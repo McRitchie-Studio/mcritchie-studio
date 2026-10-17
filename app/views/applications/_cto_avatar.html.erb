@@ -1,7 +1,18 @@
 <%# locals: (cto:, size: "md") %>
-<%# A CTO's avatar: the Agent row's (components/agent_avatar) when it has one, else its emoji on a plain circle. %>
+<%# A CTO's avatar: the Agent row's (components/agent_avatar) when it has one; a client CTO's chosen portrait over its initial on the palette's primary (AppCto); else its emoji on a plain circle. %>
+<% box = size == "lg" ? "w-16 h-16 text-2xl" : "w-14 h-14 text-xl" %>
 <% if cto.agent %>
   <%= render "components/agent_avatar", agent: cto.agent, size: size %>
+<% elsif cto.client? %>
+  <% row = cto.app_cto %>
+  <% src = row.portrait_asset && image_path(row.portrait_asset) %>
+  <span class="<%= box %> rounded-full flex items-center justify-center relative shrink-0 text-white font-bold border border-subtle bg-[rgb(var(--cto-primary))] <%= ClientCtoHelper::PALETTE_SWITCH %>"
+        style="<%= client_cto_palette_style(row) %>" data-test="client-cto-avatar">
+    <span aria-hidden="true"><%= cto.display_name.to_s.first.upcase %></span>
+    <% if src %>
+      <img src="<%= src %>" alt="<%= cto.display_name %>" class="absolute inset-0 w-full h-full rounded-full object-cover" onerror="this.remove()" data-test="client-cto-portrait">
+    <% end %>
+  </span>
 <% else %>
   <span class="<%= size == "lg" ? "w-16 h-16 text-3xl" : "w-14 h-14 text-2xl" %> rounded-full flex items-center justify-center bg-inset border border-subtle shrink-0" aria-hidden="true">🤖</span>
 <% end %>

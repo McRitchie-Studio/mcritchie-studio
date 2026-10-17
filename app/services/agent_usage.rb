@@ -133,8 +133,10 @@ module AgentUsage
   # Sum the run summaries of completed answers by these souls in [from, to).
   # metered_only: true (the client answers the allowance counts), :public (the
   # public's, metered apart), or false (every answer).
-  def totals(souls:, from:, to:, metered_only: false)
-    rows = sums(scope(souls, from, to, metered_only)).first
+  # ref: one app's rows only (a client CTO's channel_ref), for the one
+  # `client_cto` soul that answers every client app.
+  def totals(souls:, from:, to:, metered_only: false, ref: nil)
+    rows = sums(scope(souls, from, to, metered_only, ref: ref)).first
     totals_from(rows)
   end
 
@@ -153,18 +155,26 @@ module AgentUsage
   # This month's meter for an App row (owner pages, the usage ask, the gate).
   # The capped count only matters to the upgrade rule, which an unlimited meter
   # never runs, so an app with no allowance skips that query.
+  #
+  # A client app (no domain, an AppCto row) is metered on the one `client_cto`
+  # soul's answers in THAT app's chat (channel_ref), never another client's.
   def meter(app, now: Time.current, registry: self.registry)
     domain = domain_for_app(app.slug, registry: registry)
     start, finish = month_range(now)
     souls = souls_for(domain, registry: registry)
+    ref = nil
+    if domain.nil? && AppCto.exists?(app_slug: app.slug)
+      souls = [ AppCto::SOUL ]
+      ref = app.slug
+    end
     package = app.package_tier.present? ? WorkspacePackage.find(app.package_tier) : nil
     allowance = allowance_for(app)
     Meter.new(app_slug: app.slug, domain: domain, tier: app.package_tier, tier_name: package&.name,
               allowance: allowance, lifted: app.cto_cap_lifted_at.present?,
-              used: souls.empty? ? 0 : totals(souls: souls, from: start, to: now, metered_only: true).tokens,
-              public_used: souls.empty? ? 0 : totals(souls: souls, from: start, to: now, metered_only: :public).tokens,
-              totals: souls.empty? ? Totals.zero : totals(souls: souls, from: start, to: now),
-              capped_count: allowance.nil? ? 0 : capped_count(souls, start, now),
+              used: souls.empty? ? 0 : totals(souls: souls, from: start, to: now, metered_only: true, ref: ref).tokens,
+              public_used: souls.empty? ? 0 : totals(souls: souls, from: start, to: now, metered_only: :public, ref: ref).tokens,
+              totals: souls.empty? ? Totals.zero : totals(souls: souls, from: start, to: now, ref: ref),
+              capped_count: allowance.nil? ? 0 : capped_count(souls, start, now, ref: ref),
               period_start: start, period_end: finish, now: now, warn_percent: warn_percent)
   end
 
@@ -180,8 +190,12 @@ module AgentUsage
   def gate(message, now: Time.current, registry: self.registry, meters: nil)
     return Gate.new(state: :ok) if UNCAPPED_AUDIENCES.include?(message.usage_audience)
 
-    domain = registry.domain_key_for(message.soul_slug) || registry.front_door(message.soul_slug)&.dig("key")
-    app_slug = domain && registry.domains.dig(domain, "app")
+    app_slug = if message.soul_slug == AppCto::SOUL
+                 message.channel_ref
+               else
+                 domain = registry.domain_key_for(message.soul_slug) || registry.front_door(message.soul_slug)&.dig("key")
+                 domain && registry.domains.dig(domain, "app")
+               end
     app = app_slug && App.find_by(slug: app_slug)
     return Gate.new(state: :ok) unless app && allowance_for(app)
 
@@ -241,17 +255,20 @@ module AgentUsage
 
   def fmt(number) = number.to_i.to_fs(:delimited)
 
-  def capped_count(souls, from, to)
+  def capped_count(souls, from, to, ref: nil)
     return 0 if souls.empty?
 
+    messages = { soul_slug: souls }
+    messages[:channel_ref] = ref if ref
     AgentMessageEvent.joins("INNER JOIN agent_messages ON agent_messages.id = agent_message_events.agent_message_id")
                      .where(kind: "usage_capped", created_at: from...to)
-                     .where(agent_messages: { soul_slug: souls }).count
+                     .where(agent_messages: messages).count
   end
 
-  def scope(souls, from, to, metered_only)
+  def scope(souls, from, to, metered_only, ref: nil)
     scope = AgentMessage.where(status: "completed", soul_slug: Array(souls), completed_at: from...to)
                         .where("agent_messages.run_meta->>'usage_capped' IS NULL")
+    scope = scope.where(channel_ref: ref) if ref
     case metered_only
     when :public then scope.where("agent_messages.run_meta->>'audience' IN (?)", PUBLIC_AUDIENCES)
     when true then scope.where("agent_messages.run_meta->>'audience' IN (?)", METERED_AUDIENCES)

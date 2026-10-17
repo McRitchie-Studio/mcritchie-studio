@@ -4,6 +4,7 @@
 #   AppOwnership.visible_apps(user)          # admins: every app; owners: theirs
 #   AppOwnership.manage_app?(user, "cyvasse")
 #   AppOwnership.cto_for_app("turf-monster") # => Cto(domain: "turf_monster", soul: "turf_monster", …)
+#   AppOwnership.cto_for_app("pawsome")      # a client app => Cto(soul: "client_cto", app_cto: AppCto, …)
 #   AppOwnership.cto_for_agent("turf-monster")
 #   AppOwnership.sidebar_links(user)         # [] for a user who owns nothing
 #
@@ -20,14 +21,24 @@
 # reads as the CTO's name, two or more as "Agents". A user who owns nothing gets
 # no links, admin or not; an admin reaches every app at /applications anyway.
 #
+# A CLIENT APP's CTO is data, not a soul on disk (AppCto, docs/agents/system/client-cto.md):
+# when config/cto_reports.yml names no CTO for an app, its AppCto row does, and
+# the CTO is the one `client_cto` soul wearing that row's name and portrait. A
+# client CTO has no report and no settings page (`settings?` is false), and it is
+# never in `ctos`, which lists the configured ones only.
+#
 # Nothing here grants a CTO a tool or a capability. The only setting it reaches is
 # the CTO's report destination (`cto_report:<domain>`), written by
 # AgentSettingsController.
 module AppOwnership
   DOMAINS_PATH = Rails.root.join("config/agent_domains.yml")
 
-  Cto = Struct.new(:domain, :app_slug, :soul, :agent, :display_name, keyword_init: true) do
+  Cto = Struct.new(:domain, :app_slug, :soul, :agent, :display_name, :app_cto, keyword_init: true) do
     def report_key = "#{CtoReport::KEY_PREFIX}:#{domain}"
+    # A client app's CTO (an AppCto row), as opposed to one of our own souls.
+    def client? = !app_cto.nil?
+    # Whether /agents/:slug/settings serves it: only a configured CTO has a report to set.
+    def settings? = !client? && domain.present?
     # The URL slug: the Agent row's, which is the soul hyphenated.
     def slug = agent&.slug || AppOwnership.agent_slug_for(soul)
   end
@@ -70,7 +81,19 @@ module AppOwnership
     end
   end
 
-  def cto_for_app(app_slug, ctos: self.ctos) = ctos.find { |cto| cto.app_slug == app_slug.to_s }
+  # The app's CTO: the configured one, else its AppCto row's client CTO, else nil.
+  # `client_ctos` is AppCto.for_apps(...) when a list page has preloaded them.
+  def cto_for_app(app_slug, ctos: self.ctos, client_ctos: nil)
+    ctos.find { |cto| cto.app_slug == app_slug.to_s } || client_cto_for(app_slug, rows: client_ctos)
+  end
+
+  def client_cto_for(app_slug, rows: nil)
+    row = rows ? rows[app_slug.to_s] : AppCto.find_by(app_slug: app_slug.to_s)
+    return nil unless row
+
+    Cto.new(domain: nil, app_slug: row.app_slug, soul: AppCto::SOUL, agent: nil, display_name: row.name, app_cto: row)
+  end
+
   def cto_for_agent(agent_slug, ctos: self.ctos) = ctos.find { |cto| cto.slug == agent_slug.to_s }
 
   # The CTOs of the apps `user` may see (admins: all of them).

@@ -134,7 +134,8 @@ email:
 # AgentMessages::Routes#web_souls and bin/dispatcher (AgentMailbox.routed_souls).
 # A signed-in app owner or admin chats with the app's CTO on
 # /applications/:slug/chat; AgentMessages::WebIngest stores each message as a
-# `web` AgentMessage routed to that app's CTO (config/cto_reports.yml), and the
+# `web` AgentMessage routed to that app's CTO (config/cto_reports.yml, else a
+# client app's AppCto row, soul client_cto), and the
 # dispatcher answers it exactly as Discord. A CTO NOT listed here has no web
 # chat: the page says so and nothing is stored. Listing a soul here also makes
 # bin/dispatcher serve it, which is how Tyrion (not routed on Discord, where he
@@ -144,5 +145,11 @@ email:
 # Xan is listed for the /build intake chat (BuildIntake::Ingest), which is not a
 # CTO chat: no app's CTO is Xan, so listing him opens no /applications chat. It
 # makes bin/dispatcher serve his web rows even if he leaves the Discord routes.
+#
+# `client_cto` is the ONE soul every client app's chat routes to: its persona is
+# filled per app from that app's AppCto row (docs/agents/system/client-cto.md).
+# It reads no guild and has no email route. Listing it here is what makes
+# bin/dispatcher serve it (a running dispatcher restarts itself when this file
+# changes: AgentMailbox::CodeFingerprint).
 web:
-  souls: [avi, turf_monster, tyrion, xan]
+  souls: [avi, turf_monster, tyrion, xan, client_cto]

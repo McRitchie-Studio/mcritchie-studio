@@ -1,5 +1,7 @@
 <% content_for :title, "Your app · McRitchie Studio" %>
 <% req = @app_request %>
+<%# Build my app moves this page to the new CTO's chat; both opt in to a view transition so it morphs in place. %>
+<% content_for :head, tag.meta(name: "view-transition", content: "same-origin") %>
 
 <section class="<%= req.draft? ? 'max-w-5xl pt-6 sm:pt-10' : 'max-w-2xl pt-12' %> mx-auto px-4 pb-24" data-test="build-request" data-status="<%= req.status %>">
   <% if req.draft? %>

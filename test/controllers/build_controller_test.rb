@@ -85,26 +85,52 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_response :success, "the forward happens once, not on every visit home"
   end
 
-  test "Build my app on a finished checklist queues the build and shows the status page" do
+  test "Build my app on a finished checklist launches the app and moves to its new CTO's chat" do
     draft = send_prompt
     log_in_as users(:viewer)
     get build_request_path(draft.token)
     complete_intake!(draft)
 
-    assert_difference -> { Task.count }, 1 do
+    assert_difference [ -> { Task.count }, -> { App.count }, -> { AppCto.count }, -> { AgentMessage.where(soul_slug: "client_cto").count } ], 1 do
       patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" } }
     end
-    assert_redirected_to build_request_path(draft.token)
-    follow_redirect!
-
-    assert_select "[data-test='build-status']"
-    assert_select "[data-test='build-host']", text: "league-hub.mcritchie.studio"
+    assert_redirected_to chat_application_path("league-hub")
+    assert_response :see_other
     assert draft.reload.queued?
+    assert AppOwnership.manage_app?(users(:viewer).reload, "league-hub"), "the requester owns the new app"
+    cto = App.find_by!(slug: "league-hub").client_cto
+    assert_equal [ "Coach", "harbor", "#15803D" ], [ cto.name, cto.portrait, cto.light["primary"] ]
+    assert_equal "#15803D", App.find_by!(slug: "league-hub").theme_colors.dig("light", "primary")
+
+    follow_redirect!
+    assert_response :success
+    assert_select "h1", text: "Chat with Coach"
+    assert_select "[data-test='cto-chat-head'][data-client-cto='true'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
+    assert_select "[data-test='cto-chat-handover']", text: /Xan\s+Meet Coach, your CTO. I'll hand you over./
+    assert_select "meta[name='view-transition'][content='same-origin']"
+
     # The card the claim opened is what an agent builds from: it asks for the
     # footer and names the SOP, after the requester's own words.
     devops = Task.find_by!(slug: draft.task_slug).metadata.fetch("devops")
     assert_includes devops.fetch("acceptance"), "league-hub.mcritchie.studio's home page renders the site footer (footer[data-site-footer])"
     assert_includes devops.fetch("agent_context"), "docs/agents/modules/launch-build-queue.md"
+    assert_includes devops.fetch("agent_context"), "CTO: Coach (portrait harbor)"
+    assert_equal [ "league-hub" ], devops.fetch("repositories")
+  end
+
+  test "Build my app on a checklist whose colours do not read is refused and launches nothing" do
+    draft = send_prompt
+    log_in_as users(:viewer)
+    get build_request_path(draft.token)
+    complete_intake!(draft)
+    draft.update_columns(palette: draft.palette.merge("dark" => draft.palette["dark"].except("accent")))
+
+    assert_no_difference [ -> { Task.count }, -> { App.count } ] do
+      patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" } }
+    end
+    assert_redirected_to build_request_path(draft.token)
+    assert_match(/Colors/, flash[:alert])
+    assert draft.reload.draft?
   end
 
   test "a refused name re-renders the chat with the reason, and queues nothing" do

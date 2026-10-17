@@ -43,6 +43,18 @@ module AgentMessages
   # message text. No person is public. The worker gates the action and the
   # internal layers on it (AgentMailbox::Audience).
   #
+  # A CLIENT CTO (soul `client_cto`, docs/agents/system/client-cto.md) is one soul
+  # for every client app, so its PERSON layer is cut to THIS app's rows
+  # (channel_ref): an owner of two client apps never hears one app's CTO recall
+  # the other's chat. Its bundle also carries `persona`, the app's AppCto row
+  # (AppCto#persona_json), which the worker fills its persona template from,
+  # inside the untrusted fence. Every other soul's bundle has `persona: nil`.
+  # And its audience: a sender the board knows only as `public` who OWNS the app
+  # (an AppMembership owner, a server-side fact, never the message's) is that
+  # app's client, scoped to it (`client_domain` the app slug, underscored), so
+  # the CTO may talk about their own project. Their answering is unchanged: the
+  # owner-only guard reads the person's role, not this.
+  #
   # `ledger` and `user.notes` (a string) repeat the pre-omnichannel shape for a
   # worker still running the older ContextBuilder; drop them once every
   # dispatcher runs this release.
@@ -82,7 +94,7 @@ module AgentMessages
         "message_id" => @message.id,
         "as_of" => as_of.iso8601,
         "place" => place(@message),
-        "audience" => AgentPerson.audience_for(audience_person),
+        "audience" => audience_json,
         "person" => {
           "id" => @message.person_id, "display_name" => person&.display_name, "soul" => @message.soul_slug,
           "total" => total, "unread" => [ total - fetched.size, 0 ].max, "in_thread" => fetched.size - rows.size,
@@ -94,6 +106,7 @@ module AgentMessages
         },
         "user" => user_json,
         "proposals" => proposals_json,
+        "persona" => persona_json,
         "ledger" => { "turns" => person_turns, "summary" => summary, "pin" => thread_turns.last }
       }.merge(intake_json).merge(attachments_json)
     end
@@ -161,9 +174,32 @@ module AgentMessages
     def person_scope
       return AgentMessage.none if @message.person_id.blank? || @message.soul_slug.blank?
 
-      AgentMessage.where(soul_slug: @message.soul_slug, person_id: @message.person_id)
-                  .where("agent_messages.id < ?", @message.id)
-                  .where.not(status: UNSEEN_STATUSES)
+      scope = AgentMessage.where(soul_slug: @message.soul_slug, person_id: @message.person_id)
+                          .where("agent_messages.id < ?", @message.id)
+                          .where.not(status: UNSEEN_STATUSES)
+      client_cto? ? scope.where(channel_ref: @message.channel_ref) : scope
+    end
+
+    def client_cto? = @message.soul_slug == AppCto::SOUL
+
+    def audience_json
+      base = AgentPerson.audience_for(audience_person)
+      return base unless client_cto? && base["role"] == "public" && app_owner?
+
+      base.merge("role" => "client", "client_domain" => @message.channel_ref.to_s.tr("-", "_"))
+    end
+
+    def app_owner?
+      user = person&.user
+      user&.slug.present? && AppMembership.owners.exists?(app_slug: @message.channel_ref, user_slug: user.slug)
+    end
+
+    # The client CTO's persona for this app, or nil (every other soul, or a
+    # client app whose row is gone: the worker then answers as a plain CTO).
+    def persona_json
+      return nil unless client_cto?
+
+      AppCto.includes(:app).find_by(app_slug: @message.channel_ref)&.persona_json
     end
 
     # Oldest first, the newest FETCH_LIMIT.

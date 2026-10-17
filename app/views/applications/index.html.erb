@@ -16,8 +16,10 @@
           <%= link_to app.name, application_path(app.slug), class: "font-semibold text-heading hover:underline break-words", data: { test: "application-link" } %>
           <% if app.description.present? %><p class="text-secondary text-sm truncate"><%= app.description %></p><% end %>
         </div>
-        <% if cto %>
+        <% if cto&.settings? %>
           <%= link_to "CTO: #{cto.display_name}", settings_agent_path(cto.slug), class: "btn btn-secondary btn-sm shrink-0", data: { test: "application-cto-link" } %>
+        <% elsif cto %>
+          <%= link_to "CTO: #{cto.display_name}", chat_application_path(app.slug), class: "btn btn-secondary btn-sm shrink-0", data: { test: "application-cto-link" } %>
         <% end %>
       </div>
     <% end %>

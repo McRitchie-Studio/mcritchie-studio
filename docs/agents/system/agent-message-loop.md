@@ -878,7 +878,9 @@ headers only): the trusted verdict must sit in SES's trace block. Tests:
 Alex, 2026-10-16: "when you're speaking with your agent via website, discord or
 email they respond in real time." A signed-in app owner (`app_memberships`) or an
 admin opens `/applications/:slug/chat` (the **Chat** button on the app's page and
-on its CTO's settings page) and talks with that app's CTO: Avi, Turf or Tyrion.
+on its CTO's settings page) and talks with that app's CTO: Avi, Turf or Tyrion, or,
+for a client app built through `/build`, the one `client_cto` soul wearing that app's
+`AppCto` row ([`client-cto.md`](client-cto.md)).
 Each message is a new CHANNEL of this same loop, not a second loop: a `web`
 `AgentMessage`, claimed, answered with no tools and delivered exactly once.
 
@@ -898,7 +900,7 @@ bin/dispatcher (every channel) ─▶ claim ─▶ typing pulse ─▶ AgentMess
 | Which CTOs have a chat | the `web: souls:` block of `config/agent_routes.yml` |
 
 **Nothing in the request picks the soul.** The CTO is the app's, from
-`config/cto_reports.yml`, and only when the `web:` block lists it; a CTO not listed
+`config/cto_reports.yml` (else, for a client app, its `AppCto` row: soul `client_cto`), and only when the `web:` block lists it; a CTO not listed
 has no chat and the page says so. The thread is `web:<app slug>:<user id>`, so
 history persists per user per app, and the THREAD layer and the proposal scope
 never cross users or apps. `channel_ref` is the app slug and `guild_id` is nil.

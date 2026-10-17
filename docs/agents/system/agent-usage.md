@@ -42,7 +42,10 @@ text where the rollup sums. A field the envelope lacks is left out, not guessed.
 
 `AgentUsage` computes every figure from the completed rows on each read: there is
 no rollup table to drift and no job to run. A domain's answers are those of every
-soul the `souls:` map in `config/agent_domains.yml` gives that domain.
+soul the `souls:` map in `config/agent_domains.yml` gives that domain. A client app
+built through `/build` has no domain: its answers are the one `client_cto` soul's in
+THAT app's chat (`channel_ref`, the `ref:` filter), never another client app's, and the
+gate reads the app from the message's `channel_ref` ([`client-cto.md`](client-cto.md)).
 
 - `AgentUsage.totals(souls:, from:, to:)`: answers, each token kind, cost and
   average duration. Each sum reads a key only where it holds a JSON number.

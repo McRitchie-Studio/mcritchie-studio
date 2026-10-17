@@ -111,6 +111,8 @@ class AppRequest < ApplicationRecord
     taken = holding.where(subdomain: name)
     taken = taken.where.not(id: except.id) if except&.persisted?
     return "That name is taken." if taken.exists?
+    # An app row already holds it (one of ours, or a launched client app).
+    return "That name is taken." if App.exists?(slug: name)
 
     nil
   end
@@ -186,14 +188,8 @@ class AppRequest < ApplicationRecord
     self
   end
 
-  # The card's second acceptance bullet: the footer, on the page a visitor
-  # lands on. Eight words whatever the name, inside the board's 5-12 word rule.
-  def footer_criterion = "#{host}'s home page renders the site footer (#{FOOTER_SELECTOR})"
-
-  private
-
   # What the intake chat settled, for the builder's card: empty for a request
-  # made before /build became a chat.
+  # made before /build became a chat. Read by queue! and AppLaunch.
   def intake_context
     lines = []
     lines << "Sharpened idea: #{answers['idea']}" if answers.is_a?(Hash) && answers["idea"].present?
@@ -205,6 +201,12 @@ class AppRequest < ApplicationRecord
     end
     lines.empty? ? "" : "#{lines.join("\n")}\n\n"
   end
+
+  # The card's second acceptance bullet: the footer, on the page a visitor
+  # lands on. Eight words whatever the name, inside the board's 5-12 word rule.
+  def footer_criterion = "#{host}'s home page renders the site footer (#{FOOTER_SELECTOR})"
+
+  private
 
   def cto_avatar_is_storable
     errors.add(:cto_avatar, "is not a known portrait") unless BuildIntake::Portraits.storable?(cto_avatar)

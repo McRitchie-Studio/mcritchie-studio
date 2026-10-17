@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_17_153000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_17_170000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -452,6 +452,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_153000) do
     t.index ["video_slug", "number"], name: "index_alt_videos_on_video_slug_and_number", unique: true
   end
 
+  create_table "app_ctos", force: :cascade do |t|
+    t.string "app_request_token"
+    t.string "app_slug", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "facts", default: {}, null: false
+    t.string "name", null: false
+    t.jsonb "palette", default: {}, null: false
+    t.text "plan"
+    t.string "portrait"
+    t.datetime "updated_at", null: false
+    t.index ["app_slug"], name: "index_app_ctos_on_app_slug", unique: true
+  end
+
   create_table "app_memberships", force: :cascade do |t|
     t.string "app_slug", null: false
     t.datetime "created_at", null: false
@@ -590,6 +603,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_153000) do
     t.integer "position", default: 0
     t.string "slug", null: false
     t.string "status", default: "active"
+    t.jsonb "theme_colors"
     t.datetime "updated_at", null: false
     t.index ["slug"], name: "index_apps_on_slug", unique: true
   end
@@ -2912,6 +2926,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_153000) do
   add_foreign_key "alt_video_clip_versions", "alt_video_clips"
   add_foreign_key "alt_video_clips", "alt_videos", column: "alt_video_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "alt_videos", "videos", column: "video_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "app_ctos", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
   add_foreign_key "app_memberships", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
   add_foreign_key "app_memberships", "users", column: "user_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
   add_foreign_key "app_requests", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify

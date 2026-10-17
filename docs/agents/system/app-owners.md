@@ -24,6 +24,12 @@ idempotent, for `db/seeds/04_app_memberships.rb` and the task's
 `post_deploy_cmd`; it also gives a slugless user its slug. To add an owner:
 `AppMembership.create!(app: App.find_by!(slug: "…"), user: User.find_by!(email: "…"))`.
 
+A client app built through `/build` gets its owner row from **Build my app**
+(`AppLaunch`), in the same transaction as the App, its CTO and its build task. Its
+CTO is an `AppCto` row worn by the one `client_cto` soul, not a `cto_reports.yml`
+entry, so it has a chat but no report and no settings page
+([`client-cto.md`](client-cto.md)).
+
 ## Who sees what
 
 | Viewer | Sees |

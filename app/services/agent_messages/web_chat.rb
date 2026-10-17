@@ -120,7 +120,13 @@ module AgentMessages
     # The heading agent's name, from the row's own soul, whichever agent that
     # is (a CTO, or Xan on a /build thread): the domain's reply_name, else the
     # Agent's name, else the slug titleized. Nothing here assumes a CTO.
+    # A client app's CTO is named by its AppCto row (the one `client_cto` soul
+    # wears every client app's name).
     def agent_name(message)
+      if message.soul_slug == AppCto::SOUL
+        return AppCto.where(app_slug: message.channel_ref).pick(:name) || "Your CTO"
+      end
+
       AgentProposal.registry.reply_name(message.soul_slug) || Agent.find_by(slug: message.soul_slug.to_s.tr("_", "-"))&.name ||
         message.soul_slug.to_s.titleize
     end
