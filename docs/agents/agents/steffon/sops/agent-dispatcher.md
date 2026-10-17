@@ -264,7 +264,10 @@ OK to install on the work machine. The setup:
    (`claude` once, interactively). The dispatcher bills that subscription; it
    carries no API key.
 2. Give it board auth the way the agent CLI gets it (`bin/lib/agent_api.rb`),
-   with no new secret.
+   with no new secret. That token alone reads no transcript: each lease call
+   also carries the lease key the board answers the acquire that took it, held
+   only in the dispatcher's memory, so a restarted dispatcher waits out its own
+   old lease (5 minutes) before it is warm again.
 3. Let it ping once so the board knows its host: `bin/dispatcher run` in a
    terminal for a minute, then Ctrl-C. Until step 4 it is a primary, so do this
    while this Mac's dispatcher is paused or stopped, never alongside it.
@@ -279,7 +282,9 @@ OK to install on the work machine. The setup:
    `lobster-tank`, and expect the standby to answer, its log reading
    `warm mcritchie_studio: restored the checkpoint of …`. Reinstall the primary;
    the standby releases the lease after its turn (`lease released (the primary is
-   back)`), and the primary's next turn restores the standby's checkpoint.
+   back)`), and the primary's next turn restores the standby's checkpoint. The
+   standby's log then reads `removed N local transcript(s)`: it keeps no copy
+   of the owner's conversation once it hands back.
    `bin/rails agent_dispatchers:sessions` shows the holder at each step.
 
 | Symptom | Look | Fix |
