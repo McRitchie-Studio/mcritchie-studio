@@ -157,7 +157,7 @@ class WebIngestTest < ActiveSupport::TestCase
   end
 
   test "the migration links the same accounts to the owner, idempotently, and never moves another's identity" do
-    require Rails.root.join("db/migrate/20261017010000_link_owner_web_identities").to_s
+    require Rails.root.join("db/migrate/20261017020000_link_owner_web_identities").to_s
     turf_alex = User.create!(email: "alex@turfmonster.media", name: "Alex", role: "viewer")
     gmail_alex = User.create!(email: "AMcritchie@gmail.com", name: "Alex", role: "viewer")
     AgentPersonIdentity.where(platform: "web").delete_all
