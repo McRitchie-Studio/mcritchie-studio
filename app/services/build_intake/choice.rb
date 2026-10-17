@@ -6,7 +6,7 @@ module BuildIntake
   # the same rules the card was.
   #
   #   idea     message_id            → answers (idea, audience, day_one)
-  #   cto      name, portrait        → cto_name, cto_avatar
+  #   cto      name or custom_name, portrait → cto_name, cto_avatar
   #   palette  message_id, index     → palette
   #   address  subdomain             → subdomain (claimed only at Build, by queue!)
   class Choice
@@ -38,7 +38,8 @@ module BuildIntake
     end
 
     def choose_cto(params)
-      name = Card.cto_name(params[:name].to_s)
+      # A typed name wins over the picked one.
+      name = Card.cto_name(params[:custom_name].to_s.presence || params[:name].to_s)
       raise Refused, "Use 2 to 24 letters for your CTO's name." unless name
 
       portrait = params[:portrait].to_s

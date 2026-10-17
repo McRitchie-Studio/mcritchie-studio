@@ -1,0 +1,63 @@
+<%# locals: (request_row:, messages:, xan:) %>
+<%#
+  /build/:token while a draft: the chat with Xan (the shared agent_chats header and
+  composer) and the checklist. A signed-out visitor has no /cable socket, so the page
+  POLLS for answers (app/javascript/build_chat.js reads data-build-chat-poll-url and
+  asks about every turn still pending). Cards render inside their turn (build/_turn).
+  The two small Alpine helpers below are inline, ahead of the cards, so a card that
+  arrives later in a poll finds them defined.
+%>
+<script>
+  window.buildAddressCard = window.buildAddressCard || function (initial, checkUrl) {
+    return {
+      name: initial || '', state: 'idle', reason: '', timer: null,
+      pick(value) { this.name = value; this.check() },
+      onInput(el) {
+        const cleaned = el.value.toLowerCase().replace(/^\s+/, '').replace(/^https?:\/\//, '')
+          .replace(/\.mcritchie\.studio\/?$/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 30);
+        if (cleaned !== el.value) el.value = cleaned;
+        this.name = cleaned;
+        this.check();
+      },
+      check() {
+        clearTimeout(this.timer);
+        const n = this.name.replace(/-+$/, '');
+        if (!n) { this.state = 'idle'; this.reason = ''; return }
+        this.state = 'checking';
+        this.timer = setTimeout(async () => {
+          try {
+            const r = await fetch(checkUrl + '?subdomain=' + encodeURIComponent(n), { headers: { Accept: 'application/json' } });
+            const d = await r.json();
+            if (d.subdomain !== this.name.replace(/-+$/, '')) return;
+            this.state = d.available ? 'available' : 'taken'; this.reason = d.reason || '';
+          } catch (e) { this.state = 'idle' }
+        }, 250);
+      },
+      init() { if (this.name) this.check() }
+    }
+  };
+</script>
+
+<div class="grid gap-4 lg:gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] items-start" data-test="build-chat-page"
+     data-build-chat data-build-chat-poll-url="<%= build_request_turns_path(request_row.token) %>">
+  <div class="min-w-0 space-y-4 order-2 lg:order-1">
+    <%= render "agent_chats/header", name: "Xan", agent: xan, heading: "Build with Xan" do %>
+      <p class="text-secondary text-sm">An AI agent. Xan helps you set up your app: the idea, your CTO, your colors and your address.</p>
+    <% end %>
+
+    <div class="card p-0 overflow-hidden flex flex-col" data-test="build-chat">
+      <div id="<%= AgentMessages::WebChat::MESSAGES_TARGET %>" role="log" aria-live="polite" aria-label="Conversation with Xan"
+           class="flex flex-col gap-4 p-3 sm:p-4 overflow-y-auto min-h-[16rem] max-h-[65vh]" data-test="build-chat-messages" data-cto-chat-scroll>
+        <p class="hidden only:block text-center text-secondary text-sm py-10" data-test="build-chat-empty">Tell Xan what you want to build.</p>
+        <% messages.each do |message| %>
+          <%= render "build/turn", message: message, request_row: request_row %>
+        <% end %>
+      </div>
+      <%= render "agent_chats/form", **composer_locals %>
+    </div>
+  </div>
+
+  <aside class="min-w-0 order-1 lg:order-2 lg:sticky lg:top-24" aria-label="Your app's checklist">
+    <%= render "build/checklist", request_row: request_row %>
+  </aside>
+</div>

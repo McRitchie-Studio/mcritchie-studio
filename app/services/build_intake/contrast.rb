@@ -25,6 +25,9 @@ module BuildIntake
       (0.2126 * linear.call(r)) + (0.7152 * linear.call(g)) + (0.0722 * linear.call(b))
     end
 
+    # The ink that reads on `hex`: near-black or white, whichever contrasts more.
+    def ink_on(hex) = ratio(hex, "#ffffff") >= ratio(hex, "#111111") ? "#ffffff" : "#111111"
+
     # The contrast ratio of two colours, 1.0 to 21.0.
     def ratio(one, two)
       a = luminance(one)
