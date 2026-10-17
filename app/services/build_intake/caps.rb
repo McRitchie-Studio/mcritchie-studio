@@ -9,6 +9,11 @@ module BuildIntake
   #   ip       signed-out answers from one visitor IP (hashed) per hour, across requests
   #   daily    signed-out answers across ALL public intake per Denver day
   #
+  # The claim's SQL guard (Answerers#sql_guard) admits only `received` rows, and
+  # this ingest is the only writer of build-thread rows, so a row past a cap is
+  # never claimable: it is born `completed`. Two sends racing at the edge may let
+  # one extra answer through; the caps are a budget, not a lock.
+  #
   # An ANSWER here is any row of a build thread the soul was asked to answer:
   # not held (a bot-shield or unanswered row) and not itself a cap reply.
   class Caps
