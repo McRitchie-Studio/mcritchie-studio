@@ -34,7 +34,12 @@
             <p class="text-secondary"><%= @app.name %>'s CTO. Sends a daily report to the Discord channel you choose.</p>
           </div>
         </div>
-        <%= link_to "Settings", settings_agent_path(@cto.slug), class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0", data: { test: "application-cto-settings" } %>
+        <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto shrink-0">
+          <% if AgentMessages::WebIngest.available?(@cto) %>
+            <%= link_to "Chat", chat_application_path(@app.slug), class: "btn btn-primary btn-sm w-full sm:w-auto", data: { test: "application-cto-chat" } %>
+          <% end %>
+          <%= link_to "Settings", settings_agent_path(@cto.slug), class: "btn btn-secondary btn-sm w-full sm:w-auto", data: { test: "application-cto-settings" } %>
+        </div>
       </div>
     <% else %>
       <p class="text-secondary" data-test="application-no-cto">This app has no CTO yet.</p>

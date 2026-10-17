@@ -127,3 +127,16 @@ email:
     - rex@mcritchie.studio
     - pokemon@mcritchie.studio
     - team@turfmonster.media
+
+# WEB CHAT (docs/agents/system/agent-message-loop.md, "Web chat"), read by
+# AgentMessages::Routes#web_souls and bin/dispatcher (AgentMailbox.routed_souls).
+# A signed-in app owner or admin chats with the app's CTO on
+# /applications/:slug/chat; AgentMessages::WebIngest stores each message as a
+# `web` AgentMessage routed to that app's CTO (config/cto_reports.yml), and the
+# dispatcher answers it exactly as Discord. A CTO NOT listed here has no web
+# chat: the page says so and nothing is stored. Listing a soul here also makes
+# bin/dispatcher serve it, which is how Tyrion (not routed on Discord, where he
+# answers through OpenClaw) is answered in the web chat: no guild is read for
+# him, so nothing is answered twice.
+web:
+  souls: [avi, turf_monster, tyrion]

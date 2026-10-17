@@ -18,6 +18,16 @@
     </div>
   </div>
 
+  <% if AgentMessages::WebIngest.available?(@cto) %>
+    <div class="card p-4 text-sm flex flex-col sm:flex-row sm:items-center gap-3" data-test="agent-chat-card">
+      <div class="min-w-0 flex-1">
+        <h2 class="font-semibold text-heading text-base">Chat</h2>
+        <p class="text-secondary">Talk with <%= @cto.display_name %> here, live: you see it typing and its answer as it lands.</p>
+      </div>
+      <%= link_to "Open chat", chat_application_path(@app.slug), class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0", data: { test: "agent-chat-link" } %>
+    </div>
+  <% end %>
+
   <div class="card p-4 space-y-3 text-sm" data-test="agent-report-setting" data-state="<%= state %>">
     <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
       <div class="min-w-0 space-y-1">

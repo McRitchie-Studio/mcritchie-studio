@@ -72,7 +72,9 @@ module AdminWall
     # Past the wall, each action answers 404 unless the viewer owns that app or is
     # an admin (ApplicationsController, AgentSettingsController).
     "applications" => %w[index show health usage pipeline],
-    "agent_settings" => %w[index show update]
+    "agent_settings" => %w[index show update],
+    # The app's CTO web chat: 404 unless the viewer owns the app or is an admin (CtoChatsController).
+    "cto_chats" => %w[show create]
   }.transform_values(&:freeze).freeze
 
   def self.public?(controller_path, action)

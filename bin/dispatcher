@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# bin/dispatcher run [--souls a,b] [--channel all|discord|email] [--cap N] [--worker ID]
+# bin/dispatcher run [--souls a,b] [--channel all|discord|email|web] [--cap N] [--worker ID]
 # bin/dispatcher install [--if-changed] | uninstall | status
 #
 # The agent mailbox as a service on Alex's Mac
@@ -49,7 +49,7 @@ require_relative "lib/agent_dispatcher"
 
 USAGE = <<~TEXT
   Usage:
-    bin/dispatcher run [--souls a,b] [--channel all|discord|email] [--cap N] [--worker ID]
+    bin/dispatcher run [--souls a,b] [--channel all|discord|email|web] [--cap N] [--worker ID]
     bin/dispatcher install [--if-changed] | uninstall | status
 TEXT
 
@@ -74,10 +74,10 @@ when "install"
 when "uninstall" then exit AgentMailbox::LaunchAgent.new.uninstall
 when "status" then exit AgentMailbox::LaunchAgent.new.status_report
 when "run"
-  # Every channel by default (Discord and email); --channel narrows it to one.
+  # Every channel by default (Discord, email and the web chat); --channel narrows it to one.
   channel = parsed.values["--channel"].last || "all"
-  unless %w[all discord email].include?(channel)
-    warn "bin/dispatcher: --channel is all, discord or email (got #{channel.inspect}); nothing was started."
+  unless %w[all discord email web].include?(channel)
+    warn "bin/dispatcher: --channel is all, discord, email or web (got #{channel.inspect}); nothing was started."
     exit 2
   end
   channel = nil if channel == "all"

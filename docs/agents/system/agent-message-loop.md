@@ -790,7 +790,7 @@ never claimable. The trust verdict is kept in the row's `envelope`
 **The audience gate is Discord's.** A routed email from a role
 `config/agent_answerers.yml` does not answer (today everyone but the owner) is
 stored `held` with a `held` event; the claim guard holds it again on the server.
-Email has no typing pulse (`typing_refusal` answers `not_discord`).
+Email has no typing pulse (`typing_refusal` answers `not_typing_channel`).
 
 **Loop safety** (`AgentMessages::EmailLoopGuard`), checked before anything is
 stored; guarded mail stays a desk capture only:
@@ -925,7 +925,7 @@ that will post the reply shows "typing…" in the message's channel or thread.
   an admin released), and the claim is under `AgentMessage::TYPING_CAP` old. A
   held or unrouted message is never claimed, so it never types. Anyone but the
   holder gets 409 `NOT_HOLDER`; a quiet "no" is a 200 whose `meta.typing` says
-  `not_discord`, `not_answered` or `capped`, and the dispatcher stops pulsing
+  `not_typing_channel`, `not_answered` or `capped`, and the dispatcher stops pulsing
   that run on any answer but `queued`.
 - **How it stops.** The dispatcher reaps a finished run before it pulses, so
   pulses end with the run, whatever the end: the reply, a failed or raised run, a

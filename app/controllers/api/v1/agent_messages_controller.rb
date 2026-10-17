@@ -100,7 +100,7 @@ module Api
 
       # One "typing…" pulse in the message's channel, as the bot that will reply
       # (AgentMessageTypingJob). HOLDER-ONLY (409 NOT_HOLDER). Otherwise always
-      # 200: meta.typing is "queued", or why no pulse was sent ("not_discord",
+      # 200: meta.typing is "queued", or why no pulse was sent ("not_typing_channel",
       # "not_answered", "capped"), and bin/dispatcher stops pulsing that run on
       # anything but "queued". The Discord call runs on the job, so a slow
       # Discord never holds the dispatcher's main loop.

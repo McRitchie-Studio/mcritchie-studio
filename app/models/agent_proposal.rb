@@ -149,9 +149,9 @@ class AgentProposal < ApplicationRecord
   def task_url(slug) = "#{BOARD_URL}/tasks/#{slug}"
 
   # The link to the message that carried it: the thread a task records. Discord's
-  # own link; an email thread has none, so its admin page on the board.
+  # own link; an email or web-chat thread has none, so its admin page on the board.
   def thread_url
-    return "#{BOARD_URL}/admin/agent_messages/#{source_message_id}" if channel == "email" && source_message_id
+    return "#{BOARD_URL}/admin/agent_messages/#{source_message_id}" if %w[email web].include?(channel) && source_message_id
 
     source_message&.discord_url || (guild_id.present? ? "https://discord.com/channels/#{guild_id}/#{channel_ref}" : nil)
   end

@@ -63,7 +63,7 @@ class AgentEmailLoopTest < ActiveJob::TestCase
 
     claim = AgentMessage.claim!(soul: "avi", worker: "w1")
     assert_equal message, claim.message
-    assert_equal "not_discord", message.reload.typing_refusal(worker: "w1"), "email has no typing pulse"
+    assert_equal "not_typing_channel", message.reload.typing_refusal(worker: "w1"), "email has no typing pulse"
     message.complete!(worker: "w1", response_text: "Two tasks are on QA. **Nothing** is blocked.")
 
     sent = []
