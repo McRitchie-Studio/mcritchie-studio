@@ -2,8 +2,8 @@
 import "@hotwired/turbo-rails"
 import "dropping_text"
 import "alex_chat"
-// The CTO web chat (/applications/:slug/chat): delegated listeners, inert on every other page.
-import "cto_chat"
+// The shared agent web chat (first page: /applications/:slug/chat): delegated listeners, inert on every other page.
+import "agent_chat"
 import "depth_chart"
 import "scroll_tab_stop"
 import "logo_gallery"

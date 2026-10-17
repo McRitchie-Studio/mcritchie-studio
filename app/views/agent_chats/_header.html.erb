@@ -1,0 +1,15 @@
+<%# locals: (name:, agent: nil, portrait: nil, heading: "Chat with #{name}") %>
+<%# The chat's head: the heading agent's portrait and name, and the block as its subtitle. Swap the agent and the page keeps its shape. `agent` is an Agent row (components/agent_avatar); `portrait` is ready markup that wins over it; with neither, a plain circle. %>
+<div class="flex items-center gap-3 min-w-0" data-test="agent-chat-header" data-agent-name="<%= name %>">
+  <% if portrait %>
+    <%= portrait %>
+  <% elsif agent %>
+    <%= render "components/agent_avatar", agent: agent, size: "md" %>
+  <% else %>
+    <span class="w-14 h-14 text-2xl rounded-full flex items-center justify-center bg-inset border border-subtle shrink-0" aria-hidden="true">🤖</span>
+  <% end %>
+  <div class="min-w-0">
+    <h1 class="text-2xl sm:text-3xl font-bold text-heading break-words"><%= heading %></h1>
+    <%= yield %>
+  </div>
+</div>

@@ -1,5 +1,5 @@
-<%# locals: (message:, cto_name:) %>
-<%# One turn of a CTO web chat: what the viewer sent, then the CTO's answer, or why there is none yet. Rendered on the page and in WebChat broadcasts (no request: no URL helpers here). %>
+<%# locals: (message:, agent_name:) %>
+<%# One turn of an agent web chat: what the viewer sent, then the agent's answer, or why there is none yet. Rendered on the page and in WebChat broadcasts (no request: no URL helpers here). The test hooks keep their cto-chat names. %>
 <% answered = message.status == "completed" && message.response_text.present? %>
 <% replied_ms = answered ? ((message.reply_posted_at || message.completed_at || message.updated_at).to_f * 1000).to_i : nil %>
 <div id="cto-chat-turn-<%= message.id %>" class="flex flex-col gap-2" data-test="cto-chat-turn" data-status="<%= message.status %>"
@@ -7,12 +7,12 @@
   <div class="self-end max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 bg-primary/15 text-primary-ink text-sm whitespace-pre-wrap break-words" data-test="cto-chat-sent"><%= message.content %></div>
   <% if answered %>
     <div class="self-start max-w-[85%] min-w-0 card rounded-2xl rounded-bl-sm px-3 py-2" data-test="cto-chat-reply">
-      <p class="text-xs font-semibold text-muted mb-1"><%= cto_name %></p>
+      <p class="text-xs font-semibold text-muted mb-1"><%= agent_name %></p>
       <div class="prose-themed text-sm break-words [&>*:last-child]:mb-0"><%= SafeMarkdown.render(message.response_text) %></div>
     </div>
   <% elsif message.status == "held" %>
-    <p class="self-start text-xs text-warning-ink" data-test="cto-chat-held">Waiting for an admin: <%= cto_name %> does not answer this account yet.</p>
+    <p class="self-start text-xs text-warning-ink" data-test="cto-chat-held">Waiting for an admin: <%= agent_name %> does not answer this account yet.</p>
   <% elsif message.status == "dead" %>
-    <p class="self-start text-xs text-danger-ink" data-test="cto-chat-dead"><%= cto_name %> could not answer this one. Send it again.</p>
+    <p class="self-start text-xs text-danger-ink" data-test="cto-chat-dead"><%= agent_name %> could not answer this one. Send it again.</p>
   <% end %>
 </div>

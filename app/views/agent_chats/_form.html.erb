@@ -1,15 +1,16 @@
-<%# locals: (app:, cto:, error:, text:) %>
-<%# The chat's composer. A fresh client id per render makes a double submit store one message (AgentMessages::WebIngest). Enter sends; Shift+Enter is a new line (app/javascript/cto_chat.js). %>
-<%= form_with scope: :cto_chat, url: chat_application_path(app.slug), id: "cto-chat-form",
+<%# locals: (url:, scope:, id:, agent_name:, error:, text:) %>
+<%# The chat's composer. A fresh client id per render makes a double submit store one message (AgentMessages::WebIngest). Enter sends; Shift+Enter is a new line (app/javascript/agent_chat.js). Files ride in through the attachments slot, never by editing this form. %>
+<%= form_with scope: scope, url: url, id: id,
               class: "border-t border-subtle p-3 flex flex-col gap-2", data: { test: "cto-chat-form", cto_chat_form: true } do |f| %>
   <%= f.hidden_field :client_id, value: SecureRandom.uuid %>
   <% if error %>
     <p class="text-xs text-danger-ink" role="alert" data-test="cto-chat-error"><%= error %></p>
   <% end %>
+  <%= render "agent_chats/attachments_slot", form: f %>
   <div class="flex items-end gap-2">
-    <%= f.label :text, "Message #{cto.display_name}", class: "sr-only" %>
+    <%= f.label :text, "Message #{agent_name}", class: "sr-only" %>
     <%= f.text_area :text, value: text, rows: 2, maxlength: AgentMessages::WebIngest::MAX_LENGTH, required: true,
-                    placeholder: "Message #{cto.display_name}…", autocomplete: "off",
+                    placeholder: "Message #{agent_name}…", autocomplete: "off",
                     class: "input-field flex-1 min-w-0 resize-none text-sm", data: { test: "cto-chat-input" } %>
     <%= f.submit "Send", class: "btn btn-primary btn-sm shrink-0", data: { test: "cto-chat-send", turbo_submits_with: "Sending…" } %>
   </div>
