@@ -85,16 +85,21 @@ module AgentMailbox
   # with every domain off, nothing below runs and each answer is the cold run.
   # For a warm domain's front-door soul and an owner or team sender (never a
   # client, the public, or a released hold) a claim also takes the domain's
-  # board lease, restores the checkpoint when this machine's transcript is
-  # missing or older, and runs `claude -p --resume <id>` (still no tools, the
+  # board lease (presenting the lease key the board answered when this process
+  # took it), restores the checkpoint unless the local transcript is the one
+  # THIS PROCESS last checkpointed or restored (same session, same checkpoint,
+  # same SHA-256), and runs `claude -p --resume <id>` (still no tools, the
   # json envelope read as before). After the complete it uploads the transcript
   # as the checkpoint; past consolidate_at it runs one more no-tools turn for a
   # summary, which the board stores before the next turn starts fresh. One warm
   # turn per domain at a time: a second message meanwhile, a lease another
-  # dispatcher holds, or any failure answers that message per message. Leases
-  # renew on the ping beat; a handback request (a primary asking a standby) is
-  # honoured only between turns. A STANDBY (the board's role for this host)
-  # claims nothing while a primary is live.
+  # dispatcher holds, or any failure answers that message per message. A
+  # checkpoint or restore that fails is reported to the board (fault: ErrorLog
+  # and the row), never only logged here. Leases renew on the ping beat; a
+  # handback request (a primary asking a standby) is honoured only between
+  # turns. Giving a lease up removes the transcripts this process held for it.
+  # A STANDBY (the board's role for this host) claims nothing while a primary is
+  # live.
   class Dispatcher
     CAP = 5
     RENEW_EVERY = 180
@@ -137,8 +142,16 @@ module AgentMailbox
     # A consolidation turn in flight on a warm domain.
     Chore = Struct.new(:domain, :thread, :started_at, :source_session_id, :turns, :context_tokens, keyword_init: true)
     # A domain lease this dispatcher holds. busy: a warm turn or a consolidation
-    # is running on the session, so no second turn may resume it.
-    Lease = Struct.new(:domain, :session_id, :turns, :generation, :checkpointed_at, :busy, :handback, keyword_init: true)
+    # is running on the session, so no second turn may resume it. key: the
+    # lease key the board answered the acquire that took it (every lease call
+    # presents it). cwd: the soul folder its transcripts live under. files: the
+    # transcripts this process restored or checkpointed for it, removed when
+    # the lease is given up.
+    Lease = Struct.new(:domain, :session_id, :turns, :generation, :checkpointed_at, :busy, :handback, :key, :cwd,
+                       :files, keyword_init: true)
+    # The transcript this process last checkpointed or restored for a domain:
+    # the only local file a warm turn resumes without a download.
+    OwnCheckpoint = Struct.new(:session_id, :checkpointed_at, :path, :digest, keyword_init: true)
 
     attr_reader :worker, :runs, :paused_until, :pause_reason, :role, :leases, :chores
 
@@ -178,9 +191,9 @@ module AgentMailbox
       @restarting = false
       @term_at = nil
       # Warm sessions: the domain registry this checkout ships, the leases held,
-      # the consolidations running, and the checkpoints this process wrote
-      # (domain => [session id, checkpointed_at]), which mark its own transcript
-      # as current without a download.
+      # the consolidations running, and the checkpoint this process last wrote
+      # or restored per domain (domain => OwnCheckpoint), the one local
+      # transcript trusted without a download.
       @registry = registry || DomainRegistry.load(File.join(repo_root, "config/agent_domains.yml"))
       @mailbox_home = mailbox_home
       @claude_home = claude_home
@@ -452,9 +465,18 @@ module AgentMailbox
       return nil unless domain && WarmSession.eligible?(message, context)
       return nil if @leases[domain]&.busy
 
-      result = @client.domain_acquire(domain, worker: @worker)
+      held = @leases[domain]
+      result = @client.domain_acquire(domain, worker: @worker, lease_key: held&.key)
       state = result["data"] || {}
-      lease = (@leases[domain] ||= Lease.new(domain: domain))
+      lease = (@leases[domain] ||= Lease.new(domain: domain, files: []))
+      lease.cwd ||= responder_for(message["soul_slug"]).soul_folder
+      minted = result.dig("meta", "lease_key")
+      unless minted.to_s.empty?
+        # A new lease period: whatever this machine wrote before it, someone
+        # else may have advanced the session since.
+        lease.key = minted
+        @own_checkpoints.delete(domain)
+      end
       lease.session_id = state["claude_session_id"]
       lease.turns = state["turns"].to_i
       lease.generation = state["generation"]
@@ -473,38 +495,47 @@ module AgentMailbox
                             turns: lease.turns, generation: lease.generation,
                             consolidate_at: (state["consolidate_at"] || @registry.consolidate_at(domain)).to_i)
     rescue ApiError => e
-      @leases.delete(domain) if e.code == "LEASE_HELD"
+      forget_lease(domain) if e.code == "LEASE_HELD"
       reason = e.code == "LEASE_HELD" ? "another dispatcher holds the lease" : "acquire failed (#{e.message})"
       log "warm #{domain}: #{reason}; answering ##{message['id']} per message"
       nil
     end
 
-    # Is this machine's transcript of the session's head current? Its own last
-    # checkpoint, or a file newer than the board's. Else restore the board's
-    # checkpoint; a restore that fails drops the lease (the caller goes cold).
-    def transcript_ready?(lease, soul)
-      cwd = responder_for(soul).soul_folder
-      path = WarmSession.transcript_path(lease.session_id, cwd: cwd, claude_home: @claude_home)
-      return true if path && current?(lease, path)
+    # Is this machine's transcript of the session's head current? Only when it
+    # is the one THIS PROCESS last checkpointed or restored (#own_current?).
+    # No clock is compared: a file's mtime is this machine's clock and the
+    # checkpoint's is the board's, and a machine that lost the lease mid-turn
+    # holds a newer-looking file that is not the session. Else restore the
+    # board's checkpoint; a restore that fails is reported (fault) and drops the
+    # lease (the caller goes cold).
+    def transcript_ready?(lease, _soul)
+      return true if own_current?(lease)
 
-      session_id, bytes = @client.domain_checkpoint_read(lease.domain, worker: @worker)
+      session_id, bytes = @client.domain_checkpoint_read(lease.domain, worker: @worker, lease_key: lease.key)
       raise ArgumentError, "the checkpoint is of #{session_id}, not #{lease.session_id}" unless session_id == lease.session_id
 
-      WarmSession.restore!(session_id, bytes, cwd: cwd, claude_home: @claude_home)
-      @own_checkpoints[lease.domain] = [ session_id, lease.checkpointed_at ]
+      path = WarmSession.restore!(session_id, bytes, cwd: lease.cwd, claude_home: @claude_home)
+      lease.files << path
+      @own_checkpoints[lease.domain] = OwnCheckpoint.new(session_id: session_id, checkpointed_at: lease.checkpointed_at,
+                                                         path: path, digest: WarmSession.digest(path))
       log "warm #{lease.domain}: restored the checkpoint of #{session_id} (#{bytes.bytesize} bytes)"
       true
     rescue ApiError, ArgumentError, Zlib::Error, SystemCallError, IOError => e
+      report_fault(lease, "restore_failed", e)
       drop_lease(lease.domain, "the checkpoint would not restore (#{e.class})")
       false
     end
 
-    def current?(lease, path)
-      return true if @own_checkpoints[lease.domain] == [ lease.session_id, lease.checkpointed_at ]
-      return false if lease.checkpointed_at.nil?
+    # The board's head is the session this process last checkpointed or
+    # restored, at that same checkpoint, and the file is still byte for byte
+    # what it was then.
+    def own_current?(lease)
+      own = @own_checkpoints[lease.domain]
+      return false unless own && own.session_id == lease.session_id && own.checkpointed_at == lease.checkpointed_at
+      return false unless File.file?(own.path)
 
-      File.mtime(path) > Time.parse(lease.checkpointed_at.to_s)
-    rescue ArgumentError, SystemCallError
+      WarmSession.digest(own.path) == own.digest
+    rescue SystemCallError, IOError
       false
     end
 
@@ -525,11 +556,16 @@ module AgentMailbox
     def checkpoint_turn(domain, lease, answer, run)
       session_id = answer.session_id
       path = session_id && WarmSession.transcript_path(session_id, cwd: answer.cwd, claude_home: @claude_home)
-      return release_busy(domain, "the turn left no transcript") unless path
+      unless path
+        report_fault(lease, "checkpoint_failed", "no_transcript")
+        return release_busy(domain, "the turn left no transcript")
+      end
 
+      lease.files << path
       tokens = WarmSession.context_tokens(answer.meta)
       turns = lease.turns.to_i + 1
       data = WarmSession.pack(path)
+      digest = WarmSession.digest(path)
       previous = lease.session_id
       if data.bytesize > WarmSession::CHECKPOINT_LIMIT
         lease.session_id = session_id
@@ -537,13 +573,14 @@ module AgentMailbox
         return start_consolidation(domain, run.message["soul_slug"], lease, tokens, "the transcript passed the checkpoint limit")
       end
 
-      state = @client.domain_checkpoint(domain, worker: @worker, session_id: session_id, data: data, turns: turns,
-                                                context_tokens: tokens)["data"] || {}
+      state = @client.domain_checkpoint(domain, worker: @worker, lease_key: lease.key, session_id: session_id, data: data,
+                                                turns: turns, context_tokens: tokens)["data"] || {}
       lease.session_id = session_id
       lease.turns = turns
       lease.checkpointed_at = state["checkpointed_at"]
       lease.handback = state["handback_requested"] == true
-      @own_checkpoints[domain] = [ session_id, lease.checkpointed_at ]
+      @own_checkpoints[domain] = OwnCheckpoint.new(session_id: session_id, checkpointed_at: lease.checkpointed_at,
+                                                   path: path, digest: digest)
       prune_superseded(previous, session_id, answer.cwd)
       log "warm #{domain}: turn #{turns} checkpointed (#{data.bytesize} bytes, context #{tokens} tokens)"
       return release_busy(domain, "a handback was requested; between turns") if lease.handback
@@ -553,7 +590,29 @@ module AgentMailbox
 
       lease.busy = false
     rescue ApiError, SystemCallError, IOError, Zlib::Error => e
-      release_busy(domain, "the checkpoint failed (#{e.class}#{e.respond_to?(:code) && e.code ? " #{e.code}" : ''})")
+      log "warm #{domain}: CHECKPOINT FAILED (#{fault_detail(e)}); the turn is answered, the session falls back to " \
+          "the board's last checkpoint"
+      report_fault(lease, "checkpoint_failed", e)
+      release_busy(domain, "the checkpoint failed (#{fault_detail(e)})")
+    end
+
+    # Tell the board a checkpoint or restore failed (AgentDomainSession#fault!:
+    # ErrorLog and the row), so a domain gone cold shows on the board and not
+    # only in this log. `cause` is an error (its class and code are sent, never
+    # its message) or a fixed word. Never raises.
+    def report_fault(lease, fault, cause)
+      return unless lease&.key
+
+      detail = cause.is_a?(Exception) ? fault_detail(cause) : cause.to_s
+      @client.domain_fault(lease.domain, worker: @worker, lease_key: lease.key, fault: fault, detail: detail)
+      log "warm #{lease.domain}: reported #{fault} (#{detail}) to the board"
+    rescue ApiError => e
+      log "warm #{lease.domain}: the #{fault} report failed too (#{e.message})"
+    end
+
+    def fault_detail(error)
+      code = error.respond_to?(:code) && error.code ? " #{error.code}" : ""
+      "#{error.class}#{code}"[/\A[A-Za-z0-9:_. -]{0,120}/].to_s
     end
 
     # A resumed turn may write its transcript under a new session id that holds
@@ -561,11 +620,11 @@ module AgentMailbox
     # inside this soul's own project folder, never anywhere else.
     def prune_superseded(previous, current, cwd)
       return if previous.nil? || previous == current
+      return unless previous.match?(WarmSession::SESSION_ID)
 
       old = File.join(WarmSession.project_dir(cwd, claude_home: @claude_home), "#{previous}.jsonl")
-      File.delete(old) if previous.match?(WarmSession::SESSION_ID) && File.file?(old)
-    rescue SystemCallError
-      nil
+      WarmSession.discard(old)
+      @leases.each_value { |lease| lease.files&.delete(old) }
     end
 
     def start_consolidation(domain, soul, lease, tokens, why)
@@ -585,17 +644,26 @@ module AgentMailbox
       lease = @leases[domain]
       return unless lease
 
-      text, = chore.thread.value
+      text, run = chore.thread.value
+      # The summary turn's own transcript holds the whole session too.
+      summary_id = run.respond_to?(:session_id) ? run.session_id : nil
+      if summary_id.to_s.match?(WarmSession::SESSION_ID) && lease.cwd
+        lease.files << File.join(WarmSession.project_dir(lease.cwd, claude_home: @claude_home), "#{summary_id}.jsonl")
+      end
       return release_busy(domain, "the consolidation answered nothing") if text.nil?
 
-      state = @client.domain_consolidate(domain, worker: @worker, text: text, source_session_id: chore.source_session_id,
-                                                 turns_covered: chore.turns, context_tokens: chore.context_tokens)["data"] || {}
+      state = @client.domain_consolidate(domain, worker: @worker, lease_key: lease.key, text: text,
+                                                 source_session_id: chore.source_session_id, turns_covered: chore.turns,
+                                                 context_tokens: chore.context_tokens)["data"] || {}
       lease.session_id = nil
       lease.turns = 0
       lease.checkpointed_at = nil
       lease.generation = state["generation"]
       lease.handback = state["handback_requested"] == true
       @own_checkpoints.delete(domain)
+      # The summary replaces the session: its transcripts go.
+      WarmSession.discard(lease.files)
+      lease.files = []
       log "warm #{domain}: consolidated #{chore.turns} turn(s); generation #{lease.generation} starts fresh"
       return release_busy(domain, "a handback was requested; between turns") if lease.handback
 
@@ -610,14 +678,34 @@ module AgentMailbox
     end
 
     # Give a domain's lease back to the board. The session and its checkpoint
-    # stay for the next holder.
+    # stay for the next holder; this machine's copies of its transcripts go.
     def drop_lease(domain, why)
-      return unless @leases.delete(domain)
+      lease = @leases[domain]
+      return unless lease
 
-      @client.domain_release(domain, worker: @worker)
-      log "warm #{domain}: lease released (#{why})"
-    rescue ApiError => e
-      log "warm #{domain}: release failed (#{e.message}); the lease lapses on its own"
+      begin
+        @client.domain_release(domain, worker: @worker, lease_key: lease.key)
+        log "warm #{domain}: lease released (#{why})"
+      rescue ApiError => e
+        log "warm #{domain}: release failed (#{e.message}); the lease lapses on its own"
+      end
+      forget_lease(domain)
+    end
+
+    # Forget a lease without a board call (it was lost, or refused): its key,
+    # the trust in this process's last checkpoint, and the transcripts this
+    # process held for it, which are owner and team text.
+    def forget_lease(domain)
+      lease = @leases.delete(domain)
+      own = @own_checkpoints.delete(domain)
+      return unless lease || own
+
+      files = Array(lease&.files) + [ own&.path ]
+      if lease&.session_id.to_s.match?(WarmSession::SESSION_ID) && lease.cwd
+        files << File.join(WarmSession.project_dir(lease.cwd, claude_home: @claude_home), "#{lease.session_id}.jsonl")
+      end
+      removed = WarmSession.discard(files)
+      log "warm #{domain}: removed #{removed} local transcript(s)" if removed.positive?
     end
 
     # On the ping beat: renew every lease held, and give back, between turns,
@@ -629,14 +717,14 @@ module AgentMailbox
           next
         end
 
-        state = @client.domain_renew(lease.domain, worker: @worker)["data"] || {}
+        state = @client.domain_renew(lease.domain, worker: @worker, lease_key: lease.key)["data"] || {}
         lease.handback = state["handback_requested"] == true
         drop_lease(lease.domain, "a handback was requested") if lease.handback && !lease.busy
       rescue ApiError => e
         # Lost: lapsed and taken. A turn in flight checkpoints into a refusal
         # and drops it then; an idle lease is simply forgotten.
         log "warm #{lease.domain}: renew refused (#{e.message})"
-        @leases.delete(lease.domain) unless lease.busy
+        forget_lease(lease.domain) unless lease.busy
       end
     end
 

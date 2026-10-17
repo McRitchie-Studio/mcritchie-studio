@@ -30,7 +30,7 @@ class ClientPipelineTest < ActiveSupport::TestCase
     lanes = pipeline.lanes.to_h { |lane| [ lane.label, lane.cards.map(&:title) ] }
 
     assert_equal [ "Queued", "Building", "In review", "Ready for QA", "On QA", "Shipped" ], lanes.keys
-    assert_equal [ "Turf and engine", "Queued one" ], lanes["Queued"], "board order: the newest rank first"
+    assert_equal [ "Shared platform work", "Queued one" ], lanes["Queued"], "board order: the newest rank first"
     assert_equal [ "Building one" ], lanes["Building"]
     assert_equal [ "Shipped recently" ], lanes["Shipped"]
     assert_equal [ 1, 2 ], pipeline.lanes.first.cards.map(&:queue_position)
@@ -87,5 +87,31 @@ class ClientPipelineTest < ActiveSupport::TestCase
     task!("Carl fixes http://localhost:3104", stage: "designed")
     assert_equal "Carl fixes http://localhost:3104", cards(ClientPipeline.build(@turf, admin: true)).first.title
     assert_equal "the team fixes [link]", cards(ClientPipeline.build(@turf)).first.title
+  end
+
+  test "[unit] an owner reads a title only for a task of this repo alone" do
+    App.create!(slug: "cyvasse", name: "Cyvasse", position: 5)
+    task!("Turf scores feed", stage: "designed")
+    task!("Shared modal for Cyvasse clients", stage: "designed", repos: %w[turf-monster cyvasse])
+    task!("Engine theme tokens", stage: "building", repos: %w[studio-engine turf-monster])
+
+    owner = cards(ClientPipeline.build(@turf)).map(&:title)
+    assert_includes owner, "Turf scores feed"
+    assert_equal 2, owner.count(ClientPipeline::SHARED_TITLE)
+    refute(owner.any? { |title| title.include?("Cyvasse") || title.include?("modal") || title.include?("Engine") },
+           "no word of a multi-repo title reaches the owner")
+
+    admin = cards(ClientPipeline.build(@turf, admin: true)).map(&:title)
+    assert_includes admin, "Shared modal for Cyvasse clients", "admins read every title as written"
+  end
+
+  test "[unit] product tokens are not credential titles; credential tokens still are" do
+    scrub = ClientPipeline::Scrubber.new(@turf)
+    [ "Burn Free Entry Tokens", "Document Entry Token Mint", "Auto Mint Level Up Tokens",
+      "Hide Badge For Zero Tokens", "Declare Or Drop Surface Tokens" ].each do |title|
+      assert_equal title, scrub.title(title)
+    end
+    assert_equal "Security maintenance", scrub.title("Rotate the GitHub token")
+    assert_equal "Security maintenance", scrub.title("Entry tokens and the deploy token"), "a credential token beside a product one still collapses"
   end
 end

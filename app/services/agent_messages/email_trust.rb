@@ -43,8 +43,9 @@ module AgentMessages
   # holder of RESEND_API_KEY can send DKIM-passing mail `From: alex@mcritchie.studio`
   # under the `resend` selector. For a domain listed in `pinned` (config/agent_routes.yml
   # `email.pinned_dkim`: mcritchie.studio → [google], Alex's Google Workspace
-  # key), every DKIM-Signature aligned with the From domain must name a pinned
-  # selector (`s=`), and at least one must. SES's verdict does not print the
+  # key), every DKIM-Signature aligned with the From domain must be signed by
+  # exactly that domain (`d=`, not a subdomain) under a pinned selector (`s=`),
+  # and at least one must. SES's verdict does not print the
   # selector, so it is read from the DKIM-Signature headers: if every aligned
   # signature uses a pinned selector, the aligned pass SES reports can only be a
   # pinned one. A forged extra s=google signature cannot hide a real s=resend one,
@@ -240,10 +241,13 @@ module AgentMessages
       aligned = sigs.select { |t| t["d"].present? && aligned?(t["d"].downcase, domain) }
       return "no DKIM-Signature for #{domain} under a pinned selector (#{pin.last.join(', ')})" if aligned.empty?
 
-      stray = aligned.map { |t| t["s"].to_s.downcase }.reject { |s| pin.last.include?(s) }
-      return "signed for #{domain} under selector #{stray.uniq.join(', ')}, not the pinned #{pin.last.join(', ')}" if stray.any?
+      # The exact (d, s) pair: a pinned selector on a subdomain (d=x.mcritchie.studio,
+      # s=google) is a different key and does not prove the pinned domain.
+      stray = aligned.reject { |t| t["d"].downcase == pin.first && pin.last.include?(t["s"].to_s.downcase) }
+      return nil if stray.empty?
 
-      nil
+      pairs = stray.map { |t| "d=#{t['d'].downcase} s=#{t['s'].to_s.downcase}" }.uniq.join(", ")
+      "signed for #{domain} as #{pairs}, not the pinned d=#{pin.first} s=#{pin.last.join(', ')}"
     end
 
     def tags(value)

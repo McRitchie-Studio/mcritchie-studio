@@ -1,26 +1,8 @@
 const { test, expect } = require("@playwright/test");
+const { scrollToBoardBottom, gotoBoard, headerClearance, pinReading, expectLanesFitAndClear } = require("./lane_pin_helpers");
 
-// SCROLL TO THE BOTTOM OF THE BOARD, not the bottom of the DOCUMENT.
-//
-// These checks are about a lane header pinning *while its own lane scrolls beneath it*, and
-// a sticky header only sticks inside its own containing block — past the board it is
-// SUPPOSED to travel up and out. `scrollTo(0, document.scrollHeight)` meant "past the
-// board's top" only for as long as the board happened to be the last thing on the page,
-// which is a proxy, not the property. /deployments now renders a desk panel below the board
-// (tasks/_desk_panel), so the document bottom is well past the lanes and the old scroll
-// asserted a header should pin somewhere it must not.
-//
-// This addresses the board directly, so it means the same thing it always did — and stays
-// true whatever the page grows underneath. It clamps to the document, so a page where the
-// board IS last scrolls exactly as far as before.
-async function scrollToBoardBottom(page) {
-  await page.evaluate(() => {
-    const board = document.querySelector("[data-test='kanban-board']");
-    const bottom = board.getBoundingClientRect().bottom + window.scrollY;
-    const max = document.documentElement.scrollHeight - window.innerHeight;
-    window.scrollTo(0, Math.max(0, Math.min(bottom - window.innerHeight, max)));
-  });
-}
+// scrollToBoardBottom and the lane-fit helpers live in e2e/lane_pin_helpers.js, shared
+// with the classic-scrollbar spec.
 
 // THE PINNED STACK on /deployments, in a real browser: the site nav, then the swim-lane
 // headers sitting on its bottom edge.
@@ -39,8 +21,9 @@ async function scrollToBoardBottom(page) {
 //     or under the nav.
 //
 // A WIDE VIEWPORT, like the other Deployments specs: the six-lane board collapses its
-// upstream lanes below 1400px, and the lane row only drops its scroller — the thing that
-// lets the headers pin at all — when the lanes fit without one.
+// upstream lanes while the board is narrower than six (a container query), and the lane
+// row only drops its scroller — the thing that lets the headers pin at all — when the
+// lanes fit without one.
 test.use({ viewport: { width: 1600, height: 800 } });
 
 test("the lane headers pin under the site header while cards scroll beneath", async ({
@@ -69,7 +52,8 @@ test("the lane headers pin under the site header while cards scroll beneath", as
           const tops = Array.from(document.querySelectorAll("[data-test='stage-header']"))
             .filter((el) => el.getBoundingClientRect().width > 0)
             .map((el) => Math.round(el.getBoundingClientRect().top));
-          return tops.every((t) => Math.abs(t - navBottom) <= 2);
+          // An empty list would pass `every`; no visible header is no pin.
+          return tops.length > 0 && tops.every((t) => Math.abs(t - navBottom) <= 2);
         }),
       { message: "every lane header settles on the site header's bottom edge" }
     )
@@ -222,81 +206,72 @@ test("each lane contains its cards' stacking so their z-indexes stay internal", 
   }
 });
 
-// A LANE HEADER NEVER COVERS ITS LANE'S FIRST CARD (board-lane-header-overlap).
+// A LANE HEADER NEVER COVERS ITS LANE'S FIRST CARD, AND EVERY ONE PINS
+// (board-lane-header-overlap, then board-lanes-by-board-width).
 //
-// From 1400 to 1439px the six lanes, at a 13.5rem floor, measured 1376px against a
-// board 10-40px narrower, so the measured scroller came on. Inside it each sticky
-// header was offset by its pinned-stack `top` from the SCROLLER's top edge, which
-// pushed it down over its own cards: 123px at rest, 36px with the navbar collapsed.
-// So: at those widths the six lanes fit and the headers pin, and wherever the
-// scroller does come on (All Stages on a narrow window) the headers stop pinning.
-async function headerClearance(page) {
-  return page.evaluate(() => {
-    const lanes = document.querySelector("[data-test='kanban-lanes']");
-    const gaps = [...document.querySelectorAll("[data-test='stage-header']")]
-      .filter((h) => h.getBoundingClientRect().width > 0)
-      .map((h) => {
-        // The first card under the header: the first bordered box in the lane, outside the header.
-        const card = [...h.parentElement.querySelectorAll("*")].find((el) =>
-          !h.contains(el) && el.getBoundingClientRect().height > 80 && getComputedStyle(el).borderTopWidth !== "0px");
-        return card ? card.getBoundingClientRect().top - h.getBoundingClientRect().bottom : null;
-      })
-      .filter((gap) => gap !== null);
-    return { gaps, scroller: getComputedStyle(lanes).overflowX };
-  });
-}
+// From 1400 to 1439px the six lanes, at a 13.5rem floor behind a 1400px WINDOW breakpoint,
+// measured wider than the board, so the measured scroller came on. Inside it each sticky
+// header was offset by its pinned-stack `top` from the SCROLLER's top edge, down over its
+// own cards: 123px at rest, 36px with the navbar collapsed. The lane count now comes from
+// the board's own width (a container query on the lane row), so the six lanes show only
+// where they fit — 83rem, a 1392px window with overlay scrollbars — and the scroller comes
+// on only for All Stages on a board too narrow for six. Classic 17px scrollbars, which a
+// window breakpoint could not see, are covered in deployments_lane_pin_classic_scrollbars.
 
-// The lanes fit, their headers pin, and none covers its first card, at one width.
-async function expectLanesFitAndClear(page, width) {
-  await page.setViewportSize({ width, height: 650 });
-  await page.goto("/deployments");
-  for (const y of [0, 150]) {
-    await page.evaluate((top) => window.scrollTo(0, top), y);
-    await page.waitForTimeout(250);
-    const { gaps, scroller } = await headerClearance(page);
-    expect(scroller, "the lanes fit without the scroller").toBe("visible");
-    expect(gaps.length, "the board must have cards for this to mean anything").toBeGreaterThan(0);
-    gaps.forEach((gap) => expect(gap, `y=${y}: ${JSON.stringify(gaps)}`).toBeGreaterThanOrEqual(0));
-  }
-  // And they really pin: scrolled into the board, each header sits on the
-  // navbar's bottom edge, or the clearance above would pass for nothing.
-  await scrollToBoardBottom(page);
-  await expect.poll(() => page.evaluate(() => {
-    const nav = document.querySelector("header").getBoundingClientRect().bottom;
-    return [...document.querySelectorAll("[data-test='stage-header']")]
-      .filter((h) => h.getBoundingClientRect().width > 0)
-      .map((h) => Math.round(Math.abs(h.getBoundingClientRect().top - nav)));
-  })).toEqual(expect.arrayContaining([0]));
-}
-
-test("at 1300px the three lanes fit, their headers pin, and none covers its first card", async ({ page }) => {
-  await expectLanesFitAndClear(page, 1300);
+test("at 1300px the board shows three lanes, they fit, and every header pins clear of its cards", async ({ page }) => {
+  await expectLanesFitAndClear(page, 1300, { lanes: 3 });
 });
 
-test("at 1400px the six lanes fit, their headers pin, and none covers its first card", async ({ page }) => {
-  await expectLanesFitAndClear(page, 1400);
+test("at 1400px the board shows six lanes, they fit, and every header pins clear of its cards", async ({ page }) => {
+  await expectLanesFitAndClear(page, 1400, { lanes: 6 });
 });
 
-test("at 1430px the six lanes fit, their headers pin, and none covers its first card", async ({ page }) => {
-  await expectLanesFitAndClear(page, 1430);
+test("at 1416px the board shows six lanes, they fit, and every header pins clear of its cards", async ({ page }) => {
+  await expectLanesFitAndClear(page, 1416, { lanes: 6 });
 });
 
-test("with the lanes scrolling sideways the headers stop pinning, clear of their cards", async ({ page }) => {
+test("at 1440px the board shows six lanes, they fit, and every header pins clear of its cards", async ({ page }) => {
+  await expectLanesFitAndClear(page, 1440, { lanes: 6 });
+});
+
+// The one place the scroller comes on: All Stages forcing six lanes into a board that
+// cannot hold them. Clicked, not set through Alpine: the toggle must RE-MEASURE (on the
+// next tick) because showing lanes changes the row's content, not its box, and the
+// ResizeObserver hears only the box. There the headers stop pinning and sit clear of
+// their cards; toggled back, the scroller goes and the headers pin again.
+test("All Stages on a narrow board scrolls the lanes sideways and unpins the headers, then restores them", async ({ page }) => {
   await page.setViewportSize({ width: 1300, height: 650 });
-  await page.goto("/deployments");
-  // All Stages forces the six lanes into a board that cannot hold them.
-  await page.evaluate(() => {
-    const board = document.querySelector("[data-test='kanban-lanes']").closest("[x-data]");
-    window.Alpine.$data(board).showAllCols = true;
-  });
-  await expect(page.locator("[data-test='kanban-lanes']")).toHaveAttribute("data-lane-scroll", "true");
+  await gotoBoard(page);
+  const lanes = page.locator("[data-test='kanban-lanes']");
+  const toggle = page.locator("[data-test='all-stages-toggle']");
   const header = page.locator("[data-test='stage-header']").first();
+
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await expect(lanes).toHaveAttribute("data-lane-scroll", "true");
+  await expect.poll(() => lanes.evaluate((el) => getComputedStyle(el).overflowX)).toBe("auto");
   await expect.poll(() => header.evaluate((h) => getComputedStyle(h).position)).toBe("static");
   for (const y of [0, 150]) {
     await page.evaluate((top) => window.scrollTo(0, top), y);
     await page.waitForTimeout(250);
-    const { gaps } = await headerClearance(page);
+    const { headers, gaps } = await headerClearance(page);
+    expect(headers, "All Stages shows all six lanes").toBe(6);
     expect(gaps.length).toBeGreaterThan(0);
     gaps.forEach((gap) => expect(gap, `y=${y}: ${JSON.stringify(gaps)}`).toBeGreaterThanOrEqual(0));
   }
+
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await toggle.click();
+  await expect(lanes).not.toHaveAttribute("data-lane-scroll", "true");
+  await expect.poll(() => lanes.evaluate((el) => getComputedStyle(el).overflowX)).toBe("visible");
+  await scrollToBoardBottom(page);
+  await expect.poll(async () => (await pinReading(page)).worst).toBeLessThanOrEqual(2);
+  expect((await pinReading(page)).count, "back to the three lanes the board holds").toBe(3);
+});
+
+// A board wide enough for six offers no toggle: it would do nothing.
+test("a board wide enough for six lanes hides the All Stages toggle", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 650 });
+  await gotoBoard(page);
+  await expect(page.locator("[data-test='all-stages-toggle']")).toBeHidden();
 });

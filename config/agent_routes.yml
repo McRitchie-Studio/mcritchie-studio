@@ -98,8 +98,10 @@ discord:
 # team@ is never answered (no CTO answers a CTO, and no reply answers itself).
 email:
   team_address: team@mcritchie.studio
-  # Mail From these domains is verified only when every DKIM-Signature aligned
-  # with the From domain names one of these selectors. mcritchie.studio also has
+  # Mail From these domains (or their subdomains) is verified only when every
+  # DKIM-Signature aligned with the From domain is signed by exactly the listed
+  # domain (d=) under one of these selectors (s=). Production refuses to boot
+  # without a pin for team_address's domain (config/initializers/agent_email_pins.rb). mcritchie.studio also has
   # a `resend` key (resend._domainkey), so anyone holding RESEND_API_KEY could
   # send a DKIM-passing `From: alex@mcritchie.studio`; only Alex's Google
   # Workspace key (`google._domainkey`) proves his mailbox. A pass under any

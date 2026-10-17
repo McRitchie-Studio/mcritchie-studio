@@ -58,6 +58,38 @@ module AgentMessages
                           [ @team_address ].compact + @souls.flat_map(&:addresses)).uniq
     end
 
+    # Raised at boot in production when the pins are missing or empty
+    # (config/initializers/agent_email_pins.rb).
+    class PinsMissing < StandardError; end
+
+    # Why these routes cannot pin the owner's domain, or [] when they can. The
+    # team address's domain is the one whose mail is trusted as Alex, so it must
+    # be pinned to at least one selector: a missing or misspelled `pinned_dkim`
+    # would otherwise turn the pin off without a word, and any DKIM that passes
+    # for the domain (a Resend send, say) would be trusted as him.
+    def pin_problems
+      problems = []
+      problems << "email.pinned_dkim is missing or empty" if @pinned_dkim.empty?
+      @pinned_dkim.each { |domain, selectors| problems << "email.pinned_dkim.#{domain} names no selector" if selectors.empty? }
+      team_domain = @team_address.to_s.split("@", 2).last
+      if team_domain.present? && @pinned_dkim[team_domain].blank?
+        problems << "email.pinned_dkim does not pin #{team_domain}, the team address's domain"
+      end
+      problems
+    end
+
+    # Production refuses to boot on pin_problems; other environments boot (a
+    # desk or a test may run without pins). Returns the routes it checked.
+    def self.verify_pins!(routes = current, production: Rails.env.production?)
+      return routes unless production
+
+      problems = routes.pin_problems
+      return routes if problems.empty?
+
+      raise PinsMissing, "config/agent_routes.yml: #{problems.join('; ')}. Owner trust on email needs the " \
+                         "pinned DKIM selector (docs/agents/system/agent-message-loop.md, \"Email\")."
+    end
+
     def soul(slug) = @souls.find { |s| s.slug == slug.to_s }
 
     # The From line a soul's reply is sent with ("Avi <avi@mcritchie.studio>").

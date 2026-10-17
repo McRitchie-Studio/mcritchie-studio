@@ -933,6 +933,15 @@ class Task < ApplicationRecord
     devops_list("risk_tags")
   end
 
+  # The refusal a move to building would meet now, or nil (the read-only check
+  # GET /api/v1/tasks/:slug/building_lane answers; bin/task begin asks it before
+  # it cuts a desk). Writes nothing and takes no lock.
+  def building_lane_refusal
+    return nil if stage == "building" || !self.class.lane_claim_move?(stage, started_at)
+
+    BuildingLanes.refusal_for(self)
+  end
+
   # Naming advice from the last save; both task controllers answer with it.
   def warnings
     @warnings || []
@@ -2057,15 +2066,44 @@ class Task < ApplicationRecord
     {}
   end
 
-  # A lane is taken by a CLAIM: a create at `building`, or a move from `designed`.
-  # A rework block (submitted back to building) and a re-claim take no new lane.
+  # Stages a task is sent BACK to building from (a rework block, a QA bounce). The
+  # task held a lane before, so the return takes none, but only when it was ever
+  # claimed: a task created straight at `submitted` has no started_at, and its
+  # first move to building is a claim.
+  LANE_SENDBACK_STAGES = %w[submitted reviewed assembled].freeze
+
+  # A lane is taken by a CLAIM: a create at `building`; a move into building from
+  # anywhere but a send-back of a claimed task (so `designed`, a reopen from
+  # `shipped` or `archived`, and an unclaimed send-back); or a client repo added to
+  # a task already building. A rework block and a re-claim take no new lane.
   def claims_a_building_lane?
-    stage == "building" && (new_record? || (will_save_change_to_stage? && stage_in_database == "designed"))
+    return false unless stage == "building"
+    return true if new_record?
+    return lane_repositories_added.any? unless will_save_change_to_stage?
+
+    self.class.lane_claim_move?(stage_in_database, started_at_in_database)
   end
 
+  # Is a move from `from` into building a claim? Every move is, except the
+  # send-back of a task that was claimed once (it has a started_at).
+  def self.lane_claim_move?(from, started_at)
+    !(LANE_SENDBACK_STAGES.include?(from.to_s) && started_at.present?)
+  end
+
+  # A task already building is checked only for the repos this save adds: the
+  # lanes it held under its other repos are already counted.
   def building_lane_available
-    refusal = BuildingLanes.refusal_for(self)
+    only = will_save_change_to_stage? || new_record? ? nil : lane_repositories_added
+    refusal = BuildingLanes.refusal_for(self, only: only, lock: true)
     errors.add(:base, refusal) if refusal
+  end
+
+  # The repos this save adds to devops.repositories.
+  def lane_repositories_added
+    return [] unless will_save_change_to_metadata?
+
+    stored = metadata_in_database.is_a?(Hash) ? metadata_in_database.dig("devops", "repositories") : nil
+    devops_repositories - self.class.normalize_devops_list(stored || [], split_commas: true)
   end
 
   def set_stage_timestamp

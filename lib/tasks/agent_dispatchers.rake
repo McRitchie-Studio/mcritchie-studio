@@ -27,7 +27,7 @@ namespace :agent_dispatchers do
     abort "agent_dispatchers:role: #{e.message}"
   end
 
-  desc "List each warm domain's session lease, head and checkpoint"
+  desc "List each warm domain's session lease, head, checkpoint and last reported fault"
   task sessions: :environment do
     rows = AgentDomainSession.order(:domain)
     puts "no warm sessions yet" if rows.empty?
@@ -35,7 +35,8 @@ namespace :agent_dispatchers do
       lease = row.lease_live? ? "held by #{row.holder} until #{row.lease_expires_at.utc.iso8601}" : "free"
       puts "#{row.domain} gen=#{row.generation} turns=#{row.turns} context=#{row.context_tokens} #{lease} " \
            "checkpoint=#{row.checkpoint_bytes || 0}B@#{row.checkpointed_at&.utc&.iso8601 || '-'}" \
-           "#{' handback requested' if row.handback_requested?}"
+           "#{' handback requested' if row.handback_requested?}" \
+           "#{" FAULT #{row.last_fault} @#{row.last_fault_at&.utc&.iso8601}" if row.last_fault.present?}"
     end
   end
 

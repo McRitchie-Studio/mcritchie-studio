@@ -6,8 +6,8 @@ require "test_helper"
 # blocked card IS a building card (data-stage="building") wearing a red glow, and
 # it rides the Building dropzone. There is no Blocked column and no card/dropzone
 # stage asymmetry to reconcile. The same-zone drag guard (an in-place reorder must
-# never PATCH the stage) still matters, and the Building lane still collapses below
-# 1400px on the Deploy board so a stalled task is reachable via "All Stages".
+# never PATCH the stage) still matters, and the Building lane still collapses on a
+# Deploy board too narrow for six lanes, so a stalled task is reachable via "All Stages".
 class BoardBlockedCardDragTest < ActionDispatch::IntegrationTest
   # The ops pages sit behind the admin wall (AdminWall); these tests read them as
   # the operator. A test about another viewer signs that session in itself.
@@ -75,12 +75,13 @@ class BoardBlockedCardDragTest < ActionDispatch::IntegrationTest
     designed_col = doc.at_css("#dropzone-designed").parent
     reviewed_col = doc.at_css("#dropzone-reviewed").parent
 
-    # Below 1400px the upstream lanes collapse behind All Stages — and Building is
-    # no longer exempt. Blocked tasks ride Building, so a stalled task is reachable
+    # On a board too narrow for six lanes (a container query on the lane row, not a
+    # window breakpoint) the upstream lanes collapse behind All Stages — and Building
+    # is no longer exempt. Blocked tasks ride Building, so a stalled task is reachable
     # via the toggle at narrow rather than pinned visible.
-    assert_includes designed_col[":class"].to_s, "max-[1399px]:hidden"
-    assert_includes building_col[":class"].to_s, "max-[1399px]:hidden"
+    assert_includes designed_col[":class"].to_s, "@max-[83rem]/lanes:hidden"
+    assert_includes building_col[":class"].to_s, "@max-[83rem]/lanes:hidden"
     # …while the last three lanes (reviewed · assembled · shipped) stay visible.
-    refute_includes reviewed_col[":class"].to_s, "max-[1399px]:hidden"
+    refute_includes reviewed_col[":class"].to_s, "@max-[83rem]/lanes:hidden"
   end
 end

@@ -8,14 +8,20 @@
 # stripping a full task: title (scrubbed), lane, time in lane, a neutral role
 # ("Builder" while building, "Reviewer" in review), "On hold" for a block, and the
 # queue position. Nothing else crosses: no slug, PR, agent or soul, mascot, cost or
-# token count, reviewer note, session id, repo list, desk path or other app. The
-# title is scrubbed too, because a title is free text an agent wrote: a URL or a
-# filesystem path becomes "[link]", a credential mention turns the whole title
-# into "Security maintenance", a soul's name becomes "the team", and another
-# app's name becomes "a shared component". An admin's card adds the slug and the
-# PR link; the title stays as written.
+# token count, reviewer note, session id, repo list, desk path or other app.
+#
+# The title crosses only for a task whose repos are exactly this app's repo. A
+# task that names any other repo is platform work shared with other apps, where
+# other clients' names live, so an owner sees "Shared platform work" instead of
+# its title (Alex's default, 2026-10-16; Carl's review of client-devops-view-lanes).
+# A title that does cross is still scrubbed, because it is free text an agent
+# wrote: a URL or a filesystem path becomes "[link]", a credential mention turns
+# the whole title into "Security maintenance", a soul's name becomes "the team",
+# and another app's name becomes "a shared component". An admin's card adds the
+# slug and the PR link; the title stays as written.
 module ClientPipeline
   SHIPPED_WINDOW = 14.days
+  SHARED_TITLE = "Shared platform work".freeze
 
   # `age` phrases the card's time in the lane ("3 hours in review").
   Lane = Struct.new(:key, :stage, :label, :role, :age, keyword_init: true) do
@@ -69,7 +75,7 @@ module ClientPipeline
 
   def card(task, lane, admin:, scrubber:, queue_position: nil)
     fields = {
-      title: admin ? task.title : scrubber.title(task.title),
+      title: admin ? task.title : owner_title(task, scrubber),
       lane: lane.label,
       entered_at: task.public_send(ENTERED_AT.fetch(lane.stage)) || task.updated_at,
       role: lane.role,
@@ -78,6 +84,11 @@ module ClientPipeline
     }
     fields.merge!(slug: task.slug, pr_url: task.pr_url.presence) if admin
     Card.new(**fields)
+  end
+
+  # What an owner reads as the card's title (see THE SANITIZER above).
+  def owner_title(task, scrubber)
+    task.devops_repositories == [ scrubber.app.slug ] ? scrubber.title(task.title) : SHARED_TITLE
   end
 
   def release_view(app)
@@ -93,6 +104,12 @@ module ClientPipeline
     PATH = %r{(?:~|/Users|/home|/private|/tmp|/var)/\S+|\S*\.worktrees/\S*|\b(?:bin|app|lib|config|db|docs|test|e2e|scripts?)/\S+}
     CREDENTIAL = /credential|password|passphrase|secret|token|api[\s_-]?key|private[\s_-]?key|1password|\bop:\/\/|keypair|\bkeys?\b|\bsign(?:er|ers|ing)\b|seed phrase|\b[A-Z][A-Z0-9]*_(?:KEY|TOKEN|SECRET)\b/i
     CREDENTIAL_TITLE = "Security maintenance".freeze
+    # Product tokens are not credentials: Turf's entry tokens, level-up tokens and
+    # a design system's surface tokens are features an owner should read. Struck
+    # from the text before the credential test, so only these phrases are spared.
+    PRODUCT_TOKEN = /\b(?:free\s+)?entry\s+tokens?\b|\blevel[\s-]up\s+tokens?\b|\bzero\s+tokens\b|\b(?:surface|design)\s+tokens?\b/i
+
+    attr_reader :app
 
     def initialize(app)
       @app = app
@@ -102,7 +119,7 @@ module ClientPipeline
 
     def title(text)
       text = text.to_s
-      return CREDENTIAL_TITLE if text.match?(CREDENTIAL)
+      return CREDENTIAL_TITLE if text.gsub(PRODUCT_TOKEN, " ").match?(CREDENTIAL)
 
       text = text.gsub(URL, "[link]").gsub(PATH, "[link]")
       text = text.gsub(@apps, "a shared component") if @apps

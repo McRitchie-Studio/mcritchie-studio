@@ -15,11 +15,18 @@
       <h2 class="font-semibold text-heading text-base">Building lanes</h2>
       <p class="text-body text-lg font-semibold" data-test="pipeline-lanes-label"><%= lanes_status.label %></p>
       <% if lanes_status.capped? %>
-        <div class="flex gap-1" aria-hidden="true">
-          <% lanes_status.cap.times do |index| %>
-            <span class="h-2 flex-1 rounded-full <%= index < lanes_status.in_use ? 'bg-primary' : 'bg-surface-alt border border-subtle' %>"></span>
+        <div class="flex gap-1" aria-hidden="true" data-test="pipeline-lanes-meter">
+          <% [ lanes_status.cap, lanes_status.in_use ].max.times do |index| %>
+            <% if index >= lanes_status.cap %>
+              <span class="h-2 flex-1 rounded-full <%= status_tone(:warning, :fill) %>" data-test="pipeline-lanes-over"></span>
+            <% else %>
+              <span class="h-2 flex-1 rounded-full <%= index < lanes_status.in_use ? 'bg-primary' : 'bg-surface-alt border border-subtle' %>"></span>
+            <% end %>
           <% end %>
         </div>
+        <% if lanes_status.over.positive? %>
+          <p class="text-muted text-xs" data-test="pipeline-lanes-over-note">Work sent back for changes keeps its lane, so the count can run past your plan for a while. New work waits until it is back under.</p>
+        <% end %>
         <p class="text-muted text-xs">Your <%= lanes_status.tier_name %> plan builds <%= pluralize(lanes_status.cap, "task") %> at a time. More work waits in the queue, in order<%= lanes_status.full? ? ", and starts as a lane frees up" : "" %>. <%= link_to "Compare plans", packages_path, class: "underline hover:text-heading" %></p>
       <% elsif lanes_status.package %>
         <p class="text-muted text-xs">Your <%= lanes_status.tier_name %> plan has no lane limit.</p>
@@ -34,7 +41,7 @@
         <span class="text-muted text-xs">Preview</span>
       </div>
       <% if (release = @pipeline.release) %>
-        <p class="text-body">The current release is <%= release.label %>, carrying <%= pluralize(release.count, "of your tasks", plural: "of your tasks") %>.</p>
+        <p class="text-body">The current release is <%= release.label %>, carrying <%= release.count.zero? ? "none of your tasks" : pluralize(release.count, "of your tasks", plural: "of your tasks") %>.</p>
       <% else %>
         <p class="text-body">No release is in progress right now.</p>
       <% end %>
@@ -47,7 +54,7 @@
       <div class="card p-4 space-y-3 text-sm min-w-0" data-test="pipeline-lane" data-lane="<%= lane_view.key %>">
         <div class="flex items-center justify-between gap-2">
           <h2 class="font-semibold text-heading text-base"><%= lane_view.label %></h2>
-          <span class="text-xs font-semibold px-2 py-0.5 rounded-full <%= task_stage_count_classes(lane_view.lane.stage) %>" data-test="pipeline-lane-count"><%= lane_view.cards.size %></span>
+          <span class="text-xs font-semibold px-2 py-0.5 rounded-full <%= task_stage_count_classes(lane_view.lane.stage) %>" data-test="pipeline-lane-count"><span aria-hidden="true"><%= lane_view.cards.size %></span><span class="sr-only"><%= pluralize(lane_view.cards.size, "task") %></span></span>
         </div>
         <% if lane_view.key == "shipped" %><p class="text-muted text-xs">The last <%= ClientPipeline::SHIPPED_WINDOW.inspect %>.</p><% end %>
         <% if lane_view.cards.empty? %>
@@ -57,7 +64,7 @@
             <% lane_view.cards.each do |card| %>
               <li class="rounded-lg border border-subtle bg-surface-alt p-3 space-y-1 min-w-0" data-test="pipeline-card">
                 <p class="text-body font-medium break-words" data-test="pipeline-card-title">
-                  <% if card.queue_position %><span class="text-muted font-normal" data-test="pipeline-card-queue">#<%= card.queue_position %></span><% end %>
+                  <% if card.queue_position %><span class="text-muted font-normal" data-test="pipeline-card-queue"><span class="sr-only">Queue position </span>#<%= card.queue_position %></span><% end %>
                   <%= card.title %>
                 </p>
                 <p class="text-muted text-xs flex flex-wrap items-center gap-x-2 gap-y-1">
