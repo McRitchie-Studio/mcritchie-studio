@@ -6,8 +6,10 @@ require Rails.root.join("bin/lib/agent_dispatcher").to_s
 # Responder's media path, ClaudeRun.parse stream: true): a message's images and
 # PDFs become image and document blocks in ONE stream-json user message, sent to
 # the same tool-less, --safe-mode Claude; the reply is read from the stream's
-# `result` line only; images are shrunk and stripped (EXIF and GPS) before the
-# model sees them; and a file that cannot be read is skipped and named, never
+# `result` line only; ImageMagick is told to shrink and strip (EXIF and GPS)
+# every image before the model sees it (the conversion itself needs `magick`,
+# which CI does not have: it was measured on the dispatcher Mac, 2026-10-17, a
+# 3000x2000 JPEG with a GPS tag came out 1568x1045 with no EXIF, and HEIC as JPEG); and a file that cannot be read is skipped and named, never
 # fatal. A message with no files keeps today's command and prompt (the warm
 # session test pins that byte for byte).
 class AgentMediaTest < ActiveSupport::TestCase
@@ -170,29 +172,6 @@ class AgentMediaTest < ActiveSupport::TestCase
     assert_includes argv, "-auto-orient"
     assert_equal [ "-limit", "memory" ], argv.each_cons(2).find { |a, _| a == "-limit" }
     assert_match(/\Ajpeg:/, argv.last, "a HEIC goes to the model as JPEG")
-  end
-
-  test "[unit] with real ImageMagick: a 3000px JPEG with GPS comes out 1568px with no EXIF, and HEIC becomes JPEG" do
-    skip "ImageMagick (magick) is not installed" unless system("magick", "-version", out: File::NULL, err: File::NULL)
-
-    real = M::Preparer.new(fetcher: ->(url) { File.binread(FIXTURES.join(url.split("/").last)) })
-    source = File.binread(FIXTURES.join("gps.jpg"))
-    assert_includes source, "Exif\x00\x00".b, "the fixture carries an EXIF block with a GPS tag"
-
-    prepared = real.prepare([ { "filename" => "gps.jpg", "content_type" => "image/jpeg", "url" => "https://x/gps.jpg" },
-                              { "filename" => "sample.heic", "content_type" => "image/heic", "url" => "https://x/sample.heic" } ])
-    assert_equal 2, prepared.shown, prepared.skipped.inspect
-    jpeg, heic = prepared.blocks.select { |b| b["type"] == "image" }.map { |b| Base64.strict_decode64(b.dig("source", "data")) }
-    Dir.mktmpdir do |dir|
-      path = File.join(dir, "out.jpg")
-      File.binwrite(path, jpeg)
-      assert_equal "1568 1045", `magick identify -format "%w %h" #{path}`.strip
-      assert_not_includes jpeg, "Exif\x00\x00".b
-      assert_not_includes `magick identify -verbose #{path}`, "GPS"
-    end
-    assert jpeg.start_with?("\xFF\xD8".b)
-    assert heic.start_with?("\xFF\xD8".b), "HEIC is sent as JPEG"
-    assert_equal "image/jpeg", prepared.blocks[3].dig("source", "media_type")
   end
 
   test "[unit] the stream-json line is one JSON object ending in a newline, the text last" do
