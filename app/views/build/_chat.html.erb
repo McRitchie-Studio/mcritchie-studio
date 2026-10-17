@@ -14,7 +14,10 @@
     <% subtitle = capture do %>
       <p class="text-secondary text-sm">An AI agent. Xan helps you set up your app: the idea, your CTO, your colors and your address.</p>
     <% end %>
-    <%= render "agent_chats/header", name: "Xan", agent: xan, heading: "Build with Xan", subtitle: subtitle %>
+    <%# view-transition-name matches the CTO chat's head (cto_chats/show): Build my app morphs this head into the new CTO's. %>
+    <div style="view-transition-name: agent-chat-head;">
+      <%= render "agent_chats/header", name: "Xan", agent: xan, heading: "Build with Xan", subtitle: subtitle %>
+    </div>
 
     <div class="card p-0 overflow-hidden flex flex-col" data-test="build-chat">
       <div id="<%= AgentMessages::WebChat::MESSAGES_TARGET %>" role="log" aria-live="polite" aria-label="Conversation with Xan"

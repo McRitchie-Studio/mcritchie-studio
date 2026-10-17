@@ -157,7 +157,7 @@ class AppLaunch
         "kind" => "feature",
         "repositories" => [ @subdomain ],
         "acceptance" => [ "#{request.host} serves the app the requester described", request.footer_criterion ],
-        "agent_context" => "Prompt from the requester, verbatim:\n\n#{request.prompt}\n\n" \
+        "agent_context" => "Prompt from the requester, verbatim:\n\n#{request.prompt}\n\n#{request.intake_context}" \
                            "Subdomain reserved: #{request.host}. Tier: #{request.tier}. App request token: #{request.token}." \
                            "#{showcase ? ' SHOWCASE build: an example of what the App Builder delivers, submitted by an admin.' : ''}" \
                            "\n\nTheme colours (App#theme_colors, light and dark): #{palette.to_json}" \

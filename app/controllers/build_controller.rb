@@ -192,8 +192,20 @@ class BuildController < ApplicationController
       return
     end
     @app_request.user ||= current_user
-    @app_request.queue!(name)
-    redirect_to build_request_path(@app_request.token), notice: "Your app is in the build queue."
+    # Build my app (AppLaunch, docs/agents/system/client-cto.md): the App, its
+    # owner, its CTO and the build task in one transaction, then the page moves
+    # to the new CTO's chat, where Xan's handover is already the first turn. An
+    # admin's showcase without the checklist still queues the old way.
+    unless @app_request.intake_complete?
+      @app_request.queue!(name)
+      return redirect_to(build_request_path(@app_request.token), notice: "Your app is in the build queue.")
+    end
+
+    launch = rescue_and_log(target: @app_request) { AppLaunch.new(@app_request, subdomain: name).call! }
+    redirect_to chat_application_path(launch.app.slug), status: :see_other,
+                                                        notice: "#{launch.app_cto.name} is your CTO. Say hello."
+  rescue AppLaunch::Incomplete => e
+    redirect_to build_request_path(@app_request.token), alert: e.message, status: :see_other
   rescue ActiveRecord::RecordInvalid => e
     @app_request.status = "draft"
     @app_request.errors.merge!(e.record.errors) unless e.record.equal?(@app_request)

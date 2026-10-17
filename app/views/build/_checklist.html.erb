@@ -46,7 +46,8 @@
               data-build-sign-in="<%= modal_props.to_json %>">Build my app</button>
       <p class="mt-2 text-xs text-muted text-center">Free. We'll ask you to sign in first.</p>
     <% else %>
-      <%= form_with url: build_request_path(request_row.token), method: :patch, data: { turbo: false } do |f| %>
+      <%# Turbo, so the 303 to the new CTO's chat is a view-transition visit: the page morphs into the CTO's head (cto_chats/show). %>
+      <%= form_with url: build_request_path(request_row.token), method: :patch, data: { test: "build-my-app-form" } do |f| %>
         <%= hidden_field_tag "app_request[subdomain]", request_row.subdomain %>
         <button type="submit" class="btn btn-primary w-full" data-test="build-my-app" data-enabled="true">Build my app</button>
       <% end %>
