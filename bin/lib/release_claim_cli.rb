@@ -803,8 +803,9 @@ class ReleaseClaimCli
   RELEASE_CLAIM_RENEWER = ".release-conductor-claim-renewer"
 
   # The per-(session, role, slug) marker suffix. Roles are a closed set (safe); slugs
-  # are kebab-case (validated on the board) plus the `__forming__` sentinel, all
-  # filesystem-safe — sanitize defensively anyway.
+  # are kebab-case (validated on the board) plus the `__forming__` sentinel and a
+  # train's `__forming__:<train>`. The colon is stripped below, which still leaves the
+  # two sentinels distinct (`__forming__` vs `__forming__turf-monster`).
   def marker_suffix(base, role, slug)
     "#{base}-#{role}-#{slug.to_s.gsub(/[^A-Za-z0-9._-]/, '')}"
   end

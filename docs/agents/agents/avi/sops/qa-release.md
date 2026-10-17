@@ -104,12 +104,24 @@ subagents are for **read** fan-out. Narrate with `bin/agent-activity start/next/
 bin/release prepare --yes
 ```
 
+**Release trains.** `config/release_trains.yml` gives some apps their own train
+(today: `turf-monster`). A task naming only that app's repos rides its train; every
+other task (a gem, the hub, app plus engine, app plus hub) rides the hub. A bare
+`prepare` runs the hub train and holds the app train's tasks. Run an app train with
+`bin/release prepare --yes --train <app>`, then `bin/release ship --train <app>`: it
+sweeps, promotes and deploys only that app's repo, and refuses before the promote
+when that repo's `accepted` carries a hub-train task's merge (ship the hub first). A
+repo rides one active train at a time; `Release#add` refuses the second. Design:
+`/Users/alex/projects/.agents/epics/release-trains-design.md`.
+
 `prepare` owns the whole act:
 
 1. Detect every `reviewed` task plus any `assembled` straggler. A task naming a
    **parked** repo (any `config/release_repos.yml` ladder but `three-rung`) is HELD:
    `⚠ HELD <slug>: names parked <repo> (ladder: <ladder>) — <why>; left <stage>,
    never promoted or deployed.` A task naming a live AND a parked repo is held WHOLE.
+   A task that rides another **release train** is HELD too: `⚠ HELD <slug>: rides
+   the <train> train …`, with the command that sweeps it.
 2. Open or resume the release candidate.
 3. **Promote `accepted → release`**: per repo with reviewed work, ONE promote.
    - **Fast-forward** when `release` is contained in `accepted`: the `accepted` head is

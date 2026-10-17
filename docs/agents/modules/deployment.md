@@ -315,6 +315,14 @@ otherwise prod-stopping `qa-release` lane, taken only after a fail-closed
 preflight over every swept gem. `bin/release ship` re-verifies each gem
 idempotently (already-live → skip). Neither is a separate ad-hoc step.
 
+**Release trains.** Every `bin/release` command takes `--train <slug>` (default
+`hub`). An app listed in `config/release_trains.yml` (today `turf-monster`) ships on
+its own train when a task names only its repos; gems, the hub, and any task naming
+two repos ride the hub, which publishes gems producer-first. A repo rides one
+active train at a time. The same production authority covers an app train's ship;
+the nightly standing grant is task C of
+`/Users/alex/projects/.agents/epics/release-trains-design.md`.
+
 ## QA And Production URLs
 
 `mcritchie-studio/config/qa_environments.yml` is the source of truth for stable

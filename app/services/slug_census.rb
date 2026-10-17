@@ -31,7 +31,8 @@ class SlugCensus
     "contents.team_slug" => TURF_RECAP,
     "contents.rival_team_slug" => TURF_RECAP,
     "release_conductor_claims.release_slug" => "a new qa-release claims the sentinel `__forming__` " \
-                                               "before its release row exists; release slugs never change"
+                                               "(`__forming__:<train>` on an app train) before its release " \
+                                               "row exists; release slugs never change"
   }.freeze
 
   Row = Struct.new(:table, :column, :target_table, :target_column, :via, :total, :filled, :orphans, :samples,
