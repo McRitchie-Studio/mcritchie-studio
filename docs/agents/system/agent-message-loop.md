@@ -910,8 +910,12 @@ owner who is not the platform owner is a `public` person, and their message is
 page tells them so. Giving the `owner` audience to a customer would print "Alex
 McRitchie, the owner" and the internal role doc into their answers; the scoped
 app-owner audience is Phase 6 of `.agents/epics/domain-agents.md`, design only.
-To answer Alex from another of his hub accounts, link it:
-`bin/rails agent_people:link PERSON=<owner id> PLATFORM=web EXTERNAL_ID=<user id>`.
+Alex owns each app through a different hub account, so each of
+`AgentPerson::OWNER_HUB_EMAILS` (alex@mcritchie.studio, alex@turfmonster.media,
+amcritchie@gmail.com) is a `web` identity of the owner's person, linked by the
+`LinkOwnerWebIdentities` migration and `AgentPerson.seed_owner!`; his chat is
+answered as the owner from any of them. Link any other account by hand:
+`bin/rails agent_people:link PERSON=<id> PLATFORM=web EXTERNAL_ID=<user id>`.
 
 **Before any model**, as on Discord: a message that is exactly `go`, `no` or
 `change: …` in a thread with a proposal is handled by

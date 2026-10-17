@@ -145,4 +145,33 @@ class WebIngestTest < ActiveSupport::TestCase
     assert_includes AgentMailbox::Dispatcher::TYPING_CHANNELS, "web"
     assert_equal AgentMessage::TYPING_CHANNELS, AgentMailbox::Dispatcher::TYPING_CHANNELS, "board and worker agree"
   end
+
+  test "Alex's other hub accounts are the owner's web identities; nobody else's is" do
+    turf_alex = User.create!(email: "alex@turfmonster.media", name: "Alex", role: "viewer")
+    AppMembership.create!(app: apps(:turf_monster), user: turf_alex)
+    AgentPerson.seed_owner!
+
+    assert_equal @alex_person, AgentMessages::WebIngest.person_for(turf_alex)
+    assert_equal "received", ingest(turf_alex, "from my Turf account").status
+    assert_not AgentPersonIdentity.exists?(platform: "web", external_id: @owner.id.to_s, agent_person_id: @alex_person.id)
+  end
+
+  test "the migration links the same accounts to the owner, idempotently, and never moves another's identity" do
+    require Rails.root.join("db/migrate/20261017010000_link_owner_web_identities").to_s
+    turf_alex = User.create!(email: "alex@turfmonster.media", name: "Alex", role: "viewer")
+    gmail_alex = User.create!(email: "AMcritchie@gmail.com", name: "Alex", role: "viewer")
+    AgentPersonIdentity.where(platform: "web").delete_all
+    stranger = AgentPerson.create!(display_name: "Someone")
+    stranger.identities.create!(platform: "web", external_id: gmail_alex.id.to_s)
+
+    migration = LinkOwnerWebIdentities.new
+    migration.verbose = false
+    2.times { migration.up }
+
+    linked = AgentPersonIdentity.where(platform: "web").pluck(:external_id, :agent_person_id).to_h
+    assert_equal @alex_person.id, linked[@alex.id.to_s]
+    assert_equal @alex_person.id, linked[turf_alex.id.to_s]
+    assert_equal stranger.id, linked[gmail_alex.id.to_s], "an identity that belongs to someone is never moved"
+    assert_nil linked[@owner.id.to_s]
+  end
 end

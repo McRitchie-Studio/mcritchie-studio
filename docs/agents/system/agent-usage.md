@@ -106,6 +106,10 @@ no allowance skips the capped-count query (`agent_message_events` is indexed on
   (`applications/_usage_meter`): used of allowance, a bar coloured by state, the
   tier, the reset date, the public's tokens when there are any, and the
   suggestion. Owner or admin only, like the pages; the public never sees it.
+- **The CTO web chat** (`/applications/:slug/chat`) shows the same partial as a
+  bar above the conversation, built from `Meter#without_cost` for every viewer,
+  admins included, and redraws it live after each answer
+  ([`agent-message-loop.md`](agent-message-loop.md), "Web chat").
 - **Dollars are an admin's.** A non-admin owner reads tokens and the meter only:
   the page's totals lines and the JSON drop `cost_usd` (`Totals#without_cost`,
   `Meter#without_cost`). A tier's price in the suggestion is a list price, shown

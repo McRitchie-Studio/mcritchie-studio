@@ -28,6 +28,10 @@ class AgentPerson < ApplicationRecord
 
   # Alex: his Discord user id, and the hub user his email names.
   OWNER = { name: "Alex", platform: "discord", external_id: "536552944271753216", email: "alex@mcritchie.studio" }.freeze
+  # Alex's hub accounts, one per app he owns (docs/agents/system/app-owners.md).
+  # Each that exists is a `web` identity of the owner's person, so his CTO web
+  # chat is answered as the owner from any of them (LinkOwnerWebIdentities).
+  OWNER_HUB_EMAILS = %w[alex@mcritchie.studio alex@turfmonster.media amcritchie@gmail.com].freeze
 
   belongs_to :user, optional: true
   has_many :identities, class_name: "AgentPersonIdentity", inverse_of: :person, dependent: :delete_all
@@ -101,6 +105,12 @@ class AgentPerson < ApplicationRecord
     # (AgentMessages::EmailIngest). Never moved off another person here.
     unless AgentPersonIdentity.exists?(platform: "email", external_id: OWNER[:email])
       person.identities.create!(platform: "email", external_id: OWNER[:email], display_name: OWNER[:name])
+    end
+    # His hub accounts, so the CTO web chat answers him as the owner from each.
+    User.where("LOWER(email) IN (?)", OWNER_HUB_EMAILS).order(:id).pluck(:id).each do |user_id|
+      next if AgentPersonIdentity.exists?(platform: "web", external_id: user_id.to_s)
+
+      person.identities.create!(platform: "web", external_id: user_id.to_s, display_name: OWNER[:name])
     end
     person
   end
