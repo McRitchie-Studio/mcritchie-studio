@@ -7,13 +7,14 @@ module ClientCtoFixtures
   }.freeze
 
   ANSWERS = {
+    "idea" => "A booking page for one groomer: pick a slot, pay a deposit, get a reminder.",
     "audience" => "Dog owners in Denver",
-    "day_one" => "Book a grooming slot",
-    "plan" => "A booking page for one groomer: pick a slot, pay a deposit, get a reminder."
+    "day_one" => "Book a grooming slot"
   }.freeze
+  PLAN = "#{ANSWERS['idea']}\nDay one: #{ANSWERS['day_one']}".freeze
 
   def client_intake(**overrides)
-    AppLaunch::Intake.new(**{ cto_name: "Nova", cto_avatar: "/build/portraits/portrait-03.webp",
+    AppLaunch::Intake.new(**{ cto_name: "Nova", cto_avatar: "harbor",
                               palette: PALETTE.deep_dup, answers: ANSWERS.dup }.merge(overrides))
   end
 
@@ -21,8 +22,8 @@ module ClientCtoFixtures
   def client_app!(slug: "pawsome", name: "Pawsome", cto_name: "Nova")
     app = App.create!(slug: slug, name: name, emoji: "📱", color: PALETTE["light"]["primary"], package_tier: "vibe",
                       theme_colors: PALETTE)
-    AppCto.create!(app: app, name: cto_name, portrait: "/build/portraits/portrait-03.webp", palette: PALETTE,
-                   plan: ANSWERS["plan"], facts: { "owner" => "Pat", "audience" => ANSWERS["audience"] })
+    AppCto.create!(app: app, name: cto_name, portrait: "harbor", palette: PALETTE,
+                   plan: PLAN, facts: { "owner" => "Pat", "audience" => ANSWERS["audience"] })
     app
   end
 end

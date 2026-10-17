@@ -38,8 +38,9 @@ class AppLaunch
   end
 
   # What Xan's intake gathered (the request's intake columns, owned by the
-  # build-with-xan-intake task): the CTO's name and portrait, the palette and the
-  # sharpened answers.
+  # build-with-xan-intake task): the CTO's name and portrait key, the palette
+  # ({ "name", "light", "dark" }) and the sharpened answers ({ "idea",
+  # "audience", "day_one" }).
   Intake = Struct.new(:cto_name, :cto_avatar, :palette, :answers, keyword_init: true) do
     def self.from(request)
       read = ->(attr) { request.respond_to?(attr) ? request.public_send(attr) : nil }
@@ -69,8 +70,9 @@ class AppLaunch
   # (AppRequest#subdomain_is_claimable), reported as a RecordInvalid on save.
   def missing
     list = []
-    list << "Idea" if request.prompt.blank?
-    list << "CTO" if intake.cto_name.to_s.squish.blank? || intake.cto_name.to_s.squish.length > AppCto::NAME_LIMIT
+    list << "Idea" if intake.answers_hash["idea"].to_s.strip.blank?
+    list << "CTO" if intake.cto_name.to_s.squish.blank? || intake.cto_name.to_s.squish.length > AppCto::NAME_LIMIT ||
+                     intake.cto_avatar.blank?
     list << "Colors" unless AppPalette.valid?(intake.palette)
     list << "Address" if @subdomain.nil?
     list << "Account" if request.user.nil?
@@ -114,27 +116,26 @@ class AppLaunch
 
   def palette = @palette ||= AppPalette.normalize(intake.palette)
 
-  # The name the intake gave the app, else its address in words ("pawsome-grooming"
-  # reads "Pawsome Grooming").
-  def app_name
-    given = intake.answers_hash["app_name"].to_s.squish
-    given.present? && given.length <= 60 ? given : @subdomain.tr("-", " ").titleize
-  end
+  # The app's name: its address in words ("pawsome-grooming" reads "Pawsome Grooming").
+  def app_name = @subdomain.tr("-", " ").titleize
 
-  # The plan the CTO restates: Xan's sharpened plan when the intake has one, else
-  # the requester's own prompt.
+  # The plan the CTO restates: the sharpened idea and its day-one goal.
   def plan
-    (intake.answers_hash["plan"].to_s.strip.presence || request.prompt.to_s.strip)[0, AppCto::PLAN_LIMIT]
+    answers = intake.answers_hash
+    [ answers["idea"].to_s.strip, ("Day one: #{answers['day_one'].to_s.strip}" if answers["day_one"].present?) ]
+      .compact_blank.join("\n")[0, AppCto::PLAN_LIMIT]
   end
 
-  # What the persona's APP PERSONA block lists besides the plan: the prompt, the
-  # owner's name, and each sharpened answer (strings, capped).
+  # What the persona's APP PERSONA block lists besides the plan: the owner's
+  # name, the original prompt, the palette's name, and each sharpened answer.
   def facts
-    answers = intake.answers_hash.except("plan", "app_name").filter_map do |key, value|
+    answers = intake.answers_hash.filter_map do |key, value|
       text = value.is_a?(String) ? value : value.to_json
       [ key.to_s[0, 40], text.strip[0, ANSWER_LIMIT] ] if text.present?
     end.to_h
-    { "owner" => request.user.display_name.to_s[0, 100], "prompt" => request.prompt.to_s[0, ANSWER_LIMIT] }.merge(answers)
+    palette_name = intake.palette.is_a?(Hash) ? (intake.palette["name"] || intake.palette[:name]).to_s[0, 40].presence : nil
+    { "owner" => request.user.display_name.to_s[0, 100], "prompt" => request.prompt.to_s[0, ANSWER_LIMIT],
+      "palette_name" => palette_name }.compact.merge(answers)
   end
 
   # A user with no slug yet gets one on save (Sluggable), as AppMembership.seed_owners! does.

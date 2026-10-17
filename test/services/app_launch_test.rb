@@ -29,7 +29,7 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert AppOwnership.manage_app?(users(:viewer), "pawsome")
 
     cto = app.client_cto
-    assert_equal [ "Nova", "/build/portraits/portrait-03.webp", PALETTE, ANSWERS["plan"], request.token ],
+    assert_equal [ "Nova", "harbor", PALETTE, PLAN, request.token ],
                  [ cto.name, cto.portrait, cto.palette, cto.plan, cto.app_request_token ]
     assert_equal [ "Viewer User", "Dog owners in Denver", "Book a grooming slot" ],
                  cto.facts.values_at("owner", "audience", "day_one")
@@ -86,6 +86,8 @@ class AppLaunchTest < ActiveSupport::TestCase
   test "an incomplete intake is refused before anything is written, naming the checklist items" do
     cases = {
       [ "CTO" ] => client_intake(cto_name: "  "),
+      [ "Idea" ] => client_intake(answers: { "audience" => "Dog owners" }),
+      [ "Idea", "CTO" ] => client_intake(cto_avatar: nil, answers: nil),
       [ "Colors" ] => client_intake(palette: { "light" => PALETTE["light"] }),
       [ "CTO", "Colors" ] => client_intake(cto_name: nil, palette: nil)
     }
@@ -114,21 +116,19 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert_includes result.task.description, "Showcase"
   end
 
-  test "the intake's own app name and plan win over the address and the prompt" do
-    intake = client_intake(answers: { "app_name" => "Pawsome Grooming", "plan" => "Slots first." })
-    result = launch(draft, intake: intake)
-    assert_equal "Pawsome Grooming", result.app.name
+  test "the plan is the sharpened idea and its day-one goal; the palette's name is a fact" do
+    result = launch(draft, intake: client_intake(answers: { "idea" => "Slots first." },
+                                                 palette: PALETTE.merge("name" => "Harbor dusk")))
+    assert_equal "Pawsome", result.app.name
     assert_equal "Slots first.", result.app_cto.plan
-
-    bare = launch(draft(user: users(:alex)), subdomain: "bare-app", intake: client_intake(answers: nil))
-    assert_equal "Bare App", bare.app.name
-    assert_equal "A booking site for my groomer", bare.app_cto.plan
+    assert_equal "Harbor dusk", result.app_cto.facts["palette_name"]
+    assert_equal PALETTE, result.app.theme_colors, "only the colours are the theme"
   end
 
   test "Intake.from reads the request's intake columns" do
-    row = Struct.new(:cto_name, :cto_avatar, :palette, :answers).new("Nova", "/p.webp", PALETTE, { "plan" => "x" })
+    row = Struct.new(:cto_name, :cto_avatar, :palette, :answers).new("Nova", "harbor", PALETTE, { "idea" => "x" })
     intake = AppLaunch::Intake.from(row)
-    assert_equal [ "Nova", "/p.webp", PALETTE, { "plan" => "x" } ], intake.to_a
+    assert_equal [ "Nova", "harbor", PALETTE, { "idea" => "x" } ], intake.to_a
     assert_equal({}, AppLaunch::Intake.new(answers: "not a hash").answers_hash)
   end
 end

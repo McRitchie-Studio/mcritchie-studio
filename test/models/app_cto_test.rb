@@ -14,7 +14,7 @@ class AppCtoTest < ActiveSupport::TestCase
     assert_equal [ "Nova", "pawsome", "Pawsome", "pawsome.mcritchie.studio" ],
                  persona.values_at("name", "app_slug", "app_name", "host")
     assert_equal PALETTE, persona["palette"]
-    assert_equal ANSWERS["plan"], persona["plan"]
+    assert_equal PLAN, persona["plan"]
     assert_equal "Pat", persona.dig("facts", "owner")
   end
 
@@ -32,17 +32,14 @@ class AppCtoTest < ActiveSupport::TestCase
     assert_match(/dark needs/, bad.errors[:palette].join)
   end
 
-  test "a portrait renders from a public path or an uploaded blob, never anything else" do
+  test "a portrait renders from a default portrait key, never from an upload ref or anything else" do
     cto = client_app!.client_cto
-    assert_equal "/build/portraits/portrait-03.webp", cto.portrait_path
+    assert_equal "cto_portraits/harbor.svg", cto.portrait_asset
 
-    cto.portrait = "javascript:alert(1)"
-    assert_nil cto.portrait_path
-    assert_nil cto.portrait_blob, "an unknown key is no blob"
-
-    blob = ActiveStorage::Blob.create_and_upload!(io: StringIO.new("png"), filename: "me.png", key: "intake/tok/me.png")
-    cto.portrait = blob.key
-    assert_equal blob, cto.portrait_blob
+    [ "javascript:alert(1)", "../../etc/passwd", "upload:abcdefgh12", "", nil ].each do |value|
+      cto.portrait = value
+      assert_nil cto.portrait_asset, value.inspect
+    end
   end
 
   test "deleting the app deletes its CTO" do

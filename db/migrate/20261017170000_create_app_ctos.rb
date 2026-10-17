@@ -12,8 +12,7 @@ class CreateAppCtos < ActiveRecord::Migration[8.1]
     create_table :app_ctos do |t|
       t.string :app_slug, null: false
       t.string :name, null: false
-      # A default portrait's public path (/build/portraits/…) or an uploaded
-      # image's Active Storage blob key; AppCto#portrait_path says which.
+      # The intake's cto_avatar: a default portrait key, or "upload:<ref>".
       t.string :portrait
       # { "light" => { primary, accent, surface, text }, "dark" => { … } }, hex.
       t.jsonb :palette, null: false, default: {}

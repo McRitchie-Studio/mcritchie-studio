@@ -16,9 +16,11 @@ class AppCto < ApplicationRecord
   SOUL = "client_cto".freeze
   NAME_LIMIT = 40
   PLAN_LIMIT = 2000
-  # A default portrait is a public asset path; anything else is an Active
-  # Storage blob key (an uploaded portrait). Nothing else renders.
-  PORTRAIT_PATH = %r{\A/[a-z0-9/_-]+\.(?:webp|png|jpe?g|svg)\z}
+  # The portrait is the intake's cto_avatar, verbatim: a default portrait's KEY
+  # (BuildIntake::Portraits, one SVG per key under app/assets/images/cto_portraits/)
+  # or an upload ref ("upload:<ref>", chat media, a later task). Only a key
+  # renders today; anything else shows the initial on the palette's primary.
+  PORTRAIT_KEY = /\A[a-z]{2,20}\z/
 
   belongs_to :app, foreign_key: :app_slug, primary_key: :slug, inverse_of: :client_cto
 
@@ -32,15 +34,8 @@ class AppCto < ApplicationRecord
   # The `client_cto` rows for these app slugs, keyed by slug: one query for a list page.
   def self.for_apps(slugs) = where(app_slug: Array(slugs).map(&:to_s)).index_by(&:app_slug)
 
-  # The portrait to render: a default's public path, an uploaded blob, or nil
-  # (the page shows the emoji fallback).
-  def portrait_path = portrait.to_s.match?(PORTRAIT_PATH) ? portrait : nil
-
-  def portrait_blob
-    return nil if portrait.blank? || portrait_path
-
-    ActiveStorage::Blob.find_by(key: portrait)
-  end
+  # The portrait's asset (for image_path), or nil: an upload ref, or nothing.
+  def portrait_asset = portrait.to_s.match?(PORTRAIT_KEY) ? "cto_portraits/#{portrait}.svg" : nil
 
   def light = AppPalette.side(palette, "light")
   def dark = AppPalette.side(palette, "dark")

@@ -26,7 +26,7 @@ class AgentContextBuilderClientCtoTest < ActiveSupport::TestCase
 
   def persona(**overrides)
     { "soul" => "client_cto", "name" => "Nova", "app_slug" => "pawsome", "app_name" => "Pawsome",
-      "host" => "pawsome.mcritchie.studio", "palette" => PALETTE, "plan" => ANSWERS["plan"],
+      "host" => "pawsome.mcritchie.studio", "palette" => PALETTE, "plan" => PLAN,
       "facts" => { "owner" => "Pat", "audience" => "Dog owners in Denver" } }.merge(overrides.transform_keys(&:to_s))
   end
 
@@ -55,8 +55,8 @@ class AgentContextBuilderClientCtoTest < ActiveSupport::TestCase
 
     assert_includes domain, "== DOMAIN: Pawsome, the APP PERSONA"
     %w[#4F46E5 #0F172A Pat].each { |fact| assert_includes domain, fact }
-    assert_includes domain, ANSWERS["plan"]
-    [ ANSWERS["plan"], "#4F46E5", "Dog owners in Denver" ].each do |fact|
+    assert_includes domain, PLAN
+    [ PLAN, "#4F46E5", "Dog owners in Denver" ].each do |fact|
       refute_includes outside_fences(text), fact, "client-written facts never print outside the fence"
     end
   end
