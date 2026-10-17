@@ -1760,6 +1760,12 @@ App.find_or_create_by!(slug: "cyvasse") { |app| app.assign_attributes(name: "Cyv
 Agent.find_or_create_by!(slug: "turf-monster") { |agent| agent.assign_attributes(name: "Turf Monster", status: "active", agent_type: "specialist", title: "Sports Domain Specialist") }
 turf_owner = User.find_or_create_by!(email: "owner@turf.test") { |user| user.assign_attributes(name: "Turf Owner", role: "viewer") }
 AppMembership.create!(app: turf_app, user: turf_owner)
+# Cyvasse's owner, for the chat specs that SEND as an app owner
+# (e2e/cto_web_chat.spec.js, e2e/agent_chat_component.spec.js): the app-owner
+# rule answers them, so their rows are claimable by tyrion, a soul no spec claims,
+# and never sit ahead of the admin's turf_monster turns.
+cyvasse_owner = User.find_or_create_by!(email: "owner@cyvasse.test") { |user| user.assign_attributes(name: "Cyvasse Owner", role: "viewer") }
+AppMembership.find_or_create_by!(app_slug: "cyvasse", user_slug: cyvasse_owner.slug) { |m| m.role = "owner" }
 puts "Seeded: #{AppMembership.count} app owner(s)"
 
 # The CTO usage meter (e2e/app_usage_meter.spec.js; docs/agents/system/agent-usage.md):
@@ -1778,7 +1784,8 @@ puts "Seeded: one metered Turf answer"
 # The CTO web chat (e2e/cto_web_chat.spec.js; docs/agents/system/agent-message-loop.md,
 # "Web chat"): the admin's hub user is linked to an owner-role person, as Alex's
 # alex@mcritchie.studio is in production (AgentPerson.seed_owner!), so the agents
-# answer his chat. owner@turf.test keeps no person: their chat is held.
+# answer his chat. App owners keep no person until their first message; the
+# app-owner rule then answers them on their own app's chat only.
 AgentMessage.where(channel: "web").destroy_all
 AgentPersonIdentity.where(platform: "web").delete_all
 AgentPerson.find_or_create_by!(user: admin) { |p| p.assign_attributes(display_name: "E2E Chat Owner", role: "owner") }

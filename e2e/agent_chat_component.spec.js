@@ -4,7 +4,8 @@
 // nothing, Enter sends, the fresh composer keeps focus, the log sits at its newest
 // turn, and the old "cto_chat" import still resolves to the same module.
 //
-// NOT @qa-readonly: it writes agent messages (held: this owner is not answered yet).
+// NOT @qa-readonly: it writes agent messages (Cyvasse's owner, answered by the
+// app-owner rule; their rows wait for tyrion, which no spec claims).
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
 
@@ -12,8 +13,8 @@ test.use({ storageState: VISITOR });
 
 test("the shared chat script: Shift+Enter is a new line, Enter sends, focus stays, the log follows", async ({ page }) => {
   const { pageErrors, report } = watchPageErrors(page);
-  await loginWithMagicLink(page, "owner@turf.test");
-  await page.goto("/applications/turf-monster/chat");
+  await loginWithMagicLink(page, "owner@cyvasse.test");
+  await page.goto("/applications/cyvasse/chat");
 
   const imports = await page.evaluate(() => JSON.parse(document.querySelector("script[type='importmap']").textContent).imports);
   expect(imports.cto_chat, "the old import name is pinned").toBeTruthy();
@@ -32,7 +33,7 @@ test("the shared chat script: Shift+Enter is a new line, Enter sends, focus stay
 
   await input.press("Enter");
   const turn = page.locator("[data-test='cto-chat-turn']", { hasText: text });
-  await expect(turn).toHaveAttribute("data-status", "held");
+  await expect(turn).toHaveAttribute("data-status", "received");
   await expect(turn.locator("[data-test='cto-chat-sent']")).toHaveText(`${text}\nsecond line`);
   await expect(turns).toHaveCount(before + 1);
 

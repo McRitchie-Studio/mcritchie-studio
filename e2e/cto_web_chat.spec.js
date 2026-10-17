@@ -5,7 +5,8 @@
 // ActionCable stream (CABLE_ADAPTER=async, E2E_WEB_CHAT_JOBS=1) the page shows
 // "Turf is typing…", then the answer, with no reload, and typing clears. The
 // meter is in tokens; the page fits a phone; the bubbles read in both themes.
-// An owner whom the CTO does not answer yet is told so, and their turn is held.
+// An app's owner is answered on their own app's chat (the app-owner rule), with
+// no "not answered" notice, and another app's chat does not exist for them.
 //
 // NOT @qa-readonly: it writes agent messages. Nothing here talks to Discord or Claude.
 const { test, expect } = require("@playwright/test");
@@ -94,17 +95,19 @@ test("the owner chats with Turf: typing shows live, then the answer streams in",
   expect(pageErrors, report()).toHaveLength(0);
 });
 
-test("an owner the CTO does not answer yet is told so, and their message is held", async ({ page }) => {
-  await loginWithMagicLink(page, "owner@turf.test");
-  await page.goto("/applications/turf-monster/chat");
+test("an app's owner is answered on their own app's chat, as its client", async ({ page }) => {
+  await loginWithMagicLink(page, "owner@cyvasse.test");
+  await page.goto("/applications/cyvasse/chat");
 
-  await expect(page.locator("[data-test='cto-chat-unanswered']")).toContainText("does not answer your account yet");
+  await expect(page.locator("[data-test='cto-chat-unanswered']")).toHaveCount(0);
+  await expect(page.locator("[data-test='cto-chat-usage'] [data-test='usage-meter-line']")).toContainText("1,000,000");
   const input = page.locator("[data-test='cto-chat-input']");
-  await input.fill("Hello Turf");
+  const text = `Hello Tyrion ${Date.now()}`;
+  await input.fill(text);
   await page.locator("[data-test='cto-chat-send']").click();
-  const turn = page.locator("[data-test='cto-chat-turn']", { hasText: "Hello Turf" });
-  await expect(turn).toHaveAttribute("data-status", "held");
-  await expect(turn.locator("[data-test='cto-chat-held']")).toContainText("Waiting for an admin");
+  const turn = page.locator("[data-test='cto-chat-turn']", { hasText: text });
+  await expect(turn).toHaveAttribute("data-status", "received");
+  await expect(turn.locator("[data-test='cto-chat-held']")).toHaveCount(0);
 
   // Another app's chat does not exist for this owner.
   const other = await page.goto("/applications/mcritchie-studio/chat");
