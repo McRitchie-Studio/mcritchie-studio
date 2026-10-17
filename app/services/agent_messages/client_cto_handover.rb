@@ -14,7 +14,8 @@ module AgentMessages
   # role but the owner, and a new client is `public`. This row is not the client's
   # words: code wrote every byte of it, so it carries hold_released_at (actor
   # `app-launch`) and the claim guard passes it. Only this row: the client's own
-  # next message is held or answered by their role, exactly as before.
+  # next message is answered by the app-owner rule (Answerers#app_owner_thread?)
+  # on this thread, and held by their role everywhere else.
   #
   # Idempotent on its external id (one handover per app per owner).
   module ClientCtoHandover
