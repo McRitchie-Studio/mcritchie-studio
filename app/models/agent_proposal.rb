@@ -148,10 +148,25 @@ class AgentProposal < ApplicationRecord
 
   def task_url(slug) = "#{BOARD_URL}/tasks/#{slug}"
 
+  # The admin page of the message that carried the proposal, or nil.
+  def message_url = source_message_id ? "#{BOARD_URL}/admin/agent_messages/#{source_message_id}" : nil
+
+  # Where the request was made, as a task's description names it.
+  def requested_in
+    case channel
+    when "email" then "email"
+    when "web" then "the #{channel_ref} web chat"
+    else "Discord"
+    end
+  end
+
   # The link to the message that carried it: the thread a task records. Discord's
-  # own link; an email or web-chat thread has none, so its admin page on the board.
+  # own link; an email thread has none, so its admin page on the board. A web-chat
+  # thread is the app's chat page (channel_ref is the app slug), where its owner
+  # reads it; the message's admin page is message_url.
   def thread_url
-    return "#{BOARD_URL}/admin/agent_messages/#{source_message_id}" if %w[email web].include?(channel) && source_message_id
+    return "#{BOARD_URL}/applications/#{channel_ref}/chat" if channel == "web" && channel_ref.to_s.match?(/\A[a-z0-9-]+\z/)
+    return "#{BOARD_URL}/admin/agent_messages/#{source_message_id}" if channel == "email" && source_message_id
 
     source_message&.discord_url || (guild_id.present? ? "https://discord.com/channels/#{guild_id}/#{channel_ref}" : nil)
   end

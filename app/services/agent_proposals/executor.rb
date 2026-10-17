@@ -5,7 +5,8 @@ module AgentProposals
   #   ask     the named query (AgentProposals::Queries), its text posted as is.
   #   change  a `designed` board task in the domain's repo, from the template the
   #           registry checked (title, kind, shape, accept, test, risk), with
-  #           the Discord thread recorded on it (devops.source_thread). A session
+  #           the thread recorded on it (devops.source_thread: the Discord thread,
+  #           the email's admin page, or the app's web chat). A session
   #           still starts the builder (Phase 1).
   #   operate not enabled in Phase 1: refused.
   #
@@ -55,7 +56,9 @@ module AgentProposals
       thread = @proposal.thread_url
       task = Task.create!(
         title: params["title"], stage: "designed",
-        description: [ @proposal.summary, ("Requested in #{@proposal.channel == 'email' ? 'email' : 'Discord'}: #{thread}" if thread) ].compact.join("\n\n"),
+        description: [ @proposal.summary, ("Requested in #{@proposal.requested_in}: #{thread}" if thread),
+                       ("The message: #{@proposal.message_url}" if @proposal.channel == "web" && @proposal.message_url) ]
+                       .compact.join("\n\n"),
         metadata: { "devops" => { "kind" => params["kind"] || "feature", "shape" => params["shape"] || spec["default_shape"],
                   "repositories" => [ spec["repo"] ], "acceptance" => Array(params["accept"]),
                   "test_plan" => Array(params["test"]), "risk_tags" => Array(params["risk"]),

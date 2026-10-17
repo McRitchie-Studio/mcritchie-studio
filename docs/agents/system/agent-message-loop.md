@@ -919,8 +919,14 @@ answered as the owner from any of them. Link any other account by hand:
 
 **Before any model**, as on Discord: a message that is exactly `go`, `no` or
 `change: …` in a thread with a proposal is handled by
-`AgentMessages::ProposalConfirm`, and a task opened from the chat records the
-message's admin page as its source thread. Past `WebIngest::RATE_LIMIT` (30)
+`AgentMessages::ProposalConfirm`. The whole Change flow runs in the chat: the
+CTO's answer may end with a PROPOSAL, the reply shows the confirm line (the
+capability and its params), the owner's `go` in the same web thread opens a
+`designed` task, and the answer to the go carries its link. The task's
+`devops.source_thread` is the app's chat page (`/applications/<slug>/chat`) and its
+description says "Requested in the <slug> web chat" and links the message's admin
+page. A `go` in another web thread, or from a person who may not confirm, changes
+nothing (`test/integration/cto_web_chat_change_flow_test.rb`). Past `WebIngest::RATE_LIMIT` (30)
 messages in a thread within an hour the next is `held` with a `rate_limited`
 event. A message is at most 4,000 characters, the prompt's message budget. The
 form carries a client id per send, so a double submit stores one row.
