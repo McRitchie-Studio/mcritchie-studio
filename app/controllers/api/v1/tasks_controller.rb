@@ -124,7 +124,7 @@ module Api
       # or null. `bin/task begin` asks before it cuts a desk; the claim's own
       # validation stays the authority. A task already building takes no new lane.
       def building_lane
-        refusal = @task.stage == "designed" ? BuildingLanes.refusal_for(@task) : nil
+        refusal = @task.building_lane_refusal
         render_data({ "slug" => @task.slug, "refusal" => refusal })
       end
 
