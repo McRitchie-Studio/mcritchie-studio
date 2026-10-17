@@ -60,6 +60,8 @@ module AgentMessages
     end
 
     def broadcast_typing(message, now: Time.current)
+      return false if BuildIntake.thread?(message.thread_key)
+
       # UPDATE, not replace: the slot (#cto-chat-typing, which carries the fade)
       # stays on the page, and only its contents change.
       Turbo::StreamsChannel.broadcast_update_to(stream_for(message), target: TYPING_TARGET, partial: "agent_chats/typing",
@@ -82,6 +84,9 @@ module AgentMessages
         true
       end
       return false unless delivered
+      # A /build thread has no stream: its page polls (BuildController#turns),
+      # since a signed-out visitor has no /cable socket.
+      return true if BuildIntake.thread?(message.thread_key)
 
       broadcast_turn(message)
       clear_typing(message)

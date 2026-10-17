@@ -140,5 +140,9 @@ email:
 # bin/dispatcher serve it, which is how Tyrion (not routed on Discord, where he
 # answers through OpenClaw) is answered in the web chat: no guild is read for
 # him, so nothing is answered twice.
+#
+# Xan is listed for the /build intake chat (BuildIntake::Ingest), which is not a
+# CTO chat: no app's CTO is Xan, so listing him opens no /applications chat. It
+# makes bin/dispatcher serve his web rows even if he leaves the Discord routes.
 web:
-  souls: [avi, turf_monster, tyrion]
+  souls: [avi, turf_monster, tyrion, xan]

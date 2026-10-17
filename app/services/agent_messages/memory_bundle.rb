@@ -95,12 +95,21 @@ module AgentMessages
         "user" => user_json,
         "proposals" => proposals_json,
         "ledger" => { "turns" => person_turns, "summary" => summary, "pin" => thread_turns.last }
-      }
+      }.merge(intake_json)
     end
 
     private
 
     def person = @message.person
+
+    # A /build thread's intake state (BuildIntake::Context): what Xan asks next.
+    # No key at all on any other thread.
+    def intake_json
+      return {} unless BuildIntake.thread?(@message.thread_key)
+
+      intake = BuildIntake::Context.for(@message)
+      intake ? { "intake" => intake } : {}
+    end
 
     # The notes this soul may read about this sender (AgentPersonNote.visible_for,
     # by the role the board resolves now), oldest first, one per fact. A note

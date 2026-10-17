@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_17_020000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_17_153000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -285,6 +285,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_020000) do
     t.string "guild_id"
     t.datetime "hold_released_at"
     t.string "hold_released_by"
+    t.jsonb "intake_card"
     t.datetime "lease_expires_at"
     t.jsonb "mentions", default: {}, null: false
     t.bigint "person_id"
@@ -463,8 +464,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_020000) do
   end
 
   create_table "app_requests", force: :cascade do |t|
+    t.jsonb "answers", default: {}, null: false
     t.datetime "created_at", null: false
+    t.string "cto_avatar"
+    t.string "cto_name"
     t.datetime "discord_notified_at"
+    t.jsonb "palette", default: {}, null: false
     t.text "prompt", null: false
     t.datetime "queued_at"
     t.boolean "showcase", default: false, null: false
