@@ -40,7 +40,8 @@ class WebChatTest < ActiveJob::TestCase
       assert_broadcasts(@stream, 1) { AgentMessageTypingJob.perform_now(claimed.id, "w1") }
     end
     payload = sent.last
-    assert_includes payload, %(target="#{AgentMessages::WebChat::TYPING_TARGET}")
+    assert_includes payload, %(action="update" target="#{AgentMessages::WebChat::TYPING_TARGET}"),
+                    "the slot keeps its id and fade: only its contents change"
     assert_includes payload, "Turf is typing"
     assert_match(/data-typing-at="\d{13}"/, payload)
   end
@@ -67,7 +68,7 @@ class WebChatTest < ActiveJob::TestCase
     assert_includes turn, %(action="replace" target="cto-chat-turn-#{claimed.id}")
     assert_includes turn, "<strong>Steady</strong>: 12 signups.", "the answer renders as safe Markdown"
     assert_includes turn, "data-replied-at="
-    assert_includes typing, %(target="#{AgentMessages::WebChat::TYPING_TARGET}")
+    assert_includes typing, %(action="update" target="#{AgentMessages::WebChat::TYPING_TARGET}"><template></template>)
     assert_includes meter, %(target="#{AgentMessages::WebChat::METER_TARGET}")
     assert_includes meter, "usage-meter"
     assert_not_includes meter, "$", "the chat's meter is tokens, never dollars"

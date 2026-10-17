@@ -60,8 +60,10 @@ module AgentMessages
     end
 
     def broadcast_typing(message, now: Time.current)
-      Turbo::StreamsChannel.broadcast_replace_to(stream_for(message), target: TYPING_TARGET, partial: "cto_chats/typing",
-                                                                      locals: { cto_name: cto_name(message), at: now })
+      # UPDATE, not replace: the slot (#cto-chat-typing, which carries the fade)
+      # stays on the page, and only its contents change.
+      Turbo::StreamsChannel.broadcast_update_to(stream_for(message), target: TYPING_TARGET, partial: "cto_chats/typing",
+                                                                     locals: { cto_name: cto_name(message), at: now })
       true
     rescue StandardError => e
       log(e, message, "typing")

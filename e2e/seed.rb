@@ -1774,3 +1774,12 @@ AgentMessage.create!(channel: "discord", external_id: "e2e-usage-1", channel_ref
                      run_meta: { "input_tokens" => 1_200, "cache_read_tokens" => 18_000, "cache_creation_tokens" => 0,
                                  "output_tokens" => 300, "total_cost_usd" => 0.05, "duration_ms" => 4_000, "audience" => "client" })
 puts "Seeded: one metered Turf answer"
+
+# The CTO web chat (e2e/cto_web_chat.spec.js; docs/agents/system/agent-message-loop.md,
+# "Web chat"): the admin's hub user is linked to an owner-role person, as Alex's
+# alex@mcritchie.studio is in production (AgentPerson.seed_owner!), so the agents
+# answer his chat. owner@turf.test keeps no person: their chat is held.
+AgentMessage.where(channel: "web").destroy_all
+AgentPersonIdentity.where(platform: "web").delete_all
+AgentPerson.find_or_create_by!(user: admin) { |p| p.assign_attributes(display_name: "E2E Chat Owner", role: "owner") }
+puts "Seeded: the web chat's owner person"
