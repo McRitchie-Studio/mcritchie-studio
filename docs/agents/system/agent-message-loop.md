@@ -891,7 +891,8 @@ bin/dispatcher (every channel) ─▶ claim ─▶ typing pulse ─▶ AgentMess
 
 | Piece | Where |
 |-------|-------|
-| The page and the post | `CtoChatsController`, `app/views/cto_chats/`, `app/javascript/cto_chat.js`; signed-in (`AdminWall::SIGNED_IN`), 404 unless the viewer owns the app or is an admin |
+| The page and the post | `CtoChatsController`, `app/views/cto_chats/show.html.erb`; signed-in (`AdminWall::SIGNED_IN`), 404 unless the viewer owns the app or is an admin |
+| The chat itself | the shared agent chat, `app/views/agent_chats/` (`_chat`: stream, thread, typing slot, composer for any agent and stream; `_header`: the heading agent's portrait and name; `_attachments_slot`: empty, rendered inside the composer for chat media) and `app/javascript/agent_chat.js` (`cto_chat` stays pinned to it) |
 | Inbound | `AgentMessages::WebIngest` |
 | Outbound, typing, the stream | `AgentMessages::WebChat`; `CtoChatChannel` |
 | Which CTOs have a chat | the `web: souls:` block of `config/agent_routes.yml` |
@@ -984,6 +985,7 @@ a new digest of its files and `config/agent_routes.yml`).
 its reply renders as Markdown in the chat. Tests:
 `test/services/agent_messages/web_ingest_test.rb`, `web_chat_test.rb`,
 `test/channels/cto_chat_channel_test.rb`, `test/controllers/cto_chats_controller_test.rb`,
+`test/views/agent_chat_component_test.rb` (the shared chat for a non-CTO agent),
 `test/integration/cto_web_chat_loop_test.rb` (the dispatcher's loop end to end) and
 `e2e/cto_web_chat.spec.js` (typing and the answer over a real socket).
 
