@@ -224,7 +224,9 @@ module AgentMessages
     # with an app_ctos row.
     def app_owner_sql(table)
       conn = ActiveRecord::Base.connection
-      configured = CtoReport.config.values.select { |row| row.is_a?(Hash) && row["app"].present? && row["soul"].present? }
+      # Read once per Answerers (per process, as the yml): the claim polls.
+      configured = @configured_ctos ||= CtoReport.config.values
+                                                 .select { |row| row.is_a?(Hash) && row["app"].present? && row["soul"].present? }
       pairs = configured.map { |row| "(#{conn.quote(row['soul'].to_s)}, #{conn.quote(row['app'].to_s)})" }
       apps = configured.map { |row| conn.quote(row["app"].to_s) }
       soul = "(#{table}.soul_slug = #{conn.quote(AppCto::SOUL)} " \
