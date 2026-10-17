@@ -43,6 +43,15 @@ class ReleaseConductorClaim < ApplicationRecord
   # so no real release slug (kebab-case, board-validated) can ever collide with it.
   FORMING_SLUG = "__forming__"
 
+  # The forming sentinel for one release TRAIN (release-trains-design.md §2). The hub
+  # keeps the bare FORMING_SLUG, so a hub prepare contends with every conductor that
+  # predates trains exactly as before; any other train forms under its own
+  # `__forming__:<train>`, so an app train's fresh prepare never stands the hub down.
+  def self.forming_slug(train = Release::DEFAULT_TRAIN)
+    name = train.to_s.strip
+    name.empty? || name == Release::DEFAULT_TRAIN ? FORMING_SLUG : "#{FORMING_SLUG}:#{name}"
+  end
+
   # The acquire verdict: whether THIS instance now holds the (release, role), the
   # ClaimLease disposition it was in, and the (updated) row for the stand-down message.
   Outcome = Struct.new(:acquired, :disposition, :claim, keyword_init: false)
@@ -173,13 +182,26 @@ class ReleaseConductorClaim < ApplicationRecord
   # shift used to provide). Iterates the (few) rows for the role so the ClaimLease
   # liveness rules — including the corrupt-expiry "possibly live" fold — apply exactly as
   # everywhere else.
-  def self.any_live?(role:, now: Time.current)
-    where(role: role.to_s.strip.downcase).any? { |c| c.live?(now: now) }
+  #
+  # `train:` narrows the read to one release train: claims on that train's releases
+  # plus its forming sentinel. nil (the default) reads every train, which is what the
+  # reclaim guard needs: a ship on ANY train pins the shared `_ship`/`_gate` workspaces.
+  def self.any_live?(role:, train: nil, now: Time.current)
+    for_train(train).where(role: role.to_s.strip.downcase).any? { |c| c.live?(now: now) }
   end
 
   # The first live holder's descriptor for `role`, or nil — powers the withhold message.
-  def self.live_holder(role:, now: Time.current)
-    where(role: role.to_s.strip.downcase).find { |c| c.live?(now: now) }&.holder_info(now: now)
+  # `train:` scopes it as any_live? does.
+  def self.live_holder(role:, train: nil, now: Time.current)
+    for_train(train).where(role: role.to_s.strip.downcase).find { |c| c.live?(now: now) }&.holder_info(now: now)
+  end
+
+  # Claims for one train (its releases' slugs plus its forming sentinel), or every
+  # claim when `train` is nil.
+  def self.for_train(train)
+    return all if train.nil?
+
+    where(release_slug: Release.where(train: train.to_s).select(:slug)).or(where(release_slug: forming_slug(train)))
   end
 
   # Find (or create) the singleton row for a (release, role), tolerating the create

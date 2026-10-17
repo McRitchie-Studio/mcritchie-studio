@@ -104,6 +104,15 @@ class ReleaseClaimCli
   # A drift-guard test pins both to the same literal.
   FORMING_SLUG = "__forming__"
 
+  # The forming sentinel for one release train (mirrors ReleaseConductorClaim.
+  # forming_slug; a drift-guard test pins the two). The hub keeps the bare sentinel so
+  # it contends with every pre-train conductor exactly as before; another train forms
+  # under `__forming__:<train>`.
+  def self.forming_slug(train = "hub")
+    name = train.to_s.strip
+    name.empty? || name == "hub" ? FORMING_SLUG : "#{FORMING_SLUG}:#{name}"
+  end
+
   # The release states at which a conductor claim CAN have nothing left to protect.
   # NECESSARY, NOT SUFFICIENT — and that distinction was itself a defect. `shipped`
   # does NOT mean the work is over: `bin/release finalize` runs on an already-shipped
