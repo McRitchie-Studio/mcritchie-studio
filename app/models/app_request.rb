@@ -111,6 +111,8 @@ class AppRequest < ApplicationRecord
     taken = holding.where(subdomain: name)
     taken = taken.where.not(id: except.id) if except&.persisted?
     return "That name is taken." if taken.exists?
+    # An app row already holds it (one of ours, or a launched client app).
+    return "That name is taken." if App.exists?(slug: name)
 
     nil
   end
