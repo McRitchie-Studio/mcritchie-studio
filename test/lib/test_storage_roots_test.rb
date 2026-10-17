@@ -63,11 +63,14 @@ class TestStorageRootsTest < ActiveSupport::TestCase
     end
   end
 
-  test "in a parallel worker, the live services already sit on that worker's roots" do
-    skip "serial run: the configured roots stand" if @live_worker.nil?
+  test "the live services sit on this worker's roots, or on the configured roots when serial" do
+    configured = Rails.configuration.active_storage.service_configurations
+    expected = %w[test chat_private].to_h do |name|
+      root = configured.fetch(name).fetch("root").to_s
+      [ name, @live_worker.nil? ? root : TestStorageRoots.worker_root(root, @live_worker) ]
+    end
 
-    suffix = "/worker-#{@live_worker}"
-    assert ActiveStorage::Blob.service.root.to_s.end_with?(suffix), ActiveStorage::Blob.service.root.to_s
-    assert ActiveStorage::Blob.services.fetch(:chat_private).root.to_s.end_with?(suffix)
+    assert_equal expected["test"], ActiveStorage::Blob.service.root.to_s
+    assert_equal expected["chat_private"], ActiveStorage::Blob.services.fetch(:chat_private).root.to_s
   end
 end
