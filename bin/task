@@ -2405,10 +2405,6 @@ rescue StandardError
   nil
 end
 
-# The task record for `begin`'s resume decision: the data on 2xx, nil on the
-# board's POSITIVE "task not found" (create it), die on everything else — a
-# failed read must never be read as "no such task" (that is the same contract
-# task_not_found_response? guards for the worktree reclaim path).
 # `begin`'s lane-cap pre-check: dies with the board's refusal when the task's app
 # has no free building lane; returns quietly on anything else.
 def refuse_past_lane_cap!(slug)
@@ -2425,6 +2421,10 @@ rescue StandardError => e
   warn!("begin — lane check skipped (#{e.class}); the claim still enforces the cap")
 end
 
+# The task record for `begin`'s resume decision: the data on 2xx, nil on the
+# board's POSITIVE "task not found" (create it), die on everything else — a
+# failed read must never be read as "no such task" (that is the same contract
+# task_not_found_response? guards for the worktree reclaim path).
 def fetch_task_for_begin(slug)
   res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
   parsed = TaskBoard.parse_body(res)

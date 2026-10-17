@@ -99,4 +99,35 @@ class EmailRoutesTest < ActiveSupport::TestCase
     assert_match(/null Return-Path/, guard([ [ "Return-Path", "<>" ] ]))
     assert_match(/delivery report/, guard([ [ "Content-Type", "multipart/report; report-type=delivery-status" ] ]))
   end
+
+  # Carl's review of ctos-answer-team-email, hardening note 3: a missing or
+  # misspelled pinned_dkim must not silently turn owner trust's pin off.
+  test "[unit] production refuses to boot without a pin for the team address's domain" do
+    routes = ->(email) { AgentMessages::EmailRoutes.new(email) }
+    team = { "team_address" => "team@mcritchie.studio" }
+
+    { "missing" => team, "misspelled key" => team.merge("pinned_dkm" => { "mcritchie.studio" => [ "google" ] }),
+      "empty selectors" => team.merge("pinned_dkim" => { "mcritchie.studio" => [] }),
+      "another domain only" => team.merge("pinned_dkim" => { "other.example" => [ "google" ] }) }.each do |label, email|
+      error = assert_raises(AgentMessages::EmailRoutes::PinsMissing, label) do
+        AgentMessages::EmailRoutes.verify_pins!(routes.call(email), production: true)
+      end
+      assert_match(/config\/agent_routes\.yml: .*pinned_dkim/, error.message, label)
+      AgentMessages::EmailRoutes.verify_pins!(routes.call(email), production: false) # boots outside production
+    end
+
+    pinned = routes.call(team.merge("pinned_dkim" => { "mcritchie.studio" => [ "google" ] }))
+    assert_empty pinned.pin_problems
+    assert_same pinned, AgentMessages::EmailRoutes.verify_pins!(pinned, production: true)
+  end
+
+  test "[unit] the committed config/agent_routes.yml passes the production pin check" do
+    assert_empty AgentMessages::EmailRoutes.load.pin_problems
+    assert_nothing_raised { AgentMessages::EmailRoutes.verify_pins!(AgentMessages::EmailRoutes.load, production: true) }
+  end
+
+  test "[unit] the boot initializer runs the pin check" do
+    initializer = Rails.root.join("config/initializers/agent_email_pins.rb").read
+    assert_match(/after_initialize do\s+AgentMessages::EmailRoutes\.verify_pins!\s+end/, initializer)
+  end
 end

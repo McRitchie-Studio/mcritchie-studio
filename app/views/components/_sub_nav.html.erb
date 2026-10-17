@@ -10,7 +10,11 @@
       nav      the sub-nav's registry key
       current  the registry key of the page being shown
       counts   name => number, for count badges and tallies. Stage badges fall
-               back to the board's own load (@tasks_by_stage) when it is absent. %>
+               back to the board's own load (@tasks_by_stage) when it is absent.
+
+    A narrow-only button (narrow_only_on) shows only while its page's board is too
+    narrow for all its lanes: `x-show="boardNarrow"`, read from the board's own
+    container query (tasks/_deploy_board), so it can only render inside that board. %>
 <% sub_nav = Navigation.sub_nav(nav) %>
 <% entries = sub_nav_entries(nav, current: current) %>
 <% counts = (local_assigns[:counts] || (@tasks_by_stage || {}).transform_values(&:size)).with_indifferent_access %>
@@ -38,7 +42,9 @@
         <%= link_to entry[:href],
               data: { test: item.test_id },
               "aria-current": (entry[:current] ? "page" : nil),
-              class: class_names(button, "min-[1400px]:hidden" => entry[:narrow_only]) do %>
+              "x-show": ("boardNarrow" if entry[:narrow_only]),
+              style: ("display: none" if entry[:narrow_only]),
+              class: button do %>
           <span><%= item.text %></span>
           <% item.badges.each do |stage| %>
             <% count = counts[stage].to_i %>

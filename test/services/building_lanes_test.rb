@@ -76,7 +76,7 @@ class BuildingLanesTest < ActiveSupport::TestCase
   test "[unit] a rework bounce and a re-claim of a building task take no new lane" do
     @turf.update!(package_tier: "vibe")
     building = task!("Holding the lane", stage: "building")
-    submitted = task!("Back for rework", stage: "submitted")
+    submitted = task!("Back for rework", stage: "submitted", started_at: 1.day.ago)
 
     assert submitted.update(stage: "building"), "a submitted task bounced back to building is not a claim"
     assert building.update(stage: "building", title: "Holding the lane (re-claimed)")
@@ -86,5 +86,66 @@ class BuildingLanesTest < ActiveSupport::TestCase
     @turf.update!(package_tier: "vibe")
     task!("Only lane", stage: "building")
     assert_raises(ActiveRecord::RecordInvalid) { task!("Sneaks in", stage: "building") }
+  end
+
+  # Carl's review of client-devops-view-lanes, note 3: paths into building the
+  # first cut did not check.
+  test "[unit] a reopen from shipped or archived is a claim" do
+    @turf.update!(package_tier: "vibe")
+    task!("Only lane", stage: "building")
+    %w[shipped archived].each do |from|
+      reopened = task!("Reopened from #{from}", stage: from)
+      refute reopened.update(stage: "building"), "a #{from} task reopened past the cap is refused"
+      assert_equal from, reopened.reload.stage
+    end
+  end
+
+  test "[unit] a task created at a later stage and moved back is a claim" do
+    @turf.update!(package_tier: "vibe")
+    task!("Only lane", stage: "building")
+    never_claimed = task!("Created at submitted", stage: "submitted")
+    assert_nil never_claimed.started_at
+
+    refute never_claimed.update(stage: "building"), "a never-claimed task's first move to building takes a lane"
+    assert_raises(ActiveRecord::RecordInvalid) { never_claimed.reload.block!(by: "carl", kind: "rework") }
+  end
+
+  test "[unit] adding a client repo to a building task checks that app's lanes only" do
+    @turf.update!(package_tier: "vibe")
+    task!("Only turf lane", stage: "building")
+    hub_task = task!("Hub work", stage: "building", repos: [ "mcritchie-studio" ])
+
+    hub_task.metadata = hub_task.metadata.deep_merge("devops" => { "repositories" => %w[mcritchie-studio turf-monster] })
+    refute hub_task.save, "adding turf-monster at its cap is refused"
+    assert_match(/Turf Monster is on the Vibe tier/, hub_task.errors[:base].first)
+
+    turf_task = Task.find_by!(title: "Only turf lane")
+    turf_task.title = "Only turf lane (renamed)"
+    assert turf_task.save, "a building task's other edits take no new lane"
+  end
+
+  test "[unit] the claim takes a per-app advisory lock so concurrent claims serialize" do
+    @turf.update!(package_tier: "builder")
+    claim = task!("Claiming", stage: "designed")
+    statements = []
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") { |*, payload| statements << payload[:sql] }
+    begin
+      assert claim.update(stage: "building")
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber)
+    end
+    lock = statements.index { |sql| sql.include?("pg_advisory_xact_lock(#{BuildingLanes::LOCK_NAMESPACE},") }
+    count = statements.index { |sql| sql.include?(%(SELECT "tasks"."slug")) && sql.include?("'repositories' @>") }
+    assert lock, "the claim takes the lane lock"
+    assert count && lock < count, "the lock is taken before the lanes are counted"
+
+    statements.clear
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") { |*, payload| statements << payload[:sql] }
+    begin
+      BuildingLanes.refusal_for(claim)
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber)
+    end
+    refute statements.any? { |sql| sql.include?("pg_advisory_xact_lock") }, "the read-only check takes no lock"
   end
 end

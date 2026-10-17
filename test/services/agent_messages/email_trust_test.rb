@@ -124,13 +124,27 @@ class EmailTrustTest < ActiveSupport::TestCase
     raw = agent_email.sub(/^DKIM-Signature: .*\r\n/, "#{dkim_signature(d: 'mcritchie.studio', s: 'resend')}\r\n")
     v = verdict(raw)
     refute v.verified?
-    assert_match(/selector resend, not the pinned google/, v.reason)
+    assert_match(/as d=mcritchie\.studio s=resend, not the pinned d=mcritchie\.studio s=google/, v.reason)
 
     both = agent_email.sub(/^DKIM-Signature: /, "#{dkim_signature(d: 'mcritchie.studio', s: 'resend')}\r\nDKIM-Signature: ")
     refute verdict(both).verified?, "a real s=google signature beside a resend one does not rescue it"
 
     none = agent_email.sub(/^DKIM-Signature: .*\r\n/, "")
     refute verdict(none).verified?, "no aligned signature to read the selector from"
+  end
+
+  # Carl's review of ctos-answer-team-email, hardening note 1: the pin is the exact
+  # (d, s) pair, so a google selector on a subdomain key does not prove the domain.
+  test "a pinned selector under a subdomain signing domain is not the pinned key" do
+    sub = agent_email.sub(/^DKIM-Signature: .*\r\n/, "#{dkim_signature(d: 'mail.mcritchie.studio', s: 'google')}\r\n")
+    v = verdict(sub)
+    refute v.verified?, "d=mail.mcritchie.studio s=google aligns relaxed, but is not d=mcritchie.studio"
+    assert_match(/as d=mail\.mcritchie\.studio s=google, not the pinned d=mcritchie\.studio s=google/, v.reason)
+
+    beside = agent_email.sub(/^DKIM-Signature: /, "#{dkim_signature(d: 'mail.mcritchie.studio', s: 'google')}\r\nDKIM-Signature: ")
+    refute verdict(beside).verified?, "a subdomain google signature beside the real one still refuses"
+
+    assert verdict(agent_email).verified?, "the exact pinned pair still verifies"
   end
 
   test "the pin is read from config: an unpinned domain needs no selector, the pinned list can widen" do

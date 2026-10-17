@@ -394,16 +394,19 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       { count: 0 }, "the Recent link is scoped to the deployments lane only"
   end
 
-  test "deployments hides the redundant Tasks link above the full-width breakpoint" do
-    # At full width the six-lane Deploy board already shows the whole Build lane
-    # (designed · building · submitted), so the Tasks link is redundant and is
-    # hidden at 1400px+ — the complement of the board's max-[1399px] collapse.
+  test "deployments hides the redundant Tasks link while the board shows all six lanes" do
+    # A six-lane Deploy board already shows the whole Build lane (designed · building ·
+    # submitted), so the Tasks link is redundant there. It shows only while the board is
+    # too narrow for six — the complement of the lanes' own container-query collapse,
+    # read through the board's boardNarrow, so the two can never disagree.
     get deployments_path
     assert_response :success
     tasks_link = css_select(%(nav[aria-label="Board views"] a[href="#{tasks_path}"])).first
     assert tasks_link, "deployments should still render the Tasks link (for the collapsed narrow view)"
-    assert_includes tasks_link["class"], "min-[1400px]:hidden",
-      "the Tasks link should hide at 1400px+ on /deployments"
+    assert_equal "boardNarrow", tasks_link["x-show"],
+      "the Tasks link follows the board's lane collapse"
+    assert css_select("[data-test='kanban-board']").first["x-data"].to_s.start_with?("kanbanBoard("),
+      "it renders inside the board that owns boardNarrow"
 
     # /stages has no board, so nothing makes the Tasks link redundant — it stays
     # visible at every width.
@@ -411,8 +414,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     stages_tasks_link = css_select(%(nav[aria-label="Board views"] a[href="#{tasks_path}"])).first
     assert stages_tasks_link, "stages should render the Tasks link"
-    assert_not_includes stages_tasks_link["class"], "min-[1400px]:hidden",
-      "the Tasks link must not be width-hidden on /stages"
+    assert_nil stages_tasks_link["x-show"], "the Tasks link must not be hidden on /stages"
   end
 
   test "[component] deployments board links to the cross-session Activities view" do

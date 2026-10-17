@@ -28,7 +28,8 @@
 #             back               true to lead with a back arrow
 #             only / except      page keys the item shows on / hides on
 #             hide_when_current  drop the item on its own page
-#             narrow_only_on     page keys where it shows below 1400px only
+#             narrow_only_on     page keys where it shows only while that page's board is
+#                                too narrow for all its lanes (the board's boardNarrow)
 #             badges             count badges, by stage
 #             count              { key:, id: } a tally the caller supplies
 #             test_id            the data-test hook
@@ -184,8 +185,9 @@ sub_navs:
       - { page: recent_tasks, label: Recent, only: [deployments] }
 
   # The board switcher beside the title. The title already says where you are,
-  # so the button for the current board is dropped. At full width the Deploy
-  # board shows the whole Build lane, so its Tasks button shows below 1400px only.
+  # so the button for the current board is dropped. A Deploy board wide enough for
+  # six lanes shows the whole Build lane, so its Tasks button shows only while the
+  # board is too narrow for six (its container query, not a window breakpoint).
   board_views:
     style: buttons
     label: Board views

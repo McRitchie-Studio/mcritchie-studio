@@ -764,12 +764,18 @@ SMTP envelope-from and HELO (sender-chosen text) into it:
   `resend._domainkey.mcritchie.studio` exists, so anyone holding `RESEND_API_KEY`
   could send a DKIM-passing `From: alex@mcritchie.studio`. For a domain under
   `email.pinned_dkim` in `config/agent_routes.yml` (`mcritchie.studio: [google]`),
-  every `DKIM-Signature` aligned with the From domain must name a pinned
-  selector (`s=`), and one must exist. SES's verdict does not print the selector,
-  so it is read from the signatures: if every aligned one is `s=google`, the
-  aligned pass SES reports is a Google one; a real `s=resend` signature beside a
-  forged `s=google` one still refuses. A pass under any other selector is the
-  public, held.
+  every `DKIM-Signature` aligned with the From domain must be the exact pinned
+  pair, `d=` the pinned domain itself (not a subdomain) and `s=` a pinned
+  selector, and one must exist. SES's verdict does not print the selector,
+  so it is read from the signatures: if every aligned one is `d=mcritchie.studio
+  s=google`, the aligned pass SES reports is a Google one; a real `s=resend`
+  signature, or a `s=google` key on a subdomain, beside the real one still
+  refuses. A pass under any other pair is the public, held.
+- **Pin at boot.** Production refuses to boot (`EmailRoutes::PinsMissing`, from
+  `config/initializers/agent_email_pins.rb`) when `email.pinned_dkim` is missing,
+  misspelled, names a domain with no selector, or does not pin the team
+  address's domain; without the pin, any DKIM pass for mcritchie.studio would be
+  trusted as Alex. Other environments boot without it.
 
 Every lower `Authentication-Results`, every `ARC-Authentication-Results`, and
 `DeskCapture::Reader.dkim_from_raw` (which greps them all for a human reading

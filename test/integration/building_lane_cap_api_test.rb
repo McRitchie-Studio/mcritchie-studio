@@ -55,4 +55,22 @@ class BuildingLaneCapApiTest < ActionDispatch::IntegrationTest
     get "/api/v1/tasks/#{holder.slug}/building_lane", headers: { "Authorization" => "Bearer #{token}" }
     assert_nil response.parsed_body.dig("data", "refusal"), "a task already building takes no new lane"
   end
+
+  # Carl's review of client-devops-view-lanes, note 3: a reopen from shipped or
+  # archived through the API takes a lane like any claim.
+  test "[integration] a reopen from shipped through the API is refused at the cap" do
+    apps(:turf_monster).update!(package_tier: "vibe")
+    task!("Holding the lane", stage: "building")
+    reopened = task!("Shipped, reopened", stage: "shipped")
+
+    get "/api/v1/tasks/#{reopened.slug}/building_lane", headers: { "Authorization" => "Bearer #{token}" }
+    assert_match(/Turf Monster is on the Vibe tier/, response.parsed_body.dig("data", "refusal").to_s,
+                 "the read-only check answers what the reopen will meet")
+
+    claim!(reopened)
+
+    assert_response :unprocessable_entity
+    assert_match(/Turf Monster is on the Vibe tier/, response.parsed_body["error"])
+    assert_equal "shipped", reopened.reload.stage
+  end
 end

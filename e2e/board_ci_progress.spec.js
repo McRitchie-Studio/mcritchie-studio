@@ -15,7 +15,7 @@ const { openDeploySidebar } = require("./helpers");
 // renders, from both data paths, and the whole panel links to the PR.
 
 // A wide viewport: the six-lane Deployments board collapses the upstream lanes
-// (submitted among them) below 1400px unless "All Stages" is on, so the demo
+// (submitted among them) on a board narrower than six lanes unless "All Stages" is on, so the demo
 // card's column must be given room to render.
 test.use({ viewport: { width: 1600, height: 1000 } });
 

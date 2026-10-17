@@ -65,4 +65,38 @@ class ClientPipelineViewTest < ActionView::TestCase
     assert_select "[data-test='pipeline-lanes-label']", text: "1 lane in use"
     assert_select "[data-test='pipeline-lanes-uncapped']", count: 0
   end
+
+  # Shannon's notes on client-devops-view-lanes: a screen reader hears what each
+  # chip means, the meter shows work past the cap, and a release with none of the
+  # app's tasks says so in words.
+  test "[component] the lane count and queue chips carry screen-reader words" do
+    draw
+    assert_select "[data-test='pipeline-lane'][data-lane='queued'] [data-test='pipeline-lane-count'] .sr-only", text: "2 tasks"
+    assert_select "[data-test='pipeline-lane'][data-lane='building'] [data-test='pipeline-lane-count'] .sr-only", text: "1 task"
+    assert_select "[data-test='pipeline-lane'][data-lane='review'] [data-test='pipeline-lane-count'] .sr-only", text: "0 tasks"
+    assert_select "[data-test='pipeline-lane-count'] [aria-hidden='true']", ClientPipeline::LANES.size
+    assert_select "[data-test='pipeline-card-queue'] .sr-only", text: "Queue position", count: 2
+  end
+
+  test "[component] an overfilled meter draws the lanes past the cap and says why" do
+    draw(tier: "builder", in_use: 3)
+    assert_select "[data-test='pipeline-lanes-label']", text: "3 lanes in use on a 2-lane plan"
+    assert_select "[data-test='pipeline-lanes-meter'] span", 3
+    assert_select "[data-test='pipeline-lanes-over']", 1
+    assert_select "[data-test='pipeline-lanes-over-note']", text: /sent back for changes keeps its lane/
+  end
+
+  test "[component] a full meter at the cap draws no over segment" do
+    draw(tier: "builder", in_use: 2)
+    assert_select "[data-test='pipeline-lanes-label']", text: "2 of 2 lanes in use"
+    assert_select "[data-test='pipeline-lanes-meter'] span", 2
+    assert_select "[data-test='pipeline-lanes-over']", 0
+    assert_select "[data-test='pipeline-lanes-over-note']", 0
+  end
+
+  test "[component] a release with none of the app's tasks reads none, not 0 of" do
+    draw(release: ClientPipeline::ReleaseView.new(state: "assembled", count: 0))
+    assert_select "[data-test='pipeline-tonight']", text: /carrying none of your tasks\./
+    assert_select "[data-test='pipeline-tonight']", text: /0 of your tasks/, count: 0
+  end
 end

@@ -1,3 +1,5 @@
+require "zlib"
+
 # Concurrent task lanes per package tier (docs/agents/system/client-pipeline.md;
 # plan: Phase 8 of .agents/epics/domain-agents.md).
 #
@@ -10,9 +12,11 @@
 #   BuildingLanes.status(app)        # => Status(cap: 2, in_use: 1, …) "1 of 2 lanes in use"
 #   BuildingLanes.refusal_for(task)  # => nil, or the message Task's claim validation adds
 #
-# The cap binds the CLAIM: a move from `designed` (or a create) into `building`.
-# A rework block bounces a submitted task back to `building` without a claim, and
-# a re-claim of a task already building takes no new lane, so neither is refused.
+# The cap binds the CLAIM (Task#claims_a_building_lane?): a create at `building`,
+# a move into it from `designed`, `shipped` or `archived`, a first move of a task
+# that was never claimed, and a client repo added to a task already building. A
+# rework block bounces a claimed task back to `building` without a claim, and a
+# re-claim of a task already building takes no new lane, so neither is refused.
 module BuildingLanes
   # Apps that are never capped whatever their tier: the hub's own work.
   INTERNAL_APPS = %w[mcritchie-studio].freeze
@@ -22,9 +26,15 @@ module BuildingLanes
     def capped? = !cap.nil?
     def full? = capped? && in_use >= cap
     def tier_name = package&.name
+    # Lanes held past the cap: a send-back keeps its lane, and a downgrade does
+    # not evict work, so in_use can run over for a while. 0 when uncapped.
+    def over = capped? ? [ in_use - cap, 0 ].max : 0
 
-    # "2 of 3 lanes in use", or "2 lanes in use" when unlimited.
+    # "2 of 3 lanes in use"; "3 lanes in use on a 2-lane plan" past the cap; or
+    # "2 lanes in use" when unlimited.
     def label
+      return "#{in_use} lanes in use on a #{cap}-lane plan" if over.positive?
+
       noun = (capped? ? cap : in_use) == 1 ? "lane" : "lanes"
       capped? ? "#{in_use} of #{cap} #{noun} in use" : "#{in_use} #{noun} in use"
     end
@@ -47,21 +57,38 @@ module BuildingLanes
   def status(app) = Status.new(app: app, package: package_for(app), in_use: building_scope(app.slug).count)
 
   # nil when `task` may take a lane; else one sentence naming the app, its tier,
-  # the lanes in use and the upgrade. Checks every tiered app the task names.
-  def refusal_for(task)
-    slugs = task.devops_repositories
+  # the lanes in use and the upgrade. Checks every tiered app the task names, or
+  # only the slugs in `only` (a repo added to a task already building).
+  #
+  # `lock: true` (the claim validation, inside the save's transaction) takes a
+  # transaction-scoped advisory lock per capped app before counting, so two
+  # concurrent claims serialize: the second counts after the first commits and
+  # cannot overfill the cap by one. Locks are taken in a fixed order (app
+  # position, then name), so two multi-app claims cannot deadlock.
+  def refusal_for(task, only: nil, lock: false)
+    slugs = only.nil? ? task.devops_repositories : task.devops_repositories & Array(only)
     return nil if slugs.empty?
 
     App.where(slug: slugs).order(:position, :name).each do |app|
       package = package_for(app)
       next unless (cap = package&.building_lanes)
 
+      lock_lanes!(app.slug) if lock
       busy = building_scope(app.slug).where.not(id: task.id).order(:started_at).pluck(:slug)
       next if busy.size < cap
 
       return refusal_message(app, package, busy)
     end
     nil
+  end
+
+  # The advisory-lock key namespace for building lanes ("BL").
+  LOCK_NAMESPACE = 0x424C
+
+  # Holds until the surrounding transaction ends (a no-op outside one).
+  def lock_lanes!(app_slug)
+    key = Zlib.crc32("building_lanes:#{app_slug}") & 0x7fffffff
+    Task.connection.execute("SELECT pg_advisory_xact_lock(#{LOCK_NAMESPACE}, #{key})")
   end
 
   def refusal_message(app, package, busy)

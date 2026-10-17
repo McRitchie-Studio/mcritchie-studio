@@ -106,7 +106,7 @@ class EmailIngestTest < ActiveSupport::TestCase
     message = ingest(raw)
     assert_equal "held", message.status
     assert_nil message.person
-    assert_match(/selector resend/, message.envelope.dig("trust", "reason"))
+    assert_match(/s=resend, not the pinned/, message.envelope.dig("trust", "reason"))
   end
 
   test "unverified rows never count toward the rate limit, so a stranger cannot hold the owner's thread" do
