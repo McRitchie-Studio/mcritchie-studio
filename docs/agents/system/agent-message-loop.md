@@ -989,6 +989,50 @@ its reply renders as Markdown in the chat. Tests:
 `test/integration/cto_web_chat_loop_test.rb` (the dispatcher's loop end to end) and
 `e2e/cto_web_chat.spec.js` (typing and the answer over a real socket).
 
+## Build intake: Xan answers the public on /build
+
+`/build` is a chat with Xan (design: `.agents/epics/build-with-xan-design.md`). A
+visitor, signed in or not, tells Xan what they want to build; Xan asks for the idea
+(at most two follow-ups), a CTO, colors and an address, one card at a time, and the
+visitor's taps fill a checklist. **Build my app** lights up when all four are set and
+asks for sign-in only then; it queues through `AppRequest#queue!` as before.
+
+- **The thread** is `web:build:<request token>` on the `web` channel, `channel_ref`
+  `build`, written only by `BuildIntake::Ingest` (`app/services/build_intake/ingest.rb`).
+  A signed-out visitor writes as the request's own public person (web identity
+  `build:<token>`); signed in, as their user's web person. Signing in adopts the draft,
+  and the thread continues.
+- **Who is answered.** `config/agent_answerers.yml` `public_intake:` lets its soul (Xan)
+  answer ANY person, but only on a `web` row whose thread key starts with `web:build:`
+  (the prefix is pinned in code; `AgentMessages::Answerers#intake?` and its SQL twin in
+  `#sql_guard`). Nowhere else is the public answered. The public still gets no action
+  (`Audience#may?(:read_action)` is owner and team) and Xan has no catalog.
+- **Caps** (`BuildIntake::Caps`, from the same block), checked at ingest before a row is
+  answerable: 12 answers per request signed out (40 signed in), 20 signed-out answers per
+  visitor IP per hour (the IP is stored only as a keyed hash), 400 signed-out answers per
+  Denver day. Past a cap the row is stored already answered with a line from code asking
+  the visitor to sign in (`intake_capped` event); no model runs.
+- **Bot shield.** The first message carries `/contact`'s defences (`BrowserProof`): a
+  honeypot (a hit stores nothing) and a signed render time the page's script writes in.
+  A first message without it, or under two seconds, is stored `held` with a `bot_shield`
+  event and never answered; the visitor reads "send it again".
+- **Cards.** Xan's prompt gains an INTAKE section (`ContextBuilder#intake_block`): the
+  playbook from `docs/agents/agents/xan/intake.md`, the request's state from the bundle's
+  `intake` key (`BuildIntake::Context`), and the card format. Xan offers a card as a
+  PROPOSAL block of kind `intake` (`idea`, `cto`, `palette`, `address`). On a build thread
+  `AgentMessage#complete!` hands the block to `BuildIntake::Card.record_from!` instead of
+  `AgentProposal`: names, hex colours and WCAG text-on-surface contrast (4.5:1, light and
+  dark) are checked, unknown fields refuse the card, and the checked copy is stored on
+  `agent_messages.intake_card` (`intake_card` / `intake_refused` events). A catalog
+  proposal on a build thread is refused.
+- **Taps** (`BuildIntake::Choice`, `PATCH /build/:token/intake`) are the only writes to
+  `app_requests.cto_name`, `cto_avatar` (a `BuildIntake::Portraits` key), `palette` and
+  `answers`, and the subdomain; each value is checked again on the server, and a palette
+  or idea is read from the stored card, never from the post.
+- **Delivery.** A signed-out visitor has no `/cable` socket, so the page polls
+  (`GET /build/:token/turns`, `app/javascript/build_chat.js`) while a turn is pending;
+  `WebChat.deliver!` marks a build-thread answer posted without a broadcast.
+
 ## Viewing a run
 
 Each soul's Claude runs from its own folder, `~/.agents/mailbox/<soul>`
