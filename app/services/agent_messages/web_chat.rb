@@ -44,7 +44,7 @@ module AgentMessages
     # The thread's newest HISTORY turns, oldest first.
     def history(app_slug, user_id)
       AgentMessage.where(channel: "web", thread_key: thread_key(app_slug, user_id))
-                  .order(id: :desc).limit(HISTORY).to_a.reverse
+                  .order(id: :desc).limit(HISTORY).with_attached_attachments.to_a.reverse
     end
 
     def broadcast_turn(message, append: false)

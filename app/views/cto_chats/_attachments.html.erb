@@ -1,0 +1,26 @@
+<%# locals: (app:, field_name: "cto_chat[attachments][]") %>
+<%# The composer's files (app/javascript/chat_attachments.js; rules in AgentMessages::Attachments). The button, a paste or a drop anywhere on the page uploads each image or PDF to the hub at once, with a chip and a progress bar per file. Each upload answers a token, which rides the form as a hidden field; Send waits until every upload has finished. Nothing here is a blob URL. %>
+<div class="flex flex-col gap-2" data-chat-attachments data-test="cto-chat-attachments"
+     data-upload-url="<%= chat_attachments_application_path(app.slug) %>"
+     data-field-name="<%= field_name %>"
+     data-max-files="<%= AgentMessages::Attachments::MAX_FILES %>"
+     data-max-image-bytes="<%= AgentMessages::Attachments::MAX_BYTES.fetch("image") %>"
+     data-max-pdf-bytes="<%= AgentMessages::Attachments::MAX_BYTES.fetch("pdf") %>">
+  <ul class="flex flex-wrap gap-2 empty:hidden" data-chat-attachments-chips data-test="cto-chat-chips" aria-label="Attached files" aria-live="polite"></ul>
+  <div class="flex items-center gap-2 text-xs text-muted">
+    <label class="btn btn-outline btn-sm cursor-pointer inline-flex items-center gap-1" data-test="cto-chat-attach">
+      <svg aria-hidden="true" viewBox="0 0 24 24" class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+      </svg>
+      <span>Attach</span>
+      <input type="file" multiple class="sr-only" accept="<%= AgentMessages::Attachments::ACCEPT %>"
+             data-chat-attachments-input data-test="cto-chat-file-input">
+    </label>
+    <span class="hidden sm:inline">Images or PDFs: attach, paste or drop them here.</span>
+  </div>
+  <p class="hidden text-xs text-danger-ink" role="alert" data-chat-attachments-error data-test="cto-chat-attach-error"></p>
+  <div class="hidden fixed inset-0 z-50 pointer-events-none items-center justify-center bg-surface/80 border-4 border-dashed border-primary"
+       data-chat-attachments-drop data-test="cto-chat-drop">
+    <p class="text-heading font-semibold text-lg">Drop images or PDFs to attach them</p>
+  </div>
+</div>
