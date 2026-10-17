@@ -56,7 +56,7 @@ module AgentMessages
     def key_prefix(app_slug, user_id) = "apps/#{app_slug}/chat/u#{Integer(user_id)}-"
 
     def key_for(app_slug, user_id, filename)
-      name = ActiveStorage::Filename.new(filename.to_s).sanitized.gsub(/[^A-Za-z0-9._-]/, "_")
+      name = ActiveStorage::Filename.new(filename.to_s).sanitized.gsub(/[^A-Za-z0-9._-]/, "_").gsub(/\.{2,}/, ".")
       name = name[-100..] if name.length > 100
       name = "file" if name.blank? || name.match?(/\A[._-]+\z/)
       "#{key_prefix(app_slug, user_id)}#{SecureRandom.base36(24)}/#{name}"
@@ -84,12 +84,29 @@ module AgentMessages
       end
 
       filename = filename.to_s.presence || "file"
-      content_type = Marcel::MimeType.for(io)
-      io.rewind
+      content_type = sniff(io)
       check!(content_type: content_type, byte_size: io.size, filename: filename)
       ActiveStorage::Blob.create_and_upload!(io: io, filename: filename, content_type: content_type, identify: false,
                                              key: key_for(app_slug, user.id, filename),
                                              metadata: { "cto_chat" => { "app" => app_slug, "user_id" => user.id } })
+    end
+
+    # HEIF's ISO-BMFF brands (an iPhone writes `heic`, an editor `heix` or
+    # `mif1`), which Marcel reads as video/quicktime.
+    HEIF_BRANDS = %w[heic heix hevc hevx heim heis].freeze
+
+    # The type the BYTES say, never the name: HEIC/HEIF by the ftyp box's
+    # brands, everything else by Marcel. Leaves `io` rewound.
+    def sniff(io)
+      head = io.read(64).to_s.b
+      io.rewind
+      if head[4, 4] == "ftyp"
+        major = head[8, 4]
+        brands = head[16, [ head[0, 4].unpack1("N").to_i - 16, 0 ].max].to_s.scan(/.{4}/m)
+        return "image/heic" if HEIF_BRANDS.include?(major)
+        return "image/heif" if %w[mif1 msf1].include?(major) && (brands & HEIF_BRANDS).any?
+      end
+      Marcel::MimeType.for(io).tap { io.rewind }
     end
 
     # How many chat files `user_id` uploaded since `since`, on any app, read from
