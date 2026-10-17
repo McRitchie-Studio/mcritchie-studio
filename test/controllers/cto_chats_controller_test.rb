@@ -87,4 +87,17 @@ class CtoChatsControllerTest < ActionDispatch::IntegrationTest
     get settings_agent_path("turf-monster")
     assert_select "[data-test='agent-chat-card'] [data-test='agent-chat-link'][href='#{chat_application_path('turf-monster')}']"
   end
+
+  test "[component] a web row reads on the admin inbox: listed under its channel, its page renders" do
+    message = ingest(@alex, "admin can read this")
+    log_in_as(@alex)
+
+    get admin_agent_messages_path(channel: "web")
+    assert_response :success
+    assert_includes response.body, "admin can read this"
+
+    get admin_agent_message_path(message)
+    assert_response :success
+    assert_includes response.body, "admin can read this"
+  end
 end
