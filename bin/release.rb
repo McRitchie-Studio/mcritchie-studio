@@ -1295,8 +1295,11 @@ def refuse_bad_train!
   exit 1
 end
 
+# The snippet as it is sent for TRAIN: unchanged on the hub, guarded on any other.
+def train_guarded(ruby) = hub_train? ? ruby : TRAIN_BOARD_GUARD + ruby
+
 def conductor(ruby, read_only: false)
-  ruby = TRAIN_BOARD_GUARD + ruby unless hub_train?
+  ruby = train_guarded(ruby)
   payload = conductor_payload(with_conductor_session(ruby))
   cmd = PROD ? ["heroku", "run", "-a", APP, "--no-tty", "rails", "runner", payload]
              : ["bin/rails", "runner", payload]
@@ -3634,7 +3637,7 @@ def prepare
            "(got #{task_slugs.size}). Nothing was merged or deployed.")
   end
 
-  say("Prepare release — Avi qa-release (self-healing)#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
+  say("Prepare release — Avi qa-release (self-healing)#{hub_train? ? '' : " · #{TRAIN} train"}#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
 
   # LOCAL PRESENCE — the twin of the board `assembler` claim taken further down, and it

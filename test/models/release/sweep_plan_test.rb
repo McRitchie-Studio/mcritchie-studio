@@ -308,4 +308,55 @@ class Release::SweepPlanTest < ActiveSupport::TestCase
     assert_includes line, "mcritchie-studio"
     assert_includes line, "left `assembled`", "a straggler keeps ITS stage, not `reviewed`"
   end
+
+  # --- release trains (release-trains-design.md §2) ------------------------------
+
+  TRAINS = { "turf-monster" => { "repos" => [ "turf-monster" ] } }.freeze
+
+  def train_row(slug, repos)
+    row(slug).merge("repo" => repos.first, "repos" => repos,
+                    "pr_urls" => repos.to_h { |r| [ r, "https://github.com/x/#{r}/pull/1" ] })
+  end
+
+  test "[unit] the hub plan HOLDS a turf-only task under other_train and records the rest" do
+    rows = [ train_row("turf-only", [ "turf-monster" ]), train_row("hub-task", [ "mcritchie-studio" ]),
+             train_row("turf-engine", %w[turf-monster studio-engine]) ]
+
+    plan = Release::SweepPlan.compute(rows, train: "hub", trains: TRAINS)
+
+    assert_equal %w[hub-task turf-engine], plan["sweep"], "app-plus-engine rides the hub"
+    assert_equal [ { "slug" => "turf-only", "stage" => "reviewed", "repos" => [ "turf-monster" ], "train" => "turf-monster" } ],
+                 plan["other_train"]
+  end
+
+  test "[unit] the turf-monster plan records only turf-only tasks" do
+    rows = [ train_row("turf-only", [ "turf-monster" ]), train_row("hub-task", [ "mcritchie-studio" ]),
+             train_row("turf-engine", %w[turf-monster studio-engine]) ]
+
+    plan = Release::SweepPlan.compute(rows, train: "turf-monster", trains: TRAINS)
+
+    assert_equal [ "turf-only" ], plan["sweep"]
+    assert_equal %w[hub-task turf-engine], plan["other_train"].map { |e| e["slug"] }
+    assert(plan["other_train"].all? { |e| e["train"] == "hub" })
+  end
+
+  test "[unit] no train applies no train filter (a bare partition)" do
+    plan = Release::SweepPlan.compute([ train_row("turf-only", [ "turf-monster" ]) ])
+    assert_equal [ "turf-only" ], plan["sweep"]
+    assert_empty plan["other_train"]
+  end
+
+  test "[unit] the other-train HELD line names the train and the command that sweeps it" do
+    line = Release::SweepPlan.other_train_hold_line(
+      { "slug" => "turf-only", "stage" => "reviewed", "repos" => [ "turf-monster" ], "train" => "turf-monster" }, "hub"
+    )
+    assert_match(/\A⚠ HELD turf-only: rides the turf-monster train/, line)
+    assert_includes line, "`bin/release prepare --train turf-monster`"
+
+    hub_line = Release::SweepPlan.other_train_hold_line(
+      { "slug" => "hub-task", "stage" => "assembled", "repos" => [ "mcritchie-studio" ], "train" => "hub" }, "turf-monster"
+    )
+    assert_includes hub_line, "`bin/release prepare`."
+    assert_includes hub_line, "left `assembled`"
+  end
 end
