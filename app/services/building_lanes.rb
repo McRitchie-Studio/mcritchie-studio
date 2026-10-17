@@ -26,9 +26,15 @@ module BuildingLanes
     def capped? = !cap.nil?
     def full? = capped? && in_use >= cap
     def tier_name = package&.name
+    # Lanes held past the cap: a send-back keeps its lane, and a downgrade does
+    # not evict work, so in_use can run over for a while. 0 when uncapped.
+    def over = capped? ? [ in_use - cap, 0 ].max : 0
 
-    # "2 of 3 lanes in use", or "2 lanes in use" when unlimited.
+    # "2 of 3 lanes in use"; "3 lanes in use on a 2-lane plan" past the cap; or
+    # "2 lanes in use" when unlimited.
     def label
+      return "#{in_use} lanes in use on a #{cap}-lane plan" if over.positive?
+
       noun = (capped? ? cap : in_use) == 1 ? "lane" : "lanes"
       capped? ? "#{in_use} of #{cap} #{noun} in use" : "#{in_use} #{noun} in use"
     end
