@@ -127,7 +127,9 @@ module AgentMessages
     def store(attrs, person, blobs = [])
       capped = AgentMessage.transaction(requires_new: true) do
         limited = rate_limited?(attrs[:thread_key])
-        probe = AgentMessage.new(attrs.merge(soul_slug: @cto.soul))
+        # The probe carries no person: built with one, it would join the
+        # person's unsaved `messages` and fail their next save.
+        probe = AgentMessage.new(attrs.except(:person).merge(soul_slug: @cto.soul))
         owner_only = !@answerers.role_answered?(person) && @answerers.app_owner_thread?(probe, person)
         held = limited || !@answerers.allowed?(person, message: probe)
         message = AgentMessage.create!(attrs.merge(soul_slug: @cto.soul, routed_by: "chat",

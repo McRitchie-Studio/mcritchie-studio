@@ -41,7 +41,21 @@ class CtoChatsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='cto-chat-unanswered']", 0, "the owner is answered"
   end
 
-  test "[component] an owner the CTO does not answer yet is told so, and a held turn says it waits for an admin" do
+  test "[component] an app owner is answered on their own app's chat, before and after their first message, with the owner meter" do
+    log_in_as(@owner)
+    get chat_application_path("turf-monster")
+    assert_response :success
+    assert_select "[data-test='cto-chat-unanswered']", 0, "no person yet: the first message makes one the rule answers"
+
+    ingest(@owner, "hello")
+    get chat_application_path("turf-monster")
+    assert_select "[data-test='cto-chat-unanswered']", 0
+    assert_select "[data-test='cto-chat-turn'][data-status='received']"
+    assert_match(/1,000,000/, css_select("#cto-chat-meter").text, "the owner reads the cap they are held to")
+  end
+
+  test "[component] an owner the CTO does not answer (the rule off) is told so, and a held turn says it waits for an admin" do
+    AgentMessages::Answerers.current = AgentMessages::Answerers.new([ "owner" ])
     ingest(@owner, "hello")
 
     log_in_as(@owner)
@@ -49,6 +63,8 @@ class CtoChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-test='cto-chat-unanswered']", text: /does not answer your account yet/
     assert_select "[data-test='cto-chat-turn'][data-status='held'] [data-test='cto-chat-held']", text: /Waiting for an admin/
+  ensure
+    AgentMessages::Answerers.reset!
   end
 
   test "[component] an empty thread shows the prompt; the user's bubble is their text, escaped" do
