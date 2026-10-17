@@ -1,2 +1,5 @@
-<%# locals: (form:) %>
-<%# THE ATTACHMENTS SLOT: empty on purpose. The composer (agent_chats/_form) renders it inside the form, after the error and before the input row, with the form builder; the chat-media task fills it (attach button, paste and drop, a chip per file) without editing the form. %>
+<%# locals: (form:, attachments: nil) %>
+<%# THE ATTACHMENTS SLOT. The composer (agent_chats/_form) renders it inside the form, after the error and before the input row, with the form builder. A chat that takes files passes `attachments` (upload_url:, held:) in its composer locals and gets agent_chats/_attachments (attach button, paste and drop, a chip per file); a chat that passes none gets nothing. %>
+<% if attachments %>
+  <%= render "agent_chats/attachments", field_name: "#{form.object_name}[attachments][]", **attachments %>
+<% end %>

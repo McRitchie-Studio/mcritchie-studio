@@ -1,0 +1,10 @@
+<%# locals: (token:, blob:, field_name:) %>
+<%# One READY chip, drawn on the server: a file a refused send carried. Same structure and hooks as the chips app/javascript/chat_attachments.js builds, so removing it or sending works the same. No preview image: that would need a URL, and the composer holds only the token. %>
+<li data-chat-attachment-chip data-test="cto-chat-chip" data-state="done"
+    class="relative flex items-center gap-2 max-w-[16rem] rounded-xl border border-subtle bg-surface pl-2 pr-1 py-1 text-xs text-heading">
+  <span class="shrink-0 font-semibold text-muted"><%= blob.content_type == "application/pdf" ? "PDF" : "IMG" %></span>
+  <span class="min-w-0 flex flex-col gap-1"><span class="truncate" data-test="cto-chat-chip-name"><%= blob.filename %></span></span>
+  <button type="button" class="shrink-0 inline-flex items-center justify-center min-w-6 min-h-6 rounded text-base leading-none text-muted hover:text-heading" data-chat-attachment-remove data-test="cto-chat-chip-remove"
+          aria-label="Remove <%= blob.filename %>">&times;</button>
+  <input type="hidden" name="<%= field_name %>" value="<%= token %>">
+</li>

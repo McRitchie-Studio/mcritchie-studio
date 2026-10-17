@@ -11,6 +11,7 @@ require "tmpdir"
 require "uri"
 require_relative "agent_api"
 require_relative "agent_context_builder"
+require_relative "agent_media"
 require_relative "agent_proposal_block"
 require_relative "agent_warm_session"
 
@@ -277,12 +278,23 @@ module AgentMailbox
   # Stdout that is not an envelope (a stub, or a CLI crash before it could write
   # one) is a reply on exit 0 and error text otherwise: in json mode the model's
   # words only ever arrive inside the envelope.
+  #
+  # STREAM (`stream: true`, a run with media: Media.stream_cmd, --output-format
+  # stream-json): stdout is one JSON object per line, and the envelope is the
+  # LAST line whose top-level `type` is "result", the same object json mode
+  # prints, read the same way. The model's words sit only inside `assistant`
+  # lines' string values, so no text it writes can be a top-level line. A
+  # stream with no result line is a FAILED run, never a reply: its stdout is
+  # the CLI's own event stream, not an answer to post.
   module ClaudeRun
     Parsed = Struct.new(:reply, :error_text, :api_status, :session_id, :meta, keyword_init: true)
 
-    def self.parse(stdout, status, stderr)
-      env = envelope(stdout)
+    def self.parse(stdout, status, stderr, stream: false)
+      env = stream ? stream_envelope(stdout) : envelope(stdout)
       ok = status&.zero? ? true : false
+      if stream && env.nil?
+        return Parsed.new(reply: nil, error_text: join([ stdout.to_s[-2000..] || stdout.to_s, stderr ]), api_status: nil)
+      end
       if env
         failed = !ok || env["is_error"] == true || env["subtype"].to_s.start_with?("error")
         reply = failed ? nil : env["result"].to_s.strip
@@ -327,12 +339,26 @@ module AgentMailbox
       nil
     end
 
+    def self.stream_envelope(stdout)
+      stdout.to_s.each_line.reverse_each do |line|
+        next unless line.include?('"result"')
+
+        data = begin
+          JSON.parse(line.strip)
+        rescue JSON::ParserError
+          next
+        end
+        return data if data.is_a?(Hash) && data["type"] == "result"
+      end
+      nil
+    end
+
     def self.join(parts)
       return nil if parts.nil?
 
       parts.compact.map { |p| p.is_a?(String) ? p : JSON.generate(p) }.join("\n")
     end
-    private_class_method :envelope, :join, :session_id, :meta
+    private_class_method :envelope, :stream_envelope, :join, :session_id, :meta
   end
 
   # A headless run's session transcript, read for its REASONING: the text of
@@ -559,7 +585,8 @@ module AgentMailbox
     end
 
     def initialize(soul:, claude_cmd: DEFAULT_CLAUDE_CMD, runner: nil, repo_root: REPO_ROOT, clock: -> { Time.now },
-                   mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"))
+                   mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"), media: nil)
+      @media = media
       @soul = soul.to_s
       @claude_cmd = claude_cmd
       @runner = runner || AgentMailbox.method(:run_command)
@@ -583,21 +610,36 @@ module AgentMailbox
               else
                 prompt_for(message, action, context: context, audience: audience)
               end
-      output, status, error = @runner.call(warm ? warm_cmd(warm.resume_id) : @claude_cmd, stdin: stdin,
-                                                                                           timeout: CLAUDE_TIMEOUT, chdir: cwd)
-      run = ClaudeRun.parse(output, status, error)
+      cmd = warm ? warm_cmd(warm.resume_id) : @claude_cmd
+      media = prepared_media(context)
+      if media&.any?
+        stdin = Media.user_message(media.blocks, stdin)
+        cmd = Media.stream_cmd(cmd)
+      end
+      output, status, error = @runner.call(cmd, stdin: stdin, timeout: CLAUDE_TIMEOUT, chdir: cwd)
+      run = ClaudeRun.parse(output, status, error, stream: media&.any? ? true : false)
       limit = UsageLimit.detect(run, now: @clock.call)
       reasoning, source = if run.session_id
                             Transcript.reasoning(run.session_id, claude_home: @claude_home, **(warm ? { last_turn_only: true } : {}))
                           else
                             [ nil, nil ]
                           end
-      meta = (run.meta || {}).merge(source ? { "reasoning_source" => source } : {})
+      meta = (run.meta || {}).merge(source ? { "reasoning_source" => source } : {}).merge(media ? media.meta : {})
       reply, notes, proposal = run.reply && !limit ? ProposalBlock.split(run.reply) : [ nil, [], nil ]
       Answer.new(reply: reply.to_s.empty? ? nil : reply, notes: notes, proposal: proposal, action: action, status: status, usage_limit: limit,
                  signed_out: limit.nil? && ClaudeAuth.signed_out?(run), session_id: run.session_id, cwd: cwd,
                  reasoning: reasoning, meta: meta.merge(warm ? { "warm" => warm.resumed? ? "resumed" : "fresh" } : {}),
                  warm: warm)
+    end
+
+    # The message's files as content blocks (Media), or nil when it has none.
+    # The text prompt is unchanged; it names every file (ContextBuilder#files_line),
+    # and the blocks go ahead of it in ONE stream-json user message.
+    def prepared_media(context)
+      files = Media.attachments(context)
+      return nil if files.empty?
+
+      (@media ||= Media::Preparer.new).prepare(files)
     end
 
     # The consolidation turn: the session `resume_id` asked for its own notes

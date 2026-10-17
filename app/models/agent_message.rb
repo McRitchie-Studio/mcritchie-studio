@@ -85,7 +85,8 @@ class AgentMessage < ApplicationRecord
   # an app's allowance (public rows are metered apart).
   RUN_META_NUMERIC = %w[input_tokens cache_read_tokens cache_creation_tokens output_tokens thinking_tokens
                         total_cost_usd num_turns duration_ms].freeze
-  RUN_META_KEYS = (RUN_META_NUMERIC + %w[model reasoning_source warm]).freeze
+  # files_shown, files_skipped: a run with media (AgentMailbox::Media), the files sent and not.
+  RUN_META_KEYS = (RUN_META_NUMERIC + %w[model reasoning_source warm files_shown files_skipped]).freeze
 
   ClaimResult = Struct.new(:message, :reason, keyword_init: true)
 
@@ -103,6 +104,12 @@ class AgentMessage < ApplicationRecord
   # (channel, author_ref), so every stored message with an author resolves to a
   # person. A row with no author_ref has none.
   belongs_to :person, class_name: "AgentPerson", optional: true, inverse_of: :messages
+  # The files a web chat message carries (images and PDFs, AgentMessages::Attachments):
+  # private R2 objects under apps/<app>/chat/, shown only to the thread's owner
+  # and admins (CtoChatAttachmentsController) and read by the dispatcher through
+  # the holder-only context bundle.
+  # On the PRIVATE service (no public domain), never the hub's bucket.
+  has_many_attached :attachments, service: AgentMessages::Attachments::SERVICE
 
   before_create :resolve_person
 

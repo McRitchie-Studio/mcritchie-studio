@@ -18,7 +18,8 @@ meter and the tests run as if the caps were on.
 ## The run summary
 
 `bin/dispatcher` reads each answer's `claude -p --output-format json` envelope
-(`AgentMailbox::ClaudeRun.meta`) and sends the summary with the complete. The
+(the stream's `result` line for a message with images or PDFs, the same object;
+image and document tokens are in its usage) (`AgentMailbox::ClaudeRun.meta`) and sends the summary with the complete. The
 board stores it in `agent_messages.run_meta` (`AgentMessage::RUN_META_KEYS`):
 
 | Key | From the envelope |

@@ -95,7 +95,7 @@ module AgentMessages
         "user" => user_json,
         "proposals" => proposals_json,
         "ledger" => { "turns" => person_turns, "summary" => summary, "pin" => thread_turns.last }
-      }.merge(intake_json)
+      }.merge(intake_json).merge(attachments_json)
     end
 
     private
@@ -114,6 +114,16 @@ module AgentMessages
 
       intake = BuildIntake::Context.for(@message)
       intake ? { "intake" => intake } : {}
+    end
+
+    # THE FILES the message carries (web chat: images and PDFs), each with a URL
+    # that expires (AgentMessages::Attachments.for_worker), so the holder can read
+    # them; absent when there are none. Only this message's own files: a cold run
+    # sends the newest message's media, and older ones stay in the warm session.
+    def attachments_json
+      return {} unless @message.attachments.attached?
+
+      { "attachments" => Attachments.for_worker(@message) }
     end
 
     # The notes this soul may read about this sender (AgentPersonNote.visible_for,
@@ -158,7 +168,7 @@ module AgentMessages
 
     # Oldest first, the newest FETCH_LIMIT.
     def person_rows
-      person_scope.order(created_at: :desc, id: :desc).limit(FETCH_LIMIT).to_a.reverse
+      person_scope.order(created_at: :desc, id: :desc).limit(FETCH_LIMIT).with_attached_attachments.to_a.reverse
     end
 
     def thread_scope
@@ -170,7 +180,7 @@ module AgentMessages
 
     # Oldest first, the newest THREAD_TURNS.
     def thread_rows
-      thread_scope.order(id: :desc).limit(THREAD_TURNS).to_a.reverse
+      thread_scope.order(id: :desc).limit(THREAD_TURNS).with_attached_attachments.to_a.reverse
     end
 
     def user_json
@@ -212,6 +222,7 @@ module AgentMessages
       { "id" => row.id, "at" => sent(row).iso8601, "place" => place(row), "author_name" => row.author_name,
         "author_ref" => row.author_ref, "own" => row.person_id.present? && row.person_id == @message.person_id,
         "content" => row.content.to_s, "answer" => row.response_text, "status" => row.status }
+        .merge(row.attachments.any? ? { "files" => row.attachments.map { |a| a.blob.filename.to_s } } : {})
     end
 
     # The place label, CODE-SHAPED on purpose: it is printed outside the prompt's
