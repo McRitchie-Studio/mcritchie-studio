@@ -933,6 +933,15 @@ class Task < ApplicationRecord
     devops_list("risk_tags")
   end
 
+  # The refusal a move to building would meet now, or nil (the read-only check
+  # GET /api/v1/tasks/:slug/building_lane answers; bin/task begin asks it before
+  # it cuts a desk). Writes nothing and takes no lock.
+  def building_lane_refusal
+    return nil if stage == "building" || !self.class.lane_claim_move?(stage, started_at)
+
+    BuildingLanes.refusal_for(self)
+  end
+
   # Naming advice from the last save; both task controllers answer with it.
   def warnings
     @warnings || []
@@ -2064,7 +2073,13 @@ class Task < ApplicationRecord
     return true if new_record?
     return lane_repositories_added.any? unless will_save_change_to_stage?
 
-    !(LANE_SENDBACK_STAGES.include?(stage_in_database) && started_at_in_database.present?)
+    self.class.lane_claim_move?(stage_in_database, started_at_in_database)
+  end
+
+  # Is a move from `from` into building a claim? Every move is, except the
+  # send-back of a task that was claimed once (it has a started_at).
+  def self.lane_claim_move?(from, started_at)
+    !(LANE_SENDBACK_STAGES.include?(from.to_s) && started_at.present?)
   end
 
   # A task already building is checked only for the repos this save adds: the

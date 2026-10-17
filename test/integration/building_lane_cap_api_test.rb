@@ -63,6 +63,10 @@ class BuildingLaneCapApiTest < ActionDispatch::IntegrationTest
     task!("Holding the lane", stage: "building")
     reopened = task!("Shipped, reopened", stage: "shipped")
 
+    get "/api/v1/tasks/#{reopened.slug}/building_lane", headers: { "Authorization" => "Bearer #{token}" }
+    assert_match(/Turf Monster is on the Vibe tier/, response.parsed_body.dig("data", "refusal").to_s,
+                 "the read-only check answers what the reopen will meet")
+
     claim!(reopened)
 
     assert_response :unprocessable_entity
