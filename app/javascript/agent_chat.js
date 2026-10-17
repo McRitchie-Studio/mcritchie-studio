@@ -9,14 +9,15 @@
 //     a pulse older than an answer already shown is dropped at once;
 //   - Enter sends, Shift+Enter is a new line, and the composer keeps focus.
 //
-// It finds the chat by its data-agent-chat-* hooks, never by an agent's ids.
+// Its hooks keep their cto-chat names (data-cto-chat-*, #cto-chat-typing, the
+// AgentMessages::WebChat targets) for every agent, so the CTO page is unchanged.
 // Imported by application.js on every page, once per load; every listener is
 // delegated on document and does nothing where there is no chat, so a Turbo
 // visit to or back to the chat needs no re-binding. "cto_chat" is pinned to
 // this file too (config/importmap.rb), so the old import still loads it.
-const LOG = "[data-agent-chat-scroll]";
-const TYPING = "[data-agent-chat-typing]";
-const FORM = "[data-agent-chat-form]";
+const LOG = "[data-cto-chat-scroll]";
+const TYPING = "cto-chat-typing";
+const FORM = "[data-cto-chat-form]";
 let fadeTimer = null;
 
 function scrollToEnd() {
@@ -33,7 +34,7 @@ function newestReply() {
 }
 
 function settleTyping() {
-  const slot = document.querySelector(TYPING);
+  const slot = document.getElementById(TYPING);
   if (!slot) return;
   const pulse = slot.querySelector("[data-typing-at]");
   clearTimeout(fadeTimer);

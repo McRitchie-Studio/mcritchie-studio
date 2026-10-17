@@ -34,16 +34,16 @@ class AgentChatComponentTest < ActionView::TestCase
     assert_equal "Turbo::StreamsChannel", source["channel"]
     assert_equal STREAM, Turbo::StreamsChannel.verified_stream_name(source["signed-stream-name"]), "subscribes to the stream it was handed"
 
-    assert_select "##{AgentMessages::WebChat::MESSAGES_TARGET}[role='log'][aria-label='Conversation with Xan'][data-agent-chat-scroll]" do
+    assert_select "##{AgentMessages::WebChat::MESSAGES_TARGET}[role='log'][aria-label='Conversation with Xan'][data-cto-chat-scroll]" do
       assert_select "[data-test='cto-chat-turn']", 2
       assert_select "#cto-chat-turn-41[data-status='completed'][data-replied-at] [data-test='cto-chat-reply'] p.text-muted", text: "Xan"
       assert_select "#cto-chat-turn-41 [data-test='cto-chat-reply'] strong", text: "Nice."
       assert_select "#cto-chat-turn-42[data-status='received'] [data-test='cto-chat-reply']", 0
       assert_select "[data-test='cto-chat-empty']", text: "Tell Xan what you want to build."
     end
-    assert_select "##{AgentMessages::WebChat::TYPING_TARGET}[data-agent-chat-typing][data-fade-seconds='#{AgentMessages::WebChat::TYPING_FADE}']"
+    assert_select "##{AgentMessages::WebChat::TYPING_TARGET}[data-fade-seconds='#{AgentMessages::WebChat::TYPING_FADE}']"
 
-    assert_select "form#build-chat-form[action='/build/chat'][data-agent-chat-form]" do
+    assert_select "form#build-chat-form[action='/build/chat'][data-cto-chat-form]" do
       assert_select "input[type='hidden'][name='build_chat[client_id]']"
       assert_select "textarea[name='build_chat[text]'][placeholder='Message Xan…'][maxlength='#{AgentMessages::WebIngest::MAX_LENGTH}']"
       assert_select "label.sr-only", text: "Message Xan"

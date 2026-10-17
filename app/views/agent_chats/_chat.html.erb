@@ -10,7 +10,7 @@
 <%= turbo_stream_from stream, channel: channel %>
 <div class="card p-0 overflow-hidden flex flex-col" data-test="cto-chat">
   <div id="<%= AgentMessages::WebChat::MESSAGES_TARGET %>" role="log" aria-live="polite" aria-label="Conversation with <%= agent_name %>"
-       class="flex flex-col gap-4 p-3 sm:p-4 overflow-y-auto min-h-[16rem] max-h-[60vh]" data-test="cto-chat-messages" data-agent-chat-scroll>
+       class="flex flex-col gap-4 p-3 sm:p-4 overflow-y-auto min-h-[16rem] max-h-[60vh]" data-test="cto-chat-messages" data-cto-chat-scroll>
     <% if empty %>
       <p class="hidden only:block text-center text-secondary text-sm py-10" data-test="cto-chat-empty"><%= empty %></p>
     <% end %>
@@ -19,6 +19,6 @@
     <% end %>
   </div>
   <div id="<%= AgentMessages::WebChat::TYPING_TARGET %>" class="px-3 sm:px-4" data-test="cto-chat-typing-slot"
-       data-fade-seconds="<%= AgentMessages::WebChat::TYPING_FADE %>" data-agent-chat-typing></div>
+       data-fade-seconds="<%= AgentMessages::WebChat::TYPING_FADE %>"></div>
   <%= render "agent_chats/form", agent_name: agent_name, **composer %>
 </div>
