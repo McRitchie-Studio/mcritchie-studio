@@ -586,6 +586,8 @@ module AgentMailbox
     def client_domain_name
       key = @audience.client_domain
       return nil unless key
+      # A client CTO's client is the client of the one app it speaks for.
+      return safe_name(persona["app_name"], "this app") if client_cto?
       return "McRitchie Studio" if internal_client_domain?
 
       domains_config.dig("domains", key, "name").to_s.strip.then { |n| n.empty? ? key : n }
@@ -593,6 +595,8 @@ module AgentMailbox
 
     def internal_client_domain?
       key = @audience.client_domain
+      return false if client_cto?
+
       key && domains_config.dig("domains", key, "internal") == true
     end
 

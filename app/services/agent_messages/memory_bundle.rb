@@ -49,6 +49,11 @@ module AgentMessages
   # the other's chat. Its bundle also carries `persona`, the app's AppCto row
   # (AppCto#persona_json), which the worker fills its persona template from,
   # inside the untrusted fence. Every other soul's bundle has `persona: nil`.
+  # And its audience: a sender the board knows only as `public` who OWNS the app
+  # (an AppMembership owner, a server-side fact, never the message's) is that
+  # app's client, scoped to it (`client_domain` the app slug, underscored), so
+  # the CTO may talk about their own project. Their answering is unchanged: the
+  # owner-only guard reads the person's role, not this.
   #
   # `ledger` and `user.notes` (a string) repeat the pre-omnichannel shape for a
   # worker still running the older ContextBuilder; drop them once every
@@ -89,7 +94,7 @@ module AgentMessages
         "message_id" => @message.id,
         "as_of" => as_of.iso8601,
         "place" => place(@message),
-        "audience" => AgentPerson.audience_for(audience_person),
+        "audience" => audience_json,
         "person" => {
           "id" => @message.person_id, "display_name" => person&.display_name, "soul" => @message.soul_slug,
           "total" => total, "unread" => [ total - fetched.size, 0 ].max, "in_thread" => fetched.size - rows.size,
@@ -176,6 +181,18 @@ module AgentMessages
     end
 
     def client_cto? = @message.soul_slug == AppCto::SOUL
+
+    def audience_json
+      base = AgentPerson.audience_for(audience_person)
+      return base unless client_cto? && base["role"] == "public" && app_owner?
+
+      base.merge("role" => "client", "client_domain" => @message.channel_ref.to_s.tr("-", "_"))
+    end
+
+    def app_owner?
+      user = person&.user
+      user&.slug.present? && AppMembership.owners.exists?(app_slug: @message.channel_ref, user_slug: user.slug)
+    end
 
     # The client CTO's persona for this app, or nil (every other soul, or a
     # client app whose row is gone: the worker then answers as a plain CTO).
