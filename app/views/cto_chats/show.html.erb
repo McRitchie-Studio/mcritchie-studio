@@ -1,4 +1,7 @@
 <%# /applications/:slug/chat: the viewer's own live chat with the app's CTO. Owner or admin only. The chat itself is the shared agent_chats component. docs/agents/system/agent-message-loop.md ("Web chat") %>
+<%# Build my app lands here from /build: both pages opt in to a view transition, so the head morphs into the new CTO's (Turbo 8). %>
+<% content_for :head, tag.meta(name: "view-transition", content: "same-origin") %>
+<% client = @cto.client? %>
 <section class="max-w-3xl mx-auto px-4 py-6 sm:py-10 space-y-4" data-test="cto-chat-page" data-app="<%= @app.slug %>" data-soul="<%= @cto.soul %>">
   <% subtitle = capture do %>
     <p class="text-secondary text-sm">
@@ -6,7 +9,13 @@
       An AI agent: it answers here, proposes, and runs nothing without your <span class="font-semibold">go</span>.
     </p>
   <% end %>
-  <%= render "agent_chats/header", name: @cto.display_name, agent: @cto.agent, subtitle: subtitle %>
+  <%# A client app's CTO wears its own colours and portrait (AppCto, docs/agents/system/client-cto.md). %>
+  <div class="<%= "card p-3 sm:p-4 border-t-4 border-t-[rgb(var(--cto-primary))] bg-[rgb(var(--cto-primary)/0.08)] #{ClientCtoHelper::PALETTE_SWITCH}" if client %>"
+       <% if client %>style="<%= client_cto_palette_style(@cto.app_cto) %> view-transition-name: agent-chat-head;"<% end %>
+       data-test="cto-chat-head" data-client-cto="<%= client %>">
+    <%= render "agent_chats/header", name: @cto.display_name, agent: @cto.agent, subtitle: subtitle,
+                                     portrait: (render("applications/cto_avatar", cto: @cto) if client) %>
+  </div>
 
   <% if @available %>
     <details class="card p-3 text-sm group" data-test="cto-chat-usage" open>

@@ -6,8 +6,8 @@
 <% elsif cto.client? %>
   <% row = cto.app_cto %>
   <% src = row.portrait_path || (row.portrait_blob && rails_blob_path(row.portrait_blob, only_path: true)) %>
-  <span class="<%= box %> rounded-full flex items-center justify-center relative shrink-0 bg-primary text-white font-bold border border-subtle"
-        <% if (primary = row.light["primary"]) %>style="background-color: <%= primary %>;"<% end %> data-test="client-cto-avatar">
+  <span class="<%= box %> rounded-full flex items-center justify-center relative shrink-0 text-white font-bold border border-subtle bg-[rgb(var(--cto-primary))] <%= ClientCtoHelper::PALETTE_SWITCH %>"
+        style="<%= client_cto_palette_style(row) %>" data-test="client-cto-avatar">
     <span aria-hidden="true"><%= cto.display_name.to_s.first.upcase %></span>
     <% if src %>
       <img src="<%= src %>" alt="<%= cto.display_name %>" class="absolute inset-0 w-full h-full rounded-full object-cover" onerror="this.remove()" data-test="client-cto-portrait">

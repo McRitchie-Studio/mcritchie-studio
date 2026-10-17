@@ -1,11 +1,18 @@
 <%# locals: (message:, agent_name:) %>
-<%# One turn of an agent web chat: what the viewer sent, then the agent's answer, or why there is none yet. Rendered on the page and in WebChat broadcasts (no request: no URL helpers here). The test hooks keep their cto-chat names. %>
+<%# One turn of an agent web chat: what the viewer sent (or, first in a client app's CTO chat, Xan's handover: AgentMessages::ClientCtoHandover), then the agent's answer, or why there is none yet. Rendered on the page and in WebChat broadcasts (no request: no URL helpers here). The test hooks keep their cto-chat names. %>
 <% answered = message.status == "completed" && message.response_text.present? %>
 <% replied_ms = answered ? ((message.reply_posted_at || message.completed_at || message.updated_at).to_f * 1000).to_i : nil %>
 <div id="cto-chat-turn-<%= message.id %>" class="flex flex-col gap-2" data-test="cto-chat-turn" data-status="<%= message.status %>"
      <% if replied_ms %>data-replied-at="<%= replied_ms %>"<% end %>>
-  <%= render "agent_chats/sent_files", message: message %>
-  <% if message.content.present? %>
+  <% if AgentMessages::ClientCtoHandover.handover?(message) %>
+    <div class="self-start max-w-[85%] min-w-0 card rounded-2xl rounded-bl-sm px-3 py-2" data-test="cto-chat-handover">
+      <p class="text-xs font-semibold text-muted mb-1"><%= AgentMessages::ClientCtoHandover::AUTHOR %></p>
+      <p class="text-sm break-words"><%= message.content %></p>
+    </div>
+  <% else %>
+    <%= render "agent_chats/sent_files", message: message %>
+  <% end %>
+  <% if message.content.present? && !AgentMessages::ClientCtoHandover.handover?(message) %>
     <div class="self-end max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 bg-primary/15 text-primary-ink text-sm whitespace-pre-wrap break-words" data-test="cto-chat-sent"><%= message.content %></div>
   <% end %>
   <% if answered %>
