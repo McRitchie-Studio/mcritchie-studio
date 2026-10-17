@@ -266,7 +266,7 @@ OK to install on the work machine. The setup:
 2. Give it board auth the way the agent CLI gets it (`bin/lib/agent_api.rb`),
    with no new secret. That token alone reads no transcript: each lease call
    also carries the lease key the board answers the acquire that took it, held
-   only in the dispatcher's memory, so a restarted dispatcher waits out its own
+   only in the dispatcher's memory, so a dispatcher that crashed holding a lease waits out its own
    old lease (5 minutes) before it is warm again.
 3. Let it ping once so the board knows its host: `bin/dispatcher run` in a
    terminal for a minute, then Ctrl-C. Until step 4 it is a primary, so do this
