@@ -1,6 +1,7 @@
 # /applications/:slug/chat: a live chat with the app's CTO, for the app's owner
 # or an admin (docs/agents/system/agent-message-loop.md, "Web chat"; the plan is
-# Phase 7 step 3 of .agents/epics/domain-agents.md).
+# Phase 7 step 3 of .agents/epics/domain-agents.md). The views are the shared
+# agent chat (app/views/agent_chats); this controller supplies the CTO and its thread.
 #
 #   show    the user's own thread with this app's CTO (newest WebChat::HISTORY
 #           turns), the usage meter (tokens, never dollars), and the form. The
@@ -14,7 +15,10 @@
 # owns the app or is an admin, exactly as the app's own page does. The CTO is the
 # app's, from config/cto_reports.yml: nothing the request carries picks the soul.
 class CtoChatsController < ApplicationController
+  FORM_ID = "cto-chat-form".freeze
+
   before_action :load_app_and_cto
+  helper_method :composer_locals
 
   def show
     @available = AgentMessages::WebIngest.available?(@cto)
@@ -53,13 +57,18 @@ class CtoChatsController < ApplicationController
   end
 
   def append_turn(message)
-    turbo_stream.append(AgentMessages::WebChat::MESSAGES_TARGET, partial: "cto_chats/turn",
-                                                                 locals: { message: message, cto_name: @cto.display_name })
+    turbo_stream.append(AgentMessages::WebChat::MESSAGES_TARGET, partial: "agent_chats/turn",
+                                                                 locals: { message: message, agent_name: @cto.display_name })
   end
 
   def replace_form(error: nil, text: "")
-    turbo_stream.replace("cto-chat-form", partial: "cto_chats/form",
-                                          locals: { app: @app, cto: @cto, error: error, text: text })
+    turbo_stream.replace(FORM_ID, partial: "agent_chats/form",
+                                  locals: composer_locals(error: error, text: text).merge(agent_name: @cto.display_name))
+  end
+
+  # The shared composer's locals (agent_chats/_form) for this app's CTO chat.
+  def composer_locals(error: nil, text: "")
+    { url: chat_application_path(@app.slug), scope: :cto_chat, id: FORM_ID, error: error, text: text }
   end
 
   # Whether the agents answer this user's person now (config/agent_answerers.yml),

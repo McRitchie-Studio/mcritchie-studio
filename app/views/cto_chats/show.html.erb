@@ -1,19 +1,13 @@
-<%# /applications/:slug/chat: the viewer's own live chat with the app's CTO. Owner or admin only. docs/agents/system/agent-message-loop.md ("Web chat") %>
+<%# /applications/:slug/chat: the viewer's own live chat with the app's CTO. Owner or admin only. The chat itself is the shared agent_chats component. docs/agents/system/agent-message-loop.md ("Web chat") %>
 <section class="max-w-3xl mx-auto px-4 py-6 sm:py-10 space-y-4" data-test="cto-chat-page" data-app="<%= @app.slug %>" data-soul="<%= @cto.soul %>">
-  <div class="flex items-center gap-3 min-w-0">
-    <%= render "applications/cto_avatar", cto: @cto %>
-    <div class="min-w-0">
-      <h1 class="text-2xl sm:text-3xl font-bold text-heading break-words">Chat with <%= @cto.display_name %></h1>
-      <p class="text-secondary text-sm">
-        CTO of <%= link_to @app.name, application_path(@app.slug), class: "underline hover:text-heading", data: { test: "cto-chat-app-link" } %>.
-        An AI agent: it answers here, proposes, and runs nothing without your <span class="font-semibold">go</span>.
-      </p>
-    </div>
-  </div>
+  <%= render "agent_chats/header", name: @cto.display_name, agent: @cto.agent do %>
+    <p class="text-secondary text-sm">
+      CTO of <%= link_to @app.name, application_path(@app.slug), class: "underline hover:text-heading", data: { test: "cto-chat-app-link" } %>.
+      An AI agent: it answers here, proposes, and runs nothing without your <span class="font-semibold">go</span>.
+    </p>
+  <% end %>
 
   <% if @available %>
-    <%= turbo_stream_from @stream, channel: CtoChatChannel %>
-
     <details class="card p-3 text-sm group" data-test="cto-chat-usage" open>
       <summary class="cursor-pointer select-none font-semibold text-heading flex items-center justify-between gap-2">
         <span>Agent usage this month</span>
@@ -30,20 +24,8 @@
       </p>
     <% end %>
 
-    <div class="card p-0 overflow-hidden flex flex-col" data-test="cto-chat">
-      <div id="<%= AgentMessages::WebChat::MESSAGES_TARGET %>" role="log" aria-live="polite" aria-label="Conversation with <%= @cto.display_name %>"
-           class="flex flex-col gap-4 p-3 sm:p-4 overflow-y-auto min-h-[16rem] max-h-[60vh]" data-test="cto-chat-messages" data-cto-chat-scroll>
-        <p class="hidden only:block text-center text-secondary text-sm py-10" data-test="cto-chat-empty">
-          Ask <%= @cto.display_name %> anything about <%= @app.name %>.
-        </p>
-        <% @messages.each do |message| %>
-          <%= render "cto_chats/turn", message: message, cto_name: @cto.display_name %>
-        <% end %>
-      </div>
-      <div id="<%= AgentMessages::WebChat::TYPING_TARGET %>" class="px-3 sm:px-4" data-test="cto-chat-typing-slot"
-           data-fade-seconds="<%= AgentMessages::WebChat::TYPING_FADE %>"></div>
-      <%= render "cto_chats/form", app: @app, cto: @cto, error: nil, text: "" %>
-    </div>
+    <%= render "agent_chats/chat", agent_name: @cto.display_name, stream: @stream, channel: CtoChatChannel, messages: @messages,
+                                   composer: composer_locals, empty: "Ask #{@cto.display_name} anything about #{@app.name}." %>
   <% else %>
     <p class="card p-4 text-sm text-secondary" data-test="cto-chat-unavailable">
       <%= @cto.display_name %> has no web chat yet.

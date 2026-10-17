@@ -1,0 +1,24 @@
+<%# locals: (agent_name:, stream:, channel:, messages:, composer:, empty: nil) %>
+<%#
+  One agent web chat: the live stream, the thread, the typing slot and the composer.
+  Any heading agent, any thread: the caller names the agent, the signed stream and
+  the channel that admits it, the turns (AgentMessage rows, oldest first), and the
+  composer's locals (url, scope, id, error, text; agent_chats/_form). The DOM ids are
+  AgentMessages::WebChat's targets, so its broadcasts land here. The page around it
+  (header, meter, notices) is the caller's. app/javascript/agent_chat.js keeps it honest.
+%>
+<%= turbo_stream_from stream, channel: channel %>
+<div class="card p-0 overflow-hidden flex flex-col" data-test="cto-chat">
+  <div id="<%= AgentMessages::WebChat::MESSAGES_TARGET %>" role="log" aria-live="polite" aria-label="Conversation with <%= agent_name %>"
+       class="flex flex-col gap-4 p-3 sm:p-4 overflow-y-auto min-h-[16rem] max-h-[60vh]" data-test="cto-chat-messages" data-agent-chat-scroll>
+    <% if empty %>
+      <p class="hidden only:block text-center text-secondary text-sm py-10" data-test="cto-chat-empty"><%= empty %></p>
+    <% end %>
+    <% messages.each do |message| %>
+      <%= render "agent_chats/turn", message: message, agent_name: agent_name %>
+    <% end %>
+  </div>
+  <div id="<%= AgentMessages::WebChat::TYPING_TARGET %>" class="px-3 sm:px-4" data-test="cto-chat-typing-slot"
+       data-fade-seconds="<%= AgentMessages::WebChat::TYPING_FADE %>" data-agent-chat-typing></div>
+  <%= render "agent_chats/form", agent_name: agent_name, **composer %>
+</div>
