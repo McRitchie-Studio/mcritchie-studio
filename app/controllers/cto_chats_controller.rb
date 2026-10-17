@@ -9,7 +9,9 @@
 #           typing indicator and the answer arrive without a reload
 #   create  one message: AgentMessages::WebIngest stores it as a `web`
 #           AgentMessage for this app's CTO, and the dispatcher answers it as it
-#           answers Discord. Answers with the new turn as a Turbo Stream
+#           answers Discord. Answers with the new turn as a Turbo Stream. The
+#           message may carry files the composer uploaded first
+#           (CtoChatAttachmentsController, AgentMessages::Attachments)
 #
 # Past the AdminWall (SIGNED_IN), both answer 404, never 403, unless the viewer
 # owns the app or is an admin, exactly as the app's own page does. The CTO is the
@@ -31,7 +33,8 @@ class CtoChatsController < ApplicationController
   def create
     outcome = rescue_and_log(target: @app) do
       AgentMessages::WebIngest.new(user: current_user, cto: @cto)
-                              .call(params.dig(:cto_chat, :text), client_id: params.dig(:cto_chat, :client_id))
+                              .call(params.dig(:cto_chat, :text), client_id: params.dig(:cto_chat, :client_id),
+                                    attachments: attachment_tokens)
     rescue AgentMessages::WebIngest::Refused => e
       e
     end
@@ -45,6 +48,12 @@ class CtoChatsController < ApplicationController
   end
 
   private
+
+  # The composer's upload tokens (CtoChatAttachmentsController#create), strings only.
+  def attachment_tokens
+    raw = params.dig(:cto_chat, :attachments)
+    raw.is_a?(Array) ? raw.select { |t| t.is_a?(String) } : []
+  end
 
   def refused(error)
     respond_to do |format|

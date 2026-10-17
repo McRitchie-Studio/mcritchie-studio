@@ -76,7 +76,9 @@ module AdminWall
     "applications" => %w[index show health usage pipeline],
     "agent_settings" => %w[index show update],
     # The app's CTO web chat: 404 unless the viewer owns the app or is an admin (CtoChatsController).
-    "cto_chats" => %w[show create]
+    "cto_chats" => %w[show create],
+    # Its files: upload, and show a sent one, under the same 404 (CtoChatAttachmentsController).
+    "cto_chat_attachments" => %w[create show]
   }.transform_values(&:freeze).freeze
 
   def self.public?(controller_path, action)

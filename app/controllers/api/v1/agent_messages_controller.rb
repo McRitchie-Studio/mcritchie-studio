@@ -8,7 +8,8 @@ module Api
     #   GET  /api/v1/agent_messages/next       the message a claim would take now; writes nothing
     #   GET  /api/v1/agent_messages/:id        one message with its event timeline
     #   POST /api/v1/agent_messages/claim      { soul | souls[], worker, channel?, wait? } -> the claimed message or null
-    #   GET  /api/v1/agent_messages/:id/context?worker=W  the holder's context bundle (AgentMessages::MemoryBundle)
+    #   GET  /api/v1/agent_messages/:id/context?worker=W  the holder's context bundle (AgentMessages::MemoryBundle),
+    #                                             with the message's files as expiring URLs (`attachments`)
     #   POST /api/v1/agent_messages/:id/complete { worker, response_text, action_summary?,
     #                                             claude_session_id?, claude_cwd?, reasoning?, run_meta?,
     #                                             notes? }  notes: facts about the sender, filed under the message's author
@@ -33,6 +34,10 @@ module Api
     # token carries no soul, so the `soul` it sends is the actor, exactly as every
     # other board write records it (session_actor).
     class AgentMessagesController < BaseController
+      # The context bundle's file URLs (AgentMessages::Attachments.for_worker) on a
+      # Disk service need the request's host; R2 URLs do not.
+      include ActiveStorage::SetCurrent
+
       before_action :load_message, only: [ :show, :context, :complete, :release, :renew, :typing ]
       before_action :require_soul_scope!, only: [ :next_message, :claim, :context, :complete, :release, :renew, :typing ]
 
