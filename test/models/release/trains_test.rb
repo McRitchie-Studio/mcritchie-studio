@@ -44,6 +44,11 @@ class Release::TrainsTest < ActiveSupport::TestCase
     assert_equal "hub", task_naming([ "mcritchie-studio" ]).release_train
   end
 
+  test "[unit] Task#release_train is a reader; the retired devops release_train key is still refused" do
+    assert_raises(ArgumentError) { Task.normalize_devops_metadata("release_train" => "rel-x", "kind" => "feature") }
+    assert_equal "turf-monster", task_naming([ "turf-monster" ]).release_train
+  end
+
   test "[unit] Task#release_train counts a repo carried only by a PR url" do
     task = Task.create!(title: "train via pr url", stage: "reviewed",
                         metadata: { "devops" => { "shape" => "backend", "repositories" => [ "turf-monster" ],

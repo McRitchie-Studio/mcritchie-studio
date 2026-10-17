@@ -71,7 +71,11 @@ class Release
     # promoted here: the hub sweep leaves an app train's tasks for that train, and an
     # app train never sweeps hub work. nil (the default) applies no train filter, for
     # a bare partition test; every live caller passes the train it runs.
-    def compute(rows, parked: {}, train: nil, trains: {})
+    #
+    # `riding:` is the slug of the train's ACTIVE release: a row already attached to
+    # it ("release_slug") keeps riding whatever its repos say, so a member swept
+    # before its app's train existed is never stranded off its own release.
+    def compute(rows, parked: {}, train: nil, trains: {}, riding: nil)
       rows = Array(rows).map { |row| normalize(row) }
       parked_map = (parked || {}).to_h { |repo, ladder| [ repo.to_s.strip, ladder.to_s ] }
 
@@ -90,6 +94,7 @@ class Release
         other_train = rows.filter_map do |row|
           rides = Release::Trains.train_for(row["repos"], trains || {})
           next if rides == train.to_s
+          next if !riding.to_s.empty? && row["release_slug"] == riding.to_s
 
           { "slug" => row["slug"], "stage" => row["stage"], "repos" => row["repos"], "train" => rides }
         end
@@ -245,6 +250,7 @@ class Release
         "pr_url"  => row["pr_url"].to_s,
         "repo"    => row["repo"].to_s,
         "kind"    => row["kind"].to_s,
+        "release_slug" => row["release_slug"].to_s,
         "repos"   => strings(row["repos"] || [ row["repo"] ]),
         "pr_urls" => normalize_map(row["pr_urls"], row["repo"], row["pr_url"])
       }

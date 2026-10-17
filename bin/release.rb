@@ -1862,7 +1862,7 @@ def batch_resolve_ruby(slugs, override: false)
   "slugs = #{slugs.inspect}; " \
   "rows = slugs.map { |s| t = Task.find_by(slug: s); " \
   "t ? { slug: t.slug, pr_url: (t.respond_to?(:pr_url_or_derived) ? t.pr_url_or_derived : t.devops_url('pr')).to_s, repo: t.release_repo.to_s, stage: t.stage, " \
-  "merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, kind: t.release_kind.to_s, repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls) } " \
+  "merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, kind: t.release_kind.to_s, repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls), release_slug: t.release_slug.to_s } " \
   ": { slug: s, missing: true } }; " \
   "screen = Release::Conductor.screen_merge(slugs, override: #{override ? 'true' : 'false'}); " \
   "cur = #{rel_current}; " \
@@ -2348,7 +2348,8 @@ def merge
   #    this EXPLICIT command a held task is a HARD abort: the operator named it and
   #    there is no code on `accepted` to promote — silently dropping it would lie.
   plan = Release::SweepPlan.compute(infos, parked: Release::Ladder.parked(RELEASE_REPOS),
-                                    train: TRAIN, trains: RELEASE_TRAINS)
+                                    train: TRAIN, trains: RELEASE_TRAINS,
+                                    riding: (resolved["release"] || {})["slug"])
 
   # 2-bis. PARKED-REPO REFUSAL — first, because SweepPlan partitions a parked row out
   #     before anything else, so it sits in NO other list: without this abort `merge`
@@ -2495,7 +2496,7 @@ def sweep_detect_ruby(only_slugs)
   "tasks = tasks.select { |t| only.include?(t.slug) } if only; " \
   "rows = tasks.map { |t| { slug: t.slug, stage: t.stage, merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, " \
   "pr_url: (t.respond_to?(:pr_url_or_derived) ? t.pr_url_or_derived : t.devops_url('pr')).to_s, repo: t.release_repo.to_s, kind: t.release_kind.to_s, " \
-  "repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls) } }; " \
+  "repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls), release_slug: t.release_slug.to_s } }; " \
   "screen = Release::Conductor.screen_merge(rows.map { |x| x[:slug] }); " \
   "r = #{rel_current}; " \
   "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state } : nil), screen: screen }.to_json)"
@@ -3739,7 +3740,7 @@ def prepare
   #    A candidate riding ANOTHER release train (config/release_trains.yml) is held the
   #    same way, on its own `⚠ HELD` line naming the train that sweeps it.
   plan = Release::SweepPlan.compute(cands, parked: Release::Ladder.parked(RELEASE_REPOS),
-                                    train: TRAIN, trains: RELEASE_TRAINS)
+                                    train: TRAIN, trains: RELEASE_TRAINS, riding: active && active["slug"])
 
   # 3a. MULTI-REPO COVERAGE REFUSAL — fail-closed, and the earliest seam that can
   #     see it: nothing has been claimed, promoted, recorded or deployed yet. A

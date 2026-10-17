@@ -34,8 +34,11 @@ class Release
     # `release` defaults to that train's current release.
     def sweep_candidates(release = CURRENT_RELEASE, train: Release::DEFAULT_TRAIN)
       release = Release.current(train) if release.equal?(CURRENT_RELEASE)
+      # A task ALREADY attached to this train's current release keeps riding it
+      # whatever its repos say (a member swept before its app's train existed), so
+      # the train never strands its own member.
       reviewed, other_reviewed = Task.where(stage: "reviewed").order(:position).to_a
-                                     .partition { |task| task.release_train == train }
+                                     .partition { |task| task.release_train == train || (release && task.release_slug == release.slug) }
       reviewed, parked_reviewed = reviewed.partition { |task| parked_repos(task).empty? }
       stragglers, parked_stragglers = straggler_tasks(release, train: train).partition { |task| parked_repos(task).empty? }
       {
@@ -109,6 +112,18 @@ class Release
     # as before trains). Release#add refuses a task whose repo another active train
     # holds.
     def sweep!(task, override: false, train: Release::DEFAULT_TRAIN)
+      # THE TRAIN BACKSTOP for the explicit doors (`bin/release merge`, curate!'s
+      # --task list): sweep_candidates already holds another train's task, but a
+      # named slug skips that read. Checked before anything opens or records. A
+      # task already attached to this train's current release keeps riding it, and
+      # `override` is the audited escape hatch.
+      riding = task.release_slug.present? && task.release_slug == Release.current(train)&.slug
+      if !override && !riding && task.release_train != train
+        rides = task.release_train
+        raise ArgumentError, "task #{task.slug} rides the #{rides} train, not #{train}: sweep it with " \
+                             "`bin/release prepare#{rides == Release::DEFAULT_TRAIN ? '' : " --train #{rides}"}`"
+      end
+
       release = Release.current_or_open!(train)
       stamp_session_mascot(release)
       # The first sweep IS the start of assembly — record it so the stage

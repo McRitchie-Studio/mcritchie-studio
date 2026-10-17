@@ -340,6 +340,16 @@ class Release::SweepPlanTest < ActiveSupport::TestCase
     assert(plan["other_train"].all? { |e| e["train"] == "hub" })
   end
 
+  test "[unit] a row already riding the train's active release is not held" do
+    member = train_row("turf-legacy", [ "turf-monster" ]).merge("release_slug" => "rel-20261016-abc")
+    plan = Release::SweepPlan.compute([ member ], train: "hub", trains: TRAINS, riding: "rel-20261016-abc")
+    assert_equal [ "turf-legacy" ], plan["sweep"]
+    assert_empty plan["other_train"]
+
+    plan = Release::SweepPlan.compute([ member ], train: "hub", trains: TRAINS, riding: "rel-other")
+    assert_equal [ "turf-legacy" ], plan["other_train"].map { |e| e["slug"] }
+  end
+
   test "[unit] no train applies no train filter (a bare partition)" do
     plan = Release::SweepPlan.compute([ train_row("turf-only", [ "turf-monster" ]) ])
     assert_equal [ "turf-only" ], plan["sweep"]
