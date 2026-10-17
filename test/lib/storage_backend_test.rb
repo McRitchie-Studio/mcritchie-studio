@@ -177,7 +177,10 @@ class StorageBackendTest < ActiveSupport::TestCase
 
   def endpoint_of(service) = service.client.client.config.endpoint.to_s
 
-  test "storage.yml renders the two disk services and the two R2 services, and nothing else" do
+  # chat_private (AgentMessages::Attachments) renders as Disk under the test env;
+  # its R2 shape outside it is StorageBackend.chat_private_service, pinned in
+  # test/services/agent_messages/web_ingest_attachments_test.rb.
+  test "storage.yml renders the disk services, the two R2 services and the chat's private service, and nothing else" do
     r2 = { "service" => "StudioTrashS3", "endpoint" => R2_ENDPOINT, "access_key_id" => "r2-sentinel-id",
            "secret_access_key" => "r2-sentinel-secret", "region" => "auto",
            "request_checksum_calculation" => "when_required", "response_checksum_validation" => "when_required" }
@@ -185,7 +188,8 @@ class StorageBackendTest < ActiveSupport::TestCase
       "test" => { "service" => "Disk", "root" => Rails.root.join("tmp/storage").to_s },
       "local" => { "service" => "Disk", "root" => Rails.root.join("storage").to_s },
       "amazon" => r2.merge("bucket" => "mcritchie-studio-production"),
-      "amazon_dev" => r2.merge("bucket" => "mcritchie-studio-dev")
+      "amazon_dev" => r2.merge("bucket" => "mcritchie-studio-dev"),
+      "chat_private" => { "service" => "Disk", "root" => Rails.root.join("tmp/storage_chat_private").to_s }
     }
     assert_equal expected, storage_configs.deep_stringify_keys, "unset renders R2"
     assert_equal expected, storage_configs("ACTIVE_STORAGE_BACKEND" => "r2").deep_stringify_keys
