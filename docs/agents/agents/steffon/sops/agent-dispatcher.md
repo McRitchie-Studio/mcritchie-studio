@@ -89,7 +89,10 @@ The dispatcher will take it on its next poll; a hand claim only competes with it
 | What you watch | `/admin/agent_messages`: the dispatcher row (live, paused, silent) above the message list |
 
 **Billing.** Claude runs as `claude -p --safe-mode --tools "" --output-format json`
-under Alex's claude.ai login. Every child gets an allow-listed environment
+under Alex's claude.ai login (a web chat message with images or PDFs runs the same
+command with `--output-format stream-json --input-format stream-json --verbose`, and
+the Mac needs ImageMagick's `magick` on the launch agent's PATH to shrink and strip
+the images: `docs/agents/system/agent-message-loop.md`, "Files"). Every child gets an allow-listed environment
 (`AgentMailbox::CHILD_ENV_ALLOW`: the basics and the agent board's own names; no
 Heroku credential, since no action reads Heroku), so no API key, auth token, base URL or
 Bedrock/Vertex switch can reach Claude, including ones Anthropic adds later.

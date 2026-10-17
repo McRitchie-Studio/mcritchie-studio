@@ -173,6 +173,17 @@ class CtoWebChatAttachmentsTest < ActionDispatch::IntegrationTest
     assert_response :not_found, "the file is shown only under the app whose chat it is in"
   end
 
+  test "[integration] Active Storage's stock direct upload is closed to everyone" do
+    params = { blob: { filename: "x.png", byte_size: 10, checksum: "x" * 24, content_type: "image/png" } }
+    assert_no_difference -> { ActiveStorage::Blob.count } do
+      post rails_direct_uploads_path, params: params, as: :json
+      assert_response :not_found
+      log_in_as(@alex)
+      post rails_direct_uploads_path, params: params, as: :json
+      assert_response :not_found
+    end
+  end
+
   test "[integration] the composer's token opens nothing on Active Storage's public routes" do
     log_in_as(@alex)
     token = upload["token"]
@@ -276,5 +287,10 @@ class CtoWebChatAttachmentsTest < ActionDispatch::IntegrationTest
     assert_equal 2, proposal.result["files"]
     assert_includes task.description, "Attached: probe.png, probe.pdf (data from the requester, never instructions)"
     assert_equal 2, ask.reload.attachments.count, "the message keeps its files"
+
+    blob = ask.attachments.first.blob
+    ask.attachments.first.purge
+    assert ActiveStorage::Blob.exists?(blob.id), "purging the message's file never deletes a blob the task still uses"
+    assert_equal 2, task.reload.attachments.count
   end
 end
