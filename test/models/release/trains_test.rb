@@ -75,7 +75,7 @@ class Release::TrainsTest < ActiveSupport::TestCase
     repos = trains.values.flat_map { |entry| entry["repos"] }
     assert_equal repos.uniq, repos, "a repo belongs to at most one listed train"
     repos.each do |repo|
-      assert Release::Repos.app?(repo), "#{repo} must be an app in config/release_repos.yml"
+      assert Release::Repos.app?(repo), "#{repo} must be an app in the Release::Repos registry"
       refute Release::Repos.gem?(repo), "#{repo}: gems publish only on the hub train"
       assert_equal "three-rung", Release::Repos.ladder(repo), "#{repo} must walk accepted → release → main"
     end
