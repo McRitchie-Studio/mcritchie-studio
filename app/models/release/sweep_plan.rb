@@ -63,7 +63,15 @@ class Release
     # half would stamp the task assembled, then shipped, for a repo that never moved
     # — the same lie the 2026-08-13 half-ship told. `live` names what was withheld,
     # so the hold line can say so.
-    def compute(rows, parked: {})
+    #
+    # `train:` — THE TRAIN THIS SWEEP ASSEMBLES (release-trains-design.md §2), with
+    # `trains:` the listed trains (Release::Trains.config, passed in like `parked:`).
+    # A row that rides ANOTHER train (Release::Trains.train_for over its repos) is held
+    # under "other_train" — { "slug", "stage", "repos", "train" } — never recorded or
+    # promoted here: the hub sweep leaves an app train's tasks for that train, and an
+    # app train never sweeps hub work. nil (the default) applies no train filter, for
+    # a bare partition test; every live caller passes the train it runs.
+    def compute(rows, parked: {}, train: nil, trains: {})
       rows = Array(rows).map { |row| normalize(row) }
       parked_map = (parked || {}).to_h { |repo, ladder| [ repo.to_s.strip, ladder.to_s ] }
 
@@ -76,6 +84,18 @@ class Release
       end
       parked_slugs = held_parked.map { |row| row["slug"] }
       rows = rows.reject { |row| parked_slugs.include?(row["slug"]) }
+
+      other_train = []
+      unless train.nil?
+        other_train = rows.filter_map do |row|
+          rides = Release::Trains.train_for(row["repos"], trains || {})
+          next if rides == train.to_s
+
+          { "slug" => row["slug"], "stage" => row["stage"], "repos" => row["repos"], "train" => rides }
+        end
+        other_slugs = other_train.map { |row| row["slug"] }
+        rows = rows.reject { |row| other_slugs.include?(row["slug"]) }
+      end
 
       blocked = rows.filter_map do |row|
         missing = repo_coverage_gap(repos: row["repos"], pr_repos: row["pr_urls"].keys,
@@ -95,8 +115,21 @@ class Release
         "held"    => held.map { |row| row["slug"] },
         "sweep"   => record.map { |row| row["slug"] },
         "blocked" => blocked,
-        "parked"  => held_parked
+        "parked"  => held_parked,
+        "other_train" => other_train
       }
+    end
+
+    # The `⚠ HELD` sweep line for one "other_train" entry: the task, the train it
+    # rides, the stage it keeps, and the command that sweeps it. Pure, like
+    # #parked_hold_line.
+    def other_train_hold_line(entry, train)
+      stage = entry["stage"].to_s.strip.empty? ? "reviewed" : entry["stage"].to_s
+      rides = entry["train"].to_s
+      flag  = rides == Release::Trains::HUB ? "" : " --train #{rides}"
+      "⚠ HELD #{entry['slug']}: rides the #{rides} train (names #{strings(entry['repos']).join(', ')}), not " \
+        "#{train} — a repo rides one train at a time; left `#{stage}`, not promoted or recorded here. " \
+        "Sweep it with `bin/release prepare#{flag}`."
     end
 
     # The `⚠ HELD` sweep line for one "parked" entry: the task, every parked repo it

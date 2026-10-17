@@ -180,6 +180,7 @@ require_relative "../app/models/release/merge_plan"
 # SweepPlan is the pure per-task sweep partition (record onto the RC / held anomaly)
 # behind prepare's self-healing sweep + merge, plus the batch-PR base assertion.
 # Rails-free.
+require_relative "../app/models/release/trains"
 require_relative "../app/models/release/sweep_plan"
 # PromotePlan decides fast-forward or batch PR for the promote, the carry of
 # `release` back onto `accepted`, and which branch a consumer lock bump lands on.
@@ -460,6 +461,19 @@ DRY = Release::Cli.take_flag(ARGV, "--dry-run")
 Release::Cli.take_flag(ARGV, "--prod")
 PROD = !Release::Cli.take_flag(ARGV, "--local")
 ASSUME_YES = Release::Cli.take_flag(ARGV, "--yes")
+# THE RELEASE TRAIN this run drives (release-trains-design.md §2). Global like the
+# flags above: consumed at load, before the argument guard reads the line. Absent →
+# the hub, and every snippet this CLI sends the board is then exactly what it sent
+# before trains existed (rel_current & co. render the bare `Release.current`). A bare
+# or unknown `--train` is refused at dispatch (TRAIN_ERROR), never read as the hub.
+RELEASE_TRAINS =
+  begin
+    Release::Trains.config
+  rescue StandardError => e
+    TRAINS_CONFIG_ERROR = "config/release_trains.yml is unreadable (#{e.message})"
+    {}
+  end
+TRAIN, TRAIN_ERROR = Release::Trains.take_flag(ARGV, RELEASE_TRAINS)
 # The FIRST-CLASS override for a ship test gate the operator believes is a false
 # negative. It replaces the old registry-blanking trick, which silently DISARMED
 # the gate; this one demands `--reason`, confirms, and records a RED gate SOP. See
@@ -1251,7 +1265,38 @@ end
 # runs in dry-run — a read mutates nothing, so it honors "execute nothing" while
 # letting a dry-run PREVIEW the real plan. read_only goes straight to Open3 so
 # it bypasses sh's own dry-run gate.
+# --- the release train (release-trains-design.md §2) ---------------------------
+# The board lookups every snippet names, rendered for TRAIN. On the hub each renders
+# the bare pre-train call (`Release.current`), so a hub run sends the board the same
+# Ruby it always did; another train names itself (`Release.current("turf-monster")`).
+def hub_train? = TRAIN.to_s == Release::Trains::HUB
+def rel_current = hub_train? ? "Release.current" : "Release.current(#{TRAIN.inspect})"
+def rel_last_shipped = hub_train? ? "Release.last_shipped" : "Release.last_shipped(#{TRAIN.inspect})"
+def rel_current_or_open = hub_train? ? "Release.current_or_open!" : "Release.current_or_open!(#{TRAIN.inspect})"
+# The `, train: "<slug>"` keyword for a conductor call; "" on the hub.
+def train_kwarg = hub_train? ? "" : ", train: #{TRAIN.inspect}"
+# This train's forming sentinel: the bare `__forming__` on the hub.
+def forming_slug = ReleaseClaimCli.forming_slug(TRAIN)
+# A snippet sent for a non-hub train first proves the deployed board can route
+# trains. Task A's `Release.current(train)` predates the train-scoped conductor
+# (`sweep!(…, train:)`, `sweep_candidates(train:)`), so an older board would raise
+# an ArgumentError halfway through a write; this refuses before the first one.
+TRAIN_BOARD_GUARD = "raise 'the production board predates release trains (task B): ship it before --train' " \
+                    "unless Task.method_defined?(:release_train); "
+# The train an arbitrary repo list rides, judged from the CLI's OWN config, so a
+# hold works against a board that predates trains.
+def train_for_repos(repos) = Release::Trains.train_for(repos, RELEASE_TRAINS)
+
+def refuse_bad_train!
+  error = defined?(TRAINS_CONFIG_ERROR) ? TRAINS_CONFIG_ERROR : TRAIN_ERROR
+  return unless error
+
+  warn "bin/release: #{error}. Nothing was run."
+  exit 1
+end
+
 def conductor(ruby, read_only: false)
+  ruby = TRAIN_BOARD_GUARD + ruby unless hub_train?
   payload = conductor_payload(with_conductor_session(ruby))
   cmd = PROD ? ["heroku", "run", "-a", APP, "--no-tty", "rails", "runner", payload]
              : ["bin/rails", "runner", payload]
@@ -1817,7 +1862,7 @@ def batch_resolve_ruby(slugs, override: false)
   "merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, kind: t.release_kind.to_s, repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls) } " \
   ": { slug: s, missing: true } }; " \
   "screen = Release::Conductor.screen_merge(slugs, override: #{override ? 'true' : 'false'}); " \
-  "cur = Release.current; " \
+  "cur = #{rel_current}; " \
   "puts({ tasks: rows, screen: screen, release: (cur ? { slug: cur.slug } : nil) }.to_json)"
 end
 
@@ -1842,7 +1887,7 @@ end
 # Emits ONE JSON line: { "swept": [...], "slug": <last release>, "state" }.
 def batch_sweep_ruby(slugs, override: false)
   "out = Release.transaction { slugs = #{slugs.inspect}; " \
-  "results = slugs.map { |s| r = Release::Conductor.sweep!(Task.find_by!(slug: s), override: #{override ? 'true' : 'false'}); " \
+  "results = slugs.map { |s| r = Release::Conductor.sweep!(Task.find_by!(slug: s), override: #{override ? 'true' : 'false'}#{train_kwarg}); " \
   "{ task: s, release: r.slug, state: r.state } }; " \
   "last = results.last; " \
   "Release::Conductor.validate_members!(Release.find_by!(slug: last[:release])) if last; " \
@@ -2299,7 +2344,8 @@ def merge
   #    with no merged stamp — review never landed its feat PR on `accepted`). For
   #    this EXPLICIT command a held task is a HARD abort: the operator named it and
   #    there is no code on `accepted` to promote — silently dropping it would lie.
-  plan = Release::SweepPlan.compute(infos, parked: Release::Ladder.parked(RELEASE_REPOS))
+  plan = Release::SweepPlan.compute(infos, parked: Release::Ladder.parked(RELEASE_REPOS),
+                                    train: TRAIN, trains: RELEASE_TRAINS)
 
   # 2-bis. PARKED-REPO REFUSAL — first, because SweepPlan partitions a parked row out
   #     before anything else, so it sits in NO other list: without this abort `merge`
@@ -2309,6 +2355,15 @@ def merge
     abort!("merge refused #{plan['parked'].size} task(s) naming a parked repo — the conductor sweeps " \
            "three-rung repos only, so NOTHING was promoted or recorded: " \
            "#{plan['parked'].map { |entry| Release::SweepPlan.parked_hold_line(entry) }.join(' ')}")
+  end
+
+  # 2-ter. OTHER-TRAIN REFUSAL — the same reason one rule over: a task riding another
+  #     release train (config/release_trains.yml) sits in no other list, so merge would
+  #     drop it silently. The operator named it; say which train sweeps it.
+  if plan["other_train"].any?
+    abort!("merge refused #{plan['other_train'].size} task(s) riding another release train — NOTHING was " \
+           "promoted or recorded: " \
+           "#{plan['other_train'].map { |entry| Release::SweepPlan.other_train_hold_line(entry, TRAIN) }.join(' ')}")
   end
 
   # 2a. MULTI-REPO COVERAGE REFUSAL — prepare's step 3a, on the path prepare itself
@@ -2349,7 +2404,7 @@ def merge
   # the claim on EVERY exit. Inert under --dry-run (conductor_claim no-ops).
   active = resolved["release"]
   assembler_slug = (active && active["slug"]).to_s.strip
-  assembler_slug = ReleaseClaimCli::FORMING_SLUG if assembler_slug.empty?
+  assembler_slug = forming_slug if assembler_slug.empty?
   acquire_conductor_claim!("assembler", assembler_slug)
   begin
     # 3. PROMOTE accepted → release (the accepted-ladder's SECOND rung). SEMANTIC
@@ -2390,7 +2445,7 @@ def merge
     # real recorded slug so a --dry-run (no record) never claims a bogus slug.
     if result["slug"].to_s.strip != ""
       acquire_conductor_claim!("assembler", result["slug"])
-      release_conductor_claim!(role: "assembler", slug: ReleaseClaimCli::FORMING_SLUG)
+      release_conductor_claim!(role: "assembler", slug: forming_slug)
     end
 
     say("")
@@ -2432,14 +2487,14 @@ end
 def sweep_detect_ruby(only_slugs)
   only = only_slugs.empty? ? "nil" : only_slugs.inspect
   "only = #{only}; " \
-  "c = Release::Conductor.sweep_candidates; " \
-  "tasks = c['reviewed'] + c['stragglers'] + (c['parked'] || []); " \
+  "c = Release::Conductor.sweep_candidates#{hub_train? ? '' : "(train: #{TRAIN.inspect})"}; " \
+  "tasks = c['reviewed'] + c['stragglers'] + (c['parked'] || []) + (c['other_train'] || []); " \
   "tasks = tasks.select { |t| only.include?(t.slug) } if only; " \
   "rows = tasks.map { |t| { slug: t.slug, stage: t.stage, merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, " \
   "pr_url: (t.respond_to?(:pr_url_or_derived) ? t.pr_url_or_derived : t.devops_url('pr')).to_s, repo: t.release_repo.to_s, kind: t.release_kind.to_s, " \
   "repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls) } }; " \
   "screen = Release::Conductor.screen_merge(rows.map { |x| x[:slug] }); " \
-  "r = Release.current; " \
+  "r = #{rel_current}; " \
   "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state } : nil), screen: screen }.to_json)"
 end
 
@@ -2451,11 +2506,11 @@ end
 # landed, but the next run self-heals (the gh-merge failure falls back to
 # pr_merged?). Emits ONE JSON line: { slug, state, swept, repos }.
 def batch_sweep_with_plan_ruby(slugs, release_slug = nil)
-  open_ruby = release_slug ? "Release.open!(slug: #{release_slug.inspect}) if Release.current.nil?; " : ""
+  open_ruby = release_slug ? "Release.open!(slug: #{release_slug.inspect}#{train_kwarg}) if #{rel_current}.nil?; " : ""
   "result = Release.transaction { #{open_ruby}" \
   "slugs = #{slugs.inspect}; " \
-  "slugs.each { |s| Release::Conductor.sweep!(Task.find_by!(slug: s)) }; " \
-  "r = Release.current_or_open!; " \
+  "slugs.each { |s| Release::Conductor.sweep!(Task.find_by!(slug: s)#{train_kwarg}) }; " \
+  "r = #{rel_current_or_open}; " \
   "Release::Conductor.validate_members!(r); " \
   "{ slug: r.slug, state: r.state, swept: slugs, repos: Release::Conductor.repo_plan(r) } }; " \
   "puts(result.to_json)"
@@ -3667,7 +3722,7 @@ def prepare
   #     resolves below, so ownership is continuous across the promote.
   stood_down = -> { close_role_span("stood down — another session is assembling this release") }
   assembler_slug = ((active && active["slug"]) || slug).to_s.strip
-  assembler_slug = ReleaseClaimCli::FORMING_SLUG if assembler_slug.empty?
+  assembler_slug = forming_slug if assembler_slug.empty?
   acquire_conductor_claim!("assembler", assembler_slug, span_close: stood_down)
 
   # 3. SWEEP PLAN (pure: Release::SweepPlan): partition the candidates into the
@@ -3678,7 +3733,10 @@ def prepare
   #    sweep never aborts on it. A candidate naming a PARKED repo (the registry's
   #    non-three-rung ladders) is held the same way, whole, and named on a `⚠ HELD`
   #    line: it is never promoted, recorded or deployed, and the rest sweeps on.
-  plan = Release::SweepPlan.compute(cands, parked: Release::Ladder.parked(RELEASE_REPOS))
+  #    A candidate riding ANOTHER release train (config/release_trains.yml) is held the
+  #    same way, on its own `⚠ HELD` line naming the train that sweeps it.
+  plan = Release::SweepPlan.compute(cands, parked: Release::Ladder.parked(RELEASE_REPOS),
+                                    train: TRAIN, trains: RELEASE_TRAINS)
 
   # 3a. MULTI-REPO COVERAGE REFUSAL — fail-closed, and the earliest seam that can
   #     see it: nothing has been claimed, promoted, recorded or deployed yet. A
@@ -3699,6 +3757,7 @@ def prepare
   end
 
   plan["parked"].each { |entry| say("  #{Release::SweepPlan.parked_hold_line(entry)}") }
+  plan["other_train"].each { |entry| say("  #{Release::SweepPlan.other_train_hold_line(entry, TRAIN)}") }
   held = plan["held"]
   held.each do |s|
     say("  ⚠ #{s}: `reviewed` but merged:\"\" — review never landed its feat PR on `#{ACCEPTED_BRANCH}`; " \
@@ -3739,6 +3798,12 @@ def prepare
              "deployed. Ship the whole release instead: run the `Xan Heartbeat` `full-cycle` launcher.")
     end
   end
+
+  # 4a-train. AN APP TRAIN PROMOTES ONLY ITS OWN WORK (release-trains-design.md §2).
+  #     The promote below lands ALL of a repo's `accepted`; on an app train that must
+  #     not carry a hub-train task's commit (an app-plus-engine task, whose app half
+  #     would ship before the hub publishes its gem). Fail-closed, before the promote.
+  refuse_foreign_accepted_work! unless hub_train?
 
   # Promote EVERY repo each landed candidate names (`repos`), not just its primary.
   # This one line is where turf-monster was lost on 2026-08-13: it read `c["repo"]`,
@@ -3832,7 +3897,7 @@ def prepare
   #    in plan["sweep"], so it is never recorded onto the RC. Suppressed under
   #    --dry-run (the promotion previewed above; nothing recorded).
   landed = plan["sweep"]
-  left_reviewed = held + plan["parked"].map { |entry| entry["slug"] }
+  left_reviewed = held + plan["parked"].map { |entry| entry["slug"] } + plan["other_train"].map { |entry| entry["slug"] }
   result = {}
   if landed.any? && !DRY
     step("record: Release::Conductor.sweep! ×#{landed.size} + repo plan in ONE run (#{landed.join(', ')})")
@@ -3844,7 +3909,7 @@ def prepare
   if (result["repos"] || []).empty?
     step("record (read-only): Release::Conductor.repo_plan(Release.current)")
     result = conductor(
-      "r = Release.current; " \
+      "r = #{rel_current}; " \
       "puts((r ? { slug: r.slug, state: r.state, branch: r.branch, repos: Release::Conductor.repo_plan(r) } : {}).to_json)",
       read_only: true
     )
@@ -3866,7 +3931,7 @@ def prepare
   if result["slug"].to_s.strip != ""
     acquire_conductor_claim!("assembler", rel_slug,
                              span_close: -> { close_role_span("stood down — another session is assembling this release") })
-    release_conductor_claim!(role: "assembler", slug: ReleaseClaimCli::FORMING_SLUG)
+    release_conductor_claim!(role: "assembler", slug: forming_slug)
   end
 
   repos = result["repos"] || []
@@ -3956,7 +4021,7 @@ def prepare
   # consumer bump: a lock on a candidate never exists without it.
   if published_gems.any?
     step("record: gem candidate stamp (flow #{GEM_CANDIDATE_FLOW}) #{published_gems.map { |g, v| "#{g} #{v}" }.join(', ')}")
-    conductor("r = Release.current; r.update!(metadata: (r.metadata || {}).merge('gem_candidates' => " \
+    conductor("r = #{rel_current}; r.update!(metadata: (r.metadata || {}).merge('gem_candidates' => " \
               "#{gem_candidate_stamp(published_gems).inspect})); puts({gem_candidates: true}.to_json)")
   end
   bump_consumer_locks_for_qa(app_groups, published_gems)
@@ -3998,7 +4063,7 @@ def prepare
   step("record: Avi assembled QA intent (live crew ticker)")
   record_deploy_intent(
     "Avi assembled QA intent",
-    "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'assembled', actor: 'avi'); " \
+    "r = #{rel_current}; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'assembled', actor: 'avi'); " \
     "puts({ intent: 'assembled', actor: 'avi', members: n.size }.to_json)"
   )
 
@@ -4125,11 +4190,11 @@ def prepare
   primary = deployed.find { |d| d["repo"] == APP } || deployed.first
   if primary && !primary["qa_url"].empty?
     step("record: qa_url #{primary['qa_url']}")
-    conductor("Release::Conductor.record_qa_url(release: Release.current, qa_url: #{primary['qa_url'].inspect}); puts({qa_url: #{primary['qa_url'].inspect}}.to_json)")
+    conductor("Release::Conductor.record_qa_url(release: #{rel_current}, qa_url: #{primary['qa_url'].inspect}); puts({qa_url: #{primary['qa_url'].inspect}}.to_json)")
   end
   unless qa_shas.empty?
     step("record: qa_shas #{qa_shas.map { |r, s| "#{r}@#{s.to_s[0, 7]}" }.join(', ')}")
-    conductor("Release::Conductor.record_qa_shas(release: Release.current, shas: #{qa_shas.inspect}); puts({qa_shas: true}.to_json)")
+    conductor("Release::Conductor.record_qa_shas(release: #{rel_current}, shas: #{qa_shas.inspect}); puts({qa_shas: true}.to_json)")
   end
 
   # 8. QA-GREEN FLIP — the flip lands only AFTER every QA app booted
@@ -4192,7 +4257,7 @@ def prepare
       live_qa_url = primary && !primary["qa_url"].to_s.empty? ? primary["qa_url"] : nil
       step("record: Release::Conductor.qa_green!(Release.current) — QA green, flip swept members `assembled` + stamp Live-on-QA")
       conductor(
-        "r = Release.current; " \
+        "r = #{rel_current}; " \
         "Release::Conductor.qa_green!(r, usage_by_slug: #{usage.inspect}, qa_url: #{live_qa_url.inspect}) if r; " \
         "puts({ state: r&.reload&.state }.to_json)"
       )
@@ -4226,7 +4291,7 @@ def prepare
           "`#{Release::QaDeployCommand.for(qa_app: d['qa_app'], branch: RELEASE_BRANCH)}`")
     end
   end
-  say("  #{left_reviewed.join(', ')} left `reviewed` — no code on `#{ACCEPTED_BRANCH}` (re-review to heal), or `bin/task block` them.") if left_reviewed.any?
+  say("  #{left_reviewed.join(', ')} left `reviewed` — see the ⚠ line for each (no code on `#{ACCEPTED_BRANCH}`: re-review to heal, or `bin/task block` them).") if left_reviewed.any?
   # The Steffon handoff exists only on QA-green — a NOT-green prepare hands off to
   # NOBODY (the step-8 warning already said: re-run prepare once QA boots).
   if qa_green
@@ -4308,7 +4373,7 @@ def eject
   # --dry-run.
   step("record (read-only): resolve the active release for the assembler claim")
   active = conductor(
-    "r = Release.current; puts((r ? { slug: r.slug, state: r.state } : {}).to_json)",
+    "r = #{rel_current}; puts((r ? { slug: r.slug, state: r.state } : {}).to_json)",
     read_only: true
   )
 
@@ -4321,7 +4386,7 @@ def eject
   # (acquire_conductor_claim! aborts). eject is a discrete op (like merge/finalize), so the
   # begin/ensure frees the claim on EVERY exit. Inert under --dry-run (conductor_claim no-ops).
   assembler_slug = (active && active["slug"]).to_s.strip
-  assembler_slug = ReleaseClaimCli::FORMING_SLUG if assembler_slug.empty?
+  assembler_slug = forming_slug if assembler_slug.empty?
   acquire_conductor_claim!("assembler", assembler_slug)
   begin
     # Free-text feedback is safe to embed via .inspect: the whole snippet rides
@@ -4610,7 +4675,7 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
     ".order(:position).map { |t| { slug: t.slug, title: t.title } }; " \
     "accepted = Task.where(stage: 'reviewed', merged: 'accepted')" \
     ".order(:position).map { |t| { slug: t.slug, title: t.title } }; " \
-    "r = Release.current; " \
+    "r = #{rel_current}; " \
     "lane = begin; defined?(Release::LaneLease) ? Release::LaneLease.status_lines(r) : nil; " \
     "rescue StandardError => e; ['lane: unavailable (' + e.class.name + ')']; end; " \
     "puts({ pending: pending, accepted: accepted, lane: lane, " \
@@ -4801,6 +4866,63 @@ def stranded_task_index(stranded)
 rescue SystemExit, StandardError => e
   say("  (attribution unavailable: #{e.message}; the refusal below is unchanged)")
   {}
+end
+
+# The app-train prepare's accepted guard (step 4a-train). Reads, for each repo TRAIN
+# owns, the commits `accepted` is ahead of `release` by; names the tasks their merge
+# subjects carry (one board read); and REFUSES when any of those tasks rides another
+# train (Release::Trains.foreign_accepted_work). A repo it cannot read refuses too:
+# an app train ships unattended, so an unread `accepted` is not a clean one. A dry
+# run takes no fetch, so it says what it would check and moves on.
+def refuse_foreign_accepted_work!
+  repos = Release::Trains.repos_for(TRAIN, RELEASE_TRAINS) & release_repo_slugs
+  return if repos.empty?
+
+  if DRY
+    step("guard: would check `#{ACCEPTED_BRANCH}` in #{repos.join(', ')} carries only #{TRAIN}-train work — " \
+         "a dry run takes no fetch, so the guard runs live only")
+    return
+  end
+
+  step("guard: `#{ACCEPTED_BRANCH}` in #{repos.join(', ')} carries only #{TRAIN}-train work (the promote moves all of it)")
+  stranded   = {}
+  unreadable = []
+  repos.each do |repo|
+    path = repo_path(repo)
+    next unreadable << "#{repo} (no checkout at #{path})" unless Dir.exist?(path)
+
+    _out, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet", capture: true)
+    out, ok = sh("git", "-C", path, "log", "--merges", "--format=%h %s",
+                 "origin/#{RELEASE_BRANCH}..origin/#{ACCEPTED_BRANCH}", capture: true)
+    next unreadable << "#{repo} (git read failed)" unless fetched && ok
+
+    stranded[repo] = out.to_s.lines.filter_map do |line|
+      sha, subject = line.strip.split(" ", 2)
+      { "sha" => sha, "subject" => subject.to_s } unless sha.to_s.empty?
+    end
+  end
+  if unreadable.any?
+    abort!("prepare --train #{TRAIN} refused — could not read `#{ACCEPTED_BRANCH}` in #{unreadable.join(', ')}, so " \
+           "this train cannot prove it promotes only its own work. NOTHING was promoted, recorded or deployed.")
+  end
+
+  slugs = Release::MergeSubject.slugs_from_commits(stranded)
+  return say("  ✓ `#{ACCEPTED_BRANCH}` carries no task merge from another train") if slugs.empty?
+
+  board = conductor("slugs = #{slugs.inspect}; " \
+                    "puts({ tasks: Task.where(slug: slugs).map { |t| [t.slug, t.release_repos] }.to_h }.to_json)",
+                    read_only: true)
+  foreign = Release::Trains.foreign_accepted_work(stranded, board["tasks"] || {}, TRAIN, RELEASE_TRAINS)
+  if foreign.empty?
+    say("  ✓ `#{ACCEPTED_BRANCH}` carries only #{TRAIN}-train task merges (#{slugs.join(', ')})")
+    return
+  end
+
+  named = foreign.map { |f| "#{f['slug']} (#{f['train']} train, #{f['repo']} #{f['sha']})" }.uniq.join(", ")
+  abort!("prepare --train #{TRAIN} refused — `#{ACCEPTED_BRANCH}` carries work from another train: #{named}. The " \
+         "promote moves ALL of `#{ACCEPTED_BRANCH}`, so that task's commits would ship on this train, ahead of " \
+         "the hub release that publishes its other half. NOTHING was promoted, recorded or deployed. Ship it on " \
+         "its own train first (`bin/release prepare` for the hub), then re-run this train.")
 end
 
 def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
@@ -8715,7 +8837,7 @@ def ship
   #     stages / state do — so this is safe pre-claim. read_only bypasses the dry gate.
   step("record (read-only): resolve the release to ship")
   head = conductor(
-    "r = Release.current || Release.last_shipped; " \
+    "r = #{rel_current} || #{rel_last_shipped}; " \
     "abort('no active release to ship') unless r; " \
     "puts({slug: r.slug}.to_json)",
     read_only: true
@@ -8894,7 +9016,7 @@ def ship
   step("record: Steffon shipped intent (live crew ticker)")
   record_deploy_intent(
     "Steffon shipped intent",
-    "r = Release.current; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'shipped', actor: 'steffon'); " \
+    "r = #{rel_current}; n = Release::Conductor.record_deploy_intents!(r, to_stage: 'shipped', actor: 'steffon'); " \
     "puts({ intent: 'shipped', actor: 'steffon', members: n.size }.to_json)"
   )
   record_release_event(rel_slug, "deploy_prod", "started", actor: by)
@@ -9086,7 +9208,7 @@ def finalize(slug = nil)
   slug = slug.to_s.strip
   slug = opt_value("--slug").to_s.strip if slug.empty?
   step("record (read-only): resolve the release to finalize")
-  lookup = slug.empty? ? "Release.current || Release.last_shipped" : "Release.find_by(slug: #{slug.inspect})"
+  lookup = slug.empty? ? "#{rel_current} || #{rel_last_shipped}" : "Release.find_by(slug: #{slug.inspect})"
   head = conductor(
     "r = #{lookup}; " \
     "abort('no release to finalize' + (#{slug.inspect}.empty? ? '' : \" for slug #{slug}\")) unless r; " \
@@ -9596,7 +9718,8 @@ def archive
   step("record (read-only): plan archivable shipped tasks")
   plan = conductor(
     "puts({ archivable: Release::Conductor.archivable_completed_slugs, " \
-    "kept: (Release.last_shipped&.tasks&.pluck(:slug) || []) }.to_json)",
+    "kept: (Release::Conductor.respond_to?(:last_shipped_member_slugs) ? Release::Conductor.last_shipped_member_slugs : " \
+    "(Release.last_shipped&.tasks&.pluck(:slug) || [])) }.to_json)",
     read_only: true
   )
   archivable = plan["archivable"] || []
@@ -10233,7 +10356,7 @@ end
 # not shipped. Ordered on COALESCE(shipped_at, created_at), as last_shipped is, so a
 # NULL shipped_at sorts neither first nor out.
 def rollback_read_ruby(slug)
-  find = slug.empty? ? "Release.last_shipped" : "Release.find_by(slug: #{slug.inspect})"
+  find = slug.empty? ? rel_last_shipped : "Release.find_by(slug: #{slug.inspect})"
   "r = #{find}; " \
   "abort(#{(slug.empty? ? 'no shipped release to roll back' : "no release #{slug}").inspect}) unless r; " \
   "at = r.shipped_at || r.created_at; " \
@@ -10242,7 +10365,7 @@ def rollback_read_ruby(slug)
   ".order(Arel.sql('COALESCE(shipped_at, created_at) DESC')).limit(30); " \
   "later = shipped.where('COALESCE(shipped_at, created_at) > ?', at)" \
   ".order(Arel.sql('COALESCE(shipped_at, created_at) DESC')).first; " \
-  "cur = Release.current; " \
+  "cur = #{rel_current}; " \
   "puts({release: {slug: r.slug, state: r.state, deployed_sha: r.deployed_sha, " \
   "shipped_shas: (r.metadata['shipped_shas'] || {}), rolled_back: r.metadata['rolled_back'], " \
   "repos: Release::Conductor.repo_plan(r)}, " \
@@ -10426,6 +10549,7 @@ if __FILE__ == $PROGRAM_NAME
   # accounts for, instead of shifting the subcommand and letting the flag fall on
   # the floor. Unknown subcommands still fall through to the `else`.
   guard_argv!
+  refuse_bad_train!
   case ARGV.shift
   when "init"    then init
   when "merge"   then merge

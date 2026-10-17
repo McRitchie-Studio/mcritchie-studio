@@ -87,6 +87,36 @@ class Release
       HUB
     end
 
+    # THE APP TRAIN'S ACCEPTED GUARD (release-trains-design.md §2): the promote moves
+    # ALL of a repo's `accepted`, so an app train must not promote a repo whose
+    # `accepted` carries a commit from a task that rides ANOTHER train — typically an
+    # app-plus-engine task, whose app half would ship before the hub publishes its gem.
+    #
+    #   stranded   — { repo => [{ "sha", "subject" }] }, the commits `accepted` is
+    #                ahead of `release` by (bin/release reads them from git).
+    #   task_repos — { slug => [repo, ...] } for the task slugs the merge subjects
+    #                name (Release::MergeSubject), read from the board.
+    #
+    # Returns one { "repo", "sha", "subject", "slug", "train" } per commit whose task
+    # rides a train other than `train`. A commit no task can be read for (a feature
+    # commit under its merge, a rung merge, a slug the board does not know) is not
+    # attributable and not reported: the guard narrows to work it can name.
+    def foreign_accepted_work(stranded, task_repos, train, trains = config)
+      Hash(stranded).flat_map do |repo, commits|
+        Array(commits).filter_map do |commit|
+          subject = (commit["subject"] || commit[:subject]).to_s
+          slug = Release::MergeSubject.slug_from_subject(subject)
+          next unless slug && task_repos.key?(slug)
+
+          rides = train_for(task_repos[slug], trains)
+          next if rides == train.to_s
+
+          { "repo" => repo.to_s, "sha" => (commit["sha"] || commit[:sha]).to_s, "subject" => subject,
+            "slug" => slug, "train" => rides }
+        end
+      end
+    end
+
     # Parse `--train <slug>` (or `--train=<slug>`) out of argv, deleting it. Returns
     # [train, error]: the hub when the flag is absent, an error string when it is
     # present but empty or names no known train. Refusing here is the point: a bare

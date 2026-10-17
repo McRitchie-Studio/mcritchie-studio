@@ -1020,9 +1020,19 @@ class Release
     # `shipped` task that is NOT a member of Release.last_shipped. Pre-conductor
     # shipped tasks (no release_slug → in no release) fall in this set; the last
     # release's own members stay shipped as the board's read-only "Last Release".
+    #
+    # PER TRAIN (release-trains-design.md §2): each train keeps its own last shipped
+    # release's members, so archiving after a hub ship never empties an app train's
+    # "Last Release", and the reverse. With only the hub train this is the old rule.
     def archivable_completed_slugs
-      keep = Release.last_shipped&.tasks&.pluck(:slug) || []
+      keep = last_shipped_member_slugs
       Task.where(stage: "shipped").where.not(slug: keep).pluck(:slug)
+    end
+
+    # The members of every train's last shipped release, hub first.
+    def last_shipped_member_slugs
+      trains = [ Release::DEFAULT_TRAIN ] + Release.where(state: "shipped").distinct.pluck(:train)
+      trains.uniq.flat_map { |train| Release.last_shipped(train)&.tasks&.pluck(:slug) || [] }.uniq
     end
 
     # Archive every shipped task not carried by the last shipped release
@@ -1052,7 +1062,7 @@ class Release
     # `pause` defaults to 0 (tests and any programmatic caller run at full speed);
     # `bin/release archive` passes the operator-facing cadence.
     def archive_completed!(pause: 0)
-      kept     = Release.last_shipped&.tasks&.pluck(:slug) || []
+      kept     = last_shipped_member_slugs
       pause    = pause.to_f
       archived = []
       clock    = nil
