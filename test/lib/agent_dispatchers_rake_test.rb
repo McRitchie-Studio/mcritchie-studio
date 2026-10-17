@@ -49,8 +49,9 @@ class AgentDispatchersRakeTest < ActiveSupport::TestCase
   end
 
   test "sessions lists each lease; reset_session drops the head, checkpoint and lease" do
-    row = AgentDomainSession.acquire!(domain: DOMAIN, worker: "mac-1").row
-    row.checkpoint!(worker: "mac-1", session_id: "sess-0001", data: Zlib.gzip("x"), turns: 3, context_tokens: 9)
+    taken = AgentDomainSession.acquire!(domain: DOMAIN, worker: "mac-1")
+    row = taken.row
+    row.checkpoint!(worker: "mac-1", lease_key: taken.lease_key, session_id: "sess-0001", data: Zlib.gzip("x"), turns: 3, context_tokens: 9)
     assert_match(/#{DOMAIN} gen=1 turns=3 .*held by mac-1/, run_task("agent_dispatchers:sessions", {}))
 
     run_task("agent_dispatchers:reset_session", { "DOMAIN" => DOMAIN })
