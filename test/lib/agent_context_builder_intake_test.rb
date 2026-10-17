@@ -38,6 +38,13 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
     refute AgentMessages::MemoryBundle.new(other).bundle.key?("intake")
   end
 
+  test "an owner's message on a /build thread is answered as the public: the visitor reads that thread" do
+    owner = AgentPerson.create!(display_name: "Owner", role: "owner")
+    message = AgentMessage.create!(channel: "web", external_id: "build:o-1", channel_ref: "build", person: owner,
+                                   thread_key: BuildIntake.thread_key("a" * 24), soul_slug: "xan", content: "hi", status: "received")
+    assert_equal "public", AgentMessages::MemoryBundle.new(message).bundle.dig("audience", "role")
+  end
+
   test "the prompt prints the playbook, the state and the card format, and fences the idea" do
     text = prompt("audience" => { "role" => "public" },
                   "intake" => { "steps" => BuildIntake::STEPS, "done" => { "idea" => true, "cto" => false },

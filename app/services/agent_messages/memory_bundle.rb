@@ -82,7 +82,7 @@ module AgentMessages
         "message_id" => @message.id,
         "as_of" => as_of.iso8601,
         "place" => place(@message),
-        "audience" => AgentPerson.audience_for(person),
+        "audience" => AgentPerson.audience_for(audience_person),
         "person" => {
           "id" => @message.person_id, "display_name" => person&.display_name, "soul" => @message.soul_slug,
           "total" => total, "unread" => [ total - fetched.size, 0 ].max, "in_thread" => fetched.size - rows.size,
@@ -102,6 +102,11 @@ module AgentMessages
 
     def person = @message.person
 
+    # Whose role the answer is held to. A /build thread is read by whoever holds
+    # the request's token (BuildIntake), so every turn there is answered as the
+    # public, whoever sent it: no read action, internal context or owner notes.
+    def audience_person = BuildIntake.thread?(@message.thread_key) ? nil : person
+
     # A /build thread's intake state (BuildIntake::Context): what Xan asks next.
     # No key at all on any other thread.
     def intake_json
@@ -118,7 +123,7 @@ module AgentMessages
     def visible_notes
       return [] unless person
 
-      role = AgentPerson.audience_for(person)["role"]
+      role = AgentPerson.audience_for(audience_person)["role"]
       AgentPersonNote.visible_for(person, soul: @message.soul_slug, role: role)
                      .includes(:source_message).order(:noted_at, :id).to_a
                      .select { |note| AgentPersonNote.admissible?(note.body) }.uniq(&:fingerprint)
@@ -133,7 +138,7 @@ module AgentMessages
     # (`source_message_id`): a warm turn takes it only from a shown own turn
     # (AgentMailbox::WarmSession.eligible?).
     def proposals_json
-      audience = AgentProposal.audience_for(person)
+      audience = AgentProposal.audience_for(audience_person)
       last = AgentProposal.in_thread(@message).where("agent_proposals.created_at <= ?", @message.created_at)
                           .order(id: :desc).first
       { "catalog" => AgentProposal.registry.catalog(@message.soul_slug, audience: audience),
