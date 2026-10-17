@@ -96,7 +96,6 @@ module AgentMessages
     # Whether `cto` has a web chat: the `web:` block lists its soul.
     def self.available?(cto, routes: Routes.current) = cto.present? && routes.web_soul?(cto.soul)
 
-    # The person a web message from `user` is from. See THE PERSON above.
     # The person a web message from `user` would be from, read without making
     # one: nil until their first message (see THE PERSON above).
     def self.existing_person(user)
@@ -105,6 +104,7 @@ module AgentMessages
       AgentPersonIdentity.find_by(platform: "web", external_id: user.id.to_s)&.person || AgentPerson.find_by(user_id: user.id)
     end
 
+    # The person a web message from `user` is from. See THE PERSON above.
     def self.person_for(user, attempt: 1)
       external_id = user.id.to_s
       identity = AgentPersonIdentity.find_by(platform: "web", external_id: external_id)

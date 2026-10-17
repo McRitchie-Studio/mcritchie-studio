@@ -45,8 +45,10 @@ module AgentMessages
     # The app-owner block, checked. default_monthly_tokens caps an owner's
     # answers when the app's tier names no cto_monthly_tokens.
     AppOwners = Struct.new(:default_monthly_tokens, keyword_init: true)
-    # The roles the app-owner exception answers, and audits as a client: a person
-    # whose role is owner or team is answered (and spoken to) by that role already.
+    # The roles the app-owner exception answers, as a client. It never applies to
+    # an owner or team person: they are answered, or held, by their role alone
+    # (answered_roles), and spoken to as that role. A team-role app owner is held
+    # on their own thread while the list answers owner only.
     APP_OWNER_ROLES = %w[public client].freeze
 
     attr_reader :roles, :public_intake, :app_owners

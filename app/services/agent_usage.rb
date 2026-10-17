@@ -125,6 +125,15 @@ module AgentUsage
     (souls + [ front ]).compact.map(&:to_s).uniq
   end
 
+  # The souls and channel_ref a no-domain app is metered on: a client app's one
+  # `client_cto` (AppCto row), or a configured CTO (config/cto_reports.yml, e.g.
+  # Cyvasse's tyrion) that serves no domain, each on THAT app's rows only. [[], nil]
+  # for an app with neither.
+  def undomained_souls(app_slug)
+    cto = AppOwnership.cto_for_app(app_slug)
+    cto ? [ [ cto.soul ], app_slug.to_s ] : [ [], nil ]
+  end
+
   def month_range(now = Time.current)
     local = now.in_time_zone(ZONE)
     [ local.beginning_of_month, local.end_of_month ]
@@ -163,9 +172,8 @@ module AgentUsage
     start, finish = month_range(now)
     souls = souls_for(domain, registry: registry)
     ref = nil
-    if domain.nil? && AppCto.exists?(app_slug: app.slug)
-      souls = [ AppCto::SOUL ]
-      ref = app.slug
+    if domain.nil?
+      souls, ref = undomained_souls(app.slug)
     end
     package = app.package_tier.present? ? WorkspacePackage.find(app.package_tier) : nil
     allowance = allowance_for(app)
@@ -189,8 +197,7 @@ module AgentUsage
     return base if base.lifted || !base.unlimited? || fallback.nil?
 
     start, = month_range(now)
-    souls = AppCto.exists?(app_slug: app.slug) && base.domain.nil? ? [ AppCto::SOUL ] : souls_for(base.domain, registry: registry)
-    ref = souls == [ AppCto::SOUL ] ? app.slug : nil
+    souls, ref = base.domain.nil? ? undomained_souls(app.slug) : [ souls_for(base.domain, registry: registry), nil ]
     base.dup.tap do |m|
       m.allowance = fallback
       m.capped_count = capped_count(souls, start, now, ref: ref)
@@ -200,8 +207,11 @@ module AgentUsage
   # The meter a chat page shows `user` for `app`: the owner meter when the
   # app-owner rule answers them there, else the app's meter.
   def chat_meter(app, user:, soul:, now: Time.current, answerers: AgentMessages::Answerers.current)
-    owner = user && !answerers.role_answered?(AgentMessages::WebIngest.existing_person(user)) &&
-            answerers.app_owner_user?(user, app_slug: app.slug, soul: soul)
+    person = user && AgentMessages::WebIngest.existing_person(user)
+    # The same people the rule answers: no person yet (their first message makes
+    # a public one), or a public or client person. Owner and team never.
+    eligible = person.nil? || AgentMessages::Answerers::APP_OWNER_ROLES.include?(person.role)
+    owner = user && eligible && answerers.app_owner_user?(user, app_slug: app.slug, soul: soul)
     owner ? owner_meter(app, now: now, answerers: answerers) : meter(app, now: now)
   end
 
@@ -217,7 +227,10 @@ module AgentUsage
   def gate(message, now: Time.current, registry: self.registry, meters: nil)
     return Gate.new(state: :ok) if UNCAPPED_AUDIENCES.include?(message.usage_audience)
 
-    app_slug = if message.soul_slug == AppCto::SOUL
+    # An app owner's own thread names its app in channel_ref (set by WebIngest
+    # from the route), whether or not the CTO serves a domain (Cyvasse's does not).
+    owner_row = AgentMessages::Answerers.current.app_owner_thread?(message)
+    app_slug = if owner_row || message.soul_slug == AppCto::SOUL
                  message.channel_ref
                else
                  domain = registry.domain_key_for(message.soul_slug) || registry.front_door(message.soul_slug)&.dig("key")
@@ -226,7 +239,7 @@ module AgentUsage
     app = app_slug && App.find_by(slug: app_slug)
     return Gate.new(state: :ok) unless app
 
-    if AgentMessages::Answerers.current.app_owner_thread?(message)
+    if owner_row
       read = -> { owner_meter(app, now: now, registry: registry) }
       key = "owner:#{app.slug}"
     else

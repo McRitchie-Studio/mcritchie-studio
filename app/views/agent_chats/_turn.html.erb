@@ -20,6 +20,8 @@
       <p class="text-xs font-semibold text-muted mb-1"><%= agent_name %></p>
       <div class="prose-themed text-sm break-words [&>*:last-child]:mb-0"><%= SafeMarkdown.render(message.response_text, images: false) %></div>
     </div>
+  <% elsif message.status == "held" && message.events.exists?(kind: "confirm_refused") %>
+    <p class="self-start text-xs text-warning-ink" data-test="cto-chat-confirm-held">Only an admin can confirm or drop a proposal, so this waits for one. Nothing has run.</p>
   <% elsif message.status == "held" %>
     <p class="self-start text-xs text-warning-ink" data-test="cto-chat-held">Waiting for an admin: <%= agent_name %> does not answer this account yet.</p>
   <% elsif message.status == "dead" %>

@@ -46,6 +46,9 @@ soul the `souls:` map in `config/agent_domains.yml` gives that domain. A client 
 built through `/build` has no domain: its answers are the one `client_cto` soul's in
 THAT app's chat (`channel_ref`, the `ref:` filter), never another client app's, and the
 gate reads the app from the message's `channel_ref` ([`client-cto.md`](client-cto.md)).
+A configured CTO that serves no domain (Cyvasse's `tyrion`, `config/cto_reports.yml`)
+is metered the same way: its own soul's answers on THAT app's rows (`channel_ref`), and
+on an app owner's thread the gate takes the app from `channel_ref` too.
 
 - `AgentUsage.totals(souls:, from:, to:)`: answers, each token kind, cost and
   average duration. Each sum reads a key only where it holds a JSON number.

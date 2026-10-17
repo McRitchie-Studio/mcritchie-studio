@@ -187,6 +187,61 @@ class AnswerersAppOwnerTest < ActiveSupport::TestCase
     assert_equal "client", waiting.run_meta["audience"]
   end
 
+  # Cyvasse's shape: a configured CTO (tyrion, config/cto_reports.yml) that serves
+  # no domain in config/agent_domains.yml and has no AppCto row.
+  def cyvasse_owner!(cap: 500, spent: 500)
+    AgentMessages::Answerers.current = AgentMessages::Answerers.new([ "owner" ], app_owners: { "default_monthly_tokens" => cap })
+    app = App.find_by(slug: "cyvasse") || App.create!(slug: "cyvasse", name: "Cyvasse", emoji: "🐉", color: "#DC2626")
+    AppMembership.create!(app: app, user: @user)
+    assert_nil AgentUsage.domain_for_app("cyvasse"), "the shape under test: no domain"
+    refute AppCto.exists?(app_slug: "cyvasse")
+    used = row(app: "cyvasse", soul: "tyrion", status: "completed")
+    used.update_columns(completed_at: 1.minute.ago, run_meta: { "input_tokens" => spent, "audience" => "client" })
+    app
+  end
+
+  test "a no-domain CTO app (Cyvasse) is metered on its own soul, that app's rows only" do
+    app = cyvasse_owner!(spent: 300)
+    elsewhere = row(app: "turf-monster", soul: "tyrion", status: "completed", thread_key: "discord:1:1", channel: "discord")
+    elsewhere.update_columns(completed_at: 1.minute.ago, run_meta: { "input_tokens" => 9_999, "audience" => "client" })
+
+    assert_equal 300, AgentUsage.meter(app).used, "tyrion's answers on Cyvasse's chat, not its Discord rows"
+    assert_equal 300, AgentUsage.owner_meter(app).used
+  end
+
+  test "a no-domain CTO app's owner is capped at ingest" do
+    cyvasse_owner!
+    message = nil
+    assert_enqueued_with(job: AgentMessageReplyJob) { message = ingest(@user, "one more?", app: "cyvasse") }
+
+    assert_equal "completed", message.status
+    assert_match(/used its monthly agent allowance/, message.response_text)
+    assert_empty claimable_ids("tyrion")
+  end
+
+  test "a no-domain CTO app's owner row already received is capped at claim" do
+    cyvasse_owner!(spent: 0)
+    waiting = ingest(@user, "under the cap", app: "cyvasse")
+    assert_equal "received", waiting.status
+    AgentMessage.where(soul_slug: "tyrion", status: "completed").update_all(
+      run_meta: { "input_tokens" => 500, "audience" => "client" }
+    )
+
+    assert_nil AgentMessage.claim!(soul: "tyrion", worker: "w1").message
+    waiting.reload
+    assert_equal "completed", waiting.status
+    assert_match(/used its monthly agent allowance/, waiting.response_text)
+  end
+
+  test "a team-role app owner is held on their own thread, and the page shows them the app's meter, not the owner meter" do
+    @person.set_role!("team")
+    own = row
+
+    refute @answerers.allowed?(@person, message: own), "the shipped list answers owner only"
+    meter = AgentUsage.chat_meter(@turf, user: @user, soul: "turf_monster")
+    assert meter.unlimited?, "no owner cap is shown to someone the rule does not answer"
+  end
+
   test "the config refuses a malformed app_owners block" do
     assert_raises(AgentMessages::Answerers::Invalid) { AgentMessages::Answerers.new([ "owner" ], app_owners: { "default_monthly_tokens" => 0 }) }
     assert_raises(AgentMessages::Answerers::Invalid) { AgentMessages::Answerers.new([ "owner" ], app_owners: "yes") }
