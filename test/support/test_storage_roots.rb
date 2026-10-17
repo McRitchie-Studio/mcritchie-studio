@@ -8,11 +8,13 @@
 # "logo" (hub CI, release SHA 29029a4): a sibling worker's test uploaded the
 # same key with the default body between the write and the read.
 #
-# isolate! runs in parallelize_setup, after the fork, and suffixes the root of
-# EVERY configured Disk service with the worker number (tmp/storage-3). The
-# registry caches one service object per name, and ActiveStorage::Blob.service is
+# isolate! runs in parallelize_setup, after the fork, and nests the root of
+# EVERY configured Disk service with the worker number (tmp/storage/worker-3).
+# The registry caches one service object per name, and ActiveStorage::Blob.service is
 # that same object, so mutating its root re-homes every later read and write in
-# the worker. A serial run never calls it and keeps the configured roots.
+# the worker. A serial run never calls it and keeps the configured roots. The
+# subdirectory stays UNDER the configured root, so .gitignore and the artifact
+# sweep (bin/lib/artifact_sweep.rb) keep covering it.
 module TestStorageRoots
   class << self
     attr_reader :worker
@@ -29,7 +31,7 @@ module TestStorageRoots
       end
     end
 
-    def worker_root(root, worker) = "#{root.to_s.chomp('/')}-#{worker}"
+    def worker_root(root, worker) = File.join(root.to_s, "worker-#{worker}")
 
     # Only Disk services carry a root; an S3 service is never built here (building
     # one would reach for credentials a test run does not have).

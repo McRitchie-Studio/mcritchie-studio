@@ -351,7 +351,7 @@ module ActiveSupport
     # worker too, so the "starts empty" guarantee holds in every process that runs a
     # test, not just the single-process local path. No-op when workers <= 1.
     #
-    # Each worker also gets its own Active Storage disk (tmp/storage-<worker>): the
+    # Each worker also gets its own Active Storage disk (tmp/storage/worker-<n>): the
     # databases were already per-worker, the disk was not, and two workers writing
     # one key clobbered each other. See test/support/test_storage_roots.rb.
     parallelize_setup do |worker|

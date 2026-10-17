@@ -29,9 +29,9 @@ class TestStorageRootsTest < ActiveSupport::TestCase
       zero = worker_registry(base, 0)
       one = worker_registry(base, 1)
 
-      assert_equal File.join(base, "storage-0"), zero.fetch(:test).root
-      assert_equal File.join(base, "storage-1"), one.fetch(:test).root
-      assert_equal File.join(base, "storage_chat_private-1"), one.fetch(:chat_private).root
+      assert_equal File.join(base, "storage", "worker-0"), zero.fetch(:test).root
+      assert_equal File.join(base, "storage", "worker-1"), one.fetch(:test).root
+      assert_equal File.join(base, "storage_chat_private", "worker-1"), one.fetch(:chat_private).root
       refute_equal zero.fetch(:chat_private).root, one.fetch(:chat_private).root
     end
   end
@@ -66,7 +66,7 @@ class TestStorageRootsTest < ActiveSupport::TestCase
   test "in a parallel worker, the live services already sit on that worker's roots" do
     skip "serial run: the configured roots stand" if @live_worker.nil?
 
-    suffix = "-#{@live_worker}"
+    suffix = "/worker-#{@live_worker}"
     assert ActiveStorage::Blob.service.root.to_s.end_with?(suffix), ActiveStorage::Blob.service.root.to_s
     assert ActiveStorage::Blob.services.fetch(:chat_private).root.to_s.end_with?(suffix)
   end
