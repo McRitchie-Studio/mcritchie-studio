@@ -84,7 +84,7 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
     refute_includes prompt("audience" => { "role" => "owner" }), "INTAKE CHAT"
   end
 
-  # The slug stays `ray`; the name the visitor reads is the roster's (config/souls.yml).
+  # The name the visitor reads is the roster's (config/souls.yml), never the slug.
   test "the intake persona introduces itself as Ray, not by its slug" do
     text = prompt("intake" => { "steps" => BuildIntake::STEPS, "done" => {}, "values" => {} },
                   "audience" => { "role" => "public" })

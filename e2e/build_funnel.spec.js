@@ -43,7 +43,7 @@ async function adminToken(browser) {
   return token;
 }
 
-// Ray's answer (soul slug still ray) to the visitor's newest message, as bin/dispatcher
+// Ray's answer (soul slug ray) to the visitor's newest message, as bin/dispatcher
 // sends it. A leftover ray row from another spec is answered and passed over.
 async function rayAnswers(page, auth, content, text, card) {
   const worker = `e2e-build-${Date.now()}`;

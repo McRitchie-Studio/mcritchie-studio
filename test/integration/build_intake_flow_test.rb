@@ -53,7 +53,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
   end
 
   # A tap, and the visitor turn it relays: the stream appends it, pending, and
-  # it is the next row the dispatcher claims for Ray (the soul slug stays ray).
+  # it is the next row the dispatcher claims for Ray.
   def tap_and_relay(request_row, field, line, **params)
     tap_card(request_row, field, client_id: SecureRandom.uuid, **params)
     assert_response :success

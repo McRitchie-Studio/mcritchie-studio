@@ -613,7 +613,7 @@ module AgentMailbox
     end
 
     # The soul's display name from the roster (config/souls.yml `name`), which can
-    # differ from its slug: the slug `ray` reads "Ray". Nil when the roster is
+    # differ from its slug (`xan` read "Ray" until ray-slug-rename). Nil when the roster is
     # unreadable or does not name the soul, so the slug-derived name stands.
     def roster_name
       path = File.join(@repo_root, SOULS_PATH)
