@@ -170,7 +170,7 @@ class AgentAudienceTest < ActiveSupport::TestCase
   end
 
   test "a public prompt has the public rules only, and a soul's public.md stands in for its role doc" do
-    File.write(File.join(@root, "docs/agents/agents/ray/public.md"), "<!-- note -->\nXan helps visitors find their way.")
+    File.write(File.join(@root, "docs/agents/agents/ray/public.md"), "<!-- note -->\nRay helps visitors find their way.")
     text = prompt(aud("public"))
     assert_includes text, "You are speaking with: public"
     assert_includes text, rules["audiences"]["public"]["never"].first

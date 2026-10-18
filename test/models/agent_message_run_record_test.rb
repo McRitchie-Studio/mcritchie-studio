@@ -36,12 +36,12 @@ class AgentMessageRunRecordTest < ActiveSupport::TestCase
     message = agent_message!(soul: "ray")
     AgentMessage.claim!(soul: "ray", worker: "w1")
     message.reload.complete!(worker: "w1", response_text: "hi",
-                             run: { claude_session_id: "abc-123", claude_cwd: "/Users/a b/.agents/mailbox/xan" })
+                             run: { claude_session_id: "abc-123", claude_cwd: "/Users/a b/.agents/mailbox/ray" })
 
-    assert_equal "cd /Users/a\\ b/.agents/mailbox/xan && claude --resume abc-123", message.reload.resume_command
+    assert_equal "cd /Users/a\\ b/.agents/mailbox/ray && claude --resume abc-123", message.reload.resume_command
     message.update_columns(claude_session_id: "x; rm -rf /")
     assert_nil message.resume_command
     message.update_columns(claude_session_id: "abc", claude_cwd: nil)
-    assert_equal "cd ~/.agents/mailbox/xan && claude --resume abc", message.resume_command
+    assert_equal "cd ~/.agents/mailbox/ray && claude --resume abc", message.resume_command
   end
 end
