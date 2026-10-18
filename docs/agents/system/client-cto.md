@@ -32,7 +32,12 @@ control on Ray's summary card) calls it when `AppRequest#intake_complete?`, then
 `/applications/<sub>/chat`. An admin's showcase queued from the name alone, without the
 checklist, still goes through `AppRequest#queue!` (no App, no CTO). A cancelled launched
 request keeps its App row, so its name stays taken (`AppRequest.unavailable_reason` checks
-`apps.slug`).
+`apps.slug`). A refusal (`AppLaunch::Incomplete`, a `RecordInvalid` such as the tier's
+apps-per-account limit or a name taken since the tap; the claim re-checks the name)
+answers on the summary card as a Turbo Stream with the reason and a next step, never a
+422 page. The limit is data: `apps_per_account` per tier in
+`config/workspace_packages.yml`, blank for unlimited, which every tier is since
+2026-10-18 (it was one Vibe app).
 
 **The morph.** The Build control posts through Turbo, so the 303 is a Turbo visit. Both
 pages are the agent shell (`app/views/agent_chats/_shell.html.erb`) and carry

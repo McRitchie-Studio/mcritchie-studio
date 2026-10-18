@@ -1133,6 +1133,23 @@ carries **Build My App**, which asks for sign-in only then; it launches through 
   (`build-chat-page`) with the draft's chat and end with a `replace_url` stream
   (`app/javascript/build_shell.js`), which moves the address to `/build/<token>`
   through Turbo's history, with no reload. A JSON post still gets the token and path.
+  The move is animated (`app/javascript/agent_shell.js`): the thread slides in, the
+  portrait and heading shrink, the subtitle folds away and the gallery slides out
+  before the stream removes it; the status card scales in the first time it replaces
+  the heading.
+- **The shell grows with the conversation.** It is a column no taller than the window
+  below its own top; the thread grows with its turns, then scrolls inside it, so the
+  chat box sits at the window's bottom. The head and status card compact in steps
+  (`data-shell-size`: full, medium at the first turn, compact at the third or when the
+  thread scrolls; `AgentShellHelper`), from about 40% of the window for the chat at
+  first to about 80% later. Same on the app chat. Styles:
+  `app/assets/tailwind/agent_shell.css`; reduced motion keeps the steps, unanimated.
+- **A refused Build My App** (the plan's app limit, a name taken since the tap, an
+  incomplete intake) answers ON the summary card: a Turbo Stream redraws the card by
+  its id (`build-summary-<message id>`) with the reason and a next step, 422. Never a
+  422 page: Turbo renders a failed form's page as a same-URL refresh, the shell morphs
+  it, and the morph strips Alpine's `display:none` from every `x-show` (on 2026-10-18 it
+  opened the Links drawer; task `build-launch-chat-growth`).
 - **Page moves** between /build, /build/:token and the app chat are Turbo visits with a
   view transition (`<meta name="view-transition">`): the shell names its portrait,
   caption, status card and chat box, so Ray's portrait becomes the CTO's. Turbo skips
