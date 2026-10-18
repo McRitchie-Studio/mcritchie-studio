@@ -51,7 +51,7 @@ class RayDispatcherIntakeTest < ActionDispatch::IntegrationTest
   def dispatcher(souls:, runner:)
     AgentMailbox::Dispatcher.new(client: @client, souls: souls, worker: "disp-ray-1", runner: runner, channel: nil,
                                  claude_cmd: %w[fake-claude], out: @out, clock: -> { Time.now },
-                                 sleeper: ->(_) {}, idle_wait: 0, busy_wait: 0, version: "test")
+                                 sleeper: ->(_) { }, idle_wait: 0, busy_wait: 0, version: "test")
   end
 
   def drive(disp, ticks: 200)
