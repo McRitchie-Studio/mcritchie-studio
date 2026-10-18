@@ -37,8 +37,8 @@ class SubNavTest < ActionView::TestCase
     render_nav :board_sections, current: :deployments
 
     assert_not_includes hrefs, stages_path
-    assert_equal [ xan_pipeline_path, xan_insights_path, recent_tasks_path ], hrefs.last(3)
-    assert_select %(nav a[href="#{xan_insights_path}"]), text: "Insights"
+    assert_equal [ ray_pipeline_path, ray_insights_path, recent_tasks_path ], hrefs.last(3)
+    assert_select %(nav a[href="#{ray_insights_path}"]), text: "Insights"
   end
 
   test "[component] the link row wraps instead of overflowing a phone" do
@@ -74,7 +74,7 @@ class SubNavTest < ActionView::TestCase
   end
 
   test "[component] the heartbeat chips link back to Deployments on every heartbeat page" do
-    %i[xan_heartbeat heartbeat_all_activities xan_pipeline].each do |current|
+    %i[ray_heartbeat heartbeat_all_activities ray_pipeline].each do |current|
       render_nav :heartbeat, current: current, counts: { insights: 4 }
 
       link = css_select("a[data-test=hb-nav-deployments]").last
@@ -90,16 +90,16 @@ class SubNavTest < ActionView::TestCase
     render_nav :heartbeat, current: :heartbeat_all_activities, counts: { insights: 4 }
 
     assert_select %(nav[aria-label="Heartbeat"].contents), 1
-    assert_select %(a[href="#{xan_insights_path}"] span#hb-insight-count), text: "4"
-    assert_select %(a[href="#{xan_insights_path}"]), text: /Insight Bank \(4\)/
+    assert_select %(a[href="#{ray_insights_path}"] span#hb-insight-count), text: "4"
+    assert_select %(a[href="#{ray_insights_path}"]), text: /Insight Bank \(4\)/
     current = css_select("a[aria-current=page]")
     assert_equal [ "hb-nav-all-spans" ], current.map { |link| link["data-test"] }
     assert_includes current.first["class"].split, "primary"
-    assert_select %(a[data-test=hb-nav-session][href="#{xan_heartbeat_path}"]), text: /Per-session heartbeat/
+    assert_select %(a[data-test=hb-nav-session][href="#{ray_heartbeat_path}"]), text: /Per-session heartbeat/
   end
 
   test "[component] the per-session chip shows on All Activities only" do
-    render_nav :heartbeat, current: :xan_heartbeat, counts: { insights: 0 }
+    render_nav :heartbeat, current: :ray_heartbeat, counts: { insights: 0 }
 
     assert_select "a[data-test=hb-nav-session]", 0
     assert_select "a[aria-current]", 0

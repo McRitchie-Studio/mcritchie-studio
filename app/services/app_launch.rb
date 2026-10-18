@@ -38,7 +38,7 @@ class AppLaunch
     end
   end
 
-  # What Xan's intake gathered (the request's intake columns, owned by the
+  # What Ray's intake gathered (the request's intake columns, owned by the
   # build-with-xan-intake task): the CTO's name and portrait key, the palette
   # ({ "name", "light", "dark" }) and the sharpened answers ({ "idea",
   # "title", "features" }, or a v1 draft's "audience" and "day_one").

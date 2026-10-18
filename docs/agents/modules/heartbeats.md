@@ -8,7 +8,7 @@ and command. Each launcher links to that soul's `/agents/<slug>` page and carrie
 a **prompt-like row 1** plus **copyable action rows**:
 
 - **Row 1** (❤️): `Carl Heartbeat` · `Avi Heartbeat` · `Steffon Heartbeat` ·
-  `Xan Heartbeat` · `Turf Monster Heartbeat`.
+  `Ray Heartbeat` · `Turf Monster Heartbeat`.
 - **The action rows**, ordered along the pipeline (keycaps read review → assemble → ship):
   - **Carl** → `1️⃣ pr-review` · `🐢 pr-review-slow`
   - **Avi** → `2️⃣ qa-release` · `⚡ deploy-with-task` · `🔭 intent-scout`
@@ -39,7 +39,7 @@ registered in the root `AGENTS.md` SOP registry and in
 one release **atom**, except Ray's learning-loop acts. Each soul's procedure lives
 with that soul ([`Carl`](../agents/carl/HEARTBEAT.md),
 [`Avi`](../agents/avi/HEARTBEAT.md), [`Steffon`](../agents/steffon/HEARTBEAT.md),
-[`Ray`](../agents/xan/HEARTBEAT.md),
+[`Ray`](../agents/ray/HEARTBEAT.md),
 [`Turf Monster`](../agents/turf_monster/HEARTBEAT.md)); this page is the
 cross-soul map. History cut from it lives in
 [`../archive/heartbeats-2026-09-25.md`](../archive/heartbeats-2026-09-25.md).
@@ -49,7 +49,7 @@ cross-soul map. History cut from it lives in
 | **Carl** (`carl`) | `Carl Heartbeat` | `pr-review`, `pr-review-slow` | submitted PRs waiting for review | each PR `reviewed` (merged into `accepted`) or `blocked` |
 | **Avi** (`avi`) | `Avi Heartbeat` | `qa-release`, `deploy-with-task` (direct-invoke only), `arbitrate-block` (registered, not a chip — a builder contests a review block and the session that spawned it invokes Avi), `intent-scout` (a chip since 2026-10-14; `bin/task begin` launches it in the background, and the chip is the manual launch when begin could not) | `reviewed` work + `assembled` stragglers to sweep | the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra`, `archive-shipped` (registered, not a chip — production-deploy runs it) | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
-| **Ray** (`xan`) | `Xan Heartbeat` | `share-insights`, `full-cycle`, `ship-clock` (a chip since 2026-10-14: the typing-to-shipping benchmark); `grade-events` is optional (every task is graded at ship) and runs only when named | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
+| **Ray** (`ray`) | `Ray Heartbeat` | `share-insights`, `full-cycle`, `ship-clock` (a chip since 2026-10-14: the typing-to-shipping benchmark); `grade-events` is optional (every task is graded at ship) and runs only when named | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
 | **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch`, `contest-rehearsal`, `post-to-x` (a chip since 2026-10-06: Alex copies it and pastes it into a fresh session with an MP4 path), `sleeper-auction-watch` (registered, not a chip — the slug clips the card), `entry-forfeit` (registered, not a chip — on-demand incident SOP), `market-refresh` (registered, not a chip — weekly, but the moment is read off the schedule), `content-build` (registered, not a chip — queue-shaped; it runs when games finalise), `collect-vault-revenue` (registered, not a chip — operator-triggered and it moves money) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
 
 > **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
@@ -72,7 +72,7 @@ run from `/Users/alex/projects`:
 1. **Say a launcher row** (row 1 or any act row). The root `AGENTS.md` maps each
    phrase to the owning soul's `HEARTBEAT.md` and SOP. No installed skill needed.
 2. **Stamp attribution FIRST**, before any other tool call:
-   `cd /Users/alex/projects/mcritchie-studio && bin/agent-activity heartbeat <carl|avi|steffon|xan>`.
+   `cd /Users/alex/projects/mcritchie-studio && bin/agent-activity heartbeat <carl|avi|steffon|ray>`.
 3. **Run the soul's acts** from the mcritchie-studio primary checkout (the board
    is **prod** by default; pass `--yes` on the release verbs the act owns).
 
@@ -85,7 +85,7 @@ The per-soul cheat sheet:
 | **Avi** | `intent-scout` (begin launches it; the chip is the manual launch) | read the task (`bin/task show <slug> -v`) and the builder's desk, read only → post ONE brief: `bin/task note <slug> --comment "INTENT SCOUT BRIEF: …" --agent avi` ([`intent-scout`](../agents/avi/sops/intent-scout.md)) |
 | **Steffon** | `production-deploy` → `archive-shipped` | `bin/release status` → **if** QA-green: `bin/release ship --yes` (stages 4–5); then `bin/release archive --yes` (preview `--dry-run`) |
 | **Ray** | `share-insights` · `full-cycle` · `grade-events` (optional, only when named) | `bin/agent-activity awaiting --limit 10` → `bin/agent-activity grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc`; `full-cycle` = `pr-review` → `qa-release` → `production-deploy` (ship authority) |
-| **Ray** | `ship-clock` (only when named, with Alex's production clearance) | `bin/ship-clock start <slug>` (T0, before anything) → `building-sop` (`bin/task begin`, then `ship-clock start <slug>` again to move T0 onto the task) → `pr-review` → `bin/release prepare --yes` → `bin/release ship --mode cleared --clearance "<his words>" --yes` → `bin/release archive --yes` → `bin/ship-clock record <slug> --log … --note …` ([`ship-clock`](../agents/xan/sops/ship-clock.md)) |
+| **Ray** | `ship-clock` (only when named, with Alex's production clearance) | `bin/ship-clock start <slug>` (T0, before anything) → `building-sop` (`bin/task begin`, then `ship-clock start <slug>` again to move T0 onto the task) → `pr-review` → `bin/release prepare --yes` → `bin/release ship --mode cleared --clearance "<his words>" --yes` → `bin/release archive --yes` → `bin/ship-clock record <slug> --log … --note …` ([`ship-clock`](../agents/ray/sops/ship-clock.md)) |
 
 > **Script-assisted review.** `bin/pr-review` is a codex-based, **review-only**
 > loop (composes `bin/devops-cycle`, `bin/reviewer-select`, and codex reviewers
@@ -250,21 +250,21 @@ SOP: [`../agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/prod
 SOP: [`../agents/steffon/sops/archive-shipped.md`](../agents/steffon/sops/archive-shipped.md).
 Archive shipped work and reclaim completed worktrees.
 
-## 4. Xan Heartbeat — `Xan Heartbeat` / `grade-events` / `share-insights` / `full-cycle` / `ship-clock`
+## 4. Ray Heartbeat — `Ray Heartbeat` / `grade-events` / `share-insights` / `full-cycle` / `ship-clock`
 
-Launcher: [`../agents/xan/HEARTBEAT.md`](../agents/xan/HEARTBEAT.md). The
-operator view is [`/xan/pipeline`](https://mcritchie.studio/xan/pipeline).
+Launcher: [`../agents/ray/HEARTBEAT.md`](../agents/ray/HEARTBEAT.md). The
+operator view is [`/ray/pipeline`](https://mcritchie.studio/ray/pipeline).
 
 ### Act 1 — `grade-events` (optional since 2026-09-25)
 
-SOP: [`../agents/xan/sops/grade-events.md`](../agents/xan/sops/grade-events.md).
+SOP: [`../agents/ray/sops/grade-events.md`](../agents/ray/sops/grade-events.md).
 Every task is graded once at ship (`Insights::TaskGrader`, thresholds in
 `config/learning_loop.yml`), so run this act only when Alex names it.
 
 - **Precondition:** resolved activities awaiting a grade. None → report and stop.
 - **Steps:** `bin/agent-activity awaiting [--limit 10]` → `bin/agent-activity grade
   <activity-id> --disposition good|not --slug "<4–7 words>"` → `--bank` or
-  `--discard`. The `/xan/heartbeat` drawer is the admin path (the `mcr` lane):
+  `--discard`. The `/ray/heartbeat` drawer is the admin path (the `mcr` lane):
   every heartbeat page and every grade, bank, discard and confirm write needs an
   admin (the hub's admin wall), because a banked grade is printed into each new
   session's context.
@@ -272,7 +272,7 @@ Every task is graded once at ship (`Insights::TaskGrader`, thresholds in
 
 ### Act 2 — `share-insights`
 
-SOP: [`../agents/xan/sops/share-insights.md`](../agents/xan/sops/share-insights.md).
+SOP: [`../agents/ray/sops/share-insights.md`](../agents/ray/sops/share-insights.md).
 Share the **Insight Bank** (`ActionGrade.banked`, whichever grader recorded each
 row) through the docs so every next agent starts with the curated lessons.
 
@@ -286,7 +286,7 @@ row) through the docs so every next agent starts with the curated lessons.
 
 ### Act 3 — `full-cycle`
 
-SOP: [`../agents/xan/sops/full-cycle.md`](../agents/xan/sops/full-cycle.md). Run
+SOP: [`../agents/ray/sops/full-cycle.md`](../agents/ray/sops/full-cycle.md). Run
 `pr-review` → `qa-release` (`bin/release prepare --yes`) → `production-deploy`
 (`bin/release ship`). **Precondition:** `submitted` PRs and/or an `assembled`
 release; nothing anywhere → report and stop. **Exit seam:** the release `shipped`.
@@ -298,7 +298,7 @@ release; nothing anywhere → report and stop. **Exit seam:** the release `shipp
 
 ### Act 4 — `ship-clock` (only when named)
 
-SOP: [`../agents/xan/sops/ship-clock.md`](../agents/xan/sops/ship-clock.md).
+SOP: [`../agents/ray/sops/ship-clock.md`](../agents/ray/sops/ship-clock.md).
 Benchmark one easy task from Alex's prompt to production: stamp T0 first, run the
 whole pipeline under his clearance, then `bin/ship-clock record` writes the report
 and the ledger row. **Precondition:** his prompt grants production. **Exit seam:**

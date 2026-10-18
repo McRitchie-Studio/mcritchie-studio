@@ -140,12 +140,12 @@ its invocation exactly.
 | Turf Monster `roster-sync` SOP (refresh players/teams before a season) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/roster-sync.md` |
 | Turf Monster `sleeper-auction-watch` SOP (live draft valuation) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
 | Turf Monster `tiktok-draft` SOP (clip slug in, a notification in Alex's TikTok inbox and its code-written caption out) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/tiktok-draft.md` |
-| `Xan Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
-| Xan `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/xan/sops/clean-up.md` |
-| Xan `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |
-| Xan `grade-events` SOP | `mcritchie-studio/docs/agents/agents/xan/sops/grade-events.md` |
-| Xan `share-insights` SOP | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
-| Xan `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/xan/sops/ship-clock.md` |
+| `Ray Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/ray/HEARTBEAT.md` |
+| Ray `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/ray/sops/clean-up.md` |
+| Ray `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/full-cycle.md` |
+| Ray `grade-events` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/grade-events.md` |
+| Ray `share-insights` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/share-insights.md` |
+| Ray `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/ray/sops/ship-clock.md` |
 | `address-blocker` (recontextualize, fix, resubmit) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `agent-communication` (what an agent may discuss with owner, team, client and public) | `mcritchie-studio/docs/agents/modules/agent-communication.md` |
 | `building-sop` (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |

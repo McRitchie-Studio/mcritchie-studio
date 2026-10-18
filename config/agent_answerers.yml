@@ -25,7 +25,7 @@ answered_roles:
 # soul's read action is the owner's and team's (AgentMailbox::Audience), and on a
 # build thread the board takes only `intake` cards from a proposal block.
 public_intake:
-  soul: xan
+  soul: ray
   thread_prefix: "web:build:"
   # Answers per request: signed out, then signed in (the signed-in cap only
   # bounds cost; the signed-out one is the "sign in to keep going" line).

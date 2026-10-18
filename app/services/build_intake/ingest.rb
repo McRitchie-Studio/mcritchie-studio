@@ -1,6 +1,6 @@
 module BuildIntake
   # Turns ONE message a visitor typed into the /build chat into an AgentMessage
-  # for Xan on the request's thread, `web:build:<token>` (the CTO chat's twin is
+  # for Ray on the request's thread, `web:build:<token>` (the CTO chat's twin is
   # AgentMessages::WebIngest). From there it is the same loop: the dispatcher
   # claims it, answers with no tools, and AgentMessages::WebChat.deliver! marks
   # the answer posted; the page polls for it (a signed-out visitor has no
@@ -10,7 +10,7 @@ module BuildIntake
   # request belongs to an account, that account (BuildController). This class
   # derives everything else on the server:
   #
-  #   the soul    BuildIntake.soul (Xan), never a param
+  #   the soul    BuildIntake.soul (Ray), never a param
   #   the thread  web:build:<token>
   #   the person  signed in: the user's web person (WebIngest.person_for); signed
   #               out: the request's own visitor person, web identity

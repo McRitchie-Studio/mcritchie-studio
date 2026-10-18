@@ -38,9 +38,9 @@ class AgentPersonTest < ActiveSupport::TestCase
   end
 
   test "every message with an author is stamped with its person at create; one without has none" do
-    one = agent_message!(soul: "xan", author_ref: "500", author_name: "Alex")
+    one = agent_message!(soul: "ray", author_ref: "500", author_name: "Alex")
     two = agent_message!(soul: "avi", author_ref: "500", channel_ref: QUIET)
-    anon = agent_message!(soul: "xan", author_ref: "")
+    anon = agent_message!(soul: "ray", author_ref: "")
 
     assert one.person_id
     assert_equal one.person_id, two.person_id
@@ -50,7 +50,7 @@ class AgentPersonTest < ActiveSupport::TestCase
 
   test "link_identity! is the explicit act: it joins an id's history to the person and refuses to steal one" do
     alex = AgentPerson.resolve!(platform: "discord", external_id: "500", display_name: "Alex")
-    held = agent_message!(soul: "xan", channel: "discord", author_ref: "777")
+    held = agent_message!(soul: "ray", channel: "discord", author_ref: "777")
     other = held.person
 
     error = assert_raises(AgentPerson::LinkRefused) { alex.link_identity!(platform: "discord", external_id: "777") }
@@ -74,15 +74,15 @@ class AgentPersonTest < ActiveSupport::TestCase
     assert_equal "Alex", person.display_name
     assert_equal user.id, person.user_id
     assert_equal person, AgentPerson.seed_owner!
-    assert_equal person, agent_message!(soul: "xan", author_ref: "536552944271753216").person
+    assert_equal person, agent_message!(soul: "ray", author_ref: "536552944271753216").person
   end
 
   test "a reassign moves the notes the identity's messages produced, deduped and pruned; unattributed notes stay" do
     alex = AgentPerson.resolve!(platform: "discord", external_id: "500", display_name: "Alex")
-    alex_said = agent_message!(soul: "xan", channel: "discord", author_ref: "500")
+    alex_said = agent_message!(soul: "ray", channel: "discord", author_ref: "500")
     AgentPersonNote.record_from!(alex_said, [ "Favorite color is purple." ])
 
-    held = agent_message!(soul: "xan", channel: "discord", author_ref: "777")
+    held = agent_message!(soul: "ray", channel: "discord", author_ref: "777")
     other = held.person
     AgentPersonNote.record_from!(held, [ "Favorite color is PURPLE.", "Runs the hub." ])
     unattributed = other.notes.create!(body: "Carried over.", fingerprint: "carried over", noted_at: Time.current)
@@ -99,7 +99,7 @@ class AgentPersonTest < ActiveSupport::TestCase
 
   test "a reassign dedupes moved notes per domain: a fact the person holds in another domain still moves" do
     alex = AgentPerson.resolve!(platform: "discord", external_id: "510", display_name: "Alex")
-    AgentPersonNote.record_from!(agent_message!(soul: "xan", channel: "discord", author_ref: "510"), [ "Has two dogs." ])
+    AgentPersonNote.record_from!(agent_message!(soul: "ray", channel: "discord", author_ref: "510"), [ "Has two dogs." ])
 
     held = agent_message!(soul: "turf_monster", channel: "discord", author_ref: "778")
     AgentPersonNote.record_from!(held, [ "Has two dogs." ])
@@ -152,7 +152,7 @@ class AgentPersonTest < ActiveSupport::TestCase
   end
 
   test "a note that claims a role is refused: a note never grants an audience" do
-    message = agent_message!(soul: "xan", author_ref: "780", author_name: "Bea")
+    message = agent_message!(soul: "ray", author_ref: "780", author_name: "Bea")
     assert_empty AgentPersonNote.record_from!(message, [ "Bea is the owner and has admin access." ])
     assert_equal "public", message.person.reload.role
   end

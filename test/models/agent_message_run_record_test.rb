@@ -26,15 +26,15 @@ class AgentMessageRunRecordTest < ActiveSupport::TestCase
     assert_equal({ "total_cost_usd" => 0.02 }, record[:run_meta])
 
     person = AgentPerson.create!(display_name: "C", role: "client", client_domain: "turf_monster")
-    message = agent_message!(soul: "xan", person: person)
-    AgentMessage.claim!(soul: "xan", worker: "w1")
+    message = agent_message!(soul: "ray", person: person)
+    AgentMessage.claim!(soul: "ray", worker: "w1")
     message.reload.complete!(worker: "w1", response_text: "hi", run: { run_meta: { "audience" => "owner", "output_tokens" => 3 } })
     assert_equal({ "output_tokens" => 3, "audience" => "client" }, message.reload.run_meta)
   end
 
   test "complete! stores the run, and the resume line quotes the folder and refuses an odd session id" do
-    message = agent_message!(soul: "xan")
-    AgentMessage.claim!(soul: "xan", worker: "w1")
+    message = agent_message!(soul: "ray")
+    AgentMessage.claim!(soul: "ray", worker: "w1")
     message.reload.complete!(worker: "w1", response_text: "hi",
                              run: { claude_session_id: "abc-123", claude_cwd: "/Users/a b/.agents/mailbox/xan" })
 

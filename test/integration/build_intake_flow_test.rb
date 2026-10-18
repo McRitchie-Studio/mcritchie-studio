@@ -1,7 +1,7 @@
 require "test_helper"
 
-# [integration] A signed-out visitor builds with Xan through real requests: the
-# first message (bot-shielded) starts a draft and Xan's thread, Xan's answers
+# [integration] A signed-out visitor builds with Ray through real requests: the
+# first message (bot-shielded) starts a draft and Ray's thread, Ray's answers
 # (completed here as bin/dispatcher would, with intake cards) render as cards,
 # the status card appears with the first card and each tap fills its tiles
 # (Agent, Theme, Domain), and signing in adopts the request and Build queues it
@@ -32,10 +32,10 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     AppRequest.recent.first
   end
 
-  # Xan's answer, as the dispatcher completes it.
-  def xan_answers(text, card = nil)
-    claim = AgentMessage.claim!(soul: "xan", worker: "mac-1")
-    assert claim.message, "Xan should have a message to answer"
+  # Ray's answer, as the dispatcher completes it.
+  def ray_answers(text, card = nil)
+    claim = AgentMessage.claim!(soul: "ray", worker: "mac-1")
+    assert claim.message, "Ray should have a message to answer"
     body = card ? "#{text}\n===PROPOSAL===\n#{card.to_json}" : text
     claim.message.complete!(worker: "mac-1", response_text: body)
     perform_enqueued_jobs(only: AgentMessageReplyJob)
@@ -53,7 +53,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
   end
 
   # A tap, and the visitor turn it relays: the stream appends it, pending, and
-  # it is the next row the dispatcher claims for Xan (the soul slug stays xan).
+  # it is the next row the dispatcher claims for Ray (the soul slug stays ray).
   def tap_and_relay(request_row, field, line, **params)
     tap_card(request_row, field, client_id: SecureRandom.uuid, **params)
     assert_response :success
@@ -69,7 +69,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     request_row = first_message
     assert_redirected_to build_request_path(request_row.token)
     first = AgentMessage.find_by!(thread_key: BuildIntake.thread_key(request_row.token))
-    assert_equal %w[received xan public], [ first.status, first.soul_slug, first.person.role ]
+    assert_equal %w[received ray public], [ first.status, first.soul_slug, first.person.role ]
 
     get build_request_path(request_row.token)
     assert_response :success
@@ -78,7 +78,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_select "#build-checklist[data-card=false] [data-test=build-heading]", 1, "no card yet: the heading, not an empty form"
     assert_select "[data-test=build-my-app]", 0, "the status card carries no Build control"
 
-    idea = xan_answers("Got it: a league site.",
+    idea = ray_answers("Got it: a league site.",
                        { kind: "intake", card: "idea", title: "League Standings Hub", features: [ "Live standings", "Game schedules" ] })
     get build_request_turns_path(request_row.token), params: { ids: first.id }
     assert_response :success
@@ -91,7 +91,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     # Build App: the idea locks, and the visitor's line goes to Ray, who answers with the CTO card.
     relay = tap_and_relay(request_row, "idea", "Let's build League Standings Hub.", message_id: idea.id)
     assert_equal "League Standings Hub", request_row.reload.answers["title"]
-    cto = xan_answers("Meet your CTO.", { kind: "intake", card: "cto", names: %w[Marble Coach Scout], portrait: "harbor" })
+    cto = ray_answers("Meet your CTO.", { kind: "intake", card: "cto", names: %w[Marble Coach Scout], portrait: "harbor" })
     assert_equal relay, cto, "the dispatcher claimed the relayed turn"
     get build_request_path(request_row.token)
     assert_select "[data-test=build-card-cto] [data-test=build-cto-name-input][value=Marble]", 1, "the name is prefilled"
@@ -99,7 +99,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
 
     tap_and_relay(request_row, "cto", "My CTO is Marbles.", message_id: cto.id, custom_name: "Marbles", portrait: "meadow")
     assert_equal %w[Marbles meadow], [ request_row.reload.cto_name, request_row.cto_avatar ]
-    themes = xan_answers("Pick a theme.", { kind: "intake", card: "palette", palettes: [ PALETTE, PALETTE.merge("name" => "Pitch Two") ] })
+    themes = ray_answers("Pick a theme.", { kind: "intake", card: "palette", palettes: [ PALETTE, PALETTE.merge("name" => "Pitch Two") ] })
     get build_request_path(request_row.token)
     assert_select "[data-test=build-card-palette] [data-test=build-palette]", 2
     assert_select "[data-test=build-palette-preview] [data-mode=dark][style*='#0b1220']:not([hidden])"
@@ -108,7 +108,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
 
     tap_and_relay(request_row, "palette", "Let's go with the Pitch Two theme.", message_id: themes.id, index: 1)
     assert_equal "Pitch Two", request_row.reload.palette["name"]
-    domains = xan_answers("And a domain.", { kind: "intake", card: "address", names: %w[league-hub] })
+    domains = ray_answers("And a domain.", { kind: "intake", card: "address", names: %w[league-hub] })
     get build_request_path(request_row.token)
     assert_select "[data-test=build-card-address] button[data-test=build-address-suggestion]", text: "league-hub.mcritchie.studio"
 
@@ -117,7 +117,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "data-complete=\"true\"", "the tap's stream redraws the status card complete"
 
     # Ray sums up; with every step set, code gives the answer the summary card.
-    summary = xan_answers("Here's your app.")
+    summary = ray_answers("Here's your app.")
     assert_equal({ "card" => "summary" }, summary.intake_card)
     get build_request_path(request_row.token)
     assert_select "[data-test=build-card-summary][data-ready=true]" do
@@ -160,15 +160,15 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
 
   test "Build something else relays to Ray, who asks for a new direction" do
     request_row = first_message
-    idea = xan_answers("Here's the idea.", { kind: "intake", card: "idea", title: "League Standings Hub", features: %w[Standings Schedules] })
+    idea = ray_answers("Here's the idea.", { kind: "intake", card: "idea", title: "League Standings Hub", features: %w[Standings Schedules] })
     tap_and_relay(request_row, "idea_else", "I'd like to build something else.", message_id: idea.id)
     assert_equal({}, request_row.reload.answers)
-    assert_equal "I'd like to build something else.", AgentMessage.claim!(soul: "xan", worker: "mac-1").message.content
+    assert_equal "I'd like to build something else.", AgentMessage.claim!(soul: "ray", worker: "mac-1").message.content
   end
 
   test "a tap on a card from another request's thread is refused and writes nothing" do
     mine = first_message
-    xan_answers("Pick colors.", { kind: "intake", card: "palette", palettes: [ PALETTE ] })
+    ray_answers("Pick colors.", { kind: "intake", card: "palette", palettes: [ PALETTE ] })
     theirs = AppRequest.create!(prompt: "Someone else's")
 
     tap_card(theirs, "palette", message_id: AgentMessage.where(thread_key: BuildIntake.thread_key(mine.token)).last.id, index: 0)
@@ -192,7 +192,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     post build_path, params: { app_request: { prompt: "price?" } }
     held = AgentMessage.order(:id).last
     assert_equal "held", held.status
-    assert_empty AgentMessage.claimable(soul: "xan")
+    assert_empty AgentMessage.claimable(soul: "ray")
 
     assert_no_difference -> { AppRequest.count } do
       post build_path, params: { app_request: { prompt: "price?", leave_blank: "http://spam" } }
@@ -202,10 +202,10 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_equal "held", AgentMessage.where(thread_key: BuildIntake.thread_key(too_fast.token)).last.status
   end
 
-  test "past the per-request cap Xan's reply asks the visitor to sign in" do
+  test "past the per-request cap Ray's reply asks the visitor to sign in" do
     BuildIntake.policy = BuildIntake.policy.dup.tap { |p| p.turns_per_request = 1 }
     request_row = first_message
-    xan_answers("What is it for?")
+    ray_answers("What is it for?")
     say(request_row, "for my league")
     capped = AgentMessage.where(thread_key: BuildIntake.thread_key(request_row.token)).order(:id).last
     assert_equal "completed", capped.status

@@ -25,7 +25,7 @@ Loads at: every session start
 
 ## Ray (1)
 
-Loads at: `bin/dream xan`
+Loads at: `bin/dream ray`
 
 | Dream | Question | Tags | Status |
 |---|---|---|---|

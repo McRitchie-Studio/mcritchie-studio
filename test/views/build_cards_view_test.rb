@@ -17,7 +17,7 @@ class BuildCardsViewTest < ActionView::TestCase
   setup do
     @row = AppRequest.create!(prompt: "A league site")
     @message = AgentMessage.create!(channel: "web", external_id: "build:#{@row.token}:1", channel_ref: "build",
-                                    thread_key: BuildIntake.thread_key(@row.token), soul_slug: "xan", content: "hi",
+                                    thread_key: BuildIntake.thread_key(@row.token), soul_slug: "ray", content: "hi",
                                     status: "completed", response_text: "ok")
     signed_in(nil)
   end

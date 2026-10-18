@@ -2,7 +2,7 @@
 # client app's share (docs/agents/system/agent-usage.md; Phase 7 of
 # .agents/epics/domain-agents.md).
 #
-#   AgentUsage.totals(souls: %w[avi xan], from:, to:)       # one Totals
+#   AgentUsage.totals(souls: %w[avi ray], from:, to:)       # one Totals
 #   AgentUsage.daily("turf_monster", days: 7)               # [[Date, Totals]] per Denver day
 #   AgentUsage.meter(app)                                   # this month's Meter for an App row
 #   AgentUsage.gate(message)                                # before a claim: :ok, :warn or :stop

@@ -38,7 +38,7 @@ module Api
       def session_headers(session) = { "Authorization" => "Bearer #{session.token}" }
 
       def admin_headers
-        session_headers(AgentSession.create!(soul: "xan", tier: "admin", issued_by: "operator_grant"))
+        session_headers(AgentSession.create!(soul: "ray", tier: "admin", issued_by: "operator_grant"))
       end
 
       def data = JSON.parse(response.body).fetch("data")
@@ -70,7 +70,7 @@ module Api
         assert_enqueued_jobs(1, only: TiktokDraftJob) { post path, headers: admin_headers, as: :json }
 
         assert_response :created
-        assert_equal ["queued", 1, "xan via bin/tiktok-draft"], data.values_at("state", "version_number", "requested_by")
+        assert_equal ["queued", 1, "ray via bin/tiktok-draft"], data.values_at("state", "version_number", "requested_by")
         perform_enqueued_jobs
 
         get path, headers: auth_headers

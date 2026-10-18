@@ -1,5 +1,5 @@
 module AgentMessages
-  # Xan's handover to a new client CTO (docs/agents/system/client-cto.md; design:
+  # Ray's handover to a new client CTO (docs/agents/system/client-cto.md; design:
   # .agents/epics/build-with-xan-design.md, "Build my app"). AppLaunch calls it
   # inside the launch transaction, so a launched app always has its first chat
   # turn and a rolled-back launch has none.

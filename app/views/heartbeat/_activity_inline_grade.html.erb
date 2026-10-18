@@ -6,7 +6,7 @@
     drawer stays the home for the slug / long-form / bank detail — these are the fast
     lane. The checked state is server-rendered (Nokogiri-visible, no-JS correct) and
     bound to the row's Alpine `grades.<grader>` so a drawer/quick save syncs it live.
-    Locals: activity, grader ("xan" | "mcr"), grade (ActionGrade | nil). %>
+    Locals: activity, grader ("ray" | "mcr"), grade (ActionGrade | nil). %>
 <form action="<%= heartbeat_activity_grade_path(activity) %>" method="post"
       class="hb-radioform hb-evtquick-form" data-test="event-inline-grade"
       data-grader="<%= grader %>" @submit.prevent>

@@ -111,8 +111,8 @@ class Github::TaskDerivationTest < ActiveSupport::TestCase
     ]
     script = { "/repos/#{NWO}/pulls/42/commits" => commits, "/repos/#{NWO}/pulls/42" => pull(login: "carl") }
 
-    assert_equal %w[mack steffon xan carl].sort, derivation(script).first.authors(PR).sort,
-                 "alex resolves to xan; the operator, the bot and a non-roster local part name nobody"
+    assert_equal %w[mack steffon ray carl].sort, derivation(script).first.authors(PR).sort,
+                 "alex resolves to ray; the operator, the bot and a non-roster local part name nobody"
   end
 
   # --- harden-derived-fact-reads -------------------------------------------------------

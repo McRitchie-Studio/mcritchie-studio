@@ -29,7 +29,7 @@ module Api
     #
     # AUTH is the board's, unchanged (BaseController): an agent session or the
     # shared secret's token. A SESSION acts only for its own soul: an admin session
-    # (Steffon, Xan) may act for any soul, any other session only for the soul it
+    # (Steffon, Ray) may act for any soul, any other session only for the soul it
     # names. A client session and a harness key reach none of this. The shared
     # token carries no soul, so the `soul` it sends is the actor, exactly as every
     # other board write records it (session_actor).
@@ -191,7 +191,7 @@ module Api
       # The soul this call acts for: the message's own on a member route, else the
       # `soul` param.
       def acting_soul
-        @message ? @message.soul_slug.to_s : params[:soul].to_s.strip
+        @message ? @message.soul_slug.to_s : Task.canonical_soul(params[:soul])
       end
 
       # Every soul this call acts for: the message's own on a member route, else
@@ -200,7 +200,10 @@ module Api
         return [ acting_soul ].reject(&:empty?) if @message
 
         listed = params[:souls].is_a?(Array) ? params[:souls] : params[:souls].to_s.split(",")
-        (listed.map { |s| s.to_s.strip } + [ params[:soul].to_s.strip ]).reject(&:empty?).uniq
+        # A retired slug claims for its successor (Task::SOUL_ALIASES): a
+        # dispatcher still running a pre-rename config asks for `xan` and is
+        # handed the `ray` rows, so no message waits on a soul nobody serves.
+        (listed.map { |s| Task.canonical_soul(s) } + [ Task.canonical_soul(params[:soul]) ]).reject(&:empty?).uniq
       end
 
       # A single-soul claim keeps its actor as before; a multi-soul claim records

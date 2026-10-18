@@ -39,7 +39,7 @@ module AgentMessageFixtures
   DESK_THREAD = "900000000000000006".freeze
   OTHER_GUILD = "900000000000000007".freeze
   AVI_ROLE = "900000000000000010".freeze
-  XAN_ROLE = "900000000000000011".freeze
+  RAY_ROLE = "900000000000000011".freeze
   AVI_BOT = "900000000000000020".freeze
   SHARED_BOT = "900000000000000099".freeze
 
@@ -56,7 +56,7 @@ module AgentMessageFixtures
             "channels" => { DESK => { "name" => "agent-desk", "default_soul" => default_soul.to_s },
                             MUTED => { "name" => "random", "ignore" => true } },
             "souls" => { "avi" => { "roles" => [ AVI_ROLE ], "users" => [ AVI_BOT ] },
-                         "xan" => { "roles" => [ XAN_ROLE ], "users" => [] } }
+                         "ray" => { "roles" => [ RAY_ROLE ], "users" => [] } }
           }
         }
       }

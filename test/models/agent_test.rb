@@ -22,11 +22,11 @@ class AgentTest < ActiveSupport::TestCase
     assert_equal Agent.avatar_color_for("shannon"), agent.avatar_color
   end
 
-  # [unit] Regression: a soul's display name can differ from its slug (slug `xan`
+  # [unit] Regression: a soul's display name can differ from its slug (slug `ray`
   # reads "Ray"). Creating the row with both must keep the given slug, or the
-  # seed on a fresh database makes a `ray` row and orphans every `xan` child.
+  # seed on a fresh database makes a `ray` row and orphans every `ray` child.
   test "an explicit slug survives a create whose name parameterizes differently" do
-    agent = Agent.create!(name: "Ray", slug: "xan-regression", status: "active", agent_type: "orchestrator")
-    assert_equal "xan-regression", agent.reload.slug
+    agent = Agent.create!(name: "Ray", slug: "ray-regression", status: "active", agent_type: "orchestrator")
+    assert_equal "ray-regression", agent.reload.slug
   end
 end

@@ -243,11 +243,11 @@ class TiktokDraftCliTest < Minitest::Test
 
   def test_the_admin_token_is_picked_out_of_whatever_the_grant_printed_around_it
     token = "eyJfcmFpbHMiOnsiZGF0YSI6eyJzaWQiOiJzZXNzLXN5bnRoZXRpYyJ9fX0=--#{'ab12' * 16}"
-    noisy = "DEPRECATION WARNING: synthetic\nadmin session sess-synthetic granted to xan (admin), ends 2026-10-08T06:00:00Z.\n#{token}\r\n"
+    noisy = "DEPRECATION WARNING: synthetic\nadmin session sess-synthetic granted to ray (admin), ends 2026-10-08T06:00:00Z.\n#{token}\r\n"
 
     assert_equal token, TiktokDraftCli.admin_token(token)
     assert_equal token, TiktokDraftCli.admin_token(noisy)
-    assert_equal token, TiktokDraftCli.admin_token("#{token}\nadmin session sess-synthetic granted to xan")
+    assert_equal token, TiktokDraftCli.admin_token("#{token}\nadmin session sess-synthetic granted to ray")
     [nil, "", "   ", "not a token", "Running bin/rails on mcritchie-studio... up, run.1234"].each do |raw|
       assert_nil TiktokDraftCli.admin_token(raw), "#{raw.inspect} holds no token"
     end
@@ -261,7 +261,7 @@ class TiktokDraftCliTest < Minitest::Test
       env = { "CLAUDE_PROJECTS_DIR" => proj, "CLAUDE_CODE_SESSION_ID" => "harness-tiktok" }
       assert_nil TiktokDraftCli.held_admin_token(base_url: "https://mcritchie.studio", env: env), "no login held"
 
-      AdminLogin.write("harness-tiktok", proj, { "soul" => "xan", "session" => "sess-admin", "token" => "ADMIN-TOKEN",
+      AdminLogin.write("harness-tiktok", proj, { "soul" => "ray", "session" => "sess-admin", "token" => "ADMIN-TOKEN",
                                                  "expires_at" => (Time.now + 3600).utc.iso8601 }, env: env)
       assert_equal "ADMIN-TOKEN", TiktokDraftCli.held_admin_token(base_url: "https://mcritchie.studio", env: env)
       assert_equal "ADMIN-TOKEN", TiktokDraftCli.held_admin_token(base_url: "http://localhost:3000",
@@ -279,8 +279,8 @@ class TiktokDraftCliTest < Minitest::Test
 
     refute $?.success?
     assert_match(/AGENT_ADMIN_SESSION_TOKEN is not set/, out)
-    assert_match(/bin\/agent-activity heartbeat xan/, out, "the board's grant is named first")
+    assert_match(/bin\/agent-activity heartbeat ray/, out, "the board's grant is named first")
     assert_match(/agent_sessions:grant_admin/, out)
-    assert_operator out.index("heartbeat xan"), :<, out.index("agent_sessions:grant_admin")
+    assert_operator out.index("heartbeat ray"), :<, out.index("agent_sessions:grant_admin")
   end
 end

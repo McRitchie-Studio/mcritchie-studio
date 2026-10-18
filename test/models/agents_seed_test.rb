@@ -84,7 +84,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
       "shannon" => "ui",
       "jasper"  => "web3",
       "steffon" => "devops",
-      "xan"    => "documentation"
+      "ray"    => "documentation"
     }.each do |slug, domain|
       agent = Agent.find_by!(slug: slug)
       assert agent.metadata["reviewer"], "#{slug} must be a light-pool specialist"
@@ -97,15 +97,15 @@ class AgentsSeedTest < ActiveSupport::TestCase
     end
   end
 
-  test "Xan is the single identity holding the documentation review seat" do
+  test "Ray is the single identity holding the documentation review seat" do
     run_seed
     docs = Agent.active.detect do |a|
       a.metadata["reviewer"] && Array(a.metadata["domains"]).include?("documentation")
     end
     assert docs, "a documentation-domain reviewer must resolve from the seed"
-    assert_equal "xan", docs.slug, "Xan holds the documentation seat (no separate persona)"
+    assert_equal "ray", docs.slug, "Ray holds the documentation seat (no separate persona)"
     assert_equal "Lead Orchestrator", docs.title, "still the orchestrator identity"
-    refute Agent.exists?(slug: "xan-docs"), "the separate xan-docs persona is retired (folded into xan)"
+    refute Agent.exists?(slug: "ray-docs"), "the separate ray-docs persona is retired (folded into ray)"
   end
 
   # EVERY SOUL RENDERS A FACE — the property the board actually needs, which is not
@@ -143,7 +143,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
   # persona_identity). The seed owns each soul's emoji + an explicit color.
   test "each senior soul carries a status-line emoji and an explicit color" do
     run_seed
-    %w[xan avi carl shannon jasper steffon].each do |slug|
+    %w[ray avi carl shannon jasper steffon].each do |slug|
       agent = Agent.find_by!(slug: slug)
       assert agent.emoji.present?, "#{slug} must have a status-line emoji"
       assert_match(/\A#\h{6}\z/, agent.status_color, "#{slug} must carry an explicit hex color")
@@ -179,12 +179,12 @@ class AgentsSeedTest < ActiveSupport::TestCase
   end
 
   # [unit] Regression: on a fresh database the seed creates the orchestrator under
-  # its slug `xan`, named Ray, never a `ray` row derived from the name.
-  test "a fresh seed keys the orchestrator xan and names it Ray" do
-    Agent.where(slug: "xan").find_each { |a| a.skill_assignments.delete_all; a.activities.delete_all; a.usages.delete_all; a.tasks.update_all(agent_slug: nil); a.delete }
+  # its slug `ray`, named Ray, never a `ray` row derived from the name.
+  test "a fresh seed keys the orchestrator ray and names it Ray" do
+    Agent.where(slug: "ray").find_each { |a| a.skill_assignments.delete_all; a.activities.delete_all; a.usages.delete_all; a.tasks.update_all(agent_slug: nil); a.delete }
     run_seed
 
-    assert_equal "Ray", Agent.find_by!(slug: "xan").name
+    assert_equal "Ray", Agent.find_by!(slug: "ray").name
     refute Agent.exists?(slug: "ray")
   end
 end

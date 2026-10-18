@@ -188,15 +188,15 @@ An admin session belongs to an admin soul (Ray or Steffon) and lasts 8 hours.
 The board grants it. Ask, from the session that will draft:
 
 ```bash
-bin/agent-activity heartbeat xan          # or steffon; prints a login-… slug
+bin/agent-activity heartbeat ray          # or steffon; prints a login-… slug
 ```
 
 Alex answers the row with that slug on the board's tasks page, inside ten
 minutes, one of two ways:
 
 - **The one-time code** on the row. He gives it to you, and you post it:
-  `bin/agent-activity heartbeat xan --code <code>`.
-- **The Approve tap** on the row. Then run `bin/agent-activity heartbeat xan`
+  `bin/agent-activity heartbeat ray --code <code>`.
+- **The Approve tap** on the row. Then run `bin/agent-activity heartbeat ray`
   again to collect.
 
 The login is kept for this harness session, owner-only, and is never printed.

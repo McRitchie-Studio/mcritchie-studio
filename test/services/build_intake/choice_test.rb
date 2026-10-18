@@ -29,7 +29,7 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
   # A completed answer of Ray's on this request's thread, carrying `card`.
   def answer_with(card)
     message = AgentMessage.create!(channel: "web", external_id: "build:#{@request.token}:#{SecureRandom.uuid}", channel_ref: "build",
-                                   thread_key: BuildIntake.thread_key(@request.token), soul_slug: "xan", content: "earlier",
+                                   thread_key: BuildIntake.thread_key(@request.token), soul_slug: "ray", content: "earlier",
                                    status: "completed", response_text: "Here you go.")
     message.update!(intake_card: card)
     message
@@ -50,7 +50,7 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
     relays = lines.map do |(field, params), line|
       relay = tap(field, **params).relay
       assert_equal line, relay.content, field
-      assert_equal %w[received xan chat], [ relay.status, relay.soul_slug, relay.routed_by ], "#{field}: answerable by Ray"
+      assert_equal %w[received ray chat], [ relay.status, relay.soul_slug, relay.routed_by ], "#{field}: answerable by Ray"
       assert_equal "public", relay.person.role
       relay
     end
@@ -59,7 +59,7 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
     assert_equal({ "title" => "League Standings Hub", "features" => [ "Live standings", "Schedules" ], "idea" => "League Standings Hub" }, @request.answers)
     assert_equal [ "Marble", "harbor", "Pitch", "league-hub" ], [ @request.cto_name, @request.cto_avatar, @request.palette["name"], @request.subdomain ]
     assert @request.intake_complete?
-    assert_equal relays.first, AgentMessage.claimable(soul: "xan").first, "the dispatcher claims the first relayed turn (one per thread at a time)"
+    assert_equal relays.first, AgentMessage.claimable(soul: "ray").first, "the dispatcher claims the first relayed turn (one per thread at a time)"
     assert_equal 4, thread.where(status: "received").count
   end
 
@@ -103,7 +103,7 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
   test "a card from another request's thread is refused" do
     other = AppRequest.create!(prompt: "theirs")
     foreign = AgentMessage.create!(channel: "web", external_id: "build:#{other.token}:x", channel_ref: "build", thread_key: BuildIntake.thread_key(other.token),
-                                   soul_slug: "xan", content: "x", status: "completed", response_text: "y")
+                                   soul_slug: "ray", content: "x", status: "completed", response_text: "y")
     foreign.update!(intake_card: { "card" => "palette", "palettes" => [ PALETTE ] })
     assert_raises(BuildIntake::Choice::Refused) { tap("palette", message_id: foreign.id, index: "0") }
     assert_equal 0, thread.count

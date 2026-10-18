@@ -43,15 +43,15 @@ async function adminToken(browser) {
   return token;
 }
 
-// Ray's answer (soul slug still xan) to the visitor's newest message, as bin/dispatcher
-// sends it. A leftover xan row from another spec is answered and passed over.
-async function xanAnswers(page, auth, content, text, card) {
+// Ray's answer (soul slug still ray) to the visitor's newest message, as bin/dispatcher
+// sends it. A leftover ray row from another spec is answered and passed over.
+async function rayAnswers(page, auth, content, text, card) {
   const worker = `e2e-build-${Date.now()}`;
   for (let i = 0; i < 10; i += 1) {
-    const claimed = await page.request.post("/api/v1/agent_messages/claim", { headers: auth, data: { souls: ["xan"], worker, channel: "web" } });
+    const claimed = await page.request.post("/api/v1/agent_messages/claim", { headers: auth, data: { souls: ["ray"], worker, channel: "web" } });
     expect(claimed.ok()).toBeTruthy();
     const message = (await claimed.json()).data;
-    expect(message, `a xan message waiting for "${content}"`).toBeTruthy();
+    expect(message, `a ray message waiting for "${content}"`).toBeTruthy();
     const mine = message.content === content;
     const body = mine && card ? `${text}\n===PROPOSAL===\n${JSON.stringify({ kind: "intake", ...card })}` : (mine ? text : "ok");
     const done = await page.request.post(`/api/v1/agent_messages/${message.id}/complete`, { headers: auth, data: { worker, response_text: body } });
@@ -64,7 +64,7 @@ async function xanAnswers(page, auth, content, text, card) {
 // The visitor's line a tap posted, and the agent's answer to it.
 async function tapped(page, auth, line, text, card) {
   await expect(page.locator("[data-test='build-turn']", { hasText: line }), `the tap posted "${line}"`).toHaveCount(1);
-  await xanAnswers(page, auth, line, text, card);
+  await rayAnswers(page, auth, line, text, card);
 }
 
 test("a signed-out visitor's first message answers in place, taps alone reach Build My App, and the page becomes the CTO's chat, greeted, with no reload", async ({ page, browser }) => {
@@ -105,7 +105,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(page.locator("[data-test='cto-chat-input']")).toBeFocused();
 
   // The idea card: a title and key features. Build App locks it and moves on.
-  await xanAnswers(page, auth, idea, "Here's the app I hear.", { card: "idea", title: "League Standings Hub", features: ["Live standings", "Game schedules"] });
+  await rayAnswers(page, auth, idea, "Here's the app I hear.", { card: "idea", title: "League Standings Hub", features: ["Live standings", "Game schedules"] });
   const ideaCard = first.locator("[data-test='build-card-idea']");
   await expect(ideaCard.locator("[data-test='build-idea-title']")).toHaveText("League Standings Hub");
   await expect(ideaCard.locator("[data-test='build-idea-features'] li")).toHaveCount(2);

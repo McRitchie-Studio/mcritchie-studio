@@ -268,11 +268,11 @@ module AgentMailbox
       TEXT
     end
 
-    # The /build intake playbook (docs/agents/agents/xan/intake.md, below its
+    # The /build intake playbook (docs/agents/agents/ray/intake.md, below its
     # rule), the request's state from the bundle's "intake" (code-shaped, so
     # outside the fence, except the confirmed idea, which is fenced), and how to
     # write an intake card. Empty on every thread that is not a /build thread.
-    INTAKE_DOC = "docs/agents/agents/xan/intake.md"
+    INTAKE_DOC = "docs/agents/agents/ray/intake.md"
     INTAKE_FALLBACK = "Help the visitor set up their app: the idea, their CTO, their theme and their domain, " \
                       "one question at a time."
 
@@ -613,7 +613,7 @@ module AgentMailbox
     end
 
     # The soul's display name from the roster (config/souls.yml `name`), which can
-    # differ from its slug: the slug `xan` reads "Ray". Nil when the roster is
+    # differ from its slug: the slug `ray` reads "Ray". Nil when the roster is
     # unreadable or does not name the soul, so the slug-derived name stands.
     def roster_name
       path = File.join(@repo_root, SOULS_PATH)

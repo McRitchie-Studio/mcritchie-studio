@@ -12,7 +12,7 @@
   <div class="hb-isl">
     <span><%= grade.slug %></span>
     <span class="hb-disp <%= grade.good? ? "good" : "not" %>"><%= grade.disposition.upcase %></span>
-    <span class="hb-grader"><%= grade.xan? ? "Ray" : "McR → Ray" %></span>
+    <span class="hb-grader"><%= grade.ray? ? "Ray" : "McR → Ray" %></span>
   </div>
   <%# The separator is LITERAL template markup, so the browser gets the entity while
       each interpolated value rides ERB's automatic output escaping. Both values are

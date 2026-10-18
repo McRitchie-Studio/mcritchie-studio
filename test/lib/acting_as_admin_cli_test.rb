@@ -35,7 +35,7 @@ class ActingAsAdminCliTest < Minitest::Test
     FileUtils.remove_entry(@sandbox) if File.directory?(@sandbox)
   end
 
-  def keep_admin_login(soul: "xan")
+  def keep_admin_login(soul: "ray")
     AdminLogin.write(HARNESS, @child["CLAUDE_PROJECTS_DIR"],
                      { "soul" => soul, "session" => "sess-admin", "token" => "ADMIN-TOKEN",
                        "expires_at" => (Time.now + 3600).utc.iso8601 }, env: @child)

@@ -25,7 +25,7 @@ test("agents page loads", async ({ page }) => {
 });
 
 test("agent detail loads", async ({ page }) => {
-  await page.goto("/agents/xan");
+  await page.goto("/agents/ray");
   await expect(page.locator("body")).toContainText("Ray");
   await expect(page.locator("body")).toContainText("orchestrator");
 });

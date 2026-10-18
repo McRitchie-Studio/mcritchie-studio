@@ -22,7 +22,7 @@ tasks between 2026-09-20 and 2026-09-28, and only 18 were features. The rest wer
 mostly corrections to its own comments and docs, and every review minted more.
 
 - A healthy session that is simply done runs [`/wrap`](../../../skills/wrap/SKILL.md).
-- The whole board, not one session, runs Ray's [`clean-up`](../../xan/sops/clean-up.md).
+- The whole board, not one session, runs Ray's [`clean-up`](../../ray/sops/clean-up.md).
 - Your own designed cards, worked a few at a time, is [`work-backlog`](../../../modules/work-backlog.md).
 
 ## Why two sessions
@@ -217,6 +217,6 @@ toward the goal, and the in-flight roster stamped from `TZ=America/Denver date`.
 ## Related
 
 - [`/wrap`](../../../skills/wrap/SKILL.md): the healthy session-close ceremony.
-- [`clean-up`](../../xan/sops/clean-up.md): drive the whole board to zero.
+- [`clean-up`](../../ray/sops/clean-up.md): drive the whole board to zero.
 - [`process-backlog`](../../../modules/process-backlog.md) and
   [`work-backlog`](../../../modules/work-backlog.md): groom and build the designed column.

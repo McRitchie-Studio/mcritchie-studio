@@ -20,7 +20,7 @@ class HarnessKeyTest < ActionDispatch::IntegrationTest
   def body = JSON.parse(response.body)
 
   def ask(headers = @legacy, label: "studio-mac", harness: HARNESS)
-    post "/api/v1/agent_login_requests", params: { kind: "harness_key", label: label, harness_session_id: harness, soul: "xan" }.compact,
+    post "/api/v1/agent_login_requests", params: { kind: "harness_key", label: label, harness_session_id: harness, soul: "ray" }.compact,
                                          headers: headers, as: :json
   end
 
@@ -148,7 +148,7 @@ class HarnessKeyTest < ActionDispatch::IntegrationTest
     key = granted_key
     assert_no_difference -> { AgentSession.where.not(tier: "studio").count } do
       %w[admin client harness].each do |tier|
-        mint(bearer(key), soul: "xan", tier: tier)
+        mint(bearer(key), soul: "ray", tier: tier)
         assert_response :forbidden, tier
         assert_match(/granted by the operator/, body["error"])
       end
@@ -156,7 +156,7 @@ class HarnessKeyTest < ActionDispatch::IntegrationTest
 
     # A request for an admin login mints nothing by itself: it waits for the operator.
     assert_no_difference -> { AgentSession.count } do
-      post "/api/v1/agent_login_requests", params: { soul: "xan", harness_session_id: HARNESS }, headers: bearer(key), as: :json
+      post "/api/v1/agent_login_requests", params: { soul: "ray", harness_session_id: HARNESS }, headers: bearer(key), as: :json
     end
     assert_response :created
     assert_equal "pending", body.dig("data", "status")
@@ -181,7 +181,7 @@ class HarnessKeyTest < ActionDispatch::IntegrationTest
       "read a task" => -> { get api_v1_task_path(@task.slug), headers: bearer(key) },
       "write a task" => -> { patch api_v1_task_path(@task.slug), params: { title: "Renamed By A Key" }, headers: bearer(key), as: :json },
       "create a task" => -> { post api_v1_tasks_path, params: { title: "Made By A Key" }, headers: bearer(key), as: :json },
-      "narrate" => -> { post "/api/v1/activities", params: { activity: { agent_slug: "xan", activity_type: "note" } }, headers: bearer(key), as: :json },
+      "narrate" => -> { post "/api/v1/activities", params: { activity: { agent_slug: "ray", activity_type: "note" } }, headers: bearer(key), as: :json },
       "release a review claim" => -> { post review_claim_release_api_v1_task_path(@task.slug), params: { session: "s", nonce: "n" }, headers: bearer(key), as: :json },
       "log out" => -> { delete "/api/v1/agent_sessions/current", headers: bearer(key) }
     }

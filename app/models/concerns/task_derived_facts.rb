@@ -206,10 +206,10 @@ module TaskDerivedFacts
   #
   # MEASURED 2026-09-27 on data-flow-doc-contradicts-code (PR #1587): the PR's one
   # commit carries `xan@mcritchie.studio`, and with a fresh installation token
-  # `Github::TaskDerivation#authors` returns `["xan"]`. #derived_authors returned
+  # `Github::TaskDerivation#authors` returns `["ray"]`. #derived_authors returned
   # `[]` — the desk's static GITHUB_TOKEN 401s and the rescue above flattened it.
   # `bin/reviewer-select --builder none` had nothing to check its assertion
-  # against and seated Xan as the light on Xan's own PR, reporting the
+  # against and seated Ray as the light on Ray's own PR, reporting the
   # no-self-review property upheld. This method is what lets that refuse instead.
   #
   # Returns a string-keyed hash with exactly one of the last two keys set:

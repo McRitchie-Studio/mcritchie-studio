@@ -14,7 +14,7 @@ require_relative "harness_key"
 # CREATING a draft needs an admin agent session: the hub refuses the shared
 # token and a studio session on that one request (Api::V1::TiktokDraftsController).
 # The command presents the admin login this harness session holds, which the
-# operator grants on the board (`bin/agent-activity heartbeat xan|steffon`), or
+# operator grants on the board (`bin/agent-activity heartbeat ray|steffon`), or
 # the hub-shell grant's token in AGENT_ADMIN_SESSION_TOKEN when the board cannot
 # grant. Reading (a dry run, --status, --whoami) needs only the shared token
 # every desk has.
@@ -25,9 +25,9 @@ module TiktokDraftCli
 
   # What to do about a missing, expired or refused admin session.
   ADMIN_SESSION_HOWTO = "A draft needs an admin session (Ray or Steffon). Ask the board for one:\n" \
-                        "  bin/agent-activity heartbeat xan      (or steffon; it prints a login-… slug)\n" \
+                        "  bin/agent-activity heartbeat ray      (or steffon; it prints a login-… slug)\n" \
                         "Alex grants it on the board's tasks page: the Approve tap on the row with that slug, or the row's " \
-                        "one-time code, which you post with `bin/agent-activity heartbeat xan --code <code>`. It lasts 8 hours; " \
+                        "one-time code, which you post with `bin/agent-activity heartbeat ray --code <code>`. It lasts 8 hours; " \
                         "then re-run this command.\n" \
                         "When the board cannot grant (it is down, or the hub is a local or desk one), a shell on that hub can:\n" \
                         "  local or desk hub:  export #{ADMIN_TOKEN_ENV}=\"$(bin/rails agent_sessions:grant_admin)\"\n" \

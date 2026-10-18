@@ -104,7 +104,7 @@ ENV["AGENT_WORKTREE"] = "0"
 # (AgentMessageReplyJob). Blank reads as absent, and a set-but-blank var is one
 # dotenv will not overwrite. A test that wants a soul's bot sets it with with_env.
 ENV.each_key.grep(/\ADISCORD_BOT_TOKEN_/).each { |key| ENV.delete(key) }
-%w[AVI TURF_MONSTER TYRION XAN MACK].each { |soul| ENV["DISCORD_BOT_TOKEN_#{soul}"] = "" }
+%w[AVI TURF_MONSTER TYRION RAY MACK].each { |soul| ENV["DISCORD_BOT_TOKEN_#{soul}"] = "" }
 # The agent mailbox's per-soul Claude folders (AgentMailbox::Responder) go to a
 # throwaway directory, never the laptop's ~/.agents/mailbox.
 require "tmpdir"

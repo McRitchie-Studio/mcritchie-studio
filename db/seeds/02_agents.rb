@@ -5,31 +5,36 @@
 # meanings, including the metadata ReviewerSelector reads, are in that file's
 # header.
 #
-# THE ORCHESTRATOR SEAT IS `xan` (renamed from `alex`: a soul slug reading `alex`
-# would name the human owner). The rename-in-place block below keeps the row's id
-# and history; Task::SOUL_ALIASES reads `alex` as `xan`.
+# THE ORCHESTRATOR SEAT IS `ray` (it was `alex` until 2026-09-24, when the human
+# owner took that name, then `xan` until 2026-10-18; Ray is Alex's middle name).
+# The rename-in-place block below keeps the row's id and history;
+# Task::SOUL_ALIASES reads `alex` and `xan` as `ray`.
 agents_data = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls")
 
-# `alex` → `xan`, IN PLACE. A deployed database had the row and every stored
-# soul-slug value repointed by a data migration. This is the seed's own idempotent
-# half for a database that migration never reached — a desk seeded from an older
-# tree — so the upsert below FINDS `xan` instead of creating a second orchestrator. Never
-# `destroy` the old row: Agent has_many :activities dependent: :destroy, and the
-# seat's history hangs off it. Runs before the roster loop on purpose.
-if (legacy = Agent.find_by(slug: "alex"))
-  if Agent.exists?(slug: "xan")
+# `alex` / `xan` → `ray`, IN PLACE. A deployed database had the row and every
+# stored soul-slug value repointed by data migrations (RenameAlexSoulToXan,
+# RenameXanSoulToRay). This is the seed's own idempotent half for a database those
+# migrations never reached — a desk seeded from an older tree — so the upsert
+# below FINDS `ray` instead of creating a second orchestrator. Never `destroy` the
+# old row: Agent has_many :activities dependent: :destroy, and the seat's history
+# hangs off it. Runs before the roster loop on purpose.
+%w[alex xan].each do |retired_slug|
+  legacy = Agent.find_by(slug: retired_slug)
+  next unless legacy
+
+  if Agent.exists?(slug: "ray")
     # Both present: the migration owns the children; only an empty shell may go.
     empty = legacy.activities.none? && legacy.usages.none? && legacy.skill_assignments.none? && legacy.tasks.none?
     if empty
       legacy.delete
-      puts "Agent: retired the duplicate alex row (xan already seeded)"
+      puts "Agent: retired the duplicate #{retired_slug} row (ray already seeded)"
     else
-      puts "Agent: alex row still has children — db:migrate (RenameAlexSoulToXan) retires it"
+      puts "Agent: #{retired_slug} row still has children — db:migrate (RenameXanSoulToRay) retires it"
     end
   else
     # rename_slug! moves every child with the row (the agent_slug keys cascade too).
-    legacy.rename_slug!("xan")
-    puts "Agent: renamed alex → xan in place (same row, history kept)"
+    legacy.rename_slug!("ray")
+    puts "Agent: renamed #{retired_slug} → ray in place (same row, history kept)"
   end
 end
 
@@ -68,12 +73,13 @@ Agent.where.not(slug: "avi").find_each do |agent|
 end
 
 # The Documentation reviewer used to be a separate `alex-docs` persona; it was
-# folded into the single orchestrator identity (then `alex`, now `xan`) — the
+# folded into the single orchestrator identity (then `alex`, now `ray`) — the
 # orchestrator + the pool's docs seat. Retire the old row so the board roster and
 # the reviewer pool show one orchestrator. Idempotent — a no-op once the row is
 # gone. (Historical reviewer references in TaskEvent/Task metadata were rewritten
-# alex-docs→alex by the matching migration, and alex→xan by RenameAlexSoulToXan.)
+# alex-docs→alex by the matching migration, alex→xan by RenameAlexSoulToXan, and
+# xan→ray by RenameXanSoulToRay.)
 if (retired = Agent.find_by(slug: "alex-docs"))
   retired.destroy!
-  puts "Agent: retired alex-docs (folded into xan)"
+  puts "Agent: retired alex-docs (folded into ray)"
 end
