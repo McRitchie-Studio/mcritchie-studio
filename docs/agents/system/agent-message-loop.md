@@ -1179,6 +1179,8 @@ carries **Build My App**, which asks for sign-in only then; it launches through 
   thread scrolls; `AgentShellHelper`), from about 40% of the window for the chat at
   first to about 80% later. Same on the app chat. Styles:
   `app/assets/tailwind/agent_shell.css`; reduced motion keeps the steps, unanimated.
+  The height cap is declared in `100vh` before `100dvh`, so a browser without `dvh`
+  (iOS before 15.4) still caps the thread.
 - **A refused Build My App** (the plan's app limit, a name taken since the tap, an
   incomplete intake) answers ON the summary card: a Turbo Stream redraws the card by
   its id (`build-summary-<message id>`) with the reason and a next step, 422. Never a

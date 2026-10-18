@@ -269,11 +269,11 @@ features:
     category: application
     icon: "glyph:app"
     blurb: Built by our agents from your description, then reviewed and shipped through our own pipeline.
-    vibe: 1 app
-    builder: 1 app
-    pro: 1 app + workers
-    team: 1 app + workers
-    enterprise: Multiple apps
+    vibe: Unlimited apps
+    builder: Unlimited apps
+    pro: Unlimited apps + workers
+    team: Unlimited apps + workers
+    enterprise: Unlimited apps + workers
     sop: app-deploy-standard
     you_do: Describe what you want built
     status: live

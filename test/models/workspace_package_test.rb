@@ -384,6 +384,8 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     refute WorkspacePackage.features.any? { |f| f.name.match?(/Google Workspace|Managed Workspace/) },
            "Managed Workspace is a paid add-on, not a tier feature, and the row is Integrations now"
     app = feature("Custom Web App")
+    assert_equal [ "Unlimited apps", "Unlimited apps", "Unlimited apps + workers", "Unlimited apps + workers", "Unlimited apps + workers" ],
+                 TIERS.map { |key| app.value_for(key) }, "every tier is unlimited on apps, so no row sells one app"
     assert_equal "app", app.glyph, "the app leads with the drawn custom-app mark, not the GitHub logo"
     refute app.brand?
     assert_includes WorkspacePackage::GLYPHS, app.glyph
