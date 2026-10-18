@@ -7,6 +7,8 @@
   <% if error %>
     <p class="px-3 pt-1 text-xs text-danger-ink" role="alert" data-test="cto-chat-error"><%= error %></p>
   <% end %>
+  <%# Read aloud while a send posts (app/javascript/agent_chat.js): the send button is an icon. %>
+  <p class="sr-only" role="status" aria-live="polite" data-composer-status data-test="composer-status"></p>
   <%= render "agent_chats/attachments_slot", form: f, **(attachments ? { attachments: attachments } : {}) %>
   <div class="relative">
     <%= f.label :text, "Message #{agent_name}", class: "sr-only" %>

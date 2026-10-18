@@ -60,7 +60,12 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "dialog[data-test='build-portrait-dialog'] input[name='portrait'][type='radio']", BuildIntake::Portraits::KEYS.size
     assert_select "dialog input[name='portrait'][value='harbor'][checked]"
     assert_select "[data-test='build-cto-name-input'][name='custom_name'][value='Marble']"
-    assert_select "datalist option", 3
+    # Every one of Ray's names is a visible tap, not a datalist that filters the
+    # others away while the first one is prefilled.
+    assert_select "datalist", 0
+    assert_equal %w[Marble Coach Scout], css_select("[data-test='build-cto-name-suggestion']").map { |b| b["data-build-cto-name"] }
+    assert_select "[data-test='build-cto-name-suggestion'][type='button']", 3, "a tap fills the field; it never submits"
+    assert_select "[data-test='build-cto-name-suggestion'][aria-pressed='true']", text: "Marble"
     assert_select "#{intake_form('cto')} [data-test='build-choose-cto']", "Build App"
   end
 
@@ -84,6 +89,10 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-card-address'] p", text: "Pick a domain"
     assert_select "#{intake_form('address')}[data-build-domain-chip='/build/check'] input[name='subdomain'][value='league-hub']"
     assert_select "button[type='submit'][data-test='build-address-suggestion']", 2
+    # A 30-character name must wrap inside a 360px card, never run off it (the e2e measures it).
+    chip = css_select("[data-test='build-address-suggestion']").first
+    %w[max-w-full break-all].each { |c| assert_includes chip["class"].split, c }
+    assert_includes chip.ancestors("form").first["class"].to_s.split, "max-w-full"
     assert_select "form[data-build-address='/build/check'] [data-test='build-address-input'][name='subdomain']"
     assert_select "[data-test='build-choose-address']", "Use this domain"
     refute_match(/\bAddress\b/, rendered)
@@ -100,6 +109,12 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-summary-cto']", /Marble/
     assert_select "[data-test='build-summary-theme']", /Pitch/
     assert_select "[data-test='build-summary-domain']", /league-hub\.mcritchie\.studio/
+    # Valid list markup: the <dl> holds only <div>s, each holding exactly one <dt> then one <dd>.
+    list = css_select("[data-test='build-card-summary'] dl").first
+    assert_equal %w[div div div], list.element_children.map(&:name)
+    list.element_children.each do |pair|
+      assert_equal %w[dt dd], pair.element_children.map(&:name), pair["data-test"]
+    end
     button = css_select("[data-test='build-summary-build']").first
     assert_equal "Build My App", button.text.strip
     assert_equal "/build/#{@row.token}", JSON.parse(button["data-build-sign-in"])["returnTo"]

@@ -4,11 +4,15 @@
     An app with a motion loop plays it over the still while a mouse rests on the
     card or the keyboard focuses it (app/javascript/gallery_motion.js). Never on
     touch, never under prefers-reduced-motion, and the video loads nothing until
-    then (preload none). It fades in on data-playing, which the script sets only
-    once it really plays, so a slow load shows the still, not a blank box. %>
+    then (preload none, and no poster: a poster would fetch the still eagerly and
+    defeat the img's loading="lazy"; the lazy still already sits under it). It
+    fades in on data-playing, which the script sets only once it really plays, so
+    a slow load shows the still, not a blank box. The focus ring is drawn INSIDE
+    the card (-outline-offset-2): the gallery row scrolls sideways, and its
+    overflow would clip a ring drawn outside. %>
 <% host = (URI.parse(example.url).host rescue nil) || example.url %>
 <%= link_to example.url, target: "_blank", rel: "noopener",
-      class: "group flex h-full flex-col overflow-hidden rounded-2xl border border-subtle bg-surface hover:border-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+      class: "group flex h-full flex-col overflow-hidden rounded-2xl border border-subtle bg-surface hover:border-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
       data: { test: "build-example", gallery_motion: (true if example.motion) } do %>
   <span class="relative block aspect-[16/10] overflow-hidden bg-surface-alt border-b border-subtle">
     <% if example.image %>
@@ -16,7 +20,7 @@
             class: "h-full w-full object-cover object-top",
             data: { test: "build-example-image" } %>
       <% if example.motion %>
-        <video src="<%= asset_path(example.motion) %>" poster="<%= asset_path(example.image) %>"
+        <video src="<%= asset_path(example.motion) %>"
                muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"
                class="pointer-events-none absolute inset-0 h-full w-full object-cover object-top opacity-0 data-[playing]:opacity-100 transition-opacity duration-300 motion-reduce:hidden"
                data-gallery-motion-video data-test="build-example-motion"></video>

@@ -27,6 +27,8 @@
   </div>
   <input type="hidden" name="app_request[<%= BrowserProof::PROOF_FIELD %>]" data-proof="<%= BrowserProof.new(BuildController::PROOF_PURPOSE).issue %>"
          data-build-proof data-test="build-proof">
+  <%# Read aloud while the first message posts (app/javascript/build_shell.js): the send button is an icon. %>
+  <p class="sr-only" role="status" aria-live="polite" data-composer-status data-test="composer-status"></p>
   <div class="relative rounded-3xl border border-subtle bg-surface shadow-lg focus-within:border-primary transition-colors">
     <% if error %>
       <p class="px-5 pt-4 text-xs text-danger-ink" role="alert" data-test="build-form-error"><%= error %></p>

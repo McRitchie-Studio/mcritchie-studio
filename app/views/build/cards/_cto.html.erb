@@ -1,10 +1,9 @@
 <%# locals: (card:, message:, request_row:) %>
-<%# The CTO card, "Meet your CTO": the portrait on the left (tap it, or New image, to open the picker of BuildIntake::Portraits), the name Ray suggested PREFILLED in an input the visitor may edit (his other names offered as suggestions), and Build App, which saves both and relays the visitor's turn so Ray moves on to the theme (BuildIntake::Choice "cto"). The picker is a native dialog inside the form (build_chat.js opens it and swaps the preview); its radios submit with the form, so a pick needs no extra request. %>
+<%# The CTO card, "Meet your CTO": the portrait on the left (tap it, or New image, to open the picker of BuildIntake::Portraits), the name Ray suggested PREFILLED in an input the visitor may edit (all his names offered as taps under it, which fill the field), and Build App, which saves both and relays the visitor's turn so Ray moves on to the theme (BuildIntake::Choice "cto"). The picker is a native dialog inside the form (build_chat.js opens it and swaps the preview; a tap on a portrait or Done closes it, while the arrow keys only move the pick, and Enter closes it without submitting); its radios submit with the form, so a pick needs no extra request. %>
 <% keys = BuildIntake::Portraits::KEYS %>
 <% picked_name = request_row.cto_name.presence || card["names"].first %>
 <% picked_portrait = BuildIntake::Portraits.key?(request_row.cto_avatar) ? request_row.cto_avatar : (card["portrait"] || BuildIntake::Portraits.default_for(request_row.token)) %>
 <% chosen = request_row.cto_name.present? %>
-<% list_id = "build-cto-names-#{message.id}" %>
 <%= form_with url: build_request_intake_path(request_row.token), method: :patch,
       class: "rounded-2xl border #{chosen ? 'border-primary' : 'border-subtle'} bg-surface p-3 sm:p-4",
       data: { test: "build-card-cto", chosen: chosen, build_cto: true } do %>
@@ -24,12 +23,18 @@
     <div class="min-w-0 flex-1 space-y-3">
       <label class="block">
         <span class="block text-xs text-muted mb-1">Name</span>
-        <input type="text" name="custom_name" value="<%= picked_name %>" maxlength="24" required autocomplete="off" list="<%= list_id %>"
-               class="input-field w-full text-base font-semibold" data-test="build-cto-name-input">
-        <datalist id="<%= list_id %>">
-          <% card["names"].each do |name| %><option value="<%= name %>"></option><% end %>
-        </datalist>
+        <input type="text" name="custom_name" value="<%= picked_name %>" maxlength="24" required autocomplete="off"
+               class="input-field w-full text-base font-semibold" data-build-cto-name-input data-test="build-cto-name-input">
       </label>
+      <%# Ray's names as taps, not a datalist: a datalist filters by the field's value, so with the first name prefilled the others stayed hidden until the field was cleared. A tap fills the field (build_chat.js); typing still wins. %>
+      <% if card["names"].size > 1 %>
+        <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="<%= BuildController::AGENT_NAME %>'s name ideas" data-test="build-cto-names">
+          <% card["names"].each do |name| %>
+            <button type="button" class="rounded-full border border-subtle px-2.5 py-1 text-xs text-body hover:border-primary aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-heading"
+                    aria-pressed="<%= name == picked_name %>" data-build-cto-name="<%= name %>" data-test="build-cto-name-suggestion"><%= name %></button>
+          <% end %>
+        </div>
+      <% end %>
       <button type="submit" class="btn btn-primary btn-sm" data-test="build-choose-cto">
         <%= chosen ? "Save my CTO" : "Build App" %>
       </button>

@@ -52,6 +52,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
   test "the page's first message answers in place: the draft's chat streams over the empty thread and the address moves, no redirect" do
     get build_path
     assert_select "#build-chat-page form#build-first-form[action='/build']"
+    assert_select "##{BuildController::GALLERY_ID}", 1
 
     proof = BrowserProof.new(BuildController::PROOF_PURPOSE).issue(5.seconds.ago).reverse
     post build_path, params: { app_request: { prompt: PROMPT, form_proof: proof } }, as: :turbo_stream
@@ -67,7 +68,11 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "turbo-stream[action='replace'][target='build-checklist'] template [data-test='build-heading']", 1,
                   "no card yet, so the heading stays: a visitor may only be saying hi"
     assert_select "turbo-stream[action='replace_url'][url='/build/#{draft.token}']", 1
+    # Once chatting there is no gallery, in place or on a reload: the two pages agree.
+    assert_select "turbo-stream[action='remove'][target='#{BuildController::GALLERY_ID}']", 1
     assert draft.draft?
+    get build_request_path(draft.token)
+    assert_select "##{BuildController::GALLERY_ID}, [data-test='build-gallery']", 0
   end
 
   test "a refused first message comes back in the same box, with the reason and the text kept" do
