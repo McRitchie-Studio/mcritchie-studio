@@ -1,5 +1,5 @@
 <%# locals: (message:, agent_name:) %>
-<%# One turn of an agent web chat: what the viewer sent (or, first in a client app's CTO chat, Xan's handover: AgentMessages::ClientCtoHandover), then the agent's answer, or why there is none yet. Rendered on the page and in WebChat broadcasts (no request: no URL helpers here). The test hooks keep their cto-chat names. %>
+<%# One turn of an agent web chat: what the viewer sent (or, first in a client app's CTO chat, Ray's handover: AgentMessages::ClientCtoHandover), then the agent's answer, or why there is none yet. Rendered on the page and in WebChat broadcasts (no request: no URL helpers here). The test hooks keep their cto-chat names. %>
 <% answered = message.status == "completed" && message.response_text.present? %>
 <% replied_ms = answered ? ((message.reply_posted_at || message.completed_at || message.updated_at).to_f * 1000).to_i : nil %>
 <div id="cto-chat-turn-<%= message.id %>" class="flex flex-col gap-2" data-test="cto-chat-turn" data-status="<%= message.status %>"
