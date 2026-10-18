@@ -36,8 +36,10 @@
 # bin/lib/agent_audience.rb, which also holds the ranking) that may REQUEST a
 # capability, and the request must also pass Audience#may? (propose_ask,
 # propose_change). A client may request only in the domain it is a client of.
-# Only the owner ever CONFIRMS one (`go`, Audience#may?(:confirm_proposal)),
-# checked by the person's role (agent_people.role), never by a Discord id.
+# The owner CONFIRMS one (`go`, Audience#may?(:confirm_proposal)), checked by
+# the person's role (agent_people.role), never by a Discord id. An app's owner may
+# confirm a `change` on their own app's web CTO thread, under the app's cap
+# (AgentMessages::ProposalConfirm#owner_verdict); never an ask or an operate.
 #
 # `internal: true` marks a domain whose doc (and name) is internal: a client or
 # public audience gets an empty DOMAIN layer for it

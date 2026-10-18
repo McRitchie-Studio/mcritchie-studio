@@ -32,7 +32,10 @@ module AgentMailbox
       propose_ask: %w[owner team client],
       propose_change: %w[owner team client],
       propose_operate: %w[owner team],
-      # CONFIRMING (`go`, `no`, `change: …` on an open proposal) is the owner's alone.
+      # CONFIRMING (`go`, `no`, `change: …` on an open proposal) is the owner's.
+      # The one exception, an app owner on their own app's web CTO thread, is
+      # decided in code by AgentMessages::ProposalConfirm#owner_verdict, never here:
+      # widening this row would let every client confirm on every channel.
       confirm_proposal: %w[owner]
     }.freeze
     # The ranking a capability's min_audience is read against, lowest first.
