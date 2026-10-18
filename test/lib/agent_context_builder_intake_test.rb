@@ -72,4 +72,13 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
   test "no intake in the bundle, no intake section" do
     refute_includes prompt("audience" => { "role" => "owner" }), "INTAKE CHAT"
   end
+
+  # The slug stays `xan`; the name the visitor reads is the roster's (config/souls.yml).
+  test "the intake persona introduces itself as Ray, not by its slug" do
+    text = prompt("intake" => { "steps" => BuildIntake::STEPS, "done" => {}, "values" => {} },
+                  "audience" => { "role" => "public" })
+    assert text.start_with?("You are Ray, an agent in the McRitchie ecosystem"), text.lines.first
+    assert_includes text, "You are Ray, an AI agent of McRitchie Studio."
+    refute_match(/\bXan\b/, text)
+  end
 end

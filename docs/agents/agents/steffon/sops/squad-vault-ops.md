@@ -16,7 +16,7 @@ mainnet; the second is [`4S39` as a second signature](#the-second-signature). Mr
 > the transaction and double sign and provide me the URL to sign and execute."
 > (`squad-vault-ops-sop`, activity-17964)
 
-The same day Xan told him "the upgrade proposal itself follows the same pattern:
+The same day Ray told him "the upgrade proposal itself follows the same pattern:
 one click from you", and he answered "Cool let me know when the upgrade URL is
 ready" (chat, 2026-10-12, relayed in the `squad-vault-ops-sop` rework). Mainnet
 Squad #8, the v0.26 `Upgrade` of turf-vault, was the first upgrade done this
@@ -24,12 +24,12 @@ way. `7auwTL` created it, `7auwTL` and `4bKN` approved it, and he approved from
 `7ZDJ` and executed it himself at about 13:28 MDT on 2026-10-12. The program's
 last deploy is now slot 456161810, with a 707,600-byte program. Its sha256,
 `3dfcb0c4…`, is the hash of the full 707,600-byte `solana program dump` output,
-not of a trimmed binary, so compare like with like. `init_governance` followed at `5KqNaY9r…` (slot 456162765), signed by an agent with `8K81` and `CytJ` under Mr. McRitchie's one-word ruling "A" on Xan's offer of "a one-time grant: right after you execute, an agent runs init_governance with 8K81 + Mason's CytJ" (`mainnet-v026-upgrade`, activity-18004).
+not of a trimmed binary, so compare like with like. `init_governance` followed at `5KqNaY9r…` (slot 456162765), signed by an agent with `8K81` and `CytJ` under Mr. McRitchie's one-word ruling "A" on Ray's offer of "a one-time grant: right after you execute, an agent runs init_governance with 8K81 + Mason's CytJ" (`mainnet-v026-upgrade`, activity-18004).
 That `init_governance` is NOT under this SOP: it ran on the per-instance ruling
 First Rule 10 then required for a barred key; those keys are retired and never
 sign now. The
 proposal status, deploy slot, size and `init_governance` signature were read off
-chain on 2026-10-12; Xan measured the hash.
+chain on 2026-10-12; Ray measured the hash.
 
 **Callers.** [`program-upgrade`](program-upgrade.md) (rent floats for a buffer)
 and Turf Monster's [`collect-vault-revenue`](../../turf_monster/sops/collect-vault-revenue.md)
@@ -43,7 +43,7 @@ hop 2 (swept revenue to his wallet) both run their Squads step here.
 | Vault (vault 0) | `Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm` |
 | Agent seats | `7auwTL…` (`solana.turf.system`, `studio-agents`); `3LTLPG…` (`solana.turf.governance.v2`, `studio-agents-admin`), which replaced the exposed `4bKN…` by config transaction #10 on 2026-10-14 |
 | Mr. McRitchie's seats, in the order to ask for them | `7ZDJp7FU…` (Phantom), then `3Qj4v9…`, then `9gACbz…` |
-| Never sign | the retired keys Xan `8K81…`, Mason `CytJ…` and `4bKN…` (swept to 0 SOL, items archived 2026-10-14). Mack `foUu…` is devnet-only and holds no mainnet power. The app's own server key (`4S39…`, `solana.turf.server`, since 2026-10-14) signing inside the running app is the app, not an agent; an agent signs with it only as [the second signature](#the-second-signature) |
+| Never sign | the retired keys Ray `8K81…`, Mason `CytJ…` and `4bKN…` (swept to 0 SOL, items archived 2026-10-14). Mack `foUu…` is devnet-only and holds no mainnet power. The app's own server key (`4S39…`, `solana.turf.server`, since 2026-10-14) signing inside the running app is the app, not an agent; an agent signs with it only as [the second signature](#the-second-signature) |
 
 The set was read off chain on 2026-10-14, after config transaction #10. turf-vault
 `scripts/lib/squad-clusters.js` holds it, and its test pins it. Read the live set

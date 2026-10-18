@@ -23,7 +23,7 @@ never promote `accepted → release`, never touch `main`, never deploy.
 **Who runs it.** Any session, under its own Pokémon identity. The builders you
 spawn are Pokémon too ([`../agents/pokemon/role.md`](../agents/pokemon/role.md)):
 one general builder soul, legion. The reviewers you spawn are the specialists:
-Carl, Shannon, Jasper, Steffon, or Xan for prose.
+Carl, Shannon, Jasper, Steffon, or Ray for prose.
 
 > **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
 
@@ -235,7 +235,7 @@ tags are on the task.
 
 **The documentation seat merges docs-shape PRs only.** Tier A is your read of
 the diff; `bin/merge-permit` measures it again at the merge, from the PR's own
-files at the head being merged. If Xan reports a refusal (a code file landed, or
+files at the head being merged. If Ray reports a refusal (a code file landed, or
 the diff was never prose), the PR is tier B: spawn `carl`.
 
 Spawn the reviewer with this brief, filled in:
