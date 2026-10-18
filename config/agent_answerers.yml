@@ -43,7 +43,9 @@ public_intake:
 # app's web CTO thread, web:<app>:<their user id>, written by
 # AgentMessages::WebIngest. The same person stays held everywhere else: another
 # app's thread, Discord, email. They are answered as a CLIENT of that app (no
-# owner or team action; a `go` on a proposal is still the owner's alone).
+# owner or team action). On that thread only, they may say go / no / change: on a
+# `change` proposal while the app is under its cap (Alex, 2026-10-18;
+# AgentMessages::ProposalConfirm#owner_verdict).
 #
 # Their answers count against the app's usage meter (AgentUsage.owner_meter):
 # the tier's cto_monthly_tokens (config/workspace_packages.yml), or, while every
