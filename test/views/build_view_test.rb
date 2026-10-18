@@ -112,8 +112,8 @@ class BuildViewTest < ActionView::TestCase
     render template: "build/new"
 
     assert_select "[data-test='build-form'] textarea[name='app_request[prompt]'][maxlength='#{AppRequest::PROMPT_LIMIT}'][required]"
-    assert_select "label.sr-only", text: "Tell Xan what you want to build"
-    assert_select "[data-test='build-send'][aria-label='Send to Xan']"
+    assert_select "label.sr-only", text: "Tell Ray what you want to build"
+    assert_select "[data-test='build-send'][aria-label='Send to Ray']"
     assert_includes rendered, "@keydown.enter", "Enter must send the prompt"
     assert_select "[data-test='build-examples'] button", 4
   end
@@ -123,7 +123,7 @@ class BuildViewTest < ActionView::TestCase
     @messages = BuildIntake.history(request_row.token)
     @xan = nil
     view.define_singleton_method(:composer_locals) do |error: nil, text: ""|
-      { url: "/build/#{request_row.token}/messages", scope: :build_chat, id: "build-chat-form", agent_name: "Xan", error: error, text: text }
+      { url: "/build/#{request_row.token}/messages", scope: :build_chat, id: "build-chat-form", agent_name: "Ray", error: error, text: text }
     end
   end
 
@@ -133,7 +133,7 @@ class BuildViewTest < ActionView::TestCase
     render template: "build/show"
 
     assert_select "[data-test='build-chat-page'][data-build-chat-poll-url='/build/#{@app_request.token}/turns']"
-    assert_select "[data-test='agent-chat-header'][data-agent-name='Xan']"
+    assert_select "[data-test='agent-chat-header'][data-agent-name='Ray']"
     assert_select "form#build-chat-form[action='/build/#{@app_request.token}/messages'] textarea[name='build_chat[text]']"
     %w[idea cto colors address].each { |step| assert_select "[data-test='build-check-#{step}'][data-done='false']" }
     assert_select "[data-test='build-my-app'][disabled][data-enabled='false']"
