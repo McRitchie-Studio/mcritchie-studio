@@ -21,6 +21,9 @@
 .agent-shell {
   --agent-shell-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --agent-shell-time: 420ms;
+  /* 100vh first: a browser without dvh (iOS before 15.4) drops the second
+     line and still caps the thread. */
+  max-height: calc(100vh - var(--agent-shell-top, 9rem));
   max-height: calc(100dvh - var(--agent-shell-top, 9rem));
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }

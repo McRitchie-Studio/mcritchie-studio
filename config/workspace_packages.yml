@@ -249,14 +249,14 @@ packages:
   - key: enterprise
     name: Enterprise
     talk_to_us: true
-    tagline: Need more apps, white label or custom connectors? Talk to us.
+    tagline: Need white label, more domains or custom connectors? Talk to us.
     price_label: Custom
     cto_monthly_tokens: ~
     apps_per_account: ~
     building_lanes: ~
     comp: McRitchie Industries
     highlights:
-      - More than one app, and more than one domain
+      - More than one domain under one account
       - White label on your own accounts
       - Custom connectors to the systems you already use (coming soon)
       - Payments, crypto and AI features as add-ons

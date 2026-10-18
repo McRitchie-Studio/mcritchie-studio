@@ -114,7 +114,7 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
   // live: with no enterprise URL configured it opens the same booking popup
   // rather than a dead link.
   const talk = page.locator("[data-test='talk-to-us'][data-package='enterprise']");
-  await expect(talk).toContainText("Need more apps, white label or custom connectors? Talk to us");
+  await expect(talk).toContainText("Need white label, more domains or custom connectors? Talk to us");
   const book = talk.getByRole("link", { name: "Book a call" });
   await book.scrollIntoViewIfNeeded();
   await book.click();

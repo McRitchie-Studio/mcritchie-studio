@@ -81,7 +81,19 @@ class BuildViewTest < ActionView::TestCase
                  "no title band above the image: the name sits in the bottom section"
     assert_equal "cyvasse.mcritchie.studio", card.at_css("[data-test='build-example-host']").text
 
+    # Alex 2026-10-18: the domain smaller, the description much smaller, the
+    # name kept at body size so it still leads.
+    name = card.at_css("[data-test='build-example-name']")["class"].split
+    refute(name.any? { |c| c.start_with?("text-") && c =~ /text-(xs|sm|\[)/ }, "the name keeps its size")
+    host = card.at_css("[data-test='build-example-host']")["class"].split
+    assert_includes host, "text-[11px]", "the domain is smaller than text-xs"
+    refute_includes host, "text-xs"
+    assert_includes host, "truncate"
+
     blurb = card.at_css("[data-test='build-example-blurb']")
+    assert_includes blurb["class"].split, "text-[11px]", "the description is much smaller than text-sm"
+    assert_includes blurb["class"].split, "text-muted", "and quieter than the name"
+    refute_includes blurb["class"].split, "text-sm"
     assert_includes blurb["class"].split, "truncate", "one line, ending in an ellipsis"
     refute_includes blurb["class"], "line-clamp"
     assert_equal long.strip, blurb["title"], "the whole description is still there on hover"
