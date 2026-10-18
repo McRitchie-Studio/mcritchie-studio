@@ -8,7 +8,7 @@
   <% if req.draft? %>
     <% head = render "agent_chats/header", name: BuildController::AGENT_NAME, agent: @intake_agent, role: BuildController::AGENT_ROLE %>
     <% status = render "build/status_card", request_row: req, started: @started %>
-    <%= render "agent_chats/shell", page: "draft", head: head, status: status, chat: render("build/chat", request_row: req, messages: @messages) %>
+    <%= render "agent_chats/shell", page: "draft", head: head, status: status, chat: render("build/chat", request_row: req, messages: @messages), turns: @messages.size %>
 
   <% else %>
     <%# Queued or live (an admin's showcase, queued without the intake): the same shell, the status in its card, the prompt as the thread. %>

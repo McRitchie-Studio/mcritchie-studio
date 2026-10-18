@@ -7,6 +7,7 @@ pin "alex_chat"
 pin "agent_chat"
 pin "build_chat"
 pin "build_shell"
+pin "agent_shell"
 pin "typing_placeholder"
 pin "cto_chat", to: "agent_chat.js" # the old name, kept import-compatible
 pin "depth_chart"

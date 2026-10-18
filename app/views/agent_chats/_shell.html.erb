@@ -1,4 +1,4 @@
-<%# locals: (page:, head:, status:, chat:) %>
+<%# locals: (page:, head:, status:, chat:, turns: 0) %>
 <%#
   ONE structure for every page where a visitor talks to an agent
   (.agents/epics/build-with-ray-v2.md, section 6): /build, /build/:token and
@@ -14,9 +14,23 @@
   Each slot is ready markup. The three pages share it, and each slot keeps a
   view-transition name, so a move between them (Turbo, with
   <meta name="view-transition">) changes only what differs.
+
+  AS THE CONVERSATION GROWS (task build-launch-chat-growth): the shell is a
+  column no taller than the window under the navbar. The thread grows with its
+  turns until the shell reaches that height; then the thread scrolls inside it,
+  the chat box stays at the window's bottom, and whatever sits below the shell
+  (/build's gallery, the footer) is pushed off screen. The head and status card
+  compact in steps as turns accumulate (data-shell-size: full, medium, compact;
+  AgentShellHelper), so the conversation takes about 40% of the window at first
+  and about 80% later. `turns` sets the first step on the server, so a reload
+  paints at its size; app/javascript/agent_shell.js moves it on as turns arrive,
+  never back, and app/assets/tailwind/agent_shell.css draws each step, animated
+  unless the visitor prefers reduced motion.
 %>
-<section class="max-w-3xl mx-auto px-4 pt-8 sm:pt-12 pb-24 flex flex-col gap-6" data-test="agent-shell" data-shell="<%= page %>">
-  <%= head %>
-  <div style="view-transition-name: agent-status;" data-test="agent-shell-status"><%= status %></div>
-  <%= chat %>
+<section class="agent-shell max-w-3xl mx-auto px-4 pt-4 sm:pt-8 flex flex-col gap-6" data-test="agent-shell" data-shell="<%= page %>"
+         data-agent-shell data-shell-size="<%= agent_shell_size(turns) %>"
+         data-shell-medium-at="<%= AgentShellHelper::MEDIUM_AT %>" data-shell-compact-at="<%= AgentShellHelper::COMPACT_AT %>">
+  <div class="agent-shell-head" data-test="agent-shell-head"><%= head %></div>
+  <div class="agent-shell-status" style="view-transition-name: agent-status;" data-test="agent-shell-status"><%= status %></div>
+  <div class="agent-shell-chat" data-test="agent-shell-chat"><%= chat %></div>
 </section>

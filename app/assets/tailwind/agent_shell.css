@@ -1,0 +1,210 @@
+/* The agent shell as the conversation grows (app/views/agent_chats/_shell.html.erb;
+   task build-launch-chat-growth). Unlayered on purpose: it must beat the
+   utilities the partials carry (w-24, max-h-[60vh], text-5xl), which Tailwind
+   puts in a layer.
+
+   1. The shell is a column no taller than the window under the navbar
+      (--nav-bottom, published by studio-engine's pinned stack; the layout's
+      1.5rem top padding comes off too). The thread grows with its turns until the
+      column is full, then scrolls inside it, so the chat box sits at the window's
+      bottom and what follows the shell is pushed off screen.
+   2. Three size steps, data-shell-size: full (no turns yet), medium (the
+      conversation has started), compact (it is the page). Each step shrinks the
+      portrait, the caption, the heading and the status card.
+   3. Entrances for the first message's move to /build/<token>: the thread
+      slides in, the status card scales in when it first appears, and the gallery
+      slides away (app/javascript/agent_shell.js adds the classes).
+   Under prefers-reduced-motion every step still applies, with no motion. */
+
+.agent-shell {
+  --agent-shell-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --agent-shell-time: 420ms;
+  max-height: calc(100dvh - var(--nav-bottom, 4rem) - 1.5rem);
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  transition: gap var(--agent-shell-time) var(--agent-shell-ease);
+}
+
+.agent-shell > .agent-shell-head,
+.agent-shell > .agent-shell-status { flex: none; }
+
+.agent-shell > .agent-shell-chat {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.agent-shell .agent-shell-thread {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The thread: as tall as its turns, until the column is full. */
+.agent-shell [data-cto-chat-scroll] {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: none;
+  overscroll-behavior: contain;
+}
+
+.agent-shell [data-cto-chat-form],
+.agent-shell [data-build-first-form] {
+  flex: none;
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
+/* ── The head: portrait and caption ─────────────────────────────────────── */
+
+.agent-shell .agent-shell-header {
+  transition: gap var(--agent-shell-time) var(--agent-shell-ease);
+}
+
+.agent-shell .agent-shell-portrait > * {
+  transition: width var(--agent-shell-time) var(--agent-shell-ease),
+              height var(--agent-shell-time) var(--agent-shell-ease),
+              font-size var(--agent-shell-time) var(--agent-shell-ease);
+}
+
+.agent-shell[data-shell-size="medium"] .agent-shell-portrait > * {
+  width: 4rem;
+  height: 4rem;
+  font-size: 1.5rem;
+}
+
+.agent-shell[data-shell-size="compact"] { gap: 0.75rem; }
+
+.agent-shell[data-shell-size="compact"] .agent-shell-header {
+  flex-direction: row;
+  justify-content: center;
+  gap: 0.625rem;
+}
+
+.agent-shell[data-shell-size="compact"] .agent-shell-portrait > * {
+  width: 2.5rem;
+  height: 2.5rem;
+  font-size: 1rem;
+}
+
+/* ── The heading (/build before the first card) ─────────────────────────── */
+
+.agent-shell .agent-shell-heading h1 {
+  transition: font-size var(--agent-shell-time) var(--agent-shell-ease),
+              margin var(--agent-shell-time) var(--agent-shell-ease);
+}
+
+.agent-shell .agent-shell-subtitle {
+  max-height: 6rem;
+  overflow: hidden;
+  transition: max-height var(--agent-shell-time) var(--agent-shell-ease),
+              opacity calc(var(--agent-shell-time) * 0.6) ease-out;
+}
+
+.agent-shell[data-shell-size="medium"] .agent-shell-heading h1 {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+  margin-bottom: 0;
+}
+
+.agent-shell[data-shell-size="compact"] .agent-shell-heading h1 {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+  margin-bottom: 0;
+}
+
+.agent-shell:not([data-shell-size="full"]) .agent-shell-subtitle {
+  max-height: 0;
+  opacity: 0;
+}
+
+/* ── The status card ────────────────────────────────────────────────────── */
+
+.agent-shell .agent-shell-card,
+.agent-shell .agent-shell-card-title,
+.agent-shell .agent-shell-tile,
+.agent-shell .agent-shell-tile-icon {
+  transition: padding var(--agent-shell-time) var(--agent-shell-ease),
+              font-size var(--agent-shell-time) var(--agent-shell-ease),
+              height var(--agent-shell-time) var(--agent-shell-ease);
+}
+
+.agent-shell[data-shell-size="compact"] .agent-shell-card {
+  padding: 0.625rem 0.75rem;
+}
+
+.agent-shell[data-shell-size="compact"] .agent-shell-card > :not(:last-child) {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+.agent-shell[data-shell-size="compact"] .agent-shell-card-title {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+
+.agent-shell[data-shell-size="compact"] .agent-shell-tile {
+  flex-direction: row;
+  justify-content: center;
+  padding: 0.25rem 0.5rem;
+  gap: 0.375rem;
+}
+
+.agent-shell[data-shell-size="compact"] .agent-shell-tile-icon {
+  height: 1.5rem;
+  flex: none;
+}
+
+.agent-shell[data-shell-size="compact"] .agent-shell-tile-icon > * {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.agent-shell[data-shell-size="compact"] .agent-shell-tile-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.agent-shell[data-shell-size="compact"] .agent-shell-tile > :last-child { width: auto; min-width: 0; }
+
+/* ── Entrances (app/javascript/agent_shell.js) ──────────────────────────── */
+
+@keyframes agent-shell-thread-in {
+  from { opacity: 0; transform: translateY(1.5rem); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes agent-shell-pop-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+.agent-shell-enter-thread [data-cto-chat-scroll] {
+  animation: agent-shell-thread-in 460ms var(--agent-shell-ease, ease-out) both;
+}
+
+.agent-shell-enter-card {
+  animation: agent-shell-pop-in 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: top center;
+}
+
+.agent-shell-leaving {
+  transition: opacity 260ms ease-in, transform 260ms ease-in;
+  opacity: 0;
+  transform: translateY(1rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-shell,
+  .agent-shell * {
+    transition-duration: 0s !important;
+  }
+  .agent-shell-enter-thread [data-cto-chat-scroll],
+  .agent-shell-enter-card {
+    animation: none;
+  }
+  .agent-shell-leaving { transition: none; }
+}
