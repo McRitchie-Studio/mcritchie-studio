@@ -47,7 +47,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select TALK, 1
     assert_operator response.body.rindex("data-test=\"package-card\""), :<, response.body.index("data-test=\"talk-to-us\""),
                     "the line sits under the cards"
-    assert_select "#{TALK} [data-test='talk-to-us-question']", text: "Need more apps, white label or custom connectors? Talk to us."
+    assert_select "#{TALK} [data-test='talk-to-us-question']", text: "Need white label, more domains or custom connectors? Talk to us."
     assert_select "#{TALK_CTA}[data-cta-action='enterprise_booking']", text: "Book a call"
     assert_select "#{TALK} [data-test='talk-to-us-highlight']", WorkspacePackage.find(:enterprise).highlights.size
     assert_select "#{TALK} [data-test='talk-to-us-highlight']", text: /CMMC\/ITAR compliance review, available on request/

@@ -17,7 +17,12 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     line = WorkspacePackage.talk_to_us
     assert_equal "enterprise", line.key
     refute line.card?
-    assert_match(/Need more apps, white label or custom connectors\? Talk to us/, line.tagline)
+    assert_match(/Need white label, more domains or custom connectors\? Talk to us/, line.tagline)
+    # Every tier holds unlimited apps (apps_per_account: ~), so Enterprise must
+    # not sell "more apps" as its difference.
+    assert WorkspacePackage.all.all? { |pkg| pkg.apps_per_account.nil? }, "every tier is unlimited on apps"
+    refute_match(/more apps/i, line.tagline)
+    refute(line.highlights.any? { |h| h =~ /more than one app/i }, "no Enterprise highlight implies lower tiers get one app")
     assert_equal({ "label" => "Book a call", "action" => "enterprise_booking" }, line.cta)
     assert_includes WorkspacePackage.keys, "enterprise", "Enterprise keeps its key for the clients stored on it"
     refute_includes WorkspacePackage.keys, "growth", "Growth split into Pro and Team on 2026-10-12"
@@ -379,6 +384,8 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     refute WorkspacePackage.features.any? { |f| f.name.match?(/Google Workspace|Managed Workspace/) },
            "Managed Workspace is a paid add-on, not a tier feature, and the row is Integrations now"
     app = feature("Custom Web App")
+    assert_equal [ "Unlimited apps", "Unlimited apps", "Unlimited apps + workers", "Unlimited apps + workers", "Unlimited apps + workers" ],
+                 TIERS.map { |key| app.value_for(key) }, "every tier is unlimited on apps, so no row sells one app"
     assert_equal "app", app.glyph, "the app leads with the drawn custom-app mark, not the GitHub logo"
     refute app.brand?
     assert_includes WorkspacePackage::GLYPHS, app.glyph

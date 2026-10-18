@@ -9,7 +9,8 @@
       the layout's padding above it vary by page and width; 9rem without the
       script). The thread grows with its turns until the
       column is full, then scrolls inside it, so the chat box sits at the window's
-      bottom and what follows the shell is pushed off screen.
+      bottom and what follows the shell is pushed off screen. The cap is set in 100vh first,
+      then 100dvh, so a browser without dvh (iOS before 15.4) keeps the vh cap.
    2. Three size steps, data-shell-size: full (no turns yet), medium (the
       conversation has started), compact (it is the page). Each step shrinks the
       portrait, the caption, the heading and the status card.
@@ -21,6 +22,7 @@
 .agent-shell {
   --agent-shell-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --agent-shell-time: 420ms;
+  max-height: calc(100vh - var(--agent-shell-top, 9rem));
   max-height: calc(100dvh - var(--agent-shell-top, 9rem));
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
