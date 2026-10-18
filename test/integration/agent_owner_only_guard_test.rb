@@ -64,7 +64,7 @@ class AgentOwnerOnlyGuardTest < ActionDispatch::IntegrationTest
 
     mine = ingest(2202, author: ALEX)
     assert_equal mine.id, claim_over_http("mac-1")["id"]
-    assert_enqueued_with(job: AgentMessageTypingJob, args: [ mine.id, "mac-1" ]) do
+    assert_enqueued_with(job: AgentMessageTypingJob, args: [ mine.id, "mac-1", "typing" ]) do
       post typing_api_v1_agent_message_url(mine), params: { worker: "mac-1" }, headers: @shared, as: :json
     end
     assert_equal "queued", response.parsed_body.dig("meta", "typing")
