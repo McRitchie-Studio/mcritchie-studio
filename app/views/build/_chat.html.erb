@@ -1,37 +1,29 @@
-<%# locals: (request_row:, messages:, xan:) %>
+<%# locals: (request_row:, messages:) %>
 <%#
-  /build/:token while a draft: the chat with Xan (the shared agent_chats header and
-  composer) and the checklist. A signed-out visitor has no /cable socket, so the page
-  POLLS for answers (app/javascript/build_chat.js reads data-build-chat-poll-url and
-  asks about every turn still pending). Cards render inside their turn (build/_turn).
-  The log reuses AgentMessages::WebChat::MESSAGES_TARGET (a cto-chat-* id, as
-  agent_chats/_chat does), so ONE PAGE HOLDS ONE CHAT. The two small Alpine helpers below are inline, ahead of the cards, so a card that
-  arrives later in a poll finds them defined.
+  The lower half of the /build shell on a draft (agent_chats/_shell): Ray's thread,
+  then the chat box (the shared agent_chats composer). BuildController#show renders
+  it, and #create streams it in place of /build's empty thread (id build-chat-page),
+  so the first message never leaves the page. A signed-out visitor has no /cable
+  socket, so the page POLLS for answers (app/javascript/build_chat.js reads
+  data-build-chat-poll-url and asks about every turn still pending). Cards render
+  inside their turn (build/_turn). The log reuses AgentMessages::WebChat::MESSAGES_TARGET
+  (a cto-chat-* id, as agent_chats/_chat does), so ONE PAGE HOLDS ONE CHAT.
 %>
-<div class="grid gap-4 lg:gap-6 lg:grid-cols-[minmax(0,1fr)_17rem] items-start" data-test="build-chat-page"
+<div id="build-chat-page" class="flex flex-col gap-3" data-test="build-chat-page"
      data-build-chat data-build-chat-poll-url="<%= build_request_turns_path(request_row.token) %>">
-  <div class="min-w-0 space-y-4 order-2 lg:order-1">
-    <% subtitle = capture do %>
-      <p class="text-secondary text-sm">An AI agent. Ray helps you set up your app: the idea, your CTO, your colors and your address.</p>
+  <div id="<%= AgentMessages::WebChat::MESSAGES_TARGET %>" role="log" aria-live="polite" aria-label="Conversation with <%= BuildController::AGENT_NAME %>"
+       class="flex flex-col gap-4 px-1 py-2 overflow-y-auto max-h-[60vh]" data-test="build-chat-messages" data-cto-chat-scroll>
+    <p class="hidden only:block text-center text-secondary text-sm py-6" data-test="build-chat-empty">Tell <%= BuildController::AGENT_NAME %> what you want to build.</p>
+    <% messages.each do |message| %>
+      <%= render "build/turn", message: message, request_row: request_row %>
     <% end %>
-    <%# view-transition-name matches the CTO chat's head (cto_chats/show): Build my app morphs this head into the new CTO's. %>
-    <div style="view-transition-name: agent-chat-head;">
-      <%= render "agent_chats/header", name: "Ray", agent: xan, heading: "Build with Ray", subtitle: subtitle %>
-    </div>
-
-    <div class="card p-0 overflow-hidden flex flex-col" data-test="build-chat">
-      <div id="<%= AgentMessages::WebChat::MESSAGES_TARGET %>" role="log" aria-live="polite" aria-label="Conversation with Ray"
-           class="flex flex-col gap-4 p-3 sm:p-4 overflow-y-auto min-h-[16rem] max-h-[65vh]" data-test="build-chat-messages" data-cto-chat-scroll>
-        <p class="hidden only:block text-center text-secondary text-sm py-10" data-test="build-chat-empty">Tell Ray what you want to build.</p>
-        <% messages.each do |message| %>
-          <%= render "build/turn", message: message, request_row: request_row %>
-        <% end %>
-      </div>
-      <%= render "agent_chats/form", **composer_locals %>
-    </div>
   </div>
-
-  <aside class="min-w-0 order-1 lg:order-2 lg:sticky lg:top-24" aria-label="Your app's checklist">
-    <%= render "build/checklist", request_row: request_row %>
-  </aside>
+  <%= render "agent_chats/form", **composer_locals %>
+  <%# Here rather than on the page, so the first message's stream brings it too. %>
+  <% if logged_in? && current_user.admin? %>
+    <details class="mt-6" data-test="build-admin-claim">
+      <summary class="cursor-pointer text-sm font-semibold text-muted">Admin: queue a showcase without the intake</summary>
+      <div class="mt-4"><%= render "build/claim_form", req: request_row %></div>
+    </details>
+  <% end %>
 </div>

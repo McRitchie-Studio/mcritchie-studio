@@ -1,15 +1,16 @@
-<%# locals: (name:, agent: nil, portrait: nil, heading: "Chat with #{name}", subtitle: nil) %>
-<%# The chat's head: the heading agent's portrait and name, and `subtitle` (ready markup, usually a `capture`) under the heading. An explicit local, never a bare yield: a partial rendered without a block yields the LAYOUT's body, so a yield here would print the whole page twice. Swap the agent and the page keeps its shape. `agent` is an Agent row (components/agent_avatar); `portrait` is ready markup that wins over it; with neither, a plain circle. %>
-<div class="flex items-center gap-3 min-w-0" data-test="agent-chat-header" data-agent-name="<%= name %>">
-  <% if portrait %>
-    <%= portrait %>
-  <% elsif agent %>
-    <%= render "components/agent_avatar", agent: agent, size: "md" %>
-  <% else %>
-    <span class="w-14 h-14 text-2xl rounded-full flex items-center justify-center bg-inset border border-subtle shrink-0" aria-hidden="true">🤖</span>
-  <% end %>
-  <div class="min-w-0">
-    <h1 class="text-2xl sm:text-3xl font-bold text-heading break-words"><%= heading %></h1>
-    <%= subtitle if subtitle %>
+<%# locals: (name:, agent: nil, portrait: nil, role: nil) %>
+<%# The shell's head (agent_chats/_shell): the page's agent, its portrait a big circle centered on top, its name and role under it. Ray on /build, the CTO once the app exists. The portrait keeps ONE view-transition name on every agent page, so Build my app morphs Ray's portrait into the CTO's. `agent` is an Agent row (components/agent_avatar); `portrait` is ready markup that wins over it; with neither, the name's initial on a plain circle. `role` is ready markup or text. An explicit local, never a bare yield: a partial rendered without a block yields the LAYOUT's body. %>
+<div class="flex flex-col items-center gap-2 text-center min-w-0" data-test="agent-chat-header" data-agent-name="<%= name %>">
+  <div class="rounded-full shadow-md" style="view-transition-name: agent-portrait;" data-test="agent-portrait">
+    <% if portrait %>
+      <%= portrait %>
+    <% elsif agent %>
+      <%= render "components/agent_avatar", agent: agent, size: "xl" %>
+    <% else %>
+      <span class="w-24 h-24 text-3xl rounded-full flex items-center justify-center bg-inset border border-subtle text-heading font-bold shrink-0" aria-hidden="true"><%= name.to_s.first.upcase %></span>
+    <% end %>
   </div>
+  <p class="text-sm text-secondary break-words" style="view-transition-name: agent-caption;" data-test="agent-caption">
+    <span class="font-semibold text-heading"><%= name %></span><% if role.present? %> · <%= role %><% end %>
+  </p>
 </div>

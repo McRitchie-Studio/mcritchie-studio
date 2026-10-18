@@ -109,7 +109,7 @@ module AgentMessages
       app = App.find_by(slug: message.channel_ref)
       return unless app
 
-      Turbo::StreamsChannel.broadcast_update_to(stream_for(message), target: METER_TARGET, partial: "applications/usage_meter",
+      Turbo::StreamsChannel.broadcast_update_to(stream_for(message), target: METER_TARGET, partial: "agent_chats/tokens_bar",
                                                                      locals: { meter: meter_for(message, app).without_cost })
     rescue StandardError => e
       log(e, message, "meter")

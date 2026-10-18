@@ -651,3 +651,28 @@ footer[data-site-footer] .ftr-link[href^="mailto:"] { overflow-wrap: normal; }
 @media (min-width: 1024px) {
   footer[data-site-footer] .ftr-cols { grid-template-columns: 1.7fr 1.5fr 1fr 1fr 1fr; }
 }
+
+/* The agent shell's page moves (/build, /build/:token, /applications/:slug/chat;
+   app/views/agent_chats/_shell.html.erb). Turbo runs a view transition when both
+   pages carry <meta name="view-transition" content="same-origin">; the shell names
+   its portrait, caption, status card and chat box, so each glides to its place on
+   the next page (Ray's portrait becomes the CTO's) while the rest cross-fades.
+   Turbo skips the transition under prefers-reduced-motion; this rule holds the
+   same line for any other caller. */
+::view-transition-group(agent-portrait),
+::view-transition-group(agent-status),
+::view-transition-group(agent-composer) {
+  animation-duration: 320ms;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 200ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

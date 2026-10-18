@@ -1,50 +1,54 @@
 <% content_for :title, "Your app · McRitchie Studio" %>
 <% req = @app_request %>
-<%# Build my app moves this page to the new CTO's chat; both opt in to a view transition so it morphs in place. %>
+<%# A draft is the agent shell (agent_chats/_shell), the same page /build became when the first message was sent: Ray's portrait, the status card (build/_status_card), the thread and the chat box. Build my app moves it to the new CTO's chat; both opt in to a view transition, so Ray's portrait morphs into the CTO's. %>
 <% content_for :head, tag.meta(name: "view-transition", content: "same-origin") %>
+<% turbo_refreshes_with method: :morph, scroll: :preserve %>
 
-<section class="<%= req.draft? ? 'max-w-5xl pt-6 sm:pt-10' : 'max-w-2xl pt-12' %> mx-auto px-4 pb-24" data-test="build-request" data-status="<%= req.status %>">
+<section data-test="build-request" data-status="<%= req.status %>">
   <% if req.draft? %>
-    <%= render "build/chat", request_row: req, messages: @messages, xan: @xan %>
-    <% if logged_in? && current_user.admin? %>
-      <details class="mt-8" data-test="build-admin-claim">
-        <summary class="cursor-pointer text-sm font-semibold text-muted">Admin: queue a showcase without the checklist</summary>
-        <div class="mt-4"><%= render "build/claim_form", req: req %></div>
-      </details>
-    <% end %>
+    <% head = render "agent_chats/header", name: BuildController::AGENT_NAME, agent: @intake_agent, role: BuildController::AGENT_ROLE %>
+    <% status = render "build/status_card", request_row: req, started: @started %>
+    <%= render "agent_chats/shell", page: "draft", head: head, status: status, chat: render("build/chat", request_row: req, messages: @messages) %>
 
   <% else %>
-    <%# The prompt, echoed back as the first message of the conversation. %>
-    <div class="mb-8 flex justify-end">
-      <div class="max-w-[85%] rounded-3xl rounded-br-md bg-surface-alt px-5 py-3 text-body whitespace-pre-line" data-test="build-echo"><%= req.prompt %></div>
-    </div>
-    <%# The request's status page. Builds are asynchronous. %>
-    <div class="rounded-3xl border border-subtle bg-surface p-6 sm:p-8" data-test="build-status">
-      <% steps = [ [ "queued", "In the build queue" ], [ "building", "Being built" ], [ "live", "Live" ] ] %>
-      <% at = steps.index { |key, _| key == req.status } || 0 %>
-      <h1 class="text-2xl font-bold text-heading mb-1">
-        <%= req.status == "live" ? "Your app is live" : "Your app is in the queue" %>
-      </h1>
-      <p class="text-muted mb-6">
-        <% if req.status == "live" %>
-          It's served at <%= link_to req.host, req.url, class: "font-mono text-primary hover:underline", target: "_blank", rel: "noopener" %>.
-        <% else %>
-          Our agents build each app by hand, in the order they arrive. Its address is reserved for you:
-          <span class="font-mono text-body" data-test="build-host"><%= req.host %></span>.
+    <%# Queued or live (an admin's showcase, queued without the intake): the same shell, the status in its card, the prompt as the thread. %>
+    <% head = render "agent_chats/header", name: BuildController::AGENT_NAME, agent: @intake_agent, role: BuildController::AGENT_ROLE %>
+    <% status = capture do %>
+      <%# The request's status page. Builds are asynchronous. %>
+      <div class="rounded-3xl border border-subtle bg-surface p-6 sm:p-8" data-test="build-status">
+        <% steps = [ [ "queued", "In the build queue" ], [ "building", "Being built" ], [ "live", "Live" ] ] %>
+        <% at = steps.index { |key, _| key == req.status } || 0 %>
+        <h1 class="text-2xl font-bold text-heading mb-1">
+          <%= req.status == "live" ? "Your app is live" : "Your app is in the queue" %>
+        </h1>
+        <p class="text-muted mb-6">
+          <% if req.status == "live" %>
+            It's served at <%= link_to req.host, req.url, class: "font-mono text-primary hover:underline", target: "_blank", rel: "noopener" %>.
+          <% else %>
+            Our agents build each app by hand, in the order they arrive. Its address is reserved for you:
+            <span class="font-mono text-body" data-test="build-host"><%= req.host %></span>.
+          <% end %>
+        </p>
+        <ol class="flex flex-col sm:flex-row gap-3" data-test="build-steps">
+          <% steps.each_with_index do |(key, label), i| %>
+            <li class="flex-1 rounded-xl border px-4 py-3 text-sm <%= i <= at ? 'border-primary text-heading' : 'border-subtle text-muted' %>"
+                data-step="<%= key %>" data-done="<%= i <= at %>">
+              <span class="font-semibold"><%= i + 1 %>.</span> <%= label %>
+            </li>
+          <% end %>
+        </ol>
+        <% if req.status == "cancelled" %>
+          <p class="mt-4 text-sm text-muted">This request was cancelled.</p>
         <% end %>
-      </p>
-      <ol class="flex flex-col sm:flex-row gap-3" data-test="build-steps">
-        <% steps.each_with_index do |(key, label), i| %>
-          <li class="flex-1 rounded-xl border px-4 py-3 text-sm <%= i <= at ? 'border-primary text-heading' : 'border-subtle text-muted' %>"
-              data-step="<%= key %>" data-done="<%= i <= at %>">
-            <span class="font-semibold"><%= i + 1 %>.</span> <%= label %>
-          </li>
-        <% end %>
-      </ol>
-      <% if req.status == "cancelled" %>
-        <p class="mt-4 text-sm text-muted">This request was cancelled.</p>
-      <% end %>
-      <p class="mt-6 text-sm text-muted">Bookmark this page to check on it. It's only visible to you.</p>
-    </div>
+        <p class="mt-6 text-sm text-muted">Bookmark this page to check on it. It's only visible to you.</p>
+      </div>
+    <% end %>
+    <% chat = capture do %>
+      <%# The prompt, echoed back as the first message of the conversation. %>
+      <div class="mb-8 flex justify-end">
+        <div class="max-w-[85%] rounded-3xl rounded-br-md bg-surface-alt px-5 py-3 text-body whitespace-pre-line" data-test="build-echo"><%= req.prompt %></div>
+      </div>
+    <% end %>
+    <%= render "agent_chats/shell", page: "request", head: head, status: status, chat: chat %>
   <% end %>
 </section>

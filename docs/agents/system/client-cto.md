@@ -27,18 +27,20 @@ announcement) and `AppIntakeMoveJob` (the files). An incomplete intake raises
 open: Idea, CTO, Colors, Address, Account. The intake itself (the request's `cto_name`,
 `cto_avatar`, `palette` and `answers` columns) is the `build-with-xan-intake` task's.
 
-**Where it is called.** `BuildController#update` (PATCH `/build/:token`, the checklist's
-Build my app) calls it when `AppRequest#intake_complete?`, then answers 303 to
+**Where it is called.** `BuildController#update` (PATCH `/build/:token`, the Build My App
+control on Ray's summary card) calls it when `AppRequest#intake_complete?`, then answers 303 to
 `/applications/<sub>/chat`. An admin's showcase queued from the name alone, without the
 checklist, still goes through `AppRequest#queue!` (no App, no CTO). A cancelled launched
 request keeps its App row, so its name stays taken (`AppRequest.unavailable_reason` checks
 `apps.slug`).
 
-**The morph.** The checklist's form is a Turbo form, so the 303 is a Turbo visit. Both
-pages carry `<meta name="view-transition" content="same-origin">` and give their chat
-head `view-transition-name: agent-chat-head`, so Ray's head morphs into the new CTO's
-(portrait, name, the palette's primary as the head's tint) and the rest cross-fades.
-Under reduced motion it is an instant swap.
+**The morph.** The Build control posts through Turbo, so the 303 is a Turbo visit. Both
+pages are the agent shell (`app/views/agent_chats/_shell.html.erb`) and carry
+`<meta name="view-transition" content="same-origin">`; the shell names its portrait
+(`agent-portrait`), caption, status card (`agent-status`) and chat box
+(`agent-composer`) on every page, so Ray's portrait morphs into the new CTO's, the draft's
+Agent · Theme · Domain card into the app's Building · Releasing · Deploying card (in the
+palette's primary), and the rest cross-fades. Under reduced motion it is an instant swap.
 
 ## The theme colours
 
@@ -82,11 +84,13 @@ The chosen palette (`AppPalette`: `primary`, `accent`, `surface`, `text`, light 
 ## The handover and the greeting
 
 The handover row is a `web` message in the owner's thread (`web:<sub>:<user id>`), author
-`Ray`, content "Meet `<CTO>`, your CTO. I'll hand you over.", routed to `client_cto`. The
-dispatcher claims it like any message; the persona tells the CTO to answer it by greeting
-the owner by name and restating the plan. The answer reaches the open chat over its Turbo
-stream (`AgentMessages::WebChat`). The chat renders the handover as Ray's turn, not the
-owner's.
+`Ray`, content "Meet `<CTO>`, your CTO. I'll hand you over.", routed to `client_cto`. It is
+stored already answered with the CTO's opening message, which code writes from the intake
+(`ClientCtoHandover.greeting`: the owner's first name, the CTO's and the app's names, the
+plan as bullets, and "What would you like to see first?"), so the chat opens on both turns
+and no model runs for it. The dispatcher never claims the row; the persona tells the CTO
+not to greet again. The chat renders the handover as Ray's turn, then the greeting as the
+CTO's.
 
 ## Intake files (`AppIntakeMove`)
 

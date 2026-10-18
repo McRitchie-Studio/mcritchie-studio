@@ -6,22 +6,27 @@ module AgentMessages
   #
   # It stores ONE `web` AgentMessage in the owner's own chat thread with the
   # app's CTO (`web:<sub>:<user id>`), routed to `client_cto`: its content is
-  # Xan's handover line, and the dispatcher answers it as any web message, so the
-  # CTO's reply (the greeting, which restates the plan) arrives over the chat's
-  # Turbo stream like every other answer. Nothing here calls a model.
+  # Ray's handover line, and it is stored ALREADY ANSWERED with the CTO's
+  # opening message (#greeting), which code writes from the intake: the owner's
+  # name, the CTO's, the app's and the plan. So the chat opens on the handover
+  # and the greeting, never on a bare "typing…", and no model runs for it
+  # (.agents/epics/build-with-ray-v2.md, section 6). Nothing here calls a model;
+  # the dispatcher never claims the row, and the CTO's first model turn is its
+  # answer to the owner's first message, with this greeting in its history.
   #
   # WHY IT IS RELEASED. The owner-only guard (Answerers) holds a message from any
   # role but the owner, and a new client is `public`. This row is not the client's
   # words: code wrote every byte of it, so it carries hold_released_at (actor
-  # `app-launch`) and the claim guard passes it. Only this row: the client's own
-  # next message is answered by the app-owner rule (Answerers#app_owner_thread?)
-  # on this thread, and held by their role everywhere else.
+  # `app-launch`). Only this row: the client's own next message is answered by
+  # the app-owner rule (Answerers#app_owner_thread?) on this thread, and held by
+  # their role everywhere else.
   #
   # Idempotent on its external id (one handover per app per owner).
   module ClientCtoHandover
     AUTHOR = "Ray".freeze
     ACTOR = "app-launch".freeze
     VIA = "handover".freeze
+    GREETING_SUMMARY = "code greeting".freeze
 
     module_function
 
@@ -30,6 +35,22 @@ module AgentMessages
     def external_id(app_slug, user_id) = "handover:#{app_slug}:#{user_id}"
 
     def handover?(message) = message.envelope.is_a?(Hash) && message.envelope["via"] == VIA
+
+    # The CTO's opening message, from the intake alone: it greets the owner by
+    # first name, restates the plan (AppCto#plan, the sharpened idea and its day
+    # one), and asks what they want to see first. Markdown, as every answer.
+    def greeting(app_cto, user)
+      first = user&.name.to_s.split.first.presence
+      plan = app_cto.plan.to_s.lines.map(&:strip).compact_blank
+      lines = [ "Hi #{first || 'there'}, I'm #{app_cto.name}, the CTO of #{app_cto.app.name}." ]
+      if plan.any?
+        lines << "Here's the plan:\n\n#{plan.map { |line| "- #{line}" }.join("\n")}"
+      end
+      lines << "The build has started. The card above shows where it stands: Building, then Releasing to a " \
+               "preview link for you to try, then Deploying once you approve it."
+      lines << "What would you like to see first?"
+      lines.join("\n\n")
+    end
 
     def enqueue!(app_cto:, user:, now: Time.current)
       external = external_id(app_cto.app_slug, user.id)
@@ -48,7 +69,19 @@ module AgentMessages
       message.record!("routed", actor: "router", detail: { "matched" => "the #{app_cto.app_slug} CTO handover",
                                                            "soul" => AppCto::SOUL, "routed_by" => "chat" })
       message.record!("hold_released", actor: ACTOR, detail: { "reason" => "code-written handover", "person_id" => person&.id }.compact)
+      greet!(message, app_cto, user, now)
       message
+    end
+
+    # Answered in code, posted at once: the page that loads next renders it, so
+    # nothing is broadcast (no one is subscribed yet).
+    def greet!(message, app_cto, user, now)
+      message.update!(status: "completed", completed_at: now, action_summary: GREETING_SUMMARY,
+                      response_text: greeting(app_cto, user), reply_nonce: "agentmsg-#{message.id}",
+                      reply_external_id: "web:#{message.id}", reply_posted_at: now, reply_status: "posted",
+                      run_meta: { "audience" => message.usage_audience, "code_greeting" => true })
+      message.record!("completed", actor: ACTOR, detail: { "via" => "code_greeting" })
+      message.record!("reply_posted", actor: "web-chat", detail: { "via" => "web_chat" })
     end
   end
 end

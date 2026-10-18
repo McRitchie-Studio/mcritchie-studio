@@ -56,7 +56,7 @@ app/views/build/_claim_form.html.erb:
   x_data: 1
   script: 1
 app/views/build/new.html.erb:
-  x_data: 3
+  x_data: 1
   script: 0
 app/views/builders/history.html.erb:
   x_data: 1

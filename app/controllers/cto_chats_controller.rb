@@ -4,7 +4,9 @@
 # agent chat (app/views/agent_chats); this controller supplies the CTO and its thread.
 #
 #   show    the user's own thread with this app's CTO (newest WebChat::HISTORY
-#           turns), the usage meter (tokens, never dollars), and the form. The
+#           turns) under the app's status card: its Building · Releasing ·
+#           Deploying (AppDevopsStages) and the tokens used (never dollars),
+#           then the form. The
 #           page subscribes to its Turbo stream through CtoChatChannel, so the
 #           typing indicator and the answer arrive without a reload
 #   create  one message: AgentMessages::WebIngest stores it as a `web`
@@ -28,6 +30,7 @@ class CtoChatsController < ApplicationController
     @meter = AgentUsage.chat_meter(@app, user: current_user, soul: @cto.soul).without_cost
     @stream = AgentMessages::WebChat.stream_name(@app.slug, current_user.id)
     @answered = answered?
+    @stages = AppDevopsStages.for_app(@app)
   end
 
   def create

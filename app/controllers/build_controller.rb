@@ -1,19 +1,23 @@
-# /build — the McRitchie Studio app funnel, as a chat with Xan
-# (.agents/epics/build-with-xan-design.md; BuildIntake). A visitor tells Xan
-# what they want to build; Xan asks for the idea, a CTO, colors and an address,
-# one card at a time, and the visitor's taps fill a checklist. Build my app asks
-# for sign-in only then, claims the subdomain and queues the build for an agent.
-# Nothing is generated here; builds are asynchronous.
+# /build — the McRitchie Studio app funnel, as a chat with Ray
+# (.agents/epics/build-with-xan-design.md, build-with-ray-v2.md; BuildIntake). A
+# visitor tells Ray what they want to build; Ray asks for the idea, a CTO, colors
+# and an address, one card at a time, and the visitor's taps fill the status
+# card. Build my app asks for sign-in only then, claims the subdomain and queues
+# the build for an agent. Nothing is generated here; builds are asynchronous.
+# Every page is the agent shell (app/views/agent_chats/_shell.html.erb).
 #
 #   GET   /build                   the opening question
-#   POST  /build                   the first message → a draft and Xan's thread
-#                                  (no account needed; bot-shielded)
+#   POST  /build                   the first message → a draft and Ray's thread
+#                                  (no account needed; bot-shielded). From the
+#                                  page it answers IN PLACE: Turbo Streams swap
+#                                  the empty thread for the draft's chat and
+#                                  move the address to /build/:token
 #   GET   /build/check?subdomain=  live availability, JSON
 #   GET   /build/requests          admin: every requested app, filterable by status
-#   GET   /build/:token            a draft: the chat with Xan and the checklist;
+#   GET   /build/:token            a draft: the chat with Ray under its status card;
 #                                  once queued, the request's status page
-#   POST  /build/:token/messages   one more message to Xan
-#   GET   /build/:token/turns      the poll: pending turns and the checklist,
+#   POST  /build/:token/messages   one more message to Ray
+#   GET   /build/:token/turns      the poll: pending turns and the status card,
 #                                  as Turbo Streams (no /cable socket signed out)
 #   PATCH /build/:token/intake     a tap on an intake card (BuildIntake::Choice):
 #                                  sets the field and relays the visitor's turn
@@ -42,6 +46,14 @@ class BuildController < ApplicationController
   # The answers the page asks the poll about at most, newest first.
   POLL_LIMIT = 10
   FORM_ID = "build-chat-form".freeze
+  FIRST_FORM_ID = "build-first-form".freeze
+  # The region the first message swaps in place (build/_chat), and the status
+  # card's stream target (build/_status_card; the id predates the card).
+  CHAT_ID = "build-chat-page".freeze
+  STATUS_ID = "build-checklist".freeze
+  # The intake agent as the page names it. The soul slug stays BuildIntake.soul.
+  AGENT_NAME = "Ray".freeze
+  AGENT_ROLE = "AI build agent".freeze
 
   # Every app requested through the funnel, newest first. ?status= narrows it;
   # the default hides drafts (a prompt whose sender never signed in) behind
@@ -63,7 +75,7 @@ class BuildController < ApplicationController
     # A reader who came from an email: an app request made now is credited
     # to it (EmailEvents::Results).
     session[:email_ref] = params[:ref] if params[:ref].is_a?(String) && params[:ref].match?(/\A[\w-]{16,64}\z/)
-    @draft = logged_in? ? AppRequest.where(user: current_user, status: "draft").recent.first : nil
+    @intake_agent = Agent.find_by(slug: BuildIntake.soul)
     @examples = BuildGallery.examples
   end
 
@@ -89,6 +101,11 @@ class BuildController < ApplicationController
       message = request_row.errors.full_messages.to_sentence
       respond_to do |format|
         format.json { render json: { error: message }, status: :unprocessable_entity }
+        format.turbo_stream do
+          render turbo_stream: turbo_stream.replace(FIRST_FORM_ID, partial: "build/first_form",
+                                                                   locals: { error: message, text: text.to_s }),
+                 status: :unprocessable_content
+        end
         format.html { redirect_to build_path, alert: message }
       end
       return
@@ -102,6 +119,19 @@ class BuildController < ApplicationController
     EmailEvents::Results.record!(session.delete(:email_ref), "requested_app", source: "app") if session[:email_ref]
     respond_to do |format|
       format.json { render json: { token: request_row.token, path: build_request_path(request_row.token) }, status: :created }
+      # The page's own post: the conversation starts HERE. The empty thread
+      # becomes the draft's chat (its first turn already pending, so the poll
+      # starts), the status slot is redrawn for the draft, and replace_url
+      # (app/javascript/build_shell.js) moves the address bar without a reload.
+      format.turbo_stream do
+        @app_request = request_row
+        load_chat
+        render turbo_stream: [
+          turbo_stream.replace(CHAT_ID, partial: "build/chat", locals: { request_row: request_row, messages: @messages }),
+          replace_checklist,
+          helpers.turbo_stream_action_tag(:replace_url, target: CHAT_ID, url: build_request_path(request_row.token))
+        ]
+      end
       format.html { redirect_to build_request_path(request_row.token), status: :see_other }
     end
   end
@@ -114,14 +144,14 @@ class BuildController < ApplicationController
       end
       # An admin opening an unsigned draft from /build/requests only reads it;
       # attaching it would lock the visitor out of their own chat. Anyone else
-      # signing in ADOPTS the draft and its thread with Xan.
+      # signing in ADOPTS the draft and its thread with Ray.
       @app_request.update!(user: current_user) if @app_request.user.nil? && !current_user.admin?
       session.delete(:build_draft_token)
     end
-    load_chat if @app_request.draft?
+    @app_request.draft? ? load_chat : (@intake_agent = Agent.find_by(slug: BuildIntake.soul))
   end
 
-  # One more message to Xan, from the chat's composer.
+  # One more message to Ray, from the chat's composer.
   def message
     return redirect_to(build_request_path(@app_request.token), status: :see_other) unless @app_request.draft?
 
@@ -148,7 +178,7 @@ class BuildController < ApplicationController
   end
 
   # The page's poll while an answer is pending: the turns it names (this
-  # thread's only) re-rendered, and the checklist. Turbo Streams, read by
+  # thread's only) re-rendered, and the status card. Turbo Streams, read by
   # app/javascript/build_chat.js.
   def turns
     ids = params[:ids].to_s.split(",").filter_map { |id| id[/\A\d{1,18}\z/]&.to_i }.first(POLL_LIMIT)
@@ -240,7 +270,8 @@ class BuildController < ApplicationController
 
   def load_chat
     @messages = BuildIntake.history(@app_request.token)
-    @xan = Agent.find_by(slug: BuildIntake.soul)
+    @intake_agent = Agent.find_by(slug: BuildIntake.soul)
+    @started = @app_request.intake_started?
   end
 
   def append_turn(message)
@@ -253,8 +284,11 @@ class BuildController < ApplicationController
                                   locals: composer_locals(error: error, text: text))
   end
 
+  # The status card (build/_status_card), redrawn by every tap, poll and first
+  # message. Its target id stays build-checklist (STATUS_ID).
   def replace_checklist
-    turbo_stream.replace("build-checklist", partial: "build/checklist", locals: { request_row: @app_request })
+    turbo_stream.replace(STATUS_ID, partial: "build/status_card",
+                                    locals: { request_row: @app_request, started: @app_request.intake_started? })
   end
 
   helper_method :composer_locals
@@ -262,7 +296,7 @@ class BuildController < ApplicationController
   # The shared composer's locals (agent_chats/_form) for this request's chat.
   def composer_locals(error: nil, text: "")
     { url: build_request_messages_path(@app_request.token), scope: :build_chat, id: FORM_ID,
-      agent_name: "Ray", error: error, text: text }
+      agent_name: AGENT_NAME, error: error, text: text }
   end
 
   def load_request

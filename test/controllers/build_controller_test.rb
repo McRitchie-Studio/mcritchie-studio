@@ -49,6 +49,37 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='cto-chat-sent']", text: PROMPT
   end
 
+  test "the page's first message answers in place: the draft's chat streams over the empty thread and the address moves, no redirect" do
+    get build_path
+    assert_select "#build-chat-page form#build-first-form[action='/build']"
+
+    proof = BrowserProof.new(BuildController::PROOF_PURPOSE).issue(5.seconds.ago).reverse
+    post build_path, params: { app_request: { prompt: PROMPT, form_proof: proof } }, as: :turbo_stream
+    draft = AppRequest.recent.first
+
+    assert_response :success
+    assert_equal "text/vnd.turbo-stream.html", response.media_type
+    assert_select "turbo-stream[action='replace'][target='build-chat-page'] template" do
+      assert_select "[data-test='build-chat-page'][data-build-chat-poll-url='/build/#{draft.token}/turns']"
+      assert_select "[data-test='build-turn'][data-pending='true'] [data-test='cto-chat-sent']", text: PROMPT
+      assert_select "form#build-chat-form[action='/build/#{draft.token}/messages']"
+    end
+    assert_select "turbo-stream[action='replace'][target='build-checklist'] template [data-test='build-heading']", 1,
+                  "no card yet, so the heading stays: a visitor may only be saying hi"
+    assert_select "turbo-stream[action='replace_url'][url='/build/#{draft.token}']", 1
+    assert draft.draft?
+  end
+
+  test "a refused first message comes back in the same box, with the reason and the text kept" do
+    post build_path, params: { app_request: { prompt: "x" * (AppRequest::PROMPT_LIMIT + 1) } }, as: :turbo_stream
+
+    assert_response :unprocessable_content
+    assert_select "turbo-stream[action='replace'][target='build-first-form'] template" do
+      assert_select "[data-test='build-form-error']"
+      assert_select "textarea[name='app_request[prompt]']", text: "x" * (AppRequest::PROMPT_LIMIT + 1)
+    end
+  end
+
   test "the signed-out composer gets JSON back: the draft's token and path, for the sign-in modal" do
     post build_path, params: { app_request: { prompt: PROMPT } }, as: :json
     draft = AppRequest.recent.first
@@ -104,9 +135,14 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
 
     follow_redirect!
     assert_response :success
-    assert_select "h1", text: "Chat with Coach"
-    assert_select "[data-test='cto-chat-head'][data-client-cto='true'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
+    assert_select "[data-test='agent-shell'][data-shell='app'] [data-test='agent-caption']", text: /Coach\s+· CTO of League Hub/
+    assert_select "[data-test='agent-portrait'][style*='view-transition-name: agent-portrait'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
+    assert_select "[data-test='cto-chat-head'][data-client-cto='true'] h1", text: "League Hub"
+    assert_select "[data-test='devops-stage'][data-stage='building'][data-state='live']", 1, "the new build task is designed: Building, live"
     assert_select "[data-test='cto-chat-handover']", text: /Ray\s+Meet Coach, your CTO. I'll hand you over./
+    # The CTO's opening message is there on arrival: code wrote it, no model ran, nothing is typing.
+    assert_select "[data-test='cto-chat-turn'] [data-test='cto-chat-handover'] ~ [data-test='cto-chat-reply']", text: /Hi Viewer, I'm Coach, the CTO of League Hub\./
+    assert_select "[data-test='cto-chat-typing']", 0
     assert_select "meta[name='view-transition'][content='same-origin']"
 
     # The card the claim opened is what an agent builds from: it asks for the

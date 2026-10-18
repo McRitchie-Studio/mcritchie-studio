@@ -3,8 +3,10 @@ require "test_helper"
 # [integration] A signed-out visitor builds with Xan through real requests: the
 # first message (bot-shielded) starts a draft and Xan's thread, Xan's answers
 # (completed here as bin/dispatcher would, with intake cards) render as cards,
-# each tap fills the checklist, Build my app asks for sign-in, and signing in
-# adopts the request and queues it through the existing claim path.
+# the status card appears with the first card and each tap fills its tiles
+# (Agent, Theme, Domain), and signing in adopts the request and Build queues it
+# through the existing claim path. The Build control itself is Ray's summary
+# card's (build-cards-advance-chat); this test posts what it posts.
 class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
 
@@ -72,14 +74,19 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     get build_request_path(request_row.token)
     assert_response :success
     assert_select "[data-test=build-chat-page]"
-    assert_select "[data-test=build-turn][data-pending=true]", 1, "Xan's answer is pending, so the page polls"
+    assert_select "[data-test=build-turn][data-pending=true]", 1, "Ray's answer is pending, so the page polls"
+    assert_select "#build-checklist[data-card=false] [data-test=build-heading]", 1, "no card yet: the heading, not an empty form"
+    assert_select "[data-test=build-my-app]", 0, "the status card carries no Build control"
 
     idea = xan_answers("Got it: a league site.",
                        { kind: "intake", card: "idea", title: "League Standings Hub", features: [ "Live standings", "Game schedules" ] })
     get build_request_turns_path(request_row.token), params: { ids: first.id }
     assert_response :success
     assert_includes response.body, "data-test=\"build-card-idea\""
+    assert_includes response.body, "data-test=\"build-status-card\"", "the first card brings the status card in the same poll"
     assert_includes response.body, "League Standings Hub"
+    assert_select Nokogiri::HTML(response.body).css("template").map(&:inner_html).join.then { |html| Nokogiri::HTML.fragment(html) },
+                  "[data-test=build-status-title]", "League Standings Hub", "the status card takes the proposed title before any tap"
 
     # Build App: the idea locks, and the visitor's line goes to Ray, who answers with the CTO card.
     relay = tap_and_relay(request_row, "idea", "Let's build League Standings Hub.", message_id: idea.id)
@@ -107,7 +114,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
 
     tap_and_relay(request_row, "address", "Let's use league-hub.mcritchie.studio.", message_id: domains.id, subdomain: "league-hub")
     assert_equal "league-hub", request_row.reload.subdomain
-    assert_includes response.body, "data-complete=\"true\"", "the tap's stream redraws the checklist complete"
+    assert_includes response.body, "data-complete=\"true\"", "the tap's stream redraws the status card complete"
 
     # Ray sums up; with every step set, code gives the answer the summary card.
     summary = xan_answers("Here's your app.")
@@ -119,6 +126,15 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
       assert_select "[data-test=build-summary-theme]", /Pitch Two/
       assert_select "[data-test=build-summary-domain]", /league-hub\.mcritchie\.studio/
       assert_select "[data-test=build-summary-build][data-signs-in=true]", 1, "signed out, Build My App opens sign-in"
+    end
+    # The status card above the thread holds the same facts, filled tap by tap, and no Build control.
+    assert_select "#build-checklist [data-test=build-status-card][data-complete=true]" do
+      assert_select "[data-test=build-status-title]", "League Standings Hub"
+      assert_select "[data-test=build-tile-agent][data-done=true] [data-test=build-tile-agent-portrait][src*='cto_portraits/meadow']"
+      assert_select "[data-test=build-tile-agent-value]", "Marbles"
+      assert_select "[data-test=build-tile-theme-value]", "Pitch Two"
+      assert_select "[data-test=build-tile-domain-value]", "league-hub.mcritchie.studio"
+      assert_select "[data-test=build-summary-build]", 0
     end
 
     patch build_request_path(request_row.token), params: { app_request: { subdomain: "league-hub" } }

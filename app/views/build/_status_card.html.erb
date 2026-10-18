@@ -1,0 +1,63 @@
+<%# locals: (request_row: nil, started: false) %>
+<%#
+  The /build shell's status slot (agent_chats/_shell), and the stream target every
+  tap and poll replaces (id build-checklist; BuildController#replace_checklist).
+
+  Until Ray proposes a first card (`started`: AppRequest#intake_started?), it is the
+  page's heading, on /build and on a new /build/:token alike, so a visitor who only
+  says hi never sees an empty form. From then on it is the STATUS CARD: the app's
+  working title over three tiles, Agent · Theme · Domain, each filling as its card
+  is tapped (BuildIntake::Choice): the CTO's portrait and name, the palette's
+  swatches and name, the address. It carries no Build control: Ray's summary card
+  in the thread does (build/cards, build-cards-advance-chat).
+%>
+<% show_card = request_row.present? && started %>
+<div id="build-checklist" data-test="build-status" data-card="<%= show_card %>">
+  <% if show_card %>
+    <% done = request_row.intake_checklist %>
+    <div class="card p-4 sm:p-5 space-y-4" data-test="build-status-card" data-complete="<%= request_row.intake_complete? %>">
+      <h1 class="text-xl sm:text-2xl font-bold text-heading text-center break-words" data-test="build-status-title">
+        <%= request_row.working_title || "Your app" %>
+      </h1>
+      <ul class="grid grid-cols-3 gap-2 sm:gap-3">
+        <% tiles = [
+             [ "agent", "Agent", done["cto"], (request_row.cto_name if done["cto"]) ],
+             [ "theme", "Theme", done["colors"], (request_row.palette["name"] if done["colors"]) ],
+             [ "domain", "Domain", done["address"], (request_row.host if done["address"]) ]
+           ] %>
+        <% tiles.each do |key, label, set, value| %>
+          <li class="flex flex-col items-center gap-1.5 min-w-0 rounded-2xl border px-2 py-3 text-center
+                     <%= set ? 'border-primary/40 bg-primary/5' : 'border-dashed border-subtle' %>"
+              data-test="build-tile-<%= key %>" data-done="<%= set %>">
+            <span class="flex h-10 items-center justify-center" aria-hidden="true">
+              <% if key == "agent" && set && (path = BuildIntake::Portraits.path(request_row.cto_avatar)) %>
+                <%= image_tag path, alt: "", class: "h-10 w-10 rounded-full border border-subtle", data: { test: "build-tile-agent-portrait" } %>
+              <% elsif key == "theme" && set %>
+                <span class="flex -space-x-1.5">
+                  <% %w[primary accent surface].each do |role| %>
+                    <span class="h-6 w-6 rounded-full border border-subtle" style="background-color: <%= request_row.palette.dig("light", role) %>"></span>
+                  <% end %>
+                </span>
+              <% elsif key == "domain" && set %>
+                <svg viewBox="0 0 24 24" class="h-7 w-7 text-primary" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>
+                </svg>
+              <% else %>
+                <span class="h-9 w-9 rounded-full border-2 border-dashed border-subtle"></span>
+              <% end %>
+            </span>
+            <span class="text-2xs font-semibold uppercase tracking-wider text-muted"><%= label %></span>
+            <span class="block w-full truncate text-xs sm:text-sm <%= set ? 'font-semibold text-heading' : 'text-muted' %>" data-test="build-tile-<%= key %>-value">
+              <%= value || "Not yet" %>
+            </span>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+  <% else %>
+    <header class="text-center" data-test="build-heading">
+      <h1 class="text-3xl sm:text-5xl font-bold text-heading tracking-tight mb-3">What do you want to build?</h1>
+      <p class="text-muted max-w-xl mx-auto">Let our agents build &amp; host your website on the McRitchie Studio stack, free.</p>
+    </header>
+  <% end %>
+</div>

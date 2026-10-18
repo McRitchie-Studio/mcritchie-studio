@@ -15,8 +15,9 @@
 #   4. the AppCto: the name, portrait and palette chosen at intake, the plan and facts
 #   5. the board task "Build Launch App <sub>", designed, repositories [<sub>],
 #      so the tier's lane cap (BuildingLanes) governs its build
-#   6. Xan's handover, the first turn of the owner's chat with the new CTO
-#      (AgentMessages::ClientCtoHandover); the dispatcher answers it with the greeting
+#   6. Ray's handover, the first turn of the owner's chat with the new CTO
+#      (AgentMessages::ClientCtoHandover), stored already answered with the CTO's
+#      code-written greeting, so the dispatcher never claims it
 #
 # Any failure rolls every row back: no App without its owner, CTO and task, and
 # no task that outlives a failed claim. AFTER the commit, never inside it, two

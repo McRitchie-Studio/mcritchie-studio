@@ -1,0 +1,22 @@
+<%# locals: (page:, head:, status:, chat:) %>
+<%#
+  ONE structure for every page where a visitor talks to an agent
+  (.agents/epics/build-with-ray-v2.md, section 6): /build, /build/:token and
+  /applications/:slug/chat. Top to bottom:
+
+    head     the agent's portrait, centered (agent_chats/_header)
+    status   the page's status card: the heading on /build; the app's title over
+             Agent · Theme · Domain on a draft (build/_status_card); the app's
+             Building · Releasing · Deploying and its tokens on the app chat
+             (agent_chats/_devops_card)
+    chat     the thread, then the chat box (agent_chats/_form)
+
+  Each slot is ready markup. The three pages share it, and each slot keeps a
+  view-transition name, so a move between them (Turbo, with
+  <meta name="view-transition">) changes only what differs.
+%>
+<section class="max-w-3xl mx-auto px-4 pt-8 sm:pt-12 pb-24 flex flex-col gap-6" data-test="agent-shell" data-shell="<%= page %>">
+  <%= head %>
+  <div style="view-transition-name: agent-status;" data-test="agent-shell-status"><%= status %></div>
+  <%= chat %>
+</section>
