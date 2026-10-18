@@ -1,9 +1,10 @@
 // [e2e] The CTO web chat (docs/agents/system/agent-message-loop.md, "Web chat").
 // The admin (linked to an owner-role person by e2e/seed.rb) opens Turf's chat,
 // sends with Enter, and the message appears. The spec then plays the dispatcher
-// through the real mailbox API: claim, a typing pulse, the answer. Over the real
-// ActionCable stream (CABLE_ADAPTER=async, E2E_WEB_CHAT_JOBS=1) the page shows
-// "Turf is typing…", then the answer, with no reload, and typing clears. The
+// through the real mailbox API: claim, a thinking pulse, a typing pulse, the
+// answer. Over the real ActionCable stream (CABLE_ADAPTER=async,
+// E2E_WEB_CHAT_JOBS=1) the page shows "Turf is thinking", then "Turf is typing"
+// in the same space, then the answer, with no reload, and typing clears. The
 // meter is in tokens; the page fits a phone; the bubbles read in both themes.
 // An app's owner is answered on their own app's chat (the app-owner rule), with
 // no "not answered" notice, and another app's chat does not exist for them; and
@@ -58,15 +59,31 @@ test("the owner chats with Turf: typing shows live, then the answer streams in",
   const message = (await claimed.json()).data;
   expect(message.content).toBe(text);
 
-  const typing = await page.request.post(`/api/v1/agent_messages/${message.id}/typing`, { headers: auth, data: { worker } });
+  // The run's first pulse says thinking: Turf's portrait in the orbit, "Turf is
+  // thinking", and the typing bubble drawn but hidden.
+  const typing = await page.request.post(`/api/v1/agent_messages/${message.id}/typing`, { headers: auth, data: { worker, phase: "thinking" } });
   expect((await typing.json()).meta.typing).toBe("queued");
   const pulse = page.locator("#cto-chat-typing [data-test='cto-chat-typing']");
-  await expect(pulse).toContainText("Turf is typing");
-  // A second pulse lands in the same slot (the dispatcher pulses every 7s while it runs).
+  await expect(pulse).toHaveAttribute("data-phase", "thinking");
+  await expect(pulse.locator("[data-test='cto-chat-thinking']")).toBeVisible();
+  await expect(pulse.locator("[data-test='cto-chat-thinking']")).toContainText("Turf is thinking");
+  await expect(pulse.locator("[data-test='cto-chat-typing-bubble']")).toBeHidden();
+  const thinkingBox = await page.locator("#cto-chat-typing").boundingBox();
+  // The answer's words begin: the next pulse, in the same slot, says typing.
   const firstAt = await pulse.getAttribute("data-typing-at");
-  const again = await page.request.post(`/api/v1/agent_messages/${message.id}/typing`, { headers: auth, data: { worker } });
+  const again = await page.request.post(`/api/v1/agent_messages/${message.id}/typing`, { headers: auth, data: { worker, phase: "typing" } });
   expect((await again.json()).meta.typing).toBe("queued");
   await expect(pulse).not.toHaveAttribute("data-typing-at", firstAt);
+  await expect(pulse).toHaveAttribute("data-phase", "typing");
+  await expect(pulse.locator("[data-test='cto-chat-typing-bubble']")).toBeVisible();
+  await expect(pulse.locator("[data-test='cto-chat-typing-bubble']")).toContainText("Turf is typing");
+  await expect(pulse.locator("[data-test='cto-chat-thinking']")).toBeHidden();
+  const typingBox = await page.locator("#cto-chat-typing").boundingBox();
+  expect(typingBox.height, "the swap does not move the page").toBe(thinkingBox.height);
+  // A pulse from a dispatcher that sends no phase still reads as typing.
+  const bare = await page.request.post(`/api/v1/agent_messages/${message.id}/typing`, { headers: auth, data: { worker } });
+  expect((await bare.json()).meta.typing).toBe("queued");
+  await expect(pulse).toHaveAttribute("data-phase", "typing");
 
   const done = await page.request.post(`/api/v1/agent_messages/${message.id}/complete`, {
     headers: auth, data: { worker, response_text: "**Twelve** signups this week." },

@@ -45,7 +45,9 @@ async function adminToken(browser) {
 
 // Ray's answer (soul slug ray) to the visitor's newest message, as bin/dispatcher
 // sends it. A leftover ray row from another spec is answered and passed over.
-async function rayAnswers(page, auth, content, text, card) {
+// With `phases`, it first pulses thinking, then typing, and the pending turn's
+// poll shows each in turn (the dispatcher reads them off Claude's stream).
+async function rayAnswers(page, auth, content, text, card, { phases = false } = {}) {
   const worker = `e2e-build-${Date.now()}`;
   for (let i = 0; i < 10; i += 1) {
     const claimed = await page.request.post("/api/v1/agent_messages/claim", { headers: auth, data: { souls: ["ray"], worker, channel: "web" } });
@@ -53,6 +55,17 @@ async function rayAnswers(page, auth, content, text, card) {
     const message = (await claimed.json()).data;
     expect(message, `a ray message waiting for "${content}"`).toBeTruthy();
     const mine = message.content === content;
+    if (mine && phases) {
+      const indicator = page.locator("[data-test='build-turn']", { hasText: content }).locator("[data-test='cto-chat-typing']");
+      for (const phase of ["thinking", "typing"]) {
+        const pulse = await page.request.post(`/api/v1/agent_messages/${message.id}/typing`, { headers: auth, data: { worker, phase } });
+        expect((await pulse.json()).meta.typing).toBe("queued");
+        await expect(indicator).toHaveAttribute("data-phase", phase);
+      }
+      await expect(indicator.locator("[data-test='cto-chat-typing-bubble']")).toBeVisible();
+      await expect(indicator.locator("[data-test='cto-chat-typing-bubble']")).toContainText("Ray is typing");
+      await expect(indicator.locator("[data-test='cto-chat-thinking']")).toBeHidden();
+    }
     const body = mine && card ? `${text}\n===PROPOSAL===\n${JSON.stringify({ kind: "intake", ...card })}` : (mine ? text : "ok");
     const done = await page.request.post(`/api/v1/agent_messages/${message.id}/complete`, { headers: auth, data: { worker, response_text: body } });
     expect(done.ok()).toBeTruthy();
@@ -114,8 +127,14 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   // Once chatting the gallery is gone, as on a reload of /build/<token>.
   await expect(page.locator("[data-test='build-gallery']")).toHaveCount(0);
 
+  // Before Ray is on it the turn is thinking: his portrait in the orbit.
+  const waiting = first.locator("[data-test='cto-chat-typing']");
+  await expect(waiting).toHaveAttribute("data-phase", "thinking");
+  await expect(waiting.locator("[data-test='cto-chat-thinking']")).toContainText("Ray is thinking");
+  await expect(waiting.locator("[data-test='cto-chat-thinking'] .agent-typing-orbit")).toBeVisible();
+
   // The idea card: a title and key features. Build App locks it and moves on.
-  await rayAnswers(page, auth, idea, "Here's the app I hear.", { card: "idea", title: "League Standings Hub", features: ["Live standings", "Game schedules"] });
+  await rayAnswers(page, auth, idea, "Here's the app I hear.", { card: "idea", title: "League Standings Hub", features: ["Live standings", "Game schedules"] }, { phases: true });
   const ideaCard = first.locator("[data-test='build-card-idea']");
   await expect(ideaCard.locator("[data-test='build-idea-title']")).toHaveText("League Standings Hub");
   await expect(ideaCard.locator("[data-test='build-idea-features'] li")).toHaveCount(2);
