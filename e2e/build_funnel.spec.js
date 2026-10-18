@@ -1,14 +1,16 @@
-// [e2e] /build — the app funnel, the way a new visitor walks it: a chat with Xan
-// (BuildIntake; .agents/epics/build-with-xan-design.md).
+// [e2e] /build — the app funnel, the way a new visitor walks it: a chat with Ray
+// (BuildIntake; .agents/epics/build-with-xan-design.md, build-with-ray-v2.md).
 //
-// The promise only a browser can prove: a SIGNED-OUT visitor talks to Xan, taps
-// the intake cards Xan sends (CTO, colors, address), watches the checklist fill
-// and Build my app light up, and only THEN signs in; the emailed link returns to
-// the same chat, and Build my app launches the app and moves the page to the new
-// CTO's chat, where the CTO's greeting streams in. The spec plays the dispatcher through
-// the real mailbox API (claim, complete with an intake card), and the page,
-// which has no /cable socket signed out, picks each answer up by polling. Mobile
-// width and both themes are measured on the way.
+// The promise only a browser can prove: a SIGNED-OUT visitor's first message
+// answers IN PLACE (the thread grows on /build and the address becomes
+// /build/<token> with no reload), they tap the intake cards Ray sends (CTO,
+// colors, address) and watch the status card's tiles fill, and only THEN sign
+// in; the emailed link returns to the same chat, and Build launches the app and
+// moves the page to the new CTO's chat (a Turbo visit, still no reload), where
+// the CTO's code-written greeting is already there. The spec plays the
+// dispatcher through the real mailbox API (claim, complete with an intake card),
+// and the page, which has no /cable socket signed out, picks each answer up by
+// polling. Mobile width and both themes are measured on the way.
 //
 // NOT @qa-readonly: it writes requests and agent messages. Nothing here talks to Claude.
 const { test, expect } = require("@playwright/test");
@@ -61,7 +63,7 @@ async function say(page, text) {
   await expect(page.locator("[data-test='build-turn']", { hasText: text })).toHaveCount(1);
 }
 
-test("a signed-out visitor completes the intake cards, sees Build my app light up, signs in, and the page becomes the new CTO's chat", async ({ page, browser }) => {
+test("a signed-out visitor's first message answers in place, the intake fills the status card, and Build moves the page to the CTO's chat, greeted, with no reload", async ({ page, browser }) => {
   await blockThirdPartyRequests(page);
   const { pageErrors, report } = watchPageErrors(page);
   const auth = { Authorization: `Bearer ${await adminToken(browser)}`, "Content-Type": "application/json" };
@@ -70,25 +72,40 @@ test("a signed-out visitor completes the intake cards, sees Build my app light u
   const address = `league-${Date.now().toString(36)}`;
 
   await page.goto("/build");
-  const box = page.getByLabel("Tell Xan what you want to build");
+  // The shell: Ray's portrait on top, the heading, the chat box typing example ideas.
+  await expect(page.locator("[data-test='agent-shell'][data-shell='build'] [data-test='agent-chat-header'][data-agent-name='Ray']")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What do you want to build?" })).toBeVisible();
+  const box = page.getByLabel("Tell Ray what you want to build");
+  // The suite runs under reduced motion (playwright.config.js), where the
+  // placeholder holds the first example still; with motion it types.
+  const still = await box.getAttribute("placeholder");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect.poll(() => box.getAttribute("placeholder"), { message: "the placeholder types example ideas" }).not.toBe(still);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  // A marker on the window: a full page load would wipe it.
+  await page.evaluate(() => { window.__buildShellMarker = "kept"; });
   await box.fill(idea);
   // A person takes longer than the bot shield's two seconds to type an idea.
   await page.waitForTimeout(2200);
   await box.press("Enter");
 
-  // Straight into the chat, still signed out: no sign-in before Build.
-  await page.waitForURL((u) => /^\/build\/[A-Za-z0-9_-]{10,}$/.test(u.pathname));
-  await expect(page.locator("[data-test='auth-modal']")).toBeHidden();
-  await expect(page.getByRole("heading", { name: "Build with Xan" })).toBeVisible();
+  // The conversation starts HERE, still signed out: the thread grows under the
+  // heading, the address moves to /build/<token>, and the page never reloads.
   const first = page.locator("[data-test='build-turn']", { hasText: idea });
   await expect(first).toHaveAttribute("data-pending", "true");
-  await expect(page.locator("[data-test='build-my-app']")).toBeDisabled();
+  await expect(page).toHaveURL(/\/build\/[A-Za-z0-9_-]{10,}$/);
+  expect(await page.evaluate(() => window.__buildShellMarker), "no reload on the first message").toBe("kept");
+  await expect(page.locator("[data-test='auth-modal']")).toBeHidden();
+  await expect(page.getByRole("heading", { name: "What do you want to build?" })).toBeVisible();
+  await expect(page.locator("[data-test='build-status-card']")).toHaveCount(0);
+  await expect(page.locator("[data-test='cto-chat-input']")).toBeFocused();
 
-  // Xan answers; the poll brings the reply and its card in without a reload.
+  // Ray answers; the poll brings the reply, its card and the status card in without a reload.
   await xanAnswers(page, auth, idea, "Here's your idea, sharpened.", { card: "idea", idea: "A league site with live standings", audience: "rec league players" });
   await expect(first.locator("[data-test='cto-chat-reply']")).toContainText("sharpened");
+  await expect(page.locator("[data-test='build-status-card']")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "What do you want to build?" })).toHaveCount(0);
   await first.locator("[data-test='build-choose-idea']").click();
-  await expect(page.locator("[data-test='build-check-idea']")).toHaveAttribute("data-done", "true");
 
   await say(page, "Yes, that's it");
   await xanAnswers(page, auth, "Yes, that's it", "Who should run it?", { card: "cto", names: ["Coach", "Ref", "Scout"], portrait: "harbor" });
@@ -97,14 +114,15 @@ test("a signed-out visitor completes the intake cards, sees Build my app light u
   await cto.getByText("Ref", { exact: true }).click();
   await cto.locator("label[title='Meadow']").click();
   await cto.locator("[data-test='build-choose-cto']").click();
-  await expect(page.locator("[data-test='build-check-cto-value']")).toHaveText("Ref");
+  await expect(page.locator("[data-test='build-tile-agent-value']")).toHaveText("Ref");
+  await expect(page.locator("[data-test='build-tile-agent-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
 
   await say(page, "Colors next");
   await xanAnswers(page, auth, "Colors next", "Pick a palette.", { card: "palette", palettes: [PALETTE] });
   const palette = page.locator("[data-test='build-palette']").first();
   await expect(palette.locator("[data-test='build-palette-preview'] [data-mode='dark']")).toHaveCSS("background-color", "rgb(11, 18, 32)");
   await palette.locator("[data-test='build-choose-palette']").click();
-  await expect(page.locator("[data-test='build-check-colors-value']")).toHaveText("Pitch");
+  await expect(page.locator("[data-test='build-tile-theme-value']")).toHaveText("Pitch");
 
   await say(page, "And the address");
   await xanAnswers(page, auth, "And the address", "Pick an address.", { card: "address", names: [address] });
@@ -116,14 +134,14 @@ test("a signed-out visitor completes the intake cards, sees Build my app light u
   await expect(card.locator("[data-test='build-address-availability']")).toContainText("Available");
   await card.locator("[data-test='build-choose-address']").click();
 
-  // All four set: Build my app lights up, and only now asks for sign-in.
-  const build = page.locator("[data-test='build-my-app']");
-  await expect(page.locator("[data-test='build-checklist']")).toHaveAttribute("data-complete", "true");
-  await expect(build).toBeEnabled();
+  // All set: the status card is full, and only now does the visitor sign in.
+  await expect(page.locator("[data-test='build-status-card']")).toHaveAttribute("data-complete", "true");
+  await expect(page.locator("[data-test='build-tile-domain-value']")).toHaveText(`${address}.mcritchie.studio`);
+  expect(await page.evaluate(() => window.__buildShellMarker), "no reload through the whole intake").toBe("kept");
 
-  // Both themes: the chat and the checklist read. A phone: nothing runs off the side.
+  // Both themes: the chat and the status card read. A phone: nothing runs off the side.
   await eachTheme(page, async (theme) => {
-    for (const selector of ["[data-test='cto-chat-sent']", "[data-test='cto-chat-reply'] p", "[data-test='build-checklist'] .text-heading"]) {
+    for (const selector of ["[data-test='cto-chat-sent']", "[data-test='cto-chat-reply'] p", "[data-test='build-status-card'] .text-heading"]) {
       const measured = await page.evaluate(CONTRAST, selector);
       expect(measured.length, `${theme}: ${selector} renders`).toBeGreaterThan(0);
       for (const m of measured) expect(m.ratio, `${theme}: ${selector} "${m.text}"`).toBeGreaterThanOrEqual(TEXT_ON_SURFACE);
@@ -134,7 +152,10 @@ test("a signed-out visitor completes the intake cards, sees Build my app light u
   expect(overflow, "nothing runs off the side at 360px").toBeLessThanOrEqual(0);
   await page.setViewportSize({ width: 1280, height: 800 });
 
-  await build.click();
+  // The Build control is Ray's summary card's (build-cards-advance-chat); signed
+  // out it opens the standard sign-in modal with these props, as here.
+  const chatPath = new URL(page.url()).pathname;
+  await page.evaluate((path) => window.Alpine.store("modals").open("auth", { returnTo: path, title: "Create your free account" }), chatPath);
   const modal = page.locator("[data-test='auth-modal']");
   await expect(modal).toBeVisible();
   await modal.locator("#auth-email").fill(email);
@@ -151,8 +172,7 @@ test("a signed-out visitor completes the intake cards, sees Build my app light u
   }
   expect(link, "the sign-in email was sent").toBeTruthy();
 
-  // The link returns to the SAME chat, now signed in, and the checklist held.
-  const chatPath = new URL(page.url()).pathname;
+  // The link returns to the SAME chat, now signed in, and the status card held.
   await page.goto(new URL(link.action_url, page.url()).pathname);
   if (new URL(page.url()).pathname !== chatPath) {
     await page.locator("#magic-consume-form").evaluate((form) => form.requestSubmit());
@@ -165,32 +185,35 @@ test("a signed-out visitor completes the intake cards, sees Build my app light u
   await expect(onboarding).toBeHidden();
   await expect(page.locator("[data-test='build-turn']", { hasText: idea })).toHaveCount(1);
 
-  // Build my app: the page moves to the new CTO's chat (a Turbo visit with a view
-  // transition), wearing Ref's portrait and the Pitch colours, with Xan's handover first.
-  await page.getByRole("button", { name: "Build my app" }).click();
+  // Build: the PATCH Ray's summary card posts, through Turbo. The page moves to
+  // the new CTO's chat (a Turbo visit with a view transition, not a reload),
+  // Ray's portrait now Ref's, the status card the app's devops, with Xan's
+  // handover first and Ref's code-written greeting already under it.
+  await page.evaluate(() => { window.__buildShellMarker = "kept"; });
+  await page.evaluate((subdomain) => {
+    const form = document.createElement("form");
+    form.method = "post";
+    form.action = window.location.pathname;
+    const field = (name, value) => { const input = document.createElement("input"); input.type = "hidden"; input.name = name; input.value = value; form.append(input); };
+    field("_method", "patch");
+    const csrf = document.querySelector("meta[name='csrf-token']");
+    if (csrf) field("authenticity_token", csrf.content);
+    field("app_request[subdomain]", subdomain);
+    document.body.append(form);
+    form.requestSubmit();
+  }, address);
   await page.waitForURL((u) => u.pathname === `/applications/${address}/chat`);
-  await expect(page.getByRole("heading", { name: "Chat with Ref" })).toBeVisible();
+  expect(await page.evaluate(() => window.__buildShellMarker), "Build moves the page without a reload").toBe("kept");
+  await expect(page.locator("[data-test='agent-shell'][data-shell='app'] [data-test='agent-caption']")).toContainText("Ref");
+  await expect(page.locator("[data-test='agent-portrait'] [data-test='client-cto-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
   const head = page.locator("[data-test='cto-chat-head'][data-client-cto='true']");
-  await expect(head.locator("[data-test='client-cto-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
+  await expect(head.locator("[data-test='devops-stage'][data-stage='building']")).toHaveAttribute("data-state", "live");
+  await expect(head.locator("[data-test='cto-chat-usage']")).toContainText("Tokens used");
   const handover = page.locator("[data-test='cto-chat-turn']", { has: page.locator("[data-test='cto-chat-handover']") });
   await expect(handover).toContainText("Meet Ref, your CTO. I'll hand you over.");
+  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("Hi Jordan, I'm Ref,");
+  await expect(page.locator("[data-test='cto-chat-typing']")).toHaveCount(0);
   await expect(page.locator("turbo-cable-stream-source[channel='CtoChatChannel']")).toHaveAttribute("connected", "");
-
-  // The dispatcher answers the handover as client_cto; the greeting streams in live.
-  const worker = `e2e-cto-${Date.now()}`;
-  let greeted;
-  for (let i = 0; i < 10 && !greeted; i += 1) {
-    const claimed = await page.request.post("/api/v1/agent_messages/claim", { headers: auth, data: { souls: ["client_cto"], worker, channel: "web" } });
-    const message = (await claimed.json()).data;
-    expect(message, "the handover is claimable").toBeTruthy();
-    const mine = message.channel_ref === address;
-    const text = mine ? "Hi Jordan, I'm **Ref**. First we build live standings, then you see them on a preview link." : "ok";
-    await page.request.post(`/api/v1/agent_messages/${message.id}/complete`, { headers: auth, data: { worker, response_text: text } });
-    if (mine) greeted = message;
-  }
-  expect(greeted.content).toBe("Meet Ref, your CTO. I'll hand you over.");
-  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("Hi Jordan, I'm Ref.");
-  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("Ref");
 
   // Both themes: the head wears that mode's primary, and the handover, the
   // greeting and the head read. A phone fits.
@@ -222,9 +245,9 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
       await onboarding.getByRole("button", { name: "Skip for now" }).click();
       await expect(onboarding).toBeHidden();
     }
-    await page.getByLabel("Tell Xan what you want to build").fill(`Rebuild of my old ${name} app`);
-    await page.getByLabel("Tell Xan what you want to build").press("Enter");
-    await page.waitForURL((u) => /^\/build\/[A-Za-z0-9_-]{10,}$/.test(u.pathname));
+    await page.getByLabel("Tell Ray what you want to build").fill(`Rebuild of my old ${name} app`);
+    await page.getByLabel("Tell Ray what you want to build").press("Enter");
+    await expect(page).toHaveURL(/\/build\/[A-Za-z0-9_-]{10,}$/);
     // An admin skips the checklist through the name step under the chat.
     await page.locator("[data-test='build-admin-claim'] summary").click();
 

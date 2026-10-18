@@ -30,9 +30,13 @@ test("the owner chats with Turf: typing shows live, then the answer streams in",
   await page.goto("/applications/turf-monster");
   await page.locator("[data-test='application-cto-chat']").click();
   await expect(page).toHaveURL(/\/applications\/turf-monster\/chat$/);
-  await expect(page.getByRole("heading", { name: "Chat with Turf" })).toBeVisible();
+  // The agent shell: the CTO's portrait and name on top, the app's status card
+  // (Building · Releasing · Deploying, Tokens used), then the thread and the chat box.
+  await expect(page.locator("[data-test='agent-caption']")).toContainText("Turf");
+  await expect(page.locator("[data-test='cto-chat-head'] [data-test='devops-stage']")).toHaveCount(3);
   await expect(page.locator("turbo-cable-stream-source[channel='CtoChatChannel']")).toHaveAttribute("connected", "");
   await expect(page.locator("[data-test='cto-chat-usage'] [data-test='usage-meter']")).toBeVisible();
+  await expect(page.locator("[data-test='cto-chat-usage']")).toContainText("Tokens used");
   await expect(page.locator("[data-test='cto-chat-usage']")).not.toContainText("$");
 
   const text = `How are signups? ${Date.now()}`;

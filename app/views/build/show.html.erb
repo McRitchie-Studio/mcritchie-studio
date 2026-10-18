@@ -9,12 +9,6 @@
     <% head = render "agent_chats/header", name: BuildController::AGENT_NAME, agent: @intake_agent, role: BuildController::AGENT_ROLE %>
     <% status = render "build/status_card", request_row: req, started: @started %>
     <%= render "agent_chats/shell", page: "draft", head: head, status: status, chat: render("build/chat", request_row: req, messages: @messages) %>
-    <% if logged_in? && current_user.admin? %>
-      <details class="max-w-3xl mx-auto px-4 pb-24" data-test="build-admin-claim">
-        <summary class="cursor-pointer text-sm font-semibold text-muted">Admin: queue a showcase without the checklist</summary>
-        <div class="mt-4"><%= render "build/claim_form", req: req %></div>
-      </details>
-    <% end %>
 
   <% else %>
     <%# The prompt, echoed back as the first message of the conversation. %>

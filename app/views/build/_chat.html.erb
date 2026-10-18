@@ -19,4 +19,11 @@
     <% end %>
   </div>
   <%= render "agent_chats/form", **composer_locals %>
+  <%# Here rather than on the page, so the first message's stream brings it too. %>
+  <% if logged_in? && current_user.admin? %>
+    <details class="mt-6" data-test="build-admin-claim">
+      <summary class="cursor-pointer text-sm font-semibold text-muted">Admin: queue a showcase without the intake</summary>
+      <div class="mt-4"><%= render "build/claim_form", req: request_row %></div>
+    </details>
+  <% end %>
 </div>

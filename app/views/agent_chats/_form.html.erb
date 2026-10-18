@@ -1,7 +1,7 @@
 <%# locals: (url:, scope:, id:, agent_name:, error:, text:, attachments: nil) %>
 <%# The chat's composer: the one big chat box every agent page ends on (/build, /build/:token, /applications/:slug/chat), the text over a round send button at its bottom right. A fresh client id per render makes a double submit store one message (AgentMessages::WebIngest). Enter sends; Shift+Enter is a new line (app/javascript/agent_chat.js). Files ride in through the attachments slot, never by editing this form. The box keeps one view-transition name across the three pages, so a move between them leaves it in place. %>
 <%= form_with scope: scope, url: url, id: id, html: { style: "view-transition-name: agent-composer;" },
-              class: "rounded-3xl border border-subtle bg-surface shadow-lg focus-within:border-primary transition-colors p-2 flex flex-col gap-2",
+              class: "sticky bottom-3 z-10 rounded-3xl border border-subtle bg-surface shadow-lg focus-within:border-primary transition-colors p-2 flex flex-col gap-2",
               data: { test: "cto-chat-form", cto_chat_form: true } do |f| %>
   <%= f.hidden_field :client_id, value: SecureRandom.uuid %>
   <% if error %>
