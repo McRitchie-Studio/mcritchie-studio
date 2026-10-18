@@ -54,6 +54,9 @@ class BuildController < ApplicationController
   # card's stream target (build/_status_card; the id predates the card).
   CHAT_ID = "build-chat-page".freeze
   STATUS_ID = "build-checklist".freeze
+  # The summary card's own DOM id (build/cards/_summary), the target of a
+  # refused launch's stream.
+  def self.summary_dom_id(message) = "build-summary-#{message.id}"
   # The intake agent as the page names it. The soul slug stays BuildIntake.soul.
   AGENT_NAME = "Ray".freeze
   AGENT_ROLE = "AI build agent".freeze
@@ -225,6 +228,14 @@ class BuildController < ApplicationController
   # signed-out post by sending them back), needs the whole checklist (an admin
   # may queue a showcase straight from a name), then claims and queues through
   # AppRequest#queue!, as before. client-cto-from-intake swaps what it starts.
+  #
+  # A REFUSAL from the summary card (Turbo, carrying its message_id) answers ON
+  # that card: a Turbo Stream redraws it with the reason and a next step
+  # (refuse_launch). Never a 422 page: Turbo renders a failed form's page as a
+  # same-URL refresh, which this page morphs (turbo_refreshes_with :morph), and
+  # the morph strips Alpine's display:none from every x-show it touches. On
+  # 2026-10-18 that opened the Links drawer and dropped the reason (task
+  # build-launch-chat-growth).
   def update
     unless logged_in? && @app_request.claimable_by?(current_user) && @app_request.draft?
       redirect_to build_request_path(@app_request.token)
@@ -232,8 +243,9 @@ class BuildController < ApplicationController
     end
     name = params.dig(:app_request, :subdomain).presence || @app_request.subdomain
     unless @app_request.intake_complete? || current_user.admin?
-      redirect_to build_request_path(@app_request.token), alert: "Finish the steps first.", status: :see_other
-      return
+      return refuse_launch("Finish the steps first.") do
+        redirect_to build_request_path(@app_request.token), alert: "Finish the steps first.", status: :see_other
+      end
     end
     @app_request.user ||= current_user
     # Build my app (AppLaunch, docs/agents/system/client-cto.md): the App, its
@@ -249,13 +261,21 @@ class BuildController < ApplicationController
     redirect_to chat_application_path(launch.app.slug), status: :see_other,
                                                         notice: "#{launch.app_cto.name} is your CTO. Say hello."
   rescue AppLaunch::Incomplete => e
-    redirect_to build_request_path(@app_request.token), alert: e.message, status: :see_other
+    refuse_launch(e.message) { redirect_to build_request_path(@app_request.token), alert: e.message, status: :see_other }
   rescue ActiveRecord::RecordInvalid => e
     @app_request.status = "draft"
     @app_request.errors.merge!(e.record.errors) unless e.record.equal?(@app_request)
-    flash.now[:alert] = @app_request.errors.full_messages.to_sentence.presence || e.message
-    load_chat
-    render :show, status: :unprocessable_entity
+    # The address's and the plan's errors read as sentences of their own ("That
+    # name is taken."), not "Subdomain That name is taken.".
+    reason = @app_request.errors.map { |error| %i[base subdomain].include?(error.attribute) ? error.message : error.full_message }
+                                .uniq.to_sentence.presence || e.message
+    plan_limit = @app_request.errors.added?(:base, :apps_per_account)
+    domain = @app_request.errors.include?(:subdomain)
+    refuse_launch(reason, plan_limit: plan_limit, domain: domain) do
+      flash.now[:alert] = reason
+      load_chat
+      render :show, status: :unprocessable_entity
+    end
   end
 
   def check
@@ -271,6 +291,51 @@ class BuildController < ApplicationController
     return nil if logged_in?
 
     BrowserProof.new(PROOF_PURPOSE, min_seconds: PROOF_MIN_SECONDS).reason(params.dig(:app_request, BrowserProof::PROOF_FIELD))
+  end
+
+  # A refused Build My App. From the summary card's Turbo form: the card
+  # redrawn with the reason and a next step (build/cards/_summary `refusal`),
+  # 422. Without a card to name (an old page, a plain form): the composer shows
+  # the reason. Any other format runs the block (the old redirect or page).
+  def refuse_launch(reason, plan_limit: false, domain: false, &html)
+    respond_to do |format|
+      format.turbo_stream do
+        @app_request.reload
+        card = summary_message
+        stream = if card
+                   refusal = { reason: reason, plan_limit: plan_limit, domain: domain,
+                               existing_app: (existing_app_path if plan_limit) }
+                   turbo_stream.replace(BuildController.summary_dom_id(card), partial: "build/cards/summary",
+                                        locals: { card: card.intake_card, message: card, request_row: @app_request, refusal: refusal })
+                 else
+                   replace_form(error: reason)
+                 end
+        render turbo_stream: stream, status: :unprocessable_content
+      end
+      format.any(&html)
+    end
+  end
+
+  # The summary card the press came from (its form's message_id), in this thread.
+  def summary_message
+    id = params[:message_id].to_s[/\A\d{1,18}\z/]
+    return nil unless id
+
+    row = AgentMessage.find_by(id: id, channel: "web", thread_key: BuildIntake.thread_key(@app_request.token))
+    row if row&.intake_card.is_a?(Hash) && row.intake_card["card"] == "summary"
+  end
+
+  # Where the plan-limit refusal sends an owner: the chat of the app they
+  # already hold on this tier (newest), else that request's page.
+  def existing_app_path
+    other = AppRequest.holding.where(user: current_user, tier: @app_request.tier).where.not(id: @app_request.id).order(created_at: :desc).first
+    return nil unless other
+
+    if other.subdomain.present? && App.exists?(slug: other.subdomain) && AppOwnership.manage_app?(current_user, other.subdomain)
+      chat_application_path(other.subdomain)
+    else
+      build_request_path(other.token)
+    end
   end
 
   def load_chat

@@ -13,6 +13,9 @@
    they compile once instead of re-serializing on every response (epic item 4). */
 @import './heartbeat.css';
 
+/* The agent shell's growth, compaction and entrances (agent_chats/_shell). */
+@import './agent_shell.css';
+
 @config '../../../config/tailwind.config.js';
 
 /* The layer scale now comes from the ENGINE — see engine.css `-- Layer scale`,

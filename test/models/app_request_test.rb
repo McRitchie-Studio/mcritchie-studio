@@ -3,7 +3,7 @@ require "test_helper"
 # [unit] AppRequest — the /build funnel's record. The subdomain rules are the
 # promise we make publicly (<name>.mcritchie.studio), so each is pinned here:
 # format, reserved names (including every satellite's), uniqueness among
-# holding requests, and one free app per account. Queueing opens the board task
+# holding requests, and the tier's apps-per-account limit (data, unlimited today). Queueing opens the board task
 # in the same transaction.
 class AppRequestTest < ActiveSupport::TestCase
   def draft(**attrs) = AppRequest.create!({ prompt: "A booking site for my groomer" }.merge(attrs))
@@ -178,15 +178,6 @@ class AppRequestTest < ActiveSupport::TestCase
     end
   end
 
-  test "one free app per account" do
-    # A customer (non-admin). Admins are exempt — see the showcase test above.
-    draft(user: users(:viewer)).queue!("first-app")
-
-    second = draft(user: users(:viewer))
-    error = assert_raises(ActiveRecord::RecordInvalid) { second.queue!("second-app") }
-    assert_match(/one app/, error.message)
-  end
-
   test "a draft belongs to whoever signs in first, then only to them" do
     d = draft
     assert d.claimable_by?(users(:alex))
@@ -267,5 +258,39 @@ class AppRequestTest < ActiveSupport::TestCase
     context = Task.find_by!(slug: request_row.task_slug).metadata.dig("devops", "agent_context")
     assert_includes context, "CTO: Coach (portrait harbor)"
     assert_includes context, "Palette Pitch: light"
+  end
+
+  # The tier's limit from config/workspace_packages.yml, with Vibe capped at `limit`.
+  def with_vibe_apps_limit(limit, &)
+    config = WorkspacePackage.config
+    config["packages"].find { |pkg| pkg["key"] == "vibe" }["apps_per_account"] = limit
+    WorkspacePackage.stub(:config, config, &)
+  end
+
+  test "[unit] apps per account: a capped tier refuses the account's extra app and names the limit" do
+    user = users(:viewer)
+    with_vibe_apps_limit(1) do
+      draft(user: user).queue!("first-pup")
+      second = draft(user: user)
+      error = assert_raises(ActiveRecord::RecordInvalid) { second.queue!("second-pup") }
+      assert_equal "Your Vibe plan includes 1 app, and you already have one.", second.errors[:base].first
+      assert second.errors.added?(:base, :apps_per_account), "the controller reads the detail to offer next steps"
+      assert_match(/Vibe plan/, error.message)
+    end
+    with_vibe_apps_limit(2) do
+      assert draft(user: user).queue!("second-pup"), "a cap of 2 takes a second app"
+      refute draft(user: user).tap { |r| r.assign_attributes(subdomain: "third-pup", status: "queued") }.valid?
+    end
+  end
+
+  test "[unit] apps per account: an unlimited tier (Vibe today) and an admin are never capped" do
+    user = users(:viewer)
+    draft(user: user).queue!("first-pup")
+    assert draft(user: user).queue!("second-pup"), "Vibe is unlimited in the data"
+    with_vibe_apps_limit(1) do
+      admin = users(:alex)
+      draft(user: admin).queue!("show-one")
+      assert draft(user: admin).queue!("show-two"), "an admin's showcase builds are never capped"
+    end
   end
 end

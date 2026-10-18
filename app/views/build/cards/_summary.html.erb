@@ -1,8 +1,9 @@
-<%# locals: (card:, message:, request_row:) %>
-<%# The summary card: once every step is set, Ray's answer carries it (BuildIntake::Card "summary", attached by code when the answer offered no other card). Drawn from the REQUEST, never from the model: the app's title and features, the CTO, the theme and the domain, then Build My App, which runs the same launch as before (BuildController#update, AppLaunch). Signed out, it opens the sign-in modal first, whose link returns here. A summary from before a later change still shows the request as it stands now. %>
+<%# locals: (card:, message:, request_row:, refusal: nil) %>
+<%# The summary card: once every step is set, Ray's answer carries it (BuildIntake::Card "summary", attached by code when the answer offered no other card). Drawn from the REQUEST, never from the model: the app's title and features, the CTO, the theme and the domain, then Build My App, which runs the same launch as before (BuildController#update, AppLaunch). Signed out, it opens the sign-in modal first, whose link returns here. A summary from before a later change still shows the request as it stands now. A refused launch (BuildController#refuse_launch) redraws this card, by its id, with `refusal`: the reason and a next step (the app they already have and the plans for a plan limit; another address for a taken name), above the button, which stays to try again. %>
 <% answers = request_row.answers.is_a?(Hash) ? request_row.answers : {} %>
 <% ready = request_row.draft? && request_row.intake_complete? %>
-<div class="rounded-2xl border border-primary bg-surface p-3 sm:p-4 space-y-4" data-test="build-card-summary" data-ready="<%= ready %>">
+<div id="<%= BuildController.summary_dom_id(message) %>" class="rounded-2xl border <%= refusal ? 'border-danger' : 'border-primary' %> bg-surface p-3 sm:p-4 space-y-4"
+     data-test="build-card-summary" data-ready="<%= ready %>" data-refused="<%= refusal.present? %>">
   <div>
     <p class="text-xs font-semibold uppercase tracking-wider text-muted mb-1">Your app</p>
     <p class="text-lg text-heading font-bold leading-snug break-words" data-test="build-summary-title"><%= answers["title"].presence || answers["idea"] %></p>
@@ -42,6 +43,23 @@
     </div>
   </dl>
 
+  <% if refusal %>
+    <div class="rounded-xl border border-danger/40 bg-danger/10 p-3 space-y-2 text-sm" role="alert" data-test="build-summary-refusal">
+      <p class="font-semibold text-danger-ink" data-test="build-summary-refusal-reason"><%= refusal[:reason] %></p>
+      <% if refusal[:plan_limit] %>
+        <p class="text-body" data-test="build-summary-next">
+          <% if refusal[:existing_app] %>
+            <%= link_to "Open the app you have", refusal[:existing_app], class: "font-semibold text-primary-ink underline", data: { turbo_frame: "_top", test: "build-summary-existing-app" } %>, or
+          <% end %>
+          <%= link_to "see the plans", packages_path, class: "font-semibold text-primary-ink underline", data: { test: "build-summary-upgrade" } %> for more apps.
+        </p>
+      <% elsif refusal[:domain] %>
+        <p class="text-body" data-test="build-summary-next">Ask <%= BuildController::AGENT_NAME %> for another address in the chat below, then tap Build My App again.</p>
+      <% else %>
+        <p class="text-body" data-test="build-summary-next">Finish that step with <%= BuildController::AGENT_NAME %> in the chat below, then tap Build My App again.</p>
+      <% end %>
+    </div>
+  <% end %>
   <% if !ready %>
     <p class="text-xs text-muted" data-test="build-summary-not-ready"><%= request_row.draft? ? "A step changed; finish it and Ray will sum up again." : "This app is already in the build queue." %></p>
   <% elsif !logged_in? %>
@@ -54,6 +72,7 @@
     <%# Turbo, so the 303 to the new CTO's chat is a view-transition visit (cto_chats/show). %>
     <%= form_with url: build_request_path(request_row.token), method: :patch, data: { test: "build-summary-form" } do %>
       <%= hidden_field_tag "app_request[subdomain]", request_row.subdomain %>
+      <%= hidden_field_tag "message_id", message.id, id: nil %>
       <button type="submit" class="btn btn-primary w-full" data-test="build-summary-build">Build My App</button>
     <% end %>
     <p class="text-xs text-muted text-center">Claims <span class="font-mono"><%= request_row.host %></span> and starts the build.</p>

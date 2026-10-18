@@ -89,8 +89,18 @@ class AgentChatComponentTest < ActionView::TestCase
     render("agent_chats/shell", page: "app", head: tag.div(data: { test: "h" }), status: tag.div(data: { test: "s" }),
                                 chat: tag.div(data: { test: "c" }))
 
-    assert_select "section[data-test='agent-shell'][data-shell='app'] > [data-test='h'] + [data-test='agent-shell-status'][style*='agent-status'] > [data-test='s']"
-    assert_select "[data-test='agent-shell-status'] + [data-test='c']"
+    assert_select "section[data-test='agent-shell'][data-shell='app'] > [data-test='agent-shell-head'] > [data-test='h']"
+    assert_select "[data-test='agent-shell-head'] + [data-test='agent-shell-status'][style*='agent-status'] > [data-test='s']"
+    assert_select "[data-test='agent-shell-status'] + [data-test='agent-shell-chat'] > [data-test='c']"
+  end
+
+  test "[component] the shell paints its size step from the thread's turns, and carries the thresholds for the script" do
+    { 0 => "full", 1 => "medium", 2 => "medium", 3 => "compact", 12 => "compact" }.each do |turns, size|
+      @rendered = ActionView::OutputBuffer.new
+      render("agent_chats/shell", page: "draft", head: "", status: "", chat: "", turns: turns)
+      assert_select "section.agent-shell[data-agent-shell][data-shell-size='#{size}']", 1, "#{turns} turns"
+    end
+    assert_select "section[data-shell-medium-at='#{AgentShellHelper::MEDIUM_AT}'][data-shell-compact-at='#{AgentShellHelper::COMPACT_AT}']"
   end
 
   test "[component] the composer is the big chat box with a round send button" do

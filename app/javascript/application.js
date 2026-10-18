@@ -8,6 +8,8 @@ import "agent_chat"
 import "build_chat"
 // The /build agent shell: the first message answered in place (replace_url stream); its typing placeholder (typing_placeholder.js) runs a timer only while /build's first box is on the page.
 import "build_shell"
+// The agent shell as the conversation grows: the size steps, the first message's entrances, the chat box kept in view; inert where there is no shell.
+import "agent_shell"
 import "depth_chart"
 import "scroll_tab_stop"
 import "logo_gallery"

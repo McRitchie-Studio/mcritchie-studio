@@ -1791,6 +1791,24 @@ AgentPersonIdentity.where(platform: "web").delete_all
 AgentPerson.find_or_create_by!(user: admin) { |p| p.assign_attributes(display_name: "E2E Chat Owner", role: "owner") }
 puts "Seeded: the web chat's owner person"
 
+# A refused Build My App (e2e/build_launch_refusal.spec.js): a finished draft
+# whose address another app took after the visitor tapped it. Build My App is
+# refused ("That name is taken."), and the refusal must land ON the summary
+# card. The draft's token is fixed so the spec can open it.
+refused_palette = { "name" => "Pitch",
+                    "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },
+                    "dark" => { "primary" => "#4ade80", "accent" => "#fbbf24", "surface" => "#0b1220", "text" => "#f1f5f9" } }
+refused_owner = User.find_or_create_by!(email: "refused-launch@test.com") { |user| user.assign_attributes(name: "Pat Planner", role: "viewer") }
+refused_draft = AppRequest.create!(prompt: "A star checkers game", user: refused_owner, token: "e2e-refused-launch-draft",
+                                   answers: { "idea" => "Star checkers", "title" => "Star Checkers", "features" => [ "Play a friend" ] },
+                                   cto_name: "Hop", cto_avatar: "meadow", palette: refused_palette, subdomain: "taken-meanwhile")
+App.find_or_create_by!(slug: "taken-meanwhile") { |app| app.assign_attributes(name: "Taken Meanwhile", emoji: "🧩", color: "#22C55E") }
+AgentMessage.create!(channel: "web", external_id: "build:#{refused_draft.token}:1", channel_ref: "build",
+                     thread_key: BuildIntake.thread_key(refused_draft.token), soul_slug: BuildIntake.soul, content: "Let's use taken-meanwhile.",
+                     status: "completed", completed_at: Time.current, response_text: "Here's your app. Ready when you are.",
+                     intake_card: { "card" => "summary" })
+puts "Seeded: a finished draft whose address was taken meanwhile"
+
 # An app owner's word on a proposal (e2e/cto_web_chat.spec.js; Alex, 2026-10-18;
 # AgentMessages::ProposalConfirm#owner_verdict): Turf's owner, a plain viewer with
 # no agent role, has an answered question on their own Turf chat and a pending

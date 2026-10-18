@@ -185,7 +185,7 @@ class BuildViewTest < ActionView::TestCase
         assert_select "h1", text: "What do you want to build?"
         assert_select "p", text: "Let our agents build & host your website on the McRitchie Studio stack, free."
       end
-      assert_select "[data-test='agent-shell-status'] + #build-chat-page [data-test='build-form']", 1, "the chat box sits under the heading"
+      assert_select "[data-test='agent-shell-status'] + [data-test='agent-shell-chat'] > #build-chat-page [data-test='build-form']", 1, "the chat box sits under the heading"
     end
     assert_select "[data-test='resume-draft']", 0, "no unfinished-request banner"
     assert_select "[aria-label='How it works']", 0, "no three-step cards"

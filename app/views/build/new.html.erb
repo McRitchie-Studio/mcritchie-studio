@@ -8,14 +8,14 @@
 <div data-test="build-page">
   <% head = render "agent_chats/header", name: BuildController::AGENT_NAME, agent: @intake_agent, role: BuildController::AGENT_ROLE %>
   <% chat = capture do %>
-    <div id="build-chat-page" class="flex flex-col gap-3" data-test="build-chat-start">
+    <div id="build-chat-page" class="agent-shell-thread flex flex-col gap-3" data-test="build-chat-start">
       <%= render "build/first_form" %>
     </div>
   <% end %>
   <%= render "agent_chats/shell", page: "build", head: head, status: render("build/status_card"), chat: chat %>
 
   <%# The gallery is for a visitor who has not started: the first message's stream removes it (BuildController#create), so the page it leaves matches a reload of /build/<token>, which has none. %>
-  <section id="<%= BuildController::GALLERY_ID %>" class="max-w-3xl mx-auto px-4 pb-24 -mt-16">
+  <section id="<%= BuildController::GALLERY_ID %>" class="max-w-3xl mx-auto px-4 pb-24" data-build-gallery-region>
   <% if @examples.any? || (logged_in? && current_user.admin?) %>
     <section class="mt-14" aria-labelledby="built-with" data-test="build-gallery">
       <div class="flex items-center justify-between gap-3 mb-4">

@@ -33,6 +33,16 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     end
   end
 
+  test "[unit] apps per account: every tier has the key, all unlimited for now; a bad value reads as none" do
+    raw = WorkspacePackage.config.fetch("packages")
+    assert raw.all? { |attrs| attrs.key?("apps_per_account") }, "each tier names its apps_per_account"
+    assert_equal [ nil ] * 5, WorkspacePackage.all.map(&:apps_per_account), "Mr. McRitchie set every tier unlimited on 2026-10-18"
+    assert_equal 1, WorkspacePackage.new({ "key" => "x", "name" => "X", "apps_per_account" => 1 }).apps_per_account
+    [ 0, -1, "3", 2.5 ].each do |bad|
+      assert_nil WorkspacePackage.new({ "key" => "x", "name" => "X", "apps_per_account" => bad }).apps_per_account, bad.inspect
+    end
+  end
+
   test "[unit] CTO allowances: every tier has the key, blank (unlimited) until priced; a bad value reads as none" do
     raw = WorkspacePackage.config.fetch("packages")
     assert raw.all? { |attrs| attrs.key?("cto_monthly_tokens") }, "each tier names its cto_monthly_tokens"

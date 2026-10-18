@@ -15,8 +15,8 @@
 <div id="build-checklist" data-test="build-status" data-card="<%= show_card %>">
   <% if show_card %>
     <% done = request_row.intake_checklist %>
-    <div class="card p-4 sm:p-5 space-y-4" data-test="build-status-card" data-complete="<%= request_row.intake_complete? %>">
-      <h1 class="text-xl sm:text-2xl font-bold text-heading text-center break-words" data-test="build-status-title">
+    <div class="agent-shell-card card p-4 sm:p-5 space-y-4" data-test="build-status-card" data-complete="<%= request_row.intake_complete? %>">
+      <h1 class="agent-shell-card-title text-xl sm:text-2xl font-bold text-heading text-center break-words" data-test="build-status-title">
         <%= request_row.working_title || "Your app" %>
       </h1>
       <ul class="grid grid-cols-3 gap-2 sm:gap-3">
@@ -26,10 +26,10 @@
              [ "domain", "Domain", done["address"], (request_row.host if done["address"]) ]
            ] %>
         <% tiles.each do |key, label, set, value| %>
-          <li class="flex flex-col items-center gap-1.5 min-w-0 rounded-2xl border px-2 py-3 text-center
+          <li class="agent-shell-tile flex flex-col items-center gap-1.5 min-w-0 rounded-2xl border px-2 py-3 text-center
                      <%= set ? 'border-primary/40 bg-primary/5' : 'border-dashed border-subtle' %>"
               data-test="build-tile-<%= key %>" data-done="<%= set %>">
-            <span class="flex h-10 items-center justify-center" aria-hidden="true">
+            <span class="agent-shell-tile-icon flex h-10 items-center justify-center" aria-hidden="true">
               <% if key == "agent" && set && (path = BuildIntake::Portraits.path(request_row.cto_avatar)) %>
                 <%= image_tag path, alt: "", class: "h-10 w-10 rounded-full border border-subtle", data: { test: "build-tile-agent-portrait" } %>
               <% elsif key == "theme" && set %>
@@ -46,7 +46,7 @@
                 <span class="h-9 w-9 rounded-full border-2 border-dashed border-subtle"></span>
               <% end %>
             </span>
-            <span class="text-2xs font-semibold uppercase tracking-wider text-muted"><%= label %></span>
+            <span class="agent-shell-tile-label text-2xs font-semibold uppercase tracking-wider text-muted"><%= label %></span>
             <span class="block w-full truncate text-xs sm:text-sm <%= set ? 'font-semibold text-heading' : 'text-muted' %>" data-test="build-tile-<%= key %>-value">
               <%= value || "Not yet" %>
             </span>
@@ -55,9 +55,9 @@
       </ul>
     </div>
   <% else %>
-    <header class="text-center" data-test="build-heading">
+    <header class="agent-shell-heading text-center" data-test="build-heading">
       <h1 class="text-3xl sm:text-5xl font-bold text-heading tracking-tight mb-3">What do you want to build?</h1>
-      <p class="text-muted max-w-xl mx-auto">Let our agents build &amp; host your website on the McRitchie Studio stack, free.</p>
+      <p class="agent-shell-subtitle text-muted max-w-xl mx-auto">Let our agents build &amp; host your website on the McRitchie Studio stack, free.</p>
     </header>
   <% end %>
 </div>

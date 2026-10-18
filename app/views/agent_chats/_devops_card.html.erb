@@ -1,9 +1,9 @@
 <%# locals: (app:, stages:, meter: nil, client: false, palette_style: nil) %>
 <%# The app chat's status card (agent_chats/_shell): the app's title, its client-facing devops as three pills, Building · Releasing · Deploying (AppDevopsStages: done, live or still to come; the live one pulses, a steady dot under prefers-reduced-motion), and the "Tokens used" bar in #cto-chat-meter, which each answer re-renders. A client app's card wears its CTO's palette (AppCto; ClientCtoHelper). %>
-<div class="card p-4 sm:p-5 space-y-4 <%= "border-t-4 border-t-[rgb(var(--cto-primary))] bg-[rgb(var(--cto-primary)/0.08)] #{ClientCtoHelper::PALETTE_SWITCH}" if client %>"
+<div class="agent-shell-card card p-4 sm:p-5 space-y-4 <%= "border-t-4 border-t-[rgb(var(--cto-primary))] bg-[rgb(var(--cto-primary)/0.08)] #{ClientCtoHelper::PALETTE_SWITCH}" if client %>"
      <% if palette_style.present? %>style="<%= palette_style %>"<% end %>
      data-test="cto-chat-head" data-client-cto="<%= client %>">
-  <h1 class="text-xl sm:text-2xl font-bold text-heading text-center break-words">
+  <h1 class="agent-shell-card-title text-xl sm:text-2xl font-bold text-heading text-center break-words">
     <%= link_to app.name, application_path(app.slug), class: "hover:underline", data: { test: "cto-chat-app-link" } %>
   </h1>
   <ol class="grid grid-cols-3 gap-2" aria-label="Where your app is" data-test="devops-stages">

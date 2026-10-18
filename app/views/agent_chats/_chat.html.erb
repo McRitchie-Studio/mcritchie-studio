@@ -10,7 +10,7 @@
   card, notices) is the caller's. app/javascript/agent_chat.js keeps it honest.
 %>
 <%= turbo_stream_from stream, channel: channel %>
-<div class="flex flex-col gap-3" data-test="cto-chat">
+<div class="agent-shell-thread flex flex-col gap-3" data-test="cto-chat">
   <div id="<%= AgentMessages::WebChat::MESSAGES_TARGET %>" role="log" aria-live="polite" aria-label="Conversation with <%= agent_name %>"
        class="flex flex-col gap-4 px-1 py-2 overflow-y-auto max-h-[60vh]" data-test="cto-chat-messages" data-cto-chat-scroll>
     <% if empty %>
