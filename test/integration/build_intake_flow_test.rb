@@ -85,6 +85,8 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "data-test=\"build-card-idea\""
     assert_includes response.body, "data-test=\"build-status-card\"", "the first card brings the status card in the same poll"
     assert_includes response.body, "League Standings Hub"
+    assert_select Nokogiri::HTML(response.body).css("template").map(&:inner_html).join.then { |html| Nokogiri::HTML.fragment(html) },
+                  "[data-test=build-status-title]", "League Standings Hub", "the status card takes the proposed title before any tap"
 
     # Build App: the idea locks, and the visitor's line goes to Ray, who answers with the CTO card.
     relay = tap_and_relay(request_row, "idea", "Let's build League Standings Hub.", message_id: idea.id)

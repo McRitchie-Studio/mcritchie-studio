@@ -147,11 +147,19 @@ class AppRequest < ApplicationRecord
       AgentMessage.where(channel: "web", thread_key: BuildIntake.thread_key(token)).where.not(intake_card: nil).exists?
   end
 
-  # The app's working title on the status card: the idea card's title once the
-  # visitor confirmed one, else the claimed address in words, else nil.
+  # The app's working title on the status card: the title the visitor confirmed
+  # (Build App on the idea card), else the newest idea card's proposed title, so
+  # the card is named the moment Ray proposes it, else the claimed address in
+  # words, else nil.
   def working_title
-    title = answers.is_a?(Hash) ? answers["title"].to_s.squish.presence : nil
-    title || subdomain&.tr("-", " ")&.titleize
+    confirmed = answers.is_a?(Hash) ? answers["title"].to_s.squish.presence : nil
+    confirmed || proposed_title || subdomain&.tr("-", " ")&.titleize
+  end
+
+  private def proposed_title
+    AgentMessage.where(channel: "web", thread_key: BuildIntake.thread_key(token))
+                .where("intake_card->>'card' = 'idea'").order(id: :desc).limit(1)
+                .pick(Arel.sql("intake_card->>'title'")).to_s.squish.presence
   end
 
   # The first unset step, in the order Xan asks, or nil when all are set.
