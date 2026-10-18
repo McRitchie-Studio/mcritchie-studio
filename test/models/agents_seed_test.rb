@@ -195,7 +195,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
     Agent.where(slug: "ray").find_each { |a| a.skill_assignments.delete_all; a.activities.delete_all; a.usages.delete_all; a.tasks.update_all(agent_slug: nil); a.delete }
     legacy = Agent.create!(name: "Ray", slug: "xan", status: "active", agent_type: "orchestrator")
     Activity.insert_all([{ agent_slug: "xan", activity_type: "comment", description: "legacy row", created_at: Time.current, updated_at: Time.current }])
-    capture_io { run_seed }
+    run_seed
 
     refute Agent.exists?(slug: "xan")
     assert_equal legacy.id, Agent.find_by!(slug: "ray").id
