@@ -998,13 +998,35 @@ form carries a client id per send, so a double submit stores one row.
 **Real time.** The page subscribes with `turbo_stream_from <stream>, channel:
 CtoChatChannel`, one stream per user per app (`cto_chat:<app slug>:<user id>`).
 
-- **Typing** reuses the dispatcher's pulse unchanged (above, "Typing"): the run's
-  first pulse, then one every 7 seconds, capped at 3 minutes, checked by
-  `typing_refusal`. For a web row `AgentMessageTypingJob` broadcasts "Turf is
-  typing…" into the page's typing slot instead of calling a bot. The page fades it
+- **Typing** reuses the dispatcher's pulse (above, "Typing"): the run's first
+  pulse, then one every 7 seconds, capped at 3 minutes, checked by
+  `typing_refusal`. For a web row `AgentMessageTypingJob` broadcasts the
+  indicator into the page's typing slot instead of calling a bot. The page fades it
   `WebChat::TYPING_FADE` (12) seconds after the last pulse, so a run that dies
   stops typing within seconds, and drops a pulse older than an answer already
   shown.
+- **Thinking, then typing** (Alex, 2026-10-18: "a distinction in thinking and
+  typing"). A web pulse carries a phase, read off the run itself: a web answer
+  runs on `--output-format stream-json --include-partial-messages`
+  (`AgentMailbox::ClaudeStream.cmd`, still `--safe-mode` and `--tools ""`), the
+  runner hands each stdout line to `ClaudeStream::Phase` as it arrives, and the
+  phase is `thinking` from the claim until the first line that starts the
+  answer's text, then `typing` for good. The dispatcher pulses at once when the
+  phase moves (`Dispatcher#type_due`), not on the next 7-second beat. The board
+  allow-lists it (`AgentMessage.typing_phase`: `thinking` or `typing`; anything
+  else, or none, is `typing`, so a dispatcher from before phases looks as it
+  did), and `agent_chats/_typing` draws it: THINKING is the agent's small
+  portrait in a turning ring with a glow and "<Agent> is thinking" shimmering;
+  TYPING is a chat bubble of wave dots and "<Agent> is typing". Both looks share
+  one grid cell (`app/assets/tailwind/agent_typing.css`), so the swap never moves
+  the page, `app/javascript/agent_chat.js` carries the old phase across a redraw
+  so it crossfades, and reduced motion holds the ring and dots still. The answer
+  is still read from the stream's `result` line only (`ClaudeRun.parse(...,
+  stream: true)`, the json envelope's own object), and a stream with no result
+  line keeps none of the model's words in its error text. A `/build` page polls
+  instead of listening, so its pulse records the phase on the claimed row
+  (`run_meta.typing_phase`, overwritten by the answer's run summary at complete)
+  and `build/_turn` draws it. Discord's pulse has one look and carries no phase.
 - **The answer** is delivered by `AgentMessageReplyJob` through
   `WebChat.deliver!`: under the row lock it is marked posted once
   (`reply_external_id` `web:<id>`, a `reply_posted` event `via: web_chat`), then
@@ -1567,7 +1589,13 @@ long poll is in `test/controllers/api/v1/agent_messages_controller_test.rb`.
 Typing is `test/integration/agent_dispatcher_typing_test.rb` (pulses, then the
 reply as the same bot; stop on failure and at the cap) and
 `test/jobs/agent_message_typing_job_test.rb` (the bot choice, the fallback, the
-guard and the unanswered audiences).
+guard and the unanswered audiences). The web chat's thinking and typing phases
+are `test/lib/agent_claude_stream_test.rb` (the phase off a recorded stream,
+`test/fixtures/files/claude_stream_thinking.jsonl`, and the same answer as the
+json envelope), `test/integration/web_chat_thinking_typing_test.rb` (the loop:
+thinking, an immediate typing pulse, the answer; the `/build` poll; Discord
+unchanged), `test/views/agent_typing_component_test.rb` and
+`test/javascript/agent_chat_test.js`.
 
 ## Observing
 

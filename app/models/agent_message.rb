@@ -70,6 +70,15 @@ class AgentMessage < ApplicationRecord
   # run can never type forever. Shorter than a long answer may take: such an
   # answer types for three minutes and then posts without it.
   TYPING_CAP = 180
+  # What a web chat's pulse may say the answer is doing (bin/dispatcher reads it
+  # off Claude's stream, AgentMailbox::ClaudeStream): thinking until the
+  # answer's first words, then typing. Anything else, or none (a Discord pulse,
+  # a dispatcher from before phases), is typing: the look every pulse had.
+  TYPING_PHASES = %w[thinking typing].freeze
+
+  def self.typing_phase(value)
+    TYPING_PHASES.include?(value.to_s) ? value.to_s : "typing"
+  end
 
   # Candidates a single claim may answer with the usage-cap reply before it
   # gives up for this call (the next claim carries on).
@@ -502,6 +511,13 @@ class AgentMessage < ApplicationRecord
     return "capped" if claimed_at.nil? || now - claimed_at > TYPING_CAP
 
     nil
+  end
+
+  # A pending /build turn's phase as the last pulse left it (WebChat.broadcast_typing
+  # records it, since that page polls instead of listening), or nil before any.
+  def typing_phase
+    value = run_meta.is_a?(Hash) ? run_meta["typing_phase"] : nil
+    TYPING_PHASES.include?(value) ? value : nil
   end
 
   def email? = channel == "email"

@@ -142,7 +142,11 @@ module AgentMailbox
     # typed_at: the last pulse asked for (nil: none yet). typing: false once the
     # board said no (or failed): that run is never pulsed again.
     # warm: the WarmSession::Turn the run answers on, or nil (a cold run).
-    Run = Struct.new(:message, :thread, :started_at, :renewed_at, :typed_at, :typing, :warm, keyword_init: true)
+    # phase: a web-chat run's ClaudeStream::Phase (thinking, then typing), fed
+    # by the run's own stdout; nil for Discord, whose pulse has one look.
+    # pulsed_phase: the phase the last pulse carried, so a change pulses at once.
+    Run = Struct.new(:message, :thread, :started_at, :renewed_at, :typed_at, :typing, :warm, :phase, :pulsed_phase,
+                     keyword_init: true)
     # A consolidation turn in flight on a warm domain.
     Chore = Struct.new(:domain, :thread, :started_at, :source_session_id, :turns, :context_tokens, keyword_init: true)
     # A domain lease this dispatcher holds. busy: a warm turn or a consolidation
@@ -381,12 +385,16 @@ module AgentMailbox
       end
       responder = responder_for(message["soul_slug"])
       warm = warm_turn(message, context)
+      phase = ClaudeStream::Phase.new if message["channel"] == "web" && responder.streams?
       thread = Thread.new do
         Thread.current.report_on_exception = false
-        warm ? responder.respond(message, context: context, warm: warm) : responder.respond(message, context: context)
+        options = { context: context }
+        options[:warm] = warm if warm
+        options[:phase] = phase if phase
+        responder.respond(message, **options)
       end
       run = Run.new(message: message, thread: thread, started_at: now, renewed_at: now,
-                    typing: TYPING_CHANNELS.include?(message["channel"]), warm: warm)
+                    typing: TYPING_CHANNELS.include?(message["channel"]), warm: warm, phase: phase)
       @runs << run
       pulse_typing(run, now)
     end
@@ -793,12 +801,13 @@ module AgentMailbox
     end
 
     # Every live run whose last pulse is TYPING_EVERY old gets another, until
-    # TYPING_CAP after its start. A finished run is reaped before this runs, so
-    # typing stops with the run.
+    # TYPING_CAP after its start; a web run whose phase moved on (thinking to
+    # typing) gets one at once, so the page swaps on the loop's next beat. A
+    # finished run is reaped before this runs, so typing stops with the run.
     def type_due(now)
       @runs.each do |run|
         next unless run.typing
-        next if run.typed_at && now - run.typed_at < TYPING_EVERY
+        next if run.typed_at && now - run.typed_at < TYPING_EVERY && !phase_moved?(run)
 
         pulse_typing(run, now)
       end
@@ -816,7 +825,12 @@ module AgentMailbox
         return
       end
       run.typed_at = now
-      verdict = @client.typing(run.message["id"], worker: @worker).dig("meta", "typing")
+      verdict = if run.phase
+                  run.pulsed_phase = run.phase.current
+                  @client.typing(run.message["id"], worker: @worker, phase: run.pulsed_phase)
+                else
+                  @client.typing(run.message["id"], worker: @worker)
+                end.dig("meta", "typing")
       return if verdict == "queued"
 
       run.typing = false
@@ -830,6 +844,8 @@ module AgentMailbox
       run.typing = false
       log "typing for ##{run.message['id']} failed (#{e.class})"
     end
+
+    def phase_moved?(run) = run.phase ? run.phase.current != run.pulsed_phase : false
 
     def ping(now, state: nil)
       @last_ping = now

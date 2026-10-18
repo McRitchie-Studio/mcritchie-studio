@@ -1,10 +1,23 @@
-<%# locals: (agent_name:, at:) %>
-<%# One typing pulse (AgentMessages::WebChat.broadcast_typing). The page fades it TYPING_FADE seconds after the last one, and drops it when a newer answer is already shown (app/javascript/agent_chat.js). %>
-<div class="flex items-center gap-2 py-2 text-xs text-muted" data-test="cto-chat-typing" data-typing-at="<%= (at.to_f * 1000).to_i %>">
-  <span class="flex gap-1" aria-hidden="true">
-    <span class="w-1.5 h-1.5 rounded-full bg-primary animate-bounce"></span>
-    <span class="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:150ms]"></span>
-    <span class="w-1.5 h-1.5 rounded-full bg-primary animate-bounce [animation-delay:300ms]"></span>
-  </span>
-  <span><%= agent_name %> is typing…</span>
+<%# locals: (agent_name:, at:, phase: "typing", agent: nil, cto: nil) %>
+<%# One pulse of a pending answer (AgentMessages::WebChat.broadcast_typing; build/_turn while Ray's answer is pending). Two looks, both always drawn in one grid cell so a swap never moves the page: THINKING (the agent's portrait in a soft turning ring, "<Agent> is thinking" shimmering) until the answer's first words, then TYPING (a chat bubble of wave dots, "<Agent> is typing"). data-phase picks the one shown; app/assets/tailwind/agent_typing.css crossfades them and app/javascript/agent_chat.js carries the old phase across a re-render so the swap fades, keeps the motion on one clock, fades the pulse TYPING_FADE seconds after the last one, and drops a pulse older than an answer already shown. The portrait: `cto` (applications/_cto_avatar, a client CTO's own), else `agent` (components/agent_avatar), else the name's initial. Rendered in broadcasts too (no request: no URL helpers here). %>
+<% phase = AgentMessage.typing_phase(phase) %>
+<div class="agent-typing" data-test="cto-chat-typing" data-phase="<%= phase %>" data-typing-at="<%= (at.to_f * 1000).to_i %>">
+  <div class="agent-typing-layer agent-typing-thinks" data-test="cto-chat-thinking">
+    <span class="agent-typing-orbit" aria-hidden="true">
+      <% if cto %>
+        <%= render "applications/cto_avatar", cto: cto, size: "sm" %>
+      <% elsif agent %>
+        <%= render "components/agent_avatar", agent: agent, size: "sm" %>
+      <% else %>
+        <span class="w-10 h-10 text-sm rounded-full flex items-center justify-center bg-inset border border-subtle text-heading font-bold shrink-0"><%= agent_name.to_s.first.to_s.upcase %></span>
+      <% end %>
+    </span>
+    <span class="agent-typing-label agent-typing-shimmer"><%= agent_name %> is thinking</span>
+  </div>
+  <div class="agent-typing-layer agent-typing-types" data-test="cto-chat-typing-bubble">
+    <span class="agent-typing-bubble" aria-hidden="true">
+      <span class="agent-typing-dot"></span><span class="agent-typing-dot"></span><span class="agent-typing-dot"></span>
+    </span>
+    <span class="agent-typing-label"><%= agent_name %> is typing</span>
+  </div>
 </div>

@@ -46,6 +46,41 @@ class WebChatTest < ActiveJob::TestCase
     assert_match(/data-typing-at="\d{13}"/, payload)
   end
 
+  test "a pulse's phase picks the look: thinking shows Turf's portrait and 'is thinking'; an unknown phase is typing" do
+    claimed = claim!
+    AgentMessageTypingJob.perform_now(claimed.id, "w1", "thinking")
+    thinking = sent.last
+    assert_includes thinking, %(data-phase="thinking")
+    assert_includes thinking, "Turf is thinking"
+    assert_includes thinking, "agent-typing-orbit"
+
+    AgentMessageTypingJob.perform_now(claimed.id, "w1", "typing")
+    assert_includes sent.last, %(data-phase="typing")
+
+    AgentMessageTypingJob.perform_now(claimed.id, "w1", "dreaming")
+    assert_includes sent.last, %(data-phase="typing"), "off the allow-list is typing"
+    AgentMessageTypingJob.perform_now(claimed.id, "w1")
+    assert_includes sent.last, %(data-phase="typing"), "a job queued before phases is typing"
+    assert_equal({}, claimed.reload.run_meta.slice("typing_phase"), "a CTO chat's phase rides the broadcast, not the row")
+  end
+
+  test "a /build thread's phase is kept on the claimed row for its poll, and a late pulse never writes a finished row" do
+    message = AgentMessage.create!(channel: "web", external_id: "web:phase-1", channel_ref: BuildIntake::CHANNEL_REF,
+                                   thread_key: BuildIntake.thread_key("tok-phase-1"), soul_slug: "ray",
+                                   content: "A league site", status: "claimed", claimed_by: "w1", claimed_at: Time.current)
+    build_stream = AgentMessages::WebChat.stream_for(message)
+
+    assert_nil message.typing_phase
+    assert_no_broadcasts(build_stream) { assert_equal false, AgentMessages::WebChat.broadcast_typing(message, phase: "thinking") }
+    assert_equal "thinking", message.reload.typing_phase
+    AgentMessages::WebChat.broadcast_typing(message, phase: "typing")
+    assert_equal "typing", message.reload.typing_phase
+
+    message.update!(status: "completed", run_meta: { "output_tokens" => 9 })
+    AgentMessages::WebChat.broadcast_typing(message, phase: "thinking")
+    assert_equal({ "output_tokens" => 9 }, message.reload.run_meta, "the answer's run summary is left exactly as complete wrote it")
+  end
+
   test "no pulse for a worker that does not hold the claim, or once the message is answered" do
     claimed = claim!
     assert_no_broadcasts(@stream) { AgentMessageTypingJob.perform_now(claimed.id, "someone-else") }

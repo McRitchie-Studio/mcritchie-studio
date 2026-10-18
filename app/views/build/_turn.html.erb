@@ -10,7 +10,9 @@
   <% else %>
     <%= render "agent_chats/turn", message: message, agent_name: BuildController::AGENT_NAME %>
     <% if pending %>
-      <%= render "agent_chats/typing", agent_name: BuildController::AGENT_NAME, at: Time.current %>
+      <%# Thinking until the dispatcher's pulse says the answer's words have begun (WebChat.record_phase). %>
+      <%= render "agent_chats/typing", agent_name: BuildController::AGENT_NAME, at: Time.current,
+                                       phase: message.typing_phase || "thinking", agent: build_typing_agent %>
     <% end %>
     <% if card && BuildIntake::Card::KINDS.include?(card["card"]) %>
       <div class="self-start w-full max-w-xl" data-test="build-card" data-card="<%= card["card"] %>">

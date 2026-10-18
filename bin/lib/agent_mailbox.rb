@@ -10,6 +10,7 @@ require "timeout"
 require "tmpdir"
 require "uri"
 require_relative "agent_api"
+require_relative "agent_claude_stream"
 require_relative "agent_context_builder"
 require_relative "agent_media"
 require_relative "agent_proposal_block"
@@ -71,9 +72,13 @@ module AgentMailbox
     end
 
     # One "typing…" pulse for a held message (AgentMessageTypingJob on the
-    # board). meta.typing says "queued" or why not.
-    def typing(id, worker:)
-      call(:post, "/api/v1/agent_messages/#{Integer(id)}/typing", { "worker" => worker })
+    # board). meta.typing says "queued" or why not. `phase` ("thinking" or
+    # "typing", a web-chat run's ClaudeStream::Phase) is sent only when given;
+    # a Discord pulse carries none, and the board reads none as typing.
+    def typing(id, worker:, phase: nil)
+      body = { "worker" => worker }
+      body["phase"] = phase if phase
+      call(:post, "/api/v1/agent_messages/#{Integer(id)}/typing", body)
     end
 
     # bin/dispatcher's minute ping (AgentDispatcher on the board).
@@ -219,7 +224,10 @@ module AgentMailbox
   # output for an action (an operator reads it) but kept apart for Claude.
   # The child runs in its own process group under child_env. On timeout the
   # group gets TERM, then KILL after kill_grace.
-  def self.run_command(argv, stdin:, timeout:, chdir:, kill_grace: KILL_GRACE)
+  # `on_line`: called with each stdout line as it arrives (a web-chat answer's
+  # stream-json, ClaudeStream::Phase); the output returned is the same either
+  # way. A callback that raises is ignored: it can never cut the read short.
+  def self.run_command(argv, stdin:, timeout:, chdir:, kill_grace: KILL_GRACE, on_line: nil)
     Open3.popen3(child_env, *argv, chdir: chdir, unsetenv_others: true, pgroup: true) do |i, o, e, wait|
       Children.add(wait.pid)
       begin
@@ -229,7 +237,7 @@ module AgentMailbox
           nil
         end
         i.close
-        reader = Thread.new { o.read }
+        reader = Thread.new { on_line ? read_lines(o, on_line) : o.read }
         err = Thread.new { e.read }
         unless wait.join(timeout)
           signal_group(wait.pid, "TERM")
@@ -247,6 +255,31 @@ module AgentMailbox
     end
   rescue SystemCallError, IOError => e
     [ "could not run #{argv.first}: #{e.message}", 127, "" ]
+  end
+
+  # stdout read line by line, every line handed to `on_line` (as UTF-8, scrubbed),
+  # all of it returned as bytes (drained reads it as UTF-8, as for #read).
+  def self.read_lines(io, on_line)
+    out = String.new(encoding: Encoding::BINARY)
+    io.each_line do |line|
+      out << line.b
+      begin
+        on_line.call(line.b.force_encoding(Encoding::UTF_8).scrub)
+      rescue StandardError
+        nil
+      end
+    end
+    out
+  end
+
+  # Whether `runner` takes an `on_line:` keyword (run_command does; a test's
+  # stub may not). Only such a runner is handed a stream to watch, so a stub
+  # that answers in plain text keeps the json path it was written for.
+  def self.streams_lines?(runner)
+    callable = runner.is_a?(Method) || runner.is_a?(Proc) ? runner : runner.method(:call)
+    callable.parameters.any? { |kind, name| %i[key keyreq].include?(kind) && name == :on_line }
+  rescue NameError
+    false
   end
 
   # A child's output, read as UTF-8 whatever the process locale says (launchd
@@ -279,8 +312,9 @@ module AgentMailbox
   # one) is a reply on exit 0 and error text otherwise: in json mode the model's
   # words only ever arrive inside the envelope.
   #
-  # STREAM (`stream: true`, a run with media: Media.stream_cmd, --output-format
-  # stream-json): stdout is one JSON object per line, and the envelope is the
+  # STREAM (`stream: true`: a run with media, Media.stream_cmd, or a web-chat
+  # run whose phase is watched, ClaudeStream.cmd; --output-format stream-json):
+  # stdout is one JSON object per line, and the envelope is the
   # LAST line whose top-level `type` is "result", the same object json mode
   # prints, read the same way. The model's words sit only inside `assistant`
   # lines' string values, so no text it writes can be a top-level line. A
@@ -293,7 +327,7 @@ module AgentMailbox
       env = stream ? stream_envelope(stdout) : envelope(stdout)
       ok = status&.zero? ? true : false
       if stream && env.nil?
-        return Parsed.new(reply: nil, error_text: join([ stdout.to_s[-2000..] || stdout.to_s, stderr ]), api_status: nil)
+        return Parsed.new(reply: nil, error_text: join([ stream_tail(stdout), stderr ]), api_status: nil)
       end
       if env
         failed = !ok || env["is_error"] == true || env["subtype"].to_s.start_with?("error")
@@ -353,12 +387,31 @@ module AgentMailbox
       nil
     end
 
+    # A failed stream's own lines, for the error text: the last 2000 characters
+    # of what the CLI said, without the lines that carry the model's words
+    # (`assistant`, and the `stream_event` deltas partial messages add), so
+    # nothing the model wrote is read as a usage limit or a sign-out.
+    def self.stream_tail(stdout)
+      kept = stdout.to_s.each_line.reject do |line|
+        type = begin
+          data = JSON.parse(line.strip)
+          data["type"] if data.is_a?(Hash)
+        rescue JSON::ParserError
+          nil
+        end
+        MODEL_LINES.include?(type)
+      end.join
+      tail = kept[-2000..] || kept
+      tail.strip.empty? ? "the stream ended without a result line" : tail
+    end
+    MODEL_LINES = %w[assistant stream_event user].freeze
+
     def self.join(parts)
       return nil if parts.nil?
 
       parts.compact.map { |p| p.is_a?(String) ? p : JSON.generate(p) }.join("\n")
     end
-    private_class_method :envelope, :stream_envelope, :join, :session_id, :meta
+    private_class_method :envelope, :stream_envelope, :stream_tail, :join, :session_id, :meta
   end
 
   # A headless run's session transcript, read for its REASONING: the text of
@@ -599,7 +652,12 @@ module AgentMailbox
     # `context`: the board's bundle for this message (Client#context), or nil.
     # `warm`: a WarmSession::Turn, or nil (every caller but a warm dispatcher
     # turn, and then this path is exactly the cold one).
-    def respond(message, context: nil, warm: nil)
+    # `phase`: a ClaudeStream::Phase for a web-chat answer (bin/dispatcher passes
+    # one only when #streams? holds). The run then prints stream-json with
+    # partial messages, each line feeds the phase as it arrives, and the answer
+    # is read from the stream's result line: the same envelope, so the reply,
+    # usage and session id are what json mode would have read.
+    def respond(message, context: nil, warm: nil, phase: nil)
       audience = Audience.from_context(context)
       action = run_action(audience)
       cwd = soul_folder
@@ -616,8 +674,14 @@ module AgentMailbox
         stdin = Media.user_message(media.blocks, stdin)
         cmd = Media.stream_cmd(cmd)
       end
-      output, status, error = @runner.call(cmd, stdin: stdin, timeout: CLAUDE_TIMEOUT, chdir: cwd)
-      run = ClaudeRun.parse(output, status, error, stream: media&.any? ? true : false)
+      watch = phase && streams?
+      cmd = ClaudeStream.cmd(cmd) if watch
+      output, status, error = if watch
+                                @runner.call(cmd, stdin: stdin, timeout: CLAUDE_TIMEOUT, chdir: cwd, on_line: phase.to_proc)
+                              else
+                                @runner.call(cmd, stdin: stdin, timeout: CLAUDE_TIMEOUT, chdir: cwd)
+                              end
+      run = ClaudeRun.parse(output, status, error, stream: (watch || media&.any?) ? true : false)
       limit = UsageLimit.detect(run, now: @clock.call)
       reasoning, source = if run.session_id
                             Transcript.reasoning(run.session_id, claude_home: @claude_home, **(warm ? { last_turn_only: true } : {}))
@@ -631,6 +695,10 @@ module AgentMailbox
                  reasoning: reasoning, meta: meta.merge(warm ? { "warm" => warm.resumed? ? "resumed" : "fresh" } : {}),
                  warm: warm)
     end
+
+    # Whether this responder's runner hands stdout over line by line (the real
+    # one does), so a run's phase can be watched (respond's `phase:`).
+    def streams? = AgentMailbox.streams_lines?(@runner)
 
     # The message's files as content blocks (Media), or nil when it has none.
     # The text prompt is unchanged; it names every file (ContextBuilder#files_line),
