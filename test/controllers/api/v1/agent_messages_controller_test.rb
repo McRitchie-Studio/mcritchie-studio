@@ -270,7 +270,7 @@ module Api
         message = agent_message!
         post claim_api_v1_agent_messages_url, params: { soul: "avi", worker: "d1" }, headers: @shared, as: :json
 
-        assert_enqueued_with(job: AgentMessageTypingJob, args: [ message.id, "d1" ]) do
+        assert_enqueued_with(job: AgentMessageTypingJob, args: [ message.id, "d1", "typing" ]) do
           post typing_api_v1_agent_message_url(message), params: { worker: "d1" }, headers: @shared, as: :json
         end
         assert_response :success
@@ -289,6 +289,18 @@ module Api
         end
         assert_response :success
         assert_equal "capped", response.parsed_body.dig("meta", "typing")
+      end
+
+      test "typing carries an allow-listed phase to the job: thinking or typing, and anything else, or none, is typing" do
+        message = agent_message!
+        post claim_api_v1_agent_messages_url, params: { soul: "avi", worker: "d1" }, headers: @shared, as: :json
+
+        { "thinking" => "thinking", "typing" => "typing", "sleeping" => "typing", "" => "typing", "<b>" => "typing" }.each do |sent, queued|
+          assert_enqueued_with(job: AgentMessageTypingJob, args: [ message.id, "d1", queued ]) do
+            post typing_api_v1_agent_message_url(message), params: { worker: "d1", phase: sent }, headers: @shared, as: :json
+          end
+          assert_equal "queued", response.parsed_body.dig("meta", "typing"), sent.inspect
+        end
       end
 
       test "typing for a message nobody claimed is refused and queues nothing" do
