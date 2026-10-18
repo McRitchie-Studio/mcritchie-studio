@@ -43,7 +43,7 @@ class AgentContextBuilderClientCtoTest < ActiveSupport::TestCase
       text = prompt(role: role)
       assert_match(/\AYou are Nova, an agent in the McRitchie ecosystem/, text)
       assert_includes text, "You are Nova, the CTO of Pawsome", role
-      assert_includes text, "Answer it by greeting the owner by name", "the handover rule is in the template"
+      assert_includes text, "Do not greet again", "the handover rule is in the template: code already greeted"
       refute_includes text, "{{", "every placeholder is filled"
       refute_includes text, "authoring", "the template's HTML comment is stripped"
     end

@@ -82,11 +82,13 @@ The chosen palette (`AppPalette`: `primary`, `accent`, `surface`, `text`, light 
 ## The handover and the greeting
 
 The handover row is a `web` message in the owner's thread (`web:<sub>:<user id>`), author
-`Xan`, content "Meet `<CTO>`, your CTO. I'll hand you over.", routed to `client_cto`. The
-dispatcher claims it like any message; the persona tells the CTO to answer it by greeting
-the owner by name and restating the plan. The answer reaches the open chat over its Turbo
-stream (`AgentMessages::WebChat`). The chat renders the handover as Xan's turn, not the
-owner's.
+`Xan`, content "Meet `<CTO>`, your CTO. I'll hand you over.", routed to `client_cto`. It is
+stored already answered with the CTO's opening message, which code writes from the intake
+(`ClientCtoHandover.greeting`: the owner's first name, the CTO's and the app's names, the
+plan as bullets, and "What would you like to see first?"), so the chat opens on both turns
+and no model runs for it. The dispatcher never claims the row; the persona tells the CTO
+not to greet again. The chat renders the handover as Xan's turn, then the greeting as the
+CTO's.
 
 ## Intake files (`AppIntakeMove`)
 

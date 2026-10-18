@@ -42,17 +42,22 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert task.metadata.dig("devops", "agent_context").end_with?(AppRequest::BUILDER_POINTER)
 
     handover = result.handover
-    assert_equal [ "web", "pawsome", "web:pawsome:#{users(:viewer).id}", "client_cto", "received", "Xan" ],
+    assert_equal [ "web", "pawsome", "web:pawsome:#{users(:viewer).id}", "client_cto", "completed", "Xan" ],
                  [ handover.channel, handover.channel_ref, handover.thread_key, handover.soul_slug, handover.status, handover.author_name ]
     assert_equal "Meet Nova, your CTO. I'll hand you over.", handover.content
   end
 
-  test "the handover is claimable although the client's role is not answered; their own next words are answered as the app's owner" do
+  test "the handover carries the CTO's code-written greeting, so no model runs; the owner's own next words are answered as the app's owner" do
     handover = launch.handover
 
-    assert_equal [ handover ], AgentMessage.claimable(soul: "client_cto").to_a
+    assert_empty AgentMessage.claimable(soul: "client_cto").to_a, "already answered: the dispatcher never claims it"
     assert_equal "app-launch", handover.hold_released_by
-    assert_equal %w[received routed hold_released], handover.events.order(:id).pluck(:kind)
+    assert_equal %w[received routed hold_released completed reply_posted], handover.events.order(:id).pluck(:kind)
+    assert_equal [ "posted", "code greeting" ], [ handover.reply_status, handover.action_summary ]
+    greeting = handover.response_text
+    assert greeting.start_with?("Hi Viewer, I'm Nova, the CTO of Pawsome."), greeting
+    PLAN.lines.map(&:strip).each { |line| assert_includes greeting, "- #{line}", "the plan, restated" }
+    assert greeting.end_with?("What would you like to see first?")
 
     follow_up = AgentMessages::WebIngest.new(user: users(:viewer), cto: AppOwnership.cto_for_app("pawsome"))
                                         .call("Can it take payments?", client_id: "client-0001")
