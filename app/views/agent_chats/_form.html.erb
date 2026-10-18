@@ -12,7 +12,7 @@
     <%= f.label :text, "Message #{agent_name}", class: "sr-only" %>
     <%= f.text_area :text, value: text, rows: 2, maxlength: AgentMessages::WebIngest::MAX_LENGTH, required: true,
                     placeholder: "Message #{agent_name}…", autocomplete: "off",
-                    class: "block w-full min-w-0 resize-none bg-transparent px-3 pt-2 pb-12 text-base text-heading placeholder:text-muted focus:outline-none",
+                    class: "block w-full min-w-0 resize-none bg-transparent pl-3 pr-14 py-2 text-base text-heading placeholder:text-muted focus:outline-none",
                     data: { test: "cto-chat-input" } %>
     <%= f.button type: "submit", class: "absolute bottom-1 right-1 inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white disabled:opacity-40",
                  "aria-label": "Send to #{agent_name}", data: { test: "cto-chat-send" } do %>
