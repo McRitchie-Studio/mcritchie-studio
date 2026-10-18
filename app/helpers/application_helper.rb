@@ -1162,7 +1162,7 @@ module ApplicationHelper
       { agent_slug: "carl",    heartbeat: "Carl Heartbeat",    actions: ["pr-review", "pr-review-slow"],                   label: "Review",        title: "Carl — review submitted PRs, one Carl per PR (review-only)" },
       { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["qa-release", "deploy-with-task", "intent-scout"], label: "Assemble + QA", title: "Avi — sweep reviewed work onto release, then QA the candidate" },
       { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "clean-infra", "workspace-launch"], label: "Ship + sweep", title: "Steffon — ship a QA-green release (it archives on the way out), then sweep the machine" },
-      { agent_slug: "xan",     heartbeat: "Xan Heartbeat",     actions: ["grade-events", "share-insights", "full-cycle", "ship-clock"], label: "Learn + ship",  title: "Xan — grade, share insights, + full DevOps cycle heartbeat" },
+      { agent_slug: "xan",     heartbeat: "Xan Heartbeat",     actions: ["grade-events", "share-insights", "full-cycle", "ship-clock"], label: "Learn + ship",  title: "Ray — grade, share insights, + full DevOps cycle heartbeat" },
       { agent_slug: "turf-monster", heartbeat: "Turf Monster Heartbeat", actions: ["live-score-watch", "contest-rehearsal", "post-to-x"], label: "Watch scores",  title: "Turf Monster — watch a live NFL slot, or rehearse a whole contest on QA" },
       # The general builder has no HEARTBEAT, so its row carries acts only.
       { agent_slug: "pokemon", heartbeat: nil, actions: ["wrap-it-up"], label: "Build + wrap up", title: "Pokémon — hand a stuck session to a fresh one, then clear its board" }
@@ -1271,7 +1271,7 @@ module ApplicationHelper
       ],
       "Deploy" => [
         { stage: "submitted", kick: devops_kickoffs["submitted"],
-          what: "The intake queue — submitted PRs waiting for review. The review session spins ONE Carl per PR: the standing primary AND owner (there is no Avi supervisor). Carl runs the deep technical review, owns the gates, summons a domain LIGHT at his discretion from {Shannon · Jasper · Steffon · Xan} via reviewer-select, drives the verdict, and merges the feat PR into accepted.",
+          what: "The intake queue — submitted PRs waiting for review. The review session spins ONE Carl per PR: the standing primary AND owner (there is no Avi supervisor). Carl runs the deep technical review, owns the gates, summons a domain LIGHT at his discretion from {Shannon · Jasper · Steffon · Ray} via reviewer-select, drives the verdict, and merges the feat PR into accepted.",
           who: "Carl (standing primary + owner) → domain LIGHT",
           tests: "Base tier — unit + component. Carl + the light confirm green, plus code standards, smell, scalability, and acceptance.",
           gate: "A merge-ready verdict (Carl = Opus on migration / payment / solana / auth). One complete qa_feedback on a fail.",
@@ -1292,7 +1292,7 @@ module ApplicationHelper
           what: "Live in production and shown as the board's Last Release; release notes are posted as part of Run Deployment.",
           who: "Steffon (tests the frozen SHA) → operator gate or autonomous deploy trigger",
           tests: "Full e2e + highest tier on the FROZEN ship SHA (the exact prod code — fixes 'shipped ≠ tested').",
-          gate: "🔒 Avi's qa-release stops for the operator at QA; Steffon's production-deploy (or the Xan full-cycle) grants ship authority after the same gates pass.",
+          gate: "🔒 Avi's qa-release stops for the operator at QA; Steffon's production-deploy (or Ray's full-cycle) grants ship authority after the same gates pass.",
           nxt: "On explicit ship authority: bin/release ship ff's release → main, deploys prod → shipped, then Archive completed tasks" }
       ]
     }

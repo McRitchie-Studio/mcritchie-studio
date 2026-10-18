@@ -208,7 +208,7 @@ honest, and **none of them needs a manual flag in the common case**:
   **`--builder none` asserts that no soul built it, and the assertion is now
   CHECKED, not taken on trust.** It was the one input that lifted the guard on the
   caller's word alone: measured 2026-09-24 on `data-flow-doc-contradicts-code`, it
-  seated **xan** as the light on a PR Xan wrote and reported the property upheld. It
+  seated **xan** as the light on a PR Ray wrote and reported the property upheld. It
   is cross-examined against the record, `devops.fix_forward`, and the PR's own
   commits; a witness that disagrees REFUSES, and so does a PR read that FAILED —
   because an unreadable PR is not an authorless one, and that exact conflation is
@@ -268,7 +268,7 @@ LIGHT    alex       matched: docs, documentation  fit 2  (top domain fit; roll 0
 **A light out-fitting the primary is normal, not a defect.** Carl is seated by
 ROLE on every PR — he is never ranked against the pool and never rolled — while the
 light is the best DOMAIN FIT left after the exclusions. On a docs PR that reads
-exactly as above, and it is correct: Carl owns the deep read, Xan brings the lens.
+exactly as above, and it is correct: Carl owns the deep read, Ray brings the lens.
 Fit reaches the primary seat only when Carl YIELDS (he is an author, or the named
 QA owner), and then both seats come from the one ranked list and the domain-matched
 soul takes primary. Until 2026-09-22 the primary line inferred its explanation from

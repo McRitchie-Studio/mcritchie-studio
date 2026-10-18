@@ -12,17 +12,17 @@
      data-build-chat data-build-chat-poll-url="<%= build_request_turns_path(request_row.token) %>">
   <div class="min-w-0 space-y-4 order-2 lg:order-1">
     <% subtitle = capture do %>
-      <p class="text-secondary text-sm">An AI agent. Xan helps you set up your app: the idea, your CTO, your colors and your address.</p>
+      <p class="text-secondary text-sm">An AI agent. Ray helps you set up your app: the idea, your CTO, your colors and your address.</p>
     <% end %>
     <%# view-transition-name matches the CTO chat's head (cto_chats/show): Build my app morphs this head into the new CTO's. %>
     <div style="view-transition-name: agent-chat-head;">
-      <%= render "agent_chats/header", name: "Xan", agent: xan, heading: "Build with Xan", subtitle: subtitle %>
+      <%= render "agent_chats/header", name: "Ray", agent: xan, heading: "Build with Ray", subtitle: subtitle %>
     </div>
 
     <div class="card p-0 overflow-hidden flex flex-col" data-test="build-chat">
-      <div id="<%= AgentMessages::WebChat::MESSAGES_TARGET %>" role="log" aria-live="polite" aria-label="Conversation with Xan"
+      <div id="<%= AgentMessages::WebChat::MESSAGES_TARGET %>" role="log" aria-live="polite" aria-label="Conversation with Ray"
            class="flex flex-col gap-4 p-3 sm:p-4 overflow-y-auto min-h-[16rem] max-h-[65vh]" data-test="build-chat-messages" data-cto-chat-scroll>
-        <p class="hidden only:block text-center text-secondary text-sm py-10" data-test="build-chat-empty">Tell Xan what you want to build.</p>
+        <p class="hidden only:block text-center text-secondary text-sm py-10" data-test="build-chat-empty">Tell Ray what you want to build.</p>
         <% messages.each do |message| %>
           <%= render "build/turn", message: message, request_row: request_row %>
         <% end %>

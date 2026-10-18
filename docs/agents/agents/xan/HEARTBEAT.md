@@ -2,7 +2,7 @@
 
 ## Status: Active
 
-This is Xan's heartbeat launcher. It sets Xan's session attribution and routes
+This is Ray's heartbeat launcher. It sets Ray's session attribution and routes
 to three independent act SOPs:
 
 - [`share-insights`](sops/share-insights.md) - publish the banked insight bank to
@@ -18,11 +18,11 @@ learning is written only when a threshold trips. [`grade-events`](sops/grade-eve
 stays as an optional manual act: run it only when Alex asks for it by name.
 
 Use this file when Alex invokes `Xan Heartbeat`. When he invokes a
-single Xan act directly, read that act's SOP file.
+single Ray act directly, read that act's SOP file.
 
 ## Scope
 
-Xan owns the learning loop and, when explicitly launched with ship authority,
+Ray owns the learning loop and, when explicitly launched with ship authority,
 the full release pipeline:
 
 - Read the ship-time grades (`bin/rails learning_loop:backfill` prints the recent
@@ -35,7 +35,7 @@ the full release pipeline:
 Do not treat `Xan Heartbeat` as implied production approval unless the invoked
 act is `full-cycle` or Alex grants that authority in-session.
 
-Outside the heartbeat, Xan holds the review pool's documentation seat. As the
+Outside the heartbeat, Ray holds the review pool's documentation seat. As the
 primary of a docs-shape PR she merges it into `accepted` on `bin/merge-permit`'s
 permit; every other diff is Carl's to merge ([`role.md`](role.md#merging)).
 
@@ -56,7 +56,7 @@ and you run the heartbeat again to collect
 ([`credentials.md`](../../modules/credentials.md#how-a-soul-logs-in-to-the-board)).
 
 Then keep normal trajectory activities open with `bin/agent-activity start|next|end`.
-The heartbeat command makes activities self-attribute to Xan unless a delegated
+The heartbeat command makes activities self-attribute to Ray unless a delegated
 reviewer explicitly passes its own `--agent`.
 
 Use the production board by default. Do not add `--local`.
@@ -66,7 +66,7 @@ not run `bin/agent-activity heartbeat xan` themselves.
 
 ## Act SOPs
 
-Run Xan's acts in the launched scope:
+Run Ray's acts in the launched scope:
 
 1. [`share-insights`](sops/share-insights.md) - publish the banked insights.
 2. [`full-cycle`](sops/full-cycle.md) - run review -> QA -> production with
@@ -79,7 +79,7 @@ Alex grants production ship authority in the same session. Run
 
 ## Handoff
 
-End every Xan heartbeat with a short report:
+End every Ray heartbeat with a short report:
 
 - any banked insight slugs (and grading counts, if `grade-events` ran)
 - insight doc regeneration and install result

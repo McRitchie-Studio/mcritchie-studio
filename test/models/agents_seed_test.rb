@@ -177,4 +177,14 @@ class AgentsSeedTest < ActiveSupport::TestCase
 
     assert Agent.exists?(slug: "probe-soul"), "the seed reads its roster from config/souls.yml"
   end
+
+  # [unit] Regression: on a fresh database the seed creates the orchestrator under
+  # its slug `xan`, named Ray, never a `ray` row derived from the name.
+  test "a fresh seed keys the orchestrator xan and names it Ray" do
+    Agent.where(slug: "xan").find_each { |a| a.skill_assignments.delete_all; a.activities.delete_all; a.usages.delete_all; a.tasks.update_all(agent_slug: nil); a.delete }
+    run_seed
+
+    assert_equal "Ray", Agent.find_by!(slug: "xan").name
+    refute Agent.exists?(slug: "ray")
+  end
 end

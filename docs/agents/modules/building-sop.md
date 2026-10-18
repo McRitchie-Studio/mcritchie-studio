@@ -338,7 +338,7 @@ A task idling on `submitted` until a sweep finds it is dead time. So the moment
   the single-task entry in [`pr-review`](../agents/carl/sops/pr-review.md#single-task-entry-on-submit).
 
 Either way the reviewer is a **separate reviewer** subagent, never you: Carl, or
-Xan for a prose-only PR on the focus-session path (tier A in
+Ray for a prose-only PR on the focus-session path (tier A in
 [`focus-session.md`](focus-session.md)). The author set keeps a builder off its own PR. The builder's part is to start the review, not to
 do it. Review's gate-zero still owns the CI verdict and the merge.
 

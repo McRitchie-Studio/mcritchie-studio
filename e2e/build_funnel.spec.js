@@ -70,7 +70,7 @@ test("a signed-out visitor completes the intake cards, sees Build my app light u
   const address = `league-${Date.now().toString(36)}`;
 
   await page.goto("/build");
-  const box = page.getByLabel("Tell Xan what you want to build");
+  const box = page.getByLabel("Tell Ray what you want to build");
   await box.fill(idea);
   // A person takes longer than the bot shield's two seconds to type an idea.
   await page.waitForTimeout(2200);
@@ -79,7 +79,7 @@ test("a signed-out visitor completes the intake cards, sees Build my app light u
   // Straight into the chat, still signed out: no sign-in before Build.
   await page.waitForURL((u) => /^\/build\/[A-Za-z0-9_-]{10,}$/.test(u.pathname));
   await expect(page.locator("[data-test='auth-modal']")).toBeHidden();
-  await expect(page.getByRole("heading", { name: "Build with Xan" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Build with Ray" })).toBeVisible();
   const first = page.locator("[data-test='build-turn']", { hasText: idea });
   await expect(first).toHaveAttribute("data-pending", "true");
   await expect(page.locator("[data-test='build-my-app']")).toBeDisabled();
@@ -222,8 +222,8 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
       await onboarding.getByRole("button", { name: "Skip for now" }).click();
       await expect(onboarding).toBeHidden();
     }
-    await page.getByLabel("Tell Xan what you want to build").fill(`Rebuild of my old ${name} app`);
-    await page.getByLabel("Tell Xan what you want to build").press("Enter");
+    await page.getByLabel("Tell Ray what you want to build").fill(`Rebuild of my old ${name} app`);
+    await page.getByLabel("Tell Ray what you want to build").press("Enter");
     await page.waitForURL((u) => /^\/build\/[A-Za-z0-9_-]{10,}$/.test(u.pathname));
     // An admin skips the checklist through the name step under the chat.
     await page.locator("[data-test='build-admin-claim'] summary").click();

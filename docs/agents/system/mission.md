@@ -9,7 +9,7 @@ it. The entry map every session loads is `/Users/alex/projects/AGENTS.md`.
 |------------------|-------|
 | Task pipeline | `designed → building → submitted → reviewed → assembled → shipped`, plus `archived` (`Task::STAGES`); the board at `/tasks` and `/deployments` |
 | Agent registry | `/agents`, seeded from `config/souls.yml` (by `db/seeds/02_agents.rb`) and `db/seeds/03_skills.rb`; `Task::SOUL_ROSTER` reads the same `config/souls.yml` |
-| Activity record | Every session narrates with `bin/agent-activity`; Xan grades at `/xan/heartbeat`; banked lessons at `/xan/insights` |
+| Activity record | Every session narrates with `bin/agent-activity`; Ray grades at `/xan/heartbeat`; banked lessons at `/xan/insights` |
 | Usage tracking | API cost and tokens per agent at `/usages` |
 | Error capture | `/error_logs` from `studio-engine` |
 | SSO | Satellites sign in through the hub; `config/satellites.yml` names each one's default role |
@@ -28,7 +28,7 @@ the human owner.
 | Soul | Seat |
 |------|------|
 | Pokémon | The general builder. Every task gets its own mascot; it builds the whole task to `submitted` |
-| Xan | Orchestrator; runs focus sessions; the documentation review light; grades activities |
+| Ray | Orchestrator; runs focus sessions; the documentation review light; grades activities |
 | Carl | Lead Architect; the standing primary reviewer on every code PR; merges into `accepted` |
 | Shannon | UI review light |
 | Jasper | On-chain review light |

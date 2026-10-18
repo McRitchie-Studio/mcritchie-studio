@@ -1,5 +1,5 @@
 xan_agent:
-  name: Xan
+  name: Ray
   slug: xan
   status: active
   agent_type: orchestrator

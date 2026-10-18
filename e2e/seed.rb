@@ -68,7 +68,7 @@ User.create!(email: "newcomer-back@test.com", role: "viewer")
 
 # Agents
 xan = Agent.create!(
-  name: "Xan",
+  name: "Ray",
   slug: "xan",
   status: "active",
   agent_type: "orchestrator",
@@ -1729,7 +1729,7 @@ answered.record!("completed", actor: "avi", detail: { "worker" => "e2e-laptop-10
 answered.record!("reply_posted", actor: "discord-bot", detail: { "reply_id" => "910000000000000099", "url" => answered.reply_url })
 mailbox.call("e2e-mail-2", soul: "avi", status: "claimed", content: "@Avi what shipped yesterday?",
              claimed_by: "e2e-laptop-202-def456", claimed_at: Time.current, lease_expires_at: 8.minutes.from_now, attempts: 1)
-mailbox.call("e2e-mail-3", soul: "xan", status: "received", content: "@Xan what is building on the board?")
+mailbox.call("e2e-mail-3", soul: "xan", status: "received", content: "@Ray what is building on the board?")
 mailbox.call("e2e-mail-4", soul: nil, status: "unrouted", content: "just thinking out loud in the e2e channel")
 puts "Seeded: #{AgentMessage.count} agent messages"
 
