@@ -129,7 +129,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
       patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" } }
     end
     assert_redirected_to build_request_path(draft.token)
-    assert_match(/Colors/, flash[:alert])
+    assert_match(/Theme/, flash[:alert])
     assert draft.reload.draft?
   end
 
