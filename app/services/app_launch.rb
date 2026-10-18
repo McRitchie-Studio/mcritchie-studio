@@ -55,6 +55,8 @@ class AppLaunch
   Result = Struct.new(:request, :app, :membership, :app_cto, :task, :handover, keyword_init: true)
 
   ANSWER_LIMIT = 500
+  # The idea card's title is held to 60 characters (BuildIntake::Card); the name keeps that.
+  NAME_LIMIT = 60
   DEFAULT_EMOJI = "📱".freeze
 
   attr_reader :request, :intake
@@ -117,8 +119,15 @@ class AppLaunch
 
   def palette = @palette ||= AppPalette.normalize(intake.palette)
 
-  # The app's name: its address in words ("pawsome-grooming" reads "Pawsome Grooming").
-  def app_name = @subdomain.tr("-", " ").titleize
+  # The app's name: the title the visitor confirmed on Ray's idea card
+  # (answers["title"], the confirmed branch of AppRequest#working_title),
+  # squished and capped; else its address in words ("pawsome-grooming" reads
+  # "Pawsome Grooming"). The CTO's greeting (AgentMessages::ClientCtoHandover)
+  # and the persona's {{app_name}} read it; the persona prints it only when it
+  # passes ContextBuilder's SAFE_NAME, so a long title falls back there, not here.
+  def app_name
+    intake.answers_hash["title"].to_s.squish[0, NAME_LIMIT].to_s.strip.presence || @subdomain.tr("-", " ").titleize
+  end
 
   # The plan the CTO restates: the sharpened idea and its day-one goal.
   def plan

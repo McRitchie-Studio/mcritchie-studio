@@ -100,6 +100,27 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
     assert_equal({}, @request.palette)
   end
 
+  # The write and the relayed turn commit together: a relay that fails AFTER
+  # the field was saved (the save! inside the transaction already ran) takes
+  # the saved value back with it, refused or raised.
+  test "a failed relay rolls back the saved choice" do
+    refusing = Object.new
+    refusing.define_singleton_method(:call) { |*_args, **_kw| raise BuildIntake::Ingest::Refused.new("Slow down.", code: "RATE") }
+    error = assert_raises(BuildIntake::Choice::Refused) do
+      BuildIntake::Choice.new(@request, ingest: refusing).apply!("cto", { custom_name: "Marble", portrait: "harbor" })
+    end
+    assert_equal "Slow down.", error.message
+    assert_equal [ nil, nil ], @request.reload.values_at(:cto_name, :cto_avatar), "the refused relay unsaved the CTO"
+
+    crashing = Object.new
+    crashing.define_singleton_method(:call) { |*_args, **_kw| raise ActiveRecord::StatementInvalid, "connection lost" }
+    assert_raises(ActiveRecord::StatementInvalid) do
+      BuildIntake::Choice.new(@request, ingest: crashing).apply!("address", { subdomain: "league-hub" })
+    end
+    assert_nil @request.reload.subdomain, "a crashed relay unsaved the domain"
+    assert_equal 0, thread.count
+  end
+
   test "a card from another request's thread is refused" do
     other = AppRequest.create!(prompt: "theirs")
     foreign = AgentMessage.create!(channel: "web", external_id: "build:#{other.token}:x", channel_ref: "build", thread_key: BuildIntake.thread_key(other.token),
