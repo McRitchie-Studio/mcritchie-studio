@@ -1205,7 +1205,7 @@ They are stored on the row (`AgentMessage.run_record` caps each). `/admin/agent_
 the machine that ran it:
 
 ```bash
-cd ~/.agents/mailbox/xan && claude --resume <session_id>
+cd ~/.agents/mailbox/ray && claude --resume <session_id>
 ```
 
 Resuming is for an operator reading a run. The answer path resumes only in a

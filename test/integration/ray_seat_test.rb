@@ -75,7 +75,7 @@ class RaySeatTest < ActionDispatch::IntegrationTest
     refute_includes override["candidates"], "ray"
   end
 
-  # ── Routes: /ray/* serves, /alex/* forwards ──────────────────────────────
+  # ── Routes: /ray/* serves, /xan/* forwards ───────────────────────────────
 
   test "the seat's pages answer under /ray" do
     assert_equal "/ray/heartbeat", ray_heartbeat_path
@@ -88,6 +88,23 @@ class RaySeatTest < ActionDispatch::IntegrationTest
     assert_response :success
     get ray_insights_path
     assert_response :success
+  end
+
+  # The seat's slug until ray-slug-rename: every old GET 301s to the same page
+  # under /ray, query string included, so a bookmarked deep link still lands.
+  test "the retired /xan pages forward to /ray, query string and all" do
+    {
+      "/xan/heartbeat"                         => "/ray/heartbeat",
+      "/xan/heartbeat?session_id=abc"          => "/ray/heartbeat?session_id=abc",
+      "/xan/heartbeat/activities?page=2"       => "/ray/heartbeat/activities?page=2",
+      "/xan/heartbeat/activities/7/feedback"   => "/ray/heartbeat/activities/7/feedback",
+      "/xan/insights"                          => "/ray/insights",
+      "/xan/pipeline"                          => "/ray/pipeline"
+    }.each do |old, new|
+      get old
+      assert_response :moved_permanently, old
+      assert_equal "http://www.example.com#{new}", response.location, old
+    end
   end
 
   test "the launcher enters the seat as ray" do

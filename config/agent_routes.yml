@@ -119,7 +119,8 @@ email:
       from: "Turf <team@mcritchie.studio>"
   agent_addresses:
     - admin@mcritchie.studio
-    - xan@mcritchie.studio
+    - ray@mcritchie.studio
+    - xan@mcritchie.studio    # the seat's address until ray-slug-rename (2026-10-18)
     - carl@mcritchie.studio
     - shannon@mcritchie.studio
     - jasper@mcritchie.studio
