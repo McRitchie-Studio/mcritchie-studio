@@ -238,6 +238,7 @@ class BuildViewTest < ActionView::TestCase
     @app_request = AppRequest.create!(prompt: "A client portal", user: users(:alex)).queue!("client-portal")
     render template: "build/show"
 
+    assert_select "[data-test='agent-shell'][data-shell='request'] [data-test='agent-shell-status'] [data-test='build-status']", 1, "the same shell, the status in its card"
     assert_select "[data-test='build-host']", text: "client-portal.mcritchie.studio"
     assert_select "[data-test='build-steps'] [data-step='queued'][data-done='true']"
     assert_select "[data-test='build-steps'] [data-step='live'][data-done='false']"

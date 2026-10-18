@@ -27,18 +27,20 @@ announcement) and `AppIntakeMoveJob` (the files). An incomplete intake raises
 open: Idea, CTO, Colors, Address, Account. The intake itself (the request's `cto_name`,
 `cto_avatar`, `palette` and `answers` columns) is the `build-with-xan-intake` task's.
 
-**Where it is called.** `BuildController#update` (PATCH `/build/:token`, the checklist's
-Build my app) calls it when `AppRequest#intake_complete?`, then answers 303 to
+**Where it is called.** `BuildController#update` (PATCH `/build/:token`, the Build My App
+control on Ray's summary card) calls it when `AppRequest#intake_complete?`, then answers 303 to
 `/applications/<sub>/chat`. An admin's showcase queued from the name alone, without the
 checklist, still goes through `AppRequest#queue!` (no App, no CTO). A cancelled launched
 request keeps its App row, so its name stays taken (`AppRequest.unavailable_reason` checks
 `apps.slug`).
 
-**The morph.** The checklist's form is a Turbo form, so the 303 is a Turbo visit. Both
-pages carry `<meta name="view-transition" content="same-origin">` and give their chat
-head `view-transition-name: agent-chat-head`, so Xan's head morphs into the new CTO's
-(portrait, name, the palette's primary as the head's tint) and the rest cross-fades.
-Under reduced motion it is an instant swap.
+**The morph.** The Build control posts through Turbo, so the 303 is a Turbo visit. Both
+pages are the agent shell (`app/views/agent_chats/_shell.html.erb`) and carry
+`<meta name="view-transition" content="same-origin">`; the shell names its portrait
+(`agent-portrait`), caption, status card (`agent-status`) and chat box
+(`agent-composer`) on every page, so Ray's portrait morphs into the new CTO's, the draft's
+Agent · Theme · Domain card into the app's Building · Releasing · Deploying card (in the
+palette's primary), and the rest cross-fades. Under reduced motion it is an instant swap.
 
 ## The theme colours
 

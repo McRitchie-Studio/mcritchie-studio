@@ -147,7 +147,7 @@ class BuildController < ApplicationController
       @app_request.update!(user: current_user) if @app_request.user.nil? && !current_user.admin?
       session.delete(:build_draft_token)
     end
-    load_chat if @app_request.draft?
+    @app_request.draft? ? load_chat : (@intake_agent = Agent.find_by(slug: BuildIntake.soul))
   end
 
   # One more message to Ray, from the chat's composer.
