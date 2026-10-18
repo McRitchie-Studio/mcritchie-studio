@@ -73,8 +73,8 @@ class AppLaunch
     list << "Idea" if intake.answers_hash["idea"].to_s.strip.blank?
     list << "CTO" if intake.cto_name.to_s.squish.blank? || intake.cto_name.to_s.squish.length > AppCto::NAME_LIMIT ||
                      intake.cto_avatar.blank?
-    list << "Colors" unless AppPalette.valid?(intake.palette)
-    list << "Address" if @subdomain.nil?
+    list << "Theme" unless AppPalette.valid?(intake.palette)
+    list << "Domain" if @subdomain.nil?
     list << "Account" if request.user.nil?
     list
   end
