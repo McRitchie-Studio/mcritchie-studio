@@ -100,10 +100,18 @@ class AgentChatComponentTest < ActionView::TestCase
     end
   end
 
+  test "[component] the composer carries a polite status line a screen reader hears as Sending" do
+    render_chat
+    status = css_select("form#build-chat-form [data-composer-status]").sole
+    assert_equal [ "status", "polite" ], [ status["role"], status["aria-live"] ]
+    assert_includes status["class"].split, "sr-only"
+    assert_equal "", status.text, "empty until a send posts (app/javascript/agent_chat.js)"
+  end
+
   test "[component] the attachments slot renders inside the composer, empty, and a filled slot needs no form edit" do
     render_chat
     form = css_select("form#build-chat-form").sole
-    assert_equal form.css("label, textarea, input, p, span, button").size, form.css("label, textarea, input, button[data-test='cto-chat-send']").size,
+    assert_equal form.css("label, textarea, input, p, span, button").size, form.css("label, textarea, input, button[data-test='cto-chat-send'], p[data-composer-status]").size,
                  "the stock slot adds no markup"
 
     Dir.mktmpdir do |dir|

@@ -7,7 +7,8 @@
 //   - a typing pulse fades data-fade-seconds after it arrived, so a run that
 //     dies stops "typing" within seconds (the dispatcher pulses every 7s), and
 //     a pulse older than an answer already shown is dropped at once;
-//   - Enter sends, Shift+Enter is a new line, and the composer keeps focus.
+//   - Enter sends, Shift+Enter is a new line, and the composer keeps focus;
+//   - while a send posts, its status line reads "Sending…" for a screen reader.
 //
 // Its hooks keep their cto-chat names (data-cto-chat-*, #cto-chat-typing, the
 // AgentMessages::WebChat targets) for every agent, so the CTO page is unchanged.
@@ -70,8 +71,20 @@ document.addEventListener("keydown", (event) => {
   if (input.value.trim() !== "") input.form.requestSubmit();
 });
 
+// The send button is an icon, so a screen reader hears "Sending…" from the
+// composer's polite status line ([data-composer-status]) while the post runs.
+function announce(form, text) {
+  const status = form?.querySelector("[data-composer-status]");
+  if (status) status.textContent = text;
+}
+
+document.addEventListener("turbo:submit-start", (event) => {
+  announce(event.target.closest?.(FORM), "Sending…");
+});
+
 document.addEventListener("turbo:submit-end", (event) => {
   if (!event.target.closest?.(FORM) && !event.target.matches?.(FORM)) return;
+  announce(event.target.closest(FORM), "");
   requestAnimationFrame(() => document.querySelector(`${FORM} textarea`)?.focus());
 });
 

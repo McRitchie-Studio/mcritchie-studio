@@ -12,25 +12,33 @@
       </ul>
     <% end %>
   </div>
+  <%# One <div> per pair, holding only its <dt> and <dd> (the dl content model): the portrait and the swatches ride inside the value. %>
   <dl class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
-    <div class="flex items-center gap-2 min-w-0 rounded-xl border border-subtle p-2" data-test="build-summary-cto">
-      <% if (path = BuildIntake::Portraits.path(request_row.cto_avatar)) %>
-        <%= image_tag path, alt: "", class: "h-9 w-9 shrink-0 rounded-full" %>
-      <% end %>
-      <div class="min-w-0"><dt class="text-2xs text-muted">CTO</dt><dd class="font-semibold text-heading truncate"><%= request_row.cto_name %></dd></div>
+    <div class="min-w-0 rounded-xl border border-subtle p-2" data-test="build-summary-cto">
+      <dt class="text-2xs text-muted">CTO</dt>
+      <dd class="mt-1 flex items-center gap-2 min-w-0">
+        <% if (path = BuildIntake::Portraits.path(request_row.cto_avatar)) %>
+          <%= image_tag path, alt: "", class: "h-7 w-7 shrink-0 rounded-full" %>
+        <% end %>
+        <span class="font-semibold text-heading truncate"><%= request_row.cto_name %></span>
+      </dd>
     </div>
-    <div class="flex items-center gap-2 min-w-0 rounded-xl border border-subtle p-2" data-test="build-summary-theme">
-      <% if request_row.palette.present? %>
-        <span class="flex shrink-0 -space-x-1" aria-hidden="true">
-          <% %w[primary accent surface].each do |role| %>
-            <span class="h-5 w-5 rounded-full border border-subtle" style="background-color: <%= request_row.palette.dig("dark", role) %>"></span>
-          <% end %>
-        </span>
-      <% end %>
-      <div class="min-w-0"><dt class="text-2xs text-muted">Theme</dt><dd class="font-semibold text-heading truncate"><%= request_row.palette.presence&.dig("name") %></dd></div>
+    <div class="min-w-0 rounded-xl border border-subtle p-2" data-test="build-summary-theme">
+      <dt class="text-2xs text-muted">Theme</dt>
+      <dd class="mt-1 flex items-center gap-2 min-w-0">
+        <% if request_row.palette.present? %>
+          <span class="flex shrink-0 -space-x-1" aria-hidden="true">
+            <% %w[primary accent surface].each do |role| %>
+              <span class="h-5 w-5 rounded-full border border-subtle" style="background-color: <%= request_row.palette.dig("dark", role) %>"></span>
+            <% end %>
+          </span>
+        <% end %>
+        <span class="font-semibold text-heading truncate"><%= request_row.palette.presence&.dig("name") %></span>
+      </dd>
     </div>
     <div class="min-w-0 rounded-xl border border-subtle p-2" data-test="build-summary-domain">
-      <dt class="text-2xs text-muted">Domain</dt><dd class="font-mono text-xs text-heading break-all"><%= request_row.host %></dd>
+      <dt class="text-2xs text-muted">Domain</dt>
+      <dd class="mt-1 font-mono text-xs text-heading break-all"><%= request_row.host %></dd>
     </div>
   </dl>
 

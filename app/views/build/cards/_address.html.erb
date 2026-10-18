@@ -5,12 +5,12 @@
   <p class="text-xs font-semibold uppercase tracking-wider text-muted">Pick a domain</p>
   <div class="flex flex-wrap gap-2">
     <% card["names"].each do |name| %>
-      <%= form_with url: build_request_intake_path(request_row.token), method: :patch, data: { build_domain_chip: build_check_path } do %>
+      <%= form_with url: build_request_intake_path(request_row.token), method: :patch, class: "min-w-0 max-w-full", data: { build_domain_chip: build_check_path } do %>
         <%= hidden_field_tag :field, "address" %>
         <%= hidden_field_tag :message_id, message.id %>
         <%= hidden_field_tag :subdomain, name %>
         <%= hidden_field_tag :client_id, SecureRandom.uuid %>
-        <button type="submit" class="rounded-full border border-subtle px-3 py-1.5 font-mono text-xs text-body hover:border-primary aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-heading disabled:opacity-50 disabled:line-through disabled:cursor-not-allowed"
+        <button type="submit" class="max-w-full break-all text-left rounded-full border border-subtle px-3 py-1.5 font-mono text-xs text-body hover:border-primary aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-heading disabled:opacity-50 disabled:line-through disabled:cursor-not-allowed"
                 aria-pressed="<%= name == chosen %>" data-build-domain-name="<%= name %>" data-test="build-address-suggestion"><%= name %>.mcritchie.studio</button>
       <% end %>
     <% end %>

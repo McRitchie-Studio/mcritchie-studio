@@ -18,9 +18,11 @@
 //     AppRequest.normalize_subdomain, done again here) and checked live; a name
 //     we KNOW is refused disables its button (the server re-checks on the tap);
 //   - the CTO card ([data-build-cto]): the portrait or "New image" opens the
-//     picker dialog; a pick swaps the preview and closes it;
+//     picker dialog; a pick swaps the preview; a tap on a portrait, Done or
+//     Enter closes it (the arrow keys only move the pick); a tap on one of
+//     Ray's names fills the name field;
 //   - the theme card ([data-build-theme]): the Dark / Light toggle swaps every
-//     column's preview;
+//     column's preview, and the choice survives the card's re-render;
 //   - Build My App signed out ([data-build-sign-in]): opens the standard
 //     sign-in modal with the props the button carries.
 //
@@ -98,6 +100,12 @@ function checkAddress(card) {
 }
 
 document.addEventListener("input", (event) => {
+  const nameInput = event.target.closest?.("[data-build-cto-name-input]");
+  if (nameInput) {
+    nameInput.closest("[data-build-cto]")?.querySelectorAll("[data-build-cto-name]")
+      .forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.buildCtoName === nameInput.value.trim())));
+    return;
+  }
   const input = event.target.closest?.("[data-build-address-input]");
   if (!input) return;
   const cleaned = cleanName(input.value);
@@ -122,6 +130,10 @@ async function checkChip(form) {
   }
 }
 
+// A portrait pick swaps the preview. It does NOT close the picker: the arrow
+// keys move a radio group's pick (and fire change) one step at a time, so a
+// keyboard visitor browses with them. A tap on a portrait, Done, Escape (the
+// dialog's own) or Enter closes it.
 document.addEventListener("change", (event) => {
   const radio = event.target.closest?.("[data-build-portrait-src]");
   if (!radio) return;
@@ -132,8 +144,36 @@ document.addEventListener("change", (event) => {
     const label = radio.closest("label")?.title;
     if (label) preview.alt = `${label} portrait`;
   }
-  card?.querySelector("[data-build-portrait-dialog]")?.close();
 });
+
+// Enter on a portrait closes the picker instead of submitting the CTO form.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !event.target.closest?.("[data-build-portrait-src]")) return;
+  event.preventDefault();
+  event.target.closest("[data-build-portrait-dialog]")?.close();
+});
+
+// The theme card's Dark / Light choice, per card (its turn's id). The server
+// draws every card in dark, so a re-render (the tap's own stream, a poll)
+// would put it back; each re-render applies the remembered mode again.
+const themeModes = new Map();
+
+function showThemeMode(card, chosen) {
+  card.dataset.mode = chosen;
+  card.querySelectorAll("[data-build-theme-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.buildThemeMode === chosen)));
+  card.querySelectorAll("[data-build-theme-preview]").forEach((p) => { p.hidden = p.dataset.buildThemePreview !== chosen; });
+}
+
+function themeKey(card) {
+  return card.closest("[data-build-turn]")?.id || null;
+}
+
+function restoreThemeModes() {
+  document.querySelectorAll("[data-build-theme]").forEach((card) => {
+    const chosen = themeModes.get(themeKey(card));
+    if (chosen && card.dataset.mode !== chosen) showThemeMode(card, chosen);
+  });
+}
 
 document.addEventListener("click", (event) => {
   const open = event.target.closest?.("[data-build-portrait-open]");
@@ -143,13 +183,28 @@ document.addEventListener("click", (event) => {
   }
   const close = event.target.closest?.("[data-build-portrait-close]");
   if (close) { close.closest("dialog")?.close(); return; }
+  // A tap on a portrait's picture (the label) closes the picker. The arrow
+  // keys also fire click, but on the radio itself, so they never land here.
+  const portrait = event.target.closest?.("[data-build-portrait-dialog] label");
+  if (portrait && !event.target.matches("input")) {
+    portrait.closest("dialog")?.close();
+    return;
+  }
+  const ctoName = event.target.closest?.("[data-build-cto-name]");
+  if (ctoName) {
+    const card = ctoName.closest("[data-build-cto]");
+    const input = card?.querySelector("[data-build-cto-name-input]");
+    if (input) { input.value = ctoName.dataset.buildCtoName; input.focus(); }
+    card?.querySelectorAll("[data-build-cto-name]").forEach((b) => b.setAttribute("aria-pressed", String(b === ctoName)));
+    return;
+  }
   const mode = event.target.closest?.("[data-build-theme-mode]");
   if (mode) {
     const card = mode.closest("[data-build-theme]");
     const chosen = mode.dataset.buildThemeMode;
-    card.dataset.mode = chosen;
-    card.querySelectorAll("[data-build-theme-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b === mode)));
-    card.querySelectorAll("[data-build-theme-preview]").forEach((p) => { p.hidden = p.dataset.buildThemePreview !== chosen; });
+    const key = themeKey(card);
+    if (key) themeModes.set(key, chosen);
+    showThemeMode(card, chosen);
     return;
   }
   const signIn = event.target.closest?.("[data-build-sign-in]");
@@ -170,12 +225,13 @@ function checkNewCards() {
   });
 }
 
-document.addEventListener("turbo:load", () => { waitingSince = null; checkNewCards(); });
+document.addEventListener("turbo:load", () => { waitingSince = null; checkNewCards(); restoreThemeModes(); });
 document.addEventListener("turbo:before-stream-render", (event) => {
   const original = event.detail.render;
   event.detail.render = async (stream) => {
     await original(stream);
     checkNewCards();
+    restoreThemeModes();
   };
 });
 setInterval(tick, 500);

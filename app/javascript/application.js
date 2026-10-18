@@ -6,7 +6,7 @@ import "alex_chat"
 import "agent_chat"
 // The /build chat with Xan: polls for answers while one is pending, inert on every other page.
 import "build_chat"
-// The /build agent shell: the first message answered in place (replace_url stream), the typed placeholder; inert elsewhere.
+// The /build agent shell: the first message answered in place (replace_url stream); its typing placeholder (typing_placeholder.js) runs a timer only while /build's first box is on the page.
 import "build_shell"
 import "depth_chart"
 import "scroll_tab_stop"
