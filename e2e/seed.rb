@@ -68,7 +68,7 @@ User.create!(email: "newcomer-back@test.com", role: "viewer")
 
 # Agents
 xan = Agent.create!(
-  name: "Xan",
+  name: "Ray",
   slug: "xan",
   status: "active",
   agent_type: "orchestrator",

@@ -63,6 +63,7 @@ module AgentMailbox
     }.freeze
     CUT = " …[cut to budget]"
     DOMAINS_PATH = "config/agent_domains.yml"
+    SOULS_PATH = "config/souls.yml"
     # What a place label may look like: "[discord #release-notes]",
     # "[discord thread in #desk]", "[discord channel 123]", "[email]".
     PLACE = /\A\[[a-z]+(?: [a-z0-9 #_-]{1,80})?\]\z/
@@ -605,7 +606,20 @@ module AgentMailbox
     def display_name
       return safe_name(persona["name"], "the CTO") if client_cto?
 
-      @soul.split("_").map(&:capitalize).join(" ")
+      roster_name || @soul.split("_").map(&:capitalize).join(" ")
+    end
+
+    # The soul's display name from the roster (config/souls.yml `name`), which can
+    # differ from its slug: the slug `xan` reads "Ray". Nil when the roster is
+    # unreadable or does not name the soul, so the slug-derived name stands.
+    def roster_name
+      path = File.join(@repo_root, SOULS_PATH)
+      souls = File.file?(path) ? YAML.safe_load_file(path, aliases: false)&.fetch("souls", nil) : nil
+      row = Array(souls).find { |s| s.is_a?(Hash) && s["slug"] == @soul }
+      name = row && row["name"].to_s.strip
+      name.nil? || name.empty? ? nil : name
+    rescue Psych::Exception
+      nil
     end
 
     def client_cto? = @soul == CLIENT_CTO
