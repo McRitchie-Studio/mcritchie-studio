@@ -372,7 +372,7 @@ say it, so the silence is a finding rather than an omission.
 
 - [`archive-shipped.md`](archive-shipped.md) - Steffon's board closeout, which
   runs this sweep as part of its own procedure.
-- [`../../xan/sops/clean-up.md`](../../xan/sops/clean-up.md) - Ray's
+- [`../../ray/sops/clean-up.md`](../../ray/sops/clean-up.md) - Ray's
   board-to-zero act, which calls this one for the infra half.
 - [`../../../modules/worktrees.md`](../../../modules/worktrees.md) - the worktree
   launcher, the Redis band, and the lifecycle verbs.

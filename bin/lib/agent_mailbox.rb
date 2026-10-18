@@ -551,7 +551,7 @@ module AgentMailbox
     # release_status ask (AgentProposals::Queries), read in process on the board.
     ACTIONS = {
       "avi" => { argv: %w[bin/task list], what: "the task board" },
-      "xan" => { argv: %w[bin/task list], what: "the task board" }
+      "ray" => { argv: %w[bin/task list], what: "the task board" }
     }.freeze
     ACTION_TIMEOUT = 90
     ACTION_OUTPUT_LIMIT = 6000

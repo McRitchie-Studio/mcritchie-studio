@@ -208,7 +208,7 @@ honest, and **none of them needs a manual flag in the common case**:
   **`--builder none` asserts that no soul built it, and the assertion is now
   CHECKED, not taken on trust.** It was the one input that lifted the guard on the
   caller's word alone: measured 2026-09-24 on `data-flow-doc-contradicts-code`, it
-  seated **xan** as the light on a PR Ray wrote and reported the property upheld. It
+  seated **ray** as the light on a PR Ray wrote and reported the property upheld. It
   is cross-examined against the record, `devops.fix_forward`, and the PR's own
   commits; a witness that disagrees REFUSES, and so does a PR read that FAILED —
   because an unreadable PR is not an authorless one, and that exact conflation is

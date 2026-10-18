@@ -9,7 +9,7 @@ module AgentMessages
   # THE PERSON LAYER is one person's exchanges with one soul on EVERY channel and
   # platform: every earlier row with the same (soul_slug, person_id), oldest first,
   # each labeled with the place it happened (`[discord #release-notes]`). What
-  # Alex told Xan in one channel, Xan knows in the next. Another person's messages
+  # Alex told Ray in one channel, Ray knows in the next. Another person's messages
   # are never in it.
   #
   # THE THREAD LAYER is the focus: the conversation this message continues, every
@@ -132,7 +132,7 @@ module AgentMessages
     # public, whoever sent it: no read action, internal context or owner notes.
     def audience_person = BuildIntake.thread?(@message.thread_key) ? nil : person
 
-    # A /build thread's intake state (BuildIntake::Context): what Xan asks next.
+    # A /build thread's intake state (BuildIntake::Context): what Ray asks next.
     # No key at all on any other thread.
     def intake_json
       return {} unless BuildIntake.thread?(@message.thread_key)

@@ -1,4 +1,4 @@
-# Xan Heartbeat
+# Ray Heartbeat
 
 ## Status: Active
 
@@ -17,7 +17,7 @@ Grading is no longer a heartbeat act. Every task is graded once when it ships
 learning is written only when a threshold trips. [`grade-events`](sops/grade-events.md)
 stays as an optional manual act: run it only when Alex asks for it by name.
 
-Use this file when Alex invokes `Xan Heartbeat`. When he invokes a
+Use this file when Alex invokes `Ray Heartbeat`. When he invokes a
 single Ray act directly, read that act's SOP file.
 
 ## Scope
@@ -32,11 +32,11 @@ the full release pipeline:
 - Run `full-cycle` only when the operator launched that autonomous release act or
   otherwise granted production ship authority in this session.
 
-Do not treat `Xan Heartbeat` as implied production approval unless the invoked
+Do not treat `Ray Heartbeat` as implied production approval unless the invoked
 act is `full-cycle` or Alex grants that authority in-session.
 
 Outside the heartbeat, Ray holds the review pool's documentation seat. As the
-primary of a docs-shape PR she merges it into `accepted` on `bin/merge-permit`'s
+primary of a docs-shape PR he merges it into `accepted` on `bin/merge-permit`'s
 permit; every other diff is Carl's to merge ([`role.md`](role.md#merging)).
 
 ## Entry
@@ -45,12 +45,12 @@ Run from the McRitchie Studio primary checkout:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/agent-activity heartbeat xan
+bin/agent-activity heartbeat ray
 ```
 
 The command also posts an admin login request and prints its `login-…` slug.
 Give Alex that slug: he answers only the board row that carries it. He either
-gives you the row's one-time code, and `bin/agent-activity heartbeat xan
+gives you the row's one-time code, and `bin/agent-activity heartbeat ray
 --code <code>` grants and collects the session in one call, or he taps Approve,
 and you run the heartbeat again to collect
 ([`credentials.md`](../../modules/credentials.md#how-a-soul-logs-in-to-the-board)).
@@ -62,7 +62,7 @@ reviewer explicitly passes its own `--agent`.
 Use the production board by default. Do not add `--local`.
 
 Keep attribution here. The act SOP files below are standalone procedures and do
-not run `bin/agent-activity heartbeat xan` themselves.
+not run `bin/agent-activity heartbeat ray` themselves.
 
 ## Act SOPs
 
@@ -72,7 +72,7 @@ Run Ray's acts in the launched scope:
 2. [`full-cycle`](sops/full-cycle.md) - run review -> QA -> production with
    explicit ship authority.
 
-When Alex launches `Xan Heartbeat`, run `share-insights` first. Run
+When Alex launches `Ray Heartbeat`, run `share-insights` first. Run
 `full-cycle` only when the launched act or prompt explicitly includes it, or when
 Alex grants production ship authority in the same session. Run
 `grade-events` only when he names it.

@@ -93,7 +93,7 @@ secret's token otherwise.
 | Client, an outward-facing runtime | Not built. Decided: only from the isolated runtime, with a runtime-bound key stored as a digest and shown once, as Tyrion's bot token is | The runtime key, from the runtime's own env | The runtime's channel (first case: Turf Monster's TikTok DMs) | The key's |
 
 **The admin request has two grants the server verifies** (`AgentLoginRequest`).
-`bin/agent-activity heartbeat steffon|xan` posts the request and prints its
+`bin/agent-activity heartbeat steffon|ray` posts the request and prints its
 server-issued `login-…` slug. The board shows an admin each open request by that
 slug, because the soul and the harness session id on a row are whatever the
 poster sent.
@@ -292,7 +292,7 @@ Alex chooses. Each line names the code it changes.
    `Api::V1::BaseController#authenticate_legacy_token!` refuses every action that
    is not in `LegacyAuthUse::MINT_DOORS`, with a reason that names the login:
    `bin/task begin` for a builder, a review claim for a reviewer, `bin/agent-activity
-   heartbeat steffon|xan` for an admin. Test:
+   heartbeat steffon|ray` for an admin. Test:
    `test_legacy_token_on_write_answers_401_naming_login`, with the control that a
    mint door still answers it.
 2. **`bin/task` loses its fallbacks.** `bin/task#api` no longer retries a refused
@@ -341,7 +341,7 @@ its parent's environment, working tree and files; it does not inherit its
 parent's context. So each login gets a **seat**:
 
 - The command that mints a login (`bin/task begin`, a review claim,
-  `heartbeat steffon|xan`) draws a random seat, keeps the login in a file named
+  `heartbeat steffon|ray`) draws a random seat, keeps the login in a file named
   for the seat's digest, and prints the seat once, to the agent that ran it.
 - A command presents the login only when the agent names the seat
   (`AGENT_SEAT=<seat>` on the command). The seat is a selector, not a

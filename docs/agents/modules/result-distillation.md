@@ -136,5 +136,5 @@ reviewer records is only as trustworthy as the findings it was distilled from.
 The raw-capture layer this policy sits on top of is documented in
 `docs/agents/system/atomic-capture-hook.md` (the `PostToolUse` producer and the
 `AgentAction` contract); the session-level Distill grain lives in the OPSD
-learning loop surfaced at `/xan/heartbeat`. Neither is required reading to apply
+learning loop surfaced at `/ray/heartbeat`. Neither is required reading to apply
 this policy — the commands above stand on their own.

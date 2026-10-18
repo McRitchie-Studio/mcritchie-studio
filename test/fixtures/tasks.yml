@@ -21,7 +21,7 @@ in_progress_task:
   stage: building
   priority: 0
   started_at: 2026-04-01 11:00:00
-  agent_slug: xan
+  agent_slug: ray
   position: 0
 
 done_task:

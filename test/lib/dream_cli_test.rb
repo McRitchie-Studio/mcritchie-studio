@@ -147,7 +147,7 @@ class DreamCliTest < Minitest::Test
 
     assert_equal 1, code
     assert_equal "", out
-    assert_match(/\Adream: `nobody` is not a soul\. Souls: xan, avi, carl,/, err)
+    assert_match(/\Adream: `nobody` is not a soul\. Souls: ray, avi, carl,/, err)
   end
 
   def test_unit_platform_prints_the_session_start_sequence
@@ -303,7 +303,7 @@ class DreamCliTest < Minitest::Test
     root, bank = desk
     { "approved" => PROPOSAL.sub("status: proposed", "status: approved"),
       "platform" => PROPOSAL.sub("soul: carl\n", ""),
-      "two souls" => PROPOSAL.sub("soul: carl", "soul: [carl, xan]"),
+      "two souls" => PROPOSAL.sub("soul: carl", "soul: [carl, ray]"),
       "unknown soul" => PROPOSAL.sub("soul: carl", "soul: nobody"),
       "unknown key" => PROPOSAL.sub("soul: carl", "soul: carl\nowner: carl"),
       "no front matter" => "# A title\n" }.each do |label, body|

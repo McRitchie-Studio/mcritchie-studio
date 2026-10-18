@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [integration] The /build funnel through real requests: a signed-out visitor's
-# first message opens the chat with Xan, the draft survives the sign-in detour
+# first message opens the chat with Ray, the draft survives the sign-in detour
 # (by the magic link's return_to AND by the Google path that always lands on the
 # home page), Build my app on a finished checklist queues the build, and a draft
 # is only ever visible to the account that finished it. The chat itself:
@@ -37,7 +37,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='build-form'] textarea[name='app_request[prompt]']"
   end
 
-  test "sending a prompt signed out saves a draft and opens the chat with Xan, no sign-in yet" do
+  test "sending a prompt signed out saves a draft and opens the chat with Ray, no sign-in yet" do
     draft = send_prompt
 
     assert_redirected_to build_request_path(draft.token)

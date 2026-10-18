@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_18_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_18_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2479,7 +2479,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_18_120000) do
     t.datetime "created_at", null: false
     t.jsonb "facts", default: {}, null: false
     t.datetime "graded_at", null: false
-    t.string "grader", default: "xan", null: false
+    t.string "grader", default: "ray", null: false
     t.text "learning"
     t.string "note_activity_slug"
     t.string "task_slug", null: false

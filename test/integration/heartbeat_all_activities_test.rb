@@ -1,6 +1,6 @@
 require "test_helper"
 
-# [integration] GET /xan/heartbeat/activities — the cross-session All Activities page. Every
+# [integration] GET /ray/heartbeat/activities — the cross-session All Activities page. Every
 # narrated AgentActivity across ALL sessions, newest-first, paginated 100 per page.
 # Reuses the per-session activity table + drawer; there is no per-session "Unlabeled" group
 # here. Read-only meta surface, like the per-session heartbeat — no auth.
@@ -15,8 +15,8 @@ class HeartbeatAllActivitiesTest < ActionDispatch::IntegrationTest
   end
 
   test "routes to the all_activities action" do
-    assert_equal "/xan/heartbeat/activities", heartbeat_all_activities_path
-    assert_routing "/xan/heartbeat/activities", controller: "heartbeat", action: "all_activities"
+    assert_equal "/ray/heartbeat/activities", heartbeat_all_activities_path
+    assert_routing "/ray/heartbeat/activities", controller: "heartbeat", action: "all_activities"
   end
 
   test "renders activities from every session, newest-first, without auth" do
@@ -62,7 +62,7 @@ class HeartbeatAllActivitiesTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "a[href=?][data-test=hb-nav-all-spans]", heartbeat_all_activities_path
-    assert_select "a[href=?][data-test=hb-nav-session]", xan_heartbeat_path
+    assert_select "a[href=?][data-test=hb-nav-session]", ray_heartbeat_path
   end
 
   test "renders no Unlabeled group even when null-span actions exist (single group per view)" do

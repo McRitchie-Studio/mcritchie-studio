@@ -139,7 +139,7 @@ tail -n 20 ~/Library/Logs/agent-dispatcher.log
 ```
 
 The log's first line names the worker, the souls and the version:
-`start dispatcher-<host>-<pid>-<rand> serving avi,xan,turf_monster on discord (cap 5, version <sha>, code <digest>)`.
+`start dispatcher-<host>-<pid>-<rand> serving avi,ray,turf_monster on discord (cap 5, version <sha>, code <digest>)`.
 
 `bin/dispatcher install` is safe to re-run: it unloads the running copy first.
 If it prints `launchctl bootstrap failed`, run it again: the unload of the old copy

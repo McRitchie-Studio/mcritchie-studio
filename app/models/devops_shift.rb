@@ -3,7 +3,7 @@
 # A devops SHIFT lease — the "at most one live conductor per lane" gate that keeps
 # two same-role devops sessions from colliding (two Avi heartbeats, or an Avi
 # heartbeat + a standalone pr-review). A lane is a ROLE/shift key — `avi`, `steffon`,
-# `alex` — so same-role acts contend while different-role acts (a review vs a
+# `ray` — so same-role acts contend while different-role acts (a review vs a
 # qa-release) run side by side.
 #
 # It reuses the build-claim lease math verbatim (lib/claim_lease.rb): a holder is a
@@ -29,9 +29,9 @@ class DevopsShift < ApplicationRecord
   # still takes the avi shift for its board-sweep. The shift model/table are KEPT (the
   # avi lane is live); only steffon left the default set. An old row for a retired lane
   # is harmless: nothing acquires it, and it simply lapses.
-  # `alex` was renamed `xan` with the seat (2026-09-24); a lane named by the old
-  # slug resolves through Task::SOUL_ALIASES in .lane_row for one release.
-  LANES = %w[avi xan].freeze
+  # The `ray` lane was `alex` until 2026-09-24 and `xan` until 2026-10-18; a lane
+  # named by an old slug resolves through Task::SOUL_ALIASES in .lane_row.
+  LANES = %w[avi ray].freeze
 
   # The acquire verdict: whether THIS instance now holds the lane, the ClaimLease
   # disposition it was in, and the (updated) row for the holder message.

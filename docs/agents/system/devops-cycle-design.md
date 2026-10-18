@@ -627,10 +627,10 @@ Clarifications:
   who QAs the assembled RC) from the light pool, so one soul never both reviews
   and QAs the same change. (That soul remains a valid reviewer for **other**
   PRs.)
-- **Ray is the Documentation reviewer.** The `xan` seat is the orchestrator who
+- **Ray is the Documentation reviewer.** The `ray` seat is the orchestrator who
   **also** holds the **Documentation** domain review seat — one identity (seeded in
   `db/seeds/02_agents.rb`, a launchable review agent). `ReviewerSelector` /
-  `bin/reviewer-select` pick `xan` for docs-shaped PRs (the QA-owner and
+  `bin/reviewer-select` pick `ray` for docs-shaped PRs (the QA-owner and
   builder exclusions still apply, so Ray never reviews a change he built).
 - **There is no per-task QA stage.** Avi owns the QA deploy, the QA tier
   (integration + e2e-smoke), and Steffon owns the prod mechanics — but there is no separate
@@ -696,7 +696,7 @@ see "The five soul heartbeat launchers" below):
 - **`production-deploy`** (`Steffon Heartbeat` act; ship authority) — ship a
   QA-green release: fast-forward `release → main` and deploy prod; idempotent
   no-op when nothing is ready.
-- **`full-cycle`** (`Xan Heartbeat` act; full ship authority) — the whole
+- **`full-cycle`** (`Ray Heartbeat` act; full ship authority) — the whole
   release, review → assemble → QA → prod ship.
 - **`deploy-with-task`** (`Avi Heartbeat` act; ship authority for ONE task) —
   expedite ONE task to prod. Guarded on a clean LADDER — `accepted == release ==
@@ -732,7 +732,7 @@ or the `review-one` SOP; none is a new command to build):
 
 | Composition | Expands to |
 |---|---|
-| **`full-cycle`** (Xan Heartbeat act; full ship authority) | [`agents/xan/sops/full-cycle.md`](../agents/xan/sops/full-cycle.md): `pr-review` → `qa-release` → `production-deploy` — the whole release, review to prod. *Formerly the retired `Merge, Assemble, Deploy` chip;* named `full-cycle` to avoid colliding with the read-only `bin/devops-cycle` snapshot tool. |
+| **`full-cycle`** (Ray Heartbeat act; full ship authority) | [`agents/ray/sops/full-cycle.md`](../agents/ray/sops/full-cycle.md): `pr-review` → `qa-release` → `production-deploy` — the whole release, review to prod. *Formerly the retired `Merge, Assemble, Deploy` chip;* named `full-cycle` to avoid colliding with the read-only `bin/devops-cycle` snapshot tool. |
 | **`deploy-with-task`** (Avi act; ship authority for ONE task) | [`agents/avi/sops/deploy-with-task.md`](../agents/avi/sops/deploy-with-task.md): **GUARD `release == main`** → `review-one <task>` (merge to `accepted` → `reviewed`) → `qa-release` (promotes `accepted → release`) → `production-deploy`. Interactive — launched bare it asks "What task?". *Formerly the `Deploy with Task <task>` write-up here.* |
 
 > **Retired chips (2026-07-02).** The four legacy release-card chips — `Avi Heartbeat
@@ -760,7 +760,7 @@ The **Workflows card** (`tasks/_heartbeats_card`, the third of the four
 one soul at a time on a five-minute carousel; a click opens the Workflows sidebar
 with every soul and command. Each launcher is a soul face (**linking to `/agents/<slug>`**) with
 a **prompt-like row 1** (`Carl Heartbeat` / `Avi Heartbeat` / `Steffon Heartbeat` /
-`Xan Heartbeat` / `Turf Monster Heartbeat`) plus one or more **copyable action
+`Ray Heartbeat` / `Turf Monster Heartbeat`) plus one or more **copyable action
 rows**, each with a leading icon (❤️ on the heartbeat row; `1️⃣`–`3️⃣` on the three
 ordered release actions, a themed glyph on the rest). **Any row**, pasted into a
 fresh session, is a **recognized launcher**. The release tracker stays in the
@@ -770,7 +770,7 @@ with the souls:
 [`Carl`](../agents/carl/HEARTBEAT.md),
 [`Avi`](../agents/avi/HEARTBEAT.md),
 [`Steffon`](../agents/steffon/HEARTBEAT.md),
-[`Ray`](../agents/xan/HEARTBEAT.md), and
+[`Ray`](../agents/ray/HEARTBEAT.md), and
 [`Turf Monster`](../agents/turf_monster/HEARTBEAT.md).
 
 It is titled **Workflows**, not Heartbeats, because every row is a flow the
@@ -789,7 +789,7 @@ only the card's name changed.
 | **Carl** (`Carl Heartbeat`) | `pr-review` · `pr-review-slow` | review submitted PRs — one Carl per PR, **merging each to `accepted`, never touching `release`/`main`** (waves ≤5, or serialized via `pr-review-slow`) | each PR `reviewed`/`blocked` |
 | **Avi** (`Avi Heartbeat`) | `qa-release` · `deploy-with-task` (direct-invoke only) | the **self-healing sweep** — merge the reviewed queue onto `release`, pre-QA gate, deploy QA, flip members `assembled` on QA-green (`bin/release prepare --yes`, stages 1–3) | RC **deployed to QA**, members `assembled` |
 | **Steffon** (`Steffon Heartbeat`) | `production-deploy` · `archive-shipped` | **downstream-first:** ship a QA-green release (`bin/release ship --yes`, stages 4–5, stamping `merged: "main"` at each ff) if one is ready; then archive shipped tasks (`bin/release archive --yes`) from the prior cycle | the ready release `shipped` (or no-op); then prior cycle `archived` |
-| **Ray** (`Xan Heartbeat`) | `share-insights` · `full-cycle` · `grade-events` (optional since 2026-09-25: every task is graded once at ship) | grade the 10 most recent resolved activities at `/xan/heartbeat` only when named; share the banked insights out (regenerate the lessons doc from `ActionGrade.banked`; it installs nothing); OR run the whole cycle review→assemble→QA→prod ship (`full-cycle`, full ship authority) | 10 graded + insights banked; the bank shared out; or the whole release `shipped` |
+| **Ray** (`Ray Heartbeat`) | `share-insights` · `full-cycle` · `grade-events` (optional since 2026-09-25: every task is graded once at ship) | grade the 10 most recent resolved activities at `/ray/heartbeat` only when named; share the banked insights out (regenerate the lessons doc from `ActionGrade.banked`; it installs nothing); OR run the whole cycle review→assemble→QA→prod ship (`full-cycle`, full ship authority) | 10 graded + insights banked; the bank shared out; or the whole release `shipped` |
 
 **The release handoff seam.** The release stages (`Release::STAGES`, rendered on
 /deployments as the per-repo lanes tracker, `ApplicationHelper#release_repo_lanes`)
@@ -884,7 +884,7 @@ board):
    claim-next-review` until it lapses. It exits **10** rather than seating a second
    pair on a PR another live session already holds, and **also** exits 10 when the
    board refuses the claim as a self-review (the primary is in the author set) —
-   that arm names no holder and wants the author set reconciled instead. `xan` is the
+   that arm names no holder and wants the author set reconciled instead. `ray` is the
    orchestrator who also holds the launchable Documentation review seat — one
    identity (slugged `alex` until 2026-09-24). (`--qa-owner SLUG` excludes a
    different soul; `--builder SLUG`

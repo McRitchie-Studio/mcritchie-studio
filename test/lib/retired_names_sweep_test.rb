@@ -19,7 +19,7 @@ class RetiredNamesSweepTest < Minitest::Test
 
   RETIRED_NAMES = [
     # Routes that answer 404.
-    "/alex/heartbeat", "/alex/insights", "/alex/pipeline", "/xan/heartbeat/spans",
+    "/alex/heartbeat", "/alex/insights", "/alex/pipeline", "/ray/heartbeat/spans",
     # Deleted files.
     "bin/docker-entrypoint", "ci_test_command_test", "system_test_browser_test",
     "builder_policy_test",

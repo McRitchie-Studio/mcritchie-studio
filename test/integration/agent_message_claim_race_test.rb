@@ -87,9 +87,9 @@ class AgentMessageClaimRaceTest < ActiveSupport::TestCase
 
   test "two agents side by side: each picks up only its own message" do
     avi = message!(soul: "avi")
-    xan = message!(soul: "xan")
-    results = claim_in_parallel(%w[xan avi])
+    ray = message!(soul: "ray")
+    results = claim_in_parallel(%w[ray avi])
 
-    assert_equal [ xan.id, avi.id ], results
+    assert_equal [ ray.id, avi.id ], results
   end
 end

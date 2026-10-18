@@ -8,7 +8,7 @@
 # trusted with one, so instead of POSTing FROM GitHub Actions we READ the finished
 # checks with `gh pr checks` and SELF-REPORT them from the session — reusing the
 # EXACT `bin/agent-activity action` verb bin/release.rb self-reports through. CI results just become another SOURCE of kind=test_scope
-# AgentActions on /xan/pipeline. NO CI secret, NO ci.yml change, NO server change.
+# AgentActions on /ray/pipeline. NO CI secret, NO ci.yml change, NO server change.
 #
 # It reads:  gh pr checks <pr> --json name,bucket,startedAt,completedAt
 #   bucket ∈ pass | fail | pending | skipping | cancel

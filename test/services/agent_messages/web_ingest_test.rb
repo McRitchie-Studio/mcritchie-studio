@@ -160,7 +160,7 @@ class WebIngestTest < ActiveSupport::TestCase
 
   test "the web chat's CTOs are routed: the board and bin/dispatcher both serve them, Tyrion included" do
     routes = AgentMessages::Routes.load
-    assert_equal %w[avi turf_monster tyrion xan client_cto], routes.web_souls, "xan answers the /build intake chat"
+    assert_equal %w[avi turf_monster tyrion ray client_cto], routes.web_souls, "ray answers the /build intake chat"
     assert_includes routes.souls, "tyrion", "no guild routes Tyrion; the web chat does"
     assert_includes AgentMailbox.routed_souls, "tyrion"
     assert_includes AgentMailbox::Dispatcher::TYPING_CHANNELS, "web"

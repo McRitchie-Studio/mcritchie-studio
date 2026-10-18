@@ -36,7 +36,7 @@ class AgentMessageTest < ActiveSupport::TestCase
     agent_message!(soul: "avi")
     agent_message!(soul: nil, status: "unrouted", routed_by: "none")
 
-    assert_nil AgentMessage.claim!(soul: "xan", worker: "x1").message
+    assert_nil AgentMessage.claim!(soul: "ray", worker: "x1").message
     assert_equal "avi", AgentMessage.claim!(soul: "avi", worker: "a1").message.soul_slug
     assert_nil AgentMessage.claim!(soul: "avi", worker: "a2").message
   end
@@ -268,16 +268,16 @@ class AgentMessageTest < ActiveSupport::TestCase
   end
 
   test "a multi-soul claim takes the oldest message across the souls, and records that message's soul" do
-    xan = agent_message!(soul: "xan")
+    ray = agent_message!(soul: "ray")
     agent_message!(soul: "avi")
     agent_message!(soul: "carl")
 
-    first = AgentMessage.claim!(soul: %w[avi xan], worker: "d1").message
-    second = AgentMessage.claim!(soul: %w[avi xan], worker: "d1").message
-    third = AgentMessage.claim!(soul: %w[avi xan], worker: "d1").message
+    first = AgentMessage.claim!(soul: %w[avi ray], worker: "d1").message
+    second = AgentMessage.claim!(soul: %w[avi ray], worker: "d1").message
+    third = AgentMessage.claim!(soul: %w[avi ray], worker: "d1").message
 
-    assert_equal xan.id, first.id
-    assert_equal "xan", first.events.find { |e| e.kind == "claimed" }.actor
+    assert_equal ray.id, first.id
+    assert_equal "ray", first.events.find { |e| e.kind == "claimed" }.actor
     assert_equal "avi", second.soul_slug
     assert_nil third, "carl is not served"
   end

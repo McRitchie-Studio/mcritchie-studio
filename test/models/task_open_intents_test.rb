@@ -56,7 +56,7 @@ class TaskOpenIntentsTest < ActiveSupport::TestCase
                              actor: "carl", occurred_at: 2.hours.ago)
     # Left `submitted` some other way — a direct block/archive, not the target.
     task.task_events.create!(kind: "transition", from_stage: "submitted", to_stage: "archived",
-                             actor: "xan", occurred_at: 30.minutes.ago)
+                             actor: "ray", occurred_at: 30.minutes.ago)
 
     sql = open_ids(task, "reviewed")
     assert_empty sql
@@ -79,7 +79,7 @@ class TaskOpenIntentsTest < ActiveSupport::TestCase
     first = task.task_events.create!(kind: "intent", from_stage: "submitted", to_stage: "reviewed",
                                      actor: "carl", occurred_at: 2.hours.ago)
     second = task.task_events.create!(kind: "intent", from_stage: "submitted", to_stage: "reviewed",
-                                      actor: "xan", occurred_at: 1.hour.ago)
+                                      actor: "ray", occurred_at: 1.hour.ago)
 
     sql = open_ids(task, "reviewed")
     # Order matters: open_intent_for takes .last, so chronological order is load-bearing.

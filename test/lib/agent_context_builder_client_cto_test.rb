@@ -19,7 +19,7 @@ class AgentContextBuilderClientCtoTest < ActiveSupport::TestCase
       FileUtils.mkdir_p(File.dirname(File.join(@root, path)))
       FileUtils.cp(Rails.root.join(path), File.join(@root, path))
     end
-    @message = { "id" => 7, "channel" => "web", "author_name" => "Xan", "content" => "Meet Nova, your CTO. I'll hand you over." }
+    @message = { "id" => 7, "channel" => "web", "author_name" => "Ray", "content" => "Meet Nova, your CTO. I'll hand you over." }
   end
 
   teardown { FileUtils.rm_rf(@root) }

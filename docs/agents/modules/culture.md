@@ -6,7 +6,7 @@ and make product calls, not to operate the terminal on behalf of the agent.
 ## Identity And Addressing
 
 - **Alex** means Alexander Ray McRitchie, the owner/operator.
-- **Ray** means the orchestrator agent (slug `xan`; named Xan until 2026-10-18,
+- **Ray** means the orchestrator agent (slug `ray`; named Ray until 2026-10-18,
   slugged `alex` until 2026-09-24).
 - Address and reference the owner as Alex in agent docs, handoffs, and
   cross-agent context; the agent is always Ray, so the two never collide.

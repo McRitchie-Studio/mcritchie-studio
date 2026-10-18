@@ -7,7 +7,7 @@ class Admin::AgentPersonNotesControllerTest < ActionDispatch::IntegrationTest
   include AgentMessageFixtures
 
   setup do
-    @message = agent_message!(soul: "xan", channel: "discord", author_ref: "500", author_name: "Alex")
+    @message = agent_message!(soul: "ray", channel: "discord", author_ref: "500", author_name: "Alex")
     @notes = AgentPersonNote.record_from!(@message, [ "Favorite color is purple.", "Runs the hub." ])
   end
 

@@ -1,6 +1,6 @@
 module BuildIntake
-  # The intake card one of Xan's answers offers, checked in CODE before anything
-  # shows it (the ProposalBlock pattern: the model proposes, code decides). Xan
+  # The intake card one of Ray's answers offers, checked in CODE before anything
+  # shows it (the ProposalBlock pattern: the model proposes, code decides). Ray
   # writes it as a PROPOSAL block of kind "intake":
   #
   #   ===PROPOSAL===

@@ -25,7 +25,7 @@ class Admin::AgentMessagesControllerTest < ActionDispatch::IntegrationTest
   test "the list shows status, soul, claim holder and attempts, and filters by soul and status" do
     claimed = agent_message!(soul: "avi", content: "is the release green?")
     AgentMessage.claim!(soul: "avi", worker: "macbook-4242-ab12")
-    agent_message!(soul: "xan", content: "what is on the board?")
+    agent_message!(soul: "ray", content: "what is on the board?")
     agent_message!(soul: nil, status: "unrouted", routed_by: "none", content: "thinking out loud")
 
     log_in_as(admin)
@@ -36,7 +36,7 @@ class Admin::AgentMessagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#am-row-#{claimed.id}", /macbook-4242-ab12/
     assert_select "#am-row-#{claimed.id}", /lease \d+m \d+s left/
 
-    get admin_agent_messages_path(soul: "xan")
+    get admin_agent_messages_path(soul: "ray")
     assert_select "#am-rows tbody tr", 1
     assert_select "#am-rows", /what is on the board/
 
@@ -87,14 +87,14 @@ class Admin::AgentMessagesControllerTest < ActionDispatch::IntegrationTest
     get admin_agent_messages_path
     assert_select "#am-dispatchers", /No dispatcher has pinged yet/
 
-    AgentDispatcher.ping!({ "worker" => "dispatcher-alex-mac-1-abc", "souls" => %w[xan], "running" => 2, "capacity" => 5,
+    AgentDispatcher.ping!({ "worker" => "dispatcher-alex-mac-1-abc", "souls" => %w[ray], "running" => 2, "capacity" => 5,
                             "paused_until" => 2.hours.from_now.iso8601, "pause_reason" => "usage_limit",
                             "version" => "abc1234" })
     AgentDispatcher.ping!({ "worker" => "dispatcher-old" }, now: 1.hour.ago)
     get admin_agent_messages_path
     assert_select "#am-dispatchers .am-dispatcher", 2
     assert_select ".am-dispatcher[data-live=true]", /dispatcher-alex-mac-1-abc/
-    assert_select ".am-dispatcher[data-live=true]", %r{2/5 running · xan}
+    assert_select ".am-dispatcher[data-live=true]", %r{2/5 running · ray}
     assert_select ".am-dispatcher[data-live=true] .am-chip", "paused"
     assert_select ".am-dispatcher[data-live=true]", /paused until .* \(usage_limit\)/
     assert_select ".am-dispatcher[data-live=false] .am-chip", "silent"

@@ -76,7 +76,7 @@ module ReportDestinationFixtures
       return [ override[0], JSON.generate(override[1]) ] if override
 
       case [ method, path ]
-      in [ :get, "/users/@me" ] then ok("id" => BOT_USER, "username" => "xan", "bot" => true)
+      in [ :get, "/users/@me" ] then ok("id" => BOT_USER, "username" => "ray", "bot" => true)
       in [ :get, %r{\A/guilds/\d+/channels\z} ] then ok(@channels)
       in [ :get, %r{\A/guilds/\d+/threads/active\z} ] then ok(@threads)
       in [ :get, %r{\A/guilds/\d+/roles\z} ] then ok(@roles)

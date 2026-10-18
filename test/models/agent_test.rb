@@ -23,10 +23,11 @@ class AgentTest < ActiveSupport::TestCase
   end
 
   # [unit] Regression: a soul's display name can differ from its slug (slug `xan`
-  # reads "Ray"). Creating the row with both must keep the given slug, or the
-  # seed on a fresh database makes a `ray` row and orphans every `xan` child.
+  # read "Ray" until ray-slug-rename). Creating the row with both must keep the
+  # given slug, or the seed on a fresh database makes a row keyed by the name and
+  # orphans every child of the real slug.
   test "an explicit slug survives a create whose name parameterizes differently" do
-    agent = Agent.create!(name: "Ray", slug: "xan-regression", status: "active", agent_type: "orchestrator")
-    assert_equal "xan-regression", agent.reload.slug
+    agent = Agent.create!(name: "Ray", slug: "ray-regression", status: "active", agent_type: "orchestrator")
+    assert_equal "ray-regression", agent.reload.slug
   end
 end

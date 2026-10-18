@@ -291,7 +291,7 @@ every 15 minutes. The contract other sessions build against,
 **The heartbeat.** `bin/heartbeat <soul> --channel discord [--once] [--worker ID]
 [--dry-run]` is the manual form: it claims a message and reads its context
 bundle, which carries the sender's audience (below, "Audience"). For an owner or
-team sender it runs the soul's one read-only action (avi and xan: `bin/task list`,
+team sender it runs the soul's one read-only action (avi and ray: `bin/task list`,
 the board through the agent API; no action reads Heroku, which launchd cannot log
 in to); for anyone else it runs nothing. It builds the prompt from
 the five layers (below, "Memory"), the audience's rules, the action output and the
@@ -1193,7 +1193,7 @@ carries **Build My App**, which asks for sign-in only then; it launches through 
   A first message without it, or under two seconds, is stored `held` with a `bot_shield`
   event and never answered; the visitor reads "send it again".
 - **Cards.** Ray's prompt gains an INTAKE section (`ContextBuilder#intake_block`): the
-  playbook from `docs/agents/agents/xan/intake.md`, the request's state from the bundle's
+  playbook from `docs/agents/agents/ray/intake.md`, the request's state from the bundle's
   `intake` key (`BuildIntake::Context`), and the card format. Ray offers a card as a
   PROPOSAL block of kind `intake` (`idea`: a title and 2 to 3 key features; `cto`;
   `palette`, which the visitor reads as the theme; `address`, read as the domain;
@@ -1240,7 +1240,7 @@ They are stored on the row (`AgentMessage.run_record` caps each). `/admin/agent_
 the machine that ran it:
 
 ```bash
-cd ~/.agents/mailbox/xan && claude --resume <session_id>
+cd ~/.agents/mailbox/ray && claude --resume <session_id>
 ```
 
 Resuming is for an operator reading a run. The answer path resumes only in a
@@ -1511,7 +1511,7 @@ Nothing reads Discord until a bot token is set. The code ships inert.
   (`app/views/integrations/discord.html.erb`).
 - **Our own live test** (2026-10-14) uses Ray's own bot, not roles: the whole
   McRitchie Studio guild (`1332466565203103744`, no channel entries), and the soul
-  `xan` routed by a mention of the Ray bot user (`users`, not `roles`). The ids
+  `ray` routed by a mention of the Ray bot user (`users`, not `roles`). The ids
   are in `config/agent_routes.yml`. `DISCORD_AGENT_BOT_TOKEN` is set from
   `agents.discord.xan` on `mcritchie-studio` only
   ([`credential-inventory.md`](../modules/credential-inventory.md)).
@@ -1527,9 +1527,9 @@ routed there; the rows use Ray, and any routed soul works the same way.
 
 | Scenario | Do | Expect |
 |----------|----|--------|
-| Serial | Post `@Ray what is building?`. Run `bin/heartbeat xan --channel discord`, then run it again | The first run answers in the channel; the second prints `nothing for xan` |
-| Parallel | Post `@Ray one` and `@Ray two` as separate messages. Start two `bin/heartbeat xan --channel discord --once` at the same moment | Each message is answered once. Neither is read twice and no reply is doubled |
-| Two agents | Needs a second soul routed in the guild (a role, or a second bot user such as Mack's). Then post to each and run `bin/heartbeat xan --channel discord` | Ray answers only its own message; the other stays `received` until that soul's heartbeat runs |
+| Serial | Post `@Ray what is building?`. Run `bin/heartbeat ray --channel discord`, then run it again | The first run answers in the channel; the second prints `nothing for ray` |
+| Parallel | Post `@Ray one` and `@Ray two` as separate messages. Start two `bin/heartbeat ray --channel discord --once` at the same moment | Each message is answered once. Neither is read twice and no reply is doubled |
+| Two agents | Needs a second soul routed in the guild (a role, or a second bot user such as Mack's). Then post to each and run `bin/heartbeat ray --channel discord` | Ray answers only its own message; the other stays `received` until that soul's heartbeat runs |
 | Unaddressed | Post a message that mentions nobody and replies to nothing | No row is stored; the admin page does not list it |
 
 The inbound half (guild scope, the addressed-only filter, overrides, the backstop)

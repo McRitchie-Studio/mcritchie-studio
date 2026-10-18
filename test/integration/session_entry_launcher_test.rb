@@ -14,18 +14,18 @@ class SessionEntryLauncherTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-avenue=session]", 1
     assert_select "[data-avenue=avi]", 1
-    assert_select "[data-avenue=xan]", 1
+    assert_select "[data-avenue=ray]", 1
     assert_match "Session agent", response.body
     assert_match "Avi", response.body
     assert_match "Ray", response.body
   end
 
-  test "selecting Xan targets the learning heartbeat path" do
+  test "selecting Ray targets the learning heartbeat path" do
     get launcher_path
 
     assert_response :success
-    assert_select "a[data-avenue=xan][href=?]", xan_heartbeat_path
-    assert_select "a[data-avenue=xan][data-avenue-target=?]", "learning-heartbeat"
+    assert_select "a[data-avenue=ray][href=?]", ray_heartbeat_path
+    assert_select "a[data-avenue=ray][data-avenue-target=?]", "learning-heartbeat"
   end
 
   test "Session agent and Avi are visibly coming-soon stubs (not links)" do
@@ -39,11 +39,11 @@ class SessionEntryLauncherTest < ActionDispatch::IntegrationTest
     assert_select "a[data-avenue=avi]", 0
   end
 
-  test "xan heartbeat route now renders the trajectory view (no longer a placeholder)" do
-    get xan_heartbeat_path
+  test "ray heartbeat route now renders the trajectory view (no longer a placeholder)" do
+    get ray_heartbeat_path
 
     assert_response :success
     assert_select "[data-test=heartbeat]", 1
-    assert_select "[data-placeholder=xan-heartbeat]", 0
+    assert_select "[data-placeholder=ray-heartbeat]", 0
   end
 end

@@ -1,7 +1,7 @@
 # One request for a login only the operator grants
 # (docs/agents/system/agent-sessions-design.md, section 3), of one of two kinds:
 #
-# - admin_login: an admin agent session. `bin/agent-activity heartbeat steffon|xan`
+# - admin_login: an admin agent session. `bin/agent-activity heartbeat steffon|ray`
 #   posts it.
 # - harness_key: one machine's harness key (AgentSession, tier harness), which
 #   mints studio logins. `bin/harness-key request` posts it, once per machine;

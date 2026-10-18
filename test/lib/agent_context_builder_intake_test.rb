@@ -1,7 +1,7 @@
 require "test_helper"
 require Rails.root.join("bin/lib/agent_mailbox").to_s
 
-# [unit] Xan's prompt on a /build thread: the board's bundle carries the intake
+# [unit] Ray's prompt on a /build thread: the board's bundle carries the intake
 # state (BuildIntake::Context via MemoryBundle), and the worker's ContextBuilder
 # prints the playbook, the state and the intake card format, fencing the one
 # free text (the confirmed idea). No intake section anywhere else.
@@ -17,7 +17,7 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
   end
 
   def prompt(context)
-    AgentMailbox::ContextBuilder.new(soul: "xan", message: { "channel" => "web", "content" => "hi", "author_name" => "Visitor" },
+    AgentMailbox::ContextBuilder.new(soul: "ray", message: { "channel" => "web", "content" => "hi", "author_name" => "Visitor" },
                                      context: context, repo_root: Rails.root.to_s, fence: "untrusted-test").prompt
   end
 
@@ -49,7 +49,7 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
   test "an owner's message on a /build thread is answered as the public: the visitor reads that thread" do
     owner = AgentPerson.create!(display_name: "Owner", role: "owner")
     message = AgentMessage.create!(channel: "web", external_id: "build:o-1", channel_ref: "build", person: owner,
-                                   thread_key: BuildIntake.thread_key("a" * 24), soul_slug: "xan", content: "hi", status: "received")
+                                   thread_key: BuildIntake.thread_key("a" * 24), soul_slug: "ray", content: "hi", status: "received")
     assert_equal "public", AgentMessages::MemoryBundle.new(message).bundle.dig("audience", "role")
   end
 
@@ -61,8 +61,8 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
                                 "portraits" => BuildIntake::Portraits::KEYS })
 
     assert_includes text, "THIS IS A /build INTAKE CHAT"
-    assert_includes text, "Your job is four answers, asked ONE AT A TIME", "the playbook comes from docs/agents/agents/xan/intake.md"
-    refute_includes text, "The prompt text Xan answers from", "only the part below the doc's rule is printed"
+    assert_includes text, "Your job is four answers, asked ONE AT A TIME", "the playbook comes from docs/agents/agents/ray/intake.md"
+    refute_includes text, "The prompt text Ray answers from", "only the part below the doc's rule is printed"
     assert_includes text, "The request now: idea: set, cto: not set, colors: not set, address: not set. Next step: cto."
     assert_includes text, "Set by the visitor: cto_name Coach."
     assert_includes text, '"card": "palette"'
@@ -84,7 +84,7 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
     refute_includes prompt("audience" => { "role" => "owner" }), "INTAKE CHAT"
   end
 
-  # The slug stays `xan`; the name the visitor reads is the roster's (config/souls.yml).
+  # The name the visitor reads is the roster's (config/souls.yml), never the slug.
   test "the intake persona introduces itself as Ray, not by its slug" do
     text = prompt("intake" => { "steps" => BuildIntake::STEPS, "done" => {}, "values" => {} },
                   "audience" => { "role" => "public" })

@@ -13,6 +13,6 @@ class SkillsSeedTest < ActiveSupport::TestCase
 
     orphans = SkillAssignment.where.not(agent_slug: Agent.pluck(:slug)).distinct.pluck(:agent_slug)
     assert_empty orphans, "skill assignments name a slug no seeded Agent carries"
-    assert_equal 4, SkillAssignment.where(agent_slug: "xan").count, "the orchestrator's skills land on xan"
+    assert_equal 4, SkillAssignment.where(agent_slug: "ray").count, "the orchestrator's skills land on ray"
   end
 end

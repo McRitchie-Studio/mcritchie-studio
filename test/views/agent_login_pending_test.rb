@@ -7,7 +7,7 @@ class AgentLoginPendingTest < ActionView::TestCase
   include Studio::AtTimeHelper
 
   setup do
-    @login = AgentLoginRequest.request!(soul: "xan", harness_session_id: "harness-one")
+    @login = AgentLoginRequest.request!(soul: "ray", harness_session_id: "harness-one")
   end
 
   def render_for(admin)
@@ -18,7 +18,7 @@ class AgentLoginPendingTest < ActionView::TestCase
   test "[component] an admin sees the request, its code and both taps" do
     render_for(true)
 
-    assert_select "#admin-login-#{@login.slug}[data-soul='xan']" do
+    assert_select "#admin-login-#{@login.slug}[data-soul='ray']" do
       assert_select "[data-test='admin-login-code']", text: @login.display_code
       assert_select "[data-test='admin-login-slug']", text: @login.slug
       assert_select "[data-test='admin-login-requested'] time[datetime]"

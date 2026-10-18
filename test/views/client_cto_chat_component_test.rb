@@ -3,8 +3,8 @@ require_relative "../support/client_cto_fixtures"
 
 # [component] The client CTO in the shared chat: its avatar is the chosen
 # portrait over its initial on the palette's primary (both modes' colours as
-# CSS custom properties, only validated hex), and Xan's handover turn renders as
-# Xan's, on the left, never as the owner's own bubble.
+# CSS custom properties, only validated hex), and Ray's handover turn renders as
+# Ray's, on the left, never as the owner's own bubble.
 class ClientCtoChatComponentTest < ActionView::TestCase
   include ClientCtoFixtures
   helper ClientCtoHelper
@@ -36,7 +36,7 @@ class ClientCtoChatComponentTest < ActionView::TestCase
     refute_includes style, "url("
   end
 
-  test "[component] Xan's handover is Xan's turn, then the CTO's greeting" do
+  test "[component] Ray's handover is Ray's turn, then the CTO's greeting" do
     message = AgentMessage.new(id: 7, status: "completed", content: "Meet Nova, your CTO. I'll hand you over.",
                                response_text: "Hi Pat, I'm **Nova**.", completed_at: Time.utc(2026, 10, 17, 9),
                                envelope: { "via" => "handover" })

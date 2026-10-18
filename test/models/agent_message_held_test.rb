@@ -25,9 +25,9 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
 
   def ingest(raw) = AgentMessages::DiscordIngest.new(routes: agent_routes).call(raw, guild_id: GUILD)
 
-  def mention_xan(id, author:, **opts) = ingest(discord_raw(id, content: "<@&#{XAN_ROLE}> status?", author: author, roles: [ XAN_ROLE ], **opts))
+  def mention_ray(id, author:, **opts) = ingest(discord_raw(id, content: "<@&#{RAY_ROLE}> status?", author: author, roles: [ RAY_ROLE ], **opts))
 
-  def claim = AgentMessage.claim!(soul: "xan", worker: "w-#{SecureRandom.hex(3)}").message
+  def claim = AgentMessage.claim!(soul: "ray", worker: "w-#{SecureRandom.hex(3)}").message
 
   def stranger_person = AgentPerson.resolve!(platform: "discord", external_id: STRANGER, display_name: "Stranger")
 
@@ -51,7 +51,7 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
 
   test "a role change is seen at once by the claim, with no reload; a role not listed stays held back" do
     stranger = stranger_person
-    agent_message!(soul: "xan", author_ref: STRANGER)
+    agent_message!(soul: "ray", author_ref: STRANGER)
     assert_nil claim, "public is not answered"
 
     stranger.set_role!("team")
@@ -69,7 +69,7 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
   test "an empty list answers nobody, and the claim then hands out nothing (fail closed)" do
     AgentMessages::Answerers.current = AgentMessages::Answerers.new([])
     assert_empty AgentMessages::Answerers.current.person_ids
-    agent_message!(soul: "xan", author_ref: ALEX)
+    agent_message!(soul: "ray", author_ref: ALEX)
 
     assert_nil claim
   end
@@ -88,13 +88,13 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
   # --- ingest -----------------------------------------------------------------
 
   test "ingest stores Alex's mention received and a stranger's held, with an event saying why" do
-    mine = mention_xan(1001, author: ALEX)
-    theirs = mention_xan(1002, author: STRANGER)
+    mine = mention_ray(1001, author: ALEX)
+    theirs = mention_ray(1002, author: STRANGER)
 
     assert_equal "received", mine.status
     assert_equal @alex.id, mine.person_id
     assert_equal "held", theirs.status
-    assert_equal "xan", theirs.soul_slug, "a held row keeps its soul, for the admin page and a release"
+    assert_equal "ray", theirs.soul_slug, "a held row keeps its soul, for the admin page and a release"
     held = theirs.events.find { |e| e.kind == "held" }
     assert_equal "sender's role (public) is not answered; config/agent_answerers.yml answers owner (and an app's owner on that app's own CTO chat only)", held.detail["reason"]
     assert_equal theirs.person_id, held.detail["person_id"]
@@ -102,7 +102,7 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
   end
 
   test "a stranger's reply into Alex's conversation joins the thread but is held" do
-    mine = mention_xan(1101, author: ALEX)
+    mine = mention_ray(1101, author: ALEX)
     reply = ingest(discord_raw(1102, content: "me too", author: STRANGER, reply_to: mine.external_id))
 
     assert_equal mine.thread_key, reply.thread_key
@@ -112,20 +112,20 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
   # --- the claim guard ----------------------------------------------------------
 
   test "claim never returns a held row, nor a received row from an unallowed person, nor a row with no person" do
-    mention_xan(1201, author: STRANGER)
-    agent_message!(soul: "xan", author_ref: STRANGER) # somehow received: belt and braces
-    agent_message!(soul: "xan")                       # no author, no person
+    mention_ray(1201, author: STRANGER)
+    agent_message!(soul: "ray", author_ref: STRANGER) # somehow received: belt and braces
+    agent_message!(soul: "ray")                       # no author, no person
 
     assert_nil claim
-    assert_empty AgentMessage.claimable(soul: "xan")
+    assert_empty AgentMessage.claimable(soul: "ray")
   end
 
   test "a held or unallowed row older in a thread does not hold Alex's later message back" do
-    mine = mention_xan(1301, author: ALEX)
-    AgentMessage.claim!(soul: "xan", worker: "w0")
+    mine = mention_ray(1301, author: ALEX)
+    AgentMessage.claim!(soul: "ray", worker: "w0")
     mine.complete!(worker: "w0", response_text: "ok")
-    mention_xan(1302, author: STRANGER, reply_to: mine.external_id)
-    agent_message!(soul: "xan", author_ref: STRANGER, thread_key: mine.thread_key)
+    mention_ray(1302, author: STRANGER, reply_to: mine.external_id)
+    agent_message!(soul: "ray", author_ref: STRANGER, thread_key: mine.thread_key)
     later = ingest(discord_raw(1303, content: "and now?", author: ALEX, reply_to: mine.external_id))
 
     assert_equal "received", later.status
@@ -133,8 +133,8 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
   end
 
   test "a held message does not hold back the same person's released message" do
-    first = mention_xan(1401, author: STRANGER)
-    second = mention_xan(1402, author: STRANGER)
+    first = mention_ray(1401, author: STRANGER)
+    second = mention_ray(1402, author: STRANGER)
     second.release_hold!(actor: "admin:test")
 
     assert_equal "held", first.reload.status
@@ -142,8 +142,8 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
   end
 
   test "an unallowed row somehow received does not hold back the same person's released message" do
-    agent_message!(soul: "xan", author_ref: STRANGER) # received, never claimable
-    released = mention_xan(1451, author: STRANGER)
+    agent_message!(soul: "ray", author_ref: STRANGER) # received, never claimable
+    released = mention_ray(1451, author: STRANGER)
     released.release_hold!(actor: "admin:test")
 
     assert_equal released.id, claim&.id
@@ -152,7 +152,7 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
   # --- release ------------------------------------------------------------------
 
   test "release_hold! makes one held message claimable, records who did it, and the sender's next one is held" do
-    held = mention_xan(1501, author: STRANGER)
+    held = mention_ray(1501, author: STRANGER)
     held.release_hold!(actor: "admin:alex")
 
     assert_equal "received", held.reload.status
@@ -161,15 +161,15 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
     assert_equal "admin:alex", held.events.last.actor
     assert_equal "hold_released", held.events.last.kind
     assert_equal held.id, claim&.id
-    assert_equal "held", mention_xan(1502, author: STRANGER).status
+    assert_equal "held", mention_ray(1502, author: STRANGER).status
   end
 
   test "release_hold! refuses a message that is not held, and an empty actor" do
-    mine = mention_xan(1601, author: ALEX)
+    mine = mention_ray(1601, author: ALEX)
     error = assert_raises(AgentMessage::Refused) { mine.release_hold!(actor: "admin:alex") }
     assert_equal "NOT_HELD", error.code
 
-    held = mention_xan(1602, author: STRANGER)
+    held = mention_ray(1602, author: STRANGER)
     assert_equal "ACTOR_REQUIRED", assert_raises(AgentMessage::Refused) { held.release_hold!(actor: " ") }.code
     assert_equal "held", held.reload.status
   end
@@ -177,10 +177,10 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
   # --- memory, constraint, migration ---------------------------------------------
 
   test "a held row never reaches an answer's thread layer" do
-    mine = mention_xan(1701, author: ALEX)
-    AgentMessage.claim!(soul: "xan", worker: "w0")
+    mine = mention_ray(1701, author: ALEX)
+    AgentMessage.claim!(soul: "ray", worker: "w0")
     mine.complete!(worker: "w0", response_text: "ok")
-    mention_xan(1702, author: STRANGER, reply_to: mine.external_id)
+    mention_ray(1702, author: STRANGER, reply_to: mine.external_id)
     later = ingest(discord_raw(1703, content: "next", author: ALEX, reply_to: mine.external_id))
 
     turns = AgentMessages::MemoryBundle.new(later).bundle.dig("thread", "turns")
@@ -192,16 +192,16 @@ class AgentMessageHeldTest < ActiveSupport::TestCase
       SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = 'agent_messages_status_known'
     SQL
     assert_equal AgentMessage::STATUSES.sort, definition.scan(/'([a-z_]+)'::/).flatten.uniq.sort
-    row = agent_message!(soul: "xan")
+    row = agent_message!(soul: "ray")
     AgentMessage.where(id: row.id).update_all(status: "held")
     assert_raises(ActiveRecord::CheckViolation) { AgentMessage.where(id: row.id).update_all(status: "parked") }
   end
 
   test "the migration's data step holds received rows from strangers and leaves Alex's and finished rows alone" do
-    stranger_waiting = agent_message!(soul: "xan", author_ref: STRANGER)
-    alex_waiting = agent_message!(soul: "xan", author_ref: ALEX)
-    stranger_done = agent_message!(soul: "xan", author_ref: STRANGER, status: "completed")
-    stranger_dead = agent_message!(soul: "xan", author_ref: STRANGER, status: "dead")
+    stranger_waiting = agent_message!(soul: "ray", author_ref: STRANGER)
+    alex_waiting = agent_message!(soul: "ray", author_ref: ALEX)
+    stranger_done = agent_message!(soul: "ray", author_ref: STRANGER, status: "completed")
+    stranger_dead = agent_message!(soul: "ray", author_ref: STRANGER, status: "dead")
 
     migration = AddHeldToAgentMessages.new
     migration.verbose = false
