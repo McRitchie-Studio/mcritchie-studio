@@ -65,7 +65,7 @@ class CtoChatsControllerTest < ActionDispatch::IntegrationTest
     assert_match(/1,000,000/, css_select("#cto-chat-meter").text, "the owner reads the cap they are held to")
   end
 
-  test "[component] an app owner's refused go reads as waiting on an admin to confirm, not as an unanswered account" do
+  test "[component] an app owner's go on a kind they may not confirm says so, not that the account is unanswered" do
     asked = ingest(@owner, "Add a leaderboard?")
     asked.update_columns(status: "completed", completed_at: Time.current, response_text: "I can propose it.")
     AgentProposal.create!(thread_key: asked.thread_key, channel: "web", channel_ref: "turf-monster", soul_slug: "turf_monster",
@@ -76,8 +76,30 @@ class CtoChatsControllerTest < ActionDispatch::IntegrationTest
 
     log_in_as(@owner)
     get chat_application_path("turf-monster")
-    assert_select "#cto-chat-turn-#{go.id} [data-test='cto-chat-confirm-held']", text: /Only an admin can confirm or drop a proposal/
+    assert_select "#cto-chat-turn-#{go.id} [data-test='cto-chat-confirm-held']", text: AgentMessages::ProposalConfirm::KIND_REFUSED_TEXT
     assert_select "#cto-chat-turn-#{go.id} [data-test='cto-chat-held']", 0
+  end
+
+  test "[component] an owner's confirmed go shows no refusal; a team-role owner's go says this account can't confirm" do
+    asked = ingest(@owner, "Add a leaderboard?")
+    asked.update_columns(status: "completed", completed_at: Time.current, response_text: "I can propose it.")
+    params = { "title" => "Leaderboard", "kind" => "feature", "shape" => "backend", "accept" => [ "x" ], "test" => [ "x" ], "risk" => [] }
+    proposal = AgentProposal.create!(thread_key: asked.thread_key, channel: "web", channel_ref: "turf-monster", soul_slug: "turf_monster",
+                                     person: asked.person, source_message: asked, kind: "change", capability: "task",
+                                     params: params, summary: "x", expires_at: 1.day.from_now)
+    go = ingest(@owner, "go")
+    assert_equal [ "completed", "confirmed" ], [ go.status, proposal.reload.status ]
+
+    proposal.update!(status: "proposed", confirm_message: nil)
+    asked.person.set_role!("team")
+    refused = ingest(@owner, "go")
+    assert_equal "held", refused.status
+
+    log_in_as(@owner)
+    get chat_application_path("turf-monster")
+    assert_select "#cto-chat-turn-#{go.id} [data-test='cto-chat-confirm-held']", 0
+    assert_select "#cto-chat-turn-#{refused.id} [data-test='cto-chat-confirm-held']", text: AgentMessages::ProposalConfirm::REFUSED_TEXT
+    assert_select "[data-test='cto-chat-confirm-held']", text: /Only an admin/, count: 0
   end
 
   test "[component] an owner the CTO does not answer (the rule off) is told so, and a held turn says it waits for an admin" do

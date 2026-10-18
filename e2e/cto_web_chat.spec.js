@@ -117,3 +117,30 @@ test("an app's owner is answered on their own app's chat, as its client", async 
   const other = await page.goto("/applications/mcritchie-studio/chat");
   expect(other.status()).toBe(404);
 });
+
+test("an app's owner says go on a proposal in their own chat and sees the designed task", async ({ page }) => {
+  const { pageErrors, report } = watchPageErrors(page);
+  // e2e/seed.rb: owner@turf.test (a plain viewer, no agent role) has a pending
+  // change proposal under an answered question on their own Turf chat.
+  await loginWithMagicLink(page, "owner@turf.test");
+  await page.goto("/applications/turf-monster/chat");
+
+  const offer = page.locator("[data-test='cto-chat-turn']", { hasText: "Can the slate show kickoff times?" });
+  await expect(offer.locator("[data-test='cto-chat-reply']")).toContainText("Proposed: Open a task to show kickoff times");
+  await expect(page.locator("turbo-cable-stream-source[channel='CtoChatChannel']")).toHaveAttribute("connected", "");
+
+  const input = page.locator("[data-test='cto-chat-input']");
+  await input.fill("go");
+  await input.press("Enter");
+  const go = page.locator("[data-test='cto-chat-turn']").filter({ has: page.locator("[data-test='cto-chat-sent']", { hasText: /^go$/ }) }).last();
+  await expect(go.locator("[data-test='cto-chat-confirm-held']")).toHaveCount(0);
+
+  // AgentProposalJob opens the task; its answer streams into the go's turn.
+  const link = go.locator("[data-test='cto-chat-reply'] a[href*='/tasks/e2e-owner-kickoff-times']");
+  await expect(link).toBeVisible({ timeout: 20_000 });
+  await expect(go.locator("[data-test='cto-chat-reply']")).toContainText("Opened");
+
+  await page.reload();
+  await expect(page.locator("[data-test='cto-chat-reply'] a[href*='/tasks/e2e-owner-kickoff-times']")).toBeVisible();
+  expect(pageErrors, report()).toHaveLength(0);
+});

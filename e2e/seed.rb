@@ -1790,3 +1790,27 @@ AgentMessage.where(channel: "web").destroy_all
 AgentPersonIdentity.where(platform: "web").delete_all
 AgentPerson.find_or_create_by!(user: admin) { |p| p.assign_attributes(display_name: "E2E Chat Owner", role: "owner") }
 puts "Seeded: the web chat's owner person"
+
+# An app owner's word on a proposal (e2e/cto_web_chat.spec.js; Alex, 2026-10-18;
+# AgentMessages::ProposalConfirm#owner_verdict): Turf's owner, a plain viewer with
+# no agent role, has an answered question on their own Turf chat and a pending
+# change proposal under it, so the spec can say `go` and see the designed task.
+# Answered 40 days ago, so this month's usage (e2e/app_usage_meter.spec.js: "1
+# answer") is unchanged; the proposal's own clock is expires_at.
+AgentProposal.where(channel: "web").delete_all
+owner_person = AgentMessages::WebIngest.person_for(turf_owner)
+owner_ask = AgentMessage.create!(channel: "web", external_id: "e2e-owner-ask", channel_ref: "turf-monster",
+                                 thread_key: AgentMessages::WebChat.thread_key("turf-monster", turf_owner.id),
+                                 soul_slug: "turf_monster", routed_by: "chat", person: owner_person, author_ref: turf_owner.id.to_s,
+                                 author_name: turf_owner.display_name, content: "Can the slate show kickoff times?",
+                                 status: "completed", completed_at: 40.days.ago, reply_status: "posted", reply_posted_at: 40.days.ago,
+                                 reply_nonce: "agentmsg-e2e-owner-ask", sent_at: 40.days.ago)
+owner_proposal = AgentProposal.create!(thread_key: owner_ask.thread_key, channel: "web", channel_ref: "turf-monster",
+                                       soul_slug: "turf_monster", person: owner_person, source_message: owner_ask, kind: "change",
+                                       capability: "task", summary: "Open a task to show kickoff times on the slate",
+                                       params: { "title" => "E2E owner kickoff times", "kind" => "feature", "shape" => "backend",
+                                                 "accept" => [ "Each game row shows its kickoff time" ],
+                                                 "test" => [ "[unit] kickoff time renders" ], "risk" => [] },
+                                       expires_at: 1.day.from_now)
+owner_ask.update!(response_text: "I can open a task for that.\n\n#{owner_proposal.confirm_text}")
+puts "Seeded: Turf's owner with a pending change proposal"
