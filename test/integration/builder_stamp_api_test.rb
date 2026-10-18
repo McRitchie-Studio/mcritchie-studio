@@ -204,7 +204,7 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
     assert_equal true, decision["builder_known"], "both claims named a soul"
     # Order is the drop order (worst-fit first), not the claim order — the set is
     # what matters here.
-    assert_equal %w[steffon ray], decision["excluded_builders"].sort
+    assert_equal %w[ray steffon], decision["excluded_builders"].sort
     seated = decision["reviewers"].map { |r| r["slug"] }
     refute_includes seated, "ray", "the co-author must not review their own diff"
     refute_includes seated, "steffon"

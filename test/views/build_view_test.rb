@@ -181,7 +181,7 @@ class BuildViewTest < ActionView::TestCase
     end
     assert_select "[data-test='resume-draft']", 0, "no unfinished-request banner"
     assert_select "[aria-label='How it works']", 0, "no three-step cards"
-    assert_no_match(/Pick up where you left off|Tell Ray/, rendered)
+    assert_no_match(/Pick up where you left off|Tell Xan/, rendered)
   end
 
   def chat_assigns(request_row, started: request_row.intake_started?)

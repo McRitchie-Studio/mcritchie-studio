@@ -5,15 +5,17 @@ require "test_helper"
 # writer that stamps a soul stamps the canonical slug, so the record never
 # carries `alex` again after RenameAlexSoulToXan repointed it.
 class SoulAliasTest < ActiveSupport::TestCase
-  test "the roster carries ray and not alex" do
+  test "the roster carries ray and neither retired slug" do
     assert_includes Task::SOUL_ROSTER, "ray"
     refute_includes Task::SOUL_ROSTER, "alex", "the retired slug is an alias, not a roster entry"
-    assert_equal({ "alex" => "ray" }, Task::SOUL_ALIASES)
+    refute_includes Task::SOUL_ROSTER, "xan", "the retired slug is an alias, not a roster entry"
+    assert_equal({ "alex" => "ray", "xan" => "ray" }, Task::SOUL_ALIASES, "chain-flattened: alex never lands on xan")
   end
 
   test "canonical_soul maps the retired slug and passes every other value through" do
     assert_equal "ray", Task.canonical_soul("alex")
     assert_equal "ray", Task.canonical_soul(" alex ")
+    assert_equal "ray", Task.canonical_soul("xan")
     assert_equal "ray", Task.canonical_soul("ray")
     assert_equal "carl", Task.canonical_soul("carl")
     assert_equal "", Task.canonical_soul(nil)
@@ -23,6 +25,7 @@ class SoulAliasTest < ActiveSupport::TestCase
   test "soul? recognises the seat under both slugs and nothing that is neither" do
     assert Task.soul?("ray")
     assert Task.soul?("alex"), "the retired slug still names a soul while the alias stands"
+    assert Task.soul?("xan"), "so does the slug ray-slug-rename retired"
     refute Task.soul?("alex-docs"), "a slug retired without an alias stays unknown"
     refute Task.soul?("stefon")
   end

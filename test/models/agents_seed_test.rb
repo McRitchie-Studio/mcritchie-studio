@@ -105,7 +105,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
     assert docs, "a documentation-domain reviewer must resolve from the seed"
     assert_equal "ray", docs.slug, "Ray holds the documentation seat (no separate persona)"
     assert_equal "Lead Orchestrator", docs.title, "still the orchestrator identity"
-    refute Agent.exists?(slug: "ray-docs"), "the separate ray-docs persona is retired (folded into ray)"
+    refute Agent.exists?(slug: "alex-docs"), "the separate alex-docs persona is retired (folded into ray)"
   end
 
   # EVERY SOUL RENDERS A FACE — the property the board actually needs, which is not
