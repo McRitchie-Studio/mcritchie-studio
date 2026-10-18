@@ -312,8 +312,9 @@ module AgentMailbox
   # one) is a reply on exit 0 and error text otherwise: in json mode the model's
   # words only ever arrive inside the envelope.
   #
-  # STREAM (`stream: true`, a run with media: Media.stream_cmd, --output-format
-  # stream-json): stdout is one JSON object per line, and the envelope is the
+  # STREAM (`stream: true`: a run with media, Media.stream_cmd, or a web-chat
+  # run whose phase is watched, ClaudeStream.cmd; --output-format stream-json):
+  # stdout is one JSON object per line, and the envelope is the
   # LAST line whose top-level `type` is "result", the same object json mode
   # prints, read the same way. The model's words sit only inside `assistant`
   # lines' string values, so no text it writes can be a top-level line. A

@@ -61,7 +61,7 @@ class AgentChatComponentTest < ActionView::TestCase
   test "[component] the typing pulse names the agent" do
     render partial: "agent_chats/typing", locals: { agent_name: "Ray", at: Time.utc(2026, 10, 17, 9) }
 
-    assert_select "[data-test='cto-chat-typing'][data-typing-at='#{(Time.utc(2026, 10, 17, 9).to_f * 1000).to_i}']", text: /Ray is typing…/
+    assert_select "[data-test='cto-chat-typing'][data-typing-at='#{(Time.utc(2026, 10, 17, 9).to_f * 1000).to_i}']", text: /Ray is typing/
   end
 
   test "[component] the shell's head: the agent's portrait, big and centered, one view-transition name, its name and role under it" do

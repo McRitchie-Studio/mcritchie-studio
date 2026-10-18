@@ -83,7 +83,7 @@ The dispatcher will take it on its next poll; a hand claim only competes with it
 | Its plist | Rendered from `config/launchd/studio.mcritchie.agent-dispatcher.plist` into `~/Library/LaunchAgents/` by `bin/dispatcher install` |
 | Its log | `~/Library/Logs/agent-dispatcher.log`: ids and states only, never message text. A raised run adds its error class, its first backtrace line, and its error message's first line with every quoted span redacted, capped at 200 characters |
 | The answer path | `AgentMailbox::Responder` in `bin/lib/agent_mailbox.rb`, shared with `bin/heartbeat` |
-| "typing…" while it answers | Each live run asks `POST /api/v1/agent_messages/:id/typing` at its start and every 7 seconds, up to 3 minutes; the hub's `AgentMessageTypingJob` shows typing as the bot that will reply ([loop doc](../../../system/agent-message-loop.md), "Typing") |
+| "typing…" while it answers | Each live run asks `POST /api/v1/agent_messages/:id/typing` at its start and every 7 seconds, up to 3 minutes; the hub's `AgentMessageTypingJob` shows typing as the bot that will reply ([loop doc](../../../system/agent-message-loop.md), "Typing"). A web-chat run streams (`stream-json`, partial messages) so its pulse says `thinking` until the answer's text starts, then `typing`, sent at once on the change ([loop doc](../../../system/agent-message-loop.md), "Web chat") |
 | Its ping and the alerts | `POST /api/v1/agent_dispatchers/ping`; `AgentDispatcherAlertJob` every minute on the worker dyno (`config/recurring.yml`) |
 | Where alerts post | `discord.ops_channel_id` in `config/agent_routes.yml` (`lobster-tank` today), as the shared bot |
 | What you watch | `/admin/agent_messages`: the dispatcher row (live, paused, silent) above the message list |
