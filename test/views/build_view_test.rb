@@ -26,7 +26,10 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='build-honeypot'][name='app_request[leave_blank]'][tabindex='-1']"
     proof = css_select("[data-test='build-proof']").first
     assert proof["data-proof"].present?, "the signed render time rides in a data attribute"
-    assert_includes proof["x-init"], ".reverse()", "only the page's script writes it in, reversed"
+    assert proof.attributes.key?("data-build-proof"), "only the page's script writes it in, reversed, at send (build_shell.js)"
+    assert_nil proof["value"], "the server never fills it"
+    assert_select "[data-test='build-form'] [x-data], [data-test='build-form'][x-data]", 0, "no inline Alpine: the behaviour is build_shell.js"
+    assert_select "[data-test='build-send'][disabled]", 1, "send waits for text"
     refute_includes rendered, "Alpine.store('modals').open('auth'", "sign-in waits for Build my app"
   end
 
@@ -114,7 +117,7 @@ class BuildViewTest < ActionView::TestCase
     box = css_select("[data-test='build-form'] textarea[name='app_request[prompt]'][maxlength='#{AppRequest::PROMPT_LIMIT}'][required]").sole
     assert_select "label.sr-only", text: "Tell Ray what you want to build"
     assert_select "[data-test='build-send'][aria-label='Send to Ray'].rounded-full"
-    assert_includes rendered, "@keydown.enter", "Enter must send the prompt"
+    assert box.attributes.key?("data-build-first-input"), "Enter sends through build_shell.js"
     examples = JSON.parse(box["data-typing-placeholder"])
     assert_equal 4, examples.size, "the examples are typed into the placeholder (app/javascript/build_shell.js)"
     assert_equal examples.first, box["placeholder"], "still, the first example reads (no script, or reduced motion)"

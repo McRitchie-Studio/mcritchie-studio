@@ -4,10 +4,11 @@
   and its thread, signed in or not; sign-in is asked only at Build my app. It posts
   through Turbo and the answer is Turbo Streams (BuildController#create), so the
   page stays put: the thread grows under the heading and the address becomes
-  /build/<token> (app/javascript/build_shell.js). Enter sends; Shift+Enter is a new
-  line; the box grows with the text up to a cap. The placeholder types example
-  ideas (data-typing-placeholder). The bot shield is /contact's: a hidden field only
-  a script fills, and a signed render time the page's own script writes in
+  /build/<token>. Its behaviour is app/javascript/build_shell.js, not inline: Enter
+  sends; Shift+Enter is a new line; the box grows with the text up to a cap; send
+  waits for text and sends once. The placeholder types example ideas
+  (data-typing-placeholder). The bot shield is /contact's: a hidden field only a
+  script fills, and a signed render time the page's own script writes in at send
   (BrowserProof). Same box, same view-transition name, as agent_chats/_form.
 %>
 <% examples = [
@@ -17,17 +18,15 @@
      "A booking site for my dog-grooming business, with text reminders"
    ] %>
 <%= form_with model: AppRequest.new, url: build_path, method: :post, id: "build-first-form",
-              data: { test: "build-form" },
-              html: { style: "view-transition-name: agent-composer;", "x-data": "{ prompt: #{text.to_json}, sending: false, grow(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 320) + 'px' } }",
-                      "@submit": "if (!prompt.trim() || sending) { $event.preventDefault() } else { sending = true }",
-                      "@turbo:submit-end": "sending = false" } do |f| %>
+              data: { test: "build-form", build_first_form: true },
+              html: { style: "view-transition-name: agent-composer;" } do |f| %>
   <%= f.hidden_field :client_id, value: SecureRandom.uuid %>
   <div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
     <label for="app_request_<%= BrowserProof::HONEYPOT_FIELD %>">Leave this field empty</label>
     <input type="text" name="app_request[<%= BrowserProof::HONEYPOT_FIELD %>]" id="app_request_<%= BrowserProof::HONEYPOT_FIELD %>" tabindex="-1" autocomplete="off" data-test="build-honeypot">
   </div>
   <input type="hidden" name="app_request[<%= BrowserProof::PROOF_FIELD %>]" data-proof="<%= BrowserProof.new(BuildController::PROOF_PURPOSE).issue %>"
-         x-init="$el.value = $el.dataset.proof.split('').reverse().join('')" data-test="build-proof">
+         data-build-proof data-test="build-proof">
   <div class="relative rounded-3xl border border-subtle bg-surface shadow-lg focus-within:border-primary transition-colors">
     <% if error %>
       <p class="px-5 pt-4 text-xs text-danger-ink" role="alert" data-test="build-form-error"><%= error %></p>
@@ -36,14 +35,11 @@
     <%= f.text_area :prompt, value: text, rows: 3, maxlength: AppRequest::PROMPT_LIMIT, required: true, autofocus: true,
           placeholder: examples.first,
           class: "block w-full resize-none bg-transparent px-5 pt-5 pb-16 text-base text-heading placeholder:text-muted focus:outline-none",
-          "x-model": "prompt",
-          "@input": "grow($el)",
-          "@keydown.enter": "if (!$event.shiftKey && !$event.isComposing) { $event.preventDefault(); $el.form.requestSubmit() }",
-          data: { test: "build-prompt", typing_placeholder: examples.to_json } %>
+          data: { test: "build-prompt", typing_placeholder: examples.to_json, build_first_input: true } %>
     <div class="absolute bottom-3 left-5 right-3 flex items-center justify-between gap-3">
       <span class="text-xs text-muted hidden sm:inline">Enter to send · Shift+Enter for a new line</span>
       <button type="submit" class="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white disabled:opacity-40"
-              :disabled="!prompt.trim() || sending" aria-label="Send to <%= BuildController::AGENT_NAME %>" data-test="build-send">
+              <%= "disabled" if text.blank? %> aria-label="Send to <%= BuildController::AGENT_NAME %>" data-test="build-send" data-build-first-send>
         <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M12 19V5M5 12l7-7 7 7"/>
         </svg>

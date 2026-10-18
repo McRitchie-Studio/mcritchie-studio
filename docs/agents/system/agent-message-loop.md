@@ -913,7 +913,7 @@ bin/dispatcher (every channel) ─▶ claim ─▶ typing pulse ─▶ AgentMess
 | Piece | Where |
 |-------|-------|
 | The page and the post | `CtoChatsController`, `app/views/cto_chats/show.html.erb`; signed-in (`AdminWall::SIGNED_IN`), 404 unless the viewer owns the app or is an admin |
-| The chat itself | the shared agent chat, `app/views/agent_chats/` (`_chat`: stream, thread, typing slot, composer for any agent and stream; `_header`: the heading agent's portrait and name; `_attachments_slot`: empty, rendered inside the composer for chat media) and `app/javascript/agent_chat.js` (`cto_chat` stays pinned to it) |
+| The chat itself | the shared agent chat, `app/views/agent_chats/` (`_shell`: the one page structure /build, /build/:token and this page share, portrait, status card, then chat; `_header`: the agent's portrait, centered, and its name; `_devops_card`: this page's status card, the app's Building · Releasing · Deploying from `AppDevopsStages` and its `_tokens_bar`; `_chat`: stream, thread, typing slot, composer for any agent and stream; `_attachments_slot`: empty, rendered inside the composer for chat media) and `app/javascript/agent_chat.js` (`cto_chat` stays pinned to it) |
 | Inbound | `AgentMessages::WebIngest` |
 | Outbound, typing, the stream | `AgentMessages::WebChat`; `CtoChatChannel` |
 | Which CTOs have a chat | the `web: souls:` block of `config/agent_routes.yml` |
@@ -1117,11 +1117,26 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
 
 ## Build intake: Xan answers the public on /build
 
-`/build` is a chat with Xan (design: `.agents/epics/build-with-xan-design.md`). A
-visitor, signed in or not, tells Xan what they want to build; Xan asks for the idea
-(at most two follow-ups), a CTO, colors and an address, one card at a time, and the
-visitor's taps fill a checklist. **Build my app** lights up when all four are set and
-asks for sign-in only then; it queues through `AppRequest#queue!` as before.
+`/build` is a chat with Xan, shown as Ray (designs: `.agents/epics/build-with-xan-design.md`,
+`build-with-ray-v2.md`). A visitor, signed in or not, tells Ray what they want to
+build; Ray asks for the idea (at most two follow-ups), a CTO, colors and an address,
+one card at a time, and the visitor's taps fill the status card. **Build my app** asks
+for sign-in only then; it launches through `AppLaunch`.
+
+- **The page** is the agent shell (`app/views/agent_chats/_shell.html.erb`): Ray's
+  portrait, a status slot, the thread, the chat box. The status slot
+  (`build/_status_card`, stream target `build-checklist`) is the heading until Ray has
+  proposed a card (`AppRequest#intake_started?`), then the app's working title over
+  Agent · Theme · Domain tiles. It carries no Build control.
+- **The first message stays on /build.** The composer posts through Turbo;
+  `BuildController#create` answers with Turbo Streams that replace the empty thread
+  (`build-chat-page`) with the draft's chat and end with a `replace_url` stream
+  (`app/javascript/build_shell.js`), which moves the address to `/build/<token>`
+  through Turbo's history, with no reload. A JSON post still gets the token and path.
+- **Page moves** between /build, /build/:token and the app chat are Turbo visits with a
+  view transition (`<meta name="view-transition">`): the shell names its portrait,
+  caption, status card and chat box, so Ray's portrait becomes the CTO's. Turbo skips
+  the transition under `prefers-reduced-motion`.
 
 - **The thread** is `web:build:<request token>` on the `web` channel, `channel_ref`
   `build`, written only by `BuildIntake::Ingest` (`app/services/build_intake/ingest.rb`).

@@ -7,6 +7,11 @@
 //     end with a `replace_url` stream, which moves the address bar to
 //     /build/<token> through Turbo's own history (so Back and the snapshot cache
 //     agree), with no reload. Then the new chat box takes the focus.
+//   - the first chat box's own manners (build/_first_form, no inline Alpine):
+//     Enter sends and Shift+Enter is a new line; the box grows with the text up
+//     to 320px; send is off until there is text, and one send at a time; at
+//     send the bot shield's proof is written in (BrowserProof: the signed render
+//     time, reversed, which only a script running the page can do).
 //   - the empty chat box TYPES example ideas into its placeholder
 //     ([data-typing-placeholder], a JSON list): one character at a time, a
 //     pause, erased, the next. Under prefers-reduced-motion it shows the first
@@ -29,6 +34,52 @@ Turbo.StreamActions.replace_url = function replaceUrl() {
   }
   requestAnimationFrame(() => document.querySelector("[data-cto-chat-form] textarea")?.focus());
 };
+
+const FIRST_FORM = "form[data-build-first-form]";
+
+function syncSend(form) {
+  const input = form.querySelector("[data-build-first-input]");
+  const send = form.querySelector("[data-build-first-send]");
+  if (input && send) send.disabled = form.dataset.sending === "true" || input.value.trim() === "";
+}
+
+document.addEventListener("input", (event) => {
+  const input = event.target.closest?.("[data-build-first-input]");
+  if (!input) return;
+  input.style.height = "auto";
+  input.style.height = `${Math.min(input.scrollHeight, 320)}px`;
+  syncSend(input.form);
+});
+
+document.addEventListener("keydown", (event) => {
+  const input = event.target.closest?.("[data-build-first-input]");
+  if (!input || event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+  event.preventDefault();
+  input.form.requestSubmit();
+});
+
+// Capture phase: before Turbo reads the form, so a refused send never posts.
+document.addEventListener("submit", (event) => {
+  const form = event.target.closest?.(FIRST_FORM);
+  if (!form) return;
+  const input = form.querySelector("[data-build-first-input]");
+  if (!input || input.value.trim() === "" || form.dataset.sending === "true") {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
+  const proof = form.querySelector("[data-build-proof]");
+  if (proof && !proof.value) proof.value = (proof.dataset.proof || "").split("").reverse().join("");
+  form.dataset.sending = "true";
+  syncSend(form);
+}, true);
+
+document.addEventListener("turbo:submit-end", (event) => {
+  const form = event.target.closest?.(FIRST_FORM);
+  if (!form) return;
+  delete form.dataset.sending;
+  syncSend(form);
+});
 
 const TYPE_MS = 50;
 const HOLD_MS = 1800;
