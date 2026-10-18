@@ -25,7 +25,7 @@
 # the app certainly exists; AppIntakeMove is idempotent and re-runnable).
 #
 # An incomplete intake is refused before anything is written (Incomplete, which
-# names what is missing in the checklist's words: Idea, CTO, Colors, Address,
+# names what is missing in the checklist's words: Idea, CTO, Theme, Domain,
 # Account).
 class AppLaunch
   class Incomplete < StandardError
