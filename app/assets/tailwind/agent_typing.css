@@ -1,0 +1,184 @@
+/* A pending answer's indicator (app/views/agent_chats/_typing.html.erb; task
+   chat-thinking-versus-typing). Two looks share one grid cell, so the swap from
+   thinking to typing never moves the page:
+
+   THINKING  the agent's portrait in a soft turning ring with a glow, and
+             "<Agent> is thinking" with a slow shimmer across it.
+   TYPING    a chat bubble on the agent's side with three wave dots, and
+             "<Agent> is typing".
+
+   data-phase on .agent-typing picks the look; the other fades out and is then
+   hidden (so it is not read aloud or matched as visible). Every loop runs on
+   one 2.4s beat (the wave is half of it), and app/javascript/agent_chat.js
+   sets --agent-typing-sync to the page clock's place in that beat on each
+   re-render, so a pulse that redraws the indicator does not restart its motion.
+   Theme tokens only. Under prefers-reduced-motion the ring and dots hold
+   still and the swap is instant. Unlayered, like agent_shell.css. */
+
+.agent-typing {
+  --agent-typing-beat: 2.4s;
+  --agent-typing-fade: 280ms;
+  --agent-typing-sync: 0ms;
+  display: grid;
+  align-items: center;
+  padding-block: 0.375rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--color-text-muted);
+}
+
+.agent-typing > .agent-typing-layer {
+  grid-area: 1 / 1;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  transition: opacity var(--agent-typing-fade) ease, transform var(--agent-typing-fade) ease, visibility 0s linear 0s;
+}
+
+.agent-typing[data-phase="thinking"] > .agent-typing-types,
+.agent-typing[data-phase="typing"] > .agent-typing-thinks {
+  opacity: 0;
+  transform: translateY(3px);
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--agent-typing-fade) ease, transform var(--agent-typing-fade) ease,
+    visibility 0s linear var(--agent-typing-fade);
+}
+
+.agent-typing-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Thinking: the portrait's ring and glow ─────────────────────────────── */
+
+.agent-typing-orbit {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  border-radius: 9999px;
+  padding: 3px;
+}
+
+.agent-typing-orbit::before,
+.agent-typing-orbit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* The ring: a primary arc fading to nothing, masked to a 2px band. */
+.agent-typing-orbit::before {
+  background: conic-gradient(
+    from 0deg,
+    rgb(var(--color-primary-rgb) / 0) 0deg,
+    rgb(var(--color-primary-rgb) / 0.25) 90deg,
+    rgb(var(--color-primary-rgb) / 0.95) 200deg,
+    rgb(var(--color-primary-rgb) / 0) 300deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+          mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  animation: agent-typing-spin var(--agent-typing-beat) linear infinite;
+  animation-delay: var(--agent-typing-sync);
+}
+
+/* The glow: a soft primary halo that breathes on the same beat. */
+.agent-typing-orbit::after {
+  box-shadow: 0 0 0.9rem 0.05rem rgb(var(--color-primary-rgb) / 0.35);
+  animation: agent-typing-breathe var(--agent-typing-beat) ease-in-out infinite;
+  animation-delay: var(--agent-typing-sync);
+}
+
+.agent-typing-orbit > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* The label's shimmer: a lighter band of the heading colour sweeping across. */
+.agent-typing-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-text-muted) 0%,
+    var(--color-text-muted) 38%,
+    var(--color-text) 50%,
+    var(--color-text-muted) 62%,
+    var(--color-text-muted) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: agent-typing-shimmer var(--agent-typing-beat) ease-in-out infinite;
+  animation-delay: var(--agent-typing-sync);
+}
+
+/* ── Typing: the bubble and its wave ────────────────────────────────────── */
+
+.agent-typing-bubble {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.3rem;
+  height: 2.25rem;
+  padding-inline: 0.875rem;
+  border-radius: 1rem 1rem 1rem 0.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+  margin-block: 2px;
+}
+
+.agent-typing-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 9999px;
+  background: rgb(var(--color-primary-rgb));
+  opacity: 0.45;
+  animation: agent-typing-wave calc(var(--agent-typing-beat) / 2) ease-in-out infinite;
+  animation-delay: var(--agent-typing-sync);
+}
+
+.agent-typing-dot:nth-child(2) { animation-delay: calc(var(--agent-typing-sync) + 150ms); }
+.agent-typing-dot:nth-child(3) { animation-delay: calc(var(--agent-typing-sync) + 300ms); }
+
+@keyframes agent-typing-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes agent-typing-breathe {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+@keyframes agent-typing-shimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: 0% 0; }
+}
+
+@keyframes agent-typing-wave {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30% { transform: translateY(-0.25rem); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-typing > .agent-typing-layer,
+  .agent-typing[data-phase] > .agent-typing-layer { transition: none; transform: none; }
+  .agent-typing-orbit::before,
+  .agent-typing-orbit::after,
+  .agent-typing-dot { animation: none; }
+  .agent-typing-orbit::after { opacity: 0.7; }
+  .agent-typing-shimmer {
+    animation: none;
+    background: none;
+    -webkit-text-fill-color: currentcolor;
+    color: var(--color-text-muted);
+  }
+  .agent-typing-dot:nth-child(2) { opacity: 0.7; }
+  .agent-typing-dot:nth-child(3) { opacity: 1; }
+}

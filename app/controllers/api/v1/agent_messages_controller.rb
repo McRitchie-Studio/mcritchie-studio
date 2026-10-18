@@ -108,7 +108,9 @@ module Api
       # 200: meta.typing is "queued", or why no pulse was sent ("not_typing_channel",
       # "not_answered", "capped"), and bin/dispatcher stops pulsing that run on
       # anything but "queued". The Discord call runs on the job, so a slow
-      # Discord never holds the dispatcher's main loop.
+      # Discord never holds the dispatcher's main loop. `phase` (optional) is a
+      # web chat run's thinking or typing; anything else, or none, is typing
+      # (AgentMessage.typing_phase).
       def typing
         refusal = @message.typing_refusal(worker: params[:worker])
         if refusal == "not_holder"
@@ -118,7 +120,10 @@ module Api
           ))
         end
 
-        AgentMessageTypingJob.perform_later(@message.id, params[:worker].to_s.strip) if refusal.nil?
+        if refusal.nil?
+          AgentMessageTypingJob.perform_later(@message.id, params[:worker].to_s.strip,
+                                              AgentMessage.typing_phase(params[:phase]))
+        end
         render_data({ "id" => @message.id }, meta: { typing: refusal || "queued" })
       end
 

@@ -16,6 +16,9 @@
 /* The agent shell's growth, compaction and entrances (agent_chats/_shell). */
 @import './agent_shell.css';
 
+/* A pending answer's thinking and typing looks (agent_chats/_typing). */
+@import './agent_typing.css';
+
 @config '../../../config/tailwind.config.js';
 
 /* The layer scale now comes from the ENGINE — see engine.css `-- Layer scale`,

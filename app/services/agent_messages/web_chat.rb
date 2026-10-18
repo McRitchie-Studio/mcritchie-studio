@@ -4,9 +4,10 @@ module AgentMessages
   # Turbo stream. WebIngest stores the message; everything after is here.
   #
   #   broadcast_turn(m, append: true)  a new turn, appended (CtoChatsController#create)
-  #   broadcast_typing(m)              one "typing…" pulse (AgentMessageTypingJob):
-  #                                    the page shows it and fades it after
-  #                                    TYPING_FADE seconds without another pulse
+  #   broadcast_typing(m, phase:)      one pulse (AgentMessageTypingJob): "<Agent>
+  #                                    is thinking" or "is typing"; the page shows
+  #                                    it and fades it after TYPING_FADE seconds
+  #                                    without another pulse
   #   deliver!(m)                      the answer (AgentMessageReplyJob): marked
   #                                    posted ONCE, then the turn replaced in place,
   #                                    typing cleared and the usage meter redrawn
@@ -59,18 +60,39 @@ module AgentMessages
       log(e, message, "turn")
     end
 
-    def broadcast_typing(message, now: Time.current)
-      # A /build thread's page shows typing from the poll instead (deliver! above).
-      return false if BuildIntake.thread?(message.thread_key)
+    # `phase`: "thinking" or "typing" (AgentMessage.typing_phase; the job has
+    # already allow-listed it, and it is allow-listed again here).
+    def broadcast_typing(message, phase: "typing", now: Time.current)
+      phase = AgentMessage.typing_phase(phase)
+      # A /build thread's page shows typing from the poll instead (deliver! below),
+      # so the phase is kept on the row for the poll's next render.
+      if BuildIntake.thread?(message.thread_key)
+        record_phase(message, phase)
+        return false
+      end
 
       # UPDATE, not replace: the slot (#cto-chat-typing, which carries the fade)
       # stays on the page, and only its contents change.
       Turbo::StreamsChannel.broadcast_update_to(stream_for(message), target: TYPING_TARGET, partial: "agent_chats/typing",
-                                                                     locals: { agent_name: agent_name(message), at: now })
+                                                                     locals: { agent_name: agent_name(message), at: now,
+                                                                               phase: phase, cto: cto_for(message) })
       true
     rescue StandardError => e
       log(e, message, "typing")
     end
+
+    # The phase on a still-claimed row's run_meta (build/_turn reads it through
+    # AgentMessage#typing_phase), in one statement that matches nothing once the
+    # answer is in: complete! replaces run_meta with the run's own summary, and a
+    # late pulse cannot write into a finished row.
+    def record_phase(message, phase)
+      AgentMessage.where(id: message.id, status: "claimed")
+                  .where("agent_messages.run_meta->>'typing_phase' IS DISTINCT FROM ?", phase)
+                  .update_all([ "run_meta = jsonb_set(COALESCE(run_meta, '{}'::jsonb), '{typing_phase}', to_jsonb(?::text))", phase ])
+    end
+
+    # The CTO the indicator's portrait shows (applications/_cto_avatar), or nil.
+    def cto_for(message) = AppOwnership.cto_for_app(message.channel_ref)
 
     # The answer, delivered once: the row is locked, a row with a
     # reply_external_id is never delivered again, and the mark is written before
