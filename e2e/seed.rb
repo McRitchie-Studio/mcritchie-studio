@@ -1790,3 +1790,24 @@ AgentMessage.where(channel: "web").destroy_all
 AgentPersonIdentity.where(platform: "web").delete_all
 AgentPerson.find_or_create_by!(user: admin) { |p| p.assign_attributes(display_name: "E2E Chat Owner", role: "owner") }
 puts "Seeded: the web chat's owner person"
+
+# A free-plan owner who already has one app and finishes a second intake
+# (e2e/build_launch_refusal.spec.js): Build My App is refused by the one-app
+# limit (AppRequest#one_free_app_per_account), and the refusal must land ON the
+# summary card. Their first app is a real launch (AppLaunch), so the card can
+# link to its CTO chat. The draft's token is fixed so the spec can open it.
+plan_palette = { "name" => "Pitch",
+                 "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },
+                 "dark" => { "primary" => "#4ade80", "accent" => "#fbbf24", "surface" => "#0b1220", "text" => "#f1f5f9" } }
+plan_owner = User.find_or_create_by!(email: "one-app@test.com") { |user| user.assign_attributes(name: "Pat Planner", role: "viewer") }
+plan_intake = { answers: { "idea" => "A checkers game", "title" => "Plan Checkers", "features" => [ "Play a friend" ] },
+                cto_name: "Hop", cto_avatar: "meadow", palette: plan_palette }
+first_app = AppRequest.create!(prompt: "A checkers game", user: plan_owner, **plan_intake)
+AppLaunch.new(first_app, subdomain: "plan-checkers").call!
+plan_draft = AppRequest.create!(prompt: "A second game", user: plan_owner, token: "e2e-plan-limit-draft",
+                                **plan_intake.merge(answers: { "idea" => "Star checkers", "title" => "Star Checkers" }), subdomain: "plan-star-checkers")
+AgentMessage.create!(channel: "web", external_id: "build:#{plan_draft.token}:1", channel_ref: "build",
+                     thread_key: BuildIntake.thread_key(plan_draft.token), soul_slug: BuildIntake.soul, content: "Let's use plan-star-checkers.",
+                     status: "completed", completed_at: Time.current, response_text: "Here's your app. Ready when you are.",
+                     intake_card: { "card" => "summary" })
+puts "Seeded: a free-plan owner with one app and a finished second draft"

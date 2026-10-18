@@ -72,9 +72,11 @@ class AppRequest < ApplicationRecord
   validates :tier, inclusion: { in: ->(_) { WorkspacePackage.keys } }
   validates :subdomain, presence: true, unless: :draft?
   validate :subdomain_is_claimable, if: -> { subdomain.present? && (new_record? || will_save_change_to_subdomain?) }
-  # Admins are exempt: Mr. McRitchie seeds the App Builder with showcase builds
-  # (his legacy apps) through the same funnel, and those are not customers.
-  validate :one_free_app_per_account, if: -> { user && !user.admin? && tier == "vibe" && HOLDING.include?(status) }
+  # The tier's apps-per-account limit (config/workspace_packages.yml
+  # `apps_per_account`; blank is unlimited, and every tier is today). Admins are
+  # exempt: Mr. McRitchie seeds the App Builder with showcase builds (his legacy
+  # apps) through the same funnel, and those are not customers.
+  validate :apps_per_account_limit, if: -> { user && !user.admin? && HOLDING.include?(status) }
   # The intake fields (/build as a chat with Xan, BuildIntake). Only a visitor's
   # tap writes them (BuildIntake::Choice), and each is held here to the same
   # rules the card was, so no path can store a value a card could not show.
@@ -88,6 +90,13 @@ class AppRequest < ApplicationRecord
 
   scope :holding, -> { where(status: HOLDING) }
   scope :recent, -> { order(created_at: :desc) }
+
+  # The refusal when an account already holds its tier's apps
+  # (apps_per_account_limit). BuildController reads the :apps_per_account error
+  # detail to offer the app they have and the plans.
+  def self.apps_limit_message(plan_name, limit)
+    "Your #{plan_name} plan includes #{limit} #{'app'.pluralize(limit)}, and you already have #{limit == 1 ? 'one' : limit}."
+  end
 
   def self.reserved_names
     satellites = Rails.root.join("config/satellites.yml")
@@ -269,9 +278,15 @@ class AppRequest < ApplicationRecord
     errors.add(:subdomain, reason) if reason
   end
 
-  def one_free_app_per_account
-    others = self.class.holding.where(user: user, tier: "vibe")
+  def apps_per_account_limit
+    package = WorkspacePackage.find(tier)
+    limit = package&.apps_per_account
+    return if limit.nil?
+
+    others = self.class.holding.where(user: user, tier: tier)
     others = others.where.not(id: id) if persisted?
-    errors.add(:base, "Your free plan includes one app, and you already have one.") if others.exists?
+    return if others.count < limit
+
+    errors.add(:base, :apps_per_account, message: self.class.apps_limit_message(package.name, limit))
   end
 end

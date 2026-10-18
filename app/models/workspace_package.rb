@@ -136,6 +136,9 @@ class WorkspacePackage
   # tasks may be in `building` at once, a positive integer, or nil for unlimited
   # (BuildingLanes, docs/agents/system/client-pipeline.md).
   attr_reader :building_lanes
+  # How many apps one account may hold on this tier (config `apps_per_account`):
+  # a positive integer, or nil for unlimited (AppRequest#apps_per_account_limit).
+  attr_reader :apps_per_account
 
   def initialize(attrs, annual_discount_percent: 0)
     @key = attrs.fetch("key")
@@ -155,6 +158,8 @@ class WorkspacePackage
     @cto_monthly_tokens = tokens.is_a?(Integer) && tokens.positive? ? tokens : nil
     lanes = attrs["building_lanes"]
     @building_lanes = lanes.is_a?(Integer) && lanes.positive? ? lanes : nil
+    apps = attrs["apps_per_account"]
+    @apps_per_account = apps.is_a?(Integer) && apps.positive? ? apps : nil
   end
 
   # The CTO usage settings (config `cto_usage`): warn_percent and topup.
