@@ -202,11 +202,14 @@ class AppRequestTest < ActiveSupport::TestCase
     entry = BuildGallery.showcased.find { |e| e.url.include?("zz-no-screenshot") }
 
     assert entry
-    assert_nil entry.image, "no file at build_gallery/zz-no-screenshot.jpg, so no image"
-    assert_equal "build_gallery/cyvasse.jpg", BuildGallery.configured.find { |e| e.name == "Cyvasse" }.image
+    assert_nil entry.image, "no file at build_gallery/zz-no-screenshot.webp, so no image"
+    assert_nil entry.motion, "nor a loop"
+    cyvasse = BuildGallery.configured.find { |e| e.name == "Cyvasse" }
+    assert_equal "build_gallery/cyvasse.webp", cyvasse.image
+    assert_equal "build_gallery/cyvasse.mp4", cyvasse.motion
   end
 
-  test "each showcase rebuild's live card carries its screenshot" do
+  test "each showcase rebuild's live card carries its dark still and its hover loop" do
     %w[prisoners-dilemma weekly-lock rantly portfolio 10and5 search-position].each_with_index do |subdomain, i|
       # These names are reserved satellites, so queue! refuses them; queue a
       # placeholder and give it the real subdomain, as production holds it.
@@ -215,7 +218,8 @@ class AppRequestTest < ActiveSupport::TestCase
       entry = BuildGallery.showcased.find { |e| e.url == "https://#{subdomain}.mcritchie.studio" }
 
       assert entry, "#{subdomain} is in the gallery"
-      assert_equal "build_gallery/#{subdomain}.jpg", entry.image, "#{subdomain} has a screenshot"
+      assert_equal "build_gallery/#{subdomain}.webp", entry.image, "#{subdomain} has a dark-mode still"
+      assert_equal "build_gallery/#{subdomain}.mp4", entry.motion, "#{subdomain} has a hover loop"
     end
   end
 

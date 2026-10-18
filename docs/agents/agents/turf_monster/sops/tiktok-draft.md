@@ -184,7 +184,7 @@ new draft of that clip for 15 minutes.
 
 ### The admin session
 
-An admin session belongs to an admin soul (Xan or Steffon) and lasts 8 hours.
+An admin session belongs to an admin soul (Ray or Steffon) and lasts 8 hours.
 The board grants it. Ask, from the session that will draft:
 
 ```bash

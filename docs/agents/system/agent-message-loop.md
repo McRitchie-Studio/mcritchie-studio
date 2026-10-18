@@ -9,8 +9,8 @@ admin can chat with the app's CTO on McRitchie Studio itself (below, "Web chat")
 Two domain front doors are routed,
 Avi (`avi`, McRitchie Studio's CTO, Alex 2026-10-15) and Turf (`turf_monster`,
 Turf Monster), and each may PROPOSE what its domain's catalog allows, for the
-owner to confirm by reply (below, "Proposals and confirm"). Xan stays routed as a
-helper (orchestration, docs review) with no catalog. Avi and Xan keep one
+owner to confirm by reply (below, "Proposals and confirm"). Ray stays routed as a
+helper (orchestration, docs review) with no catalog. Avi and Ray keep one
 read-only action each, the same board read (`bin/task list`). Later phases add channels, agents and clients without
 changing the tables: `channel` plus a provider-neutral `external_id` name every
 row.
@@ -140,7 +140,7 @@ override's `default_soul`. A message that meets none of these is dropped without
 being stored: across a whole guild, keeping it would hoard everyone's chatter. A
 reply to a kept message that itself had no soul is kept `unrouted`, visible and
 never handed to a worker. Among several mentioned souls, the one written first
-wins. One shared bot with `@Avi`/`@Xan` roles and one bot user per soul both
+wins. One shared bot with `@Avi`/`@Ray` roles and one bot user per soul both
 work; the config lists either.
 
 **Held: the agents answer the owner, with two narrow exceptions.** `config/agent_answerers.yml` lists
@@ -425,12 +425,12 @@ is built, not when the note was filed (`AgentPersonNote.visible_for`):
   such as his favorite color, is true whichever agent hears it, so a note Turf
   files is in Avi's USER layer too. A fact filed in two domains is shown once.
 - **Client and public.** A soul reads only the notes filed in its own domain.
-  What a Turf client told Turf stays with Turf's souls; Avi, Xan and the other
+  What a Turf client told Turf stays with Turf's souls; Avi, Ray and the other
   `mcritchie_studio` souls never see it, and Turf never sees what that person told
-  Xan.
+  Ray.
 
 The conversation history (the PERSON layer) is per person per soul either way:
-Avi does not see what Alex told Xan.
+Avi does not see what Alex told Ray.
 
 **Notes.** The USER layer has a writer: the answer itself. The prompt lets the
 model end its reply with a line reading exactly `===NOTES===`, then a JSON array
@@ -601,7 +601,7 @@ board and the worker read one file the same way). Each domain names its `soul`
 | `operate` | empty | Phase 2 (a confirmed SOP, headless in a desk) |
 | `change` | both domains (`repo`, `default_shape`) | A `designed` board task (title, kind, shape, accept, test, risk) with the Discord link in `devops.source_thread`. A session still starts the builder |
 
-Only the front door has a catalog. Xan (and every other studio soul) maps to the
+Only the front door has a catalog. Ray (and every other studio soul) maps to the
 studio domain for its DOMAIN layer and proposes nothing. An `internal: true` domain (Commercial Welding) has no
 catalog and no prompt names it. Turf Monster has no aggregate entries endpoint the
 hub can read, so there is no entries-for-week ask yet.
@@ -706,7 +706,7 @@ short reason (an error class, never a message that could carry a secret).
 
 **Replies come from the front door's own bot** once its token is set
 (`DISCORD_BOT_TOKEN_AVI`, `DISCORD_BOT_TOKEN_TURF_MONSTER`; above, "Which bot
-replies"); until then they post through Xan's shared bot, signed by the domain's
+replies"); until then they post through Ray's shared bot, signed by the domain's
 `reply_name` (`**Turf** · …`). Avi is routed by a mention of his own
 Discord app's bot user (`1560516264378507334`, 1Password `agents.discord.avi`,
 in the McRitchie guild, reply-only permissions); Turf by a mention of the
@@ -1115,13 +1115,13 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
 - **Not yet:** audio and video, Discord attachments, office files, a sweep of
   and uploads never sent.
 
-## Build intake: Xan answers the public on /build
+## Build intake: Ray answers the public on /build
 
-`/build` is a chat with Xan, shown as Ray (designs: `.agents/epics/build-with-xan-design.md`,
+`/build` is a chat with Ray (designs: `.agents/epics/build-with-xan-design.md`,
 `build-with-ray-v2.md`). A visitor, signed in or not, tells Ray what they want to
 build; Ray asks for the idea (at most two follow-ups), a CTO, colors and an address,
-one card at a time, and the visitor's taps fill the status card. **Build my app** asks
-for sign-in only then; it launches through `AppLaunch`.
+one card at a time, and the visitor's taps fill the status card. Ray's summary card
+carries **Build My App**, which asks for sign-in only then; it launches through `AppLaunch`.
 
 - **The page** is the agent shell (`app/views/agent_chats/_shell.html.erb`): Ray's
   portrait, a status slot, the thread, the chat box. The status slot
@@ -1143,11 +1143,11 @@ for sign-in only then; it launches through `AppLaunch`.
   A signed-out visitor writes as the request's own public person (web identity
   `build:<token>`); signed in, as their user's web person. Signing in adopts the draft,
   and the thread continues.
-- **Who is answered.** `config/agent_answerers.yml` `public_intake:` lets its soul (Xan)
+- **Who is answered.** `config/agent_answerers.yml` `public_intake:` lets its soul (Ray)
   answer ANY person, but only on a `web` row whose thread key starts with `web:build:`
   (the prefix is pinned in code; `AgentMessages::Answerers#intake?` and its SQL twin in
   `#sql_guard`). Nowhere else is the public answered. The public still gets no action
-  (`Audience#may?(:read_action)` is owner and team) and Xan has no catalog.
+  (`Audience#may?(:read_action)` is owner and team) and Ray has no catalog.
 - **Caps** (`BuildIntake::Caps`, from the same block), checked at ingest before a row is
   answerable: 12 answers per request signed out (40 signed in), 20 signed-out answers per
   visitor IP per hour (the IP is stored only as a keyed hash), 400 signed-out answers per
@@ -1157,10 +1157,13 @@ for sign-in only then; it launches through `AppLaunch`.
   honeypot (a hit stores nothing) and a signed render time the page's script writes in.
   A first message without it, or under two seconds, is stored `held` with a `bot_shield`
   event and never answered; the visitor reads "send it again".
-- **Cards.** Xan's prompt gains an INTAKE section (`ContextBuilder#intake_block`): the
+- **Cards.** Ray's prompt gains an INTAKE section (`ContextBuilder#intake_block`): the
   playbook from `docs/agents/agents/xan/intake.md`, the request's state from the bundle's
-  `intake` key (`BuildIntake::Context`), and the card format. Xan offers a card as a
-  PROPOSAL block of kind `intake` (`idea`, `cto`, `palette`, `address`). On a build thread
+  `intake` key (`BuildIntake::Context`), and the card format. Ray offers a card as a
+  PROPOSAL block of kind `intake` (`idea`: a title and 2 to 3 key features; `cto`;
+  `palette`, which the visitor reads as the theme; `address`, read as the domain;
+  `summary`, no fields). Once every step is set, an answer that offered no card gets
+  the `summary` card from code, so Build My App is always in the thread. On a build thread
   `AgentMessage#complete!` hands the block to `BuildIntake::Card.record_from!` instead of
   `AgentProposal`: names, hex colours and WCAG text-on-surface contrast (4.5:1, light and
   dark) are checked, unknown fields refuse the card, and the checked copy is stored on
@@ -1169,7 +1172,12 @@ for sign-in only then; it launches through `AppLaunch`.
 - **Taps** (`BuildIntake::Choice`, `PATCH /build/:token/intake`) are the only writes to
   `app_requests.cto_name`, `cto_avatar` (a `BuildIntake::Portraits` key), `palette` and
   `answers`, and the subdomain; each value is checked again on the server, and a palette
-  or idea is read from the stored card, never from the post.
+  or idea is read from the stored card, never from the post. **Every tap also speaks**
+  (`.agents/epics/build-with-ray-v2.md`, 2-5): once the field is saved, the tap posts the
+  visitor's turn ("Let's build ...", "My CTO is ...") into the thread through
+  `BuildIntake::Ingest`, in the same transaction, so the dispatcher answers it with the
+  next step within the caps; a refused tap posts nothing, and a double tap posts once
+  (one client id). "Build something else" (`idea_else`) sets nothing and only relays.
 - **Delivery.** A signed-out visitor has no `/cable` socket, so the page polls
   (`GET /build/:token/turns`, `app/javascript/build_chat.js`) while a turn is pending;
   `WebChat.deliver!` marks a build-thread answer posted without a broadcast.
@@ -1466,9 +1474,9 @@ Nothing reads Discord until a bot token is set. The code ships inert.
 - **The client's own half** (server, `#agents` channel, mentionable roles,
   Developer Mode, the IDs): the public guide at `/integrations/discord`
   (`app/views/integrations/discord.html.erb`).
-- **Our own live test** (2026-10-14) uses Xan's own bot, not roles: the whole
+- **Our own live test** (2026-10-14) uses Ray's own bot, not roles: the whole
   McRitchie Studio guild (`1332466565203103744`, no channel entries), and the soul
-  `xan` routed by a mention of the Xan bot user (`users`, not `roles`). The ids
+  `xan` routed by a mention of the Ray bot user (`users`, not `roles`). The ids
   are in `config/agent_routes.yml`. `DISCORD_AGENT_BOT_TOKEN` is set from
   `agents.discord.xan` on `mcritchie-studio` only
   ([`credential-inventory.md`](../modules/credential-inventory.md)).
@@ -1476,17 +1484,17 @@ Nothing reads Discord until a bot token is set. The code ships inert.
 ## Test protocol
 
 Post in any channel or thread of the McRitchie Studio guild (`lobster-tank` is the
-quiet one), mentioning the Xan bot user (`@Xan`). The gateway stores it within a
+quiet one), mentioning the Ray bot user (`@Ray`). The gateway stores it within a
 second or two; with the dispatcher installed the answer follows and nothing else is needed;
 the rows below run the heartbeat by hand, with the dispatcher stopped
-(`bin/dispatcher uninstall`) so the two do not compete. Avi, Xan and Turf are
-routed there; the rows use Xan, and any routed soul works the same way.
+(`bin/dispatcher uninstall`) so the two do not compete. Avi, Ray and Turf are
+routed there; the rows use Ray, and any routed soul works the same way.
 
 | Scenario | Do | Expect |
 |----------|----|--------|
-| Serial | Post `@Xan what is building?`. Run `bin/heartbeat xan --channel discord`, then run it again | The first run answers in the channel; the second prints `nothing for xan` |
-| Parallel | Post `@Xan one` and `@Xan two` as separate messages. Start two `bin/heartbeat xan --channel discord --once` at the same moment | Each message is answered once. Neither is read twice and no reply is doubled |
-| Two agents | Needs a second soul routed in the guild (a role, or a second bot user such as Mack's). Then post to each and run `bin/heartbeat xan --channel discord` | Xan answers only its own message; the other stays `received` until that soul's heartbeat runs |
+| Serial | Post `@Ray what is building?`. Run `bin/heartbeat xan --channel discord`, then run it again | The first run answers in the channel; the second prints `nothing for xan` |
+| Parallel | Post `@Ray one` and `@Ray two` as separate messages. Start two `bin/heartbeat xan --channel discord --once` at the same moment | Each message is answered once. Neither is read twice and no reply is doubled |
+| Two agents | Needs a second soul routed in the guild (a role, or a second bot user such as Mack's). Then post to each and run `bin/heartbeat xan --channel discord` | Ray answers only its own message; the other stays `received` until that soul's heartbeat runs |
 | Unaddressed | Post a message that mentions nobody and replies to nothing | No row is stored; the admin page does not list it |
 
 The inbound half (guild scope, the addressed-only filter, overrides, the backstop)

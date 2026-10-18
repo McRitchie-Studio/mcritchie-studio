@@ -42,7 +42,7 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert task.metadata.dig("devops", "agent_context").end_with?(AppRequest::BUILDER_POINTER)
 
     handover = result.handover
-    assert_equal [ "web", "pawsome", "web:pawsome:#{users(:viewer).id}", "client_cto", "completed", "Xan" ],
+    assert_equal [ "web", "pawsome", "web:pawsome:#{users(:viewer).id}", "client_cto", "completed", "Ray" ],
                  [ handover.channel, handover.channel_ref, handover.thread_key, handover.soul_slug, handover.status, handover.author_name ]
     assert_equal "Meet Nova, your CTO. I'll hand you over.", handover.content
   end
@@ -96,8 +96,8 @@ class AppLaunchTest < ActiveSupport::TestCase
       [ "CTO" ] => client_intake(cto_name: "  "),
       [ "Idea" ] => client_intake(answers: { "audience" => "Dog owners" }),
       [ "Idea", "CTO" ] => client_intake(cto_avatar: nil, answers: nil),
-      [ "Colors" ] => client_intake(palette: { "light" => PALETTE["light"] }),
-      [ "CTO", "Colors" ] => client_intake(cto_name: nil, palette: nil)
+      [ "Theme" ] => client_intake(palette: { "light" => PALETTE["light"] }),
+      [ "CTO", "Theme" ] => client_intake(cto_name: nil, palette: nil)
     }
     cases.each do |missing, intake|
       assert_no_difference [ -> { App.count }, -> { Task.count }, -> { AgentMessage.count } ] do
@@ -106,7 +106,7 @@ class AppLaunchTest < ActiveSupport::TestCase
       end
     end
 
-    assert_equal [ "Address" ], AppLaunch.new(draft, subdomain: "!!", intake: client_intake).missing
+    assert_equal [ "Domain" ], AppLaunch.new(draft, subdomain: "!!", intake: client_intake).missing
     assert_equal [ "Account" ], AppLaunch.new(AppRequest.create!(prompt: "x"), subdomain: "pawsome", intake: client_intake).missing
     assert_equal 0, AppRequest.where(status: "queued").count
   end

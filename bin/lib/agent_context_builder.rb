@@ -63,6 +63,7 @@ module AgentMailbox
     }.freeze
     CUT = " …[cut to budget]"
     DOMAINS_PATH = "config/agent_domains.yml"
+    SOULS_PATH = "config/souls.yml"
     # What a place label may look like: "[discord #release-notes]",
     # "[discord thread in #desk]", "[discord channel 123]", "[email]".
     PLACE = /\A\[[a-z]+(?: [a-z0-9 #_-]{1,80})?\]\z/
@@ -272,7 +273,7 @@ module AgentMailbox
     # outside the fence, except the confirmed idea, which is fenced), and how to
     # write an intake card. Empty on every thread that is not a /build thread.
     INTAKE_DOC = "docs/agents/agents/xan/intake.md"
-    INTAKE_FALLBACK = "Help the visitor set up their app: the idea, their CTO, their colors and their address, " \
+    INTAKE_FALLBACK = "Help the visitor set up their app: the idea, their CTO, their theme and their domain, " \
                       "one question at a time."
 
     def intake_block
@@ -300,11 +301,14 @@ module AgentMailbox
         #{idea.empty? ? '  (not confirmed yet)' : fenced(JSON.generate(idea))}
         - INTAKE CARD (at most one per reply). To show the visitor a card, end your reply with a line
           reading exactly #{ProposalBlock::DELIMITER}, then ONE JSON object of kind "intake". The cards:
-          {"kind": "intake", "card": "idea", "idea": "one sentence", "audience": "who it is for", "day_one": "the one thing"}
+          {"kind": "intake", "card": "idea", "title": "Four To Six Word Title", "features": ["key feature", "key feature", "key feature"], "idea": "one sentence"}
           {"kind": "intake", "card": "cto", "names": ["Name", "Name", "Name"], "portrait": "#{portraits.first || 'harbor'}"}
           {"kind": "intake", "card": "palette", "palettes": [{"name": "Harbor", "light": {"primary": "#1d4ed8", "accent": "#f59e0b", "surface": "#ffffff", "text": "#111827"}, "dark": {"primary": "#60a5fa", "accent": "#fbbf24", "surface": "#0f172a", "text": "#f1f5f9"}}]}
           {"kind": "intake", "card": "address", "names": ["short-name", "other-name"]}
-          Portrait keys: #{portraits.join(', ')}. Up to three names, palettes or addresses per card. Use no
+          {"kind": "intake", "card": "summary"}
+          Portrait keys: #{portraits.join(', ')}. Up to three names, palettes or domains per card; two or three
+          features, each under 80 characters; a title of four to six words. The summary card takes no fields:
+          the page draws it from what the visitor chose, with the Build My App button. Use no
           other fields. Everything from #{ProposalBlock::DELIMITER} on is removed before your reply is shown; code checks
           the card (names, hex colors, text contrast) and drops anything that fails. Never write a NOTES
           section or any other proposal in this chat.
@@ -605,7 +609,20 @@ module AgentMailbox
     def display_name
       return safe_name(persona["name"], "the CTO") if client_cto?
 
-      @soul.split("_").map(&:capitalize).join(" ")
+      roster_name || @soul.split("_").map(&:capitalize).join(" ")
+    end
+
+    # The soul's display name from the roster (config/souls.yml `name`), which can
+    # differ from its slug: the slug `xan` reads "Ray". Nil when the roster is
+    # unreadable or does not name the soul, so the slug-derived name stands.
+    def roster_name
+      path = File.join(@repo_root, SOULS_PATH)
+      souls = File.file?(path) ? YAML.safe_load_file(path, aliases: false)&.fetch("souls", nil) : nil
+      row = Array(souls).find { |s| s.is_a?(Hash) && s["slug"] == @soul }
+      name = row && row["name"].to_s.strip
+      name.nil? || name.empty? ? nil : name
+    rescue Psych::Exception
+      nil
     end
 
     def client_cto? = @soul == CLIENT_CTO

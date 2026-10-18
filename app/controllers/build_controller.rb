@@ -19,7 +19,8 @@
 #   POST  /build/:token/messages   one more message to Ray
 #   GET   /build/:token/turns      the poll: pending turns and the status card,
 #                                  as Turbo Streams (no /cable socket signed out)
-#   PATCH /build/:token/intake     a tap on an intake card (BuildIntake::Choice)
+#   PATCH /build/:token/intake     a tap on an intake card (BuildIntake::Choice):
+#                                  sets the field and relays the visitor's turn
 #   PATCH /build/:token            Build my app: claim the subdomain and queue
 #
 # WHO MAY USE A DRAFT is whoever holds its secret token until it belongs to an
@@ -186,21 +187,29 @@ class BuildController < ApplicationController
     render turbo_stream: streams + [ replace_checklist ]
   end
 
-  # A tap on an intake card: the only write to an intake field.
+  # A tap on an intake card: the only write to an intake field, and the
+  # visitor's turn it relays to Ray (BuildIntake::Choice), so Ray answers with
+  # the next step without the visitor typing. The stream redraws the card, adds
+  # the relayed turn (pending, so the page polls for Ray's answer) and the checklist.
   def choose
     error = nil
+    choice = BuildIntake::Choice.new(@app_request, user: (current_user if logged_in?), ip: request.remote_ip)
     rescue_and_log(target: @app_request) do
-      BuildIntake::Choice.new(@app_request).apply!(params[:field].to_s, params)
+      choice.apply!(params[:field].to_s, params)
     rescue BuildIntake::Choice::Refused => e
       error = e.message
       @app_request.reload
     end
     card = AgentMessage.find_by(id: params[:message_id].to_s[/\A\d{1,18}\z/], channel: "web",
                                 thread_key: BuildIntake.thread_key(@app_request.token))
+    relay = error ? nil : choice.relay
     respond_to do |format|
       format.turbo_stream do
         streams = [ replace_checklist ]
         streams << turbo_stream.replace("build-turn-#{card.id}", partial: "build/turn", locals: { message: card, request_row: @app_request, error: error }) if card
+        # Removed first: a double tap finds the turn its first tap posted (one
+        # client id), and the log never shows it twice.
+        streams.push(turbo_stream.remove("build-turn-#{relay.id}"), append_turn(relay)) if relay
         render turbo_stream: streams, status: error ? :unprocessable_content : :ok
       end
       format.html { redirect_to build_request_path(@app_request.token), alert: error, status: :see_other }
@@ -218,7 +227,7 @@ class BuildController < ApplicationController
     end
     name = params.dig(:app_request, :subdomain).presence || @app_request.subdomain
     unless @app_request.intake_complete? || current_user.admin?
-      redirect_to build_request_path(@app_request.token), alert: "Finish setting up your app first.", status: :see_other
+      redirect_to build_request_path(@app_request.token), alert: "Finish the steps first.", status: :see_other
       return
     end
     @app_request.user ||= current_user

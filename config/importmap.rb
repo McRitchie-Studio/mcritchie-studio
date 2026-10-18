@@ -27,3 +27,4 @@ pin "chartkick", to: "chartkick.esm.js" # @5.0.1
 # modules (live_fx, release_fx, ticker, colors) and the *_dom modules that wire them to
 # the page. The partials that need them import the *_dom entry.
 pin_all_from "app/javascript/board", under: "board"
+pin "gallery_motion"

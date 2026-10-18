@@ -207,7 +207,9 @@ class AppRequest < ApplicationRecord
   # made before /build became a chat. Read by queue! and AppLaunch.
   def intake_context
     lines = []
+    lines << "App: #{answers['title']}" if answers.is_a?(Hash) && answers["title"].present?
     lines << "Sharpened idea: #{answers['idea']}" if answers.is_a?(Hash) && answers["idea"].present?
+    lines << "Key features: #{Array(answers['features']).join('; ')}" if answers.is_a?(Hash) && answers["features"].present?
     lines << "For: #{answers['audience']}" if answers.is_a?(Hash) && answers["audience"].present?
     lines << "Day one: #{answers['day_one']}" if answers.is_a?(Hash) && answers["day_one"].present?
     lines << "CTO: #{cto_name} (portrait #{cto_avatar})" if cto_name.present?
@@ -235,12 +237,18 @@ class AppRequest < ApplicationRecord
   def answers_are_text
     return errors.add(:answers, "must be a map") unless answers.is_a?(Hash)
 
-    unknown = answers.keys - BuildIntake::Card::TEXT_LIMITS.keys
+    unknown = answers.keys - BuildIntake::Card::TEXT_LIMITS.keys - %w[features]
     errors.add(:answers, "has unknown field(s) #{unknown.join(', ')}") if unknown.any?
     BuildIntake::Card::TEXT_LIMITS.each do |key, limit|
       value = answers[key]
       errors.add(:answers, "#{key} must be text under #{limit} characters") unless value.nil? || (value.is_a?(String) && value.length <= limit)
     end
+    features = answers["features"]
+    return if features.nil?
+    return if features.is_a?(Array) && features.size <= BuildIntake::Card::FEATURES.max &&
+              features.all? { |f| f.is_a?(String) && f.length <= BuildIntake::Card::FEATURE_LIMIT }
+
+    errors.add(:answers, "features must be up to #{BuildIntake::Card::FEATURES.max} short lines")
   end
 
   def normalize

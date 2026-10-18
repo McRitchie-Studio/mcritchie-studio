@@ -479,7 +479,7 @@ class DreamBankTest < Minitest::Test
       assert_includes index, "2 dreams."
       assert_includes index, "## Platform (1)"
       assert_includes index, "## Carl (1)\n\nLoads at: `bin/dream carl`"
-      assert_includes index, "## Xan (1)"
+      assert_includes index, "## Ray (1)", "the roster names the xan soul Ray"
       assert_equal 2, index.scan("| [`review`](carl/review.md) | Carl \\| Xan? | topic: review, merge | approved |").size
       refute_includes index, "## Jasper"
     end

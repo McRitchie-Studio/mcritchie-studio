@@ -1,30 +1,35 @@
 <%# locals: (card:, message:, request_row:) %>
-<%# The address card: Xan's suggestions, a field cleaned as they type, and the live availability check (/build/check, the same probe the name step used; build_chat.js). The server checks again on the tap and again at Build (queue!), so the live answer is advice, not a lock. %>
-<% initial = request_row.subdomain || card["names"].first %>
-<%= form_with url: build_request_intake_path(request_row.token), method: :patch,
-      class: "rounded-2xl border #{request_row.subdomain ? 'border-primary' : 'border-subtle'} bg-surface p-3 sm:p-4 space-y-3",
-      data: { test: "build-card-address", build_address: build_check_path } do %>
-  <%= hidden_field_tag :field, "address" %>
-  <%= hidden_field_tag :message_id, message.id %>
-  <p class="text-xs font-semibold uppercase tracking-wider text-muted">Your address</p>
+<%# The domain card (stored as kind "address"): Ray's suggestions as chips, each checked live on arrival (/build/check; build_chat.js disables one we know is taken). Tapping an available suggestion IS the choice: it sets the domain and relays the visitor's turn, and Ray answers with the summary and Build My App. A name of their own goes through the field below, cleaned as they type and checked live. The server checks again on every tap and again at Build, so the live answer is advice, not a lock. %>
+<% chosen = request_row.subdomain %>
+<div class="rounded-2xl border <%= chosen ? 'border-primary' : 'border-subtle' %> bg-surface p-3 sm:p-4 space-y-3" data-test="build-card-address">
+  <p class="text-xs font-semibold uppercase tracking-wider text-muted">Pick a domain</p>
   <div class="flex flex-wrap gap-2">
     <% card["names"].each do |name| %>
-      <button type="button" class="rounded-full border border-subtle px-3 py-1 font-mono text-xs text-body hover:border-primary aria-pressed:border-primary aria-pressed:text-heading"
-              aria-pressed="<%= name == initial %>" data-build-address-pick="<%= name %>" data-test="build-address-suggestion"><%= name %></button>
+      <%= form_with url: build_request_intake_path(request_row.token), method: :patch, data: { build_domain_chip: build_check_path } do %>
+        <%= hidden_field_tag :field, "address" %>
+        <%= hidden_field_tag :message_id, message.id %>
+        <%= hidden_field_tag :subdomain, name %>
+        <%= hidden_field_tag :client_id, SecureRandom.uuid %>
+        <button type="submit" class="rounded-full border border-subtle px-3 py-1.5 font-mono text-xs text-body hover:border-primary aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-heading disabled:opacity-50 disabled:line-through disabled:cursor-not-allowed"
+                aria-pressed="<%= name == chosen %>" data-build-domain-name="<%= name %>" data-test="build-address-suggestion"><%= name %>.mcritchie.studio</button>
+      <% end %>
     <% end %>
   </div>
-  <label class="block">
-    <span class="sr-only">App address</span>
-    <span class="flex items-stretch rounded-xl border border-subtle focus-within:border-primary overflow-hidden">
-      <input type="text" name="subdomain" value="<%= initial %>" required autocomplete="off" spellcheck="false" autocapitalize="none"
-             class="min-w-0 flex-1 bg-transparent px-3 py-2 font-mono text-sm text-heading focus:outline-none"
-             data-build-address-input data-test="build-address-input">
-      <span class="hidden sm:flex items-center pr-3 text-muted font-mono text-xs whitespace-nowrap">.mcritchie.studio</span>
-    </span>
-  </label>
-  <p class="text-xs min-h-4 data-[state=available]:text-success-ink data-[state=taken]:text-danger-ink text-muted" aria-live="polite"
-     data-build-address-status data-test="build-address-availability"></p>
-  <button type="submit" class="btn btn-primary btn-sm" data-build-address-submit data-test="build-choose-address">
-    <%= request_row.subdomain ? "Update address" : "Use this address" %>
-  </button>
-<% end %>
+  <%= form_with url: build_request_intake_path(request_row.token), method: :patch, class: "space-y-2", data: { build_address: build_check_path } do %>
+    <%= hidden_field_tag :field, "address" %>
+    <%= hidden_field_tag :message_id, message.id %>
+    <%= hidden_field_tag :client_id, SecureRandom.uuid %>
+    <label class="block">
+      <span class="block text-xs text-muted mb-1">Or type your own</span>
+      <span class="flex items-stretch rounded-xl border border-subtle focus-within:border-primary overflow-hidden">
+        <input type="text" name="subdomain" value="<%= chosen if chosen && !card["names"].include?(chosen) %>" required autocomplete="off" spellcheck="false" autocapitalize="none"
+               aria-label="Your own domain" class="min-w-0 flex-1 bg-transparent px-3 py-2 font-mono text-sm text-heading focus:outline-none"
+               data-build-address-input data-test="build-address-input">
+        <span class="hidden sm:flex items-center pr-3 text-muted font-mono text-xs whitespace-nowrap">.mcritchie.studio</span>
+      </span>
+    </label>
+    <p class="text-xs min-h-4 data-[state=available]:text-success-ink data-[state=taken]:text-danger-ink text-muted" aria-live="polite"
+       data-build-address-status data-test="build-address-availability"></p>
+    <button type="submit" class="btn btn-secondary btn-sm" data-build-address-submit data-test="build-choose-address">Use this domain</button>
+  <% end %>
+</div>

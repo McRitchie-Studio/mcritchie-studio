@@ -14,7 +14,8 @@
 #             proposal). BuildIntake::Card checks it in code; a card that fails is
 #             an `intake_refused` event and is never shown
 #   taps      BuildIntake::Choice writes cto_name, cto_avatar, palette, answers or
-#             the subdomain, each re-validated on the server
+#             the subdomain, each re-validated on the server, and relays the
+#             visitor's turn into the thread so Xan answers with the next step
 #   who       Xan answers the public here and nowhere else, within BuildIntake::Caps
 #             (AgentMessages::Answerers, config/agent_answerers.yml `public_intake`)
 module BuildIntake

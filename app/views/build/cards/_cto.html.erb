@@ -1,47 +1,56 @@
 <%# locals: (card:, message:, request_row:) %>
-<%# The CTO card: Xan's names (or one the visitor types) and the portrait grid (BuildIntake::Portraits, twelve original placeholders), one form, one tap. Upload is a placeholder until chat media lands. Works without JavaScript: plain radios. %>
+<%# The CTO card, "Meet your CTO": the portrait on the left (tap it, or New image, to open the picker of BuildIntake::Portraits), the name Ray suggested PREFILLED in an input the visitor may edit (his other names offered as suggestions), and Build App, which saves both and relays the visitor's turn so Ray moves on to the theme (BuildIntake::Choice "cto"). The picker is a native dialog inside the form (build_chat.js opens it and swaps the preview); its radios submit with the form, so a pick needs no extra request. %>
 <% keys = BuildIntake::Portraits::KEYS %>
-<% picked_name = card["names"].include?(request_row.cto_name) ? request_row.cto_name : card["names"].first %>
+<% picked_name = request_row.cto_name.presence || card["names"].first %>
 <% picked_portrait = BuildIntake::Portraits.key?(request_row.cto_avatar) ? request_row.cto_avatar : (card["portrait"] || BuildIntake::Portraits.default_for(request_row.token)) %>
 <% chosen = request_row.cto_name.present? %>
+<% list_id = "build-cto-names-#{message.id}" %>
 <%= form_with url: build_request_intake_path(request_row.token), method: :patch,
-      class: "rounded-2xl border #{chosen ? 'border-primary' : 'border-subtle'} bg-surface p-3 sm:p-4 space-y-4",
-      data: { test: "build-card-cto", chosen: chosen } do %>
+      class: "rounded-2xl border #{chosen ? 'border-primary' : 'border-subtle'} bg-surface p-3 sm:p-4",
+      data: { test: "build-card-cto", chosen: chosen, build_cto: true } do %>
   <%= hidden_field_tag :field, "cto" %>
   <%= hidden_field_tag :message_id, message.id %>
-  <fieldset>
-    <legend class="text-xs font-semibold uppercase tracking-wider text-muted mb-2">Name your CTO</legend>
-    <div class="flex flex-wrap gap-2">
-      <% card["names"].each do |name| %>
-        <label class="cursor-pointer">
-          <input type="radio" name="name" value="<%= name %>" class="peer sr-only" <%= "checked" if name == picked_name %> data-test="build-cto-name">
-          <span class="inline-block rounded-full border border-subtle px-3 py-1.5 text-sm text-body peer-checked:border-primary peer-checked:bg-primary/10 peer-checked:text-heading peer-focus-visible:ring-2 peer-focus-visible:ring-primary"><%= name %></span>
-        </label>
-      <% end %>
+  <%= hidden_field_tag :client_id, SecureRandom.uuid %>
+  <p class="text-xs font-semibold uppercase tracking-wider text-muted mb-3">Meet your CTO</p>
+  <div class="flex items-start gap-4">
+    <div class="flex shrink-0 flex-col items-center gap-1">
+      <button type="button" class="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ring-offset-2 ring-offset-surface"
+              data-build-portrait-open aria-haspopup="dialog" aria-label="Choose a different portrait" data-test="build-portrait-open">
+        <%= image_tag BuildIntake::Portraits.path(picked_portrait), alt: "#{BuildIntake::Portraits.label(picked_portrait)} portrait",
+              class: "block h-20 w-20 sm:h-24 sm:w-24 rounded-full border border-subtle", data: { build_portrait_preview: true, test: "build-portrait-preview" } %>
+      </button>
+      <button type="button" class="text-xs text-primary-ink hover:underline underline-offset-2" data-build-portrait-open data-test="build-portrait-new">New image</button>
     </div>
-    <label class="mt-2 block">
-      <span class="sr-only">Or type a name</span>
-      <input type="text" name="custom_name" maxlength="24" autocomplete="off" placeholder="Or type your own name"
-             class="input-field w-full sm:w-64 text-sm" data-test="build-cto-custom">
-    </label>
-  </fieldset>
+    <div class="min-w-0 flex-1 space-y-3">
+      <label class="block">
+        <span class="block text-xs text-muted mb-1">Name</span>
+        <input type="text" name="custom_name" value="<%= picked_name %>" maxlength="24" required autocomplete="off" list="<%= list_id %>"
+               class="input-field w-full text-base font-semibold" data-test="build-cto-name-input">
+        <datalist id="<%= list_id %>">
+          <% card["names"].each do |name| %><option value="<%= name %>"></option><% end %>
+        </datalist>
+      </label>
+      <button type="submit" class="btn btn-primary btn-sm" data-test="build-choose-cto">
+        <%= chosen ? "Save my CTO" : "Build App" %>
+      </button>
+    </div>
+  </div>
 
-  <fieldset>
-    <legend class="text-xs font-semibold uppercase tracking-wider text-muted mb-2">Pick a portrait</legend>
-    <div class="grid grid-cols-4 sm:grid-cols-7 gap-2" data-test="build-portraits">
+  <dialog class="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-2xl border border-subtle bg-surface p-4 text-body backdrop:bg-black/60"
+          aria-label="Pick a portrait" data-build-portrait-dialog data-test="build-portrait-dialog">
+    <div class="flex items-center justify-between mb-3">
+      <p class="font-semibold text-heading">Pick a portrait</p>
+      <button type="button" class="btn btn-secondary btn-sm" data-build-portrait-close>Done</button>
+    </div>
+    <div class="grid grid-cols-4 gap-2" data-test="build-portraits">
       <% keys.each do |key| %>
         <label class="cursor-pointer" title="<%= BuildIntake::Portraits.label(key) %>">
-          <input type="radio" name="portrait" value="<%= key %>" class="peer sr-only" <%= "checked" if key == picked_portrait %> data-test="build-portrait">
-          <%= image_tag BuildIntake::Portraits.path(key), alt: "#{BuildIntake::Portraits.label(key)} portrait", loading: "lazy",
+          <input type="radio" name="portrait" value="<%= key %>" class="peer sr-only" <%= "checked" if key == picked_portrait %>
+                 data-build-portrait-src="<%= image_path(BuildIntake::Portraits.path(key)) %>" data-test="build-portrait">
+          <%= image_tag BuildIntake::Portraits.path(key), alt: "#{BuildIntake::Portraits.label(key)} portrait",
                 class: "block w-full aspect-square rounded-full ring-offset-2 ring-offset-surface peer-checked:ring-2 peer-checked:ring-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary" %>
         </label>
       <% end %>
-      <span class="flex aspect-square items-center justify-center rounded-full border border-dashed border-subtle text-3xs leading-tight text-center text-muted px-1"
-            title="Uploading your own portrait is coming soon" data-test="build-portrait-upload" aria-disabled="true">Upload soon</span>
     </div>
-  </fieldset>
-
-  <button type="submit" class="btn <%= chosen ? 'btn-secondary' : 'btn-primary' %> btn-sm" data-test="build-choose-cto">
-    <%= chosen ? "Update my CTO" : "Choose my CTO" %>
-  </button>
+  </dialog>
 <% end %>

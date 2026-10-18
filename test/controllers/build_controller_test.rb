@@ -139,7 +139,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='agent-portrait'][style*='view-transition-name: agent-portrait'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
     assert_select "[data-test='cto-chat-head'][data-client-cto='true'] h1", text: "League Hub"
     assert_select "[data-test='devops-stage'][data-stage='building'][data-state='live']", 1, "the new build task is designed: Building, live"
-    assert_select "[data-test='cto-chat-handover']", text: /Xan\s+Meet Coach, your CTO. I'll hand you over./
+    assert_select "[data-test='cto-chat-handover']", text: /Ray\s+Meet Coach, your CTO. I'll hand you over./
     # The CTO's opening message is there on arrival: code wrote it, no model ran, nothing is typing.
     assert_select "[data-test='cto-chat-turn'] [data-test='cto-chat-handover'] ~ [data-test='cto-chat-reply']", text: /Hi Viewer, I'm Coach, the CTO of League Hub\./
     assert_select "[data-test='cto-chat-typing']", 0
@@ -165,7 +165,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
       patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" } }
     end
     assert_redirected_to build_request_path(draft.token)
-    assert_match(/Colors/, flash[:alert])
+    assert_match(/Theme/, flash[:alert])
     assert draft.reload.draft?
   end
 

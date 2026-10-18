@@ -13,7 +13,7 @@ separate souls and are unchanged by it.
 ## What it answers
 - The web chat at `/applications/<sub>/chat`, for the app's owner (and admins). It reads
   no Discord guild and has no email route.
-- The first message in every new client chat: Xan's handover, written by code at Build
+- The first message in every new client chat: Ray's handover, written by code at Build
   my app, which it answers by greeting the owner and restating the plan.
 
 ## Its prompt

@@ -2,12 +2,12 @@
 
 ## Status: Active
 
-This is Xan's `share-insights` SOP. It publishes the Insight Bank — the curated
+This is Ray's `share-insights` SOP. It publishes the Insight Bank — the curated
 lessons of `ActionGrade.banked` — into the tracked agent docs.
 
 ## Scope
 
-This SOP is part of Xan's learning loop. It does not review PRs, merge release
+This SOP is part of Ray's learning loop. It does not review PRs, merge release
 work, deploy QA, ship production, or archive work.
 
 ## Entry
@@ -38,7 +38,7 @@ and stop.
 
 **Banked-ness is the gate; the grader is not.** `#bank!` is the curation act (and
 is mutually exclusive with `#discard!`), while `grader` records only WHO WROTE THE
-ROW: `xan` is Xan's grade of the activity, `mcr` is Alex's audit **of
+ROW: `xan` is Ray's grade of the activity, `mcr` is Alex's audit **of
 that grade** — a second row on the same target, written from the browser drawer
 and never by the agent CLI, because the agent API always grades as `xan`. That
 is PROVENANCE, NOT PROOF: it records who wrote the row, and nothing reads it as a

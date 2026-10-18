@@ -52,7 +52,20 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     patch build_request_intake_path(request_row.token), params: { field: field, **params }, as: :turbo_stream
   end
 
-  test "a signed-out visitor goes from idea to a full status card, then signs in and the build is queued" do
+  # A tap, and the visitor turn it relays: the stream appends it, pending, and
+  # it is the next row the dispatcher claims for Xan (the soul slug stays xan).
+  def tap_and_relay(request_row, field, line, **params)
+    tap_card(request_row, field, client_id: SecureRandom.uuid, **params)
+    assert_response :success
+    relay = AgentMessage.where(thread_key: BuildIntake.thread_key(request_row.token)).order(:id).last
+    assert_equal line, relay.content
+    assert_includes response.body, %(target="#{AgentMessages::WebChat::MESSAGES_TARGET}"), "#{field}: the relayed turn is appended"
+    assert_includes response.body, %(id="build-turn-#{relay.id}")
+    assert_includes response.body, %(data-pending="true"), "#{field}: the page polls for Ray's answer"
+    relay
+  end
+
+  test "a signed-out visitor goes from idea to Build My App by taps alone, then signs in and the app launches" do
     request_row = first_message
     assert_redirected_to build_request_path(request_row.token)
     first = AgentMessage.find_by!(thread_key: BuildIntake.thread_key(request_row.token))
@@ -65,66 +78,90 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_select "#build-checklist[data-card=false] [data-test=build-heading]", 1, "no card yet: the heading, not an empty form"
     assert_select "[data-test=build-my-app]", 0, "the status card carries no Build control"
 
-    idea = xan_answers("Got it: a league site. Here's how I'd put it.",
-                       { kind: "intake", card: "idea", idea: "A league site with live standings", audience: "rec league players" })
+    idea = xan_answers("Got it: a league site.",
+                       { kind: "intake", card: "idea", title: "League Standings Hub", features: [ "Live standings", "Game schedules" ] })
     get build_request_turns_path(request_row.token), params: { ids: first.id }
     assert_response :success
-    assert_includes response.body, "build-turn-#{first.id}"
     assert_includes response.body, "data-test=\"build-card-idea\""
     assert_includes response.body, "data-test=\"build-status-card\"", "the first card brings the status card in the same poll"
+    assert_includes response.body, "League Standings Hub"
 
-    tap_card(request_row, "idea", message_id: idea.id)
-    assert_response :success
-    assert_equal "A league site with live standings", request_row.reload.answers["idea"]
-
-    say(request_row, "Love it")
-    cto = xan_answers("Who should run it?", { kind: "intake", card: "cto", names: %w[Coach Ref Scout], portrait: "harbor" })
+    # Build App: the idea locks, and the visitor's line goes to Ray, who answers with the CTO card.
+    relay = tap_and_relay(request_row, "idea", "Let's build League Standings Hub.", message_id: idea.id)
+    assert_equal "League Standings Hub", request_row.reload.answers["title"]
+    cto = xan_answers("Meet your CTO.", { kind: "intake", card: "cto", names: %w[Marble Coach Scout], portrait: "harbor" })
+    assert_equal relay, cto, "the dispatcher claimed the relayed turn"
     get build_request_path(request_row.token)
-    assert_select "[data-test=build-card-cto] [data-test=build-portrait]", BuildIntake::Portraits::KEYS.size
-    assert_select "[data-test=build-card-cto] input[name=name][value=Coach]"
+    assert_select "[data-test=build-card-cto] [data-test=build-cto-name-input][value=Marble]", 1, "the name is prefilled"
+    assert_select "[data-test=build-card-cto] [data-test=build-portrait-dialog] [data-test=build-portrait]", BuildIntake::Portraits::KEYS.size
 
-    tap_card(request_row, "cto", message_id: cto.id, name: "Coach", custom_name: "", portrait: "harbor")
-    assert_equal %w[Coach harbor], [ request_row.reload.cto_name, request_row.cto_avatar ]
-
-    say(request_row, "Next")
-    colors = xan_answers("Pick some colors.", { kind: "intake", card: "palette", palettes: [ PALETTE ] })
+    tap_and_relay(request_row, "cto", "My CTO is Marbles.", message_id: cto.id, custom_name: "Marbles", portrait: "meadow")
+    assert_equal %w[Marbles meadow], [ request_row.reload.cto_name, request_row.cto_avatar ]
+    themes = xan_answers("Pick a theme.", { kind: "intake", card: "palette", palettes: [ PALETTE, PALETTE.merge("name" => "Pitch Two") ] })
     get build_request_path(request_row.token)
-    assert_select "[data-test=build-palette-preview] [data-mode=light][style*='#ffffff']"
-    assert_select "[data-test=build-palette-preview] [data-mode=dark][style*='#0b1220']"
-    tap_card(request_row, "palette", message_id: colors.id, index: 0)
-    assert_equal "Pitch", request_row.reload.palette["name"]
+    assert_select "[data-test=build-card-palette] [data-test=build-palette]", 2
+    assert_select "[data-test=build-palette-preview] [data-mode=dark][style*='#0b1220']:not([hidden])"
+    assert_select "[data-test=build-palette-preview] [data-mode=light][style*='#ffffff'][hidden]"
+    assert_select "[data-test=build-more-like]", 0, "More like this is gone from the card"
 
-    say(request_row, "Next")
-    xan_answers("And an address.", { kind: "intake", card: "address", names: %w[league-hub] })
-    tap_card(request_row, "address", subdomain: "league-hub")
+    tap_and_relay(request_row, "palette", "Let's go with the Pitch Two theme.", message_id: themes.id, index: 1)
+    assert_equal "Pitch Two", request_row.reload.palette["name"]
+    domains = xan_answers("And a domain.", { kind: "intake", card: "address", names: %w[league-hub] })
+    get build_request_path(request_row.token)
+    assert_select "[data-test=build-card-address] button[data-test=build-address-suggestion]", text: "league-hub.mcritchie.studio"
+
+    tap_and_relay(request_row, "address", "Let's use league-hub.mcritchie.studio.", message_id: domains.id, subdomain: "league-hub")
     assert_equal "league-hub", request_row.reload.subdomain
     assert_includes response.body, "data-complete=\"true\"", "the tap's stream redraws the status card complete"
 
+    # Ray sums up; with every step set, code gives the answer the summary card.
+    summary = xan_answers("Here's your app.")
+    assert_equal({ "card" => "summary" }, summary.intake_card)
     get build_request_path(request_row.token)
-    assert_select "[data-test=build-status-card][data-complete=true]" do
-      assert_select "[data-test=build-tile-agent][data-done=true] [data-test=build-tile-agent-portrait][src*='cto_portraits/harbor']"
-      assert_select "[data-test=build-tile-agent-value]", text: "Coach"
-      assert_select "[data-test=build-tile-theme-value]", text: "Pitch"
-      assert_select "[data-test=build-tile-domain-value]", text: "league-hub.mcritchie.studio"
-      assert_select "[data-test=build-status-title]", text: "League Hub"
+    assert_select "[data-test=build-card-summary][data-ready=true]" do
+      assert_select "[data-test=build-summary-title]", "League Standings Hub"
+      assert_select "[data-test=build-summary-cto]", /Marbles/
+      assert_select "[data-test=build-summary-theme]", /Pitch Two/
+      assert_select "[data-test=build-summary-domain]", /league-hub\.mcritchie\.studio/
+      assert_select "[data-test=build-summary-build][data-signs-in=true]", 1, "signed out, Build My App opens sign-in"
     end
-    assert_equal "draft", request_row.reload.status
+    # The status card above the thread holds the same facts, filled tap by tap, and no Build control.
+    assert_select "#build-checklist [data-test=build-status-card][data-complete=true]" do
+      assert_select "[data-test=build-status-title]", "League Standings Hub"
+      assert_select "[data-test=build-tile-agent][data-done=true] [data-test=build-tile-agent-portrait][src*='cto_portraits/meadow']"
+      assert_select "[data-test=build-tile-agent-value]", "Marbles"
+      assert_select "[data-test=build-tile-theme-value]", "Pitch Two"
+      assert_select "[data-test=build-tile-domain-value]", "league-hub.mcritchie.studio"
+      assert_select "[data-test=build-summary-build]", 0
+    end
 
     patch build_request_path(request_row.token), params: { app_request: { subdomain: "league-hub" } }
-    assert_equal "draft", request_row.reload.status, "a signed-out Build queues nothing"
+    assert_equal "draft", request_row.reload.status, "a signed-out Build launches nothing"
 
     user = User.create!(email: "league@example.com", name: "League Fan", role: "viewer")
     post "/magic_link", params: { email: user.email, return_to: build_request_path(request_row.token) }, as: :json
     post link_consume_path(token: Studio::Link.where(kind: "magic_link").order(:created_at).last.token)
     get build_request_path(request_row.token)
     assert_equal user, request_row.reload.user, "sign-in adopts the draft"
+    assert_select "[data-test=build-card-summary] form[action='#{build_request_path(request_row.token)}'] [data-test=build-summary-build]"
 
     patch build_request_path(request_row.token), params: { app_request: { subdomain: "league-hub" } }
+    assert_redirected_to chat_application_path("league-hub")
     request_row.reload
     assert_equal "queued", request_row.status
-    assert_equal "league-hub.mcritchie.studio", request_row.host
+    app_cto = AppCto.find_by!(app_request_token: request_row.token)
+    assert_equal "Marbles", app_cto.name
+    assert_includes app_cto.plan, "Key features: Live standings; Game schedules"
     task = Task.find_by!(slug: request_row.task_slug)
-    assert_includes task.metadata.dig("devops", "agent_context"), "CTO: Coach (portrait harbor)"
+    assert_includes task.metadata.dig("devops", "agent_context"), "Key features: Live standings; Game schedules"
+  end
+
+  test "Build something else relays to Ray, who asks for a new direction" do
+    request_row = first_message
+    idea = xan_answers("Here's the idea.", { kind: "intake", card: "idea", title: "League Standings Hub", features: %w[Standings Schedules] })
+    tap_and_relay(request_row, "idea_else", "I'd like to build something else.", message_id: idea.id)
+    assert_equal({}, request_row.reload.answers)
+    assert_equal "I'd like to build something else.", AgentMessage.claim!(soul: "xan", worker: "mac-1").message.content
   end
 
   test "a tap on a card from another request's thread is refused and writes nothing" do
@@ -146,7 +183,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
 
     patch build_request_path(request_row.token), params: { app_request: { subdomain: "half-done" } }
     assert_equal "draft", request_row.reload.status
-    assert_equal "Finish setting up your app first.", flash[:alert]
+    assert_equal "Finish the steps first.", flash[:alert]
   end
 
   test "the bot shield: no proof holds the first message; the honeypot stores nothing" do

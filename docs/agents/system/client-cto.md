@@ -19,7 +19,7 @@ Our own CTOs (Avi, Turf, Tyrion) are souls in `config/cto_reports.yml` and are u
 | Owner | `app_memberships` row, role `owner`, for the requester |
 | CTO | `app_ctos` row: name, portrait, palette, plan, facts, the request token |
 | Task | "Build Launch App `<sub>`", `designed`, `repositories: [<sub>]`, so the tier's lane cap governs it |
-| Handover | Xan's first chat turn (`AgentMessages::ClientCtoHandover`) |
+| Handover | Ray's first chat turn (`AgentMessages::ClientCtoHandover`) |
 
 Any failure rolls every row back. After the commit: `AppRequestDiscordJob` (the
 announcement) and `AppIntakeMoveJob` (the files). An incomplete intake raises
@@ -84,17 +84,17 @@ The chosen palette (`AppPalette`: `primary`, `accent`, `surface`, `text`, light 
 ## The handover and the greeting
 
 The handover row is a `web` message in the owner's thread (`web:<sub>:<user id>`), author
-`Xan`, content "Meet `<CTO>`, your CTO. I'll hand you over.", routed to `client_cto`. It is
+`Ray`, content "Meet `<CTO>`, your CTO. I'll hand you over.", routed to `client_cto`. It is
 stored already answered with the CTO's opening message, which code writes from the intake
 (`ClientCtoHandover.greeting`: the owner's first name, the CTO's and the app's names, the
 plan as bullets, and "What would you like to see first?"), so the chat opens on both turns
 and no model runs for it. The dispatcher never claims the row; the persona tells the CTO
-not to greet again. The chat renders the handover as Xan's turn, then the greeting as the
+not to greet again. The chat renders the handover as Ray's turn, then the greeting as the
 CTO's.
 
 ## Intake files (`AppIntakeMove`)
 
-Files dropped while talking to Xan live under `intake/<request token>/`. After the launch
+Files dropped while talking to Ray live under `intake/<request token>/`. After the launch
 commits, `AppIntakeMoveJob` moves each Active Storage blob whose key has that prefix to
 `apps/<sub>/intake/<rest>`: copy the object (R2 server-side copy on the S3 service), repoint
 the blob's key, delete the old object. A crash before the repoint leaves the blob readable

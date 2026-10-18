@@ -43,14 +43,15 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='build-example'][href='https://cyvasse.mcritchie.studio'][target='_blank']", text: /Cyvasse/
   end
 
-  def example(name, image: nil)
-    BuildGallery::Example.new(name: name, url: "https://#{name.parameterize}.mcritchie.studio", emoji: "🧱", blurb: "An app.", image: image)
+  def example(name, image: nil, motion: nil, blurb: "An app.")
+    BuildGallery::Example.new(name: name, url: "https://#{name.parameterize}.mcritchie.studio", emoji: "🧱", blurb: blurb,
+                              image: image, motion: motion)
   end
 
   test "the gallery is a sideways row, about 3.3 cards wide, with a scroll-aware edge fade and centered card text" do
     signed_in(nil)
     @draft = nil
-    @examples = [ example("Cyvasse", image: "build_gallery/cyvasse.jpg"), example("Rantly"), example("Weekly Lock") ]
+    @examples = [ example("Cyvasse", image: "build_gallery/cyvasse.webp"), example("Rantly"), example("Weekly Lock") ]
     render template: "build/new"
 
     row = css_select("[data-test='build-gallery-row']").first
@@ -59,28 +60,67 @@ class BuildViewTest < ActionView::TestCase
     assert_includes row["@scroll.passive"], "measure", "the fade follows the scroll position"
     assert_includes row[":style"], "mask-image"
     assert_select "[data-test='build-gallery-item'][class*='sm:basis-[calc((100%-3rem)/3.3)]']", 3
-    assert_select "[data-test='build-example'] > span.text-center", 6, "the title, and the host and blurb, are centered on every card"
+    assert_select "[data-test='build-example'] > span.text-center[data-test='build-example-body']", 3, "the card text is centered on every card"
   end
 
-  test "a card reads title, then screenshot, then host and a two-line description" do
+  test "a card reads image on top, then name, host and a one-line description" do
     signed_in(nil)
     @draft = nil
-    @examples = [ example("Cyvasse", image: "build_gallery/cyvasse.jpg") ]
+    long = "A long description that runs on well past what one line of a card can hold, " * 3
+    @examples = [ example("Cyvasse", image: "build_gallery/cyvasse.webp", motion: "build_gallery/cyvasse.mp4", blurb: long.strip) ]
     render template: "build/new"
 
     card = css_select("[data-test='build-example']").first
     order = card.css("[data-test]").map { |node| node["data-test"] }
-    assert_equal %w[build-example-name build-example-image build-example-host build-example-blurb], order
+    assert_equal %w[build-example-image build-example-motion build-example-body build-example-name build-example-host build-example-blurb], order,
+                 "no title band above the image: the name sits in the bottom section"
+    assert_equal "cyvasse.mcritchie.studio", card.at_css("[data-test='build-example-host']").text
 
-    blurb = card.at_css("[data-test='build-example-blurb']")["class"].split
-    assert_includes blurb, "line-clamp-2"
-    refute_includes blurb, "block", "block overrides line-clamp's display, so the text would run past two lines"
+    blurb = card.at_css("[data-test='build-example-blurb']")
+    assert_includes blurb["class"].split, "truncate", "one line, ending in an ellipsis"
+    refute_includes blurb["class"], "line-clamp"
+    assert_equal long.strip, blurb["title"], "the whole description is still there on hover"
+  end
+
+  test "a card with a motion loop carries a silent, lazy, reduced-motion-safe video over its still" do
+    signed_in(nil)
+    @draft = nil
+    @examples = [ example("Cyvasse", image: "build_gallery/cyvasse.webp", motion: "build_gallery/cyvasse.mp4") ]
+    render template: "build/new"
+
+    video = css_select("[data-test='build-example-motion']").first
+    assert video, "the loop rides over the still"
+    assert_match %r{build_gallery/cyvasse.*\.mp4}, video["src"]
+    assert_match %r{build_gallery/cyvasse.*\.webp}, video["poster"], "until it plays, the loop shows the still"
+    %w[muted loop playsinline].each { |attr| assert video.key?(attr), "the loop is #{attr}" }
+    assert_equal "none", video["preload"], "nothing downloads until someone hovers"
+    assert_equal "true", video["aria-hidden"], "decoration: the still's alt text names the app"
+    assert_includes video["class"].split, "motion-reduce:hidden", "reduced motion keeps the still"
+    assert_includes video["class"].split, "opacity-0", "hidden until it is actually playing"
+    assert_includes video["class"].split, "data-[playing]:opacity-100", "app/javascript/gallery_motion.js marks it playing"
+    assert video.key?("data-gallery-motion-video")
+
+    card = css_select("[data-test='build-example']").first
+    assert card.key?("data-gallery-motion"), "the card opts in to app/javascript/gallery_motion.js"
+    assert_nil card["x-data"], "behaviour lives in app/javascript, not the template"
+  end
+
+  test "a card without a motion loop is a plain link with its still" do
+    signed_in(nil)
+    @draft = nil
+    @examples = [ example("Rantly", image: "build_gallery/rantly.webp") ]
+    render template: "build/new"
+
+    assert_select "[data-test='build-example-image']", 1
+    assert_select "[data-test='build-example-motion']", 0
+    card = css_select("[data-test='build-example']").first
+    refute card.key?("data-gallery-motion"), "no hover script without a loop to play"
   end
 
   test "a card shows its screenshot when there is one, and its emoji when not" do
     signed_in(nil)
     @draft = nil
-    @examples = [ example("Cyvasse", image: "build_gallery/cyvasse.jpg"), example("Rantly") ]
+    @examples = [ example("Cyvasse", image: "build_gallery/cyvasse.webp"), example("Rantly") ]
     render template: "build/new"
 
     assert_select "[data-test='build-example-image'][src*='build_gallery/cyvasse']", 1

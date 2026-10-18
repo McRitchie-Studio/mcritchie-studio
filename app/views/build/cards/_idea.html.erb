@@ -1,22 +1,33 @@
 <%# locals: (card:, message:, request_row:) %>
-<%# The idea card: Xan's sharpened restatement, for the visitor to confirm with one tap (BuildIntake::Choice "idea", read from the stored card). %>
-<% chosen = request_row.answers.is_a?(Hash) && request_row.answers["idea"] == card["idea"] %>
+<%# The idea card: the app Ray heard, as a title and two or three key features (BuildIntake::Card "idea"). Build App locks it in; Build something else sends Ray back to asking which direction to take. Each tap sets the field AND posts the visitor's turn (BuildIntake::Choice), so Ray answers next without the visitor typing. A v1 draft's card has no title: its one-sentence idea stands in. %>
+<% answers = request_row.answers.is_a?(Hash) ? request_row.answers : {} %>
+<% title = card["title"].presence || card["idea"] %>
+<% chosen = answers["idea"].present? && (card["title"].present? ? answers["title"] == card["title"] : answers["idea"] == card["idea"]) %>
 <div class="rounded-2xl border <%= chosen ? 'border-primary' : 'border-subtle' %> bg-surface p-3 sm:p-4" data-test="build-card-idea" data-chosen="<%= chosen %>">
-  <p class="text-xs font-semibold uppercase tracking-wider text-muted mb-2">Your idea</p>
-  <p class="text-heading font-semibold break-words"><%= card["idea"] %></p>
-  <dl class="mt-2 grid gap-1 text-sm">
-    <% if card["audience"] %>
-      <div class="flex gap-2"><dt class="text-muted shrink-0">For</dt><dd class="text-body break-words min-w-0"><%= card["audience"] %></dd></div>
-    <% end %>
-    <% if card["day_one"] %>
-      <div class="flex gap-2"><dt class="text-muted shrink-0">Day one</dt><dd class="text-body break-words min-w-0"><%= card["day_one"] %></dd></div>
-    <% end %>
-  </dl>
-  <%= form_with url: build_request_intake_path(request_row.token), method: :patch, class: "mt-3" do %>
-    <%= hidden_field_tag :field, "idea" %>
-    <%= hidden_field_tag :message_id, message.id %>
-    <button type="submit" class="btn <%= chosen ? 'btn-secondary' : 'btn-primary' %> btn-sm" data-test="build-choose-idea">
-      <%= chosen ? "Confirmed" : "That's it" %>
-    </button>
+  <p class="text-xs font-semibold uppercase tracking-wider text-muted mb-1">Your app</p>
+  <p class="text-lg text-heading font-bold leading-snug break-words" data-test="build-idea-title"><%= title %></p>
+  <% if card["features"].present? %>
+    <p class="mt-3 text-xs font-semibold uppercase tracking-wider text-muted">Key features</p>
+    <ul class="mt-1 list-disc pl-5 space-y-0.5 text-sm text-body" data-test="build-idea-features">
+      <% card["features"].each do |feature| %>
+        <li class="break-words"><%= feature %></li>
+      <% end %>
+    </ul>
   <% end %>
+  <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <%= form_with url: build_request_intake_path(request_row.token), method: :patch do %>
+      <%= hidden_field_tag :field, "idea" %>
+      <%= hidden_field_tag :message_id, message.id %>
+      <%= hidden_field_tag :client_id, SecureRandom.uuid %>
+      <button type="submit" class="btn btn-primary btn-sm" data-test="build-choose-idea" <%= "disabled" if chosen %>>
+        <%= chosen ? "Building this" : "Build App" %>
+      </button>
+    <% end %>
+    <%= form_with url: build_request_intake_path(request_row.token), method: :patch do %>
+      <%= hidden_field_tag :field, "idea_else" %>
+      <%= hidden_field_tag :message_id, message.id %>
+      <%= hidden_field_tag :client_id, SecureRandom.uuid %>
+      <button type="submit" class="text-sm text-primary-ink underline-offset-2 hover:underline" data-test="build-idea-else">Build something else</button>
+    <% end %>
+  </div>
 </div>

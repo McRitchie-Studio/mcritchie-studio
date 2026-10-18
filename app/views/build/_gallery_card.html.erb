@@ -1,0 +1,35 @@
+<%# One "Built with McRitchie Studio" card: the app's dark-mode still on top,
+    then its name, where it lives, and one line of what it is.
+
+    An app with a motion loop plays it over the still while a mouse rests on the
+    card or the keyboard focuses it (app/javascript/gallery_motion.js). Never on
+    touch, never under prefers-reduced-motion, and the video loads nothing until
+    then (preload none). It fades in on data-playing, which the script sets only
+    once it really plays, so a slow load shows the still, not a blank box. %>
+<% host = (URI.parse(example.url).host rescue nil) || example.url %>
+<%= link_to example.url, target: "_blank", rel: "noopener",
+      class: "group flex h-full flex-col overflow-hidden rounded-2xl border border-subtle bg-surface hover:border-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary",
+      data: { test: "build-example", gallery_motion: (true if example.motion) } do %>
+  <span class="relative block aspect-[16/10] overflow-hidden bg-surface-alt border-b border-subtle">
+    <% if example.image %>
+      <%= image_tag example.image, alt: "#{example.name}, as it looks live", loading: "lazy",
+            class: "h-full w-full object-cover object-top",
+            data: { test: "build-example-image" } %>
+      <% if example.motion %>
+        <video src="<%= asset_path(example.motion) %>" poster="<%= asset_path(example.image) %>"
+               muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"
+               class="pointer-events-none absolute inset-0 h-full w-full object-cover object-top opacity-0 data-[playing]:opacity-100 transition-opacity duration-300 motion-reduce:hidden"
+               data-gallery-motion-video data-test="build-example-motion"></video>
+      <% end %>
+    <% else %>
+      <span class="flex h-full items-center justify-center text-5xl" aria-hidden="true"><%= example.emoji %></span>
+    <% end %>
+  </span>
+  <span class="block min-w-0 px-4 py-3 text-center" data-test="build-example-body">
+    <span class="block font-semibold text-heading group-hover:text-primary truncate"
+          data-test="build-example-name"><%= example.name %></span>
+    <span class="block font-mono text-xs text-muted truncate" data-test="build-example-host"><%= host %></span>
+    <span class="mt-1 block text-sm text-body truncate" title="<%= example.blurb %>"
+          data-test="build-example-blurb"><%= example.blurb %></span>
+  </span>
+<% end %>

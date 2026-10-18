@@ -14,7 +14,7 @@ with `--agent pokemon`, which stamps the Pokémon itself. That replaced the
 indistinguishable from a Pokémon build, and it selected no differently, since
 neither is in the reviewer pool. The mascot stays the crew member. See
 [`../../modules/focus-session.md`](../../modules/focus-session.md).) The specialists (Carl,
-Shannon, Jasper, Steffon, Xan) do not build; they review, and their standards
+Shannon, Jasper, Steffon, Ray) do not build; they review, and their standards
 are what the Pokémon builds to.
 
 ## Responsibilities
@@ -33,7 +33,7 @@ specialists review to, so meeting them here is what keeps the PR from bouncing:
 - **UI** (Shannon's lens) — `x-show` owns display; single root under `<template x-if>`; `rgb(var(--x) / a)` not `rgba`; ERB comments carry no `%`; both render paths of a live partial verified; dark and light, mobile and desktop
 - **On-chain** (Jasper's lens) — IDL hash re-pinned from the built IDL; decoder byte counts match the layout; signer order matches the program; every cluster-varying value keyed by network, fail-closed on blanks
 - **Platform** (Steffon's lens) — new env vars documented and in 1Password; no deploy guard bypassed; migrations and backfills wired through the release phase or `post_deploy_cmd`; a rollback path before a deploy path; the runbook updated in the same PR
-- **Docs** (Xan's lens) — behavior, env, ports, auth, deploy, or agent-ops changes carry their doc update in the same PR; procedures stay short and link their rationale
+- **Docs** (Ray's lens) — behavior, env, ports, auth, deploy, or agent-ops changes carry their doc update in the same PR; procedures stay short and link their rationale
 - **Prior art** — before your PR description says the change introduces or exposes anything, read what it replaced
 
 ## Contact

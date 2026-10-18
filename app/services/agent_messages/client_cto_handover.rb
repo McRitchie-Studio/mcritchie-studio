@@ -6,7 +6,7 @@ module AgentMessages
   #
   # It stores ONE `web` AgentMessage in the owner's own chat thread with the
   # app's CTO (`web:<sub>:<user id>`), routed to `client_cto`: its content is
-  # Xan's handover line, and it is stored ALREADY ANSWERED with the CTO's
+  # Ray's handover line, and it is stored ALREADY ANSWERED with the CTO's
   # opening message (#greeting), which code writes from the intake: the owner's
   # name, the CTO's, the app's and the plan. So the chat opens on the handover
   # and the greeting, never on a bare "typing…", and no model runs for it
@@ -23,7 +23,7 @@ module AgentMessages
   #
   # Idempotent on its external id (one handover per app per owner).
   module ClientCtoHandover
-    AUTHOR = "Xan".freeze
+    AUTHOR = "Ray".freeze
     ACTOR = "app-launch".freeze
     VIA = "handover".freeze
     GREETING_SUMMARY = "code greeting".freeze
