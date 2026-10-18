@@ -126,6 +126,31 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "form[action='/build/#{@row.token}'] [data-test='build-summary-build']", "Build My App"
   end
 
+  test "[component] the summary card's refusal: the reason, then the next step for its kind; Build My App stays" do
+    @row.update!(answers: { "title" => "League Standings Hub", "idea" => "x" }, cto_name: "Marble", cto_avatar: "meadow",
+                 palette: PALETTE, subdomain: "league-hub")
+    signed_in(users(:viewer))
+    locals = { card: { "card" => "summary" }, message: @message, request_row: @row }
+
+    render(partial: "build/cards/summary", locals: locals.merge(refusal: { reason: "Your Vibe plan includes 1 app, and you already have one.", plan_limit: true, existing_app: "/applications/pup/chat" }))
+    assert_select "##{BuildController.summary_dom_id(@message)}[data-refused='true']"
+    assert_select "[data-test='build-summary-refusal'][role='alert'] [data-test='build-summary-refusal-reason']", /Vibe plan includes 1 app/
+    assert_select "a[data-test='build-summary-existing-app'][href='/applications/pup/chat']"
+    assert_select "a[data-test='build-summary-upgrade'][href='/packages']"
+    assert_select "form input[name='message_id'][value='#{@message.id}']"
+    assert_select "[data-test='build-summary-build']", 1
+
+    @rendered = +"" # each render below is read on its own
+    render(partial: "build/cards/summary", locals: locals.merge(refusal: { reason: "Subdomain That name is taken.", domain: true }))
+    assert_select "[data-test='build-summary-next']", /Ask Ray for another address/
+    assert_select "[data-test='build-summary-existing-app']", 0
+
+    @rendered = +""
+    render(partial: "build/cards/summary", locals: locals)
+    assert_select "[data-refused='false']"
+    assert_select "[data-test='build-summary-refusal']", 0
+  end
+
   test "a summary whose request is no longer complete offers no Build" do
     card("summary")
     assert_select "[data-test='build-card-summary'][data-ready='false']"

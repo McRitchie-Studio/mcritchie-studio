@@ -71,7 +71,9 @@ class AppRequest < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
   validates :tier, inclusion: { in: ->(_) { WorkspacePackage.keys } }
   validates :subdomain, presence: true, unless: :draft?
-  validate :subdomain_is_claimable, if: -> { subdomain.present? && (new_record? || will_save_change_to_subdomain?) }
+  # Checked again at the claim (a draft moving to queued), so a name another
+  # app took after the visitor tapped it is refused, not double-claimed.
+  validate :subdomain_is_claimable, if: -> { subdomain.present? && (new_record? || will_save_change_to_subdomain? || will_save_change_to_status?(from: "draft")) }
   # The tier's apps-per-account limit (config/workspace_packages.yml
   # `apps_per_account`; blank is unlimited, and every tier is today). Admins are
   # exempt: Mr. McRitchie seeds the App Builder with showcase builds (his legacy

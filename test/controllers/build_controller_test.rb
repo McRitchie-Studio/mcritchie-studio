@@ -189,6 +189,89 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert draft.reload.draft?
   end
 
+  # The summary card's turn, as Ray's last answer carries it.
+  def summary_turn!(draft)
+    AgentMessage.create!(channel: "web", external_id: "build:#{draft.token}:summary", channel_ref: "build",
+                         thread_key: BuildIntake.thread_key(draft.token), soul_slug: BuildIntake.soul, content: "Let's use it.",
+                         status: "completed", completed_at: Time.current, response_text: "Here's your app.", intake_card: { "card" => "summary" })
+  end
+
+  def with_vibe_apps_limit(limit, &)
+    config = WorkspacePackage.config
+    config["packages"].find { |pkg| pkg["key"] == "vibe" }["apps_per_account"] = limit
+    WorkspacePackage.stub(:config, config, &)
+  end
+
+  test "[integration] a free-plan owner over the plan's limit gets the refusal ON the summary card, with their app and the plans, as a stream" do
+    viewer = users(:viewer)
+    log_in_as viewer
+    first = send_prompt("A checkers game")
+    get build_request_path(first.token)
+    complete_intake!(first, subdomain: "first-checkers")
+    patch build_request_path(first.token), params: { app_request: { subdomain: "first-checkers" } }
+    assert_redirected_to chat_application_path("first-checkers")
+
+    draft = send_prompt
+    get build_request_path(draft.token)
+    complete_intake!(draft)
+    card = summary_turn!(draft)
+
+    with_vibe_apps_limit(1) do
+      assert_no_difference [ -> { App.count }, -> { Task.count } ] do
+        patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: card.id }, as: :turbo_stream
+      end
+    end
+    assert_response :unprocessable_content
+    assert_equal "text/vnd.turbo-stream.html", response.media_type, "a stream, never a page Turbo would morph"
+    assert_select "turbo-stream[action='replace'][target='#{BuildController.summary_dom_id(card)}'] template" do
+      assert_select "[data-test='build-card-summary'][data-refused='true'][data-ready='true']"
+      assert_select "[data-test='build-summary-refusal'][role='alert']" do
+        assert_select "[data-test='build-summary-refusal-reason']", "Your Vibe plan includes 1 app, and you already have one."
+        assert_select "a[data-test='build-summary-existing-app'][href='/applications/first-checkers/chat']"
+        assert_select "a[data-test='build-summary-upgrade'][href='/packages']"
+      end
+      assert_select "[data-test='build-summary-build']", 1, "Build My App stays, to try again"
+    end
+    assert draft.reload.draft?
+  end
+
+  test "[integration] with the data's unlimited tier the same owner launches a second app" do
+    log_in_as users(:viewer)
+    first = send_prompt("A checkers game")
+    get build_request_path(first.token)
+    complete_intake!(first, subdomain: "first-checkers")
+    patch build_request_path(first.token), params: { app_request: { subdomain: "first-checkers" } }
+
+    draft = send_prompt
+    get build_request_path(draft.token)
+    complete_intake!(draft)
+    patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: summary_turn!(draft).id }, as: :turbo_stream
+    assert_redirected_to chat_application_path("league-hub")
+  end
+
+  test "[integration] a name taken after the tap is refused on the card with a next step; without a card the composer says why" do
+    log_in_as users(:viewer)
+    draft = send_prompt
+    get build_request_path(draft.token)
+    complete_intake!(draft)
+    card = summary_turn!(draft)
+    App.create!(slug: "league-hub", name: "League Hub", emoji: "🏟", color: "#22C55E")
+
+    assert_no_difference -> { Task.count } do
+      patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: card.id }, as: :turbo_stream
+    end
+    assert_response :unprocessable_content
+    assert_select "turbo-stream[target='#{BuildController.summary_dom_id(card)}'] template [data-test='build-summary-refusal']" do
+      assert_select "[data-test='build-summary-refusal-reason']", /That name is taken\./
+      assert_select "[data-test='build-summary-next']", /another address/
+      assert_select "[data-test='build-summary-upgrade']", 0
+    end
+
+    patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" } }, as: :turbo_stream
+    assert_response :unprocessable_content
+    assert_select "turbo-stream[action='replace'][target='#{BuildController::FORM_ID}'] template [data-test='cto-chat-error']", /That name is taken/
+  end
+
   test "a draft that belongs to someone else is not shown" do
     draft = send_prompt
     log_in_as users(:viewer)
