@@ -3,9 +3,11 @@
    utilities the partials carry (w-24, max-h-[60vh], text-5xl), which Tailwind
    puts in a layer.
 
-   1. The shell is a column no taller than the window under the navbar
-      (--nav-bottom, published by studio-engine's pinned stack; the layout's
-      1.5rem top padding comes off too). The thread grows with its turns until the
+   1. The shell is a column no taller than the window below where it starts
+      (--agent-shell-top: its offset from the top of the page, which
+      app/javascript/agent_shell.js measures, since the banners, the navbar and
+      the layout's padding above it vary by page and width; 9rem without the
+      script). The thread grows with its turns until the
       column is full, then scrolls inside it, so the chat box sits at the window's
       bottom and what follows the shell is pushed off screen.
    2. Three size steps, data-shell-size: full (no turns yet), medium (the
@@ -19,9 +21,8 @@
 .agent-shell {
   --agent-shell-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --agent-shell-time: 420ms;
-  max-height: calc(100dvh - var(--nav-bottom, 4rem) - 1.5rem);
+  max-height: calc(100dvh - var(--agent-shell-top, 9rem));
   padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
-  transition: gap var(--agent-shell-time) var(--agent-shell-ease);
 }
 
 .agent-shell > .agent-shell-head,
@@ -72,7 +73,25 @@
   font-size: 1.5rem;
 }
 
-.agent-shell[data-shell-size="compact"] { gap: 0.75rem; }
+.agent-shell {
+  transition: gap var(--agent-shell-time) var(--agent-shell-ease),
+              padding-top var(--agent-shell-time) var(--agent-shell-ease);
+}
+
+.agent-shell[data-shell-size="medium"] { gap: 1rem; }
+
+.agent-shell[data-shell-size="compact"] {
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+
+/* A compact thread scrolls under the status card: its top edge fades rather
+   than cuts. */
+.agent-shell[data-shell-size="compact"] [data-cto-chat-scroll] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 1rem);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 1rem);
+  padding-top: 0.75rem;
+}
 
 .agent-shell[data-shell-size="compact"] .agent-shell-header {
   flex-direction: row;

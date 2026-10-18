@@ -68,9 +68,17 @@ function keepComposerInView(shell) {
   if (box.bottom > window.innerHeight || box.top < 0) form.scrollIntoView({ block: "nearest" });
 }
 
+// Where the shell starts on the page (banners, navbar and padding above it),
+// which its CSS takes off the window's height so it ends at the window's bottom.
+function measureTop(shell) {
+  const top = Math.max(0, Math.round(shell.getBoundingClientRect().top + window.scrollY));
+  shell.style.setProperty("--agent-shell-top", `${top}px`);
+}
+
 function settle() {
   const shell = document.querySelector(SHELL);
   if (!shell) return;
+  measureTop(shell);
   sizeShell(shell);
   // Once more after the size step's own layout, which can open room or take it.
   requestAnimationFrame(() => {
@@ -107,9 +115,15 @@ if (typeof document !== "undefined") {
     const statusWasHeading = target === STATUS_ID && document.getElementById(STATUS_ID)?.dataset.card === "false";
     const firstThread = target === CHAT_ID && action === "replace" && !document.getElementById(CHAT_ID)?.hasAttribute("data-build-chat");
 
+    // The heading redrawn as the same heading (the first message's stream, every
+    // poll before the first card) is left in place, so the size step's transition
+    // shrinks the heading on the page instead of swapping in one already small.
+    const sameHeading = target === STATUS_ID && action === "replace" && statusWasHeading &&
+      stream.templateContent?.querySelector?.("[data-card]")?.dataset.card === "false";
+
     event.detail.render = async (element) => {
       if (action === "remove" && target === GALLERY_ID) await leave(document.getElementById(GALLERY_ID));
-      await original(element);
+      if (!sameHeading) await original(element);
       if (firstThread) animateOnce(document.getElementById(CHAT_ID), "agent-shell-enter-thread");
       if (statusWasHeading && document.getElementById(STATUS_ID)?.dataset.card === "true") {
         animateOnce(document.querySelector("[data-test='build-status-card']"), "agent-shell-enter-card");
@@ -121,6 +135,6 @@ if (typeof document !== "undefined") {
   document.addEventListener("turbo:load", settle);
   window.addEventListener("resize", () => {
     const shell = document.querySelector(SHELL);
-    if (shell) sizeShell(shell);
+    if (shell) { measureTop(shell); sizeShell(shell); }
   }, { passive: true });
 }

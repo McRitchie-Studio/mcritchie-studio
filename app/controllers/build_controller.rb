@@ -265,7 +265,10 @@ class BuildController < ApplicationController
   rescue ActiveRecord::RecordInvalid => e
     @app_request.status = "draft"
     @app_request.errors.merge!(e.record.errors) unless e.record.equal?(@app_request)
-    reason = @app_request.errors.full_messages.to_sentence.presence || e.message
+    # The address's and the plan's errors read as sentences of their own ("That
+    # name is taken."), not "Subdomain That name is taken.".
+    reason = @app_request.errors.map { |error| %i[base subdomain].include?(error.attribute) ? error.message : error.full_message }
+                                .uniq.to_sentence.presence || e.message
     plan_limit = @app_request.errors.added?(:base, :apps_per_account)
     domain = @app_request.errors.include?(:subdomain)
     refuse_launch(reason, plan_limit: plan_limit, domain: domain) do
