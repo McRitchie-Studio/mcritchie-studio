@@ -31,16 +31,19 @@
             on a phone), so the partial card says "there is more". The edge that still
             has cards past it fades out (mask-image, the technique of
             components/_overflow_fade), measured on scroll AND on resize, since the
-            row's width changes without the window moving. %>
+            row's width changes without the window moving. The first message's
+            stream removes the gallery, so the observer measures its own entry
+            (never a $ref that is gone) and is disconnected on destroy. %>
         <div x-data="{ atStart: true, atEnd: true, _ro: null,
-                       measure(el) { this.atStart = el.scrollLeft <= 2; this.atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 },
+                       measure(el) { if (!el) return; this.atStart = el.scrollLeft <= 2; this.atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 },
+                       destroy() { this._ro && this._ro.disconnect() },
                        get mask() {
                          if (this.atStart && this.atEnd) return 'none';
                          const left = this.atStart ? 'black 0' : 'transparent 0, black 3rem';
                          const right = this.atEnd ? 'black 100%' : 'black calc(100% - 4rem), transparent 100%';
                          return 'linear-gradient(to right, ' + left + ', ' + right + ')';
                        } }"
-             x-init="$nextTick(() => measure($refs.row)); _ro = new ResizeObserver(() => measure($refs.row)); _ro.observe($refs.row)"
+             x-init="$nextTick(() => measure($refs.row)); _ro = new ResizeObserver((entries) => entries.forEach((entry) => measure(entry.target))); _ro.observe($refs.row)"
              x-on:turbo:before-cache.window="_ro && _ro.disconnect()">
           <ul x-ref="row" @scroll.passive="measure($el)"
               class="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-3 [scrollbar-width:thin]"

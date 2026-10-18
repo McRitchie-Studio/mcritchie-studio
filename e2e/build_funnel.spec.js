@@ -86,8 +86,15 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await expect.poll(() => box.getAttribute("placeholder"), { message: "the placeholder types example ideas" }).not.toBe(still);
   await page.emulateMedia({ reducedMotion: "reduce" });
-  // A marker on the window: a full page load would wipe it.
-  await page.evaluate(() => { window.__buildShellMarker = "kept"; });
+  // A marker on the window: a full page load would wipe it. And a record of the
+  // composer's status line, which a screen reader hears while the send posts.
+  await page.evaluate(() => {
+    window.__buildShellMarker = "kept";
+    window.__composerSaid = [];
+    new MutationObserver(() => {
+      document.querySelectorAll("[data-composer-status]").forEach((s) => { if (s.textContent) window.__composerSaid.push(s.textContent); });
+    }).observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
   await box.fill(idea);
   // A person takes longer than the bot shield's two seconds to type an idea.
   await page.waitForTimeout(2200);
@@ -103,6 +110,9 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(page.getByRole("heading", { name: "What do you want to build?" })).toBeVisible();
   await expect(page.locator("[data-test='build-status-card']")).toHaveCount(0);
   await expect(page.locator("[data-test='cto-chat-input']")).toBeFocused();
+  expect(await page.evaluate(() => window.__composerSaid), "the send was announced").toContain("Sending…");
+  // Once chatting the gallery is gone, as on a reload of /build/<token>.
+  await expect(page.locator("[data-test='build-gallery']")).toHaveCount(0);
 
   // The idea card: a title and key features. Build App locks it and moves on.
   await xanAnswers(page, auth, idea, "Here's the app I hear.", { card: "idea", title: "League Standings Hub", features: ["Live standings", "Game schedules"] });
@@ -125,9 +135,29 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await cto.locator("[data-test='build-portrait-new']").click();
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("[data-test='build-portraits'] img")).toHaveCount(12);
+  // The keyboard: an arrow moves the pick (and the preview) and the picker stays
+  // open for the next one; Enter closes it without submitting the card.
+  const preview = cto.locator("[data-test='build-portrait-preview']");
+  await dialog.locator("input[name='portrait']:checked").focus();
+  const before = await preview.getAttribute("src");
+  await page.keyboard.press("ArrowRight");
+  await expect(preview).not.toHaveAttribute("src", before);
+  await expect(dialog, "an arrow key does not close the picker").toBeVisible();
+  await page.keyboard.press("ArrowRight");
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(dialog).toBeHidden();
+  await expect(page.locator("[data-test='build-turn']", { hasText: "My CTO is" }), "Enter in the picker submits nothing").toHaveCount(0);
+  // A tap on a portrait picks it and closes the picker.
+  await cto.locator("[data-test='build-portrait-new']").click();
+  await expect(dialog).toBeVisible();
   await dialog.locator("label[title='Meadow']").click();
   await expect(dialog).toBeHidden();
   await expect(cto.locator("[data-test='build-portrait-preview']")).toHaveAttribute("src", /cto_portraits\/meadow/);
+  // Every one of Ray's names is a tap, though the first is prefilled.
+  await cto.locator("[data-test='build-cto-name-suggestion']", { hasText: "Scout" }).click();
+  await expect(cto.locator("[data-test='build-cto-name-input']")).toHaveValue("Scout");
+  await expect(cto.locator("[data-test='build-cto-name-suggestion']", { hasText: "Scout" })).toHaveAttribute("aria-pressed", "true");
   await cto.locator("[data-test='build-cto-name-input']").fill("Marbles");
   await cto.locator("[data-test='build-choose-cto']").click();
   await expect(status.locator("[data-test='build-tile-agent-value']")).toHaveText("Marbles");
@@ -151,10 +181,24 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   expect(new Set(tops).size, "three columns in one row").toBe(1);
   await themeCard.locator("[data-test='build-palette']").nth(1).getByRole("button", { name: "This Theme" }).click();
   await expect(status.locator("[data-test='build-tile-theme-value']")).toHaveText("Field");
+  // The tap re-renders the card (now showing Field as chosen): Light holds.
+  await expect(themeCard.locator("[data-test='build-palette']").nth(1)).toHaveAttribute("data-chosen", "true");
+  await expect(themeCard).toHaveAttribute("data-mode", "light");
+  await expect(lightPreview).toBeVisible();
+  await expect(themeCard.locator("[data-test='build-theme-toggle-light']")).toHaveAttribute("aria-pressed", "true");
 
   // The domain: a taken suggestion (the seed's live trivia-night) cannot be tapped; an available one IS the choice.
-  await tapped(page, auth, "Let's go with the Field theme.", "Pick a domain.", { card: "address", names: ["trivia-night", address] });
+  // A 30-character suggestion (the longest a name may be) must fit a phone's card.
+  const longest = "standings-hub-for-weekend-club";
+  await tapped(page, auth, "Let's go with the Field theme.", "Pick a domain.", { card: "address", names: ["trivia-night", address, longest] });
   const domainCard = page.locator("[data-test='build-card-address']");
+  await page.setViewportSize({ width: 360, height: 780 });
+  const fit = await domainCard.evaluate((card) => {
+    const edge = card.getBoundingClientRect().right;
+    return [...card.querySelectorAll("[data-test='build-address-suggestion']")].map((chip) => edge - chip.getBoundingClientRect().right);
+  });
+  expect(Math.min(...fit), "every domain chip ends inside its card at 360px").toBeGreaterThanOrEqual(0);
+  await page.setViewportSize({ width: 1280, height: 800 });
   await expect(domainCard.locator("[data-test='build-address-suggestion']", { hasText: "trivia-night" })).toBeDisabled();
   await domainCard.locator("[data-test='build-address-suggestion']", { hasText: address }).click();
   await expect(status).toHaveAttribute("data-complete", "true");
@@ -250,6 +294,55 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await page.setViewportSize({ width: 390, height: 844 });
   const chatOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(chatOverflow, "the CTO chat fits at 390px").toBeLessThanOrEqual(0);
+  expect(pageErrors, report()).toHaveLength(0);
+});
+
+// The address moved to /build/<token> in place (replace_url), so Turbo must file
+// the page it leaves under THAT address. Filed under "/build" (Turbo's view
+// still thought it was there), the draft's thread overwrote the empty /build in
+// the snapshot cache, and Back to an earlier /build restored the old thread.
+// (Studio.smooth_load sets no-preview, so a forward visit never shows a cached
+// page; a restore always does.)
+test("leaving /build by a Turbo visit after the first message and coming back never shows the old thread", async ({ page }) => {
+  await blockThirdPartyRequests(page);
+  const { pageErrors, report } = watchPageErrors(page);
+  await page.goto("/build");
+  await page.evaluate(() => window.Turbo.visit("/contact"));
+  await page.waitForURL((u) => u.pathname === "/contact");
+  await page.evaluate(() => window.Turbo.visit("/build"));
+  await page.waitForURL((u) => u.pathname === "/build");
+
+  const box = page.getByLabel("Tell Ray what you want to build");
+  await box.fill(`A recipe box for my family ${Date.now()}`);
+  await page.waitForTimeout(2200); // past the bot shield's two seconds
+  await box.press("Enter");
+  await expect(page).toHaveURL(/\/build\/[A-Za-z0-9_-]{10,}$/);
+  await expect(page.locator("[data-test='build-turn']")).toHaveCount(1);
+  const draftPath = new URL(page.url()).pathname;
+
+  // Every render from here, cached or fresh, is recorded with what it drew.
+  await page.evaluate(() => {
+    window.__renders = [];
+    document.addEventListener("turbo:before-render", (event) => {
+      window.__renders.push({ path: location.pathname, thread: Boolean(event.detail.newBody.querySelector("[data-test='build-turn']")) });
+    });
+  });
+  await page.evaluate(() => window.Turbo.visit("/contact"));
+  await page.waitForURL((u) => u.pathname === "/contact");
+
+  // Back to the draft: its own thread, under its own address.
+  await page.goBack();
+  await page.waitForURL((u) => u.pathname === draftPath);
+  await expect(page.locator("[data-test='build-turn']")).toHaveCount(1);
+  // Back past /contact to the first /build: empty, as it was left.
+  await page.goBack();
+  await page.waitForURL((u) => u.pathname === "/contact");
+  await page.goBack();
+  await page.waitForURL((u) => u.pathname === "/build");
+  await expect(page.getByLabel("Tell Ray what you want to build")).toBeVisible();
+  await expect(page.locator("[data-test='build-turn']"), "the empty /build, not the draft's thread").toHaveCount(0);
+  const renders = await page.evaluate(() => window.__renders);
+  expect(renders.filter((r) => r.thread && r.path !== draftPath), "no other address drew the old thread").toEqual([]);
   expect(pageErrors, report()).toHaveLength(0);
 });
 
