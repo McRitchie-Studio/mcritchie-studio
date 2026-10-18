@@ -2,39 +2,76 @@ module BuildIntake
   # The visitor's TAP on an intake card: the only thing that writes an intake
   # field. Every value is checked again here, on the server, whatever the card
   # said: a palette or an idea is taken from the stored card (by message and
-  # index, never from posted JSON), a name or an address from the post, held to
+  # index, never from posted JSON), a name or a domain from the post, held to
   # the same rules the card was.
   #
-  #   idea     message_id            → answers (idea, audience, day_one)
-  #   cto      name or custom_name, portrait → cto_name, cto_avatar
-  #   palette  message_id, index     → palette
-  #   address  subdomain             → subdomain (claimed only at Build, by queue!)
+  #   idea       message_id            → answers (title, features, idea)
+  #   idea_else  message_id            → nothing set; the idea this card set is cleared
+  #   cto        name or custom_name, portrait → cto_name, cto_avatar
+  #   palette    message_id, index     → palette (the visitor reads "theme")
+  #   address    subdomain             → subdomain (claimed only at Build)
+  #
+  # EVERY TAP ALSO SPEAKS (.agents/epics/build-with-ray-v2.md, 2-5: "It wasn't
+  # intuitive that I had to send another message after confirming"). Once the
+  # field is saved, the tap posts the visitor's own turn into the request's
+  # thread, a line written HERE from the saved value (RELAYS), never from the
+  # post. It goes through BuildIntake::Ingest like a typed message, so the
+  # dispatcher answers it with the next step within BuildIntake::Caps, and at a
+  # cap the visitor reads the cap line instead. The write and the turn commit
+  # together: a refused tap posts nothing.
   class Choice
     class Refused < StandardError; end
 
-    FIELDS = %w[idea cto palette address].freeze
+    FIELDS = %w[idea idea_else cto palette address].freeze
 
-    def initialize(request)
+    # The visitor's line for each tap, from the value just saved.
+    RELAYS = {
+      "idea" => ->(r) { "Let's build #{r.answers['title'].presence || r.answers['idea']}." },
+      "idea_else" => ->(_r) { "I'd like to build something else." },
+      "cto" => ->(r) { "My CTO is #{r.cto_name}." },
+      "palette" => ->(r) { "Let's go with the #{r.palette['name']} theme." },
+      "address" => ->(r) { "Let's use #{r.host}." }
+    }.freeze
+
+    attr_reader :relay
+
+    def initialize(request, user: nil, ip: nil, ingest: nil)
       @request = request
+      @ingest = ingest || Ingest.new(request: request, user: user, ip: ip)
     end
 
-    # The request, saved. Raises Refused with a message for the visitor.
+    # The request, saved, with #relay the visitor turn the tap posted. Raises
+    # Refused with a message for the visitor.
     def apply!(field, params)
       raise Refused, "This request is already in the build queue." unless @request.draft?
       raise Refused, "Unknown choice." unless FIELDS.include?(field.to_s)
 
-      send(:"choose_#{field}", params)
-      @request.save!
+      AppRequest.transaction do
+        send(:"choose_#{field}", params)
+        @request.save!
+        @relay = @ingest.call(RELAYS.fetch(field.to_s).call(@request), client_id: params[:client_id])
+      end
       @request
     rescue ActiveRecord::RecordInvalid => e
       raise Refused, e.record.errors.full_messages.to_sentence.presence || "That choice could not be saved."
+    rescue Ingest::Refused => e
+      raise Refused, e.message
     end
 
     private
 
     def choose_idea(params)
       card = card_for(params[:message_id], "idea")
-      @request.answers = card.slice("idea", "audience", "day_one")
+      @request.answers = { "title" => card["title"], "features" => card["features"],
+                           "idea" => card["idea"].presence || card["title"] }.compact
+    end
+
+    # "Build something else": nothing to set. If this card's idea was the one
+    # locked in, it is unlocked, so the checklist and Ray agree it is open.
+    def choose_idea_else(params)
+      card = card_for(params[:message_id], "idea")
+      @request.answers = {} if @request.answers.is_a?(Hash) && @request.answers["title"].present? &&
+                               @request.answers["title"] == card["title"]
     end
 
     def choose_cto(params)
@@ -53,10 +90,10 @@ module BuildIntake
       card = card_for(params[:message_id], "palette")
       index = params[:index].to_s
       chosen = index.match?(/\A\d\z/) ? Array(card["palettes"])[index.to_i] : nil
-      raise Refused, "Pick one of the palettes." unless chosen
+      raise Refused, "Pick one of the themes." unless chosen
 
       verdict = Card.palette(chosen)
-      raise Refused, "That palette cannot be used: #{verdict.reason}." unless verdict.ok?
+      raise Refused, "That theme cannot be used: #{verdict.reason}." unless verdict.ok?
 
       @request.palette = verdict.card
     end

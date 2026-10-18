@@ -40,7 +40,7 @@ class AppLaunch
   # What Xan's intake gathered (the request's intake columns, owned by the
   # build-with-xan-intake task): the CTO's name and portrait key, the palette
   # ({ "name", "light", "dark" }) and the sharpened answers ({ "idea",
-  # "audience", "day_one" }).
+  # "title", "features" }, or a v1 draft's "audience" and "day_one").
   Intake = Struct.new(:cto_name, :cto_avatar, :palette, :answers, keyword_init: true) do
     def self.from(request)
       read = ->(attr) { request.respond_to?(attr) ? request.public_send(attr) : nil }
@@ -122,7 +122,9 @@ class AppLaunch
   # The plan the CTO restates: the sharpened idea and its day-one goal.
   def plan
     answers = intake.answers_hash
-    [ answers["idea"].to_s.strip, ("Day one: #{answers['day_one'].to_s.strip}" if answers["day_one"].present?) ]
+    features = Array(answers["features"]).map { |f| f.to_s.strip }.compact_blank
+    [ answers["idea"].to_s.strip, ("Key features: #{features.join('; ')}" if features.any?),
+      ("Day one: #{answers['day_one'].to_s.strip}" if answers["day_one"].present?) ]
       .compact_blank.join("\n")[0, AppCto::PLAN_LIMIT]
   end
 
