@@ -61,6 +61,11 @@ class BuildViewTest < ActionView::TestCase
     assert_includes row[":style"], "mask-image"
     assert_select "[data-test='build-gallery-item'][class*='sm:basis-[calc((100%-3rem)/3.3)]']", 3
     assert_select "[data-test='build-example'] > span.text-center[data-test='build-example-body']", 3, "the card text is centered on every card"
+    # The row scrolls sideways, so its overflow clips anything drawn outside a
+    # card: the focus ring is drawn inside instead.
+    ring = css_select("[data-test='build-example']").first["class"].split
+    assert_includes ring, "focus-visible:-outline-offset-2"
+    refute_includes ring, "focus-visible:outline-offset-2"
   end
 
   test "a card reads image on top, then name, host and a one-line description" do
@@ -91,7 +96,8 @@ class BuildViewTest < ActionView::TestCase
     video = css_select("[data-test='build-example-motion']").first
     assert video, "the loop rides over the still"
     assert_match %r{build_gallery/cyvasse.*\.mp4}, video["src"]
-    assert_match %r{build_gallery/cyvasse.*\.webp}, video["poster"], "until it plays, the loop shows the still"
+    assert_nil video["poster"], "no poster: it would fetch the still eagerly; the lazy still under the video shows until it plays"
+    assert_equal "lazy", css_select("[data-test='build-example-image']").first["loading"]
     %w[muted loop playsinline].each { |attr| assert video.key?(attr), "the loop is #{attr}" }
     assert_equal "none", video["preload"], "nothing downloads until someone hovers"
     assert_equal "true", video["aria-hidden"], "decoration: the still's alt text names the app"
@@ -159,9 +165,11 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='build-send'][aria-label='Send to Ray'].rounded-full"
     assert box.attributes.key?("data-build-first-input"), "Enter sends through build_shell.js"
     examples = JSON.parse(box["data-typing-placeholder"])
-    assert_equal 4, examples.size, "the examples are typed into the placeholder (app/javascript/build_shell.js)"
+    assert_equal 4, examples.size, "the examples are typed into the placeholder (app/javascript/typing_placeholder.js)"
     assert_equal examples.first, box["placeholder"], "still, the first example reads (no script, or reduced motion)"
     assert_select "[data-test='build-examples']", 0, "no example chips"
+    assert_select "[data-test='build-form'] p.sr-only[role='status'][aria-live='polite'][data-composer-status]", 1,
+                  "the icon-only send has a status line a screen reader hears as Sending (build_shell.js)"
   end
 
   test "/build is the agent shell: Ray's portrait, the heading, then the chat box; no banner, no chips, no three steps" do

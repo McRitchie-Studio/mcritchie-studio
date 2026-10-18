@@ -97,7 +97,7 @@ class AnswerersAppOwnerTest < ActiveSupport::TestCase
     assert_equal [ own.id ], claimable_ids("client_cto")
   end
 
-  test "the owner speaks as the app's client: no owner or team action, and their go is refused" do
+  test "the owner speaks as the app's client: no owner or team action, and their go on an ask is refused" do
     own = ingest(@user, "What should we build next?")
     audience = AgentMessages::MemoryBundle.new(own).audience
     assert_equal({ "role" => "client", "client_domain" => "turf_monster" }, audience)

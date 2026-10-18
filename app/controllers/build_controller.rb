@@ -47,6 +47,9 @@ class BuildController < ApplicationController
   POLL_LIMIT = 10
   FORM_ID = "build-chat-form".freeze
   FIRST_FORM_ID = "build-first-form".freeze
+  # /build's "Built with McRitchie Studio" gallery: shown only before the first
+  # message. The first message's stream removes it, as /build/<token> has none.
+  GALLERY_ID = "build-gallery".freeze
   # The region the first message swaps in place (build/_chat), and the status
   # card's stream target (build/_status_card; the id predates the card).
   CHAT_ID = "build-chat-page".freeze
@@ -121,7 +124,8 @@ class BuildController < ApplicationController
       format.json { render json: { token: request_row.token, path: build_request_path(request_row.token) }, status: :created }
       # The page's own post: the conversation starts HERE. The empty thread
       # becomes the draft's chat (its first turn already pending, so the poll
-      # starts), the status slot is redrawn for the draft, and replace_url
+      # starts), the status slot is redrawn for the draft, the gallery goes (a
+      # reload of /build/<token> has none), and replace_url
       # (app/javascript/build_shell.js) moves the address bar without a reload.
       format.turbo_stream do
         @app_request = request_row
@@ -129,6 +133,7 @@ class BuildController < ApplicationController
         render turbo_stream: [
           turbo_stream.replace(CHAT_ID, partial: "build/chat", locals: { request_row: request_row, messages: @messages }),
           replace_checklist,
+          turbo_stream.remove(GALLERY_ID),
           helpers.turbo_stream_action_tag(:replace_url, target: CHAT_ID, url: build_request_path(request_row.token))
         ]
       end

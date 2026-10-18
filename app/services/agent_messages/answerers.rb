@@ -158,8 +158,8 @@ module AgentMessages
     # person's own (AgentPerson.audience_for), except on an app-owner thread,
     # where a public or client person is a CLIENT of that app, domain the app slug
     # underscored. Never higher than client: the exception grants no owner or team
-    # action, and a `go` from them is still refused (confirm_proposal is the
-    # owner's). nil person: the public.
+    # action. Their `go` on that thread is ProposalConfirm#owner_verdict's to
+    # decide (a change, under the cap), never confirm_proposal's. nil person: the public.
     def audience_for(message, person = message.person)
       base = AgentPerson.audience_for(person)
       return base unless person && app_owner_thread?(message, person)

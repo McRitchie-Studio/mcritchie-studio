@@ -118,6 +118,21 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert_enqueued_with(job: AppIntakeMoveJob, args: [ request.id ])
   end
 
+  test "the app is named from the idea card's confirmed title, squished and capped, and from its address without one" do
+    titled = launch(draft, subdomain: "league-hub",
+                           intake: client_intake(answers: ANSWERS.merge("title" => "  League   Standings Hub ")))
+    assert_equal "League Standings Hub", titled.app.name, "the title, not the address in words"
+    assert titled.handover.response_text.start_with?("Hi Viewer, I'm Nova, the CTO of League Standings Hub."), "the greeting names it too"
+
+    # An admin's showcase apps are not held to the one-app plan, so one user launches the other two.
+    long = launch(draft(user: users(:alex)), subdomain: "long-one", intake: client_intake(answers: ANSWERS.merge("title" => "Word " * 20)))
+    assert_operator long.app.name.length, :<=, AppLaunch::NAME_LIMIT
+    refute long.app.name.end_with?(" ")
+
+    blank = launch(draft(user: users(:alex)), subdomain: "pawsome-grooming", intake: client_intake(answers: ANSWERS.merge("title" => "   ")))
+    assert_equal "Pawsome Grooming", blank.app.name, "no title: the address in words"
+  end
+
   test "an admin's launch is a showcase build" do
     result = launch(draft(user: users(:alex)), subdomain: "coin-toss")
     assert result.request.showcase?

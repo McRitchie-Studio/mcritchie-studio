@@ -6,12 +6,14 @@
 // "Turf is typing…", then the answer, with no reload, and typing clears. The
 // meter is in tokens; the page fits a phone; the bubbles read in both themes.
 // An app's owner is answered on their own app's chat (the app-owner rule), with
-// no "not answered" notice, and another app's chat does not exist for them.
+// no "not answered" notice, and another app's chat does not exist for them; and
+// an owner who is not Alex says go on a proposal there and sees the designed task.
 //
 // NOT @qa-readonly: it writes agent messages. Nothing here talks to Discord or Claude.
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
 const { CONTRAST, eachTheme, TEXT_ON_SURFACE } = require("./contrast");
+const { ADMIN_STATE } = require("./global-setup");
 
 test.use({ storageState: VISITOR });
 
@@ -116,4 +118,46 @@ test("an app's owner is answered on their own app's chat, as its client", async 
   // Another app's chat does not exist for this owner.
   const other = await page.goto("/applications/mcritchie-studio/chat");
   expect(other.status()).toBe(404);
+});
+
+test("an app's owner says go on a proposal in their own chat and sees the designed task", async ({ page, browser }) => {
+  const { pageErrors, report } = watchPageErrors(page);
+  // e2e/seed.rb: owner@turf.test (a plain viewer, no agent role) has a pending
+  // change proposal under an answered question on their own Turf chat.
+  await loginWithMagicLink(page, "owner@turf.test");
+  await page.goto("/applications/turf-monster/chat");
+
+  const offer = page.locator("[data-test='cto-chat-turn']", { hasText: "Can the slate show kickoff times?" });
+  await expect(offer.locator("[data-test='cto-chat-reply']")).toContainText("Proposed: Open a task to show kickoff times");
+  await expect(page.locator("turbo-cable-stream-source[channel='CtoChatChannel']")).toHaveAttribute("connected", "");
+
+  let slug = null;
+  try {
+    const input = page.locator("[data-test='cto-chat-input']");
+    await input.fill("go");
+    await input.press("Enter");
+    const go = page.locator("[data-test='cto-chat-turn']").filter({ has: page.locator("[data-test='cto-chat-sent']", { hasText: /^go$/ }) }).last();
+    await expect(go).toHaveCount(1);
+    await expect(go.locator("[data-test='cto-chat-confirm-held']")).toHaveCount(0);
+
+    // AgentProposalJob opens the task; its answer streams into the go's turn.
+    const link = go.locator("[data-test='cto-chat-reply'] a[href*='/tasks/e2e-owner-kickoff-times']");
+    await expect(link).toBeVisible({ timeout: 20_000 });
+    await expect(go.locator("[data-test='cto-chat-reply']")).toContainText("Opened");
+    slug = (await link.getAttribute("href")).split("/tasks/").pop();
+
+    await page.reload();
+    await expect(page.locator(`[data-test='cto-chat-reply'] a[href$='/tasks/${slug}']`)).toBeVisible();
+    expect(pageErrors, report()).toHaveLength(0);
+  } finally {
+    // The task the go opened is this spec's row: delete it, so no later spec that
+    // measures the board sees it.
+    if (slug) {
+      const admin = await browser.newContext({ storageState: ADMIN_STATE });
+      const adminPage = await admin.newPage();
+      const token = await apiToken(adminPage);
+      await adminPage.request.delete(`/api/v1/tasks/${slug}`, { headers: { Authorization: `Bearer ${token}` } });
+      await admin.close();
+    }
+  }
 });
