@@ -7,8 +7,18 @@ module AgentMessages
   # AgentProposal, and is its text exactly `go`, `no` or `change: …` (trimmed,
   # any case, leading @-mentions ignored)? Only then does this class store it:
   #
-  #   sender may not confirm (Audience#may?(:confirm_proposal), the person's
-  #   role) → stored `held` with a `confirm_refused` event. Nothing posts, nothing runs.
+  #   sender may not confirm → stored `held` with a `confirm_refused` event
+  #   (its `reason` picks the line the chat shows, held_text). Nothing posts,
+  #   nothing runs. Two kinds of sender may:
+  #     - the owner role (Audience#may?(:confirm_proposal), the person's role,
+  #       never anything the message says), on any thread, uncapped
+  #     - an APP OWNER (Alex, 2026-10-18), only through owner_verdict: on that
+  #       app's own web CTO thread for that user (the same rule that answers
+  #       them, Answerers#app_owner_thread?), on a proposal of a kind a client
+  #       of the app may have built (OWNER_KINDS, checked again against the
+  #       registry as that client), and while the app's owner meter
+  #       (AgentUsage.owner_meter) is under its cap. At the cap the word is
+  #       answered with AgentUsage's cap line, from code, and nothing changes.
   #   proposal past expires_at → `expired`; the reply says so.
   #   the word replies to a proposal that is no longer open (superseded, run,
   #   dropped) → nothing changes; the reply says so (still running, already
@@ -39,6 +49,19 @@ module AgentMessages
     # word re-queues it (the job's claim guard keeps it to one run).
     RETRY_TEXT = "That proposal was confirmed but its run went quiet, so I am starting it again. " \
                  "Its result will post in this thread.".freeze
+    # What a refused (`held`) word shows in the web chat, by its event's reason.
+    REFUSED_TEXT = "This account can't confirm or drop proposals in this chat, so nothing has run.".freeze
+    KIND_REFUSED_TEXT = "Only the McRitchie team can confirm this kind of proposal, so nothing has run.".freeze
+    # The proposal kinds an app owner may confirm on their own app's CTO thread:
+    # a `change` opens a `designed` task in the app's own repo, which is what a
+    # client's build is. Never `ask` (the catalog's queries read board and app
+    # internals, min_audience team or owner) and never `operate` (SOPs).
+    OWNER_KINDS = %w[change].freeze
+
+    # The line a refused word shows (the `confirm_refused` event's detail).
+    def self.held_text(detail)
+      detail.to_h["reason"] == "kind" ? KIND_REFUSED_TEXT : REFUSED_TEXT
+    end
 
     # [:go] / [:no] / [:change, "the change"] / nil.
     def self.intent(content)
@@ -60,7 +83,11 @@ module AgentMessages
     # [message, jobs to enqueue once it is stored].
     def store!(attrs, person:, source:)
       audience = AgentProposal.audience_for(person)
-      return refused!(attrs, person, source, audience) unless audience.may?(:confirm_proposal)
+      unless audience.may?(:confirm_proposal)
+        verdict, detail = owner_verdict(attrs, person)
+        return capped!(attrs, source, detail) if verdict == :capped
+        return refused!(attrs, person, source, audience, reason: detail) unless verdict == :ok
+      end
       return expired!(attrs, source) if @proposal.expired?(@now)
       return stalled!(attrs, source) if @intent.first == :go && stalled?
       return answered!(attrs, source, closed_text, nil, "proposal_closed", @intent.first.to_s) unless @proposal.status == "proposed"
@@ -84,12 +111,63 @@ module AgentMessages
       message
     end
 
-    def refused!(attrs, person, source, audience)
+    def refused!(attrs, person, source, audience, reason:)
       message = base(attrs, source, status: "held")
       message.record!("confirm_refused", actor: "board",
                                          detail: { "proposal_id" => @proposal.id, "role" => audience.role,
-                                                   "person_id" => person&.id }.compact)
+                                                   "person_id" => person&.id, "reason" => reason }.compact)
       [ message, [] ]
+    end
+
+    # THE APP OWNER'S WORD. [:ok], [:capped, meter], or [:refused, reason], from
+    # facts code wrote, never the message text:
+    #   "not_app_owner"  not this app's own web CTO thread for this user, by
+    #                    Answerers#app_owner_thread? (web channel, the key
+    #                    web:<app>:<user id> built server-side, the app's CTO
+    #                    soul, a live AppMembership owner row, a public or
+    #                    client person), or the proposal is not on that thread
+    #   "kind"           the proposal is not one OWNER_KINDS names, or the
+    #                    registry would not let this owner, as the app's client,
+    #                    request it now
+    #   "no_app"         no App row to meter (fail closed)
+    def owner_verdict(attrs, person)
+      answerers = Answerers.current
+      probe = AgentMessage.new(attrs.except(:person).merge(soul_slug: @proposal.soul_slug))
+      return [ :refused, "not_app_owner" ] unless own_thread?(attrs) && answerers.app_owner_thread?(probe, person)
+      return [ :refused, "kind" ] unless client_build?(answerers.audience_for(probe, person))
+
+      app = App.find_by(slug: @proposal.channel_ref)
+      return [ :refused, "no_app" ] unless app
+
+      meter = AgentUsage.owner_meter(app, now: @now, answerers: answerers)
+      meter.capped? ? [ :capped, meter ] : [ :ok ]
+    end
+
+    # The proposal is on the very web thread the word was sent in.
+    def own_thread?(attrs)
+      @proposal.channel == "web" && attrs[:channel].to_s == "web" && @proposal.guild_id.nil? &&
+        @proposal.thread_key == attrs[:thread_key].to_s && @proposal.channel_ref == attrs[:channel_ref].to_s
+    end
+
+    # Whether this owner, as the app's client, could request this proposal now.
+    def client_build?(audience)
+      return false unless OWNER_KINDS.include?(@proposal.kind)
+
+      client = AgentMailbox::Audience.new(role: audience["role"], client_domain: audience["client_domain"])
+      AgentProposal.registry.validate(soul: @proposal.soul_slug, audience: client,
+                                      proposal: { "kind" => @proposal.kind, "capability" => @proposal.capability,
+                                                  "params" => @proposal.params, "summary" => @proposal.summary }).ok?
+    end
+
+    # The owner's word at the app's cap: answered with the cap line from code
+    # (AgentMessage#usage_capped!, as a capped question is), the proposal untouched.
+    def capped!(attrs, source, meter)
+      message = base(attrs, source, status: "received")
+      message.usage_capped!(meter, now: @now)
+      message.record!("confirm_refused", actor: "board",
+                                         detail: { "proposal_id" => @proposal.id, "reason" => "usage_cap",
+                                                   "word" => @intent.first.to_s, "person_id" => message.person_id }.compact)
+      [ message, [ [ AgentMessageReplyJob, message.id ] ] ]
     end
 
     def expired!(attrs, source)
