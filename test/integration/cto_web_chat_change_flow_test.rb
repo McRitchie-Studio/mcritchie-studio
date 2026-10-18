@@ -9,8 +9,10 @@ require Rails.root.join("bin/lib/agent_dispatcher").to_s
 # the board records it and the answer shows the confirm line with the capability
 # and params, never the block; Alex replies `go` in the same web thread; the
 # proposal job opens a `designed` task whose source thread is the Turf web chat;
-# and the result streams into the chat. A `go` in another web thread, or from a
-# person who may not confirm, leaves the proposal alone.
+# and the result streams into the chat. A `go` in another web thread leaves the
+# proposal alone. An app owner who is not Alex may say go in their OWN app's chat
+# (Alex, 2026-10-18; AgentMessages::ProposalConfirm#owner_verdict); another
+# owner's thread, a team-role owner, and another app's owner never run it.
 class CtoWebChatChangeFlowTest < ActionDispatch::IntegrationTest
   include ActionCable::TestHelper
 
@@ -111,16 +113,56 @@ class CtoWebChatChangeFlowTest < ActionDispatch::IntegrationTest
     assert_select "#cto-chat-turn-#{go.id} [data-test='cto-chat-reply'] a[href$='/tasks/#{task.slug}']"
   end
 
-  test "[integration] a go from a person who may not confirm, in their own web thread, runs nothing" do
-    stranger = User.create!(email: "turf-partner@example.com", name: "Partner", role: "viewer")
-    AppMembership.create!(app: apps(:turf_monster), user: stranger)
-    log_in_as(stranger)
+  # A pending change proposal on `user`'s own Turf web thread, from their first message.
+  def owner_proposal!(user)
+    log_in_as(user)
     first = say("hello")
-    proposal = AgentProposal.create!(thread_key: first.thread_key, channel: "web", guild_id: nil, channel_ref: "turf-monster",
-                                     soul_slug: "turf_monster", person: first.person, source_message: first, kind: "change",
-                                     capability: "task", params: { "title" => "x", "accept" => [ "x" ], "test" => [ "x" ] },
-                                     summary: "x", status: "proposed", expires_at: 1.day.from_now)
+    AgentProposal.create!(thread_key: first.thread_key, channel: "web", guild_id: nil, channel_ref: "turf-monster",
+                          soul_slug: "turf_monster", person: first.person, source_message: first, kind: "change",
+                          capability: "task", params: { "title" => "Owner asked for this", "kind" => "feature", "shape" => "backend",
+                                                        "accept" => [ "x" ], "test" => [ "[unit] x" ], "risk" => [] },
+                          summary: "Open a task", status: "proposed", expires_at: 1.day.from_now)
+  end
 
+  test "[integration] an app owner who is not Alex says go in their own Turf chat and the designed task opens" do
+    partner = User.create!(email: "turf-partner@example.com", name: "Partner", role: "viewer")
+    AppMembership.create!(app: apps(:turf_monster), user: partner)
+    proposal = owner_proposal!(partner)
+    assert_equal "public", proposal.person.role, "an ordinary owner, answered by the app-owner rule"
+
+    go = nil
+    assert_difference -> { Task.count }, 1 do
+      perform_enqueued_jobs(only: [ AgentProposalJob, AgentMessageReplyJob ]) { go = say("go") }
+    end
+    assert_equal "executed", proposal.reload.status
+    task = Task.find_by!(slug: proposal.result["task_slug"])
+    assert_equal [ "designed", "Owner asked for this" ], [ task.stage, task.title ]
+    assert_match(/\AOpened `#{task.slug}`/, go.reload.response_text)
+
+    get chat_application_path("turf-monster")
+    assert_select "#cto-chat-turn-#{go.id} [data-test='cto-chat-reply'] a[href$='/tasks/#{task.slug}']"
+  end
+
+  test "[integration] another owner's go, a team-role owner's go, and another app's owner never run the proposal" do
+    partner = User.create!(email: "turf-partner@example.com", name: "Partner", role: "viewer")
+    AppMembership.create!(app: apps(:turf_monster), user: partner)
+    proposal = owner_proposal!(partner)
+
+    co_owner = User.create!(email: "turf-co@example.com", name: "Co", role: "viewer")
+    AppMembership.create!(app: apps(:turf_monster), user: co_owner)
+    log_in_as(co_owner)
+    assert_no_difference -> { Task.count } do
+      perform_enqueued_jobs(only: AgentProposalJob) { assert_not_equal proposal.thread_key, say("go").thread_key }
+    end
+
+    studio_owner = User.create!(email: "studio-owner@example.com", name: "Studio", role: "viewer")
+    AppMembership.create!(app: apps(:mcritchie_studio), user: studio_owner)
+    log_in_as(studio_owner)
+    post chat_application_path("turf-monster"), params: { cto_chat: { text: "go" } }, as: :turbo_stream
+    assert_response :not_found, "an owner of another app has no Turf chat to say go in"
+
+    proposal.person.set_role!("team")
+    log_in_as(partner)
     assert_no_difference -> { Task.count } do
       perform_enqueued_jobs(only: AgentProposalJob) { assert_equal "held", say("go").status }
     end

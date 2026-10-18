@@ -173,8 +173,9 @@ is that app's CTO (`AppOwnership.cto_for_app`), and the membership is read at th
 moment of the check. The same person stays `held` on another app's thread, on
 Discord, by email, and on an app they do not own. The claim's SQL guard carries
 the same rule. They are answered as that app's `client` (`Answerers#audience_for`,
-`MemoryBundle#audience`): no read action, no internal context, the client catalog,
-and a `go` from them is still refused (`confirm_proposal` is the owner's). Their
+`MemoryBundle#audience`): no read action, no internal context, the client catalog.
+On that same thread they may say `go`, `no` or `change: …` on a `change` proposal
+while the app is under its cap ("Confirm by reply" below; Alex, 2026-10-18). Their
 answers are metered as `client`, against `AgentUsage.owner_meter`: the tier's
 `cto_monthly_tokens`, else `app_owners.default_monthly_tokens` (1,000,000 by
 default, while every tier is blank), unless an admin lifted the cap. At the cap,
@@ -610,8 +611,10 @@ hub can read, so there is no entries-for-week ask yet.
 `AgentMailbox::Audience::CAPABILITIES` (`propose_ask`, `propose_change`,
 `propose_operate`) and the capability's `min_audience` on `Audience::RANK`
 (public < client < team < owner). A client may request only in the domain it is a
-client of. Confirming is `confirm_proposal`, the owner's alone, read from the
-person's role (`agent_people.role`), never from a Discord id or the message text.
+client of. Confirming is `confirm_proposal`, the owner's, read from the
+person's role (`agent_people.role`), never from a Discord id or the message text,
+with one exception decided in code: an **app owner** on their own app's web CTO
+thread (`ProposalConfirm#owner_verdict`, below).
 
 **In the prompt.** The context bundle carries `proposals.catalog`: this soul's
 catalog, filtered on the board by the sender's audience. ContextBuilder lists it
@@ -666,7 +669,38 @@ and with none pending it is about nothing. A go in another thread, or a
 top-level go outside a Discord thread (which starts a thread of its own), finds
 no proposal and is routed as usual.
 
-| Word | From the owner | From anyone else |
+**An app owner's word** (Alex, 2026-10-18: "the app owner should have that
+access"). A person who is not the owner role may still confirm, drop or change a
+proposal when `ProposalConfirm#owner_verdict` passes all three, each from facts
+code wrote:
+
+1. **Their own app's thread.** `Answerers#app_owner_thread?` holds for the word
+   (the `web` channel, the key `web:<app>:<user id>` built server-side, the app's
+   CTO soul, a live `AppMembership` owner row, a `public` or `client` person), and
+   the proposal is on that very thread.
+2. **A kind a client's build may do.** `ProposalConfirm::OWNER_KINDS` is `change`
+   only (a `designed` task in the app's own repo), and the registry must still let
+   this owner, as the app's `client`, request it (`DomainRegistry#validate`). An
+   `ask` (the catalog's queries are `min_audience` team or owner) and an `operate`
+   are refused with `reason: kind`. Today that means Turf Monster's and McRitchie
+   Studio's owners may confirm `change task`; a client app (`client_cto`) and
+   Cyvasse (`tyrion`) have no catalog, so nothing is proposed there to confirm.
+   `test/services/agent_messages/proposal_confirm_app_owner_test.rb` fails when a
+   client catalog grows, so a new kind is a decision, not a drift.
+3. **Under the cap.** `AgentUsage.owner_meter` for the app is not spent. At the cap
+   the word is answered with `AgentUsage.cap_reply` (code, `usage_capped`), with a
+   `confirm_refused` event (`reason: usage_cap`), and the proposal is untouched.
+   An admin's lift removes the cap.
+
+Refused everywhere else: Discord, email, another app's thread, another user's
+thread on the same app, an app they do not own, a team-role owner, and any held
+person (`reason: not_app_owner`). The owner role is unchanged: any thread, any
+kind, never capped. A refused word in the web chat reads
+`ProposalConfirm.held_text`: "This account can't confirm or drop proposals in this
+chat, so nothing has run.", or, for a kind they may not confirm, "Only the
+McRitchie team can confirm this kind of proposal, so nothing has run."
+
+| Word | From the owner (or an app owner, as above) | From anyone else |
 |------|----------------|------------------|
 | `go` | `confirmed`; `AgentProposalJob` runs it; the result posts as the answer to the go | `held`, with a `confirm_refused` event; nothing runs, nothing posts |
 | `no` | `rejected`; "Dropped. Nothing will run." | `held` / `confirm_refused` |
@@ -954,8 +988,9 @@ capability and its params), the owner's `go` in the same web thread opens a
 `designed` task, and the answer to the go carries its link. The task's
 `devops.source_thread` is the app's chat page (`/applications/<slug>/chat`) and its
 description says "Requested in the <slug> web chat" and links the message's admin
-page. A `go` in another web thread, or from a person who may not confirm, changes
-nothing (`test/integration/cto_web_chat_change_flow_test.rb`). Past `WebIngest::RATE_LIMIT` (30)
+page. The app's owner may say that `go` whether or not they are Alex (the app-owner
+word, "Confirm by reply" above). A `go` in another web thread, or from a person who
+may not confirm, changes nothing (`test/integration/cto_web_chat_change_flow_test.rb`). Past `WebIngest::RATE_LIMIT` (30)
 messages in a thread within an hour the next is `held` with a `rate_limited`
 event. A message is at most 4,000 characters, the prompt's message budget. The
 form carries a client id per send, so a double submit stores one row.

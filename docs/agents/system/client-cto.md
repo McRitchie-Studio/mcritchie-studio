@@ -78,6 +78,11 @@ The chosen palette (`AppPalette`: `primary`, `accent`, `surface`, `text`, light 
   (actor `app-launch`).
 - **Tools.** None, as every mailbox soul: `claude -p --safe-mode --tools ""`. No read
   action, no proposal catalog, no warm session.
+- **Confirming.** With no catalog the client CTO proposes nothing, so there is nothing
+  for its owner to confirm yet. When one lands, the owner's `go`, `no` or `change: …`
+  on their own app's chat is decided by `ProposalConfirm#owner_verdict`: a `change`
+  only, under the owner meter ([`agent-message-loop.md`](agent-message-loop.md),
+  "Confirm by reply").
 - **Usage.** `AgentUsage.meter(app)` counts the `client_cto` answers in that app's chat
   only, against the app's own tier allowance; the gate stops a capped app's client CTO.
 
