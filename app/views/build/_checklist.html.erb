@@ -15,7 +15,7 @@
         <span class="min-w-0 flex-1">
           <span class="block font-semibold text-heading leading-tight"><%= labels[step] %><span class="sr-only"><%= done[step] ? ", set" : ", not set" %></span></span>
           <span class="block truncate text-xs text-muted" data-test="build-check-<%= step %>-value">
-            <% if step == "idea" %><%= done[step] ? request_row.answers["idea"] : "Tell Xan about it" %>
+            <% if step == "idea" %><%= done[step] ? request_row.answers["idea"] : "Tell Ray about it" %>
             <% elsif step == "cto" %><%= done[step] ? request_row.cto_name : "Pick a name" %>
             <% elsif step == "colors" %><%= done[step] ? request_row.palette["name"] : "Pick a palette" %>
             <% else %><%= done[step] ? request_row.host : "Pick a name" %>

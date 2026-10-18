@@ -4,7 +4,7 @@
   <header class="text-center mb-8">
     <h1 class="text-3xl sm:text-5xl font-bold text-heading tracking-tight mb-3">What do you want to build?</h1>
     <p class="text-muted max-w-xl mx-auto">
-      Tell Xan, our AI agent. He'll help you pick a CTO, colors and an address, then our agents build it
+      Tell Ray, our AI agent. He'll help you pick a CTO, colors and an address, then our agents build it
       on the McRitchie Studio stack and host it free at <span class="font-mono text-body">yourapp.mcritchie.studio</span>.
     </p>
   </header>
@@ -33,7 +33,7 @@
     <input type="hidden" name="app_request[<%= BrowserProof::PROOF_FIELD %>]" data-proof="<%= BrowserProof.new(BuildController::PROOF_PURPOSE).issue %>"
            x-init="$el.value = $el.dataset.proof.split('').reverse().join('')" data-test="build-proof">
     <div class="relative rounded-3xl border border-subtle bg-surface shadow-lg focus-within:border-primary transition-colors">
-      <%= f.label :prompt, "Tell Xan what you want to build", class: "sr-only" %>
+      <%= f.label :prompt, "Tell Ray what you want to build", class: "sr-only" %>
       <%= f.text_area :prompt, rows: 3, maxlength: AppRequest::PROMPT_LIMIT, required: true, autofocus: true,
             placeholder: "A booking site for my dog-grooming business, with a calendar and text reminders…",
             class: "block w-full resize-none bg-transparent px-5 pt-5 pb-16 text-base text-heading placeholder:text-muted focus:outline-none",
@@ -44,7 +44,7 @@
       <div class="absolute bottom-3 left-5 right-3 flex items-center justify-between gap-3">
         <span class="text-xs text-muted hidden sm:inline">Enter to send · Shift+Enter for a new line</span>
         <button type="submit" class="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white disabled:opacity-40"
-                :disabled="!prompt.trim() || sending" aria-label="Send to Xan" data-test="build-send">
+                :disabled="!prompt.trim() || sending" aria-label="Send to Ray" data-test="build-send">
           <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 19V5M5 12l7-7 7 7"/>
           </svg>
@@ -133,7 +133,7 @@
 
   <ol class="mt-14 grid gap-4 sm:grid-cols-3 text-sm" aria-label="How it works">
     <li class="rounded-xl bg-surface-alt p-4">
-      <p class="font-semibold text-heading mb-1">1. Tell Xan</p>
+      <p class="font-semibold text-heading mb-1">1. Tell Ray</p>
       <p class="text-muted">Say what the app is for and who uses it. Plain words are fine.</p>
     </li>
     <li class="rounded-xl bg-surface-alt p-4">

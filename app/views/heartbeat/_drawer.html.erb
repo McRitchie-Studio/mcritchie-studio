@@ -43,11 +43,11 @@
     </div>
 
     <%= render "heartbeat/grade_editor", action: action, grader: ActionGrade::XAN,
-          who: "Xan", role_label: "grades this action", grade: xan,
-          save_label: "Save Xan grade", allow_bank: true %>
+          who: "Ray", role_label: "grades this action", grade: xan,
+          save_label: "Save Ray grade", allow_bank: true %>
 
     <%= render "heartbeat/grade_editor", action: action, grader: ActionGrade::MCR,
-          who: "Mr. McRitchie → Xan", role_label: "audits Xan's grade", grade: mcr,
+          who: "Mr. McRitchie → Ray", role_label: "audits Ray's grade", grade: mcr,
           save_label: "Save audit", allow_bank: false %>
   </div>
 <% end %>
