@@ -23,9 +23,9 @@ class DocsSeatMergeRuleDocsTest < ActiveSupport::TestCase
     "agents/carl/sops/pr-review-light.md" => /documentation seat merges a docs-shape PR only as its PRIMARY/,
     "modules/focus-session.md" => /documentation seat merges docs-shape PRs only/,
     "modules/pr-review-sop.md" => /documentation seat merges no other shape/,
-    "agents/xan/role.md" => /Docs-shape only/,
-    "agents/xan/HEARTBEAT.md" => /every other diff is Carl's to merge/,
-    "agents/xan/claude-agent.md" => /never merges a code PR/
+    "agents/ray/role.md" => /Docs-shape only/,
+    "agents/ray/HEARTBEAT.md" => /every other diff is Carl's to merge/,
+    "agents/ray/claude-agent.md" => /never merges a code PR/
   }.freeze
 
   test "[docs] every page that seats the documentation seat names the merge rule and its command" do
@@ -71,11 +71,11 @@ class DocsSeatMergeRuleDocsTest < ActiveSupport::TestCase
   end
 
   test "[docs] the subagent definition no longer forbids the merge and is installable from the role page" do
-    agent = norm("agents/xan/claude-agent.md")
+    agent = norm("agents/ray/claude-agent.md")
 
     refute_match(/you do not merge, deploy, or move tasks/i, agent)
     assert_match(/Merge only on its exit 0/, agent)
     assert_match(/When the permit refuses: do not merge/, agent)
-    assert_includes norm("agents/xan/role.md"), "docs/agents/agents/xan/claude-agent.md /Users/alex/.claude/agents/xan.md"
+    assert_includes norm("agents/ray/role.md"), "docs/agents/agents/ray/claude-agent.md /Users/alex/.claude/agents/ray.md"
   end
 end

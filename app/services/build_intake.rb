@@ -1,7 +1,7 @@
-# /build as a chat with Xan (.agents/epics/build-with-xan-design.md;
+# /build as a chat with Ray (.agents/epics/build-with-xan-design.md;
 # docs/agents/system/agent-message-loop.md, "Build intake").
 #
-# A visitor tells Xan what they want to build. Xan asks, one at a time: the idea
+# A visitor tells Ray what they want to build. Ray asks, one at a time: the idea
 # (at most two follow-ups), the CTO, the colors, the address. Each question
 # arrives as a CARD inside the chat, and only the visitor's tap writes a field
 # on their AppRequest.
@@ -9,14 +9,14 @@
 #   thread    `web:build:<request token>`: the request's own conversation, so a
 #             signed-out visitor has one before an account exists, and signing
 #             in at Build only changes who the next message is from
-#   cards     Xan's answer ends with a PROPOSAL block of kind "intake"
+#   cards     Ray's answer ends with a PROPOSAL block of kind "intake"
 #             (AgentMailbox::ProposalBlock, the same delimiter as every other
 #             proposal). BuildIntake::Card checks it in code; a card that fails is
 #             an `intake_refused` event and is never shown
 #   taps      BuildIntake::Choice writes cto_name, cto_avatar, palette, answers or
 #             the subdomain, each re-validated on the server, and relays the
-#             visitor's turn into the thread so Xan answers with the next step
-#   who       Xan answers the public here and nowhere else, within BuildIntake::Caps
+#             visitor's turn into the thread so Ray answers with the next step
+#   who       Ray answers the public here and nowhere else, within BuildIntake::Caps
 #             (AgentMessages::Answerers, config/agent_answerers.yml `public_intake`)
 module BuildIntake
   THREAD_PREFIX = "web:build:".freeze
@@ -26,7 +26,7 @@ module BuildIntake
   TOKEN = /\A[A-Za-z0-9_-]{16,64}\z/
 
   # The four things a request needs before Build my app lights up, in the
-  # order Xan asks for them.
+  # order Ray asks for them.
   STEPS = %w[idea cto colors address].freeze
 
   module_function
@@ -66,8 +66,8 @@ module BuildIntake
     remove_instance_variable(:@policy) if defined?(@policy)
   end
 
-  # The soul that runs intake: Xan unless the config names another.
-  def soul = policy&.soul || "xan"
+  # The soul that runs intake: Ray unless the config names another.
+  def soul = policy&.soul || "ray"
 
   def history(token, limit: AgentMessages::WebChat::HISTORY)
     AgentMessage.where(channel: "web", thread_key: thread_key(token)).order(id: :desc).limit(limit).to_a.reverse

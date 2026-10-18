@@ -14,7 +14,7 @@ class Release::NotesDeliveryTest < ActiveSupport::TestCase
     task = Task.create!(title: "notes delivery demo task", stage: "reviewed",
                         metadata: { "devops" => { "shape" => "backend", "repositories" => ["mcritchie-studio"] } })
     rel = Release::Conductor.prepare!(task_slugs: [task.slug])
-    Release::Conductor.ship!(release: rel, deployed_sha: "abc1234", by: "xan", production_url: "https://example.test")
+    Release::Conductor.ship!(release: rel, deployed_sha: "abc1234", by: "ray", production_url: "https://example.test")
     rel
   end
 

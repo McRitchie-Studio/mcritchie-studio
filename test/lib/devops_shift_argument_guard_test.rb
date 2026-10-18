@@ -118,21 +118,21 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
   # acquire in test_the_detached_renewers_own_argv_survives_the_guard_it_reenters,
   # because a hand copy proves the transcription, not the code.
   REAL_ARGV = [
-    { source: "docs/agents/agents/xan/sops/clean-up.md — clean-up takes the avi shift",
+    { source: "docs/agents/agents/ray/sops/clean-up.md — clean-up takes the avi shift",
       argv: %w[acquire avi],
       command: "acquire", lane: "avi", flags: {} },
-    { source: "docs/agents/agents/xan/sops/clean-up.md — clean-up drops it when the wave ends",
+    { source: "docs/agents/agents/ray/sops/clean-up.md — clean-up drops it when the wave ends",
       argv: %w[release avi],
       command: "release", lane: "avi", flags: {} },
-    { source: "docs/agents/agents/xan/sops/clean-up.md + system/devops-shift-lease.md:87 — the bare read",
+    { source: "docs/agents/agents/ray/sops/clean-up.md + system/devops-shift-lease.md:87 — the bare read",
       argv: %w[status],
       command: "status", lane: nil, flags: {} },
     { source: "bin/statusline#heartbeat_shift — the render-time heartbeat (the second renewer)",
       argv: %w[renew avi],
       command: "renew", lane: "avi", flags: {} },
     { source: "bin/devops-shift header:8 — acquire with the documented optional --label",
-      argv: ["acquire", "xan", "--label", "Mew"],
-      command: "acquire", lane: "xan", flags: { "label" => "Mew" } },
+      argv: ["acquire", "ray", "--label", "Mew"],
+      command: "acquire", lane: "ray", flags: { "label" => "Mew" } },
     { source: "test/lib/devops_shift_renewer_integration_test.rb#test_integration_a_headless_renewer_holds_the_lease_then_frees_it_when_its_anchor_dies — the real detached renew-loop",
       argv: ["renew-loop", "avi", "--anchor-pid", "4242", "--anchor-start", "Mon Aug 17 09:12:01 2026"],
       command: "renew-loop", lane: "avi",
@@ -240,7 +240,7 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
     assert_match(/"\$SHIFT_BIN" renew "\$lane"/, statusline,
                  "the status-line heartbeat is the one external caller that runs on every render")
 
-    cleanup = File.read(File.expand_path("../../docs/agents/agents/xan/sops/clean-up.md", __dir__))
+    cleanup = File.read(File.expand_path("../../docs/agents/agents/ray/sops/clean-up.md", __dir__))
     assert_match(/^bin\/devops-shift acquire avi$/, cleanup)
     assert_match(/^bin\/devops-shift release avi$/, cleanup)
     assert_match(/bin\/devops-shift status/, cleanup)
@@ -297,11 +297,11 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
   def test_a_stray_positional_refuses
     Dir.mktmpdir do |proj|
       c = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
-      code = c.run(%w[acquire avi xan])
+      code = c.run(%w[acquire avi ray])
 
       assert_equal DevopsShiftCli::CANT_RUN, code
       assert_empty @api.calls
-      assert_match(/unrecognized argument "xan"/, @err.string)
+      assert_match(/unrecognized argument "ray"/, @err.string)
     end
   end
 

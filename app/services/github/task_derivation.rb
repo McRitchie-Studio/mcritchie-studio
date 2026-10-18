@@ -83,7 +83,7 @@ module Github
     end
 
     # The soul an email names, or nil. Canonicalised (a retired `alex` lands on
-    # `xan`) and roster-checked, so a typo'd local part names nobody.
+    # `ray`) and roster-checked, so a typo'd local part names nobody.
     def self.soul_from_email(email)
       local = email.to_s.strip[SOUL_EMAIL, 1]
       return nil unless local

@@ -14,7 +14,7 @@ class AgentDispatcherStandbyTest < ActiveSupport::TestCase
   end
 
   def ping(worker, host:, state: "running")
-    AgentDispatcher.ping!({ "worker" => worker, "host" => host, "souls" => %w[avi xan turf_monster], "state" => state })
+    AgentDispatcher.ping!({ "worker" => worker, "host" => host, "souls" => %w[avi ray turf_monster], "state" => state })
   end
 
   test "a new row is a primary; a registered host's restart inherits standby" do
@@ -44,7 +44,7 @@ class AgentDispatcherStandbyTest < ActiveSupport::TestCase
     ping("mac-1", host: "mac")
     ping("work-1", host: "workmac")
     AgentDispatcher.set_role!(host: "workmac", role: "standby", domains: %w[mcritchie_studio], registry: @registry)
-    souls = %w[avi xan turf_monster]
+    souls = %w[avi ray turf_monster]
 
     assert_equal [ souls, nil ], AgentDispatcher.claim_scope("mac-1", souls, registry: @registry)
     assert_equal [ souls, nil ], AgentDispatcher.claim_scope("heartbeat-unknown", souls, registry: @registry)
@@ -53,7 +53,7 @@ class AgentDispatcherStandbyTest < ActiveSupport::TestCase
     later = Time.current + AgentDispatcher::SILENT_AFTER + 1
     scope, reason = AgentDispatcher.claim_scope("work-1", souls, now: later, registry: @registry)
     assert_nil reason
-    assert_equal %w[avi xan], scope, "turf_monster is not a standby domain's soul"
+    assert_equal %w[avi ray], scope, "turf_monster is not a standby domain's soul"
   end
 
   test "a primary's graceful stop frees the standby at once" do

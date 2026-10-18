@@ -110,15 +110,15 @@ class HeartbeatMailboxTest < ActionDispatch::IntegrationTest
     assert_equal "nothing for avi\n", second.string
   end
 
-  test "two agents: xan's heartbeat leaves avi's message alone and answers its own from the board" do
+  test "two agents: ray's heartbeat leaves avi's message alone and answers its own from the board" do
     avi = agent_message!(soul: "avi")
-    xan = owner_message!(soul: "xan", content: "what is building?")
+    ray = owner_message!(soul: "ray", content: "what is building?")
     runner = FakeRunner.new(answer: "Two tasks are building.")
 
-    heartbeat("xan", runner: runner).run
+    heartbeat("ray", runner: runner).run
 
     assert_equal "received", avi.reload.status
-    assert_equal "completed", xan.reload.status
+    assert_equal "completed", ray.reload.status
     assert_equal %w[bin/task list], runner.calls.first[:argv]
   end
 
@@ -164,11 +164,11 @@ class HeartbeatMailboxTest < ActionDispatch::IntegrationTest
     assert_match(/claimed\s+avi\s+worker=w-9/, out.string)
 
     out = StringIO.new
-    later = agent_message!(soul: "xan", content: "board?")
+    later = agent_message!(soul: "ray", content: "board?")
     tail = AgentMailbox::InboxCli.new(%w[tail --interval 0], client: @client, out: out, sleeper: ->(_) { }, iterations: 1)
     later.update_column(:updated_at, 1.minute.from_now)
     tail.run
-    assert_match(/##{later.id} received\s+xan/, out.string)
+    assert_match(/##{later.id} received\s+ray/, out.string)
 
     out = StringIO.new
     assert_equal 2, AgentMailbox::InboxCli.new(%w[bogus], client: @client, out: out).run

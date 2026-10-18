@@ -4,7 +4,7 @@
     activity span), then Ray's activity grade editor and the McRitchie audit editor.
     The editors POST to the activity grade endpoint via fetch (heartbeatActivityEditor),
     so the drawer stays a read-only GET. Locals: activity, actions (its attributed
-    AgentActions), xan (ActionGrade | nil), mcr (ActionGrade | nil). %>
+    AgentActions), ray (ActionGrade | nil), mcr (ActionGrade | nil). %>
 <%= turbo_frame_tag "hb-drawer" do %>
   <% activity ||= local_assigns[:event] %>
   <% stage_transitions ||= {} %>
@@ -39,8 +39,8 @@
       <span class="hb-k">Cost</span><span class="hb-mono"><%= heartbeat_cost(totals[:cost]) %></span>
     </div>
 
-    <%= render "heartbeat/activity_grade_editor", activity: activity, grader: ActionGrade::XAN,
-          who: "Ray", role_label: "grades this activity", grade: xan,
+    <%= render "heartbeat/activity_grade_editor", activity: activity, grader: ActionGrade::RAY,
+          who: "Ray", role_label: "grades this activity", grade: ray,
           save_label: "Save Ray grade", allow_bank: true %>
 
     <%= render "heartbeat/activity_grade_editor", activity: activity, grader: ActionGrade::MCR,

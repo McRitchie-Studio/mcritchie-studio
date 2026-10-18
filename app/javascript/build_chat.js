@@ -1,6 +1,6 @@
-// The /build chat with Xan (app/views/build/_chat.html.erb; BuildController#turns).
+// The /build chat with Ray (app/views/build/_chat.html.erb; BuildController#turns).
 // A signed-out visitor has no /cable socket, so instead of a Turbo stream the
-// page POLLS: while any turn is still waiting for Xan (data-pending="true"), it
+// page POLLS: while any turn is still waiting for Ray (data-pending="true"), it
 // asks the server about exactly those turns and renders the Turbo Streams it
 // gets back (each turn replaced in place, and the checklist).
 //

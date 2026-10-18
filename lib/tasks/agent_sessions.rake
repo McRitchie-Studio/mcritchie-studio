@@ -3,7 +3,7 @@
 # The operator's grant of an ADMIN agent session, from a shell on the hub
 # (docs/agents/system/agent-sessions-design.md, section 3).
 #
-#   bin/rails agent_sessions:grant_admin                  Xan, 8 hours
+#   bin/rails agent_sessions:grant_admin                  Ray, 8 hours
 #   bin/rails agent_sessions:grant_admin SOUL=steffon HOURS=1
 #
 # A shell on the hub IS the grant: whoever can run this can already write the
@@ -19,9 +19,9 @@
 # or is revoked (DELETE /api/v1/agent_sessions/current): do not paste it into a
 # chat, a log or a file in a repo.
 namespace :agent_sessions do
-  desc "Grant an admin agent session (SOUL=xan|steffon, HOURS=1..8) and print its token on stdout"
+  desc "Grant an admin agent session (SOUL=ray|steffon, HOURS=1..8) and print its token on stdout"
   task grant_admin: :environment do
-    session = AgentSession.grant_admin!(soul: ENV["SOUL"].presence || "xan", hours: ENV["HOURS"].presence)
+    session = AgentSession.grant_admin!(soul: ENV["SOUL"].presence || "ray", hours: ENV["HOURS"].presence)
     warn "admin session #{session.slug} granted to #{session.soul} (#{session.tier}), ends #{session.expires_at.utc.iso8601}. " \
          "Its token is on stdout; revoke it with DELETE /api/v1/agent_sessions/current."
     puts session.token

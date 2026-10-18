@@ -232,7 +232,7 @@ is the degraded mode: the shared token is neither read nor minted, a call with a
 login is made under it, and a call with none is not made, so nothing is recorded.
 
 Admin sessions (Steffon, Ray) are unscoped within the admin tier and expire after
-8 hours. `bin/agent-activity heartbeat steffon|xan` posts an admin login request
+8 hours. `bin/agent-activity heartbeat steffon|ray` posts an admin login request
 with the shared token and prints its server-issued `login-…` slug. The board
 (`/tasks`, `/deployments`) shows an admin each open request with that slug: the
 operator answers only the row whose slug the agent printed, because the soul and

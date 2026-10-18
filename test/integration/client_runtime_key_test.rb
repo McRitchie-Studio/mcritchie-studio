@@ -38,7 +38,7 @@ class ClientRuntimeKeyTest < ActionDispatch::IntegrationTest
       "write a task" => -> { patch api_v1_task_path(@task.slug), params: { title: "Renamed By Turf" }, headers: bearer(@key), as: :json },
       "mint a login" => -> { post api_v1_agent_sessions_path, params: { soul: "pokemon", task_slug: @task.slug }, headers: bearer(@key), as: :json },
       "ask for a harness key" => -> { post "/api/v1/agent_login_requests", params: { kind: "harness_key", label: "turf", harness_session_id: "h" }, headers: bearer(@key), as: :json },
-      "narrate" => -> { post "/api/v1/activities", params: { activity: { agent_slug: "xan", activity_type: "note" } }, headers: bearer(@key), as: :json },
+      "narrate" => -> { post "/api/v1/activities", params: { activity: { agent_slug: "ray", activity_type: "note" } }, headers: bearer(@key), as: :json },
       "who am I" => -> { get "/api/v1/agent_sessions/current", headers: bearer(@key) }
     }
     assert_no_difference [ -> { AgentSession.count }, -> { Activity.count }, -> { AgentLoginRequest.count } ] do
@@ -83,7 +83,7 @@ class ClientRuntimeKeyTest < ActionDispatch::IntegrationTest
   end
 
   test "only a client soul with endpoints is granted a runtime key, and it names its runtime" do
-    %w[tyrion carl xan nobody].each do |soul|
+    %w[tyrion carl ray nobody].each do |soul|
       assert_raises(ArgumentError, soul) { AgentSession.grant_runtime_key!(soul: soul, label: "x") }
     end
     assert_raises(ArgumentError) { AgentSession.grant_runtime_key!(soul: "turf-monster", label: " ") }

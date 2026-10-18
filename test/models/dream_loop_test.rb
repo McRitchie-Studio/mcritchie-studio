@@ -110,7 +110,7 @@ class DreamLoopTest < ActiveSupport::TestCase
     end
     assert_includes error.message, "grace"
     assert_raises(DreamSwap::NotProposable) do
-      DreamSwap.propose!(session_id: "s1", reason: "r", in_key: "carl/new", out_key: "xan/dream-00", layer: "soul/carl",
+      DreamSwap.propose!(session_id: "s1", reason: "r", in_key: "carl/new", out_key: "ray/dream-00", layer: "soul/carl",
                          dreams: dreams)
     end
 

@@ -177,7 +177,7 @@ module ApplicationHelper
     return nil if slug.blank?
 
     # Read through the retired-slug alias (Task::SOUL_ALIASES) so a gate stamped
-    # `alex` in the alias's one release still resolves to the xan seat's row.
+    # `alex` or `xan` still resolves to the ray seat's row.
     slug = Task.canonical_soul(slug)
     lookup ? lookup[slug] : Agent.find_by(slug: slug)
   end
@@ -1099,7 +1099,7 @@ module ApplicationHelper
   # The four legacy release-wide meta-trigger chips (Avi Heartbeat Slow/Fast,
   # Build and Deploy QA Release, Merge Assemble Deploy) were retired in favor of
   # the soul heartbeat launchers in +heartbeat_launchers+ (Carl owns pr-review +
-  # pr-review-slow; Xan gains the full-cycle act that carries the former
+  # pr-review-slow; Ray gains the full-cycle act that carries the former
   # Merge/Assemble/Deploy).
   def devops_kickoffs
     {
@@ -1116,10 +1116,10 @@ module ApplicationHelper
   # PROMPT-LIKE row 1 plus one or more copyable atom acts. Every row is an
   # INDEPENDENTLY-copyable valid launch
   # prompt. +heartbeat+ (row 1) is the prompt-like soul heartbeat phrase — one per
-  # soul ("Carl Heartbeat" / "Avi Heartbeat" / "Steffon Heartbeat" / "Xan
+  # soul ("Carl Heartbeat" / "Avi Heartbeat" / "Steffon Heartbeat" / "Ray
   # Heartbeat" / "Turf Monster Heartbeat"); +actions+ are the launcher acts that
   # scope that heartbeat's work (Carl: pr-review + pr-review-slow; Avi: qa-release +
-  # deploy-with-task + intent-scout; Steffon: production-deploy + clean-infra + workspace-launch; Xan: grade-events +
+  # deploy-with-task + intent-scout; Steffon: production-deploy + clean-infra + workspace-launch; Ray: grade-events +
   # share-insights + full-cycle + ship-clock; Turf Monster: live-score-watch +
   # contest-rehearsal + post-to-x).
   #
@@ -1162,7 +1162,7 @@ module ApplicationHelper
       { agent_slug: "carl",    heartbeat: "Carl Heartbeat",    actions: ["pr-review", "pr-review-slow"],                   label: "Review",        title: "Carl — review submitted PRs, one Carl per PR (review-only)" },
       { agent_slug: "avi",     heartbeat: "Avi Heartbeat",     actions: ["qa-release", "deploy-with-task", "intent-scout"], label: "Assemble + QA", title: "Avi — sweep reviewed work onto release, then QA the candidate" },
       { agent_slug: "steffon", heartbeat: "Steffon Heartbeat", actions: ["production-deploy", "clean-infra", "workspace-launch"], label: "Ship + sweep", title: "Steffon — ship a QA-green release (it archives on the way out), then sweep the machine" },
-      { agent_slug: "xan",     heartbeat: "Xan Heartbeat",     actions: ["grade-events", "share-insights", "full-cycle", "ship-clock"], label: "Learn + ship",  title: "Ray — grade, share insights, + full DevOps cycle heartbeat" },
+      { agent_slug: "ray",     heartbeat: "Ray Heartbeat",     actions: ["grade-events", "share-insights", "full-cycle", "ship-clock"], label: "Learn + ship",  title: "Ray — grade, share insights, + full DevOps cycle heartbeat" },
       { agent_slug: "turf-monster", heartbeat: "Turf Monster Heartbeat", actions: ["live-score-watch", "contest-rehearsal", "post-to-x"], label: "Watch scores",  title: "Turf Monster — watch a live NFL slot, or rehearse a whole contest on QA" },
       # The general builder has no HEARTBEAT, so its row carries acts only.
       { agent_slug: "pokemon", heartbeat: nil, actions: ["wrap-it-up"], label: "Build + wrap up", title: "Pokémon — hand a stuck session to a fresh one, then clear its board" }

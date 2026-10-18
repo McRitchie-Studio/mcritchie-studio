@@ -1,5 +1,5 @@
 module BuildIntake
-  # Hex colours and WCAG 2 contrast, for the palettes Xan proposes. Code, never
+  # Hex colours and WCAG 2 contrast, for the palettes Ray proposes. Code, never
   # the model, decides whether a palette's text can be read on its surface.
   module Contrast
     HEX = /\A#?(\h{3}|\h{6})\z/

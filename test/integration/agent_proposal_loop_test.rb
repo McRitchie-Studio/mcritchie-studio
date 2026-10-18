@@ -23,7 +23,7 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
   STRANGER = "777000000000000003".freeze
   GUILD_ID = "1332466565203103744".freeze
   CHANNEL = "1332466565203103999".freeze
-  XAN_BOT = "1481150857809760399".freeze
+  RAY_BOT = "1481150857809760399".freeze
   AVI_BOT = "1560516264378507334".freeze
   OTHER_CHANNEL = "1332466565203103998".freeze
   TURF_BOT = "1405042649479647293".freeze
@@ -106,12 +106,12 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
 
       # A stranger's go in the same thread: nothing runs and nothing posts.
       posts_before = @posts.size
-      perform_enqueued_jobs { ingest(4002, "go", author: STRANGER, users: [ XAN_BOT ], reply_to: reply_id) }
+      perform_enqueued_jobs { ingest(4002, "go", author: STRANGER, users: [ RAY_BOT ], reply_to: reply_id) }
       assert_equal posts_before, @posts.size
       assert_equal "proposed", proposal.reload.status
       assert_equal 0, Task.where(title: "Footer Theme Toggle Added").count
 
-      go = perform_enqueued_jobs { ingest(4003, "go", users: [ XAN_BOT ], reply_to: reply_id) }
+      go = perform_enqueued_jobs { ingest(4003, "go", users: [ RAY_BOT ], reply_to: reply_id) }
       task = Task.find_by!(title: "Footer Theme Toggle Added")
       assert_equal "designed", task.stage
       assert_equal "ui-only", task.metadata["devops"]["shape"]
@@ -151,7 +151,7 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
       assert_equal "proposed", proposal.reload.status, "a go outside the thread leaves the proposal pending"
       assert_nil proposal.confirm_message_id
 
-      perform_enqueued_jobs { ingest(6004, "go", users: [ XAN_BOT ], reply_to: message.reload.reply_external_id) }
+      perform_enqueued_jobs { ingest(6004, "go", users: [ RAY_BOT ], reply_to: message.reload.reply_external_id) }
       assert_equal "executed", proposal.reload.status
       assert_match(/\A\*\*Avi\*\* · (Release now: `[^`]+`|No release is open\.).* Ladder: submitted \d+ · reviewed [1-9]\d* · assembled \d+\./,
                    @posts.last["content"])
@@ -201,7 +201,7 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
 
         # Alex's reply pings the shared bot that posted Turf's answer; the thread keeps Turf.
         AgentProposals::Executor.fetcher = fetcher
-        go = perform_enqueued_jobs { ingest(5002, "GO", users: [ XAN_BOT ], reply_to: message.reload.reply_external_id) }
+        go = perform_enqueued_jobs { ingest(5002, "GO", users: [ RAY_BOT ], reply_to: message.reload.reply_external_id) }
         assert_equal "turf_monster", go.soul_slug
         assert_equal 7, fetcher.calls.size, "one daily window per day asked"
         assert_match(/\A\*\*Turf\*\* · Turf Monster, the 7 days to .*: 28 signups, 14 errors\. Most frequent: NoMethodError ×14\.\z/,

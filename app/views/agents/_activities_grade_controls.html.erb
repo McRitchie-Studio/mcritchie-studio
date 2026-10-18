@@ -5,7 +5,7 @@
     keyboard-operable (see .aa-rb input in the stylesheet), wrapped in an aria-labelled
     radiogroup that names the grader. Server-rendered from `grade` (tests + no-JS
     correct) and bound to the row's Alpine grades.<grader> for live updates.
-    Locals: kind (:activity | :action), target, grader ("xan"|"mcr"), grade
+    Locals: kind (:activity | :action), target, grader ("ray"|"mcr"), grade
     (ActionGrade|nil), test_pref (data-test namespace — "aa-activity"/"aa-action" for the
     canonical cell, "…-m" for the mobile copy so hooks never collide). %>
 <% endpoint = kind == :activity ? heartbeat_activity_grade_path(target) : heartbeat_grade_path(target) %>

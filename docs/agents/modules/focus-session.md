@@ -226,7 +226,7 @@ Pick the tier from what the diff actually changed, plus the task's risk tags:
 
 | Tier | The change | Spawn |
 |---|---|---|
-| A | only prose: markdown, inert media, docs-guard tests | one `xan` (the documentation seat) on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md) as the PRIMARY: a single read, no light summoned; it claims as `--agent xan`, records its verdict with `--head`, and merges on `bin/merge-permit`'s permit |
+| A | only prose: markdown, inert media, docs-guard tests | one `ray` (the documentation seat) on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md) as the PRIMARY: a single read, no light summoned; it claims as `--agent ray`, records its verdict with `--head`, and merges on `bin/merge-permit`'s permit |
 | B | code, under 400 insertions, one repo, no risk tag | one `carl` on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md); a light at his discretion |
 | C | any of `payment` `solana` `auth` `migration`, or over 400 insertions, or two repos, or a schema change | `carl` on the primary SOP with the domain light mandatory, strongest model |
 
@@ -244,7 +244,7 @@ Spawn the reviewer with this brief, filled in:
 Review PR <url> for task <slug> (https://mcritchie.studio/tasks/<slug>), base accepted.
 Run docs/agents/agents/carl/sops/pr-review-primary.md end to end, as the soul named here.
 Claim by slug, naming that soul; the claim prints the dreams selected for the task, so read them before the diff:
-  bin/task review-claim acquire <slug> --agent <xan for tier A | carl for tiers B and C>
+  bin/task review-claim acquire <slug> --agent <ray for tier A | carl for tiers B and C>
 Recorded head: <sha>. Tier <A|B|C>: <A: single read, summon no light | B: light at your discretion | C: light mandatory>.
 The builder is the task's Pokémon, so no specialist is an author.
 Acceptance is in the task AND in the epic plan at /Users/alex/projects/.agents/epics/<epic-slug>.md, piece <n>; read both.

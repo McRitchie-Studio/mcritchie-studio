@@ -7,7 +7,7 @@
 # - studio: a builder or reviewer. Scoped to ONE task (task_slug required). A
 #   builder's (task_claim) is live while that task is building or submitted; a
 #   reviewer's (review_claim) while it is submitted and its review claim is live.
-# - admin: Steffon and Xan. Unscoped within the admin tier; task_slug is always
+# - admin: Steffon and Ray. Unscoped within the admin tier; task_slug is always
 #   null, because the tier is the scope.
 # - client: Turf Monster and Tyrion. A runtime key (issued_by runtime_key) reaches
 #   the endpoints CLIENT_ENDPOINTS lists for its soul and nothing else.
@@ -18,7 +18,7 @@
 # hold, and nothing updates a row's tier, soul or scope after create.
 class AgentSession < ApplicationRecord
   TIERS = %w[admin studio client harness].freeze
-  ADMIN_SOULS = %w[steffon xan].freeze
+  ADMIN_SOULS = %w[steffon ray].freeze
   # A harness key belongs to a machine, not a soul; its row names the logged-out
   # builder.
   HARNESS_SOUL = "pokemon".freeze
@@ -133,7 +133,7 @@ class AgentSession < ApplicationRecord
   end
 
   # The operator's grant of an admin session (lib/tasks/agent_sessions.rake):
-  # Steffon or Xan, for the admin TTL or fewer whole hours, never more.
+  # Steffon or Ray, for the admin TTL or fewer whole hours, never more.
   def self.grant_admin!(soul:, hours: nil)
     max = TTL.fetch("admin") / 1.hour
     length = hours.nil? ? max : Integer(hours.to_s, 10, exception: false)

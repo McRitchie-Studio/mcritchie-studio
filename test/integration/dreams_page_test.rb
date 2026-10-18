@@ -41,7 +41,7 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
       end
       assert_select "[data-test='dream-card'][data-dream='wait-for-the-light']"
     end
-    assert_select "[data-test='soul-column'][data-soul='xan'] [data-test='dream-card'][data-dream='wait-for-the-light']",
+    assert_select "[data-test='soul-column'][data-soul='ray'] [data-test='dream-card'][data-dream='wait-for-the-light']",
                   1, "a multi-soul dream shows under each soul"
     assert_select "[data-test='soul-column'][data-soul='turf-monster'] [data-test='sop-row']", minimum: 1
   end

@@ -79,7 +79,7 @@ class AppRequest < ApplicationRecord
   # exempt: Mr. McRitchie seeds the App Builder with showcase builds (his legacy
   # apps) through the same funnel, and those are not customers.
   validate :apps_per_account_limit, if: -> { user && !user.admin? && HOLDING.include?(status) }
-  # The intake fields (/build as a chat with Xan, BuildIntake). Only a visitor's
+  # The intake fields (/build as a chat with Ray, BuildIntake). Only a visitor's
   # tap writes them (BuildIntake::Choice), and each is held here to the same
   # rules the card was, so no path can store a value a card could not show.
   validates :cto_name, format: { with: BuildIntake::Card::NAME, message: "must be 2 to 24 letters" }, allow_nil: true
@@ -173,7 +173,7 @@ class AppRequest < ApplicationRecord
                 .pick(Arel.sql("intake_card->>'title'")).to_s.squish.presence
   end
 
-  # The first unset step, in the order Xan asks, or nil when all are set.
+  # The first unset step, in the order Ray asks, or nil when all are set.
   def next_intake_step = BuildIntake::STEPS.find { |step| !intake_checklist[step] }
 
   def queued? = status == "queued"

@@ -132,7 +132,7 @@ class DiscordGatewayTest < ActiveSupport::TestCase
     gateway.frames.find { |f| f["op"] == 2 }
   end
 
-  test "a MESSAGE_CREATE in an unlisted channel of a listed guild routes to xan, and the backstop poll dedupes it" do
+  test "a MESSAGE_CREATE in an unlisted channel of a listed guild routes to ray, and the backstop poll dedupes it" do
     gateway_listener = listener.start
     wait_until("a connection") { @gateways.any? }
     gateway = @gateways.first
@@ -144,10 +144,10 @@ class DiscordGatewayTest < ActiveSupport::TestCase
 
     gateway.dispatch("READY", { "session_id" => "s-1", "resume_gateway_url" => "wss://resume.example", "user" => { "id" => SHARED_BOT } })
     gateway.dispatch("GUILD_CREATE", { "id" => GUILD, "threads" => [ { "id" => DESK_THREAD, "parent_id" => DESK } ] })
-    addressed = discord_raw(8001, content: "<@&#{XAN_ROLE}> what is building?", channel: LOUNGE, roles: [ XAN_ROLE ], guild: GUILD)
+    addressed = discord_raw(8001, content: "<@&#{RAY_ROLE}> what is building?", channel: LOUNGE, roles: [ RAY_ROLE ], guild: GUILD)
     gateway.dispatch("MESSAGE_CREATE", addressed)
     gateway.dispatch("MESSAGE_CREATE", discord_raw(8002, content: "lunch anyone?", channel: LOUNGE, guild: GUILD))
-    gateway.dispatch("MESSAGE_CREATE", discord_raw(8003, content: "<@&#{XAN_ROLE}> hi", channel: "1", roles: [ XAN_ROLE ],
+    gateway.dispatch("MESSAGE_CREATE", discord_raw(8003, content: "<@&#{RAY_ROLE}> hi", channel: "1", roles: [ RAY_ROLE ],
                                                          guild: OTHER_GUILD))
     gateway.dispatch("MESSAGE_CREATE", discord_raw(8004, content: "<@&#{AVI_ROLE}> muted", channel: "900000000000000070",
                                                          roles: [ AVI_ROLE ], guild: GUILD))
@@ -159,7 +159,7 @@ class DiscordGatewayTest < ActiveSupport::TestCase
 
     wait_until("the last message") { AgentMessage.exists?(external_id: "8006") }
     message = AgentMessage.find_by!(external_id: "8001")
-    assert_equal [ "xan", "role", "received", LOUNGE, GUILD ],
+    assert_equal [ "ray", "role", "received", LOUNGE, GUILD ],
                  [ message.soul_slug, message.routed_by, message.status, message.channel_ref, message.guild_id ]
     assert_equal "discord-gateway", message.events.find_by(kind: "received").actor
     assert_nil AgentMessage.find_by(external_id: "8002"), "an unaddressed message is not stored"

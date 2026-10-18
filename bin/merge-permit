@@ -5,7 +5,7 @@
 #
 #   bin/merge-permit <task-slug> --agent <soul> --head <validated-sha> [--json]
 #
-# The documentation seat (xan) merges a PR only when its diff measures `docs`
+# The documentation seat (ray) merges a PR only when its diff measures `docs`
 # (prose, inert media and docs-guard tests) at the head being merged, after a
 # merge-ready verdict recorded for that head, and never her own work. Run it as
 # the line before `gh pr merge` (pr-review-primary.md, step 6); on a permit it

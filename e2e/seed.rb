@@ -67,9 +67,9 @@ User.create!(email: "newcomer-turbo@test.com", role: "viewer")
 User.create!(email: "newcomer-back@test.com", role: "viewer")
 
 # Agents
-xan = Agent.create!(
+ray = Agent.create!(
   name: "Ray",
-  slug: "xan",
+  slug: "ray",
   status: "active",
   agent_type: "orchestrator",
   title: "Lead Orchestrator",
@@ -97,13 +97,13 @@ Agent.create!(name: "Avi", slug: "avi", status: "active", agent_type: "product",
 scraping = Skill.create!(name: "Web Scraping", slug: "web-scraping", category: "data", description: "Extract data from websites")
 rails_dev = Skill.create!(name: "Rails Development", slug: "rails-development", category: "development", description: "Build Rails applications")
 
-SkillAssignment.create!(agent_slug: "xan", skill_slug: "rails-development")
+SkillAssignment.create!(agent_slug: "ray", skill_slug: "rails-development")
 SkillAssignment.create!(agent_slug: "mack", skill_slug: "web-scraping")
 
 # Tasks in different workflow stages
-Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "designed", priority: 0, agent_slug: "xan")
+Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "designed", priority: 0, agent_slug: "ray")
 Task.create!(title: "Scrape odds data", description: "Pull latest odds from sportsbooks.", stage: "building", priority: 1, agent_slug: "mack", started_at: 2.hours.ago)
-Task.create!(title: "Deploy v2 release", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "xan", started_at: 2.days.ago)
+Task.create!(title: "Deploy v2 release", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "ray", started_at: 2.days.ago)
 # A block is no longer a STAGE — it is an attribute of a `building` task (blocked_at
 # + blocked_from + blocked_by + block_kind), per the blocked-as-building collapse.
 # Seeding stage: "blocked" now fails validation and takes the whole e2e run down with
@@ -114,7 +114,7 @@ Task.create!(
   description: "Fixture for the production sidebar back-navigation regression.",
   stage: "building",
   priority: 1,
-  agent_slug: "xan",
+  agent_slug: "ray",
   started_at: 1.day.ago,
   blocked_at: 6.hours.ago,
   blocked_from: "submitted",
@@ -135,7 +135,7 @@ Task.create!(
   description: "Fixture for the session-resume board widget (last-4 + resume copy).",
   stage: "building",
   priority: 0,
-  agent_slug: "xan",
+  agent_slug: "ray",
   metadata: { "devops" => {
     "kind" => "feature",
     "repositories" => ["mcritchie-studio"],
@@ -145,7 +145,7 @@ Task.create!(
 )
 
 # Activities
-Activity.create!(agent_slug: "xan", activity_type: "task_assigned", description: "Assigned scrape task to Mack")
+Activity.create!(agent_slug: "ray", activity_type: "task_assigned", description: "Assigned scrape task to Mack")
 Activity.create!(agent_slug: "mack", activity_type: "task_started", description: "Started scraping odds data")
 
 coach_person = Person.create!(
@@ -205,7 +205,7 @@ timeline_task = Task.create!(
   description: "Fixture for the task Stage Timeline — genesis, transitions, durations, and reported model cost.",
   stage: "reviewed",
   priority: 1,
-  agent_slug: "xan",
+  agent_slug: "ray",
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
 )
 timeline_task.task_events.delete_all # replace the auto-genesis with a curated, time-spaced sequence
@@ -234,7 +234,7 @@ intent_task = Task.create!(
   description: "Fixture for the agentic-intent live block — the senior pair reviewing now.",
   stage: "submitted",
   priority: 1,
-  agent_slug: "xan",
+  agent_slug: "ray",
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
 )
 intent_task.record_intent_event(
@@ -897,7 +897,7 @@ GateRun.open!(subject_type: "task", subject_slug: tp.slug, key: "g2b_light", act
 # so materializing earlier would cache pre-evidence windows.
 Task::TestingPhases.backfill!
 
-# /xan/heartbeat demo: a representative agent-narrated EVENT trajectory so the
+# /ray/heartbeat demo: a representative agent-narrated EVENT trajectory so the
 # learning heartbeat renders spans in the e2e env (capture is forward-only, so it
 # is otherwise empty). Trimmed mirror of lib/tasks/atomic.rake's demo — a couple of
 # closed spans, a final OPEN span (renders "…in progress"), and one pre-narration
@@ -1016,7 +1016,7 @@ evolution_task.assemble!
 
 # ── Distillation pipeline · Test runs band + a gradeable test-run insight ──────
 # A couple of release test-scope VERDICTS (kind:test_scope with a pass|fail
-# result_slug) so the pipeline's "Test runs" band renders, plus a banked Xan
+# result_slug) so the pipeline's "Test runs" band renders, plus a banked Ray
 # grade on the passing one so it also surfaces as a Column-2 insight carrying an
 # ACTION Confirm button (the confirm-of-action path). The scope keys resolve to
 # phase/tier/host via config/devops_test_suites.yml at render.
@@ -1031,7 +1031,7 @@ AgentAction.create!(
   result_slug: "fail", occurred_at: Time.current, duration_ms: 4_200,
   summary: "test scope qa_up_smoke FAILED · qa · fail · http 503 · 4.2s · /up poll"
 )
-ActionGrade.create!(agent_action: test_run_pass, grader: "xan", disposition: "good",
+ActionGrade.create!(agent_action: test_run_pass, grader: "ray", disposition: "good",
                     slug: "ship gate stayed green").bank!
 
 # Model-pricing demo: two REAL production sessions replayed verbatim (a pokedex
@@ -1729,7 +1729,7 @@ answered.record!("completed", actor: "avi", detail: { "worker" => "e2e-laptop-10
 answered.record!("reply_posted", actor: "discord-bot", detail: { "reply_id" => "910000000000000099", "url" => answered.reply_url })
 mailbox.call("e2e-mail-2", soul: "avi", status: "claimed", content: "@Avi what shipped yesterday?",
              claimed_by: "e2e-laptop-202-def456", claimed_at: Time.current, lease_expires_at: 8.minutes.from_now, attempts: 1)
-mailbox.call("e2e-mail-3", soul: "xan", status: "received", content: "@Ray what is building on the board?")
+mailbox.call("e2e-mail-3", soul: "ray", status: "received", content: "@Ray what is building on the board?")
 mailbox.call("e2e-mail-4", soul: nil, status: "unrouted", content: "just thinking out loud in the e2e channel")
 puts "Seeded: #{AgentMessage.count} agent messages"
 

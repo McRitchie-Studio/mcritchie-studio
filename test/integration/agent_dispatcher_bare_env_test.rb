@@ -39,7 +39,7 @@ class AgentDispatcherBareEnvTest < ActiveSupport::TestCase
       attr_reader :completed, :released
 
       def initialize
-        @queue = [ { "id" => 67, "soul_slug" => "xan", "attempts" => 1, "channel" => "discord",
+        @queue = [ { "id" => 67, "soul_slug" => "ray", "attempts" => 1, "channel" => "discord",
                      "author_name" => "Alex", "content" => "what is building?" } ]
         @completed = []
         @released = []
@@ -63,7 +63,7 @@ class AgentDispatcherBareEnvTest < ActiveSupport::TestCase
     end
 
     board = Board.new
-    disp = AgentMailbox::Dispatcher.new(client: board, souls: %w[xan], worker: "bare-env-1", claude_cmd: [ claude ],
+    disp = AgentMailbox::Dispatcher.new(client: board, souls: %w[ray], worker: "bare-env-1", claude_cmd: [ claude ],
                                         repo_root: root, out: $stderr, sleeper: ->(_) {}, idle_wait: 0, busy_wait: 0,
                                         version: "test")
     500.times do
@@ -79,12 +79,12 @@ class AgentDispatcherBareEnvTest < ActiveSupport::TestCase
     @dir = Dir.mktmpdir("dispatcher-bare-env")
     @root = File.join(@dir, "repo")
     @home = File.join(@dir, "home")
-    FileUtils.mkdir_p([ File.join(@root, "docs/agents/agents/xan"), File.join(@root, "config"),
+    FileUtils.mkdir_p([ File.join(@root, "docs/agents/agents/ray"), File.join(@root, "config"),
                         File.join(@root, "bin"), @home ])
-    File.write(File.join(@root, "docs/agents/agents/xan/role.md"),
-               "Xan orchestrates — the naïve café crowd \u{1F680}.\n")
+    File.write(File.join(@root, "docs/agents/agents/ray/role.md"),
+               "Ray orchestrates — the naïve café crowd \u{1F680}.\n")
     File.write(File.join(@root, "config/agent_domains.yml"),
-               "domains:\n  studio: { name: \"McRitchie Studio — hub\", doc: docs/studio.md }\nsouls: { xan: studio }\n")
+               "domains:\n  studio: { name: \"McRitchie Studio — hub\", doc: docs/studio.md }\nsouls: { ray: studio }\n")
     File.write(File.join(@root, "docs/studio.md"), "The hub — résumé of agents.\n")
     # The real agent-communication SOP (the audience rules), read under the bare env too.
     FileUtils.mkdir_p(File.join(@root, "docs/agents/modules"))
@@ -120,7 +120,7 @@ class AgentDispatcherBareEnvTest < ActiveSupport::TestCase
     assert_equal [ 67 ], result["completed"].map { |c| c["id"] }
     assert_equal REPLY, result["completed"].first["text"]
     prompt = File.read(@prompt, encoding: "UTF-8")
-    assert_includes prompt, "Xan orchestrates — the naïve café crowd \u{1F680}."
+    assert_includes prompt, "Ray orchestrates — the naïve café crowd \u{1F680}."
     assert_includes prompt, "The hub — résumé of agents."
     assert_includes prompt, "board — 2 building", "the action's non-ASCII output reached the prompt"
     assert_includes prompt, "You are speaking with: owner"

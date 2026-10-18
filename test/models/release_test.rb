@@ -297,10 +297,10 @@ class ReleaseTest < ActiveSupport::TestCase
     rel.add(task)
     rel.assemble!
 
-    rel.ship!(by: "xan")
+    rel.ship!(by: "ray")
 
     assert_equal "shipped", rel.reload.state
-    assert_equal "xan", rel.confirmed_by
+    assert_equal "ray", rel.confirmed_by
     assert_not_nil rel.shipped_at
     assert_not_nil rel.confirmed_at
     assert_equal "shipped", task.reload.stage

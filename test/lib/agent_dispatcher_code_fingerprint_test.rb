@@ -30,7 +30,7 @@ class AgentDispatcherCodeFingerprintTest < Minitest::Test
     write("bin/dispatcher", "entry")
     write("bin/lib/agent_dispatcher.rb", "loop v1")
     write("bin/lib/agent_mailbox.rb", "mailbox v1")
-    write("config/agent_routes.yml", "souls: xan")
+    write("config/agent_routes.yml", "souls: ray")
     write("lib/unrelated.rb", "not loaded")
     @now = Time.at(1_800_000_000)
     @out = StringIO.new
@@ -60,7 +60,7 @@ class AgentDispatcherCodeFingerprintTest < Minitest::Test
     write("bin/lib/agent_mailbox.rb", "mailbox v2")
     refute_equal before, (after_code = fp.call)
 
-    write("config/agent_routes.yml", "souls: xan, avi")
+    write("config/agent_routes.yml", "souls: ray, avi")
     refute_equal after_code, fp.call, "a routing change restarts it too: souls are read only at startup"
   end
 
@@ -84,7 +84,7 @@ class AgentDispatcherCodeFingerprintTest < Minitest::Test
   # --- the loop's check ------------------------------------------------------
 
   def dispatcher(fp)
-    AgentMailbox::Dispatcher.new(client: IdleClient.new, souls: %w[xan], worker: "fp-test", out: @out,
+    AgentMailbox::Dispatcher.new(client: IdleClient.new, souls: %w[ray], worker: "fp-test", out: @out,
                                  clock: -> { @now }, sleeper: ->(_) { }, repo_root: @root, idle_wait: 0,
                                  version: "test", fingerprint: fp)
   end

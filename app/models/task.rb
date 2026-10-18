@@ -200,7 +200,7 @@ class Task < ApplicationRecord
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
-  # Xan's ship-time grade (Insights::TaskGrader); its lesson lives on as an ActionGrade.
+  # Ray's ship-time grade (Insights::TaskGrader); its lesson lives on as an ActionGrade.
   has_one :task_grade, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_transitions, foreign_key: :task_slug, primary_key: :slug,
@@ -2164,10 +2164,13 @@ class Task < ApplicationRecord
   SOUL_ROSTER = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls")
                     .map { |soul| soul.fetch("slug") }.freeze
 
-  # Retired slugs that still resolve on read: `alex` became `xan` (the human owner
-  # is Alex). Nothing writes the legacy slug; every stamp goes through
-  # .canonical_soul. Retire the alias one release after the rename.
-  SOUL_ALIASES = { "alex" => "xan" }.freeze
+  # Retired slugs that still resolve on read: `alex` became `xan` on 2026-09-24
+  # (the human owner is Alex), and `xan` became `ray` on 2026-10-18 (Alex's middle
+  # name). Nothing writes a legacy slug; every stamp goes through .canonical_soul.
+  # RenameXanSoulToRay repointed the stored rows; the alias covers what it cannot
+  # reach: sticky session markers, typed `--actor xan`, commit emails
+  # `xan@mcritchie.studio`, and a dispatcher still claiming for `xan`.
+  SOUL_ALIASES = { "alex" => "ray", "xan" => "ray" }.freeze
 
   # The slug a soul is recorded under: an alias resolves to its successor, anything
   # else passes through stripped. Every soul stamp calls this.

@@ -49,7 +49,7 @@ module DreamBank
     %w[qa-release prepare] => "bin/release prepare"
   }.freeze
   TAG_VALUE = /\A[a-z0-9][a-z0-9+-]*\z/
-  SOUL_ALIASES = { "alex" => "xan" }.freeze
+  SOUL_ALIASES = { "alex" => "ray", "xan" => "ray" }.freeze
   # The most characters one claim's dream block takes.
   CALL_BUDGET = 6_000
 
@@ -141,7 +141,7 @@ module DreamBank
     approved(dir: dir).select { |dream| dream.souls.include?(slug) }
   end
 
-  # `turf_monster` and `alex` name the souls.yml slugs `turf-monster` and `xan`.
+  # `turf_monster`, `alex` and `xan` name the souls.yml slugs `turf-monster` and `ray`.
   def canonical_soul(name)
     slug = name.to_s.strip.downcase.tr("_", "-")
     SOUL_ALIASES.fetch(slug, slug)

@@ -51,12 +51,12 @@
       <% mascot_slug = activity.mascot.presence || totals[:mascot] %>
       <% pokemon = pokemon_by_slug[mascot_slug] %>
       <% grades_for = activity_grades[activity.id] || {} %>
-      <% xan_g = grades_for[ActionGrade::XAN] %>
+      <% ray_g = grades_for[ActionGrade::RAY] %>
       <% mcr_g = grades_for[ActionGrade::MCR] %>
       <tbody class="hb-evtgroup" data-test="heartbeat-event"
              data-category="<%= activity.category %>" data-activity-id="<%= activity.id %>"
-             data-xan-disp="<%= xan_g&.disposition %>" data-xan-slug="<%= xan_g&.slug %>"
-             data-xan-graded="<%= xan_g.present? %>" data-xan-banked="<%= !!xan_g&.banked %>"
+             data-ray-disp="<%= ray_g&.disposition %>" data-ray-slug="<%= ray_g&.slug %>"
+             data-ray-graded="<%= ray_g.present? %>" data-ray-banked="<%= !!ray_g&.banked %>"
              data-mcr-disp="<%= mcr_g&.disposition %>" data-mcr-slug="<%= mcr_g&.slug %>"
              data-mcr-graded="<%= mcr_g.present? %>" data-mcr-banked="<%= !!mcr_g&.banked %>"
              x-data="heartbeatActivityRow()" x-init="hydrate($el)"
@@ -121,7 +121,7 @@
               <% end %>
             </div>
           </div></td>
-          <%= render "heartbeat/activity_feedback_cell", activity: activity, xan: xan_g, mcr: mcr_g %>
+          <%= render "heartbeat/activity_feedback_cell", activity: activity, ray: ray_g, mcr: mcr_g %>
         </tr>
 
         <% if actions.any? %>

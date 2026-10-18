@@ -1,7 +1,7 @@
 <% content_for(:title, "Ray · Learning Heartbeat") %>
 <% content_for(:full_width, true) %>
 
-<%# Xan learning heartbeat — the agent-narrated activity table. Each row is an
+<%# Ray learning heartbeat — the agent-narrated activity table. Each row is an
     AgentActivity (category, reason -> result) with its measured span usage; expand an
     activity to drill into attributed raw actions read-only, or drop into the trailing
     "Unlabeled" group for the tool-calls the agent never narrated. A
@@ -14,7 +14,7 @@
 
 <%= render "heartbeat/scripts" %>
 
-<section id="xan-heartbeat" data-test="heartbeat" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
+<section id="ray-heartbeat" data-test="heartbeat" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
   <div class="hb-head">
     <header class="hb-topbar">
       <div class="hb-title">
@@ -38,7 +38,7 @@
 
     <div class="hb-toolbar">
       <% if @sessions.size > 1 %>
-        <%= form_with url: xan_heartbeat_path, method: :get, data: { turbo: false } do %>
+        <%= form_with url: ray_heartbeat_path, method: :get, data: { turbo: false } do %>
           <span class="hb-lab">Session</span>
           <%= select_tag :session_id,
                 options_for_select(@sessions, @session_id),
@@ -48,7 +48,7 @@
         <span class="hb-lab">Session</span>
         <span class="hb-meta hb-mono"><%= @session_id %></span>
       <% end %>
-      <%= render "components/sub_nav", nav: :heartbeat, current: :xan_heartbeat, counts: { insights: @counts[:insights] } %>
+      <%= render "components/sub_nav", nav: :heartbeat, current: :ray_heartbeat, counts: { insights: @counts[:insights] } %>
       <span class="hb-legend">
         <span><b>activity:</b> category &middot; reason &rarr; result</span>
         <span><b>drill down:</b> expand an activity &middot; click an action to grade</span>

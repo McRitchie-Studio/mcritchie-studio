@@ -382,7 +382,7 @@ class ReleaseConductorClaimTest < ActiveSupport::TestCase
     acquire(**B, now: t0 + ClaimLease::DEFAULT_TTL_SECONDS + 5)
     assert_nil row.reload.holder_soul, "a new holder that names no soul does not inherit the prior one"
 
-    acquire(release_slug: "rel-soul-release", **A, soul: "xan")
+    acquire(release_slug: "rel-soul-release", **A, soul: "ray")
     ReleaseConductorClaim.release(release_slug: "rel-soul-release", role: "assembler", session: A[:session], nonce: A[:nonce])
     assert_nil ReleaseConductorClaim.find_by(release_slug: "rel-soul-release").holder_soul
   end

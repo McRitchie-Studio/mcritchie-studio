@@ -17,7 +17,7 @@ module AgentMessages
   # once answered, AgentMailbox::Audience holds the answer to that role's rules.
   #
   # PUBLIC INTAKE is the one exception (`public_intake:` in the same file;
-  # BuildIntake): its soul (Xan) answers ANY person, the public included, on a
+  # BuildIntake): its soul (Ray) answers ANY person, the public included, on a
   # `web` row whose thread key starts with web:build:, and nowhere else. The
   # prefix is pinned to BuildIntake::THREAD_PREFIX at load, so a config typo can
   # never open a wider set of threads. The caps are BuildIntake::Caps, enforced

@@ -28,7 +28,7 @@ async function askForLogin(page, soul) {
 
 test("the Approve tap on a pending admin login grants the session, collected once", async ({ page }) => {
   expect((await page.goto("/tasks")).ok()).toBe(true);
-  const { slug, proof } = await askForLogin(page, "xan");
+  const { slug, proof } = await askForLogin(page, "ray");
   await page.reload();
 
   const row = page.locator(`#admin-login-${slug}`);
@@ -62,7 +62,7 @@ test("the Approve tap on a pending admin login grants the session, collected onc
 test("the code on the row grants with no tap, and Decline grants nothing", async ({ page }) => {
   expect((await page.goto("/deployments")).ok()).toBe(true);
   const coded = await askForLogin(page, "steffon");
-  const declined = await askForLogin(page, "xan");
+  const declined = await askForLogin(page, "ray");
   await page.reload();
 
   const code = (await page.locator(`#admin-login-${coded.slug} [data-test='admin-login-code']`).textContent()).trim();

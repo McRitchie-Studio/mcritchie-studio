@@ -250,7 +250,7 @@ class BuildController < ApplicationController
     @app_request.user ||= current_user
     # Build my app (AppLaunch, docs/agents/system/client-cto.md): the App, its
     # owner, its CTO and the build task in one transaction, then the page moves
-    # to the new CTO's chat, where Xan's handover is already the first turn. An
+    # to the new CTO's chat, where Ray's handover is already the first turn. An
     # admin's showcase without the checklist still queues the old way.
     unless @app_request.intake_complete?
       @app_request.queue!(name)

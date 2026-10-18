@@ -25,13 +25,13 @@
 <% mascot_slug = activity.mascot.presence || totals[:mascot] %>
 <% pokemon = pokemon_by_slug[mascot_slug] %>
 <% grades_for = activity_grades[activity.id] || {} %>
-<% xan_g = grades_for[ActionGrade::XAN] %>
+<% ray_g = grades_for[ActionGrade::RAY] %>
 <% mcr_g = grades_for[ActionGrade::MCR] %>
 <tbody class="aa-group" id="aa-activity-<%= activity.id %>" data-test="aa-activity" data-activity-id="<%= activity.id %>"
        data-row-id="<%= activity.id %>" data-id-field="agent_activity_id"
-       data-xan-disp="<%= xan_g&.disposition %>" data-xan-slug="<%= xan_g&.slug %>"
-       data-xan-long="<%= xan_g&.long_form %>" data-xan-graded="<%= xan_g.present? %>"
-       data-xan-banked="<%= !!xan_g&.banked %>"
+       data-ray-disp="<%= ray_g&.disposition %>" data-ray-slug="<%= ray_g&.slug %>"
+       data-ray-long="<%= ray_g&.long_form %>" data-ray-graded="<%= ray_g.present? %>"
+       data-ray-banked="<%= !!ray_g&.banked %>"
        data-mcr-disp="<%= mcr_g&.disposition %>" data-mcr-slug="<%= mcr_g&.slug %>"
        data-mcr-long="<%= mcr_g&.long_form %>" data-mcr-graded="<%= mcr_g.present? %>"
        data-mcr-banked="<%= !!mcr_g&.banked %>"
@@ -113,7 +113,7 @@
       </div>
     </td>
 
-    <%= render "agents/activities_grade_cell", kind: :activity, target: activity, grader: "xan", grade: xan_g %>
+    <%= render "agents/activities_grade_cell", kind: :activity, target: activity, grader: "ray", grade: ray_g %>
     <%= render "agents/activities_grade_cell", kind: :activity, target: activity, grader: "mcr", grade: mcr_g %>
   </tr>
 
@@ -142,7 +142,7 @@
         <div class="aa-md-block">
           <div class="aa-md-label">Ray</div>
           <%= render "agents/activities_grade_controls", kind: :activity, target: activity,
-                grader: "xan", grade: xan_g, test_pref: "aa-activity-m" %>
+                grader: "ray", grade: ray_g, test_pref: "aa-activity-m" %>
         </div>
         <div class="aa-md-block">
           <div class="aa-md-label">McRitchie</div>

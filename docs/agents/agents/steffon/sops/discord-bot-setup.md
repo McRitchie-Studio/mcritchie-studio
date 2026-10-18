@@ -19,7 +19,7 @@ as `agents.discord.<bot>` in the `studio-agents` vault
 
 | Item | Bot user | Role |
 |------|----------|------|
-| `agents.discord.xan` | `1481150857809760399` | The SHARED bot, `DISCORD_AGENT_BOT_TOKEN`: the one reader of every listed guild (gateway and backstop poll), and the writer of every reply a soul's own bot does not post. A mention routes to `xan` |
+| `agents.discord.xan` | `1481150857809760399` | The SHARED bot, `DISCORD_AGENT_BOT_TOKEN`: the one reader of every listed guild (gateway and backstop poll), and the writer of every reply a soul's own bot does not post. A mention routes to `ray` |
 | `agents.discord.avi` | `1560516264378507334` | Avi, McRitchie Studio's front door: a mention routes to `avi`; replies as this bot once `DISCORD_BOT_TOKEN_AVI` is set |
 | `agents.discord.turf` | `1405042649479647293` | Turf, Turf Monster's front door: a mention routes to `turf_monster`; replies as this bot once `DISCORD_BOT_TOKEN_TURF_MONSTER` is set |
 | `agents.discord.tyrion` | none filed | Token field empty on purpose (his bot answers through OpenClaw); not routed. With no `DISCORD_BOT_TOKEN_TYRION` his replies, once routed, fall back to the shared bot |

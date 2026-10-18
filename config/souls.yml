@@ -22,13 +22,13 @@
 # is the qa_owner and stays out of the light pool, so no soul both reviews and QAs
 # one change. See docs/agents/agents/carl/sops/pr-review.md.
 souls:
-- slug: xan
+- slug: ray
   name: Ray
   status: active
   agent_type: orchestrator
   title: Lead Orchestrator
   description: 'Coordinates all agents, manages task assignment, and oversees system operations — the central brain of McRitchie Studio. Also holds the senior review pool''s Documentation seat: reviews docs, runbooks, the agent operating model, and READMEs on PRs that touch them.'
-  avatar: "/agents/xan.webp"
+  avatar: "/agents/ray.webp"
   position: 0
   emoji: "🧭"
   color: "#818CF8"

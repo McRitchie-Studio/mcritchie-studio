@@ -64,7 +64,7 @@ bin/agent-activity grade <activity-id> --disposition not --slug "<4-7 words>" --
 Bank only insights that make the next agent smarter. Discard generic narration,
 routine success, and anything that should not become instruction.
 
-The browser path at `/xan/heartbeat` is the operator/admin equivalent. The CLI
+The browser path at `/ray/heartbeat` is the operator/admin equivalent. The CLI
 grades as Ray; Alex's confirmation lane remains in the browser
 pipeline.
 

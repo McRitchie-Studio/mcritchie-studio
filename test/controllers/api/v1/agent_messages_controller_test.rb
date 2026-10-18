@@ -55,7 +55,7 @@ module Api
 
       test "a session acts only for its own soul; an admin session for any" do
         agent_message!(soul: "avi")
-        xan_message = agent_message!(soul: "xan")
+        ray_message = agent_message!(soul: "ray")
 
         post claim_api_v1_agent_messages_url, params: { soul: "avi", worker: "w" }, headers: bearer(studio_session("carl")), as: :json
         assert_response :forbidden
@@ -66,10 +66,10 @@ module Api
         assert_equal "avi", response.parsed_body.dig("data", "soul_slug")
 
         admin = AgentSession.create!(soul: "steffon", tier: "admin", issued_by: "operator_grant")
-        post claim_api_v1_agent_messages_url, params: { soul: "xan", worker: "w" }, headers: bearer(admin), as: :json
+        post claim_api_v1_agent_messages_url, params: { soul: "ray", worker: "w" }, headers: bearer(admin), as: :json
         assert_response :success
-        assert_equal xan_message.id, response.parsed_body.dig("data", "id")
-        assert_equal "steffon", xan_message.reload.events.last.actor, "a session's soul is the recorded actor"
+        assert_equal ray_message.id, response.parsed_body.dig("data", "id")
+        assert_equal "steffon", ray_message.reload.events.last.actor, "a session's soul is the recorded actor"
       end
 
       test "a harness key reaches none of the mailbox" do
@@ -119,7 +119,7 @@ module Api
 
       test "list filters by soul and status, and show carries the timeline" do
         avi = agent_message!(soul: "avi")
-        agent_message!(soul: "xan")
+        agent_message!(soul: "ray")
         AgentMessage.claim!(soul: "avi", worker: "w1")
 
         get api_v1_agent_messages_url, params: { soul: "avi", status: "claimed" }, headers: @shared
@@ -150,11 +150,11 @@ module Api
         sleeper = lambda do |seconds|
           sleeps << seconds
           travel(seconds.seconds, with_usec: true)
-          arrived ||= agent_message!(soul: "xan") if sleeps.size == 3
+          arrived ||= agent_message!(soul: "ray") if sleeps.size == 3
         end
 
         with_sleeper(sleeper) do
-          post claim_api_v1_agent_messages_url, params: { souls: %w[avi xan], worker: "d1", wait: 15 },
+          post claim_api_v1_agent_messages_url, params: { souls: %w[avi ray], worker: "d1", wait: 15 },
                                                 headers: @shared, as: :json
         end
 
@@ -168,7 +168,7 @@ module Api
       test "a long-poll claim with nothing arriving answers data null at its deadline, and the wait is capped" do
         waited = 0.0
         with_sleeper(->(seconds) { waited += seconds; travel(seconds.seconds, with_usec: true) }) do
-          post claim_api_v1_agent_messages_url, params: { souls: "avi,xan", worker: "d1", wait: 600 },
+          post claim_api_v1_agent_messages_url, params: { souls: "avi,ray", worker: "d1", wait: 600 },
                                                 headers: @shared, as: :json
         end
 
