@@ -141,8 +141,8 @@ test("activity + action timestamps render at second precision", async ({ page })
   await expect(explore.locator("[data-test='action-span']").first()).toContainText("created at");
 });
 
-// The launcher's Xan avenue links straight to the heartbeat trajectory.
-test("the session launcher Xan avenue links to the heartbeat trajectory", async ({ page }) => {
+// The launcher's Ray avenue links straight to the heartbeat trajectory.
+test("the session launcher Ray avenue links to the heartbeat trajectory", async ({ page }) => {
   await page.goto("/launcher");
 
   const xan = page.locator("a[data-avenue='xan']");

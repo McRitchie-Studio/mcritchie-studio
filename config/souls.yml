@@ -18,12 +18,12 @@
 #               review_weight  NUMERIC weight (2.0 heavy, 1.0 light), never a label
 #
 # Carl is the standing primary and owner on every PR; he summons one domain light
-# from Shannon (UI), Jasper (Web3), Steffon (DevOps) and Xan (Documentation). Avi
+# from Shannon (UI), Jasper (Web3), Steffon (DevOps) and Ray (Documentation). Avi
 # is the qa_owner and stays out of the light pool, so no soul both reviews and QAs
 # one change. See docs/agents/agents/carl/sops/pr-review.md.
 souls:
 - slug: xan
-  name: Xan
+  name: Ray
   status: active
   agent_type: orchestrator
   title: Lead Orchestrator

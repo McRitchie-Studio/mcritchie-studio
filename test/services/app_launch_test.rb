@@ -42,7 +42,7 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert task.metadata.dig("devops", "agent_context").end_with?(AppRequest::BUILDER_POINTER)
 
     handover = result.handover
-    assert_equal [ "web", "pawsome", "web:pawsome:#{users(:viewer).id}", "client_cto", "received", "Xan" ],
+    assert_equal [ "web", "pawsome", "web:pawsome:#{users(:viewer).id}", "client_cto", "received", "Ray" ],
                  [ handover.channel, handover.channel_ref, handover.thread_key, handover.soul_slug, handover.status, handover.author_name ]
     assert_equal "Meet Nova, your CTO. I'll hand you over.", handover.content
   end

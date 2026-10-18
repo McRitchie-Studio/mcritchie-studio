@@ -5,7 +5,7 @@
 
 ## Status: Active
 
-Xan's `clean-up` SOP. It drives the DevOps pipeline to **zero open tasks** and
+Ray's `clean-up` SOP. It drives the DevOps pipeline to **zero open tasks** and
 leaves the local infrastructure with nothing hanging: no stranded worktrees, no
 orphaned PRs, no half-built desks, no tmp residue.
 

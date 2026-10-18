@@ -9,7 +9,9 @@ module BuildGallery
   CONFIG = Rails.root.join("config/build_examples.yml")
   BLURB_LIMIT = 120
 
-  Example = Struct.new(:name, :url, :emoji, :blurb, :image, keyword_init: true)
+  # `image` is the card's dark-mode still; `motion` the short loop it plays on
+  # hover (script/gallery_capture.cjs writes both). Either may be nil.
+  Example = Struct.new(:name, :url, :emoji, :blurb, :image, :motion, keyword_init: true)
 
   IMAGE_DIR = "build_gallery".freeze
 
@@ -40,19 +42,20 @@ module BuildGallery
   def configured
     YAML.safe_load_file(CONFIG).fetch("examples", []).map do |attrs|
       Example.new(name: attrs.fetch("name"), url: attrs.fetch("url"), emoji: attrs["emoji"].presence || "🧱",
-                  blurb: attrs["blurb"].to_s, image: existing_image(attrs["image"]))
+                  blurb: attrs["blurb"].to_s, image: existing_image(attrs["image"]), motion: existing_image(attrs["motion"]))
     end
   end
 
   def showcased
     AppRequest.where(showcase: true, status: "live").order(updated_at: :desc).map do |req|
       Example.new(name: display_name(req.subdomain), url: req.url, emoji: "🧱",
-                  blurb: first_sentence(req.prompt), image: existing_image("#{IMAGE_DIR}/#{req.subdomain}.jpg"))
+                  blurb: first_sentence(req.prompt), image: existing_image("#{IMAGE_DIR}/#{req.subdomain}.webp"),
+                  motion: existing_image("#{IMAGE_DIR}/#{req.subdomain}.mp4"))
     end
   end
 
-  # An image path for image_tag, or nil when the file is not there — a card
-  # then shows its emoji instead of a broken image.
+  # An asset path (a still or a loop), or nil when the file is not there — a
+  # card then shows its emoji, or just its still, instead of a broken file.
   def existing_image(path)
     return nil if path.blank?
 

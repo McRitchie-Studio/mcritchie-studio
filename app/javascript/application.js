@@ -12,6 +12,8 @@ import "logo_gallery"
 import "logo_editor"
 import "logo_download"
 import "dreams_filter"
+// The /build gallery's hover loops: delegated, inert elsewhere.
+import "gallery_motion"
 // The chat composer's files (attach, paste, drop; send waits for uploads): delegated, inert elsewhere.
 import "chat_attachments"
 

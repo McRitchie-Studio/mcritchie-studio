@@ -106,7 +106,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "h1", text: "Chat with Coach"
     assert_select "[data-test='cto-chat-head'][data-client-cto='true'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
-    assert_select "[data-test='cto-chat-handover']", text: /Xan\s+Meet Coach, your CTO. I'll hand you over./
+    assert_select "[data-test='cto-chat-handover']", text: /Ray\s+Meet Coach, your CTO. I'll hand you over./
     assert_select "meta[name='view-transition'][content='same-origin']"
 
     # The card the claim opened is what an agent builds from: it asks for the

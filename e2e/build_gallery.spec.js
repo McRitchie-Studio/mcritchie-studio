@@ -2,14 +2,15 @@
 //
 // e2e/seed.rb seeds three LIVE showcase apps (plus Cyvasse from
 // config/build_examples.yml). What only a browser proves: the row really scrolls
-// sideways, a screenshot really loads, and the edge fade follows the scroll.
+// sideways, a still really loads, the edge fade follows the scroll, and a card's
+// motion loop plays on hover (and not under reduced motion).
 const { test, expect } = require("@playwright/test");
 const { blockThirdPartyRequests, VISITOR } = require("./helpers");
 
 // What a visitor sees: signed out, not the suite's default admin session.
 test.use({ storageState: VISITOR });
 
-test("the gallery scrolls sideways, its screenshot loads, and the fade follows the scroll", async ({ page }) => {
+test("the gallery scrolls sideways, its still loads, and the fade follows the scroll", async ({ page }) => {
   await blockThirdPartyRequests(page);
   await page.setViewportSize({ width: 1280, height: 1000 });
   await page.goto("/build");
@@ -32,15 +33,14 @@ test("the gallery scrolls sideways, its screenshot loads, and the fade follows t
   const hosts = await page.locator("[data-test='build-example']").evaluateAll((links) => links.map((a) => new URL(a.href).host.split(".")[0]));
   expect(hosts.slice(0, 3)).toEqual(["cyvasse", "prisoners-dilemma", "rantly"]);
 
-  // The description stops at two lines: line-clamp needs its own display, and a
-  // `block` on the same element used to win and let the text run on.
-  // Measured, not read off the class: fill one with far more than two lines of
-  // text and it must still render two lines tall.
+  // The description is one line, cut with an ellipsis. Measured, not read off
+  // the class: fill one with far more than a line of text and it must still
+  // render one line tall.
   const lines = await page.locator("[data-test='build-example-blurb']").first().evaluate((el) => {
     el.textContent = "A long description that keeps going. ".repeat(20);
     return el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight);
   });
-  expect(lines).toBeLessThanOrEqual(2.05);
+  expect(lines).toBeLessThanOrEqual(1.05);
 
   const image = page.locator("[data-test='build-example-image']").first();
   await image.scrollIntoViewIfNeeded();
@@ -51,4 +51,39 @@ test("the gallery scrolls sideways, its screenshot loads, and the fade follows t
   await row.evaluate((el) => el.scrollTo({ left: el.scrollWidth }));
   await expect.poll(() => row.evaluate((el) => getComputedStyle(el).maskImage)).not.toContain("calc(100% - 64px)");
   await expect.poll(() => row.evaluate((el) => getComputedStyle(el).maskImage)).toContain("48px");
+});
+
+// Each showcase app has a dark still and a short loop (build_gallery/<sub>.webp
+// and .mp4). The loop loads nothing until a mouse rests on the card, then plays
+// over the still; leaving stops it. Under reduced motion the still stays.
+test("a card plays its motion loop on hover, and keeps the still under reduced motion", async ({ page }) => {
+  await blockThirdPartyRequests(page);
+  // The suite runs under reduced motion (playwright.config.js); a visitor who
+  // has not asked for it is the case under test first.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await page.goto("/build");
+
+  const card = page.locator("[data-test='build-example']").first();
+  const video = card.locator("[data-test='build-example-motion']");
+  await card.scrollIntoViewIfNeeded();
+  expect(await video.evaluate((v) => v.paused)).toBe(true);
+  expect(await video.evaluate((v) => getComputedStyle(v).opacity)).toBe("0");
+
+  await card.hover();
+  await expect.poll(() => video.evaluate((v) => !v.paused && v.currentTime > 0)).toBe(true);
+  await expect.poll(() => video.evaluate((v) => getComputedStyle(v).opacity)).toBe("1");
+
+  await page.mouse.move(0, 0);
+  await expect.poll(() => video.evaluate((v) => v.paused)).toBe(true);
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
+  const calmCard = page.locator("[data-test='build-example']").first();
+  const calmVideo = calmCard.locator("[data-test='build-example-motion']");
+  await calmCard.scrollIntoViewIfNeeded();
+  await calmCard.hover();
+  await page.waitForTimeout(600);
+  expect(await calmVideo.evaluate((v) => v.paused)).toBe(true);
+  expect(await calmVideo.evaluate((v) => getComputedStyle(v).display)).toBe("none");
 });

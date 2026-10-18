@@ -42,7 +42,7 @@ class ClientCtoChatComponentTest < ActionView::TestCase
                                envelope: { "via" => "handover" })
     render partial: "agent_chats/turn", locals: { message: message, agent_name: "Nova" }
 
-    assert_select "[data-test='cto-chat-handover'] p.text-muted", text: "Xan"
+    assert_select "[data-test='cto-chat-handover'] p.text-muted", text: "Ray"
     assert_select "[data-test='cto-chat-handover']", text: /Meet Nova, your CTO/
     assert_select "[data-test='cto-chat-sent']", 0, "the handover is not the owner's own bubble"
     assert_select "[data-test='cto-chat-reply'] strong", text: "Nova"

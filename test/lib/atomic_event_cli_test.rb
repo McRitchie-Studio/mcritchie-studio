@@ -1085,8 +1085,8 @@ class AgentActivityCliTest < Minitest::Test
       out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN, "heartbeat", "alex")
 
       assert_predicate status, :success?
-      assert_includes out, "## Xan's dream sequence"
-      assert_operator out.index("heartbeat set"), :<, out.index("## Xan's dream sequence")
+      assert_includes out, "## Ray's dream sequence"
+      assert_operator out.index("heartbeat set"), :<, out.index("## Ray's dream sequence")
 
       out, _err, _status = Open3.capture3(env, RbConfig.ruby, BIN, "heartbeat", "--clear")
       refute_includes out, "dream sequence"

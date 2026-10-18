@@ -10,7 +10,7 @@
     canonical cell, "…-m" for the mobile copy so hooks never collide). %>
 <% endpoint = kind == :activity ? heartbeat_activity_grade_path(target) : heartbeat_grade_path(target) %>
 <% role     = grader == "mcr" ? "M" : "A" %>
-<% who      = grader == "mcr" ? "Mr. McRitchie" : "Xan" %>
+<% who      = grader == "mcr" ? "Mr. McRitchie" : "Ray" %>
 <div class="aa-gradebox">
   <form action="<%= endpoint %>" method="post" class="aa-graderow" data-grader="<%= grader %>"
         data-test="<%= test_pref %>-grade-form-<%= grader %>" aria-label="<%= who %> grade" @submit.prevent>

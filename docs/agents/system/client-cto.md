@@ -19,7 +19,7 @@ Our own CTOs (Avi, Turf, Tyrion) are souls in `config/cto_reports.yml` and are u
 | Owner | `app_memberships` row, role `owner`, for the requester |
 | CTO | `app_ctos` row: name, portrait, palette, plan, facts, the request token |
 | Task | "Build Launch App `<sub>`", `designed`, `repositories: [<sub>]`, so the tier's lane cap governs it |
-| Handover | Xan's first chat turn (`AgentMessages::ClientCtoHandover`) |
+| Handover | Ray's first chat turn (`AgentMessages::ClientCtoHandover`) |
 
 Any failure rolls every row back. After the commit: `AppRequestDiscordJob` (the
 announcement) and `AppIntakeMoveJob` (the files). An incomplete intake raises
@@ -36,7 +36,7 @@ request keeps its App row, so its name stays taken (`AppRequest.unavailable_reas
 
 **The morph.** The checklist's form is a Turbo form, so the 303 is a Turbo visit. Both
 pages carry `<meta name="view-transition" content="same-origin">` and give their chat
-head `view-transition-name: agent-chat-head`, so Xan's head morphs into the new CTO's
+head `view-transition-name: agent-chat-head`, so Ray's head morphs into the new CTO's
 (portrait, name, the palette's primary as the head's tint) and the rest cross-fades.
 Under reduced motion it is an instant swap.
 
@@ -82,15 +82,15 @@ The chosen palette (`AppPalette`: `primary`, `accent`, `surface`, `text`, light 
 ## The handover and the greeting
 
 The handover row is a `web` message in the owner's thread (`web:<sub>:<user id>`), author
-`Xan`, content "Meet `<CTO>`, your CTO. I'll hand you over.", routed to `client_cto`. The
+`Ray`, content "Meet `<CTO>`, your CTO. I'll hand you over.", routed to `client_cto`. The
 dispatcher claims it like any message; the persona tells the CTO to answer it by greeting
 the owner by name and restating the plan. The answer reaches the open chat over its Turbo
-stream (`AgentMessages::WebChat`). The chat renders the handover as Xan's turn, not the
+stream (`AgentMessages::WebChat`). The chat renders the handover as Ray's turn, not the
 owner's.
 
 ## Intake files (`AppIntakeMove`)
 
-Files dropped while talking to Xan live under `intake/<request token>/`. After the launch
+Files dropped while talking to Ray live under `intake/<request token>/`. After the launch
 commits, `AppIntakeMoveJob` moves each Active Storage blob whose key has that prefix to
 `apps/<sub>/intake/<rest>`: copy the object (R2 server-side copy on the S3 service), repoint
 the blob's key, delete the old object. A crash before the repoint leaves the blob readable

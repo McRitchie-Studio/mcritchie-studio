@@ -19,7 +19,7 @@ module AgentMessages
   #
   # Idempotent on its external id (one handover per app per owner).
   module ClientCtoHandover
-    AUTHOR = "Xan".freeze
+    AUTHOR = "Ray".freeze
     ACTOR = "app-launch".freeze
     VIA = "handover".freeze
 

@@ -40,8 +40,8 @@ async function adminToken(browser) {
   return token;
 }
 
-// Xan's answer to the visitor's newest message, as bin/dispatcher sends it. A
-// leftover xan row from another spec is answered and passed over.
+// Ray's answer (soul slug still xan) to the visitor's newest message, as bin/dispatcher
+// sends it. A leftover xan row from another spec is answered and passed over.
 async function xanAnswers(page, auth, content, text, card) {
   const worker = `e2e-build-${Date.now()}`;
   for (let i = 0; i < 10; i += 1) {
@@ -82,6 +82,7 @@ test("a signed-out visitor taps from the idea to Build My App without typing aga
   // Straight into the chat, still signed out: no sign-in before Build.
   await page.waitForURL((u) => /^\/build\/[A-Za-z0-9_-]{10,}$/.test(u.pathname));
   await expect(page.locator("[data-test='auth-modal']")).toBeHidden();
+  await expect(page.getByRole("heading", { name: "Build with Ray" })).toBeVisible();
   const first = page.locator("[data-test='build-turn']", { hasText: idea });
   await expect(first).toHaveAttribute("data-pending", "true");
 
@@ -246,8 +247,8 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
       await onboarding.getByRole("button", { name: "Skip for now" }).click();
       await expect(onboarding).toBeHidden();
     }
-    await page.getByLabel("Tell Xan what you want to build").fill(`Rebuild of my old ${name} app`);
-    await page.getByLabel("Tell Xan what you want to build").press("Enter");
+    await page.getByLabel("Tell Ray what you want to build").fill(`Rebuild of my old ${name} app`);
+    await page.getByLabel("Tell Ray what you want to build").press("Enter");
     await page.waitForURL((u) => /^\/build\/[A-Za-z0-9_-]{10,}$/.test(u.pathname));
     // An admin skips the checklist through the name step under the chat.
     await page.locator("[data-test='build-admin-claim'] summary").click();

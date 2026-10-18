@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [component] Session entry launcher — the terminal-styled chooser for how you
-# enter a session. ui-only shape: assert the rendered avenues and that the Xan
+# enter a session. ui-only shape: assert the rendered avenues and that the Ray
 # avenue targets the learning-heartbeat path.
 class SessionEntryLauncherTest < ActionDispatch::IntegrationTest
   # The ops pages sit behind the admin wall (AdminWall); these tests read them as
@@ -17,7 +17,7 @@ class SessionEntryLauncherTest < ActionDispatch::IntegrationTest
     assert_select "[data-avenue=xan]", 1
     assert_match "Session agent", response.body
     assert_match "Avi", response.body
-    assert_match "Xan", response.body
+    assert_match "Ray", response.body
   end
 
   test "selecting Xan targets the learning heartbeat path" do

@@ -262,7 +262,7 @@ class BuildController < ApplicationController
   # The shared composer's locals (agent_chats/_form) for this request's chat.
   def composer_locals(error: nil, text: "")
     { url: build_request_messages_path(@app_request.token), scope: :build_chat, id: FORM_ID,
-      agent_name: "Xan", error: error, text: text }
+      agent_name: "Ray", error: error, text: text }
   end
 
   def load_request

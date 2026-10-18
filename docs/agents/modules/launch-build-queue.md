@@ -58,12 +58,15 @@ which writes to a local database nobody sees.
    commit it in a hub PR:
 
    ```bash
-   node script/gallery_screenshot.cjs https://<subdomain>.mcritchie.studio/<page> <subdomain>
+   node script/gallery_capture.cjs https://<subdomain>.mcritchie.studio/<page> <subdomain>
    ```
 
-   It writes `app/assets/images/build_gallery/<subdomain>.jpg`, which the
-   "Built with McRitchie Studio" row on `/build` finds by convention. Without
-   it the card shows an emoji instead.
+   It writes `app/assets/images/build_gallery/<subdomain>.webp` (a dark-mode
+   still) and `<subdomain>.mp4` (a five-second loop the card plays on hover),
+   which the "Built with McRitchie Studio" row on `/build` finds by convention.
+   Without the still the card shows an emoji instead. The app must answer dark
+   mode (`prefers-color-scheme: dark`); the script asks for it. When production
+   is asleep, run the app locally and add `--from http://127.0.0.1:<port>`.
 5. Mark it live. The requester's page then links to it (and a showcase app
    joins the /build gallery):
 

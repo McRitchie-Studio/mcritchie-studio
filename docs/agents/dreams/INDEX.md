@@ -23,7 +23,7 @@ Loads at: every session start
 | [`turn-a-reframe-into-a-test`](platform/turn-a-reframe-into-a-test.md) | Alex reframes the problem in a way I had not considered. How do I respond? | topic: diagnosis | approved |
 | [`verify-a-report-before-relaying-it`](platform/verify-a-report-before-relaying-it.md) | A subagent reports that it verified something. Can I pass that to Alex as fact? | topic: subagents, reporting | approved |
 
-## Xan (1)
+## Ray (1)
 
 Loads at: `bin/dream xan`
 
