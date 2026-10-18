@@ -355,7 +355,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   # THE DEFECT, measured 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a
   # docs PR Ray wrote while the task carried no stamp): `--builder none` seated RAY
   # as the light on Ray's own diff and printed the no-self-review property upheld,
-  # while `--builder ray` correctly excluded her. `none` made the builder KNOWN and
+  # while `--builder ray` correctly excluded him. `none` made the builder KNOWN and
   # returned an empty author set, so every source that could have named an author was
   # skipped unread — the one input to this class that failed OPEN.
   #
@@ -387,7 +387,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal ["ray"], decision["builder_none_contradicted_by"]
     assert_equal({ "pr_commits" => ["ray"] }, decision["builder_none_contradictions"],
       "the PR is named as the witness, not the record")
-    refute_includes decision["candidates"], "ray", "ray cannot be a light candidate on her own PR"
+    refute_includes decision["candidates"], "ray", "ray cannot be a light candidate on his own PR"
     refute_includes decision["reviewers"].map { |r| r["slug"] }, "ray",
       "and is not seated — the 2026-09-24 outcome, now impossible"
   end

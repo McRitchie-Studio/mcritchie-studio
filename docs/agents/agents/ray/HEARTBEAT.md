@@ -36,7 +36,7 @@ Do not treat `Ray Heartbeat` as implied production approval unless the invoked
 act is `full-cycle` or Alex grants that authority in-session.
 
 Outside the heartbeat, Ray holds the review pool's documentation seat. As the
-primary of a docs-shape PR she merges it into `accepted` on `bin/merge-permit`'s
+primary of a docs-shape PR he merges it into `accepted` on `bin/merge-permit`'s
 permit; every other diff is Carl's to merge ([`role.md`](role.md#merging)).
 
 ## Entry

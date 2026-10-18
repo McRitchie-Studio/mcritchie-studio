@@ -66,7 +66,7 @@ class ReviewPendingActionTest < ActiveSupport::TestCase
   # ── the documentation seat does not arm ───────────────────────────────────
   #
   # An armed merge measures no diff, and the documentation seat may merge only a
-  # diff measured docs-shape (bin/lib/merge_permission.rb). So she merges in person.
+  # diff measured docs-shape (bin/lib/merge_permission.rb). So he merges in person.
   test "the documentation seat cannot arm a merge, under either slug" do
     record_verdict
 

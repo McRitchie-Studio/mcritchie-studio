@@ -115,7 +115,7 @@ class ReviewerSelectCliTest < Minitest::Test
   # THE DEFECT, measured 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a
   # docs PR Ray wrote while the task carried no stamp): `--builder none` seated RAY
   # as the light on Ray's own diff and reported the no-self-review property upheld,
-  # while `--builder ray` correctly excluded her. It was the ONE input to this tool
+  # while `--builder ray` correctly excluded him. It was the ONE input to this tool
   # that lifted a safety check on the caller's word alone.
   #
   # These boot the real script, because the REFUSAL is the CLI's job — the selector

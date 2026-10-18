@@ -174,6 +174,12 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `download-youtube` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
 | `email-image` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | `wrap-it-up` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
+| `Ray Heartbeat` | Ray | `mcritchie-studio/docs/agents/agents/ray/HEARTBEAT.md` |
+| `clean-up` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/clean-up.md` |
+| `full-cycle` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/full-cycle.md` |
+| `grade-events` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/grade-events.md` |
+| `share-insights` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/share-insights.md` |
+| `ship-clock` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/ship-clock.md` |
 | `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | `constraint-diagnosis` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
 | `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
@@ -210,12 +216,6 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `roster-sync` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/roster-sync.md` |
 | `sleeper-auction-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
 | `tiktok-draft` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/tiktok-draft.md` |
-| `Ray Heartbeat` | Ray | `mcritchie-studio/docs/agents/agents/ray/HEARTBEAT.md` |
-| `clean-up` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/clean-up.md` |
-| `full-cycle` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/full-cycle.md` |
-| `grade-events` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/grade-events.md` |
-| `share-insights` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/share-insights.md` |
-| `ship-clock` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/ship-clock.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `agent-communication` | Shared | `mcritchie-studio/docs/agents/modules/agent-communication.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |

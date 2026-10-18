@@ -241,7 +241,7 @@ tasks. If anything is missing, note it as a finding; do not guess.
      do nothing; a moved head is refused; an expired window does not run late; and
      it stands down while a live review claim is held. **The documentation seat
      does not arm:** an armed merge measures no diff, so the board refuses it for
-     Ray. She waits for CI and merges in person on the permit.
+     Ray. He waits for CI and merges in person on the permit.
      - Arming is REFUSED unless the task's **latest** scout report is
        `merge-ready`. To change your mind, record a later scout report; the armed
        merge refuses at fire time. You do not have to disarm. The latest report

@@ -102,7 +102,7 @@
 #
 # THAT ASSERTION IS CHECKED, NOT TRUSTED (see NO_BUILDER). It is the only input the
 # caller can state about somebody else's work, it was the only one that failed OPEN,
-# and on 2026-09-24 it seated a soul on her own PR. It is now cross-examined against
+# and on 2026-09-24 it seated a soul on his own PR. It is now cross-examined against
 # the record and the PR's commits — two witnesses the caller does not control — so a
 # false assertion is contradicted, and an assertion whose witness could not be READ
 # is reported as unverified rather than as cleared. The class still degrades (the

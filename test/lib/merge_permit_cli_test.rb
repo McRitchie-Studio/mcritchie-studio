@@ -130,7 +130,7 @@ class MergePermitCliTest < Minitest::Test
   end
 
   def test_refuses_the_seat_named_by_a_commit_on_the_pr
-    # No stamp names her: only the PR's own commits do.
+    # No stamp names him: only the PR's own commits do.
     @github.commits = "pokemon@mcritchie.studio\nTidy\n\nCo-Authored-By: Ray <xan@mcritchie.studio>\n"
 
     assert_equal MergePermitCli::REFUSED, as_ray

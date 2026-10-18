@@ -121,7 +121,7 @@ Carl** (Agent tool, `subagent_type: carl`) as the **review OWNER**. Carl:
    `data-flow-doc-contradicts-code` (PR #1587, a docs PR **Ray** wrote while the task
    carried no stamp): `--builder none` seated **ray** as the light on Ray's own diff
    and reported the no-self-review property upheld, while `--builder ray` correctly
-   excluded her. It stopped covering a **Pokémon** build on 2026-09-24 too, when
+   excluded him. It stopped covering a **Pokémon** build on 2026-09-24 too, when
    `pokemon` joined the roster — a Pokémon build names `--builder pokemon` like any
    other. What is left for it is the genuinely unattributed build: a change driven
    straight from the operator's own hands. The assertion is now cross-examined
@@ -343,7 +343,7 @@ so and wait one more round. A blocker found after the merge costs a whole new ta
   `release`/`main`. Avi's **`qa-release`** (`bin/release prepare`) promotes the
   **ONE `accepted → release` batch PR per repo** and flips members `assembled` on
   QA-green. **Bias to action: a clean merge-ready verdict = go.** When Ray is
-  the primary of a docs-shape PR she merges it the same way, on
+  the primary of a docs-shape PR he merges it the same way, on
   `bin/merge-permit`'s permit; the documentation seat merges no other shape.
   For a registered **gem**, the merge is followed by a read-only
   **upstream-changelog audit** of that gem's `accepted` (`UpstreamMisfile.audit`).

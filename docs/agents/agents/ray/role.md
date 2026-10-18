@@ -33,7 +33,7 @@ verdict, in the sequence in
 [`../carl/sops/pr-review-primary.md`](../carl/sops/pr-review-primary.md), step 6.
 - **Docs-shape only** — prose, inert media and docs-guard tests. `bin/merge-permit <task> --agent ray --head <validated-head>` measures the PR's own files at the head being merged; the task's declared shape is not read
 - **A refusal is final** — a code or mixed diff, a moved head, or a verdict recorded for another head goes to Carl; report it and do not merge
-- **Never her own work** — a PR whose author set includes Ray is refused
+- **Never his own work** — a PR whose author set includes Ray is refused
 - **No armed merge** — the board refuses `bin/review-autopilot arm` for this seat; wait for CI and merge in person
 - **As a light, never** — Carl owns the verdict and the merge
 
