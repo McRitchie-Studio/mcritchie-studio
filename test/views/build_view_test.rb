@@ -78,7 +78,7 @@ class BuildViewTest < ActionView::TestCase
     assert_equal long.strip, blurb["title"], "the whole description is still there on hover"
   end
 
-  test "a card with a motion loop plays it on mouse hover or keyboard focus, never on touch or reduced motion" do
+  test "a card with a motion loop carries a silent, lazy, reduced-motion-safe video over its still" do
     signed_in(nil)
     @draft = nil
     @examples = [ example("Cyvasse", image: "build_gallery/cyvasse.webp", motion: "build_gallery/cyvasse.mp4") ]
@@ -93,14 +93,12 @@ class BuildViewTest < ActionView::TestCase
     assert_equal "true", video["aria-hidden"], "decoration: the still's alt text names the app"
     assert_includes video["class"].split, "motion-reduce:hidden", "reduced motion keeps the still"
     assert_includes video["class"].split, "opacity-0", "hidden until it is actually playing"
-    assert_equal "playing = true", video["@playing"]
+    assert_includes video["class"].split, "data-[playing]:opacity-100", "app/javascript/gallery_motion.js marks it playing"
+    assert video.key?("data-gallery-motion-video")
 
     card = css_select("[data-test='build-example']").first
-    assert_equal "$event.pointerType === 'mouse' && play()", card["@pointerenter"], "a touch tap opens the app; it does not play"
-    assert_includes card["@focus"], ":focus-visible", "keyboard focus plays it too"
-    assert_equal "stop()", card["@pointerleave"]
-    assert_equal "stop()", card["@blur"]
-    assert_includes card["x-data"], "prefers-reduced-motion: reduce", "the script checks reduced motion as well as the CSS"
+    assert card.key?("data-gallery-motion"), "the card opts in to app/javascript/gallery_motion.js"
+    assert_nil card["x-data"], "behaviour lives in app/javascript, not the template"
   end
 
   test "a card without a motion loop is a plain link with its still" do
@@ -112,7 +110,7 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='build-example-image']", 1
     assert_select "[data-test='build-example-motion']", 0
     card = css_select("[data-test='build-example']").first
-    assert_nil card["x-data"], "no hover script without a loop to play"
+    refute card.key?("data-gallery-motion"), "no hover script without a loop to play"
   end
 
   test "a card shows its screenshot when there is one, and its emoji when not" do
