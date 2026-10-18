@@ -47,7 +47,7 @@
         <label class="cursor-pointer" title="<%= BuildIntake::Portraits.label(key) %>">
           <input type="radio" name="portrait" value="<%= key %>" class="peer sr-only" <%= "checked" if key == picked_portrait %>
                  data-build-portrait-src="<%= image_path(BuildIntake::Portraits.path(key)) %>" data-test="build-portrait">
-          <%= image_tag BuildIntake::Portraits.path(key), alt: "#{BuildIntake::Portraits.label(key)} portrait", loading: "lazy",
+          <%= image_tag BuildIntake::Portraits.path(key), alt: "#{BuildIntake::Portraits.label(key)} portrait",
                 class: "block w-full aspect-square rounded-full ring-offset-2 ring-offset-surface peer-checked:ring-2 peer-checked:ring-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary" %>
         </label>
       <% end %>
