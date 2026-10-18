@@ -179,12 +179,26 @@ class AgentsSeedTest < ActiveSupport::TestCase
   end
 
   # [unit] Regression: on a fresh database the seed creates the orchestrator under
-  # its slug `ray`, named Ray, never a `ray` row derived from the name.
+  # its slug `ray`, named Ray, and exactly once.
   test "a fresh seed keys the orchestrator ray and names it Ray" do
     Agent.where(slug: "ray").find_each { |a| a.skill_assignments.delete_all; a.activities.delete_all; a.usages.delete_all; a.tasks.update_all(agent_slug: nil); a.delete }
     run_seed
 
     assert_equal "Ray", Agent.find_by!(slug: "ray").name
-    refute Agent.exists?(slug: "ray")
+    assert_equal 1, Agent.where(name: "Ray").count, "one orchestrator row"
+  end
+
+  # [unit] A desk seeded from a pre-rename tree holds the seat as `xan`: the seed
+  # renames that row in place (same id, its activities follow) instead of making
+  # a second orchestrator.
+  test "a legacy xan row is renamed to ray in place, keeping its id and children" do
+    Agent.where(slug: "ray").find_each { |a| a.skill_assignments.delete_all; a.activities.delete_all; a.usages.delete_all; a.tasks.update_all(agent_slug: nil); a.delete }
+    legacy = Agent.create!(name: "Ray", slug: "xan", status: "active", agent_type: "orchestrator")
+    Activity.insert_all([{ agent_slug: "xan", activity_type: "comment", description: "legacy row", created_at: Time.current, updated_at: Time.current }])
+    capture_io { run_seed }
+
+    refute Agent.exists?(slug: "xan")
+    assert_equal legacy.id, Agent.find_by!(slug: "ray").id
+    assert_equal 1, Activity.where(agent_slug: "ray").count
   end
 end
