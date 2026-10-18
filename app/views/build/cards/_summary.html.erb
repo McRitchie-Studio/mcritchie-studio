@@ -1,0 +1,53 @@
+<%# locals: (card:, message:, request_row:) %>
+<%# The summary card: once every step is set, Ray's answer carries it (BuildIntake::Card "summary", attached by code when the answer offered no other card). Drawn from the REQUEST, never from the model: the app's title and features, the CTO, the theme and the domain, then Build My App, which runs the same launch as before (BuildController#update, AppLaunch). Signed out, it opens the sign-in modal first, whose link returns here. A summary from before a later change still shows the request as it stands now. %>
+<% answers = request_row.answers.is_a?(Hash) ? request_row.answers : {} %>
+<% ready = request_row.draft? && request_row.intake_complete? %>
+<div class="rounded-2xl border border-primary bg-surface p-3 sm:p-4 space-y-4" data-test="build-card-summary" data-ready="<%= ready %>">
+  <div>
+    <p class="text-xs font-semibold uppercase tracking-wider text-muted mb-1">Your app</p>
+    <p class="text-lg text-heading font-bold leading-snug break-words" data-test="build-summary-title"><%= answers["title"].presence || answers["idea"] %></p>
+    <% if answers["features"].present? %>
+      <ul class="mt-2 list-disc pl-5 space-y-0.5 text-sm text-body" data-test="build-summary-features">
+        <% Array(answers["features"]).each do |feature| %><li class="break-words"><%= feature %></li><% end %>
+      </ul>
+    <% end %>
+  </div>
+  <dl class="grid grid-cols-1 sm:grid-cols-3 gap-2 text-sm">
+    <div class="flex items-center gap-2 min-w-0 rounded-xl border border-subtle p-2" data-test="build-summary-cto">
+      <% if (path = BuildIntake::Portraits.path(request_row.cto_avatar)) %>
+        <%= image_tag path, alt: "", class: "h-9 w-9 shrink-0 rounded-full" %>
+      <% end %>
+      <div class="min-w-0"><dt class="text-2xs text-muted">CTO</dt><dd class="font-semibold text-heading truncate"><%= request_row.cto_name %></dd></div>
+    </div>
+    <div class="flex items-center gap-2 min-w-0 rounded-xl border border-subtle p-2" data-test="build-summary-theme">
+      <% if request_row.palette.present? %>
+        <span class="flex shrink-0 -space-x-1" aria-hidden="true">
+          <% %w[primary accent surface].each do |role| %>
+            <span class="h-5 w-5 rounded-full border border-subtle" style="background-color: <%= request_row.palette.dig("dark", role) %>"></span>
+          <% end %>
+        </span>
+      <% end %>
+      <div class="min-w-0"><dt class="text-2xs text-muted">Theme</dt><dd class="font-semibold text-heading truncate"><%= request_row.palette.presence&.dig("name") %></dd></div>
+    </div>
+    <div class="min-w-0 rounded-xl border border-subtle p-2" data-test="build-summary-domain">
+      <dt class="text-2xs text-muted">Domain</dt><dd class="font-mono text-xs text-heading break-all"><%= request_row.host %></dd>
+    </div>
+  </dl>
+
+  <% if !ready %>
+    <p class="text-xs text-muted" data-test="build-summary-not-ready"><%= request_row.draft? ? "A step changed; finish it and Ray will sum up again." : "This app is already in the build queue." %></p>
+  <% elsif !logged_in? %>
+    <% modal_props = { returnTo: build_request_path(request_row.token), title: "Create your free account",
+                       subtitle: "Sign in and we'll start building #{request_row.host}." } %>
+    <button type="button" class="btn btn-primary w-full" data-test="build-summary-build" data-signs-in="true"
+            data-build-sign-in="<%= modal_props.to_json %>">Build My App</button>
+    <p class="text-xs text-muted text-center">Free. We'll ask you to sign in first.</p>
+  <% else %>
+    <%# Turbo, so the 303 to the new CTO's chat is a view-transition visit (cto_chats/show). %>
+    <%= form_with url: build_request_path(request_row.token), method: :patch, data: { test: "build-summary-form" } do %>
+      <%= hidden_field_tag "app_request[subdomain]", request_row.subdomain %>
+      <button type="submit" class="btn btn-primary w-full" data-test="build-summary-build">Build My App</button>
+    <% end %>
+    <p class="text-xs text-muted text-center">Claims <span class="font-mono"><%= request_row.host %></span> and starts the build.</p>
+  <% end %>
+</div>

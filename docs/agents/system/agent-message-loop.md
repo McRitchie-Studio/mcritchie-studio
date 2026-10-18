@@ -1145,7 +1145,10 @@ asks for sign-in only then; it queues through `AppRequest#queue!` as before.
 - **Cards.** Ray's prompt gains an INTAKE section (`ContextBuilder#intake_block`): the
   playbook from `docs/agents/agents/xan/intake.md`, the request's state from the bundle's
   `intake` key (`BuildIntake::Context`), and the card format. Ray offers a card as a
-  PROPOSAL block of kind `intake` (`idea`, `cto`, `palette`, `address`). On a build thread
+  PROPOSAL block of kind `intake` (`idea`: a title and 2 to 3 key features; `cto`;
+  `palette`, which the visitor reads as the theme; `address`, read as the domain;
+  `summary`, no fields). Once every step is set, an answer that offered no card gets
+  the `summary` card from code, so Build My App is always in the thread. On a build thread
   `AgentMessage#complete!` hands the block to `BuildIntake::Card.record_from!` instead of
   `AgentProposal`: names, hex colours and WCAG text-on-surface contrast (4.5:1, light and
   dark) are checked, unknown fields refuse the card, and the checked copy is stored on
@@ -1154,7 +1157,12 @@ asks for sign-in only then; it queues through `AppRequest#queue!` as before.
 - **Taps** (`BuildIntake::Choice`, `PATCH /build/:token/intake`) are the only writes to
   `app_requests.cto_name`, `cto_avatar` (a `BuildIntake::Portraits` key), `palette` and
   `answers`, and the subdomain; each value is checked again on the server, and a palette
-  or idea is read from the stored card, never from the post.
+  or idea is read from the stored card, never from the post. **Every tap also speaks**
+  (`.agents/epics/build-with-ray-v2.md`, 2-5): once the field is saved, the tap posts the
+  visitor's turn ("Let's build ...", "My CTO is ...") into the thread through
+  `BuildIntake::Ingest`, in the same transaction, so the dispatcher answers it with the
+  next step within the caps; a refused tap posts nothing, and a double tap posts once
+  (one client id). "Build something else" (`idea_else`) sets nothing and only relays.
 - **Delivery.** A signed-out visitor has no `/cable` socket, so the page polls
   (`GET /build/:token/turns`, `app/javascript/build_chat.js`) while a turn is pending;
   `WebChat.deliver!` marks a build-thread answer posted without a broadcast.

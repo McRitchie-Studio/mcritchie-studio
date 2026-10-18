@@ -1,0 +1,135 @@
+require "test_helper"
+
+# [unit] A tap on an intake card (BuildIntake::Choice): it sets the field from
+# the stored card or a checked post, AND posts the visitor's turn into the
+# request's thread (.agents/epics/build-with-ray-v2.md, 2-5), a line written
+# from the saved value, so Ray answers next without the visitor typing. A
+# refused tap writes nothing and posts nothing; a double tap posts once; at a
+# cap the turn is answered in code.
+class BuildIntakeChoiceTest < ActiveSupport::TestCase
+  include ActiveJob::TestHelper
+
+  PALETTE = { "name" => "Pitch",
+              "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },
+              "dark" => { "primary" => "#4ade80", "accent" => "#fbbf24", "surface" => "#0b1220", "text" => "#f1f5f9" } }.freeze
+
+  setup do
+    AgentMessages::Answerers.current = AgentMessages::Answerers.load
+    BuildIntake.reset_policy!
+    @request = AppRequest.create!(prompt: "A league site with schedules")
+  end
+
+  teardown do
+    AgentMessages::Answerers.reset!
+    BuildIntake.reset_policy!
+  end
+
+  def thread = AgentMessage.where(channel: "web", thread_key: BuildIntake.thread_key(@request.token)).order(:id)
+
+  # A completed answer of Ray's on this request's thread, carrying `card`.
+  def answer_with(card)
+    message = AgentMessage.create!(channel: "web", external_id: "build:#{@request.token}:#{SecureRandom.uuid}", channel_ref: "build",
+                                   thread_key: BuildIntake.thread_key(@request.token), soul_slug: "xan", content: "earlier",
+                                   status: "completed", response_text: "Here you go.")
+    message.update!(intake_card: card)
+    message
+  end
+
+  def tap(field, **params) = BuildIntake::Choice.new(@request, ip: "203.0.113.9").tap { |c| c.apply!(field, params) }
+
+  test "every field sets its value and relays the visitor's line as a turn Ray will answer" do
+    idea = answer_with({ "card" => "idea", "title" => "League Standings Hub", "features" => [ "Live standings", "Schedules" ] })
+    themes = answer_with({ "card" => "palette", "palettes" => [ PALETTE ] })
+
+    lines = {
+      [ "idea", { message_id: idea.id } ] => "Let's build League Standings Hub.",
+      [ "cto", { custom_name: "Marble", portrait: "harbor" } ] => "My CTO is Marble.",
+      [ "palette", { message_id: themes.id, index: "0" } ] => "Let's go with the Pitch theme.",
+      [ "address", { subdomain: "league-hub" } ] => "Let's use league-hub.mcritchie.studio."
+    }
+    relays = lines.map do |(field, params), line|
+      relay = tap(field, **params).relay
+      assert_equal line, relay.content, field
+      assert_equal %w[received xan chat], [ relay.status, relay.soul_slug, relay.routed_by ], "#{field}: answerable by Ray"
+      assert_equal "public", relay.person.role
+      relay
+    end
+
+    @request.reload
+    assert_equal({ "title" => "League Standings Hub", "features" => [ "Live standings", "Schedules" ], "idea" => "League Standings Hub" }, @request.answers)
+    assert_equal [ "Marble", "harbor", "Pitch", "league-hub" ], [ @request.cto_name, @request.cto_avatar, @request.palette["name"], @request.subdomain ]
+    assert @request.intake_complete?
+    assert_equal relays.first, AgentMessage.claimable(soul: "xan").first, "the dispatcher claims the first relayed turn (one per thread at a time)"
+    assert_equal 4, thread.where(status: "received").count
+  end
+
+  test "Build something else relays without setting anything, and unlocks the idea this card set" do
+    idea = answer_with({ "card" => "idea", "title" => "League Standings Hub", "features" => %w[a b] })
+    tap("idea", message_id: idea.id)
+    assert @request.reload.intake_checklist["idea"]
+
+    relay = tap("idea_else", message_id: idea.id).relay
+    assert_equal "I'd like to build something else.", relay.content
+    assert_equal({}, @request.reload.answers)
+
+    other = answer_with({ "card" => "idea", "title" => "Fantasy Draft Board", "features" => %w[a b] })
+    tap("idea", message_id: other.id)
+    tap("idea_else", message_id: idea.id)
+    assert_equal "Fantasy Draft Board", @request.reload.answers["title"], "an older card's link leaves a newer idea alone"
+  end
+
+  test "a refused tap writes nothing and posts nothing" do
+    themes = answer_with({ "card" => "palette", "palettes" => [ PALETTE ] })
+    AppRequest.create!(prompt: "taken", subdomain: "taken-name", status: "queued", user: User.create!(email: "t@example.com", name: "T", role: "viewer"))
+
+    refusals = {
+      [ "cto", { custom_name: "x", portrait: "harbor" } ] => /2 to 24 letters/,
+      [ "cto", { custom_name: "Marble", portrait: "pikachu" } ] => /portrait/,
+      [ "palette", { message_id: themes.id, index: "4" } ] => /themes/,
+      [ "idea", { message_id: themes.id } ] => /no longer available/,
+      [ "address", { subdomain: "taken-name" } ] => /taken|claimed|in use/i,
+      [ "theme", {} ] => /Unknown choice/
+    }
+    assert_no_difference -> { thread.count } do
+      refusals.each do |(field, params), reason|
+        error = assert_raises(BuildIntake::Choice::Refused, field) { tap(field, **params) }
+        assert_match reason, error.message, field
+      end
+    end
+    assert_nil @request.reload.cto_name
+    assert_equal({}, @request.palette)
+  end
+
+  test "a card from another request's thread is refused" do
+    other = AppRequest.create!(prompt: "theirs")
+    foreign = AgentMessage.create!(channel: "web", external_id: "build:#{other.token}:x", channel_ref: "build", thread_key: BuildIntake.thread_key(other.token),
+                                   soul_slug: "xan", content: "x", status: "completed", response_text: "y")
+    foreign.update!(intake_card: { "card" => "palette", "palettes" => [ PALETTE ] })
+    assert_raises(BuildIntake::Choice::Refused) { tap("palette", message_id: foreign.id, index: "0") }
+    assert_equal 0, thread.count
+  end
+
+  test "a double tap of one card posts one turn" do
+    first = tap("cto", custom_name: "Marble", portrait: "harbor", client_id: "tap-00000001").relay
+    again = tap("cto", custom_name: "Marble", portrait: "harbor", client_id: "tap-00000001").relay
+    assert_equal first, again
+    assert_equal 1, thread.count
+  end
+
+  test "a queued request takes no taps" do
+    @request.update_columns(status: "queued")
+    assert_raises(BuildIntake::Choice::Refused) { tap("cto", custom_name: "Marble", portrait: "harbor") }
+    assert_equal 0, thread.count
+  end
+
+  test "past the request cap the relayed turn is answered in code, and the field is still set" do
+    BuildIntake.policy = BuildIntake.policy.dup.tap { |p| p.turns_per_request = 1 }
+    BuildIntake::Ingest.new(request: @request, ip: "203.0.113.9").call("hello")
+
+    relay = tap("cto", custom_name: "Marble", portrait: "harbor").relay
+    assert_equal "completed", relay.status
+    assert_equal BuildIntake::Caps::CAP_SUMMARY, relay.action_summary
+    assert_includes relay.response_text, "Sign in to continue"
+    assert_equal "Marble", @request.reload.cto_name
+  end
+end

@@ -8,14 +8,20 @@
 //     has waited SLOW_AFTER_MS (a dispatcher that is down should not be hammered);
 //   - nothing at all on any other page, or when nothing is pending.
 //
-// Also two delegated behaviours a card may need however it arrived (on load or
+// Also the delegated behaviours a card may need however it arrived (on load or
 // in a poll), so the templates carry no inline script:
 //
-//   - the address card ([data-build-address]): the field is cleaned as it is
-//     typed (the server's AppRequest.normalize_subdomain, done again here), a
-//     suggestion fills it, and /build/check answers live; a name we KNOW is
-//     refused disables the button (the server re-checks on the tap regardless);
-//   - Build my app signed out ([data-build-sign-in]): opens the standard
+//   - the domain card: each suggestion chip ([data-build-domain-chip]) is
+//     checked once on arrival and disabled when /build/check says it is taken
+//     (a tap on an available one submits the choice); the own-name field
+//     ([data-build-address]) is cleaned as it is typed (the server's
+//     AppRequest.normalize_subdomain, done again here) and checked live; a name
+//     we KNOW is refused disables its button (the server re-checks on the tap);
+//   - the CTO card ([data-build-cto]): the portrait or "New image" opens the
+//     picker dialog; a pick swaps the preview and closes it;
+//   - the theme card ([data-build-theme]): the Dark / Light toggle swaps every
+//     column's preview;
+//   - Build My App signed out ([data-build-sign-in]): opens the standard
 //     sign-in modal with the props the button carries.
 //
 // Imported by application.js on every page, once per load; one timer, which
@@ -70,9 +76,6 @@ function checkAddress(card) {
   const status = card.querySelector("[data-build-address-status]");
   const submit = card.querySelector("[data-build-address-submit]");
   if (!input || !status) return;
-  card.querySelectorAll("[data-build-address-pick]").forEach((pick) => {
-    pick.setAttribute("aria-pressed", String(pick.dataset.buildAddressPick === input.value));
-  });
   const name = input.value.replace(/-+$/, "");
   clearTimeout(checkTimers.get(card));
   const show = (state, text) => {
@@ -102,12 +105,51 @@ document.addEventListener("input", (event) => {
   checkAddress(input.closest("[data-build-address]"));
 });
 
+// A suggestion chip, checked once: a taken name cannot be tapped.
+async function checkChip(form) {
+  const button = form.querySelector("[data-build-domain-name]");
+  if (!button) return;
+  try {
+    const name = button.dataset.buildDomainName;
+    const response = await fetch(`${form.dataset.buildDomainChip}?subdomain=${encodeURIComponent(name)}`, { headers: { Accept: "application/json" } });
+    const data = await response.json();
+    if (!data.available && button.getAttribute("aria-pressed") !== "true") {
+      button.disabled = true;
+      button.title = data.reason || "Not available";
+    }
+  } catch (_error) {
+    // Unknown: left tappable; the server checks on the tap.
+  }
+}
+
+document.addEventListener("change", (event) => {
+  const radio = event.target.closest?.("[data-build-portrait-src]");
+  if (!radio) return;
+  const card = radio.closest("[data-build-cto]");
+  const preview = card?.querySelector("[data-build-portrait-preview]");
+  if (preview) {
+    preview.src = radio.dataset.buildPortraitSrc;
+    const label = radio.closest("label")?.title;
+    if (label) preview.alt = `${label} portrait`;
+  }
+  card?.querySelector("[data-build-portrait-dialog]")?.close();
+});
+
 document.addEventListener("click", (event) => {
-  const pick = event.target.closest?.("[data-build-address-pick]");
-  if (pick) {
-    const card = pick.closest("[data-build-address]");
-    const input = card?.querySelector("[data-build-address-input]");
-    if (input) { input.value = pick.dataset.buildAddressPick; checkAddress(card); }
+  const open = event.target.closest?.("[data-build-portrait-open]");
+  if (open) {
+    open.closest("[data-build-cto]")?.querySelector("[data-build-portrait-dialog]")?.showModal();
+    return;
+  }
+  const close = event.target.closest?.("[data-build-portrait-close]");
+  if (close) { close.closest("dialog")?.close(); return; }
+  const mode = event.target.closest?.("[data-build-theme-mode]");
+  if (mode) {
+    const card = mode.closest("[data-build-theme]");
+    const chosen = mode.dataset.buildThemeMode;
+    card.dataset.mode = chosen;
+    card.querySelectorAll("[data-build-theme-mode]").forEach((b) => b.setAttribute("aria-pressed", String(b === mode)));
+    card.querySelectorAll("[data-build-theme-preview]").forEach((p) => { p.hidden = p.dataset.buildThemePreview !== chosen; });
     return;
   }
   const signIn = event.target.closest?.("[data-build-sign-in]");
@@ -116,11 +158,15 @@ document.addEventListener("click", (event) => {
   }
 });
 
-// A card already on the page (or one a poll brings) checks its prefilled name once.
+// A card already on the page (or one a poll or a tap brings) checks its names once.
 function checkNewCards() {
   document.querySelectorAll("[data-build-address]:not([data-build-address-checked])").forEach((card) => {
     card.dataset.buildAddressChecked = "true";
     checkAddress(card);
+  });
+  document.querySelectorAll("[data-build-domain-chip]:not([data-build-address-checked])").forEach((form) => {
+    form.dataset.buildAddressChecked = "true";
+    checkChip(form);
   });
 }
 
