@@ -43,5 +43,10 @@ class AppDevopsStagesTest < ActiveSupport::TestCase
 
     task.update_columns(stage: "assembled")
     assert_equal %i[done live pending], AppDevopsStages.for_app(app).map(&:state)
+
+    task.update_columns(stage: "archived")
+    assert_equal %i[pending pending pending], AppDevopsStages.for_app(app).map(&:state), "archived unshipped"
+    task.update_columns(completed_at: Time.current)
+    assert_equal %i[done done done], AppDevopsStages.for_app(app).map(&:state), "archive-shipped keeps it done"
   end
 end

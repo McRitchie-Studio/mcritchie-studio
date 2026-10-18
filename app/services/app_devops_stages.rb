@@ -14,7 +14,8 @@
 #
 # The board has no `shipping` task stage: a task waits on `assembled` while its
 # release ships, so Deploying reads the release's own timeline
-# (Release#current_stage "prod_deploying"). An archived task shows nothing live.
+# (Release#current_stage "prod_deploying"). A task archived after it shipped, or
+# whose release has shipped, shows all three done; one archived unshipped, nothing live.
 # An app with no build task (one of our own, live before /build existed) shows
 # all three done.
 class AppDevopsStages
@@ -29,9 +30,16 @@ class AppDevopsStages
 
   def self.for_app(app)
     task = build_task(app)
-    return from("shipped") if task.nil?
+    return from("shipped") if task.nil? || shipped?(task)
 
     from(task.stage, release_stage: (task.release&.current_stage if task.stage == "assembled"))
+  end
+
+  # Shipped, whatever the task column says now: archive-shipped moves a shipped
+  # task to `archived` (completed_at stays), and a release can ship before its
+  # members are moved (Release#resumable_member_ship).
+  def self.shipped?(task)
+    task.completed_at.present? || (%w[assembled archived].include?(task.stage) && task.release&.shipped?)
   end
 
   # The newest build task for the app's subdomain, or nil.
