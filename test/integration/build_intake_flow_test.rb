@@ -3,8 +3,10 @@ require "test_helper"
 # [integration] A signed-out visitor builds with Xan through real requests: the
 # first message (bot-shielded) starts a draft and Xan's thread, Xan's answers
 # (completed here as bin/dispatcher would, with intake cards) render as cards,
-# each tap fills the checklist, Build my app asks for sign-in, and signing in
-# adopts the request and queues it through the existing claim path.
+# the status card appears with the first card and each tap fills its tiles
+# (Agent, Theme, Domain), and signing in adopts the request and Build queues it
+# through the existing claim path. The Build control itself is Ray's summary
+# card's (build-cards-advance-chat); this test posts what it posts.
 class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
 
@@ -50,7 +52,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     patch build_request_intake_path(request_row.token), params: { field: field, **params }, as: :turbo_stream
   end
 
-  test "a signed-out visitor goes from idea to a lit Build my app, then signs in and the build is queued" do
+  test "a signed-out visitor goes from idea to a full status card, then signs in and the build is queued" do
     request_row = first_message
     assert_redirected_to build_request_path(request_row.token)
     first = AgentMessage.find_by!(thread_key: BuildIntake.thread_key(request_row.token))
@@ -59,8 +61,9 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     get build_request_path(request_row.token)
     assert_response :success
     assert_select "[data-test=build-chat-page]"
-    assert_select "[data-test=build-turn][data-pending=true]", 1, "Xan's answer is pending, so the page polls"
-    assert_select "[data-test=build-my-app][disabled]"
+    assert_select "[data-test=build-turn][data-pending=true]", 1, "Ray's answer is pending, so the page polls"
+    assert_select "#build-checklist[data-card=false] [data-test=build-heading]", 1, "no card yet: the heading, not an empty form"
+    assert_select "[data-test=build-my-app]", 0, "the status card carries no Build control"
 
     idea = xan_answers("Got it: a league site. Here's how I'd put it.",
                        { kind: "intake", card: "idea", idea: "A league site with live standings", audience: "rec league players" })
@@ -68,6 +71,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_includes response.body, "build-turn-#{first.id}"
     assert_includes response.body, "data-test=\"build-card-idea\""
+    assert_includes response.body, "data-test=\"build-status-card\"", "the first card brings the status card in the same poll"
 
     tap_card(request_row, "idea", message_id: idea.id)
     assert_response :success
@@ -94,11 +98,16 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     xan_answers("And an address.", { kind: "intake", card: "address", names: %w[league-hub] })
     tap_card(request_row, "address", subdomain: "league-hub")
     assert_equal "league-hub", request_row.reload.subdomain
-    assert_includes response.body, "data-complete=\"true\"", "the tap's stream redraws the checklist complete"
+    assert_includes response.body, "data-complete=\"true\"", "the tap's stream redraws the status card complete"
 
     get build_request_path(request_row.token)
-    assert_select "[data-test=build-my-app][data-enabled=true]:not([disabled])", 1
-    assert_select "[data-test=build-my-app][data-signs-in=true]", 1, "signed out, Build my app opens sign-in"
+    assert_select "[data-test=build-status-card][data-complete=true]" do
+      assert_select "[data-test=build-tile-agent][data-done=true] [data-test=build-tile-agent-portrait][src*='cto_portraits/harbor']"
+      assert_select "[data-test=build-tile-agent-value]", text: "Coach"
+      assert_select "[data-test=build-tile-theme-value]", text: "Pitch"
+      assert_select "[data-test=build-tile-domain-value]", text: "league-hub.mcritchie.studio"
+      assert_select "[data-test=build-status-title]", text: "League Hub"
+    end
     assert_equal "draft", request_row.reload.status
 
     patch build_request_path(request_row.token), params: { app_request: { subdomain: "league-hub" } }
@@ -109,7 +118,6 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     post link_consume_path(token: Studio::Link.where(kind: "magic_link").order(:created_at).last.token)
     get build_request_path(request_row.token)
     assert_equal user, request_row.reload.user, "sign-in adopts the draft"
-    assert_select "form[action='#{build_request_path(request_row.token)}'] [data-test=build-my-app]"
 
     patch build_request_path(request_row.token), params: { app_request: { subdomain: "league-hub" } }
     request_row.reload
@@ -138,7 +146,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
 
     patch build_request_path(request_row.token), params: { app_request: { subdomain: "half-done" } }
     assert_equal "draft", request_row.reload.status
-    assert_equal "Finish the checklist first.", flash[:alert]
+    assert_equal "Finish setting up your app first.", flash[:alert]
   end
 
   test "the bot shield: no proof holds the first message; the honeypot stores nothing" do

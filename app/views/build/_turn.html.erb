@@ -1,16 +1,16 @@
 <%# locals: (message:, request_row:, error: nil) %>
-<%# One turn of the /build chat: the shared agent_chats turn, a typing line while Xan's answer is pending (the poll replaces the whole turn when it lands), and the intake card the answer carried (BuildIntake::Card, already checked in code). A bot-shield hold reads as "send it again", never as an admin wait. %>
+<%# One turn of the /build chat: the shared agent_chats turn, a typing line while Ray's answer is pending (the poll replaces the whole turn when it lands), and the intake card the answer carried (BuildIntake::Card, already checked in code). A bot-shield hold reads as "send it again", never as an admin wait. %>
 <% pending = %w[received claimed].include?(message.status) %>
 <% card = message.status == "completed" && message.intake_card.is_a?(Hash) ? message.intake_card : nil %>
 <div id="build-turn-<%= message.id %>" class="flex flex-col gap-2" data-test="build-turn" data-build-turn
      data-status="<%= message.status %>" data-pending="<%= pending %>">
   <% if message.held? %>
     <div class="self-end max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 bg-primary/15 text-primary-ink text-sm whitespace-pre-wrap break-words" data-test="cto-chat-sent"><%= message.content %></div>
-    <p class="self-start text-xs text-warning-ink" data-test="build-turn-held">Xan didn't catch that one. Send it again.</p>
+    <p class="self-start text-xs text-warning-ink" data-test="build-turn-held"><%= BuildController::AGENT_NAME %> didn't catch that one. Send it again.</p>
   <% else %>
-    <%= render "agent_chats/turn", message: message, agent_name: "Xan" %>
+    <%= render "agent_chats/turn", message: message, agent_name: BuildController::AGENT_NAME %>
     <% if pending %>
-      <%= render "agent_chats/typing", agent_name: "Xan", at: Time.current %>
+      <%= render "agent_chats/typing", agent_name: BuildController::AGENT_NAME, at: Time.current %>
     <% end %>
     <% if card && BuildIntake::Card::KINDS.include?(card["card"]) %>
       <div class="self-start w-full max-w-xl" data-test="build-card" data-card="<%= card["card"] %>">

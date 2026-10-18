@@ -64,32 +64,46 @@ class AgentChatComponentTest < ActionView::TestCase
     assert_select "[data-test='cto-chat-typing'][data-typing-at='#{(Time.utc(2026, 10, 17, 9).to_f * 1000).to_i}']", text: /Xan is typing…/
   end
 
-  test "[component] the header shows the heading agent's portrait and name, with the subtitle local under it" do
-    xan = AgentStub.new(slug: "xan", name: "Xan", avatar: "https://img.test/xan.png", avatar_color: "#6366f1", avatar_initials: "X")
-    render("agent_chats/header", name: "Xan", agent: xan, subtitle: tag.p("Your guide to a new app.", data: { test: "subtitle" }))
+  test "[component] the shell's head: the agent's portrait, big and centered, one view-transition name, its name and role under it" do
+    ray = AgentStub.new(slug: "xan", name: "Ray", avatar: "https://img.test/ray.png", avatar_color: "#6366f1", avatar_initials: "R")
+    render("agent_chats/header", name: "Ray", agent: ray, role: "AI build agent")
 
-    assert_select "[data-test='agent-chat-header'][data-agent-name='Xan']" do
-      assert_select "img[src='https://img.test/xan.png']"
-      assert_select "h1", text: "Chat with Xan"
-      assert_select "[data-test='subtitle']", text: "Your guide to a new app."
+    assert_select "[data-test='agent-chat-header'][data-agent-name='Ray']" do
+      assert_select "[data-test='agent-portrait'][style='view-transition-name: agent-portrait;'] span.w-24 img[src='https://img.test/ray.png']"
+      assert_select "[data-test='agent-caption']", text: /Ray\s+· AI build agent/
     end
+    assert_select "h1", 0, "the page's heading is its status slot's"
   end
 
-  test "[component] the header swaps agents: ready portrait markup wins, and with no agent a plain circle stands in" do
-    render("agent_chats/header", name: "Nova", heading: "Meet Nova", portrait: tag.img(src: "/nova.png", alt: "", data: { test: "portrait" }))
-    assert_select "[data-test='agent-chat-header'][data-agent-name='Nova'] [data-test='portrait'][src='/nova.png']"
-    assert_select "h1", text: "Meet Nova"
+  test "[component] the header swaps agents: ready portrait markup wins, and with no agent the name's initial stands in" do
+    render("agent_chats/header", name: "Nova", portrait: tag.img(src: "/nova.png", alt: "", data: { test: "portrait" }))
+    assert_select "[data-test='agent-chat-header'][data-agent-name='Nova'] [data-test='agent-portrait'] [data-test='portrait'][src='/nova.png']"
 
     @rendered = ActionView::OutputBuffer.new
     render("agent_chats/header", name: "Nova") # no block: the header never yields (a yield would print the layout body again)
-    assert_select "[data-test='agent-chat-header'] span[aria-hidden='true']", text: "🤖"
-    assert_select "h1", text: "Chat with Nova"
+    assert_select "[data-test='agent-portrait'] span[aria-hidden='true']", text: "N"
+    assert_select "[data-test='agent-caption']", text: "Nova"
+  end
+
+  test "[component] the shell stacks head, status and chat, each slot as given" do
+    render("agent_chats/shell", page: "app", head: tag.div(data: { test: "h" }), status: tag.div(data: { test: "s" }),
+                                chat: tag.div(data: { test: "c" }))
+
+    assert_select "section[data-test='agent-shell'][data-shell='app'] > [data-test='h'] + [data-test='agent-shell-status'][style*='agent-status'] > [data-test='s']"
+    assert_select "[data-test='agent-shell-status'] + [data-test='c']"
+  end
+
+  test "[component] the composer is the big chat box with a round send button" do
+    render_chat
+    assert_select "form#build-chat-form.rounded-3xl[style*='view-transition-name: agent-composer']" do
+      assert_select "button[type='submit'][data-test='cto-chat-send'][aria-label='Send to Xan'].rounded-full svg"
+    end
   end
 
   test "[component] the attachments slot renders inside the composer, empty, and a filled slot needs no form edit" do
     render_chat
     form = css_select("form#build-chat-form").sole
-    assert_equal form.css("label, textarea, input, p, span, button").size, form.css("label, textarea, input").size,
+    assert_equal form.css("label, textarea, input, p, span, button").size, form.css("label, textarea, input, button[data-test='cto-chat-send']").size,
                  "the stock slot adds no markup"
 
     Dir.mktmpdir do |dir|

@@ -2,10 +2,11 @@
 
 require "test_helper"
 
-# [component] The /build views in isolation: the opening composer (the first
-# message to Xan, bot-shielded), the draft page (the chat with Xan and its
-# checklist, the same signed in or out; an admin also gets the name step), the
-# intake cards, and the status page once queued.
+# [component] The /build views in isolation: the agent shell (Ray's portrait,
+# the heading or the status card, the thread, the chat box), the opening
+# composer (the first message to Ray, bot-shielded, answered in place), the
+# draft page (the same shell, signed in or out; an admin also gets the name
+# step), and the status page once queued.
 class BuildViewTest < ActionView::TestCase
   include ApplicationHelper
 
@@ -14,13 +15,13 @@ class BuildViewTest < ActionView::TestCase
     view.define_singleton_method(:current_user) { user }
   end
 
-  test "the composer is the first message to Xan: a plain post, with the bot shield" do
+  test "the composer is the first message to Ray: a Turbo post answered in place, with the bot shield" do
     signed_in(nil)
-    @draft = nil
     @examples = []
     render template: "build/new"
 
-    assert_select "[data-test='build-form'][action='/build'][method='post']"
+    assert_select "#build-chat-page form#build-first-form[data-test='build-form'][action='/build'][method='post']"
+    assert_select "[data-test='build-form'][data-turbo='false']", 0, "Turbo posts it, so the answer streams into this page"
     assert_select "[data-test='build-form'] input[name='app_request[client_id]']"
     assert_select "[data-test='build-honeypot'][name='app_request[leave_blank]'][tabindex='-1']"
     proof = css_select("[data-test='build-proof']").first
@@ -105,43 +106,82 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='build-gallery']", 0
   end
 
-  test "the composer: a labelled prompt, Enter-to-send, a send button and examples" do
+  test "the composer: a labelled prompt, Enter-to-send, a round send button and a placeholder that types example ideas" do
     signed_in(nil)
-    @draft = nil
     @examples = []
     render template: "build/new"
 
-    assert_select "[data-test='build-form'] textarea[name='app_request[prompt]'][maxlength='#{AppRequest::PROMPT_LIMIT}'][required]"
-    assert_select "label.sr-only", text: "Tell Xan what you want to build"
-    assert_select "[data-test='build-send'][aria-label='Send to Xan']"
+    box = css_select("[data-test='build-form'] textarea[name='app_request[prompt]'][maxlength='#{AppRequest::PROMPT_LIMIT}'][required]").sole
+    assert_select "label.sr-only", text: "Tell Ray what you want to build"
+    assert_select "[data-test='build-send'][aria-label='Send to Ray'].rounded-full"
     assert_includes rendered, "@keydown.enter", "Enter must send the prompt"
-    assert_select "[data-test='build-examples'] button", 4
+    examples = JSON.parse(box["data-typing-placeholder"])
+    assert_equal 4, examples.size, "the examples are typed into the placeholder (app/javascript/build_shell.js)"
+    assert_equal examples.first, box["placeholder"], "still, the first example reads (no script, or reduced motion)"
+    assert_select "[data-test='build-examples']", 0, "no example chips"
   end
 
-  def chat_assigns(request_row)
+  test "/build is the agent shell: Ray's portrait, the heading, then the chat box; no banner, no chips, no three steps" do
+    signed_in(users(:viewer))
+    AppRequest.create!(prompt: "An unfinished idea", user: users(:viewer))
+    @intake_agent = nil
+    @examples = []
+    render template: "build/new"
+
+    assert_select "[data-test='agent-shell'][data-shell='build']" do
+      assert_select "[data-test='agent-chat-header'][data-agent-name='Ray'] [data-test='agent-portrait'][style*='view-transition-name: agent-portrait']"
+      assert_select "#build-checklist[data-card='false'] [data-test='build-heading']" do
+        assert_select "h1", text: "What do you want to build?"
+        assert_select "p", text: "Let our agents build & host your website on the McRitchie Studio stack, free."
+      end
+      assert_select "[data-test='agent-shell-status'] + #build-chat-page [data-test='build-form']", 1, "the chat box sits under the heading"
+    end
+    assert_select "[data-test='resume-draft']", 0, "no unfinished-request banner"
+    assert_select "[aria-label='How it works']", 0, "no three-step cards"
+    assert_no_match(/Pick up where you left off|Tell Xan/, rendered)
+  end
+
+  def chat_assigns(request_row, started: request_row.intake_started?)
     @app_request = request_row
     @messages = BuildIntake.history(request_row.token)
-    @xan = nil
+    @intake_agent = nil
+    @started = started
     view.define_singleton_method(:composer_locals) do |error: nil, text: ""|
-      { url: "/build/#{request_row.token}/messages", scope: :build_chat, id: "build-chat-form", agent_name: "Xan", error: error, text: text }
+      { url: "/build/#{request_row.token}/messages", scope: :build_chat, id: "build-chat-form", agent_name: "Ray", error: error, text: text }
     end
   end
 
-  test "signed out, a draft is the chat with Xan and a checklist whose Build waits" do
+  test "signed out, a new draft is the same shell: Ray, the heading until a first card, the thread and the chat box" do
     signed_in(nil)
     chat_assigns(AppRequest.create!(prompt: "A client portal"))
     render template: "build/show"
 
-    assert_select "[data-test='build-chat-page'][data-build-chat-poll-url='/build/#{@app_request.token}/turns']"
-    assert_select "[data-test='agent-chat-header'][data-agent-name='Xan']"
-    assert_select "form#build-chat-form[action='/build/#{@app_request.token}/messages'] textarea[name='build_chat[text]']"
-    %w[idea cto colors address].each { |step| assert_select "[data-test='build-check-#{step}'][data-done='false']" }
-    assert_select "[data-test='build-my-app'][disabled][data-enabled='false']"
+    assert_select "[data-test='agent-shell'][data-shell='draft']" do
+      assert_select "[data-test='agent-chat-header'][data-agent-name='Ray']"
+      assert_select "#build-checklist[data-card='false'] [data-test='build-heading']", 1
+      assert_select "#build-chat-page[data-build-chat-poll-url='/build/#{@app_request.token}/turns']"
+      assert_select "form#build-chat-form[action='/build/#{@app_request.token}/messages'][style*='agent-composer'] textarea[name='build_chat[text]']"
+    end
+    assert_select "[data-test='build-my-app']", 0, "no Build control in the shell: Ray's summary card carries it"
     assert_select "[data-test='build-claim']", 0, "no name step for a visitor"
     assert_select "[data-test='build-register']", 0, "no sign-in before Build"
   end
 
-  test "a complete checklist lights Build: sign-in signed out, the claim form signed in" do
+  test "once Ray proposed a card, the status card shows the working title and three empty tiles" do
+    signed_in(nil)
+    chat_assigns(AppRequest.create!(prompt: "A client portal"), started: true)
+    render template: "build/show"
+
+    assert_select "#build-checklist[data-card='true'] [data-test='build-status-card'][data-complete='false']" do
+      assert_select "[data-test='build-status-title']", text: "Your app"
+      %w[agent theme domain].each do |tile|
+        assert_select "[data-test='build-tile-#{tile}'][data-done='false'] [data-test='build-tile-#{tile}-value']", text: "Not yet"
+      end
+    end
+    assert_select "[data-test='build-heading']", 0
+  end
+
+  test "a complete intake fills every tile: the CTO's portrait and name, the palette, the address" do
     palette = { "name" => "Pitch",
                 "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },
                 "dark" => { "primary" => "#4ade80", "accent" => "#fbbf24", "surface" => "#0b1220", "text" => "#f1f5f9" } }
@@ -150,13 +190,15 @@ class BuildViewTest < ActionView::TestCase
     signed_in(nil)
     chat_assigns(row)
     render template: "build/show"
-    button = css_select("[data-test='build-my-app']").first
-    assert_equal "true", button["data-enabled"]
-    props = JSON.parse(button["data-build-sign-in"])
-    assert_equal "/build/#{row.token}", props["returnTo"], "the sign-in modal's emailed link returns to this chat"
-    assert_includes props["subtitle"], "client-portal.mcritchie.studio"
-    assert_select "[data-test='build-check-cto-portrait'][src*='cto_portraits/harbor']"
-    assert_select "[data-test='build-check-address-value']", text: "client-portal.mcritchie.studio"
+
+    assert_select "[data-test='build-status-card'][data-complete='true']" do
+      assert_select "[data-test='build-status-title']", "Client Portal", "the claimed address in words until the idea card names it"
+      assert_select "[data-test='build-tile-agent'][data-done='true'] [data-test='build-tile-agent-portrait'][src*='cto_portraits/harbor']"
+      assert_select "[data-test='build-tile-agent-value']", text: "Nova"
+      assert_select "[data-test='build-tile-theme'][data-done='true'] span[style*='#15803d']"
+      assert_select "[data-test='build-tile-theme-value']", text: "Pitch"
+      assert_select "[data-test='build-tile-domain-value']", text: "client-portal.mcritchie.studio"
+    end
   end
 
   test "the auth modal card: Google, an email field, and returnTo passed to the magic link" do

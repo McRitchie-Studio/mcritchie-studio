@@ -1,13 +1,16 @@
 <% content_for :title, "Your app · McRitchie Studio" %>
 <% req = @app_request %>
-<%# Build my app moves this page to the new CTO's chat; both opt in to a view transition so it morphs in place. %>
+<%# A draft is the agent shell (agent_chats/_shell), the same page /build became when the first message was sent: Ray's portrait, the status card (build/_status_card), the thread and the chat box. Build my app moves it to the new CTO's chat; both opt in to a view transition, so Ray's portrait morphs into the CTO's. %>
 <% content_for :head, tag.meta(name: "view-transition", content: "same-origin") %>
+<% turbo_refreshes_with method: :morph, scroll: :preserve %>
 
-<section class="<%= req.draft? ? 'max-w-5xl pt-6 sm:pt-10' : 'max-w-2xl pt-12' %> mx-auto px-4 pb-24" data-test="build-request" data-status="<%= req.status %>">
+<section class="<%= req.draft? ? '' : 'max-w-2xl pt-12 mx-auto px-4 pb-24' %>" data-test="build-request" data-status="<%= req.status %>">
   <% if req.draft? %>
-    <%= render "build/chat", request_row: req, messages: @messages, xan: @xan %>
+    <% head = render "agent_chats/header", name: BuildController::AGENT_NAME, agent: @intake_agent, role: BuildController::AGENT_ROLE %>
+    <% status = render "build/status_card", request_row: req, started: @started %>
+    <%= render "agent_chats/shell", page: "draft", head: head, status: status, chat: render("build/chat", request_row: req, messages: @messages) %>
     <% if logged_in? && current_user.admin? %>
-      <details class="mt-8" data-test="build-admin-claim">
+      <details class="max-w-3xl mx-auto px-4 pb-24" data-test="build-admin-claim">
         <summary class="cursor-pointer text-sm font-semibold text-muted">Admin: queue a showcase without the checklist</summary>
         <div class="mt-4"><%= render "build/claim_form", req: req %></div>
       </details>

@@ -139,6 +139,21 @@ class AppRequest < ApplicationRecord
   # Build my app lights up only when all four are set.
   def intake_complete? = intake_checklist.values.all?
 
+  # Whether the /build page shows the status card yet (build/_status_card):
+  # once Ray has proposed a card, or anything is set. Before that, a visitor
+  # who only says hi sees the heading, not an empty form.
+  def intake_started?
+    intake_checklist.values.any? ||
+      AgentMessage.where(channel: "web", thread_key: BuildIntake.thread_key(token)).where.not(intake_card: nil).exists?
+  end
+
+  # The app's working title on the status card: the idea card's title once the
+  # visitor confirmed one, else the claimed address in words, else nil.
+  def working_title
+    title = answers.is_a?(Hash) ? answers["title"].to_s.squish.presence : nil
+    title || subdomain&.tr("-", " ")&.titleize
+  end
+
   # The first unset step, in the order Xan asks, or nil when all are set.
   def next_intake_step = BuildIntake::STEPS.find { |step| !intake_checklist[step] }
 

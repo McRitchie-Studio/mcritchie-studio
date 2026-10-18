@@ -28,7 +28,15 @@ class CtoChatsControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select "[data-test='cto-chat-page'][data-app='turf-monster'][data-soul='turf_monster']"
-    assert_select "h1", text: "Chat with Turf"
+    # The agent shell: the CTO's portrait and name on top, the app's status card, then the chat.
+    assert_select "[data-test='agent-shell'][data-shell='app']" do
+      assert_select "[data-test='agent-caption']", text: /Turf\s+· CTO of #{apps(:turf_monster).name}/
+      assert_select "[data-test='cto-chat-head'] h1", text: apps(:turf_monster).name
+      assert_select "[data-test='devops-stage']", 3
+      assert_select "[data-test='devops-stage'][data-state='done']", 3, "no build task: one of our own live apps"
+      assert_select "[data-test='cto-chat-usage'] [data-test='usage-meter-line']", text: /Tokens used/
+    end
+    assert_select "[data-test='cto-chat-usage']", text: /Agent usage this month/, count: 0
     assert_select "turbo-cable-stream-source[channel='CtoChatChannel']", 1
     signed = css_select("turbo-cable-stream-source").first["signed-stream-name"]
     assert_equal AgentMessages::WebChat.stream_name("turf-monster", @alex.id), CtoChatChannel.verified_stream_name(signed)
