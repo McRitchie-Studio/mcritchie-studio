@@ -9,11 +9,12 @@
 # Only list an app that is LIVE at its URL right now. A gallery of placeholders
 # reads worse than an empty one.
 #
-# `image` is a screenshot under app/assets/images, captured with
-#   node script/gallery_screenshot.cjs <url> <slug>
+# `image` is a dark-mode still and `motion` a short loop the card plays on
+# hover, both under app/assets/images, captured together with
+#   node script/gallery_capture.cjs <url> <slug>
 # Point it at the page that shows what the app IS (Cyvasse's game board, not its
-# landing text). A live showcase request needs no entry: its screenshot is found
-# by convention at build_gallery/<subdomain>.jpg.
+# landing text). A live showcase request needs no entry: its files are found
+# by convention at build_gallery/<subdomain>.webp and .mp4.
 # `lead` names the apps shown first, in this order, by subdomain; every other
 # app follows in its usual order (this list, then showcase apps newest first).
 lead:
@@ -32,4 +33,5 @@ examples:
     url: https://cyvasse.mcritchie.studio
     emoji: "🐉"
     blurb: The hex strategy board game from Alex's first app, rebuilt as a live multiplayer game.
-    image: build_gallery/cyvasse.jpg
+    image: build_gallery/cyvasse.webp
+    motion: build_gallery/cyvasse.mp4
