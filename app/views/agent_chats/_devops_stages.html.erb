@@ -7,7 +7,7 @@
       <li class="min-w-0 <%= 'cta-glow' if stage.live? %>"
           data-test="devops-stage" data-stage="<%= stage.key %>" data-state="<%= stage.state %>" data-count="<%= stage.count %>"
           <% if stage.live? %>aria-current="step"<% end %>>
-        <span class="devops-stage-pill flex items-center justify-center gap-1 sm:gap-1.5 min-w-0 rounded-full border px-1 min-[400px]:px-2 py-1.5 text-[11px] min-[400px]:text-xs sm:text-sm font-semibold
+        <span class="devops-stage-pill flex items-center justify-center gap-1 sm:gap-1.5 min-w-0 rounded-full border px-1 min-[400px]:px-2 py-1.5 text-2xs min-[400px]:text-xs sm:text-sm font-semibold
                      <%= stage.done? ? 'devops-stage-done text-heading' : (stage.live? ? 'devops-stage-live text-heading' : 'border-subtle text-muted') %>">
           <% if stage.done? %>
             <span class="devops-stage-mark" aria-hidden="true">✓</span>
