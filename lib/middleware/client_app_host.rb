@@ -25,6 +25,9 @@ class ClientAppHost
   # http://demo.localhost:3038/.
   LOCAL_DOMAIN = "localhost"
   OFF = %w[off none false 0].freeze
+  # The production session cookie's domain (config/initializers/session_store.rb):
+  # a preview domain at or under it would hand model-written code the hub's cookies.
+  HUB_COOKIE_DOMAIN = "mcritchie.studio"
   # One DNS label, as AppRequest::SUBDOMAIN_FORMAT spells a subdomain.
   LABEL = /\A[a-z0-9][a-z0-9-]{1,28}[a-z0-9]\z/
 
@@ -38,6 +41,9 @@ class ClientAppHost
     def domain(env = ENV, production: Rails.env.production?, qa: qa_environment?)
       value = env[ENV_NAME].to_s.strip.downcase.delete_prefix(".")
       return nil if OFF.include?(value)
+      if value == HUB_COOKIE_DOMAIN || value.end_with?(".#{HUB_COOKIE_DOMAIN}")
+        raise ArgumentError, "#{ENV_NAME}=#{value} is inside the hub session cookie's domain; use a separate registrable domain"
+      end
       return value unless value.empty?
       return (qa ? nil : PRODUCTION_DOMAIN) if production
 

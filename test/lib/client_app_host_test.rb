@@ -15,6 +15,9 @@ class ClientAppHostTest < ActiveSupport::TestCase
     assert_equal "localhost", ClientAppHost.domain({}, production: false, qa: false)
     assert_equal "preview.example", ClientAppHost.domain({ "CLIENT_APP_PREVIEW_DOMAIN" => " .Preview.Example " }, production: true, qa: true)
     assert_nil ClientAppHost.domain({ "CLIENT_APP_PREVIEW_DOMAIN" => "off" }, production: true, qa: false)
+    %w[mcritchie.studio preview.qa.mcritchie.studio].each do |inside|
+      assert_raises(ArgumentError) { ClientAppHost.domain({ "CLIENT_APP_PREVIEW_DOMAIN" => inside }, production: true, qa: true) }
+    end
   end
 
   test "[unit] sub_for takes exactly one valid label under the domain" do
