@@ -1,0 +1,28 @@
+# The automatic first version of every /build app (.agents/epics/client-app-zero-to-one.md;
+# runbook: docs/agents/system/client-build-launcher.md). Read by the board
+# (ClientBuilds.config, app/services/client_builds.rb) and by the launcher on
+# Alex's Mac (bin/client-build-launcher, bin/lib/client_build_launcher.rb).
+#
+# preview_domain   where the shared host serves each bundle: <sub>.<preview_domain>.
+#                  A separate registrable domain, so the hub's .mcritchie.studio
+#                  session cookie never reaches model-written code. Alex buys
+#                  mcritchie.si later; the name is config until then.
+# cap              builds running at once on the Mac. The 5-agent cap is shared with
+#                  the dispatcher and every session, so this stays small.
+# max_attempts     claims one launch task may take. A failed run blocks the task; a
+#                  human re-queues it (bin/task move <slug> designed), and past this
+#                  many claims the launcher leaves it for a person.
+# run_minutes      the builder's wall-clock cap (Alex's ~45-minute build budget).
+# max_turns        the builder's turn cap: assistant turns in the stream before the
+#                  run is stopped.
+# model            the builder's model. Execution runs on Opus (focus-session.md, Step 6).
+# poll_seconds     how often the launcher asks the board for work when idle.
+# bundle_max_bytes the local validation's size limit, before publish validates again.
+preview_domain: mcritchie.si
+cap: 2
+max_attempts: 3
+run_minutes: 45
+max_turns: 120
+model: opus
+poll_seconds: 30
+bundle_max_bytes: 5000000
