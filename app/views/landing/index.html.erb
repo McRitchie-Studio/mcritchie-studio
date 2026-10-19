@@ -39,7 +39,16 @@
       An acquisition entrepreneur partnering with owners to carry proven
       businesses into their next decade.
     </p>
-    <a href="#about" class="btn btn-primary btn-lg">Meet Alex</a>
+    <%# The hero's call to action is the /build funnel (Alex, 2026-10-19): Build
+        Your App, in the CTA glow primitive's rainbow preset (cta-glow-rainbow,
+        app/assets/tailwind/cta_glow.css) to draw the eye. Meet Alex stays as a
+        quiet text link to the About section just below. %>
+    <div class="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
+      <%= tag.span class: "cta-glow cta-glow-rainbow", data: { test: "hero-build-glow" } do %>
+        <%= link_to "Build Your App", build_path, class: "btn btn-primary btn-lg", data: { test: "hero-build-cta" } %>
+      <% end %>
+      <a href="#about" class="text-heading hover:text-primary font-semibold transition" data-test="hero-meet-alex">Meet Alex</a>
+    </div>
   </div>
 </section>
 
