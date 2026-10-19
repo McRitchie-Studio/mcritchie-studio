@@ -95,10 +95,19 @@ The chosen palette (`AppPalette`: `primary`, `accent`, `surface`, `text`, light 
 
 The handover row is a `web` message in the owner's thread (`web:<sub>:<user id>`), author
 `Ray`, content "Meet `<CTO>`, your CTO. I'll hand you over.", routed to `client_cto`. It is
-stored already answered with the CTO's opening message, which code writes from the intake
-(`ClientCtoHandover.greeting`: the owner's first name, the CTO's and the app's names, the
-plan as bullets, and "What would you like to see first?"), so the chat opens on both turns
-and no model runs for it. The dispatcher never claims the row; the persona tells the CTO
+stored already answered with the CTO's opening message, which code writes from the launch
+(`ClientCtoHandover.greeting`: in the first person, "Hi `<first name>`, I'm `<CTO>`, the agent
+who'll be managing `<app>`", that it is building now and what the status card's three stages
+mean, the app's address, and what the owner can do meanwhile), so the chat opens on both turns
+and no model runs for it.
+
+Build My App on the summary card launches first, then shows the launch panel
+(`build/_launch`) in place of the /build shell: the new CTO's portrait, the app's name, and
+three steps ("Building Brand Sheet", "Hatching CTO", "Setting Up Domain") resolving over about
+eight seconds in the app's colours, before a Turbo visit to the chat, where the portrait morphs
+into the chat's head. The address moves to the chat at once, so a reload lands there; a refused
+launch stays on the summary card with its reason. In development, an admin can replay the panel
+for a launched app at `/build/launch-demo/<sub>`. The dispatcher never claims the row; the persona tells the CTO
 not to greet again. The chat renders the handover as Ray's turn, then the greeting as the
 CTO's.
 
