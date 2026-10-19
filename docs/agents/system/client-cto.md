@@ -99,9 +99,35 @@ The handover row is a `web` message in the owner's thread (`web:<sub>:<user id>`
 `Ray`, content "Meet `<CTO>`, your CTO. I'll hand you over.", routed to `client_cto`. It is
 stored already answered with the CTO's opening message, which code writes from the launch
 (`ClientCtoHandover.greeting`: in the first person, "Hi `<first name>`, I'm `<CTO>`, the agent
-who'll be managing `<app>`", that it is building now and what the status card's three stages
-mean, the app's address, and what the owner can do meanwhile), so the chat opens on both turns
-and no model runs for it.
+who'll be managing `<app>`", that it is in line to be built, what the status card shows, the
+app's address, and what the owner can do meanwhile), so the chat opens on both turns and no
+model runs for it. It never says "building now": at launch the build task is `designed` and
+nobody holds it (task `app-card-stage-labels`). A greeting already stored keeps its words.
+
+## The status card's sub-labels and ETAs
+
+Each lit pill on the card (`AppDevopsStages`, `agent_chats/_devops_stages`) carries a second
+line for where its furthest-along task is, and a third for how long that step usually has
+left (`AppDevopsStages::Eta`). Each list row says the same for its own task.
+
+| Task step | Pill | Sub-label | ETA |
+|-----------|------|-----------|-----|
+| `designed` | Building | Prepping | "no builder yet" unless a launcher is live, else the usual wait |
+| `building` | Building | Building (On hold while blocked) | usual build time, less time spent |
+| `submitted` | Building | Reviewing | usual review time |
+| `reviewed` | Building | Approved | usual wait for a release |
+| `assembled` | Releasing | On QA | usual time to ship |
+| release deploying | Deploying | Going live | usual production deploy |
+
+- **The usual time** is the median `seconds_in_from` of the last 20 forward transitions out of
+  that stage (`task_events`), board-wide, cached ten minutes; Deploying uses the last 20
+  releases' `prod_deploy_started_at → shipped_at`. With fewer than three durations the pill
+  shows no ETA. Past the usual time it reads "running long".
+- **The launcher seam.** A designed task promises minutes only while a dispatcher ping
+  (`AgentDispatcher`) carrying the soul `client-build-launcher` has been heard in the last five
+  minutes and is not paused (`Eta.launcher_live?`).
+- **The preview seam.** A `preview_ready` checkpoint `TaskEvent` on a task past `designed` and
+  still in the Building lane reads "Preview ready", with no ETA (task `client-app-host`).
 
 Build My App on the summary card launches first, then goes to the chat. The launch sets
 `app_ctos.launch_animation_pending` (the app's initial load), and the owner's first visit to

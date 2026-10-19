@@ -76,9 +76,9 @@ class AppLaunchTest < ActiveSupport::TestCase
     # do meanwhile (task build-launch-handoff): code wrote it from the launch's own rows.
     assert greeting.start_with?("Hi Viewer, I'm Nova, the agent who'll be managing Pawsome."), greeting
     assert_includes greeting, "It's in line to be built: your brand sheet, the first version of the app, and its home at **pawsome.mcritchie.studio**."
-    assert_includes greeting, "The card above shows live progress: Prepping until a builder picks it up, then Building, Reviewing, " \
-                              "Releasing to a preview link for you to try, and Deploying once you approve it."
-    assert greeting.end_with?("While you wait, tell me anything you'd like added or changed, or ask me about the plan.")
+    assert_includes greeting, "The card above shows live progress: Prepping until a builder starts, then Building, Reviewing, " \
+                              "Releasing to a preview link for you, and Deploying once you approve."
+    assert greeting.end_with?("Meanwhile, tell me anything you'd like added or changed, or ask about the plan.")
     assert_equal "designed", launched.task.reload.stage, "the greeting's claim matches the task: in line, not building"
     assert_no_match(/building now|it builds/i, greeting)
     assert_operator greeting.split.size, :<=, 70, "short: Alex's voice, plain and warm"

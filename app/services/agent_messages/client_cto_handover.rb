@@ -55,9 +55,9 @@ module AgentMessages
       [
         "Hi #{first || 'there'}, I'm #{app_cto.name}, the agent who'll be managing #{app_cto.app.name}.",
         "It's in line to be built: your brand sheet, the first version of the app, and its home at **#{host}**. " \
-        "The card above shows live progress: Prepping until a builder picks it up, then Building, Reviewing, " \
-        "Releasing to a preview link for you to try, and Deploying once you approve it.",
-        "While you wait, tell me anything you'd like added or changed, or ask me about the plan."
+        "The card above shows live progress: Prepping until a builder starts, then Building, Reviewing, " \
+        "Releasing to a preview link for you, and Deploying once you approve.",
+        "Meanwhile, tell me anything you'd like added or changed, or ask about the plan."
       ].join("\n\n")
     end
 
