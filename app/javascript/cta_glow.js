@@ -21,8 +21,10 @@
 // stand-ins), so test/javascript/cta_glow_test.js runs it without a browser.
 
 export const GLOW_VARS = ["--glow-a", "--glow-b", "--glow-c"];
-// cta_glow.css draws the glow's circle this much wider and taller than the CTA.
-export const GLOW_BLEED_PX = 16;
+// cta_glow.css draws the glow this much wider and taller than the CTA: wider by
+// more, so the squashed circle still reaches round a wide button's ends.
+export const GLOW_BLEED_X_PX = 48;
+export const GLOW_BLEED_Y_PX = 16;
 
 // The glow colours a theme option carries: { "--glow-a": "#…", … }, or null
 // when it carries none.
@@ -49,9 +51,10 @@ export function syncThemeGlow(card) {
 
 // The circle's squash for a CTA of this size: its glow box's height over its
 // width, as a unitless share (1 for a round CTA, small for a wide button).
-export function glowSquash(width, height, bleed = GLOW_BLEED_PX) {
+export function glowSquash(width, height) {
   if (!(width > 0) || !(height > 0)) return 1;
-  return Math.min(1, (height + bleed) / (width + bleed));
+  if (Math.abs(width - height) <= 1) return 1; // a round or square CTA glows in a circle
+  return Math.min(1, (height + GLOW_BLEED_Y_PX) / (width + GLOW_BLEED_X_PX));
 }
 
 const watched = new Set();
