@@ -55,9 +55,13 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert_equal %w[received routed hold_released completed reply_posted], handover.events.order(:id).pluck(:kind)
     assert_equal [ "posted", "code greeting" ], [ handover.reply_status, handover.action_summary ]
     greeting = handover.response_text
-    assert greeting.start_with?("Hi Viewer, I'm Nova, the CTO of Pawsome."), greeting
-    PLAN.lines.map(&:strip).each { |line| assert_includes greeting, "- #{line}", "the plan, restated" }
-    assert greeting.end_with?("What would you like to see first?")
+    # First person and by name, building now, what the card shows, what to do meanwhile
+    # (task build-launch-handoff): code wrote it from the launch's own rows.
+    assert greeting.start_with?("Hi Viewer, I'm Nova, the agent who'll be managing Pawsome."), greeting
+    assert_includes greeting, "It's building now: your brand sheet, the first version of the app, and its home at **pawsome.mcritchie.studio**."
+    assert_includes greeting, "Building, then Releasing to a preview link for you to try, then Deploying once you approve it."
+    assert greeting.end_with?("While it builds, tell me anything you'd like added or changed, or ask me about the plan.")
+    assert_operator greeting.split.size, :<=, 70, "short: Alex's voice, plain and warm"
 
     follow_up = AgentMessages::WebIngest.new(user: users(:viewer), cto: AppOwnership.cto_for_app("pawsome"))
                                         .call("Can it take payments?", client_id: "client-0001")
@@ -122,7 +126,7 @@ class AppLaunchTest < ActiveSupport::TestCase
     titled = launch(draft, subdomain: "league-hub",
                            intake: client_intake(answers: ANSWERS.merge("title" => "  League   Standings Hub ")))
     assert_equal "League Standings Hub", titled.app.name, "the title, not the address in words"
-    assert titled.handover.response_text.start_with?("Hi Viewer, I'm Nova, the CTO of League Standings Hub."), "the greeting names it too"
+    assert titled.handover.response_text.start_with?("Hi Viewer, I'm Nova, the agent who'll be managing League Standings Hub."), "the greeting names it too"
 
     # An admin's showcase apps are not held to the one-app plan, so one user launches the other two.
     long = launch(draft(user: users(:alex)), subdomain: "long-one", intake: client_intake(answers: ANSWERS.merge("title" => "Word " * 20)))

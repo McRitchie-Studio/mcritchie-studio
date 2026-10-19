@@ -7,8 +7,8 @@ module AgentMessages
   # It stores ONE `web` AgentMessage in the owner's own chat thread with the
   # app's CTO (`web:<sub>:<user id>`), routed to `client_cto`: its content is
   # Ray's handover line, and it is stored ALREADY ANSWERED with the CTO's
-  # opening message (#greeting), which code writes from the intake: the owner's
-  # name, the CTO's, the app's and the plan. So the chat opens on the handover
+  # opening message (#greeting), which code writes from the launch: the owner's
+  # first name, the CTO's, the app's and its address. So the chat opens on the handover
   # and the greeting, never on a bare "typing…", and no model runs for it
   # (.agents/epics/build-with-ray-v2.md, section 6). Nothing here calls a model;
   # the dispatcher never claims the row, and the CTO's first model turn is its
@@ -36,20 +36,23 @@ module AgentMessages
 
     def handover?(message) = message.envelope.is_a?(Hash) && message.envelope["via"] == VIA
 
-    # The CTO's opening message, from the intake alone: it greets the owner by
-    # first name, restates the plan (AppCto#plan, the sharpened idea and its day
-    # one), and asks what they want to see first. Markdown, as every answer.
+    # The CTO's opening message, from the launch's data alone (task
+    # build-launch-handoff, Alex 2026-10-18): first person and by name, it greets
+    # the owner by first name, says the CTO is the agent managing the app, that
+    # the app is building now and what that means (the status card's three
+    # stages, the address), and what the owner can do here meanwhile. Short, in
+    # Alex's plain voice; the plan stays on the summary card the owner just
+    # confirmed. Markdown, as every answer.
     def greeting(app_cto, user)
       first = user&.name.to_s.split.first.presence
-      plan = app_cto.plan.to_s.lines.map(&:strip).compact_blank
-      lines = [ "Hi #{first || 'there'}, I'm #{app_cto.name}, the CTO of #{app_cto.app.name}." ]
-      if plan.any?
-        lines << "Here's the plan:\n\n#{plan.map { |line| "- #{line}" }.join("\n")}"
-      end
-      lines << "The build has started. The card above shows where it stands: Building, then Releasing to a " \
-               "preview link for you to try, then Deploying once you approve it."
-      lines << "What would you like to see first?"
-      lines.join("\n\n")
+      host = "#{app_cto.app_slug}.#{AppRequest::PARENT_DOMAIN}"
+      [
+        "Hi #{first || 'there'}, I'm #{app_cto.name}, the agent who'll be managing #{app_cto.app.name}.",
+        "It's building now: your brand sheet, the first version of the app, and its home at **#{host}**. " \
+        "The card above shows where it stands: Building, then Releasing to a preview link for you to try, " \
+        "then Deploying once you approve it.",
+        "While it builds, tell me anything you'd like added or changed, or ask me about the plan."
+      ].join("\n\n")
     end
 
     def enqueue!(app_cto:, user:, now: Time.current)

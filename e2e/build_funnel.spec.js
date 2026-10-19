@@ -13,8 +13,8 @@
 // the prefilled name edited), and Use Domain (a chip picked, the name edited and
 // typed back while the chip's glow follows the field). The summary card follows, and Build My App asks for sign-in only
 // then; the emailed link returns to the same chat, and Build My App launches the app
-// and moves the page to the new CTO's chat (a Turbo visit, no reload), where the
-// CTO's code-written greeting is already there. The
+// and, after the launch panel's three steps, moves the page to the new CTO's chat (a
+// Turbo visit, no reload), where the CTO's code-written greeting is already there. The
 // spec plays the dispatcher through the real mailbox API (claim, complete with an
 // intake card), and the page, which has no /cable socket signed out, picks each
 // answer up by polling. Mobile width and both themes are measured on the way.
@@ -342,9 +342,22 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   // transition, not a reload), Ray's portrait now Marbles's, the status card the app's
   // devops in the Field colours, Ray's handover first and Marbles's code-written greeting
   // already under it: no model ran, nothing is typing.
+  //
+  // Between the two, the launch panel (task build-launch-handoff): the launch has
+  // happened, the shell is swapped in place for Marbles's portrait, the app's name and
+  // the three steps, and the address is ALREADY the chat (a reload lands there). This
+  // suite runs with reduced motion (playwright.config.js), so the steps show done at
+  // once and the visit follows a short pause.
   await page.evaluate(() => { window.__buildShellMarker = "kept"; });
   await page.locator("[data-test='build-card-summary'] [data-test='build-summary-build']").click();
-  await page.waitForURL((u) => u.pathname === `/applications/${address}/chat`);
+  const panel = page.locator("[data-test='build-launch']");
+  await expect(panel).toBeVisible();
+  await expect(page).toHaveURL((u) => u.pathname === `/applications/${address}/chat`);
+  await expect(page.locator("[data-test='agent-shell']")).toHaveCount(0);
+  await expect(panel.locator("[data-test='build-launch-portrait'] [data-test='client-cto-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
+  await expect(panel.locator("[data-test='build-launch-step']")).toHaveText(["Building Brand Sheet", "Hatching CTO", "Setting Up Domain"]);
+  for (const step of await panel.locator("[data-test='build-launch-step']").all()) await expect(step).toHaveAttribute("data-state", "done");
+  await expect(page.locator("[data-test='agent-shell'][data-shell='app']")).toBeVisible();
   expect(await page.evaluate(() => window.__buildShellMarker), "Build My App moves the page without a reload").toBe("kept");
   await expect(page.locator("[data-test='agent-shell'][data-shell='app'] [data-test='agent-caption']")).toContainText("Marbles");
   await expect(page.locator("[data-test='agent-portrait'] [data-test='client-cto-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
@@ -354,8 +367,8 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(head.locator("[data-test='cto-chat-usage']")).toContainText("Tokens used");
   const handover = page.locator("[data-test='cto-chat-turn']", { has: page.locator("[data-test='cto-chat-handover']") });
   await expect(handover).toContainText("Meet Marbles, your CTO. I'll hand you over.");
-  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("Hi Jordan, I'm Marbles,");
-  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("What would you like to see first?");
+  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("Hi Jordan, I'm Marbles, the agent who'll be managing");
+  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("It's building now");
   await expect(page.locator("[data-test='cto-chat-typing']")).toHaveCount(0);
   await expect(page.locator("turbo-cable-stream-source[channel='CtoChatChannel']")).toHaveAttribute("connected", "");
 
@@ -363,6 +376,9 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   // greeting and the head read. A phone fits.
   await eachTheme(page, async (theme) => {
     await expect(head).toHaveCSS("border-top-color", theme === "dark" ? "rgb(74, 222, 128)" : "rgb(21, 128, 61)");
+    // The live stage glows in the app's colours, not the studio's (build_launch.css).
+    await expect(head.locator("[data-test='devops-stage'][data-stage='building'] .devops-stage-pill"))
+      .toHaveCSS("border-top-color", theme === "dark" ? "rgb(74, 222, 128)" : "rgb(21, 128, 61)");
     for (const selector of ["[data-test='cto-chat-handover'] p", "[data-test='cto-chat-reply'] p", "[data-test='cto-chat-head'] h1"]) {
       const measured = await page.evaluate(CONTRAST, selector);
       expect(measured.length, `${theme}: ${selector} renders`).toBeGreaterThan(0);

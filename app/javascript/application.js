@@ -20,6 +20,8 @@ import "logo_download"
 import "dreams_filter"
 // The /build gallery's hover loops: delegated, inert elsewhere.
 import "gallery_motion"
+// Build My App's launch panel: the three steps, then the CTO's chat (a custom element, inert elsewhere).
+import "build_launch"
 // The chat composer's files (attach, paste, drop; send waits for uploads): delegated, inert elsewhere.
 import "chat_attachments"
 

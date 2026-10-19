@@ -21,14 +21,17 @@
 #                                  as Turbo Streams (no /cable socket signed out)
 #   PATCH /build/:token/intake     a tap on an intake card (BuildIntake::Choice):
 #                                  sets the field and relays the visitor's turn
-#   PATCH /build/:token            Build my app: claim the subdomain and queue
+#   PATCH /build/:token            Build my app: claim the subdomain and queue;
+#                                  from the summary card, the launch panel
+#                                  (build/_launch) in place, then the CTO's chat
+#   GET   /build/launch-demo/:slug development only, admin: replay that panel
 #
 # WHO MAY USE A DRAFT is whoever holds its secret token until it belongs to an
 # account, then that account (or an admin, to read). load_request is the gate
 # for every action that names a token.
 class BuildController < ApplicationController
   before_action :load_request, only: %i[show update message turns choose]
-  before_action :require_admin, only: :index
+  before_action :require_admin, only: %i[index launch_demo]
 
   # Public forms that write rows: bounded per IP, so they cannot fill a table or
   # run up the agents' bill (BuildIntake::Caps bounds the answers themselves).
@@ -58,6 +61,10 @@ class BuildController < ApplicationController
   # The summary card's own DOM id (build/cards/_summary), the target of a
   # refused launch's stream.
   def self.summary_dom_id(message) = "build-summary-#{message.id}"
+  # A successful Build My App swaps the whole agent shell (the one on the page,
+  # whichever page drew it) for the launch panel, build/_launch, whose id is LAUNCH_ID.
+  LAUNCH_TARGETS = "[data-agent-shell]".freeze
+  LAUNCH_ID = "build-launch".freeze
   # The intake agent as the page names it. The soul slug stays BuildIntake.soul.
   AGENT_NAME = "Ray".freeze
   AGENT_ROLE = "AI build agent".freeze
@@ -146,6 +153,13 @@ class BuildController < ApplicationController
   end
 
   def show
+    # A launched request's page IS its CTO's chat, for its owner: a reload or
+    # Back during the launch panel, an old link or bookmark (task
+    # build-launch-handoff). An admin reading someone's request stays here.
+    if (chat = launched_chat_path)
+      return redirect_to(chat, status: :see_other)
+    end
+
     if logged_in? && @app_request.draft?
       unless @app_request.claimable_by?(current_user)
         redirect_to build_path, alert: "That draft belongs to another account."
@@ -259,8 +273,27 @@ class BuildController < ApplicationController
     end
 
     launch = rescue_and_log(target: @app_request) { AppLaunch.new(@app_request, subdomain: name).call! }
-    redirect_to chat_application_path(launch.app.slug), status: :see_other,
-                                                        notice: "#{launch.app_cto.name} is your CTO. Say hello."
+    respond_to do |format|
+      # The summary card's Turbo press (task build-launch-handoff): the launch
+      # has ALREADY happened above; what follows is presentation. The agent
+      # shell is swapped in place for the launch panel (build/_launch: the new
+      # CTO's portrait, the app's name, three steps in the app's colours), and
+      # the address moves to the CTO's chat at once, so a reload mid-animation
+      # lands there; the gallery below the shell goes too.
+      # app/javascript/build_launch.js plays the steps, then visits
+      # the chat. A refusal never reaches here (refuse_launch, below).
+      format.turbo_stream do
+        render turbo_stream: [
+          turbo_stream.replace_all(LAUNCH_TARGETS, partial: "build/launch", locals: launch_locals(launch.app_cto)),
+          turbo_stream.remove(GALLERY_ID),
+          helpers.turbo_stream_action_tag(:replace_url, target: LAUNCH_ID, url: chat_application_path(launch.app.slug))
+        ]
+      end
+      format.any do
+        redirect_to chat_application_path(launch.app.slug), status: :see_other,
+                                                            notice: "#{launch.app_cto.name} is your CTO. Say hello."
+      end
+    end
   rescue AppLaunch::Incomplete => e
     refuse_launch(e.message) { redirect_to build_request_path(@app_request.token), alert: e.message, status: :see_other }
   rescue ActiveRecord::RecordInvalid => e
@@ -277,6 +310,17 @@ class BuildController < ApplicationController
       load_chat
       render :show, status: :unprocessable_entity
     end
+  end
+
+  # Development only (the route exists only there), for an admin: the launch
+  # panel for an app that has already launched, on its own page, so the
+  # animation and its hand-off to the CTO's chat can be watched again without
+  # launching another app. GET /build/launch-demo/:slug.
+  def launch_demo
+    app_cto = AppCto.includes(:app).find_by(app_slug: params[:slug].to_s)
+    return redirect_to(build_requests_path, alert: "No client app named #{params[:slug]}.") unless app_cto
+
+    @launch_locals = launch_locals(app_cto)
   end
 
   def check
@@ -315,6 +359,23 @@ class BuildController < ApplicationController
       end
       format.any(&html)
     end
+  end
+
+  # The CTO chat of the app this request launched, when the viewer is the
+  # request's owner and may manage it; else nil (a draft, a showcase queued
+  # without the intake, someone else's request).
+  def launched_chat_path
+    return nil if @app_request.draft? || @app_request.subdomain.blank? || !logged_in? || @app_request.user != current_user
+    return nil unless AppCto.exists?(app_slug: @app_request.subdomain, app_request_token: @app_request.token)
+    return nil unless AppOwnership.manage_app?(current_user, @app_request.subdomain)
+
+    chat_application_path(@app_request.subdomain)
+  end
+
+  # The launch panel's locals (build/_launch): the CTO the launch made, its app,
+  # and the chat the panel hands over to.
+  def launch_locals(app_cto)
+    { app_cto: app_cto, cto: AppOwnership.cto_for_app(app_cto.app_slug), href: chat_application_path(app_cto.app_slug) }
   end
 
   # The summary card the press came from (its form's message_id), in this thread.

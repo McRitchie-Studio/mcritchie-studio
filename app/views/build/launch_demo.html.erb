@@ -1,0 +1,6 @@
+<% content_for :title, "Launch demo · McRitchie Studio" %>
+<%# Development only (BuildController#launch_demo): the launch panel Build My App shows, for an app that has already launched, then the hand-off to its CTO's chat. Reload to watch it again. %>
+<% content_for :head, tag.meta(name: "view-transition", content: "same-origin") %>
+<section data-test="build-launch-demo">
+  <%= render "build/launch", **@launch_locals %>
+</section>
