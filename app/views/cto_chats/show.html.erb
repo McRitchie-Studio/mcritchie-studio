@@ -10,7 +10,7 @@
     <%= render "agent_chats/header", name: @cto.display_name, agent: @cto.agent, role: role,
                                      portrait: (render("applications/cto_avatar", cto: @cto, size: "xl") if client) %>
   <% end %>
-  <% status = render "agent_chats/devops_card", app: @app, stages: @stages, meter: (@meter if @available), client: client,
+  <% status = render "agent_chats/devops_card", app: @app, board: @board, admin: @admin, meter: (@meter if @available), client: client,
                                                 palette_style: (client_cto_palette_style(@cto.app_cto) if client) %>
   <% chat = capture do %>
     <% if @available %>

@@ -359,6 +359,9 @@ class Task < ApplicationRecord
   after_update_commit :broadcast_block_change, if: :saved_change_to_blocked_at?
   # A destroy fires no TaskEvent, so broadcast the card removal.
   after_destroy_commit :broadcast_removal_to_deployments_board
+  # The app chat's status card (AppDevopsStages::Live) reloads when a task for
+  # the app appears, leaves, changes stage, release or title.
+  after_commit :broadcast_app_devops_card, on: %i[create update destroy]
 
   def to_param
     slug
@@ -2522,6 +2525,13 @@ class Task < ApplicationRecord
 
   def broadcast_block_change
     DeploymentsBroadcaster.block_change(self)
+  end
+
+  def broadcast_app_devops_card
+    return unless destroyed? || previously_new_record? ||
+                  saved_change_to_stage? || saved_change_to_release_slug? || saved_change_to_title?
+
+    AppDevopsStages::Live.task_changed(self)
   end
 
   # devops.checks_run carries two namespaces. The author owns the tier tags
