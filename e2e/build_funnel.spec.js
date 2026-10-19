@@ -338,8 +338,9 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   // Ray's handover first and Marbles's code-written greeting already under it: no
   // model ran, nothing is typing.
   await page.goto(new URL(link.action_url, page.url()).pathname);
-  if (!new URL(page.url()).pathname.startsWith("/applications/")) {
-    await page.locator("#magic-consume-form").evaluate((form) => form.requestSubmit());
+  // The confirm page auto-posts; submit it by hand only if it is still showing.
+  if (new URL(page.url()).pathname.startsWith("/l/") && await page.locator("#magic-consume-form").count()) {
+    await page.locator("#magic-consume-form").evaluate((form) => form.requestSubmit()).catch(() => {});
   }
   // Between the sign-in and the chat, the launch panel (task build-launch-handoff):
   // the launch has happened, and the page shows Marbles's portrait, the app's name and
