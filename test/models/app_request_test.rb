@@ -69,6 +69,18 @@ class AppRequestTest < ActiveSupport::TestCase
     assert_equal "That name is reserved.", AppRequest.unavailable_reason("chain")
   end
 
+  test "[unit] unavailable_reasons answers every suggestion in one pass, as unavailable_reason would (task build-flow-polish)" do
+    draft(user: users(:alex)).queue!("pawsome")
+    names = [ "pawsome", "www", "x", "fresh-name", "Fresh Name" ]
+    queries = []
+    counter = ->(*, payload) { queries << payload[:sql] unless payload[:name] == "SCHEMA" || payload[:cached] }
+    reasons = ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { AppRequest.unavailable_reasons(names) }
+    assert_equal names.index_with { |name| AppRequest.unavailable_reason(name) }, reasons
+    assert_equal "That name is taken.", reasons["pawsome"]
+    assert_nil reasons["fresh-name"]
+    assert_operator queries.size, :<=, 2, "one query for requests and one for apps, however many names"
+  end
+
   test "a claimed name is taken; a cancelled request releases it" do
     first = draft(user: users(:alex)).queue!("pawsome")
     assert_equal "That name is taken.", AppRequest.unavailable_reason("pawsome")

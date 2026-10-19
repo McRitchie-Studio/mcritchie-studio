@@ -121,11 +121,13 @@ class BuildCardsViewTest < ActionView::TestCase
     card("theme", "palettes" => themes)
     assert_equal [ false, false, true ], css_select("input[name='index']").map { |r| r.key?("checked") }
     assert_select "[data-test='build-palette'][data-chosen='true']", 1
+    assert_select "[data-test='build-choose-palette'][disabled]", 1, "Choose Theme on the chosen theme cannot post (task build-flow-polish)"
 
     @rendered = +""
     @row.update!(palette: {})
     card("theme", "palettes" => themes.first(2))
     assert_equal [ true, false ], css_select("input[name='index']").map { |r| r.key?("checked") }
+    assert_select "[data-test='build-choose-palette']:not([disabled])", 1, "nothing chosen yet: Choose Theme is live"
   end
 
   test "the domain card: one stack of bare-name chips, the name field with the suffix inside it, then Use Domain" do
@@ -138,7 +140,9 @@ class BuildCardsViewTest < ActionView::TestCase
     chips = css_select("[data-test='build-address-suggestion']")
     assert_equal %w[poke-offense pokemon-lineup], chips.map { |c| c.text.strip }
     assert(chips.all? { |c| c["type"] == "button" }, "a chip fills the field; it never submits")
-    assert_equal 1, rendered.scan(".mcritchie.studio").size, "the suffix appears once, inside the field"
+    spoken = css_select(".sr-only").count { |node| node.text.include?(".mcritchie.studio") }
+    assert_equal 1, spoken, "a screen reader's description of the field names the suffix"
+    assert_equal 1, rendered.scan(".mcritchie.studio").size - spoken, "the suffix is seen once, inside the field"
     assert_select "label[data-test='build-address-field'].justify-center [data-test='build-address-input'] + [data-test='build-address-suffix']", ".mcritchie.studio"
     assert_select "[data-test='build-address-input'][size='12']", 1, "sized to its name, so name and suffix centre as one group"
     # The first suggestion is preselected: it fills the field and glows.
@@ -164,6 +168,20 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-address-input'][value='my-own-name']"
     assert_select "[data-test='build-address-suggestion'][aria-pressed='true']", 0, "a name of their own matches no chip"
     assert_select "[data-test='build-card-address'][data-chosen='true']"
+    assert_select "[data-test='build-choose-address'][disabled]", 1, "Use Domain on the chosen domain cannot post (task build-flow-polish)"
+  end
+
+  test "[component] the domain card brings its availability with it, and says the suffix to a screen reader (task build-flow-polish)" do
+    AppRequest.create!(prompt: "theirs", status: "queued", subdomain: "poke-offense", user: users(:viewer))
+    card("address", "names" => %w[poke-offense pokemon-lineup])
+    assert_select "[data-test='build-address-availability'][data-state='available']", "Available",
+                  "the render's own check answers for the preselected name: the page asks nothing on arrival"
+    assert_select "[data-test='build-choose-address']:not([disabled])", 1
+
+    input = css_select("[data-test='build-address-input']").first
+    described = input["aria-describedby"].split.map { |id| css_select("##{id}").first&.text.to_s.strip }
+    assert_equal "Ends in .mcritchie.studio.", described.first, "the field's description names the suffix the eye sees beside it"
+    assert_equal "Available", described.last, "then the live availability line"
   end
 
   test "[component] the CTA glow: studio colours on Start App, the selected theme behind Choose Theme, the chosen theme after" do

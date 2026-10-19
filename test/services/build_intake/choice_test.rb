@@ -165,6 +165,32 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
     assert_equal 1, thread.count
   end
 
+  test "[unit] Choose Theme on the theme already chosen posts nothing and spends no turn (task build-flow-polish)" do
+    themes = answer_with({ "card" => "palette", "palettes" => [ PALETTE, PALETTE.merge("name" => "Field") ] })
+    tap("palette", message_id: themes.id, index: "0")
+    turns = thread.count
+    saved_at = @request.reload.updated_at
+
+    again = tap("palette", message_id: themes.id, index: "0")
+    assert_nil again.relay, "no visitor turn, so Ray is not asked again"
+    assert_equal turns, thread.count
+    assert_equal saved_at, @request.reload.updated_at, "nothing written"
+
+    changed = tap("palette", message_id: themes.id, index: "1")
+    assert_equal "Let's go with the Field theme.", changed.relay.content, "another theme still posts"
+    assert_equal turns + 1, thread.count
+  end
+
+  test "[unit] Use Domain on the domain already chosen posts nothing; another name does" do
+    tap("address", subdomain: "league-hub")
+    assert_equal 1, thread.count
+    assert_nil tap("address", subdomain: "league-hub").relay
+    assert_nil tap("address", subdomain: "League Hub").relay, "the same name however it is typed"
+    assert_equal 1, thread.count
+    assert_equal "Let's use league-site.mcritchie.studio.", tap("address", subdomain: "league-site").relay.content
+    assert_equal 2, thread.count
+  end
+
   test "a queued request takes no taps" do
     @request.update_columns(status: "queued")
     assert_raises(BuildIntake::Choice::Refused) { tap("cto", custom_name: "Marble", portrait: "harbor") }
