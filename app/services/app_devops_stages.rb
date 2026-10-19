@@ -61,7 +61,7 @@ class AppDevopsStages
     end
 
     Board.new(stages: stages_for(placed, launch && placed.find { |task, _| task.slug == launch }),
-              items: items_for(app, placed.first(limit), admin: admin), total: placed.size)
+              items: items_for(app, placed.first(limit), admin: admin, launch_slug: launch), total: placed.size)
   end
 
   def self.for_app(app) = board_for(app, limit: 0).stages
@@ -134,12 +134,18 @@ class AppDevopsStages
     end
   end
 
-  def self.items_for(app, placed, admin:)
+  # An owner reads the app's build task ("Build Launch App <subdomain>", the
+  # board's name for it) as "Launching <App name>".
+  def self.items_for(app, placed, admin:, launch_slug: nil)
     return [] if placed.empty?
 
     scrubber = ClientPipeline::Scrubber.new(app) unless admin
     placed.map do |task, lane|
-      Item.new(title: admin ? task.title : owner_title(task, app, scrubber), lane: STAGES.fetch(lane),
+      title = if admin then task.title
+              elsif task.slug == launch_slug then "Launching #{app.name}"
+              else owner_title(task, app, scrubber)
+              end
+      Item.new(title: title, lane: STAGES.fetch(lane),
                slug: (task.slug if admin), at: task.updated_at)
     end
   end

@@ -107,6 +107,8 @@ class AppDevopsStagesTest < ActiveSupport::TestCase
 
     board = AppDevopsStages.board_for(lane_app)
     assert_equal({ "building" => [ :live, 1 ], "releasing" => [ :live, 1 ], "deploying" => [ :pending, 0 ] }, counts(board))
+    assert_equal [ "Polish", "Launching Lane Probe" ], board.items.map(&:title), "an owner reads the build task in plain words"
+    assert_includes AppDevopsStages.board_for(lane_app, admin: true).items.map(&:title), "Build Launch App lane-probe"
 
     Task.find_by!(title: "Polish").update_columns(stage: "archived")
     board = AppDevopsStages.board_for(lane_app)
