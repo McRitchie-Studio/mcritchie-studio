@@ -7,7 +7,7 @@ require "tmpdir"
 class ClientAppBundleTest < ActiveSupport::TestCase
   def bundle(files) = ClientAppBundle.new({ "index.html" => "<!doctype html>" }.merge(files))
 
-  def refused(files, pattern)
+  def assert_refused(files, pattern)
     errors = bundle(files).errors
     assert errors.any? { |e| e.match?(pattern) }, "expected #{pattern.inspect} in #{errors.inspect}"
   end
@@ -35,33 +35,33 @@ class ClientAppBundleTest < ActiveSupport::TestCase
 
   test "[unit] server code and unknown file types are refused" do
     %w[server.rb index.php page.html.erb run.sh app.py Gemfile .htaccess main.wasm x.mjs].each do |name|
-      refused({ name => "code" }, /not a static file type|dot-file/)
+      assert_refused({ name => "code" }, /not a static file type|dot-file/)
     end
   end
 
   test "[unit] traversal, absolute, dot-file and odd paths are refused" do
-    refused({ "../escape.html" => "x" }, /dot-file or an empty, '\.' or '\.\.' segment/)
-    refused({ "a/../../b.html" => "x" }, /'\.\.' segment/)
-    refused({ "/etc/passwd.txt" => "x" }, /not a relative path/)
-    refused({ "a\\b.html" => "x" }, /not a relative path/)
-    refused({ "a//b.html" => "x" }, /empty/)
-    refused({ ".env.txt" => "x" }, /dot-file/)
-    refused({ "assets/.hidden.js" => "x" }, /dot-file/)
-    refused({ "my page.html" => "x" }, /character outside/)
-    refused({ "nul\0.html" => "x" }, /not a relative path/)
-    refused({ "#{(%w[a] * 7).join('/')}.js" => "x" }, /nested more than/)
-    refused({ "#{'a' * 210}.js" => "x" }, /too long/)
+    assert_refused({ "../escape.html" => "x" }, /dot-file or an empty, '\.' or '\.\.' segment/)
+    assert_refused({ "a/../../b.html" => "x" }, /'\.\.' segment/)
+    assert_refused({ "/etc/passwd.txt" => "x" }, /not a relative path/)
+    assert_refused({ "a\\b.html" => "x" }, /not a relative path/)
+    assert_refused({ "a//b.html" => "x" }, /empty/)
+    assert_refused({ ".env.txt" => "x" }, /dot-file/)
+    assert_refused({ "assets/.hidden.js" => "x" }, /dot-file/)
+    assert_refused({ "my page.html" => "x" }, /character outside/)
+    assert_refused({ "nul\0.html" => "x" }, /not a relative path/)
+    assert_refused({ "#{(%w[a] * 7).join('/')}.js" => "x" }, /nested more than/)
+    assert_refused({ "#{'a' * 210}.js" => "x" }, /too long/)
   end
 
   test "[unit] size and count caps" do
     big = "x" * (ClientAppBundle::MAX_FILE_BYTES + 1)
-    refused({ "big.js" => big }, /over #{ClientAppBundle::MAX_FILE_BYTES} for one file/)
+    assert_refused({ "big.js" => big }, /over #{ClientAppBundle::MAX_FILE_BYTES} for one file/)
 
     halves = (1..3).to_h { |i| [ "part#{i}.js", "x" * (2 * 1024 * 1024) ] }
-    refused(halves, /over #{ClientAppBundle::MAX_BYTES}\z/)
+    assert_refused(halves, /over #{ClientAppBundle::MAX_BYTES}\z/)
 
     many = (1..ClientAppBundle::MAX_FILES).to_h { |i| [ "f#{i}.js", "x" ] }
-    refused(many, /files, over #{ClientAppBundle::MAX_FILES}/)
+    assert_refused(many, /files, over #{ClientAppBundle::MAX_FILES}/)
   end
 
   test "[unit] validate! raises Invalid carrying every error" do

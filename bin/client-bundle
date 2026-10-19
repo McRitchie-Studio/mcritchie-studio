@@ -17,14 +17,22 @@
 
 require "base64"
 require "json"
-require_relative "../lib/client_app_bundle"
-require_relative "lib/fact_cli"
+require_relative "lib/cli_arg_guard"
 
 USAGE = <<~TEXT
   Usage: bin/client-bundle check <dir>
          bin/client-bundle publish <sub> <dir> [--api URL | --local]
 TEXT
 DEFAULT_API = "https://mcritchie.studio"
+
+# Before anything else: --help anywhere answers usage, and an argument this
+# script does not know refuses, so a probe never publishes.
+ARGS = CliArgGuard.guard!(ARGV, program: "client-bundle", usage: USAGE,
+                                consequence: "nothing was validated or sent.",
+                                bool: %w[--local], value: %w[--api], allow_positional: true)
+
+require_relative "../lib/client_app_bundle"
+require_relative "lib/fact_cli"
 
 def bundle_from(dir)
   bundle = ClientAppBundle.from_directory(dir)
@@ -74,23 +82,22 @@ def publish_local(sub, dir)
   exec(rails, "runner", "ClientApps::LocalPublish.run(ARGV)", sub, File.expand_path(dir))
 end
 
-command, *rest = ARGV
+command, *rest = ARGS.positionals
 case command
 when "check"
-  abort USAGE unless rest.size == 1
+  abort USAGE unless rest.size == 1 && !ARGS.bool?("--local") && ARGS.all("--api").empty?
   bundle = bundle_from(rest.first)
   puts "ok: #{bundle.files.size} files, #{bundle.byte_size} bytes"
 when "publish"
-  local = rest.delete("--local")
-  api = nil
-  if (index = rest.index("--api"))
-    api = rest[index + 1] or abort USAGE
-    rest.slice!(index, 2)
+  abort USAGE unless rest.size == 2 && ARGS.all("--api").size <= 1
+  api = ARGS.first("--api")
+  abort "client-bundle: --local and --api are separate runs" if ARGS.bool?("--local") && api
+  if ARGS.bool?("--local")
+    publish_local(*rest)
+  else
+    publish_via_api(*rest, api || ENV["CLIENT_BUNDLE_API"].to_s.strip.then { |v| v.empty? ? DEFAULT_API : v })
   end
-  abort USAGE unless rest.size == 2
-  abort "client-bundle: --local and --api are separate runs" if local && api
-  local ? publish_local(*rest) : publish_via_api(*rest, api || ENV["CLIENT_BUNDLE_API"].to_s.strip.then { |v| v.empty? ? DEFAULT_API : v })
-when "-h", "--help", nil
+when nil
   puts USAGE
 else
   abort USAGE
