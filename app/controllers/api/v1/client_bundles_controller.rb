@@ -54,7 +54,7 @@ module Api
         return render_error("send a Content-Length", status: :length_required, error_code: "LENGTH_REQUIRED") if length.nil?
         return if length <= MAX_REQUEST_BYTES
 
-        render_error("the request is #{length} bytes, over #{MAX_REQUEST_BYTES}", status: :payload_too_large, error_code: "TOO_LARGE")
+        render_error("the request is #{length} bytes, over #{MAX_REQUEST_BYTES}", status: :content_too_large, error_code: "TOO_LARGE")
       end
 
       def require_agent_session!
