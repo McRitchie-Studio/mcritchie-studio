@@ -157,4 +157,18 @@ class ClientAppHostWiringTest < ActionDispatch::IntegrationTest
       assert_includes response.body, "Nothing here"
     end
   end
+
+  test "[integration] a storage failure answers the host's own 500 and is logged, with no cookie" do
+    publish!(client_app_with_build_task!)
+    preview("pawsome")
+
+    ClientApps::BundleStore.stub(:read, ->(*) { raise ClientApps::BundleStore::Corrupt, "bad bytes" }) do
+      assert_difference "ErrorLog.count", 1 do
+        get "/app.js"
+      end
+    end
+    assert_response :internal_server_error
+    assert_includes response.body, "data-client-app-state=\"error\""
+    assert_nil response.headers["set-cookie"]
+  end
 end

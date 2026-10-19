@@ -58,12 +58,23 @@ module ClientApps
     ASSET_CACHE = "public, max-age=300"
     HASHED_NAME = /[.-][0-9a-f]{8,}\.[a-z0-9]+\z/i
 
+    # A failure (storage down, a corrupt object) answers the host's own 500 page,
+    # never a hub error page, and is recorded as the hub records its own: an
+    # ErrorLog naming the sub, and Sentry.
     def self.call(env, sub)
       new(env, sub).response
     rescue StandardError => e
-      Rails.logger.error("[client-app-host] #{e.class}: #{e.message}")
-      Sentry.capture_exception(e) if defined?(Sentry) && Sentry.respond_to?(:capture_exception)
+      Rails.logger.error("[client-app-host] #{sub}: #{e.class}: #{e.message}")
+      record_failure(e, sub)
       page(500, Pages.error)
+    end
+
+    def self.record_failure(exception, sub)
+      Sentry.capture_exception(exception) if defined?(Sentry) && Sentry.respond_to?(:capture_exception)
+      log = ErrorLog.capture!(exception)
+      log.update(target_name: sub) if sub && log.respond_to?(:target_name=)
+    rescue StandardError => e
+      Rails.logger.error("[client-app-host] could not record the failure: #{e.class}")
     end
 
     def self.page(status, html, head: false)
