@@ -38,7 +38,7 @@ module AdminWall
     # with Ray before sign-in: a message, the answer poll and a card tap. Each
     # is gated past the wall by the request's secret token (BuildController#load_request).
     # Build My App (update) too: signed out it only remembers the press and
-    # answers with the sign-in prompt; the launch itself needs an account.
+    # opens the sign-in modal; the launch itself needs an account.
     "build" => %w[create check message turns choose update],
     "contact_submissions" => %w[create],
     # Email: the unsubscribe page and the open/click/goal tracking pixels.

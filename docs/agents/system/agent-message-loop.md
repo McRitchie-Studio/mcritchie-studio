@@ -1179,11 +1179,22 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
 build; Ray asks for the idea (at most two follow-ups), the theme, a CTO and an address,
 one card at a time, and the visitor's taps fill the status card. Ray's summary card
 carries **Build My App**, which asks for sign-in only then; it launches through `AppLaunch`.
-Signed out, the press answers in place with a sign-in prompt (magic link or Google) and is
-remembered in that browser's session for an hour (`BuildIntake::PendingLaunch`); the sign-in
-lands on `GET /build/:token/launch` (the link's `return_to`; Google via the home page), which
-claims the draft, launches it once and opens `/applications/:slug/chat`. Without that
-session's press (a forwarded link, a refresh, a stale press) the landing only opens the draft.
+Signed out, the press opens the sign-in modal (`modals/_auth`, magic link or Google) through
+an `open_modal` Turbo Stream (`app/javascript/modal_stream.js`), adding nothing to the thread,
+and is remembered in that browser's session for an hour (`BuildIntake::PendingLaunch`, bound
+afresh by every press, so a dismissed modal opens again on the next). The sign-in lands on
+`GET /build/:token/launch` (the link's `return_to`; Google via the home page, which forwards
+only while the draft is still a draft with no account or theirs, else forgets the press),
+which claims the draft, launches it once and redirects to `/applications/:slug/chat`. Without
+that session's press (a forwarded link, a refresh, a stale press) the landing only opens the draft.
+
+**The initial load.** `AppLaunch` sets `app_ctos.launch_animation_pending`; the owner's
+first visit to the CTO's chat (`CtoChatsController#show`), however they arrived (the
+signed-in press's 303, the magic link, Google), clears it atomically and renders the launch
+panel (`build/_launch`, `app/javascript/build_launch.js`: Building Brand Sheet, Hatching
+CTO, Setting Up Domain over about eight seconds), which then visits the same chat. A refresh
+goes straight to the chat; an admin viewing someone else's app neither sees nor spends it; a
+Turbo hover prefetch gets a 204 and spends nothing.
 
 - **The page** is the agent shell (`app/views/agent_chats/_shell.html.erb`): Ray's
   portrait, a status slot, the thread, the chat box. The status slot

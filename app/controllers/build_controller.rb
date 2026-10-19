@@ -21,14 +21,15 @@
 #                                  as Turbo Streams (no /cable socket signed out)
 #   PATCH /build/:token/intake     a tap on an intake card (BuildIntake::Choice):
 #                                  sets the field and relays the visitor's turn
-#   PATCH /build/:token            Build my app: claim the subdomain and queue;
-#                                  from the summary card, the launch panel
-#                                  (build/_launch) in place, then the CTO's chat.
-#                                  Signed out, it answers with the sign-in
-#                                  prompt instead and remembers the press
-#                                  (BuildIntake::PendingLaunch)
+#   PATCH /build/:token            Build my app: claim the subdomain, launch,
+#                                  and go to the CTO's chat, whose first visit
+#                                  plays the launch panel (build/_launch; AppCto
+#                                  launch_animation_pending). Signed out, it
+#                                  opens the sign-in modal instead and remembers
+#                                  the press (BuildIntake::PendingLaunch)
 #   GET   /build/:token/launch     the landing after that sign-in: the press,
-#                                  taken once from THIS session, launches
+#                                  taken once from THIS session, launches, then
+#                                  the same CTO's chat
 #   GET   /build/launch-demo/:slug development only, admin: replay that panel
 #
 # WHO MAY USE A DRAFT is whoever holds its secret token until it belongs to an
@@ -63,14 +64,14 @@ class BuildController < ApplicationController
   # card's stream target (build/_status_card; the id predates the card).
   CHAT_ID = "build-chat-page".freeze
   STATUS_ID = "build-checklist".freeze
-  # The sign-in prompt a signed-out Build My App opens under the summary card.
-  SIGN_IN_PROMPT_ID = "build-sign-in-prompt".freeze
+  # The engine modal a signed-out Build My App opens (modals/_auth), and the
+  # longest address its subtitle may name (a DNS label; BuildIntake::PendingLaunch).
+  SIGN_IN_MODAL = "auth".freeze
   # The summary card's own DOM id (build/cards/_summary), the target of a
   # refused launch's stream.
   def self.summary_dom_id(message) = "build-summary-#{message.id}"
-  # A successful Build My App swaps the whole agent shell (the one on the page,
-  # whichever page drew it) for the launch panel, build/_launch, whose id is LAUNCH_ID.
-  LAUNCH_TARGETS = "[data-agent-shell]".freeze
+  # The launch panel's id (build/_launch), which the CTO's chat plays on its
+  # owner's first visit (CtoChatsController#show).
   LAUNCH_ID = "build-launch".freeze
   # The intake agent as the page names it. The soul slug stays BuildIntake.soul.
   AGENT_NAME = "Ray".freeze
@@ -247,11 +248,12 @@ class BuildController < ApplicationController
     end
   end
 
-  # Build my app. Signed out, it asks for sign-in IN PLACE (sign_in_to_launch):
+  # Build my app. Signed out, it opens the sign-in MODAL (sign_in_to_launch):
   # the press is remembered in this session and the sign-in comes back to
-  # #launch, which finishes it. Signed in, it needs the whole checklist (an
-  # admin may queue a showcase straight from a name), then claims and launches
-  # (launch_draft, shared with #launch).
+  # #launch, which finishes it; dismissed, the next press opens it again.
+  # Signed in, it needs the whole checklist (an admin may queue a showcase
+  # straight from a name), then claims and launches (launch_draft, shared with
+  # #launch) and goes to the CTO's chat (launched).
   #
   # A REFUSAL from the summary card (Turbo, carrying its message_id) answers ON
   # that card: a Turbo Stream redraws it with the reason and a next step
@@ -295,12 +297,15 @@ class BuildController < ApplicationController
   # (the magic link's return_to; LandingController forwards the Google path).
   # It launches ONLY with the press's intent, taken once from this session
   # (BuildIntake::PendingLaunch): a forwarded link opened in another browser,
-  # a refresh, or a stale press finds none and just opens the draft, claiming
-  # nothing. The claim is the same rule as ever (AppRequest#claimable_by?:
-  # unclaimed, or already theirs; load_request has already turned away a draft
-  # that is someone else's). Launched now, it shows the launch panel, which
-  # hands off to the CTO's chat; launched already by them, it goes straight to
-  # the chat. A refusal lands on the draft with the reason on its summary card.
+  # a refresh, or a stale press finds none and launches nothing. It only
+  # redirects to the draft's page, where, as on any visit by a signed-in
+  # non-admin, #show adopts a draft that has no account yet. The launch's own
+  # claim is the same rule as ever (AppRequest#claimable_by?: unclaimed, or
+  # already theirs; load_request has already turned away a draft that is
+  # someone else's). Launched now or already by them, it goes to the CTO's
+  # chat, whose first visit plays the launch panel (AppCto
+  # launch_animation_pending). A refusal lands on the draft with the reason on
+  # its summary card.
   def launch
     intent = BuildIntake::PendingLaunch.take(session, @app_request.token)
     return redirect_to(chat_application_path(@app_request.subdomain), status: :see_other) if launched_by_viewer?
@@ -322,11 +327,8 @@ class BuildController < ApplicationController
     session.delete(:build_draft_token)
     outcome = launch_draft(intent.subdomain || @app_request.subdomain)
     case outcome.kind
-    # The launch panel the signed-in press shows (build/_launch), as a page:
-    # it plays its steps, then visits the CTO's chat.
-    when :launched
-      @launch_locals = launch_locals(outcome.app_cto)
-      render :launch
+    # The CTO's chat, whose first visit plays the launch panel (build/_launch).
+    when :launched then redirect_to(chat_application_path(outcome.app_slug), status: :see_other)
     else
       # A second landing that raced this one launched it first: go to the app.
       @app_request.reload
@@ -354,30 +356,21 @@ class BuildController < ApplicationController
 
   private
 
-  # What launch_draft did: :launched (app_slug, app_cto, notice), :queued (an admin's
+  # What launch_draft did: :launched (app_slug, app_cto), :queued (an admin's
   # showcase without the checklist) or :refused (reason, and which next step
   # the summary card offers; incomplete when nothing was written).
-  LaunchOutcome = Struct.new(:kind, :app_slug, :app_cto, :notice, :reason, :plan_limit, :domain, :incomplete, keyword_init: true)
+  LaunchOutcome = Struct.new(:kind, :app_slug, :app_cto, :reason, :plan_limit, :domain, :incomplete, keyword_init: true)
   def launch_outcome(kind, **attrs) = LaunchOutcome.new(kind: kind, plan_limit: false, domain: false, incomplete: false, **attrs)
 
-  # A launched app, from #update. The summary card's Turbo press (task
-  # build-launch-handoff): the launch has ALREADY happened; what follows is
-  # presentation. The agent shell is swapped in place for the launch panel
-  # (build/_launch: the new CTO's portrait, the app's name, three steps in the
-  # app's colours), and the address moves to the CTO's chat at once, so a
-  # reload mid-animation lands there; the gallery below the shell goes too.
-  # app/javascript/build_launch.js plays the steps, then visits the chat.
+  # A launched app, from #update: the launch has ALREADY happened. One path for
+  # every way in (task build-sign-in-modal): the CTO's chat, whose first visit
+  # by the owner plays the launch panel (AppCto launch_animation_pending,
+  # CtoChatsController#show: the new CTO's portrait, the app's name, three
+  # steps in the app's colours, then the chat). Turbo follows the 303 as a
+  # visit, and the draft and the panel both opt in to a view transition, so
+  # Ray's portrait morphs into the CTO's.
   def launched(outcome)
-    respond_to do |format|
-      format.turbo_stream do
-        render turbo_stream: [
-          turbo_stream.replace_all(LAUNCH_TARGETS, partial: "build/launch", locals: launch_locals(outcome.app_cto)),
-          turbo_stream.remove(GALLERY_ID),
-          helpers.turbo_stream_action_tag(:replace_url, target: LAUNCH_ID, url: chat_application_path(outcome.app_slug))
-        ]
-      end
-      format.any { redirect_to chat_application_path(outcome.app_slug), status: :see_other, notice: outcome.notice }
-    end
+    redirect_to chat_application_path(outcome.app_slug), status: :see_other
   end
 
   # The launch itself, for #update and #launch alike, on a draft the caller has
@@ -392,7 +385,7 @@ class BuildController < ApplicationController
     end
 
     launch = rescue_and_log(target: @app_request) { AppLaunch.new(@app_request, subdomain: name).call! }
-    launch_outcome(:launched, app_slug: launch.app.slug, app_cto: launch.app_cto, notice: "#{launch.app_cto.name} is your CTO. Say hello.")
+    launch_outcome(:launched, app_slug: launch.app.slug, app_cto: launch.app_cto)
   rescue AppLaunch::Incomplete => e
     launch_outcome(:refused, reason: e.message, incomplete: true)
   rescue ActiveRecord::RecordInvalid => e
@@ -406,34 +399,36 @@ class BuildController < ApplicationController
                              domain: @app_request.errors.include?(:subdomain))
   end
 
-  # A signed-out Build My App: remember the press in THIS session
-  # (BuildIntake::PendingLaunch, with the address the card showed) and answer
-  # in place with the sign-in prompt under the summary card (build/_sign_in_prompt),
-  # whose magic link and Google button both come back to #launch. The draft is
-  # untouched. Without Turbo (an old page, a plain form), the draft page.
+  # A signed-out Build My App (task build-sign-in-modal, Alex 2026-10-19: "a
+  # modal, not another step"): remember the press in THIS session
+  # (BuildIntake::PendingLaunch, with the address the card showed; every press
+  # binds it afresh) and answer with one Turbo Stream that opens the engine's
+  # sign-in modal (modals/_auth) over the chat, whose magic link (returnTo) and
+  # Google button both come back to #launch. Nothing is added to the thread, so
+  # a dismissed modal leaves the draft as it was, and the next press opens the
+  # same modal again. Without Turbo (an old page, a plain form), the draft page.
   def sign_in_to_launch
     unless @app_request.draft?
       return redirect_to(build_request_path(@app_request.token), status: :see_other)
     end
 
-    BuildIntake::PendingLaunch.bind(session, token: @app_request.token,
-                                             subdomain: params.dig(:app_request, :subdomain).presence || @app_request.subdomain)
+    intent = BuildIntake::PendingLaunch.bind(session, token: @app_request.token,
+                                                      subdomain: params.dig(:app_request, :subdomain).presence || @app_request.subdomain)
     session[:build_draft_token] = @app_request.token
     respond_to do |format|
-      format.turbo_stream do
-        card = summary_message
-        prompt = { partial: "build/sign_in_prompt",
-                   locals: { request_row: @app_request, return_to: build_request_launch_path(@app_request.token) } }
-        # Removed first, so a second press never stacks two prompts.
-        placed = if card
-                   turbo_stream.after(BuildController.summary_dom_id(card), **prompt)
-                 else
-                   turbo_stream.append(AgentMessages::WebChat::MESSAGES_TARGET, **prompt)
-                 end
-        render turbo_stream: [ turbo_stream.remove(SIGN_IN_PROMPT_ID), placed ]
-      end
+      format.turbo_stream { render turbo_stream: open_sign_in_modal(intent.subdomain) }
       format.any { redirect_to build_request_path(@app_request.token), status: :see_other }
     end
+  end
+
+  # The stream that opens the sign-in modal (app/javascript/modal_stream.js),
+  # its copy naming the address the press will claim.
+  def open_sign_in_modal(subdomain)
+    name = AppRequest.normalize_subdomain(subdomain).presence || @app_request.subdomain
+    building = name.present? ? "#{name}.#{AppRequest::PARENT_DOMAIN}" : "your app"
+    props = { returnTo: build_request_launch_path(@app_request.token), title: "Sign in to build your app",
+              subtitle: "Free. Then we start building #{building}." }
+    helpers.turbo_stream_action_tag(:open_modal, modal: SIGN_IN_MODAL, props: props.to_json)
   end
 
   # A launch the sign-in landing could not finish: back on the draft, the
@@ -503,8 +498,8 @@ class BuildController < ApplicationController
     chat_application_path(@app_request.subdomain)
   end
 
-  # The launch panel's locals (build/_launch): the CTO the launch made, its app,
-  # and the chat the panel hands over to.
+  # The launch panel's locals (build/_launch), for the development replay: the
+  # CTO the launch made, its app, and the chat the panel hands over to.
   def launch_locals(app_cto)
     { app_cto: app_cto, cto: AppOwnership.cto_for_app(app_cto.app_slug), href: chat_application_path(app_cto.app_slug) }
   end

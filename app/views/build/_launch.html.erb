@@ -1,9 +1,11 @@
 <%# locals: (app_cto:, cto:, href:) %>
 <%#
-  The launch panel (task build-launch-handoff, Alex 2026-10-18): what a
-  successful Build My App swaps the /build agent shell for, in place
-  (BuildController#update streams it over [data-agent-shell]). The launch has
-  ALREADY happened on the server (AppLaunch); this is presentation only. The new
+  The launch panel (task build-launch-handoff, Alex 2026-10-18): the app's
+  initial load. The first visit by its owner to the new CTO's chat renders it
+  (CtoChatsController#show, AppCto launch_animation_pending; task
+  build-sign-in-modal), however they arrived: the signed-in Build My App, the
+  magic link, or Google. The launch has ALREADY happened on the server
+  (AppLaunch); this is presentation only. The new
   CTO's portrait and name, the app's name, and three steps that resolve in turn
   over about eight seconds, each a spinner under the shared CTA glow (cta-glow), then a check, in the app's own colours
   (ClientCtoHelper: --cto-primary / --cto-accent for this mode). Then

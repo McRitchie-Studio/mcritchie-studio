@@ -24,6 +24,8 @@ import "dreams_filter"
 import "gallery_motion"
 // Build My App's launch panel: the three steps, then the CTO's chat (a custom element, inert elsewhere).
 import "build_launch"
+// The open_modal Turbo Stream action: a signed-out Build My App opens the sign-in modal (only registers the action).
+import "modal_stream"
 // The chat composer's files (attach, paste, drop; send waits for uploads): delegated, inert elsewhere.
 import "chat_attachments"
 

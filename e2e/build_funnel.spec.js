@@ -12,10 +12,11 @@
 // picked after the dark/light toggle), Hatch CTO (a portrait picked in the modal,
 // the prefilled name edited), and Use Domain (a chip picked, the name edited and
 // typed back while the chip's glow follows the field). The summary card follows, and Build My App asks for sign-in only
-// then, in place under the card; the emailed link signs in and lands on the app being
-// built (the draft claimed and launched once, task build-launch-sign-in): the launch
-// panel's three steps, then the new CTO's chat, where the CTO's code-written
-// greeting is already there. The
+// then, in the sign-in MODAL (task build-sign-in-modal): dismissed, the draft stays and
+// the next press opens it again; the emailed link signs in and lands on the app being
+// built (the draft claimed and launched once, task build-launch-sign-in): its first
+// visit plays the launch panel's three steps, then the new CTO's chat, where the CTO's
+// code-written greeting is already there, and a reload is the chat. The
 // spec plays the dispatcher through the real mailbox API (claim, complete with an
 // intake card), and the page, which has no /cable socket signed out, picks each
 // answer up by polling. Mobile width and both themes are measured on the way.
@@ -308,20 +309,33 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   expect(overflow, "nothing runs off the side at 360px").toBeLessThanOrEqual(0);
   await page.setViewportSize({ width: 1280, height: 800 });
 
-  // Build My App, signed out: the press answers IN PLACE with the sign-in prompt
-  // under the summary card (no reload, the draft kept), and remembers itself in
-  // this browser's session (task build-launch-sign-in).
+  // Build My App, signed out: the press opens the sign-in MODAL over the chat (no
+  // reload, nothing added to the thread) and remembers itself in this browser's
+  // session (tasks build-launch-sign-in, build-sign-in-modal). Dismissed, the draft
+  // is as it was, and the next press opens the same modal again.
   const draftPath = new URL(page.url()).pathname;
-  await summary.locator("[data-test='build-summary-build']").click();
-  const prompt = page.locator("[data-test='build-sign-in-prompt']");
-  await expect(prompt).toBeVisible();
-  await expect(prompt.getByRole("heading", { name: "Sign in to build your app" })).toBeVisible();
-  await expect(prompt.locator("[data-test='build-sign-in-google']")).toContainText("Continue with Google");
-  expect(await page.evaluate(() => window.__buildShellMarker), "the prompt opens without a reload").toBe("kept");
-  await prompt.locator("#build-sign-in-email").fill(email);
+  const build = summary.locator("[data-test='build-summary-build']");
+  const turnsBefore = await page.locator("[data-test='build-turn']").count();
+  const modal = page.locator("[data-test='auth-modal']");
+  await build.click();
+  await expect(modal).toBeVisible();
+  await expect(modal.getByRole("heading", { name: "Sign in to build your app" })).toBeVisible();
+  await expect(modal).toContainText(`Free. Then we start building ${address}.mcritchie.studio.`);
+  await expect(modal.locator("[data-test='auth-google']")).toContainText("Continue with Google");
+  await modal.locator("[data-test='auth-close']").click();
+  await expect(modal).toBeHidden();
+  await expect(summary).toBeVisible();
+  await expect(build).toBeEnabled();
+  await expect(build.locator("[data-test='build-summary-working']"), "the pressed state ends when the modal opens").toBeHidden();
+  expect(await page.locator("[data-test='build-turn']").count(), "the modal added nothing to the thread").toBe(turnsBefore);
+  await build.click();
+  await expect(modal).toBeVisible();
+  await expect(modal.getByRole("heading", { name: "Sign in to build your app" })).toBeVisible();
+  expect(await page.evaluate(() => window.__buildShellMarker), "the modal opens without a reload").toBe("kept");
+  await modal.locator("#auth-email").fill(email);
   await Promise.all([
     page.waitForResponse((r) => r.url().includes("/magic_link") && r.request().method() === "POST" && r.ok()),
-    prompt.getByRole("button", { name: "Email me a sign-in link" }).click(),
+    modal.getByRole("button", { name: "Email me a sign-in link" }).click(),
   ]);
 
   let link;
@@ -342,8 +356,9 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   if (new URL(page.url()).pathname.startsWith("/l/") && await page.locator("#magic-consume-form").count()) {
     await page.locator("#magic-consume-form").evaluate((form) => form.requestSubmit()).catch(() => {});
   }
-  // Between the sign-in and the chat, the launch panel (task build-launch-handoff):
-  // the launch has happened, and the page shows Marbles's portrait, the app's name and
+  // The app's first visit is its initial load, the launch panel (tasks
+  // build-launch-handoff, build-sign-in-modal): the launch has happened, and the page,
+  // already at the chat's address, shows Marbles's portrait, the app's name and
   // the three steps. This suite runs with reduced motion (playwright.config.js), so
   // the steps show done at once and the visit follows a short pause.
   const panel = page.locator("[data-test='build-launch']");
@@ -359,6 +374,10 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
     await onboarding.getByRole("button", { name: "Save and continue" }).click();
     await expect(onboarding).toBeHidden();
   }
+  // A reload is the chat: the initial load plays once.
+  await page.reload();
+  await expect(page.locator("[data-test='agent-shell'][data-shell='app']")).toBeVisible();
+  await expect(page.locator("[data-test='build-launch']")).toHaveCount(0);
   // The landing again (a refresh, a second click) launches nothing more: it only reopens the app.
   const again = await page.request.get(`${draftPath}/launch`, { maxRedirects: 0 });
   expect(again.status()).toBe(303);

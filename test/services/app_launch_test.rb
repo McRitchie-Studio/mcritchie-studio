@@ -47,6 +47,21 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert_equal "Meet Nova, your CTO. I'll hand you over.", handover.content
   end
 
+  test "[unit] the launch sets the app's initial load, so the owner's first visit plays the launch animation" do
+    assert launch.app_cto.reload.launch_animation_pending?
+  end
+
+  test "[unit] the greeting names the owner's first name, else their name's first word, else there" do
+    user = users(:viewer)
+    cto = launch.app_cto
+    user.update_columns(first_name: "Jordan", name: "Viewer User")
+    assert AgentMessages::ClientCtoHandover.greeting(cto, user).start_with?("Hi Jordan, I'm Nova")
+    user.update_columns(first_name: nil)
+    assert AgentMessages::ClientCtoHandover.greeting(cto, user).start_with?("Hi Viewer, I'm Nova")
+    user.update_columns(name: nil)
+    assert AgentMessages::ClientCtoHandover.greeting(cto, user).start_with?("Hi there, I'm Nova"), "never the email's local part"
+  end
+
   test "the handover carries the CTO's code-written greeting, so no model runs; the owner's own next words are answered as the app's owner" do
     handover = launch.handover
 

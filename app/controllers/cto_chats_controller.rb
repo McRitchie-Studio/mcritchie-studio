@@ -3,7 +3,10 @@
 # Phase 7 step 3 of .agents/epics/domain-agents.md). The views are the shared
 # agent chat (app/views/agent_chats); this controller supplies the CTO and its thread.
 #
-#   show    the user's own thread with this app's CTO (newest WebChat::HISTORY
+#   show    a newly launched app's FIRST visit by its owner (AppCto
+#           launch_animation_pending, task build-sign-in-modal): the launch
+#           animation (build/_launch), which then visits this same page; else
+#           the user's own thread with this app's CTO (newest WebChat::HISTORY
 #           turns) under the app's status card: its Building · Releasing ·
 #           Deploying (AppDevopsStages) and the tokens used (never dollars),
 #           then the form. The
@@ -25,6 +28,8 @@ class CtoChatsController < ApplicationController
   helper_method :composer_locals
 
   def show
+    return if play_launch_animation
+
     @available = AgentMessages::WebIngest.available?(@cto)
     @messages = AgentMessages::WebChat.history(@app.slug, current_user.id)
     @meter = AgentUsage.chat_meter(@app, user: current_user, soul: @cto.soul).without_cost
@@ -51,6 +56,33 @@ class CtoChatsController < ApplicationController
   end
 
   private
+
+  # The app's initial load (task build-sign-in-modal, Alex 2026-10-19): the
+  # owner's first visit after Build My App, however they arrived (the signed-in
+  # press, the magic link's landing, Google's), plays the launch panel
+  # (build/_launch: three steps in the app's colours, then a visit back here).
+  # The flag is cleared HERE, as the panel renders, so a refresh goes straight
+  # to the chat. Only an owner of the app clears it: an admin reading someone
+  # else's app sees the chat and leaves the owner's first visit alone. Turbo's
+  # hover prefetch (X-Sec-Purpose: prefetch) must not spend it on a page nobody
+  # opened, so it gets an empty answer; a click on that link then loads the page
+  # in full, which plays the panel. True when it answered.
+  def play_launch_animation
+    app_cto = @cto.app_cto
+    return false unless app_cto&.launch_animation_pending?
+    return false unless AppMembership.owners.exists?(app_slug: @app.slug, user_slug: current_user.slug)
+
+    if request.headers["X-Sec-Purpose"] == "prefetch"
+      head :no_content
+      return true
+    end
+    return false unless app_cto.take_launch_animation!
+
+    response.headers["Cache-Control"] = "no-store"
+    @launch_locals = { app_cto: app_cto, cto: @cto, href: chat_application_path(@app.slug) }
+    render :launch
+    true
+  end
 
   # The composer's upload tokens (CtoChatAttachmentsController#create), strings only.
   def attachment_tokens

@@ -44,7 +44,7 @@ module AgentMessages
     # Alex's plain voice; the plan stays on the summary card the owner just
     # confirmed. Markdown, as every answer.
     def greeting(app_cto, user)
-      first = user&.name.to_s.split.first.presence
+      first = greeting_name(user)
       host = "#{app_cto.app_slug}.#{AppRequest::PARENT_DOMAIN}"
       [
         "Hi #{first || 'there'}, I'm #{app_cto.name}, the agent who'll be managing #{app_cto.app.name}.",
@@ -53,6 +53,18 @@ module AgentMessages
         "then Deploying once you approve it.",
         "While it builds, tell me anything you'd like added or changed, or ask me about the plan."
       ].join("\n\n")
+    end
+
+    # Whom the greeting names: the owner's first name (users.first_name, which
+    # the engine's first-name onboarding collects), else the first word of their
+    # name; nil greets "there". Not the email's local part (task
+    # build-sign-in-modal looked): "new-builder@" would greet "New", "info@"
+    # "Info", and "amcritchie@" "Amcritchie". A new magic-link account has no
+    # name yet when the launch writes this, so it is greeted "there".
+    def greeting_name(user)
+      return nil unless user
+
+      (user.try(:first_name).presence || user.name.to_s.split.first).to_s.strip.presence
     end
 
     def enqueue!(app_cto:, user:, now: Time.current)

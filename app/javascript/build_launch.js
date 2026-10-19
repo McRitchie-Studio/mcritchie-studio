@@ -1,8 +1,9 @@
 // The Build My App launch panel (app/views/build/_launch.html.erb; task
-// build-launch-handoff). BuildController#update has ALREADY launched the app
-// when this element arrives (a Turbo Stream swaps it in for the agent shell, and
-// a replace_url stream moves the address to the CTO's chat, so a reload lands
-// there). This only plays the three steps, then visits the chat:
+// build-launch-handoff). The app has ALREADY launched when this element
+// arrives: it is the owner's first visit to the CTO's chat (CtoChatsController
+// #show, AppCto launch_animation_pending; task build-sign-in-modal), so the
+// address is already the chat's and the flag is spent, and a reload lands on
+// the chat. This only plays the three steps, then visits the chat:
 //
 //   step 1 active ─2.4s─▶ done, step 2 active ─2.4s─▶ done, step 3 active
 //   ─2.4s─▶ done ─0.8s─▶ Turbo.visit(href)                       ≈ 8 seconds

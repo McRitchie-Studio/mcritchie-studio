@@ -1,6 +1,0 @@
-<% content_for :title, "Launching · McRitchie Studio" %>
-<%# BuildController#launch, after a signed-out Build My App's sign-in: the app has ALREADY launched (the press, taken once from this session); this is the same launch panel the signed-in press swaps in place (build/_launch, task build-launch-handoff), which plays its steps and then visits the new CTO's chat. A reload of this address launches nothing: it goes straight to the chat. %>
-<% content_for :head, tag.meta(name: "view-transition", content: "same-origin") %>
-<section data-test="build-launch-landing">
-  <%= render "build/launch", **@launch_locals %>
-</section>
