@@ -156,6 +156,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
 
   // The theme comes first: three options, dark first, the middle one preselected; one Choose Theme.
   const themes = ["Pitch", "Field", "Court"].map((name) => ({ ...PALETTE, name }));
+  themes[2] = { ...themes[2], light: { ...PALETTE.light, primary: "#1d4ed8" } };
   await tapped(page, auth, "Let's build League Standings Hub.", "Pick a theme.", { card: "palette", palettes: themes });
   const themeCard = page.locator("[data-test='build-card-palette']");
   await expect(themeCard.locator("[data-test='build-palette']")).toHaveCount(3);
@@ -174,8 +175,11 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   expect(new Set(tops).size, "three columns in one row").toBe(1);
   // The keyboard moves the pick like any radio group; a tap on a column picks it.
   await themeCard.getByRole("radio", { name: "Field" }).focus();
+  const glowA = () => themeCard.locator("[data-test='build-palette-glow']").evaluate((el) => getComputedStyle(el).getPropertyValue("--glow-a").trim());
+  await expect.poll(glowA, { message: "Choose Theme glows in the selected theme" }).toBe("rgb(21, 128, 61)");
   await page.keyboard.press("ArrowRight");
   await expect(themeCard.getByRole("radio", { name: "Court" })).toBeChecked();
+  await expect.poll(glowA, { message: "picking Court moves the glow to its colours" }).toBe("rgb(29, 78, 216)");
   await expect(themeCard.locator("[data-test='build-palette']").nth(2).locator("[data-test='build-palette-check']")).toBeVisible();
   await themeCard.locator("[data-test='build-palette']").nth(0).click();
   await expect(themeCard.getByRole("radio", { name: "Pitch" })).toBeChecked();

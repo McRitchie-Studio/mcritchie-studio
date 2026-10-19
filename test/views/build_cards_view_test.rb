@@ -9,6 +9,7 @@ require "test_helper"
 # one visitor turn (BuildIntake::Choice).
 class BuildCardsViewTest < ActionView::TestCase
   include ApplicationHelper
+  include CtaGlowHelper
 
   PALETTE = { "name" => "Pitch",
               "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },
@@ -75,7 +76,7 @@ class BuildCardsViewTest < ActionView::TestCase
     stack = css_select("[data-test='build-cto-stack']").first
     assert_includes stack["class"].split, "flex-col"
     order = stack.element_children.map { |el| el["data-test"] || el.at_css("[data-test]")&.[]("data-test") }
-    assert_equal %w[build-cto-portrait build-cto-name-input build-cto-names build-choose-cto], order
+    assert_equal %w[build-cto-portrait build-cto-name-input build-cto-names build-cto-glow], order
     assert_includes css_select("[data-test='build-choose-cto']").first["class"].split, "w-full", "the CTA spans the card at the bottom"
   end
 
@@ -109,7 +110,7 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-palette-check'][aria-hidden='true']", 3
     # One CTA, at the bottom, submitting the selected index.
     assert_select "#{intake_form('palette')} button[type='submit']", 1
-    assert_select "#{intake_form('palette')} > button[type='submit'][data-test='build-choose-palette']:last-of-type", "Choose Theme"
+    assert_select "#{intake_form('palette')} > .cta-glow:last-child > button[type='submit'][data-test='build-choose-palette']", "Choose Theme"
     assert_select "[data-test='build-more-like']", 0
     refute_includes rendered, "More like this"
   end
@@ -130,7 +131,7 @@ class BuildCardsViewTest < ActionView::TestCase
   test "the domain card: one stack of bare-name chips, the name field with the suffix inside it, then Use Domain" do
     card("address", "names" => %w[poke-offense pokemon-lineup])
     assert_select "#{intake_form('address')}[data-test='build-card-address'][data-build-address='/build/check']"
-    assert_equal %w[build-address-suggestions build-address-field build-address-availability build-choose-address],
+    assert_equal %w[build-address-suggestions build-address-field build-address-availability build-address-glow],
                  css_select("[data-test='build-address-stack']").first.element_children.map { |el| el["data-test"] || el.at_css("[data-test]")&.[]("data-test") },
                  "top to bottom: the chips, the field, the availability line, Use Domain"
     # Chips are bare names: the suffix lives only in the field.
@@ -138,7 +139,8 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_equal %w[poke-offense pokemon-lineup], chips.map { |c| c.text.strip }
     assert(chips.all? { |c| c["type"] == "button" }, "a chip fills the field; it never submits")
     assert_equal 1, rendered.scan(".mcritchie.studio").size, "the suffix appears once, inside the field"
-    assert_select "[data-test='build-address-field'] [data-test='build-address-input'] + [data-test='build-address-suffix']", ".mcritchie.studio"
+    assert_select "label[data-test='build-address-field'].justify-center [data-test='build-address-input'] + [data-test='build-address-suffix']", ".mcritchie.studio"
+    assert_select "[data-test='build-address-input'][size='12']", 1, "sized to its name, so name and suffix centre as one group"
     # The first suggestion is preselected: it fills the field and glows.
     assert_select "[data-test='build-address-input'][name='subdomain'][value='poke-offense']"
     assert_equal %w[true false], chips.map { |c| c["aria-pressed"] }
@@ -164,6 +166,51 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-card-address'][data-chosen='true']"
   end
 
+  test "[component] the CTA glow: studio colours on Start App, the selected theme behind Choose Theme, the chosen theme after" do
+    glow_of = ->(selector) { css_select(selector).first["style"].to_s }
+    card("idea", "title" => "League Standings Hub", "features" => %w[a b])
+    assert_select ".cta-glow[data-test='build-idea-glow'] > [data-test='build-choose-idea']"
+    assert_empty glow_of.("[data-test='build-idea-glow']"), "no theme yet: the studio's own primary and accent (the CSS fallback)"
+
+    @rendered = +""
+    themes = [ PALETTE.merge("name" => "Pitch"),
+               PALETTE.merge("name" => "Field", "light" => PALETTE["light"].merge("primary" => "#1d4ed8", "accent" => "#b45309")) ]
+    themes << PALETTE.merge("name" => "Court")
+    card("theme", "palettes" => themes)
+    assert_select ".cta-glow[data-build-theme-glow] > [data-test='build-choose-palette']"
+    assert_equal "--glow-a: #1d4ed8; --glow-b: #b45309; --glow-c: #4ade80", glow_of.("[data-test='build-palette-glow']"),
+                 "the middle (selected) theme's light primary, light accent, dark primary"
+    options = css_select("input[name='index']")
+    assert_equal %w[#15803d #1d4ed8 #15803d], options.map { |o| o["data-glow-a"] }, "every option carries its colours for the swap"
+    assert_equal %w[#4ade80 #4ade80 #4ade80], options.map { |o| o["data-glow-c"] }
+
+    @rendered = +""
+    @row.update!(palette: themes[1])
+    card("cto", "names" => %w[Marble], "portrait" => "harbor")
+    assert_includes glow_of.("[data-test='build-cto-glow']"), "--glow-a: #1d4ed8", "the chosen theme carries on to Hatch CTO"
+    @rendered = +""
+    card("address", "names" => %w[poke-offense])
+    assert_select ".cta-glow[data-test='build-address-glow'] > [data-test='build-choose-address']"
+    assert_includes glow_of.("[data-test='build-address-glow']"), "--glow-b: #b45309"
+  end
+
+  test "[component] a spent CTA draws no glow: the CTO once set, the theme already chosen" do
+    @row.update!(palette: PALETTE, cto_name: "Coach", cto_avatar: "meadow")
+    card("cto", "names" => %w[Marble], "portrait" => "harbor")
+    assert_select "[data-test='build-cto-glow'][data-glow='off']"
+    @rendered = +""
+    card("theme", "palettes" => [ PALETTE, PALETTE.merge("name" => "Field") ])
+    assert_select "[data-test='build-card-palette'][data-chosen-index='0']"
+    assert_select "[data-test='build-palette-glow'][data-glow='off']", 1, "the chosen theme is selected: Choose Theme is spent"
+  end
+
+  test "[unit] cta_glow_vars: only hex colours reach the style, and a broken palette falls back" do
+    assert_equal({ "--glow-a" => "#15803d", "--glow-b" => "#f59e0b", "--glow-c" => "#4ade80" }, cta_glow_vars(PALETTE))
+    assert_nil cta_glow_vars({})
+    assert_nil cta_glow_vars(nil)
+    assert_nil cta_glow_vars(PALETTE.merge("light" => PALETTE["light"].merge("primary" => "red; background: url(x)")))
+  end
+
   test "the summary card draws the request; Build My App signs in first, then posts the launch" do
     @row.update!(answers: { "title" => "League Standings Hub", "idea" => "League Standings Hub", "features" => [ "Live standings", "Schedules" ] },
                  cto_name: "Marble", cto_avatar: "meadow", palette: PALETTE, subdomain: "league-hub")
@@ -183,6 +230,8 @@ class BuildCardsViewTest < ActionView::TestCase
     end
     button = css_select("[data-test='build-summary-build']").first
     assert_equal "Build My App", button.text.strip
+    assert_select ".cta-glow[data-test='build-summary-glow'][style*='--glow-a: #15803d'] > [data-test='build-summary-build']", 1,
+                  "Build My App glows in the chosen theme"
     assert_equal "/build/#{@row.token}", JSON.parse(button["data-build-sign-in"])["returnTo"]
 
     signed_in(User.create!(email: "m@example.com", name: "M", role: "viewer"))
