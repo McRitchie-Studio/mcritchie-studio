@@ -8,6 +8,10 @@ the one `client_cto` soul. Design: `.agents/epics/build-with-xan-design.md`; bac
 
 Our own CTOs (Avi, Turf, Tyrion) are souls in `config/cto_reports.yml` and are unchanged.
 
+The app's first version is a static bundle on the shared client-app host, at
+`<sub>.mcritchie.si`; until one is published, that address shows a "being built" page in
+the CTO's colours: [`client-app-host.md`](client-app-host.md).
+
 ## Build my app (`AppLaunch`)
 
 `AppLaunch.new(app_request, subdomain:).call!` runs in ONE transaction:
