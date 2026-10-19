@@ -28,9 +28,10 @@ open: Idea, CTO, Colors, Address, Account. The intake itself (the request's `cto
 `cto_avatar`, `palette` and `answers` columns) is the `build-with-xan-intake` task's.
 
 **Where it is called.** `BuildController#update` (PATCH `/build/:token`, the Build My App
-control on Ray's summary card) calls it when `AppRequest#intake_complete?`, then answers the summary card's Turbo
-press with the launch panel and the move to `/applications/<sub>/chat` (below, "The
-handover and the greeting"), and any other request with a 303 there. An admin's showcase queued from the name alone, without the
+control on Ray's summary card) calls it when `AppRequest#intake_complete?`, then answers with a 303 to
+`/applications/<sub>/chat`, whose first visit plays the launch panel (below, "The
+handover and the greeting"). Signed out, the press opens the sign-in modal first and the
+sign-in's landing (`GET /build/:token/launch`) calls it the same way. An admin's showcase queued from the name alone, without the
 checklist, still goes through `AppRequest#queue!` (no App, no CTO). A cancelled launched
 request keeps its App row, so its name stays taken (`AppRequest.unavailable_reason` checks
 `apps.slug`). A refusal (`AppLaunch::Incomplete`, a `RecordInvalid` such as the tier's
@@ -102,12 +103,16 @@ who'll be managing `<app>`", that it is building now and what the status card's 
 mean, the app's address, and what the owner can do meanwhile), so the chat opens on both turns
 and no model runs for it.
 
-Build My App on the summary card launches first, then shows the launch panel
-(`build/_launch`) in place of the /build shell: the new CTO's portrait, the app's name, and
-three steps ("Building Brand Sheet", "Hatching CTO", "Setting Up Domain") resolving over about
-eight seconds in the app's colours, before a Turbo visit to the chat, where the portrait morphs
-into the chat's head. The address moves to the chat at once, so a reload lands there; a refused
-launch stays on the summary card with its reason. In development, an admin can replay the panel
+Build My App on the summary card launches first, then goes to the chat. The launch sets
+`app_ctos.launch_animation_pending` (the app's initial load), and the owner's first visit to
+the chat (`CtoChatsController#show`), however they arrived (the signed-in press, the magic
+link, Google), clears it atomically and renders the launch panel (`build/_launch`) instead:
+the new CTO's portrait (morphing from Ray's), the app's name, and three steps ("Building
+Brand Sheet", "Hatching CTO", "Setting Up Domain") resolving over about eight seconds in the
+app's colours, before a Turbo visit to the same chat, where the portrait morphs into the
+chat's head. A reload is the chat; an admin viewing someone else's app never sees or spends
+the flag; a Turbo hover prefetch gets a 204. A refused launch stays on the summary card with
+its reason. In development, an admin can replay the panel
 for a launched app at `/build/launch-demo/<sub>`. The dispatcher never claims the row; the persona tells the CTO
 not to greet again. The chat renders the handover as Ray's turn, then the greeting as the
 CTO's.
