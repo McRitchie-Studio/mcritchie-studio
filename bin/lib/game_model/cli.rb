@@ -254,7 +254,11 @@ module GameModel
     def file(dir, production:, dry_run:)
       spec = Spec.load(dir)
       target = DigestVideo.target(production: production)
-      sheets = %w[base iced].filter_map do |variant|
+      # Each run mints new keys, so a second run would file a second artifact.
+      filed = File.join(dir, "filed#{production ? '' : '_dev'}.json")
+      raise Failure, "already filed (#{filed}); delete it to file again" if File.exist?(filed) && !dry_run
+
+      sheets =%w[base iced].filter_map do |variant|
         png = File.join(dir, "sheet", "#{Filing.slug(spec['name'])}-#{variant}.png")
         next unless File.size?(png)
 
@@ -276,7 +280,7 @@ module GameModel
       sheets.each { |s| storage.put(s[:object_key], s[:path], "image/jpeg") }
       api = DigestVideo::ApiClient.new(base_url: target[:api], repo_root: File.expand_path("../..", __dir__))
       data = api.post("/api/v1/game_looks", payload)
-      write_json(dir, "filed#{production ? '' : '_dev'}.json", data)
+      write_json(dir, File.basename(filed), data)
       @out.puts "filed #{target[:api]}/people/#{data['person']}/models/#{data['look']}" \
                 "#{data['iced_twin'] ? " and #{target[:api]}/people/#{data['person']}/models/#{data['iced_twin']}" : ''}"
     end

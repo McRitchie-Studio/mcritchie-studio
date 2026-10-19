@@ -139,6 +139,16 @@ class GameModelTest < Minitest::Test
     end
   end
 
+  def test_file_refuses_a_second_run_once_filed
+    Dir.mktmpdir do |dir|
+      File.write(File.join(dir, "spec.yml"), SPEC.to_yaml)
+      touch(dir, "sheet/test-player-base.png")
+      touch(dir, "filed_dev.json")
+      error = assert_raises(GameModel::Failure) { GameModel::Cli.new(["file", dir], out: StringIO.new, shell: ->(*) {}).run }
+      assert_match "already filed", error.message
+    end
+  end
+
   private
 
   def touch(dir, path)
