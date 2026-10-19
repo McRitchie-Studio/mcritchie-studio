@@ -224,3 +224,72 @@ test("the domain card asks for availability once its name changes, never on arri
   expect(checks).toEqual([`?subdomain=${free}-2`]);
   expect(pageErrors, report()).toHaveLength(0);
 });
+
+// Nothing sideways on a phone (Carl and Shannon's block on PR 2185): a glowing
+// CTA's layers never grow past the CTA, so neither the page nor the chat thread
+// scrolls sideways while the glow moves.
+async function sideways(page) {
+  return page.evaluate((selector) => {
+    const thread = document.querySelector(selector);
+    return {
+      page: document.scrollingElement.scrollWidth - window.innerWidth,
+      thread: thread ? thread.scrollWidth - thread.clientWidth : 0,
+    };
+  }, log);
+}
+
+test("on a phone a glowing Choose Theme scrolls neither the page nor the thread sideways, at any point of its motion", async ({ page, browser }) => {
+  test.setTimeout(60_000);
+  await blockThirdPartyRequests(page);
+  const { pageErrors, report } = watchPageErrors(page);
+  const auth = { Authorization: `Bearer ${await adminToken(browser)}`, "Content-Type": "application/json" };
+  await page.setViewportSize({ width: 375, height: 760 });
+  const idea = `A surf school booking app ${Date.now()}`;
+  await start(page, idea);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const themes = ["Pitch", "Field", "Court"].map((name) => ({ ...PALETTE, name }));
+  await rayAnswers(page, auth, idea, "Pick a theme.", { card: "palette", palettes: themes });
+  const glow = page.locator("[data-test='build-palette-glow']");
+  await expect(glow).toBeVisible();
+  await glow.scrollIntoViewIfNeeded();
+  await expect(glow).toHaveAttribute("data-glow-visible", "true");
+  expect(await glow.evaluate((el) => getComputedStyle(el, "::after").animationName), "the glow is moving").toBe("cta-glow-trade");
+  // Sample across one whole cycle of the motion (3s each way).
+  const worst = { page: 0, thread: 0 };
+  for (let i = 0; i < 14; i += 1) {
+    const now = await sideways(page);
+    worst.page = Math.max(worst.page, now.page);
+    worst.thread = Math.max(worst.thread, now.thread);
+    await page.waitForTimeout(250);
+  }
+  expect(worst.page, "the page never scrolls sideways").toBeLessThanOrEqual(0);
+  expect(worst.thread, "the chat thread never scrolls sideways").toBeLessThanOrEqual(0);
+  expect(pageErrors, report()).toHaveLength(0);
+});
+
+test("leaving mid-typing and coming Back shows the whole answer, its link live and the thread not busy", async ({ page, browser }) => {
+  test.setTimeout(60_000);
+  await blockThirdPartyRequests(page);
+  const { pageErrors, report } = watchPageErrors(page);
+  const auth = { Authorization: `Bearer ${await adminToken(browser)}`, "Content-Type": "application/json" };
+  const idea = `A tide table app ${Date.now()}`;
+  await start(page, idea);
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const text = `${longAnswer("Back")}\n\nRead the [packages](/packages) page.`;
+  await rayAnswers(page, auth, idea, text);
+  await expect(page.locator("[data-agent-revealing]")).toHaveCount(1, { timeout: 15_000 });
+  // Away mid-typing, by a Turbo visit, then Back to the cached page.
+  await page.evaluate(() => window.Turbo.visit("/packages"));
+  await expect(page).toHaveURL(/\/packages$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/build\/[A-Za-z0-9_-]{10,}$/);
+  const body = page.locator("[data-test='build-turn']", { hasText: idea }).locator("[data-agent-reveal]");
+  await expect(body).toContainText("Back line 20");
+  expect(await body.evaluate((el) => el.inert), "the answer is not inert").toBe(false);
+  await expect(page.locator("[role='log'][aria-busy]"), "the thread is not busy").toHaveCount(0);
+  await expect(page.locator("[data-agent-revealing]")).toHaveCount(0);
+  const link = body.getByRole("link", { name: "packages" });
+  await link.focus();
+  await expect(link, "the link takes focus").toBeFocused();
+  expect(pageErrors, report()).toHaveLength(0);
+});

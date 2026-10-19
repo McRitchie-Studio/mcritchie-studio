@@ -363,6 +363,17 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   // the steps show done at once and the visit follows a short pause.
   const panel = page.locator("[data-test='build-launch']");
   await expect(panel).toBeVisible();
+  // On a phone the panel's glows (the round portrait, the live step) scroll
+  // nothing sideways (task build-flow-polish: a turning glow layer did, 89px).
+  await page.setViewportSize({ width: 375, height: 800 });
+  expect(await page.evaluate(() => document.scrollingElement.scrollWidth - window.innerWidth), "the launch panel never scrolls sideways on a phone").toBeLessThanOrEqual(0);
+  const portraitGlow = await panel.locator("[data-test='build-launch-portrait']").evaluate((el) => {
+    const glow = getComputedStyle(el, "::before");
+    return { radius: glow.borderTopLeftRadius, width: parseFloat(glow.width), height: parseFloat(glow.height), box: el.getBoundingClientRect().width };
+  });
+  expect(Math.abs(portraitGlow.width - portraitGlow.height), "the round portrait's glow is a circle").toBeLessThanOrEqual(1);
+  expect(portraitGlow.width - portraitGlow.box, "close round it: 3px each side").toBeLessThanOrEqual(6.5);
+  await page.setViewportSize({ width: 1280, height: 800 });
   await expect(panel.locator("[data-test='build-launch-portrait'] [data-test='client-cto-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
   await expect(panel.locator("[data-test='build-launch-step']")).toHaveText(["Building Brand Sheet", "Hatching CTO", "Setting Up Domain"]);
   for (const step of await panel.locator("[data-test='build-launch-step']").all()) await expect(step).toHaveAttribute("data-state", "done");
@@ -377,6 +388,15 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   // A reload is the chat: the initial load plays once.
   await page.reload();
   await expect(page.locator("[data-test='agent-shell'][data-shell='app']")).toBeVisible();
+  // On a phone the chat (its live devops stage glowing) scrolls nothing sideways.
+  await page.setViewportSize({ width: 375, height: 800 });
+  const phoneSideways = await page.evaluate(() => {
+    const thread = document.querySelector("[data-cto-chat-scroll]");
+    return { page: document.scrollingElement.scrollWidth - window.innerWidth, thread: thread ? thread.scrollWidth - thread.clientWidth : 0 };
+  });
+  expect(phoneSideways.page, "the CTO chat page never scrolls sideways on a phone").toBeLessThanOrEqual(0);
+  expect(phoneSideways.thread, "nor does its thread").toBeLessThanOrEqual(0);
+  await page.setViewportSize({ width: 1280, height: 800 });
   await expect(page.locator("[data-test='build-launch']")).toHaveCount(0);
   // The landing again (a refresh, a second click) launches nothing more: it only reopens the app.
   const again = await page.request.get(`${draftPath}/launch`, { maxRedirects: 0 });
