@@ -152,6 +152,13 @@ class BuildController < ApplicationController
   end
 
   def show
+    # A launched request's page IS its CTO's chat, for its owner: a reload or
+    # Back during the launch panel, an old link or bookmark (task
+    # build-launch-handoff). An admin reading someone's request stays here.
+    if (chat = launched_chat_path)
+      return redirect_to(chat, status: :see_other)
+    end
+
     if logged_in? && @app_request.draft?
       unless @app_request.claimable_by?(current_user)
         redirect_to build_path, alert: "That draft belongs to another account."
@@ -349,6 +356,17 @@ class BuildController < ApplicationController
       end
       format.any(&html)
     end
+  end
+
+  # The CTO chat of the app this request launched, when the viewer is the
+  # request's owner and may manage it; else nil (a draft, a showcase queued
+  # without the intake, someone else's request).
+  def launched_chat_path
+    return nil if @app_request.draft? || @app_request.subdomain.blank? || !logged_in? || @app_request.user != current_user
+    return nil unless AppCto.exists?(app_slug: @app_request.subdomain, app_request_token: @app_request.token)
+    return nil unless AppOwnership.manage_app?(current_user, @app_request.subdomain)
+
+    chat_application_path(@app_request.subdomain)
   end
 
   # The launch panel's locals (build/_launch): the CTO the launch made, its app,

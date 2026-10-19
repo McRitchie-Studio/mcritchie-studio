@@ -59,7 +59,12 @@ class BuildLaunch extends HTMLElement {
   go() {
     const href = this.dataset.href;
     if (!href || !this.isConnected) return;
-    Turbo.visit(href, { action: "replace" });
+    // An advance, never a "replace": the address is already href, and Turbo
+    // reads a replace visit to the current path as a page REFRESH, which this
+    // page morphs (turbo_refreshes_with :morph) instead of rendering the chat
+    // with its view transition. Turbo still writes the history as a replace,
+    // because the visit's URL is the one it leaves (Visit#changeHistory).
+    Turbo.visit(href);
   }
 }
 

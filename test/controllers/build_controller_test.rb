@@ -282,6 +282,15 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-test='cto-chat-reply']", text: /Hi Viewer, I'm Coach, the agent who'll be managing League Hub\./
     assert_select "[data-test='cto-chat-typing']", 0
+
+    # The draft's own address (Back, an old link) takes its owner to the chat too;
+    # an admin reading the request from /build/requests stays on its page.
+    get build_request_path(draft.token)
+    assert_redirected_to chat_application_path("league-hub")
+    log_in_as users(:alex)
+    get build_request_path(draft.token)
+    assert_response :success
+    assert_select "[data-test='build-request'][data-status='queued']"
   end
 
   test "[integration] the launch replay is an admin's, in development only" do

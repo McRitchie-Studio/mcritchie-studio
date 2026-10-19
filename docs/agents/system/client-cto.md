@@ -28,8 +28,9 @@ open: Idea, CTO, Colors, Address, Account. The intake itself (the request's `cto
 `cto_avatar`, `palette` and `answers` columns) is the `build-with-xan-intake` task's.
 
 **Where it is called.** `BuildController#update` (PATCH `/build/:token`, the Build My App
-control on Ray's summary card) calls it when `AppRequest#intake_complete?`, then answers 303 to
-`/applications/<sub>/chat`. An admin's showcase queued from the name alone, without the
+control on Ray's summary card) calls it when `AppRequest#intake_complete?`, then answers the summary card's Turbo
+press with the launch panel and the move to `/applications/<sub>/chat` (below, "The
+handover and the greeting"), and any other request with a 303 there. An admin's showcase queued from the name alone, without the
 checklist, still goes through `AppRequest#queue!` (no App, no CTO). A cancelled launched
 request keeps its App row, so its name stays taken (`AppRequest.unavailable_reason` checks
 `apps.slug`). A refusal (`AppLaunch::Incomplete`, a `RecordInvalid` such as the tier's

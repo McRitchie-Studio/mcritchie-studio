@@ -1209,6 +1209,15 @@ carries **Build My App**, which asks for sign-in only then; it launches through 
   422 page: Turbo renders a failed form's page as a same-URL refresh, the shell morphs
   it, and the morph strips Alpine's `display:none` from every `x-show` (on 2026-10-18 it
   opened the Links drawer; task `build-launch-chat-growth`).
+- **A launched Build My App** (task `build-launch-handoff`) launches first, on the
+  server, then answers with Turbo Streams: the shell is swapped in place for the launch
+  panel (`build/_launch`: the new CTO's portrait, the app's name, and "Building Brand
+  Sheet", "Hatching CTO", "Setting Up Domain" resolving over about eight seconds in the
+  app's colours; `app/javascript/build_launch.js`, `app/assets/tailwind/build_launch.css`),
+  and the address moves to the app chat at once, so a reload lands there. Then a Turbo
+  visit opens the chat, the portrait morphing into its head. Reduced motion shows the
+  steps done and moves on after a short pause. A launched request's own address sends its
+  owner to the chat.
 - **Page moves** between /build, /build/:token and the app chat are Turbo visits with a
   view transition (`<meta name="view-transition">`): the shell names its portrait,
   caption, status card and chat box, so Ray's portrait becomes the CTO's. Turbo skips

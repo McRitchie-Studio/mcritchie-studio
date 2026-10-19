@@ -29,7 +29,7 @@ class BuildLaunchComponentTest < ActionView::TestCase
                  css_select("[data-test='build-launch-step']").map { |li| li.text.squish }
     assert_equal %w[active pending pending], css_select("[data-test='build-launch-step']").map { |li| li["data-state"] }
     assert_select "[data-build-launch-status][role='status']"
-    assert_select "a[data-test='build-launch-skip'][href='/applications/pawsome/chat'][data-turbo-action='replace']", text: "Go to Nova now"
+    assert_select "a[data-test='build-launch-skip'][href='/applications/pawsome/chat']:not([data-turbo-action])", text: "Go to Nova now"
   end
 
   test "[component] the launch panel wears the app's palette in both modes" do
