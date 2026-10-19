@@ -38,6 +38,10 @@
   text-underline-offset: 2px;
 }
 
+/* An answer still typing: an element whose first letter is not due yet waits
+   (so a list's bullets never stand empty), and so does what follows its words. */
+[data-agent-unrevealed] { display: none !important; }
+
 /* An answer still typing: what follows its words waits off the page. */
 [data-agent-revealing] .agent-action { display: none; }
 
