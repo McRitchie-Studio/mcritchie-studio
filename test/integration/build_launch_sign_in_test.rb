@@ -1,13 +1,16 @@
 require "test_helper"
 
-# [integration] A signed-out Build My App (task build-launch-sign-in, Alex
-# 2026-10-18): /build stays public, the press answers in place with a sign-in
-# prompt and remembers itself in this browser's session
-# (BuildIntake::PendingLaunch), and the sign-in, by the emailed link or by
-# Google, lands the visitor on the app they were building: the draft claimed,
-# the launch run once, then /applications/:slug/chat. Nothing launches without
-# that session's press: not a forwarded link in another browser, not a refresh,
-# not a stale press, and never someone else's draft.
+# [integration] A signed-out Build My App (tasks build-launch-sign-in, Alex
+# 2026-10-18, and build-sign-in-modal, 2026-10-19): /build stays public, the
+# press opens the sign-in MODAL (an open_modal Turbo Stream, nothing added to the
+# thread) and remembers itself in this browser's session
+# (BuildIntake::PendingLaunch); every press does both again, so a dismissed
+# modal reopens. The sign-in, by the emailed link or by Google, lands the
+# visitor on the app they were building: the draft claimed, the launch run once,
+# then /applications/:slug/chat, whose first visit plays the launch panel once
+# (AppCto launch_animation_pending). Nothing launches without that session's
+# press: not a forwarded link in another browser, not a refresh, not a stale
+# press, and never someone else's draft; a press whose draft is gone is dropped.
 class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
   PROMPT = "A league site with schedules, scores and standings".freeze
   PALETTE = { "name" => "Pitch",
@@ -44,11 +47,33 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     post link_consume_path(token: link.token)
   end
 
-  # The landing's answer to a fresh launch: the launch panel (build/_launch), which
-  # plays its steps and then visits the app's chat.
+  # The landing's answer to a fresh launch: the app's chat, whose first visit is
+  # the launch panel (build/_launch), which plays its steps and then visits the
+  # same chat. The flag is spent, so the next visit is the chat itself.
   def assert_launch_panel_for(slug)
+    assert_redirected_to chat_application_path(slug)
+    follow_redirect!
     assert_response :success
     assert_select "[data-test='build-launch-landing'] [data-test='build-launch'][data-app='#{slug}'][data-href='#{chat_application_path(slug)}']", 1
+    assert_not AppCto.find_by!(app_slug: slug).launch_animation_pending?
+    get chat_application_path(slug)
+    assert_response :success
+    assert_select "[data-test='build-launch']", 0, "a refresh after the panel is the chat"
+    assert_select "[data-test='cto-chat-page'][data-app='#{slug}']", 1
+  end
+
+  # The stream a signed-out press answers with: it opens the engine's auth modal,
+  # returning to the launch landing, and names the address.
+  def assert_opens_sign_in_modal(draft, host: "league-hub.mcritchie.studio")
+    assert_response :success
+    assert_equal "text/vnd.turbo-stream.html", response.media_type, "a stream, never the old silent redirect"
+    streams = css_select("turbo-stream")
+    assert_equal 1, streams.size, "one stream: nothing is added to the thread"
+    stream = streams.first
+    assert_equal [ "open_modal", "auth" ], [ stream["action"], stream["modal"] ]
+    props = JSON.parse(stream["props"])
+    assert_equal({ "returnTo" => "/build/#{draft.token}/launch", "title" => "Sign in to build your app",
+                   "subtitle" => "Free. Then we start building #{host}." }, props)
   end
 
   def mock_google(email)
@@ -58,32 +83,45 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     )
   end
 
-  test "signed out, Build My App answers in place with the sign-in prompt under the summary card, and the draft stays" do
+  test "signed out, Build My App opens the sign-in modal and binds the press; the draft stays, and every later press opens it again" do
     draft, card = ready_draft!
 
-    assert_no_difference [ -> { App.count }, -> { Task.count } ] do
+    assert_no_difference [ -> { App.count }, -> { Task.count }, -> { AgentMessage.count } ] do
       press_build_my_app(draft, card)
     end
-    assert_response :success
-    assert_equal "text/vnd.turbo-stream.html", response.media_type, "a stream, never the old silent redirect"
-    assert_select "turbo-stream[action='remove'][target='#{BuildController::SIGN_IN_PROMPT_ID}']", 1
-    assert_select "turbo-stream[action='after'][target='#{BuildController.summary_dom_id(card)}'] template" do
-      assert_select "[data-test='build-sign-in-prompt']" do
-        assert_select "h3", "Sign in to build your app"
-        assert_select "form[action='/auth/google_oauth2'][method='post'][data-turbo='false']", 1, "Google's request phase is a POST (omniauth-rails_csrf_protection), out of Turbo"
-        assert_select "[data-test='build-sign-in-google']", /Continue with Google/
-        assert_select "form[data-test='build-sign-in-email-form'][action='/magic_link'][method='post']" do
-          assert_select "input[type='email'][name='email']"
-          assert_select "input[type='hidden'][name='return_to'][value='/build/#{draft.token}/launch']"
-        end
-      end
-    end
+    assert_opens_sign_in_modal(draft)
     assert draft.reload.draft?
     assert_nil draft.user
+    first = session[BuildIntake::PendingLaunch::KEY]
+    assert_equal [ draft.token, "league-hub" ], first.values_at("token", "subdomain")
+
+    # Dismissed (nothing reaches the server), then pressed again: the same modal,
+    # and the press bound afresh, so its hour starts again.
+    travel 10.minutes do
+      press_build_my_app(draft, card)
+      assert_opens_sign_in_modal(draft)
+      assert_operator session[BuildIntake::PendingLaunch::KEY]["at"], :>, first["at"], "the press is bound afresh"
+    end
+    assert draft.reload.draft?
+  end
+
+  test "the modal names the address the press carried, held to one DNS label" do
+    draft, card = ready_draft!
+
+    patch build_request_path(draft.token), params: { app_request: { subdomain: "x" * 80 }, message_id: card.id }, as: :turbo_stream
+    assert_opens_sign_in_modal(draft, host: "#{'x' * 63}.mcritchie.studio")
+    assert_equal 63, session[BuildIntake::PendingLaunch::KEY]["subdomain"].length
+  end
+
+  test "without Turbo the signed-out press still binds and returns to the draft" do
+    draft, card = ready_draft!
+
+    patch build_request_path(draft.token), params: { app_request: { subdomain: draft.subdomain }, message_id: card.id }
+    assert_redirected_to build_request_path(draft.token)
     assert_equal draft.token, session[BuildIntake::PendingLaunch::KEY]["token"]
   end
 
-  test "the magic link signs in, claims the draft, launches it once and plays the launch panel into the app's chat; a refresh only reopens the app" do
+  test "the magic link signs in, claims the draft, launches it once and the app's first visit plays the launch panel; a refresh only reopens the app" do
     draft, card = ready_draft!
     press_build_my_app(draft, card)
 
@@ -93,6 +131,7 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
       follow_redirect!
     end
     assert_launch_panel_for("league-hub")
+    assert_select "[data-test='cto-chat-reply']", { text: /Hi there, I'm Coach/ }, "a new account has no name yet"
     user = User.find_by!(email: "new-builder@example.test")
     assert_equal user, draft.reload.user, "claimed by the new session"
     assert_equal "queued", draft.status
@@ -105,7 +144,7 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     assert_redirected_to chat_application_path("league-hub"), "a refresh goes to the app and launches nothing"
   end
 
-  test "Google lands on home, which forwards to the launch, which plays the launch panel into the app's chat" do
+  test "Google lands on home, which forwards to the launch, whose app's first visit plays the launch panel" do
     draft, card = ready_draft!
     press_build_my_app(draft, card)
     mock_google("google-builder@example.test")
@@ -201,16 +240,33 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='build-summary-refusal']", 0, "the reason shows once"
   end
 
-  test "signed in, Build My App is unchanged: it launches at once, into the launch panel, and binds no press" do
+  test "signed in, Build My App launches at once, binds no press, and the app's first visit plays the launch panel" do
     draft, card = ready_draft!
     log_in_as users(:viewer)
 
     patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: card.id }, as: :turbo_stream
-    assert_response :success
-    assert_select "turbo-stream template [data-test='build-launch'][data-app='league-hub']", 1, "the launch panel, in place (build-launch-handoff)"
-    assert_select "turbo-stream template [data-test='build-sign-in-prompt']", 0
     assert_equal users(:viewer), draft.reload.user
     assert_nil session[BuildIntake::PendingLaunch::KEY]
+    assert_launch_panel_for("league-hub")
+  end
+
+  test "a press whose draft was deleted, launched, or claimed by someone else is dropped at the landing: home never bounces to /build" do
+    { deleted: ->(d) { d.destroy! },
+      claimed: ->(d) { d.update!(user: User.create!(email: "taker-#{d.id}@example.test", name: "Taker")) },
+      launched: ->(d) { d.update_columns(status: "queued") } }.each do |how, change|
+      reset!
+      draft, card = ready_draft!(subdomain: "league-#{how}")
+      press_build_my_app(draft, card)
+      change.call(draft)
+      mock_google("google-#{how}@example.test")
+
+      get "/auth/google_oauth2/callback"
+      follow_redirect!
+      assert_response :success, "#{how}: the home page, not a forward"
+      assert_nil session[BuildIntake::PendingLaunch::KEY], "#{how}: the press is forgotten"
+      get root_path
+      assert_response :success, "#{how}: and stays forgotten"
+    end
   end
 
   test "the landing never launches by GET without the press, even for the draft's own signed-in owner" do

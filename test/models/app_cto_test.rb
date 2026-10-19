@@ -47,4 +47,19 @@ class AppCtoTest < ActiveSupport::TestCase
     app.destroy!
     assert_equal 0, AppCto.where(app_slug: "pawsome").count
   end
+
+  # Task build-sign-in-modal: the app's initial load.
+  test "[unit] the initial load is off by default and taken once, by one caller" do
+    cto = client_app!.client_cto
+    assert_not cto.launch_animation_pending?, "an app made without a launch has had its first visit"
+    assert_not cto.take_launch_animation!
+
+    cto.update!(launch_animation_pending: true)
+    racer = AppCto.find(cto.id)
+    assert cto.take_launch_animation!, "the first visit takes it"
+    assert_not cto.launch_animation_pending?
+    assert_not cto.changed?, "the in-memory row matches the database"
+    assert_not racer.take_launch_animation!, "a second tab holding a stale row does not play it again"
+    assert_not cto.reload.launch_animation_pending?
+  end
 end

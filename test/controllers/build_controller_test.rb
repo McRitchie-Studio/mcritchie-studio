@@ -140,8 +140,15 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_equal [ "Coach", "harbor", "#15803D" ], [ cto.name, cto.portrait, cto.light["primary"] ]
     assert_equal "#15803D", App.find_by!(slug: "league-hub").theme_colors.dig("light", "primary")
 
+    # The owner's first visit is the app's initial load: the launch panel, once
+    # (AppCto launch_animation_pending, task build-sign-in-modal); then the chat.
     follow_redirect!
     assert_response :success
+    assert_select "[data-test='build-launch-landing'] [data-test='build-launch'][data-app='league-hub']", 1
+    assert_not cto.reload.launch_animation_pending?
+    get chat_application_path("league-hub")
+    assert_response :success
+    assert_select "[data-test='build-launch']", 0
     assert_select "[data-test='agent-shell'][data-shell='app'] [data-test='agent-caption']", text: /Coach\s+· CTO of League Hub/
     assert_select "[data-test='agent-portrait'][style*='view-transition-name: agent-portrait'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
     assert_select "[data-test='cto-chat-head'][data-client-cto='true'] h1", text: "League Hub"
@@ -248,14 +255,15 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     get build_request_path(draft.token)
     complete_intake!(draft)
     patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: summary_turn!(draft).id }, as: :turbo_stream
-    assert_response :success
-    assert_select "turbo-stream[action='replace'][targets='#{BuildController::LAUNCH_TARGETS}'] template [data-test='build-launch'][data-app='league-hub']"
+    assert_redirected_to chat_application_path("league-hub")
+    assert App.exists?(slug: "league-hub")
   end
 
-  # Task build-launch-handoff: the launch happens on the server FIRST; the stream
-  # only presents it. The shell is swapped in place for the launch panel, and the
-  # address moves to the CTO's chat at once, so a reload mid-animation lands there.
-  test "[integration] Build My App from the summary card launches, then answers with the launch panel over the shell and the address on the CTO's chat" do
+  # Tasks build-launch-handoff and build-sign-in-modal: the launch happens on the
+  # server FIRST, then the press goes to the CTO's chat, whose first visit by the
+  # owner is the app's initial load: the launch panel (AppCto
+  # launch_animation_pending), cleared as it renders, so a reload is the chat.
+  test "[integration] Build My App from the summary card launches, then the chat's first visit plays the launch panel once" do
     log_in_as users(:viewer)
     draft = send_prompt
     get build_request_path(draft.token)
@@ -265,10 +273,15 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_difference [ -> { App.count }, -> { AppCto.count }, -> { Task.count } ], 1 do
       patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: card.id }, as: :turbo_stream
     end
-    assert_response :success
-    assert_equal "text/vnd.turbo-stream.html", response.media_type
+    assert_redirected_to chat_application_path("league-hub")
+    assert_response :see_other
     assert draft.reload.queued?, "launched before the panel is drawn"
-    assert_select "turbo-stream[action='replace'][targets='[data-agent-shell]'] template" do
+    app_cto = AppCto.find_by!(app_slug: "league-hub")
+    assert app_cto.launch_animation_pending?, "the launch sets the initial load"
+
+    follow_redirect!
+    assert_response :success
+    assert_select "[data-test='build-launch-landing']" do
       assert_select "build-launch#build-launch[data-test='build-launch'][data-href='/applications/league-hub/chat']" do
         assert_select "[data-test='build-launch-portrait'][style*='view-transition-name: agent-portrait'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
         assert_select "[data-test='build-launch-caption']", text: /Coach\s+· CTO of League Hub/
@@ -277,12 +290,14 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
       end
       assert_select "[data-test='build-launch'][style*='--cto-primary-light: 21 128 61;']", 1, "the app's own colours"
     end
-    assert_select "turbo-stream[action='replace_url'][target='#{BuildController::LAUNCH_ID}'][url='/applications/league-hub/chat']"
-    assert_select "turbo-stream[action='remove'][target='#{BuildController::GALLERY_ID}']", 1, "nothing of /build stays under the panel"
+    assert_select "meta[name='view-transition'][content='same-origin']", { minimum: 1 }, "Ray's portrait morphs into the CTO's"
+    assert_equal "no-store", response.headers["Cache-Control"]
+    assert_not app_cto.reload.launch_animation_pending?, "spent as it rendered"
 
-    # A reload mid-animation is a plain visit to the chat: the CTO is already speaking.
+    # A reload is a plain visit to the chat: the CTO is already speaking.
     get chat_application_path("league-hub")
     assert_response :success
+    assert_select "[data-test='build-launch']", 0
     assert_select "[data-test='cto-chat-reply']", text: /Hi Viewer, I'm Coach, the agent who'll be managing League Hub\./
     assert_select "[data-test='cto-chat-typing']", 0
 

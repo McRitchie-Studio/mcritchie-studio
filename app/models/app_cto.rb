@@ -34,6 +34,19 @@ class AppCto < ApplicationRecord
   # The `client_cto` rows for these app slugs, keyed by slug: one query for a list page.
   def self.for_apps(slugs) = where(app_slug: Array(slugs).map(&:to_s)).index_by(&:app_slug)
 
+  # The app's initial load (launch_animation_pending, task build-sign-in-modal):
+  # AppLaunch sets it; the owner's first visit to the CTO's chat takes it back,
+  # once. True only for the ONE request that cleared it, so two tabs or a
+  # double load never both play the animation (CtoChatsController#show).
+  def take_launch_animation!
+    return false unless launch_animation_pending?
+
+    taken = self.class.where(id: id, launch_animation_pending: true).update_all(launch_animation_pending: false, updated_at: Time.current)
+    self.launch_animation_pending = false
+    clear_attribute_changes([ :launch_animation_pending ])
+    taken == 1
+  end
+
   # The portrait's asset (for image_path), or nil: an upload ref, or nothing.
   def portrait_asset = portrait.to_s.match?(PORTRAIT_KEY) ? "cto_portraits/#{portrait}.svg" : nil
 

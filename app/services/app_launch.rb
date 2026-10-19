@@ -12,7 +12,9 @@
 #      chosen palette (the one place the launch/template step reads the client's
 #      colours from: bin/launch-app, docs/agents/system/new-app-onboarding-sop.md)
 #   3. the requester's AppMembership, role owner
-#   4. the AppCto: the name, portrait and palette chosen at intake, the plan and facts
+#   4. the AppCto: the name, portrait and palette chosen at intake, the plan and
+#      facts, and the initial load (launch_animation_pending: the owner's first
+#      visit to the CTO's chat plays the launch animation, task build-sign-in-modal)
 #   5. the board task "Build Launch App <sub>", designed, repositories [<sub>],
 #      so the tier's lane cap (BuildingLanes) governs its build
 #   6. Ray's handover, the first turn of the owner's chat with the new CTO
@@ -94,7 +96,8 @@ class AppLaunch
                         status: "active", theme_colors: palette)
       membership = AppMembership.create!(app_slug: app.slug, user_slug: owner_slug, role: "owner")
       app_cto = AppCto.create!(app: app, name: intake.cto_name.to_s.squish, portrait: intake.cto_avatar.presence,
-                               palette: palette, plan: plan, facts: facts, app_request_token: request.token)
+                               palette: palette, plan: plan, facts: facts, app_request_token: request.token,
+                               launch_animation_pending: true)
       task = Task.create!(task_attributes)
       request.update!(task_slug: task.slug)
       handover = AgentMessages::ClientCtoHandover.enqueue!(app_cto: app_cto, user: request.user, now: @now)

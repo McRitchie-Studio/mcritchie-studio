@@ -23,6 +23,8 @@ pin "chat_attachments"
 pin "dreams_filter"
 # Build My App's launch panel (app/views/build/_launch.html.erb).
 pin "build_launch"
+# Turbo Stream action that opens an engine modal (BuildController#sign_in_to_launch).
+pin "modal_stream"
 # chart.js is the self-contained jsDelivr/esm.sh "auto" bundle (auto-registers
 # controllers + scales, @kurkle/color inlined). chartkick is the ESM build,
 # pinned to a UNIQUE filename so propshaft serves THIS file and not the chartkick
