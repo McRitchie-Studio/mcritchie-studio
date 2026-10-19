@@ -70,7 +70,7 @@ async function send(page, text) {
 
 // A long answer: enough lines that the thread scrolls and the reveal takes a while.
 function longAnswer(label) {
-  return Array.from({ length: 14 }, (_, i) => `${label} line ${i + 1}: ${"a few more words about the app ".repeat(3)}`).join("\n\n");
+  return Array.from({ length: 20 }, (_, i) => `${label} line ${i + 1}: ${"more words about the app ".repeat(2)}`).join("\n\n");
 }
 
 const log = "[data-cto-chat-scroll]";
@@ -107,6 +107,7 @@ test("a reader at the end of the thread stays pinned as an answer types in and a
 
   // A first long answer makes the thread scroll.
   await rayAnswers(page, auth, idea, longAnswer("First"));
+  await expect(page.locator("[data-test='build-turn']", { hasText: idea }).locator("[data-agent-reveal]")).toContainText("First line 20", { timeout: 15_000 });
   await expect(page.locator("[data-agent-revealing]")).toHaveCount(0);
   const scrolls = await page.locator(log).evaluate((el) => el.scrollHeight > el.clientHeight + 200);
   expect(scrolls, "the thread is long enough to scroll").toBe(true);
@@ -119,7 +120,7 @@ test("a reader at the end of the thread stays pinned as an answer types in and a
   await page.waitForTimeout(100);
   await startSampling(page);
   await rayAnswers(page, auth, second, longAnswer("Second"));
-  await expect(page.locator("[data-test='build-turn']", { hasText: second }).locator("[data-agent-reveal]")).toContainText("Second line 14");
+  await expect(page.locator("[data-test='build-turn']", { hasText: second }).locator("[data-agent-reveal]")).toContainText("Second line 20", { timeout: 15_000 });
   await expect(page.locator("[data-agent-revealing]")).toHaveCount(0);
   await page.waitForTimeout(150);
   const pinned = await stopSampling(page);
@@ -136,7 +137,7 @@ test("a reader at the end of the thread stays pinned as an answer types in and a
   await page.waitForTimeout(100);
   await startSampling(page);
   await rayAnswers(page, auth, third, longAnswer("Third"));
-  await expect(page.locator("[data-test='build-turn']", { hasText: third }).locator("[data-agent-reveal]")).toContainText("Third line 14");
+  await expect(page.locator("[data-test='build-turn']", { hasText: third }).locator("[data-agent-reveal]")).toContainText("Third line 20", { timeout: 15_000 });
   await expect(page.locator("[data-agent-revealing]")).toHaveCount(0);
   await page.waitForTimeout(150);
   const reading = await stopSampling(page);
