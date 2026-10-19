@@ -83,6 +83,9 @@ async function tapped(page, auth, line, text, card) {
 }
 
 test("a signed-out visitor's first message answers in place, taps alone reach Build My App, and the page becomes the CTO's chat, greeted, with no reload", async ({ page, browser }) => {
+  // The whole intake, sign-in and launch in one walk, with the theme, CTO and domain
+  // cards each exercised by keyboard and tap: past the suite's 30s default.
+  test.setTimeout(90_000);
   await blockThirdPartyRequests(page);
   const { pageErrors, report } = watchPageErrors(page);
   const auth = { Authorization: `Bearer ${await adminToken(browser)}`, "Content-Type": "application/json" };
