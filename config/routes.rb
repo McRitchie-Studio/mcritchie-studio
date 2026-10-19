@@ -24,6 +24,8 @@ Rails.application.routes.draw do
   # Admin: every app requested through the funnel. Before build/:token, or
   # "requests" would be read as a token.
   get   "build/requests", to: "build#index", as: :build_requests
+  # Development only: replay the Build My App launch panel for a launched app.
+  get   "build/launch-demo/:slug", to: "build#launch_demo", as: :build_launch_demo if Rails.env.development?
   get   "build/:token", to: "build#show",   as: :build_request
   patch "build/:token", to: "build#update"
   # The landing after a signed-out Build My App's sign-in (both the magic link's

@@ -142,8 +142,34 @@ and posts them to `POST /api/v1/game_looks`. The hub then:
 - files each sheet as a `character_sheet` artifact stamped `game_model_layered`
   and the pinned model.
 
-Re-filing the same key returns what is on file. Hand the operator the look links:
+Re-filing the same key returns what is on file, and `file` refuses a second run once `filed.json` exists. Hand the operator the look links:
 `https://mcritchie.studio/people/<person>/models/<look>`.
+
+## People and looks: who a sheet files under
+
+- **An athlete** files by `espn_id`. The hub finds him through his athlete
+  record, and the new look takes his team and jersey number. All 24 starters of
+  2026-10-18 were on file.
+- **Anyone without an athlete record** (a head coach on the sideline) files by
+  name. Put `person: { first_name, last_name, vocation }` in `spec.yml` in place
+  of `espn_id` (vocation `coach`, or any non-athlete vocation), plus
+  `team_slug` for his look's team.
+  - The hub finds the person by name, or creates him with that vocation.
+  - A person found by name keeps his flags.
+  - An athlete never files by name, so a namesake is never guessed at.
+- **The R2 folder names the subject:** the `espn_id`, or the person's name slug
+  (`character-sheets/game-models/dave-canales/...`). The hub refuses a key under
+  any other folder.
+- **The look is per game:** `descriptor` names the uniform or attire and the game
+  (`Panthers sideline · 2026 Week 6 at PHI`). Re-filing the same descriptor reuses
+  the look. The first look a person gets becomes their default, which is what
+  the people picker and the recast picker show.
+- **A coach has no headshot to identify against.** Seed his face from the frames
+  whose captions name him (`photos.json` `alt`), then run `find` with those
+  crops as `face_refs`. The coach build itself (sideline attire in place of the
+  uniform, the pads and the jersey) is not a CLI stage yet: the first coach
+  sheet (Dave Canales, 2026-10-18) was built with the same pinned client and face
+  pack, plus coach prompts.
 
 ## Cost and time, measured
 

@@ -148,7 +148,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='devops-stage'][data-stage='building'][data-state='live']", 1, "the new build task is designed: Building, live"
     assert_select "[data-test='cto-chat-handover']", text: /Ray\s+Meet Coach, your CTO. I'll hand you over./
     # The CTO's opening message is there on arrival: code wrote it, no model ran, nothing is typing.
-    assert_select "[data-test='cto-chat-turn'] [data-test='cto-chat-handover'] ~ [data-test='cto-chat-reply']", text: /Hi Viewer, I'm Coach, the CTO of League Hub\./
+    assert_select "[data-test='cto-chat-turn'] [data-test='cto-chat-handover'] ~ [data-test='cto-chat-reply']", text: /Hi Viewer, I'm Coach, the agent who'll be managing League Hub\./
     assert_select "[data-test='cto-chat-typing']", 0
     assert_select "meta[name='view-transition'][content='same-origin']"
 
@@ -248,7 +248,57 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     get build_request_path(draft.token)
     complete_intake!(draft)
     patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: summary_turn!(draft).id }, as: :turbo_stream
+    assert_response :success
+    assert_select "turbo-stream[action='replace'][targets='#{BuildController::LAUNCH_TARGETS}'] template [data-test='build-launch'][data-app='league-hub']"
+  end
+
+  # Task build-launch-handoff: the launch happens on the server FIRST; the stream
+  # only presents it. The shell is swapped in place for the launch panel, and the
+  # address moves to the CTO's chat at once, so a reload mid-animation lands there.
+  test "[integration] Build My App from the summary card launches, then answers with the launch panel over the shell and the address on the CTO's chat" do
+    log_in_as users(:viewer)
+    draft = send_prompt
+    get build_request_path(draft.token)
+    complete_intake!(draft)
+    card = summary_turn!(draft)
+
+    assert_difference [ -> { App.count }, -> { AppCto.count }, -> { Task.count } ], 1 do
+      patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: card.id }, as: :turbo_stream
+    end
+    assert_response :success
+    assert_equal "text/vnd.turbo-stream.html", response.media_type
+    assert draft.reload.queued?, "launched before the panel is drawn"
+    assert_select "turbo-stream[action='replace'][targets='[data-agent-shell]'] template" do
+      assert_select "build-launch#build-launch[data-test='build-launch'][data-href='/applications/league-hub/chat']" do
+        assert_select "[data-test='build-launch-portrait'][style*='view-transition-name: agent-portrait'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
+        assert_select "[data-test='build-launch-caption']", text: /Coach\s+· CTO of League Hub/
+        assert_select "[data-test='build-launch-app']", text: "League Hub"
+        assert_select "[data-test='build-launch-step']", 3
+      end
+      assert_select "[data-test='build-launch'][style*='--cto-primary-light: 21 128 61;']", 1, "the app's own colours"
+    end
+    assert_select "turbo-stream[action='replace_url'][target='#{BuildController::LAUNCH_ID}'][url='/applications/league-hub/chat']"
+    assert_select "turbo-stream[action='remove'][target='#{BuildController::GALLERY_ID}']", 1, "nothing of /build stays under the panel"
+
+    # A reload mid-animation is a plain visit to the chat: the CTO is already speaking.
+    get chat_application_path("league-hub")
+    assert_response :success
+    assert_select "[data-test='cto-chat-reply']", text: /Hi Viewer, I'm Coach, the agent who'll be managing League Hub\./
+    assert_select "[data-test='cto-chat-typing']", 0
+
+    # The draft's own address (Back, an old link) takes its owner to the chat too;
+    # an admin reading the request from /build/requests stays on its page.
+    get build_request_path(draft.token)
     assert_redirected_to chat_application_path("league-hub")
+    log_in_as users(:alex)
+    get build_request_path(draft.token)
+    assert_response :success
+    assert_select "[data-test='build-request'][data-status='queued']"
+  end
+
+  test "[integration] the launch replay is an admin's, in development only" do
+    refute Rails.application.routes.url_helpers.respond_to?(:build_launch_demo_path), "no route outside development"
+    assert_raises(ActionController::RoutingError) { Rails.application.routes.recognize_path("/build/launch-demo/league-hub") }
   end
 
   test "[integration] a name taken after the tap is refused on the card with a next step; without a card the composer says why" do

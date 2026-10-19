@@ -44,6 +44,13 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     post link_consume_path(token: link.token)
   end
 
+  # The landing's answer to a fresh launch: the launch panel (build/_launch), which
+  # plays its steps and then visits the app's chat.
+  def assert_launch_panel_for(slug)
+    assert_response :success
+    assert_select "[data-test='build-launch-landing'] [data-test='build-launch'][data-app='#{slug}'][data-href='#{chat_application_path(slug)}']", 1
+  end
+
   def mock_google(email)
     OmniAuth.config.test_mode = true
     OmniAuth.config.mock_auth[:google_oauth2] = OmniAuth::AuthHash.new(
@@ -76,7 +83,7 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     assert_equal draft.token, session[BuildIntake::PendingLaunch::KEY]["token"]
   end
 
-  test "the magic link signs in, claims the draft, launches it once and lands on the app's chat; a refresh only reopens the app" do
+  test "the magic link signs in, claims the draft, launches it once and plays the launch panel into the app's chat; a refresh only reopens the app" do
     draft, card = ready_draft!
     press_build_my_app(draft, card)
 
@@ -85,7 +92,7 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     assert_difference [ -> { App.count }, -> { AppCto.count }, -> { Task.count } ], 1 do
       follow_redirect!
     end
-    assert_redirected_to chat_application_path("league-hub")
+    assert_launch_panel_for("league-hub")
     user = User.find_by!(email: "new-builder@example.test")
     assert_equal user, draft.reload.user, "claimed by the new session"
     assert_equal "queued", draft.status
@@ -98,7 +105,7 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     assert_redirected_to chat_application_path("league-hub"), "a refresh goes to the app and launches nothing"
   end
 
-  test "Google lands on home, which forwards to the launch, which lands on the app's chat" do
+  test "Google lands on home, which forwards to the launch, which plays the launch panel into the app's chat" do
     draft, card = ready_draft!
     press_build_my_app(draft, card)
     mock_google("google-builder@example.test")
@@ -110,7 +117,7 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     assert_difference -> { App.count }, 1 do
       follow_redirect!
     end
-    assert_redirected_to chat_application_path("league-hub")
+    assert_launch_panel_for("league-hub")
     assert_equal "google-builder@example.test", draft.reload.user.email
 
     get root_path
@@ -194,12 +201,14 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='build-summary-refusal']", 0, "the reason shows once"
   end
 
-  test "signed in, Build My App is unchanged: it launches at once and binds no press" do
+  test "signed in, Build My App is unchanged: it launches at once, into the launch panel, and binds no press" do
     draft, card = ready_draft!
     log_in_as users(:viewer)
 
     patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: card.id }, as: :turbo_stream
-    assert_redirected_to chat_application_path("league-hub")
+    assert_response :success
+    assert_select "turbo-stream template [data-test='build-launch'][data-app='league-hub']", 1, "the launch panel, in place (build-launch-handoff)"
+    assert_select "turbo-stream template [data-test='build-sign-in-prompt']", 0
     assert_equal users(:viewer), draft.reload.user
     assert_nil session[BuildIntake::PendingLaunch::KEY]
   end

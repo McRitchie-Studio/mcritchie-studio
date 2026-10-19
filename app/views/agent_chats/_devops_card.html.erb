@@ -1,27 +1,30 @@
 <%# locals: (app:, stages:, meter: nil, client: false, palette_style: nil) %>
-<%# The app chat's status card (agent_chats/_shell): the app's title, its client-facing devops as three pills, Building · Releasing · Deploying (AppDevopsStages: done, live or still to come; the live one pulses, a steady dot under prefers-reduced-motion), and the "Tokens used" bar in #cto-chat-meter, which each answer re-renders. A client app's card wears its CTO's palette (AppCto; ClientCtoHelper). %>
+<%# The app chat's status card (agent_chats/_shell): the app's title, its client-facing devops as three pills, Building · Releasing · Deploying (AppDevopsStages: done, live or still to come; the live one wears the shared CTA glow, cta-glow, in the CTO palette's colours (build_launch.css sets --glow-a, --glow-b, --glow-c; the studio primary is the fallback), a done one carries a check, a future one stays muted; the glow holds still under prefers-reduced-motion), and the "Tokens used" bar in #cto-chat-meter, which each answer re-renders. A client app's card wears its CTO's palette (AppCto; ClientCtoHelper). %>
 <div class="agent-shell-card card p-4 sm:p-5 space-y-4 <%= "border-t-4 border-t-[rgb(var(--cto-primary))] bg-[rgb(var(--cto-primary)/0.08)] #{ClientCtoHelper::PALETTE_SWITCH}" if client %>"
      <% if palette_style.present? %>style="<%= palette_style %>"<% end %>
      data-test="cto-chat-head" data-client-cto="<%= client %>">
   <h1 class="agent-shell-card-title text-xl sm:text-2xl font-bold text-heading text-center break-words">
     <%= link_to app.name, application_path(app.slug), class: "hover:underline", data: { test: "cto-chat-app-link" } %>
   </h1>
-  <ol class="grid grid-cols-3 gap-2" aria-label="Where your app is" data-test="devops-stages">
+  <ol class="devops-stages grid grid-cols-3 gap-2" aria-label="Where your app is" data-test="devops-stages">
     <% stages.each do |stage| %>
-      <li class="flex items-center justify-center gap-1.5 min-w-0 rounded-full border px-2 py-1.5 text-xs sm:text-sm font-semibold
-                 <%= stage.done? ? 'border-primary/40 bg-primary/10 text-heading' : (stage.live? ? 'border-primary text-heading' : 'border-subtle text-muted') %>"
+      <%# The live stage wears the shared CTA glow (cta-glow, app/assets/tailwind/cta_glow.css) in the app's colours; the pill inside it is opaque, so the glow shows only around it. %>
+      <li class="min-w-0 <%= 'cta-glow' if stage.live? %>"
           data-test="devops-stage" data-stage="<%= stage.key %>" data-state="<%= stage.state %>"
           <% if stage.live? %>aria-current="step"<% end %>>
-        <% if stage.done? %>
-          <span class="text-primary" aria-hidden="true">✓</span>
-        <% elsif stage.live? %>
-          <span class="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true">
-            <span class="absolute inline-flex h-full w-full rounded-full bg-primary opacity-75 motion-safe:animate-ping"></span>
-            <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary"></span>
-          </span>
-        <% end %>
-        <span class="truncate"><%= stage.label %></span>
-        <span class="sr-only"><%= { done: ", done", live: ", under way", pending: ", to come" }[stage.state] %></span>
+        <span class="devops-stage-pill flex items-center justify-center gap-1.5 min-w-0 rounded-full border px-2 py-1.5 text-xs sm:text-sm font-semibold
+                     <%= stage.done? ? 'devops-stage-done text-heading' : (stage.live? ? 'devops-stage-live text-heading' : 'border-subtle text-muted') %>">
+          <% if stage.done? %>
+            <span class="devops-stage-mark" aria-hidden="true">✓</span>
+          <% elsif stage.live? %>
+            <span class="relative flex h-2.5 w-2.5 shrink-0" aria-hidden="true">
+              <span class="devops-stage-dot absolute inline-flex h-full w-full rounded-full opacity-75 motion-safe:animate-ping"></span>
+              <span class="devops-stage-dot relative inline-flex h-2.5 w-2.5 rounded-full"></span>
+            </span>
+          <% end %>
+          <span class="truncate"><%= stage.label %></span>
+          <span class="sr-only"><%= { done: ", done", live: ", under way", pending: ", to come" }[stage.state] %></span>
+        </span>
       </li>
     <% end %>
   </ol>

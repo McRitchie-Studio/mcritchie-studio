@@ -247,4 +247,9 @@ class ArtifactTest < ActiveSupport::TestCase
     assert_not_empty writes, "losing the last subject must retire the artifact"
     assert a.reload.retired?
   end
+
+  test "a locally built game model reads by its name, not its key" do
+    assert_equal "Layered game model (bin/game-model)", Artifact.new(generator: "game_model_layered").generator_label
+    assert_equal "some_retired_row", Artifact.new(generator: "some_retired_row").generator_label
+  end
 end
