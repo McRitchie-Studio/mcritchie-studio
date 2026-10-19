@@ -31,41 +31,26 @@
   --glow-c: var(--launch-glow);
 }
 
-/* The glow itself: a soft blurred gradient of the palette behind the element,
-   breathing while work runs. The element's own fill is opaque (mixed into the
-   surface), so the glow shows only around its edge and never under its text. */
+/* The glow itself: a soft blurred gradient of the palette AROUND the element,
+   breathing while work runs: three coloured shadows, --glow-a to the left,
+   --glow-b to the right, --glow-c all round. Shadows paint outside the box
+   only, so the glow never sits under the element's text. */
 .build-launch-portrait,
 .build-launch-step[data-state="active"],
 .devops-stage-live {
-  position: relative;
-  isolation: isolate;
-}
-
-.build-launch-portrait::before,
-.build-launch-step[data-state="active"]::before,
-.devops-stage-live::before {
-  content: "";
-  position: absolute;
-  inset: -3px;
-  z-index: -1;
-  border-radius: inherit;
-  background: linear-gradient(90deg, var(--glow-a), var(--glow-b), var(--glow-c));
-  filter: blur(10px);
-  opacity: 0.45;
+  --glow-ring: 0 0 0 1px color-mix(in srgb, var(--glow-a) 45%, transparent);
+  box-shadow: var(--glow-ring),
+              -8px 0 18px -6px color-mix(in srgb, var(--glow-a) 55%, transparent),
+              8px 0 18px -6px color-mix(in srgb, var(--glow-b) 55%, transparent),
+              0 0 14px -4px color-mix(in srgb, var(--glow-c) 50%, transparent);
   animation: build-glow-breathe 2.4s ease-in-out infinite;
-  pointer-events: none;
 }
 
-.build-launch-portrait::before {
-  inset: -8px;
-  filter: blur(18px);
+.build-launch-portrait {
+  --glow-ring: 0 0 0 4px color-mix(in srgb, var(--glow-a) 30%, transparent);
 }
 
 /* 1. The launch panel */
-
-.build-launch-portrait {
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--launch-glow) 30%, transparent);
-}
 
 .build-launch-step {
   transition: border-color 300ms ease, background-color 300ms ease, opacity 300ms ease;
@@ -118,7 +103,6 @@
 .devops-stage-live {
   border-color: var(--launch-glow);
   background-color: color-mix(in srgb, var(--launch-glow) 12%, var(--color-surface));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--launch-glow) 35%, transparent);
 }
 
 .devops-stage-done {
@@ -135,8 +119,18 @@
 }
 
 @keyframes build-glow-breathe {
-  0%, 100% { opacity: 0.3; transform: scale(0.97); }
-  50% { opacity: 0.7; transform: scale(1.03); }
+  0%, 100% {
+    box-shadow: var(--glow-ring),
+                -6px 0 12px -6px color-mix(in srgb, var(--glow-a) 35%, transparent),
+                6px 0 12px -6px color-mix(in srgb, var(--glow-b) 35%, transparent),
+                0 0 8px -4px color-mix(in srgb, var(--glow-c) 30%, transparent);
+  }
+  50% {
+    box-shadow: var(--glow-ring),
+                -12px 0 24px -4px color-mix(in srgb, var(--glow-a) 70%, transparent),
+                12px 0 24px -4px color-mix(in srgb, var(--glow-b) 70%, transparent),
+                0 0 20px -2px color-mix(in srgb, var(--glow-c) 60%, transparent);
+  }
 }
 
 @keyframes build-launch-spin {
@@ -144,10 +138,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .build-launch-portrait::before,
-  .build-launch-step[data-state="active"]::before,
+  .build-launch-portrait,
+  .build-launch-step[data-state="active"],
   .build-launch-step[data-state="active"] .build-launch-ring,
-  .devops-stage-live::before {
+  .devops-stage-live {
     animation: none;
   }
 
@@ -156,13 +150,5 @@
     transition: none;
   }
 
-  .devops-stage-live {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--launch-glow) 50%, transparent);
-  }
 
-  .build-launch-portrait::before,
-  .build-launch-step[data-state="active"]::before,
-  .devops-stage-live::before {
-    opacity: 0.5;
-  }
 }

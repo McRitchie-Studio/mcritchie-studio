@@ -63,12 +63,14 @@ class BuildLaunchComponentTest < ActionView::TestCase
     assert_match(/--launch-glow:\s*var\(--launch-tint,\s*var\(--color-primary\)\);/, css, "no CTO palette: the studio primary")
     assert_match(/--glow-a:\s*var\(--launch-glow\);/, css, "the CTA glow's stop names, shared with the /build cards")
     assert_match(/--glow-b:\s*var\(--launch-glow-accent\);/, css)
-    assert_match(/\.devops-stage-live::before\s*\{[^}]*background:\s*linear-gradient\(90deg, var\(--glow-a\), var\(--glow-b\), var\(--glow-c\)\)[^}]*animation:\s*build-glow-breathe/m, css)
+    glow = css[/\.devops-stage-live\s*\{\s*--glow-ring[^}]*\}/m].to_s
+    %w[--glow-a --glow-b --glow-c].each { |stop| assert_includes glow, "var(#{stop})", "the live pill's glow uses #{stop}" }
+    assert_includes glow, "animation: build-glow-breathe"
     assert_match(/\.build-launch-step\[data-state="active"\] \.build-launch-ring\s*\{[^}]*animation:/m, css)
     reduced = css[/@media \(prefers-reduced-motion: reduce\)\s*\{.*\z/m]
     assert reduced, "a reduced-motion block"
     stilled = reduced[/\A[^{]*\{\s*([^{]*)\{\s*animation:\s*none;/m, 1].to_s
-    [ ".build-launch-portrait::before", '.build-launch-step[data-state="active"] .build-launch-ring', ".devops-stage-live::before" ].each do |selector|
+    [ ".build-launch-portrait", '.build-launch-step[data-state="active"] .build-launch-ring', ".devops-stage-live" ].each do |selector|
       assert_includes stilled, selector, "#{selector} holds still"
     end
     assert_includes Rails.root.join("app/assets/tailwind/application.css").read, "@import './build_launch.css';"
