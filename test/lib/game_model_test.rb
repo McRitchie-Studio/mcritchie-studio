@@ -136,6 +136,7 @@ class GameModelTest < Minitest::Test
     assert_equal({ "first_name" => "Dave", "last_name" => "Canales", "vocation" => "coach" }, payload[:person])
     assert_equal "carolina-panthers", payload[:team_slug]
     refute payload.key?(:espn_id)
+    refute payload.key?(:jersey_number), "a coach's look carries no jersey number"
     assert_equal "123", GameModel::Spec.new(".", SPEC).folder
     assert_raises(GameModel::Failure) { GameModel::Spec.new(".", SPEC.reject { |k, _| k == "espn_id" }).folder }
   end

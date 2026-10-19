@@ -398,7 +398,7 @@ module GameModel
 
     def payload(spec, sheets)
       who = spec["espn_id"].to_s != "" ? { espn_id: spec["espn_id"].to_s } : { person: spec["person"], team_slug: spec["team_slug"] }
-      { **who, descriptor: spec["descriptor"], jersey_number: spec["number"]&.to_i,
+      { **who, descriptor: spec["descriptor"], jersey_number: (spec["number"]&.to_i if who[:espn_id]),
         generation_notes: spec["notes"], sheets: sheets }.compact
     end
   end
