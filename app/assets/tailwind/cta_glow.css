@@ -30,7 +30,14 @@
    CTA is scrolled off screen), data-glow="off" (a spent CTA, or the domain
    card's Use Domain with no valid name), or a disabled button. Under
    prefers-reduced-motion the glow holds still. Unlayered, like
-   agent_typing.css. */
+   agent_typing.css.
+
+   More than three colours: --glow-stops, when set, is the gradient's whole
+   colour list (comma separated, first colour repeated last so the ring closes)
+   and replaces --glow-a/b/c. It is a plain, unregistered property, so it does
+   not blend on a change; the theme card keeps the three registered colours.
+   .cta-glow-rainbow is the one preset (task landing-build-ctas: the landing
+   hero's Build Your App). */
 
 @property --glow-a { syntax: "<color>"; inherits: true; initial-value: transparent; }
 @property --glow-b { syntax: "<color>"; inherits: true; initial-value: transparent; }
@@ -53,7 +60,7 @@
   inset: -3px;
   z-index: -1;
   border-radius: 9999px;
-  background: conic-gradient(from var(--glow-from, 0deg), var(--glow-a), var(--glow-b), var(--glow-c), var(--glow-a));
+  background: conic-gradient(from var(--glow-from, 0deg), var(--glow-stops, var(--glow-a), var(--glow-b), var(--glow-c), var(--glow-a)));
   filter: blur(12px);
   opacity: 0.75;
   pointer-events: none;
@@ -74,6 +81,13 @@
 .cta-glow:has(> [data-build-glow="false"])::before,
 .cta-glow:has(> [data-build-glow="false"])::after {
   display: none;
+}
+
+/* The rainbow preset: seven stops round the ring, the first repeated to close
+   it. Bright enough to read as a halo on the pale light-mode page and on the
+   dark navy one. */
+.cta-glow-rainbow {
+  --glow-stops: #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #6366f1, #d946ef, #ef4444;
 }
 
 @keyframes cta-glow-trade {
