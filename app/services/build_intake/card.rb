@@ -11,11 +11,11 @@ module BuildIntake
   #   idea     title (required, the app's name in a few words, at most
   #            TITLE_WORDS), features (2 to 3 short bullets, required), idea
   #            (an optional one-sentence description): what the visitor taps
-  #            Build App on, or "Build something else"
-  #   cto      names (1 to 3), portrait (a BuildIntake::Portraits key)
+  #            Start App on, or "Build something else"
   #   palette  palettes (1 to 3), each { name, light, dark }, each mode exactly
   #            { primary, accent, surface, text } as hex colours, the text
   #            readable on the surface (WCAG AA, 4.5:1) in BOTH modes
+  #   cto      names (1 to 3), portrait (a BuildIntake::Portraits key)
   #   address  names (1 to 3): domain suggestions, each a valid, unreserved name
   #   summary  nothing: the app as the request now stands, drawn by the page from
   #            the request's own fields, with Build My App. Code also attaches
