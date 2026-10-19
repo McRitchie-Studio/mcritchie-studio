@@ -13,8 +13,9 @@
 //
 //   - the domain card ([data-build-address]): the name field is cleaned as it
 //     is typed (the server's AppRequest.normalize_subdomain, done again here)
-//     and checked live; a name we KNOW is refused disables Use Domain (the
-//     server re-checks on the tap). The field is the source of truth for the
+//     and checked live once it changes (the render's own answer comes with
+//     the card); a name we KNOW is refused, or the domain already chosen,
+//     disables Use Domain (the server re-checks on the tap). The field is the source of truth for the
 //     glows (build_domain.js): the chip it matches glows, and a chip tap fills
 //     the field without focusing it. The server draws a taken chip disabled;
 //   - the CTO card ([data-build-cto]): the portrait or "New image" opens the
@@ -82,17 +83,16 @@ const checkTimers = new WeakMap();
 function checkAddress(card) {
   const input = card.querySelector("[data-build-address-input]");
   const status = card.querySelector("[data-build-address-status]");
-  const submit = card.querySelector("[data-build-address-submit]");
   if (!input || !status) return;
   const name = input.value.replace(/-+$/, "");
   clearTimeout(checkTimers.get(card));
   const show = (state, text) => {
     status.dataset.state = state;
     status.textContent = text;
-    if (submit) submit.disabled = state === "taken";
     syncDomainGlow(card, { taken: state === "taken" });
   };
-  if (!name) { show("idle", ""); return; }
+  // The domain this request already holds needs no check: Use Domain is spent.
+  if (!name || name === card.dataset.chosenName) { show("idle", ""); return; }
   show("checking", "Checking…");
   checkTimers.set(card, setTimeout(async () => {
     try {
@@ -208,11 +208,15 @@ document.addEventListener("click", (event) => {
   }
 });
 
-// A card already on the page (or one a poll or a tap brings) checks its names once.
+// A card already on the page (or one a poll or a tap brings) draws its glows
+// from the answer the server rendered with it (build/cards/_address checks all
+// its names once, on the render), so it asks /build/check nothing on arrival;
+// only a changed name (typing, a chip tap) is checked live.
 function checkNewCards() {
   document.querySelectorAll("[data-build-address]:not([data-build-address-checked])").forEach((card) => {
     card.dataset.buildAddressChecked = "true";
-    checkAddress(card);
+    const status = card.querySelector("[data-build-address-status]");
+    syncDomainGlow(card, { taken: status?.dataset.state === "taken" });
   });
 }
 

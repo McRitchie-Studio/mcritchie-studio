@@ -22,7 +22,8 @@ module BuildIntake
   # post. It goes through BuildIntake::Ingest like a typed message, so the
   # dispatcher answers it with the next step within BuildIntake::Caps, and at a
   # cap the visitor reads the cap line instead. The write and the turn commit
-  # together: a refused tap posts nothing.
+  # together: a refused tap posts nothing, and so does a theme or domain tap on
+  # the answer already saved (UNCHANGED_IS_A_NO_OP; #relay is then nil).
   class Choice
     class Refused < StandardError; end
 
@@ -36,6 +37,9 @@ module BuildIntake
       "cto" => ->(r) { "My CTO is #{r.cto_name}." },
       "address" => ->(r) { "Let's use #{r.host}." }
     }.freeze
+
+    # The taps that do nothing when they would save the value already saved.
+    UNCHANGED_IS_A_NO_OP = %w[palette address].freeze
 
     attr_reader :relay
 
@@ -52,8 +56,14 @@ module BuildIntake
 
       AppRequest.transaction do
         send(:"choose_#{field}", params)
-        @request.save!
-        @relay = @ingest.call(RELAYS.fetch(field.to_s).call(@request), client_id: params[:client_id])
+        # Choose Theme or Use Domain on the answer already saved: nothing to
+        # write and nothing to tell Ray, so no turn is spent (the card also
+        # disables its button while the pick is the saved one).
+        unchanged = UNCHANGED_IS_A_NO_OP.include?(field.to_s) && !@request.changed?
+        unless unchanged
+          @request.save!
+          @relay = @ingest.call(RELAYS.fetch(field.to_s).call(@request), client_id: params[:client_id])
+        end
       end
       @request
     rescue ActiveRecord::RecordInvalid => e

@@ -4,15 +4,25 @@
 //   - the theme card: picking an option ([data-glow-a] on its radio) moves the
 //     glow behind Choose Theme ([data-build-theme-glow]) to that theme's
 //     colours. The colours are registered CSS properties, so the browser blends
-//     them. The glow is spent (data-glow="off") while the pick is the theme
-//     already chosen (the card's data-chosen-index).
+//     them. While the pick is the theme already chosen (the card's
+//     data-chosen-index) the glow is spent (data-glow="off") and Choose Theme is
+//     disabled: a re-tap would spend a turn of Ray's for nothing.
 //   - every glow: one IntersectionObserver marks a CTA scrolled off screen
-//     data-glow-visible="false", so it draws no blurred layer.
+//     data-glow-visible="false", so it draws no blurred layer; and one
+//     ResizeObserver keeps its --glow-squash, the height-to-width share the CSS
+//     squashes its turning circle by, so the glow hugs a wide button.
+//   - Turbo: before a page is cached both observers let go of every element,
+//     and the cached copy loses its data-glow-watched mark, so a restored page
+//     is watched afresh and nothing removed is kept alive (task
+//     build-flow-polish). A watch after a stream render also drops any glow
+//     the render took off the page.
 //
-// Pure where it can be (themeGlowVars, syncThemeGlow take stand-ins), so
-// test/javascript/cta_glow_test.js runs it without a browser.
+// Pure where it can be (themeGlowVars, syncThemeGlow, glowSquash take
+// stand-ins), so test/javascript/cta_glow_test.js runs it without a browser.
 
 export const GLOW_VARS = ["--glow-a", "--glow-b", "--glow-c"];
+// cta_glow.css draws the glow's circle this much wider and taller than the CTA.
+export const GLOW_BLEED_PX = 16;
 
 // The glow colours a theme option carries: { "--glow-a": "#…", … }, or null
 // when it carries none.
@@ -32,19 +42,74 @@ export function syncThemeGlow(card) {
   if (vars) Object.entries(vars).forEach(([name, value]) => glow.style.setProperty(name, value));
   const spent = card.dataset.chosenIndex !== undefined && card.dataset.chosenIndex !== "" && option.value === card.dataset.chosenIndex;
   if (spent) glow.dataset.glow = "off"; else delete glow.dataset.glow;
+  const submit = glow.querySelector?.("button[type='submit']");
+  if (submit) submit.disabled = spent;
   return vars;
 }
 
-let observer = null;
+// The circle's squash for a CTA of this size: its glow box's height over its
+// width, as a unitless share (1 for a round CTA, small for a wide button).
+export function glowSquash(width, height, bleed = GLOW_BLEED_PX) {
+  if (!(width > 0) || !(height > 0)) return 1;
+  return Math.min(1, (height + bleed) / (width + bleed));
+}
+
+const watched = new Set();
+let visibility = null;
+let sizes = null;
+
+function squash(el, width, height) {
+  el.style.setProperty("--glow-squash", glowSquash(width, height).toFixed(3));
+}
 
 // Watches every .cta-glow under root (new ones too: call again after a render).
 export function watchGlows(root = document) {
-  if (typeof IntersectionObserver === "undefined") return;
-  observer ||= new IntersectionObserver((entries) => {
-    entries.forEach((entry) => { entry.target.dataset.glowVisible = String(entry.isIntersecting); });
+  watched.forEach((el) => {
+    if (el.isConnected) return;
+    visibility?.unobserve(el);
+    sizes?.unobserve(el);
+    watched.delete(el);
   });
+  if (typeof IntersectionObserver !== "undefined") {
+    visibility ||= new IntersectionObserver((entries) => {
+      entries.forEach((entry) => { entry.target.dataset.glowVisible = String(entry.isIntersecting); });
+    });
+  }
+  if (typeof ResizeObserver !== "undefined") {
+    sizes ||= new ResizeObserver((entries) => {
+      entries.forEach((entry) => {
+        const box = entry.borderBoxSize?.[0];
+        squash(entry.target, box ? box.inlineSize : entry.contentRect.width, box ? box.blockSize : entry.contentRect.height);
+      });
+    });
+  }
   root.querySelectorAll(".cta-glow:not([data-glow-watched])").forEach((el) => {
     el.dataset.glowWatched = "true";
-    observer.observe(el);
+    watched.add(el);
+    visibility?.observe(el);
+    sizes?.observe(el);
   });
+}
+
+// Lets go of every glow: the observers disconnect and the marks come off, so the
+// page Turbo caches holds nothing it watched and a restore watches afresh.
+export function releaseGlows(root = document) {
+  visibility?.disconnect();
+  sizes?.disconnect();
+  visibility = null;
+  sizes = null;
+  watched.clear();
+  root.querySelectorAll?.(".cta-glow[data-glow-watched]").forEach((el) => {
+    delete el.dataset.glowWatched;
+    delete el.dataset.glowVisible;
+  });
+}
+
+// How many glows are watched now (the leak check in test/javascript and e2e).
+export function watchedCount() {
+  return watched.size;
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("turbo:before-cache", () => releaseGlows());
 }

@@ -128,6 +128,25 @@ class AppRequest < ApplicationRecord
     nil
   end
 
+  # unavailable_reason for several names in one pass: { name => reason or nil },
+  # keyed by the names as given. One read of the reserved list and one query each
+  # for the requests and apps holding any of them, however many names (the
+  # domain card checks all of Ray's suggestions on every render).
+  def self.unavailable_reasons(names, except: nil)
+    normal = Array(names).index_with { |name| normalize_subdomain(name) }
+    wanted = normal.values.select { |name| name.match?(SUBDOMAIN_FORMAT) }.uniq
+    reserved = wanted.any? ? reserved_names : []
+    held = holding.where(subdomain: wanted)
+    held = held.where.not(id: except.id) if except&.persisted?
+    taken = wanted.empty? ? Set.new : (held.pluck(:subdomain) + App.where(slug: wanted).pluck(:slug)).to_set
+    normal.transform_values do |name|
+      if !name.match?(SUBDOMAIN_FORMAT) then "Use 3 to 30 letters, numbers or hyphens, starting and ending with a letter or number."
+      elsif reserved.include?(name) then "That name is reserved."
+      elsif taken.include?(name) then "That name is taken."
+      end
+    end
+  end
+
   # What the name field does as the user types, done again on the server so the
   # two always agree: lowercase, drop the parent domain, turn every run of
   # anything that is not a-z or 0-9 into ONE hyphen, and trim hyphens off both
