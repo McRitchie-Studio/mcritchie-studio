@@ -407,12 +407,16 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   const head = page.locator("[data-test='cto-chat-head'][data-client-cto='true']");
   await expect(head.locator("h1")).toBeVisible();
   await expect(head.locator("[data-test='devops-stage'][data-stage='building']")).toHaveAttribute("data-state", "live");
+  // The build task is designed and no launcher is live: the pill says Prepping, never Building work (task app-card-stage-labels).
+  await expect(head.locator("[data-test='devops-stage'][data-stage='building'] [data-test='devops-stage-sub-label']")).toHaveText("Prepping");
+  await expect(head.locator("[data-test='devops-stage'][data-stage='building'] [data-test='devops-stage-eta']")).toHaveText("no builder");
   await expect(head.locator("[data-test='cto-chat-usage']")).toContainText("Tokens used");
   const handover = page.locator("[data-test='cto-chat-turn']", { has: page.locator("[data-test='cto-chat-handover']") });
   await expect(handover).toContainText("Meet Marbles, your CTO. I'll hand you over.");
   // Launched at sign-in, before the first-name step: the greeting has no name yet.
   await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("Hi there, I'm Marbles, the agent who'll be managing");
-  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("It's building now");
+  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("It's in line to be built");
+  await expect(handover.locator("[data-test='cto-chat-reply']")).not.toContainText("building now");
   await expect(page.locator("[data-test='cto-chat-typing']")).toHaveCount(0);
   await expect(page.locator("turbo-cable-stream-source[channel='CtoChatChannel']")).toHaveAttribute("connected", "");
 

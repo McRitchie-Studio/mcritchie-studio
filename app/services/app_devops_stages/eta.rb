@@ -10,6 +10,12 @@ class AppDevopsStages
   #   Deploying is the median of the last SAMPLE shipped releases' production
   #   deploys (prod_deploy_started_at → shipped_at).
   #
+  # This is the board's one stage-duration spine, read the way TaskIntelligence's
+  # stage-speed median reads it (median seconds_in_from by from_stage), here
+  # windowed to the newest SAMPLE. Review::DurationRoll (a per-repo review-gate
+  # span, capped at an hour) and Release::DurationCache (per-release ladders)
+  # answer different questions and are not reused.
+  #
   # The ETA is what is LEFT: the median less the time the task has already spent
   # on the step. Fewer than MIN_SAMPLES durations and there is no ETA at all (the
   # card shows the sub-label alone): a number from nothing would be a promise.
