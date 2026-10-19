@@ -20,6 +20,9 @@ Rails.application.config.filter_parameters += [
   # String, so Api::V1::FactsController#mask_logged_parameters masks a number or
   # a boolean, and every other parameter that is not a name.
   /\Afact\.value\z/,
+  # A client bundle's file bodies (POST /api/v1/client_bundles/:sub): megabytes of
+  # base64 that the request log has no use for.
+  :content_base64,
   # An admin login's one-time code, nested and at the top level of its own API.
   /\Aagent_login_request\.code\z/,
   lambda do |key, value, params = nil|

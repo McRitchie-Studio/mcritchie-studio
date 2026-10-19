@@ -711,6 +711,9 @@ Rails.application.routes.draw do
           post :retire
         end
       end
+      # Publish a client app's static bundle to the shared host (bin/client-bundle;
+      # docs/agents/system/client-app-host.md). Agent sessions only.
+      post "client_bundles/:sub", to: "client_bundles#create", as: :client_bundle
       # Rename one record's slug with every row that names it (admin sessions).
       patch "slugs/:kind/:slug", to: "slug_renames#update", as: :slug_rename
       # The person/athlete projection turf-monster syncs from. Read-only by
