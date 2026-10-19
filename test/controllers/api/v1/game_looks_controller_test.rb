@@ -116,15 +116,15 @@ module Api
         assert_response :ok, "a re-post finds the person and the look on file"
       end
 
-      test "a person already on file is found by name, not duplicated" do
+      test "a by-name filing never lands on a namesake athlete" do
         @stored << "character-sheets/game-models/josh-allen/x-base-1.jpg"
-        assert_no_difference "Person.count" do
+        assert_no_difference ["Person.count", "Appearance.count", "Artifact.count", "ErrorLog.count"] do
           api_post(coach_payload({ first_name: "Josh", last_name: "Allen", vocation: "coach" })
                      .merge(sheets: [{ variant: "base", object_key: "character-sheets/game-models/josh-allen/x-base-1.jpg" }]))
         end
-        assert_response :created
-        assert_equal "josh-allen", data["person"]
-        assert_not Person.find_by!(slug: "josh-allen").coach?, "a person found by name keeps his flags"
+        assert_response :unprocessable_entity
+        assert_equal "NAMESAKE", JSON.parse(response.body)["error_code"]
+        assert_not Person.find_by!(slug: "josh-allen").coach?, "the athlete keeps his flags"
       end
 
       test "person refusals write nothing, a person included" do

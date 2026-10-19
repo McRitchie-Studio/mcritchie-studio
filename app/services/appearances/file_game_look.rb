@@ -138,6 +138,9 @@ module Appearances
       end
 
       found = Person.find_by_name(first, last)
+      # A namesake athlete is someone else: never file a by-name sheet on him.
+      raise Refused.new("#{found.slug} is on file as an athlete; file an athlete by espn_id", "NAMESAKE") if found&.athlete?
+
       Subject.new(person_slug: found&.slug, team_slug: @params["team_slug"].presence, jersey_number: nil,
                   folder: "#{first} #{last}".parameterize, new_person: { first_name: first, last_name: last, vocation: vocation })
     end
