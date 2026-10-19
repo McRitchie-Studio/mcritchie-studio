@@ -70,7 +70,7 @@ class ClientBuildLauncherLoopTest < ActionDispatch::IntegrationTest
   def launcher(builder:, publisher: StubPublisher.new, dry_run: false)
     ClientBuildLauncher::Launcher.new(client: @client, config: CONFIG, worker: "test-mac", builder: builder, publisher: publisher,
                                       desk_bound: ->(_slug) { false }, root: @root, out: @out, dry_run: dry_run,
-                                      sleeper: ->(_s) {})
+                                      sleeper: ->(_s) { })
   end
 
   def writing_builder
