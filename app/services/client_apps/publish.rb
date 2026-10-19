@@ -33,8 +33,15 @@ module ClientApps
       return "no such app" unless app
       return "#{app.slug} is not a valid preview subdomain" unless app.slug.to_s.match?(ClientAppHost::LABEL)
       return "#{app.slug} is a reserved name (one of ours), never a client preview" if AppRequest.reserved_names.include?(app.slug)
+      # The registry's own apps and libraries (config/apps.yml), the hub among
+      # them: reserved_names misses any whose host is not under mcritchie.studio.
+      return "#{app.slug} is one of ours (config/apps.yml), never a client preview" if registered_slug?(app.slug)
 
       nil
+    end
+
+    def self.registered_slug?(slug)
+      (AppCatalog.apps + AppCatalog.libraries).any? { |entry| entry.slug == slug.to_s }
     end
 
     # The app's build task (the board task AppLaunch or AppRequest#queue! opened

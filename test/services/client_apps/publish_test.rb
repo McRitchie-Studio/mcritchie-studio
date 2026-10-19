@@ -95,6 +95,11 @@ module ClientApps
       assert_match(/reserved/, error.message)
       assert_nil reserved.reload.preview_version
 
+      hub = apps(:mcritchie_studio)
+      error = assert_raises(Publish::Refused) { Publish.new(app: hub, files: bundle_files, by: "x").call }
+      assert_match(/one of ours/, error.message)
+      assert_nil hub.reload.preview_version
+
       odd = App.create!(slug: "x", name: "X")
       assert_raises(Publish::Refused) { Publish.new(app: odd, files: bundle_files, by: "x").call }
     end
