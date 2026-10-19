@@ -1,18 +1,50 @@
 // [e2e] The agent shell as the conversation grows (app/views/agent_chats/_shell.html.erb,
-// app/javascript/agent_shell.js, app/assets/tailwind/agent_shell.css; task
-// build-launch-chat-growth). Alex, 2026-10-18: the conversation should take about 40%
-// of the window at first and about 80% as it goes on, the chat box always at the
-// window's bottom, the gallery pushed off screen, and the move from /build to
-// /build/<token> visibly animated.
+// app/javascript/agent_shell.js, app/assets/tailwind/agent_shell.css; tasks
+// build-launch-chat-growth and build-chat-reading-flow). Alex, 2026-10-18: the
+// conversation should take about 40% of the window at first and about 80% as it goes
+// on, the chat box always at the window's bottom; and the head's makeup (the gallery
+// gone, "What do you want to build?" shrunk) should follow the CHAT'S SIZE as it
+// grows, not the send of a message. A new answer from Ray types itself in, and his
+// words sit on the page, not in a bubble (app/javascript/agent_reveal.js).
 //
-// What only a browser shows: the first message animates in place (no reload), the
-// head compacts in steps, the shell stops at the window's height while the thread
-// scrolls inside it, and the chat box stays in the window. Then the same on the
-// CTO chat. NOT @qa-readonly: it writes requests and agent messages.
+// What only a browser shows: the first message animates in place (no reload) and
+// leaves the hero and gallery standing; the head compacts in steps as the thread
+// grows, and the gallery slides away; the shell stops at the window's height while
+// the thread scrolls inside it; the chat box stays in the window; a reload opens at
+// its thread's step. Then the same on the CTO chat, and the typewriter.
+// NOT @qa-readonly: it writes requests and agent messages.
 const { test, expect } = require("@playwright/test");
 const { blockThirdPartyRequests, loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
 
 test.use({ storageState: VISITOR });
+
+// The mailbox API's bearer token, read from an admin page in a SEPARATE context,
+// so the visitor's own browser stays signed out (as build_funnel.spec.js does).
+async function adminToken(browser) {
+  const context = await browser.newContext();
+  const admin = await context.newPage();
+  await loginWithMagicLink(admin, "alex@test.com");
+  await admin.goto("/agents/activities");
+  const token = await admin.getAttribute("meta[name='e2e-api-token']", "content");
+  await context.close();
+  return token;
+}
+
+// Ray answers the visitor's message through the real mailbox API; the page polls.
+async function rayAnswers(page, auth, content, body) {
+  const worker = `e2e-reveal-${Date.now()}`;
+  for (let i = 0; i < 10; i += 1) {
+    const claimed = await page.request.post("/api/v1/agent_messages/claim", { headers: auth, data: { souls: ["ray"], worker, channel: "web" } });
+    expect(claimed.ok()).toBeTruthy();
+    const message = (await claimed.json()).data;
+    expect(message, `a ray message waiting for "${content}"`).toBeTruthy();
+    const mine = message.content === content;
+    const done = await page.request.post(`/api/v1/agent_messages/${message.id}/complete`, { headers: auth, data: { worker, response_text: mine ? body : "ok" } });
+    expect(done.ok()).toBeTruthy();
+    if (mine) return;
+  }
+  throw new Error(`never claimed "${content}"`);
+}
 
 // The shell's height as a share of the window, the head's height, and whether the
 // chat box sits inside the window.
@@ -44,7 +76,7 @@ async function send(page, text) {
   await expect(page.locator("[data-test='cto-chat-sent']", { hasText: text })).toHaveCount(1);
 }
 
-test("on /build the first message animates in place, and a long conversation keeps the chat box in view with the head compact", async ({ page }) => {
+test("on /build the first message leaves the hero standing; the head compacts as the thread grows, and a long conversation keeps the chat box in view", async ({ page }) => {
   await blockThirdPartyRequests(page);
   const { pageErrors, report } = watchPageErrors(page);
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -55,43 +87,53 @@ test("on /build the first message animates in place, and a long conversation kee
   const start = await measure(page);
   expect(start.size).toBe("full");
   expect(start.share, "the opening shell is under half the window").toBeLessThan(0.62);
-  await expect(page.locator("[data-test='build-gallery']"), "the gallery shows below the opening shell").toBeInViewport({ ratio: 0.2 });
+  const gallery = page.locator("[data-test='build-gallery']");
+  await expect(gallery, "the gallery shows below the opening shell").toBeInViewport({ ratio: 0.2 });
   const fullHead = start.head;
 
   await page.evaluate(() => {
     window.__marker = "kept";
     window.__animated = [];
+    window.__sizes = [];
     document.addEventListener("animationstart", (e) => window.__animated.push(e.animationName));
     document.addEventListener("transitionstart", (e) => window.__animated.push(`${e.target.className.split?.(" ")[0] || e.target.tagName}:${e.propertyName}`));
+    new MutationObserver(() => {
+      const size = document.querySelector("[data-agent-shell]")?.dataset.shellSize;
+      if (size && window.__sizes.at(-1) !== size) window.__sizes.push(size);
+    }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["data-shell-size"] });
   });
   const box = page.getByLabel("Tell Ray what you want to build");
   await box.fill(`A recipe box for my family ${Date.now()}`);
   await page.waitForTimeout(2200); // past the bot shield's two seconds
   await box.press("Enter");
   await expect(page).toHaveURL(/\/build\/[A-Za-z0-9_-]{10,}$/);
-  await expect(page.locator("[data-agent-shell]")).toHaveAttribute("data-shell-size", "medium");
   expect(await page.evaluate(() => window.__marker), "no reload").toBe("kept");
-  // The move is animated: the thread slides in, the portrait and heading shrink.
-  // (the gallery slides away too, before the stream removes it).
+  // The thread slides in; a SEND does not compact the head: one short turn still
+  // fits beside the hero, so the heading, the subtitle and the gallery stay.
+  await expect.poll(() => page.evaluate(() => window.__animated.includes("agent-shell-thread-in"))).toBe(true);
+  await page.waitForTimeout(600);
+  await expect(page.locator("[data-agent-shell]")).toHaveAttribute("data-shell-size", "full");
+  await expect(page.locator("[data-test='build-heading'] .agent-shell-subtitle")).toBeVisible();
+  await expect(gallery, "the gallery stays while the conversation is short").toBeVisible();
+  expect((await measure(page)).head, "the hero kept its size").toBeGreaterThanOrEqual(fullHead - 1);
+
+  // As the thread grows the head steps down (medium, then compact, one way), its
+  // shrink animated, and the gallery slides away for good.
+  for (let i = 1; i <= 7; i += 1) {
+    await send(page, `Another thought, number ${i}: ${"and some detail ".repeat(6)}`);
+  }
+  await expect(page.locator("[data-agent-shell]")).toHaveAttribute("data-shell-size", "compact");
+  await expect(gallery, "the gallery went once the thread grew").toBeHidden();
+  expect(await page.evaluate(() => window.__sizes), "full, then medium, then compact: forward only").toEqual(["medium", "compact"]);
   await expect.poll(() => page.evaluate(() => {
     const seen = window.__animated;
     return {
-      thread: seen.includes("agent-shell-thread-in"),
       portrait: seen.some((name) => name.endsWith(":width")),
       subtitle: seen.some((name) => /^agent-shell-subtitle:/.test(name)),
       heading: seen.some((name) => /^text-3xl:font-size$/.test(name)),
       gallery: seen.some((name) => /:opacity$/.test(name) && !/^agent-shell-subtitle/.test(name)),
     };
-  })).toEqual({ thread: true, portrait: true, subtitle: true, heading: true, gallery: true });
-  await page.waitForTimeout(500);
-  expect((await measure(page)).head, "the portrait shrank").toBeLessThan(fullHead);
-
-  // A long conversation: the head goes compact, the shell stops at the window, the
-  // thread scrolls inside it, and the chat box stays in the window.
-  for (let i = 1; i <= 7; i += 1) {
-    await send(page, `Another thought, number ${i}: ${"and some detail ".repeat(6)}`);
-  }
-  await expect(page.locator("[data-agent-shell]")).toHaveAttribute("data-shell-size", "compact");
+  })).toEqual({ portrait: true, subtitle: true, heading: true, gallery: true });
   await page.waitForTimeout(500);
   const grown = await measure(page);
   expect(grown.share, "the conversation fills most of the window").toBeGreaterThan(0.75);
@@ -113,9 +155,10 @@ test("on /build the first message animates in place, and a long conversation kee
   expect(phone.share).toBeLessThanOrEqual(1.0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), "nothing runs off the side").toBeLessThanOrEqual(0);
 
-  // A reload paints compact at once (the server's step), with the thread at its end.
+  // A reload opens at its thread's step: compact, the gallery gone, at the end.
   await page.reload();
   await expect(page.locator("[data-agent-shell]")).toHaveAttribute("data-shell-size", "compact");
+  await expect(gallery).toBeHidden();
   expect((await measure(page)).composerInView).toBe(true);
   expect(pageErrors, report()).toHaveLength(0);
 });
@@ -138,5 +181,87 @@ test("the CTO chat grows the same way: compact head, window-tall thread, chat bo
   expect(grown.threadClear).toBe(true);
   expect(grown.shellBottom).toBeLessThanOrEqual(1);
   expect(grown.logAtEnd).toBe(true);
+  expect(pageErrors, report()).toHaveLength(0);
+});
+
+test("a new answer from Ray types itself in on the page, its card after it; history and a reload show at once", async ({ page, browser }) => {
+  await blockThirdPartyRequests(page);
+  const { pageErrors, report } = watchPageErrors(page);
+  const auth = { Authorization: `Bearer ${await adminToken(browser)}`, "Content-Type": "application/json" };
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/build");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const idea = `A tide chart for surfers ${Date.now()}`;
+  const box = page.getByLabel("Tell Ray what you want to build");
+  await box.fill(idea);
+  await page.waitForTimeout(2200);
+  await box.press("Enter");
+  const turn = page.locator("[data-test='build-turn']", { hasText: idea });
+  await expect(turn).toHaveAttribute("data-pending", "true");
+
+  // What the reveal does, as it does it: a screen reader's whole copy, the turn
+  // marked while it types, the card held back, the visible words growing.
+  await page.evaluate(() => {
+    const seen = window.__reveal = { revealing: false, copy: "", hiddenBody: false, cardShownWhileTyping: false, lengths: [] };
+    new MutationObserver(() => {
+      const t = document.querySelector("[data-agent-revealing]");
+      if (t) {
+        seen.revealing = true;
+        const copy = t.querySelector("[data-agent-reveal-copy]");
+        if (copy) seen.copy = copy.textContent;
+        const body = t.querySelector("[data-agent-reveal]");
+        if (body?.getAttribute("aria-hidden") === "true") seen.hiddenBody = true;
+        if (body) seen.lengths.push(body.textContent.length);
+        const card = t.querySelector("[data-action-card]");
+        if (card && card.getBoundingClientRect().height > 0) seen.cardShownWhileTyping = true;
+      }
+    }).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true });
+  });
+
+  const words = "Here is the app **I hear**: a tide chart that knows your break.\n\n- Tides by the hour\n- Swell and wind together\n- A morning alert when it is good";
+  const card = { kind: "intake", card: "idea", title: "Tide Chart", features: ["Tides", "Swell"] };
+  await rayAnswers(page, auth, idea, `${words}\n===PROPOSAL===\n${JSON.stringify(card)}`);
+
+  const reply = turn.locator("[data-test='cto-chat-reply']");
+  await expect(reply.locator("[data-agent-reveal]")).toContainText("A morning alert when it is good");
+  await expect(turn).not.toHaveAttribute("data-agent-revealing", "");
+  await expect(turn.locator("[data-test='build-card-idea']"), "the card follows the words").toBeVisible();
+  await expect(reply.locator("strong")).toHaveText("I hear");
+  await expect(reply.locator("li")).toHaveCount(3);
+  await expect(reply.locator("[data-agent-reveal-copy]"), "the screen reader's copy goes at the end").toHaveCount(0);
+  await expect(reply.locator("[data-agent-reveal]")).not.toHaveAttribute("aria-hidden", "true");
+
+  const seen = await page.evaluate(() => window.__reveal);
+  expect(seen.revealing, "the answer typed in").toBe(true);
+  expect(seen.hiddenBody, "the typing words are hidden from a screen reader").toBe(true);
+  expect(seen.copy, "a screen reader had the whole answer at once").toContain("A morning alert when it is good");
+  expect(seen.cardShownWhileTyping, "the card waited for the words").toBe(false);
+  expect(seen.lengths.length, "the words grew over several frames").toBeGreaterThan(3);
+  expect(Math.min(...seen.lengths), "it started short").toBeLessThan(40);
+
+  // Ray's words sit on the page: no bubble behind them, in either theme.
+  const look = await reply.evaluate((el) => {
+    const style = getComputedStyle(el);
+    return { bg: style.backgroundColor, border: style.borderTopWidth, width: el.getBoundingClientRect().width,
+             log: el.closest("[data-cto-chat-scroll]").getBoundingClientRect().width };
+  });
+  expect(look.bg).toBe("rgba(0, 0, 0, 0)");
+  expect(look.border).toBe("0px");
+  expect(look.width, "the thread's full width").toBeGreaterThan(look.log * 0.9);
+  const cardLook = await turn.locator("[data-test='build-card-idea']").evaluate((el) => getComputedStyle(el).borderTopWidth);
+  expect(cardLook, "the card keeps its bubble").not.toBe("0px");
+
+  // A reload is history: the answer is there at once, never typed again.
+  await page.reload();
+  await page.evaluate(() => {
+    window.__typedAgain = false;
+    new MutationObserver(() => { if (document.querySelector("[data-agent-revealing]")) window.__typedAgain = true; })
+      .observe(document.body, { subtree: true, attributes: true });
+  });
+  const again = page.locator("[data-test='build-turn']", { hasText: idea }).locator("[data-test='cto-chat-reply'] [data-agent-reveal]");
+  await expect(again).toContainText("A morning alert when it is good");
+  await expect(page.locator("[data-agent-revealing]")).toHaveCount(0);
+  await page.waitForTimeout(800);
+  expect(await page.evaluate(() => window.__typedAgain)).toBe(false);
   expect(pageErrors, report()).toHaveLength(0);
 });

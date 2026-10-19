@@ -124,8 +124,10 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(page.locator("[data-test='build-status-card']")).toHaveCount(0);
   await expect(page.locator("[data-test='cto-chat-input']")).toBeFocused();
   expect(await page.evaluate(() => window.__composerSaid), "the send was announced").toContain("Sending…");
-  // Once chatting the gallery is gone, as on a reload of /build/<token>.
-  await expect(page.locator("[data-test='build-gallery']")).toHaveCount(0);
+  // A send alone never compacts the page: one short turn leaves the heading and
+  // the gallery standing (they go as the thread grows; agent_shell_growth.spec.js).
+  await expect(page.locator("[data-agent-shell]")).toHaveAttribute("data-shell-size", "full");
+  await expect(page.locator("[data-test='build-gallery']")).toBeVisible();
 
   // Before Ray is on it the turn is thinking: his portrait in the orbit.
   const waiting = first.locator("[data-test='cto-chat-typing']");
