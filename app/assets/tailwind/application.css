@@ -19,6 +19,9 @@
 /* A pending answer's thinking and typing looks (agent_chats/_typing). */
 @import './agent_typing.css';
 
+/* The reading flow: agent words unbubbled, cards bubbled, a new answer typed in. */
+@import './agent_reply.css';
+
 @config '../../../config/tailwind.config.js';
 
 /* The layer scale now comes from the ENGINE — see engine.css `-- Layer scale`,

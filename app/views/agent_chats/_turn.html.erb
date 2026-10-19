@@ -1,13 +1,15 @@
 <%# locals: (message:, agent_name:) %>
-<%# One turn of an agent web chat: what the viewer sent (or, first in a client app's CTO chat, Ray's handover: AgentMessages::ClientCtoHandover), then the agent's answer, or why there is none yet. Rendered on the page and in WebChat broadcasts (no request: no URL helpers here). The test hooks keep their cto-chat names. %>
+<%# One turn of an agent web chat: what the viewer sent (or, first in a client app's CTO chat, Ray's handover: AgentMessages::ClientCtoHandover), then the agent's answer, or why there is none yet. Rendered on the page and in WebChat broadcasts (no request: no URL helpers here). The test hooks keep their cto-chat names.
+    THE READING FLOW (task build-chat-reading-flow): the visitor's words sit in their right-hand bubble; the agent's words are plain text on the page (agent-reply: no bubble, no name box, the thread's full width; app/assets/tailwind/agent_reply.css), so the bubble is kept for what asks for a tap (build/_turn's intake cards). The agent's name stays for a screen reader. A NEW answer types itself in (app/javascript/agent_reveal.js, data-agent-reveal); one on the page at load is shown at once. %>
 <% answered = message.status == "completed" && message.response_text.present? %>
 <% replied_ms = answered ? ((message.reply_posted_at || message.completed_at || message.updated_at).to_f * 1000).to_i : nil %>
 <div id="cto-chat-turn-<%= message.id %>" class="flex flex-col gap-2" data-test="cto-chat-turn" data-status="<%= message.status %>"
      <% if replied_ms %>data-replied-at="<%= replied_ms %>"<% end %>>
   <% if AgentMessages::ClientCtoHandover.handover?(message) %>
-    <div class="self-start max-w-[85%] min-w-0 card rounded-2xl rounded-bl-sm px-3 py-2" data-test="cto-chat-handover">
-      <p class="text-xs font-semibold text-muted mb-1"><%= AgentMessages::ClientCtoHandover::AUTHOR %></p>
-      <p class="text-sm break-words"><%= message.content %></p>
+    <%# Ray's handover is another agent's words, so it names him; plain text like any answer. %>
+    <div class="agent-reply self-stretch min-w-0" data-test="cto-chat-handover" data-bubble="false">
+      <p class="agent-reply-author text-xs font-semibold text-muted mb-1"><%= AgentMessages::ClientCtoHandover::AUTHOR %></p>
+      <p class="agent-reply-body break-words"><%= message.content %></p>
     </div>
   <% else %>
     <%= render "agent_chats/sent_files", message: message %>
@@ -16,9 +18,9 @@
     <div class="self-end max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 bg-primary/15 text-primary-ink text-sm whitespace-pre-wrap break-words" data-test="cto-chat-sent"><%= message.content %></div>
   <% end %>
   <% if answered %>
-    <div class="self-start max-w-[85%] min-w-0 card rounded-2xl rounded-bl-sm px-3 py-2" data-test="cto-chat-reply">
-      <p class="text-xs font-semibold text-muted mb-1"><%= agent_name %></p>
-      <div class="prose-themed text-sm break-words [&>*:last-child]:mb-0"><%= SafeMarkdown.render(message.response_text, images: false) %></div>
+    <div class="agent-reply self-stretch min-w-0" data-test="cto-chat-reply" data-bubble="false">
+      <p class="sr-only" data-test="cto-chat-reply-author"><%= agent_name %>:</p>
+      <div class="agent-reply-body prose-themed break-words [&>*:last-child]:mb-0" data-agent-reveal><%= SafeMarkdown.render(message.response_text, images: false) %></div>
     </div>
   <% elsif message.status == "held" && (refusal = message.events.find_by(kind: "confirm_refused")) %>
     <p class="self-start text-xs text-warning-ink" data-test="cto-chat-confirm-held"><%= AgentMessages::ProposalConfirm.held_text(refusal.detail) %></p>
