@@ -5,7 +5,7 @@
       app/javascript/build_launch.js): the new CTO's portrait glows, and each of
       the three steps is pending (muted), active (a spinning ring, the step
       glowing) or done (a filled check), by its data-state.
-   2. The app chat's stage pills (app/views/agent_chats/_devops_card.html.erb):
+   2. The app chat's stage pills (app/views/agent_chats/_devops_stages.html.erb):
       the live stage glows while work runs, a done stage carries a check on a
       tint, a future one stays muted.
 

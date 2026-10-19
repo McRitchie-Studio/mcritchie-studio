@@ -947,9 +947,10 @@ bin/dispatcher (every channel) ─▶ claim ─▶ typing pulse ─▶ AgentMess
 | Piece | Where |
 |-------|-------|
 | The page and the post | `CtoChatsController`, `app/views/cto_chats/show.html.erb`; signed-in (`AdminWall::SIGNED_IN`), 404 unless the viewer owns the app or is an admin |
-| The chat itself | the shared agent chat, `app/views/agent_chats/` (`_shell`: the one page structure /build, /build/:token and this page share, portrait, status card, then chat; `_header`: the agent's portrait, centered, and its name; `_devops_card`: this page's status card, the app's Building · Releasing · Deploying from `AppDevopsStages` and its `_tokens_bar`; `_chat`: stream, thread, typing slot, composer for any agent and stream; `_attachments_slot`: empty, rendered inside the composer for chat media) and `app/javascript/agent_chat.js` (`cto_chat` stays pinned to it) |
+| The chat itself | the shared agent chat, `app/views/agent_chats/` (`_shell`: the one page structure /build, /build/:token and this page share, portrait, status card, then chat; `_header`: the agent's portrait, centered, and its name; `_devops_card`: this page's status card, its `_devops_stages` frame (the app's Building · Releasing · Deploying pills with a count per lane and the newest five open tasks, from `AppDevopsStages.board_for`; an admin's titles link to the board, an owner's are plain and sanitized) and its `_tokens_bar`; `_chat`: stream, thread, typing slot, composer for any agent and stream; `_attachments_slot`: empty, rendered inside the composer for chat media) and `app/javascript/agent_chat.js` (`cto_chat` stays pinned to it) |
 | Inbound | `AgentMessages::WebIngest` |
 | Outbound, typing, the stream | `AgentMessages::WebChat`; `CtoChatChannel` |
+| The status card's live reload | `AppDevopsStages::Live`: a task for the app created, moved in stage, release or title, or destroyed, or a release starting or ending production, replaces the card's frame with one whose src is `GET /applications/:slug/chat/status` (`CtoChatsController#status`), so each viewer refetches their own card; the per-app stream (`AppDevopsChannel`, owner or admin) carries no task content |
 | Which CTOs have a chat | the `web: souls:` block of `config/agent_routes.yml` |
 
 **Nothing in the request picks the soul.** The CTO is the app's, from

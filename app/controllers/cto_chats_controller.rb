@@ -8,17 +8,21 @@
 #           animation (build/_launch), which then visits this same page; else
 #           the user's own thread with this app's CTO (newest WebChat::HISTORY
 #           turns) under the app's status card: its Building · Releasing ·
-#           Deploying (AppDevopsStages) and the tokens used (never dollars),
-#           then the form. The
+#           Deploying with the open tasks in each and the newest few listed
+#           (AppDevopsStages.board_for: an admin's titles link to the board, an
+#           owner's are plain and sanitized) and the tokens used (never
+#           dollars), then the form. The
 #           page subscribes to its Turbo stream through CtoChatChannel, so the
 #           typing indicator and the answer arrive without a reload
+#   status  the card's pills and task list alone, the frame the page reloads
+#           when a task for the app moves (AppDevopsStages::Live)
 #   create  one message: AgentMessages::WebIngest stores it as a `web`
 #           AgentMessage for this app's CTO, and the dispatcher answers it as it
 #           answers Discord. Answers with the new turn as a Turbo Stream. The
 #           message may carry files the composer uploaded first
 #           (CtoChatAttachmentsController, AgentMessages::Attachments)
 #
-# Past the AdminWall (SIGNED_IN), both answer 404, never 403, unless the viewer
+# Past the AdminWall (SIGNED_IN), all three answer 404, never 403, unless the viewer
 # owns the app or is an admin, exactly as the app's own page does. The CTO is the
 # app's, from config/cto_reports.yml: nothing the request carries picks the soul.
 class CtoChatsController < ApplicationController
@@ -35,7 +39,16 @@ class CtoChatsController < ApplicationController
     @meter = AgentUsage.chat_meter(@app, user: current_user, soul: @cto.soul).without_cost
     @stream = AgentMessages::WebChat.stream_name(@app.slug, current_user.id)
     @answered = answered?
-    @stages = AppDevopsStages.for_app(@app)
+    @admin = AppOwnership.admin?(current_user)
+    @board = AppDevopsStages.board_for(@app, admin: @admin)
+  end
+
+  # The status card's live half alone (agent_chats/_devops_stages, a turbo-frame),
+  # which the page fetches when AppDevopsStages::Live says a task for the app moved.
+  def status
+    admin = AppOwnership.admin?(current_user)
+    render partial: "agent_chats/devops_stages",
+           locals: { app: @app, board: AppDevopsStages.board_for(@app, admin: admin), admin: admin }
   end
 
   def create

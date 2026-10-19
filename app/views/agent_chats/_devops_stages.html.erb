@@ -1,0 +1,55 @@
+<%# locals: (app:, board:, admin: false) %>
+<%# The live half of the app chat's status card (agent_chats/_devops_card): the three pills, Building · Releasing · Deploying, and the open tasks under them (AppDevopsStages.board_for). A lane with tasks is live: it wears the shared CTA glow (cta-glow) in the app's colours and carries its count. A lane the app's own build task has passed carries a check; any other lane stays muted. With nothing in flight the card says so. The list is the newest few tasks, title and lane: an admin's title links to the board, an owner's is plain text through ClientPipeline's sanitizer. The frame reloads itself (src: cto_chats#status) when AppDevopsStages::Live broadcasts that a task for this app moved; target _top keeps the admin's links whole-page. %>
+<turbo-frame id="<%= AppDevopsStages::Live.frame_id(app.slug) %>" target="_top" class="block space-y-3" data-test="devops-board">
+  <ol class="devops-stages grid grid-cols-3 gap-1.5 sm:gap-2" aria-label="Where your app is" data-test="devops-stages">
+    <% board.stages.each do |stage| %>
+      <%# The live stage wears the shared CTA glow (cta-glow, app/assets/tailwind/cta_glow.css) in the app's colours; the pill inside it is opaque, so the glow shows only around it. %>
+      <li class="min-w-0 <%= 'cta-glow' if stage.live? %>"
+          data-test="devops-stage" data-stage="<%= stage.key %>" data-state="<%= stage.state %>" data-count="<%= stage.count %>"
+          <% if stage.live? %>aria-current="step"<% end %>>
+        <span class="devops-stage-pill flex items-center justify-center gap-1 sm:gap-1.5 min-w-0 rounded-full border px-1 min-[400px]:px-2 py-1.5 text-2xs min-[400px]:text-xs sm:text-sm font-semibold
+                     <%= stage.done? ? 'devops-stage-done text-heading' : (stage.live? ? 'devops-stage-live text-heading' : 'border-subtle text-muted') %>">
+          <% if stage.done? %>
+            <span class="devops-stage-mark" aria-hidden="true">✓</span>
+          <% elsif stage.live? %>
+            <%# On a phone three lit pills leave no room for the dot beside a label and its count, so the dot shows from sm up; the glow still marks the pill. %>
+            <span class="relative hidden sm:flex h-2.5 w-2.5 shrink-0" aria-hidden="true">
+              <span class="devops-stage-dot absolute inline-flex h-full w-full rounded-full opacity-75 motion-safe:animate-ping"></span>
+              <span class="devops-stage-dot relative inline-flex h-2.5 w-2.5 rounded-full"></span>
+            </span>
+          <% end %>
+          <span class="truncate"><%= stage.label %></span>
+          <% if stage.count.positive? %>
+            <span class="shrink-0 tabular-nums" data-test="devops-stage-count"><%= stage.count %></span>
+          <% end %>
+          <span class="sr-only"><%= stage.live? ? ", #{pluralize(stage.count, 'task')} under way" : { done: ", done", pending: ", nothing here" }[stage.state] %></span>
+        </span>
+      </li>
+    <% end %>
+  </ol>
+  <% if board.idle? %>
+    <p class="text-sm text-muted text-center" data-test="devops-idle">Nothing in progress right now.</p>
+  <% else %>
+    <ul class="divide-y divide-subtle text-sm" aria-label="In progress" data-test="devops-tasks">
+      <% board.items.each do |item| %>
+        <li class="flex items-baseline justify-between gap-3 py-1.5 min-w-0" data-test="devops-task">
+          <% if admin && item.slug %>
+            <%= link_to item.title, task_path(item.slug), class: "min-w-0 truncate text-heading hover:underline", data: { test: "devops-task-link" } %>
+          <% else %>
+            <span class="min-w-0 truncate text-heading" data-test="devops-task-title"><%= item.title %></span>
+          <% end %>
+          <span class="shrink-0 text-xs text-muted"><%= item.lane %></span>
+        </li>
+      <% end %>
+    </ul>
+    <% if board.more.positive? %>
+      <p class="text-xs text-muted text-center" data-test="devops-more">
+        <% if admin %>
+          <%= link_to "+#{board.more} more", pipeline_application_path(app.slug), class: "hover:underline" %>
+        <% else %>
+          +<%= board.more %> more
+        <% end %>
+      </p>
+    <% end %>
+  <% end %>
+</turbo-frame>

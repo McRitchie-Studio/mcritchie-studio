@@ -177,6 +177,10 @@ class Release < ApplicationRecord
   # transaction never broadcasts a state that didn't land.
   after_commit :broadcast_release_modules, on: %i[create update]
   after_commit :refresh_duration_metrics_safely, on: %i[create update]
+  # The app chat's status card (AppDevopsStages::Live): its members' apps move
+  # from Releasing to Deploying, or off the card, as production starts or ends.
+  after_update_commit :broadcast_app_devops_cards,
+                      if: -> { saved_change_to_prod_deploy_started_at? || saved_change_to_state? }
 
   scope :active, -> { where(state: ACTIVE_STATES) }
 
@@ -728,6 +732,10 @@ class Release < ApplicationRecord
     refresh_duration_metrics!
   rescue StandardError => e
     Rails.logger.warn("[release-duration-cache] refresh failed for #{slug}: #{e.class}: #{e.message}")
+  end
+
+  def broadcast_app_devops_cards
+    AppDevopsStages::Live.release_changed(self)
   end
 
   def event_completed?(step)
