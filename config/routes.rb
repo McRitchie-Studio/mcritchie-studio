@@ -709,6 +709,9 @@ Rails.application.routes.draw do
       # design: MS masters durable facts, TM masters events, and neither writes
       # into the other's master.
       resources :athletes, only: [:index]
+      # Written by bin/game-model (the game-character-models SOP): a layered sheet built
+      # on the operator's Mac, filed on the player's look for that game and its iced twin.
+      resources :game_looks, only: [:create]
       # Written by bin/digest-video (stage 1), the cast vision pass (stage 2), bin/find-clips (stage 5),
       # bin/clip-references (lettered frames) and bin/stitch-video (the final stitch).
       # Drawn twice: /api/v1/videos is canonical, and /api/v1/music_videos (the

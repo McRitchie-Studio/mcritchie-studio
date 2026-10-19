@@ -140,6 +140,7 @@ its invocation exactly.
 | Turf Monster `content-build` SOP (drain the idea queue, write the takes) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/content-build.md` |
 | Turf Monster `contest-rehearsal` SOP (QA devnet lifecycle) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
 | Turf Monster `entry-forfeit` SOP (withdraw one entrant, forfeit fee) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
+| Turf Monster `game-character-models` SOP (a starting QB as he looked in one game, plus the iced twin) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/game-character-models.md` |
 | Turf Monster `live-score-watch` SOP | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | Turf Monster `market-refresh` SOP (rebuild a span's benchmarks from fresh lines) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/market-refresh.md` |
 | Turf Monster `post-to-x` SOP (winning team + video in, drafted and approved post on @turfmonstershow out) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/post-to-x.md` |
