@@ -15,6 +15,10 @@ class AppDevopsStages
     STREAM_PREFIX = "app_devops:".freeze
     APP_SLUG = /\A[a-z0-9-]{1,60}\z/
     CHAT_THREAD = %r{/applications/(?<app>[a-z0-9-]{1,60})/chat\z}
+    # A frame reload keeps the BROADCAST frame element and swaps only its
+    # children, so it carries the partial's own frame attributes
+    # (agent_chats/_devops_stages) or the card loses its spacing on first reload.
+    FRAME_ATTRIBUTES = %(target="_top" class="block space-y-3" data-test="devops-board").freeze
 
     module_function
 
@@ -51,7 +55,7 @@ class AppDevopsStages
     def refresh(app_slugs)
       helpers = Rails.application.routes.url_helpers
       app_slugs.each do |slug|
-        frame = %(<turbo-frame id="#{frame_id(slug)}" target="_top" src="#{helpers.chat_status_application_path(slug)}"></turbo-frame>)
+        frame = %(<turbo-frame id="#{frame_id(slug)}" #{FRAME_ATTRIBUTES} src="#{helpers.chat_status_application_path(slug)}"></turbo-frame>)
         AppDevopsChannel.broadcast_replace_to(stream_name(slug), target: frame_id(slug), html: frame)
       end
     end

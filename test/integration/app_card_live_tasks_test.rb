@@ -108,6 +108,12 @@ class AppCardLiveTasksTest < ActionDispatch::IntegrationTest
     assert_includes frame, %(target="app-devops-turf-monster")
     assert_includes frame, %(src="#{chat_status_application_path('turf-monster')}")
     assert_not_includes frame, "Live scores ticker", "the shared stream carries no task content"
+
+    log_in_as(@owner)
+    get chat_application_path("turf-monster")
+    page = css_select("turbo-frame#app-devops-turf-monster").sole
+    sent = Nokogiri::HTML5.fragment(frame.match(/<template>(.*)<\/template>/m)[1]).at_css("turbo-frame")
+    %w[target class data-test].each { |name| assert_equal page[name], sent[name], "a reload keeps the frame's own #{name}" }
   end
 
   test "[integration] a chat-opened task reloads its chat's card; a release starting production reloads its members' apps" do
