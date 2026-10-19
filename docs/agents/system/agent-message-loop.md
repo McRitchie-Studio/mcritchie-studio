@@ -1176,7 +1176,7 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
 
 `/build` is a chat with Ray (designs: `.agents/epics/build-with-xan-design.md`,
 `build-with-ray-v2.md`). A visitor, signed in or not, tells Ray what they want to
-build; Ray asks for the idea (at most two follow-ups), colors (the theme), a CTO and an address,
+build; Ray asks for the idea (at most two follow-ups), the theme, a CTO and an address,
 one card at a time, and the visitor's taps fill the status card. Ray's summary card
 carries **Build My App**, which asks for sign-in only then; it launches through `AppLaunch`.
 Signed out, the press answers in place with a sign-in prompt (magic link or Google) and is

@@ -256,7 +256,7 @@ class AppRequestTest < ActiveSupport::TestCase
                 "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },
                 "dark" => { "primary" => "#4ade80", "accent" => "#fbbf24", "surface" => "#0b1220", "text" => "#f1f5f9" } }
     request_row = AppRequest.create!(prompt: "A league site")
-    assert_equal({ "idea" => false, "cto" => false, "colors" => false, "address" => false }, request_row.intake_checklist)
+    assert_equal({ "idea" => false, "theme" => false, "cto" => false, "address" => false }, request_row.intake_checklist)
     assert_equal "idea", request_row.next_intake_step
 
     refute request_row.update(cto_name: "R2D2"), "a CTO name is letters"

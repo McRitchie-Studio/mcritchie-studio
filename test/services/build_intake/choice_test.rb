@@ -38,10 +38,10 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
   def tap(field, **params) = BuildIntake::Choice.new(@request, ip: "203.0.113.9").tap { |c| c.apply!(field, params) }
 
   test "[unit] the theme is asked before the CTO, and a theme tap with no CTO yet moves the request on to the CTO" do
-    assert_equal %w[idea colors cto address], BuildIntake::STEPS
+    assert_equal %w[idea theme cto address], BuildIntake::STEPS
     idea = answer_with({ "card" => "idea", "title" => "League Standings Hub", "features" => [ "Live standings", "Schedules" ] })
     tap("idea", message_id: idea.id)
-    assert_equal "colors", @request.reload.next_intake_step, "after the idea, the theme"
+    assert_equal "theme", @request.reload.next_intake_step, "after the idea, the theme"
 
     themes = answer_with({ "card" => "palette", "palettes" => [ PALETTE, PALETTE.merge("name" => "Field") ] })
     tap("palette", message_id: themes.id, index: "1")
@@ -55,7 +55,7 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
 
   test "[unit] a draft from the old order (CTO picked, no theme yet) still takes its theme tap and goes on to the domain" do
     @request.update!(answers: { "title" => "League Standings Hub", "idea" => "League Standings Hub" }, cto_name: "Coach", cto_avatar: "meadow")
-    assert_equal "colors", @request.next_intake_step
+    assert_equal "theme", @request.next_intake_step
 
     themes = answer_with({ "card" => "palette", "palettes" => [ PALETTE ] })
     relay = tap("palette", message_id: themes.id, index: "0").relay

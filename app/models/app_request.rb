@@ -139,12 +139,16 @@ class AppRequest < ApplicationRecord
 
   def draft? = status == "draft"
 
-  # The checklist beside the /build chat: which of BuildIntake::STEPS are set.
+  # The checklist beside the /build chat: which of BuildIntake::STEPS are set,
+  # in that order. A retired step name (BuildIntake::STEP_ALIASES: "colors")
+  # still reads its step's value, but is never one of the keys, so the
+  # checklist's values, its JSON and Ray's context carry each step once.
   def intake_checklist
-    { "idea" => answers.is_a?(Hash) && answers["idea"].present?,
-      "cto" => cto_name.present? && cto_avatar.present?,
-      "colors" => palette.present?,
-      "address" => subdomain.present? }
+    checklist = Hash.new { |_hash, name| BuildIntake::STEP_ALIASES.key?(name) ? checklist[BuildIntake.step(name)] : nil }
+    checklist.merge!("idea" => answers.is_a?(Hash) && answers["idea"].present?,
+                     "theme" => palette.present?,
+                     "cto" => cto_name.present? && cto_avatar.present?,
+                     "address" => subdomain.present?)
   end
 
   # Build my app lights up only when all four are set.
