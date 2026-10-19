@@ -2,8 +2,11 @@
 // app/assets/tailwind/build_cards.css draws it). THE NAME FIELD IS THE SOURCE
 // OF TRUTH: the chip whose name is exactly the field's value glows
 // (aria-pressed="true"), no chip glows when it matches none, and Use Domain
-// glows (data-build-glow="true") whenever the name could be claimed: the
-// server's AppRequest::SUBDOMAIN_FORMAT, and not known to be taken.
+// glows (data-build-glow="true") whenever the name could be claimed (the
+// server's AppRequest::SUBDOMAIN_FORMAT, and not known to be taken) and is not
+// the domain this request already holds (the card's data-chosen-name: that
+// CTA is spent). The field is also kept sized to its value (its `size`), so
+// the name and the suffix stay centred as one group.
 //
 // Pure (no imports, no document), so test/javascript/build_domain_test.js runs
 // it against stand-in elements; app/javascript/build_chat.js calls it on every
@@ -37,8 +40,10 @@ export function syncDomainGlow(card, { taken = false } = {}) {
   const chips = Array.from(card.querySelectorAll("[data-build-domain-name]"));
   const match = matchingChip(input.value, chips.map((chip) => chip.dataset.buildDomainName));
   chips.forEach((chip) => chip.setAttribute("aria-pressed", String(chip.dataset.buildDomainName === match)));
+  input.size = Math.max(input.value.length, 1);
   const submit = card.querySelector("[data-build-address-submit]");
-  if (submit) submit.dataset.buildGlow = String(validDomain(input.value) && !taken);
+  const held = (card.dataset?.chosenName || "") !== "" && domainName(input.value) === card.dataset.chosenName;
+  if (submit) submit.dataset.buildGlow = String(validDomain(input.value) && !taken && !held);
   return match;
 }
 

@@ -191,10 +191,10 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(lightPreview).toBeVisible();
   await expect(themeCard.locator("[data-test='build-theme-toggle-light']")).toHaveAttribute("aria-pressed", "true");
 
-  // What should we call your CTO?: one stack; the name is prefilled; the portrait opens the picker.
-  await tapped(page, auth, "Let's go with the Field theme.", "What should we call your CTO?", { card: "cto", names: ["Marble", "Coach", "Scout"], portrait: "harbor" });
+  // Customize your CTO: one stack; the name is prefilled; the portrait opens the picker.
+  await tapped(page, auth, "Let's go with the Field theme.", "Customize your CTO", { card: "cto", names: ["Marble", "Coach", "Scout"], portrait: "harbor" });
   const cto = page.locator("[data-test='build-card-cto']");
-  await expect(cto.locator("[data-test='build-cto-heading']")).toHaveText("What should we call your CTO?");
+  await expect(cto.locator("[data-test='build-cto-heading']")).toHaveText("Customize your CTO");
   await expect(cto.locator("[data-test='build-cto-name-input']")).toHaveValue("Marble");
   // Stacked: portrait above the name, the name above its ideas, Hatch CTO at the bottom.
   const ys = await Promise.all(["build-portrait-preview", "build-cto-name-input", "build-cto-names", "build-choose-cto"]

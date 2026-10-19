@@ -1,5 +1,5 @@
 <%# locals: (card:, message:, request_row:) %>
-<%# The CTO card, "What should we call your CTO?", one centred stack (Alex, 2026-10-18): the portrait on top (tap it, or New image, to open the picker of BuildIntake::Portraits), the name Ray suggested PREFILLED in an input the visitor may edit, his other names as taps under it (which fill the field), and Hatch CTO at the bottom, which saves both and relays the visitor's turn so Ray moves on to the domain (BuildIntake::Choice "cto"). The picker is a native dialog inside the form (build_chat.js opens it and swaps the preview; a tap on a portrait or Done closes it, while the arrow keys only move the pick, and Enter closes it without submitting); its radios submit with the form, so a pick needs no extra request. %>
+<%# The CTO card, "Customize your CTO", one centred stack (Alex, 2026-10-18): the portrait on top (tap it, or New image, to open the picker of BuildIntake::Portraits), the name Ray suggested PREFILLED in an input the visitor may edit, his other names as taps under it (which fill the field), and Hatch CTO at the bottom, which saves both and relays the visitor's turn so Ray moves on to the domain (BuildIntake::Choice "cto"). The picker is a native dialog inside the form (build_chat.js opens it and swaps the preview; a tap on a portrait or Done closes it, while the arrow keys only move the pick, and Enter closes it without submitting); its radios submit with the form, so a pick needs no extra request. %>
 <% keys = BuildIntake::Portraits::KEYS %>
 <% picked_name = request_row.cto_name.presence || card["names"].first %>
 <% picked_portrait = BuildIntake::Portraits.key?(request_row.cto_avatar) ? request_row.cto_avatar : (card["portrait"] || BuildIntake::Portraits.default_for(request_row.token)) %>
@@ -10,7 +10,7 @@
   <%= hidden_field_tag :field, "cto" %>
   <%= hidden_field_tag :message_id, message.id %>
   <%= hidden_field_tag :client_id, SecureRandom.uuid %>
-  <p class="text-center text-base font-semibold text-heading mb-3" data-test="build-cto-heading">What should we call your CTO?</p>
+  <p class="text-center text-base font-semibold text-heading mb-3" data-test="build-cto-heading">Customize your CTO</p>
   <div class="mx-auto flex max-w-sm flex-col items-center gap-3" data-test="build-cto-stack">
     <div class="flex flex-col items-center gap-1" data-test="build-cto-portrait">
       <button type="button" class="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ring-offset-2 ring-offset-surface"
@@ -34,9 +34,12 @@
         <% end %>
       </div>
     <% end %>
-    <button type="submit" class="btn btn-primary w-full" data-test="build-choose-cto">
-      <%= chosen ? "Save my CTO" : "Hatch CTO" %>
-    </button>
+    <%# The chosen theme's colours carry on here (cta-glow); spent once the CTO is set. %>
+    <%= tag.span class: "cta-glow w-full", style: cta_glow_style(request_row.palette), data: { test: "build-cto-glow", glow: ("off" if chosen) } do %>
+      <button type="submit" class="btn btn-primary w-full" data-test="build-choose-cto">
+        <%= chosen ? "Save my CTO" : "Hatch CTO" %>
+      </button>
+    <% end %>
   </div>
 
   <dialog class="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-2xl border border-subtle bg-surface p-4 text-body backdrop:bg-black/60"

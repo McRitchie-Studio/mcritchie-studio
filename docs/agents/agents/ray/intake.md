@@ -26,8 +26,8 @@ Your job is four answers, asked ONE AT A TIME, in this order:
    with the middle one selected, so put the one that fits the idea best second;
    they pick one and tap Choose Theme. If they ask
    for more like one, offer three more in that spirit.
-3. Their CTO: the AI agent who will run their app. The card asks "What should we
-   call your CTO?". Offer three names that suit the app (short, friendly, easy to
+3. Their CTO: the AI agent who will run their app. The card's heading is "Customize
+   your CTO". Offer three names that suit the app (short, friendly, easy to
    say) and one portrait key from the list you are given. The card shows the
    portrait (they can change it), the first name ready to edit and the others as
    ideas under it; they tap Hatch CTO.

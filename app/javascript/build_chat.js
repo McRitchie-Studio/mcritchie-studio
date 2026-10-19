@@ -23,6 +23,8 @@
 //     Ray's names fills the name field;
 //   - the theme card ([data-build-theme]): the Dark / Light toggle swaps every
 //     column's preview, and the choice survives the card's re-render;
+//   - the CTA glows (cta_glow.js): a theme pick moves Choose Theme's glow to
+//     that theme's colours, and a glow scrolled off screen draws nothing;
 //   - Build My App signed out ([data-build-sign-in]): opens the standard
 //     sign-in modal with the props the button carries.
 //
@@ -31,6 +33,7 @@
 // a Turbo visit needs no re-binding.
 import { Turbo } from "@hotwired/turbo-rails";
 import { pickDomainChip, syncDomainGlow } from "build_domain";
+import { syncThemeGlow, watchGlows } from "cta_glow";
 
 const POLL_MS = 2500;
 const SLOW_MS = 10000;
@@ -120,6 +123,9 @@ document.addEventListener("input", (event) => {
 // keyboard visitor browses with them. A tap on a portrait, Done, Escape (the
 // dialog's own) or Enter closes it.
 document.addEventListener("change", (event) => {
+  // A theme option picked: the glow behind Choose Theme takes its colours.
+  const themeCard = event.target.matches?.("input[name='index']") && event.target.closest("[data-build-theme]");
+  if (themeCard) { syncThemeGlow(themeCard); return; }
   const radio = event.target.closest?.("[data-build-portrait-src]");
   if (!radio) return;
   const card = radio.closest("[data-build-cto]");
@@ -212,13 +218,14 @@ function checkNewCards() {
   });
 }
 
-document.addEventListener("turbo:load", () => { waitingSince = null; checkNewCards(); restoreThemeModes(); });
+document.addEventListener("turbo:load", () => { waitingSince = null; checkNewCards(); restoreThemeModes(); watchGlows(); });
 document.addEventListener("turbo:before-stream-render", (event) => {
   const original = event.detail.render;
   event.detail.render = async (stream) => {
     await original(stream);
     checkNewCards();
     restoreThemeModes();
+    watchGlows();
   };
 });
 setInterval(tick, 500);

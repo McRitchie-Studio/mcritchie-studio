@@ -15,11 +15,12 @@ function element(dataset = {}, extra = {}) {
            setAttribute(name, value) { attributes[name] = value; }, focus() { this.focused = true; }, ...extra };
 }
 
-function card(value, names = [ "poke-offense", "pokemon-lineup", "lineup-drafter" ]) {
-  const input = element({}, { value });
+function card(value, names = [ "poke-offense", "pokemon-lineup", "lineup-drafter" ], chosenName = "") {
+  const input = element({}, { value, size: 20 });
   const chips = names.map((name) => element({ buildDomainName: name }));
   const submit = element();
   const root = {
+    dataset: { chosenName },
     querySelector: (selector) => ({ "[data-build-address-input]": input, "[data-build-address-submit]": submit })[selector] ?? null,
     querySelectorAll: (selector) => (selector === "[data-build-domain-name]" ? chips : []),
   };
@@ -88,4 +89,22 @@ test("a chip tap fills the field and glows, without focusing the field; a disabl
   chips[1].disabled = true;
   assert.equal(pickDomainChip(root, chips[1]), null);
   assert.equal(input.value, "lineup-drafter");
+});
+
+test("the field is sized to its name, so the name and the suffix stay centred together", () => {
+  const { root, input } = card("poke-offense");
+  syncDomainGlow(root);
+  assert.equal(input.size, 12);
+  input.value = "";
+  syncDomainGlow(root);
+  assert.equal(input.size, 1, "an empty field keeps a caret's width");
+});
+
+test("Use Domain is spent on the domain the request already holds, and glows again for another", () => {
+  const { root, input, submit } = card("poke-offense", undefined, "poke-offense");
+  syncDomainGlow(root);
+  assert.equal(submit.dataset.buildGlow, "false");
+  input.value = "pokemon-lineup";
+  syncDomainGlow(root);
+  assert.equal(submit.dataset.buildGlow, "true");
 });

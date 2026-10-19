@@ -52,9 +52,9 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-idea-title']", "A league site with live standings"
   end
 
-  test "What should we call your CTO?: one stack of portrait, prefilled name, name ideas, then Hatch CTO" do
+  test "Customize your CTO: one stack of portrait, prefilled name, name ideas, then Hatch CTO" do
     card("cto", "names" => %w[Marble Coach Scout], "portrait" => "harbor")
-    assert_select "[data-test='build-cto-heading']", "What should we call your CTO?"
+    assert_select "[data-test='build-cto-heading']", "Customize your CTO"
     refute_match(/Meet your CTO/, rendered)
     assert_select "[data-test='build-portrait-preview'][src*='cto_portraits/harbor']"
     assert_select "[data-test='build-portrait-open'][aria-haspopup='dialog']"

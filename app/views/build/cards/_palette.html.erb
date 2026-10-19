@@ -3,9 +3,10 @@
 <% palettes = card["palettes"] %>
 <% chosen_index = request_row.palette.present? ? palettes.index(request_row.palette) : nil %>
 <% selected = chosen_index || (palettes.size - 1) / 2 %>
+<%# The glow behind Choose Theme wears the SELECTED theme's colours (cta-glow); picking another option blends it to that theme's (cta_glow.js). Spent while the selection is the theme already chosen. %>
 <%= form_with url: build_request_intake_path(request_row.token), method: :patch,
       class: "rounded-2xl border border-subtle bg-surface p-3 sm:p-4",
-      data: { test: "build-card-palette", build_theme: true, mode: "dark" } do %>
+      data: { test: "build-card-palette", build_theme: true, mode: "dark", chosen_index: chosen_index } do %>
   <%= hidden_field_tag :field, "palette" %>
   <%= hidden_field_tag :message_id, message.id %>
   <%= hidden_field_tag :client_id, SecureRandom.uuid %>
@@ -24,7 +25,8 @@
                     has-[:checked]:border-primary has-[:checked]:ring-2 has-[:checked]:ring-primary
                     has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary"
              data-test="build-palette" data-chosen="<%= index == chosen_index %>">
-        <input type="radio" name="index" value="<%= index %>" class="peer sr-only" aria-label="<%= palette["name"] %>" <%= "checked" if index == selected %> data-test="build-palette-option">
+        <input type="radio" name="index" value="<%= index %>" class="peer sr-only" aria-label="<%= palette["name"] %>" <%= "checked" if index == selected %> data-test="build-palette-option"
+               <%= tag.attributes(data: (cta_glow_vars(palette) || {}).transform_keys { |k| k.delete_prefix("--") }) %>>
         <span class="absolute right-2 top-2 hidden h-5 w-5 items-center justify-center rounded-full bg-primary text-white peer-checked:flex" aria-hidden="true" data-test="build-palette-check">
           <svg viewBox="0 0 20 20" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 10.5l3 3 7-7"/></svg>
         </span>
@@ -48,5 +50,7 @@
       </label>
     <% end %>
   </div>
-  <button type="submit" class="btn btn-primary w-full mt-4" data-test="build-choose-palette">Choose Theme</button>
+  <%= tag.span class: "cta-glow mt-4", style: cta_glow_style(palettes[selected]), data: { test: "build-palette-glow", build_theme_glow: true, glow: ("off" if selected == chosen_index) } do %>
+    <button type="submit" class="btn btn-primary w-full" data-test="build-choose-palette">Choose Theme</button>
+  <% end %>
 <% end %>

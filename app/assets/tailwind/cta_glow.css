@@ -1,0 +1,65 @@
+/* The CTA glow primitive (app/helpers/cta_glow_helper.rb; app/javascript/cta_glow.js).
+
+   A wrapper around ONE button:
+
+     <span class="cta-glow" style="--glow-a: #…; --glow-b: #…; --glow-c: #…">
+       <button class="btn btn-primary w-full">Choose Theme</button>
+     </span>
+
+   Its ::before is one blurred layer behind the button: a slowly turning conic
+   gradient of --glow-a, --glow-b and --glow-c. Without the variables it takes
+   the studio's own primary and accent. The three colours are registered
+   properties, so a change (picking another theme on the theme card) blends
+   over 600ms instead of jumping. The wrapper isolates, so the glow paints
+   above the card's background and below the button; the button's own focus
+   ring is drawn on the button, above the glow.
+
+   GPU: one layer per CTA, and none when it cannot be seen or is spent:
+   data-glow-visible="false" (cta_glow.js, an IntersectionObserver, when the
+   CTA is scrolled off screen), data-glow="off" (a spent CTA, or the domain
+   card's Use Domain with no valid name), or a disabled button. Under
+   prefers-reduced-motion the gradient holds still. Unlayered, like
+   agent_typing.css. */
+
+@property --glow-a { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --glow-b { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --glow-c { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --glow-turn { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+
+.cta-glow {
+  --glow-a: rgb(var(--color-primary-rgb));
+  --glow-b: var(--color-accent);
+  --glow-c: rgb(var(--color-primary-rgb));
+  position: relative;
+  isolation: isolate;
+  display: block;
+  transition: --glow-a 600ms ease, --glow-b 600ms ease, --glow-c 600ms ease;
+}
+
+.cta-glow::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  border-radius: 9999px;
+  background: conic-gradient(from var(--glow-turn), var(--glow-a), var(--glow-b), var(--glow-c), var(--glow-a));
+  filter: blur(12px);
+  opacity: 0.75;
+  pointer-events: none;
+  animation: cta-glow-turn 6s linear infinite;
+}
+
+.cta-glow[data-glow="off"]::before,
+.cta-glow[data-glow-visible="false"]::before,
+.cta-glow:has(> :disabled)::before,
+.cta-glow:has(> [data-build-glow="false"])::before {
+  display: none;
+}
+
+@keyframes cta-glow-turn {
+  to { --glow-turn: 360deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta-glow::before { animation: none; }
+}

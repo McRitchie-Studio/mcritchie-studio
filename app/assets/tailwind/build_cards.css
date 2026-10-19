@@ -1,17 +1,19 @@
-/* The /build domain card's glows (app/views/build/cards/_address.html.erb;
+/* The /build domain card's chip glow (app/views/build/cards/_address.html.erb;
    app/javascript/build_domain.js decides who glows).
 
-   CHIP  the suggestion whose name is exactly the input's value
-         (aria-pressed="true") wears a steady primary halo. It fades as soon
-         as an edit makes the input match no chip, and comes back when the
-         name is typed back, or moves to the chip whose name is typed.
-   CTA   Use Domain (data-build-glow="true", whenever the name is valid and
-         not known to be taken) breathes a soft primary glow: "click here to
-         start the magic".
+   The suggestion whose name is exactly the input's value (aria-pressed="true")
+   wears a steady primary halo. It fades as soon as an edit makes the input
+   match no chip, and comes back when the name is typed back, or moves to the
+   chip whose name is typed. Use Domain's glow is the shared CTA primitive
+   (cta_glow.css), in the chosen theme's colours.
 
-   Theme tokens only (--color-primary-rgb), so both modes take their own
-   primary. Under prefers-reduced-motion the CTA's glow holds still, at full
-   strength, instead of breathing. Unlayered, like agent_typing.css. */
+   The name field: the name and the fixed .mcritchie.studio suffix sit as one
+   group in the middle of the field. The input is sized to its value (its
+   `size`, kept by build_domain.js), so the name grows outward from the
+   centre with the suffix right after it; a name too long for the field
+   scrolls inside the input instead of pushing the suffix out.
+
+   Theme tokens only (--color-primary-rgb). Unlayered, like agent_typing.css. */
 
 .build-domain-chip {
   transition: box-shadow 240ms ease, border-color 240ms ease;
@@ -20,22 +22,4 @@
 .build-domain-chip[aria-pressed="true"] {
   border-color: rgb(var(--color-primary-rgb));
   box-shadow: 0 0 0 1px rgb(var(--color-primary-rgb) / 0.55), 0 0 14px 2px rgb(var(--color-primary-rgb) / 0.45);
-}
-
-.build-domain-cta {
-  transition: box-shadow 240ms ease;
-}
-
-.build-domain-cta[data-build-glow="true"] {
-  box-shadow: 0 0 0 1px rgb(var(--color-primary-rgb) / 0.5), 0 0 18px 4px rgb(var(--color-primary-rgb) / 0.45);
-  animation: build-domain-breathe 2.4s ease-in-out infinite;
-}
-
-@keyframes build-domain-breathe {
-  0%, 100% { box-shadow: 0 0 0 1px rgb(var(--color-primary-rgb) / 0.45), 0 0 10px 2px rgb(var(--color-primary-rgb) / 0.3); }
-  50% { box-shadow: 0 0 0 1px rgb(var(--color-primary-rgb) / 0.65), 0 0 22px 6px rgb(var(--color-primary-rgb) / 0.55); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .build-domain-cta[data-build-glow="true"] { animation: none; }
 }

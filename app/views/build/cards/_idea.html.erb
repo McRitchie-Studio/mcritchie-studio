@@ -19,9 +19,12 @@
       <%= hidden_field_tag :field, "idea" %>
       <%= hidden_field_tag :message_id, message.id %>
       <%= hidden_field_tag :client_id, SecureRandom.uuid %>
-      <button type="submit" class="btn btn-primary btn-sm" data-test="build-choose-idea" <%= "disabled" if chosen %>>
-        <%= chosen ? "Building this" : "Start App" %>
-      </button>
+      <%# The studio's own primary and accent glow (cta-glow with no palette): no theme is chosen yet. Spent once chosen (disabled). %>
+      <span class="cta-glow inline-block" data-test="build-idea-glow">
+        <button type="submit" class="btn btn-primary btn-sm" data-test="build-choose-idea" <%= "disabled" if chosen %>>
+          <%= chosen ? "Building this" : "Start App" %>
+        </button>
+      </span>
     <% end %>
     <%= form_with url: build_request_intake_path(request_row.token), method: :patch do %>
       <%= hidden_field_tag :field, "idea_else" %>

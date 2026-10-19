@@ -112,7 +112,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     tap_and_relay(request_row, "palette", "Let's go with the Pitch Two theme.", message_id: themes.id, index: 1)
     assert_equal "Pitch Two", request_row.reload.palette["name"]
     assert_equal "cto", request_row.next_intake_step
-    cto = ray_answers("What should we call your CTO?", { kind: "intake", card: "cto", names: %w[Marble Coach Scout], portrait: "harbor" })
+    cto = ray_answers("Customize your CTO", { kind: "intake", card: "cto", names: %w[Marble Coach Scout], portrait: "harbor" })
     get build_request_path(request_row.token)
     assert_select "[data-test=build-card-cto] [data-test=build-cto-name-input][value=Marble]", 1, "the name is prefilled"
     assert_select "[data-test=build-card-cto] [data-test=build-choose-cto]", "Hatch CTO"
