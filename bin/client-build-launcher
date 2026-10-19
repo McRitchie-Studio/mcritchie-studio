@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 # bin/client-build-launcher run [--once] [--dry-run] [--cap N] [--worker ID]
-# bin/client-build-launcher install [--if-changed] | uninstall | status
+# bin/client-build-launcher install [--if-changed] | uninstall | status | sandbox-check
 #
 # The automatic first version of every /build app, as a service on Alex's Mac
 # beside bin/dispatcher (runbook: docs/agents/system/client-build-launcher.md;
@@ -28,6 +28,11 @@
 # ~/Library/Logs/client-build-launcher.log); it refuses a task desk under
 # .worktrees/. Alex runs it (installing a launchd job is persistence).
 #
+# `sandbox-check` proves the builder's confinement with the real `claude`: it plants
+# a canary file outside the run's directory and a canary secret in the environment,
+# asks the builder to copy both, and exits 0 only when neither appears (one short
+# run on the subscription).
+#
 #   CLIENT_BUILD_CLAUDE_CMD  the builder command, as a shell-split string (tests stub it)
 #
 # Exit: 0 ok · 1 refused or not running · 2 usage · 3 status: not installed.
@@ -42,14 +47,14 @@ require_relative "lib/client_build_launcher"
 USAGE = <<~TEXT
   Usage:
     bin/client-build-launcher run [--once] [--dry-run] [--cap N] [--worker ID]
-    bin/client-build-launcher install [--if-changed] | uninstall | status
+    bin/client-build-launcher install [--if-changed] | uninstall | status | sandbox-check
 TEXT
 
 command = ARGV.first
 spec = case command
        when "run" then { value: %w[--cap --worker], bool: %w[--once --dry-run] }
        when "install" then { bool: %w[--if-changed] }
-       when "uninstall", "status" then {}
+       when "uninstall", "status", "sandbox-check" then {}
        end
 if spec.nil?
   CliArgGuard.guard!(ARGV, program: "bin/client-build-launcher", usage: USAGE, consequence: "nothing was started or installed.")
@@ -65,6 +70,10 @@ when "install"
   exit(parsed.bool?("--if-changed") ? agent.install_if_changed : agent.install)
 when "uninstall" then exit ClientBuildLauncher::LaunchAgent.new.uninstall
 when "status" then exit ClientBuildLauncher::LaunchAgent.new.status_report
+when "sandbox-check"
+  held, lines = ClientBuildLauncher::Sandbox.check(ClientBuildLauncher.config)
+  lines.each { |line| puts line }
+  exit(held ? 0 : 1)
 when "run"
   config = ClientBuildLauncher.config.dup
   if (cap = parsed.values["--cap"].last)
