@@ -1,15 +1,17 @@
-<%# One "Built with McRitchie Studio" card: the app's dark-mode still on top,
-    then its name, where it lives, and one line of what it is.
+<%# One "Built with McRitchie Studio" card (build/_gallery's sideways row): the
+    app's dark-mode still on top (BuildGallery::Example#image; its emoji when it
+    has none), then its name, its host, and one line of what it is, each held to
+    one line (truncate; the blurb's full text is its title).
 
     An app with a motion loop plays it over the still while a mouse rests on the
     card or the keyboard focuses it (app/javascript/gallery_motion.js). Never on
     touch, never under prefers-reduced-motion, and the video loads nothing until
-    then (preload none, and no poster: a poster would fetch the still eagerly and
-    defeat the img's loading="lazy"; the lazy still already sits under it). It
-    fades in on data-playing, which the script sets only once it really plays, so
-    a slow load shows the still, not a blank box. The focus ring is drawn INSIDE
-    the card (-outline-offset-2): the gallery row scrolls sideways, and its
-    overflow would clip a ring drawn outside. %>
+    it is asked to play (preload none, and no poster: a poster would fetch the
+    still eagerly and defeat the img's loading="lazy"). It fades in on
+    data-playing, which the script sets only once it really plays, so a slow
+    load shows the still, not a blank box. The focus ring is drawn INSIDE the
+    card (-outline-offset-2): the row scrolls sideways, and its overflow would
+    clip a ring drawn outside. %>
 <% host = (URI.parse(example.url).host rescue nil) || example.url %>
 <%= link_to example.url, target: "_blank", rel: "noopener",
       class: "group flex h-full flex-col overflow-hidden rounded-2xl border border-subtle bg-surface hover:border-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",

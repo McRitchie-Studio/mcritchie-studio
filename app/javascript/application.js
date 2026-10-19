@@ -12,6 +12,8 @@ import "build_shell"
 import "agent_shell"
 // A new agent answer types itself in (HTML kept, history and reduced motion instant); inert where there is no chat.
 import "agent_reveal"
+// The chat thread follows new text for a reader within 20px of its end; one scrolled up is left alone.
+import "chat_follow"
 import "depth_chart"
 import "scroll_tab_stop"
 import "logo_gallery"

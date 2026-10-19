@@ -11,16 +11,16 @@
 //   - natural speed: about CHARS_PER_SECOND (some 25 characters a 60ms beat),
 //     never under MIN_MS and never over MAX_MS however long the answer, timed by
 //     the clock, so a slow frame never slows the whole.
-//   - the thread stays pinned to its newest line while it types, unless the
-//     reader has scrolled up;
+//   - the thread stays pinned to its newest line while it types, for a reader
+//     within 20px of its end (chat_follow.js; a reader scrolled up is not moved);
 //   - what follows the words in the turn (an intake card, .agent-action) waits
 //     until the last letter is down, then fades in (app/assets/tailwind/agent_reply.css);
 //   - the thinking/typing look hands off to it: the stream that brings the
 //     answer is the one that takes the indicator away (build/_turn re-renders the
 //     turn without it; agent_chat.js drops a pulse older than the answer).
-//   - a screen reader gets the whole answer at once: a hidden plain-words copy
-//     of it is read while the visible one types (aria-hidden), and the copy goes
-//     at the end, leaving the one answer.
+//   - a screen reader gets the whole answer once, when it is done: the thread
+//     (a polite live region) is aria-busy while it types, and the typing words
+//     are inert, so no link in them takes focus mid-typing (typeAnswer below);
 //   - an answer already on the page when it loads (history, a reload, a morph
 //     refresh) shows at once, and so does every answer under
 //     prefers-reduced-motion.
@@ -33,8 +33,6 @@ const TURN = "[id^='cto-chat-turn-']";
 export const CHARS_PER_SECOND = 420;
 export const MIN_MS = 450;
 export const MAX_MS = 2600;
-// A reader this close to the end is following along: keep them there.
-const PINNED_PX = 32;
 
 function reducedMotion() {
   return typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
@@ -117,7 +115,9 @@ export function reveal(body, { now = () => performance.now(), frame = (fn) => re
   };
   const tick = () => {
     if (finished) return;
-    if (body.isConnected === false) { finished = true; return; }
+    // A turn replaced mid-typing lets go, and still says it is done, so the
+    // live region it held busy is freed.
+    if (body.isConnected === false) { finished = true; onDone(); return; }
     const shown = lettersDue(state.total, now() - start, duration);
     if (shown >= state.total) { finish(); return; }
     paintReveal(state, shown);
@@ -151,41 +151,46 @@ export function newAnswers(root, seen) {
   return fresh;
 }
 
-// One answer typed in on the page: the screen reader's copy, the turn's waiting
-// card, and the scroll pin around reveal().
+// One answer typed in on the page: the screen reader's single reading, the
+// turn's waiting card, and the reveal itself.
+//
+// A screen reader hears the answer ONCE, whole, when it is done (task
+// build-flow-polish): the thread is a polite live region (role="log"), so
+// while the words type it is marked aria-busy, and the reader is told about
+// the finished answer when the mark comes off, not about each letter or twice.
+// The typing words are `inert` until then, so a link in the answer cannot take
+// focus (or a tap) while it is still being typed. Scrolling is chat_follow.js's:
+// the thread follows the words only for a reader who is at its end.
 function typeAnswer(body) {
   const log = body.closest(LOG);
   const turn = body.closest("[data-build-turn]") || body.closest(TURN);
-  // The whole answer as plain words for a screen reader (no second set of links
-  // or bold to tab to or find twice), read once, while the visible words type.
-  const copy = document.createElement("span");
-  copy.className = "sr-only";
-  copy.setAttribute("data-agent-reveal-copy", "");
-  copy.textContent = body.textContent.replace(/\s+/g, " ").trim();
-  body.before(copy);
-  body.setAttribute("aria-hidden", "true");
+  busy(log, +1);
+  body.inert = true;
   turn?.setAttribute("data-agent-revealing", "");
-  const pinned = () => !log || log.scrollHeight - log.clientHeight - log.scrollTop <= PINNED_PX;
-  let follow = pinned();
   reveal(body, {
-    onPaint() {
-      if (follow && log) log.scrollTop = log.scrollHeight;
-    },
     onDone() {
-      copy.remove();
-      body.removeAttribute("aria-hidden");
+      body.inert = false;
       turn?.removeAttribute("data-agent-revealing");
       turn?.querySelectorAll(".agent-action").forEach((card) => {
         if (reducedMotion()) return;
         card.classList.add("agent-action-enter");
         card.addEventListener("animationend", () => card.classList.remove("agent-action-enter"), { once: true });
       });
-      if (log && (follow || pinned())) requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
+      busy(log, -1);
     },
   });
-  // A reader who scrolls up while it types is left where they are.
-  log?.addEventListener("wheel", () => { follow = false; }, { once: true, passive: true });
-  log?.addEventListener("touchmove", () => { follow = false; }, { once: true, passive: true });
+}
+
+// The live region is busy while ANY answer in it types (two can overlap), and
+// is let go when the last one is done.
+const busyCount = new WeakMap();
+
+export function busy(log, step) {
+  if (!log) return;
+  const count = Math.max(0, (busyCount.get(log) || 0) + step);
+  busyCount.set(log, count);
+  if (count > 0) log.setAttribute("aria-busy", "true");
+  else log.removeAttribute("aria-busy");
 }
 
 if (typeof document !== "undefined") {

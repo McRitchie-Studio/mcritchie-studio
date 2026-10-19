@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { CHARS_PER_SECOND, MAX_MS, MIN_MS, answeredTurns, lettersDue, newAnswers, paintReveal, prepareReveal, reveal, revealDuration }
+import { CHARS_PER_SECOND, MAX_MS, MIN_MS, answeredTurns, busy, lettersDue, newAnswers, paintReveal, prepareReveal, reveal, revealDuration }
   from "../../app/javascript/agent_reveal.js";
 
 function text(data) { return { nodeType: 3, data }; }
@@ -102,10 +102,27 @@ test("finish() shows it all at once; an answer taken off the page stops typing",
 
   const gone = answer();
   const c2 = clock();
-  reveal(gone, { now: c2.now, frame: c2.frame, reduced: false });
+  let done = 0;
+  reveal(gone, { now: c2.now, frame: c2.frame, reduced: false, onDone: () => { done += 1; } });
   gone.isConnected = false;
   c2.advance(10);
   assert.equal(c2.pending(), 0, "a replaced turn's reveal lets go");
+  assert.equal(done, 1, "and says it is done, so the live region it held busy is freed");
+});
+
+test("[unit] the live region is busy while any answer types, and freed when the last one ends (task build-flow-polish)", () => {
+  const attrs = new Map();
+  const log = { setAttribute: (k, v) => attrs.set(k, v), removeAttribute: (k) => attrs.delete(k) };
+  busy(log, +1);
+  assert.equal(attrs.get("aria-busy"), "true");
+  busy(log, +1);
+  busy(log, -1);
+  assert.equal(attrs.get("aria-busy"), "true", "a second answer still typing keeps it busy");
+  busy(log, -1);
+  assert.equal(attrs.has("aria-busy"), false, "the reader hears the finished answers once");
+  busy(log, -1);
+  assert.equal(attrs.has("aria-busy"), false, "never below zero");
+  busy(null, +1);
 });
 
 test("history is never typed: only an answer the page has not seen is new", () => {

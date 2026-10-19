@@ -125,7 +125,7 @@
                     <% elsif segments.any?(&:last) %>
                       <span class="inline-block max-w-full rounded-lg border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold leading-snug" data-test="stack-hostnames"><%= safe_join(segments.map { |text, host| host ? tag.span(segments.one? ? package_hostname(text) : text, class: ("whitespace-nowrap" unless segments.one?), data: { test: "stack-hostname" }) : text }, " + ") %></span>
                     <% else %>
-                      <span class="inline-block max-w-full rounded-lg border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold leading-snug [overflow-wrap:anywhere]"><%= value %></span>
+                      <span class="inline-block max-w-full rounded-lg border <%= feature.varies? ? 'border-primary text-primary' : 'border-subtle text-body' %> px-2 py-0.5 text-xs font-semibold leading-snug break-words"><%= value %></span>
                     <% end %>
                   <% end %>
                 </td>

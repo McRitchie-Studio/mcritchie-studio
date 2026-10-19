@@ -32,10 +32,21 @@
 .agent-reply .agent-reply-body p,
 .agent-reply .agent-reply-body li { line-height: 1.7; }
 
+/* A link in an answer wears the theme's text-safe primary (--color-primary-ink:
+   darkened on the light page, lightened on the dark one), at rest and on hover,
+   so it reads in both themes; hover thickens the underline instead of changing
+   the colour (task build-flow-polish: the raw primary read dim on dark). */
 .agent-reply .agent-reply-body a {
-  color: var(--color-primary);
+  color: var(--color-primary-ink);
   text-decoration: underline;
+  text-decoration-thickness: 1px;
   text-underline-offset: 2px;
+}
+
+.agent-reply .agent-reply-body a:hover,
+.agent-reply .agent-reply-body a:focus-visible {
+  color: var(--color-primary-ink);
+  text-decoration-thickness: 2px;
 }
 
 /* An answer still typing: an element whose first letter is not due yet waits
