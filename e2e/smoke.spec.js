@@ -137,7 +137,7 @@ test("nav links work without errors @quarantine", async ({ page }) => {
   await page.goto("/");
   const buildApp = page.getByRole("link", { name: "Build App", exact: true });
   if (await buildApp.count()) {
-    await buildApp.click();
+    await buildApp.first().click();
     await expect(page).toHaveURL("/build");
     await page.goto("/");
   }
