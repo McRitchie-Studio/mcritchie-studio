@@ -52,7 +52,12 @@ async function rayAnswers(page, auth, content, text, card) {
 }
 
 // The visitor's first message on /build, past the bot shield's two seconds.
+// Each test's visitor comes from its own documentation-range address (the e2e
+// server trusts the loopback proxy's X-Forwarded-For), so the turns these tests
+// spend count against their own BuildIntake::Caps per-IP hour, not the one every
+// other /build spec on the shard shares as 127.0.0.1.
 async function start(page, idea) {
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": `198.51.100.${1 + Math.floor(Math.random() * 250)}` });
   await page.goto("/build");
   const box = page.getByLabel("Tell Ray what you want to build");
   await box.fill(idea);
