@@ -150,6 +150,31 @@ module Api
         assert_equal "building", task.reload.stage
         assert_empty thread("pawsome")
       end
+          test "a released run goes back in line, spends its attempt, and posts nothing" do
+        task = launch!("pawsome")
+        claim(task.slug)
+        post finish_api_v1_client_build_url(task.slug), params: { run: "r1", outcome: "released", reason: "the launcher was stopped" },
+                                                        headers: @auth, as: :json
+        assert_response :success
+        task.reload
+        assert_equal [ "designed", false ], [ task.stage, task.blocked? ]
+        assert_equal [ "released", 1 ], task.devops["client_build"].values_at("state", "attempts")
+        assert_empty thread("pawsome").where("envelope->>'kind' = 'released'")
+
+        claim(task.slug, run: "r2")
+        assert_response :success
+        assert_equal 2, task.reload.devops.dig("client_build", "attempts")
+      end
+
+      test "a progress turn renders as the CTO's line alone, with no sent bubble" do
+        task = launch!("pawsome")
+        claim(task.slug)
+        post progress_api_v1_client_build_url(task.slug), params: { run: "r1", kind: "started" }, headers: @auth, as: :json
+        html = ApplicationController.render(partial: "agent_chats/turn", locals: { message: thread("pawsome").sole, agent_name: "Nova" })
+        assert_includes html, "started building the first version"
+        refute_includes html, "cto-chat-sent", "the marker content is never shown as the owner's words"
+        refute_includes html, "[build progress"
+      end
     end
   end
 end

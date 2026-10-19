@@ -882,6 +882,9 @@ module AgentMailbox
     LABEL = "studio.mcritchie.agent-dispatcher"
     TEMPLATE = File.join(REPO_ROOT, "config/launchd/#{LABEL}.plist")
     LOG_NAME = "agent-dispatcher.log"
+    # The command a refusal names. A service built on this class (ClientBuildLauncher::LaunchAgent)
+    # sets its own LABEL, TEMPLATE, LOG_NAME and COMMAND; every method reads them through self.class.
+    COMMAND = "bin/dispatcher"
     # After `bootout`, launchd stops the old job (SIGTERM, then up to the plist's
     # ExitTimeOut of 90s) before the label is free; a `bootstrap` sent sooner fails
     # with "Bootstrap failed: 5: Input/output error". So install waits for the
@@ -907,14 +910,15 @@ module AgentMailbox
       @sleeper = sleeper
     end
 
-    def plist_path = File.join(@home, "Library/LaunchAgents/#{LABEL}.plist")
-    def log_path = File.join(@home, "Library/Logs/#{LOG_NAME}")
+    def label = self.class::LABEL
+    def plist_path = File.join(@home, "Library/LaunchAgents/#{label}.plist")
+    def log_path = File.join(@home, "Library/Logs/#{self.class::LOG_NAME}")
     def domain = "gui/#{@uid}"
 
     def render
       values = { "REPO_ROOT" => @repo_root, "HOME" => @home, "RUBY" => @ruby, "PATH" => service_path,
-                 "LOG" => log_path, "LABEL" => LABEL }
-      File.read(TEMPLATE, encoding: "UTF-8").gsub(/\{\{([A-Z_]+)\}\}/) do
+                 "LOG" => log_path, "LABEL" => label }
+      File.read(self.class::TEMPLATE, encoding: "UTF-8").gsub(/\{\{([A-Z_]+)\}\}/) do
         key = Regexp.last_match(1)
         raise ArgumentError, "template names unknown {{#{key}}}" unless values.key?(key)
 
@@ -951,7 +955,7 @@ module AgentMailbox
       status_report
     end
 
-    def target = "#{domain}/#{LABEL}"
+    def target = "#{domain}/#{label}"
 
     # True once `launchctl print` no longer finds the label (the old job has
     # exited); false when it is still listed after BOOTOUT_WAIT.
@@ -963,7 +967,7 @@ module AgentMailbox
 
         @sleeper.call(BOOTOUT_POLL)
       end
-      @out.puts "#{LABEL}: still loaded #{BOOTOUT_WAIT}s after bootout; trying the bootstrap anyway"
+      @out.puts "#{label}: still loaded #{BOOTOUT_WAIT}s after bootout; trying the bootstrap anyway"
       false
     end
 
@@ -988,7 +992,7 @@ module AgentMailbox
     def mark_failed(rendered, output)
       File.write(plist_path, "#{rendered}#{FAILED_MARK} #{Time.now.utc.iso8601}: " \
                              "#{output.gsub(/\s+/, ' ').gsub('--', '- -')}; the next ship reinstalls -->\n")
-      @out.puts "launchctl bootstrap failed: #{output}. The service is NOT loaded; run `bin/dispatcher install` " \
+      @out.puts "launchctl bootstrap failed: #{output}. The service is NOT loaded; run `#{self.class::COMMAND} install` " \
                 "from the hub checkout (the next production ship also retries)."
     end
 
@@ -1003,7 +1007,7 @@ module AgentMailbox
     # 0 not installed / current / reinstalled · install's code on a failure.
     def install_if_changed
       unless File.exist?(plist_path)
-        @out.puts "#{LABEL}: not installed; nothing to refresh"
+        @out.puts "#{label}: not installed; nothing to refresh"
         return 0
       end
 
@@ -1012,11 +1016,11 @@ module AgentMailbox
       agent = kept ? self.class.new(home: @home, repo_root: @repo_root, ruby: kept[:ruby], path: kept[:path],
                                     uid: @uid, launchctl: @launchctl, out: @out, sleeper: @sleeper) : self
       if agent.render == installed
-        @out.puts "#{LABEL}: installed plist matches the template; nothing to refresh"
+        @out.puts "#{label}: installed plist matches the template; nothing to refresh"
         return 0
       end
 
-      @out.puts "#{LABEL}: the plist template changed; reinstalling"
+      @out.puts "#{label}: the plist template changed; reinstalling"
       agent.install
     end
 
@@ -1031,28 +1035,28 @@ module AgentMailbox
     end
 
     def uninstall
-      @launchctl.call("bootout", "#{domain}/#{LABEL}")
+      @launchctl.call("bootout", "#{domain}/#{label}")
       existed = File.exist?(plist_path)
       FileUtils.rm_f(plist_path)
-      @out.puts existed ? "uninstalled #{LABEL}; removed #{plist_path}" : "#{LABEL} was not installed"
+      @out.puts existed ? "uninstalled #{label}; removed #{plist_path}" : "#{label} was not installed"
       0
     end
 
     # 0 running · 1 installed but not running · 3 not installed.
     def status_report
       unless File.exist?(plist_path)
-        @out.puts "#{LABEL}: not installed (no #{plist_path})"
+        @out.puts "#{label}: not installed (no #{plist_path})"
         return 3
       end
-      output, status = @launchctl.call("print", "#{domain}/#{LABEL}")
+      output, status = @launchctl.call("print", "#{domain}/#{label}")
       unless status.success?
-        @out.puts "#{LABEL}: installed but not loaded (launchctl print failed)"
+        @out.puts "#{label}: installed but not loaded (launchctl print failed)"
         return 1
       end
       state = output[/^\s*state = (.+)$/, 1]&.strip
       pid = output[/^\s*pid = (\d+)/, 1]
       last_exit = output[/last exit code = (.+)$/, 1]
-      @out.puts "#{LABEL}: #{state || 'unknown'}#{pid ? " (pid #{pid})" : ''}" \
+      @out.puts "#{label}: #{state || 'unknown'}#{pid ? " (pid #{pid})" : ''}" \
                 "#{last_exit ? ", last exit #{last_exit.strip}" : ''}; logs at #{log_path}"
       state == "running" ? 0 : 1
     end

@@ -1,0 +1,110 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/client-build-launcher run [--once] [--dry-run] [--cap N] [--worker ID]
+# bin/client-build-launcher install [--if-changed] | uninstall | status
+#
+# The automatic first version of every /build app, as a service on Alex's Mac
+# beside bin/dispatcher (runbook: docs/agents/system/client-build-launcher.md;
+# design: .agents/epics/client-app-zero-to-one.md). `run` polls the production
+# board for designed "Build Launch App <sub>" tasks (the ones an AppRequest names),
+# oldest first, claims at most --cap (config/client_builds.yml `cap`) at once,
+# builds each in a scratch directory under ~/.client-builds/<sub>/<run> with a
+# sandboxed headless Claude, publishes the bundle through client-app-host's
+# bin/client-bundle, and reports to the board, which moves the task and posts the
+# CTO chat lines (ClientBuilds).
+#
+#   --once      one claim pass, then wait for its runs and exit
+#   --dry-run   read the board and say what it would claim; claims, builds and
+#               posts nothing (implies --once)
+#
+# New code restarts it with nobody's help: on the minute beat it re-reads a
+# digest of its own files; a new digest seen twice stops claiming, lets the runs
+# finish, and exits 0, and launchd's KeepAlive starts the new code. SIGTERM ends
+# the builders and puts their tasks back in line.
+#
+# `install` renders config/launchd/studio.mcritchie.client-build-launcher.plist
+# into ~/Library/LaunchAgents and loads it (logs in
+# ~/Library/Logs/client-build-launcher.log); it refuses a task desk under
+# .worktrees/. Alex runs it (installing a launchd job is persistence).
+#
+#   CLIENT_BUILD_CLAUDE_CMD  the builder command, as a shell-split string (tests stub it)
+#
+# Exit: 0 ok · 1 refused or not running · 2 usage · 3 status: not installed.
+
+require_relative "lib/process_encoding"
+ProcessEncoding.force_utf8!
+
+require "shellwords"
+require_relative "lib/cli_arg_guard"
+require_relative "lib/client_build_launcher"
+
+USAGE = <<~TEXT
+  Usage:
+    bin/client-build-launcher run [--once] [--dry-run] [--cap N] [--worker ID]
+    bin/client-build-launcher install [--if-changed] | uninstall | status
+TEXT
+
+command = ARGV.first
+spec = case command
+       when "run" then { value: %w[--cap --worker], bool: %w[--once --dry-run] }
+       when "install" then { bool: %w[--if-changed] }
+       when "uninstall", "status" then {}
+       end
+if spec.nil?
+  CliArgGuard.guard!(ARGV, program: "bin/client-build-launcher", usage: USAGE, consequence: "nothing was started or installed.")
+  warn USAGE
+  exit 2
+end
+parsed = CliArgGuard.guard!(ARGV.drop(1), program: "bin/client-build-launcher #{command}", usage: USAGE,
+                                          consequence: "nothing was started or installed.", **spec)
+
+case command
+when "install"
+  agent = ClientBuildLauncher::LaunchAgent.new
+  exit(parsed.bool?("--if-changed") ? agent.install_if_changed : agent.install)
+when "uninstall" then exit ClientBuildLauncher::LaunchAgent.new.uninstall
+when "status" then exit ClientBuildLauncher::LaunchAgent.new.status_report
+when "run"
+  config = ClientBuildLauncher.config.dup
+  if (cap = parsed.values["--cap"].last)
+    value = Integer(cap, exception: false)
+    unless value&.between?(1, AgentMailbox::Dispatcher::CAP)
+      warn "bin/client-build-launcher: --cap must be 1..#{AgentMailbox::Dispatcher::CAP} (the concurrency cap); nothing was started."
+      exit 2
+    end
+    config["cap"] = value
+  end
+  dry_run = parsed.bool?("--dry-run")
+
+  # Claude bills Alex's claude.ai subscription; the builder's environment is an
+  # allow-list (Sandbox::ENV_ALLOW), and this process drops the commonest key too.
+  ENV.delete("ANTHROPIC_API_KEY")
+  stub = ENV["CLIENT_BUILD_CLAUDE_CMD"].to_s.strip
+  builder = nil
+  unless stub.empty?
+    builder = lambda do |prompt, dir|
+      ClientBuildLauncher::Sandbox.run(Shellwords.split(stub), prompt: prompt, dir: dir,
+                                                               timeout: Integer(config["run_minutes"]) * 60,
+                                                               max_turns: Integer(config["max_turns"]))
+    end
+  end
+
+  unless dry_run || !File.executable?("/usr/bin/caffeinate")
+    Process.detach(Process.spawn("/usr/bin/caffeinate", "-is", "-w", Process.pid.to_s))
+  end
+
+  $stdout.sync = true
+  launcher = ClientBuildLauncher::Launcher.new(
+    client: ClientBuildLauncher::Client.new(api: AgentApi.new(open_timeout: 5, read_timeout: 30)),
+    config: config, worker: parsed.values["--worker"].last || ClientBuildLauncher.default_worker,
+    builder: builder, dry_run: dry_run,
+    fingerprint: dry_run ? nil : AgentMailbox::CodeFingerprint.new(
+      [ __FILE__, *$LOADED_FEATURES.select { |f| f.start_with?(File.join(ClientBuildLauncher::REPO_ROOT, "")) },
+        ClientBuildLauncher::CONFIG_PATH ]
+    )
+  )
+  %w[TERM INT].each { |sig| Signal.trap(sig) { launcher.request_termination! } }
+  launcher.run(once: parsed.bool?("--once") || dry_run)
+  exit 0
+end

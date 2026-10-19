@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  TEMPLATE for bin/client-build-launcher's launchd service
+  (docs/agents/system/client-build-launcher.md). Never copy this file by
+  hand: `bin/client-build-launcher install` fills the double-braced placeholders with this Mac's
+  paths (ClientBuildLauncher::LaunchAgent, AgentMailbox::LaunchAgent#render) and loads the result from
+  ~/Library/LaunchAgents.
+
+  Awake: bin/client-build-launcher holds `caffeinate -is -w <its own pid>` itself,
+  as bin/dispatcher does: a wrapping caffeinate does not forward launchd's SIGTERM.
+  On SIGTERM it stops claiming and finishes each run in flight as failed (the task
+  blocks with the reason) within ExitTimeOut; a run it could not report is
+  recovered as failed at the next start.
+
+  LANG and LC_ALL: launchd passes no locale, and without one Ruby reads files as
+  US-ASCII. The launcher also forces UTF-8 itself, and the builder's allow-listed
+  environment (ClientBuildLauncher::Sandbox::ENV_ALLOW) carries these two.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{{LABEL}}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{RUBY}}</string>
+    <string>{{REPO_ROOT}}/bin/client-build-launcher</string>
+    <string>run</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>{{REPO_ROOT}}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>{{PATH}}</string>
+    <key>HOME</key>
+    <string>{{HOME}}</string>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+    <key>LC_ALL</key>
+    <string>en_US.UTF-8</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>ExitTimeOut</key>
+  <integer>90</integer>
+  <key>ProcessType</key>
+  <string>Standard</string>
+  <key>StandardOutPath</key>
+  <string>{{LOG}}</string>
+  <key>StandardErrorPath</key>
+  <string>{{LOG}}</string>
+</dict>
+</plist>

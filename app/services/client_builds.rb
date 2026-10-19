@@ -5,7 +5,8 @@
 #   candidates            designed launch tasks, oldest first, that a launcher may claim
 #   claim!(slug, ...)     designed -> building, atomically, and the intake to build from
 #   progress!(slug, ...)  one code-written line in the app owner's CTO chat
-#   finish!(slug, ...)    preview_ready -> shipped, or failed -> blocked with the reason
+#   finish!(slug, ...)    preview_ready -> shipped; failed -> blocked with the reason;
+#                         released -> designed (back in line)
 #
 # WHICH TASKS. A launch task is the one an AppRequest names (AppRequest#task_slug,
 # written by AppLaunch in the same transaction as the task), never a title match.
@@ -36,6 +37,11 @@ module ClientBuilds
   CANDIDATE_LIMIT = 25
   PROGRESS_KINDS = %w[started preview_ready failed].freeze
   VIA = "build_progress".freeze
+  # preview_ready ships the task; failed blocks it; released (the launcher was
+  # stopped, or found a run it had lost) puts it back in line, designed, for the
+  # next claim. A release still spends the attempt, so a crash loop ends at
+  # max_attempts with the task left for a person.
+  OUTCOMES = %w[preview_ready failed released].freeze
 
   # A refusal the API answers 409 (or 404 for :not_found) with the reason.
   class Refused < StandardError
@@ -126,7 +132,7 @@ module ClientBuilds
   # failed: blocked, with the reason as a qa_feedback row. Either way the CTO chat
   # gets its line after the commit.
   def finish!(slug, run:, outcome:, reason: nil, version: nil, now: Time.current)
-    raise Refused.new(:bad_request, "outcome is preview_ready or failed") unless %w[preview_ready failed].include?(outcome.to_s)
+    raise Refused.new(:bad_request, "outcome is #{OUTCOMES.join(', ')}") unless OUTCOMES.include?(outcome.to_s)
 
     task = Task.transaction do
       task = held!(slug, run)
@@ -134,6 +140,9 @@ module ClientBuilds
         subdomain = AppRequest.find_by!(task_slug: slug).subdomain
         write_run!(task, { "state" => "preview_ready", "version" => version.to_s.presence, "finished_at" => now.iso8601,
                            "preview_url" => preview_url(subdomain) }, stage: "shipped", extra: { "included_in_release" => false })
+      elsif outcome.to_s == "released"
+        write_run!(task, { "state" => "released", "finished_at" => now.iso8601,
+                           "reason" => reason.to_s.squish.presence&.slice(0, REASON_LIMIT) }, stage: "designed")
       else
         why = reason.to_s.squish.presence || "the build failed without a reason"
         write_run!(task, { "state" => "failed", "finished_at" => now.iso8601, "reason" => why[0, REASON_LIMIT] })
@@ -144,7 +153,7 @@ module ClientBuilds
       end
       task
     end
-    announce(slug, outcome.to_s, run)
+    announce(slug, outcome.to_s, run) unless outcome.to_s == "released"
     task
   end
 
