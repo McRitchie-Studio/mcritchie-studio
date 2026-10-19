@@ -104,7 +104,20 @@ test("Use Domain is spent on the domain the request already holds, and glows aga
   const { root, input, submit } = card("poke-offense", undefined, "poke-offense");
   syncDomainGlow(root);
   assert.equal(submit.dataset.buildGlow, "false");
+  assert.equal(submit.disabled, true, "a re-tap on the held domain cannot post (task build-flow-polish)");
   input.value = "pokemon-lineup";
   syncDomainGlow(root);
   assert.equal(submit.dataset.buildGlow, "true");
+  assert.equal(submit.disabled, false, "another name enables it");
+  input.value = "poke-offense";
+  syncDomainGlow(root);
+  assert.equal(submit.disabled, true, "typing the held name back disables it again");
+});
+
+test("Use Domain is disabled for a name the live check says is taken", () => {
+  const { root, submit } = card("pokemon-lineup");
+  syncDomainGlow(root, { taken: true });
+  assert.equal(submit.disabled, true);
+  syncDomainGlow(root, { taken: false });
+  assert.equal(submit.disabled, false);
 });

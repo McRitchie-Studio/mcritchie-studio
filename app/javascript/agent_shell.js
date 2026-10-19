@@ -26,6 +26,8 @@
 //
 // Imported by application.js on every page, once per load; listeners delegated on
 // document, and nothing happens where there is no shell.
+import { follow, stickIfFollowing } from "chat_follow";
+
 const SHELL = "[data-agent-shell]";
 const LOG = "[data-cto-chat-scroll]";
 export const SIZES = ["full", "medium", "compact"];
@@ -103,9 +105,11 @@ export function sizeFresh(shell, read = metrics) {
   return shell.dataset.shellSize;
 }
 
-function scrollLogToEnd(shell) {
+// The thread kept at its end for a reader who was there (chat_follow.js): a
+// step of the head or a stream never pulls back a reader who scrolled up.
+function keepLogAtEnd(shell) {
   const log = shell.querySelector(LOG);
-  if (log) log.scrollTop = log.scrollHeight;
+  if (log) stickIfFollowing(log);
 }
 
 // The chat box in the window: the page scrolls only as far as it must.
@@ -169,7 +173,7 @@ function step(shell) {
       sizeShell(shell);
       retireGallery(shell);
       remember(shell);
-      scrollLogToEnd(shell);
+      keepLogAtEnd(shell);
     });
   }
 }
@@ -216,7 +220,7 @@ function settle() {
   watch(shell);
   step(shell);
   requestAnimationFrame(() => {
-    scrollLogToEnd(shell);
+    keepLogAtEnd(shell);
     keepComposerInView(shell);
   });
 }
@@ -238,7 +242,8 @@ function load({ morphed = false } = {}) {
   retireGallery(shell, { instant: true });
   remember(shell);
   watch(shell);
-  scrollLogToEnd(shell);
+  const log = shell.querySelector(LOG);
+  if (log) follow(log);
   requestAnimationFrame(() => requestAnimationFrame(() => shell.classList.remove("agent-shell-instant")));
 }
 

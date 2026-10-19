@@ -94,7 +94,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     # visitor's line goes to Ray, who answers with the THEME card.
     relay = tap_and_relay(request_row, "idea", "Let's build League Standings Hub.", message_id: idea.id)
     assert_equal "League Standings Hub", request_row.reload.answers["title"]
-    assert_equal "colors", request_row.next_intake_step, "the theme comes before the CTO"
+    assert_equal "theme", request_row.next_intake_step, "the theme comes before the CTO"
     status = Nokogiri::HTML(response.body).css("turbo-stream[target=build-checklist] template").map(&:inner_html).join
     assert_select Nokogiri::HTML.fragment(status), "[data-test=build-status-card] [data-test=build-status-title]", "League Standings Hub",
                   "Start App's own stream draws the status card, titled"

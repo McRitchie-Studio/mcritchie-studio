@@ -51,6 +51,7 @@
     <% end %>
   </div>
   <%= tag.span class: "cta-glow mt-4", style: cta_glow_style(palettes[selected]), data: { test: "build-palette-glow", build_theme_glow: true, glow: ("off" if selected == chosen_index) } do %>
-    <button type="submit" class="btn btn-primary w-full" data-test="build-choose-palette">Choose Theme</button>
+    <%# Disabled while the selection is the theme already chosen: a re-tap would spend a turn of Ray's for nothing (BuildIntake::Choice ignores it too). Picking another theme enables it (cta_glow.js). %>
+    <button type="submit" class="btn btn-primary w-full" data-test="build-choose-palette" <%= "disabled" if selected == chosen_index %>>Choose Theme</button>
   <% end %>
 <% end %>

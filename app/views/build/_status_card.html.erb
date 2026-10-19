@@ -22,7 +22,7 @@
       </h1>
       <ul class="grid grid-cols-3 gap-2 sm:gap-3">
         <% tiles = [
-             [ "theme", "Theme", done["colors"], (request_row.palette["name"] if done["colors"]) ],
+             [ "theme", "Theme", done["theme"], (request_row.palette["name"] if done["theme"]) ],
              [ "agent", "Agent", done["cto"], (request_row.cto_name if done["cto"]) ],
              [ "domain", "Domain", done["address"], (request_row.host if done["address"]) ]
            ] %>
