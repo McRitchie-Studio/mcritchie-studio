@@ -36,6 +36,10 @@ module ClientBuildLauncher
   CONFIG_PATH = File.join(REPO_ROOT, "config/client_builds.yml")
   # The builder's soul, for the system prompt and the record.
   SOUL = "pokemon"
+  # The soul the launcher's heartbeat lists (AgentDispatcher::LAUNCHER_SOUL): the
+  # status card reads a launcher as live while a ping under it is under 5 minutes
+  # old and not paused.
+  LAUNCHER_SOUL = "client-build-launcher"
 
   def self.config(path = CONFIG_PATH) = YAML.safe_load_file(path).freeze
 
@@ -71,6 +75,10 @@ module ClientBuildLauncher
       path += "?#{URI.encode_www_form(worker: worker)}" if worker
       call(:get, path)
     end
+
+    # The minute heartbeat, on the dispatcher's own table (AgentDispatcher), under the
+    # one soul LAUNCHER_SOUL: the status card reads a launcher as live from it.
+    def ping(payload) = call(:post, "/api/v1/agent_dispatchers/ping", payload)
 
     def claim(slug, worker:, run:) = call(:post, member(slug, "claim"), { "worker" => worker, "run" => run })["data"]
     def progress(slug, run:, kind:) = call(:post, member(slug, "progress"), { "run" => run, "kind" => kind })["data"]
@@ -155,7 +163,8 @@ module ClientBuildLauncher
         (footer[data-site-footer], with "Built with McRitchie Studio") on every page.
 
         Rules for the bundle:
-        - Static files only: HTML, CSS, JavaScript, SVG, images, JSON. No server code, no build step.
+        - Static files only, of these types: .html .css .js .json .svg .png .jpg .webp .woff2 .ico .txt.
+          At most 200 files and 5 MB. No server code, no build step.
         - It is served under a strict Content-Security-Policy: no inline <script>, no inline event
           handlers (onclick=...), no inline style attributes or <style> blocks. Put CSS in .css files
           and JavaScript in .js files, loaded by relative path.
@@ -277,7 +286,10 @@ module ClientBuildLauncher
   module Validator
     module_function
 
-    STATIC = %w[.html .htm .css .js .mjs .json .svg .png .jpg .jpeg .gif .webp .avif .ico .txt .md .woff .woff2 .map .webmanifest].freeze
+    # The host's list (client-app-host: ClientAppBundle), so a bundle that passes here
+    # is not refused at publish for its file types or count.
+    STATIC = %w[.html .css .js .json .svg .png .jpg .jpeg .webp .woff2 .ico .txt].freeze
+    MAX_FILES = 200
 
     def errors(dir, max_bytes:)
       list = []
@@ -293,10 +305,12 @@ module ClientBuildLauncher
         elsif File.file?(path)
           total += File.size(path)
           list << "#{rel} is not a static file type" unless STATIC.include?(File.extname(rel).downcase)
-          list.concat(csp_errors(rel, File.read(path, encoding: "UTF-8").scrub)) if %w[.html .htm].include?(File.extname(rel).downcase)
+          list.concat(csp_errors(rel, File.read(path, encoding: "UTF-8").scrub)) if File.extname(rel).downcase == ".html"
         end
       end
       list << "the bundle is #{total} bytes, over #{max_bytes}" if total > max_bytes
+      files = Dir.glob("**/*", File::FNM_DOTMATCH, base: dir).count { |rel| File.file?(File.join(dir, rel)) }
+      list << "the bundle has #{files} files, over #{MAX_FILES}" if files > MAX_FILES
       list << "index.html has no site footer (footer[data-site-footer])" unless File.read(index).include?("data-site-footer")
       list
     end
@@ -469,28 +483,55 @@ module ClientBuildLauncher
   # claims nothing (a run would only end blocked).
   class Publisher
     Result = Struct.new(:ok, :version, :output, keyword_init: true)
+    # The publish API takes an AGENT SESSION, never the shared token
+    # (docs/agents/system/client-app-host.md): an admin session for the launcher.
+    # From the environment, else this owner-only file (launchd passes no secret env).
+    TOKEN_ENV = "CLIENT_BUNDLE_SESSION_TOKEN"
+    TOKEN_FILE = File.join(Dir.home, ".client-builds", "session-token")
 
-    def initialize(repo_root: REPO_ROOT, runner: nil)
+    def initialize(repo_root: REPO_ROOT, runner: nil, env: ENV, token_file: TOKEN_FILE)
       @command = File.join(repo_root, "bin/client-bundle")
-      @runner = runner || ->(argv) { Open3.capture2e(*argv) }
+      @runner = runner || ->(argv, child_env) { Open3.capture2e(child_env, *argv) }
+      @env = env
+      @token_file = token_file
     end
 
-    def available? = File.executable?(@command)
+    def available? = unavailable_reason.nil?
+
+    # Why a publish cannot run now, or nil.
+    def unavailable_reason
+      return "publish is not installed (#{@command}, task client-app-host)" unless File.executable?(@command)
+      return "no publish session (#{TOKEN_ENV}, or #{@token_file})" unless token
+
+      nil
+    end
+
+    def token
+      from_env = @env[TOKEN_ENV].to_s.strip
+      return from_env unless from_env.empty?
+      return nil unless File.file?(@token_file) && File.readable?(@token_file)
+
+      File.read(@token_file).strip.then { |t| t.empty? ? nil : t }
+    end
 
     def call(subdomain, dir)
-      output, status = @runner.call([ @command, "publish", subdomain, dir ])
+      output, status = @runner.call([ @command, "publish", subdomain, dir ], { TOKEN_ENV => token.to_s })
       Result.new(ok: status.success?, version: version_in(output.to_s), output: ClientBuildLauncher.tail(output))
     rescue SystemCallError => e
       Result.new(ok: false, version: nil, output: "could not run #{@command}: #{e.message}")
     end
 
-    # The version the command printed: a JSON line's "version", else "version <v>".
+    # The version the command printed: "published <sub> <version> (N files, B bytes)"
+    # (client-app-host's bin/client-bundle), else a JSON line's "version".
     def version_in(output)
+      found = output[/^published \S+ (\S+)/, 1]
+      return found if found
+
       output.each_line do |line|
         parsed = JSON.parse(line) rescue nil
         return parsed["version"].to_s if parsed.is_a?(Hash) && parsed["version"]
       end
-      output[/\bversion[:= ]+([\w.-]+)/i, 1]
+      nil
     end
   end
 
@@ -572,6 +613,8 @@ module ClientBuildLauncher
       @slots = []
       @stopping = false
       @next_ping = nil
+      @started_at = clock.call
+      @version = AgentMailbox::Dispatcher.git_version(REPO_ROOT) rescue nil
     end
 
     def cap = Integer(@config.fetch("cap"))
@@ -622,7 +665,7 @@ module ClientBuildLauncher
     # Each claimable task: claim it, post "started", start its run.
     def claim_free_slots
       unless @publisher.available?
-        log("publish is not installed (bin/client-bundle, task client-app-host); claiming nothing")
+        log("#{@publisher.unavailable_reason}; claiming nothing")
         return [] unless @dry_run
       end
 
@@ -699,18 +742,37 @@ module ClientBuildLauncher
 
     # New code seen on two checks in a row: stop claiming; run exits once drained.
     def check_code
-      return unless @fingerprint
+      return if @dry_run
 
       now = @clock.call
       return if @next_ping && now < @next_ping
 
       @next_ping = now + PING_EVERY
+      ping(now)
+      return unless @fingerprint
+
       current = @fingerprint.call
       @changed_seen = current == @digest ? 0 : @changed_seen + 1
       return unless @changed_seen >= 2 && !@stopping
 
       log("new code on disk; draining #{@slots.size} run(s), then exiting for launchd to restart")
       stop!
+    end
+
+    # The heartbeat (Client#ping). A paused launcher (publish not installed) says
+    # so, so the card does not promise a builder that will not come.
+    def ping(now)
+      paused = !@publisher.available?
+      @client.ping({ "worker" => @worker, "host" => Socket.gethostname.split(".").first, "souls" => [ LAUNCHER_SOUL ],
+                     "running" => @slots.size, "capacity" => cap, "state" => if @stopping then "stopping"
+                                                                               elsif paused then "paused"
+                                                                               else "running"
+                                                                               end,
+                     "paused_until" => (paused ? (now + PING_EVERY * 2).utc.iso8601 : nil),
+                     "pause_reason" => (paused ? @publisher.unavailable_reason : nil),
+                     "version" => @version, "started_at" => @started_at.utc.iso8601 }.compact)
+    rescue ApiError => e
+      log("board: ping failed (#{e.message})")
     end
 
     private

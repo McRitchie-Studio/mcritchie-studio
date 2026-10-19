@@ -13,6 +13,8 @@ at `<sub>.<preview domain>`. Nobody waits for a person to pick it up.
 | Publish | `bin/client-bundle publish <sub> <dir>` (task `client-app-host`), behind `ClientBuildLauncher::Publisher` |
 | The plist template | `config/launchd/studio.mcritchie.client-build-launcher.plist` |
 | Logs | `~/Library/Logs/client-build-launcher.log` |
+| Heartbeat | a minute ping to `/api/v1/agent_dispatchers/ping` listing the one soul `client-build-launcher` (`AgentDispatcher::LAUNCHER_SOUL`) |
+| Publish session | `CLIENT_BUNDLE_SESSION_TOKEN`, else the owner-only file `~/.client-builds/session-token`: an admin agent session (the publish API refuses the shared token) |
 | Scratch directories | `~/.client-builds/<sub>/<run>`: outside every repo, one per run, kept for inspection |
 
 ## What one build does
@@ -35,8 +37,11 @@ at `<sub>.<preview domain>`. Nobody waits for a person to pick it up.
 4. **Check.** The launcher's local check refuses a bundle with no `index.html`,
    a non-static file, a link, an inline script or event handler, a script from
    another host, no footer, or a size over `bundle_max_bytes`. Publish checks again.
-5. **Publish.** `bin/client-bundle publish <sub> <dir>` uploads the bundle, flips
-   `App#preview_version` and records `preview_ready`.
+5. **Publish.** `bin/client-bundle publish <sub> <dir>` posts the bundle to
+   `POST /api/v1/client_bundles/<sub>` under the publish session; the hub uploads
+   it to the private bucket, flips `App#preview_version` and records the
+   `preview_ready` checkpoint ([`client-app-host.md`](client-app-host.md)). The
+   launcher reads the version from its `published <sub> <version>` line.
 6. **Report.** `POST …/finish` with `preview_ready` ships the task and posts the
    preview link in the CTO chat; with `failed` it blocks the task.
 
@@ -100,8 +105,20 @@ leaked the file, so the check bites.
 - **New code.** The launcher re-reads a digest of its own files every minute;
   new code seen twice stops claiming, lets the runs finish, and exits 0, and
   launchd starts the new code.
-- **Publish not installed.** Until `bin/client-bundle` exists in the checkout,
-  the launcher claims nothing and logs why.
+- **Publish not ready.** Until `bin/client-bundle` exists in the checkout and a
+  publish session is on hand, the launcher claims nothing, logs why, and pings
+  `paused` with the reason, so the status card does not promise a builder.
+
+## The heartbeat
+
+Every minute the launcher pings the dispatcher's table (`AgentDispatcher`) as
+worker `client-build-launcher@<host>`, souls `["client-build-launcher"]`, with its
+running count, cap and state. The status card (task `app-card-stage-labels`)
+reads a launcher as live while such a ping is under five minutes old and not
+paused; until then a designed task reads "Prepping · waiting for a builder".
+A launcher row answers no mailbox, so `AgentDispatcher.mailbox` leaves it out of
+the primaries, the standbys and the floor alert: a live launcher can never hide a
+silent dispatcher.
 
 ## Operate it
 
@@ -113,6 +130,17 @@ bin/client-build-launcher sandbox-check          # the confinement proof (one sh
 bin/client-build-launcher status                 # the launchd job's state
 tail -f ~/Library/Logs/client-build-launcher.log
 ```
+
+**The publish session** must exist before the launcher builds anything: an admin
+agent session's token, written owner-only (`umask 077; pbpaste > ~/.client-builds/session-token`).
+It is a credential: never print it. Mint it from a hub shell with
+`bin/rails agent_sessions:grant_admin` ([`agent-sessions-design.md`](agent-sessions-design.md)).
+
+**Open gap:** an admin session lives one to eight hours, and the launcher is a
+standing service. Once the session expires, a publish answers 401 and the run
+blocks its task. A standing machine credential for publish (a harness key the
+publish endpoint accepts, `accepts_harness_key`) is owed before the launcher runs
+unattended for long.
 
 **Install** is Alex's: a launchd job is persistence, which an agent's auto mode
 does not run. From the hub's primary checkout (install refuses a desk):

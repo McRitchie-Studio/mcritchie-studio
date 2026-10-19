@@ -43,6 +43,7 @@ class ClientBuildLauncherLoopTest < ActionDispatch::IntegrationTest
 
     def initialize(ok: true) = (@ok = ok) && (@calls = [])
     def available? = true
+    def unavailable_reason = nil
 
     def call(subdomain, dir)
       @calls << [ subdomain, dir, File.read(File.join(dir, "index.html")) ]
@@ -100,6 +101,15 @@ class ClientBuildLauncherLoopTest < ActionDispatch::IntegrationTest
     assert_includes html, "data-site-footer"
     assert_includes @prompts.sole, "A dog-walk scheduler"
     assert_equal %w[started preview_ready], chat("dog-walks").map { |m| m.envelope["kind"] }
+  end
+
+  test "the launcher pings under its own soul, and its row never stands in for the mailbox dispatcher" do
+    launcher(builder: writing_builder).tick
+
+    row = AgentDispatcher.launchers.sole
+    assert_equal [ "test-mac", [ ClientBuildLauncher::LAUNCHER_SOUL ], "running", 2 ], [ row.worker_id, row.souls, row.state, row.capacity ]
+    assert_empty AgentDispatcher.primaries, "a launcher is not the mailbox's primary"
+    assert AgentDispatcher.silent?, "a live launcher never hides a silent dispatcher"
   end
 
   test "a failing builder blocks the task with the reason and posts the snag line" do
