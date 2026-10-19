@@ -154,6 +154,24 @@ class ClientBuildLauncherLoopTest < ActionDispatch::IntegrationTest
     loop_under_test.drain
   end
 
+  test "the session the launcher mints publishes its own app through the real host, and no other app" do
+    task = launch!("dog-walks")
+    launch!("cat-naps")
+    @client.claim(task.slug, worker: "test-mac", run: "r1")
+    token = @client.mint_session(task.slug)
+    files = { "index.html" => "<!doctype html><title>Dog Walks</title><script src=\"app.js\"></script>", "app.js" => "1" }
+    body = { files: files.map { |path, bytes| { path: path, content_base64: Base64.strict_encode64(bytes) } } }.to_json
+    headers = { "Authorization" => "Bearer #{token}", "Content-Type" => "application/json" }
+
+    post api_v1_client_bundle_path("cat-naps"), params: body, headers: headers
+    assert_includes [ 401, 403 ], response.status, "another client app refuses this task's login"
+    assert_nil App.find_by!(slug: "cat-naps").preview_version
+
+    post api_v1_client_bundle_path("dog-walks"), params: body, headers: headers
+    assert_response :created
+    assert_equal response.parsed_body.dig("data", "version"), App.find_by!(slug: "dog-walks").preview_version
+  end
+
   test "a failing builder blocks the task with the reason and posts the snag line" do
     task = launch!("dog-walks")
     timing_out = ->(_prompt, _dir) { ClientBuildLauncher::Sandbox::Result.new(status: :timeout, exit_status: nil, turns: 9, stderr: "") }

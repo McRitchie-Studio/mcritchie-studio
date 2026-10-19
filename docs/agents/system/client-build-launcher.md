@@ -40,7 +40,7 @@ at `<sub>.<preview domain>`. Nobody waits for a person to pick it up.
 5. **Publish.** `bin/client-bundle publish <sub> <dir>` posts the bundle to
    `POST /api/v1/client_bundles/<sub>` under the publish session; the hub uploads
    it to the private bucket, flips `App#preview_version` and records the
-   `preview_ready` checkpoint (`docs/agents/system/client-app-host.md`, task `client-app-host`). The
+   `preview_ready` checkpoint ([`client-app-host.md`](client-app-host.md)). The
    launcher reads the version from its `published <sub> <version>` line.
 6. **Report.** `POST …/finish` with `preview_ready` ships the task and posts the
    preview link in the CTO chat; with `failed` it blocks the task.
