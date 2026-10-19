@@ -226,7 +226,9 @@ module GameModel
       centre = Gate.centroid(refs.map { |r| vectors[r] })
       scores = outs.to_h { |o| [File.basename(o, ".png"), Gate.score(vectors[o], centre)&.round(3)] }
       write_json(dir, "out/#{stage}/scores.json", scores)
-      scores.each { |name, s| @out.puts "#{name.ljust(20)} #{s ? format('%.2f', s) : '-'}#{s && s < FACE_FLOOR ? '  BELOW FLOOR' : ''}" }
+      low = Gate.below_floor(scores)
+      shades = stage.start_with?("iced_") ? " (shades cover the eyes: judge iced faces by eye)" : ""
+      scores.each { |name, s| @out.puts "#{name.ljust(20)} #{s ? format('%.2f', s) : '-'}#{low.include?(name) ? "  BELOW FLOOR#{shades}" : ''}" }
     end
 
     def board(dir, stage)
@@ -264,7 +266,7 @@ module GameModel
 
         jpg = png.sub(/\.png\z/, ".jpg")
         sh("magick", png, "-quality", "92", jpg)
-        key = Filing.key(spec["espn_id"], spec["descriptor"], variant)
+        key = Filing.key(spec.folder, spec["descriptor"], variant)
         { variant: variant, object_key: key, path: jpg }
       end
       raise Failure, "no stitched sheet in #{dir}/sheet; run stitch first" if sheets.empty?

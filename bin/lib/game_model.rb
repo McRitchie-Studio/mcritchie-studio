@@ -107,7 +107,10 @@ module GameModel
   # The judgment stays with the agent (what the uniform is, the facial hair that
   # week, which frames are build references); the CLI does the mechanics.
   class Spec
-    REQUIRED = %w[name espn_id descriptor number uniform jersey_panel specifics_front specifics_back
+    # `espn_id` names an athlete; someone with no athlete record (a head coach)
+    # is named by `person: { first_name, last_name, vocation }` instead, and
+    # FileGameLook finds or creates him. One of the two is required to file.
+    REQUIRED = %w[name descriptor number uniform jersey_panel specifics_front specifics_back
                   back_panel hair facial_hair build face_refs uniform_refs].freeze
     LISTS = %w[face_refs uniform_refs build_refs game_refs].freeze
 
@@ -137,6 +140,17 @@ module GameModel
 
     # The pick for a slot, else nil (the gate's best then stands).
     def pick(stage, slot) = (picks[stage] || {})[slot]
+
+    # The R2 folder this subject files under: his espn_id, else his name slug
+    # (the hub refuses a key filed under any other folder).
+    def folder
+      return @data["espn_id"].to_s if @data["espn_id"].to_s != ""
+
+      person = @data["person"] || {}
+      raise Failure, "spec.yml names nobody: give espn_id, or person: { first_name, last_name, vocation }" if person.empty?
+
+      Filing.slug("#{person['first_name']} #{person['last_name']}")
+    end
   end
 
   # ── THE PROMPTS, each one proven on the hand-built sheets ──
@@ -336,7 +350,12 @@ module GameModel
             .transform_values { |rows| rows.max_by { |_, s| s || -1 } }
     end
 
-    def below_floor(scores) = scores.select { |_, s| s && s < FACE_FLOOR }.keys.sort
+    # Back views show no face to score, so the floor never applies to them.
+    BACK_VIEWS = %w[back tq_back rear].freeze
+
+    def back_view?(name) = BACK_VIEWS.include?(name.sub(/_\d+\z/, ""))
+
+    def below_floor(scores) = scores.select { |name, s| s && s < FACE_FLOOR && !back_view?(name) }.keys.sort
   end
 
   # ── THE 5x2 GRID, stitched locally (the one-call grid failed 14 of 14) ──
@@ -347,11 +366,14 @@ module GameModel
     module_function
 
     # Two full bodies on the left; six 796px panels, three over three, on the right.
+    # The halves are named after the sheet, so a base and an iced stitch never
+    # share a temp file.
     def commands(fronts:, panels:, out:, work:)
       raise Failure, "a sheet needs 2 full bodies and 6 panels" unless fronts.size == 2 && panels.size == 6
 
-      left = File.join(work, "left.png")
-      right = File.join(work, "right.png")
+      stem = File.basename(out, ".*")
+      left = File.join(work, "#{stem}-left.png")
+      right = File.join(work, "#{stem}-right.png")
       row = ->(set) { ["("] + set + ["-resize", "796x796", "-background", BACKGROUND, "-splice", "#{GAP}x0", "+append", "-chop", "#{GAP}x0", ")"] }
       [
         ["magick", "(", fronts[0], "-resize", "x1600", ")", "(", fronts[1], "-resize", "x1600", ")",
@@ -370,12 +392,13 @@ module GameModel
 
     def slug(text) = text.to_s.downcase.gsub(/[^a-z0-9]+/, "-").gsub(/\A-|-\z/, "")
 
-    def key(espn_id, descriptor, variant, clock: Time)
-      "#{KEY_PREFIX}#{espn_id}/#{slug(descriptor)}-#{variant}-#{clock.now.utc.strftime('%Y%m%d%H%M%S')}.jpg"
+    def key(folder, descriptor, variant, clock: Time)
+      "#{KEY_PREFIX}#{folder}/#{slug(descriptor)}-#{variant}-#{clock.now.utc.strftime('%Y%m%d%H%M%S')}.jpg"
     end
 
     def payload(spec, sheets)
-      { espn_id: spec["espn_id"].to_s, descriptor: spec["descriptor"], jersey_number: spec["number"].to_i,
+      who = spec["espn_id"].to_s != "" ? { espn_id: spec["espn_id"].to_s } : { person: spec["person"], team_slug: spec["team_slug"] }
+      { **who, descriptor: spec["descriptor"], jersey_number: (spec["number"]&.to_i if who[:espn_id]),
         generation_notes: spec["notes"], sheets: sheets }.compact
     end
   end

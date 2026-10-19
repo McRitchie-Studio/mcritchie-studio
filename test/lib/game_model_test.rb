@@ -80,6 +80,7 @@ class GameModelTest < Minitest::Test
     assert_equal({ "front_neutral" => ["front_neutral_2", 0.81], "rear" => ["rear_1", nil], "tq_left" => ["tq_left_1", 0.66] },
                  GameModel::Gate.best(scores))
     assert_equal ["tq_left_1"], GameModel::Gate.below_floor(scores)
+    assert_empty GameModel::Gate.below_floor({ "tq_back_1" => 0.21, "rear_2" => 0.05 }), "back views have no face to floor"
     centre = GameModel::Gate.centroid([[1.0, 0.0], [0.0, 1.0], nil])
     assert_in_delta 0.7071, centre.first, 0.001
   end
@@ -88,7 +89,7 @@ class GameModelTest < Minitest::Test
     cmds = GameModel::Stitch.commands(fronts: %w[f b], panels: %w[p1 p2 p3 p4 p5 p6], out: "s.png", work: "w")
     assert_equal 3, cmds.size
     assert_equal %w[f b], cmds[0].values_at(2, 7)
-    assert_equal "w/right.png", cmds[1].last
+    assert_equal "w/s-right.png", cmds[1].last, "temp halves are named after the sheet"
     assert_equal %w[p1 p2 p3], cmds[1][2, 3]
     assert_equal %w[p4 p5 p6], cmds[1][16, 3]
     assert_equal "s.png", cmds[2].last
@@ -124,6 +125,20 @@ class GameModelTest < Minitest::Test
       assert_equal "iced_full", File.basename(File.dirname(rings[:refs][4])), "iced panels copy the iced full body"
       assert_equal "g3.jpg", File.basename(rings[:refs].last)
     end
+  end
+
+  def test_a_coach_spec_files_by_person_under_his_name_folder
+    coach = SPEC.reject { |k, _| k == "espn_id" }.merge("person" => { "first_name" => "Dave", "last_name" => "Canales", "vocation" => "coach" },
+                                                        "team_slug" => "carolina-panthers")
+    spec = GameModel::Spec.new(".", coach)
+    assert_equal "dave-canales", spec.folder
+    payload = GameModel::Filing.payload(spec, [])
+    assert_equal({ "first_name" => "Dave", "last_name" => "Canales", "vocation" => "coach" }, payload[:person])
+    assert_equal "carolina-panthers", payload[:team_slug]
+    refute payload.key?(:espn_id)
+    refute payload.key?(:jersey_number), "a coach's look carries no jersey number"
+    assert_equal "123", GameModel::Spec.new(".", SPEC).folder
+    assert_raises(GameModel::Failure) { GameModel::Spec.new(".", SPEC.reject { |k, _| k == "espn_id" }).folder }
   end
 
   def test_file_dry_run_uploads_and_posts_nothing

@@ -92,6 +92,60 @@ module Api
         assert_nil Appearance.find_by!(slug: data["look"]).iced_twin
       end
 
+      COACH_KEY = "character-sheets/game-models/sean-mcvay-test/rams-sideline-2026-week-6-base-20261019040000.jpg".freeze
+
+      def coach_payload(person = { first_name: "Sean", last_name: "Mcvay-Test", vocation: "coach" })
+        { person: person, descriptor: "Rams sideline · 2026 Week 6 vs ARI", sheets: [{ variant: "base", object_key: COACH_KEY }] }
+      end
+
+      test "a coach with no person on file is created, flagged coach, and his sheet filed" do
+        @stored << COACH_KEY
+        assert_difference -> { Person.count } => 1, -> { Appearance.count } => 1, -> { Artifact.count } => 1 do
+          api_post(coach_payload)
+        end
+        assert_response :created
+
+        person = Person.find_by!(slug: data["person"])
+        assert_equal ["sean-mcvay-test", true, false], [person.slug, person.coach?, person.athlete?]
+        look = Appearance.find_by!(slug: data["look"])
+        assert_equal ["sean-mcvay-test", "Rams sideline · 2026 Week 6 vs ARI", nil], [look.person_slug, look.descriptor, look.jersey_number]
+
+        assert_no_difference ["Person.count", "Appearance.count", "Artifact.count"] do
+          api_post(coach_payload)
+        end
+        assert_response :ok, "a re-post finds the person and the look on file"
+      end
+
+      test "a by-name filing never lands on a namesake athlete" do
+        @stored << "character-sheets/game-models/josh-allen/x-base-1.jpg"
+        assert_no_difference ["Person.count", "Appearance.count", "Artifact.count", "ErrorLog.count"] do
+          api_post(coach_payload({ first_name: "Josh", last_name: "Allen", vocation: "coach" })
+                     .merge(sheets: [{ variant: "base", object_key: "character-sheets/game-models/josh-allen/x-base-1.jpg" }]))
+        end
+        assert_response :unprocessable_entity
+        assert_equal "NAMESAKE", JSON.parse(response.body)["error_code"]
+        assert_not Person.find_by!(slug: "josh-allen").coach?, "the athlete keeps his flags"
+      end
+
+      test "person refusals write nothing, a person included" do
+        @stored << COACH_KEY
+        cases = {
+          coach_payload.merge(espn_id: "3918298") => "INVALID",
+          coach_payload({ first_name: "Sean", last_name: "Mcvay-Test", vocation: "athlete" }) => "INVALID",
+          coach_payload({ first_name: "Sean", last_name: "", vocation: "coach" }) => "INVALID",
+          coach_payload({ first_name: "Sean", last_name: "Mcvay-Test", vocation: "coach", age: 40 }) => "UNPERMITTED_KEYS",
+          coach_payload({ first_name: "Someone", last_name: "Else", vocation: "coach" }) => "INVALID_KEY",
+          payload([{ variant: "base", object_key: COACH_KEY }]) => "INVALID_KEY"
+        }
+        cases.each do |body, code|
+          assert_no_difference ["Person.count", "Artifact.count", "Appearance.count", "ErrorLog.count"] do
+            api_post(body)
+          end
+          assert_response :unprocessable_entity
+          assert_equal code, JSON.parse(response.body)["error_code"], body.inspect
+        end
+      end
+
       test "refusals write nothing" do
         cases = {
           payload.merge(extra: 1) => [:unprocessable_entity, "UNPERMITTED_KEYS"],
