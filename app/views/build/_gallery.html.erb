@@ -1,0 +1,49 @@
+<%# locals: (examples:) %>
+<%# /build's "Built with McRitchie Studio" gallery, below the agent shell on /build and on a draft's /build/:token. It stays while the conversation is short and slides away for good once the thread has grown enough to step the head down (app/javascript/agent_shell.js; task build-chat-reading-flow), so the live page and a reload of it agree. %>
+<section id="<%= BuildController::GALLERY_ID %>" class="max-w-3xl mx-auto px-4 pb-24" data-build-gallery-region>
+<% if examples.any? || (logged_in? && current_user.admin?) %>
+  <section class="mt-14" aria-labelledby="built-with" data-test="build-gallery">
+    <div class="flex items-center justify-between gap-3 mb-4">
+      <h2 id="built-with" class="text-sm font-semibold uppercase tracking-wider text-muted">Built with McRitchie Studio</h2>
+      <% if logged_in? && current_user.admin? %>
+        <%= link_to "See all apps →", build_requests_path(status: "all"), class: "text-sm font-semibold text-primary hover:underline",
+              data: { test: "build-gallery-all" } %>
+      <% end %>
+    </div>
+
+    <% if examples.any? %>
+      <%# A sideways row of every live app: about 3.3 cards wide on a laptop (1.25
+          on a phone), so the partial card says "there is more". The edge that still
+          has cards past it fades out (mask-image, the technique of
+          components/_overflow_fade), measured on scroll AND on resize, since the
+          row's width changes without the window moving. The first message's
+          stream removes the gallery, so the observer measures its own entry
+          (never a $ref that is gone) and is disconnected on destroy. %>
+      <div x-data="{ atStart: true, atEnd: true, _ro: null,
+                     measure(el) { if (!el) return; this.atStart = el.scrollLeft <= 2; this.atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 2 },
+                     destroy() { this._ro && this._ro.disconnect() },
+                     get mask() {
+                       if (this.atStart && this.atEnd) return 'none';
+                       const left = this.atStart ? 'black 0' : 'transparent 0, black 3rem';
+                       const right = this.atEnd ? 'black 100%' : 'black calc(100% - 4rem), transparent 100%';
+                       return 'linear-gradient(to right, ' + left + ', ' + right + ')';
+                     } }"
+           x-init="$nextTick(() => measure($refs.row)); _ro = new ResizeObserver((entries) => entries.forEach((entry) => measure(entry.target))); _ro.observe($refs.row)"
+           x-on:turbo:before-cache.window="_ro && _ro.disconnect()">
+        <ul x-ref="row" @scroll.passive="measure($el)"
+            class="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-3 [scrollbar-width:thin]"
+            :style="`-webkit-mask-image: ${mask}; mask-image: ${mask}`"
+            data-test="build-gallery-row">
+          <% examples.each do |example| %>
+            <li class="snap-start shrink-0 min-w-0 basis-[80%] sm:basis-[calc((100%-3rem)/3.3)]" data-test="build-gallery-item">
+              <%= render "build/gallery_card", example: example %>
+            </li>
+          <% end %>
+        </ul>
+      </div>
+    <% else %>
+      <p class="text-sm text-muted" data-test="build-gallery-empty">Nothing live yet — admins see this line; visitors see no gallery at all.</p>
+    <% end %>
+  </section>
+<% end %>
+</section>

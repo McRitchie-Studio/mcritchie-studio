@@ -36,7 +36,7 @@ class AgentChatComponentTest < ActionView::TestCase
 
     assert_select "##{AgentMessages::WebChat::MESSAGES_TARGET}[role='log'][aria-label='Conversation with Ray'][data-cto-chat-scroll]" do
       assert_select "[data-test='cto-chat-turn']", 2
-      assert_select "#cto-chat-turn-41[data-status='completed'][data-replied-at] [data-test='cto-chat-reply'] p.text-muted", text: "Ray"
+      assert_select "#cto-chat-turn-41[data-status='completed'][data-replied-at] [data-test='cto-chat-reply'] p.sr-only", text: "Ray:"
       assert_select "#cto-chat-turn-41 [data-test='cto-chat-reply'] strong", text: "Nice."
       assert_select "#cto-chat-turn-42[data-status='received'] [data-test='cto-chat-reply']", 0
       assert_select "[data-test='cto-chat-empty']", text: "Tell Ray what you want to build."
@@ -94,13 +94,34 @@ class AgentChatComponentTest < ActionView::TestCase
     assert_select "[data-test='agent-shell-status'] + [data-test='agent-shell-chat'] > [data-test='c']"
   end
 
-  test "[component] the shell paints its size step from the thread's turns, and carries the thresholds for the script" do
-    { 0 => "full", 1 => "medium", 2 => "medium", 3 => "compact", 12 => "compact" }.each do |turns, size|
+  test "[component] the shell guesses its first paint from the turns, and carries the height thresholds the script steps by" do
+    # A guess only (the page measures the thread's height on load): one turn
+    # usually still fits beside the full head.
+    { 0 => "full", 1 => "full", 2 => "medium", 3 => "compact", 12 => "compact" }.each do |turns, size|
       @rendered = ActionView::OutputBuffer.new
       render("agent_chats/shell", page: "draft", head: "", status: "", chat: "", turns: turns)
       assert_select "section.agent-shell[data-agent-shell][data-shell-size='#{size}']", 1, "#{turns} turns"
     end
-    assert_select "section[data-shell-medium-at='#{AgentShellHelper::MEDIUM_AT}'][data-shell-compact-at='#{AgentShellHelper::COMPACT_AT}']"
+    assert_select "section[data-shell-medium-share='#{AgentShellHelper::MEDIUM_SHARE}'][data-shell-compact-share='#{AgentShellHelper::COMPACT_SHARE}']"
+    assert_operator AgentShellHelper::MEDIUM_SHARE, :<, AgentShellHelper::COMPACT_SHARE
+  end
+
+  test "[component] the reading flow: the agent's words are plain text on the page, the visitor's keep their bubble" do
+    render_chat
+
+    reply = css_select("#cto-chat-turn-41 [data-test='cto-chat-reply']").sole
+    classes = reply["class"].split
+    assert_equal "false", reply["data-bubble"]
+    assert_includes classes, "agent-reply"
+    assert_includes classes, "self-stretch", "the thread's full width"
+    assert_empty classes & %w[card rounded-2xl rounded-bl-sm border bg-surface px-3 py-2 max-w-[85%]], "no bubble around the agent's words"
+    assert_select "#cto-chat-turn-41 [data-test='cto-chat-reply'] p.text-muted", 0, "no name box over the answer"
+    assert_select "#cto-chat-turn-41 [data-test='cto-chat-reply'] .agent-reply-body.prose-themed[data-agent-reveal] strong", text: "Nice."
+
+    sent = css_select("#cto-chat-turn-41 [data-test='cto-chat-sent']").sole["class"].split
+    assert_includes sent, "self-end"
+    assert_includes sent, "rounded-2xl"
+    assert_includes sent, "bg-primary/15"
   end
 
   test "[component] the composer is the big chat box with a round send button" do
