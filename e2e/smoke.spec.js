@@ -129,8 +129,19 @@ test("nav links work without errors @quarantine", async ({ page }) => {
   await page.getByRole("link", { name: /Agents/ }).first().click();
   await expect(page).toHaveURL("/agents");
 
+  // Signed out, the navbar's primary button is "Build App" once the bundled
+  // studio-engine has Studio.navbar_signed_out_cta (config/initializers/studio.rb),
+  // with sign-in kept as a quiet "Log in" link; before the relock the button
+  // itself is "Log in". The phone row's copy of the link is hidden at this
+  // width, so one visible "Log in" answers on either engine.
   await page.goto("/");
-  await page.getByRole("link", { name: "Log in" }).click();
+  const buildApp = page.getByRole("link", { name: "Build App", exact: true });
+  if (await buildApp.count()) {
+    await buildApp.first().click();
+    await expect(page).toHaveURL("/build");
+    await page.goto("/");
+  }
+  await page.getByRole("link", { name: "Log in", exact: true }).click();
   await expect(page).toHaveURL("/signin");
 });
 

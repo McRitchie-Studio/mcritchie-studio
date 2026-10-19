@@ -44,7 +44,18 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
         assert_select "a.nav-logo-link[href=?] img.nav-logo[src='/brand/icon-light.svg']", root_path, 1
       end
       NavbarBrand.assert_drawn(self)
-      assert_select "a.btn-primary[href=?]", login_path, text: Studio.sign_in_label, count: 1
+      # The signed-out button, on either side of the engine relock (see
+      # #signed_out_cta?): an explicit branch, not a skip, so both arms assert.
+      if signed_out_cta?
+        assert_select "a.btn-primary[data-nav-signed-out-cta][href=?]", build_path, text: "Build App", count: 1
+        assert_select "a.btn-primary[href=?]", login_path, count: 0
+        # Sign-in stays reachable as a quiet link: beside the button from md,
+        # and in the phone row below md.
+        assert_select "a[data-nav-sign-in][href=?]", login_path, text: Studio.sign_in_label, count: 2
+        assert_select "a.btn[href=?]", login_path, count: 0
+      else
+        assert_select "a.btn-primary[href=?]", login_path, text: Studio.sign_in_label, count: 1
+      end
       assert_select "button[data-link-sidebar-trigger][aria-controls=?][aria-label='Toggle links menu']", SIDEBAR, minimum: 1
       assert_select "button[title='Toggle theme']", minimum: 1
       assert_select "a[href=?]", logout_path, count: 0
@@ -53,6 +64,28 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
     end
     assert_select "header[x-data='navCollapse()']", count: 0
     assert_select "#studio-link-sidebar", 1
+  end
+
+  # config/initializers/studio.rb sets Studio.navbar_signed_out_cta to Build App
+  # only once the bundled engine has the setting. Until the release relocks it,
+  # the old sign-in button is the right answer and the else arm pins it.
+  def signed_out_cta? = Studio.respond_to?(:navbar_signed_out_cta=)
+
+  test "the signed-out CTA is Build App to /build once the engine has the setting" do
+    if signed_out_cta?
+      assert_equal({ label: "Build App", path: "/build" }, Studio.navbar_signed_out_cta)
+      assert_equal "/build", build_path, "the CTA's path is the funnel's route"
+    else
+      refute Studio.respond_to?(:navbar_signed_out_cta), "the guard and the reader disagree about the engine"
+    end
+  end
+
+  test "a member never sees the signed-out CTA" do
+    log_in_as users(:viewer)
+    get about_path
+    assert_response :success
+
+    assert_select "[data-nav-signed-out-cta], [data-nav-sign-in]", count: 0
   end
 
   test "a member gets the account control by first name and the links menu, with no log out link" do
