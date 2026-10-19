@@ -62,4 +62,20 @@ class BuildIntakePendingLaunchTest < ActiveSupport::TestCase
 
     assert_equal "league-hub", Intent.take(round_tripped, "tok-abc", now: @now).subdomain
   end
+
+  # Task build-sign-in-modal.
+  test "[unit] the address is held to one DNS label, and bind answers the intent it stored" do
+    intent = Intent.bind(@session, token: "tok-abc", subdomain: " #{'a' * 70} ", now: @now)
+
+    assert_equal "a" * Intent::SUBDOMAIN_LIMIT, intent.subdomain
+    assert_equal [ "tok-abc", @now.to_i ], [ intent.token, intent.at ]
+    assert_equal "a" * 63, Intent.take(@session, "tok-abc", now: @now).subdomain
+  end
+
+  test "[unit] clear forgets the press" do
+    Intent.bind(@session, token: "tok-abc", subdomain: "league-hub", now: @now)
+    Intent.clear(@session)
+
+    assert_nil Intent.pending_token(@session, now: @now)
+  end
 end

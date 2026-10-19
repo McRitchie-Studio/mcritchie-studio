@@ -229,9 +229,13 @@ class BuildCardsViewTest < ActionView::TestCase
       assert_equal %w[dt dd], pair.element_children.map(&:name), pair["data-test"]
     end
     button = css_select("[data-test='build-summary-build']").first
-    assert_equal "Build My App", button.text.strip
+    assert_equal "Build My App", button.element_children.first.text.strip, "the resting label"
+    # The pressed state (task build-sign-in-modal): while Turbo holds the form
+    # aria-busy, the label gives way to a spinner and a working label.
+    assert_select "form.group[action='/build/#{@row.token}'] [data-test='build-summary-build'] [data-test='build-summary-working'].hidden", text: /One moment…/
+    assert_select "[data-test='build-summary-working'] svg.animate-spin[aria-hidden='true']", 1
     # Signed out it is the same PATCH: the server remembers the press and answers
-    # with the sign-in prompt (BuildController#sign_in_to_launch). No client-side modal.
+    # with a stream that opens the sign-in modal (BuildController#sign_in_to_launch).
     assert_equal "true", button["data-signs-in"]
     assert_nil button["data-build-sign-in"]
     assert_select ".cta-glow[data-test='build-summary-glow'][style*='--glow-a: #15803d'] > [data-test='build-summary-build']", 1,
@@ -241,9 +245,10 @@ class BuildCardsViewTest < ActionView::TestCase
 
     signed_in(User.create!(email: "m@example.com", name: "M", role: "viewer"))
     card("summary")
+    assert_select "[data-test='build-summary-working']", text: /Building…/
     assert_select "form[action='/build/#{@row.token}'] input[name='_method'][value='patch']"
     assert_select "form[action='/build/#{@row.token}'] input[name='app_request[subdomain]'][value='league-hub']"
-    assert_select "form[action='/build/#{@row.token}'] [data-test='build-summary-build']", "Build My App"
+    assert_select "form[action='/build/#{@row.token}'] [data-test='build-summary-build'] > span:first-child", "Build My App"
   end
 
   test "[component] the summary card's refusal: the reason, then the next step for its kind; Build My App stays" do

@@ -55,21 +55,16 @@ module AgentMessages
       ].join("\n\n")
     end
 
-    # Whom the greeting names: the owner's first name, else the first word of
-    # their name, else (a new magic-link account has neither: task
-    # build-sign-in-modal) the first word of their email's local part when it
-    # reads as a name ("jordan.lee@" greets Jordan), never a mailbox like
-    # "info@"; nil greets "there".
-    MAILBOX_WORDS = %w[admin contact hello hey hi info mail me office sales support team].freeze
-
+    # Whom the greeting names: the owner's first name (users.first_name, which
+    # the engine's first-name onboarding collects), else the first word of their
+    # name; nil greets "there". Not the email's local part (task
+    # build-sign-in-modal looked): "new-builder@" would greet "New", "info@"
+    # "Info", and "amcritchie@" "Amcritchie". A new magic-link account has no
+    # name yet when the launch writes this, so it is greeted "there".
     def greeting_name(user)
       return nil unless user
 
-      named = (user.try(:first_name).presence || user.name.to_s.split.first).to_s.strip
-      return named if named.present?
-
-      word = user.email.to_s.split("@").first.to_s[/\A[[:alpha:]]{2,20}(?![[:alpha:]])/].to_s.downcase
-      word.length >= 3 && !MAILBOX_WORDS.include?(word) ? word.capitalize : nil
+      (user.try(:first_name).presence || user.name.to_s.split.first).to_s.strip.presence
     end
 
     def enqueue!(app_cto:, user:, now: Time.current)
