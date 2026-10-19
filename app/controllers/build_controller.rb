@@ -157,12 +157,7 @@ class BuildController < ApplicationController
       @app_request.update!(user: current_user) if @app_request.user.nil? && !current_user.admin?
       session.delete(:build_draft_token)
     end
-    if @app_request.draft?
-      load_chat
-      @examples = BuildGallery.examples
-    else
-      @intake_agent = Agent.find_by(slug: BuildIntake.soul)
-    end
+    @app_request.draft? ? load_chat : (@intake_agent = Agent.find_by(slug: BuildIntake.soul))
   end
 
   # One more message to Ray, from the chat's composer.
@@ -348,6 +343,8 @@ class BuildController < ApplicationController
     @messages = BuildIntake.history(@app_request.token)
     @intake_agent = Agent.find_by(slug: BuildIntake.soul)
     @started = @app_request.intake_started?
+    # The draft page's gallery (build/_gallery), until its thread has grown.
+    @examples = BuildGallery.examples
   end
 
   def append_turn(message)
