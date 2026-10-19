@@ -144,7 +144,7 @@ class GameModelTest < Minitest::Test
       File.write(File.join(dir, "spec.yml"), SPEC.to_yaml)
       touch(dir, "sheet/test-player-base.png")
       touch(dir, "filed_dev.json")
-      error = assert_raises(GameModel::Failure) { GameModel::Cli.new(["file", dir], out: StringIO.new, shell: ->(*) {}).run }
+      error = assert_raises(GameModel::Failure) { GameModel::Cli.new(["file", dir], out: StringIO.new, shell: ->(*) { }).run }
       assert_match "already filed", error.message
     end
   end
