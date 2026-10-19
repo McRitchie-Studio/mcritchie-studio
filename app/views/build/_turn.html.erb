@@ -16,7 +16,10 @@
     <% end %>
     <% if card && BuildIntake::Card::KINDS.include?(card["card"]) %>
       <div class="self-start w-full max-w-xl" data-test="build-card" data-card="<%= card["card"] %>">
-        <%= render "build/cards/#{card['card']}", card: card, message: message, request_row: request_row %>
+        <% card_locals = { card: card, message: message, request_row: request_row } %>
+        <%# A launch the sign-in landing refused shows its reason on the newest summary card (BuildController#launch_refusal_for). %>
+        <% card_locals[:refusal] = launch_refusal_for(message) if card["card"] == "summary" && respond_to?(:launch_refusal_for) %>
+        <%= render "build/cards/#{card['card']}", **card_locals %>
         <% if error %>
           <p class="mt-2 text-xs text-danger-ink" role="alert" data-test="build-card-error"><%= error %></p>
         <% end %>

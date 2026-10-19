@@ -37,7 +37,9 @@ module AdminWall
     # The customer funnel's writes and its live subdomain probe, and the chat
     # with Ray before sign-in: a message, the answer poll and a card tap. Each
     # is gated past the wall by the request's secret token (BuildController#load_request).
-    "build" => %w[create check message turns choose],
+    # Build My App (update) too: signed out it only remembers the press and
+    # answers with the sign-in prompt; the launch itself needs an account.
+    "build" => %w[create check message turns choose update],
     "contact_submissions" => %w[create],
     # Email: the unsubscribe page and the open/click/goal tracking pixels.
     "unsubscribes" => %w[show create resubscribe],
@@ -66,8 +68,9 @@ module AdminWall
   # controller_path => actions any signed-in user may reach: their own account,
   # their own /build request, and the pages of an app they own.
   SIGNED_IN = {
-    # The /build funnel's name step: a customer claims a subdomain for their draft.
-    "build" => %w[update],
+    # The landing after a signed-out Build My App's sign-in: it claims and
+    # launches that draft (BuildController#launch, BuildIntake::PendingLaunch).
+    "build" => %w[launch],
     "studio/profiles" => %w[show edit update avatar unlink_google subscribe_newsletter unsubscribe_newsletter],
     "studio/onboarding" => %w[first_name skip_first_name],
     # An app owner's own apps and their CTOs' settings (docs/agents/system/app-owners.md).

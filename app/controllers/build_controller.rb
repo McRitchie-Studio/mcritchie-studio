@@ -21,13 +21,18 @@
 #                                  as Turbo Streams (no /cable socket signed out)
 #   PATCH /build/:token/intake     a tap on an intake card (BuildIntake::Choice):
 #                                  sets the field and relays the visitor's turn
-#   PATCH /build/:token            Build my app: claim the subdomain and queue
+#   PATCH /build/:token            Build my app: claim the subdomain and queue.
+#                                  Signed out, it answers with the sign-in
+#                                  prompt instead and remembers the press
+#                                  (BuildIntake::PendingLaunch)
+#   GET   /build/:token/launch     the landing after that sign-in: the press,
+#                                  taken once from THIS session, launches
 #
 # WHO MAY USE A DRAFT is whoever holds its secret token until it belongs to an
 # account, then that account (or an admin, to read). load_request is the gate
 # for every action that names a token.
 class BuildController < ApplicationController
-  before_action :load_request, only: %i[show update message turns choose]
+  before_action :load_request, only: %i[show update launch message turns choose]
   before_action :require_admin, only: :index
 
   # Public forms that write rows: bounded per IP, so they cannot fill a table or
@@ -54,6 +59,8 @@ class BuildController < ApplicationController
   # card's stream target (build/_status_card; the id predates the card).
   CHAT_ID = "build-chat-page".freeze
   STATUS_ID = "build-checklist".freeze
+  # The sign-in prompt a signed-out Build My App opens under the summary card.
+  SIGN_IN_PROMPT_ID = "build-sign-in-prompt".freeze
   # The summary card's own DOM id (build/cards/_summary), the target of a
   # refused launch's stream.
   def self.summary_dom_id(message) = "build-summary-#{message.id}"
@@ -157,6 +164,7 @@ class BuildController < ApplicationController
       session.delete(:build_draft_token)
     end
     @app_request.draft? ? load_chat : (@intake_agent = Agent.find_by(slug: BuildIntake.soul))
+    load_launch_refusal if @app_request.draft?
   end
 
   # One more message to Ray, from the chat's composer.
@@ -224,10 +232,11 @@ class BuildController < ApplicationController
     end
   end
 
-  # Build my app. Asks for sign-in (the page opens it; this answers a
-  # signed-out post by sending them back), needs the whole checklist (an admin
-  # may queue a showcase straight from a name), then claims and queues through
-  # AppRequest#queue!, as before. client-cto-from-intake swaps what it starts.
+  # Build my app. Signed out, it asks for sign-in IN PLACE (sign_in_to_launch):
+  # the press is remembered in this session and the sign-in comes back to
+  # #launch, which finishes it. Signed in, it needs the whole checklist (an
+  # admin may queue a showcase straight from a name), then claims and launches
+  # (launch_draft, shared with #launch).
   #
   # A REFUSAL from the summary card (Turbo, carrying its message_id) answers ON
   # that card: a Turbo Stream redraws it with the reason and a next step
@@ -237,7 +246,9 @@ class BuildController < ApplicationController
   # 2026-10-18 that opened the Links drawer and dropped the reason (task
   # build-launch-chat-growth).
   def update
-    unless logged_in? && @app_request.claimable_by?(current_user) && @app_request.draft?
+    return sign_in_to_launch unless logged_in?
+
+    unless @app_request.claimable_by?(current_user) && @app_request.draft?
       redirect_to build_request_path(@app_request.token)
       return
     end
@@ -247,34 +258,57 @@ class BuildController < ApplicationController
         redirect_to build_request_path(@app_request.token), alert: "Finish the steps first.", status: :see_other
       end
     end
-    @app_request.user ||= current_user
-    # Build my app (AppLaunch, docs/agents/system/client-cto.md): the App, its
-    # owner, its CTO and the build task in one transaction, then the page moves
-    # to the new CTO's chat, where Ray's handover is already the first turn. An
-    # admin's showcase without the checklist still queues the old way.
-    unless @app_request.intake_complete?
-      @app_request.queue!(name)
-      return redirect_to(build_request_path(@app_request.token), notice: "Your app is in the build queue.")
-    end
 
-    launch = rescue_and_log(target: @app_request) { AppLaunch.new(@app_request, subdomain: name).call! }
-    redirect_to chat_application_path(launch.app.slug), status: :see_other,
-                                                        notice: "#{launch.app_cto.name} is your CTO. Say hello."
-  rescue AppLaunch::Incomplete => e
-    refuse_launch(e.message) { redirect_to build_request_path(@app_request.token), alert: e.message, status: :see_other }
-  rescue ActiveRecord::RecordInvalid => e
-    @app_request.status = "draft"
-    @app_request.errors.merge!(e.record.errors) unless e.record.equal?(@app_request)
-    # The address's and the plan's errors read as sentences of their own ("That
-    # name is taken."), not "Subdomain That name is taken.".
-    reason = @app_request.errors.map { |error| %i[base subdomain].include?(error.attribute) ? error.message : error.full_message }
-                                .uniq.to_sentence.presence || e.message
-    plan_limit = @app_request.errors.added?(:base, :apps_per_account)
-    domain = @app_request.errors.include?(:subdomain)
-    refuse_launch(reason, plan_limit: plan_limit, domain: domain) do
-      flash.now[:alert] = reason
-      load_chat
-      render :show, status: :unprocessable_entity
+    outcome = launch_draft(name)
+    case outcome.kind
+    when :queued then redirect_to(build_request_path(@app_request.token), notice: "Your app is in the build queue.")
+    when :launched then redirect_to(chat_application_path(outcome.app_slug), status: :see_other, notice: outcome.notice)
+    else
+      refuse_launch(outcome.reason, plan_limit: outcome.plan_limit, domain: outcome.domain) do
+        if outcome.incomplete
+          redirect_to build_request_path(@app_request.token), alert: outcome.reason, status: :see_other
+        else
+          flash.now[:alert] = outcome.reason
+          load_chat
+          render :show, status: :unprocessable_entity
+        end
+      end
+    end
+  end
+
+  # GET /build/:token/launch — where a signed-out Build My App's sign-in lands
+  # (the magic link's return_to; LandingController forwards the Google path).
+  # It launches ONLY with the press's intent, taken once from this session
+  # (BuildIntake::PendingLaunch): a forwarded link opened in another browser,
+  # a refresh, or a stale press finds none and just opens the draft, claiming
+  # nothing. The claim is the same rule as ever (AppRequest#claimable_by?:
+  # unclaimed, or already theirs; load_request has already turned away a draft
+  # that is someone else's). Launched already by them, it goes to the app. A
+  # refusal lands on the draft with the reason on its summary card.
+  def launch
+    intent = BuildIntake::PendingLaunch.take(session, @app_request.token)
+    return redirect_to(chat_application_path(@app_request.subdomain), status: :see_other) if launched_by_viewer?
+    return redirect_to(build_request_path(@app_request.token), status: :see_other) unless intent && @app_request.draft?
+
+    unless @app_request.intake_complete?
+      return refuse_after_sign_in(launch_outcome(:refused, reason: "Finish the steps first.", incomplete: true))
+    end
+    # The claim, atomic: only a draft still unclaimed or already the viewer's.
+    claimed = AppRequest.where(id: @app_request.id, status: "draft", user_id: [ nil, current_user.id ])
+                        .update_all(user_id: current_user.id, updated_at: Time.current)
+    @app_request.reload
+    return redirect_to(build_path, alert: "That draft belongs to another account.", status: :see_other) if claimed.zero?
+
+    session.delete(:build_draft_token)
+    outcome = launch_draft(intent.subdomain || @app_request.subdomain)
+    case outcome.kind
+    when :launched then redirect_to(chat_application_path(outcome.app_slug), status: :see_other, notice: outcome.notice)
+    else
+      # A second landing that raced this one launched it first: go to the app.
+      @app_request.reload
+      return redirect_to(chat_application_path(@app_request.subdomain), status: :see_other) if launched_by_viewer?
+
+      refuse_after_sign_in(outcome)
     end
   end
 
@@ -284,6 +318,93 @@ class BuildController < ApplicationController
   end
 
   private
+
+  # What launch_draft did: :launched (app_slug, notice), :queued (an admin's
+  # showcase without the checklist) or :refused (reason, and which next step
+  # the summary card offers; incomplete when nothing was written).
+  LaunchOutcome = Struct.new(:kind, :app_slug, :notice, :reason, :plan_limit, :domain, :incomplete, keyword_init: true)
+  def launch_outcome(kind, **attrs) = LaunchOutcome.new(kind: kind, plan_limit: false, domain: false, incomplete: false, **attrs)
+
+  # The launch itself, for #update and #launch alike, on a draft the caller has
+  # already checked is the viewer's to claim: AppLaunch (the App, its owner,
+  # its CTO and the build task in one transaction, docs/agents/system/client-cto.md),
+  # or, for an admin's showcase without the checklist, the old queue.
+  def launch_draft(name)
+    @app_request.user ||= current_user
+    unless @app_request.intake_complete?
+      @app_request.queue!(name)
+      return launch_outcome(:queued)
+    end
+
+    launch = rescue_and_log(target: @app_request) { AppLaunch.new(@app_request, subdomain: name).call! }
+    launch_outcome(:launched, app_slug: launch.app.slug, notice: "#{launch.app_cto.name} is your CTO. Say hello.")
+  rescue AppLaunch::Incomplete => e
+    launch_outcome(:refused, reason: e.message, incomplete: true)
+  rescue ActiveRecord::RecordInvalid => e
+    @app_request.status = "draft"
+    @app_request.errors.merge!(e.record.errors) unless e.record.equal?(@app_request)
+    # The address's and the plan's errors read as sentences of their own ("That
+    # name is taken."), not "Subdomain That name is taken.".
+    reason = @app_request.errors.map { |error| %i[base subdomain].include?(error.attribute) ? error.message : error.full_message }
+                                .uniq.to_sentence.presence || e.message
+    launch_outcome(:refused, reason: reason, plan_limit: @app_request.errors.added?(:base, :apps_per_account),
+                             domain: @app_request.errors.include?(:subdomain))
+  end
+
+  # A signed-out Build My App: remember the press in THIS session
+  # (BuildIntake::PendingLaunch, with the address the card showed) and answer
+  # in place with the sign-in prompt under the summary card (build/_sign_in_prompt),
+  # whose magic link and Google button both come back to #launch. The draft is
+  # untouched. Without Turbo (an old page, a plain form), the draft page.
+  def sign_in_to_launch
+    unless @app_request.draft?
+      return redirect_to(build_request_path(@app_request.token), status: :see_other)
+    end
+
+    BuildIntake::PendingLaunch.bind(session, token: @app_request.token,
+                                             subdomain: params.dig(:app_request, :subdomain).presence || @app_request.subdomain)
+    session[:build_draft_token] = @app_request.token
+    respond_to do |format|
+      format.turbo_stream do
+        card = summary_message
+        prompt = { partial: "build/sign_in_prompt",
+                   locals: { request_row: @app_request, return_to: build_request_launch_path(@app_request.token) } }
+        # Removed first, so a second press never stacks two prompts.
+        placed = if card
+                   turbo_stream.after(BuildController.summary_dom_id(card), **prompt)
+                 else
+                   turbo_stream.append(AgentMessages::WebChat::MESSAGES_TARGET, **prompt)
+                 end
+        render turbo_stream: [ turbo_stream.remove(SIGN_IN_PROMPT_ID), placed ]
+      end
+      format.any { redirect_to build_request_path(@app_request.token), status: :see_other }
+    end
+  end
+
+  # A launch the sign-in landing could not finish: back on the draft, the
+  # reason on its summary card (launch_refusal_for, read by build/_turn).
+  def refuse_after_sign_in(outcome)
+    flash[:build_launch_refusal] = { "reason" => outcome.reason, "plan_limit" => outcome.plan_limit,
+                                     "domain" => outcome.domain,
+                                     "existing_app" => (existing_app_path if outcome.plan_limit) }
+    redirect_to build_request_path(@app_request.token), status: :see_other
+  end
+
+  # The viewer's own request, already launched into its app.
+  def launched_by_viewer?
+    !@app_request.draft? && @app_request.user == current_user && @app_request.subdomain.present? &&
+      App.exists?(slug: @app_request.subdomain)
+  end
+
+  helper_method :launch_refusal_for
+
+  # The refusal the sign-in landing left (refuse_after_sign_in), for the
+  # draft's newest summary card only, in the locals build/cards/_summary takes.
+  def launch_refusal_for(message)
+    return nil unless @launch_refusal && message.id == @launch_refusal_message_id
+
+    @launch_refusal
+  end
 
   # Why the first message looks like a bot's, or nil. A signed-in visitor has
   # already proved more than a browser.
@@ -336,6 +457,15 @@ class BuildController < ApplicationController
     else
       build_request_path(other.token)
     end
+  end
+
+  def load_launch_refusal
+    raw = flash[:build_launch_refusal]
+    return unless raw.is_a?(Hash) && raw["reason"].present?
+
+    @launch_refusal_message_id = @messages.reverse.find { |m| m.intake_card.is_a?(Hash) && m.intake_card["card"] == "summary" }&.id
+    @launch_refusal = { reason: raw["reason"].to_s, plan_limit: raw["plan_limit"] == true, domain: raw["domain"] == true,
+                        existing_app: raw["existing_app"].presence }
   end
 
   def load_chat

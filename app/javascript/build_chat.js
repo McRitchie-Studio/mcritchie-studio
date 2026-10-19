@@ -23,8 +23,6 @@
 //     Ray's names fills the name field;
 //   - the theme card ([data-build-theme]): the Dark / Light toggle swaps every
 //     column's preview, and the choice survives the card's re-render;
-//   - Build My App signed out ([data-build-sign-in]): opens the standard
-//     sign-in modal with the props the button carries.
 //
 // Imported by application.js on every page, once per load; one timer, which
 // reads the page fresh on every tick, and listeners delegated on document, so
@@ -206,10 +204,6 @@ document.addEventListener("click", (event) => {
     if (key) themeModes.set(key, chosen);
     showThemeMode(card, chosen);
     return;
-  }
-  const signIn = event.target.closest?.("[data-build-sign-in]");
-  if (signIn && window.Alpine?.store("modals")) {
-    window.Alpine.store("modals").open("auth", JSON.parse(signIn.dataset.buildSignIn));
   }
 });
 
