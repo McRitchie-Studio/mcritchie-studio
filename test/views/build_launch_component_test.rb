@@ -47,9 +47,11 @@ class BuildLaunchComponentTest < ActionView::TestCase
 
   test "[component] the live stage pill glows, a done one carries a check, a future one stays muted" do
     app = client_app!
-    stages = AppDevopsStages.from("assembled")
+    stages = AppDevopsStages.from("assembled").map { |stage| stage.live? ? stage.dup.tap { |s| s.count = 1 } : stage }
+    board = AppDevopsStages::Board.new(stages: stages, total: 1,
+                                       items: [ AppDevopsStages::Item.new(title: "Build Launch App", lane: "Releasing") ])
     render partial: "agent_chats/devops_card",
-           locals: { app: app, stages: stages, client: true, palette_style: client_cto_palette_style(app.client_cto) }
+           locals: { app: app, board: board, client: true, palette_style: client_cto_palette_style(app.client_cto) }
 
     assert_select "[data-test='cto-chat-head'][style*='--cto-primary-light: 79 70 229;']"
     assert_select "ol.devops-stages[data-test='devops-stages']"

@@ -33,12 +33,13 @@ class CtoChatsControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='agent-caption']", text: /Turf\s+· CTO of #{apps(:turf_monster).name}/
       assert_select "[data-test='cto-chat-head'] h1", text: apps(:turf_monster).name
       assert_select "[data-test='devops-stage']", 3
-      assert_select "[data-test='devops-stage'][data-state='done']", 3, "no build task: one of our own live apps"
+      assert_select "[data-test='devops-stage'][data-state='pending']", 3, "nothing in flight: no pill lit, no checks"
+      assert_select "[data-test='devops-idle']", text: "Nothing in progress right now."
       assert_select "[data-test='cto-chat-usage'] [data-test='usage-meter-line']", text: /Tokens used/
     end
     assert_select "[data-test='cto-chat-usage']", text: /Agent usage this month/, count: 0
     assert_select "turbo-cable-stream-source[channel='CtoChatChannel']", 1
-    signed = css_select("turbo-cable-stream-source").first["signed-stream-name"]
+    signed = css_select("turbo-cable-stream-source[channel='CtoChatChannel']").sole["signed-stream-name"]
     assert_equal AgentMessages::WebChat.stream_name("turf-monster", @alex.id), CtoChatChannel.verified_stream_name(signed)
 
     assert_select "#cto-chat-messages[role='log'] [data-test='cto-chat-turn']", 2
@@ -132,7 +133,7 @@ class CtoChatsControllerTest < ActionDispatch::IntegrationTest
     get chat_application_path("turf-monster")
 
     assert_select "[data-test='cto-chat-unavailable']", text: /Turf has no web chat yet/
-    assert_select "turbo-cable-stream-source", 0
+    assert_select "turbo-cable-stream-source[channel='CtoChatChannel']", 0
     assert_select "form#cto-chat-form", 0
 
     get application_path("turf-monster")
