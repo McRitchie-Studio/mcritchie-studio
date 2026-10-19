@@ -43,7 +43,7 @@ class AppDevopsStages
     # (past the usual time), :waiting (nobody to start it).
     Estimate = Struct.new(:text, :phrase, :kind, :seconds, keyword_init: true)
 
-    WAITING = Estimate.new(text: "no builder yet", phrase: "waiting for a builder", kind: :waiting).freeze
+    WAITING = Estimate.new(text: "no builder", phrase: "waiting for a builder", kind: :waiting).freeze
 
     module_function
 

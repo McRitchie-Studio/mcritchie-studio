@@ -103,7 +103,7 @@ class AppDevopsStagesEtaTest < ActiveSupport::TestCase
 
     board = AppDevopsStages.board_for(eta_app)
     building = lane(board, "building")
-    assert_equal [ :live, 1, "Prepping", "no builder yet" ], [ building.state, building.count, building.sub_label, building.eta.text ]
+    assert_equal [ :live, 1, "Prepping", "no builder" ], [ building.state, building.count, building.sub_label, building.eta.text ]
     assert_equal "Prepping · waiting for a builder", board.items.sole.status
     assert_nil lane(board, "releasing").sub_label, "a muted pill carries no sub-label"
 

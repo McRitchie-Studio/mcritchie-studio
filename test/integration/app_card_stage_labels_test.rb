@@ -30,7 +30,7 @@ class AppCardStageLabelsTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select "#{building_pill} [data-test='devops-stage-sub-label']", text: "Prepping"
-    assert_select "#{building_pill} [data-test='devops-stage-eta'][data-eta-kind='waiting']", text: "no builder yet"
+    assert_select "#{building_pill} [data-test='devops-stage-eta'][data-eta-kind='waiting']", text: "no builder"
     assert_select "[data-test='devops-task']", text: /Launching Pawsome\s+Prepping · waiting for a builder/
     assert_select "[data-test='devops-stage'][data-state='pending'] [data-test='devops-stage-sub-label']", 0
 

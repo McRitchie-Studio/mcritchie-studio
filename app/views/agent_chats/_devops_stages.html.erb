@@ -1,5 +1,5 @@
 <%# locals: (app:, board:, admin: false) %>
-<%# The live half of the app chat's status card (agent_chats/_devops_card): the three pills, Building · Releasing · Deploying, and the open tasks under them (AppDevopsStages.board_for). A lane with tasks is live: it wears the shared CTA glow (cta-glow) in the app's colours and carries its count. A lane the app's own build task has passed carries a check; any other lane stays muted. With nothing in flight the card says so. A live pill also carries a second line: where its furthest-along task is (Prepping, Building, Reviewing, Approved, On QA, Going live) and, beneath it, how long that step usually has left (AppDevopsStages::Eta; "no builder yet" while nobody can start it). The list is the newest few tasks, title and where each is with its ETA: an admin's title links to the board, an owner's is plain text through ClientPipeline's sanitizer. The frame reloads itself (src: cto_chats#status) when AppDevopsStages::Live broadcasts that a task for this app moved; target _top keeps the admin's links whole-page. %>
+<%# The live half of the app chat's status card (agent_chats/_devops_card): the three pills, Building · Releasing · Deploying, and the open tasks under them (AppDevopsStages.board_for). A lane with tasks is live: it wears the shared CTA glow (cta-glow) in the app's colours and carries its count. A lane the app's own build task has passed carries a check; any other lane stays muted. With nothing in flight the card says so. A live pill also carries a second line: where its furthest-along task is (Prepping, Building, Reviewing, Approved, On QA, Going live) and, beneath it, how long that step usually has left (AppDevopsStages::Eta; "no builder" while nobody can start it). The list is the newest few tasks, title and where each is with its ETA: an admin's title links to the board, an owner's is plain text through ClientPipeline's sanitizer. The frame reloads itself (src: cto_chats#status) when AppDevopsStages::Live broadcasts that a task for this app moved; target _top keeps the admin's links whole-page. %>
 <turbo-frame id="<%= AppDevopsStages::Live.frame_id(app.slug) %>" target="_top" class="block space-y-3" data-test="devops-board">
   <% tall = board.stages.any?(&:sub_label) %>
   <%# With a second line in a live pill, every pill in the row grows to its height, so all three trade the capsule for a rounded box together. %>
@@ -28,7 +28,7 @@
             <% end %>
           </span>
           <% if stage.sub_label %>
-            <%# Two short lines under the label, each truncating rather than widening the pill: the sub-label, then the ETA ("~20 min", "no builder yet"). %>
+            <%# Two short lines under the label, each truncating rather than widening the pill: the sub-label, then the ETA ("~20 min", "no builder"). %>
             <span class="block max-w-full truncate text-2xs sm:text-xs font-medium" data-test="devops-stage-sub-label"><%= stage.sub_label %></span>
             <% if stage.eta %>
               <span class="block max-w-full truncate text-2xs sm:text-xs font-normal text-muted tabular-nums" data-test="devops-stage-eta" data-eta-kind="<%= stage.eta.kind %>"><%= stage.eta.text %></span>
@@ -44,13 +44,14 @@
   <% else %>
     <ul class="divide-y divide-subtle text-sm" aria-label="In progress" data-test="devops-tasks">
       <% board.items.each do |item| %>
-        <li class="flex items-baseline justify-between gap-3 py-1.5 min-w-0" data-test="devops-task">
+        <%# On a phone the row stacks, title over where it is, so neither truncates the other; from sm up they share one line. %>
+        <li class="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 sm:gap-3 py-1.5 min-w-0" data-test="devops-task">
           <% if admin && item.slug %>
             <%= link_to item.title, task_path(item.slug), class: "min-w-0 truncate text-heading hover:underline", data: { test: "devops-task-link" } %>
           <% else %>
             <span class="min-w-0 truncate text-heading" data-test="devops-task-title"><%= item.title %></span>
           <% end %>
-          <span class="shrink-0 max-w-[60%] truncate text-xs text-muted" data-test="devops-task-status"><%= item.status.presence || item.lane %></span>
+          <span class="min-w-0 sm:shrink-0 sm:max-w-[60%] truncate text-xs text-muted" data-test="devops-task-status"><%= item.status.presence || item.lane %></span>
         </li>
       <% end %>
     </ul>

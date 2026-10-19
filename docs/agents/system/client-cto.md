@@ -112,7 +112,7 @@ left (`AppDevopsStages::Eta`). Each list row says the same for its own task.
 
 | Task step | Pill | Sub-label | ETA |
 |-----------|------|-----------|-----|
-| `designed` | Building | Prepping | "no builder yet" unless a launcher is live, else the usual wait |
+| `designed` | Building | Prepping | "no builder" unless a launcher is live, else the usual wait |
 | `building` | Building | Building (On hold while blocked) | usual build time, less time spent |
 | `submitted` | Building | Reviewing | usual review time |
 | `reviewed` | Building | Approved | usual wait for a release |
