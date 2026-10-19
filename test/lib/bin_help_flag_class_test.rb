@@ -134,6 +134,9 @@ class BinHelpFlagClassTest < Minitest::Test
     # Generate enqueues a PAID image round; the guard runs before the Rails boot.
     "email-image"            => :cli_arg_guard,
     "game-model"             => :cli_arg_guard, # PAID image calls; the guard runs before bundler
+    # PUBLISHES a client app's bundle (flips its live preview); the guard runs
+    # before the bundle is read or anything is sent.
+    "client-bundle"          => :cli_arg_guard,
     # COPIES the credential helper's whole closure to disk and repoints a symlink,
     # so it is guarded like the rest of the mutating flat scripts. Its --check and
     # --print-config arms install nothing, but the DEFAULT arm (no flags at all)
@@ -594,6 +597,7 @@ class BinHelpFlagClassTest < Minitest::Test
   # Ruby scripts must call it before their first mutating call — asserted by
   # position, because "it is in the file somewhere" is not the property that matters.
   FIRST_MUTATION = {
+    "client-bundle"       => "ClientAppBundle",
     "program-drift"       => "ProgramDrift.readings",
     "archive-docs"        => "DocsArchive.roll_ledger!",
     "clean-artifacts"     => "ArtifactSweep",

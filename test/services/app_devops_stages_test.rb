@@ -140,7 +140,10 @@ class AppDevopsStagesTest < ActiveSupport::TestCase
     queries = count_card_queries { AppDevopsStages.board_for(lane_app, admin: true) }
     6.times { |i| card_task("R#{i}", "assembled", release: release) }
     assert_equal queries, count_card_queries { AppDevopsStages.board_for(lane_app, admin: true) }, "no N+1"
-    assert_operator queries, :<=, 3, "the request, the tasks, their releases"
+    # The request, the tasks, their releases, then the sub-labels' reads
+    # (task app-card-stage-labels): the stage medians and the preview checkpoints,
+    # one each; the launcher read only when a designed task shows.
+    assert_operator queries, :<=, 5, "the request, the tasks, their releases, the medians, the previews"
   end
 
   def count_card_queries(&block)

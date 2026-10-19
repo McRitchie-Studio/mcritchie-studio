@@ -19,6 +19,12 @@ class App < ApplicationRecord
   has_one :client_cto, class_name: "AppCto", foreign_key: :app_slug, primary_key: :slug,
                        inverse_of: :app, dependent: :delete
 
+  # The static bundles this app has published to the shared client-app host
+  # (docs/agents/system/client-app-host.md). `preview_version` names the live one;
+  # ClientApps::Publish is the only writer of either.
+  has_many :preview_versions, class_name: "AppPreviewVersion", foreign_key: :app_slug, primary_key: :slug,
+                              inverse_of: :app, dependent: :delete_all
+
   # The default app a brand-new session adopts before any task exists — the
   # SessionStart hook seeds "<random Pokémon> · mcritchie-studio".
   DEFAULT_SLUG = "mcritchie-studio".freeze
@@ -29,6 +35,13 @@ class App < ApplicationRecord
   # No `active` scope: status here is config/apps.yml's word, where a live app
   # may be showcase or delinquent, so `where(status: "active")` would drop Turf
   # Monster. Ask AppCatalog (`Entry#live?`) whether an app is live.
+
+  # The live bundle's history row, or nil when nothing is published yet.
+  def current_preview
+    return nil if preview_version.blank?
+
+    preview_versions.find_by(version: preview_version)
+  end
 
   def self.default
     find_by(slug: DEFAULT_SLUG)

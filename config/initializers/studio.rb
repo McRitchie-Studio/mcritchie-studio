@@ -92,6 +92,15 @@ Studio.configure do |config|
   if Studio.respond_to?(:navbar_scroll_timeline=)
     config.navbar_scroll_timeline = true
   end
+  # The signed-out navbar's primary button sells the funnel (Alex 2026-10-19):
+  # "Build App" to /build, with sign-in kept as a quiet link beside it and in
+  # the phone row (studio-engine's Studio.navbar_signed_out_cta). Sign-in's own
+  # words stay Studio.sign_in_label, which also words the engine's auth pages.
+  # Guarded the same way: inert until the release relocks an engine that has
+  # the setting.
+  if Studio.respond_to?(:navbar_signed_out_cta=)
+    config.navbar_signed_out_cta = { label: "Build App", path: "/build" }
+  end
   # ---- Site footer and booking (studio-engine docs/SITE_FOOTER.md) ----
   # The engine renders the footer, the map, the booking frame and the booking
   # popup, and serves Leaflet. This block is only the facts.

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_19_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_19_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -477,6 +477,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_180000) do
     t.check_constraint "role::text = 'owner'::text", name: "app_memberships_role_known"
   end
 
+  create_table "app_preview_versions", force: :cascade do |t|
+    t.string "app_slug", null: false
+    t.integer "byte_size", null: false
+    t.datetime "created_at", null: false
+    t.integer "file_count", null: false
+    t.jsonb "manifest", default: {}, null: false
+    t.datetime "published_at", null: false
+    t.string "published_by"
+    t.datetime "updated_at", null: false
+    t.string "version", null: false
+    t.index ["app_slug", "published_at"], name: "index_app_preview_versions_on_app_slug_and_published_at"
+    t.index ["app_slug", "version"], name: "index_app_preview_versions_on_app_slug_and_version", unique: true
+  end
+
   create_table "app_requests", force: :cascade do |t|
     t.jsonb "answers", default: {}, null: false
     t.datetime "created_at", null: false
@@ -602,6 +616,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_180000) do
     t.string "name", null: false
     t.string "package_tier"
     t.integer "position", default: 0
+    t.string "preview_version"
     t.string "slug", null: false
     t.string "status", default: "active"
     t.jsonb "theme_colors"
@@ -2930,6 +2945,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_180000) do
   add_foreign_key "app_ctos", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
   add_foreign_key "app_memberships", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
   add_foreign_key "app_memberships", "users", column: "user_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
+  add_foreign_key "app_preview_versions", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
   add_foreign_key "app_requests", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "app_requests", "users"
   add_foreign_key "appearance_reference_photos", "appearances", column: "appearance_slug", primary_key: "slug", on_update: :cascade

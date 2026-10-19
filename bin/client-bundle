@@ -1,0 +1,104 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/client-bundle: publish a client app's static bundle to the shared host
+# (docs/agents/system/client-app-host.md).
+#
+#   bin/client-bundle check <dir>                      validate only; sends nothing
+#   bin/client-bundle publish <sub> <dir>              through the hub API (production by default)
+#   bin/client-bundle publish <sub> <dir> --api URL    through another hub (a desk server)
+#   bin/client-bundle publish <sub> <dir> --local      into this checkout's development database
+#
+# A publish through the API presents an agent session's token, and the hub
+# decides: CLIENT_BUNDLE_SESSION_TOKEN, else AGENT_ADMIN_SESSION_TOKEN, else the
+# studio session of the desk this runs in. An admin session publishes any client
+# app; a studio session only the app whose build task it holds. The shared token
+# is never sent. This script holds no storage credential: the hub writes R2.
+
+require "base64"
+require "json"
+require_relative "lib/cli_arg_guard"
+
+USAGE = <<~TEXT
+  Usage: bin/client-bundle check <dir>
+         bin/client-bundle publish <sub> <dir> [--api URL | --local]
+TEXT
+DEFAULT_API = "https://mcritchie.studio"
+
+# Before anything else: --help anywhere answers usage, and an argument this
+# script does not know refuses, so a probe never publishes.
+ARGS = CliArgGuard.guard!(ARGV, program: "client-bundle", usage: USAGE,
+                                consequence: "nothing was validated or sent.",
+                                bool: %w[--local], value: %w[--api], allow_positional: true)
+
+require_relative "../lib/client_app_bundle"
+require_relative "lib/fact_cli"
+
+def bundle_from(dir)
+  bundle = ClientAppBundle.from_directory(dir)
+  bundle.validate!
+rescue ClientAppBundle::Invalid => e
+  warn "client-bundle: refused, nothing was sent:"
+  e.errors.each { |error| warn "  - #{error}" }
+  exit 1
+end
+
+def session_token
+  explicit = ENV["CLIENT_BUNDLE_SESSION_TOKEN"].to_s.strip
+  explicit.empty? ? FactCli.session_token : explicit
+end
+
+def publish_via_api(sub, dir, api)
+  bundle = bundle_from(dir)
+  token = session_token
+  abort "client-bundle: no agent session. Set CLIENT_BUNDLE_SESSION_TOKEN, hold an admin session in " \
+        "AGENT_ADMIN_SESSION_TOKEN, or run from the desk of the app's build task." unless token
+
+  payload = { files: bundle.files.map { |path, bytes| { path: path, content_base64: Base64.strict_encode64(bytes) } } }
+  uri = URI.join("#{api.chomp('/')}/", "api/v1/client_bundles/#{URI.encode_www_form_component(sub)}")
+  req = Net::HTTP::Post.new(uri, "Content-Type" => "application/json", "Authorization" => "Bearer #{token}")
+  req.body = JSON.generate(payload)
+  res = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https", open_timeout: 10, read_timeout: 120) { |http| http.request(req) }
+  body = JSON.parse(res.body.to_s) rescue {}
+  unless res.is_a?(Net::HTTPSuccess)
+    warn "client-bundle: hub answered #{res.code}: #{[body['error_code'], body['error'] || 'no reason given'].compact.join(' ')}"
+    Array(body["errors"]).each { |error| warn "  - #{error}" }
+    exit 1
+  end
+
+  data = body.fetch("data", {})
+  puts "published #{data['app_slug']} #{data['version']} (#{data['file_count']} files, #{data['byte_size']} bytes)"
+  puts "previous: #{data['previous_version'] || 'none'}"
+  event = data["event"]
+  puts "event: #{event ? "#{event['name']} on #{event['task_slug']}" : 'none (no build task)'}"
+  puts "url: #{data['url']}"
+rescue SystemCallError, SocketError, Timeout::Error => e
+  abort "client-bundle: could not reach #{api}: #{e.class}"
+end
+
+def publish_local(sub, dir)
+  bundle_from(dir)
+  rails = File.expand_path("rails", __dir__)
+  exec(rails, "runner", "ClientApps::LocalPublish.run(ARGV)", sub, File.expand_path(dir))
+end
+
+command, *rest = ARGS.positionals
+case command
+when "check"
+  abort USAGE unless rest.size == 1 && !ARGS.bool?("--local") && ARGS.all("--api").empty?
+  bundle = bundle_from(rest.first)
+  puts "ok: #{bundle.files.size} files, #{bundle.byte_size} bytes"
+when "publish"
+  abort USAGE unless rest.size == 2 && ARGS.all("--api").size <= 1
+  api = ARGS.first("--api")
+  abort "client-bundle: --local and --api are separate runs" if ARGS.bool?("--local") && api
+  if ARGS.bool?("--local")
+    publish_local(*rest)
+  else
+    publish_via_api(*rest, api || ENV["CLIENT_BUNDLE_API"].to_s.strip.then { |v| v.empty? ? DEFAULT_API : v })
+  end
+when nil
+  puts USAGE
+else
+  abort USAGE
+end
