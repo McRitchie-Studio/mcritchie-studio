@@ -23,10 +23,12 @@
 //     Ray's names fills the name field;
 //   - the theme card ([data-build-theme]): the Dark / Light toggle swaps every
 //     column's preview, and the choice survives the card's re-render;
+//   - the sign-in prompt a signed-out Build My App opens
+//     ([data-build-sign-in-email], build/_sign_in_prompt): the email form is
+//     sent in place through window.postMagicLink, with the launch landing as
+//     its return_to, and the check-inbox modal opens.
 //   - the CTA glows (cta_glow.js): a theme pick moves Choose Theme's glow to
 //     that theme's colours, and a glow scrolled off screen draws nothing;
-//   - Build My App signed out ([data-build-sign-in]): opens the standard
-//     sign-in modal with the props the button carries.
 //
 // Imported by application.js on every page, once per load; one timer, which
 // reads the page fresh on every tick, and listeners delegated on document, so
@@ -204,10 +206,6 @@ document.addEventListener("click", (event) => {
     showThemeMode(card, chosen);
     return;
   }
-  const signIn = event.target.closest?.("[data-build-sign-in]");
-  if (signIn && window.Alpine?.store("modals")) {
-    window.Alpine.store("modals").open("auth", JSON.parse(signIn.dataset.buildSignIn));
-  }
 });
 
 // A card already on the page (or one a poll or a tap brings) checks its names once.
@@ -229,3 +227,27 @@ document.addEventListener("turbo:before-stream-render", (event) => {
   };
 });
 setInterval(tick, 500);
+
+// The sign-in prompt's email form (build/_sign_in_prompt): sent in place, so the
+// draft stays on screen; the form's own return_to is the launch landing.
+document.addEventListener("submit", async (event) => {
+  const form = event.target.closest?.("[data-build-sign-in-email]");
+  if (!form || typeof window.postMagicLink !== "function") return;
+  event.preventDefault();
+  const email = form.elements.email?.value.trim();
+  const send = form.querySelector("[data-build-sign-in-send]");
+  const error = form.querySelector("[data-build-sign-in-error]");
+  const sent = form.querySelector("[data-build-sign-in-sent]");
+  if (!email || send?.disabled) return;
+  if (error) error.hidden = true;
+  if (send) { send.disabled = true; send.textContent = "Sending…"; }
+  try {
+    await window.postMagicLink(email, form.elements.return_to?.value);
+    if (sent) sent.hidden = false;
+    window.Alpine?.store("modals")?.open("check-inbox", { sentEmail: email });
+  } catch (_e) {
+    if (error) error.hidden = false;
+  } finally {
+    if (send) { send.disabled = false; send.textContent = "Email me a sign-in link"; }
+  }
+});

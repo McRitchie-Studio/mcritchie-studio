@@ -28,6 +28,10 @@ Rails.application.routes.draw do
   get   "build/launch-demo/:slug", to: "build#launch_demo", as: :build_launch_demo if Rails.env.development?
   get   "build/:token", to: "build#show",   as: :build_request
   patch "build/:token", to: "build#update"
+  # The landing after a signed-out Build My App's sign-in (both the magic link's
+  # return_to and the Google path through LandingController): it launches only
+  # with the press's intent in this session (BuildIntake::PendingLaunch).
+  get   "build/:token/launch", to: "build#launch", as: :build_request_launch
   # The /build chat with Ray (BuildIntake): a message, the poll for answers, and
   # a tap on an intake card.
   post  "build/:token/messages", to: "build#message", as: :build_request_messages

@@ -12,9 +12,10 @@
 // picked after the dark/light toggle), Hatch CTO (a portrait picked in the modal,
 // the prefilled name edited), and Use Domain (a chip picked, the name edited and
 // typed back while the chip's glow follows the field). The summary card follows, and Build My App asks for sign-in only
-// then; the emailed link returns to the same chat, and Build My App launches the app
-// and, after the launch panel's three steps, moves the page to the new CTO's chat (a
-// Turbo visit, no reload), where the CTO's code-written greeting is already there. The
+// then, in place under the card; the emailed link signs in and lands on the app being
+// built (the draft claimed and launched once, task build-launch-sign-in): the launch
+// panel's three steps, then the new CTO's chat, where the CTO's code-written
+// greeting is already there. The
 // spec plays the dispatcher through the real mailbox API (claim, complete with an
 // intake card), and the page, which has no /cable socket signed out, picks each
 // answer up by polling. Mobile width and both themes are measured on the way.
@@ -82,7 +83,7 @@ async function tapped(page, auth, line, text, card) {
   await rayAnswers(page, auth, line, text, card);
 }
 
-test("a signed-out visitor's first message answers in place, taps alone reach Build My App, and the page becomes the CTO's chat, greeted, with no reload", async ({ page, browser }) => {
+test("a signed-out visitor's first message answers in place, taps alone reach Build My App, and the sign-in it asks for lands on the CTO's chat, greeted", async ({ page, browser }) => {
   // The whole intake, sign-in and launch in one walk, with the theme, CTO and domain
   // cards each exercised by keyboard and tap: past the suite's 30s default.
   test.setTimeout(90_000);
@@ -307,13 +308,20 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   expect(overflow, "nothing runs off the side at 360px").toBeLessThanOrEqual(0);
   await page.setViewportSize({ width: 1280, height: 800 });
 
+  // Build My App, signed out: the press answers IN PLACE with the sign-in prompt
+  // under the summary card (no reload, the draft kept), and remembers itself in
+  // this browser's session (task build-launch-sign-in).
+  const draftPath = new URL(page.url()).pathname;
   await summary.locator("[data-test='build-summary-build']").click();
-  const modal = page.locator("[data-test='auth-modal']");
-  await expect(modal).toBeVisible();
-  await modal.locator("#auth-email").fill(email);
+  const prompt = page.locator("[data-test='build-sign-in-prompt']");
+  await expect(prompt).toBeVisible();
+  await expect(prompt.getByRole("heading", { name: "Sign in to build your app" })).toBeVisible();
+  await expect(prompt.locator("[data-test='build-sign-in-google']")).toContainText("Continue with Google");
+  expect(await page.evaluate(() => window.__buildShellMarker), "the prompt opens without a reload").toBe("kept");
+  await prompt.locator("#build-sign-in-email").fill(email);
   await Promise.all([
     page.waitForResponse((r) => r.url().includes("/magic_link") && r.request().method() === "POST" && r.ok()),
-    modal.getByRole("button", { name: "Email me a sign-in link" }).click(),
+    prompt.getByRole("button", { name: "Email me a sign-in link" }).click(),
   ]);
 
   let link;
@@ -324,41 +332,37 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   }
   expect(link, "the sign-in email was sent").toBeTruthy();
 
-  // The link returns to the SAME chat, now signed in, and every choice held.
-  const chatPath = new URL(page.url()).pathname;
+  // The emailed link signs in and lands on the app being built: the draft is
+  // claimed, the launch runs once, and the page is the new CTO's chat, with Ray's
+  // portrait now Marbles's, the status card the app's devops in the Field colours,
+  // Ray's handover first and Marbles's code-written greeting already under it: no
+  // model ran, nothing is typing.
   await page.goto(new URL(link.action_url, page.url()).pathname);
-  if (new URL(page.url()).pathname !== chatPath) {
-    await page.locator("#magic-consume-form").evaluate((form) => form.requestSubmit());
+  // The confirm page auto-posts; submit it by hand only if it is still showing.
+  if (new URL(page.url()).pathname.startsWith("/l/") && await page.locator("#magic-consume-form").count()) {
+    await page.locator("#magic-consume-form").evaluate((form) => form.requestSubmit()).catch(() => {});
   }
-  await page.waitForURL((u) => u.pathname === chatPath);
-  const onboarding = page.getByRole("dialog", { name: "onboarding first name" });
-  await expect(onboarding).toBeVisible();
-  await onboarding.getByLabel("First name").fill("Jordan");
-  await onboarding.getByRole("button", { name: "Save and continue" }).click();
-  await expect(onboarding).toBeHidden();
-  await expect(page.locator("[data-test='build-turn']", { hasText: idea })).toHaveCount(1);
-
-  // Build My App: the page moves to the new CTO's chat (a Turbo visit with a view
-  // transition, not a reload), Ray's portrait now Marbles's, the status card the app's
-  // devops in the Field colours, Ray's handover first and Marbles's code-written greeting
-  // already under it: no model ran, nothing is typing.
-  //
-  // Between the two, the launch panel (task build-launch-handoff): the launch has
-  // happened, the shell is swapped in place for Marbles's portrait, the app's name and
-  // the three steps, and the address is ALREADY the chat (a reload lands there). This
-  // suite runs with reduced motion (playwright.config.js), so the steps show done at
-  // once and the visit follows a short pause.
-  await page.evaluate(() => { window.__buildShellMarker = "kept"; });
-  await page.locator("[data-test='build-card-summary'] [data-test='build-summary-build']").click();
+  // Between the sign-in and the chat, the launch panel (task build-launch-handoff):
+  // the launch has happened, and the page shows Marbles's portrait, the app's name and
+  // the three steps. This suite runs with reduced motion (playwright.config.js), so
+  // the steps show done at once and the visit follows a short pause.
   const panel = page.locator("[data-test='build-launch']");
   await expect(panel).toBeVisible();
-  await expect(page).toHaveURL((u) => u.pathname === `/applications/${address}/chat`);
-  await expect(page.locator("[data-test='agent-shell']")).toHaveCount(0);
   await expect(panel.locator("[data-test='build-launch-portrait'] [data-test='client-cto-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
   await expect(panel.locator("[data-test='build-launch-step']")).toHaveText(["Building Brand Sheet", "Hatching CTO", "Setting Up Domain"]);
   for (const step of await panel.locator("[data-test='build-launch-step']").all()) await expect(step).toHaveAttribute("data-state", "done");
+  await page.waitForURL((u) => u.pathname === `/applications/${address}/chat`);
   await expect(page.locator("[data-test='agent-shell'][data-shell='app']")).toBeVisible();
-  expect(await page.evaluate(() => window.__buildShellMarker), "Build My App moves the page without a reload").toBe("kept");
+  const onboarding = page.getByRole("dialog", { name: "onboarding first name" });
+  if (await onboarding.isVisible().catch(() => false)) {
+    await onboarding.getByLabel("First name").fill("Jordan");
+    await onboarding.getByRole("button", { name: "Save and continue" }).click();
+    await expect(onboarding).toBeHidden();
+  }
+  // The landing again (a refresh, a second click) launches nothing more: it only reopens the app.
+  const again = await page.request.get(`${draftPath}/launch`, { maxRedirects: 0 });
+  expect(again.status()).toBe(303);
+  expect(new URL(again.headers().location, page.url()).pathname).toBe(`/applications/${address}/chat`);
   await expect(page.locator("[data-test='agent-shell'][data-shell='app'] [data-test='agent-caption']")).toContainText("Marbles");
   await expect(page.locator("[data-test='agent-portrait'] [data-test='client-cto-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
   const head = page.locator("[data-test='cto-chat-head'][data-client-cto='true']");
@@ -367,7 +371,8 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(head.locator("[data-test='cto-chat-usage']")).toContainText("Tokens used");
   const handover = page.locator("[data-test='cto-chat-turn']", { has: page.locator("[data-test='cto-chat-handover']") });
   await expect(handover).toContainText("Meet Marbles, your CTO. I'll hand you over.");
-  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("Hi Jordan, I'm Marbles, the agent who'll be managing");
+  // Launched at sign-in, before the first-name step: the greeting has no name yet.
+  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("Hi there, I'm Marbles, the agent who'll be managing");
   await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("It's building now");
   await expect(page.locator("[data-test='cto-chat-typing']")).toHaveCount(0);
   await expect(page.locator("turbo-cable-stream-source[channel='CtoChatChannel']")).toHaveAttribute("connected", "");

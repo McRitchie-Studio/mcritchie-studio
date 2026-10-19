@@ -17,7 +17,10 @@
     <% if card && BuildIntake::Card::KINDS.include?(card["card"]) %>
       <%# The point of action: the card keeps its bubble while Ray's words around it are plain text (agent_chats/_turn), and it waits for those words to finish typing (agent-action, app/assets/tailwind/agent_reply.css). %>
       <div class="agent-action self-start w-full max-w-xl" data-test="build-card" data-card="<%= card["card"] %>" data-action-card>
-        <%= render "build/cards/#{card['card']}", card: card, message: message, request_row: request_row %>
+        <% card_locals = { card: card, message: message, request_row: request_row } %>
+        <%# A launch the sign-in landing refused shows its reason on the newest summary card (BuildController#launch_refusal_for). %>
+        <% card_locals[:refusal] = launch_refusal_for(message) if card["card"] == "summary" && respond_to?(:launch_refusal_for) %>
+        <%= render "build/cards/#{card['card']}", **card_locals %>
         <% if error %>
           <p class="mt-2 text-xs text-danger-ink" role="alert" data-test="build-card-error"><%= error %></p>
         <% end %>
