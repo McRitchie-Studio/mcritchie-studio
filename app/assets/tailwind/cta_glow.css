@@ -36,6 +36,10 @@
    colour list (comma separated, first colour repeated last so the ring closes)
    and replaces --glow-a/b/c. It is a plain, unregistered property, so it does
    not blend on a change; the theme card keeps the three registered colours.
+   --glow-reach (how far past the CTA each layer sits, default 3px),
+   --glow-blur (12px) and --glow-strength (the layers' peak opacity, 0.75)
+   tune one glow louder or quieter. A larger reach is layout overflow, so use
+   it only where the CTA's container clips (the landing hero does).
    .cta-glow-rainbow is the one preset (task landing-build-ctas: the landing
    hero's Build Your App). */
 
@@ -57,12 +61,12 @@
 .cta-glow::after {
   content: "";
   position: absolute;
-  inset: -3px;
+  inset: calc(-1 * var(--glow-reach, 3px));
   z-index: -1;
   border-radius: 9999px;
   background: conic-gradient(from var(--glow-from, 0deg), var(--glow-stops, var(--glow-a), var(--glow-b), var(--glow-c), var(--glow-a)));
-  filter: blur(12px);
-  opacity: 0.75;
+  filter: blur(var(--glow-blur, 12px));
+  opacity: var(--glow-strength, 0.75);
   pointer-events: none;
 }
 
@@ -88,10 +92,13 @@
    dark navy one. */
 .cta-glow-rainbow {
   --glow-stops: #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #6366f1, #d946ef, #ef4444;
+  --glow-reach: 8px;
+  --glow-blur: 16px;
+  --glow-strength: 1;
 }
 
 @keyframes cta-glow-trade {
-  to { opacity: 0.75; }
+  to { opacity: var(--glow-strength, 0.75); }
 }
 
 @media (prefers-reduced-motion: reduce) {
