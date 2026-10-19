@@ -4,9 +4,15 @@
 ## Status: Active
 
 `/build` is McRitchie Studio's app funnel. A visitor describes an app, creates a
-free account, and claims `<name>.mcritchie.studio`. Nothing is generated
-automatically: each request is **queued** and an agent builds it, asynchronously.
-This SOP is how an agent works that queue.
+free account, and claims `<name>.mcritchie.studio`. Each request is **queued**
+and built asynchronously.
+
+**Since 2026-10-19 the first version is automatic.** `bin/client-build-launcher`
+on Alex's Mac claims every launch task `AppLaunch` opens, builds a static bundle
+with a sandboxed builder, and publishes it to the shared preview host
+([`client-build-launcher.md`](../system/client-build-launcher.md)). This SOP is
+the hand path: a launch task the launcher left for a person (blocked past its
+attempts), a request from before the launcher, or an app moving to its own repo.
 
 ## The pieces
 
