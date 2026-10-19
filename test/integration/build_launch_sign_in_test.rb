@@ -65,10 +65,12 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
         assert_select "h3", "Sign in to build your app"
         assert_select "form[action='/auth/google_oauth2'][method='post'][data-turbo='false']", 1, "Google's request phase is a POST (omniauth-rails_csrf_protection), out of Turbo"
         assert_select "[data-test='build-sign-in-google']", /Continue with Google/
-        assert_select "[data-test='build-sign-in-email-form'] input[type='email']"
+        assert_select "form[data-test='build-sign-in-email-form'][action='/magic_link'][method='post']" do
+          assert_select "input[type='email'][name='email']"
+          assert_select "input[type='hidden'][name='return_to'][value='/build/#{draft.token}/launch']"
+        end
       end
     end
-    assert_includes response.body, "/build/#{draft.token}/launch", "the emailed link comes back to the launch"
     assert draft.reload.draft?
     assert_nil draft.user
     assert_equal draft.token, session[BuildIntake::PendingLaunch::KEY]["token"]
