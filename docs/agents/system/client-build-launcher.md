@@ -14,7 +14,7 @@ at `<sub>.<preview domain>`. Nobody waits for a person to pick it up.
 | The plist template | `config/launchd/studio.mcritchie.client-build-launcher.plist` |
 | Logs | `~/Library/Logs/client-build-launcher.log` |
 | Heartbeat | a minute ping to `/api/v1/agent_dispatchers/ping` listing the one soul `client-build-launcher` (`AgentDispatcher::LAUNCHER_SOUL`) |
-| Publish session | `CLIENT_BUNDLE_SESSION_TOKEN`, else the owner-only file `~/.client-builds/session-token`: an admin agent session (the publish API refuses the shared token) |
+| Publish session | a studio login for the one build task the run holds, minted per run (below); no standing publish secret |
 | Scratch directories | `~/.client-builds/<sub>/<run>`: outside every repo, one per run, kept for inspection |
 
 ## What one build does
@@ -105,8 +105,8 @@ leaked the file, so the check bites.
 - **New code.** The launcher re-reads a digest of its own files every minute;
   new code seen twice stops claiming, lets the runs finish, and exits 0, and
   launchd starts the new code.
-- **Publish not ready.** Until `bin/client-bundle` exists in the checkout and a
-  publish session is on hand, the launcher claims nothing, logs why, and pings
+- **Publish not ready.** Until `bin/client-bundle` exists in the checkout, the
+  launcher claims nothing, logs why, and pings
   `paused` with the reason, so the status card does not promise a builder.
 
 ## The heartbeat
@@ -131,16 +131,19 @@ bin/client-build-launcher status                 # the launchd job's state
 tail -f ~/Library/Logs/client-build-launcher.log
 ```
 
-**The publish session** must exist before the launcher builds anything: an admin
-agent session's token, written owner-only (`umask 077; pbpaste > ~/.client-builds/session-token`).
-It is a credential: never print it. Mint it from a hub shell with
-`bin/rails agent_sessions:grant_admin` ([`agent-sessions-design.md`](agent-sessions-design.md)).
+**The publish session** needs no new secret. The publish API takes an agent
+session, never the shared token, and a studio session publishes only the app whose
+build task it holds (`client-app-host`). So at each claim the launcher mints one
+with the machine credential it already holds (`POST /api/v1/agent_sessions`,
+`issued_by: task_claim`, soul `pokemon`, which the claim stamped as the builder):
 
-**Open gap:** an admin session lives one to eight hours, and the launcher is a
-standing service. Once the session expires, a publish answers 401 and the run
-blocks its task. A standing machine credential for publish (a harness key the
-publish endpoint accepts, `accepts_harness_key`) is owed before the launcher runs
-unattended for long.
+- It reaches that one task: any other task, the launcher's own board calls, and
+  every admin endpoint refuse it (`require_task_scope`, `require_admin_session`).
+- It dies when the task leaves `building`, and lives 24 hours at most.
+- It is held in memory, passed to `bin/client-bundle` as `CLIENT_BUNDLE_SESSION_TOKEN`
+  (with `AGENT_ADMIN_SESSION_TOKEN` unset in that child), and never written to
+  disk, logged, or shown to the builder.
+- A 401 at publish (an expired or revoked login) re-mints once and retries.
 
 **Install** is Alex's: a launchd job is persistence, which an agent's auto mode
 does not run. From the hub's primary checkout (install refuses a desk):

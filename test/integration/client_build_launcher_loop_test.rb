@@ -41,13 +41,20 @@ class ClientBuildLauncherLoopTest < ActionDispatch::IntegrationTest
   class StubPublisher
     attr_reader :calls
 
-    def initialize(ok: true) = (@ok = ok) && (@calls = [])
+    # `answers`: one per call, :ok or :unauthorized; the last repeats.
+    def initialize(ok: true, answers: nil)
+      @answers = answers || [ ok ? :ok : :failed ]
+      @calls = []
+    end
+
     def available? = true
     def unavailable_reason = nil
 
-    def call(subdomain, dir)
-      @calls << [ subdomain, dir, File.read(File.join(dir, "index.html")) ]
-      ClientBuildLauncher::Publisher::Result.new(ok: @ok, version: (@ok ? "v1" : nil), output: @ok ? "" : "upload refused")
+    def call(subdomain, dir, token:)
+      @calls << [ subdomain, dir, File.read(File.join(dir, "index.html")), token ]
+      answer = @answers[[ @calls.size - 1, @answers.size - 1 ].min]
+      ClientBuildLauncher::Publisher::Result.new(ok: answer == :ok, version: (answer == :ok ? "v1" : nil),
+                                                 output: answer == :ok ? "" : "hub answered 401", unauthorized: answer == :unauthorized)
     end
   end
 
@@ -94,7 +101,10 @@ class ClientBuildLauncherLoopTest < ActionDispatch::IntegrationTest
     assert_equal "shipped", task.stage, @out.string
     assert_equal [ "preview_ready", "v1", "https://dog-walks.mcritchie.si" ],
                  task.devops["client_build"].values_at("state", "version", "preview_url")
-    sub, dir, html = publisher.calls.sole
+    sub, dir, html, token = publisher.calls.sole
+    session = AgentSession.from_token(token)
+    assert_equal [ "studio", task.slug, "pokemon" ], [ session.tier, session.task_slug, session.soul ],
+                 "publish presents a studio session for this one build task, nothing broader"
     assert_equal "dog-walks", sub
     assert dir.start_with?(File.join(@root, "dog-walks", "")), "a scratch directory per run, outside the repo"
     assert_includes html, "Walk schedule", "the builder's bundle is what publishes"
@@ -110,6 +120,38 @@ class ClientBuildLauncherLoopTest < ActionDispatch::IntegrationTest
     assert_equal [ "test-mac", [ ClientBuildLauncher::LAUNCHER_SOUL ], "running", 2 ], [ row.worker_id, row.souls, row.state, row.capacity ]
     assert_empty AgentDispatcher.primaries, "a launcher is not the mailbox's primary"
     assert AgentDispatcher.silent?, "a live launcher never hides a silent dispatcher"
+  end
+
+  test "an expired publish session is re-minted once and the publish goes through" do
+    task = launch!("dog-walks")
+    publisher = StubPublisher.new(answers: %i[unauthorized ok])
+    launcher(builder: writing_builder, publisher: publisher).run(once: true)
+
+    first, second = publisher.calls.map(&:last)
+    refute_equal first, second
+    assert AgentSession.from_token(first).revoked?, "the re-mint revokes the old login"
+    assert_equal "shipped", task.reload.stage
+  end
+
+  test "the publish session reaches its own task and nothing else" do
+    task = launch!("dog-walks")
+    other = Task.create!(title: "A hub task", stage: "designed")
+    publisher = StubPublisher.new(answers: [ :failed ])
+    loop_under_test = launcher(builder: writing_builder, publisher: publisher)
+    loop_under_test.tick
+    loop_until = Time.now + 10
+    sleep 0.05 until publisher.calls.any? || Time.now > loop_until
+    token = publisher.calls.first&.last
+    assert token, "the run reached publish"
+    bearer = { "Authorization" => "Bearer #{token}" }
+
+    patch "/api/v1/tasks/#{other.slug}", params: { task: { title: "hijack" } }, headers: bearer, as: :json
+    assert_response :forbidden
+    get "/api/v1/client_builds", headers: bearer
+    assert_response :forbidden, "a studio login cannot drive the launcher's board calls"
+    assert_equal "A hub task", other.reload.title
+    assert_equal task.slug, AgentSession.from_token(token).task_slug
+    loop_under_test.drain
   end
 
   test "a failing builder blocks the task with the reason and posts the snag line" do

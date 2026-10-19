@@ -80,6 +80,14 @@ module ClientBuildLauncher
     # one soul LAUNCHER_SOUL: the status card reads a launcher as live from it.
     def ping(payload) = call(:post, "/api/v1/agent_dispatchers/ping", payload)
 
+    # A studio login for `slug`'s build (POST /api/v1/agent_sessions, task_claim),
+    # minted with the launcher's machine credential. The board grants it only while
+    # the task is building and only to the soul its claim stamped (ClientBuilds::BUILDER).
+    def mint_session(slug, soul: SOUL)
+      call(:post, "/api/v1/agent_sessions", { "tier" => "studio", "soul" => soul, "task_slug" => slug,
+                                              "issued_by" => "task_claim" }).dig("data", "token")
+    end
+
     def claim(slug, worker:, run:) = call(:post, member(slug, "claim"), { "worker" => worker, "run" => run })["data"]
     def progress(slug, run:, kind:) = call(:post, member(slug, "progress"), { "run" => run, "kind" => kind })["data"]
 
@@ -482,43 +490,37 @@ module ClientBuildLauncher
   # contract. Until that command exists, available? is false and the launcher
   # claims nothing (a run would only end blocked).
   class Publisher
-    Result = Struct.new(:ok, :version, :output, keyword_init: true)
+    Result = Struct.new(:ok, :version, :output, :unauthorized, keyword_init: true)
     # The publish API takes an AGENT SESSION, never the shared token
-    # (docs/agents/system/client-app-host.md): an admin session for the launcher.
-    # From the environment, else this owner-only file (launchd passes no secret env).
+    # (docs/agents/system/client-app-host.md). The launcher hands it the narrowest
+    # one there is: a STUDIO session for the one build task the run holds, minted
+    # at the claim (Client#mint_session) and re-minted once on a 401. It publishes
+    # only that task's app, dies when the task leaves building, and is never written
+    # to disk or shown to the builder.
     TOKEN_ENV = "CLIENT_BUNDLE_SESSION_TOKEN"
-    TOKEN_FILE = File.join(Dir.home, ".client-builds", "session-token")
+    # Unset in the publish child, so a broader session in the launcher's own
+    # environment is never the one presented.
+    UNSET = %w[AGENT_ADMIN_SESSION_TOKEN].freeze
 
-    def initialize(repo_root: REPO_ROOT, runner: nil, env: ENV, token_file: TOKEN_FILE)
+    def initialize(repo_root: REPO_ROOT, runner: nil)
       @command = File.join(repo_root, "bin/client-bundle")
       @runner = runner || ->(argv, child_env) { Open3.capture2e(child_env, *argv) }
-      @env = env
-      @token_file = token_file
     end
 
     def available? = unavailable_reason.nil?
 
     # Why a publish cannot run now, or nil.
     def unavailable_reason
-      return "publish is not installed (#{@command}, task client-app-host)" unless File.executable?(@command)
-      return "no publish session (#{TOKEN_ENV}, or #{@token_file})" unless token
-
-      nil
+      File.executable?(@command) ? nil : "publish is not installed (#{@command}, task client-app-host)"
     end
 
-    def token
-      from_env = @env[TOKEN_ENV].to_s.strip
-      return from_env unless from_env.empty?
-      return nil unless File.file?(@token_file) && File.readable?(@token_file)
-
-      File.read(@token_file).strip.then { |t| t.empty? ? nil : t }
-    end
-
-    def call(subdomain, dir)
-      output, status = @runner.call([ @command, "publish", subdomain, dir ], { TOKEN_ENV => token.to_s })
-      Result.new(ok: status.success?, version: version_in(output.to_s), output: ClientBuildLauncher.tail(output))
+    def call(subdomain, dir, token:)
+      child_env = UNSET.to_h { |name| [ name, nil ] }.merge(TOKEN_ENV => token.to_s)
+      output, status = @runner.call([ @command, "publish", subdomain, dir ], child_env)
+      Result.new(ok: status.success?, version: version_in(output.to_s), output: ClientBuildLauncher.tail(output),
+                 unauthorized: !status.success? && output.to_s.match?(/hub answered 401\b/))
     rescue SystemCallError => e
-      Result.new(ok: false, version: nil, output: "could not run #{@command}: #{e.message}")
+      Result.new(ok: false, version: nil, output: "could not run #{@command}: #{e.message}", unauthorized: false)
     end
 
     # The version the command printed: "published <sub> <version> (N files, B bytes)"
@@ -542,7 +544,9 @@ module ClientBuildLauncher
 
     attr_reader :slug, :run_id, :dir, :started_at
 
-    def initialize(slug:, run_id:, intake:, dir:, config:, builder:, publisher:, log:)
+    # `session`: a callable answering the run's publish session; called again with
+    # `fresh: true` after a 401 (the session expired or was revoked), once.
+    def initialize(slug:, run_id:, intake:, dir:, config:, builder:, publisher:, log:, session: ->(fresh: false) { })
       @slug = slug
       @run_id = run_id
       @intake = intake
@@ -551,6 +555,7 @@ module ClientBuildLauncher
       @builder = builder
       @publisher = publisher
       @log = log
+      @session = session
       @started_at = Time.now
     end
 
@@ -562,7 +567,8 @@ module ClientBuildLauncher
       problems = Validator.errors(@dir, max_bytes: Integer(@config.fetch("bundle_max_bytes")))
       return failed("the bundle failed its check: #{problems.first(5).join('; ')}") if problems.any?
 
-      published = @publisher.call(@intake.fetch("subdomain"), @dir)
+      published = publish
+
       return failed("publish failed: #{published.output.to_s.strip.lines.last(3).join(' ').strip}") unless published.ok
 
       Outcome.new(outcome: "preview_ready", version: published.version)
@@ -571,6 +577,17 @@ module ClientBuildLauncher
     end
 
     private
+
+    def publish
+      token = @session.call(fresh: false)
+      return Publisher::Result.new(ok: false, output: "no publish session could be minted") unless token
+
+      result = @publisher.call(@intake.fetch("subdomain"), @dir, token: token)
+      return result unless result.unauthorized
+
+      fresh = @session.call(fresh: true)
+      fresh ? @publisher.call(@intake.fetch("subdomain"), @dir, token: fresh) : result
+    end
 
     def failed(reason) = Outcome.new(outcome: "failed", reason: reason[0, 900])
 
@@ -704,7 +721,7 @@ module ClientBuildLauncher
         log("#{slug}: the started line did not post (#{e.message})")
       end
       run = Run.new(slug: slug, run_id: run_id, intake: intake, dir: dir, config: @config, builder: @builder,
-                    publisher: @publisher, log: method(:log))
+                    publisher: @publisher, log: method(:log), session: session_for(slug))
       @slots << Slot.new(slug: slug, run_id: run_id, dir: dir, thread: Thread.new { run.call })
       log("#{slug}: claimed run #{run_id}; building in #{dir}")
     end
@@ -776,6 +793,25 @@ module ClientBuildLauncher
     end
 
     private
+
+    # The run's publish session: minted at the claim, here on the main thread, and
+    # re-minted on demand (a 401 at publish) from the run's thread. Held in memory
+    # only. A mint that fails answers nil, and the run ends failed with that reason.
+    def session_for(slug)
+      lock = Mutex.new
+      token = mint(slug)
+      lambda do |fresh: false|
+        lock.synchronize { token = mint(slug) if fresh || token.nil? }
+        token
+      end
+    end
+
+    def mint(slug)
+      @client.mint_session(slug)
+    rescue ApiError => e
+      log("#{slug}: no publish session (#{e.code || e.status}: #{e.message})")
+      nil
+    end
 
     def desk_bound
       @desk_bound || Picker.desk_bound_on_disk(AgentApi.new(open_timeout: 1, read_timeout: 1).projects_dir)

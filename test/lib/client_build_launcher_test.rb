@@ -163,30 +163,22 @@ class ClientBuildLauncherTest < Minitest::Test
 
   # --- Publisher --------------------------------------------------------------
 
-  def test_the_publisher_reads_the_version_and_is_absent_until_installed
+  def test_the_publisher_presents_only_the_run_session_and_reads_the_version
     seen = nil
     out = "published pawsome v20261019-ab12 (3 files, 900 bytes)\nprevious: none\nurl: https://pawsome.mcritchie.si\n"
-    pub = CL::Publisher.new(repo_root: "/nowhere", env: { "CLIENT_BUNDLE_SESSION_TOKEN" => "sess" }, token_file: "/nowhere/t",
-                            runner: ->(argv, env) { seen = [ argv, env ]; [ out, Status.new(true) ] })
+    pub = CL::Publisher.new(repo_root: "/nowhere", runner: ->(argv, env) { seen = [ argv, env ]; [ out, Status.new(true) ] })
     refute pub.available?
     assert_includes pub.unavailable_reason, "not installed"
-    result = pub.call("pawsome", "/tmp/x")
-    assert_equal [ true, "v20261019-ab12" ], [ result.ok, result.version ]
-    assert_equal [ [ "/nowhere/bin/client-bundle", "publish", "pawsome", "/tmp/x" ], { "CLIENT_BUNDLE_SESSION_TOKEN" => "sess" } ], seen
+    result = pub.call("pawsome", "/tmp/x", token: "studio-sess")
+    assert_equal [ true, "v20261019-ab12", false ], [ result.ok, result.version, result.unauthorized ]
+    assert_equal [ "/nowhere/bin/client-bundle", "publish", "pawsome", "/tmp/x" ], seen[0]
+    assert_equal({ "AGENT_ADMIN_SESSION_TOKEN" => nil, "CLIENT_BUNDLE_SESSION_TOKEN" => "studio-sess" }, seen[1],
+                 "a broader session in the launcher's env is unset for the child")
   end
 
-  def test_the_publisher_needs_a_session_from_the_env_or_its_owner_only_file
-    Dir.mktmpdir do |root|
-      FileUtils.mkdir_p(File.join(root, "bin"))
-      File.write(File.join(root, "bin/client-bundle"), "#!/bin/sh\n")
-      File.chmod(0o755, File.join(root, "bin/client-bundle"))
-      file = File.join(root, "session-token")
-      pub = CL::Publisher.new(repo_root: root, env: {}, token_file: file)
-      assert_includes pub.unavailable_reason, "no publish session"
-      File.write(file, "from-file\n")
-      assert pub.available?
-      assert_equal "from-file", pub.token
-    end
+  def test_a_401_from_the_hub_reads_as_unauthorized
+    pub = CL::Publisher.new(repo_root: "/nowhere", runner: ->(*) { [ "client-bundle: hub answered 401: SESSION_ENDED", Status.new(false) ] })
+    assert pub.call("pawsome", "/tmp/x", token: "old").unauthorized
   end
 
   # --- LaunchAgent ------------------------------------------------------------
