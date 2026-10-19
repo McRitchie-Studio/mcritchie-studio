@@ -81,6 +81,14 @@ class ClientAppHost
       raw = raw.strip.downcase
       raw.start_with?("[") ? raw : raw.sub(/:\d+\z/, "")
     end
+
+    # The hosts X-Forwarded-Host and Forwarded name. Rack, HostAuthorization and
+    # the hub's request.host believe them, so a hub request naming a preview host
+    # there is the door's (a 404: its sub comes only from HTTP_HOST), never the hub's.
+    def forwarded_hosts(env)
+      names = env["HTTP_X_FORWARDED_HOST"].to_s.split(",") + env["HTTP_FORWARDED"].to_s.scan(/host="?([^";,\s]+)/i).flatten
+      names.map { |name| name.strip.downcase.sub(/:\d+\z/, "") }
+    end
   end
 
   def initialize(app, domain: self.class.domain)
@@ -94,7 +102,8 @@ class ClientAppHost
 
   def call(env)
     host = self.class.request_host(env)
-    return @app.call(env) unless self.class.preview_host?(host, @domain)
+    forwarded = self.class.forwarded_hosts(env).any? { |name| self.class.preview_host?(name, @domain) }
+    return @app.call(env) unless forwarded || self.class.preview_host?(host, @domain)
 
     env["client_app_host.sub"] = self.class.sub_for(host, @domain)
     @preview.call(env)

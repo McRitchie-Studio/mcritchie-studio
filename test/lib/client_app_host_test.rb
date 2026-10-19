@@ -49,6 +49,18 @@ class ClientAppHostTest < ActiveSupport::TestCase
     end
   end
 
+  test "[unit] a hub request forging a preview host in X-Forwarded-Host or Forwarded never reaches the hub" do
+    door = ClientAppHost.new(HUB, domain: "mcritchie.si")
+    [ { "HTTP_X_FORWARDED_HOST" => "x.mcritchie.si" }, { "HTTP_X_FORWARDED_HOST" => "a.com, X.mcritchie.si:443" },
+      { "HTTP_FORWARDED" => 'for=1.2.3.4;host="x.mcritchie.si"' } ].each do |forged|
+      status, _, body = door.call(Rack::MockRequest.env_for("https://mcritchie.studio/login", forged.merge(method: "POST")))
+      assert_equal 405, status, forged.inspect
+      assert_not_includes body.to_a.join, "hub"
+    end
+    status, = door.call(Rack::MockRequest.env_for("https://mcritchie.studio/", "HTTP_X_FORWARDED_HOST" => "mcritchie.studio"))
+    assert_equal 200, status
+  end
+
   test "[unit] the host is off when the domain is nil" do
     door = ClientAppHost.new(HUB, domain: nil)
     status, = door.call(Rack::MockRequest.env_for("https://pawsome.mcritchie.si/"))
