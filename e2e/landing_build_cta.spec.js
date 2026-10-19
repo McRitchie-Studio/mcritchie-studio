@@ -19,8 +19,13 @@ test("on a phone the rainbow Build Your App never scrolls the page sideways, in 
   await page.setViewportSize({ width: 375, height: 760 });
   await page.emulateMedia({ reducedMotion: "no-preference" });
   for (const scheme of ["light", "dark"]) {
-    await page.emulateMedia({ colorScheme: scheme });
+    // The site theme is localStorage.theme (studio-engine's pre-paint script:
+    // anything but "light" is dark), not prefers-color-scheme, so emulateMedia
+    // alone rendered both passes dark.
     await page.goto("/");
+    await page.evaluate((value) => localStorage.setItem("theme", value), scheme);
+    await page.reload();
+    expect(await page.evaluate(() => document.documentElement.classList.contains("dark")), `${scheme} theme`).toBe(scheme === "dark");
     const glow = page.locator(glowSelector);
     await expect(glow).toBeVisible();
     const cta = glow.getByRole("link", { name: "Build Your App" });
