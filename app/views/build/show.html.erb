@@ -1,6 +1,6 @@
 <% content_for :title, "Your app · McRitchie Studio" %>
 <% req = @app_request %>
-<%# A draft is the agent shell (agent_chats/_shell), the same page /build became when the first message was sent: Ray's portrait, the status card (build/_status_card), the thread and the chat box. Build my app moves it to the new CTO's chat; both opt in to a view transition, so Ray's portrait morphs into the CTO's. %>
+<%# A draft is the agent shell (agent_chats/_shell), the same page /build became when the first message was sent: Ray's portrait, the status card (build/_status_card), the thread and the chat box, and /build's gallery below it until the thread has grown (build/_gallery). Build my app moves it to the new CTO's chat; both opt in to a view transition, so Ray's portrait morphs into the CTO's. %>
 <% content_for :head, tag.meta(name: "view-transition", content: "same-origin") %>
 <% turbo_refreshes_with method: :morph, scroll: :preserve %>
 
@@ -9,6 +9,7 @@
     <% head = render "agent_chats/header", name: BuildController::AGENT_NAME, agent: @intake_agent, role: BuildController::AGENT_ROLE %>
     <% status = render "build/status_card", request_row: req, started: @started %>
     <%= render "agent_chats/shell", page: "draft", head: head, status: status, chat: render("build/chat", request_row: req, messages: @messages), turns: @messages.size %>
+    <%= render "build/gallery", examples: @examples %>
 
   <% else %>
     <%# Queued or live (an admin's showcase, queued without the intake): the same shell, the status in its card, the prompt as the thread. %>
