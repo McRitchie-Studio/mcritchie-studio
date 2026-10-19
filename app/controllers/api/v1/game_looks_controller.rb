@@ -5,10 +5,11 @@ module Api
     # for that game (and the look's iced twin for an iced sheet).
     #
     #   POST /api/v1/game_looks
-    #        { espn_id, descriptor, jersey_number?, generation_notes?,
+    #        { espn_id | person: { first_name, last_name, vocation }, team_slug?,
+    #          descriptor, jersey_number?, generation_notes?,
     #          sheets: [{ variant: "base"|"iced", object_key }] }
     class GameLooksController < BaseController
-      KEYS = %w[espn_id descriptor jersey_number generation_notes sheets].freeze
+      KEYS = %w[espn_id person team_slug descriptor jersey_number generation_notes sheets].freeze
       SHEET_KEYS = %w[variant object_key].freeze
       ROUTING_KEYS = %w[controller action format game_look].freeze
 

@@ -39,6 +39,10 @@ class Artifact < ApplicationRecord
                    .each_with_object({}) { |s, h| h[s.appearance_slug] ||= s.artifact }
   end
 
+  # Generators that run outside the registry (on the operator's Mac) and only
+  # file their output here: their stored key is not a registry row.
+  LOCAL_GENERATOR_LABELS = { "game_model_layered" => "Layered game model (bin/game-model)" }.freeze
+
   def to_param = slug
   def approved? = approved_at.present?
   def retired? = retired_at.present?
@@ -59,7 +63,7 @@ class Artifact < ApplicationRecord
   def generator_label
     return nil if generator.blank?
 
-    ImageGeneration::Registry.find(generator)&.label.presence || generator
+    ImageGeneration::Registry.find(generator)&.label.presence || LOCAL_GENERATOR_LABELS[generator] || generator
   end
 
   # THE UNIT THE VENDOR COUNTED IN, resolved through the registry, defaulting to
