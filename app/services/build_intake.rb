@@ -2,7 +2,7 @@
 # docs/agents/system/agent-message-loop.md, "Build intake").
 #
 # A visitor tells Ray what they want to build. Ray asks, one at a time: the idea
-# (at most two follow-ups), the CTO, the colors, the address. Each question
+# (at most two follow-ups), the colors (the theme), the CTO, the address. Each question
 # arrives as a CARD inside the chat, and only the visitor's tap writes a field
 # on their AppRequest.
 #
@@ -26,8 +26,11 @@ module BuildIntake
   TOKEN = /\A[A-Za-z0-9_-]{16,64}\z/
 
   # The four things a request needs before Build my app lights up, in the
-  # order Ray asks for them.
-  STEPS = %w[idea cto colors address].freeze
+  # order Ray asks for them. The theme comes before the CTO: it is the easier
+  # question (Alex, 2026-10-18). The order is only the asking order: a tap on
+  # any card writes its field whatever is set already (BuildIntake::Choice), so
+  # a draft that picked its CTO under the old order simply goes on to the theme.
+  STEPS = %w[idea colors cto address].freeze
 
   module_function
 

@@ -151,15 +151,14 @@ class AppRequest < ApplicationRecord
   def intake_complete? = intake_checklist.values.all?
 
   # Whether the /build page shows the status card yet (build/_status_card):
-  # once Ray has proposed a card, or anything is set. Before that, a visitor
-  # who only says hi sees the heading, not an empty form.
-  def intake_started?
-    intake_checklist.values.any? ||
-      AgentMessage.where(channel: "web", thread_key: BuildIntake.thread_key(token)).where.not(intake_card: nil).exists?
-  end
+  # once the visitor has locked an idea in (Start App on the idea card), or any
+  # step is set (a draft from before this rule may hold a step without an idea).
+  # Before that, the visitor sees the heading, even while an idea card waits in
+  # the thread (Alex, 2026-10-18: no "Not yet" tiles until Start App).
+  def intake_started? = intake_checklist.values.any?
 
   # The app's working title on the status card: the title the visitor confirmed
-  # (Build App on the idea card), else the newest idea card's proposed title, so
+  # (Start App on the idea card), else the newest idea card's proposed title, so
   # the card is named the moment Ray proposes it, else the claimed address in
   # words, else nil.
   def working_title

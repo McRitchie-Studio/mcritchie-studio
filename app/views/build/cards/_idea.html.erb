@@ -1,5 +1,5 @@
 <%# locals: (card:, message:, request_row:) %>
-<%# The idea card: the app Ray heard, as a title and two or three key features (BuildIntake::Card "idea"). Build App locks it in; Build something else sends Ray back to asking which direction to take. Each tap sets the field AND posts the visitor's turn (BuildIntake::Choice), so Ray answers next without the visitor typing. A v1 draft's card has no title: its one-sentence idea stands in. %>
+<%# The idea card: the app Ray heard, as a title and two or three key features (BuildIntake::Card "idea"). Start App locks it in, and only then does the status card above the chat appear (AppRequest#intake_started?); Build something else sends Ray back to asking which direction to take. Each tap sets the field AND posts the visitor's turn (BuildIntake::Choice), so Ray answers next without the visitor typing. A v1 draft's card has no title: its one-sentence idea stands in. %>
 <% answers = request_row.answers.is_a?(Hash) ? request_row.answers : {} %>
 <% title = card["title"].presence || card["idea"] %>
 <% chosen = answers["idea"].present? && (card["title"].present? ? answers["title"] == card["title"] : answers["idea"] == card["idea"]) %>
@@ -19,9 +19,12 @@
       <%= hidden_field_tag :field, "idea" %>
       <%= hidden_field_tag :message_id, message.id %>
       <%= hidden_field_tag :client_id, SecureRandom.uuid %>
-      <button type="submit" class="btn btn-primary btn-sm" data-test="build-choose-idea" <%= "disabled" if chosen %>>
-        <%= chosen ? "Building this" : "Build App" %>
-      </button>
+      <%# The studio's own primary and accent glow (cta-glow with no palette): no theme is chosen yet. Spent once chosen (disabled). %>
+      <span class="cta-glow inline-block" data-test="build-idea-glow">
+        <button type="submit" class="btn btn-primary btn-sm" data-test="build-choose-idea" <%= "disabled" if chosen %>>
+          <%= chosen ? "Building this" : "Start App" %>
+        </button>
+      </span>
     <% end %>
     <%= form_with url: build_request_intake_path(request_row.token), method: :patch do %>
       <%= hidden_field_tag :field, "idea_else" %>

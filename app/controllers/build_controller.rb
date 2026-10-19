@@ -1,6 +1,6 @@
 # /build — the McRitchie Studio app funnel, as a chat with Ray
 # (.agents/epics/build-with-xan-design.md, build-with-ray-v2.md; BuildIntake). A
-# visitor tells Ray what they want to build; Ray asks for the idea, a CTO, colors
+# visitor tells Ray what they want to build; Ray asks for the idea, colors, a CTO
 # and an address, one card at a time, and the visitor's taps fill the status
 # card. Build my app asks for sign-in only then, claims the subdomain and queues
 # the build for an agent. Nothing is generated here; builds are asynchronous.
