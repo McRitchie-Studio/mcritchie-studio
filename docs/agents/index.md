@@ -210,6 +210,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `content-build` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/content-build.md` |
 | `contest-rehearsal` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
 | `entry-forfeit` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
+| `game-character-models` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/game-character-models.md` |
 | `live-score-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | `market-refresh` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/market-refresh.md` |
 | `post-to-x` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/post-to-x.md` |

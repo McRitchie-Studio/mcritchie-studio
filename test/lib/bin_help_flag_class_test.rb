@@ -133,6 +133,7 @@ class BinHelpFlagClassTest < Minitest::Test
     "importmap-audit-ci"     => :optparse,
     # Generate enqueues a PAID image round; the guard runs before the Rails boot.
     "email-image"            => :cli_arg_guard,
+    "game-model"             => :cli_arg_guard, # PAID image calls; the guard runs before bundler
     # COPIES the credential helper's whole closure to disk and repoints a symlink,
     # so it is guarded like the rest of the mutating flat scripts. Its --check and
     # --print-config arms install nothing, but the DEFAULT arm (no flags at all)
