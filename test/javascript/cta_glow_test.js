@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { themeGlowVars, syncThemeGlow } from "../../app/javascript/cta_glow.js";
+import { releaseGlows, syncThemeGlow, themeGlowVars, watchGlows, watchedCount } from "../../app/javascript/cta_glow.js";
 
 function option(value, a, b, c, checked = false) {
   return { value, checked, dataset: { glowA: a, glowB: b, glowC: c } };
@@ -13,7 +13,9 @@ function option(value, a, b, c, checked = false) {
 
 function card(options, chosenIndex) {
   const props = {};
-  const glow = { dataset: {}, style: { setProperty: (name, value) => { props[name] = value; } } };
+  const submit = { disabled: false };
+  const glow = { dataset: {}, style: { setProperty: (name, value) => { props[name] = value; } },
+                 querySelector: (selector) => (selector === "button[type='submit']" ? submit : null) };
   const root = {
     dataset: chosenIndex === undefined ? {} : { chosenIndex },
     querySelector: (selector) => {
@@ -22,7 +24,7 @@ function card(options, chosenIndex) {
       return null;
     },
   };
-  return { root, glow, props, options };
+  return { root, glow, props, options, submit };
 }
 
 const PITCH = ["#15803d", "#f59e0b", "#4ade80"];
@@ -53,4 +55,49 @@ test("the glow is spent while the pick is the theme already chosen, and returns 
   options[1].checked = true;
   syncThemeGlow(root);
   assert.equal(glow.dataset.glow, undefined);
+});
+
+test("[unit] Choose Theme is disabled while the pick is the theme already chosen, and enabled for another (task build-flow-polish)", () => {
+  const { root, options, submit } = card([option("0", ...PITCH, true), option("1", ...FIELD)], "0");
+  syncThemeGlow(root);
+  assert.equal(submit.disabled, true, "a re-tap on the chosen theme cannot post");
+  options[0].checked = false;
+  options[1].checked = true;
+  syncThemeGlow(root);
+  assert.equal(submit.disabled, false, "another theme can be chosen");
+  options[1].checked = false;
+  options[0].checked = true;
+  syncThemeGlow(root);
+  assert.equal(submit.disabled, true, "back on the chosen one, disabled again");
+});
+
+test("[unit] a card with no theme chosen yet keeps Choose Theme enabled", () => {
+  const { root, submit } = card([option("0", ...PITCH, true)]);
+  syncThemeGlow(root);
+  assert.equal(submit.disabled, false);
+});
+
+test("[unit] watched glows are let go: removed ones on the next watch, all of them before Turbo caches the page", () => {
+  const observed = new Set();
+  globalThis.IntersectionObserver = class { observe(el) { observed.add(el); } unobserve(el) { observed.delete(el); } disconnect() { observed.clear(); } };
+  const glow = () => ({ isConnected: true, dataset: {}, style: { setProperty() {} } });
+  const page = [glow(), glow()];
+  const root = { querySelectorAll: () => page.filter((el) => !el.dataset.glowWatched) };
+  try {
+    watchGlows(root);
+    assert.equal(watchedCount(), 2);
+    watchGlows(root);
+    assert.equal(watchedCount(), 2, "watching again adds nothing twice");
+
+    page[0].isConnected = false; // a stream render took it off the page
+    watchGlows(root);
+    assert.equal(watchedCount(), 1, "the removed glow is no longer held");
+    assert.equal(observed.has(page[0]), false);
+
+    releaseGlows({ querySelectorAll: () => page.filter((el) => el.dataset.glowWatched) });
+    assert.equal(watchedCount(), 0, "before-cache lets go of everything");
+    assert.equal(page[1].dataset.glowWatched, undefined, "the cached copy is watched afresh on restore");
+  } finally {
+    delete globalThis.IntersectionObserver;
+  }
 });

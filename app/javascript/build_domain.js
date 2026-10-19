@@ -5,7 +5,7 @@
 // glows (data-build-glow="true") whenever the name could be claimed (the
 // server's AppRequest::SUBDOMAIN_FORMAT, and not known to be taken) and is not
 // the domain this request already holds (the card's data-chosen-name: that
-// CTA is spent). The field is also kept sized to its value (its `size`), so
+// CTA is spent, and disabled, as it is for a name known to be taken). The field is also kept sized to its value (its `size`), so
 // the name and the suffix stay centred as one group.
 //
 // Pure (no imports, no document), so test/javascript/build_domain_test.js runs
@@ -43,7 +43,12 @@ export function syncDomainGlow(card, { taken = false } = {}) {
   input.size = Math.max(input.value.length, 1);
   const submit = card.querySelector("[data-build-address-submit]");
   const held = (card.dataset?.chosenName || "") !== "" && domainName(input.value) === card.dataset.chosenName;
-  if (submit) submit.dataset.buildGlow = String(validDomain(input.value) && !taken && !held);
+  if (submit) {
+    submit.dataset.buildGlow = String(validDomain(input.value) && !taken && !held);
+    // A tap on the domain already held would spend a turn of Ray's for
+    // nothing, and a known-taken one would only be refused: both disabled.
+    submit.disabled = taken || held;
+  }
   return match;
 }
 

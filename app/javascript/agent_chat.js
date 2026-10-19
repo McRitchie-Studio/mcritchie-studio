@@ -3,7 +3,8 @@
 // turn when its answer lands, and pulses "typing…" into the typing slot. This
 // module only keeps the view honest around those streams:
 //
-//   - the log scrolls to the newest turn on load and after every stream render;
+//   - the log opens at its newest turn, and after every stream render keeps a
+//     reader who was at the end there (chat_follow.js; one scrolled up stays);
 //   - a typing pulse fades data-fade-seconds after it arrived, so a run that
 //     dies stops "typing" within seconds (the dispatcher pulses every 7s), and
 //     a pulse older than an answer already shown is dropped at once;
@@ -22,6 +23,8 @@
 // delegated on document and does nothing where there is no chat, so a Turbo
 // visit to or back to the chat needs no re-binding. "cto_chat" is pinned to
 // this file too (config/importmap.rb), so the old import still loads it.
+import { follow, stickIfFollowing } from "chat_follow";
+
 const LOG = "[data-cto-chat-scroll]";
 const TYPING = "cto-chat-typing";
 const FORM = "[data-cto-chat-form]";
@@ -71,11 +74,6 @@ function settleIndicators(before, now = Date.now()) {
   });
 }
 
-function scrollToEnd() {
-  const log = document.querySelector(LOG);
-  if (log) log.scrollTop = log.scrollHeight;
-}
-
 function newestReply() {
   let newest = 0;
   document.querySelectorAll(`${LOG} [data-replied-at]`).forEach((turn) => {
@@ -101,7 +99,7 @@ function settleTyping() {
 function afterRender() {
   requestAnimationFrame(() => {
     settleTyping();
-    scrollToEnd();
+    stickIfFollowing(document.querySelector(LOG));
   });
 }
 
@@ -142,8 +140,9 @@ if (typeof document !== "undefined") {
   });
 
   function init() {
-    if (!document.querySelector(LOG)) return;
-    scrollToEnd();
+    const log = document.querySelector(LOG);
+    if (!log) return;
+    follow(log);
     settleIndicators(null);
     settleTyping();
   }

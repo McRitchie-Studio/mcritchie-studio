@@ -157,6 +157,26 @@ test("on a phone the full stack scrolls inside its box, keeps its tier header, a
   const hostLines = await vibeHost.evaluate((el) =>
     Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)));
   expect(hostLines).toBeLessThanOrEqual(2);
+  // A plain cell wraps between words, never inside one (task build-flow-polish:
+  // "Unlimited apps" broke as "Unlimi / ted" on a phone). Each word's text
+  // sits on one line box.
+  const unlimited = page.locator("[data-test='stack-cell'][data-package='vibe']", { hasText: "Unlimited apps" }).first();
+  await expect(unlimited).toBeVisible();
+  const brokenWords = await unlimited.evaluate((cell) => {
+    const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+    const broken = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      for (const match of node.data.matchAll(/\S+/g)) {
+        const range = document.createRange();
+        range.setStart(node, match.index);
+        range.setEnd(node, match.index + match[0].length);
+        const lines = new Set([...range.getClientRects()].map((r) => Math.round(r.top)));
+        if (lines.size > 1) broken.push(match[0]);
+      }
+    }
+    return broken;
+  });
+  expect(brokenWords, "no word breaks across lines").toEqual([]);
   await expect(page.locator("[data-test='stack-blurb']").first()).toBeHidden();
   const serverLogo = page.locator("[data-feature='host'] [data-test='stack-lead'] [data-brand='heroku'] img");
   await expect(serverLogo).toBeVisible();

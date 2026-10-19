@@ -199,18 +199,19 @@ test("a new answer from Ray types itself in on the page, its card after it; hist
   const turn = page.locator("[data-test='build-turn']", { hasText: idea });
   await expect(turn).toHaveAttribute("data-pending", "true");
 
-  // What the reveal does, as it does it: a screen reader's whole copy, the turn
-  // marked while it types, the card held back, the visible words growing.
+  // What the reveal does, as it does it: the live region busy (a screen reader
+  // hears the answer once, when it is done), the typing words inert (no link in
+  // them takes focus), the turn marked while it types, the card held back, the
+  // visible words growing.
   await page.evaluate(() => {
-    const seen = window.__reveal = { revealing: false, copy: "", hiddenBody: false, cardShownWhileTyping: false, lengths: [] };
+    const seen = window.__reveal = { revealing: false, busy: false, inertBody: false, cardShownWhileTyping: false, lengths: [] };
     new MutationObserver(() => {
       const t = document.querySelector("[data-agent-revealing]");
       if (t) {
         seen.revealing = true;
-        const copy = t.querySelector("[data-agent-reveal-copy]");
-        if (copy) seen.copy = copy.textContent;
+        if (t.closest("[role='log']")?.getAttribute("aria-busy") === "true") seen.busy = true;
         const body = t.querySelector("[data-agent-reveal]");
-        if (body?.getAttribute("aria-hidden") === "true") seen.hiddenBody = true;
+        if (body?.inert) seen.inertBody = true;
         if (body) seen.lengths.push(body.textContent.length);
         const card = t.querySelector("[data-action-card]");
         if (card && card.getBoundingClientRect().height > 0) seen.cardShownWhileTyping = true;
@@ -228,13 +229,14 @@ test("a new answer from Ray types itself in on the page, its card after it; hist
   await expect(turn.locator("[data-test='build-card-idea']"), "the card follows the words").toBeVisible();
   await expect(reply.locator("strong")).toHaveText("I hear");
   await expect(reply.locator("li")).toHaveCount(3);
-  await expect(reply.locator("[data-agent-reveal-copy]"), "the screen reader's copy goes at the end").toHaveCount(0);
-  await expect(reply.locator("[data-agent-reveal]")).not.toHaveAttribute("aria-hidden", "true");
+  await expect(page.locator("[role='log'][aria-busy]"), "the live region is let go: the reader hears the finished answer").toHaveCount(0);
+  expect(await reply.locator("[data-agent-reveal]").evaluate((el) => el.inert), "the finished words take focus again").toBe(false);
+  await expect(reply.locator("[data-agent-reveal-copy]"), "no second copy for a screen reader to read twice").toHaveCount(0);
 
   const seen = await page.evaluate(() => window.__reveal);
   expect(seen.revealing, "the answer typed in").toBe(true);
-  expect(seen.hiddenBody, "the typing words are hidden from a screen reader").toBe(true);
-  expect(seen.copy, "a screen reader had the whole answer at once").toContain("A morning alert when it is good");
+  expect(seen.busy, "the live region was busy while the words typed").toBe(true);
+  expect(seen.inertBody, "the typing words were inert").toBe(true);
   expect(seen.cardShownWhileTyping, "the card waited for the words").toBe(false);
   expect(seen.lengths.length, "the words grew over several frames").toBeGreaterThan(3);
   expect(Math.min(...seen.lengths), "it started short").toBeLessThan(40);

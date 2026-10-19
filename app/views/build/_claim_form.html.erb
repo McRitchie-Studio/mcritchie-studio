@@ -139,8 +139,11 @@
             class: "min-w-[7rem] flex-1 bg-transparent pl-4 sm:pl-1 pr-4 sm:pr-1 py-3 font-mono text-heading placeholder:text-muted focus:outline-none",
             ":value": "name", ":placeholder": "placeholderText",
             "@input": "onInput($el)", "@blur": "onBlur()",
+            aria: { describedby: "build-claim-suffix" },
             data: { test: "build-subdomain" } %>
-      <span class="hidden sm:flex items-center pr-4 text-muted font-mono text-sm whitespace-nowrap">.mcritchie.studio</span>
+      <%# The suffix beside the field is decoration a screen reader may never reach (hidden below sm), so the field's description says it. %>
+      <span class="sr-only" id="build-claim-suffix">Ends in .<%= AppRequest::PARENT_DOMAIN %>.</span>
+      <span class="hidden sm:flex items-center pr-4 text-muted font-mono text-sm whitespace-nowrap" aria-hidden="true">.mcritchie.studio</span>
     </div>
     <%# Below sm the box holds only the name, full width; the whole address is
         spelled out underneath as they type. %>

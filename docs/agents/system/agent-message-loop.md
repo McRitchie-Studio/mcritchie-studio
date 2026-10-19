@@ -1176,7 +1176,7 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
 
 `/build` is a chat with Ray (designs: `.agents/epics/build-with-xan-design.md`,
 `build-with-ray-v2.md`). A visitor, signed in or not, tells Ray what they want to
-build; Ray asks for the idea (at most two follow-ups), colors (the theme), a CTO and an address,
+build; Ray asks for the idea (at most two follow-ups), the theme, a CTO and an address,
 one card at a time, and the visitor's taps fill the status card. Ray's summary card
 carries **Build My App**, which asks for sign-in only then; it launches through `AppLaunch`.
 Signed out, the press opens the sign-in modal (`modals/_auth`, magic link or Google) through
@@ -1229,11 +1229,23 @@ Turbo hover prefetch gets a 204 and spends nothing.
   `app/assets/tailwind/agent_reply.css`). A NEW answer (a stream's or the poll's
   turn replace) types itself in (`app/javascript/agent_reveal.js`): its rendered
   HTML kept, text nodes filled in order at about 420 characters a second, 0.45s at
-  least and 2.6s at most, the thread pinned to its end, the card after the last
-  word. A screen reader reads a hidden whole copy at once. History, a reload, a morph
-  and reduced motion show the answer at once.
+  least and 2.6s at most, the card after the last word. While it types the thread is
+  `aria-busy` and the words are `inert`, so a screen reader hears the answer once, when
+  it is done, and no link in it takes focus mid-typing. History, a reload, a morph and
+  reduced motion show the answer at once.
   The height cap is declared in `100vh` before `100dvh`, so a browser without `dvh`
   (iOS before 15.4) still caps the thread.
+- **Following the newest line** (`app/javascript/chat_follow.js`, task
+  `build-flow-polish`). A reader within 20px of the thread's end when it grows (an
+  answer typing in, a turn or a card arriving, the head stepping down) is kept at the
+  end; one scrolled further up is not moved. The reader's own send goes to the end.
+  One binding per thread element, so nothing piles up across stream renders. Same on
+  `/build` and every agent chat.
+- **No-op re-taps.** Choose Theme and Use Domain are disabled while the pick is the
+  answer already saved, and `BuildIntake::Choice` ignores such a tap (no write, no
+  visitor turn, no turn of Ray's). The domain card checks every suggestion's
+  availability once, in its render (`AppRequest.unavailable_reasons`), and asks
+  `/build/check` only when the name changes.
 - **A refused Build My App** (the plan's app limit, a name taken since the tap, an
   incomplete intake) answers ON the summary card: a Turbo Stream redraws the card by
   its id (`build-summary-<message id>`) with the reason and a next step, 422. Never a

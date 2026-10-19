@@ -2,7 +2,7 @@
 # docs/agents/system/agent-message-loop.md, "Build intake").
 #
 # A visitor tells Ray what they want to build. Ray asks, one at a time: the idea
-# (at most two follow-ups), the colors (the theme), the CTO, the address. Each question
+# (at most two follow-ups), the theme, the CTO, the address. Each question
 # arrives as a CARD inside the chat, and only the visitor's tap writes a field
 # on their AppRequest.
 #
@@ -30,11 +30,24 @@ module BuildIntake
   # question (Alex, 2026-10-18). The order is only the asking order: a tap on
   # any card writes its field whatever is set already (BuildIntake::Choice), so
   # a draft that picked its CTO under the old order simply goes on to the theme.
-  STEPS = %w[idea colors cto address].freeze
+  #
+  # The theme step was named "colors" until task build-flow-polish (the visitor
+  # always read "Theme"). The step name is never stored: a request holds the
+  # theme in its `palette` column, and the checklist, the next step and Ray's
+  # intake context are worked out from the columns on every read. So no draft
+  # needs migrating. STEP_ALIASES keeps the old name readable for anything that
+  # still asks for it (an intake bundle built before the deploy, a stale
+  # template): AppRequest#intake_checklist answers "colors" with the theme's
+  # value, and BuildIntake.step turns an old name into the new one.
+  STEPS = %w[idea theme cto address].freeze
+  STEP_ALIASES = { "colors" => "theme" }.freeze
 
   module_function
 
   def thread_key(token) = "#{THREAD_PREFIX}#{token}"
+
+  # A step's current name: "colors" is "theme"; any other name is itself.
+  def step(name) = STEP_ALIASES.fetch(name.to_s, name.to_s)
 
   def thread?(thread_key) = thread_key.to_s.start_with?(THREAD_PREFIX)
 

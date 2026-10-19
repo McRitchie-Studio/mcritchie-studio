@@ -24,7 +24,7 @@ Our own CTOs (Avi, Turf, Tyrion) are souls in `config/cto_reports.yml` and are u
 Any failure rolls every row back. After the commit: `AppRequestDiscordJob` (the
 announcement) and `AppIntakeMoveJob` (the files). An incomplete intake raises
 `AppLaunch::Incomplete` before anything is written, naming the checklist items still
-open: Idea, CTO, Colors, Address, Account. The intake itself (the request's `cto_name`,
+open: Idea, CTO, Theme, Domain, Account. The intake itself (the request's `cto_name`,
 `cto_avatar`, `palette` and `answers` columns) is the `build-with-xan-intake` task's.
 
 **Where it is called.** `BuildController#update` (PATCH `/build/:token`, the Build My App
