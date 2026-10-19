@@ -130,10 +130,16 @@ Rails.application.configure do
   # attackers reach the SSO hub under a foreign origin's cookie scope and
   # replay against the dyno's direct *.herokuapp.com URL (bypassing CDN/WAF
   # allowlists). Especially critical here since this app is the SSO hub.
+  # The shared client-app host's domain (docs/agents/system/client-app-host.md):
+  # ".mcritchie.si" admits every <sub>.mcritchie.si, which ClientAppHost answers
+  # before anything of the hub's runs. Off (nil) on QA unless set.
+  require Rails.root.join("lib/middleware/client_app_host")
+  client_app_preview_domain = ClientAppHost.domain
   config.hosts = [
     app_host,                                                # primary public URL for this deploy target
     ENV.fetch("DYNO_HOST", "mcritchie-studio.herokuapp.com"), # direct Heroku dyno URL (health checks, etc.)
-    *app_host_aliases
+    *app_host_aliases,
+    *(client_app_preview_domain && ".#{client_app_preview_domain}")
   ].uniq
   # /up is the Rails health-check endpoint Heroku polls — Heroku's load balancer
   # may use internal addressing, so exclude it from host authorization to avoid
