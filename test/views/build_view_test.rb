@@ -230,7 +230,7 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='build-register']", 0, "no sign-in before Build"
   end
 
-  test "once Ray proposed a card, the status card shows the working title and three empty tiles" do
+  test "once the idea is started, the status card shows the working title and three empty tiles, in the order Ray asks" do
     signed_in(nil)
     chat_assigns(AppRequest.create!(prompt: "A client portal"), started: true)
     render template: "build/show"
@@ -241,6 +241,8 @@ class BuildViewTest < ActionView::TestCase
         assert_select "[data-test='build-tile-#{tile}'][data-done='false'] [data-test='build-tile-#{tile}-value']", text: "Not yet"
       end
     end
+    assert_equal %w[build-tile-theme build-tile-agent build-tile-domain],
+                 css_select("[data-test='build-status-card'] li").map { |li| li["data-test"] }, "Theme · Agent · Domain, as BuildIntake::STEPS"
     assert_select "[data-test='build-heading']", 0
   end
 

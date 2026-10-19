@@ -15,21 +15,23 @@
   view-transition name, so a move between them (Turbo, with
   <meta name="view-transition">) changes only what differs.
 
-  AS THE CONVERSATION GROWS (task build-launch-chat-growth): the shell is a
-  column no taller than the window under the navbar. The thread grows with its
-  turns until the shell reaches that height; then the thread scrolls inside it,
-  the chat box stays at the window's bottom, and whatever sits below the shell
-  (/build's gallery, the footer) is pushed off screen. The head and status card
-  compact in steps as turns accumulate (data-shell-size: full, medium, compact;
-  AgentShellHelper), so the conversation takes about 40% of the window at first
-  and about 80% later. `turns` sets the first step on the server, so a reload
-  paints at its size; app/javascript/agent_shell.js moves it on as turns arrive,
-  never back, and app/assets/tailwind/agent_shell.css draws each step, animated
-  unless the visitor prefers reduced motion.
+  AS THE CONVERSATION GROWS (tasks build-launch-chat-growth,
+  build-chat-reading-flow): the shell is a column no taller than the window under
+  the navbar. The thread grows with its turns until the shell reaches that height;
+  then the thread scrolls inside it, the chat box stays at the window's bottom,
+  and whatever sits below the shell (the footer) is pushed off screen. The head
+  and status card compact in steps as the THREAD'S HEIGHT grows, not as messages
+  are sent (data-shell-size: full, medium, compact): past MEDIUM_SHARE and
+  COMPACT_SHARE of the shell's room, or whenever the thread no longer fits beside
+  the head (AgentShellHelper). /build's gallery stays while the head is full.
+  `turns` only guesses the first paint's step; app/javascript/agent_shell.js
+  measures afresh on load, moves the step on as the thread grows, never back, and
+  app/assets/tailwind/agent_shell.css draws each step, animated unless the visitor
+  prefers reduced motion.
 %>
 <section class="agent-shell max-w-3xl mx-auto px-4 pt-4 sm:pt-8 flex flex-col gap-6" data-test="agent-shell" data-shell="<%= page %>"
          data-agent-shell data-shell-size="<%= agent_shell_size(turns) %>"
-         data-shell-medium-at="<%= AgentShellHelper::MEDIUM_AT %>" data-shell-compact-at="<%= AgentShellHelper::COMPACT_AT %>">
+         data-shell-medium-share="<%= AgentShellHelper::MEDIUM_SHARE %>" data-shell-compact-share="<%= AgentShellHelper::COMPACT_SHARE %>">
   <div class="agent-shell-head" data-test="agent-shell-head"><%= head %></div>
   <div class="agent-shell-status" style="view-transition-name: agent-status;" data-test="agent-shell-status"><%= status %></div>
   <div class="agent-shell-chat" data-test="agent-shell-chat"><%= chat %></div>

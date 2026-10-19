@@ -28,6 +28,9 @@ class BuildLaunchComponentTest < ActionView::TestCase
     assert_equal [ "Building Brand Sheet", "Hatching CTO", "Setting Up Domain" ],
                  css_select("[data-test='build-launch-step']").map { |li| li.text.squish }
     assert_equal %w[active pending pending], css_select("[data-test='build-launch-step']").map { |li| li["data-state"] }
+    assert_equal %w[on off off], css_select("[data-test='build-launch-step'].cta-glow").map { |li| li["data-glow"] },
+                 "the shared CTA glow, lit on the active step only"
+    assert_select "[data-test='build-launch-portrait'].cta-glow"
     assert_select "[data-build-launch-status][role='status']"
     assert_select "a[data-test='build-launch-skip'][href='/applications/pawsome/chat']:not([data-turbo-action])", text: "Go to Nova now"
   end
@@ -50,29 +53,25 @@ class BuildLaunchComponentTest < ActionView::TestCase
 
     assert_select "[data-test='cto-chat-head'][style*='--cto-primary-light: 79 70 229;']"
     assert_select "ol.devops-stages[data-test='devops-stages']"
-    assert_select "[data-test='devops-stage'][data-stage='building'][data-state='done'].devops-stage-done .devops-stage-mark", text: "✓"
-    assert_select "[data-test='devops-stage'][data-stage='releasing'][data-state='live'].devops-stage-live[aria-current='step'] .devops-stage-dot", 2
-    assert_select "[data-test='devops-stage'][data-stage='deploying'][data-state='pending'].text-muted"
-    assert_select "[data-test='devops-stage'].devops-stage-live", 1
+    assert_select "[data-test='devops-stage'][data-stage='building'][data-state='done']:not(.cta-glow) .devops-stage-pill.devops-stage-done .devops-stage-mark", text: "✓"
+    assert_select "[data-test='devops-stage'][data-stage='releasing'][data-state='live'].cta-glow[aria-current='step'] .devops-stage-pill.devops-stage-live .devops-stage-dot", 2
+    assert_select "[data-test='devops-stage'][data-stage='deploying'][data-state='pending']:not(.cta-glow) .devops-stage-pill.text-muted"
+    assert_select "[data-test='devops-stage'].cta-glow", 1, "only the live stage glows"
     assert_select "[data-test='devops-stage'] .bg-primary", 0, "no studio-primary utility: the colour is the app's"
   end
 
-  test "[component] the glow's colour is the CTO palette's, falling back to the studio primary, and holds still under reduced motion" do
+  test "[component] the glow is the shared cta-glow in the CTO palette's colours, falling back to the studio primary" do
     css = CSS.read
     assert_match(/--launch-tint:\s*rgb\(var\(--cto-primary\)\);/, css)
     assert_match(/--launch-glow:\s*var\(--launch-tint,\s*var\(--color-primary\)\);/, css, "no CTO palette: the studio primary")
-    assert_match(/--glow-a:\s*var\(--launch-glow\);/, css, "the CTA glow's stop names, shared with the /build cards")
-    assert_match(/--glow-b:\s*var\(--launch-glow-accent\);/, css)
-    glow = css[/\.devops-stage-live\s*\{\s*--glow-ring[^}]*\}/m].to_s
-    %w[--glow-a --glow-b --glow-c].each { |stop| assert_includes glow, "var(#{stop})", "the live pill's glow uses #{stop}" }
-    assert_includes glow, "animation: build-glow-breathe"
+    shared = css[/\.build-launch \.cta-glow,\s*\.devops-stages \.cta-glow\s*\{[^}]*\}/m].to_s
+    assert_includes shared, "--glow-a: var(--launch-glow);", "the shared CTA glow's stops are the CTO palette's"
+    assert_includes shared, "--glow-b: var(--launch-glow-accent);"
+    refute_match(/@keyframes [a-z-]*glow/, css, "no second glow primitive: cta-glow draws it")
+    assert_includes Rails.root.join("app/assets/tailwind/cta_glow.css").read, ".cta-glow::before"
     assert_match(/\.build-launch-step\[data-state="active"\] \.build-launch-ring\s*\{[^}]*animation:/m, css)
-    reduced = css[/@media \(prefers-reduced-motion: reduce\)\s*\{.*\z/m]
-    assert reduced, "a reduced-motion block"
-    stilled = reduced[/\A[^{]*\{\s*([^{]*)\{\s*animation:\s*none;/m, 1].to_s
-    [ ".build-launch-portrait", '.build-launch-step[data-state="active"] .build-launch-ring', ".devops-stage-live" ].each do |selector|
-      assert_includes stilled, selector, "#{selector} holds still"
-    end
+    reduced = css[/@media \(prefers-reduced-motion: reduce\)\s*\{.*\z/m].to_s
+    assert_match(/\.build-launch-step\[data-state="active"\] \.build-launch-ring\s*\{\s*animation:\s*none;/m, reduced, "the ring holds still")
     assert_includes Rails.root.join("app/assets/tailwind/application.css").read, "@import './build_launch.css';"
   end
 end

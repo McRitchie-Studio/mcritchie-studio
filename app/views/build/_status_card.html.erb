@@ -3,12 +3,13 @@
   The /build shell's status slot (agent_chats/_shell), and the stream target every
   tap and poll replaces (id build-checklist; BuildController#replace_checklist).
 
-  Until Ray proposes a first card (`started`: AppRequest#intake_started?), it is the
-  page's heading, on /build and on a new /build/:token alike, so a visitor who only
-  says hi never sees an empty form. From then on it is the STATUS CARD: the app's
-  working title over three tiles, Agent · Theme · Domain, each filling as its card
-  is tapped (BuildIntake::Choice): the CTO's portrait and name, the palette's
-  swatches and name, the address. It carries no Build control: Ray's summary card
+  Until the visitor taps Start App on an idea card (`started`:
+  AppRequest#intake_started?), it is the page's heading, on /build and on a new
+  /build/:token alike, so a visitor still shaping the idea never sees a form of
+  "Not yet" tiles. From then on it is the STATUS CARD: the app's working title over
+  three tiles in the order Ray asks (BuildIntake::STEPS), Theme · Agent · Domain,
+  each filling as its card is tapped (BuildIntake::Choice): the palette's swatches
+  and name, the CTO's portrait and name, the address. It carries no Build control: Ray's summary card
   in the thread does (build/cards, build-cards-advance-chat).
 %>
 <% show_card = request_row.present? && started %>
@@ -21,8 +22,8 @@
       </h1>
       <ul class="grid grid-cols-3 gap-2 sm:gap-3">
         <% tiles = [
-             [ "agent", "Agent", done["cto"], (request_row.cto_name if done["cto"]) ],
              [ "theme", "Theme", done["colors"], (request_row.palette["name"] if done["colors"]) ],
+             [ "agent", "Agent", done["cto"], (request_row.cto_name if done["cto"]) ],
              [ "domain", "Domain", done["address"], (request_row.host if done["address"]) ]
            ] %>
         <% tiles.each do |key, label, set, value| %>

@@ -5,7 +5,7 @@
   (BuildController#update streams it over [data-agent-shell]). The launch has
   ALREADY happened on the server (AppLaunch); this is presentation only. The new
   CTO's portrait and name, the app's name, and three steps that resolve in turn
-  over about eight seconds, each a pulse, then a check, in the app's own colours
+  over about eight seconds, each a spinner under the shared CTA glow (cta-glow), then a check, in the app's own colours
   (ClientCtoHelper: --cto-primary / --cto-accent for this mode). Then
   app/javascript/build_launch.js visits the CTO's chat (href), and the portrait
   and caption, which carry the shell's view-transition names, morph into that
@@ -17,7 +17,7 @@
               class="build-launch max-w-3xl mx-auto px-4 pt-8 sm:pt-12 pb-10 flex flex-col items-center gap-6 text-center <%= ClientCtoHelper::PALETTE_SWITCH %>"
               style="<%= client_cto_palette_style(app_cto) %>"
               data-href="<%= href %>" data-test="build-launch" data-app="<%= app_cto.app_slug %>">
-  <div class="build-launch-portrait rounded-full" style="view-transition-name: agent-portrait;" data-test="build-launch-portrait">
+  <div class="build-launch-portrait cta-glow rounded-full" style="view-transition-name: agent-portrait;" data-test="build-launch-portrait">
     <%= render "applications/cto_avatar", cto: cto, size: "xl" %>
   </div>
   <div class="space-y-1 min-w-0 max-w-full">
@@ -28,13 +28,16 @@
   </div>
   <ol class="w-full max-w-sm flex flex-col gap-3 text-left" aria-label="Setting up <%= app_cto.app.name %>" data-test="build-launch-steps">
     <% steps.each_with_index do |label, index| %>
-      <li class="build-launch-step flex items-center gap-3 rounded-2xl border border-subtle bg-surface px-4 py-3"
+      <%# Each step is a cta-glow wrapper (the shared CTA glow), lit only while it is the active one (data-glow); the card inside is opaque. %>
+      <li class="build-launch-step cta-glow" data-glow="<%= index.zero? ? 'on' : 'off' %>"
           data-state="<%= index.zero? ? 'active' : 'pending' %>" data-test="build-launch-step" data-step="<%= index %>">
-        <span class="build-launch-icon relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full" aria-hidden="true">
-          <span class="build-launch-ring absolute inset-0 rounded-full"></span>
-          <svg class="build-launch-check relative h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 10.5l3.5 3.5 7.5-8"/></svg>
+        <span class="build-launch-card flex items-center gap-3 rounded-2xl border border-subtle bg-surface px-4 py-3">
+          <span class="build-launch-icon relative flex h-7 w-7 shrink-0 items-center justify-center rounded-full" aria-hidden="true">
+            <span class="build-launch-ring absolute inset-0 rounded-full"></span>
+            <svg class="build-launch-check relative h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 10.5l3.5 3.5 7.5-8"/></svg>
+          </span>
+          <span class="build-launch-label font-semibold"><%= label %></span>
         </span>
-        <span class="build-launch-label font-semibold"><%= label %></span>
       </li>
     <% end %>
   </ol>

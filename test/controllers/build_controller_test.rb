@@ -68,11 +68,13 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "turbo-stream[action='replace'][target='build-checklist'] template [data-test='build-heading']", 1,
                   "no card yet, so the heading stays: a visitor may only be saying hi"
     assert_select "turbo-stream[action='replace_url'][url='/build/#{draft.token}']", 1
-    # Once chatting there is no gallery, in place or on a reload: the two pages agree.
-    assert_select "turbo-stream[action='remove'][target='#{BuildController::GALLERY_ID}']", 1
+    # The first message leaves the gallery in place: it slides away once the
+    # thread has grown (app/javascript/agent_shell.js), and a reload of
+    # /build/<token> draws it too, so the two pages agree.
+    assert_select "turbo-stream[action='remove'][target='#{BuildController::GALLERY_ID}']", 0
     assert draft.draft?
     get build_request_path(draft.token)
-    assert_select "##{BuildController::GALLERY_ID}, [data-test='build-gallery']", 0
+    assert_select "##{BuildController::GALLERY_ID}", 1
   end
 
   test "a refused first message comes back in the same box, with the reason and the text kept" do
@@ -276,6 +278,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='build-launch'][style*='--cto-primary-light: 21 128 61;']", 1, "the app's own colours"
     end
     assert_select "turbo-stream[action='replace_url'][target='#{BuildController::LAUNCH_ID}'][url='/applications/league-hub/chat']"
+    assert_select "turbo-stream[action='remove'][target='#{BuildController::GALLERY_ID}']", 1, "nothing of /build stays under the panel"
 
     # A reload mid-animation is a plain visit to the chat: the CTO is already speaking.
     get chat_application_path("league-hub")

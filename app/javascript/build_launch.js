@@ -26,7 +26,7 @@ class BuildLaunch extends HTMLElement {
     const steps = [...this.querySelectorAll("[data-test='build-launch-step']")];
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (reduced) {
-      steps.forEach((step) => { step.dataset.state = "done"; });
+      steps.forEach((step) => { step.dataset.state = "done"; step.dataset.glow = "off"; });
       this.announce("All set.");
       this.later(REDUCED_MS, () => this.go());
       return;
@@ -34,8 +34,9 @@ class BuildLaunch extends HTMLElement {
     steps.forEach((step, index) => {
       this.later(STEP_MS * (index + 1), () => {
         step.dataset.state = "done";
+        step.dataset.glow = "off";
         const next = steps[index + 1];
-        if (next) next.dataset.state = "active";
+        if (next) Object.assign(next.dataset, { state: "active", glow: "on" });
         this.announce(`${step.textContent.trim()}: done.`);
       });
     });

@@ -11,18 +11,20 @@
 // Also the delegated behaviours a card may need however it arrived (on load or
 // in a poll), so the templates carry no inline script:
 //
-//   - the domain card: each suggestion chip ([data-build-domain-chip]) is
-//     checked once on arrival and disabled when /build/check says it is taken
-//     (a tap on an available one submits the choice); the own-name field
-//     ([data-build-address]) is cleaned as it is typed (the server's
-//     AppRequest.normalize_subdomain, done again here) and checked live; a name
-//     we KNOW is refused disables its button (the server re-checks on the tap);
+//   - the domain card ([data-build-address]): the name field is cleaned as it
+//     is typed (the server's AppRequest.normalize_subdomain, done again here)
+//     and checked live; a name we KNOW is refused disables Use Domain (the
+//     server re-checks on the tap). The field is the source of truth for the
+//     glows (build_domain.js): the chip it matches glows, and a chip tap fills
+//     the field without focusing it. The server draws a taken chip disabled;
 //   - the CTO card ([data-build-cto]): the portrait or "New image" opens the
 //     picker dialog; a pick swaps the preview; a tap on a portrait, Done or
 //     Enter closes it (the arrow keys only move the pick); a tap on one of
 //     Ray's names fills the name field;
 //   - the theme card ([data-build-theme]): the Dark / Light toggle swaps every
 //     column's preview, and the choice survives the card's re-render;
+//   - the CTA glows (cta_glow.js): a theme pick moves Choose Theme's glow to
+//     that theme's colours, and a glow scrolled off screen draws nothing;
 //   - Build My App signed out ([data-build-sign-in]): opens the standard
 //     sign-in modal with the props the button carries.
 //
@@ -30,6 +32,8 @@
 // reads the page fresh on every tick, and listeners delegated on document, so
 // a Turbo visit needs no re-binding.
 import { Turbo } from "@hotwired/turbo-rails";
+import { pickDomainChip, syncDomainGlow } from "build_domain";
+import { syncThemeGlow, watchGlows } from "cta_glow";
 
 const POLL_MS = 2500;
 const SLOW_MS = 10000;
@@ -84,6 +88,7 @@ function checkAddress(card) {
     status.dataset.state = state;
     status.textContent = text;
     if (submit) submit.disabled = state === "taken";
+    syncDomainGlow(card, { taken: state === "taken" });
   };
   if (!name) { show("idle", ""); return; }
   show("checking", "Checking…");
@@ -113,28 +118,14 @@ document.addEventListener("input", (event) => {
   checkAddress(input.closest("[data-build-address]"));
 });
 
-// A suggestion chip, checked once: a taken name cannot be tapped.
-async function checkChip(form) {
-  const button = form.querySelector("[data-build-domain-name]");
-  if (!button) return;
-  try {
-    const name = button.dataset.buildDomainName;
-    const response = await fetch(`${form.dataset.buildDomainChip}?subdomain=${encodeURIComponent(name)}`, { headers: { Accept: "application/json" } });
-    const data = await response.json();
-    if (!data.available && button.getAttribute("aria-pressed") !== "true") {
-      button.disabled = true;
-      button.title = data.reason || "Not available";
-    }
-  } catch (_error) {
-    // Unknown: left tappable; the server checks on the tap.
-  }
-}
-
 // A portrait pick swaps the preview. It does NOT close the picker: the arrow
 // keys move a radio group's pick (and fire change) one step at a time, so a
 // keyboard visitor browses with them. A tap on a portrait, Done, Escape (the
 // dialog's own) or Enter closes it.
 document.addEventListener("change", (event) => {
+  // A theme option picked: the glow behind Choose Theme takes its colours.
+  const themeCard = event.target.matches?.("input[name='index']") && event.target.closest("[data-build-theme]");
+  if (themeCard) { syncThemeGlow(themeCard); return; }
   const radio = event.target.closest?.("[data-build-portrait-src]");
   if (!radio) return;
   const card = radio.closest("[data-build-cto]");
@@ -190,6 +181,12 @@ document.addEventListener("click", (event) => {
     portrait.closest("dialog")?.close();
     return;
   }
+  const domainChip = event.target.closest?.("[data-build-domain-name]");
+  if (domainChip) {
+    const card = domainChip.closest("[data-build-address]");
+    if (card && pickDomainChip(card, domainChip) !== null) checkAddress(card);
+    return;
+  }
   const ctoName = event.target.closest?.("[data-build-cto-name]");
   if (ctoName) {
     const card = ctoName.closest("[data-build-cto]");
@@ -219,19 +216,16 @@ function checkNewCards() {
     card.dataset.buildAddressChecked = "true";
     checkAddress(card);
   });
-  document.querySelectorAll("[data-build-domain-chip]:not([data-build-address-checked])").forEach((form) => {
-    form.dataset.buildAddressChecked = "true";
-    checkChip(form);
-  });
 }
 
-document.addEventListener("turbo:load", () => { waitingSince = null; checkNewCards(); restoreThemeModes(); });
+document.addEventListener("turbo:load", () => { waitingSince = null; checkNewCards(); restoreThemeModes(); watchGlows(); });
 document.addEventListener("turbo:before-stream-render", (event) => {
   const original = event.detail.render;
   event.detail.render = async (stream) => {
     await original(stream);
     checkNewCards();
     restoreThemeModes();
+    watchGlows();
   };
 });
 setInterval(tick, 500);

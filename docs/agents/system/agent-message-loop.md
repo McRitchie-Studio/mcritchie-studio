@@ -1176,31 +1176,46 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
 
 `/build` is a chat with Ray (designs: `.agents/epics/build-with-xan-design.md`,
 `build-with-ray-v2.md`). A visitor, signed in or not, tells Ray what they want to
-build; Ray asks for the idea (at most two follow-ups), a CTO, colors and an address,
+build; Ray asks for the idea (at most two follow-ups), colors (the theme), a CTO and an address,
 one card at a time, and the visitor's taps fill the status card. Ray's summary card
 carries **Build My App**, which asks for sign-in only then; it launches through `AppLaunch`.
 
 - **The page** is the agent shell (`app/views/agent_chats/_shell.html.erb`): Ray's
   portrait, a status slot, the thread, the chat box. The status slot
-  (`build/_status_card`, stream target `build-checklist`) is the heading until Ray has
-  proposed a card (`AppRequest#intake_started?`), then the app's working title over
-  Agent · Theme · Domain tiles. It carries no Build control.
+  (`build/_status_card`, stream target `build-checklist`) is the heading until the
+  visitor taps Start App on an idea card (`AppRequest#intake_started?`), then the
+  app's working title over Theme · Agent · Domain tiles, in the order Ray asks. It
+  carries no Build control.
 - **The first message stays on /build.** The composer posts through Turbo;
   `BuildController#create` answers with Turbo Streams that replace the empty thread
   (`build-chat-page`) with the draft's chat and end with a `replace_url` stream
   (`app/javascript/build_shell.js`), which moves the address to `/build/<token>`
   through Turbo's history, with no reload. A JSON post still gets the token and path.
-  The move is animated (`app/javascript/agent_shell.js`): the thread slides in, the
-  portrait and heading shrink, the subtitle folds away and the gallery slides out
-  before the stream removes it; the status card scales in the first time it replaces
-  the heading.
+  The thread slides in (`app/javascript/agent_shell.js`); the send itself compacts
+  nothing, so the hero and the gallery stand while the thread is short; the status
+  card scales in the first time it replaces the heading.
 - **The shell grows with the conversation.** It is a column no taller than the window
   below its own top; the thread grows with its turns, then scrolls inside it, so the
-  chat box sits at the window's bottom. The head and status card compact in steps
-  (`data-shell-size`: full, medium at the first turn, compact at the third or when the
-  thread scrolls; `AgentShellHelper`), from about 40% of the window for the chat at
-  first to about 80% later. Same on the app chat. Styles:
+  chat box sits at the window's bottom. The head and status card compact in steps as
+  the THREAD'S HEIGHT grows, never because a message was sent (task
+  `build-chat-reading-flow`): `data-shell-size` goes full, then medium past
+  `MEDIUM_SHARE` of the shell's room, then compact past `COMPACT_SHARE`, and one step
+  on whenever the thread no longer fits beside the head (`AgentShellHelper`). A
+  ResizeObserver on the thread and its turns drives it, once a frame; it moves forward
+  only on a page; a load measures afresh, unanimated, so a reload opens at its step,
+  and a morph refresh keeps the step reached. At the first step /build's gallery
+  ("Built with McRitchie Studio", `build/_gallery`, drawn on `/build` and on a
+  draft's `/build/<token>`) slides away for good. Same on the app chat. Styles:
   `app/assets/tailwind/agent_shell.css`; reduced motion keeps the steps, unanimated.
+- **The reading flow.** The agent's words are plain text on the page (no bubble, no
+  name box; the name stays for a screen reader), the visitor's keep their right-hand
+  bubble, and the intake cards keep theirs as the point of action (`.agent-action`;
+  `app/assets/tailwind/agent_reply.css`). A NEW answer (a stream's or the poll's
+  turn replace) types itself in (`app/javascript/agent_reveal.js`): its rendered
+  HTML kept, text nodes filled in order at about 420 characters a second, 0.45s at
+  least and 2.6s at most, the thread pinned to its end, the card after the last
+  word. A screen reader reads a hidden whole copy at once. History, a reload, a morph
+  and reduced motion show the answer at once.
   The height cap is declared in `100vh` before `100dvh`, so a browser without `dvh`
   (iOS before 15.4) still caps the thread.
 - **A refused Build My App** (the plan's app limit, a name taken since the tap, an

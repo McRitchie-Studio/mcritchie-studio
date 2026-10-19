@@ -3,8 +3,8 @@
 
    1. The launch panel (app/views/build/_launch.html.erb,
       app/javascript/build_launch.js): the new CTO's portrait glows, and each of
-      the three steps is pending (muted), active (a spinning ring that pulses)
-      or done (a filled check), by its data-state.
+      the three steps is pending (muted), active (a spinning ring, the step
+      glowing) or done (a filled check), by its data-state.
    2. The app chat's stage pills (app/views/agent_chats/_devops_card.html.erb):
       the live stage glows while work runs, a done stage carries a check on a
       tint, a future one stays muted.
@@ -16,7 +16,8 @@
    color-mix, so the fallback need not be a triplet.
 
    Unlayered, like agent_shell.css, so it beats the utilities the partials carry.
-   Under prefers-reduced-motion nothing moves: the glow holds still. */
+   Under prefers-reduced-motion nothing moves: the ring stops and cta-glow holds
+   its gradient still. */
 
 .build-launch,
 .devops-stages {
@@ -24,35 +25,27 @@
   --launch-glow: var(--launch-tint, var(--color-primary));
   --launch-glow-2: rgb(var(--cto-accent));
   --launch-glow-accent: var(--launch-glow-2, var(--launch-glow));
-  /* The CTA glow's three stops (the same names as the /build cards' CTA glow,
-     task build-cards-order-and-ctas), so the two fold into one class later. */
+}
+
+/* The glow is the shared CTA glow primitive (cta-glow, app/assets/tailwind/
+   cta_glow.css, from task build-cards-order-and-ctas): its blurred, turning
+   gradient of --glow-a, --glow-b and --glow-c. Here those stops are the CTO
+   palette's primary, accent and primary (the studio's when there is none),
+   set with a more specific selector than .cta-glow's own studio defaults. */
+.build-launch .cta-glow,
+.devops-stages .cta-glow {
   --glow-a: var(--launch-glow);
   --glow-b: var(--launch-glow-accent);
   --glow-c: var(--launch-glow);
 }
 
-/* The glow itself: a soft blurred gradient of the palette AROUND the element,
-   breathing while work runs: three coloured shadows, --glow-a to the left,
-   --glow-b to the right, --glow-c all round. Shadows paint outside the box
-   only, so the glow never sits under the element's text. */
-.build-launch-portrait,
-.build-launch-step[data-state="active"],
-.devops-stage-live {
-  --glow-ring: 0 0 0 1px color-mix(in srgb, var(--glow-a) 45%, transparent);
-  box-shadow: var(--glow-ring),
-              -8px 0 18px -6px color-mix(in srgb, var(--glow-a) 55%, transparent),
-              8px 0 18px -6px color-mix(in srgb, var(--glow-b) 55%, transparent),
-              0 0 14px -4px color-mix(in srgb, var(--glow-c) 50%, transparent);
-  animation: build-glow-breathe 2.4s ease-in-out infinite;
-}
-
 .build-launch-portrait {
-  --glow-ring: 0 0 0 4px color-mix(in srgb, var(--glow-a) 30%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--launch-glow) 30%, transparent);
 }
 
 /* 1. The launch panel */
 
-.build-launch-step {
+.build-launch-card {
   transition: border-color 300ms ease, background-color 300ms ease, opacity 300ms ease;
 }
 
@@ -64,8 +57,8 @@
   color: var(--color-text-muted, currentColor);
 }
 
-.build-launch-step[data-state="active"],
-.build-launch-step[data-state="done"] {
+.build-launch-step[data-state="active"] .build-launch-card,
+.build-launch-step[data-state="done"] .build-launch-card {
   border-color: color-mix(in srgb, var(--launch-glow) 45%, transparent);
   background-color: color-mix(in srgb, var(--launch-glow) 8%, var(--color-surface));
 }
@@ -118,37 +111,17 @@
   background-color: var(--launch-glow);
 }
 
-@keyframes build-glow-breathe {
-  0%, 100% {
-    box-shadow: var(--glow-ring),
-                -6px 0 12px -6px color-mix(in srgb, var(--glow-a) 35%, transparent),
-                6px 0 12px -6px color-mix(in srgb, var(--glow-b) 35%, transparent),
-                0 0 8px -4px color-mix(in srgb, var(--glow-c) 30%, transparent);
-  }
-  50% {
-    box-shadow: var(--glow-ring),
-                -12px 0 24px -4px color-mix(in srgb, var(--glow-a) 70%, transparent),
-                12px 0 24px -4px color-mix(in srgb, var(--glow-b) 70%, transparent),
-                0 0 20px -2px color-mix(in srgb, var(--glow-c) 60%, transparent);
-  }
-}
-
 @keyframes build-launch-spin {
   to { transform: rotate(360deg); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .build-launch-portrait,
-  .build-launch-step[data-state="active"],
-  .build-launch-step[data-state="active"] .build-launch-ring,
-  .devops-stage-live {
+  .build-launch-step[data-state="active"] .build-launch-ring {
     animation: none;
   }
 
-  .build-launch-step,
+  .build-launch-card,
   .build-launch-check {
     transition: none;
   }
-
-
 }

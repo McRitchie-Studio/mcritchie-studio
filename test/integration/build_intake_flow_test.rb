@@ -3,8 +3,8 @@ require "test_helper"
 # [integration] A signed-out visitor builds with Ray through real requests: the
 # first message (bot-shielded) starts a draft and Ray's thread, Ray's answers
 # (completed here as bin/dispatcher would, with intake cards) render as cards,
-# the status card appears with the first card and each tap fills its tiles
-# (Agent, Theme, Domain), and signing in adopts the request and Build queues it
+# the status card appears once Start App locks the idea, and each tap after it
+# fills its tiles in the order Ray asks (Theme, Agent, Domain), and signing in adopts the request and Build queues it
 # through the existing claim path. The Build control itself is Ray's summary
 # card's (build-cards-advance-chat); this test posts what it posts.
 class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
@@ -83,34 +83,47 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     get build_request_turns_path(request_row.token), params: { ids: first.id }
     assert_response :success
     assert_includes response.body, "data-test=\"build-card-idea\""
-    assert_includes response.body, "data-test=\"build-status-card\"", "the first card brings the status card in the same poll"
+    refute_includes response.body, "data-test=\"build-status-card\"", "an idea card alone does not bring the status card"
+    assert_includes response.body, "data-test=\"build-heading\"", "the heading stays until Start App"
     assert_includes response.body, "League Standings Hub"
-    assert_select Nokogiri::HTML(response.body).css("template").map(&:inner_html).join.then { |html| Nokogiri::HTML.fragment(html) },
-                  "[data-test=build-status-title]", "League Standings Hub", "the status card takes the proposed title before any tap"
+    get build_request_path(request_row.token)
+    assert_select "[data-test=build-card-idea] [data-test=build-choose-idea]", "Start App"
+    assert_select "[data-test=build-status-card]", 0
 
-    # Build App: the idea locks, and the visitor's line goes to Ray, who answers with the CTO card.
+    # Start App: the idea locks, the tap's stream brings the status card, and the
+    # visitor's line goes to Ray, who answers with the THEME card.
     relay = tap_and_relay(request_row, "idea", "Let's build League Standings Hub.", message_id: idea.id)
     assert_equal "League Standings Hub", request_row.reload.answers["title"]
-    cto = ray_answers("Meet your CTO.", { kind: "intake", card: "cto", names: %w[Marble Coach Scout], portrait: "harbor" })
-    assert_equal relay, cto, "the dispatcher claimed the relayed turn"
+    assert_equal "colors", request_row.next_intake_step, "the theme comes before the CTO"
+    status = Nokogiri::HTML(response.body).css("turbo-stream[target=build-checklist] template").map(&:inner_html).join
+    assert_select Nokogiri::HTML.fragment(status), "[data-test=build-status-card] [data-test=build-status-title]", "League Standings Hub",
+                  "Start App's own stream draws the status card, titled"
+    themes = ray_answers("Pick a theme.", { kind: "intake", card: "palette", palettes: [ PALETTE, PALETTE.merge("name" => "Pitch Two"), PALETTE.merge("name" => "Pitch Three") ] })
+    assert_equal relay, themes, "the dispatcher claimed the relayed turn"
     get build_request_path(request_row.token)
-    assert_select "[data-test=build-card-cto] [data-test=build-cto-name-input][value=Marble]", 1, "the name is prefilled"
-    assert_select "[data-test=build-card-cto] [data-test=build-portrait-dialog] [data-test=build-portrait]", BuildIntake::Portraits::KEYS.size
-
-    tap_and_relay(request_row, "cto", "My CTO is Marbles.", message_id: cto.id, custom_name: "Marbles", portrait: "meadow")
-    assert_equal %w[Marbles meadow], [ request_row.reload.cto_name, request_row.cto_avatar ]
-    themes = ray_answers("Pick a theme.", { kind: "intake", card: "palette", palettes: [ PALETTE, PALETTE.merge("name" => "Pitch Two") ] })
-    get build_request_path(request_row.token)
-    assert_select "[data-test=build-card-palette] [data-test=build-palette]", 2
+    assert_select "[data-test=build-card-palette] [data-test=build-palette]", 3
+    assert_select "[data-test=build-card-palette] input[name=index][value='1'][checked]", 1, "the middle theme is preselected"
+    assert_select "[data-test=build-card-palette] [data-test=build-choose-palette]", "Choose Theme"
     assert_select "[data-test=build-palette-preview] [data-mode=dark][style*='#0b1220']:not([hidden])"
     assert_select "[data-test=build-palette-preview] [data-mode=light][style*='#ffffff'][hidden]"
     assert_select "[data-test=build-more-like]", 0, "More like this is gone from the card"
 
+    # Choose Theme posts the selected radio's index, as the browser sends the card's form.
     tap_and_relay(request_row, "palette", "Let's go with the Pitch Two theme.", message_id: themes.id, index: 1)
     assert_equal "Pitch Two", request_row.reload.palette["name"]
+    assert_equal "cto", request_row.next_intake_step
+    cto = ray_answers("Customize your CTO", { kind: "intake", card: "cto", names: %w[Marble Coach Scout], portrait: "harbor" })
+    get build_request_path(request_row.token)
+    assert_select "[data-test=build-card-cto] [data-test=build-cto-name-input][value=Marble]", 1, "the name is prefilled"
+    assert_select "[data-test=build-card-cto] [data-test=build-choose-cto]", "Hatch CTO"
+    assert_select "[data-test=build-card-cto] [data-test=build-portrait-dialog] [data-test=build-portrait]", BuildIntake::Portraits::KEYS.size
+
+    tap_and_relay(request_row, "cto", "My CTO is Marbles.", message_id: cto.id, custom_name: "Marbles", portrait: "meadow")
+    assert_equal %w[Marbles meadow], [ request_row.reload.cto_name, request_row.cto_avatar ]
     domains = ray_answers("And a domain.", { kind: "intake", card: "address", names: %w[league-hub] })
     get build_request_path(request_row.token)
-    assert_select "[data-test=build-card-address] button[data-test=build-address-suggestion]", text: "league-hub.mcritchie.studio"
+    assert_select "[data-test=build-card-address] button[data-test=build-address-suggestion][aria-pressed=true]", text: "league-hub"
+    assert_select "[data-test=build-card-address] [data-test=build-choose-address]", "Use Domain"
 
     tap_and_relay(request_row, "address", "Let's use league-hub.mcritchie.studio.", message_id: domains.id, subdomain: "league-hub")
     assert_equal "league-hub", request_row.reload.subdomain

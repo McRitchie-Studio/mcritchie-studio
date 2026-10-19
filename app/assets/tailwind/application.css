@@ -19,6 +19,13 @@
 /* A pending answer's thinking and typing looks (agent_chats/_typing). */
 @import './agent_typing.css';
 
+/* The reading flow: agent words unbubbled, cards bubbled, a new answer typed in. */
+@import './agent_reply.css';
+
+/* The CTA glow primitive (cta-glow) and the /build domain card's chip glow. */
+@import './cta_glow.css';
+@import './build_cards.css';
+
 /* Build My App's launch panel and the app chat's glowing stage pills, in the app's colours. */
 @import './build_launch.css';
 

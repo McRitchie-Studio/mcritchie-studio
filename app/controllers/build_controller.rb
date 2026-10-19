@@ -1,6 +1,6 @@
 # /build — the McRitchie Studio app funnel, as a chat with Ray
 # (.agents/epics/build-with-xan-design.md, build-with-ray-v2.md; BuildIntake). A
-# visitor tells Ray what they want to build; Ray asks for the idea, a CTO, colors
+# visitor tells Ray what they want to build; Ray asks for the idea, colors, a CTO
 # and an address, one card at a time, and the visitor's taps fill the status
 # card. Build my app asks for sign-in only then, claims the subdomain and queues
 # the build for an agent. Nothing is generated here; builds are asynchronous.
@@ -50,8 +50,9 @@ class BuildController < ApplicationController
   POLL_LIMIT = 10
   FORM_ID = "build-chat-form".freeze
   FIRST_FORM_ID = "build-first-form".freeze
-  # /build's "Built with McRitchie Studio" gallery: shown only before the first
-  # message. The first message's stream removes it, as /build/<token> has none.
+  # /build's "Built with McRitchie Studio" gallery (build/_gallery), on /build and
+  # a draft's /build/<token>: it stays while the thread is short and slides away
+  # once the thread has grown (app/javascript/agent_shell.js).
   GALLERY_ID = "build-gallery".freeze
   # The region the first message swaps in place (build/_chat), and the status
   # card's stream target (build/_status_card; the id predates the card).
@@ -134,16 +135,16 @@ class BuildController < ApplicationController
       format.json { render json: { token: request_row.token, path: build_request_path(request_row.token) }, status: :created }
       # The page's own post: the conversation starts HERE. The empty thread
       # becomes the draft's chat (its first turn already pending, so the poll
-      # starts), the status slot is redrawn for the draft, the gallery goes (a
-      # reload of /build/<token> has none), and replace_url
+      # starts), the status slot is redrawn for the draft, and replace_url
       # (app/javascript/build_shell.js) moves the address bar without a reload.
+      # The gallery stays until the thread has grown (app/javascript/agent_shell.js),
+      # as on a reload of /build/<token>.
       format.turbo_stream do
         @app_request = request_row
         load_chat
         render turbo_stream: [
           turbo_stream.replace(CHAT_ID, partial: "build/chat", locals: { request_row: request_row, messages: @messages }),
           replace_checklist,
-          turbo_stream.remove(GALLERY_ID),
           helpers.turbo_stream_action_tag(:replace_url, target: CHAT_ID, url: build_request_path(request_row.token))
         ]
       end
@@ -278,11 +279,13 @@ class BuildController < ApplicationController
       # shell is swapped in place for the launch panel (build/_launch: the new
       # CTO's portrait, the app's name, three steps in the app's colours), and
       # the address moves to the CTO's chat at once, so a reload mid-animation
-      # lands there. app/javascript/build_launch.js plays the steps, then visits
+      # lands there; the gallery below the shell goes too.
+      # app/javascript/build_launch.js plays the steps, then visits
       # the chat. A refusal never reaches here (refuse_launch, below).
       format.turbo_stream do
         render turbo_stream: [
           turbo_stream.replace_all(LAUNCH_TARGETS, partial: "build/launch", locals: launch_locals(launch.app_cto)),
+          turbo_stream.remove(GALLERY_ID),
           helpers.turbo_stream_action_tag(:replace_url, target: LAUNCH_ID, url: chat_application_path(launch.app.slug))
         ]
       end
@@ -401,6 +404,8 @@ class BuildController < ApplicationController
     @messages = BuildIntake.history(@app_request.token)
     @intake_agent = Agent.find_by(slug: BuildIntake.soul)
     @started = @app_request.intake_started?
+    # The draft page's gallery (build/_gallery), until its thread has grown.
+    @examples = BuildGallery.examples
   end
 
   def append_turn(message)
