@@ -31,15 +31,36 @@
 # passed keep their check (the launch's progress, as before). With nothing in
 # flight every pill is muted and the card says "Nothing in progress": never three
 # checks that read as finished work.
+#
+# THE SUB-LABELS (task app-card-stage-labels, Alex 2026-10-19). A live pill also
+# says where its work actually is, read from the lane's MOST ADVANCED task (the
+# newest among equals), and how long that step usually has left (Eta):
+#
+#   designed    Prepping          in line: nobody is building it yet
+#   building    Building          a builder holds it (On hold while blocked)
+#   submitted   Reviewing         its PR is in review
+#   reviewed    Approved          merged, waiting for a release
+#   assembled   On QA             on a release, in QA
+#   deploying   Going live        its release is deploying production
+#
+# Each list row says the same for its own task ("Prepping · waiting for a
+# builder"). THE PREVIEW SEAM: once a task's first version is live on its
+# preview host, the host's publish (task client-app-host) records a
+# `preview_ready` CHECKPOINT TaskEvent on it; a task past `designed` and still
+# in the Building lane then reads "Preview ready", with no ETA.
 class AppDevopsStages
-  Stage = Struct.new(:key, :label, :state, :count, keyword_init: true) do
+  # `sub_label` and `eta` (an Eta::Estimate, or nil) are set on a live pill only.
+  Stage = Struct.new(:key, :label, :state, :count, :sub_label, :eta, keyword_init: true) do
     def done? = state == :done
     def live? = state == :live
   end
 
   # One line of the card's list. `slug` is set for an admin only; an owner's
-  # title has been through ClientPipeline's sanitizer.
-  Item = Struct.new(:title, :lane, :slug, :at, keyword_init: true)
+  # title has been through ClientPipeline's sanitizer. `status` is the task's
+  # sub-label and ETA phrase, "Prepping · waiting for a builder".
+  Item = Struct.new(:title, :lane, :slug, :at, :sub_label, :eta, keyword_init: true) do
+    def status = [ sub_label, eta&.phrase ].compact.join(" · ")
+  end
 
   Board = Struct.new(:stages, :items, :total, keyword_init: true) do
     def idle? = total.zero?
@@ -50,7 +71,16 @@ class AppDevopsStages
   BUILDING_TASK_STAGES = %w[designed building submitted reviewed].freeze
   DEPLOYING_RELEASE_STAGES = %w[prod_deploying].freeze
   LIST_LIMIT = 5
-  COLUMNS = %i[id slug title stage release_slug completed_at updated_at].freeze
+  COLUMNS = %i[id slug title stage release_slug completed_at updated_at created_at
+               started_at submitted_at reviewed_at assembled_at blocked_at].freeze
+  # A task's step: its stage, or Eta::DEPLOYING while its release deploys.
+  # Ordered: the furthest-along step leads its lane's pill.
+  STEPS = (BUILDING_TASK_STAGES + %w[assembled] + [ Eta::DEPLOYING ]).freeze
+  SUB_LABELS = { "designed" => "Prepping", "building" => "Building", "submitted" => "Reviewing",
+                 "reviewed" => "Approved", "assembled" => "On QA", Eta::DEPLOYING => "Going live" }.freeze
+  ON_HOLD = "On hold".freeze
+  PREVIEW_READY = "Preview ready".freeze
+  PREVIEW_READY_EVENT = "preview_ready".freeze
 
   # The status card's model: the pills, the newest `limit` tasks, the total.
   def self.board_for(app, admin: false, limit: LIST_LIMIT)
@@ -60,8 +90,62 @@ class AppDevopsStages
       [ task, lane ] if lane
     end
 
-    Board.new(stages: stages_for(placed, launch && placed.find { |task, _| task.slug == launch }),
-              items: items_for(app, placed.first(limit), admin: admin, launch_slug: launch), total: placed.size)
+    progress = Progress.new(placed, listed: placed.first(limit))
+    Board.new(stages: stages_for(placed, launch && placed.find { |task, _| task.slug == launch }, progress),
+              items: items_for(app, placed.first(limit), progress, admin: admin, launch_slug: launch), total: placed.size)
+  end
+
+  # The step a placed task is on (see STEPS).
+  def self.step_for(task, lane) = lane == Eta::DEPLOYING ? Eta::DEPLOYING : task.stage.to_s
+
+  # The sub-label for a task on a step (see THE SUB-LABELS).
+  def self.sub_label_for(step, blocked: false, preview_ready: false)
+    return ON_HOLD if step == "building" && blocked
+    return PREVIEW_READY if preview_ready && BUILDING_TASK_STAGES.include?(step) && step != "designed"
+
+    SUB_LABELS[step]
+  end
+
+  # Each task's sub-label and ETA, read once for the card: the lane heads and
+  # the listed rows share one median query, one launcher read (only when a
+  # designed task shows) and one preview read.
+  class Progress
+    def initialize(placed, listed:, now: Time.current)
+      @now = now
+      @heads = placed.group_by(&:last).transform_values do |pairs|
+        pairs.each_with_index.max_by { |(task, lane), index| [ STEPS.index(AppDevopsStages.step_for(task, lane)).to_i, -index ] }.first
+      end
+      shown = (@heads.values + listed).uniq { |task, _| task.slug }
+      steps = shown.map { |task, lane| AppDevopsStages.step_for(task, lane) }
+      @medians = Eta.medians(steps)
+      @launcher = steps.include?("designed") && Eta.launcher_live?(now: now)
+      @previews = previews(shown.map { |task, _| task.slug })
+    end
+
+    # [sub_label, eta] for the lane's head task, or nil for an empty lane.
+    def for_lane(key)
+      pair = @heads[key]
+      pair && for_task(*pair)
+    end
+
+    def for_task(task, lane)
+      step = AppDevopsStages.step_for(task, lane)
+      label = AppDevopsStages.sub_label_for(step, blocked: task.blocked_at.present?, preview_ready: @previews.include?(task.slug))
+      eta = (Eta.estimate(step, entered_at: entered_at(task, step), medians: @medians, launcher: @launcher, now: @now) if label == SUB_LABELS[step])
+      [ label, eta ]
+    end
+
+    private
+
+    def entered_at(task, step)
+      step == Eta::DEPLOYING ? task.release&.prod_deploy_started_at : task.public_send(Eta::ENTERED_AT.fetch(step))
+    end
+
+    def previews(slugs)
+      return Set.new if slugs.empty?
+
+      TaskEvent.checkpoints.where(task_slug: slugs, to_stage: PREVIEW_READY_EVENT).distinct.pluck(:task_slug).to_set
+    end
   end
 
   def self.for_app(app) = board_for(app, limit: 0).stages
@@ -121,7 +205,7 @@ class AppDevopsStages
 
   # The pills for the placed [task, lane] pairs (see THE PILLS). `launch` is the
   # build task's pair while it is in flight, else nil.
-  def self.stages_for(placed, launch)
+  def self.stages_for(placed, launch, progress)
     counts = placed.map(&:last).tally
     base = launch ? from(launch.first.stage, release_stage: (launch.first.release&.current_stage if launch.first.stage == "assembled")) : nil
     STAGES.each_with_index.map do |(key, label), index|
@@ -130,13 +214,14 @@ class AppDevopsStages
               elsif base&.dig(index)&.done? then :done
               else :pending
               end
-      Stage.new(key: key, label: label, state: state, count: count)
+      sub_label, eta = progress.for_lane(key) if state == :live
+      Stage.new(key: key, label: label, state: state, count: count, sub_label: sub_label, eta: eta)
     end
   end
 
   # An owner reads the app's build task ("Build Launch App <subdomain>", the
   # board's name for it) as "Launching <App name>".
-  def self.items_for(app, placed, admin:, launch_slug: nil)
+  def self.items_for(app, placed, progress, admin:, launch_slug: nil)
     return [] if placed.empty?
 
     scrubber = ClientPipeline::Scrubber.new(app) unless admin
@@ -145,8 +230,9 @@ class AppDevopsStages
               elsif task.slug == launch_slug then "Launching #{app.name}"
               else owner_title(task, app, scrubber)
               end
-      Item.new(title: title, lane: STAGES.fetch(lane),
-               slug: (task.slug if admin), at: task.updated_at)
+      sub_label, eta = progress.for_task(task, lane)
+      Item.new(title: title, lane: STAGES.fetch(lane), slug: (task.slug if admin), at: task.updated_at,
+               sub_label: sub_label, eta: eta)
     end
   end
 

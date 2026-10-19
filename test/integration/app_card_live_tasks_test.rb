@@ -45,7 +45,7 @@ class AppCardLiveTasksTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='devops-idle']", 0
     assert_select "[data-test='devops-task']", 3
     assert_select "[data-test='devops-task']", text: /Live scores ticker\s+Building/
-    assert_select "[data-test='devops-task']", text: /Contest results page\s+Releasing/
+    assert_select "[data-test='devops-task']", text: /Contest results page\s+On QA/
     assert_select "[data-test='devops-task'] a", 0, "an owner gets no links"
     assert_select "[data-test='devops-board'] a[href*='/tasks/']", 0
     assert_not_includes css_select("[data-test='devops-board']").text, building.slug, "no internal slug"

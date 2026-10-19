@@ -63,19 +63,24 @@ class AppLaunchTest < ActiveSupport::TestCase
   end
 
   test "the handover carries the CTO's code-written greeting, so no model runs; the owner's own next words are answered as the app's owner" do
-    handover = launch.handover
+    launched = launch
+    handover = launched.handover
 
     assert_empty AgentMessage.claimable(soul: "client_cto").to_a, "already answered: the dispatcher never claims it"
     assert_equal "app-launch", handover.hold_released_by
     assert_equal %w[received routed hold_released completed reply_posted], handover.events.order(:id).pluck(:kind)
     assert_equal [ "posted", "code greeting" ], [ handover.reply_status, handover.action_summary ]
     greeting = handover.response_text
-    # First person and by name, building now, what the card shows, what to do meanwhile
-    # (task build-launch-handoff): code wrote it from the launch's own rows.
+    # First person and by name, in line (never "building now": nobody builds a
+    # designed task, task app-card-stage-labels), what the card shows, what to
+    # do meanwhile (task build-launch-handoff): code wrote it from the launch's own rows.
     assert greeting.start_with?("Hi Viewer, I'm Nova, the agent who'll be managing Pawsome."), greeting
-    assert_includes greeting, "It's building now: your brand sheet, the first version of the app, and its home at **pawsome.mcritchie.studio**."
-    assert_includes greeting, "Building, then Releasing to a preview link for you to try, then Deploying once you approve it."
-    assert greeting.end_with?("While it builds, tell me anything you'd like added or changed, or ask me about the plan.")
+    assert_includes greeting, "It's in line to be built: your brand sheet, the first version of the app, and its home at **pawsome.mcritchie.studio**."
+    assert_includes greeting, "The card above shows live progress: Prepping until a builder starts, then Building, Reviewing, " \
+                              "Releasing to a preview link for you, and Deploying once you approve."
+    assert greeting.end_with?("Meanwhile, tell me anything you'd like added or changed, or ask about the plan.")
+    assert_equal "designed", launched.task.reload.stage, "the greeting's claim matches the task: in line, not building"
+    assert_no_match(/building now|it builds/i, greeting)
     assert_operator greeting.split.size, :<=, 70, "short: Alex's voice, plain and warm"
 
     follow_up = AgentMessages::WebIngest.new(user: users(:viewer), cto: AppOwnership.cto_for_app("pawsome"))
