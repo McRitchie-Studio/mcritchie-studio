@@ -165,7 +165,7 @@
         card's Alpine form or the check-inbox modal can call it. %>
     <script>
       // `returnTo` (optional) is where the emailed link lands after sign-in —
-      // /build's sign-in prompt passes its launch landing (/build/<token>/launch),
+      // /build's sign-in modal passes its launch landing (/build/<token>/launch),
       // which finishes Build My App in the browser that pressed it and only
       // opens the draft anywhere else. The server keeps it to a same-origin path.
       window.postMagicLink = async function (email, returnTo) {

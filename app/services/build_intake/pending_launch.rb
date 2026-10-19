@@ -10,6 +10,7 @@ module BuildIntake
   #   BuildIntake::PendingLaunch.bind(session, token: draft.token, subdomain: "league-hub")
   #   BuildIntake::PendingLaunch.take(session, draft.token)   # => intent or nil, and gone
   #   BuildIntake::PendingLaunch.pending_token(session)       # => the token, while still fresh
+  #   BuildIntake::PendingLaunch.clear(session)               # forget it
   #
   # Why the session and not the link: an emailed link can be forwarded, and a
   # GET must never launch an app on its own. Only the browser that pressed the
@@ -23,14 +24,25 @@ module BuildIntake
   module PendingLaunch
     KEY = :build_pending_launch
     TTL = 1.hour
+    # The longest address a press may carry: one DNS label.
+    SUBDOMAIN_LIMIT = 63
 
     Intent = Struct.new(:token, :subdomain, :at, keyword_init: true)
 
     module_function
 
+    # The press, remembered (a later press for any draft replaces it), and
+    # answered as the Intent it stored. The address is the client's to send, so
+    # it is held to a DNS label's 63 characters: the session is a cookie, and an
+    # address no launch could claim has no business filling it.
     def bind(session, token:, subdomain:, now: Time.current)
-      session[KEY] = { "token" => token.to_s, "subdomain" => subdomain.to_s.presence, "at" => now.to_i }
+      subdomain = subdomain.to_s.strip.first(SUBDOMAIN_LIMIT).presence
+      session[KEY] = { "token" => token.to_s, "subdomain" => subdomain, "at" => now.to_i }
+      Intent.new(token: token.to_s, subdomain: subdomain, at: now.to_i)
     end
+
+    # Forget the press (LandingController, for a draft that can no longer launch).
+    def clear(session) = session.delete(KEY)
 
     # The intent for TOKEN, removed from the session; nil when there is none,
     # it names another draft, or it has expired (an expired one is removed too).

@@ -44,7 +44,7 @@ module AgentMessages
     # Alex's plain voice; the plan stays on the summary card the owner just
     # confirmed. Markdown, as every answer.
     def greeting(app_cto, user)
-      first = user&.name.to_s.split.first.presence
+      first = greeting_name(user)
       host = "#{app_cto.app_slug}.#{AppRequest::PARENT_DOMAIN}"
       [
         "Hi #{first || 'there'}, I'm #{app_cto.name}, the agent who'll be managing #{app_cto.app.name}.",
@@ -53,6 +53,23 @@ module AgentMessages
         "then Deploying once you approve it.",
         "While it builds, tell me anything you'd like added or changed, or ask me about the plan."
       ].join("\n\n")
+    end
+
+    # Whom the greeting names: the owner's first name, else the first word of
+    # their name, else (a new magic-link account has neither: task
+    # build-sign-in-modal) the first word of their email's local part when it
+    # reads as a name ("jordan.lee@" greets Jordan), never a mailbox like
+    # "info@"; nil greets "there".
+    MAILBOX_WORDS = %w[admin contact hello hey hi info mail me office sales support team].freeze
+
+    def greeting_name(user)
+      return nil unless user
+
+      named = (user.try(:first_name).presence || user.name.to_s.split.first).to_s.strip
+      return named if named.present?
+
+      word = user.email.to_s.split("@").first.to_s[/\A[[:alpha:]]{2,20}(?![[:alpha:]])/].to_s.downcase
+      word.length >= 3 && !MAILBOX_WORDS.include?(word) ? word.capitalize : nil
     end
 
     def enqueue!(app_cto:, user:, now: Time.current)
