@@ -9,7 +9,8 @@
     props.returnTo — where the emailed link lands after sign-in (kept to a
                      same-origin path by the server). Google cannot carry it: a
                      page that needs Google to come back must also leave itself
-                     in the session (see LandingController and /build).
+                     in the session (see LandingController; /build's Build My App
+                     uses its own prompt, build/_sign_in_prompt, for that reason).
     props.title / props.subtitle — optional copy; sensible defaults below. %>
 <div x-data="{
        email: '', sending: false, error: '',

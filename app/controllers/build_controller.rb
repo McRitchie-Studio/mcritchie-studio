@@ -293,7 +293,11 @@ class BuildController < ApplicationController
     unless @app_request.intake_complete?
       return refuse_after_sign_in(launch_outcome(:refused, reason: "Finish the steps first.", incomplete: true))
     end
-    # The claim, atomic: only a draft still unclaimed or already the viewer's.
+    # The claim: AppRequest#claimable_by? (unclaimed, or already the viewer's),
+    # then the same rule as one atomic write, so a claim racing it cannot be overwritten.
+    unless @app_request.claimable_by?(current_user)
+      return redirect_to(build_path, alert: "That draft belongs to another account.", status: :see_other)
+    end
     claimed = AppRequest.where(id: @app_request.id, status: "draft", user_id: [ nil, current_user.id ])
                         .update_all(user_id: current_user.id, updated_at: Time.current)
     @app_request.reload
