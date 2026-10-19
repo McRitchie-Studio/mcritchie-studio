@@ -9,6 +9,7 @@ require "test_helper"
 # one visitor turn (BuildIntake::Choice).
 class BuildCardsViewTest < ActionView::TestCase
   include ApplicationHelper
+  include CtaGlowHelper
 
   PALETTE = { "name" => "Pitch",
               "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },
@@ -32,13 +33,14 @@ class BuildCardsViewTest < ActionView::TestCase
 
   def intake_form(field) = "form[action='/build/#{@row.token}/intake'][method='post']:has(input[name='field'][value='#{field}'])"
 
-  test "the idea card: a title, its key features, Build App and a Build something else link" do
+  test "the idea card: a title, its key features, Start App and a Build something else link" do
     card("idea", "title" => "League Standings Hub", "features" => [ "Live standings", "Schedules" ])
     assert_select "[data-test='build-idea-title']", "League Standings Hub"
     assert_select "[data-test='build-idea-features'] li", 2
     assert_select "#{intake_form('idea')} input[name='message_id'][value='#{@message.id}']"
     assert_select "#{intake_form('idea')} input[name='client_id']"
-    assert_select "#{intake_form('idea')} [data-test='build-choose-idea']:not([disabled])", "Build App"
+    assert_select "#{intake_form('idea')} [data-test='build-choose-idea']:not([disabled])", "Start App"
+    refute_match(/Build App/, rendered)
     assert_select "#{intake_form('idea_else')} [data-test='build-idea-else']", "Build something else"
   end
 
@@ -51,9 +53,10 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-idea-title']", "A league site with live standings"
   end
 
-  test "Meet your CTO: the portrait opens a picker, the name is prefilled, Build App saves both" do
+  test "Customize your CTO: one stack of portrait, prefilled name, name ideas, then Hatch CTO" do
     card("cto", "names" => %w[Marble Coach Scout], "portrait" => "harbor")
-    assert_select "[data-test='build-card-cto'] p", text: "Meet your CTO"
+    assert_select "[data-test='build-cto-heading']", "Customize your CTO"
+    refute_match(/Meet your CTO/, rendered)
     assert_select "[data-test='build-portrait-preview'][src*='cto_portraits/harbor']"
     assert_select "[data-test='build-portrait-open'][aria-haspopup='dialog']"
     assert_select "[data-test='build-portrait-new']", "New image"
@@ -66,36 +69,146 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_equal %w[Marble Coach Scout], css_select("[data-test='build-cto-name-suggestion']").map { |b| b["data-build-cto-name"] }
     assert_select "[data-test='build-cto-name-suggestion'][type='button']", 3, "a tap fills the field; it never submits"
     assert_select "[data-test='build-cto-name-suggestion'][aria-pressed='true']", text: "Marble"
-    assert_select "#{intake_form('cto')} [data-test='build-choose-cto']", "Build App"
+    assert_select "#{intake_form('cto')} [data-test='build-choose-cto']", "Hatch CTO"
+    refute_match(/Build App/, rendered)
+
+    # The stack, top to bottom: the portrait, the name, the name ideas, Hatch CTO, in one centred column.
+    stack = css_select("[data-test='build-cto-stack']").first
+    assert_includes stack["class"].split, "flex-col"
+    order = stack.element_children.map { |el| el["data-test"] || el.at_css("[data-test]")&.[]("data-test") }
+    assert_equal %w[build-cto-portrait build-cto-name-input build-cto-names build-cto-glow], order
+    assert_includes css_select("[data-test='build-choose-cto']").first["class"].split, "w-full", "the CTA spans the card at the bottom"
   end
 
-  test "the theme card: three columns, dark previews first behind a dark/light toggle, This Theme under each" do
+  test "a CTO already set keeps its name and saves again" do
+    @row.update!(cto_name: "Coach", cto_avatar: "meadow")
+    card("cto", "names" => %w[Marble Coach Scout], "portrait" => "harbor")
+    assert_select "[data-test='build-cto-name-input'][value='Coach']"
+    assert_select "dialog input[name='portrait'][value='meadow'][checked]"
+    assert_select "[data-test='build-choose-cto']", "Save my CTO"
+  end
+
+  test "the theme card: three selectable columns, the middle one preselected, one Choose Theme; the dark/light toggle stays" do
     themes = %w[Pitch Field Court].map { |name| PALETTE.merge("name" => name) }
     card("theme", "palettes" => themes)
-    assert_select "[data-test='build-card-palette'][data-mode='dark'] .sm\\:grid-cols-3"
+    assert_select "#{intake_form('palette')}[data-test='build-card-palette'][data-mode='dark'] .sm\\:grid-cols-3[role='radiogroup']"
     assert_select "[data-test='build-palette']", 3
-    assert_select "[data-test='build-theme-toggle-dark'][aria-pressed='true']"
-    assert_select "[data-test='build-theme-toggle-light'][aria-pressed='false']"
+    assert_select "[data-test='build-theme-toggle-dark'][type='button'][aria-pressed='true']"
+    assert_select "[data-test='build-theme-toggle-light'][type='button'][aria-pressed='false']"
     assert_select "[data-build-theme-preview='dark']:not([hidden])[style*='#0b1220']", 3
     assert_select "[data-build-theme-preview='light'][hidden][style*='#ffffff']", 3
-    assert_select "#{intake_form('palette')} [data-test='build-choose-palette']", text: "This Theme", count: 3
-    assert_select "#{intake_form('palette')} input[name='index'][value='2']"
+    # Options, not buttons: one radio per theme, named index, the middle one checked.
+    radios = css_select("[data-test='build-palette'] input[type='radio'][name='index']")
+    assert_equal %w[0 1 2], radios.map { |r| r["value"] }
+    assert_equal %w[Pitch Field Court], radios.map { |r| r["aria-label"] }, "each option is named by its theme"
+    assert_equal [ false, true, false ], radios.map { |r| r.key?("checked") }, "the middle theme is preselected"
+    assert_select "[data-test='build-palette'] button", 0, "no This Theme under each column"
+    refute_match(/This Theme/, rendered)
+    # The selected one reads as selected: a ring and a check.
+    label = css_select("[data-test='build-palette']").first["class"].split
+    assert_includes label, "has-[:checked]:ring-2"
+    assert_select "[data-test='build-palette-check'][aria-hidden='true']", 3
+    # One CTA, at the bottom, submitting the selected index.
+    assert_select "#{intake_form('palette')} button[type='submit']", 1
+    assert_select "#{intake_form('palette')} > .cta-glow:last-child > button[type='submit'][data-test='build-choose-palette']", "Choose Theme"
     assert_select "[data-test='build-more-like']", 0
     refute_includes rendered, "More like this"
   end
 
-  test "the domain card: each suggestion is its own tap, and a field for a name of their own" do
-    card("address", "names" => %w[league-hub standings])
-    assert_select "[data-test='build-card-address'] p", text: "Pick a domain"
-    assert_select "#{intake_form('address')}[data-build-domain-chip='/build/check'] input[name='subdomain'][value='league-hub']"
-    assert_select "button[type='submit'][data-test='build-address-suggestion']", 2
+  test "the theme card preselects the theme already chosen, and the middle of two is the first" do
+    themes = %w[Pitch Field Court].map { |name| PALETTE.merge("name" => name) }
+    @row.update!(palette: themes.last)
+    card("theme", "palettes" => themes)
+    assert_equal [ false, false, true ], css_select("input[name='index']").map { |r| r.key?("checked") }
+    assert_select "[data-test='build-palette'][data-chosen='true']", 1
+
+    @rendered = +""
+    @row.update!(palette: {})
+    card("theme", "palettes" => themes.first(2))
+    assert_equal [ true, false ], css_select("input[name='index']").map { |r| r.key?("checked") }
+  end
+
+  test "the domain card: one stack of bare-name chips, the name field with the suffix inside it, then Use Domain" do
+    card("address", "names" => %w[poke-offense pokemon-lineup])
+    assert_select "#{intake_form('address')}[data-test='build-card-address'][data-build-address='/build/check']"
+    assert_equal %w[build-address-suggestions build-address-field build-address-availability build-address-glow],
+                 css_select("[data-test='build-address-stack']").first.element_children.map { |el| el["data-test"] || el.at_css("[data-test]")&.[]("data-test") },
+                 "top to bottom: the chips, the field, the availability line, Use Domain"
+    # Chips are bare names: the suffix lives only in the field.
+    chips = css_select("[data-test='build-address-suggestion']")
+    assert_equal %w[poke-offense pokemon-lineup], chips.map { |c| c.text.strip }
+    assert(chips.all? { |c| c["type"] == "button" }, "a chip fills the field; it never submits")
+    assert_equal 1, rendered.scan(".mcritchie.studio").size, "the suffix appears once, inside the field"
+    assert_select "label[data-test='build-address-field'].justify-center [data-test='build-address-input'] + [data-test='build-address-suffix']", ".mcritchie.studio"
+    assert_select "[data-test='build-address-input'][size='12']", 1, "sized to its name, so name and suffix centre as one group"
+    # The first suggestion is preselected: it fills the field and glows.
+    assert_select "[data-test='build-address-input'][name='subdomain'][value='poke-offense']"
+    assert_equal %w[true false], chips.map { |c| c["aria-pressed"] }
+    assert_select "button[type='submit'][data-test='build-choose-address'][data-build-glow='true']", "Use Domain"
+    assert_select "#{intake_form('address')} button[type='submit']", 1, "one CTA"
     # A 30-character name must wrap inside a 360px card, never run off it (the e2e measures it).
-    chip = css_select("[data-test='build-address-suggestion']").first
-    %w[max-w-full break-all].each { |c| assert_includes chip["class"].split, c }
-    assert_includes chip.ancestors("form").first["class"].to_s.split, "max-w-full"
-    assert_select "form[data-build-address='/build/check'] [data-test='build-address-input'][name='subdomain']"
-    assert_select "[data-test='build-choose-address']", "Use this domain"
-    refute_match(/\bAddress\b/, rendered)
+    %w[max-w-full break-all].each { |c| assert_includes chips.first["class"].split, c }
+    refute_match(/\bAddress\b|Use this domain|Or type your own/, rendered)
+  end
+
+  test "the domain card draws a taken suggestion disabled, preselects the first free one, and keeps a chosen domain" do
+    AppRequest.create!(prompt: "theirs", status: "queued", subdomain: "poke-offense", user: users(:viewer))
+    card("address", "names" => %w[poke-offense pokemon-lineup])
+    assert_select "[data-test='build-address-suggestion'][disabled]", "poke-offense"
+    assert_select "[data-test='build-address-input'][value='pokemon-lineup']"
+    assert_select "[data-test='build-address-suggestion'][aria-pressed='true']", "pokemon-lineup"
+
+    @rendered = +""
+    @row.update!(subdomain: "my-own-name")
+    card("address", "names" => %w[pokemon-lineup])
+    assert_select "[data-test='build-address-input'][value='my-own-name']"
+    assert_select "[data-test='build-address-suggestion'][aria-pressed='true']", 0, "a name of their own matches no chip"
+    assert_select "[data-test='build-card-address'][data-chosen='true']"
+  end
+
+  test "[component] the CTA glow: studio colours on Start App, the selected theme behind Choose Theme, the chosen theme after" do
+    glow_of = ->(selector) { css_select(selector).first["style"].to_s }
+    card("idea", "title" => "League Standings Hub", "features" => %w[a b])
+    assert_select ".cta-glow[data-test='build-idea-glow'] > [data-test='build-choose-idea']"
+    assert_empty glow_of.("[data-test='build-idea-glow']"), "no theme yet: the studio's own primary and accent (the CSS fallback)"
+
+    @rendered = +""
+    themes = [ PALETTE.merge("name" => "Pitch"),
+               PALETTE.merge("name" => "Field", "light" => PALETTE["light"].merge("primary" => "#1d4ed8", "accent" => "#b45309")) ]
+    themes << PALETTE.merge("name" => "Court")
+    card("theme", "palettes" => themes)
+    assert_select ".cta-glow[data-build-theme-glow] > [data-test='build-choose-palette']"
+    assert_equal "--glow-a: #1d4ed8; --glow-b: #b45309; --glow-c: #4ade80", glow_of.("[data-test='build-palette-glow']"),
+                 "the middle (selected) theme's light primary, light accent, dark primary"
+    options = css_select("input[name='index']")
+    assert_equal %w[#15803d #1d4ed8 #15803d], options.map { |o| o["data-glow-a"] }, "every option carries its colours for the swap"
+    assert_equal %w[#4ade80 #4ade80 #4ade80], options.map { |o| o["data-glow-c"] }
+
+    @rendered = +""
+    @row.update!(palette: themes[1])
+    card("cto", "names" => %w[Marble], "portrait" => "harbor")
+    assert_includes glow_of.("[data-test='build-cto-glow']"), "--glow-a: #1d4ed8", "the chosen theme carries on to Hatch CTO"
+    @rendered = +""
+    card("address", "names" => %w[poke-offense])
+    assert_select ".cta-glow[data-test='build-address-glow'] > [data-test='build-choose-address']"
+    assert_includes glow_of.("[data-test='build-address-glow']"), "--glow-b: #b45309"
+  end
+
+  test "[component] a spent CTA draws no glow: the CTO once set, the theme already chosen" do
+    @row.update!(palette: PALETTE, cto_name: "Coach", cto_avatar: "meadow")
+    card("cto", "names" => %w[Marble], "portrait" => "harbor")
+    assert_select "[data-test='build-cto-glow'][data-glow='off']"
+    @rendered = +""
+    card("theme", "palettes" => [ PALETTE, PALETTE.merge("name" => "Field") ])
+    assert_select "[data-test='build-card-palette'][data-chosen-index='0']"
+    assert_select "[data-test='build-palette-glow'][data-glow='off']", 1, "the chosen theme is selected: Choose Theme is spent"
+  end
+
+  test "[unit] cta_glow_vars: only hex colours reach the style, and a broken palette falls back" do
+    assert_equal({ "--glow-a" => "#15803d", "--glow-b" => "#f59e0b", "--glow-c" => "#4ade80" }, cta_glow_vars(PALETTE))
+    assert_nil cta_glow_vars({})
+    assert_nil cta_glow_vars(nil)
+    assert_nil cta_glow_vars(PALETTE.merge("light" => PALETTE["light"].merge("primary" => "red; background: url(x)")))
   end
 
   test "the summary card draws the request; Build My App posts the launch, which asks a visitor to sign in first" do
@@ -121,6 +234,8 @@ class BuildCardsViewTest < ActionView::TestCase
     # with the sign-in prompt (BuildController#sign_in_to_launch). No client-side modal.
     assert_equal "true", button["data-signs-in"]
     assert_nil button["data-build-sign-in"]
+    assert_select ".cta-glow[data-test='build-summary-glow'][style*='--glow-a: #15803d'] > [data-test='build-summary-build']", 1,
+                  "Build My App glows in the chosen theme"
     assert_select "form[action='/build/#{@row.token}'] input[name='_method'][value='patch']"
     assert_select "form[action='/build/#{@row.token}'] input[name='message_id'][value='#{@message.id}']"
 

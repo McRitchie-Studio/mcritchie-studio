@@ -237,6 +237,20 @@ class AppRequestTest < ActiveSupport::TestCase
     refute BuildGallery.examples.any? { |e| e.url.include?("customer-app") }
   end
 
+  test "[unit] the status card waits for Start App: a proposed idea card is not a start, a locked idea or any set step is" do
+    row = AppRequest.create!(prompt: "A league site")
+    AgentMessage.create!(channel: "web", external_id: "build:#{row.token}:1", channel_ref: "build", thread_key: BuildIntake.thread_key(row.token),
+                         soul_slug: "ray", content: "hi", status: "completed", response_text: "ok",
+                         intake_card: { "card" => "idea", "title" => "League Standings Hub", "features" => %w[a b] })
+    refute row.intake_started?, "an idea card waiting in the thread does not bring the status card"
+
+    row.update!(answers: { "title" => "League Standings Hub", "idea" => "League Standings Hub" })
+    assert row.intake_started?, "Start App locks the idea, and the status card appears"
+
+    row.update!(answers: {}, cto_name: "Coach", cto_avatar: "harbor")
+    assert row.intake_started?, "a draft holding a step without an idea still shows what it holds"
+  end
+
   test "the intake fields hold the card rules, and the checklist reads them" do
     palette = { "name" => "Pitch",
                 "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },

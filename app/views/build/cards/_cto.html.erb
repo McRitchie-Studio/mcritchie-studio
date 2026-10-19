@@ -1,5 +1,5 @@
 <%# locals: (card:, message:, request_row:) %>
-<%# The CTO card, "Meet your CTO": the portrait on the left (tap it, or New image, to open the picker of BuildIntake::Portraits), the name Ray suggested PREFILLED in an input the visitor may edit (all his names offered as taps under it, which fill the field), and Build App, which saves both and relays the visitor's turn so Ray moves on to the theme (BuildIntake::Choice "cto"). The picker is a native dialog inside the form (build_chat.js opens it and swaps the preview; a tap on a portrait or Done closes it, while the arrow keys only move the pick, and Enter closes it without submitting); its radios submit with the form, so a pick needs no extra request. %>
+<%# The CTO card, "Customize your CTO", one centred stack (Alex, 2026-10-18): the portrait on top (tap it, or New image, to open the picker of BuildIntake::Portraits), the name Ray suggested PREFILLED in an input the visitor may edit, his other names as taps under it (which fill the field), and Hatch CTO at the bottom, which saves both and relays the visitor's turn so Ray moves on to the domain (BuildIntake::Choice "cto"). The picker is a native dialog inside the form (build_chat.js opens it and swaps the preview; a tap on a portrait or Done closes it, while the arrow keys only move the pick, and Enter closes it without submitting); its radios submit with the form, so a pick needs no extra request. %>
 <% keys = BuildIntake::Portraits::KEYS %>
 <% picked_name = request_row.cto_name.presence || card["names"].first %>
 <% picked_portrait = BuildIntake::Portraits.key?(request_row.cto_avatar) ? request_row.cto_avatar : (card["portrait"] || BuildIntake::Portraits.default_for(request_row.token)) %>
@@ -10,35 +10,36 @@
   <%= hidden_field_tag :field, "cto" %>
   <%= hidden_field_tag :message_id, message.id %>
   <%= hidden_field_tag :client_id, SecureRandom.uuid %>
-  <p class="text-xs font-semibold uppercase tracking-wider text-muted mb-3">Meet your CTO</p>
-  <div class="flex items-start gap-4">
-    <div class="flex shrink-0 flex-col items-center gap-1">
+  <p class="text-center text-base font-semibold text-heading mb-3" data-test="build-cto-heading">Customize your CTO</p>
+  <div class="mx-auto flex max-w-sm flex-col items-center gap-3" data-test="build-cto-stack">
+    <div class="flex flex-col items-center gap-1" data-test="build-cto-portrait">
       <button type="button" class="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ring-offset-2 ring-offset-surface"
               data-build-portrait-open aria-haspopup="dialog" aria-label="Choose a different portrait" data-test="build-portrait-open">
         <%= image_tag BuildIntake::Portraits.path(picked_portrait), alt: "#{BuildIntake::Portraits.label(picked_portrait)} portrait",
-              class: "block h-20 w-20 sm:h-24 sm:w-24 rounded-full border border-subtle", data: { build_portrait_preview: true, test: "build-portrait-preview" } %>
+              class: "block h-24 w-24 sm:h-28 sm:w-28 rounded-full border border-subtle", data: { build_portrait_preview: true, test: "build-portrait-preview" } %>
       </button>
       <button type="button" class="text-xs text-primary-ink hover:underline underline-offset-2" data-build-portrait-open data-test="build-portrait-new">New image</button>
     </div>
-    <div class="min-w-0 flex-1 space-y-3">
-      <label class="block">
-        <span class="block text-xs text-muted mb-1">Name</span>
-        <input type="text" name="custom_name" value="<%= picked_name %>" maxlength="24" required autocomplete="off"
-               class="input-field w-full text-base font-semibold" data-build-cto-name-input data-test="build-cto-name-input">
-      </label>
-      <%# Ray's names as taps, not a datalist: a datalist filters by the field's value, so with the first name prefilled the others stayed hidden until the field was cleared. A tap fills the field (build_chat.js); typing still wins. %>
-      <% if card["names"].size > 1 %>
-        <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="<%= BuildController::AGENT_NAME %>'s name ideas" data-test="build-cto-names">
-          <% card["names"].each do |name| %>
-            <button type="button" class="rounded-full border border-subtle px-2.5 py-1 text-xs text-body hover:border-primary aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-heading"
-                    aria-pressed="<%= name == picked_name %>" data-build-cto-name="<%= name %>" data-test="build-cto-name-suggestion"><%= name %></button>
-          <% end %>
-        </div>
-      <% end %>
-      <button type="submit" class="btn btn-primary btn-sm" data-test="build-choose-cto">
-        <%= chosen ? "Save my CTO" : "Build App" %>
+    <label class="block w-full">
+      <span class="sr-only">Your CTO's name</span>
+      <input type="text" name="custom_name" value="<%= picked_name %>" maxlength="24" required autocomplete="off"
+             class="input-field w-full text-center text-base font-semibold" data-build-cto-name-input data-test="build-cto-name-input">
+    </label>
+    <%# Ray's names as taps, not a datalist: a datalist filters by the field's value, so with the first name prefilled the others stayed hidden until the field was cleared. A tap fills the field (build_chat.js); typing still wins. %>
+    <% if card["names"].size > 1 %>
+      <div class="flex flex-wrap items-center justify-center gap-1.5" role="group" aria-label="<%= BuildController::AGENT_NAME %>'s name ideas" data-test="build-cto-names">
+        <% card["names"].each do |name| %>
+          <button type="button" class="rounded-full border border-subtle px-2.5 py-1 text-xs text-body hover:border-primary aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-heading"
+                  aria-pressed="<%= name == picked_name %>" data-build-cto-name="<%= name %>" data-test="build-cto-name-suggestion"><%= name %></button>
+        <% end %>
+      </div>
+    <% end %>
+    <%# The chosen theme's colours carry on here (cta-glow); spent once the CTO is set. %>
+    <%= tag.span class: "cta-glow w-full", style: cta_glow_style(request_row.palette), data: { test: "build-cto-glow", glow: ("off" if chosen) } do %>
+      <button type="submit" class="btn btn-primary w-full" data-test="build-choose-cto">
+        <%= chosen ? "Save my CTO" : "Hatch CTO" %>
       </button>
-    </div>
+    <% end %>
   </div>
 
   <dialog class="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-2xl border border-subtle bg-surface p-4 text-body backdrop:bg-black/60"

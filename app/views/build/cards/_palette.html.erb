@@ -1,8 +1,17 @@
 <%# locals: (card:, message:, request_row:) %>
-<%# The theme card (stored as kind "palette"): up to three themes Ray proposed, each already contrast-checked in light AND dark (BuildIntake::Card), side by side as vertical columns. Each column is a small preview of the app drawn with the theme's own normalized hex colours, in DARK mode first; the toggle swaps all three to light and back (build_chat.js; without script the dark preview stays). This Theme under each taps it (by index, from the stored card) and relays the visitor's turn, so Ray moves on to the domain. %>
-<div class="rounded-2xl border border-subtle bg-surface p-3 sm:p-4" data-test="build-card-palette" data-build-theme data-mode="dark">
+<%# The theme card (stored as kind "palette"), the first question after the idea: up to three themes Ray proposed, each already contrast-checked in light AND dark (BuildIntake::Card), side by side as vertical columns. Each column is a small preview of the app drawn with the theme's own normalized hex colours, in DARK mode first; the toggle swaps all three to light and back (build_chat.js; without script the dark preview stays). The columns are OPTIONS, not buttons (Alex, 2026-10-18): one radio group named `index`, the middle theme preselected (or the one already chosen), a ring and a check on the selected one, the arrow keys moving the pick; one Choose Theme at the bottom submits the selected index (from the stored card) and relays the visitor's turn, so Ray moves on to the CTO. %>
+<% palettes = card["palettes"] %>
+<% chosen_index = request_row.palette.present? ? palettes.index(request_row.palette) : nil %>
+<% selected = chosen_index || (palettes.size - 1) / 2 %>
+<%# The glow behind Choose Theme wears the SELECTED theme's colours (cta-glow); picking another option blends it to that theme's (cta_glow.js). Spent while the selection is the theme already chosen. %>
+<%= form_with url: build_request_intake_path(request_row.token), method: :patch,
+      class: "rounded-2xl border border-subtle bg-surface p-3 sm:p-4",
+      data: { test: "build-card-palette", build_theme: true, mode: "dark", chosen_index: chosen_index } do %>
+  <%= hidden_field_tag :field, "palette" %>
+  <%= hidden_field_tag :message_id, message.id %>
+  <%= hidden_field_tag :client_id, SecureRandom.uuid %>
   <div class="flex items-center justify-between gap-2 mb-3">
-    <p class="text-xs font-semibold uppercase tracking-wider text-muted">Pick a theme</p>
+    <p class="text-xs font-semibold uppercase tracking-wider text-muted" id="build-theme-heading-<%= message.id %>">Pick a theme</p>
     <div class="inline-flex rounded-full border border-subtle p-0.5 text-xs" role="group" aria-label="Preview mode">
       <% %w[dark light].each do |mode| %>
         <button type="button" class="rounded-full px-2.5 py-1 font-semibold text-muted aria-pressed:bg-primary aria-pressed:text-white"
@@ -10,35 +19,38 @@
       <% end %>
     </div>
   </div>
-  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-    <% card["palettes"].each_with_index do |palette, index| %>
-      <% chosen = request_row.palette.present? && request_row.palette == palette %>
-      <div class="flex min-w-0 flex-col gap-2 rounded-xl border <%= chosen ? 'border-primary' : 'border-subtle' %> p-2" data-test="build-palette" data-chosen="<%= chosen %>">
-        <p class="font-semibold text-heading text-sm truncate text-center"><%= palette["name"] %></p>
-        <div data-test="build-palette-preview">
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3" role="radiogroup" aria-labelledby="build-theme-heading-<%= message.id %>" data-test="build-palette-options">
+    <% palettes.each_with_index do |palette, index| %>
+      <label class="relative flex min-w-0 cursor-pointer flex-col gap-2 rounded-xl border border-subtle p-2 hover:border-primary/60
+                    has-[:checked]:border-primary has-[:checked]:ring-2 has-[:checked]:ring-primary
+                    has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-primary"
+             data-test="build-palette" data-chosen="<%= index == chosen_index %>">
+        <input type="radio" name="index" value="<%= index %>" class="peer sr-only" aria-label="<%= palette["name"] %>" <%= "checked" if index == selected %> data-test="build-palette-option"
+               <%= tag.attributes(data: (cta_glow_vars(palette) || {}).transform_keys { |k| k.delete_prefix("--") }) %>>
+        <span class="absolute right-2 top-2 hidden h-5 w-5 items-center justify-center rounded-full bg-primary text-white peer-checked:flex" aria-hidden="true" data-test="build-palette-check">
+          <svg viewBox="0 0 20 20" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 10.5l3 3 7-7"/></svg>
+        </span>
+        <span class="block font-semibold text-heading text-sm truncate text-center px-6" aria-hidden="true"><%= palette["name"] %></span>
+        <span class="block" aria-hidden="true" data-test="build-palette-preview">
           <% BuildIntake::Card::MODES.reverse.each do |mode| %>
             <% c = palette[mode] %>
-            <div class="flex flex-col gap-2 rounded-lg border border-subtle p-2.5 min-h-40" style="background-color: <%= c["surface"] %>; color: <%= c["text"] %>"
-                 data-mode="<%= mode %>" data-build-theme-preview="<%= mode %>" <%= "hidden" if mode == "light" %>>
-              <div class="flex items-center gap-1.5">
+            <span class="flex flex-col gap-2 rounded-lg border border-subtle p-2.5 min-h-40" style="background-color: <%= c["surface"] %>; color: <%= c["text"] %>"
+                  data-mode="<%= mode %>" data-build-theme-preview="<%= mode %>" <%= "hidden" if mode == "light" %>>
+              <span class="flex items-center gap-1.5">
                 <span class="h-2.5 w-2.5 rounded-full" style="background-color: <%= c["accent"] %>"></span>
-                <p class="text-2xs font-bold leading-tight truncate">Your app</p>
-              </div>
+                <span class="text-2xs font-bold leading-tight truncate">Your app</span>
+              </span>
               <span class="h-1.5 w-4/5 rounded-full opacity-60" style="background-color: <%= c["text"] %>"></span>
               <span class="h-1.5 w-3/5 rounded-full opacity-40" style="background-color: <%= c["text"] %>"></span>
               <span class="mt-auto self-start rounded-md px-2 py-0.5 text-3xs font-semibold" style="background-color: <%= c["primary"] %>; color: <%= BuildIntake::Contrast.ink_on(c["primary"]) %>">Button</span>
-              <p class="text-3xs opacity-80 leading-tight"><%= mode.capitalize %> mode</p>
-            </div>
+              <span class="text-3xs opacity-80 leading-tight"><%= mode.capitalize %> mode</span>
+            </span>
           <% end %>
-        </div>
-        <%= form_with url: build_request_intake_path(request_row.token), method: :patch, class: "mt-auto" do %>
-          <%= hidden_field_tag :field, "palette" %>
-          <%= hidden_field_tag :message_id, message.id %>
-          <%= hidden_field_tag :index, index %>
-          <%= hidden_field_tag :client_id, SecureRandom.uuid %>
-          <button type="submit" class="btn <%= chosen ? 'btn-secondary' : 'btn-primary' %> btn-sm w-full" data-test="build-choose-palette" <%= "disabled" if chosen %>><%= chosen ? "Chosen" : "This Theme" %></button>
-        <% end %>
-      </div>
+        </span>
+      </label>
     <% end %>
   </div>
-</div>
+  <%= tag.span class: "cta-glow mt-4", style: cta_glow_style(palettes[selected]), data: { test: "build-palette-glow", build_theme_glow: true, glow: ("off" if selected == chosen_index) } do %>
+    <button type="submit" class="btn btn-primary w-full" data-test="build-choose-palette">Choose Theme</button>
+  <% end %>
+<% end %>

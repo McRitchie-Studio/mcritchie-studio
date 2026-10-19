@@ -67,7 +67,9 @@
     <%= form_with url: build_request_path(request_row.token), method: :patch, data: { test: "build-summary-form" } do %>
       <%= hidden_field_tag "app_request[subdomain]", request_row.subdomain %>
       <%= hidden_field_tag "message_id", message.id, id: nil %>
-      <button type="submit" class="btn btn-primary w-full" data-test="build-summary-build" data-signs-in="<%= !logged_in? %>">Build My App</button>
+      <%= tag.span class: "cta-glow", style: cta_glow_style(request_row.palette), data: { test: "build-summary-glow" } do %>
+        <button type="submit" class="btn btn-primary w-full" data-test="build-summary-build" data-signs-in="<%= !logged_in? %>">Build My App</button>
+      <% end %>
     <% end %>
     <% if logged_in? %>
       <p class="text-xs text-muted text-center">Claims <span class="font-mono"><%= request_row.host %></span> and starts the build.</p>

@@ -5,11 +5,13 @@
 // The promise only a browser can prove: a SIGNED-OUT visitor types ONE message, which
 // answers IN PLACE on /build (the thread grows under the heading and the address
 // becomes /build/<token>, no reload), then gets from the idea to Build My App by TAPS
-// ALONE while the status card's Agent · Theme · Domain tiles fill. Every card's CTA sets its field and
+// ALONE. The status card waits for Start App, then its Theme · Agent · Domain tiles
+// fill in the order Ray asks (theme before CTO). Every card's CTA sets its field and
 // posts the visitor's own line into the thread, so the next answer arrives without
-// typing: Build App on the idea, Build App on the CTO (a portrait picked in the
-// modal, the prefilled name edited), This Theme (after the dark/light toggle), and a
-// domain suggestion. The summary card follows, and Build My App asks for sign-in only
+// typing: Start App on the idea, Choose Theme (the middle theme preselected, another
+// picked after the dark/light toggle), Hatch CTO (a portrait picked in the modal,
+// the prefilled name edited), and Use Domain (a chip picked, the name edited and
+// typed back while the chip's glow follows the field). The summary card follows, and Build My App asks for sign-in only
 // then, in place under the card; the emailed link signs in and lands on the app being
 // built (the draft claimed and launched once, task build-launch-sign-in): the new
 // CTO's chat, where the CTO's code-written greeting is already there. The
@@ -81,6 +83,9 @@ async function tapped(page, auth, line, text, card) {
 }
 
 test("a signed-out visitor's first message answers in place, taps alone reach Build My App, and the sign-in it asks for lands on the CTO's chat, greeted", async ({ page, browser }) => {
+  // The whole intake, sign-in and launch in one walk, with the theme, CTO and domain
+  // cards each exercised by keyboard and tap: past the suite's 30s default.
+  test.setTimeout(90_000);
   await blockThirdPartyRequests(page);
   const { pageErrors, report } = watchPageErrors(page);
   const auth = { Authorization: `Bearer ${await adminToken(browser)}`, "Content-Type": "application/json" };
@@ -124,8 +129,10 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(page.locator("[data-test='build-status-card']")).toHaveCount(0);
   await expect(page.locator("[data-test='cto-chat-input']")).toBeFocused();
   expect(await page.evaluate(() => window.__composerSaid), "the send was announced").toContain("Sending…");
-  // Once chatting the gallery is gone, as on a reload of /build/<token>.
-  await expect(page.locator("[data-test='build-gallery']")).toHaveCount(0);
+  // A send alone never compacts the page: one short turn leaves the heading and
+  // the gallery standing (they go as the thread grows; agent_shell_growth.spec.js).
+  await expect(page.locator("[data-agent-shell]")).toHaveAttribute("data-shell-size", "full");
+  await expect(page.locator("[data-test='build-gallery']")).toBeVisible();
 
   // Before Ray is on it the turn is thinking: his portrait in the orbit.
   const waiting = first.locator("[data-test='cto-chat-typing']");
@@ -133,22 +140,72 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(waiting.locator("[data-test='cto-chat-thinking']")).toContainText("Ray is thinking");
   await expect(waiting.locator("[data-test='cto-chat-thinking'] .agent-typing-orbit")).toBeVisible();
 
-  // The idea card: a title and key features. Build App locks it and moves on.
+  // The idea card: a title and key features. Start App locks it and moves on.
   await rayAnswers(page, auth, idea, "Here's the app I hear.", { card: "idea", title: "League Standings Hub", features: ["Live standings", "Game schedules"] }, { phases: true });
   const ideaCard = first.locator("[data-test='build-card-idea']");
   await expect(ideaCard.locator("[data-test='build-idea-title']")).toHaveText("League Standings Hub");
   await expect(ideaCard.locator("[data-test='build-idea-features'] li")).toHaveCount(2);
   await expect(ideaCard.locator("[data-test='build-idea-else']")).toBeVisible();
-  // The first card brings the status card, titled with the app's working title.
+  // The status card waits for Start App: the heading holds until the idea is locked.
   const status = page.locator("[data-test='build-status-card']");
+  await expect(status).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "What do you want to build?" })).toBeVisible();
+  await ideaCard.getByRole("button", { name: "Start App" }).click();
   await expect(status.locator("[data-test='build-status-title']")).toHaveText("League Standings Hub");
   await expect(page.getByRole("heading", { name: "What do you want to build?" })).toHaveCount(0);
-  await ideaCard.locator("[data-test='build-choose-idea']").click();
+  // The tiles, in the order Ray asks.
+  expect(await status.locator("li").evaluateAll((els) => els.map((el) => el.dataset.test))).toEqual(["build-tile-theme", "build-tile-agent", "build-tile-domain"]);
 
-  // Meet your CTO: the name is prefilled; the portrait opens the picker.
-  await tapped(page, auth, "Let's build League Standings Hub.", "Meet your CTO.", { card: "cto", names: ["Marble", "Coach", "Scout"], portrait: "harbor" });
+  // The theme comes first: three options, dark first, the middle one preselected; one Choose Theme.
+  const themes = ["Pitch", "Field", "Court"].map((name) => ({ ...PALETTE, name }));
+  themes[2] = { ...themes[2], light: { ...PALETTE.light, primary: "#1d4ed8" } };
+  await tapped(page, auth, "Let's build League Standings Hub.", "Pick a theme.", { card: "palette", palettes: themes });
+  const themeCard = page.locator("[data-test='build-card-palette']");
+  await expect(themeCard.locator("[data-test='build-palette']")).toHaveCount(3);
+  await expect(themeCard.getByRole("radio", { name: "Field" })).toBeChecked();
+  await expect(themeCard.getByRole("button", { name: "This Theme" })).toHaveCount(0);
+  const darkPreview = themeCard.locator("[data-test='build-palette']").first().locator("[data-build-theme-preview='dark']");
+  const lightPreview = themeCard.locator("[data-test='build-palette']").first().locator("[data-build-theme-preview='light']");
+  await expect(darkPreview).toHaveCSS("background-color", "rgb(11, 18, 32)");
+  await expect(lightPreview).toBeHidden();
+  await themeCard.locator("[data-test='build-theme-toggle-light']").click();
+  await expect(lightPreview).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(darkPreview).toBeHidden();
+  await expect(themeCard.locator("[data-test='build-more-like']")).toHaveCount(0);
+  // Side by side on a desktop: the three columns share one row.
+  const tops = await themeCard.locator("[data-test='build-palette']").evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
+  expect(new Set(tops).size, "three columns in one row").toBe(1);
+  // The keyboard moves the pick like any radio group; a tap on a column picks it.
+  await themeCard.getByRole("radio", { name: "Field" }).focus();
+  const glowA = () => themeCard.locator("[data-test='build-palette-glow']").evaluate((el) => getComputedStyle(el).getPropertyValue("--glow-a").trim());
+  await expect.poll(glowA, { message: "Choose Theme glows in the selected theme" }).toBe("rgb(21, 128, 61)");
+  await page.keyboard.press("ArrowRight");
+  await expect(themeCard.getByRole("radio", { name: "Court" })).toBeChecked();
+  await expect.poll(glowA, { message: "picking Court moves the glow to its colours" }).toBe("rgb(29, 78, 216)");
+  await expect(themeCard.locator("[data-test='build-palette']").nth(2).locator("[data-test='build-palette-check']")).toBeVisible();
+  await themeCard.locator("[data-test='build-palette']").nth(0).click();
+  await expect(themeCard.getByRole("radio", { name: "Pitch" })).toBeChecked();
+  await expect(themeCard.locator("[data-test='build-palette']").nth(2).locator("[data-test='build-palette-check']")).toBeHidden();
+  await themeCard.locator("[data-test='build-palette']").nth(1).click();
+  await expect(page.locator("[data-test='build-turn']", { hasText: "Let's go with the" }), "picking a theme submits nothing").toHaveCount(0);
+  await themeCard.getByRole("button", { name: "Choose Theme" }).click();
+  await expect(status.locator("[data-test='build-tile-theme-value']")).toHaveText("Field");
+  // The tap re-renders the card (now showing Field as chosen): Light holds.
+  await expect(themeCard.locator("[data-test='build-palette']").nth(1)).toHaveAttribute("data-chosen", "true");
+  await expect(themeCard.getByRole("radio", { name: "Field" })).toBeChecked();
+  await expect(themeCard).toHaveAttribute("data-mode", "light");
+  await expect(lightPreview).toBeVisible();
+  await expect(themeCard.locator("[data-test='build-theme-toggle-light']")).toHaveAttribute("aria-pressed", "true");
+
+  // Customize your CTO: one stack; the name is prefilled; the portrait opens the picker.
+  await tapped(page, auth, "Let's go with the Field theme.", "Customize your CTO", { card: "cto", names: ["Marble", "Coach", "Scout"], portrait: "harbor" });
   const cto = page.locator("[data-test='build-card-cto']");
+  await expect(cto.locator("[data-test='build-cto-heading']")).toHaveText("Customize your CTO");
   await expect(cto.locator("[data-test='build-cto-name-input']")).toHaveValue("Marble");
+  // Stacked: portrait above the name, the name above its ideas, Hatch CTO at the bottom.
+  const ys = await Promise.all(["build-portrait-preview", "build-cto-name-input", "build-cto-names", "build-choose-cto"]
+    .map((t) => cto.locator(`[data-test='${t}']`).evaluate((el) => el.getBoundingClientRect().top)));
+  expect([...ys].sort((a, b) => a - b), "the CTO card stacks top to bottom").toEqual(ys);
   const dialog = cto.locator("[data-test='build-portrait-dialog']");
   await expect(dialog).toBeHidden();
   await cto.locator("[data-test='build-portrait-new']").click();
@@ -178,48 +235,50 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(cto.locator("[data-test='build-cto-name-input']")).toHaveValue("Scout");
   await expect(cto.locator("[data-test='build-cto-name-suggestion']", { hasText: "Scout" })).toHaveAttribute("aria-pressed", "true");
   await cto.locator("[data-test='build-cto-name-input']").fill("Marbles");
-  await cto.locator("[data-test='build-choose-cto']").click();
+  await cto.getByRole("button", { name: "Hatch CTO" }).click();
   await expect(status.locator("[data-test='build-tile-agent-value']")).toHaveText("Marbles");
   await expect(status.locator("[data-test='build-tile-agent-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
 
-  // The theme: three columns, dark first; the toggle swaps all three to light.
-  const themes = ["Pitch", "Field", "Court"].map((name) => ({ ...PALETTE, name }));
-  await tapped(page, auth, "My CTO is Marbles.", "Pick a theme.", { card: "palette", palettes: themes });
-  const themeCard = page.locator("[data-test='build-card-palette']");
-  await expect(themeCard.locator("[data-test='build-palette']")).toHaveCount(3);
-  const darkPreview = themeCard.locator("[data-test='build-palette']").first().locator("[data-build-theme-preview='dark']");
-  const lightPreview = themeCard.locator("[data-test='build-palette']").first().locator("[data-build-theme-preview='light']");
-  await expect(darkPreview).toHaveCSS("background-color", "rgb(11, 18, 32)");
-  await expect(lightPreview).toBeHidden();
-  await themeCard.locator("[data-test='build-theme-toggle-light']").click();
-  await expect(lightPreview).toHaveCSS("background-color", "rgb(255, 255, 255)");
-  await expect(darkPreview).toBeHidden();
-  await expect(themeCard.locator("[data-test='build-more-like']")).toHaveCount(0);
-  // Side by side on a desktop: the three columns share one row.
-  const tops = await themeCard.locator("[data-test='build-palette']").evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
-  expect(new Set(tops).size, "three columns in one row").toBe(1);
-  await themeCard.locator("[data-test='build-palette']").nth(1).getByRole("button", { name: "This Theme" }).click();
-  await expect(status.locator("[data-test='build-tile-theme-value']")).toHaveText("Field");
-  // The tap re-renders the card (now showing Field as chosen): Light holds.
-  await expect(themeCard.locator("[data-test='build-palette']").nth(1)).toHaveAttribute("data-chosen", "true");
-  await expect(themeCard).toHaveAttribute("data-mode", "light");
-  await expect(lightPreview).toBeVisible();
-  await expect(themeCard.locator("[data-test='build-theme-toggle-light']")).toHaveAttribute("aria-pressed", "true");
-
-  // The domain: a taken suggestion (the seed's live trivia-night) cannot be tapped; an available one IS the choice.
-  // A 30-character suggestion (the longest a name may be) must fit a phone's card.
+  // The domain: one stack. Bare-name chips (a taken one, the seed's live trivia-night, drawn
+  // disabled), the field with the suffix inside it, a glowing Use Domain. The field is the
+  // source of truth for the glow. A 30-character suggestion (the longest a name may be) must fit a phone's card.
   const longest = "standings-hub-for-weekend-club";
-  await tapped(page, auth, "Let's go with the Field theme.", "Pick a domain.", { card: "address", names: ["trivia-night", address, longest] });
+  await tapped(page, auth, "My CTO is Marbles.", "Pick a domain.", { card: "address", names: ["trivia-night", address, longest] });
   const domainCard = page.locator("[data-test='build-card-address']");
+  const field = domainCard.locator("[data-test='build-address-input']");
+  const chip = (name) => domainCard.locator("[data-test='build-address-suggestion']", { hasText: name });
+  const useDomain = domainCard.getByRole("button", { name: "Use Domain" });
   await page.setViewportSize({ width: 360, height: 780 });
   const fit = await domainCard.evaluate((card) => {
     const edge = card.getBoundingClientRect().right;
-    return [...card.querySelectorAll("[data-test='build-address-suggestion']")].map((chip) => edge - chip.getBoundingClientRect().right);
+    return [...card.querySelectorAll("[data-test='build-address-suggestion'], [data-test='build-address-field']")].map((el) => edge - el.getBoundingClientRect().right);
   });
-  expect(Math.min(...fit), "every domain chip ends inside its card at 360px").toBeGreaterThanOrEqual(0);
+  expect(Math.min(...fit), "every domain chip and the field end inside the card at 360px").toBeGreaterThanOrEqual(0);
+  await expect(domainCard.locator("[data-test='build-address-suffix']")).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 800 });
-  await expect(domainCard.locator("[data-test='build-address-suggestion']", { hasText: "trivia-night" })).toBeDisabled();
-  await domainCard.locator("[data-test='build-address-suggestion']", { hasText: address }).click();
+  await expect(chip("trivia-night")).toBeDisabled();
+  await expect(chip(address)).toHaveText(address);
+  // The first free suggestion is preselected: it fills the field and glows, and so does Use Domain.
+  await expect(field).toHaveValue(address);
+  await expect(chip(address)).toHaveAttribute("aria-pressed", "true");
+  await expect(useDomain).toHaveAttribute("data-build-glow", "true");
+  const halo = (locator) => locator.evaluate((el) => getComputedStyle(el).boxShadow);
+  await expect.poll(() => halo(chip(address)), { message: "the selected chip wears a glow" }).not.toBe("none");
+  // Picking the long chip moves the glow, and the field takes its name without the keyboard.
+  await chip(longest).click();
+  await expect(field).toHaveValue(longest);
+  await expect(field).not.toBeFocused();
+  await expect(chip(longest)).toHaveAttribute("aria-pressed", "true");
+  await expect(chip(address)).toHaveAttribute("aria-pressed", "false");
+  // An edit fades it; typing back to the original brings it back.
+  await field.fill(`${address}-x`);
+  await expect(domainCard.locator("[data-test='build-address-suggestion'][aria-pressed='true']"), "an edit that matches no chip fades the glow").toHaveCount(0);
+  await expect.poll(() => halo(chip(address)), { message: "the faded chip has no glow" }).toBe("none");
+  await field.fill(address);
+  await expect(chip(address), "typed back, the chip glows again").toHaveAttribute("aria-pressed", "true");
+  await expect(useDomain).toHaveAttribute("data-build-glow", "true");
+  await expect(domainCard.locator("[data-test='build-address-availability']")).toHaveText("Available");
+  await useDomain.click();
   await expect(status).toHaveAttribute("data-complete", "true");
   await expect(status.locator("[data-test='build-tile-domain-value']")).toHaveText(`${address}.mcritchie.studio`);
   await expect(status.locator("[data-test='build-summary-build'], [data-test='build-my-app']")).toHaveCount(0);

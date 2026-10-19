@@ -37,14 +37,42 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
 
   def tap(field, **params) = BuildIntake::Choice.new(@request, ip: "203.0.113.9").tap { |c| c.apply!(field, params) }
 
+  test "[unit] the theme is asked before the CTO, and a theme tap with no CTO yet moves the request on to the CTO" do
+    assert_equal %w[idea colors cto address], BuildIntake::STEPS
+    idea = answer_with({ "card" => "idea", "title" => "League Standings Hub", "features" => [ "Live standings", "Schedules" ] })
+    tap("idea", message_id: idea.id)
+    assert_equal "colors", @request.reload.next_intake_step, "after the idea, the theme"
+
+    themes = answer_with({ "card" => "palette", "palettes" => [ PALETTE, PALETTE.merge("name" => "Field") ] })
+    tap("palette", message_id: themes.id, index: "1")
+    assert_equal "Field", @request.reload.palette["name"]
+    assert_nil @request.cto_name, "the theme is set with no CTO"
+    assert_equal "cto", @request.next_intake_step, "after the theme, the CTO"
+
+    tap("cto", custom_name: "Marble", portrait: "harbor")
+    assert_equal "address", @request.reload.next_intake_step
+  end
+
+  test "[unit] a draft from the old order (CTO picked, no theme yet) still takes its theme tap and goes on to the domain" do
+    @request.update!(answers: { "title" => "League Standings Hub", "idea" => "League Standings Hub" }, cto_name: "Coach", cto_avatar: "meadow")
+    assert_equal "colors", @request.next_intake_step
+
+    themes = answer_with({ "card" => "palette", "palettes" => [ PALETTE ] })
+    relay = tap("palette", message_id: themes.id, index: "0").relay
+    assert_equal "Let's go with the Pitch theme.", relay.content
+    @request.reload
+    assert_equal [ "Coach", "meadow", "Pitch" ], [ @request.cto_name, @request.cto_avatar, @request.palette["name"] ], "the CTO it picked is kept"
+    assert_equal "address", @request.next_intake_step
+  end
+
   test "every field sets its value and relays the visitor's line as a turn Ray will answer" do
     idea = answer_with({ "card" => "idea", "title" => "League Standings Hub", "features" => [ "Live standings", "Schedules" ] })
     themes = answer_with({ "card" => "palette", "palettes" => [ PALETTE ] })
 
     lines = {
       [ "idea", { message_id: idea.id } ] => "Let's build League Standings Hub.",
-      [ "cto", { custom_name: "Marble", portrait: "harbor" } ] => "My CTO is Marble.",
       [ "palette", { message_id: themes.id, index: "0" } ] => "Let's go with the Pitch theme.",
+      [ "cto", { custom_name: "Marble", portrait: "harbor" } ] => "My CTO is Marble.",
       [ "address", { subdomain: "league-hub" } ] => "Let's use league-hub.mcritchie.studio."
     }
     relays = lines.map do |(field, params), line|

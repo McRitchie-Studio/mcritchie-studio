@@ -7,9 +7,13 @@ module BuildIntake
   #
   #   idea       message_id            → answers (title, features, idea)
   #   idea_else  message_id            → nothing set; the idea this card set is cleared
-  #   cto        name or custom_name, portrait → cto_name, cto_avatar
   #   palette    message_id, index     → palette (the visitor reads "theme")
+  #   cto        name or custom_name, portrait → cto_name, cto_avatar
   #   address    subdomain             → subdomain (claimed only at Build)
+  #
+  # Listed in the order Ray asks (BuildIntake::STEPS). No tap checks that the
+  # step before it is set: the order is Ray's to ask, and a draft started under
+  # the old order (CTO before theme) still takes its theme tap.
   #
   # EVERY TAP ALSO SPEAKS (.agents/epics/build-with-ray-v2.md, 2-5: "It wasn't
   # intuitive that I had to send another message after confirming"). Once the
@@ -22,14 +26,14 @@ module BuildIntake
   class Choice
     class Refused < StandardError; end
 
-    FIELDS = %w[idea idea_else cto palette address].freeze
+    FIELDS = %w[idea idea_else palette cto address].freeze
 
     # The visitor's line for each tap, from the value just saved.
     RELAYS = {
       "idea" => ->(r) { "Let's build #{r.answers['title'].presence || r.answers['idea']}." },
       "idea_else" => ->(_r) { "I'd like to build something else." },
-      "cto" => ->(r) { "My CTO is #{r.cto_name}." },
       "palette" => ->(r) { "Let's go with the #{r.palette['name']} theme." },
+      "cto" => ->(r) { "My CTO is #{r.cto_name}." },
       "address" => ->(r) { "Let's use #{r.host}." }
     }.freeze
 

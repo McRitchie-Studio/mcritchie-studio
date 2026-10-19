@@ -273,7 +273,7 @@ module AgentMailbox
     # outside the fence, except the confirmed idea, which is fenced), and how to
     # write an intake card. Empty on every thread that is not a /build thread.
     INTAKE_DOC = "docs/agents/agents/ray/intake.md"
-    INTAKE_FALLBACK = "Help the visitor set up their app: the idea, their CTO, their theme and their domain, " \
+    INTAKE_FALLBACK = "Help the visitor set up their app: the idea, their theme, their CTO and their domain, " \
                       "one question at a time."
 
     def intake_block
