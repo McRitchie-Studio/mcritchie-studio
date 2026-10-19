@@ -1182,9 +1182,10 @@ carries **Build My App**, which asks for sign-in only then; it launches through 
 
 - **The page** is the agent shell (`app/views/agent_chats/_shell.html.erb`): Ray's
   portrait, a status slot, the thread, the chat box. The status slot
-  (`build/_status_card`, stream target `build-checklist`) is the heading until Ray has
-  proposed a card (`AppRequest#intake_started?`), then the app's working title over
-  Agent · Theme · Domain tiles. It carries no Build control.
+  (`build/_status_card`, stream target `build-checklist`) is the heading until the
+  visitor taps Start App on an idea card (`AppRequest#intake_started?`), then the
+  app's working title over Theme · Agent · Domain tiles, in the order Ray asks. It
+  carries no Build control.
 - **The first message stays on /build.** The composer posts through Turbo;
   `BuildController#create` answers with Turbo Streams that replace the empty thread
   (`build-chat-page`) with the draft's chat and end with a `replace_url` stream
