@@ -558,7 +558,7 @@ module ClientBuildLauncher
         tick
         break if once || (@stopping && @slots.empty?)
 
-        @sleeper.call(@slots.empty? ? Integer(@config.fetch("poll_seconds")) : 5)
+        @slots.empty? ? @sleeper.call(Integer(@config.fetch("poll_seconds"))) : @slots.first.thread.join(5)
       end
       drain if once
     end
@@ -570,9 +570,11 @@ module ClientBuildLauncher
       claim_free_slots unless @stopping
     end
 
+    # Wait for every run in flight (each thread's own join, not a sleep), reporting
+    # each as it ends.
     def drain
       until @slots.empty?
-        @sleeper.call(5)
+        @slots.first.thread.join(5)
         reap
       end
     end
