@@ -1,11 +1,20 @@
-# The agent shell's size step (agent_chats/_shell, task build-launch-chat-growth):
-# how far the head and status card have compacted for a thread of `turns` turns.
-# app/javascript/agent_shell.js reads the same thresholds off the shell's data
-# attributes, so the server's first paint and the page's later steps agree.
+# The agent shell's size step (agent_chats/_shell; tasks build-launch-chat-growth,
+# build-chat-reading-flow). The head compacts as the THREAD GROWS, not as messages
+# are sent: app/javascript/agent_shell.js reads the thread's height against the
+# shell's room (the window below where the shell starts) and steps forward past
+# these shares of it, or whenever the thread has to scroll at the step it is on.
+# The server cannot measure a height, so `agent_shell_size` is only the first
+# paint's guess from the turn count; the page measures afresh on load.
 module AgentShellHelper
-  # The first answer starts the conversation: the heading and portrait shrink.
-  MEDIUM_AT = 1
-  # By the third turn the thread is the page: the head is one line.
+  # Past this share of the room the conversation has started: the heading and
+  # portrait shrink and /build's gallery slides away.
+  MEDIUM_SHARE = 0.3
+  # Past this share the thread is the page: the head is one line.
+  COMPACT_SHARE = 0.55
+
+  # The first paint's guess (a turn is the visitor's words and the answer): one
+  # turn usually still fits beside the full head, three rarely do.
+  MEDIUM_AT = 2
   COMPACT_AT = 3
 
   # Ray's Agent row, for the portrait in a pending /build turn's thinking look

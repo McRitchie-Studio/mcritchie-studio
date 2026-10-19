@@ -11,12 +11,13 @@
       column is full, then scrolls inside it, so the chat box sits at the window's
       bottom and what follows the shell is pushed off screen. The cap is set in 100vh first,
       then 100dvh, so a browser without dvh (iOS before 15.4) keeps the vh cap.
-   2. Three size steps, data-shell-size: full (no turns yet), medium (the
-      conversation has started), compact (it is the page). Each step shrinks the
-      portrait, the caption, the heading and the status card.
-   3. Entrances for the first message's move to /build/<token>: the thread
-      slides in, the status card scales in when it first appears, and the gallery
-      slides away (app/javascript/agent_shell.js adds the classes).
+   2. Three size steps, data-shell-size: full (a short thread), medium (the
+      thread has grown past a share of the window), compact (it is the page);
+      app/javascript/agent_shell.js picks them by the thread's height. Each step
+      shrinks the portrait, the caption, the heading and the status card.
+   3. Entrances: the thread slides in on the first message's move to
+      /build/<token>, the status card scales in when it first appears, and the
+      gallery slides away at the first step (agent_shell.js adds the classes).
    Under prefers-reduced-motion every step still applies, with no motion. */
 
 .agent-shell {
@@ -216,6 +217,12 @@
   transition: opacity 260ms ease-in, transform 260ms ease-in;
   opacity: 0;
   transform: translateY(1rem);
+}
+
+/* A page load's fresh measurement (agent_shell.js) lands its step unanimated. */
+.agent-shell.agent-shell-instant,
+.agent-shell.agent-shell-instant * {
+  transition-duration: 0s !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
