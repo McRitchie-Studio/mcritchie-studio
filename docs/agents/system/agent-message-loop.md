@@ -1218,9 +1218,21 @@ session's press (a forwarded link, a refresh, a stale press) the landing only op
   `app/assets/tailwind/agent_reply.css`). A NEW answer (a stream's or the poll's
   turn replace) types itself in (`app/javascript/agent_reveal.js`): its rendered
   HTML kept, text nodes filled in order at about 420 characters a second, 0.45s at
-  least and 2.6s at most, the thread pinned to its end, the card after the last
-  word. A screen reader reads a hidden whole copy at once. History, a reload, a morph
-  and reduced motion show the answer at once.
+  least and 2.6s at most, the card after the last word. While it types the thread is
+  `aria-busy` and the words are `inert`, so a screen reader hears the answer once, when
+  it is done, and no link in it takes focus mid-typing. History, a reload, a morph and
+  reduced motion show the answer at once.
+- **Following the newest line** (`app/javascript/chat_follow.js`, task
+  `build-flow-polish`). A reader within 20px of the thread's end when it grows (an
+  answer typing in, a turn or a card arriving, the head stepping down) is kept at the
+  end; one scrolled further up is not moved. The reader's own send goes to the end.
+  One binding per thread element, so nothing piles up across stream renders. Same on
+  `/build` and every agent chat.
+- **No-op re-taps.** Choose Theme and Use Domain are disabled while the pick is the
+  answer already saved, and `BuildIntake::Choice` ignores such a tap (no write, no
+  visitor turn, no turn of Ray's). The domain card checks every suggestion's
+  availability once, in its render (`AppRequest.unavailable_reasons`), and asks
+  `/build/check` only when the name changes.
   The height cap is declared in `100vh` before `100dvh`, so a browser without `dvh`
   (iOS before 15.4) still caps the thread.
 - **A refused Build My App** (the plan's app limit, a name taken since the tap, an
