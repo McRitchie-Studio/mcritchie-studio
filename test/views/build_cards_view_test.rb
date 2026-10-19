@@ -98,7 +98,7 @@ class BuildCardsViewTest < ActionView::TestCase
     refute_match(/\bAddress\b/, rendered)
   end
 
-  test "the summary card draws the request; Build My App signs in first, then posts the launch" do
+  test "the summary card draws the request; Build My App posts the launch, which asks a visitor to sign in first" do
     @row.update!(answers: { "title" => "League Standings Hub", "idea" => "League Standings Hub", "features" => [ "Live standings", "Schedules" ] },
                  cto_name: "Marble", cto_avatar: "meadow", palette: PALETTE, subdomain: "league-hub")
     card("summary")
@@ -117,7 +117,12 @@ class BuildCardsViewTest < ActionView::TestCase
     end
     button = css_select("[data-test='build-summary-build']").first
     assert_equal "Build My App", button.text.strip
-    assert_equal "/build/#{@row.token}", JSON.parse(button["data-build-sign-in"])["returnTo"]
+    # Signed out it is the same PATCH: the server remembers the press and answers
+    # with the sign-in prompt (BuildController#sign_in_to_launch). No client-side modal.
+    assert_equal "true", button["data-signs-in"]
+    assert_nil button["data-build-sign-in"]
+    assert_select "form[action='/build/#{@row.token}'] input[name='_method'][value='patch']"
+    assert_select "form[action='/build/#{@row.token}'] input[name='message_id'][value='#{@message.id}']"
 
     signed_in(User.create!(email: "m@example.com", name: "M", role: "viewer"))
     card("summary")
