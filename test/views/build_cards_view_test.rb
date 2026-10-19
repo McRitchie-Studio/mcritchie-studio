@@ -134,7 +134,7 @@ class BuildCardsViewTest < ActionView::TestCase
     card("address", "names" => %w[poke-offense pokemon-lineup])
     assert_select "#{intake_form('address')}[data-test='build-card-address'][data-build-address='/build/check']"
     assert_equal %w[build-address-suggestions build-address-field build-address-availability build-address-glow],
-                 css_select("[data-test='build-address-stack']").first.element_children.map { |el| el["data-test"] || el.at_css("[data-test]")&.[]("data-test") },
+                 css_select("[data-test='build-address-stack']").first.element_children.reject { |el| el["class"].to_s.split.include?("sr-only") }.map { |el| el["data-test"] || el.at_css("[data-test]")&.[]("data-test") },
                  "top to bottom: the chips, the field, the availability line, Use Domain"
     # Chips are bare names: the suffix lives only in the field.
     chips = css_select("[data-test='build-address-suggestion']")
@@ -179,6 +179,8 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-choose-address']:not([disabled])", 1
 
     input = css_select("[data-test='build-address-input']").first
+    assert_select "label[data-test='build-address-field'] .sr-only", { text: /mcritchie\.studio/, count: 0 },
+                  "the suffix is not part of the field's label, so it is read once, as its description"
     described = input["aria-describedby"].split.map { |id| css_select("##{id}").first&.text.to_s.strip }
     assert_equal "Ends in .mcritchie.studio.", described.first, "the field's description names the suffix the eye sees beside it"
     assert_equal "Available", described.last, "then the live availability line"

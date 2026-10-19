@@ -1233,6 +1233,8 @@ Turbo hover prefetch gets a 204 and spends nothing.
   `aria-busy` and the words are `inert`, so a screen reader hears the answer once, when
   it is done, and no link in it takes focus mid-typing. History, a reload, a morph and
   reduced motion show the answer at once.
+  The height cap is declared in `100vh` before `100dvh`, so a browser without `dvh`
+  (iOS before 15.4) still caps the thread.
 - **Following the newest line** (`app/javascript/chat_follow.js`, task
   `build-flow-polish`). A reader within 20px of the thread's end when it grows (an
   answer typing in, a turn or a card arriving, the head stepping down) is kept at the
@@ -1244,8 +1246,6 @@ Turbo hover prefetch gets a 204 and spends nothing.
   visitor turn, no turn of Ray's). The domain card checks every suggestion's
   availability once, in its render (`AppRequest.unavailable_reasons`), and asks
   `/build/check` only when the name changes.
-  The height cap is declared in `100vh` before `100dvh`, so a browser without `dvh`
-  (iOS before 15.4) still caps the thread.
 - **A refused Build My App** (the plan's app limit, a name taken since the tap, an
   incomplete intake) answers ON the summary card: a Turbo Stream redraws the card by
   its id (`build-summary-<message id>`) with the reason and a next step, 422. Never a

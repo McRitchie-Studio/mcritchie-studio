@@ -8,24 +8,16 @@
 //     data-chosen-index) the glow is spent (data-glow="off") and Choose Theme is
 //     disabled: a re-tap would spend a turn of Ray's for nothing.
 //   - every glow: one IntersectionObserver marks a CTA scrolled off screen
-//     data-glow-visible="false", so it draws no blurred layer; and one
-//     ResizeObserver keeps its --glow-squash, the height-to-width share the CSS
-//     squashes its turning circle by, so the glow hugs a wide button.
-//   - Turbo: before a page is cached both observers let go of every element,
+//     data-glow-visible="false", so it draws no blurred layer.
+//   - Turbo: before a page is cached the observer lets go of every element,
 //     and the cached copy loses its data-glow-watched mark, so a restored page
 //     is watched afresh and nothing removed is kept alive (task
 //     build-flow-polish). A watch after a stream render also drops any glow
 //     the render took off the page.
 //
-// Pure where it can be (themeGlowVars, syncThemeGlow, glowSquash take
-// stand-ins), so test/javascript/cta_glow_test.js runs it without a browser.
+// Pure where it can be (themeGlowVars, syncThemeGlow take stand-ins), so test/javascript/cta_glow_test.js runs it without a browser.
 
 export const GLOW_VARS = ["--glow-a", "--glow-b", "--glow-c"];
-// cta_glow.css draws the glow this much wider and taller than the CTA: wider by
-// more, so the squashed circle still reaches round a wide button's ends.
-export const GLOW_BLEED_X_PX = 48;
-export const GLOW_BLEED_Y_PX = 16;
-
 // The glow colours a theme option carries: { "--glow-a": "#…", … }, or null
 // when it carries none.
 export function themeGlowVars(option) {
@@ -49,28 +41,14 @@ export function syncThemeGlow(card) {
   return vars;
 }
 
-// The circle's squash for a CTA of this size: its glow box's height over its
-// width, as a unitless share (1 for a round CTA, small for a wide button).
-export function glowSquash(width, height) {
-  if (!(width > 0) || !(height > 0)) return 1;
-  if (Math.abs(width - height) <= 1) return 1; // a round or square CTA glows in a circle
-  return Math.min(1, (height + GLOW_BLEED_Y_PX) / (width + GLOW_BLEED_X_PX));
-}
-
 const watched = new Set();
 let visibility = null;
-let sizes = null;
-
-function squash(el, width, height) {
-  el.style.setProperty("--glow-squash", glowSquash(width, height).toFixed(3));
-}
 
 // Watches every .cta-glow under root (new ones too: call again after a render).
 export function watchGlows(root = document) {
   watched.forEach((el) => {
     if (el.isConnected) return;
     visibility?.unobserve(el);
-    sizes?.unobserve(el);
     watched.delete(el);
   });
   if (typeof IntersectionObserver !== "undefined") {
@@ -78,29 +56,18 @@ export function watchGlows(root = document) {
       entries.forEach((entry) => { entry.target.dataset.glowVisible = String(entry.isIntersecting); });
     });
   }
-  if (typeof ResizeObserver !== "undefined") {
-    sizes ||= new ResizeObserver((entries) => {
-      entries.forEach((entry) => {
-        const box = entry.borderBoxSize?.[0];
-        squash(entry.target, box ? box.inlineSize : entry.contentRect.width, box ? box.blockSize : entry.contentRect.height);
-      });
-    });
-  }
   root.querySelectorAll(".cta-glow:not([data-glow-watched])").forEach((el) => {
     el.dataset.glowWatched = "true";
     watched.add(el);
     visibility?.observe(el);
-    sizes?.observe(el);
   });
 }
 
-// Lets go of every glow: the observers disconnect and the marks come off, so the
+// Lets go of every glow: the observer disconnects and the marks come off, so the
 // page Turbo caches holds nothing it watched and a restore watches afresh.
 export function releaseGlows(root = document) {
   visibility?.disconnect();
-  sizes?.disconnect();
   visibility = null;
-  sizes = null;
   watched.clear();
   root.querySelectorAll?.(".cta-glow[data-glow-watched]").forEach((el) => {
     delete el.dataset.glowWatched;

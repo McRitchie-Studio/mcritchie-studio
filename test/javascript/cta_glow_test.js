@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { glowSquash, releaseGlows, syncThemeGlow, themeGlowVars, watchGlows, watchedCount } from "../../app/javascript/cta_glow.js";
+import { releaseGlows, syncThemeGlow, themeGlowVars, watchGlows, watchedCount } from "../../app/javascript/cta_glow.js";
 
 function option(value, a, b, c, checked = false) {
   return { value, checked, dataset: { glowA: a, glowB: b, glowC: c } };
@@ -77,17 +77,9 @@ test("[unit] a card with no theme chosen yet keeps Choose Theme enabled", () => 
   assert.equal(submit.disabled, false);
 });
 
-test("[unit] the glow's circle is squashed to the CTA's shape", () => {
-  assert.equal(glowSquash(100, 100), 1, "a round CTA keeps a circle");
-  assert.equal(glowSquash(384, 40), 56 / 432, "a wide button: its glow box's height over its width");
-  assert.equal(glowSquash(0, 40), 1, "an unmeasured CTA falls back to a circle");
-  assert.ok(glowSquash(40, 384) <= 1, "never stretched taller than a circle");
-});
-
 test("[unit] watched glows are let go: removed ones on the next watch, all of them before Turbo caches the page", () => {
   const observed = new Set();
   globalThis.IntersectionObserver = class { observe(el) { observed.add(el); } unobserve(el) { observed.delete(el); } disconnect() { observed.clear(); } };
-  globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} };
   const glow = () => ({ isConnected: true, dataset: {}, style: { setProperty() {} } });
   const page = [glow(), glow()];
   const root = { querySelectorAll: () => page.filter((el) => !el.dataset.glowWatched) };
@@ -107,6 +99,5 @@ test("[unit] watched glows are let go: removed ones on the next watch, all of th
     assert.equal(page[1].dataset.glowWatched, undefined, "the cached copy is watched afresh on restore");
   } finally {
     delete globalThis.IntersectionObserver;
-    delete globalThis.ResizeObserver;
   }
 });

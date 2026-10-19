@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { CHARS_PER_SECOND, MAX_MS, MIN_MS, answeredTurns, busy, lettersDue, newAnswers, paintReveal, prepareReveal, reveal, revealDuration }
+import { CHARS_PER_SECOND, MAX_MS, MIN_MS, answeredTurns, busy, finishRevealing, typeAnswer, lettersDue, newAnswers, paintReveal, prepareReveal, reveal, revealDuration }
   from "../../app/javascript/agent_reveal.js";
 
 function text(data) { return { nodeType: 3, data }; }
@@ -135,4 +135,26 @@ test("history is never typed: only an answer the page has not seen is new", () =
   const after = page(body("cto-chat-turn-1"), body("cto-chat-turn-2"), fresh);
   assert.deepEqual(newAnswers(after, seen), [ fresh ], "the answer that arrived is the one typed");
   assert.deepEqual(newAnswers(after, seen), [], "a re-render of an answer already typed shows at once");
+});
+
+test("[unit] leaving mid-typing finishes the answer before Turbo caches the page: whole text, links live, region not busy (task build-flow-polish)", () => {
+  const attrs = new Map();
+  const log = { setAttribute: (k, v) => attrs.set(k, v), removeAttribute: (k) => attrs.delete(k) };
+  const turn = el("div");
+  const root = answer();
+  root.closest = (selector) => (selector === "[data-cto-chat-scroll]" ? log : selector === "[data-build-turn]" ? turn : null);
+  const c = clock();
+  typeAnswer(root, { now: c.now, frame: c.frame, reduced: false });
+  c.advance(100);
+  assert.equal(root.inert, true, "mid-typing the words are inert");
+  assert.equal(attrs.get("aria-busy"), "true");
+  assert.equal(turn.hasAttribute("data-agent-revealing"), true);
+  assert.notEqual(html(root), "<p>Hi <strong>there</strong>.</p>\n<ul><li>One</li><li>Two</li></ul>", "still typing");
+
+  finishRevealing(); // turbo:before-cache
+  assert.equal(html(root), "<p>Hi <strong>there</strong>.</p>\n<ul><li>One</li><li>Two</li></ul>", "the whole answer is in the snapshot");
+  assert.equal(root.inert, false, "its links work after Back");
+  assert.equal(attrs.has("aria-busy"), false);
+  assert.equal(turn.hasAttribute("data-agent-revealing"), false);
+  finishRevealing(); // a second cache finds nothing typing
 });

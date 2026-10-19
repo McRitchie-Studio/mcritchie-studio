@@ -6,23 +6,26 @@
        <button class="btn btn-primary w-full">Choose Theme</button>
      </span>
 
-   Its ::before is one blurred layer behind the button: a conic gradient of
-   --glow-a, --glow-b and --glow-c on a CIRCLE that turns. Without the variables
-   it takes the studio's own primary and accent. The three colours are
-   registered properties, so a change (picking another theme on the theme
+   Two blurred layers behind the button, each the wrapper's own shape 3px
+   larger: ::before a conic gradient of --glow-a, --glow-b and --glow-c, and
+   ::after the same gradient turned half way round. ::after fades in and out
+   over ::before, so the colours trade places round the button. Without the
+   variables it takes the studio's own primary and accent. The three colours
+   are registered properties, so a change (picking another theme on the theme
    card) blends over 600ms instead of jumping. The wrapper isolates, so the
    glow paints above the card's background and below the button; the button's
    own focus ring is drawn on the button, above the glow.
 
-   The turn is a TRANSFORM (task build-flow-polish): the circle rotates, then is
-   squashed to the CTA's shape by --glow-squash (its height over its width,
-   kept by cta_glow.js; 1 for a round CTA). Rotating a circle never changes its
-   outline, so the squashed glow keeps its place around the button while its
-   colours travel round it, and the compositor runs the whole animation: the
-   layer is painted once, not every frame (the old way animated a registered
-   angle inside the gradient, which repainted the blurred layer each frame).
+   Why a fade and not a turn (task build-flow-polish): the motion is OPACITY,
+   so the compositor runs it and nothing repaints a frame (the first version
+   animated a registered angle inside the gradient, repainting the blurred
+   layer every frame), and neither layer ever grows past 3px beyond the CTA (a
+   rotated layer's corners count as scrollable overflow: a turning square
+   behind a full-width button gave every chat thread, and the launch page on a
+   phone, a pulsing sideways scroll). The blur that reaches further is paint,
+   not layout, so it never scrolls anything.
 
-   GPU: one layer per CTA, and none when it cannot be seen or is spent:
+   GPU: two layers per CTA, and none when it cannot be seen or is spent:
    data-glow-visible="false" (cta_glow.js, an IntersectionObserver, when the
    CTA is scrolled off screen), data-glow="off" (a spent CTA, or the domain
    card's Use Domain with no valid name), or a disabled button. Under
@@ -37,51 +40,46 @@
   --glow-a: rgb(var(--color-primary-rgb));
   --glow-b: var(--color-accent);
   --glow-c: rgb(var(--color-primary-rgb));
-  /* A wide button's share until cta_glow.js measures this one. */
-  --glow-squash: 0.15;
   position: relative;
   isolation: isolate;
   display: block;
   transition: --glow-a 600ms ease, --glow-b 600ms ease, --glow-c 600ms ease;
 }
 
-/* A round CTA (the launch portrait) glows in a circle, close round it. */
-.cta-glow.rounded-full { --glow-squash: 1; }
-.cta-glow.rounded-full::before { width: calc(100% + 16px); scale: 1; }
-
-.cta-glow::before {
+.cta-glow::before,
+.cta-glow::after {
   content: "";
   position: absolute;
-  left: 50%;
-  top: 50%;
+  inset: -3px;
   z-index: -1;
-  /* GLOW_BLEED_X_PX in cta_glow.js: 24px past each end, so the squashed
-     circle still wraps a wide button's rounded ends. */
-  width: calc(100% + 48px);
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: conic-gradient(var(--glow-a), var(--glow-b), var(--glow-c), var(--glow-a));
+  border-radius: 9999px;
+  background: conic-gradient(from var(--glow-from, 0deg), var(--glow-a), var(--glow-b), var(--glow-c), var(--glow-a));
   filter: blur(12px);
   opacity: 0.75;
   pointer-events: none;
-  /* Read right to left: turn the circle, squash it to the CTA, centre it. */
-  translate: -50% -50%;
-  scale: 1 var(--glow-squash);
-  transform: rotate(0deg);
-  animation: cta-glow-turn 6s linear infinite;
+}
+
+.cta-glow::after {
+  --glow-from: 180deg;
+  opacity: 0;
+  animation: cta-glow-trade 3s ease-in-out infinite alternate;
 }
 
 .cta-glow[data-glow="off"]::before,
+.cta-glow[data-glow="off"]::after,
 .cta-glow[data-glow-visible="false"]::before,
+.cta-glow[data-glow-visible="false"]::after,
 .cta-glow:has(> :disabled)::before,
-.cta-glow:has(> [data-build-glow="false"])::before {
+.cta-glow:has(> :disabled)::after,
+.cta-glow:has(> [data-build-glow="false"])::before,
+.cta-glow:has(> [data-build-glow="false"])::after {
   display: none;
 }
 
-@keyframes cta-glow-turn {
-  to { transform: rotate(360deg); }
+@keyframes cta-glow-trade {
+  to { opacity: 0.75; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cta-glow::before { animation: none; }
+  .cta-glow::after { animation: none; }
 }

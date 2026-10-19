@@ -161,17 +161,22 @@ export function newAnswers(root, seen) {
 // The typing words are `inert` until then, so a link in the answer cannot take
 // focus (or a tap) while it is still being typed. Scrolling is chat_follow.js's:
 // the thread follows the words only for a reader who is at its end.
-function typeAnswer(body) {
+export function typeAnswer(body, options = {}) {
   const log = body.closest(LOG);
   const turn = body.closest("[data-build-turn]") || body.closest(TURN);
   busy(log, +1);
   body.inert = true;
   turn?.setAttribute("data-agent-revealing", "");
-  reveal(body, {
+  let handle = null;
+  let done = false;
+  handle = reveal(body, {
+    ...options,
     onDone() {
+      done = true;
+      if (handle) revealing.delete(handle);
       body.inert = false;
       turn?.removeAttribute("data-agent-revealing");
-      turn?.querySelectorAll(".agent-action").forEach((card) => {
+      turn?.querySelectorAll?.(".agent-action").forEach((card) => {
         if (reducedMotion()) return;
         card.classList.add("agent-action-enter");
         card.addEventListener("animationend", () => card.classList.remove("agent-action-enter"), { once: true });
@@ -179,6 +184,19 @@ function typeAnswer(body) {
       busy(log, -1);
     },
   });
+  if (!done) revealing.add(handle);
+  return handle;
+}
+
+// The answers typing now. Before Turbo caches the page (a visit away
+// mid-typing), each is finished: its whole text written in, its words no longer
+// inert, the live region no longer busy, so Back restores a finished answer
+// whose links work, never a frozen half-typed one (task build-flow-polish).
+const revealing = new Set();
+
+export function finishRevealing() {
+  Array.from(revealing).forEach((handle) => handle.finish());
+  revealing.clear();
 }
 
 // The live region is busy while ANY answer in it types (two can overlap), and
@@ -207,6 +225,8 @@ if (typeof document !== "undefined") {
       fresh.forEach(typeAnswer);
     };
   });
+
+  document.addEventListener("turbo:before-cache", finishRevealing);
 
   // Whatever a load or a morph puts on the page is history: shown as it is.
   document.addEventListener("turbo:load", remember);

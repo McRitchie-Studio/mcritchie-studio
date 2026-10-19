@@ -25,13 +25,13 @@
     <%# The name and the suffix, centred as one group: the input is sized to its value (size, kept by build_domain.js; field-sizing where the browser has it), so the name grows outward from the middle. A tap anywhere in the field focuses the input (it is a label). A name too long for a phone scrolls inside the input. %>
     <label class="flex cursor-text items-center justify-center rounded-xl border border-subtle bg-surface px-3 py-2 font-mono text-sm focus-within:border-primary" data-test="build-address-field">
       <span class="sr-only">Your domain name</span>
-      <%# The suffix is drawn beside the field and hidden from a screen reader, so the field's description says it: "ends in .mcritchie.studio", then the live availability line. %>
-      <span class="sr-only" id="build-domain-suffix-<%= message.id %>">Ends in .<%= AppRequest::PARENT_DOMAIN %>.</span>
       <input type="text" name="subdomain" value="<%= value %>" size="<%= [ value.to_s.length, 1 ].max %>" required autocomplete="off" spellcheck="false" autocapitalize="none" maxlength="30"
              aria-describedby="build-domain-suffix-<%= message.id %> build-domain-status-<%= message.id %>" class="min-w-[1ch] max-w-full shrink bg-transparent p-0 text-right text-heading [field-sizing:content] focus:outline-none"
              data-build-address-input data-test="build-address-input">
       <span class="shrink-0 text-muted whitespace-nowrap select-none" aria-hidden="true" data-test="build-address-suffix">.<%= AppRequest::PARENT_DOMAIN %></span>
     </label>
+    <%# The suffix is drawn beside the field and hidden from a screen reader, so the field's description says it ("Ends in .mcritchie.studio."), then the live availability line. Outside the label, so the field's NAME is only "Your domain name" and the suffix is read once. %>
+    <span class="sr-only" id="build-domain-suffix-<%= message.id %>">Ends in .<%= AppRequest::PARENT_DOMAIN %>.</span>
     <p class="text-xs text-center min-h-4 data-[state=available]:text-success-ink data-[state=taken]:text-danger-ink text-muted" aria-live="polite"
        id="build-domain-status-<%= message.id %>" data-state="<%= status_state %>" data-build-address-status data-test="build-address-availability"><%= status_text %></p>
     <%= tag.span class: "cta-glow", style: cta_glow_style(request_row.palette), data: { test: "build-address-glow" } do %>
