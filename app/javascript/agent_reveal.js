@@ -18,9 +18,9 @@
 //   - the thinking/typing look hands off to it: the stream that brings the
 //     answer is the one that takes the indicator away (build/_turn re-renders the
 //     turn without it; agent_chat.js drops a pulse older than the answer).
-//   - a screen reader gets the whole answer at once: a hidden copy of it is read
-//     while the visible one types (aria-hidden), and both become the one answer
-//     at the end.
+//   - a screen reader gets the whole answer at once: a hidden plain-words copy
+//     of it is read while the visible one types (aria-hidden), and the copy goes
+//     at the end, leaving the one answer.
 //   - an answer already on the page when it loads (history, a reload, a morph
 //     refresh) shows at once, and so does every answer under
 //     prefers-reduced-motion.
@@ -156,10 +156,12 @@ export function newAnswers(root, seen) {
 function typeAnswer(body) {
   const log = body.closest(LOG);
   const turn = body.closest("[data-build-turn]") || body.closest(TURN);
-  const copy = body.cloneNode(true);
-  copy.removeAttribute("data-agent-reveal");
+  // The whole answer as plain words for a screen reader (no second set of links
+  // or bold to tab to or find twice), read once, while the visible words type.
+  const copy = document.createElement("span");
+  copy.className = "sr-only";
   copy.setAttribute("data-agent-reveal-copy", "");
-  copy.classList.add("sr-only");
+  copy.textContent = body.textContent.replace(/\s+/g, " ").trim();
   body.before(copy);
   body.setAttribute("aria-hidden", "true");
   turn?.setAttribute("data-agent-revealing", "");
