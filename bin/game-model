@@ -1,0 +1,47 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Game character models: one player as he looked in one game, built in layers
+# on this Mac and filed on his look in the hub. The SOP is
+# docs/agents/agents/turf_monster/sops/game-character-models.md; run these in its order.
+#
+#   bin/game-model setup                                   # build the face tools in ~/.game-model (once)
+#   bin/game-model harvest <dir> <club-host> [--since D] [--match RE]   # team/league galleries only
+#   bin/game-model faces <dir>                             # crop every face (Apple Vision)
+#   bin/game-model identify <dir>                          # ArcFace vs the headshot (spec.yml espn_id)
+#   bin/game-model headwear <dir>                          # label headwear on the matches; bare.jpg board
+#   bin/game-model find <dir> <gallery-regex>              # find him in the game's frames
+#   bin/game-model generate <dir> <stage> [--attempts N]   # PAID: facepack|body|full|panels|iced_full|iced_panels
+#   bin/game-model score <dir> <stage>                     # face gate (>= 0.70) on a stage's outputs
+#   bin/game-model board <dir> <stage>                     # montage to look at
+#   bin/game-model stitch <dir> [--iced]                   # the 5x2 sheet, locally
+#   bin/game-model file <dir> [--production] [--dry-run]   # R2, then POST /api/v1/game_looks
+require_relative "lib/cli_arg_guard"
+
+USAGE = File.read(__FILE__).lines.drop(3).take_while { |l| l.start_with?("#") }.map { |l| l.sub(/\A# ?/, "") }.join
+
+# Before any gem loads and before any subcommand: `--help` anywhere prints usage,
+# and an unknown flag refuses, so no line nobody accounted for reaches a paid call.
+CliArgGuard.guard!(
+  ARGV,
+  program: "bin/game-model",
+  usage: USAGE,
+  consequence: "nothing was downloaded, generated, uploaded or filed.",
+  bool: %w[--iced --production --dry-run],
+  value: %w[--since --match --attempts],
+  allow_positional: true
+)
+if ARGV.empty?
+  puts USAGE
+  exit 0
+end
+
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+require "bundler/setup" # aws-sdk-s3 for R2; before any gem loads
+require_relative "lib/game_model/cli"
+
+begin
+  exit GameModel::Cli.new(ARGV).run
+rescue GameModel::Failure, DigestVideo::Failure, KeyError, IndexError => e
+  abort "game-model: #{e.message}"
+end
