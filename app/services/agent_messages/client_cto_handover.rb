@@ -39,19 +39,25 @@ module AgentMessages
     # The CTO's opening message, from the launch's data alone (task
     # build-launch-handoff, Alex 2026-10-18): first person and by name, it greets
     # the owner by first name, says the CTO is the agent managing the app, that
-    # the app is building now and what that means (the status card's three
-    # stages, the address), and what the owner can do here meanwhile. Short, in
-    # Alex's plain voice; the plan stays on the summary card the owner just
-    # confirmed. Markdown, as every answer.
+    # the app is IN LINE to be built and what that means (the address, and the
+    # status card's live progress: Prepping, Building, Reviewing, Releasing,
+    # Deploying), and what the owner can do here meanwhile. Short, in Alex's
+    # plain voice; the plan stays on the summary card the owner just confirmed.
+    # Markdown, as every answer.
+    #
+    # NEVER "building now" (task app-card-stage-labels, Alex 2026-10-19): at
+    # launch the task is `designed` and nobody is building it yet; the card
+    # (AppDevopsStages) says Building only once a builder holds it. A greeting
+    # already stored keeps its words; only new launches read this text.
     def greeting(app_cto, user)
       first = greeting_name(user)
       host = "#{app_cto.app_slug}.#{AppRequest::PARENT_DOMAIN}"
       [
         "Hi #{first || 'there'}, I'm #{app_cto.name}, the agent who'll be managing #{app_cto.app.name}.",
-        "It's building now: your brand sheet, the first version of the app, and its home at **#{host}**. " \
-        "The card above shows where it stands: Building, then Releasing to a preview link for you to try, " \
-        "then Deploying once you approve it.",
-        "While it builds, tell me anything you'd like added or changed, or ask me about the plan."
+        "It's in line to be built: your brand sheet, the first version of the app, and its home at **#{host}**. " \
+        "The card above shows live progress: Prepping until a builder picks it up, then Building, Reviewing, " \
+        "Releasing to a preview link for you to try, and Deploying once you approve it.",
+        "While you wait, tell me anything you'd like added or changed, or ask me about the plan."
       ].join("\n\n")
     end
 
