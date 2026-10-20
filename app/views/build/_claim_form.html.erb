@@ -20,8 +20,9 @@
         // no leading hyphen. A trailing one is left while they type (they may
         // be mid-word) and trimmed on blur — the server trims it too.
         // A pasted full address keeps just the name: drop a scheme and a
-        // trailing .mcritchie.studio first, the way the server does, or
-        // "myapp.mcritchie.studio" becomes "myapp-mcritchie-studio". The
+        // trailing .mcritchie.app (or the old .mcritchie.studio) first, the
+        // way the server does, or "myapp.mcritchie.app" becomes
+        // "myapp-mcritchie-app". The
         // field carries NO maxlength for the same reason: the browser would
         // cut a 38-character paste before this ran (measured 2026-09-26);
         // the 30-character cap is applied here, after stripping.
@@ -29,7 +30,7 @@
           // Leading whitespace only: a TRAILING space is the user mid-word
           // ("League " → "league-"), and trimming it swallowed the hyphen.
           const bare = value.toLowerCase().replace(/^\s+/, '')
-            .replace(/^https?:\/\//, '').replace(/\/+$/, '').replace(/\.mcritchie\.studio$/, '');
+            .replace(/^https?:\/\//, '').replace(/\/+$/, '').replace(/\.mcritchie\.(app|studio)$/, '');
           return bare.replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 30);
         },
         onInput(el) {
@@ -142,13 +143,13 @@
             aria: { describedby: "build-claim-suffix" },
             data: { test: "build-subdomain" } %>
       <%# The suffix beside the field is decoration a screen reader may never reach (hidden below sm), so the field's description says it. %>
-      <span class="sr-only" id="build-claim-suffix">Ends in .<%= AppRequest::PARENT_DOMAIN %>.</span>
-      <span class="hidden sm:flex items-center pr-4 text-muted font-mono text-sm whitespace-nowrap" aria-hidden="true">.mcritchie.studio</span>
+      <span class="sr-only" id="build-claim-suffix">Ends in .<%= AppRequest::CLIENT_APP_DOMAIN %>.</span>
+      <span class="hidden sm:flex items-center pr-4 text-muted font-mono text-sm whitespace-nowrap" aria-hidden="true">.<%= AppRequest::CLIENT_APP_DOMAIN %></span>
     </div>
     <%# Below sm the box holds only the name, full width; the whole address is
         spelled out underneath as they type. %>
     <p class="sm:hidden mt-1 font-mono text-xs text-muted break-all" data-test="build-address-preview"
-       x-text="(name.replace(/-+$/, '') || 'yourapp') + '.mcritchie.studio'">yourapp.mcritchie.studio</p>
+       x-text="(name.replace(/-+$/, '') || 'yourapp') + '.<%= AppRequest::CLIENT_APP_DOMAIN %>'">yourapp.<%= AppRequest::CLIENT_APP_DOMAIN %></p>
     <p class="mt-2 text-sm min-h-5" aria-live="polite" data-test="build-availability">
       <span x-show="state === 'checking'" x-cloak class="text-muted">Checking…</span>
       <span x-show="state === 'available'" x-cloak class="text-success-ink">Available</span>

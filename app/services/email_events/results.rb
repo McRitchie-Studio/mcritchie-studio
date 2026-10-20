@@ -51,9 +51,9 @@ module EmailEvents
       url
     end
 
-    # Our own apps only. Customer apps also live on *.mcritchie.studio, and
-    # an email's token is not theirs to receive, so this is a list, not a
-    # suffix match. Add an app here when an email links to it. Cyvasse is on
+    # Our own apps only. Customer apps live on *.mcritchie.app (older builds on
+    # *.mcritchie.studio), and an email's token is not theirs to receive, so
+    # this is a list, not a suffix match. Add an app here when an email links to it. Cyvasse is on
     # cyvasse.xyz; its old host stays for the emails already sent.
     APP_HOSTS = %w[mcritchie.studio www.mcritchie.studio cyvasse.xyz cyvasse.mcritchie.studio].freeze
 

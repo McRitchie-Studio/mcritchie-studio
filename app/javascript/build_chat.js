@@ -73,7 +73,7 @@ async function tick() {
 
 function cleanName(value) {
   return value.toLowerCase().replace(/^\s+/, "").replace(/^https?:\/\//, "")
-    .replace(/\.mcritchie\.studio\/?$/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, 30);
+    .replace(/\.mcritchie\.(app|studio)\/?$/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+/, "").slice(0, 30);
 }
 
 const checkTimers = new WeakMap();

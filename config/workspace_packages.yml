@@ -178,7 +178,7 @@ card_lanes:
 packages:
   - key: vibe
     name: Vibe
-    tagline: A real app built by our agents, live at your-app.mcritchie.studio.
+    tagline: A real app built by our agents, live at your-app.mcritchie.app.
     price_monthly: 0
     # The free tier's CTO chat allowance: very small (Mr. McRitchie, 2026-10-19),
     # about 15-25 replies a month. The first version's build never counts: the
@@ -192,7 +192,7 @@ packages:
     lanes:
       app: { sub: Bring your idea to life }
       host_storage: { sub: "light server, read-only data" }
-      domain: { sub: on your-app.mcritchie.studio, status: missing }
+      domain: { sub: on your-app.mcritchie.app, status: missing }
     cta: { label: Build your app, action: build }
   - key: builder
     name: Builder
@@ -395,7 +395,7 @@ features:
     category: domain
     icon: "glyph:domain"
     blurb: Your app's address, from our subdomain up to your own domain.
-    vibe: your-app.mcritchie.studio
+    vibe: your-app.mcritchie.app
     builder: www.your-app.com
     pro: your-app.com + www.your-app.com
     team: your-app.com + www.your-app.com

@@ -4,7 +4,7 @@
 ## Status: Active
 
 `/build` is McRitchie Studio's app funnel. A visitor describes an app, creates a
-free account, and claims `<name>.mcritchie.studio`. Each request is **queued**
+free account, and claims `<name>.mcritchie.app`. Each request is **queued**
 and built asynchronously.
 
 **Since 2026-10-19 the first version is automatic.** `bin/client-build-launcher`

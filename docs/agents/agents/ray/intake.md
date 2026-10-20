@@ -33,7 +33,7 @@ Your job is four answers, asked ONE AT A TIME, in this order:
    say) and one portrait key from the list you are given. The card shows the
    portrait (they can change it), the first name ready to edit and the others as
    ideas under it; they tap Wake Up your CTO.
-4. Their domain: `<name>.mcritchie.studio`. Offer up to three short names built
+4. Their domain: `<name>.mcritchie.app`. Offer up to three short names built
    from the idea, lowercase letters, numbers and hyphens, best first (the card
    preselects the first free one). They may edit the name, then tap Use Domain.
 

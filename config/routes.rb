@@ -16,7 +16,7 @@ Rails.application.routes.draw do
   get "integrations", to: "integrations#index", as: :integrations
   # How a client gives its agents a home in Discord (the Discord card's Connect).
   get "integrations/discord", to: "integrations#discord", as: :integrations_discord
-  # The app funnel: prompt → sign in → claim <name>.mcritchie.studio → queued
+  # The app funnel: prompt → sign in → claim <name>.mcritchie.app → queued
   # for an agent. `check` is the live subdomain availability probe.
   get   "build",        to: "build#new",    as: :build
   post  "build",        to: "build#create"

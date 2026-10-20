@@ -7,7 +7,7 @@
    chip whose name is typed. Use Domain's glow is the shared CTA primitive
    (cta_glow.css), in the chosen theme's colours.
 
-   The name field: the name and the fixed .mcritchie.studio suffix sit as one
+   The name field: the name and the fixed .mcritchie.app suffix sit as one
    group in the middle of the field. The input is sized to its value (its
    `size`, kept by build_domain.js), so the name grows outward from the
    centre with the suffix right after it; a name too long for the field
