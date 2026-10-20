@@ -1109,8 +1109,8 @@ phase_env_snapshot() {
 }
 
 # ─── Phase 10: Always-on services + what only the operator can do ──────────
-# The always-on local services (config/local_services.yml, first entry the agent
-# dispatcher) and what they need from this Mac, via bin/local-services:
+# The always-on local services (config/local_services.yml: the agent dispatcher
+# and the client build launcher) and what they need from this Mac, via bin/local-services:
 #   - the Claude Code allow-rules (config/claude_allow_rules.json) merged into
 #     the USER ~/.claude/settings.json: adds only, keeps every other key
 #   - `claude auth status` must read authMethod claude.ai (never logged in for

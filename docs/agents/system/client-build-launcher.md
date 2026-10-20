@@ -216,8 +216,10 @@ with the machine credential it already holds (`POST /api/v1/agent_sessions`,
   disk, logged, or shown to the builder.
 - A 401 at publish (an expired or revoked login) re-mints once and retries.
 
-**Install** is Alex's: a launchd job is persistence, which an agent's auto mode
-does not run. From the hub's primary checkout (install refuses a desk):
+**Install by hand** is Alex's: a launchd job is persistence, which an agent's auto
+mode does not run. On a rebuilt Mac the burn-down's services phase installs it
+(below), once Claude Code is signed in with claude.ai. By hand, from the hub's
+primary checkout (install refuses a desk):
 
 ```bash
 ! cd /Users/alex/projects/mcritchie-studio && bin/client-build-launcher install
