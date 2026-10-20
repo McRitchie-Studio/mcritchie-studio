@@ -6,7 +6,7 @@
   Until the visitor taps Start App on an idea card (`started`:
   AppRequest#intake_started?), it is the page's heading, on /build and on a new
   /build/:token alike, so a visitor still shaping the idea never sees a form of
-  "Not yet" tiles. From then on it is the STATUS CARD: the app's working title over
+  empty tiles. From then on it is the STATUS CARD: the app's working title over
   three tiles in the order Ray asks (BuildIntake::STEPS), Theme · Agent · Domain,
   each filling as its card is tapped (BuildIntake::Choice): the palette's swatches
   and name, the CTO's portrait and name, the address. It carries no Build control: Ray's summary card
@@ -14,10 +14,11 @@
 
   A tile not yet set reads its step's name, never "Not yet" (Alex, 2026-10-19): Theme,
   Agent, Domain. The step Ray is on now (AppRequest#next_intake_step) is marked
-  data-current and shimmers (build_cards.css, still under reduced motion); a set tile
-  carries a check over its value. The card pops when it first appears (Start App;
-  agent_shell.js, agent-shell-pop-in) and again when Build My App is pressed
-  (build_status.js, build_cards.css).
+  data-current and shimmers (build_cards.css; under reduced motion the shimmer stops
+  and a still primary border marks it); a set tile carries a check over its value.
+  The card pops when it first appears (Start App; agent_shell.js, agent-shell-pop-in)
+  and again when Build My App is pressed (build_status.js, build_cards.css); under
+  reduced motion both play only the pop's glow.
 %>
 <% show_card = request_row.present? && started %>
 <div id="build-checklist" data-test="build-status" data-card="<%= show_card %>">

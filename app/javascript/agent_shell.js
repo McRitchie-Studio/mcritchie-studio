@@ -27,6 +27,7 @@
 // Imported by application.js on every page, once per load; listeners delegated on
 // document, and nothing happens where there is no shell.
 import { follow, stickIfFollowing } from "chat_follow";
+import { popStatusCard } from "build_status";
 
 const SHELL = "[data-agent-shell]";
 const LOG = "[data-cto-chat-scroll]";
@@ -131,6 +132,20 @@ function animateOnce(element, className) {
   if (!element || reducedMotion()) return;
   element.classList.add(className);
   element.addEventListener("animationend", () => element.classList.remove(className), { once: true });
+}
+
+// The status card's arrival (Start App's stream swaps the heading for it): the
+// agent-shell-pop-in entrance. Under reduced motion that entrance is still, so
+// the card plays build_status.js's pop instead, which reduced motion cuts to its
+// glow (build_cards.css), and the arrival still shows. `reduced` is a parameter
+// so test/javascript/agent_shell_test.js drives both paths without a browser.
+export function enterStatusCard(root = document, reduced = reducedMotion()) {
+  if (reduced) return popStatusCard(root) ? "glow" : null;
+  const card = root.querySelector?.("[data-build-status-card]");
+  if (!card) return null;
+  card.classList.add("agent-shell-enter-card");
+  card.addEventListener("animationend", () => card.classList.remove("agent-shell-enter-card"), { once: true });
+  return "pop";
 }
 
 // The gallery slides away once the head has stepped, then is hidden for good.
@@ -266,7 +281,7 @@ if (typeof document !== "undefined") {
       if (!sameHeading) await original(element);
       if (firstThread) animateOnce(document.getElementById(CHAT_ID), "agent-shell-enter-thread");
       if (statusWasHeading && document.getElementById(STATUS_ID)?.dataset.card === "true") {
-        animateOnce(document.querySelector("[data-test='build-status-card']"), "agent-shell-enter-card");
+        enterStatusCard();
       }
       settle();
     };

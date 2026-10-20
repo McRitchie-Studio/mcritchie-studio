@@ -27,8 +27,11 @@ module ClientPipeline
   Lane = Struct.new(:key, :stage, :label, :role, :age, keyword_init: true) do
     def age_line(time) = format(age, time: time)
   end
+  # A designed task reads "Prepping", in line with nobody building it yet: the
+  # word the app's status card uses for it (AppDevopsStages::SUB_LABELS), so the
+  # two pages never disagree about the same task. The key stays "queued".
   LANES = [
-    Lane.new(key: "queued",   stage: "designed",  label: "Queued",       age: "%{time} in the queue"),
+    Lane.new(key: "queued",   stage: "designed",  label: AppDevopsStages::SUB_LABELS.fetch("designed"), age: "%{time} in line"),
     Lane.new(key: "building", stage: "building",  label: "Building",     age: "%{time} building", role: "Builder"),
     Lane.new(key: "review",   stage: "submitted", label: "In review",    age: "%{time} in review", role: "Reviewer"),
     Lane.new(key: "ready",    stage: "reviewed",  label: "Ready for QA", age: "%{time} ready"),

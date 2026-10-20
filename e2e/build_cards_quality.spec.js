@@ -9,7 +9,7 @@
 //   3. Choose Theme's moving orbit glow turns inside its own ring: on a 375px
 //      phone neither the page nor the chat thread scrolls sideways while it runs.
 //   4. Pick three new themes sends "Can you give me three new theme ideas?" as
-//      the visitor's own chat turn.
+//      the visitor's own chat turn, and a draft already in the box survives it.
 // NOT @qa-readonly: it writes requests and agent messages.
 const { test, expect } = require("@playwright/test");
 const { blockThirdPartyRequests, loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
@@ -136,7 +136,13 @@ test("Start App pops a status card of Theme, Agent, Domain; the theme card toggl
   }
 
   // 4. Pick three new themes: the visitor's own turn, sent through the chat box.
+  //    A half-typed draft rides out the send and is back in the box after it
+  //    (task client-flow-review-leftovers).
+  const box = page.locator("[data-test='cto-chat-input']");
+  await box.fill("make it feel like a lake cabin");
   await themeCard.getByRole("button", { name: "Pick three new themes" }).click();
   await expect(page.locator("[data-test='build-turn']", { hasText: "Can you give me three new theme ideas?" })).toHaveAttribute("data-pending", "true");
+  await expect(box, "the draft is back in the redrawn box").toHaveValue("make it feel like a lake cabin");
+  await expect(page.locator("[data-test='build-turn']", { hasText: "make it feel like a lake cabin" })).toHaveCount(0);
   expect(pageErrors, report()).toHaveLength(0);
 });
