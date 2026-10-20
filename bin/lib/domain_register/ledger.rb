@@ -32,6 +32,13 @@ module DomainRegister
   # only sandbox-guarded stores may name (test/lib/state_store_containment_test.rb).
   # bin/clean-artifacts sweeps only tmp/cache, never this. Override with
   # DOMAIN_REGISTER_LEDGER (the tests do).
+  #
+  # A writing run (register, status) holds an exclusive flock on <path>.lock for
+  # its whole length (#exclusively). Without it two concurrent register runs
+  # could both read "no open authorization" before either wrote its
+  # `authorized` line, and buy twice; or a status could close an authorization
+  # another run was about to act on. A second run REFUSES at once rather than
+  # waiting (a register can poll for ten minutes), and has written nothing.
   class Ledger
     ENV_PATH = "DOMAIN_REGISTER_LEDGER"
 
@@ -51,6 +58,23 @@ module DomainRegister
       File.open(@path, "a") { |f| f.puts(JSON.generate(event)) }
       event
     end
+
+    # Runs the block holding the ledger's lock; raises Abort, having run nothing,
+    # when another run holds it. The lock is released when the block returns or
+    # raises (and by the OS if the process dies).
+    def exclusively(what)
+      FileUtils.mkdir_p(File.dirname(@path))
+      File.open(lock_path, File::RDWR | File::CREAT, 0o644) do |lock|
+        unless lock.flock(File::LOCK_EX | File::LOCK_NB)
+          raise Abort, "REFUSED, nothing ran: another bin/domain-register run holds the ledger " \
+                       "(#{lock_path}). Wait for it to finish, then #{what} again."
+        end
+
+        yield
+      end
+    end
+
+    def lock_path = "#{@path}.lock"
 
     CLOSING = %w[registered failed no_workflow].freeze
 

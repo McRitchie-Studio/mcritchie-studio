@@ -180,7 +180,8 @@ class DomainRegisterTest < Minitest::Test
                     "name_servers" => %w[ada.ns.cloudflare.com bob.ns.cloudflare.com] }
     at_post = nil
     @api.on_register = -> { at_post = ledger.entries.map { |e| e["event"] } }
-    assert runner.register("acmecorp.dev", price: "10.46", ok: OK)
+    runner.register("acmecorp.dev", price: "10.46", ok: OK)
+    assert_equal %w[authorized registered], ledger.entries.map { |e| e["event"] }
 
     assert_equal %w[authorized], at_post, "the OK must be on the ledger BEFORE the money moves"
     assert_equal 1, @api.registrations.length
@@ -312,6 +313,48 @@ class DomainRegisterTest < Minitest::Test
 
     runner.register("acmecorp.dev", price: "10.46", ok: OK, dry_run: true)
     assert_match "open authorization", @out.string
+  end
+
+  # Another run (a second shell) holding the ledger's lock, for the block.
+  def while_another_run_holds_the_ledger
+    FileUtils.mkdir_p(File.dirname(ledger.lock_path))
+    File.open(ledger.lock_path, File::RDWR | File::CREAT) do |held|
+      assert held.flock(File::LOCK_EX | File::LOCK_NB), "the test could not take the lock"
+      yield
+    end
+  end
+
+  def test_a_concurrent_register_refuses_before_any_call_while_another_run_holds_the_ledger
+    while_another_run_holds_the_ledger do
+      err = assert_raises(DomainRegister::Abort) { runner.register("acmecorp.dev", price: "10.46", ok: OK) }
+      assert_match "another bin/domain-register run holds the ledger", err.message
+      assert_match "nothing ran", err.message
+    end
+    assert_empty @api.registrations
+    assert_empty @api.log, "no check, probe or purchase while the ledger is held"
+    assert_empty ledger.entries, "no authorized line from the refused run"
+  end
+
+  def test_status_waits_its_turn_too_because_it_writes_closings
+    ledger.append({ "event" => "authorized", "domain" => "acmecorp.dev", "at" => "2026-10-19T19:00:00Z", "by" => "steffon" })
+    while_another_run_holds_the_ledger do
+      assert_raises(DomainRegister::Abort) { runner.status("acmecorp.dev") }
+    end
+    assert_equal %w[authorized], ledger.entries.map { |e| e["event"] }
+  end
+
+  def test_the_lock_is_released_when_a_run_ends_or_raises
+    runner.register("acmecorp.dev", price: "10.46", ok: OK)
+    assert_equal %w[authorized registered], ledger.entries.map { |e| e["event"] }
+    assert_raises(DomainRegister::Abort) { runner.register("acmecorp.dev", price: "10.46", ok: OK) }
+    while_another_run_holds_the_ledger { :taken } # both runs let go
+  end
+
+  def test_a_dry_run_takes_no_lock
+    while_another_run_holds_the_ledger do
+      runner.register("acmecorp.dev", price: "10.46", ok: OK, dry_run: true)
+    end
+    assert_match "PLAN", @out.string
   end
 
   def test_closed_authorizations_do_not_refuse

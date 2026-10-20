@@ -91,7 +91,17 @@ module DomainRegister
     end
 
     # ── register (spends money unless dry_run) ───────────────────────────────
+    # A real run holds the ledger's lock from its first ledger read to its last
+    # write (Ledger#exclusively); a dry run writes nothing and takes no lock.
     def register(domain, price:, ok:, premium: false, dry_run: false)
+      return register_run(domain, price: price, ok: ok, premium: premium, dry_run: true) if dry_run
+
+      @ledger.exclusively("run register for #{domain}") do
+        register_run(domain, price: price, ok: ok, premium: premium, dry_run: false)
+      end
+    end
+
+    def register_run(domain, price:, ok:, premium:, dry_run:)
       banner(dry_run ? "register --dry-run (spends nothing)" : "register")
       quote = @registrar.check([domain]).find { |q| q.name == domain }
       say "fresh check: #{quote || "#{domain}  NO ANSWER"}"
@@ -153,8 +163,14 @@ module DomainRegister
         "Money MAY have moved. Run bin/domain-register status #{domain}; do NOT re-run register."
     end
 
-    # ── status (read-only) ───────────────────────────────────────────────────
+    # ── status (reads Cloudflare; writes ledger closing lines) ────────────────
+    # Not read-only: an open authorization the workflow has settled is closed in
+    # the ledger here (#reconcile, #close_unbought), so status holds the lock too.
     def status(domain)
+      @ledger.exclusively("run status for #{domain}") { status_run(domain) }
+    end
+
+    def status_run(domain)
       workflow = @registrar.existing_workflow(domain)
       open = @ledger.open_authorization(domain)
       if workflow.nil?
@@ -193,6 +209,8 @@ module DomainRegister
         current = @registrar.status(domain)
       end
     end
+
+    private :register_run, :status_run
 
     private
 

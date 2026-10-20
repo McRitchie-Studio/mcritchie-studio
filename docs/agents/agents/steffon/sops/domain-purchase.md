@@ -134,8 +134,11 @@ durable record on the board, once per purchase (or per `unknown`):
 
 ```bash
 bin/task note <launch-task> --comment "domain-purchase: <domain> on Cloudflare, USD <price> (renews USD <renewal>), Alex: \"<his words>, <date>\", workflow <state>, zone <id>"
-bin/task update <launch-task> --checks "[control] domain-purchase: <domain> registered on Cloudflare <date>, zone <id> in our account"
 ```
+
+The note is the whole record. Do not add it to `--checks`: `bin/task update
+--checks` replaces the task's checks list, so it would erase the tiers already
+recorded there.
 
 The next step is [`domain-dns`](./domain-dns.md): `bin/domain-cutover <app>
 <domain> plan` finds the zone already in our account and needs no registrar
@@ -179,4 +182,4 @@ Green when the registrar line names Squarespace (Squarespace Domains may show
 its upstream registrar) and the creation date is today. NS records usually
 appear within minutes; the next step does not need them yet.
 
-Record: `bin/task update <launch-task> --checks "[control] domain-purchase: <domain> registered today at Squarespace"`.
+Record: `bin/task note <launch-task> --comment "domain-purchase: <domain> registered today at Squarespace"` (a note, not `--checks`, which replaces the task's checks list).
