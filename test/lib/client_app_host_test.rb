@@ -105,6 +105,13 @@ class ClientAppHostTest < ActiveSupport::TestCase
     assert_nil ClientAppHost.clashing_host("mcritchie.si")
   end
 
+  test "[unit] the launcher's preview domain (config/client_builds.yml) is the production default and clears the guard" do
+    assert_equal ClientAppHost::PRODUCTION_DOMAIN, ClientBuilds.preview_domain
+    assert_nil ClientAppHost.clashing_host(ClientBuilds.preview_domain)
+    assert_equal ClientAppHost.url_for("pawsome", domain: ClientAppHost::PRODUCTION_DOMAIN, production: true),
+                 ClientBuilds.preview_url("pawsome")
+  end
+
   test "[unit] the host is off when the domain is nil" do
     door = ClientAppHost.new(HUB, domain: nil)
     status, = door.call(Rack::MockRequest.env_for("https://pawsome.mcritchie.si/"))
