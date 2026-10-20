@@ -410,7 +410,8 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   // The build task is designed and no launcher is live: the pill says Prepping, never Building work (task app-card-stage-labels).
   await expect(head.locator("[data-test='devops-stage'][data-stage='building'] [data-test='devops-stage-sub-label']")).toHaveText("Prepping");
   await expect(head.locator("[data-test='devops-stage'][data-stage='building'] [data-test='devops-stage-eta']")).toHaveText("no builder");
-  await expect(head.locator("[data-test='cto-chat-usage']")).toContainText("Tokens used");
+  // A /build app is on Vibe, the free tier: 25,000 CTO chat tokens a month (task free-budget-meter).
+  await expect(head.locator("[data-test='cto-chat-usage'] [data-test='usage-meter-line']")).toContainText("of 25,000 tokens this month");
   const handover = page.locator("[data-test='cto-chat-turn']", { has: page.locator("[data-test='cto-chat-handover']") });
   await expect(handover).toContainText("Meet Marbles, your CTO. I'll hand you over.");
   // Launched at sign-in, before the first-name step: the greeting has no name yet.

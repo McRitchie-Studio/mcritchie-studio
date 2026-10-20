@@ -96,6 +96,7 @@ class AgentUsageFreeTierTest < ActiveSupport::TestCase
     reply = AgentUsage.cap_reply(AgentUsage.owner_meter(@app, now: NOW))
     assert_match(/\AThis app has used its monthly agent allowance, so I can't answer this one\. It resets Nov 1\./, reply)
     assert_includes reply, "[Upgrade your plan](http://www.example.com/packages)"
+    assert_includes reply, "Builder ($100/month) raises it.", "the next tier up is named, at its configured price"
     assert_equal "I can't answer right now. Please try again after Nov 1.",
                  AgentUsage.cap_reply(AgentUsage.owner_meter(@app, now: NOW), audience: "public"), "the public reads no upgrade"
   end
