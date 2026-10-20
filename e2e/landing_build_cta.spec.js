@@ -3,7 +3,8 @@
 // Alex, 2026-10-19: "Build Your App with a rainbow glow to draw the eyes." The
 // hero CTA wears the cta-glow primitive's rainbow preset. On a 375px phone the
 // glow never scrolls the page sideways at any point of its motion; under reduced
-// motion the glow holds still; and the CTA goes to /build.
+// motion the glow holds still; in light mode it takes deeper stops than in dark
+// (task preview-domain-mcritchie-app); and the CTA goes to /build.
 // @qa-readonly: it only reads the signed-out landing page.
 const { test, expect } = require("@playwright/test");
 const { blockThirdPartyRequests, watchPageErrors, VISITOR } = require("./helpers");
@@ -18,6 +19,7 @@ test("on a phone the rainbow Build Your App never scrolls the page sideways, in 
   const { pageErrors, report } = watchPageErrors(page);
   await page.setViewportSize({ width: 375, height: 760 });
   await page.emulateMedia({ reducedMotion: "no-preference" });
+  const rings = {};
   for (const scheme of ["light", "dark"]) {
     // The site theme is localStorage.theme (studio-engine's pre-paint script:
     // anything but "light" is dark), not prefers-color-scheme, so emulateMedia
@@ -32,8 +34,10 @@ test("on a phone the rainbow Build Your App never scrolls the page sideways, in 
     await expect(cta).toHaveAttribute("href", "/build");
     const layer = await glow.evaluate((el) => {
       const after = getComputedStyle(el, "::after");
-      return { animation: after.animationName, background: getComputedStyle(el, "::before").backgroundImage };
+      const before = getComputedStyle(el, "::before");
+      return { animation: after.animationName, background: before.backgroundImage, filter: before.filter };
     });
+    rings[scheme] = layer;
     expect(layer.animation, "the glow is moving").toBe("cta-glow-trade");
     expect(layer.background, "the glow is the rainbow's seven stops, not the three-colour default").toMatch(/conic-gradient/);
     expect((layer.background.match(/rgb\(/g) || []).length, "rainbow stops").toBeGreaterThanOrEqual(7);
@@ -45,6 +49,17 @@ test("on a phone the rainbow Build Your App never scrolls the page sideways, in 
     }
     expect(worst, `${scheme}: the page never scrolls sideways`).toBeLessThanOrEqual(0);
   }
+  // Light mode is louder (task preview-domain-mcritchie-app): over the pale hero
+  // the ring takes its own deeper stops and a tighter blur. The 500-weight yellow
+  // (#eab308) that vanished on white is gone from the light ring and replaced by
+  // amber (#d97706); the dark ring keeps its original stops and blur.
+  expect(rings.light.background, "light and dark rings differ").not.toBe(rings.dark.background);
+  expect(rings.light.background, "light ring: amber, not the pale yellow").toContain("rgb(217, 119, 6)");
+  expect(rings.light.background).not.toContain("rgb(234, 179, 8)");
+  expect(rings.light.background, "light ring: deep cyan").toContain("rgb(8, 145, 178)");
+  expect(rings.dark.background, "dark ring unchanged").toContain("rgb(234, 179, 8)");
+  expect(rings.light.filter).toBe("blur(10px)");
+  expect(rings.dark.filter).toBe("blur(16px)");
   await expect(page.locator("[data-test='hero-meet-alex']")).toHaveAttribute("href", "#about");
   expect(pageErrors, report()).toHaveLength(0);
 });

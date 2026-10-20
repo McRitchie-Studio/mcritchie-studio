@@ -32,10 +32,11 @@ module ClientApps
     def self.publishable_reason(app)
       return "no such app" unless app
       return "#{app.slug} is not a valid preview subdomain" unless app.slug.to_s.match?(ClientAppHost::LABEL)
-      return "#{app.slug} is a reserved name (one of ours), never a client preview" if AppRequest.reserved_names.include?(app.slug)
       # The registry's own apps and libraries (config/apps.yml), the hub among
-      # them: reserved_names misses any whose host is not under mcritchie.studio.
+      # them. reserved_names now holds them too (so /build refuses the name up
+      # front); this check runs first only to name the registry in the refusal.
       return "#{app.slug} is one of ours (config/apps.yml), never a client preview" if registered_slug?(app.slug)
+      return "#{app.slug} is a reserved name (one of ours), never a client preview" if AppRequest.reserved_names.include?(app.slug)
       # The allow-list, which the deny-lists above only back up: a client app is
       # one a /build request launched (AppLaunch, AppRequest#queue!), and that
       # request still holds its name. Any other App row (a hand-made one, a

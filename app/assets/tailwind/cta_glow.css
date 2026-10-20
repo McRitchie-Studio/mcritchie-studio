@@ -41,7 +41,7 @@
    tune one glow louder or quieter. A larger reach is layout overflow, so use
    it only where the CTA's container clips (the landing hero does).
    .cta-glow-rainbow is the one preset (task landing-build-ctas: the landing
-   hero's Build Your App). */
+   hero's Build Your App); it carries its own deeper stops in light mode. */
 
 @property --glow-a { syntax: "<color>"; inherits: true; initial-value: transparent; }
 @property --glow-b { syntax: "<color>"; inherits: true; initial-value: transparent; }
@@ -88,13 +88,25 @@
 }
 
 /* The rainbow preset: seven stops round the ring, the first repeated to close
-   it. Bright enough to read as a halo on the pale light-mode page and on the
-   dark navy one. */
+   it. These 500-weight stops read as a halo on the dark navy page. */
 .cta-glow-rainbow {
   --glow-stops: #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #6366f1, #d946ef, #ef4444;
   --glow-reach: 8px;
   --glow-blur: 16px;
   --glow-strength: 1;
+}
+
+/* Light mode (task preview-domain-mcritchie-app; Alex, 2026-10-19: a louder
+   rainbow in light mode). Over the pale hero the 500-weight yellow and cyan
+   blurred into the background and the ring read as a faint smudge. The light
+   theme (the html element without .dark) takes deeper, more saturated stops
+   (600 weight; the yellow moves to amber so it still reads on white) and a
+   tighter blur, so less of each colour is spread thin into the page. Reach and
+   strength are unchanged, so the overflow the hero clips is the same, and the
+   dark theme keeps the stops above. */
+:root:not(.dark) .cta-glow-rainbow {
+  --glow-stops: #dc2626, #ea580c, #d97706, #16a34a, #0891b2, #4f46e5, #c026d3, #dc2626;
+  --glow-blur: 10px;
 }
 
 @keyframes cta-glow-trade {
