@@ -92,16 +92,35 @@ module ClientApps
     test "[unit] a reserved name or a non-label slug is never published" do
       reserved = apps(:turf_monster)
       error = assert_raises(Publish::Refused) { Publish.new(app: reserved, files: bundle_files, by: "x").call }
-      assert_match(/reserved/, error.message)
+      assert_equal "turf-monster is a reserved name (one of ours), never a client preview", error.message
       assert_nil reserved.reload.preview_version
 
       hub = apps(:mcritchie_studio)
       error = assert_raises(Publish::Refused) { Publish.new(app: hub, files: bundle_files, by: "x").call }
-      assert_match(/one of ours/, error.message)
+      assert_equal "mcritchie-studio is one of ours (config/apps.yml), never a client preview", error.message
       assert_nil hub.reload.preview_version
 
       odd = App.create!(slug: "x", name: "X")
       assert_raises(Publish::Refused) { Publish.new(app: odd, files: bundle_files, by: "x").call }
+    end
+
+    test "[unit] only a client app publishes: an App row no /build request holds is refused" do
+      # A valid label on neither deny-list: only the allow-list stops it.
+      stray = App.create!(slug: "stray-app", name: "Stray")
+      assert_nil AppRequest.reserved_names.find { |name| name == stray.slug }
+      assert_not Publish.registered_slug?(stray.slug)
+      error = assert_raises(Publish::Refused) { Publish.new(app: stray, files: bundle_files, by: "x").call }
+      assert_equal "stray-app has no client origin (no /build request holds the name), never a client preview", error.message
+      assert_nil stray.reload.preview_version
+
+      # A cancelled request no longer holds the name.
+      request = AppRequest.find_by!(subdomain: @app.slug)
+      request.update_columns(status: "cancelled")
+      assert_raises(Publish::Refused) { publish }
+      assert_nil @app.reload.preview_version
+
+      request.update_columns(status: "live")
+      assert publish.version
     end
 
     test "[unit] the private bucket without keys refuses before any upload" do
