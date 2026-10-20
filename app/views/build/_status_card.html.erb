@@ -11,12 +11,20 @@
   each filling as its card is tapped (BuildIntake::Choice): the palette's swatches
   and name, the CTO's portrait and name, the address. It carries no Build control: Ray's summary card
   in the thread does (build/cards, build-cards-advance-chat).
+
+  A tile not yet set reads its step's name, never "Not yet" (Alex, 2026-10-19): Theme,
+  Agent, Domain. The step Ray is on now (AppRequest#next_intake_step) is marked
+  data-current and shimmers (build_cards.css, still under reduced motion); a set tile
+  carries a check over its value. The card pops when it first appears (Start App;
+  agent_shell.js, agent-shell-pop-in) and again when Build My App is pressed
+  (build_status.js, build_cards.css).
 %>
 <% show_card = request_row.present? && started %>
 <div id="build-checklist" data-test="build-status" data-card="<%= show_card %>">
   <% if show_card %>
     <% done = request_row.intake_checklist %>
-    <div class="agent-shell-card card p-4 sm:p-5 space-y-4" data-test="build-status-card" data-complete="<%= request_row.intake_complete? %>">
+    <% current = { "theme" => "theme", "cto" => "agent", "address" => "domain" }[request_row.next_intake_step] %>
+    <div class="agent-shell-card build-status-card card p-4 sm:p-5 space-y-4" data-test="build-status-card" data-build-status-card data-complete="<%= request_row.intake_complete? %>">
       <h1 class="agent-shell-card-title text-xl sm:text-2xl font-bold text-heading text-center break-words" data-test="build-status-title">
         <%= request_row.working_title || "Your app" %>
       </h1>
@@ -27,9 +35,10 @@
              [ "domain", "Domain", done["address"], (request_row.host if done["address"]) ]
            ] %>
         <% tiles.each do |key, label, set, value| %>
-          <li class="agent-shell-tile flex flex-col items-center gap-1.5 min-w-0 rounded-2xl border px-2 py-3 text-center
-                     <%= set ? 'border-primary/40 bg-primary/5' : 'border-dashed border-subtle' %>"
-              data-test="build-tile-<%= key %>" data-done="<%= set %>">
+          <% now = !set && key == current %>
+          <li class="agent-shell-tile relative flex flex-col items-center gap-1.5 min-w-0 rounded-2xl border px-2 py-3 text-center
+                     <%= set ? 'border-primary/40 bg-primary/5' : (now ? 'build-tile-current border-primary/60' : 'border-dashed border-subtle') %>"
+              data-test="build-tile-<%= key %>" data-done="<%= set %>" data-current="<%= now %>"<%= ' aria-current="step"'.html_safe if now %>>
             <span class="agent-shell-tile-icon flex h-10 items-center justify-center" aria-hidden="true">
               <% if key == "agent" && set && (path = BuildIntake::Portraits.path(request_row.cto_avatar)) %>
                 <%= image_tag path, alt: "", class: "h-10 w-10 rounded-full border border-subtle", data: { test: "build-tile-agent-portrait" } %>
@@ -44,13 +53,18 @@
                   <circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>
                 </svg>
               <% else %>
-                <span class="h-9 w-9 rounded-full border-2 border-dashed border-subtle"></span>
+                <span class="h-9 w-9 rounded-full border-2 border-dashed <%= now ? 'build-tile-current-dot border-primary' : 'border-subtle' %>"></span>
               <% end %>
             </span>
-            <span class="agent-shell-tile-label text-2xs font-semibold uppercase tracking-wider text-muted"><%= label %></span>
-            <span class="block w-full truncate text-xs sm:text-sm <%= set ? 'font-semibold text-heading' : 'text-muted' %>" data-test="build-tile-<%= key %>-value">
-              <%= value || "Not yet" %>
-            </span>
+            <% if set %>
+              <span class="agent-shell-tile-label text-2xs font-semibold uppercase tracking-wider text-muted"><%= label %></span>
+              <span class="flex w-full min-w-0 items-center justify-center gap-1 text-xs sm:text-sm font-semibold text-heading" data-test="build-tile-<%= key %>-value">
+                <svg viewBox="0 0 20 20" class="h-3.5 w-3.5 shrink-0 text-primary" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-test="build-tile-<%= key %>-check"><path d="M5 10.5l3 3 7-7"/></svg>
+                <span class="truncate"><%= value %></span>
+              </span>
+            <% else %>
+              <span class="block w-full truncate text-xs sm:text-sm font-semibold <%= now ? 'build-tile-current-name text-heading' : 'text-muted' %>" data-test="build-tile-<%= key %>-value"><%= label %><% if now %><span class="sr-only"> (in progress)</span><% end %></span>
+            <% end %>
           </li>
         <% end %>
       </ul>

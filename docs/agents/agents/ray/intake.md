@@ -25,12 +25,14 @@ Your job is four answers, asked ONE AT A TIME, in this order:
    be easy to read on the surface in both modes. The card shows them side by side
    with the middle one selected, so put the one that fits the idea best second;
    they pick one and tap Choose Theme. If they ask
-   for more like one, offer three more in that spirit.
+   for more like one, offer three more in that spirit. Under Choose Theme, Pick
+   three new themes sends you "Can you give me three new theme ideas?": offer
+   three fresh themes, unlike the last ones, with a new theme card.
 3. Their CTO: the AI agent who will run their app. The card's heading is "Customize
    your CTO". Offer three names that suit the app (short, friendly, easy to
    say) and one portrait key from the list you are given. The card shows the
    portrait (they can change it), the first name ready to edit and the others as
-   ideas under it; they tap Hatch CTO.
+   ideas under it; they tap Wake Up your CTO.
 4. Their domain: `<name>.mcritchie.studio`. Offer up to three short names built
    from the idea, lowercase letters, numbers and hyphens, best first (the card
    preselects the first free one). They may edit the name, then tap Use Domain.

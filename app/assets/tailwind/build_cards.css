@@ -23,3 +23,82 @@
   border-color: rgb(var(--color-primary-rgb));
   box-shadow: 0 0 0 1px rgb(var(--color-primary-rgb) / 0.55), 0 0 14px 2px rgb(var(--color-primary-rgb) / 0.45);
 }
+
+/* ── The status card (app/views/build/_status_card.html.erb) ──────────────
+   Alex, 2026-10-19: the step in progress shows it, and the card celebrates.
+
+   The current step's tile (data-current, .build-tile-current): its border
+   breathes a primary halo and its name shimmers, a light band sliding across
+   the text (background-clip: text, so the band never leaves the text's own
+   box and nothing scrolls). Its dashed dot turns slowly. Under
+   prefers-reduced-motion the halo holds still and the shimmer stops, leaving
+   the primary border and the heading-coloured name to mark the step.
+
+   The pop (.build-status-pop, set by build_status.js for one run): a brief
+   scale up and back with a primary glow when Build My App is pressed (its
+   arrival on Start App is agent_shell.css's agent-shell-pop-in, the same
+   beat). A transform, so the card's layout
+   box never changes; 3% of a phone-width card stays inside the page's 16px
+   gutter, and the card sits above the thread, outside its scroll box, so
+   nothing scrolls sideways. Under reduced motion only the glow plays. */
+
+/* Compact (the shell scrolled): a tile not yet set drops its empty dot, so a
+   phone-width tile has room for its step's whole name ("Domain", not "Dom…"). */
+.agent-shell[data-shell-size="compact"] .agent-shell-tile[data-done="false"] .agent-shell-tile-icon {
+  display: none;
+}
+
+.build-tile-current {
+  animation: build-tile-breathe 2s ease-in-out infinite;
+}
+
+@keyframes build-tile-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--color-primary-rgb) / 0); }
+  50% { box-shadow: 0 0 0 2px rgb(var(--color-primary-rgb) / 0.25), 0 0 14px 2px rgb(var(--color-primary-rgb) / 0.3); }
+}
+
+.build-tile-current-name {
+  background-image: linear-gradient(100deg, currentColor 0%, currentColor 40%, rgb(var(--color-primary-rgb)) 50%, currentColor 60%, currentColor 100%);
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: build-tile-shimmer 2.4s linear infinite;
+}
+
+@keyframes build-tile-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -150% 0; }
+}
+
+.build-tile-current-dot {
+  animation: build-tile-turn 6s linear infinite;
+}
+
+@keyframes build-tile-turn {
+  to { transform: rotate(1turn); }
+}
+
+.build-status-pop {
+  animation: build-status-pop 700ms cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+
+@keyframes build-status-pop {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgb(var(--color-primary-rgb) / 0); }
+  35% { transform: scale(1.03); box-shadow: 0 0 0 3px rgb(var(--color-primary-rgb) / 0.35), 0 0 32px 6px rgb(var(--color-primary-rgb) / 0.45); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 rgb(var(--color-primary-rgb) / 0); }
+}
+
+@keyframes build-status-flash {
+  0%, 100% { box-shadow: 0 0 0 0 rgb(var(--color-primary-rgb) / 0); }
+  35% { box-shadow: 0 0 0 3px rgb(var(--color-primary-rgb) / 0.35), 0 0 32px 6px rgb(var(--color-primary-rgb) / 0.45); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .build-tile-current,
+  .build-tile-current-dot,
+  .build-tile-current-name { animation: none; }
+  .build-tile-current { box-shadow: 0 0 0 2px rgb(var(--color-primary-rgb) / 0.25); }
+  .build-tile-current-name { -webkit-text-fill-color: currentColor; background-image: none; }
+  .build-status-pop { animation-name: build-status-flash; }
+}

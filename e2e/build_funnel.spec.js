@@ -9,7 +9,7 @@
 // fill in the order Ray asks (theme before CTO). Every card's CTA sets its field and
 // posts the visitor's own line into the thread, so the next answer arrives without
 // typing: Start App on the idea, Choose Theme (the middle theme preselected, another
-// picked after the dark/light toggle), Hatch CTO (a portrait picked in the modal,
+// picked after the dark/light toggle), Wake Up your CTO (a portrait picked in the modal,
 // the prefilled name edited), and Use Domain (a chip picked, the name edited and
 // typed back while the chip's glow follows the field). The summary card follows, and Build My App asks for sign-in only
 // then, in the sign-in MODAL (task build-sign-in-modal): dismissed, the draft stays and
@@ -204,7 +204,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   const cto = page.locator("[data-test='build-card-cto']");
   await expect(cto.locator("[data-test='build-cto-heading']")).toHaveText("Customize your CTO");
   await expect(cto.locator("[data-test='build-cto-name-input']")).toHaveValue("Marble");
-  // Stacked: portrait above the name, the name above its ideas, Hatch CTO at the bottom.
+  // Stacked: portrait above the name, the name above its ideas, Wake Up your CTO at the bottom.
   const ys = await Promise.all(["build-portrait-preview", "build-cto-name-input", "build-cto-names", "build-choose-cto"]
     .map((t) => cto.locator(`[data-test='${t}']`).evaluate((el) => el.getBoundingClientRect().top)));
   expect([...ys].sort((a, b) => a - b), "the CTO card stacks top to bottom").toEqual(ys);
@@ -237,7 +237,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(cto.locator("[data-test='build-cto-name-input']")).toHaveValue("Scout");
   await expect(cto.locator("[data-test='build-cto-name-suggestion']", { hasText: "Scout" })).toHaveAttribute("aria-pressed", "true");
   await cto.locator("[data-test='build-cto-name-input']").fill("Marbles");
-  await cto.getByRole("button", { name: "Hatch CTO" }).click();
+  await cto.getByRole("button", { name: "Wake Up your CTO" }).click();
   await expect(status.locator("[data-test='build-tile-agent-value']")).toHaveText("Marbles");
   await expect(status.locator("[data-test='build-tile-agent-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
 
