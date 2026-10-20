@@ -11,10 +11,10 @@
 #   bin/game-model identify <dir>                          # ArcFace vs the headshot (spec.yml espn_id)
 #   bin/game-model headwear <dir>                          # label headwear on the matches; bare.jpg board
 #   bin/game-model find <dir> <gallery-regex>              # find him in the game's frames
-#   bin/game-model generate <dir> <stage> [--attempts N]   # PAID: facepack|body|full|panels|iced_full|iced_panels
+#   bin/game-model generate <dir> <stage> [--attempts N]   # PAID: facepack|body|full|panels|iced_full|iced_panels|performance
 #   bin/game-model score <dir> <stage>                     # face gate (>= 0.70) on a stage's outputs
 #   bin/game-model board <dir> <stage>                     # montage to look at
-#   bin/game-model stitch <dir> [--iced]                   # the 5x2 sheet, locally
+#   bin/game-model stitch <dir> [--iced|--performance]     # the 5x2 sheet, or the 4x4 performance sheet, locally
 #   bin/game-model file <dir> [--production] [--dry-run]   # R2, then POST /api/v1/game_looks
 require_relative "lib/cli_arg_guard"
 
@@ -27,7 +27,7 @@ CliArgGuard.guard!(
   program: "bin/game-model",
   usage: USAGE,
   consequence: "nothing was downloaded, generated, uploaded or filed.",
-  bool: %w[--iced --production --dry-run],
+  bool: %w[--iced --performance --production --dry-run],
   value: %w[--since --match --attempts],
   allow_positional: true
 )
