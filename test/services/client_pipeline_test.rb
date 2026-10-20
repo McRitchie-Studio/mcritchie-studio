@@ -29,8 +29,8 @@ class ClientPipelineTest < ActiveSupport::TestCase
     pipeline = ClientPipeline.build(@turf)
     lanes = pipeline.lanes.to_h { |lane| [ lane.label, lane.cards.map(&:title) ] }
 
-    assert_equal [ "Queued", "Building", "In review", "Ready for QA", "On QA", "Shipped" ], lanes.keys
-    assert_equal [ "Shared platform work", "Queued one" ], lanes["Queued"], "board order: the newest rank first"
+    assert_equal [ "Prepping", "Building", "In review", "Ready for QA", "On QA", "Shipped" ], lanes.keys, "a designed task reads Prepping, as on the status card"
+    assert_equal [ "Shared platform work", "Queued one" ], lanes["Prepping"], "board order: the newest rank first"
     assert_equal [ "Building one" ], lanes["Building"]
     assert_equal [ "Shipped recently" ], lanes["Shipped"]
     assert_equal [ 1, 2 ], pipeline.lanes.first.cards.map(&:queue_position)

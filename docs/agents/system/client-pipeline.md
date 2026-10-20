@@ -17,7 +17,7 @@ and, for an owner of one app, from the sidebar's **Your apps** section.
 - **Which tasks:** every task whose `devops.repositories` names the app's slug
   (`Task.for_repository`; an App slug is its repo slug). A multi-repo task shows
   on each app it names.
-- **Lanes:** Queued (`designed`, numbered in board order: rank, then newest
+- **Lanes:** Prepping (`designed`, the status card's word for it; numbered in board order: rank, then newest
   first; the number is display only, and nothing makes #1 start next), Building, In review
   (`submitted`), Ready for QA (`reviewed`), On QA (`assembled`), Shipped (the last
   14 days). Each card shows its title, its lane and its time in that lane.
