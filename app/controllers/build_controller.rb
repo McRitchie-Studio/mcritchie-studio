@@ -425,7 +425,7 @@ class BuildController < ApplicationController
   # its copy naming the address the press will claim.
   def open_sign_in_modal(subdomain)
     name = AppRequest.normalize_subdomain(subdomain).presence || @app_request.subdomain
-    building = name.present? ? "#{name}.#{AppRequest::CLIENT_APP_DOMAIN}" : "your app"
+    building = AppRequest.host_for(name) || "your app"
     props = { returnTo: build_request_launch_path(@app_request.token), title: "Sign in to build your app",
               subtitle: "Free. Then we start building #{building}." }
     helpers.turbo_stream_action_tag(:open_modal, modal: SIGN_IN_MODAL, props: props.to_json)

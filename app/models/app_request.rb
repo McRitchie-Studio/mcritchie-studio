@@ -129,16 +129,10 @@ class AppRequest < ApplicationRecord
   # aliases (studio-engine, turf-vault, vault), so a /build app never shares a
   # name with a repo or gem of ours.
   def self.read_reserved_names
-    satellites = Rails.root.join("config/satellites.yml")
-    rows = YAML.safe_load_file(satellites).fetch("satellites", [])
-    urls = rows.map { |sat| sat["production_url"] } +
-           AppCatalog.apps.flat_map { |app| [ app.production_url, app.qa_url ] }
-    hosts = urls.compact.filter_map do |url|
-      host = URI.parse(url.to_s).host.to_s
+    rows = satellite_rows
+    hosts = registry_hosts.filter_map do |host|
       domain = OUR_DOMAINS.find { |ours| host.end_with?(".#{ours}") }
       host.delete_suffix(".#{domain}") if domain
-    rescue URI::InvalidURIError
-      nil
     end
     slugs = rows.filter_map { |sat| sat["slug"].presence } +
             AppCatalog.apps.map(&:slug) +
@@ -146,6 +140,41 @@ class AppRequest < ApplicationRecord
     (RESERVED + hosts + slugs).uniq.freeze
   end
   private_class_method :read_reserved_names
+
+  # The names the registries serve at <name>.mcritchie.studio: the satellites
+  # built before mcritchie.app (rantly, weekly-lock, the showcase rebuilds). A
+  # live request holding one (a showcase row, given its subdomain by hand) is
+  # served there, so #host names it there. No claim can reach one: each is
+  # reserved.
+  def self.hub_hosted_names
+    @hub_hosted_names ||= registry_hosts.filter_map { |host| host.delete_suffix(".#{HUB_DOMAIN}") if host.end_with?(".#{HUB_DOMAIN}") }.to_set.freeze
+  end
+
+  # The address an app named NAME is served at: <name>.mcritchie.app, or, for a
+  # satellite built before it (hub_hosted_names), the <name>.mcritchie.studio it
+  # is served at. The one spelling #host, the CTO and its handover all use.
+  def self.host_for(name)
+    return nil if name.blank?
+
+    "#{name}.#{hub_hosted_names.include?(name) ? HUB_DOMAIN : CLIENT_APP_DOMAIN}"
+  end
+
+  # Every production and QA host satellites.yml and config/apps.yml name.
+  def self.registry_hosts
+    urls = satellite_rows.map { |sat| sat["production_url"] } +
+           AppCatalog.apps.flat_map { |app| [ app.production_url, app.qa_url ] }
+    urls.compact.filter_map do |url|
+      URI.parse(url.to_s).host.to_s.presence
+    rescue URI::InvalidURIError
+      nil
+    end
+  end
+  private_class_method :registry_hosts
+
+  def self.satellite_rows
+    YAML.safe_load_file(Rails.root.join("config/satellites.yml")).fetch("satellites", [])
+  end
+  private_class_method :satellite_rows
 
   # Why NAME cannot be claimed, or nil when it can. The one answer the live
   # availability check and the model's validation both give.
@@ -238,9 +267,9 @@ class AppRequest < ApplicationRecord
 
   def queued? = status == "queued"
 
-  def url = subdomain.present? ? "https://#{subdomain}.#{CLIENT_APP_DOMAIN}" : nil
+  def url = host && "https://#{host}"
 
-  def host = subdomain.present? ? "#{subdomain}.#{CLIENT_APP_DOMAIN}" : nil
+  def host = self.class.host_for(subdomain)
 
   # Sign-in attaches a draft to whoever finished it. A draft already attached
   # belongs to that user only.

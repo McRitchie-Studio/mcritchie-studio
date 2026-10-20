@@ -61,7 +61,7 @@ class AppCto < ApplicationRecord
       "name" => name,
       "app_slug" => app_slug,
       "app_name" => app&.name,
-      "host" => "#{app_slug}.#{AppRequest::CLIENT_APP_DOMAIN}",
+      "host" => AppRequest.host_for(app_slug),
       "palette" => AppPalette.normalize(palette),
       "plan" => plan.to_s,
       "facts" => facts.is_a?(Hash) ? facts : {}
