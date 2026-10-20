@@ -1,11 +1,11 @@
 // [unit] build_status: the theme card's Dark / Light control is a toggle (a tap
-// on the side already showing flips to the other), the status card pops only
-// when a render first draws it, and Pick three new themes sends its line through
+// on the side already showing flips to the other), the status card pops on
+// Build My App, and Pick three new themes sends its line through
 // the chat box's own submit. Run against stand-in elements.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { POP_CLASS, askAgent, cardAppeared, nextThemeMode, popStatusCard } from "../../app/javascript/build_status.js";
+import { POP_CLASS, askAgent, nextThemeMode, popStatusCard } from "../../app/javascript/build_status.js";
 
 test("a tap on the other side shows it; a tap on the side showing flips it", () => {
   assert.equal(nextThemeMode("dark", "light"), "light");
@@ -13,14 +13,6 @@ test("a tap on the other side shows it; a tap on the side showing flips it", () 
   assert.equal(nextThemeMode("dark", "dark"), "light", "the active side flips to the other");
   assert.equal(nextThemeMode("light", "light"), "dark");
   assert.equal(nextThemeMode(undefined, "dark"), "dark", "no mode yet: the tap's own side");
-});
-
-test("the card pops only when the heading turns into the card", () => {
-  assert.equal(cardAppeared("false", "true"), true, "Start App: heading to card");
-  assert.equal(cardAppeared(undefined, "true"), true, "the slot arrived with the card");
-  assert.equal(cardAppeared("true", "true"), false, "a poll redrawing the card is no new card");
-  assert.equal(cardAppeared("false", "false"), false);
-  assert.equal(cardAppeared("true", "false"), false);
 });
 
 function classList() {

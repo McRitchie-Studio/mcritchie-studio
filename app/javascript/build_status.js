@@ -1,16 +1,16 @@
 // Small /build behaviours of the status card and the theme card (task
 // build-cards-quality-pass; Alex, 2026-10-19). build_chat.js wires them in.
 //
-//   - the status card pops (build_cards.css .build-status-pop) once when it
-//     first appears, the stream after Start App swapping the heading for the
-//     card, and again when Build My App is pressed;
+//   - the status card pops again when Build My App is pressed (build_cards.css
+//     .build-status-pop); its first pop, when Start App's stream swaps the
+//     heading for it, is agent_shell.js's agent-shell-enter-card;
 //   - the theme card's Dark / Light control is a toggle: a tap on the side
 //     already showing flips to the other;
 //   - "Pick three new themes" ([data-build-ask]) writes its line into the chat
 //     box and sends it through the composer's own submit, so it travels the
 //     same path as a typed message.
 //
-// Pure where it can be (nextThemeMode, cardAppeared, askAgent take stand-ins),
+// Pure where it can be (nextThemeMode, askAgent take stand-ins),
 // so test/javascript/build_status_test.js runs it without a browser.
 
 export const POP_CLASS = "build-status-pop";
@@ -22,13 +22,8 @@ export function nextThemeMode(current, clicked) {
   return current === "dark" ? "light" : "dark";
 }
 
-// Whether a render turned the heading into the status card: the slot's
-// data-card was "false" (or the slot was absent) and is now "true".
-export function cardAppeared(before, after) {
-  return after === "true" && before !== "true";
-}
-
-// Plays the pop on the status card once; a second call restarts it.
+// Plays the pop on the status card once; a second call restarts it. Under
+// reduced motion only its glow plays (build_cards.css).
 export function popStatusCard(root = document) {
   const card = root.querySelector?.("[data-build-status-card]");
   if (!card) return false;

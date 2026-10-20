@@ -317,4 +317,34 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-summary-build']", 0
     assert_select "[data-test='build-summary-not-ready']"
   end
+
+  # [component] The styles behind the quality pass (task build-cards-quality-pass):
+  # the orbit glow turns INSIDE a clipped ring (no sideways scroll) and holds still
+  # under reduced motion; the status card's arrival grows past full size with a
+  # glow; the step in progress shimmers, and holds still under reduced motion.
+  test "the orbit glow is clipped to its ring, the card's arrival pops, and the current step shimmers, each still under reduced motion" do
+    glow = Rails.root.join("app/assets/tailwind/cta_glow.css").read
+    ring = glow[/\.cta-glow-ring \{[^}]*\}/m].to_s
+    assert_includes ring, "overflow: hidden", "the turning square is clipped to the ring"
+    assert_match(/inset: calc\(-1 \* var\(--glow-reach, 3px\)\)/, ring, "the ring reaches only 3px past the CTA")
+    assert_match(/\.cta-glow-ring::before \{[^}]*animation: cta-glow-orbit/m, glow)
+    assert_match(/@keyframes cta-glow-orbit \{\s*to \{ transform: translate\(-50%, -50%\) rotate\(1turn\); \}/m, glow, "a transform, run by the compositor")
+    assert_match(/\.cta-glow\[data-glow="off"\] > \.cta-glow-ring/, glow, "a spent CTA draws no ring")
+    assert_match(/\.cta-glow:has\(> :disabled\) > \.cta-glow-ring/, glow, "a disabled CTA draws no ring")
+    reduced = glow[/@media \(prefers-reduced-motion: reduce\)\s*\{.*\z/m].to_s
+    assert_includes reduced, ".cta-glow-ring::before { animation: none; }"
+
+    shell = Rails.root.join("app/assets/tailwind/agent_shell.css").read
+    pop = shell[/@keyframes agent-shell-pop-in \{.*?\n\}/m].to_s
+    assert_includes pop, "scale(1.03)", "the card grows past full size"
+    assert_includes pop, "box-shadow: 0 0 0 3px", "with a primary glow"
+
+    cards = Rails.root.join("app/assets/tailwind/build_cards.css").read
+    assert_match(/\.build-tile-current \{\s*animation: build-tile-breathe/m, cards)
+    assert_match(/\.build-tile-current-name \{[^}]*animation: build-tile-shimmer/m, cards)
+    assert_match(/\.build-status-pop \{\s*animation: build-status-pop/m, cards)
+    reduced = cards[/@media \(prefers-reduced-motion: reduce\)\s*\{.*\z/m].to_s
+    assert_match(/\.build-tile-current-name \{ animation: none; \}/, reduced)
+    assert_includes reduced, ".build-status-pop { animation-name: build-status-flash; }", "reduced motion keeps only the glow"
+  end
 end

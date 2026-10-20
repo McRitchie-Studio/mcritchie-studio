@@ -199,9 +199,15 @@
   to { opacity: 1; transform: none; }
 }
 
+/* The status card's arrival (Start App) is a celebration (Alex, 2026-10-19:
+   the card should "pop"): it grows in past full size with a primary glow and
+   settles. 3% of a phone-width card stays inside the page's 16px gutter, and
+   the card sits above the thread's scroll box, so nothing scrolls sideways.
+   The same pop plays again on Build My App (build_cards.css .build-status-pop). */
 @keyframes agent-shell-pop-in {
-  from { opacity: 0; transform: scale(0.94); }
-  to { opacity: 1; transform: none; }
+  from { opacity: 0; transform: scale(0.94); box-shadow: 0 0 0 0 rgb(var(--color-primary-rgb) / 0); }
+  45% { opacity: 1; transform: scale(1.03); box-shadow: 0 0 0 3px rgb(var(--color-primary-rgb) / 0.35), 0 0 32px 6px rgb(var(--color-primary-rgb) / 0.45); }
+  to { opacity: 1; transform: none; box-shadow: 0 0 0 0 rgb(var(--color-primary-rgb) / 0); }
 }
 
 .agent-shell-enter-thread [data-cto-chat-scroll] {
@@ -209,7 +215,7 @@
 }
 
 .agent-shell-enter-card {
-  animation: agent-shell-pop-in 380ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: agent-shell-pop-in 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
   transform-origin: top center;
 }
 

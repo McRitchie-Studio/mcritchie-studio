@@ -25,7 +25,6 @@
 //   - the theme card ([data-build-theme]): the Dark / Light toggle swaps every
 //     column's preview (a tap on the side already showing flips to the other,
 //     build_status.js), and the choice survives the card's re-render;
-//   - the status card (build_status.js): it pops when a render first draws it;
 //   - the CTA glows (cta_glow.js): a theme pick moves Choose Theme's glow to
 //     that theme's colours, and a glow scrolled off screen draws nothing;
 //
@@ -35,7 +34,7 @@
 import { Turbo } from "@hotwired/turbo-rails";
 import { pickDomainChip, syncDomainGlow } from "build_domain";
 import { syncThemeGlow, watchGlows } from "cta_glow";
-import { cardAppeared, nextThemeMode, popStatusCard } from "build_status";
+import { nextThemeMode } from "build_status";
 
 const POLL_MS = 2500;
 const SLOW_MS = 10000;
@@ -223,9 +222,7 @@ document.addEventListener("turbo:load", () => { waitingSince = null; checkNewCar
 document.addEventListener("turbo:before-stream-render", (event) => {
   const original = event.detail.render;
   event.detail.render = async (stream) => {
-    const before = document.getElementById("build-checklist")?.dataset.card;
     await original(stream);
-    if (cardAppeared(before, document.getElementById("build-checklist")?.dataset.card)) popStatusCard();
     checkNewCards();
     restoreThemeModes();
     watchGlows();

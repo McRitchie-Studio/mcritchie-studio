@@ -35,8 +35,9 @@
    the primary border and the heading-coloured name to mark the step.
 
    The pop (.build-status-pop, set by build_status.js for one run): a brief
-   scale up and back with a primary glow, when the card first appears (Start
-   App) and when Build My App is pressed. A transform, so the card's layout
+   scale up and back with a primary glow when Build My App is pressed (its
+   arrival on Start App is agent_shell.css's agent-shell-pop-in, the same
+   beat). A transform, so the card's layout
    box never changes; 3% of a phone-width card stays inside the page's 16px
    gutter, and the card sits above the thread, outside its scroll box, so
    nothing scrolls sideways. Under reduced motion only the glow plays. */

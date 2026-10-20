@@ -15,8 +15,9 @@
   A tile not yet set reads its step's name, never "Not yet" (Alex, 2026-10-19): Theme,
   Agent, Domain. The step Ray is on now (AppRequest#next_intake_step) is marked
   data-current and shimmers (build_cards.css, still under reduced motion); a set tile
-  carries a check over its value. The card pops once when it first appears (Start
-  App) and again when Build My App is pressed (build_status.js, build_cards.css).
+  carries a check over its value. The card pops when it first appears (Start App;
+  agent_shell.js, agent-shell-pop-in) and again when Build My App is pressed
+  (build_status.js, build_cards.css).
 %>
 <% show_card = request_row.present? && started %>
 <div id="build-checklist" data-test="build-status" data-card="<%= show_card %>">
@@ -60,7 +61,6 @@
               <span class="flex w-full min-w-0 items-center justify-center gap-1 text-xs sm:text-sm font-semibold text-heading" data-test="build-tile-<%= key %>-value">
                 <svg viewBox="0 0 20 20" class="h-3.5 w-3.5 shrink-0 text-primary" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-test="build-tile-<%= key %>-check"><path d="M5 10.5l3 3 7-7"/></svg>
                 <span class="truncate"><%= value %></span>
-                <span class="sr-only">(done)</span>
               </span>
             <% else %>
               <span class="block w-full truncate text-xs sm:text-sm font-semibold <%= now ? 'build-tile-current-name text-heading' : 'text-muted' %>" data-test="build-tile-<%= key %>-value"><%= label %><% if now %><span class="sr-only"> (in progress)</span><% end %></span>

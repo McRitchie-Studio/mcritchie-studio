@@ -1,7 +1,7 @@
 // [e2e] The /build cards' quality pass (task build-cards-quality-pass; Alex,
 // 2026-10-19, from production screenshots).
 //
-//   1. The status card pops when Start App first draws it, and its three tiles
+//   1. The status card pops (grows past full size with a glow) when Start App first draws it, and its three tiles
 //      read Theme, Agent, Domain (never "Not yet"), the theme step marked as the
 //      one in progress.
 //   2. The theme card's Dark / Light control is a toggle: a second tap on the
@@ -80,17 +80,20 @@ test("Start App pops a status card of Theme, Agent, Domain; the theme card toggl
   await rayAnswers(page, auth, (c) => c === idea, "Here's the app.",
                    { card: "idea", title: "Weekly Trivia With Friends", features: ["Rounds", "Scores"] });
 
-  // 1. Start App: the card arrives and pops; the tiles name their steps.
+  // 1. Start App: the card arrives and pops (agent_shell.js's enter animation,
+  //    which plays only with motion); the tiles name their steps.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.evaluate(() => {
-    window.__popped = false;
+    window.__popped = null;
     new MutationObserver(() => {
-      if (document.querySelector("[data-build-status-card].build-status-pop")) window.__popped = true;
+      const card = document.querySelector("[data-build-status-card].agent-shell-enter-card");
+      if (card && !window.__popped) window.__popped = getComputedStyle(card).animationName;
     }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
   });
   await page.getByRole("button", { name: "Start App" }).click();
   const status = page.locator("[data-test='build-status-card']");
   await expect(status).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.__popped), { message: "the card popped when it first appeared" }).toBe(true);
+  await expect.poll(() => page.evaluate(() => window.__popped), { message: "the card popped when it first appeared" }).toBe("agent-shell-pop-in");
   await expect(status.locator("[data-test='build-tile-theme-value']")).toContainText("Theme");
   await expect(status.locator("[data-test='build-tile-agent-value']")).toHaveText("Agent");
   await expect(status.locator("[data-test='build-tile-domain-value']")).toHaveText("Domain");
@@ -121,7 +124,6 @@ test("Start App pops a status card of Theme, Agent, Domain; the theme card toggl
 
   // 3. With motion, the orbit ring turns behind Choose Theme, and nothing on the
   //    375px page, nor in the thread, scrolls sideways at any point of its turn.
-  await page.emulateMedia({ reducedMotion: "no-preference" });
   const choose = themeCard.getByRole("button", { name: "Choose Theme" });
   await choose.scrollIntoViewIfNeeded();
   const ring = themeCard.locator("[data-test='build-palette-glow-ring']");
