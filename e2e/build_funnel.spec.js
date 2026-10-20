@@ -518,6 +518,9 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
     const width = await field.evaluate((el) => el.getBoundingClientRect().width);
     expect(width, "the name keeps the room at 360px").toBeGreaterThan(180);
 
+    // The old suffix, from an address shared before mcritchie.app, cleans the same way.
+    await field.fill(`${name}.mcritchie.studio`);
+    await expect(field).toHaveValue(name);
     await field.fill(`https://${name}.mcritchie.app/`);
     await expect(field).toHaveValue(name);
     await expect(page.locator("[data-test='build-address-preview']")).toHaveText(`${name}.mcritchie.app`);

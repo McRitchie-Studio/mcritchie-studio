@@ -50,21 +50,26 @@ which writes to a local database nobody sees.
 1. Build it on our stack from the app template, the way any satellite is built,
    with the site footer (and legal pages if it takes accounts or personal data)
    in the first build: [new-app onboarding § 7](../system/new-app-onboarding-sop.md#7-build-conventions).
-2. **Point the name at it by hand.** `mcritchie.studio` has no wildcard DNS: add a
-   CNAME for `<subdomain>` to the app's Heroku DNS target, then
-   `heroku certs:auto --app <app>` until its certificate is issued. The DNS
-   records live with the domain (see [deployment](deployment.md), the
-   subdomain cutover steps).
-3. Confirm it answers: `curl -fsS https://<subdomain>.mcritchie.studio/up`.
+2. **Point the name at it by hand.** The request's address is `<subdomain>.mcritchie.app`
+   (the card's acceptance names it). The `mcritchie.app` wildcard sends every name
+   to the shared preview host ([client-app-host](../system/client-app-host.md)), so
+   an app on its own Heroku app needs its own record: `heroku domains:add
+   <subdomain>.mcritchie.app --app <app>`, a DNS-only CNAME for `<subdomain>` in the
+   `mcritchie.app` zone to the app's Heroku DNS target (an exact name outranks the
+   wildcard), then `heroku certs:auto --app <app>` until its certificate is issued.
+   A request from before 2026-10-20 may hold a `<subdomain>.mcritchie.studio`
+   address instead; its records live with that domain (see
+   [deployment](deployment.md), the subdomain cutover steps).
+3. Confirm it answers at the card's address (`<host>`): `curl -fsS https://<host>/up`.
    Then confirm the card's second acceptance bullet, the footer on the home page:
-   `curl -fsS https://<subdomain>.mcritchie.studio/ | grep -c 'data-site-footer'`
+   `curl -fsS https://<host>/ | grep -c 'data-site-footer'`
    (expect `1` or more; what a `0` means is under onboarding § 7's DONE line).
 4. **Showcase builds only:** capture its gallery screenshot, pointed at the page
    that shows what the app IS (Cyvasse's game board, not its landing text), and
    commit it in a hub PR:
 
    ```bash
-   node script/gallery_capture.cjs https://<subdomain>.mcritchie.studio/<page> <subdomain>
+   node script/gallery_capture.cjs https://<host>/<page> <subdomain>
    ```
 
    It writes `app/assets/images/build_gallery/<subdomain>.webp` (a dark-mode
