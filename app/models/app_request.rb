@@ -191,12 +191,30 @@ class AppRequest < ApplicationRecord
   # Build my app lights up only when all four are set.
   def intake_complete? = intake_checklist.values.all?
 
+  # The intake card Ray proposes themes on (BuildIntake::Card "palette"): the
+  # theme step's card in the thread.
+  THEME_CARD = "palette".freeze
+
   # Whether the /build page shows the status card yet (build/_status_card):
-  # once the visitor has locked an idea in (Start App on the idea card), or any
-  # step is set (a draft from before this rule may hold a step without an idea).
-  # Before that, the visitor sees the heading, even while an idea card waits in
-  # the thread (Alex, 2026-10-18: no status tiles until Start App).
-  def intake_started? = intake_checklist.values.any?
+  # once Ray's THEME card is in this request's thread, or any of the theme, the
+  # CTO or the address is set (a draft from before this rule may hold one
+  # without a theme card). Locking the idea in (Start App) is not enough: the
+  # card waits while Ray is still typing, and pops in on the turn the theme
+  # card lands (Alex, 2026-10-20; before that, 2026-10-18: no status tiles
+  # until Start App). Before then the visitor sees the heading (idea_locked?
+  # picks which one).
+  def intake_started?
+    checklist = intake_checklist
+    BuildIntake::STEPS.drop(1).any? { |step| checklist[step] } || theme_card_shown?
+  end
+
+  # The visitor tapped Start App on an idea card: the idea is locked in.
+  def idea_locked? = intake_checklist["idea"]
+
+  private def theme_card_shown?
+    AgentMessage.where(channel: "web", thread_key: BuildIntake.thread_key(token), status: "completed")
+                .where("intake_card->>'card' = ?", THEME_CARD).exists?
+  end
 
   # The app's working title on the status card: the title the visitor confirmed
   # (Start App on the idea card), else the newest idea card's proposed title, so
