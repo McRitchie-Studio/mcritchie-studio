@@ -50,15 +50,15 @@ test("on a phone the rainbow Build Your App never scrolls the page sideways, in 
     expect(worst, `${scheme}: the page never scrolls sideways`).toBeLessThanOrEqual(0);
   }
   // Light mode is louder (task preview-domain-mcritchie-app): over the pale hero
-  // the ring takes its own deeper stops and a tighter blur. The 500-weight yellow
-  // (#eab308) that vanished on white is gone from the light ring and replaced by
-  // amber (#d97706); the dark ring keeps its original stops and blur.
+  // the ring takes its own stops and a tighter blur. The 500-weight yellow
+  // (#eab308) that muddied on white is replaced by #facc15 and the green deepens
+  // to #16a34a; the dark ring keeps its original stops and 16px blur.
   expect(rings.light.background, "light and dark rings differ").not.toBe(rings.dark.background);
-  expect(rings.light.background, "light ring: amber, not the pale yellow").toContain("rgb(217, 119, 6)");
+  expect(rings.light.background, "light ring: the brighter yellow").toContain("rgb(250, 204, 21)");
   expect(rings.light.background).not.toContain("rgb(234, 179, 8)");
-  expect(rings.light.background, "light ring: deep cyan").toContain("rgb(8, 145, 178)");
+  expect(rings.light.background, "light ring: the deeper green").toContain("rgb(22, 163, 74)");
   expect(rings.dark.background, "dark ring unchanged").toContain("rgb(234, 179, 8)");
-  expect(rings.light.filter).toBe("blur(10px)");
+  expect(rings.light.filter).toBe("blur(8px)");
   expect(rings.dark.filter).toBe("blur(16px)");
   await expect(page.locator("[data-test='hero-meet-alex']")).toHaveAttribute("href", "#about");
   expect(pageErrors, report()).toHaveLength(0);

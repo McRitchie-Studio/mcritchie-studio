@@ -97,16 +97,18 @@
 }
 
 /* Light mode (task preview-domain-mcritchie-app; Alex, 2026-10-19: a louder
-   rainbow in light mode). Over the pale hero the 500-weight yellow and cyan
-   blurred into the background and the ring read as a faint smudge. The light
-   theme (the html element without .dark) takes deeper, more saturated stops
-   (600 weight; the yellow moves to amber so it still reads on white) and a
-   tighter blur, so less of each colour is spread thin into the page. Reach and
-   strength are unchanged, so the overflow the hero clips is the same, and the
-   dark theme keeps the stops above. */
+   rainbow in light mode). Over the pale hero the 16px blur spread each colour
+   thin and the ring read as a faint smudge in which yellow and cyan vanished.
+   The light theme (the html element without .dark) takes a tighter blur (8px)
+   and a slightly longer reach (10px), so each band stays dense, and swaps four
+   stops: deeper red, green and indigo hold their hue on white, and a brighter
+   yellow (#facc15) stays yellow where the 500 weight muddied to olive. The
+   hero's section clips the reach (e2e/landing_build_cta.spec.js samples a
+   375px phone for sideways scroll); the dark theme keeps the preset above. */
 :root:not(.dark) .cta-glow-rainbow {
-  --glow-stops: #dc2626, #ea580c, #d97706, #16a34a, #0891b2, #4f46e5, #c026d3, #dc2626;
-  --glow-blur: 10px;
+  --glow-stops: #dc2626, #f97316, #facc15, #16a34a, #06b6d4, #4f46e5, #c026d3, #dc2626;
+  --glow-reach: 10px;
+  --glow-blur: 8px;
 }
 
 @keyframes cta-glow-trade {
