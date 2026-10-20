@@ -6,7 +6,9 @@
 #   claim!(slug, ...)     designed -> building, atomically, and the intake to build from
 #   progress!(slug, ...)  one code-written line in the app owner's CTO chat
 #   finish!(slug, ...)    preview_ready -> shipped; failed -> blocked with the reason;
-#                         released -> designed (back in line)
+#                         released -> designed (back in line), unless the app
+#                         published during the run: then it ships; every
+#                         outcome revokes the run's publish session
 #
 # WHICH TASKS. A launch task is the one an AppRequest names (AppRequest#task_slug,
 # written by AppLaunch in the same transaction as the task), never a title match.
@@ -130,17 +132,27 @@ module ClientBuilds
 
   # The run's end. preview_ready: shipped, with the version and the preview URL.
   # failed: blocked, with the reason as a qa_feedback row. Either way the CTO chat
-  # gets its line after the commit.
+  # gets its line after the commit. Every outcome revokes the run's publish
+  # session (revoke_sessions!).
   def finish!(slug, run:, outcome:, reason: nil, version: nil, now: Time.current)
     raise Refused.new(:bad_request, "outcome is #{OUTCOMES.join(', ')}") unless OUTCOMES.include?(outcome.to_s)
 
+    outcome = outcome.to_s
     task = Task.transaction do
       task = held!(slug, run)
-      if outcome.to_s == "preview_ready"
+      revoke_sessions!(task)
+      # A release of a run whose bundle already went live (the launcher stopped or
+      # crashed between publish and finish): the preview is real, so the task
+      # ships instead of going back in line to be rebuilt.
+      if outcome == "released" && (published = published_during_run(task, slug))
+        outcome = "preview_ready"
+        version = published.version
+      end
+      if outcome == "preview_ready"
         subdomain = AppRequest.find_by!(task_slug: slug).subdomain
         write_run!(task, { "state" => "preview_ready", "version" => version.to_s.presence, "finished_at" => now.iso8601,
                            "preview_url" => preview_url(subdomain) }, stage: "shipped", extra: { "included_in_release" => false })
-      elsif outcome.to_s == "released"
+      elsif outcome == "released"
         write_run!(task, { "state" => "released", "finished_at" => now.iso8601,
                            "reason" => reason.to_s.squish.presence&.slice(0, REASON_LIMIT) }, stage: "designed")
       else
@@ -153,7 +165,7 @@ module ClientBuilds
       end
       task
     end
-    announce(slug, outcome.to_s, run) unless outcome.to_s == "released"
+    announce(slug, outcome, run) unless outcome == "released"
     task
   end
 
@@ -224,6 +236,25 @@ module ClientBuilds
   def run_of(task)
     run = task.devops[KEY]
     run.is_a?(Hash) ? run : {}
+  end
+
+  # The newest bundle the task's app published since the run started, or nil.
+  def published_during_run(task, slug)
+    started = Time.iso8601(run_of(task)["started_at"].to_s) rescue nil
+    subdomain = AppRequest.find_by(task_slug: slug)&.subdomain
+    return nil unless started && subdomain
+
+    AppPreviewVersion.where(app_slug: subdomain).where("published_at >= ?", started).newest_first.first
+  end
+
+  # The builder's task_claim logins on `task` (the launcher's publish session).
+  # A failed run leaves the task building, blocked, where the login would stay
+  # live until its 24-hour expiry; a finish of any outcome ends it here, server
+  # side, so no launcher has to remember to. Only after held! has passed: a stale
+  # run's finish revokes nothing.
+  def revoke_sessions!(task)
+    AgentSession.unrevoked.for_task(task.slug).where(tier: "studio", issued_by: "task_claim", soul: BUILDER)
+                .update_all(revoked_at: Time.current, revoked_by: ACTOR)
   end
 
   # The task, locked, when `run` holds its build; else a refusal.
