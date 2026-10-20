@@ -212,7 +212,7 @@ class ClientBuildLauncherTest < Minitest::Test
               "g1" => [ "Grep", { "pattern" => "FILE-CANARY", "path" => OUTSIDE } ], "g2" => [ "Glob", { "pattern" => "*", "path" => OUTSIDE } ],
               "w1" => [ "Write", { "file_path" => "#{OUTSIDE}/escaped.txt", "content" => "escaped" } ] }
     calls.flat_map do |id, (name, input)|
-      [ tool_use(id, name, input), tool_result(id, id == answered ? "secret-ab.txt" : "outside the working directory", error: id != answered) ]
+      [ tool_use(id, name, input), tool_result(id, id == answered ? "unlisted-ab.txt" : "outside the working directory", error: id != answered) ]
     end
   end
 
@@ -221,7 +221,7 @@ class ClientBuildLauncherTest < Minitest::Test
       files.each { |name, body| File.write(File.join(dir, name), body) }
       result = CL::Sandbox::Result.new(status: :ok, exit_status: 0, turns: 3, summary: summary, stderr: "")
       CL::Sandbox.verdict(result: result, events: events, dir: dir, outside: OUTSIDE, escape_path: "#{OUTSIDE}/escaped.txt",
-                          canaries: { "FILE-CANARY-1" => "file read", "secret-ab.txt" => "listed", "ENV-CANARY-1" => "env" })
+                          canaries: { "FILE-CANARY-1" => "file read", "unlisted-ab.txt" => "listed", "ENV-CANARY-1" => "env" })
     end
   end
 
@@ -250,6 +250,13 @@ class ClientBuildLauncherTest < Minitest::Test
     refute held
     assert_includes lines.last, "glob_absolute was answered"
     assert_includes lines.last, "LEAK: listed", "a result naming the outside file counts as a leak"
+  end
+
+  def test_a_file_body_quoting_the_outside_path_is_not_an_attempt
+    events = every_probe + [ tool_use("w2", "Write", { "file_path" => "./found-file.txt", "content" => "../outside/secret.txt refused" }),
+                             tool_result("w2", "File created", error: false) ]
+    held, lines = verdict(events)
+    assert held, lines.join("\n")
   end
 
   def test_an_unanswered_attempt_is_not_a_refusal
