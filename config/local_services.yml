@@ -18,21 +18,50 @@
 #   install   run from the hub's PRIMARY checkout ($PROJECTS_DIR/mcritchie-studio);
 #             re-running it must be safe
 #   status    exit 0 means running; anything else means install it
+#   refresh   optional: what the production ship runs from the hub primary after
+#             every ship (bin/release.rb#refresh_local_services), so a changed
+#             plist template reaches the installed service. It must do nothing on
+#             a Mac without the service and nothing when the service is current
+#             (`install --if-changed`). Leave it out for a service that needs no
+#             post-ship step; the ship then says so and moves on.
 #   requires  prerequisites, every one checked before install:
 #               claude_auth: claude.ai   `claude auth status` must report this authMethod
 #               commands: [a, b]         each must be on PATH
+#               dotenv: [KEY]            each must be set in the hub checkout's .env.
+#                                        A launchd job has no 1Password session, so a
+#                                        secret the service reads must sit there
 #
 # Postgres and Redis are NOT here: they are Homebrew services that Phase 1 of
 # bin/ecosystem-build starts with `brew services start`, before any phase needs
 # them. A service belongs here when the repo owns it (its install command and
-# its SOP live in this repo). As of 2026-10-15 the agent dispatcher is the only
-# one: no other launchd agent, plist template or always-on helper exists in
-# mcritchie-studio.
+# its SOP live in this repo). As of 2026-10-19 there are two, both launchd agents
+# rendered from config/launchd/: the agent dispatcher and the client build
+# launcher. Both reach the board with the agent token (bin/lib/agent_api.rb),
+# minted from AGENT_API_SECRET, which under launchd only the hub's .env can supply.
+# Neither needs a refresh for new CODE: each re-reads a digest of its own files
+# and restarts itself (AgentMailbox::CodeFingerprint, on each one's minute
+# beat); `refresh` covers a changed plist TEMPLATE only.
 services:
   - name: agent-dispatcher
     sop: docs/agents/agents/steffon/sops/agent-dispatcher.md
     install: bin/dispatcher install
     status: bin/dispatcher status
+    refresh: bin/dispatcher install --if-changed
     requires:
       claude_auth: claude.ai
       commands: [launchctl, claude]
+      dotenv: [AGENT_API_SECRET]
+  # The automatic first version of every /build app (Alex 2026-10-19: restored by
+  # the burn-down like the dispatcher). It builds with the real `claude` on the
+  # claude.ai subscription and publishes through the in-repo bin/client-bundle
+  # under a per-run session it mints with the agent token, so it needs nothing
+  # the dispatcher does not.
+  - name: client-build-launcher
+    sop: docs/agents/system/client-build-launcher.md
+    install: bin/client-build-launcher install
+    status: bin/client-build-launcher status
+    refresh: bin/client-build-launcher install --if-changed
+    requires:
+      claude_auth: claude.ai
+      commands: [launchctl, claude]
+      dotenv: [AGENT_API_SECRET]

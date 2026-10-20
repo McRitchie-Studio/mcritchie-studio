@@ -192,6 +192,7 @@ require_relative "../app/models/release/cli"
 require_relative "../app/models/devops/windows"
 require_relative "lib/ship_authority"
 require_relative "lib/projects_root"
+require_relative "lib/local_services"
 # `status` prints PROGRAM DRIFT: on-chain programs behind their source (program_drift_report).
 require_relative "lib/program_drift"
 # Every command a refusal here hands the operator comes through the one remedy helper.
@@ -9146,10 +9147,11 @@ def ship
   #     with a live session's work (a qa-release-time prepare run would install
   #     main's STALE docs and leave the drift in place). See sync_agent_docs.
   sync_agent_docs
-  # 7c. Re-render the agent dispatcher's launchd plist from the restored primary,
-  #     only when it is installed here and the template changed (code alone needs
-  #     nothing: the service restarts itself). Warn-only. See refresh_dispatcher_service.
-  refresh_dispatcher_service
+  # 7c. Re-render each always-on local service's launchd plist (the dispatcher, the
+  #     client build launcher: config/local_services.yml) from the restored primary,
+  #     only when it is installed here and its template changed (code alone needs
+  #     nothing: each service restarts itself). Warn-only. See refresh_local_services.
+  refresh_local_services
   # Drop the deployer claim on a clean ship so the release frees immediately. Best-effort.
   release_conductor_claim!
   close_role_span("shipped #{rel_slug} → prod")
@@ -9376,7 +9378,7 @@ def finalize(slug = nil)
     #    the killed ship skipped). Both best-effort + non-fatal.
     restore_primaries(app_groups)
     sync_agent_docs
-    refresh_dispatcher_service
+    refresh_local_services
 
     say("")
     say("✓ Finalized #{rel_slug} — recorded #{pending.join(', ')}. The board now reflects the shipped release.")
@@ -9466,34 +9468,62 @@ rescue StandardError => e
   say("  ⚠ agent-docs install skipped (#{e.message}) — run `#{installer}` by hand (the ship already succeeded)")
 end
 
-# Post-ship dispatcher refresh. bin/dispatcher runs under launchd from the hub's
-# PRIMARY checkout, which restore_primaries has just moved to the shipped `main`.
-# The service restarts itself when its code changes (AgentMailbox::CodeFingerprint),
-# but a restart reuses the plist launchd already holds, so a change to the plist
-# TEMPLATE (config/launchd/studio.mcritchie.agent-dispatcher.plist) still needs an
-# install. This runs the primary's `bin/dispatcher install --if-changed`, which does
-# nothing on a Mac without the service, nothing when the installed plist matches
-# the new template, and otherwise reinstalls (AgentMailbox::LaunchAgent#install_if_changed).
+# Post-ship refresh of the always-on local services: every entry in the hub
+# primary's config/local_services.yml that names a `refresh` (as of 2026-10-19 the
+# agent dispatcher and the client build launcher, both `install --if-changed`).
+# Both run under launchd from the hub's PRIMARY checkout, which restore_primaries
+# has just moved to the shipped `main`. Each restarts itself when its code changes
+# (AgentMailbox::CodeFingerprint), but a restart reuses the plist launchd already
+# holds, so a change to a plist TEMPLATE (config/launchd/*.plist) still needs an
+# install. `install --if-changed` does nothing on a Mac without the service,
+# nothing when the installed plist matches the new template, and otherwise
+# reinstalls (AgentMailbox::LaunchAgent#install_if_changed). An entry with no
+# `refresh` is named and skipped.
 #
-# Always the PRIMARY's script, never the ship workspace's or the fixed-path tooling's:
-# the plist bakes in the tree it was installed from, install refuses a .worktrees/
-# tree (the ship workspace is one), and a tooling snapshot would point the service
-# at a frozen copy. NON-FATAL by construction, like sync_agent_docs: a refresh can
-# only warn, never fail the completed ship. Under --dry-run, `sh` prints and skips.
-def refresh_dispatcher_service
+# The registry is the PRIMARY's (the shipped one), read with this tooling's
+# parser. Always the PRIMARY's script, never the ship workspace's or the
+# fixed-path tooling's: the plist bakes in the tree it was installed from, install
+# refuses a .worktrees/ tree (the ship workspace is one), and a tooling snapshot
+# would point the service at a frozen copy. NON-FATAL by construction, like
+# sync_agent_docs: a refresh can only warn, never fail the completed ship, and one
+# service's failure never stops the next. Under --dry-run, `sh` prints and skips.
+def refresh_local_services
   say("")
-  step("refresh the agent dispatcher service: bin/dispatcher install --if-changed from the hub primary")
-  dispatcher = "the hub primary's bin/dispatcher" # seeded before anything that can raise
-  dispatcher = File.join(repo_path("mcritchie-studio"), "bin", "dispatcher")
-  unless File.exist?(dispatcher)
-    say("  · no #{dispatcher}; nothing to refresh")
+  step("refresh the always-on local services (config/local_services.yml): each one's refresh from the hub primary")
+  hub = "the hub primary" # seeded before anything that can raise
+  hub = repo_path("mcritchie-studio")
+  registry = File.join(hub, "config", "local_services.yml")
+  unless File.exist?(registry)
+    say("  · no #{registry}; nothing to refresh")
     return
   end
-  out, ok = sh(dispatcher, "install", "--if-changed", capture: true)
-  print(out)
-  say("  ⚠ dispatcher refresh failed — run `#{dispatcher} install` by hand (the ship already succeeded)") unless ok
+  LocalServices::Registry.load(registry).each { |service| refresh_local_service(hub, service) }
 rescue StandardError => e
-  say("  ⚠ dispatcher refresh skipped (#{e.message}) — run `#{dispatcher} install` by hand (the ship already succeeded)")
+  say("  ⚠ local services refresh skipped (#{e.message}) — run each service's install from #{hub} by hand " \
+      "(the ship already succeeded)")
+end
+
+# One registry entry's refresh: its `refresh` command, the script made absolute
+# against the hub primary. Warn-only.
+def refresh_local_service(hub, service)
+  by_hand = "#{service.name}'s install" # seeded before anything that can raise
+  install = Shellwords.split(service.install)
+  by_hand = [ File.join(hub, install.first), *install.drop(1) ].join(" ")
+  if service.refresh.nil?
+    say("  · #{service.name}: no refresh registered; nothing to do")
+    return
+  end
+  argv = Shellwords.split(service.refresh)
+  script = File.join(hub, argv.first)
+  unless File.exist?(script)
+    say("  · #{service.name}: no #{script}; nothing to refresh")
+    return
+  end
+  out, ok = sh(script, *argv.drop(1), capture: true)
+  print(out)
+  say("  ⚠ #{service.name} refresh failed — run `#{by_hand}` by hand (the ship already succeeded)") unless ok
+rescue StandardError => e
+  say("  ⚠ #{service.name} refresh skipped (#{e.message}) — run `#{by_hand}` by hand (the ship already succeeded)")
 end
 
 # --- archive (the DevOps loop's conclusion) --------------------------------
