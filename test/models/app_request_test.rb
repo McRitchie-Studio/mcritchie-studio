@@ -269,18 +269,37 @@ class AppRequestTest < ActiveSupport::TestCase
     refute BuildGallery.examples.any? { |e| e.url.include?("customer-app") }
   end
 
-  test "[unit] the status card waits for Start App: a proposed idea card is not a start, a locked idea or any set step is" do
+  test "[unit] the status card waits for Ray's theme card: a locked idea alone is not a start; the theme card or any later step is" do
     row = AppRequest.create!(prompt: "A league site")
-    AgentMessage.create!(channel: "web", external_id: "build:#{row.token}:1", channel_ref: "build", thread_key: BuildIntake.thread_key(row.token),
-                         soul_slug: "ray", content: "hi", status: "completed", response_text: "ok",
-                         intake_card: { "card" => "idea", "title" => "League Standings Hub", "features" => %w[a b] })
+    thread = BuildIntake.thread_key(row.token)
+    turn = lambda do |n, card, status: "completed"|
+      AgentMessage.create!(channel: "web", external_id: "build:#{row.token}:#{n}", channel_ref: "build", thread_key: thread,
+                           soul_slug: "ray", content: "hi", status: status, response_text: "ok", intake_card: card)
+    end
+    turn.call(1, { "card" => "idea", "title" => "League Standings Hub", "features" => %w[a b] })
     refute row.intake_started?, "an idea card waiting in the thread does not bring the status card"
+    refute row.idea_locked?
 
     row.update!(answers: { "title" => "League Standings Hub", "idea" => "League Standings Hub" })
-    assert row.intake_started?, "Start App locks the idea, and the status card appears"
+    assert row.idea_locked?
+    refute row.intake_started?, "Start App locks the idea, but the card waits while Ray types the theme card"
 
-    row.update!(answers: {}, cto_name: "Coach", cto_avatar: "harbor")
-    assert row.intake_started?, "a draft holding a step without an idea still shows what it holds"
+    turn.call(2, { "card" => "palette", "palettes" => [] }, status: "received")
+    refute row.intake_started?, "a theme card on an answer not yet completed is not shown in the thread"
+
+    other = AppRequest.create!(prompt: "Another site")
+    AgentMessage.create!(channel: "web", external_id: "build:#{other.token}:1", channel_ref: "build", thread_key: BuildIntake.thread_key(other.token),
+                         soul_slug: "ray", content: "hi", status: "completed", response_text: "ok", intake_card: { "card" => "palette" })
+    refute row.intake_started?, "another request's theme card is not this one's"
+
+    turn.call(3, { "card" => "palette", "palettes" => [] })
+    assert row.intake_started?, "Ray's theme card is in the thread: the status card appears"
+
+    %w[palette cto address].each do |step|
+      fresh = AppRequest.create!(prompt: "An old draft")
+      fresh.update_columns(step == "palette" ? { palette: { "name" => "Pitch" } } : step == "cto" ? { cto_name: "Coach", cto_avatar: "harbor" } : { subdomain: "old-draft-#{fresh.id}" })
+      assert fresh.intake_started?, "a draft holding #{step} without a theme card still shows what it holds"
+    end
   end
 
   test "the intake fields hold the card rules, and the checklist reads them" do

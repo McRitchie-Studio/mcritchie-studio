@@ -2,7 +2,7 @@
 // build-cards-quality-pass; Alex, 2026-10-19). build_chat.js wires them in.
 //
 //   - the status card pops again when Build My App is pressed (build_cards.css
-//     .build-status-pop); its first pop, when Start App's stream swaps the
+//     .build-status-pop); its first pop, when the poll bringing Ray's theme card swaps the
 //     heading for it, is agent_shell.js's agent-shell-enter-card;
 //   - the theme card's Dark / Light control is a toggle: a tap on the side
 //     already showing flips to the other;

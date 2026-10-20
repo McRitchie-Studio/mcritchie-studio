@@ -90,17 +90,34 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=build-card-idea] [data-test=build-choose-idea]", "Start App"
     assert_select "[data-test=build-status-card]", 0
 
-    # Start App: the idea locks, the tap's stream brings the status card, and the
-    # visitor's line goes to Ray, who answers with the THEME card.
+    # Start App: the idea locks, and the visitor's line goes to Ray, who answers
+    # with the THEME card. The status card waits for that card (Alex,
+    # 2026-10-20): the tap's stream and every poll while Ray types redraw the
+    # heading, now naming the locked idea.
     relay = tap_and_relay(request_row, "idea", "Let's build League Standings Hub.", message_id: idea.id)
     assert_equal "League Standings Hub", request_row.reload.answers["title"]
     assert_equal "theme", request_row.next_intake_step, "the theme comes before the CTO"
     status = Nokogiri::HTML(response.body).css("turbo-stream[target=build-checklist] template").map(&:inner_html).join
-    assert_select Nokogiri::HTML.fragment(status), "[data-test=build-status-card] [data-test=build-status-title]", "League Standings Hub",
-                  "Start App's own stream draws the status card, titled"
+    assert_select Nokogiri::HTML.fragment(status), "[data-test=build-status-card]", 0, "Start App alone does not bring the status card"
+    assert_select Nokogiri::HTML.fragment(status), "#build-checklist[data-card=false][data-heading=locked] [data-test=build-heading-title]",
+                  "League Standings Hub", "the heading names the locked idea while Ray types"
+    get build_request_turns_path(request_row.token), params: { ids: relay.id }
+    refute_includes response.body, "data-test=\"build-status-card\"", "a poll while Ray types keeps the heading"
+    get build_request_path(request_row.token)
+    assert_select "#build-checklist[data-heading=locked] [data-test=build-heading-title]", "League Standings Hub"
+    assert_select "[data-test=build-status-card]", 0, "a reload while Ray types shows the heading too"
+
     themes = ray_answers("Pick a theme.", { kind: "intake", card: "palette", palettes: [ PALETTE, PALETTE.merge("name" => "Pitch Two"), PALETTE.merge("name" => "Pitch Three") ] })
     assert_equal relay, themes, "the dispatcher claimed the relayed turn"
+    # The poll that brings the theme card brings the status card in the same
+    # response, so it pops in with the card, no reload.
+    get build_request_turns_path(request_row.token), params: { ids: themes.id }
+    assert_includes response.body, "data-test=\"build-card-palette\""
+    status = Nokogiri::HTML(response.body).css("turbo-stream[target=build-checklist] template").map(&:inner_html).join
+    assert_select Nokogiri::HTML.fragment(status), "[data-test=build-status-card] [data-test=build-status-title]", "League Standings Hub",
+                  "the theme card's poll draws the status card, titled"
     get build_request_path(request_row.token)
+    assert_select "#build-checklist[data-card=true] [data-test=build-status-card]", 1
     assert_select "[data-test=build-card-palette] [data-test=build-palette]", 3
     assert_select "[data-test=build-card-palette] input[name=index][value='1'][checked]", 1, "the middle theme is preselected"
     assert_select "[data-test=build-card-palette] [data-test=build-choose-palette]", "Choose Theme"
