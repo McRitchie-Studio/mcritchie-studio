@@ -24,14 +24,17 @@
 # test/lib/domain_register_integration_test.rb ([integration], a stubbed API).
 
 require_relative "domain_cutover"
+
+module DomainRegister
+  Abort = DomainCutover::Abort
+end
+
 require_relative "domain_register/quote"
 require_relative "domain_register/registrar"
 require_relative "domain_register/ledger"
 require_relative "domain_register/runner"
 
 module DomainRegister
-  Abort = DomainCutover::Abort
-
   DOMAIN = /\A(?!www\.)(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+\z/
 
   module_function
@@ -52,7 +55,7 @@ module DomainRegister
 
     module_function
 
-    def registrar(reader = DomainCutover::Credentials.method(:op_read))
+    def registrar(reader = method(:op_read))
       require_relative "op_vaults"
       raise Abort, "cannot read #{REGISTRAR_ITEM}: #{OpVaults.diagnose(:deployer)}" unless OpVaults.token(:deployer)
 
@@ -68,6 +71,21 @@ module DomainRegister
       raise Abort, "#{DNS_ITEM} account-id read empty: stop. Nothing ran." if account.empty?
 
       [token, account]
+    end
+
+    # `op read`, value on stdout only, stderr dropped so nothing echoes. A failed
+    # read (an expired or wrong admin token, a missing item) raises, so it is
+    # never mistaken for an item that exists but is empty.
+    def op_read(ref, env, runner: ->(e, argv) { [IO.popen(e, argv, err: File::NULL, &:read).to_s, $?] })
+      out, status = runner.call(env, ["op", "read", ref])
+      unless status&.success?
+        require_relative "op_vaults"
+        raise Abort, "op read #{ref} failed (exit #{status&.exitstatus.inspect}): #{OpVaults.diagnose(:deployer)} Nothing ran."
+      end
+
+      out.strip
+    rescue Errno::ENOENT
+      raise Abort, "the 1Password CLI (op) is not on PATH. Nothing ran."
     end
 
     # The DNS token, for the read-only zone proof after a registration.

@@ -17,6 +17,24 @@ module DomainRegister
   #
   # The registration POST is the one call that spends money. It is reached only
   # through Runner#register, after every refusal has passed.
+  # Cloudflare ANSWERED, with an HTTP error. `status` and the raw `errors` let a
+  # caller tell a definite refusal (4xx) from an ambiguous one (5xx).
+  class HttpError < Abort
+    attr_reader :status, :errors
+
+    def initialize(message, status:, errors: [])
+      super(message)
+      @status = status
+      @errors = errors
+    end
+
+    def rejected? = status.between?(400, 499)
+  end
+
+  # The request was sent (or may have been) and NO answer came back: timeout,
+  # reset, TLS failure. For the purchase POST that means money MAY have moved.
+  class NoAnswer < Abort; end
+
   class Registrar
     BASE = "https://api.cloudflare.com/client/v4"
     CHECK_LIMIT = 20
@@ -86,7 +104,27 @@ module DomainRegister
     end
 
     def status(domain)
-      request(:get, "/registrar/registrations/#{URI.encode_www_form_component(domain)}/registration-status")["result"] || {}
+      request(:get, status_path(domain))["result"] || {}
+    end
+
+    # Has Cloudflare EVER started a registration for this domain? Asked before
+    # every purchase, so a re-run can never buy twice while a first workflow is
+    # still in flight. Answers nil ONLY on the documented not-found: a 4xx whose
+    # errors carry code 10000 "No workflow found for <domain>" (the 4XX example on
+    # https://developers.cloudflare.com/api/resources/registrar/subresources/registration_status/methods/get;
+    # the page names no HTTP status, so none is assumed). A 2xx answers the
+    # workflow. Anything else (a 5xx, an auth error, another 4xx, no answer)
+    # raises: fail closed, because "could not tell" must never read as "never bought".
+    def existing_workflow(domain)
+      request(:get, status_path(domain))["result"] || {}
+    rescue HttpError => e
+      return nil if e.status.between?(400, 499) && not_found?(e.errors, domain)
+
+      raise
+    end
+
+    def self.not_found_message?(message, domain)
+      message.to_s.strip.casecmp?("No workflow found for #{domain}")
     end
 
     # The dashboard step that clears a refusal, or nil when the message is not a
@@ -97,10 +135,25 @@ module DomainRegister
 
     private
 
+    def status_path(domain) = "/registrar/registrations/#{URI.encode_www_form_component(domain)}/registration-status"
+
+    def not_found?(errors, domain)
+      errors.any? { |e| e["code"].to_i == 10_000 && self.class.not_found_message?(e["message"], domain) }
+    end
+
     def request(verb, path, body = nil)
-      res = @transport.call(verb, "#{@base}/accounts/#{@account_id}#{path}",
-                            headers: { "Authorization" => "Bearer #{@token}", "content-type" => "application/json" },
-                            body: body && JSON.generate(body))
+      res = begin
+        @transport.call(verb, "#{@base}/accounts/#{@account_id}#{path}",
+                        headers: { "Authorization" => "Bearer #{@token}", "content-type" => "application/json" },
+                        body: body && JSON.generate(body))
+      rescue StandardError => e
+        # The request may have reached Cloudflare: a read timeout, a reset or an
+        # empty reply (EOFError, which the shared Transport does not translate)
+        # after the bytes went out says nothing about what Cloudflare did. Every
+        # failure to hear an answer is NoAnswer, never an ordinary refusal.
+        raise NoAnswer, DomainRegister.redact("Cloudflare #{verb.upcase} #{path}: no answer (#{e.message})",
+                                              [@token, @account_id])
+      end
       json = res.json
       return json if res.ok? && json["success"] != false
 
@@ -109,7 +162,8 @@ module DomainRegister
       hint = self.class.prerequisite_for(errors)
       message = "Cloudflare #{verb.upcase} #{path}: HTTP #{res.status} #{errors}"
       message += "\n  -> #{hint}" if hint
-      raise Abort, DomainRegister.redact(message, [@token, @account_id])
+      raise HttpError.new(DomainRegister.redact(message, [@token, @account_id]),
+                          status: res.status, errors: Array(json["errors"]))
     end
   end
 end

@@ -171,8 +171,7 @@ class DomainRegisterTest < Minitest::Test
   def test_register_rechecks_immediately_before_the_post
     runner.register("acmecorp.dev", price: "10.46", ok: OK)
     verbs = @api.log.map { |c| URI(c[:url]).path.split("/").last(2).join("/") }
-    assert_equal "registrar/domain-check", verbs.first
-    assert_equal "registrar/registrations", verbs[1]
+    assert_equal ["registrar/domain-check", "acmecorp.dev/registration-status", "registrar/registrations"], verbs.first(3)
   end
 
   # ── a real (faked) purchase ──────────────────────────────────────────────
@@ -214,7 +213,7 @@ class DomainRegisterTest < Minitest::Test
     @api.register_reply = { status: 202, result: @api.workflow("pending") }
     @api.statuses = [@api.workflow("in_progress"), @api.workflow("blocked"), @api.workflow("succeeded")]
     runner(zone_attempts: 1).register("acmecorp.dev", price: "10.46", ok: OK)
-    assert_equal 3, @api.log.count { |c| c[:url].end_with?("/registration-status") }
+    assert_equal 3, @api.polls.length
     assert_equal "registered", ledger.entries.last["event"]
   end
 
@@ -223,7 +222,7 @@ class DomainRegisterTest < Minitest::Test
     @api.statuses = [@api.workflow("action_required", action: "verify the registrant email")]
     err = assert_raises(DomainRegister::Abort) { runner.register("acmecorp.dev", price: "10.46", ok: OK) }
     assert_match "verify the registrant email", err.message
-    assert_equal 1, @api.log.count { |c| c[:url].end_with?("/registration-status") }
+    assert_equal 1, @api.polls.length
     assert_equal "pending", ledger.entries.last["event"]
   end
 
@@ -243,7 +242,7 @@ class DomainRegisterTest < Minitest::Test
       runner(poll_interval: 5, poll_timeout: 20).register("acmecorp.dev", price: "10.46", ok: OK)
     end
     assert_match "do NOT re-run register", err.message
-    assert_equal 4, @api.log.count { |c| c[:url].end_with?("/registration-status") }
+    assert_equal 4, @api.polls.length
     assert_equal "pending", ledger.entries.last["event"]
     assert_equal 1, @api.registrations.length
   end
@@ -259,15 +258,188 @@ class DomainRegisterTest < Minitest::Test
     assert_equal "registered", ledger.entries.last["event"]
   end
 
+  # ── no double purchase: status first, ledger first, ambiguous outcomes ──
+  def refused_without_post(**args)
+    err = assert_raises(DomainRegister::Abort) { runner.register("acmecorp.dev", price: "10.46", ok: OK, **args) }
+    assert_empty @api.registrations, "a purchase POST went out"
+    err
+  end
+
+  def test_an_existing_workflow_in_any_state_refuses_with_no_post_and_no_ledger
+    %w[pending in_progress blocked action_required succeeded failed].each do |state|
+      @api.existing = @api.workflow(state)
+      err = refused_without_post
+      assert_match "already exists at Cloudflare (state #{state})", err.message
+    end
+    assert_empty ledger.entries
+  end
+
+  def test_only_the_documented_not_found_lets_a_purchase_through
+    runner.register("acmecorp.dev", price: "10.46", ok: OK)
+    probe = @api.log.find { |c| c[:url].end_with?("/registration-status") }
+    assert_operator @api.log.index(probe), :<, @api.log.index(@api.registrations.first), "probe before the POST"
+    assert_equal 1, @api.registrations.length
+  end
+
+  def test_any_other_probe_answer_refuses
+    [[500, 10_000, "No workflow found for acmecorp.dev"], # a 5xx is never a not-found
+     [403, 10_000, "Authentication error"],
+     [404, 10_000, "No workflow found for other.dev"],
+     [404, 7003, "No workflow found for acmecorp.dev"],
+     [429, 10_000, "rate limited"]].each do |answer|
+      @api = F.new.quote("acmecorp.dev")
+      @api.probe_error = answer
+      err = refused_without_post
+      assert_match "could not confirm that no registration exists", err.message, answer.inspect
+    end
+    assert_empty ledger.entries
+  end
+
+  def test_a_probe_with_no_answer_refuses
+    registrar = DomainRegister::Registrar.new(@api, token: F::TOKEN, account_id: F::ACCOUNT)
+    def registrar.existing_workflow(_d) = raise(DomainRegister::NoAnswer, "no answer")
+    r = R.new(registrar: registrar, ledger: ledger, out: @out, clock: -> { @now })
+    err = assert_raises(DomainRegister::Abort) { r.register("acmecorp.dev", price: "10.46", ok: OK) }
+    assert_match "could not confirm", err.message
+    assert_empty @api.registrations
+  end
+
+  def test_an_open_authorization_in_the_ledger_refuses_naming_its_time
+    ledger.append({ "event" => "authorized", "domain" => "acmecorp.dev", "at" => "2026-10-19T19:00:00Z", "by" => "steffon" })
+    err = refused_without_post
+    assert_match "open authorization for acmecorp.dev from 2026-10-19T19:00:00Z", err.message
+    refute(@api.log.any? { |c| c[:url].end_with?("/registration-status") }, "the ledger refusal comes before any probe")
+
+    runner.register("acmecorp.dev", price: "10.46", ok: OK, dry_run: true)
+    assert_match "open authorization", @out.string
+  end
+
+  def test_closed_authorizations_do_not_refuse
+    %w[registered failed no_workflow].each do |closing|
+      File.write(ledger.path, "")
+      ledger.append({ "event" => "authorized", "domain" => "acmecorp.dev", "at" => "2026-10-19T19:00:00Z" })
+      ledger.append({ "event" => closing, "domain" => "acmecorp.dev", "at" => "2026-10-19T19:01:00Z" })
+      ledger.append({ "event" => "authorized", "domain" => "other.dev", "at" => "2026-10-19T19:02:00Z" })
+      assert_nil ledger.open_authorization("acmecorp.dev"), closing
+    end
+    %w[unknown pending].each do |still_open|
+      File.write(ledger.path, "")
+      ledger.append({ "event" => "authorized", "domain" => "acmecorp.dev", "at" => "2026-10-19T19:00:00Z" })
+      ledger.append({ "event" => still_open, "domain" => "acmecorp.dev", "at" => "2026-10-19T19:01:00Z" })
+      refute_nil ledger.open_authorization("acmecorp.dev"), still_open
+    end
+  end
+
+  def test_a_purchase_post_with_no_answer_is_unknown_and_a_rerun_buys_nothing
+    @api.register_raises = true
+    err = assert_raises(DomainRegister::NoAnswer) { runner.register("acmecorp.dev", price: "10.46", ok: OK) }
+    assert_match "Money MAY have moved", err.message
+    assert_match "do NOT re-run register", err.message
+    assert_equal %w[authorized unknown], ledger.entries.map { |e| e["event"] }
+
+    @api.register_raises = false
+    assert_raises(DomainRegister::Abort) { runner.register("acmecorp.dev", price: "10.46", ok: OK) }
+    assert_equal 1, @api.registrations.length, "the re-run sent a second purchase"
+  end
+
+  def test_a_transport_exception_the_shared_transport_does_not_translate_is_no_answer
+    transport = Object.new
+    api = @api
+    transport.define_singleton_method(:call) do |verb, url, **kw|
+      raise EOFError, "end of file reached" if verb == :post && url.end_with?("/registrations")
+
+      api.call(verb, url, **kw)
+    end
+    registrar = DomainRegister::Registrar.new(transport, token: F::TOKEN, account_id: F::ACCOUNT)
+    r = R.new(registrar: registrar, ledger: ledger, out: @out, clock: -> { @now })
+    assert_raises(DomainRegister::NoAnswer) { r.register("acmecorp.dev", price: "10.46", ok: OK) }
+    assert_equal "unknown", ledger.entries.last["event"]
+  end
+
+  def test_a_5xx_on_the_purchase_is_unknown_not_failed
+    @api.register_error = [502, 10_000, "Bad gateway"]
+    err = assert_raises(DomainRegister::NoAnswer) { runner.register("acmecorp.dev", price: "10.46", ok: OK) }
+    assert_match "Money MAY have moved", err.message
+    assert_equal %w[authorized unknown], ledger.entries.map { |e| e["event"] }
+  end
+
+  def test_a_4xx_on_the_purchase_is_failed_rejected_and_a_retry_may_go
+    @api.register_error = [400, 10_000, "No default payment method on file"]
+    assert_raises(DomainRegister::HttpError) { runner.register("acmecorp.dev", price: "10.46", ok: OK) }
+    assert_equal "rejected", ledger.entries.last["failure"]
+
+    @api.register_error = nil
+    runner.register("acmecorp.dev", price: "10.46", ok: OK)
+    assert_equal 2, @api.registrations.length
+    assert_equal "registered", ledger.entries.last["event"]
+  end
+
+  def test_a_poll_with_no_answer_is_unknown
+    @api.register_reply = { status: 202, result: @api.workflow("in_progress") }
+    registrar = DomainRegister::Registrar.new(@api, token: F::TOKEN, account_id: F::ACCOUNT)
+    def registrar.status(_d) = raise(DomainRegister::NoAnswer, "poll timed out")
+    r = R.new(registrar: registrar, ledger: ledger, out: @out, clock: -> { @now }, sleeper: ->(_) {})
+    assert_raises(DomainRegister::NoAnswer) { r.register("acmecorp.dev", price: "10.46", ok: OK) }
+    assert_equal %w[authorized unknown], ledger.entries.map { |e| e["event"] }
+  end
+
+  # ── status reconciles the ledger ─────────────────────────────────────────
+  def open_auth(at)
+    ledger.append({ "event" => "authorized", "domain" => "acmecorp.dev", "at" => at.utc.iso8601, "by" => "steffon",
+                    "currency" => "USD", "price" => "10.46", "renewal" => "10.46" })
+  end
+
+  def test_status_closes_an_open_authorization_on_a_terminal_workflow
+    open_auth(@now - 60)
+    @api.existing = @api.workflow("succeeded")
+    runner.status("acmecorp.dev")
+    assert_equal "registered", ledger.entries.last["event"]
+    assert_nil ledger.open_authorization("acmecorp.dev")
+  end
+
+  def test_status_closes_an_unbought_authorization_only_after_it_settles
+    open_auth(@now - 60)
+    assert_nil runner.status("acmecorp.dev")
+    refute_nil ledger.open_authorization("acmecorp.dev"), "closed inside the settle window"
+    assert_match "stays open", @out.string
+
+    @now += R::SETTLE_SECONDS
+    runner.status("acmecorp.dev")
+    assert_equal "no_workflow", ledger.entries.last["event"]
+  end
+
+  def test_status_leaves_an_in_flight_authorization_open
+    open_auth(@now - 60)
+    @api.existing = @api.workflow("in_progress")
+    runner.status("acmecorp.dev")
+    refute_nil ledger.open_authorization("acmecorp.dev")
+  end
+
+  # ── op read ──────────────────────────────────────────────────────────────
+  def test_a_failed_op_read_is_reported_as_a_read_failure_not_an_empty_item
+    failed = Struct.new(:exitstatus) { def success? = false }.new(1)
+    err = assert_raises(DomainRegister::Abort) do
+      DomainRegister::Credentials.op_read("op://v/i/f", {}, runner: ->(_e, _a) { ["", failed] })
+    end
+    assert_match "op read op://v/i/f failed (exit 1)", err.message
+    refute_match "Alex pastes", err.message
+
+    ok = Struct.new(:exitstatus) { def success? = true }.new(0)
+    assert_equal "", DomainRegister::Credentials.op_read("op://v/i/f", {}, runner: ->(_e, _a) { ["\n", ok] })
+  end
+
   # ── secrets ──────────────────────────────────────────────────────────────
   def test_no_token_or_account_id_reaches_output_or_errors_or_the_ledger
     @api.zones << { "id" => "zone1", "name" => "acmecorp.dev", "status" => "active", "name_servers" => [] }
     runner.register("acmecorp.dev", price: "10.46", ok: OK, dry_run: true)
     runner.register("acmecorp.dev", price: "10.46", ok: OK)
+    @kept_ledger = File.read(ledger.path)
+    @api = F.new.quote("acmecorp.dev")
+    File.delete(ledger.path)
     @api.register_error = [400, 10_000, "echo #{F::TOKEN} #{F::ACCOUNT}"]
     err = assert_raises(DomainRegister::Abort) { runner.register("acmecorp.dev", price: "10.46", ok: OK) }
 
-    text = @out.string + err.message + File.read(ledger.path)
+    text = @out.string + err.message + File.read(ledger.path) + @kept_ledger.to_s
     [F::TOKEN, F::DNS_TOKEN, F::ACCOUNT].each { |secret| refute_includes text, secret }
     assert_includes err.message, "[REDACTED]"
   end

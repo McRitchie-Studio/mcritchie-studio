@@ -10,8 +10,18 @@ module DomainRegister
   #   authorized  written BEFORE the registration POST: the domain, the exact
   #               price and renewal, Alex's words (--ok), who ran it, when.
   #   registered  the workflow reached `succeeded`.
-  #   failed      the POST or the workflow failed, with Cloudflare's message.
-  #   pending     the poll timed out with the workflow still running.
+  #   failed      `failure: rejected`: Cloudflare answered the POST with a 4xx,
+  #               so no registration started; `failure: workflow`: the
+  #               workflow itself ended `failed`.
+  #   unknown     the POST (or a poll) got NO answer, or a 5xx: money MAY have
+  #               moved.
+  #   pending     the poll timed out, or a person must act, with the workflow open.
+  #   no_workflow `status` found no workflow for an authorization at least
+  #               SETTLE_SECONDS old: nothing was bought.
+  #
+  # An `authorized` line is OPEN until a later registered, failed or
+  # no_workflow line for the same domain closes it. register refuses while one is
+  # open (#open_authorization), so an unknown outcome can never be bought twice.
   #
   # Writing `authorized` first means a crash mid-purchase still leaves a record
   # that money may have moved, and on whose word.
@@ -40,6 +50,24 @@ module DomainRegister
       FileUtils.mkdir_p(File.dirname(@path))
       File.open(@path, "a") { |f| f.puts(JSON.generate(event)) }
       event
+    end
+
+    CLOSING = %w[registered failed no_workflow].freeze
+
+    # The newest `authorized` line for the domain that nothing after it has
+    # closed, or nil.
+    def open_authorization(domain)
+      open = nil
+      entries.each do |e|
+        next unless e["domain"] == domain
+
+        if e["event"] == "authorized"
+          open = e
+        elsif CLOSING.include?(e["event"])
+          open = nil
+        end
+      end
+      open
     end
 
     def entries

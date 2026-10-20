@@ -50,7 +50,9 @@ class DomainRegisterIntegrationTest < Minitest::Test
 
   def teardown = FileUtils.remove_entry(@dir)
 
-  def run_cli(*args, base: nil)
+  def run_cli(*args, base: nil, status: :not_found, drop_purchase: false)
+    @status = status
+    @drop_purchase = drop_purchase
     server = TCPServer.new("127.0.0.1", 0)
     requests = []
     thread = Thread.new { serve(server, requests) }
@@ -75,6 +77,10 @@ class DomainRegisterIntegrationTest < Minitest::Test
       end
       body = headers["content-length"] ? client.read(headers["content-length"].to_i) : nil
       requests << { method: method, path: path, bearer: headers["authorization"], body: body && JSON.parse(body) }
+      if @drop_purchase && method == "POST" && path.end_with?("/registrar/registrations")
+        client.close # the request arrived; no answer goes back (the ambiguous case)
+        next
+      end
       status, payload = answer(method, path, body)
       client.write("HTTP/1.1 #{status}\r\nContent-Type: application/json\r\n" \
                    "Content-Length: #{payload.bytesize}\r\nConnection: close\r\n\r\n#{payload}")
@@ -88,6 +94,14 @@ class DomainRegisterIntegrationTest < Minitest::Test
     if method == "POST" && path == "/client/v4/accounts/#{ACCOUNT}/registrar/domain-check"
       rows = JSON.parse(body)["domains"].filter_map { |d| QUOTES[d] }
       ["200 OK", JSON.generate({ "success" => true, "errors" => [], "result" => { "domains" => rows } })]
+    elsif method == "GET" && path.end_with?("/registration-status")
+      if @status == :not_found
+        domain = path.split("/")[-2]
+        ["404 Not Found", JSON.generate({ "success" => false, "result" => nil, "messages" => [],
+                                          "errors" => [{ "code" => 10_000, "message" => "No workflow found for #{domain}" }] })]
+      else
+        ["200 OK", JSON.generate({ "success" => true, "errors" => [], "result" => { "state" => @status.to_s, "completed" => false } })]
+      end
     else
       # Anything else (above all a registration POST) is a test failure, asserted below.
       ["500 Internal Server Error", JSON.generate({ "success" => false, "errors" => [{ "code" => 9999, "message" => "unexpected" }] })]
@@ -156,6 +170,34 @@ class DomainRegisterIntegrationTest < Minitest::Test
     assert_match "price changed", err
     assert_only_domain_checks(requests)
     refute_secrets(out, err)
+  end
+
+  def purchases(requests) = requests.select { |r| r[:method] == "POST" && r[:path].end_with?("/registrar/registrations") }
+
+  def test_an_in_flight_workflow_at_cloudflare_refuses_a_purchase_with_no_post
+    requests, out, err, status = run_cli("register", "acmecorp.dev", "--price", "10.46", "--ok", OK, status: :in_progress)
+
+    assert_equal 2, status.exitstatus
+    assert_match "already exists at Cloudflare (state in_progress)", err
+    assert_empty purchases(requests)
+    refute File.exist?(@ledger)
+    refute_secrets(out, err)
+  end
+
+  def test_a_purchase_with_no_answer_is_unknown_and_the_rerun_sends_no_second_post
+    requests, out, err, status = run_cli("register", "acmecorp.dev", "--price", "10.46", "--ok", OK, drop_purchase: true)
+
+    assert_equal 2, status.exitstatus
+    assert_match "Money MAY have moved", err
+    assert_match "do NOT re-run register", err
+    assert_equal 1, purchases(requests).length
+    assert_equal %w[authorized unknown], File.readlines(@ledger).map { |l| JSON.parse(l)["event"] }
+    refute_secrets(out, err, File.read(@ledger))
+
+    requests, _out, err, status = run_cli("register", "acmecorp.dev", "--price", "10.46", "--ok", OK)
+    assert_equal 2, status.exitstatus
+    assert_match "open authorization for acmecorp.dev", err
+    assert_empty purchases(requests), "the re-run sent a second purchase"
   end
 
   def test_help_and_an_unknown_flag_run_nothing

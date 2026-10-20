@@ -97,23 +97,36 @@ module DomainRegister
       say "fresh check: #{quote || "#{domain}  NO ANSWER"}"
       refusals = self.class.refusals(quote, price: price, ok: ok, premium: premium)
 
-      return plan(domain, refusals) if dry_run
+      return plan(domain, refusals + [dangling_refusal(domain)].compact) if dry_run
 
+      refusals << dangling_refusal(domain)
+      refusals.compact!
       unless refusals.empty?
         raise Abort, "REFUSED, nothing was bought:\n#{refusals.map { |r| "  - #{r}" }.join("\n")}"
       end
+
+      ensure_never_registered!(domain)
 
       record("authorized", domain, quote, ok: ok)
       say "registering #{domain} for #{CURRENCY} #{Quote.format(quote.registration)} " \
           "(auto-renew ON at #{CURRENCY} #{Quote.format(quote.renewal)}/yr, WHOIS redaction ON)"
       workflow = begin
         @registrar.register(domain)
-      rescue Abort => e
-        record("failed", domain, quote, error: e.message)
+      rescue HttpError => e
+        raise ambiguous!(domain, quote, e) unless e.rejected?
+
+        record("failed", domain, quote, failure: "rejected", error: e.message)
         raise
+      rescue Abort => e # NoAnswer, and anything else that left no answer
+        raise ambiguous!(domain, quote, e)
       end
 
-      final = poll(domain, workflow)
+      final = begin
+        poll(domain, workflow)
+      rescue Abort => e
+        raise ambiguous!(domain, quote, e)
+      end
+
       case final["state"]
       when "succeeded"
         record("registered", domain, quote, registration: final.dig("context", "registration"))
@@ -122,16 +135,34 @@ module DomainRegister
         zone = prove_zone(domain)
         next_step(domain)
         zone ? true : false
+      when "failed"
+        record("failed", domain, quote, failure: "workflow", workflow: final)
+        raise Abort, outcome_message(domain, final)
       else
-        state = final["state"] || "unknown"
-        record(state == "failed" ? "failed" : "pending", domain, quote, workflow: final)
+        record("pending", domain, quote, workflow: final)
         raise Abort, outcome_message(domain, final)
       end
     end
 
+    # How long after an `authorized` line a "no workflow" answer from status is
+    # trusted to mean nothing was bought (Cloudflare's synchronous window is 10s).
+    SETTLE_SECONDS = 900
+
+    def self.unknown_message(domain, why)
+      "#{domain}: the purchase request was sent and no clear answer came back (#{why}). " \
+        "Money MAY have moved. Run bin/domain-register status #{domain}; do NOT re-run register."
+    end
+
     # ── status (read-only) ───────────────────────────────────────────────────
     def status(domain)
-      workflow = @registrar.status(domain)
+      workflow = @registrar.existing_workflow(domain)
+      open = @ledger.open_authorization(domain)
+      if workflow.nil?
+        say "#{domain}: no registration workflow at Cloudflare (nothing was bought through the API)"
+        close_unbought(domain, open) if open
+        return nil
+      end
+      reconcile(domain, open, workflow) if open
       say "#{domain}: #{workflow['state'] || 'unknown'}#{workflow['completed'] ? ' (completed)' : ''}#{expiry(workflow)}"
       error = workflow["error"]
       say "  error: #{error['code']} #{error['message']}" if error
@@ -165,6 +196,64 @@ module DomainRegister
 
     private
 
+    # LEDGER FIRST: an authorization nothing has closed means an earlier run may
+    # have bought it.
+    def dangling_refusal(domain)
+      open = @ledger.open_authorization(domain)
+      return nil unless open
+
+      "the ledger holds an open authorization for #{domain} from #{open['at']} (by #{open['by']}): an " \
+        "earlier purchase may have gone through. Run bin/domain-register status #{domain} first"
+    end
+
+    # STATUS FIRST: proceed only on Cloudflare's documented "No workflow found".
+    def ensure_never_registered!(domain)
+      workflow = begin
+        @registrar.existing_workflow(domain)
+      rescue Abort => e
+        raise Abort, "REFUSED, nothing was bought: could not confirm that no registration exists for " \
+                     "#{domain} (#{e.message}). Try again later; bin/domain-register status #{domain}"
+      end
+      return if workflow.nil?
+
+      raise Abort, "REFUSED, nothing was bought: a registration for #{domain} already exists at Cloudflare " \
+                   "(state #{workflow['state'] || 'unknown'}). Read it with bin/domain-register status #{domain}"
+    end
+
+    # The POST or the poll left no clear outcome: ledger `unknown`, never `failed`.
+    def ambiguous!(domain, quote, error)
+      record("unknown", domain, quote, error: error.message)
+      NoAnswer.new(self.class.unknown_message(domain, error.message))
+    end
+
+    def reconcile(domain, open, workflow)
+      quote = quote_from(open)
+      case workflow["state"]
+      when "succeeded"
+        record("registered", domain, quote, registration: workflow.dig("context", "registration"), via: "status")
+        say "ledger: closed the #{open['at']} authorization as registered"
+      when "failed"
+        record("failed", domain, quote, failure: "workflow", workflow: workflow, via: "status")
+        say "ledger: closed the #{open['at']} authorization as failed (nothing was bought)"
+      end
+    end
+
+    def close_unbought(domain, open)
+      age = @clock.call - Time.iso8601(open["at"])
+      if age >= SETTLE_SECONDS
+        record("no_workflow", domain, quote_from(open), via: "status")
+        say "ledger: closed the #{open['at']} authorization: no workflow #{(age / 60).floor} minutes later, nothing was bought"
+      else
+        say "ledger: the #{open['at']} authorization stays open until #{SETTLE_SECONDS / 60} minutes have passed; " \
+            "run status again then"
+      end
+    end
+
+    def quote_from(entry)
+      Quote.new(name: entry["domain"], currency: entry["currency"],
+                registration: Quote.money(entry["price"]), renewal: Quote.money(entry["renewal"]))
+    end
+
     def plan(domain, refusals)
       say ""
       if refusals.empty?
@@ -175,7 +264,8 @@ module DomainRegister
         say ""
         say "and, once those clear, would"
       end
-      say "  1. append 'authorized' to #{@ledger.path}"
+      say "  1. refuse on an open ledger authorization, then GET registration-status and refuse unless " \
+          "Cloudflare answers \"No workflow found\"; then append 'authorized' to #{@ledger.path}"
       say "  2. CLOUDFLARE POST /accounts/<account>/registrar/registrations #{JSON.generate(@registrar.registration_body(domain))}"
       say "  3. poll registration-status every #{@poll_interval}s, up to #{@poll_timeout}s"
       say "  4. read the zone back with cloudflare.studio.provision and print the domain-dns next step"

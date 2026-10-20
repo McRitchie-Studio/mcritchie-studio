@@ -14,7 +14,8 @@ class DomainRegisterFakeApi
   DNS_TOKEN = "cf-dns-secret-0123456789"
   ACCOUNT = "acct0123456789abcdef"
 
-  attr_accessor :quotes, :register_reply, :statuses, :zones, :register_error, :on_register
+  attr_accessor :quotes, :register_reply, :statuses, :zones, :register_error, :on_register,
+                :existing, :probe_error, :register_raises
   attr_reader :log
 
   def initialize
@@ -37,6 +38,19 @@ class DomainRegisterFakeApi
 
   def registrations = @log.select { |c| c[:verb] == :post && c[:url].end_with?("/registrar/registrations") }
 
+  # registration-status reads made AFTER the purchase POST: the poll, not the probe.
+  def polls
+    first = @log.index { |c| c[:verb] == :post && c[:url].end_with?("/registrar/registrations") }
+    return [] if first.nil?
+
+    @log[(first + 1)..].select { |c| c[:url].end_with?("/registration-status") }
+  end
+
+  # The documented answer for a domain with no workflow (the 4XX example).
+  def not_found(domain)
+    fail_with(404, 10_000, "No workflow found for #{domain}")
+  end
+
   def call(verb, url, headers: {}, body: nil)
     @log << { verb: verb, url: url, headers: headers, body: body && JSON.parse(body) }
     path = URI(url).path.delete_prefix("/client/v4")
@@ -47,10 +61,22 @@ class DomainRegisterFakeApi
       ok(200, { "domains" => rows })
     in [:post, %r{\A/accounts/[^/]+/registrar/registrations\z}]
       @on_register&.call
+      if @register_raises
+        @created = true # the bytes went out; Cloudflare started a workflow nobody heard about
+        raise DomainCutover::Abort, "api.cloudflare.com: Net::ReadTimeout"
+      end
       return fail_with(*@register_error) if @register_error
+
+      @created = true
 
       ok(@register_reply&.fetch(:status, 201) || 201, @register_reply&.fetch(:result) || workflow("succeeded"))
     in [:get, %r{\A/accounts/[^/]+/registrar/registrations/([^/]+)/registration-status\z}]
+      domain = Regexp.last_match(1)
+      return fail_with(*@probe_error) if @probe_error
+      unless @created
+        return @existing ? ok(200, @existing) : not_found(domain)
+      end
+
       ok(200, @statuses.length > 1 ? @statuses.shift : @statuses.first || workflow("in_progress"))
     in [:get, "/zones"]
       name = URI.decode_www_form(URI(url).query.to_s).to_h["name"]
