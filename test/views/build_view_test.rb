@@ -230,7 +230,7 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='build-register']", 0, "no sign-in before Build"
   end
 
-  test "once the idea is started, the status card shows the working title and three empty tiles, in the order Ray asks" do
+  test "once the intake is started, the status card shows the working title and three empty tiles, in the order Ray asks" do
     signed_in(nil)
     chat_assigns(AppRequest.create!(prompt: "A client portal", answers: { "idea" => "A client portal" }), started: true)
     render template: "build/show"
