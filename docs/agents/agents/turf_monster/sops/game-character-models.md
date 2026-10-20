@@ -145,6 +145,27 @@ and posts them to `POST /api/v1/game_looks`. The hub then:
 Re-filing the same key returns what is on file, and `file` refuses a second run once `filed.json` exists. Hand the operator the look links:
 `https://mcritchie.studio/people/<person>/models/<look>`.
 
+### 6. The performance sheet (for music videos)
+
+A 4x4 sheet of front-on head-and-shoulders cells in today's jersey, for lip-sync:
+
+- Rows 1–2, expressions: neutral, big smile, laughing, hype, intense, surprised,
+  singing, smirk.
+- Rows 3–4, mouth shapes: AH, EE, IH, OH, OO, M/B/P, F/V, L/TH.
+
+It needs only the face pack and `game_refs`, plus `name`, `hair`, `facial_hair`
+and `jersey_panel` in the spec, so it can run before, or without, the full
+body. Each cell is captioned with its name.
+
+```bash
+bin/game-model generate <dir> performance --attempts 1 && bin/game-model score <dir> performance && bin/game-model board <dir> performance
+bin/game-model stitch <dir> --performance
+```
+
+Judge the mouths by eye: each must read as its sound, not as a smile. Big
+expressions score lower on the face gate than neutral ones, so judge the
+likeness by eye too. `file` does not file this sheet yet.
+
 ## People and looks: who a sheet files under
 
 - **An athlete** files by `espn_id`. The hub finds him through his athlete

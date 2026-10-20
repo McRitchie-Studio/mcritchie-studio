@@ -22,6 +22,9 @@ module GameModel
       "rear" => %w[back tq_back profile_left]
     }.freeze
     SHEET_ORDER = %w[front_neutral tq_left profile_right look_up front_smile rear].freeze
+    # Every performance cell is front-on, so its face model leads with the front
+    # views and keeps two turns for the bone structure.
+    PERFORMANCE_FACES = %w[front_neutral front_smile tq_left tq_right profile_right].freeze
 
     def initialize(argv, out: $stdout, shell: nil, edits: nil)
       @argv = argv.dup
@@ -42,7 +45,7 @@ module GameModel
       when "generate" then generate(@argv.fetch(0), @argv.fetch(1), attempts: flag("--attempts", 2).to_i)
       when "score" then score(@argv.fetch(0), @argv.fetch(1))
       when "board" then board(@argv.fetch(0), @argv.fetch(1))
-      when "stitch" then stitch(@argv.fetch(0), iced: @argv.include?("--iced"))
+      when "stitch" then stitch(@argv.fetch(0), iced: @argv.include?("--iced"), performance: @argv.include?("--performance"))
       when "file" then file(@argv.fetch(0), production: @argv.include?("--production"), dry_run: @argv.include?("--dry-run"))
       else
         raise Failure, "unknown command #{command.inspect}; see bin/game-model --help"
@@ -158,9 +161,9 @@ module GameModel
       hits.first(24).each { |r| @out.puts format("%.2f %s h=%d", r["score"], File.basename(r["file"]), r["h"]) }
     end
 
-    # ── generate <workdir> <stage> [--attempts N]: facepack | body | full | panels | iced_full | iced_panels ──
+    # ── generate <workdir> <stage> [--attempts N]: facepack | body | full | panels | iced_full | iced_panels | performance ──
     def generate(dir, stage, attempts:)
-      spec = Spec.load(dir)
+      spec = Spec.load(dir, needs: Spec::STAGE_NEEDS.fetch(stage, Spec::REQUIRED))
       jobs = jobs_for(spec, dir, stage, attempts)
       edits = @edits || ImageEdits.new(api_key: GameModel.openai_key)
       failures = []
@@ -212,8 +215,15 @@ module GameModel
           refs = view == "rear" ? faces + [back_full] + pads : faces + [full] + pads
           { prompt: Prompts.panel(spec, view, iced: iced), refs: refs, size: "1024x1024", out: out.call(view, n) }
         end
+      when "performance"
+        faces = PERFORMANCE_FACES.map { |v| picked(spec, dir, "facepack", v) }
+        games = spec.refs("game_refs").last(2)
+        Prompts::PERFORMANCE_ORDER.product(tries.to_a).map do |cell, n|
+          { prompt: Prompts.performance(spec, cell, faces: faces.size, games: games.size), refs: faces + games,
+            size: "1024x1024", out: out.call(cell, n) }
+        end
       else
-        raise Failure, "stage must be facepack, body, full, panels, iced_full or iced_panels"
+        raise Failure, "stage must be facepack, body, full, panels, iced_full, iced_panels or performance"
       end
     end
 
@@ -237,8 +247,10 @@ module GameModel
       @out.puts File.join(dir, "board_#{stage}.jpg")
     end
 
-    # ── stitch <workdir> [--iced] ──
-    def stitch(dir, iced:)
+    # ── stitch <workdir> [--iced | --performance] ──
+    def stitch(dir, iced:, performance: false)
+      return stitch_performance(dir) if performance
+
       spec = Spec.load(dir)
       full = iced ? "iced_full" : "full"
       panels = iced ? "iced_panels" : "panels"
@@ -248,6 +260,17 @@ module GameModel
       FileUtils.mkdir_p(work)
       name = File.join(work, "#{Filing.slug(spec['name'])}-#{iced ? 'iced' : 'base'}.png")
       Stitch.commands(fronts: fronts, panels: cells, out: name, work: work).each { |cmd| sh(*cmd) }
+      sh("magick", name, "-resize", "2400x", "-quality", "88", name.sub(/\.png\z/, "_preview.jpg"))
+      @out.puts name
+    end
+
+    def stitch_performance(dir)
+      spec = Spec.load(dir, needs: Spec::PERFORMANCE)
+      cells = Prompts::PERFORMANCE_ORDER.map { |cell| picked(spec, dir, "performance", cell) }
+      work = File.join(dir, "sheet")
+      FileUtils.mkdir_p(work)
+      name = File.join(work, "#{Filing.slug(spec['name'])}-performance.png")
+      Stitch.performance_commands(cells: cells, out: name, font: FONT).each { |cmd| sh(*cmd) }
       sh("magick", name, "-resize", "2400x", "-quality", "88", name.sub(/\.png\z/, "_preview.jpg"))
       @out.puts name
     end
