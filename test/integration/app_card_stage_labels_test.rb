@@ -29,8 +29,11 @@ class AppCardStageLabelsTest < ActionDispatch::IntegrationTest
     get chat_application_path("pawsome")
     assert_response :success
 
-    assert_select "#{building_pill} [data-test='devops-stage-sub-label']", text: "Prepping"
-    assert_select "#{building_pill} [data-test='devops-stage-eta'][data-eta-kind='waiting']", text: "no builder"
+    # Only a designed task in the lane: the pill reads Prepping, with no count, sub-label or "no builder".
+    assert_select "#{building_pill}[data-prepping='true']", text: /\A\s*Prepping\s*,/
+    assert_select "#{building_pill} [data-test='devops-stage-count']", 0
+    assert_select "#{building_pill} [data-test='devops-stage-sub-label']", 0
+    assert_select "#{building_pill} [data-test='devops-stage-eta']", 0
     assert_select "[data-test='devops-task']", text: /Launching Pawsome\s+Prepping · waiting for a builder/
     assert_select "[data-test='devops-stage'][data-state='pending'] [data-test='devops-stage-sub-label']", 0
 
@@ -48,12 +51,14 @@ class AppCardStageLabelsTest < ActionDispatch::IntegrationTest
 
     log_in_as(@owner)
     get chat_status_application_path("pawsome")
-    assert_select "#{building_pill} [data-test='devops-stage-eta'][data-eta-kind='left']", text: "~20 min"
+    assert_select "#{building_pill}[data-prepping='true'] [data-test='devops-stage-eta'][data-eta-kind='left']", text: "~20 min"
     assert_select "[data-test='devops-task']", text: /Prepping · ~20 min left/
 
     @launch.task.update_columns(stage: "building", started_at: 1.minute.ago)
     get chat_status_application_path("pawsome")
     assert_select "#{building_pill} [data-test='devops-stage-sub-label']", text: "Building"
+    assert_select "#{building_pill}[data-prepping]", 0, "a task a builder holds makes the lane Building again"
+    assert_select "#{building_pill} [data-test='devops-stage-count']", text: "1"
     assert_select "#{building_pill} [data-test='devops-stage-eta']", text: "~2 h"
   end
 end

@@ -267,6 +267,17 @@ class AgentMessage < ApplicationRecord
                                       "suggestion" => meter.suggestion&.as_json }.compact)
   end
 
+  # Answered in code, before any claim: `text` is the whole reply and no model
+  # runs (AgentMessages::FirstNameAsk). Queued for AgentMessageReplyJob, as the
+  # cap reply is. `meta` joins the run summary; it carries no tokens.
+  def code_answered!(text, summary:, meta: {}, now: Time.current)
+    update!(status: "completed", completed_at: now, claimed_by: nil, claimed_at: nil, lease_expires_at: nil,
+            response_text: text, action_summary: summary,
+            reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued",
+            run_meta: { "audience" => usage_audience, "code_reply" => true }.merge(meta))
+    record!("completed", actor: "web-chat", detail: { "via" => "code_reply", "summary" => summary })
+  end
+
   # The notice a warned answer ends with, when its current claim was warned.
   # Never on an answer to the public: the meter is the owner's.
   def usage_warning_line(now: Time.current)

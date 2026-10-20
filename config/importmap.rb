@@ -22,6 +22,8 @@ pin "logo_editor"
 pin "logo_download"
 # The chat composer's files (app/views/agent_chats/_attachments.html.erb).
 pin "chat_attachments"
+# The CTO chat usage meter's reset countdown (app/views/agent_chats/_tokens_bar.html.erb).
+pin "usage_countdown"
 pin "dreams_filter"
 # Build My App's launch panel (app/views/build/_launch.html.erb).
 pin "build_launch"

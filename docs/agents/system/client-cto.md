@@ -108,6 +108,22 @@ app's address, and what the owner can do meanwhile), so the chat opens on both t
 model runs for it. It never says "building now": at launch the build task is `designed` and
 nobody holds it (task `app-card-stage-labels`). A greeting already stored keeps its words.
 
+**A nameless owner is asked in the chat** (task `cto-chat-quality-pass`): with no first name
+and no name, the greeting ends "Before we dive in, what should I call you? Just your first name
+is fine, or say skip." and carries `run_meta.asks_first_name`. The owner's next message, if it
+reads as a name or a skip ("skip", "not now"), is answered in code with no model
+(`AgentMessages::FirstNameAsk`). **When in doubt it goes to the model**: a name is ONE word
+("Ada"), TWO words each typed with a capital ("Mary Jane"), up to three in any case after a
+strong cue ("call me", "my name is"), or up to three each typed with a capital after a weak one
+("I'm Ada", never "I'm so excited"), and any word in `STOP_WORDS` (acknowledgements, common
+request verbs, function words, app nouns: "Add dark mode", "Sounds good", "Ship it") rejects it.
+A name is written as the engine's onboarding step writes it (`Studio::NameParts`, the same caps,
+`update_columns`, `name` backfilled); the reply says how to fix it ("Not right? Say "call me" and
+your name."), and the very next message, only with a strong cue ("call me Al"), corrects it. A skip sets the engine's
+session skip. Anything else goes to the model and ends the ask. The chat pages
+never arm the engine's first-name modal (`CtoChatsController` → `skip_first_name_modal!`;
+`ApplicationController#first_name_modal?`); every other page still does.
+
 ## The status card's sub-labels and ETAs
 
 Each lit pill on the card (`AppDevopsStages`, `agent_chats/_devops_stages`) carries a second
@@ -117,6 +133,7 @@ left (`AppDevopsStages::Eta`). Each list row says the same for its own task.
 | Task step | Pill | Sub-label | ETA |
 |-----------|------|-----------|-----|
 | `designed` | Building | Prepping | "no builder" unless a launcher is live, else the usual wait |
+| only `designed` in the lane | **Prepping**, no count | none | the usual wait while a launcher is live, else none ("waiting for a builder" stays on the row) |
 | `building` | Building | Building (On hold while blocked) | usual build time, less time spent |
 | `submitted` | Building | Reviewing | usual review time |
 | `reviewed` | Building | Approved | usual wait for a release |

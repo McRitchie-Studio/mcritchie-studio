@@ -45,6 +45,10 @@ module AgentMessages
     # plain voice; the plan stays on the summary card the owner just confirmed.
     # Markdown, as every answer.
     #
+    # A nameless owner (no first name, no name) is asked for one in the last
+    # line (FirstNameAsk::QUESTION; task cto-chat-quality-pass): their reply
+    # sets it, so the engine's first-name modal stays off this page.
+    #
     # NEVER "building now" (task app-card-stage-labels, Alex 2026-10-19): at
     # launch the task is `designed` and nobody is building it yet; the card
     # (AppDevopsStages) says Building only once a builder holds it. A greeting
@@ -57,8 +61,9 @@ module AgentMessages
         "It's in line to be built: your brand sheet, the first version of the app, and its home at **#{host}**. " \
         "The card above shows live progress: Prepping until a builder starts, then Building, Reviewing, " \
         "Releasing to a preview link for you, and Deploying once you approve.",
-        "Meanwhile, tell me anything you'd like added or changed, or ask about the plan."
-      ].join("\n\n")
+        "Meanwhile, tell me anything you'd like added or changed, or ask about the plan.",
+        (FirstNameAsk::QUESTION if first.nil? && FirstNameAsk.ask?(user))
+      ].compact.join("\n\n")
     end
 
     # Whom the greeting names: the owner's first name (users.first_name, which
@@ -100,7 +105,8 @@ module AgentMessages
       message.update!(status: "completed", completed_at: now, action_summary: GREETING_SUMMARY,
                       response_text: greeting(app_cto, user), reply_nonce: "agentmsg-#{message.id}",
                       reply_external_id: "web:#{message.id}", reply_posted_at: now, reply_status: "posted",
-                      run_meta: { "audience" => message.usage_audience, "code_greeting" => true })
+                      run_meta: { "audience" => message.usage_audience, "code_greeting" => true,
+                                  FirstNameAsk::META => (true if greeting_name(user).nil? && FirstNameAsk.ask?(user)) }.compact)
       message.record!("completed", actor: ACTOR, detail: { "via" => "code_greeting" })
       message.record!("reply_posted", actor: "web-chat", detail: { "via" => "web_chat" })
     end

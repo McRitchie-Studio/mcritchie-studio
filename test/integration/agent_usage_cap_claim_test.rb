@@ -82,7 +82,7 @@ class AgentUsageCapClaimTest < ActiveSupport::TestCase
       AgentMessage.claim!(soul: "turf_monster", worker: "w1")
       capped.reload
       assert_equal "completed", capped.status
-      assert_match(/\AI can't answer right now\. Please try again after Nov 1\.\z/, capped.response_text)
+      assert_match(/\AI can't answer right now\. Please try again after Nov 1 at 1am MST\.\z/, capped.response_text)
       assert_no_match(/\$|allowance|upgrade/i, capped.response_text)
     end
 

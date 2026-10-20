@@ -97,7 +97,9 @@
         already up), so turbo:load is the only signal there. Attached ONCE per
         document — without the flag, every visit added another pair and they
         accumulated for the life of the tab. %>
-    <% if logged_in? && Studio.first_name_outstanding?(current_user, session) %>
+    <%# ApplicationController#first_name_modal?: the engine's rule, except on a
+        page that asks for the name itself (the CTO chat, CtoChatsController). %>
+    <% if first_name_modal? %>
       <div id="onboarding-ask-first-name" hidden></div>
     <% end %>
     <script>

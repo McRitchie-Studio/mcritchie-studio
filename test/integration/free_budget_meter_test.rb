@@ -43,7 +43,7 @@ class FreeBudgetMeterTest < ActionDispatch::IntegrationTest
   test "[integration] a CTO reply broadcasts the updated meter to the owner's open card" do
     log_in_as(@owner)
     get chat_application_path(@client_app.slug)
-    assert_select "#cto-chat-meter [data-test='usage-meter-line']", text: /0\s+of\s+25,000\s+tokens this month/
+    assert_select "#cto-chat-meter [data-test='usage-meter-line']", text: /0% used\s+Resets \w{3} \d+ at 1am M[SD]T\s+0 \/ 25,000/
 
     message = send_chat("How do I add a booking form?")
     assert_equal "received", message.status, "an owner under the cap is answered by the model"
@@ -56,7 +56,8 @@ class FreeBudgetMeterTest < ActionDispatch::IntegrationTest
     meter = meter_broadcasts.last
     assert meter, "the reply's delivery pushed the meter"
     assert_includes meter, %(action="update")
-    assert_match(/1,840<\/span> of <span[^>]*>25,000<\/span> tokens this month/, meter)
+    assert_match(/data-test="usage-meter-percent">7&#37; used</, meter)
+    assert_match(/data-test="usage-meter-tokens">1,840 \/ 25,000</, meter)
     assert_includes meter, %(data-state="ok")
     assert_includes meter, %(aria-valuenow="7")
     assert_not_includes meter, "$", "tokens, never dollars"

@@ -79,15 +79,21 @@ A message answered at the cap (below) carries no tokens and is not counted.
   client's package from `stack_clients.tier` onto the app with the same slug
   (Turf Monster `team`, Cyvasse `builder`, Commercial Welding `pro`, 10and5
   `vibe`); our own stacks are `internal` and stay blank.
-- **The allowance** is the tier's `cto_monthly_tokens`, per calendar month in
-  America/Denver. Blank, no tier, or an admin's lift: unlimited.
+- **The allowance** is the tier's `cto_monthly_tokens`, per month in
+  America/Denver that **resets at 1:00 am on the 1st** (`AgentUsage.month_range`,
+  task `cto-chat-quality-pass`): the hour after midnight on the 1st still counts
+  against the month before. On a fall-back Sunday (Nov 1 2026) the reset is the
+  second 1:00, standard time, so the meter's "1am MST" is true. `Meter#period_end`
+  is that reset moment (exclusive), and `Meter#resets_line` reads "Resets Nov 1
+  at 1am MST" (MDT while daylight time holds). Blank, no tier, or an admin's
+  lift: unlimited.
 - **What counts against it**: input + cache read + cache write + output tokens of
   the answers to **client** senders. Answers to the **public** are metered apart
   (`Meter#public_used`, shown on the meter as its own line) and never consume the
   allowance, so a stranger cannot exhaust what the client pays for (Alex,
   2026-10-16). Once the client's allowance is spent, a public message is still
   refused, with a plain line ("I can't answer right now. Please try again after
-  Nov 1.") that carries no meter, price or upgrade; a public answer never ends
+  Nov 1 at 1am MST.") that carries no meter, price or upgrade; a public answer never ends
   with the 80% notice either. The meter is the owner's, never the public's. Owner and team answers are in the totals but never
   metered and never capped. An answer from before this release has no `audience`
   and is not metered (only the owner was answered then).
@@ -134,10 +140,18 @@ no allowance skips the capped-count query (`agent_message_events` is indexed on
   tier, the reset date, the public's tokens when there are any, and the
   suggestion. Owner or admin only, like the pages; the public never sees it.
 - **The CTO web chat** (`/applications/:slug/chat`) shows a compact meter on the
-  app's status card (`agent_chats/_tokens_bar`): "1,840 of 25,000 tokens this
-  month", the percent, a thin bar coloured by state, and the suggestion. Past
+  app's status card (`agent_chats/_tokens_bar`): on the left "42% used" with
+  "Resets Nov 1 at 1am MST" beside it, smaller and lighter; on the right the
+  tokens, "10,689 / 25,000", until `warn_percent` is used (80% by default, so
+  under a fifth left) or the cap (`Meter#countdown?`), when the right side counts
+  down instead, "Resets in 3d 4h" (minutes under a day), and the left drops its
+  reset line so "Resets" reads once (the countdown carries it as a title). The
+  countdown is ticked each minute, and refreshes the page once the reset passes, by
+  `app/javascript/usage_countdown.js` (`AgentUsage.countdown_line` paints the
+  first value; the two must agree). Under it an 8px bar coloured by state, and
+  the suggestion. Past
   `warn_percent` it adds "Running low: N tokens left this month", and at the cap
-  "This month's allowance is used up; it resets Nov 1", each with an "Upgrade for
+  "This month's allowance is used up; it resets Nov 1 at 1am MST", each with an "Upgrade for
   more" link to `/packages`. It is built from `Meter#without_cost` for every
   viewer, admins included, and redrawn live after each answer is delivered,
   the cap reply included (`WebChat.deliver!` → `broadcast_meter`;

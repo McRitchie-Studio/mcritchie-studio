@@ -189,7 +189,7 @@ class AgentUsageTest < ActiveSupport::TestCase
     with_allowances do
       meter = AgentUsage.meter(@app, now: NOW)
       reply = AgentUsage.cap_reply(meter)
-      assert_match(/used its monthly agent allowance.*resets Nov 1\. Pro \(\$500\/month\) raises it\. \[Upgrade your plan\]\(http:\/\/www\.example\.com\/packages\) or contact us\.\z/, reply)
+      assert_match(/used its monthly agent allowance.*resets Nov 1 at 1am MST\. Pro \(\$500\/month\) raises it\. \[Upgrade your plan\]\(http:\/\/www\.example\.com\/packages\) or contact us\.\z/, reply)
       refute_match(/owner can raise/, reply)
     end
     with_allowances(builder: 1_200) do

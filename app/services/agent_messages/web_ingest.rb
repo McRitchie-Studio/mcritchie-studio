@@ -36,7 +36,9 @@ module AgentMessages
   # thread (ProposalConfirm, before any model, as on Discord; never for a message
   # that carries files), then the store: `held` past RATE_LIMIT in RATE_WINDOW or
   # for a role the agents do not answer, else `received`, with the files attached
-  # in the same transaction.
+  # in the same transaction. A nameless owner's first message after the CTO
+  # asked for their name (FirstNameAsk) that gives a name or a skip is stored
+  # answered in code, and the name saved.
   #
   # Idempotent on (channel, external_id): the form carries a client id per send,
   # so a double submit stores one row.
@@ -88,7 +90,9 @@ module AgentMessages
                 envelope: { "via" => "web_chat", "app" => @cto.app_slug, "user_id" => @user.id,
                             "attachments" => (blobs.size if blobs.any?) }.compact }
 
-      (blobs.empty? && confirm(text, attrs, person)) || store(attrs, person, blobs)
+      return store(attrs, person, blobs) unless blobs.empty?
+
+      confirm(text, attrs, person) || store(attrs, person, name_answer: name_answer(text, attrs))
     rescue ActiveRecord::RecordNotUnique
       AgentMessage.find_by!(channel: "web", external_id: external_id)
     end
@@ -124,7 +128,14 @@ module AgentMessages
 
     private
 
-    def store(attrs, person, blobs = [])
+    # The owner's answer to the CTO's first-name ask (FirstNameAsk), or nil.
+    def name_answer(text, attrs)
+      FirstNameAsk.answer_for(@user, attrs[:thread_key], text)
+    end
+
+    # `name_answer`: a FirstNameAsk::Answer, answered in code (no model, no
+    # tokens) when the message is not held, ahead of the cap.
+    def store(attrs, person, blobs = [], name_answer: nil)
       capped = AgentMessage.transaction(requires_new: true) do
         limited = rate_limited?(attrs[:thread_key])
         # The probe carries no person: built with one, it would join the
@@ -143,12 +154,17 @@ module AgentMessages
                                           detail: { "limit" => RATE_LIMIT, "window_minutes" => (RATE_WINDOW / 60).to_i })
         end
         message.record!("held", actor: "answerers", detail: { "reason" => @answerers.held_reason(person), "person_id" => person&.id }.compact) if held && !limited
+        if name_answer && !held
+          message.code_answered!(FirstNameAsk.reply!(@user, name_answer), summary: FirstNameAsk::SUMMARY,
+                                 meta: { "first_name" => name_answer.skip? ? "skipped" : "saved" }, now: @now)
+          next [ message, true ]
+        end
         meter = owner_only && !held ? owner_meter : nil
         message.usage_capped!(meter, now: @now) if meter&.capped?
         [ message, meter&.capped? ]
       end
-      message, was_capped = capped
-      AgentMessageReplyJob.perform_later(message.id) if was_capped
+      message, answered = capped
+      AgentMessageReplyJob.perform_later(message.id) if answered
       message
     end
 

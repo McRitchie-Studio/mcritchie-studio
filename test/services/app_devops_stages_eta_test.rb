@@ -96,6 +96,18 @@ class AppDevopsStagesEtaTest < ActiveSupport::TestCase
     assert Eta.launcher_live?
   end
 
+  test "[unit] a lane of only designed tasks reads Prepping with no count; one real build makes it Building with its count" do
+    card_task("Add a gallery", "designed")
+    card_task("Add a menu", "designed")
+    building = lane(AppDevopsStages.board_for(eta_app), "building")
+    assert_equal [ "Prepping", true, 2, 0, nil ], [ building.label, building.prepping?, building.count, building.shown_count, building.sub_label ]
+
+    card_task("Add a footer", "building", started_at: 1.minute.ago)
+    building = lane(AppDevopsStages.board_for(eta_app), "building")
+    assert_equal [ "Building", false, 3, 3, "Building" ], [ building.label, building.prepping?, building.count, building.shown_count, building.sub_label ]
+    assert_not lane(AppDevopsStages.board_for(eta_app), "releasing").prepping?, "only the Building lane can be prepping"
+  end
+
   test "[unit] the single designed launch task reads Prepping, waiting for a builder" do
     durations("designed", [ 1200 ] * 3)
     launch = card_task("Build Launch App eta-probe", "designed", repos: [])
@@ -103,7 +115,8 @@ class AppDevopsStagesEtaTest < ActiveSupport::TestCase
 
     board = AppDevopsStages.board_for(eta_app)
     building = lane(board, "building")
-    assert_equal [ :live, 1, "Prepping", "no builder" ], [ building.state, building.count, building.sub_label, building.eta.text ]
+    # A lane of only designed tasks reads Prepping as its label: no count shown, no sub-label, no "no builder".
+    assert_equal [ :live, 1, 0, "Prepping", nil, nil ], [ building.state, building.count, building.shown_count, building.label, building.sub_label, building.eta ]
     assert_equal "Prepping · waiting for a builder", board.items.sole.status
     assert_nil lane(board, "releasing").sub_label, "a muted pill carries no sub-label"
 

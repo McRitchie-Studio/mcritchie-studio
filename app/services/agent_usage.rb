@@ -43,6 +43,8 @@ module AgentUsage
   TOKEN_KINDS = %w[input_tokens cache_read_tokens cache_creation_tokens output_tokens].freeze
   SUMMED = (TOKEN_KINDS + %w[thinking_tokens total_cost_usd duration_ms]).freeze
   DEFAULT_WARN_PERCENT = 80
+  # The allowance month resets at 1:00 Denver on the 1st (month_range).
+  RESET_HOUR = 1
   # Capped this many times in a month: suggest the next tier whatever the trend.
   CAPPED_TWICE = 2
 
@@ -86,6 +88,20 @@ module AgentUsage
     def capped? = state == :capped
     def warn? = state == :warn
     def remaining = unlimited? ? nil : [ allowance - used, 0 ].max
+
+    # When the allowance resets: period_end, the next 1:00 Denver on the 1st.
+    def resets_at = period_end.in_time_zone(ZONE)
+    # "Nov 1", the reset's Denver date (the cap notes and replies).
+    def resets_on = resets_at.strftime("%b %-d")
+    # "Resets Nov 1 at 1am MST" (MDT while daylight time holds at the reset).
+    # "Nov 1 at 1am MST": the reset moment, as the meter and the cap reply both say it.
+    def resets_moment = "#{resets_on} at #{resets_at.strftime('%-l%P').strip} #{resets_at.strftime('%Z')}"
+    def resets_line = "Resets #{resets_moment}"
+    # From warn_percent used (80% by default: under a fifth left) or at the cap,
+    # the meter counts down instead of showing tokens.
+    def countdown? = warn? || capped?
+    # "Resets in 3d 4h" from `at` (the page's first paint; usage_countdown.js ticks it).
+    def countdown_line(at = Time.current) = AgentUsage.countdown_line((resets_at - at).to_i)
     def suggestion = @suggestion ||= Suggestion.for(self)
 
     # The meter for a viewer who is not an admin: the same numbers, no dollars.
@@ -141,10 +157,27 @@ module AgentUsage
     cto ? [ [ cto.soul ], app_slug.to_s ] : [ [], nil ]
   end
 
+  # The allowance month: [start, reset), from 1:00 America/Denver on the 1st to
+  # 1:00 on the next 1st (task cto-chat-quality-pass, Alex 2026-10-19: "Resets
+  # Nov 1 at 1am MST"). So the hour after Denver midnight on the 1st (two on a fall-back Sunday) still
+  # belongs to the month before. A 1:00 that happens twice (the fall-back Sunday,
+  # as on Nov 1 2026) is the SECOND one, standard time: 1am MST, as the meter says.
   def month_range(now = Time.current)
     local = now.in_time_zone(ZONE)
-    [ local.beginning_of_month, local.end_of_month ]
+    start = reset_at(local.year, local.month)
+    start = reset_at(*prev_month(local.year, local.month)) if local < start
+    [ start, reset_at(*next_month(start.year, start.month)) ]
   end
+
+  # 1:00 Denver wall time on the 1st of year/month; the later of two (see above).
+  def reset_at(year, month)
+    at = ActiveSupport::TimeZone[ZONE].local(year, month, 1, RESET_HOUR)
+    later = at + 1.hour
+    later.hour == RESET_HOUR ? later : at
+  end
+
+  def next_month(year, month) = month == 12 ? [ year + 1, 1 ] : [ year, month + 1 ]
+  def prev_month(year, month) = month == 1 ? [ year - 1, 12 ] : [ year, month - 1 ]
 
   # Sum the run summaries of completed answers by these souls in [from, to).
   # metered_only: true (the client answers the allowance counts), :public (the
@@ -270,6 +303,23 @@ module AgentUsage
     value.is_a?(Integer) && value.between?(1, 99) ? value : DEFAULT_WARN_PERCENT
   end
 
+  # The meter's countdown to the reset, from whole seconds left: "Resets in 3d 4h"
+  # a day or more out, "Resets in 4h 12m" under a day, "Resets in 12m" under an
+  # hour, minutes rounded up so it never reads 0m early. Its JavaScript twin is
+  # countdownLine in app/javascript/usage_countdown.js; the two must agree.
+  def countdown_line(seconds)
+    return "Resetting now" if seconds <= 0
+
+    minutes = (seconds / 60.0).ceil
+    days, rest = minutes.divmod(24 * 60)
+    hours, mins = rest.divmod(60)
+    left = if days.positive? then "#{days}d #{hours}h"
+           elsif hours.positive? then "#{hours}h #{mins}m"
+           else "#{mins}m"
+           end
+    "Resets in #{left}"
+  end
+
   # The line a warned answer ends with. Code, never the model.
   def warn_line(meter)
     "_#{[ "#{meter.percent}% of this app's monthly agent allowance is used.", meter.suggestion&.line ].compact.join(' ')}_"
@@ -279,7 +329,7 @@ module AgentUsage
   # public sender reads a plain line: no meter, no price, no upgrade (the meter
   # is the owner's, never the public's).
   def cap_reply(meter, audience: nil)
-    resets = meter.period_end.in_time_zone(ZONE).to_date.next_day.strftime("%b %-d")
+    resets = meter.resets_moment
     if PUBLIC_AUDIENCES.include?(audience.to_s)
       return "I can't answer right now. Please try again after #{resets}."
     end
