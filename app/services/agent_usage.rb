@@ -303,7 +303,7 @@ module AgentUsage
   # The meter's countdown to the reset, from whole seconds left: "Resets in 3d 4h"
   # a day or more out, "Resets in 4h 12m" under a day, "Resets in 12m" under an
   # hour, minutes rounded up so it never reads 0m early. Its JavaScript twin is
-  # app/javascript/usage_countdown.js#countdownLine; the two must agree.
+  # countdownLine in app/javascript/usage_countdown.js; the two must agree.
   def countdown_line(seconds)
     return "Resetting now" if seconds <= 0
 
