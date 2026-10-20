@@ -226,6 +226,24 @@ does not run. From the hub's primary checkout (install refuses a desk):
 `uninstall` unloads and removes it. `install --if-changed` reinstalls only when
 the plist template changed.
 
+**Restored by the burn-down.** The launcher is the second entry in
+`config/local_services.yml`, beside the dispatcher, so a fresh Mac gets it back
+with nobody remembering its name: Phase 10 of `bin/ecosystem-build` (alone:
+`bin/ecosystem-build --phase services`) runs `bin/client-build-launcher install`
+when it is not running and its prerequisites are met: `launchctl` and `claude` on
+PATH, Claude Code signed in with claude.ai (the builder runs on the subscription),
+and `AGENT_API_SECRET` in the hub checkout's `.env` (a launchd job has no
+1Password session, and the agent token it mints its board calls and publish
+sessions from comes from that secret). An unmet one is skipped and put on the
+build's closing checklist
+([`house-burn-down.md`](house-burn-down.md), "Always-on services").
+
+**The production ship refreshes it.** After every ship, `bin/release.rb#refresh_local_services`
+runs each registered service's `refresh` from the hub primary; the launcher's is
+`bin/client-build-launcher install --if-changed`. New code needs nothing (the
+launcher restarts itself, above); only a changed plist template reinstalls it,
+which stops it as SIGTERM does: runs in flight go back in line.
+
 ## Settings (`config/client_builds.yml`)
 
 | Key | Default | Meaning |

@@ -996,7 +996,8 @@ module AgentMailbox
                 "from the hub checkout (the next production ship also retries)."
     end
 
-    # The ship's step (bin/release.rb#refresh_dispatcher_service): reinstall only
+    # The ship's step (bin/release.rb#refresh_local_services, each service's
+    # `refresh` in config/local_services.yml): reinstall only
     # when the service is installed AND the template it was rendered from has
     # changed. Not installed → nothing, never a bootstrap. The comparison renders
     # the new template with the INSTALLED plist's own ruby and PATH, because the
