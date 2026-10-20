@@ -1200,10 +1200,12 @@ Turbo hover prefetch gets a 204 and spends nothing.
 
 - **The page** is the agent shell (`app/views/agent_chats/_shell.html.erb`): Ray's
   portrait, a status slot, the thread, the chat box. The status slot
-  (`build/_status_card`, stream target `build-checklist`) is the heading until the
-  visitor taps Start App on an idea card (`AppRequest#intake_started?`), then the
-  app's working title over Theme · Agent · Domain tiles, in the order Ray asks. It
-  carries no Build control.
+  (`build/_status_card`, stream target `build-checklist`) is the heading until Ray's
+  theme card (`palette`) is in the thread, or a draft already holds a theme, CTO or
+  address (`AppRequest#intake_started?`). Start App alone only turns the heading to
+  the locked idea's title while Ray types (Alex, 2026-10-20). Then it is the app's
+  working title over Theme · Agent · Domain tiles, in the order Ray asks, popping in
+  on the same poll that brings the theme card. It carries no Build control.
 - **The first message stays on /build.** The composer posts through Turbo;
   `BuildController#create` answers with Turbo Streams that replace the empty thread
   (`build-chat-page`) with the draft's chat and end with a `replace_url` stream

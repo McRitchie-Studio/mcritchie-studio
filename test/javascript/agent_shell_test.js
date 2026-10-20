@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { enterStatusCard, sizeFor, sizeFresh, sizeShell, thresholds, turnCount } from "../../app/javascript/agent_shell.js";
+import { enterStatusCard, keepsHeading, sizeFor, sizeFresh, sizeShell, thresholds, turnCount } from "../../app/javascript/agent_shell.js";
 import { POP_CLASS } from "../../app/javascript/build_status.js";
 
 const SHARES = { mediumShare: 0.3, compactShare: 0.55 };
@@ -111,4 +111,18 @@ test("under reduced motion the arrival plays the glow-only pop instead of nothin
 test("no status card, no arrival", () => {
   assert.equal(enterStatusCard({ querySelector: () => null }, false), null);
   assert.equal(enterStatusCard({ querySelector: () => null }, true), null);
+});
+
+// The status slot's redraws before Ray's theme card (task status-card-waits-theme):
+// the same heading stays in place; a new face (Start App locks the idea) or the
+// card (the theme card's poll) is swapped in.
+test("a redraw keeps the heading only when it is the same heading face", () => {
+  const slot = (card, heading) => ({ dataset: heading ? { card, heading } : { card } });
+  assert.ok(keepsHeading(slot("false", "intro"), slot("false", "intro")), "every poll before Start App keeps the heading");
+  assert.ok(keepsHeading(slot("false", "locked"), slot("false", "locked")), "every poll while Ray types the theme card keeps it");
+  assert.ok(keepsHeading(slot("false"), slot("false", "intro")), "a page from before the faces reads as the intro");
+  assert.ok(!keepsHeading(slot("false", "intro"), slot("false", "locked")), "Start App's stream swaps in the locked face");
+  assert.ok(!keepsHeading(slot("false", "locked"), slot("true")), "the theme card's poll swaps in the status card");
+  assert.ok(!keepsHeading(slot("true"), slot("true")), "the card is always redrawn");
+  assert.ok(!keepsHeading(null, slot("false", "intro")));
 });

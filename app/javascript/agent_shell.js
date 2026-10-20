@@ -19,7 +19,7 @@
 //     the head is full and slides away, for good on that page, at the first step;
 //   - the FIRST MESSAGE's move to /build/<token> (BuildController#create's
 //     streams): the thread slides in; the status card scales in the first time it
-//     replaces the heading; after any stream the chat box is kept in the window.
+//     replaces the heading (the poll that brings Ray's theme card); after any stream the chat box is kept in the window.
 //
 // Under prefers-reduced-motion the steps and entrances still apply, unanimated
 // (the CSS turns the motion off; the gallery goes at once).
@@ -134,7 +134,8 @@ function animateOnce(element, className) {
   element.addEventListener("animationend", () => element.classList.remove(className), { once: true });
 }
 
-// The status card's arrival (Start App's stream swaps the heading for it): the
+// The status card's arrival (the poll that brings Ray's theme card swaps the
+// heading for it): the
 // agent-shell-pop-in entrance. Under reduced motion that entrance is still, so
 // the card plays build_status.js's pop instead, which reduced motion cuts to its
 // glow (build_cards.css), and the arrival still shows. `reduced` is a parameter
@@ -146,6 +147,15 @@ export function enterStatusCard(root = document, reduced = reducedMotion()) {
   card.classList.add("agent-shell-enter-card");
   card.addEventListener("animationend", () => card.classList.remove("agent-shell-enter-card"), { once: true });
   return "pop";
+}
+
+// Whether a redraw of the status slot leaves the page's heading in place: both
+// are the heading (data-card false) with the same face (data-heading: "intro"
+// asks what to build, "locked" names the idea Start App locked in). A new face
+// (Start App's stream) is swapped in; the card (Ray's theme card) always is.
+export function keepsHeading(current, incoming) {
+  if (current?.dataset?.card !== "false" || incoming?.dataset?.card !== "false") return false;
+  return (current.dataset.heading || "intro") === (incoming.dataset.heading || "intro");
 }
 
 // The gallery slides away once the head has stepped, then is hidden for good.
@@ -272,10 +282,10 @@ if (typeof document !== "undefined") {
     const firstThread = target === CHAT_ID && action === "replace" && !document.getElementById(CHAT_ID)?.hasAttribute("data-build-chat");
 
     // The heading redrawn as the same heading (the first message's stream, every
-    // poll before the first card) is left in place, so a later size step's
+    // poll before the theme card) is left in place, so a later size step's
     // transition shrinks the heading on the page instead of swapping in a new one.
-    const sameHeading = target === STATUS_ID && action === "replace" && statusWasHeading &&
-      stream.templateContent?.querySelector?.("[data-card]")?.dataset.card === "false";
+    const sameHeading = target === STATUS_ID && action === "replace" &&
+      keepsHeading(document.getElementById(STATUS_ID), stream.templateContent?.querySelector?.("[data-card]"));
 
     event.detail.render = async (element) => {
       if (!sameHeading) await original(element);

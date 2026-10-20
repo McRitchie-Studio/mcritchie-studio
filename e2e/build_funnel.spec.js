@@ -153,16 +153,22 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(status).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "What do you want to build?" })).toBeVisible();
   await ideaCard.getByRole("button", { name: "Start App" }).click();
-  await expect(status.locator("[data-test='build-status-title']")).toHaveText("League Standings Hub");
+  // Locked in, but the status card waits for Ray's theme card (Alex, 2026-10-20):
+  // while he types, the heading names the idea.
+  await expect(page.getByRole("heading", { name: "League Standings Hub" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "What do you want to build?" })).toHaveCount(0);
-  // The tiles, in the order Ray asks.
-  expect(await status.locator("li").evaluateAll((els) => els.map((el) => el.dataset.test))).toEqual(["build-tile-theme", "build-tile-agent", "build-tile-domain"]);
+  await expect(status).toHaveCount(0);
 
   // The theme comes first: three options, dark first, the middle one preselected; one Choose Theme.
   const themes = ["Pitch", "Field", "Court"].map((name) => ({ ...PALETTE, name }));
   themes[2] = { ...themes[2], light: { ...PALETTE.light, primary: "#1d4ed8" } };
   await tapped(page, auth, "Let's build League Standings Hub.", "Pick a theme.", { card: "palette", palettes: themes });
   const themeCard = page.locator("[data-test='build-card-palette']");
+  // The status card arrives with the theme card, no reload.
+  await expect(status.locator("[data-test='build-status-title']")).toHaveText("League Standings Hub");
+  expect(await page.evaluate(() => window.__buildShellMarker), "no reload when the status card arrives").toBe("kept");
+  // The tiles, in the order Ray asks.
+  expect(await status.locator("li").evaluateAll((els) => els.map((el) => el.dataset.test))).toEqual(["build-tile-theme", "build-tile-agent", "build-tile-domain"]);
   await expect(themeCard.locator("[data-test='build-palette']")).toHaveCount(3);
   await expect(themeCard.getByRole("radio", { name: "Field" })).toBeChecked();
   await expect(themeCard.getByRole("button", { name: "This Theme" })).toHaveCount(0);

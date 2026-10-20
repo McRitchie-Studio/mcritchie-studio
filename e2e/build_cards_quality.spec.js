@@ -69,7 +69,7 @@ async function sidewaysOverflow(page) {
   });
 }
 
-test("Start App pops a status card of Theme, Agent, Domain; the theme card toggles, glows in its ring at 375px, and asks Ray for new themes", async ({ page, browser }) => {
+test("the theme card pops a status card of Theme, Agent, Domain; the theme card toggles, glows in its ring at 375px, and asks Ray for new themes", async ({ page, browser }) => {
   test.setTimeout(90_000);
   await blockThirdPartyRequests(page);
   const { pageErrors, report } = watchPageErrors(page);
@@ -80,8 +80,10 @@ test("Start App pops a status card of Theme, Agent, Domain; the theme card toggl
   await rayAnswers(page, auth, (c) => c === idea, "Here's the app.",
                    { card: "idea", title: "Weekly Trivia With Friends", features: ["Rounds", "Scores"] });
 
-  // 1. Start App: the card arrives and pops (agent_shell.js's enter animation,
-  //    which plays only with motion); the tiles name their steps.
+  // 1. Start App locks the idea, but the status card waits for Ray's theme card
+  //    (task status-card-waits-theme); it arrives with that card and pops
+  //    (agent_shell.js's enter animation, which plays only with motion); the
+  //    tiles name their steps.
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.evaluate(() => {
     window.__popped = null;
@@ -92,19 +94,21 @@ test("Start App pops a status card of Theme, Agent, Domain; the theme card toggl
   });
   await page.getByRole("button", { name: "Start App" }).click();
   const status = page.locator("[data-test='build-status-card']");
+  await expect(page.locator("#build-checklist[data-heading='locked'] [data-test='build-heading-title']")).toHaveText("Weekly Trivia With Friends");
+  await expect(status).toHaveCount(0);
+
+  // The Start App relay brings Ray's theme card, and the status card with it.
+  const themes = ["Pitch", "Field", "Court"].map((name) => ({ ...PALETTE, name }));
+  await rayAnswers(page, auth, (c) => c.startsWith("Let's build"), "Pick a theme.", { card: "palette", palettes: themes });
+  const themeCard = page.locator("[data-test='build-card-palette']");
+  await expect(themeCard).toBeVisible();
   await expect(status).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.__popped), { message: "the card popped when it first appeared" }).toBe("agent-shell-pop-in");
+  await expect.poll(() => page.evaluate(() => window.__popped), { message: "the card popped when it arrived with the theme card" }).toBe("agent-shell-pop-in");
   await expect(status.locator("[data-test='build-tile-theme-value']")).toContainText("Theme");
   await expect(status.locator("[data-test='build-tile-agent-value']")).toHaveText("Agent");
   await expect(status.locator("[data-test='build-tile-domain-value']")).toHaveText("Domain");
   await expect(status).not.toContainText("Not yet");
   await expect(status.locator("[data-test='build-tile-theme']")).toHaveAttribute("data-current", "true");
-
-  // The Start App relay brings Ray's theme card.
-  const themes = ["Pitch", "Field", "Court"].map((name) => ({ ...PALETTE, name }));
-  await rayAnswers(page, auth, (c) => c.startsWith("Let's build"), "Pick a theme.", { card: "palette", palettes: themes });
-  const themeCard = page.locator("[data-test='build-card-palette']");
-  await expect(themeCard).toBeVisible();
 
   // 2. The toggle: dark first; Light shows light; a second tap on Light flips
   //    back to dark; a tap on Dark while dark shows light.
