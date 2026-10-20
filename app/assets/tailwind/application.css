@@ -466,6 +466,11 @@
     --nav-title-lead-size: var(--nav-title-size);
     --nav-title-lead: calc(2rem - 0.5rem * var(--nav-p, 0));      /* line box, 32px -> 24px */
   }
+  /* NO SIGN-IN LINK IN THE NAVBAR. The engine sets a quiet Log in link beside
+     the signed-out CTA (data-nav-sign-in, desktop and phone rows); this app
+     keeps only Build App there and carries Log in in the link sidebar instead
+     (LinkTreeHelper#visitor_link_sections; Alex, 2026-10-20). */
+  .nav-shell [data-nav-sign-in] { display: none; }
   /* THE ENGINE'S NAVBAR, DRESSED FOR THIS APP. The header is layouts/_navbar
      from studio-engine; these rules are what this app's look asks of it.
 

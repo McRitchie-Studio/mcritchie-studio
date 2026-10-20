@@ -49,8 +49,9 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
       if signed_out_cta?
         assert_select "a.btn-primary[data-nav-signed-out-cta][href=?]", build_path, text: "Build App", count: 1
         assert_select "a.btn-primary[href=?]", login_path, count: 0
-        # Sign-in stays reachable as a quiet link: beside the button from md,
-        # and in the phone row below md.
+        # The engine still draws its quiet sign-in links (beside the button from
+        # md, and in the phone row); this app hides them in CSS and carries Log
+        # in in the link sidebar (/tasks/drop-hero-meet-alex).
         assert_select "a[data-nav-sign-in][href=?]", login_path, text: Studio.sign_in_label, count: 2
         assert_select "a.btn[href=?]", login_path, count: 0
       else
@@ -64,6 +65,8 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
     end
     assert_select "header[x-data='navCollapse()']", count: 0
     assert_select "#studio-link-sidebar", 1
+    # A visitor's Log in lives in the link sidebar (/tasks/drop-hero-meet-alex).
+    assert_select "#studio-link-sidebar a[href=?]", login_path, text: /#{Studio.sign_in_label}/, minimum: 1
   end
 
   # config/initializers/studio.rb sets Studio.navbar_signed_out_cta to Build App

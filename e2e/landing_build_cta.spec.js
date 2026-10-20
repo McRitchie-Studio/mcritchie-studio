@@ -60,7 +60,7 @@ test("on a phone the rainbow Build Your App never scrolls the page sideways, in 
   expect(rings.dark.background, "dark ring unchanged").toContain("rgb(234, 179, 8)");
   expect(rings.light.filter).toBe("blur(8px)");
   expect(rings.dark.filter).toBe("blur(16px)");
-  await expect(page.locator("[data-test='hero-meet-alex']")).toHaveAttribute("href", "#about");
+  await expect(page.locator("[data-test='hero-meet-alex']"), "Meet Alex was dropped (drop-hero-meet-alex)").toHaveCount(0);
   expect(pageErrors, report()).toHaveLength(0);
 });
 
