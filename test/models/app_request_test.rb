@@ -63,12 +63,12 @@ class AppRequestTest < ActiveSupport::TestCase
     end
   end
 
-  # config/apps.yml names apps and libraries satellites.yml never lists: the
+  # The app catalog (AppCatalog::PATH) names apps and libraries satellites.yml never lists: the
   # libraries (studio-engine, solana-studio, turf-vault and its alias vault) and
   # apps with no satellite row (acquisition-studio, tax-studio's tax host). A
   # /build app must not take any of them.
-  test "[unit] every config/apps.yml app and library name is reserved, with aliases and our subdomains" do
-    catalog = YAML.safe_load_file(Rails.root.join("config/apps.yml"))
+  test "[unit] every app catalog app and library name is reserved, with aliases and our subdomains" do
+    catalog = YAML.safe_load_file(AppCatalog::PATH)
     library_names = catalog["libraries"].flat_map { |lib| [ lib["slug"], *lib["aliases"] ] }
     assert_includes library_names, "studio-engine"
     assert_includes library_names, "vault"
@@ -78,7 +78,7 @@ class AppRequestTest < ActiveSupport::TestCase
                            .map { |h| h.delete_suffix(".mcritchie.studio") }
     assert_includes hosts, "tax"
     (library_names + app_names + hosts).select { |name| name.match?(AppRequest::SUBDOMAIN_FORMAT) }.each do |name|
-      assert_equal "That name is reserved.", AppRequest.unavailable_reason(name), "#{name} is in config/apps.yml"
+      assert_equal "That name is reserved.", AppRequest.unavailable_reason(name), "#{name} is in the app catalog"
       assert_equal "That name is reserved.", AppRequest.unavailable_reasons([ name ])[name], "#{name} (batch check)"
     end
   end
