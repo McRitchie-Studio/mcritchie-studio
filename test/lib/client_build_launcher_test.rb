@@ -291,11 +291,44 @@ class ClientBuildLauncherTest < Minitest::Test
       root = File.join(home, ".client-builds")
       held = CL::InstanceLock.acquire(root)
       bin = File.expand_path("../../bin/client-build-launcher", __dir__)
-      out, status = Open3.capture2e({ "HOME" => home }, RbConfig.ruby, bin, "run", "--once")
+      # A dead local port: the refused run must never post an activity anywhere real.
+      out, status = Open3.capture2e({ "HOME" => home, "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:9" },
+                                    RbConfig.ruby, bin, "run", "--once")
       held.close
       assert_equal 1, status.exitstatus, out
       assert_includes out, "another launcher is already running on this Mac (pid #{Process.pid}"
       assert_includes out, "nothing was started"
+    end
+  end
+
+  # --- The stand-in builder -----------------------------------------------------
+
+  def test_only_a_test_sandbox_check_honours_the_stub_builder
+    stub = { "CLIENT_BUILD_CLAUDE_CMD" => "/tmp/fake-claude --flag" }
+    assert_equal %w[/tmp/fake-claude --flag], CL.stub_builder("sandbox-check", stub.merge("CLIENT_BUILD_LAUNCHER_TEST" => "1"))
+    assert_nil CL.stub_builder("sandbox-check", stub), "no test switch, no stub"
+    assert_nil CL.stub_builder("sandbox-check", stub.merge("CLIENT_BUILD_LAUNCHER_TEST" => "true"))
+    assert_nil CL.stub_builder("run", stub.merge("CLIENT_BUILD_LAUNCHER_TEST" => "1")), "run never takes the stub"
+    assert_nil CL.stub_builder("sandbox-check", { "CLIENT_BUILD_LAUNCHER_TEST" => "1" })
+  end
+
+  def test_run_ignores_the_stub_builder_even_with_the_test_switch
+    bin = File.expand_path("../../bin/client-build-launcher", __dir__)
+    source = File.read(bin)
+    run_block = source[/^when "run"\n.*\z/m]
+    assert run_block, "the run branch"
+    run_block = run_block.lines.grep_v(/\A\s*#/).join
+    refute_match(/stub_builder|Sandbox\.run|builder:/, run_block, "run wires no builder of its own; the Launcher's default is the real claude")
+
+    Dir.mktmpdir do |home|
+      root = File.join(home, ".client-builds")
+      held = CL::InstanceLock.acquire(root)
+      env = { "HOME" => home, "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:9",
+              "CLIENT_BUILD_CLAUDE_CMD" => "/bin/true", "CLIENT_BUILD_LAUNCHER_TEST" => "1" }
+      out, status = Open3.capture2e(env, RbConfig.ruby, bin, "run", "--once")
+      held.close
+      assert_equal 1, status.exitstatus, out
+      assert_includes out, "CLIENT_BUILD_CLAUDE_CMD is ignored by run; the builder is the real claude."
     end
   end
 end
