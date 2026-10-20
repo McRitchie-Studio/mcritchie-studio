@@ -1,0 +1,255 @@
+# frozen_string_literal: true
+
+require "time"
+
+module DomainRegister
+  # check, register and status. Every refusal is decided from a domain-check made
+  # IMMEDIATELY before the registration POST, never from an earlier check or a
+  # remembered price: a quote can change between Alex's OK and the purchase, and
+  # the OK covered one price.
+  class Runner
+    # Cloudflare's API registers no premium domain today ("do not call this
+    # endpoint if domain-check returns tier: premium"). --premium is the explicit
+    # fee acknowledgement the brief asks for; while this is false, a premium
+    # domain still stops here, acknowledged or not, and is bought in the dashboard.
+    PREMIUM_VIA_API = false
+
+    PRICE = /\A\d+(\.\d{1,2})?\z/
+    DATED = /\b20\d\d-\d\d-\d\d\b/
+    CURRENCY = "USD"
+    TERMINAL = %w[succeeded failed].freeze
+    WAITING = %w[pending in_progress blocked].freeze
+
+    def initialize(registrar:, ledger:, zone_client: nil, out: $stdout, sleeper: ->(s) { sleep(s) },
+                   clock: -> { Time.now.utc }, actor: ENV.fetch("USER", "unknown"),
+                   poll_interval: 5, poll_timeout: 600, zone_attempts: 6, zone_interval: 10)
+      @registrar = registrar
+      @ledger = ledger
+      @zone_client = zone_client # -> { DomainCutover::Cloudflare }, built only after a purchase
+      @out = out
+      @sleeper = sleeper
+      @clock = clock
+      @actor = actor
+      @poll_interval = poll_interval
+      @poll_timeout = poll_timeout
+      @zone_attempts = zone_attempts
+      @zone_interval = zone_interval
+    end
+
+    # ── check (read-only) ────────────────────────────────────────────────────
+    def check(domains)
+      quotes = @registrar.check(domains)
+      quotes.each { |q| say q.to_s }
+      missing = domains - quotes.map(&:name)
+      missing.each { |d| say "#{d}  NO ANSWER (Cloudflare returned no row for it)" }
+      quotes
+    end
+
+    # Every reason this purchase must not happen, from a fresh quote. Empty means go.
+    def self.refusals(quote, price:, ok:, premium:)
+      reasons = []
+      if quote.nil?
+        reasons << "Cloudflare returned no domain-check row for this domain"
+        return reasons
+      end
+
+      if quote.premium?
+        if !premium
+          reasons << "#{quote.name} is PREMIUM (#{quote.price_line}): pass --premium to acknowledge the premium fee"
+        elsif !PREMIUM_VIA_API
+          reasons << "#{quote.name} is PREMIUM and Cloudflare's API does not register premium domains yet: " \
+                     "Alex buys it in the dashboard"
+        end
+      elsif !quote.registrable
+        reasons << "#{quote.name} is not available: #{quote.reason || 'no reason given'} (#{quote.reason_text})"
+      end
+
+      if quote.registrable || quote.premium?
+        if quote.registration.nil?
+          reasons << "Cloudflare quoted no registration price"
+        elsif quote.currency != CURRENCY
+          reasons << "Cloudflare quoted #{quote.currency}, not #{CURRENCY}"
+        end
+      end
+
+      if price.to_s.strip.empty?
+        reasons << "no --price: pass the exact USD registration price Alex approved"
+      elsif !price.to_s.strip.match?(PRICE)
+        reasons << "--price #{price.inspect} is not a USD amount like 10.46"
+      elsif quote.registration && BigDecimal(price.to_s.strip) != quote.registration
+        reasons << "price changed: Cloudflare quotes #{CURRENCY} #{Quote.format(quote.registration)} now, " \
+                   "Alex approved #{CURRENCY} #{Quote.format(BigDecimal(price.to_s.strip))}: ask him again"
+      end
+
+      if ok.to_s.strip.empty?
+        reasons << "no --ok: quote Alex's own words approving this domain at this price, with the date"
+      elsif !ok.to_s.match?(DATED)
+        reasons << "--ok carries no date: quote Alex's words with the date, e.g. \"buy it, 2026-10-19\""
+      end
+
+      reasons
+    end
+
+    # ── register (spends money unless dry_run) ───────────────────────────────
+    def register(domain, price:, ok:, premium: false, dry_run: false)
+      banner(dry_run ? "register --dry-run (spends nothing)" : "register")
+      quote = @registrar.check([domain]).find { |q| q.name == domain }
+      say "fresh check: #{quote || "#{domain}  NO ANSWER"}"
+      refusals = self.class.refusals(quote, price: price, ok: ok, premium: premium)
+
+      return plan(domain, refusals) if dry_run
+
+      unless refusals.empty?
+        raise Abort, "REFUSED, nothing was bought:\n#{refusals.map { |r| "  - #{r}" }.join("\n")}"
+      end
+
+      record("authorized", domain, quote, ok: ok)
+      say "registering #{domain} for #{CURRENCY} #{Quote.format(quote.registration)} " \
+          "(auto-renew ON at #{CURRENCY} #{Quote.format(quote.renewal)}/yr, WHOIS redaction ON)"
+      workflow = begin
+        @registrar.register(domain)
+      rescue Abort => e
+        record("failed", domain, quote, error: e.message)
+        raise
+      end
+
+      final = poll(domain, workflow)
+      case final["state"]
+      when "succeeded"
+        record("registered", domain, quote, registration: final.dig("context", "registration"))
+        say "REGISTERED #{domain}#{expiry(final)}"
+        say "ledger: #{@ledger.path}"
+        zone = prove_zone(domain)
+        next_step(domain)
+        zone ? true : false
+      else
+        state = final["state"] || "unknown"
+        record(state == "failed" ? "failed" : "pending", domain, quote, workflow: final)
+        raise Abort, outcome_message(domain, final)
+      end
+    end
+
+    # ── status (read-only) ───────────────────────────────────────────────────
+    def status(domain)
+      workflow = @registrar.status(domain)
+      say "#{domain}: #{workflow['state'] || 'unknown'}#{workflow['completed'] ? ' (completed)' : ''}#{expiry(workflow)}"
+      error = workflow["error"]
+      say "  error: #{error['code']} #{error['message']}" if error
+      action = workflow.dig("context", "action")
+      say "  action required: #{action}" if action
+      workflow
+    end
+
+    # Follow a workflow to a terminal state. 201 arrives completed; 202 is polled.
+    # `action_required` stops at once (a person must act); `blocked` keeps polling,
+    # as Cloudflare advises.
+    def poll(domain, workflow)
+      deadline = @clock.call + @poll_timeout
+      current = workflow
+      loop do
+        state = current["state"]
+        return current if TERMINAL.include?(state) || current["completed"] == true
+        return current if state == "action_required"
+
+        unless WAITING.include?(state)
+          raise Abort, "#{domain}: unknown workflow state #{state.inspect}; read it with " \
+                       "bin/domain-register status #{domain}"
+        end
+        return current if @clock.call >= deadline
+
+        say "  #{state}..."
+        @sleeper.call(@poll_interval)
+        current = @registrar.status(domain)
+      end
+    end
+
+    private
+
+    def plan(domain, refusals)
+      say ""
+      if refusals.empty?
+        say "PLAN (all gates pass): the real run would"
+      else
+        say "WOULD REFUSE:"
+        refusals.each { |r| say "  - #{r}" }
+        say ""
+        say "and, once those clear, would"
+      end
+      say "  1. append 'authorized' to #{@ledger.path}"
+      say "  2. CLOUDFLARE POST /accounts/<account>/registrar/registrations #{JSON.generate(@registrar.registration_body(domain))}"
+      say "  3. poll registration-status every #{@poll_interval}s, up to #{@poll_timeout}s"
+      say "  4. read the zone back with cloudflare.studio.provision and print the domain-dns next step"
+      say "Nothing was bought; no ledger line was written."
+      refusals.empty?
+    end
+
+    def prove_zone(domain)
+      client = begin
+        @zone_client&.call
+      rescue Abort => e
+        say "zone proof: could not read the DNS token (#{e.message}); the domain IS registered"
+        return nil
+      end
+      unless client
+        say "zone proof: skipped (no DNS reader); check the zone by hand in the dashboard"
+        return nil
+      end
+
+      @zone_attempts.times do |i|
+        zone = begin
+          client.find_zone(domain)
+        rescue Abort => e
+          say "zone proof: #{e.message}"
+          nil
+        end
+        if zone
+          say "zone: #{zone['name']} is in our account (id #{zone['id']}, status #{zone['status']}, " \
+              "nameservers #{Array(zone['name_servers']).join(', ')})"
+          return zone
+        end
+        @sleeper.call(@zone_interval) if i < @zone_attempts - 1
+      end
+      say "WARNING: no zone for #{domain} in our Cloudflare account yet. Cloudflare Registrar creates it; " \
+          "re-check in a few minutes in the dashboard before running domain-dns."
+      nil
+    end
+
+    def next_step(domain)
+      say ""
+      say "NEXT: Steffon's domain-dns SOP (docs/agents/agents/steffon/sops/domain-dns.md) for #{domain}."
+      say "  The zone is already on Cloudflare with Cloudflare's nameservers: no registrar move, no 6-hour wait."
+    end
+
+    def outcome_message(domain, workflow)
+      state = workflow["state"] || "unknown"
+      case state
+      when "failed"
+        error = workflow["error"] || {}
+        hint = Registrar.prerequisite_for("#{error['code']} #{error['message']}")
+        msg = "#{domain}: registration FAILED: #{error['code']} #{error['message']}"
+        hint ? "#{msg}\n  -> #{hint}" : msg
+      when "action_required"
+        "#{domain}: Cloudflare needs a person: #{workflow.dig('context', 'action') || 'see the dashboard'}. " \
+          "Alex acts in the dashboard; then bin/domain-register status #{domain}"
+      else
+        "#{domain}: still #{state} after #{@poll_timeout}s. The purchase may complete on its own: " \
+          "bin/domain-register status #{domain} (do NOT re-run register)"
+      end
+    end
+
+    def record(event, domain, quote, **extra)
+      @ledger.append({ "event" => event, "domain" => domain, "at" => @clock.call.utc.iso8601,
+                       "by" => @actor, "currency" => quote.currency,
+                       "price" => Quote.format(quote.registration), "renewal" => Quote.format(quote.renewal),
+                       "auto_renew" => true, "privacy_mode" => "redaction" }.merge(extra.transform_keys(&:to_s)))
+    end
+
+    def expiry(workflow)
+      expires = workflow.dig("context", "registration", "expires_at")
+      expires ? ", expires #{expires}" : ""
+    end
+
+    def banner(text) = say("== domain-register #{text}")
+    def say(text) = @out.puts(text)
+  end
+end

@@ -1,0 +1,93 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/domain-register — check and buy a domain for one of OUR OWN entities on
+# Cloudflare Registrar, by API. The runbook is Steffon's domain-purchase SOP
+# (§ Cloudflare Registrar); the logic and every refusal live in
+# bin/lib/domain_register/. A client's domain is never bought here.
+
+require_relative "lib/cli_arg_guard"
+
+USAGE = <<~TXT
+  usage: bin/domain-register check <domain>...
+         bin/domain-register register <domain> --price <exact USD> --ok "<Alex's words, YYYY-MM-DD>" [--premium] [--dry-run]
+         bin/domain-register status <domain>
+
+  check     availability, the registration and renewal price, the premium flag and
+            why a domain cannot be bought by API. Read-only; up to 20 domains.
+  register  SPENDS MONEY on the account's default card. Re-checks the domain at once
+            and REFUSES unless it is available, the registration price equals --price
+            exactly, a premium domain carries --premium, and --ok quotes Alex's own
+            per-domain approval with the date. Registers for 1 year with auto-renew ON
+            and WHOIS redaction ON, polls registration-status to the end, appends to
+            the purchase ledger (<projects>/.agents/ledgers/domain-registrations.jsonl),
+            reads the new zone back from our account and prints the domain-dns step.
+            --dry-run runs the check and every refusal, prints the plan, and buys nothing.
+  status    the registration workflow's state for a domain. Read-only.
+
+  Credentials (admin lane: source ~/.zprofile.admin): cloudflare.registrar/api-token
+  (Registrar write only) and cloudflare.studio.provision/account-id; the zone read
+  uses cloudflare.studio.provision/api-token. Nothing secret is printed.
+TXT
+
+COMMANDS = {
+  "check" => { bool: [], value: [] },
+  "register" => { bool: %w[--dry-run --premium], value: %w[--price --ok] },
+  "status" => { bool: [], value: [] }
+}.freeze
+
+command = ARGV[0]
+spec = COMMANDS.fetch(command, { bool: [], value: [] })
+args = CliArgGuard.guard!(
+  ARGV,
+  program: "domain-register",
+  usage: USAGE,
+  bool: spec[:bool],
+  value: spec[:value],
+  allow_positional: true,
+  consequence: "NOTHING ran: no credential read, no API call, nothing bought."
+)
+
+_, *domains = args.positionals
+domains = domains.map { |d| d.strip.downcase.delete_suffix(".") }
+arity_ok = command == "check" ? domains.length.between?(1, 20) : domains.length == 1
+unless COMMANDS.key?(command) && arity_ok
+  warn(USAGE)
+  exit 2
+end
+
+require_relative "lib/domain_register"
+
+bad = domains.reject { |d| d.match?(DomainRegister::DOMAIN) }
+unless bad.empty?
+  warn("domain-register: want bare domains (lowercase, no www.): #{bad.join(', ')}. NOTHING ran.")
+  exit 2
+end
+
+token = nil
+account = nil
+begin
+  token, account = DomainRegister::Credentials.registrar
+  transport = DomainCutover::Transport.new
+  registrar = DomainRegister::Registrar.new(transport, token: token, account_id: account)
+  zone_client = lambda do
+    dns_token, dns_account = DomainRegister::Credentials.dns
+    DomainCutover::Cloudflare.new(transport, token: dns_token, account_id: dns_account)
+  end
+  runner = DomainRegister::Runner.new(registrar: registrar, ledger: DomainRegister::Ledger.new,
+                                      zone_client: zone_client)
+
+  case command
+  when "check"
+    runner.check(domains)
+  when "status"
+    runner.status(domains.first)
+  when "register"
+    ok = runner.register(domains.first, price: args.first("--price"), ok: args.first("--ok"),
+                                         premium: args.bool?("--premium"), dry_run: args.bool?("--dry-run"))
+    exit(ok ? 0 : 1)
+  end
+rescue DomainCutover::Abort => e
+  warn("domain-register: #{DomainRegister.redact(e.message, [token, account])}")
+  exit 2
+end
