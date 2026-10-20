@@ -109,7 +109,9 @@ premium domains. If the price moved, ask Alex again at the new price; never edit
 ledger holds an `authorized` line for the domain that nothing has closed, and it
 asks Cloudflare's registration-status first, going on **only** on Cloudflare's
 documented "No workflow found for <domain>". A workflow in any state, or any
-other answer, refuses.
+other answer, refuses. A real `register` and every `status` hold an exclusive
+lock on the ledger for their whole run, so a second run started meanwhile
+refuses at once and writes nothing; a `--dry-run` takes no lock.
 
 It registers for one year with **auto-renew ON** and **WHOIS redaction ON**,
 polls the registration to the end, and appends each event to the purchase
@@ -122,9 +124,9 @@ nothing was bought), `pending` (still running, or a person must act), or
 **`unknown` means money MAY have moved**: the purchase was sent and no clear
 answer came back (a timeout, a dropped connection, a 5xx). On `unknown` or
 `pending`, run `bin/domain-register status <domain>` and do **not** re-run
-`register`; it would refuse anyway. `status` closes the ledger line once the
-workflow ends, or once Cloudflare still has no workflow 15 minutes after the
-authorization.
+`register`; it would refuse anyway. `status` spends nothing but is not
+read-only: it writes the ledger's closing line once the workflow ends, or once
+Cloudflare still has no workflow 15 minutes after the authorization.
 
 ### A4. Prove it is ours — the command, then Steffon
 

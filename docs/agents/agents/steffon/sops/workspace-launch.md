@@ -94,8 +94,9 @@ bin/task create --title "Launch <Company> Workspace" --kind chore --shape docs \
   --agent-context "workspace-launch for <domain>, package <pro|team|enterprise>"
 ```
 
-Record each finished step on the task (`bin/task update <slug> --checks "…"`) so
-a launch interrupted mid-way resumes from the board, not from memory.
+Record each finished step on the task (`bin/task note <slug> --comment "…"`) so
+a launch interrupted mid-way resumes from the board, not from memory. A note,
+never `bin/task update --checks`: that replaces the task's whole checks list.
 
 ### Steps 1-10
 

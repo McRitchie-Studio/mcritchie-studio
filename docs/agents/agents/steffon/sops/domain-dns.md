@@ -89,7 +89,7 @@ an hour; re-check rather than re-paste. Once green:
    Then tell me "done".
 ```
 
-Record: `bin/task update <launch-task> --checks "[control] domain-dns: MX, SPF, DKIM, DMARC resolve publicly"`.
+Record: `bin/task note <launch-task> --comment "domain-dns: MX, SPF, DKIM, DMARC resolve publicly"`.
 
 DMARC starts at `p=none` on purpose. Raise it to `quarantine` after a few weeks
 of clean reports — a separate, deliberate change.
@@ -233,7 +233,7 @@ back and re-verifies. `APP_HOST` also drives mailer links and the Google callbac
 a new authorized redirect URI. Retire the registrar's old forwarding only after
 this is green.
 
-Record: `bin/task update <launch-task> --checks "[control] domain-dns: <domain> on Cloudflare, records match the snapshot, www 301s to the bare domain"`.
+Record: `bin/task note <launch-task> --comment "domain-dns: <domain> on Cloudflare, records match the snapshot, www 301s to the bare domain"`.
 
 ### 5. Workspace mail — Steffon
 
