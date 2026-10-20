@@ -20,6 +20,13 @@
 # metered and never capped. An answer from before this release carries no
 # audience and is not metered (only the owner was answered then).
 #
+# THE FIRST VERSION'S BUILD NEVER COUNTS (Alex, 2026-10-19: it is the cost of
+# acquiring the client). bin/client-build-launcher's claude runs happen on the
+# launcher's machine and write no answer rows, so their tokens never reach a
+# run summary; the build-progress lines it posts into the owner's chat
+# (ClientBuilds.progress!, envelope via build_progress) are code-written and
+# skipped here outright, so they count as no answer either.
+#
 # DOLLARS are for admins. Totals#without_cost drops the CLI's cost figure, and
 # totals_line then prints tokens only: a non-admin owner's page and JSON read
 # tokens and the meter, never a price.
@@ -278,7 +285,14 @@ module AgentUsage
     end
 
     [ "This app has used its monthly agent allowance, so I can't answer this one. It resets #{resets}.",
-      meter.suggestion&.line, "Upgrade your plan or contact us." ].compact.join(" ")
+      meter.suggestion&.line, "[Upgrade your plan](#{upgrade_url}) or contact us." ].compact.join(" ")
+  end
+
+  # The plans page the cap line links to, absolute (the line also reaches
+  # Discord and email, where a path goes nowhere): the hub's public origin, the
+  # one the mailers link from (https://mcritchie.studio in production).
+  def upgrade_url
+    Rails.application.routes.url_helpers.packages_url(**(Rails.application.config.action_mailer.default_url_options || {}))
   end
 
   # "12 answers, 230,400 tokens (in 1,200 · cache read 200,000 · cache write
@@ -319,6 +333,7 @@ module AgentUsage
   def scope(souls, from, to, metered_only, ref: nil)
     scope = AgentMessage.where(status: "completed", soul_slug: Array(souls), completed_at: from...to)
                         .where("agent_messages.run_meta->>'usage_capped' IS NULL")
+                        .where("agent_messages.envelope->>'via' IS DISTINCT FROM ?", ClientBuilds::VIA)
     scope = scope.where(channel_ref: ref) if ref
     case metered_only
     when :public then scope.where("agent_messages.run_meta->>'audience' IN (?)", PUBLIC_AUDIENCES)
