@@ -73,7 +73,7 @@ module SafeMarkdown
     true
   end
 
-  def bare_host(host) = host.to_s.strip.downcase.delete_prefix("www.")
+  def bare_host(host) = host.to_s.strip.downcase.delete_suffix(".").delete_prefix("www.")
 
   # Redcarpet's HTML renderer with the link, autolink and image callbacks checked. Returning nil
   # from a callback makes Redcarpet emit the span's original Markdown as text.
