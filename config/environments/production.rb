@@ -131,7 +131,7 @@ Rails.application.configure do
   # replay against the dyno's direct *.herokuapp.com URL (bypassing CDN/WAF
   # allowlists). Especially critical here since this app is the SSO hub.
   # The shared client-app host's domain (docs/agents/system/client-app-host.md):
-  # ".mcritchie.si" admits every <sub>.mcritchie.si, which ClientAppHost answers
+  # ".mcritchie.app" admits every <sub>.mcritchie.app, which ClientAppHost answers
   # before anything of the hub's runs. Off (nil) on QA unless set.
   require Rails.root.join("lib/middleware/client_app_host")
   client_app_preview_domain = ClientAppHost.domain

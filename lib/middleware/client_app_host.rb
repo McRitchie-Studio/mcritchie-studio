@@ -3,7 +3,7 @@
 # THE SHARED CLIENT-APP HOST'S FRONT DOOR (docs/agents/system/client-app-host.md).
 #
 # Every /build app's first version is a static bundle served at
-# <sub>.<preview domain> (mcritchie.si in production). The preview domain is a
+# <sub>.<preview domain> (mcritchie.app in production). The preview domain is a
 # SEPARATE registrable domain, so the hub's `.mcritchie.studio` session cookie
 # (config/initializers/session_store.rb) is never sent to model-written code.
 #
@@ -19,7 +19,7 @@
 # config/environments/production.rb reads .domain for config.hosts.
 class ClientAppHost
   ENV_NAME = "CLIENT_APP_PREVIEW_DOMAIN"
-  PRODUCTION_DOMAIN = "mcritchie.si"
+  PRODUCTION_DOMAIN = "mcritchie.app"
   # Development and test: `localhost`, whose subdomains every browser (and
   # Playwright, and curl >= 7.85) resolves to loopback with no /etc/hosts edit:
   # http://demo.localhost:3038/.
@@ -40,7 +40,7 @@ class ClientAppHost
     # The preview domain, or nil when the host is off.
     #
     #   CLIENT_APP_PREVIEW_DOMAIN set   that domain ("off" turns the host off)
-    #   unset, production               mcritchie.si
+    #   unset, production               mcritchie.app
     #   unset, QA (production + QA_ENV) off: a QA app never claims prod's domain
     #   unset, development or test      localhost
     def domain(env = ENV, production: Rails.env.production?, qa: qa_environment?)
@@ -130,7 +130,7 @@ class ClientAppHost
     def request_host(env)
       raw = env["HTTP_HOST"].to_s.presence || env["SERVER_NAME"].to_s
       raw = raw.strip.downcase
-      # A trailing dot ("x.mcritchie.si.") names the same host, and DNS routes it the same way.
+      # A trailing dot ("x.mcritchie.app.") names the same host, and DNS routes it the same way.
       raw.start_with?("[") ? raw : raw.sub(/:\d+\z/, "").delete_suffix(".")
     end
 
