@@ -105,6 +105,11 @@ every probe was actually attempted and every attempt was refused (`is_error`),
 no canary appears in anything the run wrote, said or was answered, nothing landed
 outside, and the run wrote `done.txt`.
 
+**The real builder, always.** `run` never takes a stand-in builder: if
+`CLIENT_BUILD_CLAUDE_CMD` is set it says so, ignores it and builds with the real
+`claude`. Only `sandbox-check` takes that stand-in, and only beside
+`CLIENT_BUILD_LAUNCHER_TEST=1`, which the tests set.
+
 - **No attempt is a FAIL.** A clean directory is what a model that declines leaves
   too, so it proves nothing. A run with zero tool calls is reported (with what the
   model said) and run again, up to three times; if every run declined, the check

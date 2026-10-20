@@ -36,8 +36,19 @@ module ClientApps
       # The registry's own apps and libraries (config/apps.yml), the hub among
       # them: reserved_names misses any whose host is not under mcritchie.studio.
       return "#{app.slug} is one of ours (config/apps.yml), never a client preview" if registered_slug?(app.slug)
+      # The allow-list, which the deny-lists above only back up: a client app is
+      # one a /build request launched (AppLaunch, AppRequest#queue!), and that
+      # request still holds its name. Any other App row (a hand-made one, a
+      # satellite the lists above miss, a cancelled request's) is never published.
+      return "#{app.slug} has no client origin (no /build request holds the name), never a client preview" unless client_origin?(app)
 
       nil
+    end
+
+    # Whether a /build request holds APP's name: the claim AppLaunch and
+    # AppRequest#queue! make, and the only way a client App row comes to be.
+    def self.client_origin?(app)
+      AppRequest.holding.exists?(subdomain: app.slug)
     end
 
     def self.registered_slug?(slug)

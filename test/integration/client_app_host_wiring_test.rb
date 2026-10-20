@@ -100,6 +100,17 @@ class ClientAppHostWiringTest < ActionDispatch::IntegrationTest
     assert_nil response.headers["set-cookie"]
   end
 
+  test "[integration] a hub request forging a preview host in any Forwarded form never reaches the hub" do
+    host! "localhost"
+    [ { "X-Forwarded-Host" => "x.localhost" }, { "Forwarded" => "host = x.localhost" },
+      { "Forwarded" => 'host="a\\.x.local\\host"' }, { "Forwarded" => "for=1.2.3.4;host=X.localhost." } ].each do |forged|
+      get "/signin", headers: forged
+      assert_response :not_found, forged.inspect
+      assert_not_includes response.body, "McRitchie", forged.inspect
+      assert_nil response.headers["set-cookie"], forged.inspect
+    end
+  end
+
   test "[integration] the hub's own host still reaches the hub (control)" do
     host! "localhost"
     get "/signin"

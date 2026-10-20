@@ -100,7 +100,14 @@ class AppRequest < ApplicationRecord
     "Your #{plan_name} plan includes #{limit} #{'app'.pluralize(limit)}, and you already have #{limit == 1 ? 'one' : limit}."
   end
 
+  # Read once per process: the preview host checks it on every request
+  # (ClientApps::Host), and satellites.yml ships with the code. In development
+  # the class reloads with the code, and the memo with it.
   def self.reserved_names
+    @reserved_names ||= read_reserved_names
+  end
+
+  def self.read_reserved_names
     satellites = Rails.root.join("config/satellites.yml")
     rows = YAML.safe_load_file(satellites).fetch("satellites", [])
     hosts = rows.filter_map do |sat|
@@ -109,8 +116,9 @@ class AppRequest < ApplicationRecord
     rescue URI::InvalidURIError
       nil
     end
-    (RESERVED + hosts + rows.filter_map { |sat| sat["slug"].presence }).uniq
+    (RESERVED + hosts + rows.filter_map { |sat| sat["slug"].presence }).uniq.freeze
   end
+  private_class_method :read_reserved_names
 
   # Why NAME cannot be claimed, or nil when it can. The one answer the live
   # availability check and the model's validation both give.

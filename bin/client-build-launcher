@@ -39,15 +39,17 @@
 # One launcher per Mac: `run` holds a flock on ~/.client-builds/launcher.lock, and
 # a second `run` exits 1 naming the holder's pid (a --dry-run takes no lock).
 #
-#   CLIENT_BUILD_CLAUDE_CMD  the builder command, as a shell-split string (tests stub it;
-#                            sandbox-check honours it too)
+#   CLIENT_BUILD_CLAUDE_CMD  a stand-in builder command, as a shell-split string. Only
+#                            sandbox-check honours it, and only beside
+#                            CLIENT_BUILD_LAUNCHER_TEST=1 (the tests). `run` never does:
+#                            it always builds with the real `claude`, and says so when
+#                            the variable is set.
 #
 # Exit: 0 ok · 1 refused or not running · 2 usage · 3 status: not installed.
 
 require_relative "lib/process_encoding"
 ProcessEncoding.force_utf8!
 
-require "shellwords"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/client_build_launcher"
 
@@ -78,9 +80,8 @@ when "install"
 when "uninstall" then exit ClientBuildLauncher::LaunchAgent.new.uninstall
 when "status" then exit ClientBuildLauncher::LaunchAgent.new.status_report
 when "sandbox-check"
-  stub = ENV["CLIENT_BUILD_CLAUDE_CMD"].to_s.strip
-  held, lines = ClientBuildLauncher::Sandbox.check(ClientBuildLauncher.config,
-                                                   claude: stub.empty? ? "claude" : Shellwords.split(stub))
+  stub = ClientBuildLauncher.stub_builder("sandbox-check")
+  held, lines = ClientBuildLauncher::Sandbox.check(ClientBuildLauncher.config, claude: stub || "claude")
   lines.each { |line| puts line }
   exit(held ? 0 : 1)
 when "run"
@@ -98,14 +99,11 @@ when "run"
   # Claude bills Alex's claude.ai subscription; the builder's environment is an
   # allow-list (Sandbox::ENV_ALLOW), and this process drops the commonest key too.
   ENV.delete("ANTHROPIC_API_KEY")
-  stub = ENV["CLIENT_BUILD_CLAUDE_CMD"].to_s.strip
-  builder = nil
-  unless stub.empty?
-    builder = lambda do |prompt, dir|
-      ClientBuildLauncher::Sandbox.run(Shellwords.split(stub), prompt: prompt, dir: dir,
-                                                               timeout: Integer(config["run_minutes"]) * 60,
-                                                               max_turns: Integer(config["max_turns"]))
-    end
+  # `run` builds customers' apps with the real builder, always: a stand-in
+  # command is for sandbox-check's tests (ClientBuildLauncher.stub_builder).
+  if ENV.key?(ClientBuildLauncher::STUB_ENV)
+    warn "bin/client-build-launcher: #{ClientBuildLauncher::STUB_ENV} is ignored by run; the builder is the real claude."
+    ENV.delete(ClientBuildLauncher::STUB_ENV)
   end
 
   # One launcher per Mac (ClientBuildLauncher::InstanceLock): a second would release
@@ -130,7 +128,7 @@ when "run"
   launcher = ClientBuildLauncher::Launcher.new(
     client: ClientBuildLauncher::Client.new(api: AgentApi.new(open_timeout: 5, read_timeout: 30)),
     config: config, worker: parsed.values["--worker"].last || ClientBuildLauncher.default_worker,
-    builder: builder, dry_run: dry_run,
+    dry_run: dry_run,
     fingerprint: dry_run ? nil : AgentMailbox::CodeFingerprint.new(
       [ __FILE__, *$LOADED_FEATURES.select { |f| f.start_with?(File.join(ClientBuildLauncher::REPO_ROOT, "")) },
         ClientBuildLauncher::CONFIG_PATH ]

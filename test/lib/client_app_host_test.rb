@@ -55,13 +55,61 @@ class ClientAppHostTest < ActiveSupport::TestCase
   test "[unit] a hub request forging a preview host in X-Forwarded-Host or Forwarded never reaches the hub" do
     door = ClientAppHost.new(HUB, domain: "mcritchie.si")
     [ { "HTTP_X_FORWARDED_HOST" => "x.mcritchie.si" }, { "HTTP_X_FORWARDED_HOST" => "a.com, X.mcritchie.si:443" },
-      { "HTTP_FORWARDED" => 'for=1.2.3.4;host="x.mcritchie.si"' } ].each do |forged|
+      { "HTTP_FORWARDED" => 'for=1.2.3.4;host="x.mcritchie.si"' },
+      # Rack's own parser (what request.host believes) takes spaces around '='
+      # and unescapes a quoted value; the door must read both forms the same way.
+      { "HTTP_FORWARDED" => "host = x.mcritchie.si" }, { "HTTP_FORWARDED" => 'host="a\\.x.mcritchie.si"' },
+      # Only Rack's unescape reads this one as a preview host.
+      { "HTTP_FORWARDED" => 'host="x.mcritchie\\.si"' },
+      { "HTTP_FORWARDED" => "for=1.2.3.4, host=a.com, host=X.mcritchie.si." },
+      { "HTTP_X_FORWARDED_HOST" => "x.mcritchie.si." } ].each do |forged|
       status, _, body = door.call(Rack::MockRequest.env_for("https://mcritchie.studio/login", forged.merge(method: "POST")))
       assert_equal 405, status, forged.inspect
       assert_not_includes body.to_a.join, "hub"
     end
     status, = door.call(Rack::MockRequest.env_for("https://mcritchie.studio/", "HTTP_X_FORWARDED_HOST" => "mcritchie.studio"))
     assert_equal 200, status
+  end
+
+  test "[unit] the forwarded hosts include Rack's parse of Forwarded, unescaped" do
+    assert_includes ClientAppHost.forwarded_hosts("HTTP_FORWARDED" => "host = x.mcritchie.si"), "x.mcritchie.si"
+    assert_includes ClientAppHost.forwarded_hosts("HTTP_FORWARDED" => 'host="a\\.x.mcritchie.si"'), "a.x.mcritchie.si"
+    # Rack answers nil for a header it cannot parse; the scan still reads it.
+    assert_nil Rack::Utils.forwarded_values("host=x.mcritchie.si;;==")
+    assert_includes ClientAppHost.forwarded_hosts("HTTP_FORWARDED" => "host=x.mcritchie.si;;=="), "x.mcritchie.si"
+    assert_empty ClientAppHost.forwarded_hosts({})
+  end
+
+  test "[unit] a trailing dot on the Host header is the same preview host" do
+    door = ClientAppHost.new(HUB, domain: "mcritchie.si")
+    status, _, body = door.call(Rack::MockRequest.env_for("https://nobody-here.mcritchie.si./"))
+    assert_equal 404, status
+    assert_not_includes body.to_a.join, "hub"
+    assert_equal "pawsome.mcritchie.si", ClientAppHost.request_host("HTTP_HOST" => "Pawsome.mcritchie.si.:443")
+  end
+
+  test "[unit] the domain guard strips a trailing dot and refuses any domain at, under or above a production host" do
+    env = ->(value) { { "CLIENT_APP_PREVIEW_DOMAIN" => value } }
+    assert_equal "preview.example", ClientAppHost.domain(env.call("preview.example."), production: true, qa: false)
+    %w[studio mcritchie.studio. x.turfmonster.media turfmonster.media media qa.turfmonster.media. llc
+       cyvasse.xyz herokuapp.com com a.karenmcritchie.com].each do |value|
+      error = assert_raises(ArgumentError, value) { ClientAppHost.domain(env.call(value), production: true, qa: false) }
+      assert_match(/production host|hub session cookie/, error.message, value)
+    end
+    # The hosts come from both registries: apps.yml's and satellites.yml's.
+    hosts = ClientAppHost.production_hosts
+    assert_includes hosts, "mcritchie.studio"
+    assert_includes hosts, "turfmonster.media"
+    assert_includes hosts, "qa.mcritchie.industries"
+    assert_includes hosts, "cyvasse.mcritchie.studio" # satellites.yml only
+    assert_nil ClientAppHost.clashing_host("mcritchie.si")
+  end
+
+  test "[unit] the launcher's preview domain (config/client_builds.yml) is the production default and clears the guard" do
+    assert_equal ClientAppHost::PRODUCTION_DOMAIN, ClientBuilds.preview_domain
+    assert_nil ClientAppHost.clashing_host(ClientBuilds.preview_domain)
+    assert_equal ClientAppHost.url_for("pawsome", domain: ClientAppHost::PRODUCTION_DOMAIN, production: true),
+                 ClientBuilds.preview_url("pawsome")
   end
 
   test "[unit] the host is off when the domain is nil" do

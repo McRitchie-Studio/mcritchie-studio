@@ -282,7 +282,7 @@ class ClientBuildLauncherLoopTest < ActionDispatch::IntegrationTest
         echo '{"type":"result","result":"I declined every step."}'
       SH
       File.chmod(0o755, stub)
-      out, status = Open3.capture2e({ "CLIENT_BUILD_CLAUDE_CMD" => stub },
+      out, status = Open3.capture2e({ "CLIENT_BUILD_CLAUDE_CMD" => stub, "CLIENT_BUILD_LAUNCHER_TEST" => "1" },
                                     RbConfig.ruby, Rails.root.join("bin/client-build-launcher").to_s, "sandbox-check")
       assert_equal 1, status.exitstatus, out
       assert_includes out, "FAIL"

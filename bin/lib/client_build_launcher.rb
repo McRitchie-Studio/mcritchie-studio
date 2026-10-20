@@ -31,6 +31,8 @@ require_relative "process_table"
 # to it (Sandbox), then a local check (Validator), then the publish adapter
 # (Publisher, client-app-host's bin/client-bundle). Every board call is made from
 # the main loop; a run's thread does only local work.
+require "shellwords"
+
 module ClientBuildLauncher
   REPO_ROOT = File.expand_path("../..", __dir__)
   CONFIG_PATH = File.join(REPO_ROOT, "config/client_builds.yml")
@@ -44,6 +46,22 @@ module ClientBuildLauncher
   def self.config(path = CONFIG_PATH) = YAML.safe_load_file(path).freeze
 
   def self.default_worker = "client-build-launcher@#{Socket.gethostname.split('.').first}"
+
+  # A stand-in builder command (a shell-split string), for tests only.
+  STUB_ENV = "CLIENT_BUILD_CLAUDE_CMD"
+  # The explicit switch a test sets beside STUB_ENV. Without it nothing honours the stub.
+  TEST_ENV = "CLIENT_BUILD_LAUNCHER_TEST"
+
+  # The builder command SUBCOMMAND runs: the stub as argv, or nil for the real
+  # `claude`. Only `sandbox-check`, and only with TEST_ENV=1, takes the stub:
+  # `run` builds customers' apps, so a stray CLIENT_BUILD_CLAUDE_CMD in the
+  # service's environment must never swap its builder.
+  def self.stub_builder(subcommand, env = ENV)
+    return nil unless subcommand == "sandbox-check" && env[TEST_ENV] == "1"
+
+    stub = env[STUB_ENV].to_s.strip
+    stub.empty? ? nil : Shellwords.split(stub)
+  end
 
   # The last `limit` characters of `text` ("abc"[-2000..] is nil, not "abc").
   def self.tail(text, limit = 2000)
