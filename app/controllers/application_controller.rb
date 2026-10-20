@@ -29,7 +29,20 @@ class ApplicationController < ActionController::Base
   # Default-deny: every action needs an admin unless AdminWall lists it.
   include AdminWall
 
+  helper_method :first_name_modal?
+
   private
+
+  # Whether the layout arms the engine's first-name modal on this page: the
+  # engine's rule (Studio.first_name_outstanding?), unless the page asks for the
+  # name itself and opted out with skip_first_name_modal! (the CTO chat asks in
+  # its own thread: AgentMessages::FirstNameAsk, task cto-chat-quality-pass).
+  def first_name_modal?
+    !@skip_first_name_modal && logged_in? && Studio.first_name_outstanding?(current_user, session)
+  end
+
+  # A page that asks for the first name in its own way keeps the modal off itself.
+  def skip_first_name_modal! = @skip_first_name_modal = true
 
   # Sign-out (the engine's SessionsController#destroy) and a forced re-login
   # (verify_session_token) both end here. Neither rotates the user's token, so

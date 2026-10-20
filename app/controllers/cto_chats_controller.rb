@@ -20,7 +20,10 @@
 #           AgentMessage for this app's CTO, and the dispatcher answers it as it
 #           answers Discord. Answers with the new turn as a Turbo Stream. The
 #           message may carry files the composer uploaded first
-#           (CtoChatAttachmentsController, AgentMessages::Attachments)
+#           (CtoChatAttachmentsController, AgentMessages::Attachments). A
+#           nameless owner's answer to the CTO's first-name ask saves the name
+#           (AgentMessages::FirstNameAsk); these pages never open the engine's
+#           first-name modal
 #
 # Past the AdminWall (SIGNED_IN), all three answer 404, never 403, unless the viewer
 # owns the app or is an admin, exactly as the app's own page does. The CTO is the
@@ -29,6 +32,10 @@ class CtoChatsController < ApplicationController
   FORM_ID = "cto-chat-form".freeze
 
   before_action :load_app_and_cto
+  # The CTO asks a nameless owner for their first name in the chat
+  # (AgentMessages::FirstNameAsk), so the engine's first-name modal never opens
+  # over the launch panel or the thread (Alex 2026-10-19).
+  before_action :skip_first_name_modal!
   helper_method :composer_locals
 
   def show
@@ -60,6 +67,10 @@ class CtoChatsController < ApplicationController
       e
     end
     return refused(outcome) if outcome.is_a?(AgentMessages::WebIngest::Refused)
+
+    # A skip of the CTO's first-name ask (AgentMessages::FirstNameAsk) is the
+    # engine's skip: not now, for this session, so no other page asks either.
+    session[Studio::FIRST_NAME_SKIP_SESSION_KEY] = true if outcome.run_meta.is_a?(Hash) && outcome.run_meta["first_name"] == "skipped"
 
     AgentMessages::WebChat.broadcast_turn(outcome, append: true) if outcome.previously_new_record?
     respond_to do |format|
