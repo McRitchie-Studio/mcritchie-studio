@@ -230,7 +230,7 @@ the plist template changed.
 
 | Key | Default | Meaning |
 |-----|---------|---------|
-| `preview_domain` | `mcritchie.si` | The host's domain; a separate registrable domain, so the hub's cookie never reaches a bundle |
+| `preview_domain` | `mcritchie.app` | The host's domain; a separate registrable domain, so the hub's cookie never reaches a bundle |
 | `cap` | 2 | Builds at once (`--cap` overrides, 1–5) |
 | `max_attempts` | 3 | Claims per task before it is left for a person |
 | `run_minutes` | 45 | The builder's wall-clock cap |

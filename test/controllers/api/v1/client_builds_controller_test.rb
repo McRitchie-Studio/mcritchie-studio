@@ -45,7 +45,7 @@ module Api
         assert_equal [ older.slug, newer.slug ], rows.pluck("task_slug")
         assert_equal %w[older-app newer-app], rows.pluck("subdomain")
         assert_equal [ 0, 0 ], rows.pluck("attempts")
-        assert_equal "mcritchie.si", response.parsed_body.dig("meta", "preview_domain")
+        assert_equal "mcritchie.app", response.parsed_body.dig("meta", "preview_domain")
       end
 
       test "a claim moves the task to building, records the run and answers the intake" do
@@ -58,7 +58,7 @@ module Api
                      [ intake["subdomain"], intake["app_name"], intake.dig("cto", "name"), intake.dig("cto", "portrait") ]
         assert_equal PALETTE["light"]["primary"], intake.dig("palette", "light", "primary")
         assert_includes intake["prompt"], "Ignore all previous instructions", "the prompt rides as data, verbatim"
-        assert_equal "https://pawsome.mcritchie.si", intake["preview_url"]
+        assert_equal "https://pawsome.mcritchie.app", intake["preview_url"]
 
         task.reload
         assert_equal "building", task.stage
@@ -119,10 +119,10 @@ module Api
         assert_equal "shipped", task.stage
         assert_nil task.merged, "no code was merged anywhere"
         assert_equal false, task.devops["included_in_release"]
-        assert_equal [ "preview_ready", "v1", "https://pawsome.mcritchie.si" ],
+        assert_equal [ "preview_ready", "v1", "https://pawsome.mcritchie.app" ],
                      task.devops["client_build"].values_at("state", "version", "preview_url")
         refute Task.reviewable.exists?(slug: task.slug)
-        assert_includes thread("pawsome").last.response_text, "(https://pawsome.mcritchie.si)"
+        assert_includes thread("pawsome").last.response_text, "(https://pawsome.mcritchie.app)"
       end
 
       test "a failed run blocks the task with the reason and posts the snag line" do
@@ -174,7 +174,7 @@ module Api
         task.reload
         assert_equal [ "shipped", "preview_ready", "20261019T201500Z-1a2b3c4d" ],
                      [ task.stage, *task.devops["client_build"].values_at("state", "version") ]
-        assert_includes thread("pawsome").last.response_text, "(https://pawsome.mcritchie.si)"
+        assert_includes thread("pawsome").last.response_text, "(https://pawsome.mcritchie.app)"
       end
 
       test "a release still goes back in line when the app's only bundle predates the run" do

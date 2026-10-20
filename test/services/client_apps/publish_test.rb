@@ -90,10 +90,15 @@ module ClientApps
     end
 
     test "[unit] a reserved name or a non-label slug is never published" do
-      reserved = apps(:turf_monster)
+      reserved = App.create!(slug: "www", name: "WWW")
       error = assert_raises(Publish::Refused) { Publish.new(app: reserved, files: bundle_files, by: "x").call }
-      assert_equal "turf-monster is a reserved name (one of ours), never a client preview", error.message
+      assert_equal "www is a reserved name (one of ours), never a client preview", error.message
       assert_nil reserved.reload.preview_version
+
+      satellite = apps(:turf_monster)
+      error = assert_raises(Publish::Refused) { Publish.new(app: satellite, files: bundle_files, by: "x").call }
+      assert_equal "turf-monster is one of ours (config/apps.yml), never a client preview", error.message
+      assert_nil satellite.reload.preview_version
 
       hub = apps(:mcritchie_studio)
       error = assert_raises(Publish::Refused) { Publish.new(app: hub, files: bundle_files, by: "x").call }
