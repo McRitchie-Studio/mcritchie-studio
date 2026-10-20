@@ -13,12 +13,15 @@
       <%# Left: the share used, and beside it, lighter and smaller, when it resets (1am Denver on the 1st, AgentUsage.month_range). %>
       <span class="flex min-w-0 flex-wrap items-baseline gap-x-2">
         <span class="font-semibold text-heading tabular-nums" data-test="usage-meter-percent"><%= meter.percent %>&#37; used</span>
-        <span class="text-xs text-muted" data-test="usage-meter-resets"><%= meter.resets_line %></span>
+        <%# Counting down, the right side already says when it resets: the left drops its line so "Resets" reads once. %>
+        <% unless meter.countdown? %>
+          <span class="text-xs text-muted" data-test="usage-meter-resets"><%= meter.resets_line %></span>
+        <% end %>
       </span>
-      <%# Right: the tokens, until under a fifth is left (the warn share); then a countdown to the reset, ticked each minute (usage_countdown.js). %>
+      <%# Right: the tokens, until warn_percent is used (80%: under a fifth left) or the cap; then a countdown to the reset, ticked each minute (usage_countdown.js). %>
       <% if meter.countdown? %>
         <span class="shrink-0 text-secondary text-xs tabular-nums" data-test="usage-meter-countdown"
-              data-usage-countdown data-resets-at="<%= meter.resets_at.to_i %>"><%= meter.countdown_line %></span>
+              data-usage-countdown data-resets-at="<%= meter.resets_at.to_i %>" title="<%= meter.resets_line %>"><%= meter.countdown_line %></span>
       <% else %>
         <span class="shrink-0 text-secondary text-xs tabular-nums" data-test="usage-meter-tokens"><%= fmt.(meter.used) %> / <%= fmt.(meter.allowance) %></span>
       <% end %>
@@ -31,7 +34,7 @@
     </div>
   <% end %>
   <% if meter.capped? || meter.warn? %>
-    <% resets = meter.resets_on %>
+    <% resets = meter.resets_moment %>
     <p class="<%= meter.capped? ? 'text-danger-ink' : 'text-warning-ink' %> text-xs" data-test="usage-cap-note">
       <% if meter.capped? %>
         This month's allowance is used up; it resets <%= resets %>.

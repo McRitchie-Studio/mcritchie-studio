@@ -93,7 +93,7 @@ A message answered at the cap (below) carries no tokens and is not counted.
   allowance, so a stranger cannot exhaust what the client pays for (Alex,
   2026-10-16). Once the client's allowance is spent, a public message is still
   refused, with a plain line ("I can't answer right now. Please try again after
-  Nov 1.") that carries no meter, price or upgrade; a public answer never ends
+  Nov 1 at 1am MST.") that carries no meter, price or upgrade; a public answer never ends
   with the 80% notice either. The meter is the owner's, never the public's. Owner and team answers are in the totals but never
   metered and never capped. An answer from before this release has no `audience`
   and is not metered (only the owner was answered then).
@@ -142,14 +142,16 @@ no allowance skips the capped-count query (`agent_message_events` is indexed on
 - **The CTO web chat** (`/applications/:slug/chat`) shows a compact meter on the
   app's status card (`agent_chats/_tokens_bar`): on the left "42% used" with
   "Resets Nov 1 at 1am MST" beside it, smaller and lighter; on the right the
-  tokens, "10,689 / 25,000", until under a fifth is left (`warn_percent`, or at
-  the cap: `Meter#countdown?`), when the right side counts down instead, "Resets
-  in 3d 4h" (minutes under a day), ticked each minute by
+  tokens, "10,689 / 25,000", until `warn_percent` is used (80% by default, so
+  under a fifth left) or the cap (`Meter#countdown?`), when the right side counts
+  down instead, "Resets in 3d 4h" (minutes under a day), and the left drops its
+  reset line so "Resets" reads once (the countdown carries it as a title). The
+  countdown is ticked each minute, and refreshes the page once the reset passes, by
   `app/javascript/usage_countdown.js` (`AgentUsage.countdown_line` paints the
   first value; the two must agree). Under it an 8px bar coloured by state, and
   the suggestion. Past
   `warn_percent` it adds "Running low: N tokens left this month", and at the cap
-  "This month's allowance is used up; it resets Nov 1", each with an "Upgrade for
+  "This month's allowance is used up; it resets Nov 1 at 1am MST", each with an "Upgrade for
   more" link to `/packages`. It is built from `Meter#without_cost` for every
   viewer, admins included, and redrawn live after each answer is delivered,
   the cap reply included (`WebChat.deliver!` → `broadcast_meter`;

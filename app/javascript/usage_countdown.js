@@ -17,19 +17,34 @@ export function countdownLine(seconds) {
   return "Resets in " + mins + "m";
 }
 
-// Rewrites every countdown span from its data-resets-at (epoch seconds).
-export function tick(root, nowMs) {
+// Rewrites every countdown span from its data-resets-at (epoch seconds), and
+// returns the reset times that have passed (each once per page: `seen`), so the
+// caller refreshes the page and the new month's meter replaces "Resetting now".
+export function tick(root, nowMs, seen = new Set()) {
+  const passed = [];
   root.querySelectorAll("[data-usage-countdown]").forEach((el) => {
     const at = Number(el.dataset.resetsAt);
     if (!Number.isFinite(at)) return;
-    const text = countdownLine(Math.floor(at - nowMs / 1000));
+    const left = Math.floor(at - nowMs / 1000);
+    const text = countdownLine(left);
     if (el.textContent !== text) el.textContent = text;
+    if (left <= 0 && !seen.has(at)) { seen.add(at); passed.push(at); }
   });
+  return passed;
 }
 
 if (typeof document !== "undefined" && typeof window !== "undefined" && !window.__usageCountdownArmed) {
   window.__usageCountdownArmed = true;
-  const run = () => tick(document, Date.now());
+  const seen = new Set();
+  const run = () => {
+    // A minute past the reset (the server's month has turned), refresh once:
+    // the page morphs (turbo_refreshes_with), so the thread keeps its place.
+    if (tick(document, Date.now() - 60 * 1000, seen).length && window.Turbo) {
+      window.Turbo.visit(window.location.href, { action: "replace" });
+    } else {
+      tick(document, Date.now(), new Set());
+    }
+  };
   document.addEventListener("turbo:load", run);
   window.setInterval(run, 60 * 1000);
 }

@@ -55,10 +55,15 @@ class CtoChatFirstNameTest < ActionDispatch::IntegrationTest
     assert_equal [ "completed", "first name", "saved" ], [ reply.status, reply.action_summary, reply.run_meta["first_name"] ]
     assert_match(/\ANice to meet you, Ada!/, reply.response_text)
     assert_equal [ "Ada", "Ada" ], [ @owner.reload.first_name, @owner.name ]
+    assert_includes reply.response_text, %(Not right? Say "call me" and your name.)
+
+    fix = send_chat("call me Ace")
+    assert_equal [ "completed", "saved" ], [ fix.status, fix.run_meta["first_name"] ], "the very next cued message corrects it"
+    assert_equal "Ace", @owner.reload.first_name
 
     nxt = send_chat("Can you add a gallery?")
     assert_equal "received", nxt.status, "after the ask, the model answers as usual"
-    assert_equal "Ada", nxt.author_name, "and the CTO's next turns know the name"
+    assert_equal "Ace", nxt.author_name, "and the CTO's next turns know the name"
 
     get packages_path
     assert_select MODAL_MARKER, 0
@@ -77,10 +82,12 @@ class CtoChatFirstNameTest < ActionDispatch::IntegrationTest
 
   test "[integration] a first message that is not a name goes to the model and ends the ask" do
     open_chat
-    message = send_chat("Can you add online payments?")
+    message = send_chat("Add dark mode") # Carl's trigger: a request, not a name
+    assert_equal "received", message.status, "the request reaches the model"
     assert_equal "received", message.status
     assert_nil @owner.reload.first_name
     assert_equal "received", send_chat("Ada").status, "only the first message after the ask is read as a name"
+    assert_equal "received", send_chat("call me Ada").status, "nor a cued one: no name was saved to correct"
     assert_nil @owner.reload.first_name
   end
 

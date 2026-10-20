@@ -24,3 +24,13 @@ test("tick rewrites each countdown from its reset time", () => {
   assert.equal(span.textContent, "Resets in 5h 3m");
   assert.equal(bad.textContent, "keep", "a span with no reset time is left alone");
 });
+
+test("tick reports a passed reset once, so the page refreshes once and never loops", () => {
+  const span = { dataset: { resetsAt: "1000" }, textContent: "Resets in 1m" };
+  const root = { querySelectorAll: () => [ span ] };
+  const seen = new Set();
+  assert.deepEqual(tick(root, 999 * 1000, seen), [], "not yet");
+  assert.deepEqual(tick(root, 1001 * 1000, seen), [ 1000 ]);
+  assert.equal(span.textContent, "Resetting now");
+  assert.deepEqual(tick(root, 1100 * 1000, seen), [], "already refreshed for this reset");
+});

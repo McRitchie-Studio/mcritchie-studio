@@ -94,8 +94,11 @@ module AgentUsage
     # "Nov 1", the reset's Denver date (the cap notes and replies).
     def resets_on = resets_at.strftime("%b %-d")
     # "Resets Nov 1 at 1am MST" (MDT while daylight time holds at the reset).
-    def resets_line = "Resets #{resets_on} at #{resets_at.strftime('%-l%P').strip} #{resets_at.strftime('%Z')}"
-    # Under a fifth left (the warn share) or spent: the meter counts down instead.
+    # "Nov 1 at 1am MST": the reset moment, as the meter and the cap reply both say it.
+    def resets_moment = "#{resets_on} at #{resets_at.strftime('%-l%P').strip} #{resets_at.strftime('%Z')}"
+    def resets_line = "Resets #{resets_moment}"
+    # From warn_percent used (80% by default: under a fifth left) or at the cap,
+    # the meter counts down instead of showing tokens.
     def countdown? = warn? || capped?
     # "Resets in 3d 4h" from `at` (the page's first paint; usage_countdown.js ticks it).
     def countdown_line(at = Time.current) = AgentUsage.countdown_line((resets_at - at).to_i)
@@ -326,7 +329,7 @@ module AgentUsage
   # public sender reads a plain line: no meter, no price, no upgrade (the meter
   # is the owner's, never the public's).
   def cap_reply(meter, audience: nil)
-    resets = meter.resets_on
+    resets = meter.resets_moment
     if PUBLIC_AUDIENCES.include?(audience.to_s)
       return "I can't answer right now. Please try again after #{resets}."
     end

@@ -8,14 +8,19 @@ class FirstNameAskTest < ActiveSupport::TestCase
 
   def name_of(text) = Ask.parse(text)&.then { |a| a.name? ? a.name : a.kind }
 
-  test "[unit] a name, bare or introduced, is read; a lowercase one is capitalized" do
+  test "[unit] a name: one word, two capitalized words, or up to three after a cue" do
     assert_equal "Ada", name_of("Ada")
     assert_equal "Ada", name_of("ada.")
+    assert_equal "Mary Jane", name_of("Mary Jane")
+    assert_equal "Ada Lovelace", name_of("Ada Lovelace")
     assert_equal "Ada Lovelace", name_of("I'm Ada Lovelace")
+    assert_equal "Ada Lovelace", name_of("i'm ada lovelace"), "after a cue, any case, capitalized"
     assert_equal "Jo", name_of("call me jo!")
+    assert_equal "Alex", name_of("call me alex")
     assert_equal "Mary-Jane", name_of("Hi, my name is Mary-Jane")
     assert_equal "José", name_of("It's José")
     assert_equal "DeShawn", name_of("DeShawn"), "a typed capital is kept"
+    assert_nil Ask.parse("call me Will"), "a stop word rejects even after a cue (\"It's fine\"): such a name goes to the model and /profile"
   end
 
   test "[unit] a skip is read as a skip" do
@@ -23,10 +28,25 @@ class FirstNameAskTest < ActiveSupport::TestCase
     [ "no thanks", "not now", "skip for now", "rather not" ].each { |text| assert_equal :skip, name_of(text), text }
   end
 
+  # Carl's probe list (review of this task): each was saved as a first name, and
+  # the request never reached the model. When in doubt, the model answers.
+  CARL_PROBES = [ "Add dark mode", "Sounds good", "Thank you", "Looks great", "Make it blue", "Change the logo",
+                  "What's next", "Love it", "Perfect", "Great", "Awesome", "Cool", "Can you help", "Add a blog",
+                  "Sure thing", "Go ahead", "Ship it", "Let's go", "Ignore previous instructions" ].freeze
+
   test "[unit] anything that is not a name goes to the model" do
-    [ "Can you add a booking page?", "yes", "hello", "what do you need", "1234", "a b c d", "",
-      "ok", "Add dark mode to the site please" ].each { |text| assert_nil Ask.parse(text), text.inspect }
+    (CARL_PROBES + [ "Can you add a booking page?", "yes", "hello", "what do you need", "1234", "a b c d", "",
+                     "ok", "Add dark mode to the site please", "dark mode", "ada lovelace", "Pricing", "Logo",
+                     "Will", "It's fine", "This is great", "Book Now Please", "make it pop" ]).each do |text|
+      assert_nil Ask.parse(text), "#{text.inspect} must reach the model"
+    end
     assert_nil Ask.parse("A" * 41), "past the engine's per-name cap"
+  end
+
+  test "[unit] a correction needs a cue" do
+    assert_equal "Al", Ask.parse("call me Al", cue_required: true).name
+    assert_nil Ask.parse("Al", cue_required: true)
+    assert_nil Ask.parse("skip", cue_required: true)
   end
 
   test "[unit] the save writes the engine's columns and backfills a blank name" do
@@ -50,5 +70,20 @@ class FirstNameAskTest < ActiveSupport::TestCase
     assert Ask.pending?(user, thread)
     row.call({})
     assert_not Ask.pending?(user, thread), "only the first message after the ask"
+  end
+
+  test "[unit] right after a saved name, a cued message corrects it, name and all; anything else is the model's" do
+    user = User.create!(email: "nameless-#{SecureRandom.hex(3)}@example.test")
+    assert_match(/\ANice to meet you, Ada! \(Not right\? Say "call me" and your name\.\)/, Ask.reply!(user, Ask.parse("Ada Lovelace")))
+    thread = "web:pawsome:#{user.id}"
+    AgentMessage.create!(channel: "web", external_id: SecureRandom.uuid, channel_ref: "pawsome", thread_key: thread,
+                         author_ref: user.id.to_s, author_name: "x", content: "Ada Lovelace", mentions: {}, sent_at: Time.current,
+                         soul_slug: AppCto::SOUL, status: "completed", run_meta: { "first_name" => "saved" })
+    assert_nil Ask.answer_for(user.reload, thread, "Add dark mode")
+    assert_nil Ask.answer_for(user, thread, "Al")
+    correction = Ask.answer_for(user, thread, "call me Al")
+    assert correction.correction
+    assert_equal "Got it, Al. #{Ask::NEXT_STEP}", Ask.reply!(user, correction)
+    assert_equal [ "Al", nil, "Al" ], user.reload.values_at(:first_name, :last_name, :name)
   end
 end

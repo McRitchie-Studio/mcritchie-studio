@@ -69,4 +69,32 @@ class AgentUsageResetTest < ActiveSupport::TestCase
     assert_equal "Resets in 1d 0h", AgentUsage.countdown_line(24 * 3600)
     assert_equal "Resetting now", AgentUsage.countdown_line(0)
   end
+
+  test "[unit] Nov 1 2026, the fall-back Sunday: 1am happens twice and the month turns at the second, 1am MST" do
+    first_one_am = Time.utc(2026, 11, 1, 7, 0)  # 01:00 MDT
+    second_one_am = Time.utc(2026, 11, 1, 8, 0) # 01:00 MST
+    assert_equal "MDT", first_one_am.in_time_zone(ZONE).strftime("%Z")
+    assert_equal 10, AgentUsage.month_range(first_one_am).first.month, "the first 1am is still October"
+    assert_equal 10, AgentUsage.month_range(second_one_am - 1).first.month
+    start, finish = AgentUsage.month_range(second_one_am)
+    assert_equal [ second_one_am, "MST" ], [ start.utc, start.strftime("%Z") ]
+    assert_equal ZONE.local(2026, 12, 1, 1), finish
+    assert_equal 30.days.to_i, (finish - start).to_i, "1am MST to 1am MST: exactly 30 days"
+  end
+
+  test "[unit] the cap reply names the same reset moment the meter does" do
+    m = meter(used: 25_000)
+    assert_includes AgentUsage.cap_reply(m), "It resets Nov 1 at 1am MST."
+    assert_equal "I can't answer right now. Please try again after Nov 1 at 1am MST.", AgentUsage.cap_reply(m, audience: "public")
+  end
+
+  test "[unit] counting down, the meter says Resets once: the left line drops, the countdown carries it as a title" do
+    html = ApplicationController.render(partial: "agent_chats/tokens_bar", locals: { meter: meter(used: 21_000) })
+    assert_equal 1, html.scan(/Resets in/).size
+    assert_no_match(/data-test="usage-meter-resets"/, html)
+    assert_match(/data-test="usage-meter-countdown"[^>]*title="Resets Nov 1 at 1am MST"/m, html)
+    calm = ApplicationController.render(partial: "agent_chats/tokens_bar", locals: { meter: meter(used: 10_689) })
+    assert_match(/data-test="usage-meter-resets">Resets Nov 1 at 1am MST</, calm)
+    assert_match(/data-test="usage-meter-tokens">10,689 \/ 25,000</, calm)
+  end
 end

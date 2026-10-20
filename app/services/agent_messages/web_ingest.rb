@@ -130,7 +130,7 @@ module AgentMessages
 
     # The owner's answer to the CTO's first-name ask (FirstNameAsk), or nil.
     def name_answer(text, attrs)
-      FirstNameAsk.pending?(@user, attrs[:thread_key]) ? FirstNameAsk.parse(text) : nil
+      FirstNameAsk.answer_for(@user, attrs[:thread_key], text)
     end
 
     # `name_answer`: a FirstNameAsk::Answer, answered in code (no model, no
