@@ -26,7 +26,7 @@ module DomainRegister
     # message and answered with the dashboard step that clears it.
     PREREQUISITES = [
       [/authentication error|unauthori[sz]ed|invalid api token|permission/i,
-       "the token cannot use the Registrar API. Use op://studio-agents-admin/cloudflare.registrar/api-token " \
+       "the token cannot use the Registrar API. Use the admin-lane item cloudflare.registrar, field api-token " \
        "(permission Account > Registrar > Edit), never the DNS token cloudflare.studio.provision."],
       [/payment|billing|card|charge/i,
        "no default payment method. Alex: Cloudflare dashboard > Manage Account > Billing > Payment info, " \
