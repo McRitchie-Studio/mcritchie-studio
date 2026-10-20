@@ -28,10 +28,12 @@
       <% else %>
         Running low: <%= fmt.(meter.remaining) %> tokens left this month.
       <% end %>
-      <%= link_to "Upgrade for more", packages_path, class: "font-semibold underline", data: { test: "usage-upgrade-link", turbo: false } %>
+      <% if (suggestion = meter.suggestion) %>
+        <span data-test="usage-suggestion" data-kind="<%= suggestion.kind %>"><%= suggestion.line %></span>
+      <% end %>
+      <%= link_to "Upgrade for more", packages_path, class: "font-semibold underline", data: { test: "usage-upgrade-link" } %>
     </p>
-  <% end %>
-  <% if (suggestion = meter.suggestion) %>
+  <% elsif (suggestion = meter.suggestion) %>
     <p class="text-warning-ink text-xs" data-test="usage-suggestion" data-kind="<%= suggestion.kind %>"><%= suggestion.line %></p>
   <% end %>
 </div>
