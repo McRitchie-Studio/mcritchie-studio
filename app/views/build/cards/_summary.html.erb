@@ -64,7 +64,7 @@
     <p class="text-xs text-muted" data-test="build-summary-not-ready"><%= request_row.draft? ? "A step changed; finish it and Ray will sum up again." : "This app is already in the build queue." %></p>
   <% else %>
     <%# Turbo, so the 303 to the new CTO's chat is a view-transition visit (cto_chats/show, whose first visit plays the launch panel). Signed out, the same press opens the sign-in modal (BuildController#sign_in_to_launch), and the sign-in comes back to launch. While the press is in flight Turbo disables the button and marks the form aria-busy, which swaps its label for a spinner (the group-aria-busy classes) until the panel or the modal arrives. %>
-    <%= form_with url: build_request_path(request_row.token), method: :patch, class: "group", data: { test: "build-summary-form" } do %>
+    <%= form_with url: build_request_path(request_row.token), method: :patch, class: "group", data: { test: "build-summary-form", build_summary_form: true } do %>
       <%= hidden_field_tag "app_request[subdomain]", request_row.subdomain %>
       <%= hidden_field_tag "message_id", message.id, id: nil %>
       <%= tag.span class: "cta-glow", style: cta_glow_style(request_row.palette), data: { test: "build-summary-glow" } do %>

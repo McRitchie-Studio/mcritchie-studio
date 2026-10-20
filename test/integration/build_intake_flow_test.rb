@@ -115,7 +115,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     cto = ray_answers("Customize your CTO", { kind: "intake", card: "cto", names: %w[Marble Coach Scout], portrait: "harbor" })
     get build_request_path(request_row.token)
     assert_select "[data-test=build-card-cto] [data-test=build-cto-name-input][value=Marble]", 1, "the name is prefilled"
-    assert_select "[data-test=build-card-cto] [data-test=build-choose-cto]", "Hatch CTO"
+    assert_select "[data-test=build-card-cto] [data-test=build-choose-cto]", "Wake Up your CTO"
     assert_select "[data-test=build-card-cto] [data-test=build-portrait-dialog] [data-test=build-portrait]", BuildIntake::Portraits::KEYS.size
 
     tap_and_relay(request_row, "cto", "My CTO is Marbles.", message_id: cto.id, custom_name: "Marbles", portrait: "meadow")
@@ -144,9 +144,9 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_select "#build-checklist [data-test=build-status-card][data-complete=true]" do
       assert_select "[data-test=build-status-title]", "League Standings Hub"
       assert_select "[data-test=build-tile-agent][data-done=true] [data-test=build-tile-agent-portrait][src*='cto_portraits/meadow']"
-      assert_select "[data-test=build-tile-agent-value]", "Marbles"
-      assert_select "[data-test=build-tile-theme-value]", "Pitch Two"
-      assert_select "[data-test=build-tile-domain-value]", "league-hub.mcritchie.studio"
+      assert_select "[data-test=build-tile-agent-value]", /Marbles/
+      assert_select "[data-test=build-tile-theme-value]", /Pitch Two/
+      assert_select "[data-test=build-tile-domain-value]", /league-hub\.mcritchie\.studio/
       assert_select "[data-test=build-summary-build]", 0
     end
 

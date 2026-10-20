@@ -53,7 +53,7 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-idea-title']", "A league site with live standings"
   end
 
-  test "Customize your CTO: one stack of portrait, prefilled name, name ideas, then Hatch CTO" do
+  test "Customize your CTO: one stack of portrait, prefilled name, name ideas, then Wake Up your CTO" do
     card("cto", "names" => %w[Marble Coach Scout], "portrait" => "harbor")
     assert_select "[data-test='build-cto-heading']", "Customize your CTO"
     refute_match(/Meet your CTO/, rendered)
@@ -69,10 +69,13 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_equal %w[Marble Coach Scout], css_select("[data-test='build-cto-name-suggestion']").map { |b| b["data-build-cto-name"] }
     assert_select "[data-test='build-cto-name-suggestion'][type='button']", 3, "a tap fills the field; it never submits"
     assert_select "[data-test='build-cto-name-suggestion'][aria-pressed='true']", text: "Marble"
-    assert_select "#{intake_form('cto')} [data-test='build-choose-cto']", "Hatch CTO"
+    # [component] Alex, 2026-10-19: the CTA reads Wake Up your CTO, and stands taller than a plain button.
+    assert_select "#{intake_form('cto')} [data-test='build-choose-cto']", "Wake Up your CTO"
+    refute_match(/Hatch CTO/, rendered)
+    assert_includes css_select("[data-test='build-choose-cto']").first["class"].split, "min-h-14", "the CTO's CTA is taller"
     refute_match(/Build App/, rendered)
 
-    # The stack, top to bottom: the portrait, the name, the name ideas, Hatch CTO, in one centred column.
+    # The stack, top to bottom: the portrait, the name, the name ideas, Wake Up your CTO, in one centred column.
     stack = css_select("[data-test='build-cto-stack']").first
     assert_includes stack["class"].split, "flex-col"
     order = stack.element_children.map { |el| el["data-test"] || el.at_css("[data-test]")&.[]("data-test") }
@@ -110,7 +113,18 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-palette-check'][aria-hidden='true']", 3
     # One CTA, at the bottom, submitting the selected index.
     assert_select "#{intake_form('palette')} button[type='submit']", 1
-    assert_select "#{intake_form('palette')} > .cta-glow:last-child > button[type='submit'][data-test='build-choose-palette']", "Choose Theme"
+    assert_select "#{intake_form('palette')} > .cta-glow > button[type='submit'][data-test='build-choose-palette']", "Choose Theme"
+    # [component] Alex, 2026-10-19: more room above Choose Theme, the moving orbit
+    # glow (a clipped ring turning behind it), and under it a link asking Ray for
+    # three new themes through the chat box.
+    glow = css_select("[data-test='build-palette-glow']").first
+    assert_includes glow["class"].split, "cta-glow-orbit"
+    assert_includes glow["class"].split, "mt-6", "more space above Choose Theme"
+    assert_select "[data-test='build-palette-glow'] > span.cta-glow-ring[aria-hidden='true'] + button[data-test='build-choose-palette']", 1
+    assert_select "#{intake_form('palette')} > .cta-glow + [data-test='build-theme-more']", 1, "the ask sits under Choose Theme"
+    assert_select "[data-test='build-theme-more'] button[type='button'][data-test='build-theme-more-ask'][data-build-ask='Can you give me three new theme ideas?']",
+                  text: "Pick three new themes"
+    assert_select "[data-test='build-theme-more']", text: /Want different colors\?/
     assert_select "[data-test='build-more-like']", 0
     refute_includes rendered, "More like this"
   end
@@ -207,7 +221,7 @@ class BuildCardsViewTest < ActionView::TestCase
     @rendered = +""
     @row.update!(palette: themes[1])
     card("cto", "names" => %w[Marble], "portrait" => "harbor")
-    assert_includes glow_of.("[data-test='build-cto-glow']"), "--glow-a: #1d4ed8", "the chosen theme carries on to Hatch CTO"
+    assert_includes glow_of.("[data-test='build-cto-glow']"), "--glow-a: #1d4ed8", "the chosen theme carries on to Wake Up your CTO"
     @rendered = +""
     card("address", "names" => %w[poke-offense])
     assert_select ".cta-glow[data-test='build-address-glow'] > [data-test='build-choose-address']"
@@ -260,6 +274,7 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_nil button["data-build-sign-in"]
     assert_select ".cta-glow[data-test='build-summary-glow'][style*='--glow-a: #15803d'] > [data-test='build-summary-build']", 1,
                   "Build My App glows in the chosen theme"
+    assert_select "form[data-test='build-summary-form'][data-build-summary-form]", 1, "build_status.js pops the status card when this form posts"
     assert_select "form[action='/build/#{@row.token}'] input[name='_method'][value='patch']"
     assert_select "form[action='/build/#{@row.token}'] input[name='message_id'][value='#{@message.id}']"
 

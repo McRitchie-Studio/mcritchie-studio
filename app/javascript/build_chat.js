@@ -23,7 +23,9 @@
 //     Enter closes it (the arrow keys only move the pick); a tap on one of
 //     Ray's names fills the name field;
 //   - the theme card ([data-build-theme]): the Dark / Light toggle swaps every
-//     column's preview, and the choice survives the card's re-render;
+//     column's preview (a tap on the side already showing flips to the other,
+//     build_status.js), and the choice survives the card's re-render;
+//   - the status card (build_status.js): it pops when a render first draws it;
 //   - the CTA glows (cta_glow.js): a theme pick moves Choose Theme's glow to
 //     that theme's colours, and a glow scrolled off screen draws nothing;
 //
@@ -33,6 +35,7 @@
 import { Turbo } from "@hotwired/turbo-rails";
 import { pickDomainChip, syncDomainGlow } from "build_domain";
 import { syncThemeGlow, watchGlows } from "cta_glow";
+import { cardAppeared, nextThemeMode, popStatusCard } from "build_status";
 
 const POLL_MS = 2500;
 const SLOW_MS = 10000;
@@ -196,7 +199,7 @@ document.addEventListener("click", (event) => {
   const mode = event.target.closest?.("[data-build-theme-mode]");
   if (mode) {
     const card = mode.closest("[data-build-theme]");
-    const chosen = mode.dataset.buildThemeMode;
+    const chosen = nextThemeMode(card.dataset.mode, mode.dataset.buildThemeMode);
     const key = themeKey(card);
     if (key) themeModes.set(key, chosen);
     showThemeMode(card, chosen);
@@ -220,7 +223,9 @@ document.addEventListener("turbo:load", () => { waitingSince = null; checkNewCar
 document.addEventListener("turbo:before-stream-render", (event) => {
   const original = event.detail.render;
   event.detail.render = async (stream) => {
+    const before = document.getElementById("build-checklist")?.dataset.card;
     await original(stream);
+    if (cardAppeared(before, document.getElementById("build-checklist")?.dataset.card)) popStatusCard();
     checkNewCards();
     restoreThemeModes();
     watchGlows();
