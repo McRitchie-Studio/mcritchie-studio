@@ -62,6 +62,8 @@ Browsers, Playwright and curl (7.85 and later) resolve `*.localhost` to loopback
 refuses it (an `ArgumentError`) when it sits at, under or above the hub's cookie domain
 or any `production_url` or `qa_url` host in `config/apps.yml` or `config/satellites.yml`.
 So `studio`, `mcritchie.studio.`, `media` and `x.turfmonster.media` are all refused.
+It also refuses a value of one label (`app`, `.app`, `app.`): a top-level domain on
+its own, not a registrable one. Only `localhost` may be one label.
 
 **Forged hosts.** A request whose `X-Forwarded-Host` or `Forwarded` header names a preview
 host is answered by the door, never the hub. `Forwarded` is read both by Rack's own

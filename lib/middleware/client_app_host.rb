@@ -55,6 +55,12 @@ class ClientAppHost
           raise ArgumentError, "#{ENV_NAME}=#{value} is at, under or above #{host}, a production host " \
                                "(#{REGISTRIES.join(' or ')}); use a separate registrable domain"
         end
+        # One label ("app", ".app", "app.") is a top-level domain on its own: every
+        # <sub>.app on the internet would be routed here. Only localhost may be one.
+        if !value.include?(".") && value != LOCAL_DOMAIN
+          raise ArgumentError, "#{ENV_NAME}=#{value} is one label, a top-level domain, not a registrable domain; " \
+                               "use a name like preview.example (only #{LOCAL_DOMAIN} may be one label)"
+        end
         return value
       end
       return (qa ? nil : PRODUCTION_DOMAIN) if production
