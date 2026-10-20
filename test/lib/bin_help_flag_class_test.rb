@@ -666,7 +666,7 @@ class BinHelpFlagClassTest < Minitest::Test
     # The first 1Password read; every Cloudflare and Heroku write follows it.
     "domain-cutover"      => "DomainCutover::Credentials.cloudflare",
     # The first 1Password read; the domain-check and the registration POST follow it.
-    "domain-register"     => "DomainRegister::Credentials.registrar"
+    "domain-register"     => "DomainRegister::Credentials.cloudflare"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation

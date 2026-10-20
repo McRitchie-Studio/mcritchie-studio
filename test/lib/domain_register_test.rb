@@ -31,7 +31,7 @@ class DomainRegisterTest < Minitest::Test
   def runner(**opts)
     R.new(registrar: DomainRegister::Registrar.new(@api, token: F::TOKEN, account_id: F::ACCOUNT),
           ledger: ledger, out: @out, sleeper: ->(s) { @now += s }, clock: -> { @now }, actor: "steffon",
-          zone_client: -> { DomainCutover::Cloudflare.new(@api, token: F::DNS_TOKEN, account_id: F::ACCOUNT) },
+          zone_client: -> { DomainCutover::Cloudflare.new(@api, token: F::TOKEN, account_id: F::ACCOUNT) },
           **opts)
   end
 
@@ -200,7 +200,7 @@ class DomainRegisterTest < Minitest::Test
     { "No default payment method on file" => /Billing > Payment info/,
       "Domain Registration Agreement has not been accepted" => /accept the agreement/,
       "No registrant contact provided and no default address book entry found" => /default registrant contact/,
-      "Authentication error" => /never the DNS token/ }.each do |message, hint|
+      "Authentication error" => /needs Account > Registrar > Edit/ }.each do |message, hint|
       @api.register_error = [403, 10_000, message]
       err = assert_raises(DomainRegister::Abort) { runner.register("acmecorp.dev", price: "10.46", ok: OK) }
       assert_match hint, err.message, message
@@ -440,29 +440,35 @@ class DomainRegisterTest < Minitest::Test
     err = assert_raises(DomainRegister::Abort) { runner.register("acmecorp.dev", price: "10.46", ok: OK) }
 
     text = @out.string + err.message + File.read(ledger.path) + @kept_ledger.to_s
-    [F::TOKEN, F::DNS_TOKEN, F::ACCOUNT].each { |secret| refute_includes text, secret }
+    [F::TOKEN, F::ACCOUNT].each { |secret| refute_includes text, secret }
     assert_includes err.message, "[REDACTED]"
   end
 
   # ── credentials ──────────────────────────────────────────────────────────
-  def test_registrar_credentials_read_the_registrar_item_not_the_dns_token
+  def test_credentials_read_the_widened_provision_token_and_account
     reads = []
     reader = lambda do |ref, _env|
       reads << ref
-      ref.include?("cloudflare.registrar/api-token") ? "reg-token" : "acct"
+      ref.end_with?("/api-token") ? "cf-token" : "acct"
     end
     with_env("OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => "ops_x") do
-      assert_equal %w[reg-token acct], DomainRegister::Credentials.registrar(reader)
+      assert_equal %w[cf-token acct], DomainRegister::Credentials.cloudflare(reader)
     end
-    assert_equal %w[op://studio-agents-admin/cloudflare.registrar/api-token
+    assert_equal %w[op://studio-agents-admin/cloudflare.studio.provision/api-token
                     op://studio-agents-admin/cloudflare.studio.provision/account-id], reads
   end
 
-  def test_an_empty_registrar_item_says_what_alex_pastes
+  def test_an_empty_token_read_stops_before_any_call
     with_env("OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => "ops_x") do
-      err = assert_raises(DomainRegister::Abort) { DomainRegister::Credentials.registrar(->(_r, _e) { "" }) }
-      assert_match "is empty: Alex pastes the Registrar token", err.message
+      err = assert_raises(DomainRegister::Abort) { DomainRegister::Credentials.cloudflare(->(_r, _e) { "" }) }
+      assert_match "cloudflare.studio.provision api-token read empty", err.message
     end
+  end
+
+  def test_an_authentication_error_names_the_missing_registrar_grant
+    @api.register_error = [403, 10_000, "Authentication error"]
+    err = assert_raises(DomainRegister::Abort) { runner.register("acmecorp.dev", price: "10.46", ok: OK) }
+    assert_match "cloudflare.studio.provision needs Account > Registrar > Edit", err.message
   end
 
   private

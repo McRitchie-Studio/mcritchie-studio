@@ -4,8 +4,8 @@ require "json"
 require "uri"
 
 module DomainRegister
-  # Cloudflare's Registrar API (beta since 2026-04-15), with the Registrar-only
-  # token. Docs: https://developers.cloudflare.com/registrar/registrar-api/
+  # Cloudflare's Registrar API (beta since 2026-04-15), with the account token
+  # cloudflare.studio.provision (widened with Account > Registrar > Edit). Docs: https://developers.cloudflare.com/registrar/registrar-api/
   #
   #   POST /accounts/{id}/registrar/domain-check            { "domains": [...] }, at most 20
   #   POST /accounts/{id}/registrar/registrations           { "domain_name", "auto_renew", "privacy_mode", "years" }
@@ -44,8 +44,8 @@ module DomainRegister
     # message and answered with the dashboard step that clears it.
     PREREQUISITES = [
       [/authentication error|unauthori[sz]ed|invalid api token|permission/i,
-       "the token cannot use the Registrar API. Use the admin-lane item cloudflare.registrar, field api-token " \
-       "(permission Account > Registrar > Edit), never the DNS token cloudflare.studio.provision."],
+       "the token cannot use the Registrar API: the admin-lane token cloudflare.studio.provision needs " \
+       "Account > Registrar > Edit on McRitchie Studio's account (Cloudflare dashboard > My Profile > API Tokens)."],
       [/payment|billing|card|charge/i,
        "no default payment method. Alex: Cloudflare dashboard > Manage Account > Billing > Payment info, " \
        "add a card and make it the default."],

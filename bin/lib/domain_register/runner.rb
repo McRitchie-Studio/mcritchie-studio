@@ -268,7 +268,7 @@ module DomainRegister
           "Cloudflare answers \"No workflow found\"; then append 'authorized' to #{@ledger.path}"
       say "  2. CLOUDFLARE POST /accounts/<account>/registrar/registrations #{JSON.generate(@registrar.registration_body(domain))}"
       say "  3. poll registration-status every #{@poll_interval}s, up to #{@poll_timeout}s"
-      say "  4. read the zone back with cloudflare.studio.provision and print the domain-dns next step"
+      say "  4. read the zone back (same token) and print the domain-dns next step"
       say "Nothing was bought; no ledger line was written."
       refusals.empty?
     end
@@ -277,11 +277,11 @@ module DomainRegister
       client = begin
         @zone_client&.call
       rescue Abort => e
-        say "zone proof: could not read the DNS token (#{e.message}); the domain IS registered"
+        say "zone proof: could not build the zone reader (#{e.message}); the domain IS registered"
         return nil
       end
       unless client
-        say "zone proof: skipped (no DNS reader); check the zone by hand in the dashboard"
+        say "zone proof: skipped (no zone reader); check the zone by hand in the dashboard"
         return nil
       end
 

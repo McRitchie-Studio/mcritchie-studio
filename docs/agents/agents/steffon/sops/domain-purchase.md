@@ -43,11 +43,12 @@ Cloudflare refuses a registration:
 2. **Registrant contact:** Domain Registration > Manage, the default registrant
    contact (name, address, phone, email). WHOIS redaction hides it.
 3. **Domain Registration Agreement:** accepted once, under Domain Registration.
-4. **The token:** a Cloudflare API token with **Account > Registrar > Edit
-   only**, pasted into `op://studio-agents-admin/cloudflare.registrar/api-token`.
-   The DNS token `cloudflare.studio.provision` cannot call the Registrar API
-   (it answers `10000 Authentication error`) and is never used for it; it only
-   supplies the account id and reads the new zone back.
+4. **The token:** `op://studio-agents-admin/cloudflare.studio.provision/api-token`,
+   the account token `domain-dns` already uses, widened by Alex on 2026-10-19
+   with **Account > Registrar > Edit**. It now spends money (a registration
+   charges the default card), so treat it as a cost-bearing credential. One token
+   checks, buys, and reads the new zone back. If `check` answers
+   `10000 Authentication error`, the Registrar grant is missing.
 
 Every command runs in the admin lane:
 
@@ -127,7 +128,7 @@ authorization.
 
 ### A4. Prove it is ours — the command, then Steffon
 
-The command reads the zone back with `cloudflare.studio.provision` and prints
+The command reads the zone back with the same token and prints
 its id, status and nameservers. The ledger lives in one Mac's `tmp/`, so put the
 durable record on the board, once per purchase (or per `unknown`):
 

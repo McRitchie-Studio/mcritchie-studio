@@ -124,10 +124,6 @@ records = [
   { vault: "studio-agents", title: "discord.webhooks", service: "discord", notes: UNDESCRIBED },
 
   # --- studio-agents-admin: ship lane and break-glass ---
-  { vault: "studio-agents-admin", title: "cloudflare.registrar", service: "cloudflare", category: "API Credential",
-    status: "empty", url: "https://dash.cloudflare.com", used_by: "bin/domain-register (domain-purchase, our own entities)",
-    scope_summary: "Account > Registrar > Edit only. Each registration spends money on the account's default card. " \
-                   "Filed empty on 2026-10-19; flip to filed once Mr. McRitchie pastes the token." },
   { vault: "studio-agents-admin", title: "Heroku", service: "heroku", category: "Login", url: "https://dashboard.heroku.com",
     scope_summary: "The master account login: password, TOTP, recovery codes. Break-glass only." },
   { vault: "studio-agents-admin", title: "heroku.studio.admin", service: "heroku", category: "API Credential",

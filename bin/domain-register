@@ -25,9 +25,10 @@ USAGE = <<~TXT
             --dry-run runs the check and every refusal, prints the plan, and buys nothing.
   status    the registration workflow's state for a domain. Read-only.
 
-  Credentials (admin lane: source ~/.zprofile.admin): cloudflare.registrar/api-token
-  (Registrar write only) and cloudflare.studio.provision/account-id; the zone read
-  uses cloudflare.studio.provision/api-token. Nothing secret is printed.
+  Credentials (admin lane: source ~/.zprofile.admin): cloudflare.studio.provision
+  api-token + account-id, which carries Account > Registrar > Edit (it can spend
+  money) as well as the zone grants used to read the new zone back. Nothing secret
+  is printed.
 TXT
 
 COMMANDS = {
@@ -67,13 +68,10 @@ end
 token = nil
 account = nil
 begin
-  token, account = DomainRegister::Credentials.registrar
+  token, account = DomainRegister::Credentials.cloudflare
   transport = DomainCutover::Transport.new
   registrar = DomainRegister::Registrar.new(transport, token: token, account_id: account)
-  zone_client = lambda do
-    dns_token, dns_account = DomainRegister::Credentials.dns
-    DomainCutover::Cloudflare.new(transport, token: dns_token, account_id: dns_account)
-  end
+  zone_client = -> { DomainCutover::Cloudflare.new(transport, token: token, account_id: account) }
   runner = DomainRegister::Runner.new(registrar: registrar, ledger: DomainRegister::Ledger.new,
                                       zone_client: zone_client)
 

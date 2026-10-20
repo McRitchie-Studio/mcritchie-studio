@@ -11,7 +11,6 @@ require_relative "../../bin/lib/domain_register"
 
 class DomainRegisterFakeApi
   TOKEN = "cf-registrar-secret-0123456789"
-  DNS_TOKEN = "cf-dns-secret-0123456789"
   ACCOUNT = "acct0123456789abcdef"
 
   attr_accessor :quotes, :register_reply, :statuses, :zones, :register_error, :on_register,

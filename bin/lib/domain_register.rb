@@ -19,7 +19,7 @@
 # `unknown`, never `failed`: money MAY have moved, and a re-run refuses.
 # It registers with auto_renew true and privacy_mode redaction, polls the
 # registration-status workflow to a terminal state, writes the ledger, and then
-# proves the zone exists in our Cloudflare account with the DNS token.
+# proves the zone exists in our Cloudflare account (same token, zone read).
 #
 # Plain Ruby, no Rails. The HTTP seam, Abort, Write and #redact are
 # DomainCutover's (bin/lib/domain_cutover/http.rb); the zone proof reuses its
@@ -48,32 +48,29 @@ module DomainRegister
 
   # Credentials, read from 1Password by item name in the ADMIN lane
   # (studio-agents-admin; source ~/.zprofile.admin), never printed.
-  #   Registrar: cloudflare.registrar / api-token — a token with Registrar write
-  #              ONLY. The DNS token cannot call the Registrar API (it answers
-  #              "10000 Authentication error"), so it is never used for it.
-  #   Account:   cloudflare.studio.provision / account-id.
-  #   Zone read: cloudflare.studio.provision / api-token, used only to read the
-  #              new zone back (Credentials.dns).
+  #
+  # One token for everything: cloudflare.studio.provision (api-token +
+  # account-id). Alex widened it on 2026-10-19 with Account > Registrar > Edit
+  # rather than file a separate Registrar-only token, so the same value now
+  # checks domains, BUYS them (the registration POST charges the account's
+  # default card), and reads the new zone back. It is a cost-bearing credential.
+  # Before the widening it answered domain-check with "10000 Authentication
+  # error"; that answer now means the Registrar grant is missing again.
   module Credentials
-    REGISTRAR_ITEM = "cloudflare.registrar"
-    DNS_ITEM = DomainCutover::Credentials::CLOUDFLARE_ITEM
+    ITEM = DomainCutover::Credentials::CLOUDFLARE_ITEM
 
     module_function
 
-    def registrar(reader = method(:op_read))
+    def cloudflare(reader = method(:op_read))
       require_relative "op_vaults"
-      raise Abort, "cannot read #{REGISTRAR_ITEM}: #{OpVaults.diagnose(:deployer)}" unless OpVaults.token(:deployer)
+      raise Abort, "cannot read #{ITEM}: #{OpVaults.diagnose(:deployer)}" unless OpVaults.token(:deployer)
 
       env = OpVaults.op_env(:deployer)
-      token = reader.call(OpVaults.ref(REGISTRAR_ITEM, "api-token", :deployer), env)
-      if token.empty?
-        raise Abort, "#{OpVaults.ref(REGISTRAR_ITEM, 'api-token', :deployer)} is empty: Alex pastes the " \
-                     "Registrar token (Cloudflare dashboard > My Profile > API Tokens, permission " \
-                     "Account > Registrar > Edit on McRitchie Studio's account) into that field. Nothing ran."
-      end
+      token = reader.call(OpVaults.ref(ITEM, "api-token", :deployer), env)
+      raise Abort, "#{ITEM} api-token read empty: stop. Nothing ran." if token.empty?
 
-      account = reader.call(OpVaults.ref(DNS_ITEM, "account-id", :deployer), env)
-      raise Abort, "#{DNS_ITEM} account-id read empty: stop. Nothing ran." if account.empty?
+      account = reader.call(OpVaults.ref(ITEM, "account-id", :deployer), env)
+      raise Abort, "#{ITEM} account-id read empty: stop. Nothing ran." if account.empty?
 
       [token, account]
     end
@@ -92,8 +89,5 @@ module DomainRegister
     rescue Errno::ENOENT
       raise Abort, "the 1Password CLI (op) is not on PATH. Nothing ran."
     end
-
-    # The DNS token, for the read-only zone proof after a registration.
-    def dns(reader = DomainCutover::Credentials.method(:op_read)) = DomainCutover::Credentials.cloudflare(reader)
   end
 end

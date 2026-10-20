@@ -39,7 +39,7 @@ class DomainRegisterIntegrationTest < Minitest::Test
     File.write(File.join(fake_bin, "op"), <<~SH)
       #!/bin/sh
       case "$2" in
-        *cloudflare.registrar/api-token) printf '%s' '#{TOKEN}' ;;
+        *cloudflare.studio.provision/api-token) printf '%s' '#{TOKEN}' ;;
         *cloudflare.studio.provision/account-id) printf '%s' '#{ACCOUNT}' ;;
         *) exit 1 ;;
       esac
