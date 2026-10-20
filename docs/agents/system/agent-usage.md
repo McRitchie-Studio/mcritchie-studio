@@ -10,10 +10,18 @@ sessions". A warm turn's run summary is stored like any other (`run_meta.warm`
 says `fresh` or `resumed`); it is mostly cache reads, and owner and team turns
 are never metered.
 
-**Alex's default: caps are present but off.** Every tier's allowance in
-`config/workspace_packages.yml` is blank, and blank is unlimited. Nothing is
-capped and no reply carries a notice until he prices the tiers. The code, the
-meter and the tests run as if the caps were on.
+**One cap is on: the free tier's.** Vibe, the tier every `/build` app starts on,
+allows 25,000 CTO chat tokens a month, about 15-25 replies (Alex, 2026-10-19:
+"very small and updated after each message returned"; task free-budget-meter).
+Every paid tier's allowance in `config/workspace_packages.yml` is still blank,
+and blank is unlimited, until he prices them.
+
+**The first version's build never counts** (it is the cost of acquiring the
+client). `bin/client-build-launcher` runs its builder on the launcher's machine
+and records no tokens on the board at all: no answer row, no run summary. The
+lines it posts into the owner's chat (`ClientBuilds.progress!`, envelope `via:
+build_progress`) are code-written, and the meter's scope skips them outright.
+Counting the build would need a token source the launcher does not have today.
 
 ## The run summary
 
@@ -102,8 +110,9 @@ the app that the soul's domain serves (`app:` in `config/agent_domains.yml`):
 
 **An app owner's own chat** (the app-owner exception, `app_owners:` in
 `config/agent_answerers.yml`) is held to `AgentUsage.owner_meter`: the app's meter,
-with `app_owners.default_monthly_tokens` (1,000,000, a conservative default chosen
-with the feature, not a price) as the allowance when the tier names none, and no cap
+with the tier's allowance (Vibe: 25,000), else `app_owners.default_monthly_tokens`
+(1,000,000, a conservative default chosen with the feature, not a price) when the
+tier names none, and no cap
 under an admin's lift. Their answers are stamped `client`, so they count in `used`.
 `WebIngest` checks it before storing: at the cap the message is stored already
 answered with the cap reply. The gate above checks the same meter at the claim, and
@@ -111,7 +120,9 @@ the chat page shows it.
 
 A capped message is completed, never skipped, so it cannot sit `received` and
 keep a long-poll busy. The cap reply says the allowance is used, when it resets,
-the suggestion (below), and "Upgrade your plan or contact us." A claim reads each
+the suggestion (below), and "[Upgrade your plan](https://mcritchie.studio/packages)
+or contact us." (`AgentUsage.upgrade_url`: absolute, since the line also reaches
+Discord and email). A claim reads each
 app's meter once, however many of its capped candidates it answers. An app with
 no allowance skips the capped-count query (`agent_message_events` is indexed on
 `(kind, created_at)` for the apps that have one).
@@ -122,11 +133,15 @@ no allowance skips the capped-count query (`agent_message_events` is indexed on
   (`applications/_usage_meter`): used of allowance, a bar coloured by state, the
   tier, the reset date, the public's tokens when there are any, and the
   suggestion. Owner or admin only, like the pages; the public never sees it.
-- **The CTO web chat** (`/applications/:slug/chat`) shows a compact "Tokens used"
-  bar (`agent_chats/_tokens_bar`: used of allowance, the bar, the suggestion) on the
-  app's status card, built from `Meter#without_cost` for every viewer, admins
-  included, and redraws it live after each answer
-  ([`agent-message-loop.md`](agent-message-loop.md), "Web chat").
+- **The CTO web chat** (`/applications/:slug/chat`) shows a compact meter on the
+  app's status card (`agent_chats/_tokens_bar`): "1,840 of 25,000 tokens this
+  month", the percent, a thin bar coloured by state, and the suggestion. Past
+  `warn_percent` it adds "Running low: N tokens left this month", and at the cap
+  "This month's allowance is used up; it resets Nov 1", each with an "Upgrade for
+  more" link to `/packages`. It is built from `Meter#without_cost` for every
+  viewer, admins included, and redrawn live after each answer is delivered,
+  the cap reply included (`WebChat.deliver!` → `broadcast_meter`;
+  [`agent-message-loop.md`](agent-message-loop.md), "Web chat").
 - **Dollars are an admin's.** A non-admin owner reads tokens and the meter only:
   the page's totals lines and the JSON drop `cost_usd` (`Totals#without_cost`,
   `Meter#without_cost`). A tier's price in the suggestion is a list price, shown
@@ -155,7 +170,8 @@ The meter and the cap reply show it. No prompt receives a price.
 
 ## Not built here
 
-- Real allowance numbers and top-up prices: Alex's call.
+- Paid tiers' allowance numbers and top-up prices: Alex's call (Vibe's is set).
+- Counting the first version's build: the launcher records no tokens.
 - Billing: the allowances mean money only once client CTOs run on an API-billed
   runtime (Phase 6).
 - The MS web chat bar (Phase 7 step 3) and per-(domain, user) sessions.

@@ -107,16 +107,26 @@ class AppRequest < ApplicationRecord
     @reserved_names ||= read_reserved_names
   end
 
+  # Both registries feed it. satellites.yml gives each satellite's slug and host;
+  # config/apps.yml (AppCatalog) adds what satellites.yml never lists: every app's
+  # slug, its production and QA hosts under ours, and every library's slug and
+  # aliases (studio-engine, turf-vault, vault), so a /build app never shares a
+  # name with a repo or gem of ours.
   def self.read_reserved_names
     satellites = Rails.root.join("config/satellites.yml")
     rows = YAML.safe_load_file(satellites).fetch("satellites", [])
-    hosts = rows.filter_map do |sat|
-      host = URI.parse(sat["production_url"].to_s).host.to_s
+    urls = rows.map { |sat| sat["production_url"] } +
+           AppCatalog.apps.flat_map { |app| [ app.production_url, app.qa_url ] }
+    hosts = urls.compact.filter_map do |url|
+      host = URI.parse(url.to_s).host.to_s
       host.delete_suffix(".#{PARENT_DOMAIN}") if host.end_with?(".#{PARENT_DOMAIN}")
     rescue URI::InvalidURIError
       nil
     end
-    (RESERVED + hosts + rows.filter_map { |sat| sat["slug"].presence }).uniq.freeze
+    slugs = rows.filter_map { |sat| sat["slug"].presence } +
+            AppCatalog.apps.map(&:slug) +
+            AppCatalog.libraries.flat_map { |lib| [ lib.slug, *lib.aliases ] }
+    (RESERVED + hosts + slugs).uniq.freeze
   end
   private_class_method :read_reserved_names
 

@@ -6,7 +6,7 @@ require_relative "../support/agent_message_fixtures"
 # against an app's allowance (public ones are metered apart), the gate warns at 80% and stops at 100%
 # before a claim, owner and team are never capped, an admin's lift wins, and the
 # upgrade rule names a price only from the tiers config. Allowances are stubbed;
-# the shipped config has none (caps off until priced).
+# the shipped config caps only Vibe (25,000, the free tier).
 class AgentUsageTest < ActiveSupport::TestCase
   include AgentMessageFixtures
 
@@ -37,8 +37,10 @@ class AgentUsageTest < ActiveSupport::TestCase
     message
   end
 
-  test "the shipped config caps nothing: every package's allowance is blank" do
-    assert WorkspacePackage.all.all? { |p| p.cto_monthly_tokens.nil? }
+  test "the shipped config caps only the free tier: Vibe at 25,000, every paid package blank" do
+    allowances = WorkspacePackage.all.to_h { |p| [ p.key, p.cto_monthly_tokens ] }
+    assert_equal 25_000, allowances.delete("vibe"), "Alex, 2026-10-19: the free budget is very small"
+    assert allowances.values.all?(&:nil?), "paid tiers unchanged: #{allowances.inspect}"
     assert_equal 80, AgentUsage.warn_percent
     assert AgentUsage.meter(@app, now: NOW).unlimited?
   end
@@ -187,7 +189,7 @@ class AgentUsageTest < ActiveSupport::TestCase
     with_allowances do
       meter = AgentUsage.meter(@app, now: NOW)
       reply = AgentUsage.cap_reply(meter)
-      assert_match(/used its monthly agent allowance.*resets Nov 1\. Pro \(\$500\/month\) raises it\. Upgrade your plan or contact us\.\z/, reply)
+      assert_match(/used its monthly agent allowance.*resets Nov 1\. Pro \(\$500\/month\) raises it\. \[Upgrade your plan\]\(http:\/\/www\.example\.com\/packages\) or contact us\.\z/, reply)
       refute_match(/owner can raise/, reply)
     end
     with_allowances(builder: 1_200) do

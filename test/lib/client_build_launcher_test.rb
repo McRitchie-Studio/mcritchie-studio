@@ -166,7 +166,7 @@ class ClientBuildLauncherTest < Minitest::Test
 
   def test_the_publisher_presents_only_the_run_session_and_reads_the_version
     seen = nil
-    out = "published pawsome v20261019-ab12 (3 files, 900 bytes)\nprevious: none\nurl: https://pawsome.mcritchie.si\n"
+    out = "published pawsome v20261019-ab12 (3 files, 900 bytes)\nprevious: none\nurl: https://pawsome.mcritchie.app\n"
     pub = CL::Publisher.new(repo_root: "/nowhere", runner: ->(argv, env) { seen = [ argv, env ]; [ out, Status.new(true) ] })
     refute pub.available?
     assert_includes pub.unavailable_reason, "not installed"

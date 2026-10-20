@@ -177,8 +177,9 @@ the same rule. They are answered as that app's `client` (`Answerers#audience_for
 On that same thread they may say `go`, `no` or `change: …` on a `change` proposal
 while the app is under its cap ("Confirm by reply" below; Alex, 2026-10-18). Their
 answers are metered as `client`, against `AgentUsage.owner_meter`: the tier's
-`cto_monthly_tokens`, else `app_owners.default_monthly_tokens` (1,000,000 by
-default, while every tier is blank), unless an admin lifted the cap. At the cap,
+`cto_monthly_tokens` (Vibe, the free tier: 25,000), else
+`app_owners.default_monthly_tokens` (1,000,000) for a tier that names none,
+unless an admin lifted the cap. At the cap,
 `WebIngest` stores the message already answered with `AgentUsage.cap_reply` and
 no model runs. An owner or team person is answered by their role, never by this
 rule. Remove the block to hold app owners again.

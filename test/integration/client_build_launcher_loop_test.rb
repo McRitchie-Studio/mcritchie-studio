@@ -99,7 +99,7 @@ class ClientBuildLauncherLoopTest < ActionDispatch::IntegrationTest
 
     task.reload
     assert_equal "shipped", task.stage, @out.string
-    assert_equal [ "preview_ready", "v1", "https://dog-walks.mcritchie.si" ],
+    assert_equal [ "preview_ready", "v1", "https://dog-walks.mcritchie.app" ],
                  task.devops["client_build"].values_at("state", "version", "preview_url")
     sub, dir, html, token = publisher.calls.sole
     session = AgentSession.from_token(token)

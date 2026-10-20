@@ -1770,7 +1770,7 @@ puts "Seeded: #{AppMembership.count} app owner(s)"
 
 # The CTO usage meter (e2e/app_usage_meter.spec.js; docs/agents/system/agent-usage.md):
 # Turf on the Builder tier, and one answered client message this month with its
-# run summary. The shipped allowances are blank, so the meter reads unlimited.
+# run summary. Builder's shipped allowance is blank (only Vibe's is set), so the meter reads unlimited.
 turf_app.update!(package_tier: "builder", cto_cap_lifted_at: nil, cto_cap_lifted_by: nil)
 usage_client = AgentPerson.find_or_create_by!(display_name: "E2E Turf Client") { |p| p.assign_attributes(role: "client", client_domain: "turf_monster") }
 AgentMessage.where(external_id: "e2e-usage-1").destroy_all
