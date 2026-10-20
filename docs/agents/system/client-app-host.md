@@ -58,6 +58,17 @@ sha256) makes a revalidation a 304. A file whose name carries a content hash
 Browsers, Playwright and curl (7.85 and later) resolve `*.localhost` to loopback with no
 `/etc/hosts` edit. Setting the variable picks another domain, and `off` turns the host off.
 
+**The domain guard.** A set `CLIENT_APP_PREVIEW_DOMAIN` loses a trailing dot. Boot then
+refuses it (an `ArgumentError`) when it sits at, under or above the hub's cookie domain
+or any `production_url` or `qa_url` host in `config/apps.yml` or `config/satellites.yml`.
+So `studio`, `mcritchie.studio.`, `media` and `x.turfmonster.media` are all refused.
+
+**Forged hosts.** A request whose `X-Forwarded-Host` or `Forwarded` header names a preview
+host is answered by the door, never the hub. `Forwarded` is read both by Rack's own
+parser (what `request.host` believes: spaces around `=`, escaped quoted values) and by a
+plain scan, because Rack answers nil for a header it cannot parse. A trailing dot on any
+host is the same host.
+
 **Not live yet.** Alex buys `mcritchie.si` later. Until then, production answers no
 preview host. To go live:
 
@@ -65,6 +76,11 @@ preview host. To go live:
 2. Add `*.mcritchie.si` as a Heroku custom domain. Heroku's ACM does not issue wildcard
    certificates, so use a Cloudflare origin certificate.
 3. If `EDGE_SECRET` is ever armed, add the same edge-secret transform rule to the new zone.
+4. Add a Cloudflare **rate-limiting rule** on the zone for `*.mcritchie.si`: preview hosts
+   sit in front of Rack::Attack, so the edge is their only throttle. Match
+   `http.host ends_with ".mcritchie.si"` (and the apex), count by client IP, and block
+   for a short period past a ceiling well above one visitor's page load (start near
+   300 requests a minute per IP and tune from the zone's analytics).
 
 Each step is a DNS or credential change for Steffon's `domain-dns` act.
 
@@ -129,6 +145,11 @@ The CLI runs them before it sends anything, and the hub runs them again.
 `{ data: { app_slug, version, previous_version, url, file_count, byte_size, event } }`.
 A refused bundle answers 422 `BUNDLE_INVALID` with every reason in `errors`.
 
+**Only client apps publish.** `ClientApps::Publish.publishable_reason` allows an app only
+when a `/build` request (`AppRequest`, queued, building or live) holds its name: the claim
+`AppLaunch` and `AppRequest#queue!` make. The reserved names and `config/apps.yml` stay as
+a second guard. Any other App row is refused ("has no client origin").
+
 The bearer must be an **agent session**. The shared token answers 401, and a client or
 harness session 403. An admin session publishes any client app. A studio session
 publishes only the app whose **build task** it holds: the task of the `/build` request
@@ -154,7 +175,9 @@ no build task records none.
 ## Not covered yet
 
 - **No rollback command.** Re-publishing an older bundle makes a new version.
-- **No throttle.** Preview hosts sit in front of Rack::Attack, so they are not
-  throttled; the in-process cache keeps a repeat read off R2.
+- **No in-app throttle.** Preview hosts sit in front of Rack::Attack, so the hub does not
+  throttle them; the in-process cache keeps a repeat read off R2, and the go-live
+  Cloudflare rate rule (step 4 above) is their throttle. The reserved-name list a preview
+  request checks is read once per process, never from disk per request.
 - **AppRequest stays where it is.** Publishing does not move a `/build` request to
   `live`; the launcher moves the task.
