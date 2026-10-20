@@ -1161,6 +1161,11 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
   `SafeMarkdown.render(..., images: false)`: a Markdown image is a link, so an
   answer steered by text inside a file cannot send data out through an `<img>`
   that loads on sight.
+- **Off-site links open in a new tab.** The chat renders with `new_tab: true`
+  (task cto-pill-count-and-links): a link to another host, such as a client's
+  `https://<sub>.mcritchie.app` preview, gets `target="_blank" rel="noopener"`;
+  a hub path, an anchor, a mailto, or a link to the hub's own host stays in the
+  tab. /docs and dream stories are unchanged.
 - **A failed upload holds the send.** A send waiting on uploads does not go
   when one fails, and a send with a failed chip on it is stopped: the chip stays,
   red, with its reason, and the composer says to remove it or attach it again.

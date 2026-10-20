@@ -158,4 +158,12 @@ class AgentChatComponentTest < ActionView::TestCase
                   "the slot renders inside the form with the composer's form builder"
     assert_select "form#build-chat-form [data-test='slot-filled'] + div textarea", 1, "it sits right above the input row"
   end
+
+  test "[component] a reply's link off the hub opens in a new tab; a hub link stays in the tab" do
+    reply = "The first version is ready: **[table-ready.mcritchie.app](https://table-ready.mcritchie.app/)**. See [your apps](/applications)."
+    render_chat(messages: [ AgentMessage.new(id: 43, status: "completed", content: "Go", response_text: reply, completed_at: Time.utc(2026, 10, 20, 9)) ])
+
+    assert_select "#cto-chat-turn-43 [data-test='cto-chat-reply'] a[href='https://table-ready.mcritchie.app/'][target='_blank'][rel='noopener']", text: "table-ready.mcritchie.app"
+    assert_select "#cto-chat-turn-43 [data-test='cto-chat-reply'] a[href='/applications']:not([target])", text: "your apps"
+  end
 end

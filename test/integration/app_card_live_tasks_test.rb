@@ -41,6 +41,7 @@ class AppCardLiveTasksTest < ActionDispatch::IntegrationTest
 
     assert_select "[data-test='devops-stage'][data-stage='building'][data-state='live'][data-count='2'] [data-test='devops-stage-count']", text: "2"
     assert_select "[data-test='devops-stage'][data-stage='releasing'][data-state='live'][data-count='1']"
+    assert_select "[data-test='devops-stage'][data-stage='releasing'] [data-test='devops-stage-count']", 0, "a lane of one shows no count"
     assert_select "[data-test='devops-stage'][data-stage='deploying'][data-state='pending'][data-count='0']"
     assert_select "[data-test='devops-idle']", 0
     assert_select "[data-test='devops-task']", 3
