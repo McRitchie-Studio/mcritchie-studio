@@ -1,7 +1,7 @@
 // [e2e] An app owner reads their CTO's usage (docs/agents/system/agent-usage.md).
 // owner@turf.test owns Turf Monster (e2e/seed.rb seeds one answered client
 // message this month on the Builder tier). The app page shows the usage card:
-// the meter (unlimited, since the shipped allowances are blank), this month's
+// the meter (unlimited, since Builder's shipped allowance is blank), this month's
 // totals and today's, in tokens (never dollars, which are an admin's); the
 // CTO's settings page shows the same meter; the admin levers are not offered to
 // an owner. At phone width nothing runs off the side.

@@ -48,10 +48,10 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     end
   end
 
-  test "[unit] CTO allowances: every tier has the key, blank (unlimited) until priced; a bad value reads as none" do
+  test "[unit] CTO allowances: every tier has the key; Vibe's is 25,000, the paid tiers blank (unlimited) until priced; a bad value reads as none" do
     raw = WorkspacePackage.config.fetch("packages")
     assert raw.all? { |attrs| attrs.key?("cto_monthly_tokens") }, "each tier names its cto_monthly_tokens"
-    assert_equal [ nil ] * 5, WorkspacePackage.all.map(&:cto_monthly_tokens)
+    assert_equal [ 25_000, nil, nil, nil, nil ], WorkspacePackage.all.map(&:cto_monthly_tokens)
     assert_equal 80, WorkspacePackage.cto_usage["warn_percent"]
     assert_equal({ "tokens" => nil, "price" => nil }, WorkspacePackage.cto_usage["topup"])
 

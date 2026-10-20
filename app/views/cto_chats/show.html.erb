@@ -1,4 +1,4 @@
-<%# /applications/:slug/chat: the viewer's own live chat with the app's CTO. Owner or admin only. The page is the agent shell (agent_chats/_shell): the CTO's portrait, the app's status card (Building · Releasing · Deploying, Tokens used), then the thread and the chat box. docs/agents/system/agent-message-loop.md ("Web chat") %>
+<%# /applications/:slug/chat: the viewer's own live chat with the app's CTO. Owner or admin only. The page is the agent shell (agent_chats/_shell): the CTO's portrait, the app's status card (Building · Releasing · Deploying, then the tokens this month), then the thread and the chat box. docs/agents/system/agent-message-loop.md ("Web chat") %>
 <%# Build my app lands here from /build, after the launch panel (build/_launch): both pages opt in to a view transition, so the panel's portrait morphs into the CTO's head (Turbo 8). %>
 <% content_for :head, tag.meta(name: "view-transition", content: "same-origin") %>
 <% turbo_refreshes_with method: :morph, scroll: :preserve %>

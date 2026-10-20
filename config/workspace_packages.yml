@@ -107,7 +107,8 @@ billing:
 # may use in a calendar month (America/Denver), summed from each answer's run
 # summary (input + cache read + cache write + output). Blank (~) is UNLIMITED:
 # Mr. McRitchie's default of 2026-10-16 is caps present but off until he prices
-# them. Owner and team answers never count and are never capped.
+# them; the first one priced is Vibe's, 25,000 (2026-10-19). Owner and team
+# answers never count and are never capped (an APP owner is metered as a client).
 #
 #   warn_percent  a reply past this share of the allowance carries a notice
 #   topup         a token top-up offered when no higher package has a bigger
@@ -179,7 +180,11 @@ packages:
     name: Vibe
     tagline: A real app built by our agents, live at your-app.mcritchie.studio.
     price_monthly: 0
-    cto_monthly_tokens: ~
+    # The free tier's CTO chat allowance: very small (Mr. McRitchie, 2026-10-19),
+    # about 15-25 replies a month. The first version's build never counts: the
+    # launcher's runs write no answer rows (AgentUsage#scope also skips its
+    # build-progress lines). At the cap the CTO answers AgentUsage.cap_reply.
+    cto_monthly_tokens: 25000
     apps_per_account: ~
     building_lanes: 1
     comp: 10and5

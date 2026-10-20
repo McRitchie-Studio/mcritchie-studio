@@ -48,8 +48,9 @@ public_intake:
 # AgentMessages::ProposalConfirm#owner_verdict).
 #
 # Their answers count against the app's usage meter (AgentUsage.owner_meter):
-# the tier's cto_monthly_tokens (config/workspace_packages.yml), or, while every
-# tier's is blank, the default below. An admin's lift (apps.cto_cap_lifted_at)
+# the tier's cto_monthly_tokens (config/workspace_packages.yml: Vibe, the free
+# tier every /build app starts on, is 25,000), or, when the app's tier names
+# none, the default below. An admin's lift (apps.cto_cap_lifted_at)
 # removes the cap. At the cap WebIngest answers in code with
 # AgentUsage.cap_reply and no model runs. Remove this block to hold app owners again.
 app_owners:
