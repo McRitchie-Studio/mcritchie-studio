@@ -105,6 +105,17 @@ class ClientAppHostTest < ActiveSupport::TestCase
     assert_nil ClientAppHost.clashing_host("mcritchie.app")
   end
 
+  test "[unit] the domain guard refuses a dotless value, a public suffix on its own, unless it is localhost" do
+    env = ->(value) { { "CLIENT_APP_PREVIEW_DOMAIN" => value } }
+    %w[app .app app. APP preview].each do |value|
+      error = assert_raises(ArgumentError, value) { ClientAppHost.domain(env.call(value), production: true, qa: false) }
+      assert_match(/one label|registrable domain/, error.message, value)
+    end
+    assert_equal "localhost", ClientAppHost.domain(env.call("localhost"), production: true, qa: false)
+    assert_equal "localhost", ClientAppHost.domain(env.call(".localhost."), production: false, qa: false)
+    assert_equal "mcritchie.app", ClientAppHost.domain(env.call("mcritchie.app"), production: true, qa: false)
+  end
+
   test "[unit] the launcher's preview domain (config/client_builds.yml) is the production default and clears the guard" do
     assert_equal ClientAppHost::PRODUCTION_DOMAIN, ClientBuilds.preview_domain
     assert_nil ClientAppHost.clashing_host(ClientBuilds.preview_domain)

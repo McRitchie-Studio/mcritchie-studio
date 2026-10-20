@@ -146,4 +146,4 @@ Green when both match what [`domain-dns`](./domain-dns.md) published. If
 either changed, restore it before closing the step — a site that works while
 the company's email stops arriving is a failed launch.
 
-Record: `bin/task update <launch-task> --checks "[control] website-launch: https://<domain> 200, mail DNS unchanged"`.
+Record: `bin/task note <launch-task> --comment "website-launch: https://<domain> 200, mail DNS unchanged"`.

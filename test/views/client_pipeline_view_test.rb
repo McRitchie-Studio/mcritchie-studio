@@ -16,7 +16,7 @@ class ClientPipelineViewTest < ActionView::TestCase
     app = apps(:turf_monster)
     building = ClientPipeline::Card.new(title: "Wire the scores", lane: "Building", entered_at: 2.hours.ago, role: "Builder",
                                         on_hold: true, slug: ("wire-the-scores" if admin), pr_url: ("https://github.com/x/y/pull/1" if admin))
-    queued = [ 1, 2 ].map { |n| ClientPipeline::Card.new(title: "Queued #{n}", lane: "Queued", entered_at: n.days.ago, queue_position: n, on_hold: false, slug: ("queued-#{n}" if admin)) }
+    queued = [ 1, 2 ].map { |n| ClientPipeline::Card.new(title: "Queued #{n}", lane: "Prepping", entered_at: n.days.ago, queue_position: n, on_hold: false, slug: ("queued-#{n}" if admin)) }
     lanes = ClientPipeline::LANES.map do |l|
       cards = { "building" => [ building ], "queued" => queued }.fetch(l.key, [])
       ClientPipeline::LaneView.new(lane: l, cards: cards)
@@ -40,7 +40,7 @@ class ClientPipelineViewTest < ActionView::TestCase
     assert_select "[data-test='pipeline-card-queue']", [ "#1", "#2" ].size
     assert_select "[data-test='pipeline-card-hold']", text: "On hold"
     assert_select "[data-test='pipeline-lane'][data-lane='building'] [data-test='pipeline-card-age']", text: "about 2 hours building"
-    assert_select "[data-test='pipeline-lane'][data-lane='queued'] [data-test='pipeline-card-age']", text: "1 day in the queue"
+    assert_select "[data-test='pipeline-lane'][data-lane='queued'] [data-test='pipeline-card-age']", text: "1 day in line"
     assert_select "[data-test='pipeline-lane'][data-lane='review'] [data-test='pipeline-lane-empty']"
     assert_select "[data-test='pipeline-card-admin']", count: 0
     assert_select "[data-test='pipeline-tonight']", text: /No release is in progress/

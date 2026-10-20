@@ -23,7 +23,11 @@ USAGE = <<~TXT
             the purchase ledger (the hub primary's tmp/domain-register/registrations.jsonl),
             reads the new zone back from our account and prints the domain-dns step.
             --dry-run runs the check and every refusal, prints the plan, and buys nothing.
-  status    the registration workflow's state for a domain. Read-only.
+  status    the registration workflow's state for a domain. Spends nothing, but NOT
+            read-only: an open ledger authorization the workflow has settled is
+            closed with a registered, failed or no_workflow line.
+  register and status hold an exclusive lock on the ledger while they run; a second
+  run refuses at once and writes nothing.
 
   Credentials (admin lane: source ~/.zprofile.admin): cloudflare.studio.provision
   api-token + account-id, which carries Account > Registrar > Edit (it can spend

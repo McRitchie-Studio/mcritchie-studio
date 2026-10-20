@@ -20,7 +20,7 @@ written on a preview host.
 | Host | Answer |
 |------|--------|
 | `<sub>.<domain>`, the app has a live bundle | The file the path names, from `App#preview_version`. `/` and a directory serve their `index.html`; `/about` also tries `about/index.html` and `about.html`. An unknown path **without** an extension gets `index.html` (the SPA fallback). An unknown file (`/x.js`) gets a 404 |
-| `<sub>.<domain>`, a client app (an App with an `AppCto`) or a held `/build` request, no bundle yet | The "being built" page: the app's name, its CTO's name and portrait, and its palette in light and dark mode |
+| `<sub>.<domain>`, a client app (an App with an `AppCto`) or a held `/build` request, no bundle yet | The "being built" page: the app's name, its CTO's name and portrait, and its palette in light and dark mode. It answers on **every** path (`/x.js` included) until a bundle exists |
 | Anything else: an unknown sub, a reserved name or one of our own apps, the apex, a nested name | A bare 404 that names nothing of the hub's |
 | A method other than GET or HEAD | 405 |
 
@@ -62,6 +62,8 @@ Browsers, Playwright and curl (7.85 and later) resolve `*.localhost` to loopback
 refuses it (an `ArgumentError`) when it sits at, under or above the hub's cookie domain
 or any `production_url` or `qa_url` host in `config/apps.yml` or `config/satellites.yml`.
 So `studio`, `mcritchie.studio.`, `media` and `x.turfmonster.media` are all refused.
+It also refuses a value of one label (`app`, `.app`, `app.`): a top-level domain on
+its own, not a registrable one. Only `localhost` may be one label.
 
 **Forged hosts.** A request whose `X-Forwarded-Host` or `Forwarded` header names a preview
 host is answered by the door, never the hub. `Forwarded` is read both by Rack's own
@@ -69,16 +71,31 @@ parser (what `request.host` believes: spaces around `=`, escaped quoted values) 
 plain scan, because Rack answers nil for a header it cannot parse. A trailing dot on any
 host is the same host.
 
-**Not live yet.** Alex chose `mcritchie.app` on 2026-10-19 (it replaced `mcritchie.si`).
-It is bought on Cloudflare Registrar, so the zone lands in our Cloudflare account with no
-nameserver move. The whole `.app` TLD is on the browsers' HSTS preload list, so a
-preview is reachable over https only (a browser upgrades every http request to it
-before sending), and the certificate in step 2 is required before anyone can see a page.
-Until it is wired, production answers no preview host. To go live, in this order:
+**Live since 2026-10-19, 23:45 MDT.** Alex chose `mcritchie.app` on 2026-10-19 (it
+replaced `mcritchie.si`). It is bought on Cloudflare Registrar, so the zone sits in our
+Cloudflare account with no nameserver move. The whole `.app` TLD is on the browsers' HSTS
+preload list, so a preview is reachable over https only (a browser upgrades every http
+request to it before sending), and the certificate in step 2 is what lets anyone see a
+page. What is in place:
+
+- a proxied wildcard CNAME `*.mcritchie.app` on the Cloudflare zone;
+- the Heroku SNI endpoint `gigantoraptor-93447`, carrying a Cloudflare origin certificate
+  for `*.mcritchie.app` and `mcritchie.app` (expires 2041-10-16);
+- zone SSL mode **Full (strict)**;
+- the edge rate-limiting rule (step 4).
+
+`EDGE_SECRET` is still **unset** on the hub, so the origin stays open (step 3).
+
+How it was wired, in order (the runbook for a second preview domain):
 
 1. Put the zone on Cloudflare, with a proxied wildcard `*.mcritchie.app` record.
 2. Add `*.mcritchie.app` as a Heroku custom domain. Heroku's ACM does not issue wildcard
-   certificates, so use a Cloudflare origin certificate.
+   certificates, so use a **Cloudflare origin certificate**. Minting one through the Origin
+   CA API needs the token grant **Zone > SSL and Certificates > Edit**; the Account-level
+   SSL and Certificates group is the wrong one and answers error 1016. Heroku accepts a
+   manual SNI certificate alongside ACM on the same app. Without a TTY, `heroku certs:add`
+   cannot ask which domain the endpoint serves, so attach it afterwards with
+   `heroku domains:update "*.mcritchie.app" --cert <endpoint>`.
 3. **Edge secret before the rate rule.** If `EDGE_SECRET` is armed (or is armed later), add
    the same edge-secret transform rule to the new zone *first*. EdgeGuard sits in front of
    every host, so without the rule every preview request is refused. Without `EDGE_SECRET`

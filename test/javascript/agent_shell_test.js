@@ -7,7 +7,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { sizeFor, sizeFresh, sizeShell, thresholds, turnCount } from "../../app/javascript/agent_shell.js";
+import { enterStatusCard, sizeFor, sizeFresh, sizeShell, thresholds, turnCount } from "../../app/javascript/agent_shell.js";
+import { POP_CLASS } from "../../app/javascript/build_status.js";
 
 const SHARES = { mediumShare: 0.3, compactShare: 0.55 };
 
@@ -75,4 +76,39 @@ test("the thresholds ride the shell; the empty-state line is not a turn", () => 
 test("a page with no shell is left alone", () => {
   assert.equal(sizeShell(null), null);
   assert.equal(sizeFresh(null), null);
+});
+
+// The status card's arrival (task client-flow-review-leftovers): its entrance
+// pop, and under reduced motion build_status.js's pop, whose CSS keeps only the
+// glow, so the arrival still shows.
+function statusRoot() {
+  const set = new Set();
+  const card = {
+    offsetWidth: 300, listeners: [],
+    classList: { add: (c) => set.add(c), remove: (c) => set.delete(c), contains: (c) => set.has(c) },
+    addEventListener(type, fn) { this.listeners.push([type, fn]); },
+  };
+  return { card, root: { querySelector: (s) => (s === "[data-build-status-card]" ? card : null) } };
+}
+
+test("the status card arrives with the entrance pop when motion is allowed", () => {
+  const { card, root } = statusRoot();
+  assert.equal(enterStatusCard(root, false), "pop");
+  assert.ok(card.classList.contains("agent-shell-enter-card"));
+  assert.ok(!card.classList.contains(POP_CLASS));
+  card.listeners.find(([type]) => type === "animationend")[1]();
+  assert.ok(!card.classList.contains("agent-shell-enter-card"), "the class goes when the pop ends");
+});
+
+test("under reduced motion the arrival plays the glow-only pop instead of nothing", () => {
+  const { card, root } = statusRoot();
+  assert.equal(enterStatusCard(root, true), "glow");
+  assert.ok(card.classList.contains(POP_CLASS), "build-status-pop, which reduced motion cuts to its glow");
+  assert.ok(!card.classList.contains("agent-shell-enter-card"));
+  clearTimeout(card._buildPopTimer);
+});
+
+test("no status card, no arrival", () => {
+  assert.equal(enterStatusCard({ querySelector: () => null }, false), null);
+  assert.equal(enterStatusCard({ querySelector: () => null }, true), null);
 });

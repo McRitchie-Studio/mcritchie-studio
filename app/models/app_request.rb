@@ -195,7 +195,7 @@ class AppRequest < ApplicationRecord
   # once the visitor has locked an idea in (Start App on the idea card), or any
   # step is set (a draft from before this rule may hold a step without an idea).
   # Before that, the visitor sees the heading, even while an idea card waits in
-  # the thread (Alex, 2026-10-18: no "Not yet" tiles until Start App).
+  # the thread (Alex, 2026-10-18: no status tiles until Start App).
   def intake_started? = intake_checklist.values.any?
 
   # The app's working title on the status card: the title the visitor confirmed
