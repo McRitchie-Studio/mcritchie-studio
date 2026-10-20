@@ -169,7 +169,8 @@ A release needs no step from anyone, two mechanisms between them:
   restart it, and a routing change in `agent_routes.yml` does.
 - **The ship reinstalls it when the plist template changes.** After the production
   ship restores the primaries and syncs the agent docs, it runs the hub primary's
-  `bin/dispatcher install --if-changed` (`bin/release.rb#refresh_dispatcher_service`).
+  `bin/dispatcher install --if-changed` (the dispatcher's `refresh` in
+  `config/local_services.yml`, run by `bin/release.rb#refresh_local_services`).
   With no plist in `~/Library/LaunchAgents` it does nothing. Otherwise it renders
   the new template with the installed plist's own ruby and PATH (the ship's
   environment is not the shell that installed it) and reinstalls only when that
