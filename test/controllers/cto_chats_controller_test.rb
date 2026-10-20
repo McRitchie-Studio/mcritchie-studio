@@ -35,7 +35,7 @@ class CtoChatsControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='devops-stage']", 3
       assert_select "[data-test='devops-stage'][data-state='pending']", 3, "nothing in flight: no pill lit, no checks"
       assert_select "[data-test='devops-idle']", text: "Nothing in progress right now."
-      assert_select "[data-test='cto-chat-usage'] [data-test='usage-meter-line']", text: /tokens this month/
+      assert_select "[data-test='cto-chat-usage'] [data-test='usage-meter-line']", text: /tokens this month|% used/
     end
     assert_select "[data-test='cto-chat-usage']", text: /Agent usage this month/, count: 0
     assert_select "turbo-cable-stream-source[channel='CtoChatChannel']", 1

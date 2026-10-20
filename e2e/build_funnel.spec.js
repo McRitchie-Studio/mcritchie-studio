@@ -379,12 +379,8 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   for (const step of await panel.locator("[data-test='build-launch-step']").all()) await expect(step).toHaveAttribute("data-state", "done");
   await page.waitForURL((u) => u.pathname === `/applications/${address}/chat`);
   await expect(page.locator("[data-test='agent-shell'][data-shell='app']")).toBeVisible();
-  const onboarding = page.getByRole("dialog", { name: "onboarding first name" });
-  if (await onboarding.isVisible().catch(() => false)) {
-    await onboarding.getByLabel("First name").fill("Jordan");
-    await onboarding.getByRole("button", { name: "Save and continue" }).click();
-    await expect(onboarding).toBeHidden();
-  }
+  // The CTO asks for the first name in the chat, so the engine's first-name modal never opens here (task cto-chat-quality-pass).
+  await expect(page.getByRole("dialog", { name: "onboarding first name" })).toHaveCount(0);
   // A reload is the chat: the initial load plays once.
   await page.reload();
   await expect(page.locator("[data-test='agent-shell'][data-shell='app']")).toBeVisible();
@@ -407,17 +403,26 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   const head = page.locator("[data-test='cto-chat-head'][data-client-cto='true']");
   await expect(head.locator("h1")).toBeVisible();
   await expect(head.locator("[data-test='devops-stage'][data-stage='building']")).toHaveAttribute("data-state", "live");
-  // The build task is designed and no launcher is live: the pill says Prepping, never Building work (task app-card-stage-labels).
-  await expect(head.locator("[data-test='devops-stage'][data-stage='building'] [data-test='devops-stage-sub-label']")).toHaveText("Prepping");
-  await expect(head.locator("[data-test='devops-stage'][data-stage='building'] [data-test='devops-stage-eta']")).toHaveText("no builder");
-  // A /build app is on Vibe, the free tier: 25,000 CTO chat tokens a month (task free-budget-meter).
-  await expect(head.locator("[data-test='cto-chat-usage'] [data-test='usage-meter-line']")).toContainText("of 25,000 tokens this month");
+  // The build task is designed and no launcher is live: the lane reads Prepping as its label, no count, no "no builder" (task cto-chat-quality-pass).
+  await expect(head.locator("[data-test='devops-stage'][data-stage='building']")).toHaveAttribute("data-prepping", "true");
+  await expect(head.locator("[data-test='devops-stage'][data-stage='building']")).toContainText("Prepping");
+  await expect(head.locator("[data-test='devops-stage'][data-stage='building'] [data-test='devops-stage-count']")).toHaveCount(0);
+  await expect(head.locator("[data-test='devops-stage'][data-stage='building'] [data-test='devops-stage-eta']")).toHaveCount(0);
+  // A /build app is on Vibe, the free tier: 25,000 CTO chat tokens a month (task free-budget-meter), reset at 1am Denver on the 1st.
+  await expect(head.locator("[data-test='cto-chat-usage'] [data-test='usage-meter-percent']")).toHaveText("0% used");
+  await expect(head.locator("[data-test='cto-chat-usage'] [data-test='usage-meter-resets']")).toHaveText(/^Resets \w{3} \d+ at 1am M[SD]T$/);
+  await expect(head.locator("[data-test='cto-chat-usage'] [data-test='usage-meter-tokens']")).toHaveText("0 / 25,000");
   const handover = page.locator("[data-test='cto-chat-turn']", { has: page.locator("[data-test='cto-chat-handover']") });
   await expect(handover).toContainText("Meet Marbles, your CTO. I'll hand you over.");
   // Launched at sign-in, before the first-name step: the greeting has no name yet.
   await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("Hi there, I'm Marbles, the agent who'll be managing");
   await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("It's in line to be built");
   await expect(handover.locator("[data-test='cto-chat-reply']")).not.toContainText("building now");
+  // A nameless owner is asked in the chat, and the answer sets the first name (task cto-chat-quality-pass).
+  await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("what should I call you?");
+  await page.locator("[data-test='cto-chat-input']").fill("Jordan");
+  await page.locator("[data-test='cto-chat-send']").click();
+  await expect(page.locator("[data-test='cto-chat-turn']", { hasText: "Jordan" }).locator("[data-test='cto-chat-reply']")).toContainText("Nice to meet you, Jordan!");
   await expect(page.locator("[data-test='cto-chat-typing']")).toHaveCount(0);
   await expect(page.locator("turbo-cable-stream-source[channel='CtoChatChannel']")).toHaveAttribute("connected", "");
 
