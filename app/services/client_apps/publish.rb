@@ -6,7 +6,7 @@ module ClientApps
   #
   #   result = ClientApps::Publish.new(app:, files: { "index.html" => bytes, … }, by: "pokemon").call
   #   result.version            # "20261019T201500Z-1a2b3c4d"
-  #   result.url                # "https://<sub>.mcritchie.si"
+  #   result.url                # "https://<sub>.mcritchie.app"
   #   result.event              # the preview_ready TaskEvent, or nil (no build task)
   #
   # 1. VALIDATE with ClientAppBundle (size, count, file types, paths, index.html).

@@ -1,7 +1,7 @@
 # The shared client-app host
 
 Every app built through `/build` gets its first version as a **static bundle**. One
-shared host serves all of them at `<sub>.<preview domain>`, which is `mcritchie.si` in
+shared host serves all of them at `<sub>.<preview domain>`, which is `mcritchie.app` in
 production. The plan and its decisions are in `.agents/epics/client-app-zero-to-one.md`.
 An app moves to its own repo and Heroku app only when it needs server code.
 
@@ -51,7 +51,7 @@ sha256) makes a revalidation a 304. A file whose name carries a content hash
 
 | Where | `CLIENT_APP_PREVIEW_DOMAIN` unset | URL |
 |-------|-----------------------------------|-----|
-| Production | `mcritchie.si` (also listed in `config.hosts` as `.mcritchie.si`) | `https://<sub>.mcritchie.si` |
+| Production | `mcritchie.app` (also listed in `config.hosts` as `.mcritchie.app`) | `https://<sub>.mcritchie.app` |
 | QA | off: a QA app never claims production's domain | none |
 | Development, test | `localhost` | `http://<sub>.localhost:<desk port>` |
 
@@ -69,18 +69,30 @@ parser (what `request.host` believes: spaces around `=`, escaped quoted values) 
 plain scan, because Rack answers nil for a header it cannot parse. A trailing dot on any
 host is the same host.
 
-**Not live yet.** Alex buys `mcritchie.si` later. Until then, production answers no
-preview host. To go live:
+**Not live yet.** Alex chose `mcritchie.app` on 2026-10-19 (it replaced `mcritchie.si`).
+It is bought on Cloudflare Registrar, so the zone lands in our Cloudflare account with no
+nameserver move. Until it is wired, production answers no preview host. To go live, in
+this order:
 
-1. Put the zone on Cloudflare, with a proxied wildcard `*.mcritchie.si` record.
-2. Add `*.mcritchie.si` as a Heroku custom domain. Heroku's ACM does not issue wildcard
+1. Put the zone on Cloudflare, with a proxied wildcard `*.mcritchie.app` record.
+2. Add `*.mcritchie.app` as a Heroku custom domain. Heroku's ACM does not issue wildcard
    certificates, so use a Cloudflare origin certificate.
-3. If `EDGE_SECRET` is ever armed, add the same edge-secret transform rule to the new zone.
-4. Add a Cloudflare **rate-limiting rule** on the zone for `*.mcritchie.si`: preview hosts
-   sit in front of Rack::Attack, so the edge is their only throttle. Match
-   `http.host ends_with ".mcritchie.si"` (and the apex), count by client IP, and block
-   for a short period past a ceiling well above one visitor's page load (start near
-   300 requests a minute per IP and tune from the zone's analytics).
+3. **Edge secret before the rate rule.** If `EDGE_SECRET` is armed (or is armed later), add
+   the same edge-secret transform rule to the new zone *first*. EdgeGuard sits in front of
+   every host, so without the rule every preview request is refused. Without `EDGE_SECRET`
+   armed at all, the origin stays open: a direct request to the Heroku dyno with
+   `Host: x.mcritchie.app` reaches the door and never meets the edge's throttle, so the
+   rate rule in step 4 is only a real limit once the edge secret is in force.
+4. Add a Cloudflare **rate-limiting rule** on the zone: preview hosts sit in front of
+   Rack::Attack, so the edge is their only throttle. Match
+   `ends_with(http.host, ".mcritchie.app") or http.host eq "mcritchie.app"`, count by
+   client IP, and block past a ceiling well above one visitor's page load. The Free plan
+   allows only a **10-second period**, so start near **50 requests per 10 seconds** per IP
+   and tune from the zone's analytics.
+5. **Set `CLIENT_APP_PREVIEW_DOMAIN` on QA first** (`mcritchie-studio-qa`), and watch it
+   boot. The domain guard raises at boot on a bad value, so a typo crash-loops the whole
+   hub, not just the preview host. Production needs no value (the default is
+   `mcritchie.app`); set one there only after the same value booted on QA.
 
 Each step is a DNS or credential change for Steffon's `domain-dns` act.
 
