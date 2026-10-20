@@ -19,7 +19,7 @@
   <% end %>
   <p class="text-muted text-xs">
     <%= meter.tier_name ? "#{meter.tier_name} tier" : "No tier" %> ·
-    resets <%= meter.period_end.to_date.next_day.strftime("%b %-d") %> ·
+    <%= meter.resets_line.downcase_first %> ·
     counts answers to clients only
   </p>
   <% if meter.public_used.to_i.positive? %>
