@@ -41,10 +41,31 @@ module DomainRegister
        "the account has reached Cloudflare's per-account domain limit; ask Cloudflare to raise it."]
     ].freeze
 
-    def initialize(transport, token:, account_id:)
+    # The integration test points the whole CLI at a stub server on loopback.
+    # Nothing else may: a typo'd or planted base would hand the token to a
+    # stranger, so any non-loopback value refuses before a call is made.
+    BASE_ENV = "DOMAIN_REGISTER_API_BASE"
+    LOOPBACK = %w[127.0.0.1 localhost].freeze
+
+    def self.base(env = ENV)
+      value = env[BASE_ENV].to_s.strip
+      return BASE if value.empty?
+
+      host = begin
+        URI(value).host
+      rescue URI::InvalidURIError
+        nil
+      end
+      raise Abort, "#{BASE_ENV} may point only at loopback (a test stub), not #{host || value}. Nothing ran." unless LOOPBACK.include?(host)
+
+      value.delete_suffix("/")
+    end
+
+    def initialize(transport, token:, account_id:, base: self.class.base)
       @transport = transport
       @token = token
       @account_id = account_id
+      @base = base
     end
 
     def check(domains)
@@ -77,7 +98,7 @@ module DomainRegister
     private
 
     def request(verb, path, body = nil)
-      res = @transport.call(verb, "#{BASE}/accounts/#{@account_id}#{path}",
+      res = @transport.call(verb, "#{@base}/accounts/#{@account_id}#{path}",
                             headers: { "Authorization" => "Bearer #{@token}", "content-type" => "application/json" },
                             body: body && JSON.generate(body))
       json = res.json
