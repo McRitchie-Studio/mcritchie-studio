@@ -91,6 +91,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # redirect rules, adds Heroku domains and moves APP_HOST. One guard with a
     # per-subcommand flag dictionary, ahead of the first credential read.
     "domain-cutover"         => :cli_arg_guard,
+    # Buys domains on Cloudflare Registrar: the registration POST charges Alex's
+    # card. One guard with a per-subcommand flag dictionary, ahead of the first
+    # credential read, so `register <d> --price x --ok y --help` buys nothing.
+    "domain-register"        => :cli_arg_guard,
     # --- retrofitted 2026-08-31, /tasks/qa-server-help-provisions -------------
     # It sat in :subcommand looking classified while `provision <app> --yes --help`
     # ran a REAL provision — heroku create, billable add-ons, domains, ACM and a
@@ -660,7 +664,9 @@ class BinHelpFlagClassTest < Minitest::Test
     # The same shape: install is the first arm that writes, and run's claims come after it.
     "client-build-launcher" => "ClientBuildLauncher::LaunchAgent.new",
     # The first 1Password read; every Cloudflare and Heroku write follows it.
-    "domain-cutover"      => "DomainCutover::Credentials.cloudflare"
+    "domain-cutover"      => "DomainCutover::Credentials.cloudflare",
+    # The first 1Password read; the domain-check and the registration POST follow it.
+    "domain-register"     => "DomainRegister::Credentials.cloudflare"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation
