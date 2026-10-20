@@ -43,6 +43,14 @@
 #   assembled   On QA             on a release, in QA
 #   deploying   Going live        its release is deploying production
 #
+# THE PREPPING LANE (task cto-chat-quality-pass, Alex 2026-10-19). A Building
+# lane whose tasks are ALL designed has nobody building: its pill reads
+# "Prepping" as its label, with no count and no sub-label, never "Building 1"
+# over "Prepping" over "no builder". It keeps a real wait ("~20 min") when a
+# launcher is live; the "no builder" wait stays on the list row only. The pill's
+# data-stage stays `building`. One task past designed and the lane is Building,
+# with its count, as above.
+#
 # Each list row says the same for its own task ("Prepping · waiting for a
 # builder"). THE PREVIEW SEAM: once a task's first version is live on its
 # preview host, the host's publish (task client-app-host) records a
@@ -50,9 +58,16 @@
 # in the Building lane then reads "Preview ready", with no ETA.
 class AppDevopsStages
   # `sub_label` and `eta` (an Eta::Estimate, or nil) are set on a live pill only.
-  Stage = Struct.new(:key, :label, :state, :count, :sub_label, :eta, keyword_init: true) do
+  # `prepping` marks a Building lane holding only designed tasks: its label is
+  # then "Prepping" and it shows no count (see THE PREPPING LANE).
+  Stage = Struct.new(:key, :label, :state, :count, :sub_label, :eta, :prepping, keyword_init: true) do
     def done? = state == :done
     def live? = state == :live
+    def prepping? = prepping == true
+    # The count the pill prints: none on a prepping lane, where nobody builds yet.
+    def shown_count = prepping? ? 0 : count
+    # A second line under the label: the sub-label, or a prepping lane's ETA.
+    def second_line? = sub_label.present? || (prepping? && eta.present?)
   end
 
   # One line of the card's list. `slug` is set for an admin only; an owner's
@@ -215,7 +230,13 @@ class AppDevopsStages
               else :pending
               end
       sub_label, eta = progress.for_lane(key) if state == :live
-      Stage.new(key: key, label: label, state: state, count: count, sub_label: sub_label, eta: eta)
+      if state == :live && key == "building" && placed.all? { |task, lane| lane != key || task.stage.to_s == "designed" }
+        label = SUB_LABELS["designed"]
+        sub_label = nil
+        eta = nil if eta&.kind == :waiting
+        prepping = true
+      end
+      Stage.new(key: key, label: label, state: state, count: count, sub_label: sub_label, eta: eta, prepping: prepping || false)
     end
   end
 
