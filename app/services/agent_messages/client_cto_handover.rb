@@ -55,7 +55,7 @@ module AgentMessages
     # already stored keeps its words; only new launches read this text.
     def greeting(app_cto, user)
       first = greeting_name(user)
-      host = "#{app_cto.app_slug}.#{AppRequest::PARENT_DOMAIN}"
+      host = AppRequest.host_for(app_cto.app_slug)
       [
         "Hi #{first || 'there'}, I'm #{app_cto.name}, the agent who'll be managing #{app_cto.app.name}.",
         "It's in line to be built: your brand sheet, the first version of the app, and its home at **#{host}**. " \

@@ -26,7 +26,7 @@ class AgentContextBuilderClientCtoTest < ActiveSupport::TestCase
 
   def persona(**overrides)
     { "soul" => "client_cto", "name" => "Nova", "app_slug" => "pawsome", "app_name" => "Pawsome",
-      "host" => "pawsome.mcritchie.studio", "palette" => PALETTE, "plan" => PLAN,
+      "host" => "pawsome.mcritchie.app", "palette" => PALETTE, "plan" => PLAN,
       "facts" => { "owner" => "Pat", "audience" => "Dog owners in Denver" } }.merge(overrides.transform_keys(&:to_s))
   end
 

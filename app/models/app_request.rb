@@ -7,18 +7,32 @@
 #   queued   — signed in and a subdomain claimed. A board task now exists for an
 #              agent to pick up (`task_slug`).
 #   building — an agent is on it.
-#   live     — served at <subdomain>.mcritchie.studio.
+#   live     — served at <subdomain>.mcritchie.app.
 #   cancelled
 #
 # Builds are ASYNCHRONOUS and done by agents; nothing here generates an app.
-# Phase 1 only RESERVES the subdomain: mcritchie.studio has no wildcard DNS, so
-# the agent delivering the build points the name at it.
+# The claim RESERVES the subdomain. A client app is served on its own registrable
+# domain, mcritchie.app (wildcard DNS and certificate since 2026-10-19), by
+# ClientAppHost (lib/middleware/client_app_host.rb), never on the hub's
+# mcritchie.studio, whose session cookie model-written code must not see.
 class AppRequest < ApplicationRecord
   STATUSES = %w[draft queued building live cancelled].freeze
   # A request that holds its subdomain. A cancelled one releases it.
   HOLDING = %w[queued building live].freeze
 
-  PARENT_DOMAIN = "mcritchie.studio".freeze
+  # The domain every client app's address is on: <subdomain>.mcritchie.app. It is
+  # the PRODUCTION name, ClientAppHost::PRODUCTION_DOMAIN, not ClientAppHost.domain:
+  # the address is the promise a visitor keeps, and it is the same whichever
+  # environment renders /build (development serves the bundle at
+  # <subdomain>.localhost, and QA serves none).
+  CLIENT_APP_DOMAIN = "mcritchie.app".freeze
+  # The hub's own domain. Client app addresses were spelled <subdomain>.mcritchie.studio
+  # until 2026-10-20, so a name pasted with that suffix still cleans to the bare
+  # name, and the hub's satellites on it (rantly.mcritchie.studio) stay reserved.
+  HUB_DOMAIN = "mcritchie.studio".freeze
+  # The suffixes a pasted address may carry, and the domains whose registered
+  # hosts reserve their names.
+  OUR_DOMAINS = [ CLIENT_APP_DOMAIN, HUB_DOMAIN ].freeze
   PROMPT_LIMIT = 4000
 
   # 3-30 characters of a-z, 0-9 and hyphens, starting and ending alphanumeric —
@@ -30,6 +44,8 @@ class AppRequest < ApplicationRecord
   # satellite is reserved the day it is registered, not the day someone notices.
   # The slug counts too: an app whose production_url is not a subdomain of ours
   # (rolio is a herokuapp host) still keeps its name.
+  # A name stays reserved on mcritchie.app because it is ours on mcritchie.studio:
+  # rantly.mcritchie.app would pass for our Rantly, and a satellite may move over.
   # `chain` holds chain-ops' planned host, chain.mcritchie.studio, which has no
   # DNS yet, so satellites.yml's production_url (null) cannot reserve it.
   RESERVED = %w[
@@ -113,15 +129,10 @@ class AppRequest < ApplicationRecord
   # aliases (studio-engine, turf-vault, vault), so a /build app never shares a
   # name with a repo or gem of ours.
   def self.read_reserved_names
-    satellites = Rails.root.join("config/satellites.yml")
-    rows = YAML.safe_load_file(satellites).fetch("satellites", [])
-    urls = rows.map { |sat| sat["production_url"] } +
-           AppCatalog.apps.flat_map { |app| [ app.production_url, app.qa_url ] }
-    hosts = urls.compact.filter_map do |url|
-      host = URI.parse(url.to_s).host.to_s
-      host.delete_suffix(".#{PARENT_DOMAIN}") if host.end_with?(".#{PARENT_DOMAIN}")
-    rescue URI::InvalidURIError
-      nil
+    rows = satellite_rows
+    hosts = registry_hosts.filter_map do |host|
+      domain = OUR_DOMAINS.find { |ours| host.end_with?(".#{ours}") }
+      host.delete_suffix(".#{domain}") if domain
     end
     slugs = rows.filter_map { |sat| sat["slug"].presence } +
             AppCatalog.apps.map(&:slug) +
@@ -129,6 +140,41 @@ class AppRequest < ApplicationRecord
     (RESERVED + hosts + slugs).uniq.freeze
   end
   private_class_method :read_reserved_names
+
+  # The names the registries serve at <name>.mcritchie.studio: the satellites
+  # built before mcritchie.app (rantly, weekly-lock, the showcase rebuilds). A
+  # live request holding one (a showcase row, given its subdomain by hand) is
+  # served there, so #host names it there. No claim can reach one: each is
+  # reserved.
+  def self.hub_hosted_names
+    @hub_hosted_names ||= registry_hosts.filter_map { |host| host.delete_suffix(".#{HUB_DOMAIN}") if host.end_with?(".#{HUB_DOMAIN}") }.to_set.freeze
+  end
+
+  # The address an app named NAME is served at: <name>.mcritchie.app, or, for a
+  # satellite built before it (hub_hosted_names), the <name>.mcritchie.studio it
+  # is served at. The one spelling #host, the CTO and its handover all use.
+  def self.host_for(name)
+    return nil if name.blank?
+
+    "#{name}.#{hub_hosted_names.include?(name) ? HUB_DOMAIN : CLIENT_APP_DOMAIN}"
+  end
+
+  # Every production and QA host satellites.yml and config/apps.yml name.
+  def self.registry_hosts
+    urls = satellite_rows.map { |sat| sat["production_url"] } +
+           AppCatalog.apps.flat_map { |app| [ app.production_url, app.qa_url ] }
+    urls.compact.filter_map do |url|
+      URI.parse(url.to_s).host.to_s.presence
+    rescue URI::InvalidURIError
+      nil
+    end
+  end
+  private_class_method :registry_hosts
+
+  def self.satellite_rows
+    YAML.safe_load_file(Rails.root.join("config/satellites.yml")).fetch("satellites", [])
+  end
+  private_class_method :satellite_rows
 
   # Why NAME cannot be claimed, or nil when it can. The one answer the live
   # availability check and the model's validation both give.
@@ -166,12 +212,15 @@ class AppRequest < ApplicationRecord
   end
 
   # What the name field does as the user types, done again on the server so the
-  # two always agree: lowercase, drop the parent domain, turn every run of
-  # anything that is not a-z or 0-9 into ONE hyphen, and trim hyphens off both
-  # ends. "Uber for Dogs!" becomes "uber-for-dogs".
+  # two always agree: lowercase, drop a trailing .mcritchie.app (or the old
+  # .mcritchie.studio), turn every run of anything that is not a-z or 0-9 into
+  # ONE hyphen, and trim hyphens off both ends. "Uber for Dogs!" becomes
+  # "uber-for-dogs"; "Pawsome.mcritchie.app" becomes "pawsome".
   def self.normalize_subdomain(name)
-    name.to_s.strip.downcase.delete_suffix(".#{PARENT_DOMAIN}")
-        .gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
+    name = name.to_s.strip.downcase
+    domain = OUR_DOMAINS.find { |ours| name.end_with?(".#{ours}") }
+    name = name.delete_suffix(".#{domain}") if domain
+    name.gsub(/[^a-z0-9]+/, "-").gsub(/\A-+|-+\z/, "")
   end
 
   def draft? = status == "draft"
@@ -236,9 +285,9 @@ class AppRequest < ApplicationRecord
 
   def queued? = status == "queued"
 
-  def url = subdomain.present? ? "https://#{subdomain}.#{PARENT_DOMAIN}" : nil
+  def url = host && "https://#{host}"
 
-  def host = subdomain.present? ? "#{subdomain}.#{PARENT_DOMAIN}" : nil
+  def host = self.class.host_for(subdomain)
 
   # Sign-in attaches a draft to whoever finished it. A draft already attached
   # belongs to that user only.

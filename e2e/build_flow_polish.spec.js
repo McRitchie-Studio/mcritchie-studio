@@ -215,7 +215,7 @@ test("the domain card asks for availability once its name changes, never on arri
   // The field's accessible description names the suffix it is drawn beside.
   const description = await field.evaluate((el) => el.getAttribute("aria-describedby").split(" ")
     .map((id) => document.getElementById(id)?.textContent.trim()).join(" "));
-  expect(description).toContain("Ends in .mcritchie.studio.");
+  expect(description).toContain("Ends in .mcritchie.app.");
 
   // A chip tap changes the name: one check, for that name.
   await card.locator("[data-test='build-address-suggestion']", { hasText: `${free}-2` }).click();

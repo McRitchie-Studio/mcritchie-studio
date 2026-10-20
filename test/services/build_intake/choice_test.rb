@@ -73,7 +73,7 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
       [ "idea", { message_id: idea.id } ] => "Let's build League Standings Hub.",
       [ "palette", { message_id: themes.id, index: "0" } ] => "Let's go with the Pitch theme.",
       [ "cto", { custom_name: "Marble", portrait: "harbor" } ] => "My CTO is Marble.",
-      [ "address", { subdomain: "league-hub" } ] => "Let's use league-hub.mcritchie.studio."
+      [ "address", { subdomain: "league-hub" } ] => "Let's use league-hub.mcritchie.app."
     }
     relays = lines.map do |(field, params), line|
       relay = tap(field, **params).relay
@@ -187,7 +187,7 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
     assert_nil tap("address", subdomain: "league-hub").relay
     assert_nil tap("address", subdomain: "League Hub").relay, "the same name however it is typed"
     assert_equal 1, thread.count
-    assert_equal "Let's use league-site.mcritchie.studio.", tap("address", subdomain: "league-site").relay.content
+    assert_equal "Let's use league-site.mcritchie.app.", tap("address", subdomain: "league-site").relay.content
     assert_equal 2, thread.count
   end
 

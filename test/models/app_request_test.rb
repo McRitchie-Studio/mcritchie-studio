@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [unit] AppRequest — the /build funnel's record. The subdomain rules are the
-# promise we make publicly (<name>.mcritchie.studio), so each is pinned here:
+# promise we make publicly (<name>.mcritchie.app), so each is pinned here:
 # format, reserved names (including every satellite's), uniqueness among
 # holding requests, and the tier's apps-per-account limit (data, unlimited today). Queueing opens the board task
 # in the same transaction.
@@ -29,12 +29,58 @@ class AppRequestTest < ActiveSupport::TestCase
 
   test "names are cleaned the way the field cleans them: case, runs of symbols, edge hyphens" do
     {
+      "  Pawsome.mcritchie.app " => "pawsome",
       "  Pawsome.mcritchie.studio " => "pawsome",
       "Uber for Dogs!" => "uber-for-dogs",
       "asda ddadd   d" => "asda-ddadd-d",
       "-My_App--" => "my-app",
       "ab.cd" => "ab-cd"
     }.each { |typed, name| assert_equal name, AppRequest.normalize_subdomain(typed), typed.inspect }
+  end
+
+  # Client apps are served at <name>.mcritchie.app since 2026-10-19 (task
+  # app-domains-use-mcritchie-app): the /build card showed .mcritchie.studio.
+  test "[unit] a client app's address is on mcritchie.app, the production preview domain" do
+    assert_equal "mcritchie.app", AppRequest::CLIENT_APP_DOMAIN
+    assert_equal ClientAppHost::PRODUCTION_DOMAIN, AppRequest::CLIENT_APP_DOMAIN, "the address /build promises is the one ClientAppHost serves"
+    request_row = AppRequest.new(subdomain: "pawsome")
+    assert_equal "pawsome.mcritchie.app", request_row.host
+    assert_equal "https://pawsome.mcritchie.app", request_row.url
+    assert_equal "pawsome.mcritchie.app", AppRequest.host_for("pawsome")
+    assert_nil AppRequest.new.host
+    assert_nil AppRequest.new.url
+    assert_nil AppRequest.host_for("")
+  end
+
+  test "[unit] a pasted address with either suffix cleans to the bare name, and only a trailing one" do
+    {
+      "pawsome.mcritchie.app" => "pawsome",
+      "pawsome.mcritchie.studio" => "pawsome",
+      "PAWSOME.MCRITCHIE.APP" => "pawsome",
+      "mcritchie.app.pawsome" => "mcritchie-app-pawsome",
+      "pawsome.mcritchie.app.mcritchie.studio" => "pawsome-mcritchie-app",
+      "pawsome.example.app" => "pawsome-example-app"
+    }.each { |typed, name| assert_equal name, AppRequest.normalize_subdomain(typed), typed.inspect }
+  end
+
+  # The reserved list still guards mcritchie.app names: a name that is ours on
+  # mcritchie.studio (a satellite, a hub host) would pass for ours on mcritchie.app.
+  test "[unit] a hub name stays reserved when claimed as a mcritchie.app address" do
+    %w[www app rantly weekly-lock tax].each do |name|
+      assert_equal "That name is reserved.", AppRequest.unavailable_reason("#{name}.mcritchie.app"), name
+    end
+  end
+
+  # A satellite built before mcritchie.app (a showcase rebuild given its
+  # subdomain by hand) is served at its registered hub host, so its address
+  # and gallery link must not move to mcritchie.app, where nothing serves it.
+  test "[unit] a live satellite from before mcritchie.app keeps its mcritchie.studio address" do
+    assert_includes AppRequest.hub_hosted_names, "rantly"
+    refute_includes AppRequest.hub_hosted_names, "pawsome"
+    legacy = AppRequest.new(subdomain: "rantly")
+    assert_equal "rantly.mcritchie.studio", legacy.host
+    assert_equal "https://rantly.mcritchie.studio", legacy.url
+    assert_equal "rantly.mcritchie.studio", AppRequest.host_for("rantly")
   end
 
   test "every example name the field types is a valid, unreserved name" do
@@ -113,7 +159,7 @@ class AppRequestTest < ActiveSupport::TestCase
     request_row = draft(user: users(:alex)).queue!("pawsome")
 
     assert request_row.queued?
-    assert_equal "pawsome.mcritchie.studio", request_row.host
+    assert_equal "pawsome.mcritchie.app", request_row.host
     task = Task.find_by!(slug: request_row.task_slug)
     assert_equal "designed", task.stage
     assert_equal "Build Launch App pawsome", task.title
@@ -128,8 +174,8 @@ class AppRequestTest < ActiveSupport::TestCase
     devops = Task.find_by!(slug: request_row.task_slug).metadata.fetch("devops")
 
     assert_equal [
-      "pawsome.mcritchie.studio serves the app the requester described",
-      "pawsome.mcritchie.studio's home page renders the site footer (footer[data-site-footer])"
+      "pawsome.mcritchie.app serves the app the requester described",
+      "pawsome.mcritchie.app's home page renders the site footer (footer[data-site-footer])"
     ], devops.fetch("acceptance")
     context = devops.fetch("agent_context")
     assert context.end_with?(
@@ -144,7 +190,7 @@ class AppRequestTest < ActiveSupport::TestCase
     request_row = draft(prompt: prompt, user: users(:viewer)).queue!("pawsome")
     context = Task.find_by!(slug: request_row.task_slug).metadata.dig("devops", "agent_context")
 
-    assert context.start_with?("Prompt from the requester, verbatim:\n\n#{prompt}\n\nSubdomain reserved: pawsome.mcritchie.studio."), context
+    assert context.start_with?("Prompt from the requester, verbatim:\n\n#{prompt}\n\nSubdomain reserved: pawsome.mcritchie.app."), context
     assert_operator context.index(prompt), :<, context.index("launch-build-queue.md")
   end
 

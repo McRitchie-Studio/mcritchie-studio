@@ -85,7 +85,7 @@ class AppLaunchTest < ActiveSupport::TestCase
     # designed task, task app-card-stage-labels), what the card shows, what to
     # do meanwhile (task build-launch-handoff): code wrote it from the launch's own rows.
     assert greeting.start_with?("Hi Viewer, I'm Nova, the agent who'll be managing Pawsome."), greeting
-    assert_includes greeting, "It's in line to be built: your brand sheet, the first version of the app, and its home at **pawsome.mcritchie.studio**."
+    assert_includes greeting, "It's in line to be built: your brand sheet, the first version of the app, and its home at **pawsome.mcritchie.app**."
     assert_includes greeting, "The card above shows live progress: Prepping until a builder starts, then Building, Reviewing, " \
                               "Releasing to a preview link for you, and Deploying once you approve."
     assert greeting.end_with?("Meanwhile, tell me anything you'd like added or changed, or ask about the plan.")

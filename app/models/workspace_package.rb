@@ -62,7 +62,7 @@ class WorkspacePackage
     # The software keys (config/workspace_icons.yml) this feature puts in a
     # client's stack. A planned feature provisions nothing: it is a promise. A
     # tier below `brand_from` gets the row but not the software (Vibe's web
-    # address is a mcritchie.studio subdomain, so no Squarespace domain).
+    # address is a mcritchie.app subdomain, so no Squarespace domain).
     def software_keys(package_key = nil)
       return [] unless delivered?
       return [] if below_brand_from?(package_key)
@@ -97,7 +97,7 @@ class WorkspacePackage
     # The brands a package card names for this row: the lead brand and every
     # software it shows. A planned row is a promise, so it names none, and a
     # tier below `brand_from` gets the row but not the brand (Vibe's web
-    # address is a mcritchie.studio subdomain, not a Squarespace domain).
+    # address is a mcritchie.app subdomain, not a Squarespace domain).
     def card_brands(package_key = nil)
       return [] if planned?
       return [] if below_brand_from?(package_key)

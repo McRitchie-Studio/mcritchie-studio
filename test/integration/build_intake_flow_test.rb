@@ -142,7 +142,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=build-card-address] button[data-test=build-address-suggestion][aria-pressed=true]", text: "league-hub"
     assert_select "[data-test=build-card-address] [data-test=build-choose-address]", "Use Domain"
 
-    tap_and_relay(request_row, "address", "Let's use league-hub.mcritchie.studio.", message_id: domains.id, subdomain: "league-hub")
+    tap_and_relay(request_row, "address", "Let's use league-hub.mcritchie.app.", message_id: domains.id, subdomain: "league-hub")
     assert_equal "league-hub", request_row.reload.subdomain
     assert_includes response.body, "data-complete=\"true\"", "the tap's stream redraws the status card complete"
 
@@ -154,7 +154,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
       assert_select "[data-test=build-summary-title]", "League Standings Hub"
       assert_select "[data-test=build-summary-cto]", /Marbles/
       assert_select "[data-test=build-summary-theme]", /Pitch Two/
-      assert_select "[data-test=build-summary-domain]", /league-hub\.mcritchie\.studio/
+      assert_select "[data-test=build-summary-domain]", /league-hub\.mcritchie\.app/
       assert_select "[data-test=build-summary-build][data-signs-in=true]", 1, "signed out, Build My App opens sign-in"
     end
     # The status card above the thread holds the same facts, filled tap by tap, and no Build control.
@@ -163,7 +163,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
       assert_select "[data-test=build-tile-agent][data-done=true] [data-test=build-tile-agent-portrait][src*='cto_portraits/meadow']"
       assert_select "[data-test=build-tile-agent-value]", /Marbles/
       assert_select "[data-test=build-tile-theme-value]", /Pitch Two/
-      assert_select "[data-test=build-tile-domain-value]", /league-hub\.mcritchie\.studio/
+      assert_select "[data-test=build-tile-domain-value]", /league-hub\.mcritchie\.app/
       assert_select "[data-test=build-summary-build]", 0
     end
 
