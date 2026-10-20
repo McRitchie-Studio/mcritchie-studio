@@ -108,7 +108,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     end
     vibe_domain = "#{card('vibe')} [data-test='package-line'][data-lane='domain']"
     assert_select "#{vibe_domain} [data-test='line-title']", text: /Custom Domain\s*\(In Builder\)/
-    assert_select "#{vibe_domain} [data-test='line-sub']", text: "on your-app.mcritchie.studio"
+    assert_select "#{vibe_domain} [data-test='line-sub']", text: "on your-app.mcritchie.app"
     assert_select "[data-test='line-title']", text: /Web address/, count: 0
     assert_select "#{card('team')} [data-test='package-line'][data-status='missing']", 0
     soon = "#{card('team')} [data-test='package-line'][data-status='soon']"
@@ -266,11 +266,11 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-feature='integrations'] [data-test='stack-software'] [data-brand='google']"
     assert_equal [ "—", "—", "Google Workspace & more", "Google Workspace & more", "Custom" ],
                  css_select("[data-feature='integrations'] [data-test='stack-cell']").map { |td| cell_text(td) }
-    assert_equal [ "your-app.mcritchie.studio", "www.your-app.com", "your-app.com + www.your-app.com",
+    assert_equal [ "your-app.mcritchie.app", "www.your-app.com", "your-app.com + www.your-app.com",
                    "your-app.com + www.your-app.com", "Multiple domains" ],
                  css_select("[data-feature='web-address'] [data-test='stack-cell']").map { |td| td.text.strip }
     vibe = "[data-feature='web-address'] [data-test='stack-cell'][data-package='vibe']"
-    assert_select "#{vibe} [data-test='stack-hostnames'] [data-test='stack-hostname']", text: "your-app.mcritchie.studio" do
+    assert_select "#{vibe} [data-test='stack-hostnames'] [data-test='stack-hostname']", text: "your-app.mcritchie.app" do
       assert_select "wbr", 1, "the one place it may wrap: after its first label"
     end
     assert_select "#{vibe} [class*='overflow-wrap']", 0, "a hostname never breaks mid-word"

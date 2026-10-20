@@ -125,7 +125,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=build-card-address] button[data-test=build-address-suggestion][aria-pressed=true]", text: "league-hub"
     assert_select "[data-test=build-card-address] [data-test=build-choose-address]", "Use Domain"
 
-    tap_and_relay(request_row, "address", "Let's use league-hub.mcritchie.studio.", message_id: domains.id, subdomain: "league-hub")
+    tap_and_relay(request_row, "address", "Let's use league-hub.mcritchie.app.", message_id: domains.id, subdomain: "league-hub")
     assert_equal "league-hub", request_row.reload.subdomain
     assert_includes response.body, "data-complete=\"true\"", "the tap's stream redraws the status card complete"
 

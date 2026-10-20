@@ -395,7 +395,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   test "[unit] the web address reads three domain levels across the tiers" do
     address = feature("Web address")
 
-    assert_equal [ "your-app.mcritchie.studio", "www.your-app.com", "your-app.com + www.your-app.com",
+    assert_equal [ "your-app.mcritchie.app", "www.your-app.com", "your-app.com + www.your-app.com",
                    "your-app.com + www.your-app.com", "Multiple domains" ], TIERS.map { |key| address.value_for(key) }
     assert_equal "Your app's address, from our subdomain up to your own domain.", address.blurb,
                  "one short line: the cells already show the steps"
@@ -408,7 +408,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   test "[unit] the domain lane reads Custom Domain up to Builder and Premium Domain from Pro, Cloudflare in no card line" do
     lines = WorkspacePackage.cards.to_h { |card| [ card.key, card.card_lines.find { |l| l.key == "domain" } ] }
 
-    assert_equal [ "Custom Domain", "on your-app.mcritchie.studio", "missing" ], lines["vibe"].to_h.values_at(:title, :sub, :status)
+    assert_equal [ "Custom Domain", "on your-app.mcritchie.app", "missing" ], lines["vibe"].to_h.values_at(:title, :sub, :status)
     assert_equal [ "Custom Domain", "www.your-app.com", "included" ], lines["builder"].to_h.values_at(:title, :sub, :status)
     %w[pro team].each do |key|
       assert_equal [ "Premium Domain", "best-in-class speed & security", "included" ], lines[key].to_h.values_at(:title, :sub, :status), key
@@ -512,7 +512,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
                    "pro" => team_marketing + [ [ "Fractional CMO", "Team" ], [ "Email drafting agent", "Team" ] ],
                    "team" => [] }, missing)
     vibe_domain = WorkspacePackage.find(:vibe).card_lines.find { |l| l.key == "domain" }
-    assert_equal "on your-app.mcritchie.studio", vibe_domain.sub
+    assert_equal "on your-app.mcritchie.app", vibe_domain.sub
     assert_equal "Bring your idea to life", WorkspacePackage.find(:vibe).card_lines.find { |l| l.key == "app" }.sub
     # ", nightly backups" wrapped at 1280px, so it left all three (the stack carries backups).
     assert_equal [ "light server, read-only data", "always on, 11 GB", "background jobs, 60 GB", "background jobs, 132 GB" ],
@@ -540,7 +540,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     end
     vibe = domain.call(:vibe)
     assert vibe.missing?
-    assert_equal [ "Custom Domain", "on your-app.mcritchie.studio", "Builder" ], [ vibe.title, vibe.sub, vibe.in_tier.name ],
+    assert_equal [ "Custom Domain", "on your-app.mcritchie.app", "Builder" ], [ vibe.title, vibe.sub, vibe.in_tier.name ],
                  "a missing lane keeps the lane's own title"
     assert_equal "Custom Domain", WorkspacePackage.card_lanes.assoc("Application").last.find { |l| l.key == "domain" }.title,
                  "the override lives on the package, not the lane list"

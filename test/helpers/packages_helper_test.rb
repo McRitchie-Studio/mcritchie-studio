@@ -61,21 +61,21 @@ class PackagesHelperTest < ActionView::TestCase
   end
 
   test "[unit] a hostname value breaks only at its plus, never inside a hostname" do
-    assert_equal [ [ "yourname.mcritchie.studio", true ] ], package_cell_segments("yourname.mcritchie.studio")
+    assert_equal [ [ "yourname.mcritchie.app", true ] ], package_cell_segments("yourname.mcritchie.app")
     assert_equal [ [ "yourname.com", true ], [ "www.yourname.com", true ] ], package_cell_segments("yourname.com + www.yourname.com")
     assert_equal [ [ "Basic web", false ], [ "worker", false ] ], package_cell_segments("Basic web + worker")
     assert_equal [ [ "Multiple domains", false ] ], package_cell_segments("Multiple domains")
   end
 
   test "[unit] a hostname wraps only after its first label, and only while a dot remains" do
-    assert_equal "yourname.<wbr>mcritchie.studio", package_hostname("yourname.mcritchie.studio").to_s
+    assert_equal "yourname.<wbr>mcritchie.app", package_hostname("yourname.mcritchie.app").to_s
     assert_equal "www.<wbr>yourname.com", package_hostname("www.yourname.com").to_s
     assert_equal "yourname.com", package_hostname("yourname.com").to_s
   end
 
   test "[unit] a tagline keeps its hostname on one line, trailing period outside" do
-    html = package_tagline("A real app built by our agents, live at your-app.mcritchie.studio.").to_s
-    assert_equal 'A real app built by our agents, live at <span class="whitespace-nowrap" data-test="tagline-host">your-app.mcritchie.studio</span>.', html
+    html = package_tagline("A real app built by our agents, live at your-app.mcritchie.app.").to_s
+    assert_equal 'A real app built by our agents, live at <span class="whitespace-nowrap" data-test="tagline-host">your-app.mcritchie.app</span>.', html
     assert_equal "Your founding team: a CTO and a CMO.", package_tagline("Your founding team: a CTO and a CMO.").to_s
   end
 

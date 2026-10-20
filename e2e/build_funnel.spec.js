@@ -282,16 +282,16 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(domainCard.locator("[data-test='build-address-availability']")).toHaveText("Available");
   await useDomain.click();
   await expect(status).toHaveAttribute("data-complete", "true");
-  await expect(status.locator("[data-test='build-tile-domain-value']")).toHaveText(`${address}.mcritchie.studio`);
+  await expect(status.locator("[data-test='build-tile-domain-value']")).toHaveText(`${address}.mcritchie.app`);
   await expect(status.locator("[data-test='build-summary-build'], [data-test='build-my-app']")).toHaveCount(0);
 
   // The summary: the app as chosen, and Build My App, which asks for sign-in only now.
-  await tapped(page, auth, `Let's use ${address}.mcritchie.studio.`, "Here's your app. Ready when you are.");
+  await tapped(page, auth, `Let's use ${address}.mcritchie.app.`, "Here's your app. Ready when you are.");
   const summary = page.locator("[data-test='build-card-summary']");
   await expect(summary.locator("[data-test='build-summary-title']")).toHaveText("League Standings Hub");
   await expect(summary.locator("[data-test='build-summary-cto']")).toContainText("Marbles");
   await expect(summary.locator("[data-test='build-summary-theme']")).toContainText("Field");
-  await expect(summary.locator("[data-test='build-summary-domain']")).toContainText(`${address}.mcritchie.studio`);
+  await expect(summary.locator("[data-test='build-summary-domain']")).toContainText(`${address}.mcritchie.app`);
   const typed = await page.locator("[data-test='cto-chat-sent']").allTextContents();
   expect(typed.filter((t) => !/^(Let's|My CTO|I'd like)/.test(t.trim())), "the visitor typed only the first message").toEqual([idea]);
   expect(await page.evaluate(() => window.__buildShellMarker), "no reload through the whole intake").toBe("kept");
@@ -320,7 +320,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await build.click();
   await expect(modal).toBeVisible();
   await expect(modal.getByRole("heading", { name: "Sign in to build your app" })).toBeVisible();
-  await expect(modal).toContainText(`Free. Then we start building ${address}.mcritchie.studio.`);
+  await expect(modal).toContainText(`Free. Then we start building ${address}.mcritchie.app.`);
   await expect(modal.locator("[data-test='auth-google']")).toContainText("Continue with Google");
   await modal.locator("[data-test='auth-close']").click();
   await expect(modal).toBeHidden();
@@ -518,9 +518,9 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
     const width = await field.evaluate((el) => el.getBoundingClientRect().width);
     expect(width, "the name keeps the room at 360px").toBeGreaterThan(180);
 
-    await field.fill(`https://${name}.mcritchie.studio/`);
+    await field.fill(`https://${name}.mcritchie.app/`);
     await expect(field).toHaveValue(name);
-    await expect(page.locator("[data-test='build-address-preview']")).toHaveText(`${name}.mcritchie.studio`);
+    await expect(page.locator("[data-test='build-address-preview']")).toHaveText(`${name}.mcritchie.app`);
     await page.locator("[data-test='build-claim-submit']").click();
     await expect(page.locator("[data-test='build-request']")).toHaveAttribute("data-status", "queued");
   }
@@ -529,7 +529,7 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
   // seed carries live showcase apps of its own for the gallery spec.)
   await page.goto("/build/requests?status=showcase");
   for (const name of ["coin-toss", "chess-club"]) {
-    const row = page.locator("[data-test='app-request']", { has: page.locator("[data-test='app-request-host']", { hasText: `${name}.mcritchie.studio` }) });
+    const row = page.locator("[data-test='app-request']", { has: page.locator("[data-test='app-request-host']", { hasText: `${name}.mcritchie.app` }) });
     await expect(row.locator("[data-test='app-request-showcase']")).toHaveCount(1);
   }
 });

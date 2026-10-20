@@ -162,7 +162,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     # The card the claim opened is what an agent builds from: it asks for the
     # footer and names the SOP, after the requester's own words.
     devops = Task.find_by!(slug: draft.task_slug).metadata.fetch("devops")
-    assert_includes devops.fetch("acceptance"), "league-hub.mcritchie.studio's home page renders the site footer (footer[data-site-footer])"
+    assert_includes devops.fetch("acceptance"), "league-hub.mcritchie.app's home page renders the site footer (footer[data-site-footer])"
     assert_includes devops.fetch("agent_context"), "docs/agents/modules/launch-build-queue.md"
     assert_includes devops.fetch("agent_context"), "CTO: Coach (portrait harbor)"
     assert_equal [ "league-hub" ], devops.fetch("repositories")
@@ -395,7 +395,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     get build_requests_path
     assert_response :success
     assert_select "[data-test='app-request']", 1, "the default tab is real requests, not drafts"
-    assert_select "[data-test='app-request-host']", text: "league-hub.mcritchie.studio"
+    assert_select "[data-test='app-request-host']", text: "league-hub.mcritchie.app"
     assert_select "[data-test='app-request-prompt']", text: "A league site"
     assert_select "[data-test='app-request-task']"
     assert_select "[data-test='app-request-tab'][data-status='draft']", text: /Drafts\s*1/
@@ -428,7 +428,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     live.update!(status: "live")
 
     get build_path
-    assert_select "[data-test='build-example'][href='https://coin-toss.mcritchie.studio']", text: /Coin Toss/
+    assert_select "[data-test='build-example'][href='https://coin-toss.mcritchie.app']", text: /Coin Toss/
     assert_select "[data-test='build-example']", text: /A coin toss tournament\./
   end
 

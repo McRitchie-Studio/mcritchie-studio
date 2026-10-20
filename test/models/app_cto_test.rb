@@ -11,7 +11,7 @@ class AppCtoTest < ActiveSupport::TestCase
     persona = cto.persona_json
 
     assert_equal "client_cto", persona["soul"]
-    assert_equal [ "Nova", "pawsome", "Pawsome", "pawsome.mcritchie.studio" ],
+    assert_equal [ "Nova", "pawsome", "Pawsome", "pawsome.mcritchie.app" ],
                  persona.values_at("name", "app_slug", "app_name", "host")
     assert_equal PALETTE, persona["palette"]
     assert_equal PLAN, persona["plan"]

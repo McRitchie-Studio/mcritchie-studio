@@ -298,7 +298,9 @@ class BuildViewTest < ActionView::TestCase
     assert_equal "onInput($el)", field["@input"], "input is cleaned as it is typed"
     assert_nil field["x-effect"], "the chat composer keeps the focus"
     assert_select "[data-test='build-admin-claim'] [data-test='build-claim']", 1
-    assert_includes rendered, ".mcritchie.studio"
+    assert_includes rendered, ".mcritchie.app"
+    refute_includes rendered, ".mcritchie.studio'", "the visible suffix and preview are mcritchie.app (task app-domains-use-mcritchie-app)"
+    assert_includes rendered, ".replace(/\\.mcritchie\\.(app|studio)$/, '')", "a pasted address loses either suffix, as normalize_subdomain does"
     AppRequest::EXAMPLE_NAMES.each { |example| assert_includes rendered, example }
     assert_includes rendered, ".slice(0, 3)", "three examples are sampled per visit"
     assert_includes rendered, "if (index === last) { this._typing = null; return }", "the motion stops on the third"
@@ -311,7 +313,7 @@ class BuildViewTest < ActionView::TestCase
     render template: "build/show"
 
     assert_select "[data-test='agent-shell'][data-shell='request'] [data-test='agent-shell-status'] [data-test='build-status']", 1, "the same shell, the status in its card"
-    assert_select "[data-test='build-host']", text: "client-portal.mcritchie.studio"
+    assert_select "[data-test='build-host']", text: "client-portal.mcritchie.app"
     assert_select "[data-test='build-steps'] [data-step='queued'][data-done='true']"
     assert_select "[data-test='build-steps'] [data-step='live'][data-done='false']"
   end

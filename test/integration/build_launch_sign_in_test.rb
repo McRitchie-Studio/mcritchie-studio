@@ -64,7 +64,7 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
 
   # The stream a signed-out press answers with: it opens the engine's auth modal,
   # returning to the launch landing, and names the address.
-  def assert_opens_sign_in_modal(draft, host: "league-hub.mcritchie.studio")
+  def assert_opens_sign_in_modal(draft, host: "league-hub.mcritchie.app")
     assert_response :success
     assert_equal "text/vnd.turbo-stream.html", response.media_type, "a stream, never the old silent redirect"
     streams = css_select("turbo-stream")
@@ -109,7 +109,7 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     draft, card = ready_draft!
 
     patch build_request_path(draft.token), params: { app_request: { subdomain: "x" * 80 }, message_id: card.id }, as: :turbo_stream
-    assert_opens_sign_in_modal(draft, host: "#{'x' * 63}.mcritchie.studio")
+    assert_opens_sign_in_modal(draft, host: "#{'x' * 63}.mcritchie.app")
     assert_equal 63, session[BuildIntake::PendingLaunch::KEY]["subdomain"].length
   end
 

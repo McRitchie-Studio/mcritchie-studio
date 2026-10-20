@@ -154,10 +154,10 @@ class BuildCardsViewTest < ActionView::TestCase
     chips = css_select("[data-test='build-address-suggestion']")
     assert_equal %w[poke-offense pokemon-lineup], chips.map { |c| c.text.strip }
     assert(chips.all? { |c| c["type"] == "button" }, "a chip fills the field; it never submits")
-    spoken = css_select(".sr-only").count { |node| node.text.include?(".mcritchie.studio") }
+    spoken = css_select(".sr-only").count { |node| node.text.include?(".mcritchie.app") }
     assert_equal 1, spoken, "a screen reader's description of the field names the suffix"
-    assert_equal 1, rendered.scan(".mcritchie.studio").size - spoken, "the suffix is seen once, inside the field"
-    assert_select "label[data-test='build-address-field'].justify-center [data-test='build-address-input'] + [data-test='build-address-suffix']", ".mcritchie.studio"
+    assert_equal 1, rendered.scan(".mcritchie.app").size - spoken, "the suffix is seen once, inside the field"
+    assert_select "label[data-test='build-address-field'].justify-center [data-test='build-address-input'] + [data-test='build-address-suffix']", ".mcritchie.app"
     assert_select "[data-test='build-address-input'][size='12']", 1, "sized to its name, so name and suffix centre as one group"
     # The first suggestion is preselected: it fills the field and glows.
     assert_select "[data-test='build-address-input'][name='subdomain'][value='poke-offense']"
@@ -196,7 +196,7 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "label[data-test='build-address-field'] .sr-only", { text: /mcritchie\.studio/, count: 0 },
                   "the suffix is not part of the field's label, so it is read once, as its description"
     described = input["aria-describedby"].split.map { |id| css_select("##{id}").first&.text.to_s.strip }
-    assert_equal "Ends in .mcritchie.studio.", described.first, "the field's description names the suffix the eye sees beside it"
+    assert_equal "Ends in .mcritchie.app.", described.first, "the field's description names the suffix the eye sees beside it"
     assert_equal "Available", described.last, "then the live availability line"
   end
 
