@@ -11,7 +11,12 @@
 #   - the registration price equals --price EXACTLY (USD),
 #   - a premium domain carries --premium (and Cloudflare's API registers no
 #     premium domain today, so even then it stops: see Runner::PREMIUM_VIA_API),
-#   - --ok carries Alex's own words with the date (YYYY-MM-DD).
+#   - --ok carries Alex's own words with the date (YYYY-MM-DD),
+#   - the ledger holds no open authorization for the domain, and
+#   - Cloudflare's registration-status answers its documented "No workflow
+#     found" (any workflow, or any other answer, refuses).
+# A purchase request that gets no clear answer (no reply, or a 5xx) is ledgered
+# `unknown`, never `failed`: money MAY have moved, and a re-run refuses.
 # It registers with auto_renew true and privacy_mode redaction, polls the
 # registration-status workflow to a terminal state, writes the ledger, and then
 # proves the zone exists in our Cloudflare account with the DNS token.

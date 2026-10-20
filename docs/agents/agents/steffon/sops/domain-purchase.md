@@ -104,19 +104,35 @@ needs `--premium`, and still stops while Cloudflare's API cannot register
 premium domains. If the price moved, ask Alex again at the new price; never edit
 `--price` to match.
 
+**It never buys a domain twice.** Before the purchase it refuses when the
+ledger holds an `authorized` line for the domain that nothing has closed, and it
+asks Cloudflare's registration-status first, going on **only** on Cloudflare's
+documented "No workflow found for <domain>". A workflow in any state, or any
+other answer, refuses.
+
 It registers for one year with **auto-renew ON** and **WHOIS redaction ON**,
-polls the registration to the end, and appends each event (authorized, then
-registered, failed or pending; with the price and Alex's words) to the purchase
-ledger at `/Users/alex/projects/mcritchie-studio/tmp/domain-register/registrations.jsonl`.
-On `still in_progress` it says so: run `bin/domain-register status <domain>`
-and do **not** re-run `register`.
+polls the registration to the end, and appends each event to the purchase
+ledger at `/Users/alex/projects/mcritchie-studio/tmp/domain-register/registrations.jsonl`:
+`authorized` (the price and Alex's words, written before the purchase), then
+`registered`, `failed` (Cloudflare refused with a 4xx, or the workflow failed:
+nothing was bought), `pending` (still running, or a person must act), or
+`unknown`.
+
+**`unknown` means money MAY have moved**: the purchase was sent and no clear
+answer came back (a timeout, a dropped connection, a 5xx). On `unknown` or
+`pending`, run `bin/domain-register status <domain>` and do **not** re-run
+`register`; it would refuse anyway. `status` closes the ledger line once the
+workflow ends, or once Cloudflare still has no workflow 15 minutes after the
+authorization.
 
 ### A4. Prove it is ours — the command, then Steffon
 
 The command reads the zone back with `cloudflare.studio.provision` and prints
-its id, status and nameservers. Then record it:
+its id, status and nameservers. The ledger lives in one Mac's `tmp/`, so put the
+durable record on the board, once per purchase (or per `unknown`):
 
 ```bash
+bin/task note <launch-task> --comment "domain-purchase: <domain> on Cloudflare, USD <price> (renews USD <renewal>), Alex: \"<his words>, <date>\", workflow <state>, zone <id>"
 bin/task update <launch-task> --checks "[control] domain-purchase: <domain> registered on Cloudflare <date>, zone <id> in our account"
 ```
 

@@ -378,7 +378,7 @@ class DomainRegisterTest < Minitest::Test
     @api.register_reply = { status: 202, result: @api.workflow("in_progress") }
     registrar = DomainRegister::Registrar.new(@api, token: F::TOKEN, account_id: F::ACCOUNT)
     def registrar.status(_d) = raise(DomainRegister::NoAnswer, "poll timed out")
-    r = R.new(registrar: registrar, ledger: ledger, out: @out, clock: -> { @now }, sleeper: ->(_) {})
+    r = R.new(registrar: registrar, ledger: ledger, out: @out, clock: -> { @now }, sleeper: ->(_) { })
     assert_raises(DomainRegister::NoAnswer) { r.register("acmecorp.dev", price: "10.46", ok: OK) }
     assert_equal %w[authorized unknown], ledger.entries.map { |e| e["event"] }
   end
