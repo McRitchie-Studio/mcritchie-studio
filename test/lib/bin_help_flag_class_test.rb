@@ -184,6 +184,9 @@ class BinHelpFlagClassTest < Minitest::Test
     # CLAIMS a message on the board; bin/agent-inbox only reads. Both guard first.
     "heartbeat"              => :cli_arg_guard,
     "dispatcher"             => :cli_arg_guard,
+    # bin/dispatcher's sibling service: install writes ~/Library/LaunchAgents and
+    # run claims board tasks, so every subcommand guards first.
+    "client-build-launcher"  => :cli_arg_guard,
     # The services phase of bin/ecosystem-build: `restore` installs launchd
     # services and `allow-rules` rewrites ~/.claude/settings.json, so the guard
     # runs (per subcommand) before either.
@@ -654,6 +657,8 @@ class BinHelpFlagClassTest < Minitest::Test
     # ~/Library/LaunchAgents write) is the first arm that writes anything, and the
     # run loop's claims come after it.
     "dispatcher"          => "AgentMailbox::LaunchAgent.new",
+    # The same shape: install is the first arm that writes, and run's claims come after it.
+    "client-build-launcher" => "ClientBuildLauncher::LaunchAgent.new",
     # The first 1Password read; every Cloudflare and Heroku write follows it.
     "domain-cutover"      => "DomainCutover::Credentials.cloudflare"
   }.freeze

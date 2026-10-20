@@ -814,6 +814,15 @@ Rails.application.routes.draw do
           post :fault
         end
       end
+      # bin/client-build-launcher, the automatic first version of a /build app
+      # (ClientBuilds; docs/agents/system/client-build-launcher.md).
+      resources :client_builds, only: [:index], param: :slug do
+        member do
+          post :claim
+          post :progress
+          post :finish
+        end
+      end
       # bin/dispatcher's minute ping, read by the floor alert (AgentDispatcherAlertJob).
       resources :agent_dispatchers, only: [:index] do
         collection do

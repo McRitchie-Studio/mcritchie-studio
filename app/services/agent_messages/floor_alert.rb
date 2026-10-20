@@ -53,7 +53,7 @@ module AgentMessages
       oldest = scope.order(:id).first
       return Check.new(kind: "message_waiting", failing: false, detail: {}) unless oldest
 
-      paused = AgentDispatcher.newest_first.first
+      paused = AgentDispatcher.mailbox.newest_first.first
       detail = { "count" => scope.count, "oldest_id" => oldest.id, "oldest_soul" => oldest.soul_slug,
                  "oldest_at" => oldest.created_at.iso8601 }
       if paused&.paused?(now: now)

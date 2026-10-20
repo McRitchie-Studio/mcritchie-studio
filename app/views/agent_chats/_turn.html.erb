@@ -1,5 +1,5 @@
 <%# locals: (message:, agent_name:) %>
-<%# One turn of an agent web chat: what the viewer sent (or, first in a client app's CTO chat, Ray's handover: AgentMessages::ClientCtoHandover), then the agent's answer, or why there is none yet. Rendered on the page and in WebChat broadcasts (no request: no URL helpers here). The test hooks keep their cto-chat names.
+<%# One turn of an agent web chat: what the viewer sent (or, first in a client app's CTO chat, Ray's handover: AgentMessages::ClientCtoHandover), then the agent's answer (a build progress line, ClientBuilds#progress!, is the answer alone), or why there is none yet. Rendered on the page and in WebChat broadcasts (no request: no URL helpers here). The test hooks keep their cto-chat names.
     THE READING FLOW (task build-chat-reading-flow): the visitor's words sit in their right-hand bubble; the agent's words are plain text on the page (agent-reply: no bubble, no name box, the thread's full width; app/assets/tailwind/agent_reply.css), so the bubble is kept for what asks for a tap (build/_turn's intake cards). The agent's name stays for a screen reader. A NEW answer types itself in (app/javascript/agent_reveal.js, data-agent-reveal); one on the page at load is shown at once. %>
 <% answered = message.status == "completed" && message.response_text.present? %>
 <% replied_ms = answered ? ((message.reply_posted_at || message.completed_at || message.updated_at).to_f * 1000).to_i : nil %>
@@ -14,7 +14,7 @@
   <% else %>
     <%= render "agent_chats/sent_files", message: message %>
   <% end %>
-  <% if message.content.present? && !AgentMessages::ClientCtoHandover.handover?(message) %>
+  <% if message.content.present? && !AgentMessages::ClientCtoHandover.handover?(message) && !ClientBuilds.progress?(message) %>
     <div class="self-end max-w-[85%] rounded-2xl rounded-br-sm px-3 py-2 bg-primary/15 text-primary-ink text-sm whitespace-pre-wrap break-words" data-test="cto-chat-sent"><%= message.content %></div>
   <% end %>
   <% if answered %>

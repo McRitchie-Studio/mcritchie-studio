@@ -22,7 +22,7 @@ the CTO's colours: [`client-app-host.md`](client-app-host.md).
 | App | `apps` row, slug = subdomain, the request's tier, `theme_colors` = the palette |
 | Owner | `app_memberships` row, role `owner`, for the requester |
 | CTO | `app_ctos` row: name, portrait, palette, plan, facts, the request token |
-| Task | "Build Launch App `<sub>`", `designed`, `repositories: [<sub>]`, so the tier's lane cap governs it |
+| Task | "Build Launch App `<sub>`", `designed`, `repositories: [<sub>]`, so the tier's lane cap governs it. `bin/client-build-launcher` claims it and builds the first version automatically ([`client-build-launcher.md`](client-build-launcher.md)) |
 | Handover | Ray's first chat turn (`AgentMessages::ClientCtoHandover`) |
 
 Any failure rolls every row back. After the commit: `AppRequestDiscordJob` (the

@@ -42,6 +42,7 @@ its invocation exactly.
 | Client CTOs (Build my app: App, owner, `AppCto`, task in one transaction; the one `client_cto` soul; theme colours; intake files to `apps/<sub>/intake/`) | `mcritchie-studio/docs/agents/system/client-cto.md` |
 | Shared client-app host (`<sub>.mcritchie.si` serves an app's static bundle; no cookie, strict CSP; `bin/client-bundle publish`; `preview_ready` event) | `mcritchie-studio/docs/agents/system/client-app-host.md` |
 | Client pipeline (an owner's sanitized view of their app's tasks by lane; building lanes per tier, enforced on the claim) | `mcritchie-studio/docs/agents/system/client-pipeline.md` |
+| Client build launcher (every /build app's automatic first version: the Mac service, the sandboxed builder, the stage flow, install) | `mcritchie-studio/docs/agents/system/client-build-launcher.md` |
 | Daily app report (the 07:00 Denver CTO summary of every app's health, in Discord; `HEALTH_TOKEN_<SLUG>`) | `mcritchie-studio/docs/agents/system/daily-app-report.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |

@@ -31,8 +31,16 @@ class AgentDispatcher < ApplicationRecord
   validates :role, inclusion: { in: ROLES }
 
   scope :newest_first, -> { order(last_seen_at: :desc) }
-  scope :primaries, -> { where(role: "primary") }
-  scope :standbys, -> { where(role: "standby") }
+  # bin/client-build-launcher pings this table too (its row lists the one soul
+  # LAUNCHER_SOUL), so the status card can tell a live launcher from none
+  # (docs/agents/system/client-build-launcher.md). It answers no mailbox, so it is
+  # never a primary or a standby: the floor alert and the standby rule read only
+  # the mailbox rows, and a live launcher can never hide a silent dispatcher.
+  LAUNCHER_SOUL = "client-build-launcher".freeze
+  scope :mailbox, -> { where.not("agent_dispatchers.souls @> ?", [ LAUNCHER_SOUL ].to_json) }
+  scope :launchers, -> { where("agent_dispatchers.souls @> ?", [ LAUNCHER_SOUL ].to_json) }
+  scope :primaries, -> { mailbox.where(role: "primary") }
+  scope :standbys, -> { mailbox.where(role: "standby") }
 
   # Upsert this worker's row from a ping. Unknown keys are ignored; a missing
   # worker raises ArgumentError (the API answers 422). Returns the row.
@@ -42,7 +50,7 @@ class AgentDispatcher < ApplicationRecord
 
     row = find_or_initialize_by(worker_id: worker)
     host = clip(params["host"])
-    if row.new_record? && host && (kept = where(host: host).newest_first.first)
+    if row.new_record? && host && (kept = mailbox.where(host: host).newest_first.first)
       row.role = kept.role
       row.standby_domains = kept.standby_domains
     end
