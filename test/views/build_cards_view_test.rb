@@ -193,7 +193,7 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-choose-address']:not([disabled])", 1
 
     input = css_select("[data-test='build-address-input']").first
-    assert_select "label[data-test='build-address-field'] .sr-only", { text: /mcritchie\.studio/, count: 0 },
+    assert_select "label[data-test='build-address-field'] .sr-only", { text: /mcritchie\.app/, count: 0 },
                   "the suffix is not part of the field's label, so it is read once, as its description"
     described = input["aria-describedby"].split.map { |id| css_select("##{id}").first&.text.to_s.strip }
     assert_equal "Ends in .mcritchie.app.", described.first, "the field's description names the suffix the eye sees beside it"
@@ -255,7 +255,7 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "[data-test='build-summary-cto'] img[src*='cto_portraits/meadow']"
     assert_select "[data-test='build-summary-cto']", /Marble/
     assert_select "[data-test='build-summary-theme']", /Pitch/
-    assert_select "[data-test='build-summary-domain']", /league-hub\.mcritchie\.studio/
+    assert_select "[data-test='build-summary-domain']", /league-hub\.mcritchie\.app/
     # Valid list markup: the <dl> holds only <div>s, each holding exactly one <dt> then one <dd>.
     list = css_select("[data-test='build-card-summary'] dl").first
     assert_equal %w[div div div], list.element_children.map(&:name)

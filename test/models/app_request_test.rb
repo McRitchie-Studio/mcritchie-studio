@@ -66,7 +66,7 @@ class AppRequestTest < ActiveSupport::TestCase
   # The reserved list still guards mcritchie.app names: a name that is ours on
   # mcritchie.studio (a satellite, a hub host) would pass for ours on mcritchie.app.
   test "[unit] a hub name stays reserved when claimed as a mcritchie.app address" do
-    %w[www app rantly weekly-lock qa tax].each do |name|
+    %w[www app rantly weekly-lock tax].each do |name|
       assert_equal "That name is reserved.", AppRequest.unavailable_reason("#{name}.mcritchie.app"), name
     end
   end

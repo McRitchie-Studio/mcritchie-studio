@@ -73,7 +73,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
   test "[component] each card lists grouped lines with status marks, one teaser of the next tier, Team featured" do
     get packages_path
 
-    assert_select "#{card('vibe')} [data-test='package-tagline']", text: /your-app\.mcritchie\.studio/
+    assert_select "#{card('vibe')} [data-test='package-tagline']", text: /your-app\.mcritchie\.app/
     assert_select "#{card('pro')} [data-test='package-tagline']", text: /fractional CTO/
     assert_select "#{card('team')} [data-test='package-tagline']", text: /founding team: a CTO and a CMO/
     WorkspacePackage.cards.each do |package|

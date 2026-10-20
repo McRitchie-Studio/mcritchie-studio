@@ -270,7 +270,7 @@ class BuildViewTest < ActionView::TestCase
       assert_select "[data-test='build-tile-agent-value']", text: /Nova/
       assert_select "[data-test='build-tile-theme'][data-done='true'] span[style*='#15803d']"
       assert_select "[data-test='build-tile-theme-value']", text: /Pitch/
-      assert_select "[data-test='build-tile-domain-value']", text: /client-portal\.mcritchie\.studio/
+      assert_select "[data-test='build-tile-domain-value']", text: /client-portal\.mcritchie\.app/
       %w[theme agent domain].each { |tile| assert_select "[data-test='build-tile-#{tile}-check']", 1 }
       assert_select "[data-current='true']", 0, "nothing in progress once every step is set"
     end

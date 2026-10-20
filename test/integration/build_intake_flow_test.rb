@@ -137,7 +137,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
       assert_select "[data-test=build-summary-title]", "League Standings Hub"
       assert_select "[data-test=build-summary-cto]", /Marbles/
       assert_select "[data-test=build-summary-theme]", /Pitch Two/
-      assert_select "[data-test=build-summary-domain]", /league-hub\.mcritchie\.studio/
+      assert_select "[data-test=build-summary-domain]", /league-hub\.mcritchie\.app/
       assert_select "[data-test=build-summary-build][data-signs-in=true]", 1, "signed out, Build My App opens sign-in"
     end
     # The status card above the thread holds the same facts, filled tap by tap, and no Build control.
@@ -146,7 +146,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
       assert_select "[data-test=build-tile-agent][data-done=true] [data-test=build-tile-agent-portrait][src*='cto_portraits/meadow']"
       assert_select "[data-test=build-tile-agent-value]", /Marbles/
       assert_select "[data-test=build-tile-theme-value]", /Pitch Two/
-      assert_select "[data-test=build-tile-domain-value]", /league-hub\.mcritchie\.studio/
+      assert_select "[data-test=build-tile-domain-value]", /league-hub\.mcritchie\.app/
       assert_select "[data-test=build-summary-build]", 0
     end
 
