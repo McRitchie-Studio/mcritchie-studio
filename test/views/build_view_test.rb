@@ -232,7 +232,7 @@ class BuildViewTest < ActionView::TestCase
 
   test "once the idea is started, the status card shows the working title and three empty tiles, in the order Ray asks" do
     signed_in(nil)
-    chat_assigns(AppRequest.create!(prompt: "A client portal"), started: true)
+    chat_assigns(AppRequest.create!(prompt: "A client portal", answers: { "idea" => "A client portal" }), started: true)
     render template: "build/show"
 
     assert_select "#build-checklist[data-card='true'] [data-test='build-status-card'][data-complete='false']" do
