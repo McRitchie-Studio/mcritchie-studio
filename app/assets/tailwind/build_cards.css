@@ -41,6 +41,12 @@
    gutter, and the card sits above the thread, outside its scroll box, so
    nothing scrolls sideways. Under reduced motion only the glow plays. */
 
+/* Compact (the shell scrolled): a tile not yet set drops its empty dot, so a
+   phone-width tile has room for its step's whole name ("Domain", not "Dom…"). */
+.agent-shell[data-shell-size="compact"] .agent-shell-tile[data-done="false"] .agent-shell-tile-icon {
+  display: none;
+}
+
 .build-tile-current {
   animation: build-tile-breathe 2s ease-in-out infinite;
 }
