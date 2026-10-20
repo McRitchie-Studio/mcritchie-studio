@@ -107,7 +107,7 @@ premium domains. If the price moved, ask Alex again at the new price; never edit
 It registers for one year with **auto-renew ON** and **WHOIS redaction ON**,
 polls the registration to the end, and appends each event (authorized, then
 registered, failed or pending; with the price and Alex's words) to the purchase
-ledger at `/Users/alex/projects/.agents/ledgers/domain-registrations.jsonl`.
+ledger at `/Users/alex/projects/mcritchie-studio/tmp/domain-register/registrations.jsonl`.
 On `still in_progress` it says so: run `bin/domain-register status <domain>`
 and do **not** re-run `register`.
 

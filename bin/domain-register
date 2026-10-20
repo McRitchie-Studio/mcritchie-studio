@@ -20,7 +20,7 @@ USAGE = <<~TXT
             exactly, a premium domain carries --premium, and --ok quotes Alex's own
             per-domain approval with the date. Registers for 1 year with auto-renew ON
             and WHOIS redaction ON, polls registration-status to the end, appends to
-            the purchase ledger (<projects>/.agents/ledgers/domain-registrations.jsonl),
+            the purchase ledger (the hub primary's tmp/domain-register/registrations.jsonl),
             reads the new zone back from our account and prints the domain-dns step.
             --dry-run runs the check and every refusal, prints the plan, and buys nothing.
   status    the registration workflow's state for a domain. Read-only.
