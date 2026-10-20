@@ -112,6 +112,11 @@ module GameModel
     # FileGameLook finds or creates him. One of the two is required to file.
     REQUIRED = %w[name descriptor number uniform jersey_panel specifics_front specifics_back
                   back_panel hair facial_hair build face_refs uniform_refs].freeze
+    # The face pack needs only his face; the performance sheet, heads only, adds
+    # today's jersey. Neither waits on the uniform spec.
+    FACEPACK = %w[name hair facial_hair face_refs].freeze
+    PERFORMANCE = (FACEPACK + %w[jersey_panel game_refs]).freeze
+    STAGE_NEEDS = { "facepack" => FACEPACK, "performance" => PERFORMANCE }.freeze
     LISTS = %w[face_refs uniform_refs build_refs game_refs].freeze
 
     attr_reader :dir, :data
@@ -201,6 +206,36 @@ module GameModel
     GRILL_VIEW = "GRILL SHOT: front, a big wide open smile showing the diamond-encrusted grill on his teeth"
     ICED_PANEL_VIEWS = PANEL_VIEWS.merge("look_up" => RINGS_VIEW, "front_smile" => GRILL_VIEW).freeze
 
+    # ── THE PERFORMANCE SHEET: 16 front-on cells for lip-sync and music videos ──
+    # Rows 1-2 are expressions; rows 3-4 are the mouth shapes a singer's face
+    # passes through (the vowels, then the three consonant shapes that read on
+    # camera). Each mouth is described by the lips, teeth and jaw, not by the
+    # letter, because the model draws a letter's name as a smile.
+    EXPRESSIONS = {
+      "neutral" => "a relaxed neutral expression, mouth closed, eyes to the lens",
+      "big_smile" => "a big genuine smile showing his upper and lower teeth, cheeks raised, eyes creased",
+      "laughing" => "laughing hard, mouth wide open, eyes nearly shut, head tipped back slightly",
+      "hype" => "shouting with hype energy, mouth wide open in a yell, brows pulled down, neck tendons tight",
+      "intense" => "a fierce game-face scowl: brows pulled down hard and together, eyes narrowed, nostrils flared, " \
+                   "jaw clenched, lips pressed tight - clearly NOT a neutral face",
+      "surprised" => "surprised, eyebrows raised high, eyes wide, mouth dropped slightly open",
+      "singing" => "singing a long held note with feeling, eyes closed, brows lifted, mouth open in a relaxed oval",
+      "smirk" => "a confident one-sided smirk, the RIGHT corner of his mouth raised, mouth closed, one brow slightly up"
+    }.freeze
+    MOUTHS = {
+      "ah" => "AH as in \"father\": jaw dropped wide open, mouth a tall open oval, tongue low and flat, upper teeth visible",
+      "ee" => "EE as in \"see\": lips stretched wide sideways, upper and lower teeth almost touching and both visible, jaw nearly closed",
+      "ih" => "IH/EH as in \"bed\": mouth half open and relaxed, lips slightly spread, a gap between the teeth",
+      "oh" => "OH as in \"go\": lips rounded into a large open O, jaw half dropped, teeth hidden by the lips",
+      "oo" => "OO as in \"food\": lips pushed forward into a small tight round pucker, jaw almost closed, no teeth visible",
+      "mbp" => "M/B/P: lips pressed firmly together in a flat closed line, as just before the sound bursts out",
+      "fv" => "F/V: his upper front teeth clearly visible and pressing down ON his lower lip, the lower lip rolled " \
+              "slightly inward under them; his lower teeth hidden, the upper lip lifted a little",
+      "l_th" => "L/TH: mouth open about halfway, the TIP of his tongue clearly visible, raised and poking slightly " \
+                "out between his upper and lower front teeth"
+    }.freeze
+    PERFORMANCE_ORDER = (EXPRESSIONS.keys + MOUTHS.keys).freeze
+
     PADS = "It is worn over hard SHOULDER PADS: the shoulder line is squared, rigid and clearly wider than his " \
            "chest, with both shoulders fully inside the frame."
     BACKDROP = "Plain neutral mid-grey seamless background, soft even studio lighting"
@@ -280,6 +315,18 @@ module GameModel
         "no helmet, wearing his game uniform exactly as in the full-body image: #{jersey}. #{PADS} " \
         "#{iced ? "#{iced_clause} " : ''}Frame from just above the top of his hair down to mid-chest. #{BACKDROP} " \
         "matching the face model, photorealistic, sharp focus."
+    end
+
+    def performance(spec, cell, faces:, games:)
+      face = EXPRESSIONS[cell] ? "His expression: #{EXPRESSIONS.fetch(cell)}." :
+                                 "He is singing, frozen mid-word with his mouth shaped for the sound #{MOUTHS.fetch(cell)}; " \
+                                 "the rest of his face is relaxed and his eyes are open, to the lens."
+      "The first #{faces} images are the FACE MODEL of one real man: #{identity(spec)}. The last #{games} images " \
+        "are real photographs of him in this game: copy his jersey from them.\n\n" \
+        "Create a head-and-shoulders studio reference photograph of this man facing the camera straight on, head " \
+        "level, BARE HEAD with no helmet, wearing his game jersey: #{spec['jersey_panel']}. #{PADS} #{face} The " \
+        "expression is his own face making it: the identity must not change. Frame from just above the top of his " \
+        "hair down to mid-chest, his face large and sharp. #{BACKDROP} matching the face model, photorealistic."
     end
   end
 
@@ -383,6 +430,19 @@ module GameModel
         ["magick", left, right, "-background", BACKGROUND, "-splice", "#{GAP}x0", "+append", "-chop", "#{GAP}x0",
          "-bordercolor", BACKGROUND, "-border", "16", out]
       ]
+    end
+    # The performance sheet: 16 cells, four by four, each captioned with its
+    # expression or mouth shape so an editor can pick a frame by name.
+    CAPTIONS = { "mbp" => "M/B/P", "fv" => "F/V", "l_th" => "L/TH" }.freeze
+
+    def caption(name) = CAPTIONS.fetch(name) { name.tr("_", " ").upcase }
+
+    def performance_commands(cells:, out:, font:)
+      raise Failure, "a performance sheet needs #{Prompts::PERFORMANCE_ORDER.size} cells" unless cells.size == Prompts::PERFORMANCE_ORDER.size
+
+      labelled = cells.zip(Prompts::PERFORMANCE_ORDER).flat_map { |path, name| ["-label", caption(name), path] }
+      [["magick", "montage", "-font", font, "-pointsize", "28", "-fill", "white", "-background", BACKGROUND, *labelled,
+        "-tile", "4x4", "-geometry", "640x640+#{GAP / 2}+#{GAP / 2}", "-bordercolor", BACKGROUND, "-border", "16", out]]
     end
   end
 

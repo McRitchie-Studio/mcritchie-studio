@@ -11,7 +11,9 @@ require_relative "../../bin/lib/game_model/cli"
 # the prompts carry the lessons of the hand-built sheets (the three-quarter
 # geometry, the build anchors), the gate picks the best attempt and flags the
 # floor, the stitch lays out 2 + 6, and each stage wires its references in order
-# under the 16-image cap. The paid path itself was proven by real runs.
+# under the 16-image cap, and the performance sheet takes 16 front-on cells,
+# 4x4, from the face pack and today's jersey. The paid path itself was proven
+# by real runs.
 class GameModelTest < Minitest::Test
   SPEC = {
     "name" => "Test Player", "espn_id" => "123", "descriptor" => "Bears white · 2026 Week 6 at ATL", "number" => 18,
@@ -125,6 +127,53 @@ class GameModelTest < Minitest::Test
       assert_equal "iced_full", File.basename(File.dirname(rings[:refs][4])), "iced panels copy the iced full body"
       assert_equal "g3.jpg", File.basename(rings[:refs].last)
     end
+  end
+
+  def test_the_performance_stage_needs_only_his_face_and_todays_jersey
+    Dir.mktmpdir do |dir|
+      heads = SPEC.slice(*GameModel::Spec::PERFORMANCE)
+      File.write(File.join(dir, "spec.yml"), heads.merge("picks" => { "facepack" => { "tq_left" => "tq_left_2" } }).to_yaml)
+      GameModel::Prompts::FACE_VIEWS.each_key { |n| [1, 2].each { |i| touch(dir, "out/facepack/#{n}_#{i}.png") } }
+      cli = GameModel::Cli.new([], out: StringIO.new)
+      spec = GameModel::Spec.load(dir, needs: GameModel::Spec::PERFORMANCE)
+      assert_raises(GameModel::Failure) { GameModel::Spec.load(dir) }
+      assert_equal 10, cli.jobs_for(GameModel::Spec.load(dir, needs: GameModel::Spec::FACEPACK), dir, "facepack", 1).size,
+                   "a heads-only spec can build its face pack"
+
+      jobs = cli.jobs_for(spec, dir, "performance", 1)
+      assert_equal 16, jobs.size
+      assert_equal GameModel::Prompts::PERFORMANCE_ORDER, jobs.map { |j| File.basename(j[:out]).delete_suffix("_1") }
+      refs = jobs.first[:refs].map { |p| File.basename(p) }
+      assert_equal %w[front_neutral_1.png front_smile_1.png tq_left_2.png tq_right_1.png profile_right_1.png g2.jpg g3.jpg], refs,
+                   "face model first (the pick wins), then the last two game refs"
+      assert_equal "1024x1024", jobs.first[:size]
+    end
+  end
+
+  def test_each_performance_cell_names_its_face_or_mouth
+    prompts = GameModel::Prompts::PERFORMANCE_ORDER.to_h { |c| [c, GameModel::Prompts.performance(SPEC, c, faces: 5, games: 2)] }
+    assert_equal 16, prompts.size
+    assert_includes prompts["singing"], "eyes closed"
+    assert_includes prompts["oo"], "pucker"
+    assert_includes prompts["fv"], "upper front teeth clearly visible and pressing down ON his lower lip"
+    assert_includes prompts["mbp"], "lips pressed firmly together"
+    prompts.each_value do |text|
+      assert_includes text, "facing the camera straight on"
+      assert_includes text, "the WHITE jersey"
+      assert_includes text, "identity must not change"
+    end
+    assert_equal 16, prompts.values.uniq.size, "every cell has its own prompt"
+  end
+
+  def test_the_performance_stitch_is_a_captioned_four_by_four
+    cells = (1..16).map { |i| "c#{i}.png" }
+    cmd = GameModel::Stitch.performance_commands(cells: cells, out: "p.png", font: "F.ttf").first
+    assert_equal "4x4", cmd[cmd.index("-tile") + 1]
+    assert_equal "NEUTRAL", cmd[cmd.index("c1.png") - 1]
+    assert_equal "BIG SMILE", cmd[cmd.index("c2.png") - 1]
+    assert_equal "L/TH", cmd[cmd.index("c16.png") - 1]
+    assert_equal "p.png", cmd.last
+    assert_raises(GameModel::Failure) { GameModel::Stitch.performance_commands(cells: cells.first(15), out: "p", font: "F") }
   end
 
   def test_a_coach_spec_files_by_person_under_his_name_folder

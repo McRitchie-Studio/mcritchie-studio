@@ -232,15 +232,23 @@ class BuildViewTest < ActionView::TestCase
 
   test "once the idea is started, the status card shows the working title and three empty tiles, in the order Ray asks" do
     signed_in(nil)
-    chat_assigns(AppRequest.create!(prompt: "A client portal"), started: true)
+    chat_assigns(AppRequest.create!(prompt: "A client portal", answers: { "idea" => "A client portal" }), started: true)
     render template: "build/show"
 
     assert_select "#build-checklist[data-card='true'] [data-test='build-status-card'][data-complete='false']" do
       assert_select "[data-test='build-status-title']", text: "Your app"
-      %w[agent theme domain].each do |tile|
-        assert_select "[data-test='build-tile-#{tile}'][data-done='false'] [data-test='build-tile-#{tile}-value']", text: "Not yet"
+      # [component] Each empty tile reads its step's name, never "Not yet", and the
+      # step Ray is on now (the theme, after the idea) is marked current (Alex, 2026-10-19).
+      { "theme" => "Theme", "agent" => "Agent", "domain" => "Domain" }.each do |tile, name|
+        assert_select "[data-test='build-tile-#{tile}'][data-done='false'] [data-test='build-tile-#{tile}-value']", text: /\A#{name}/
       end
+      assert_select "[data-test='build-tile-theme'][data-current='true'][aria-current='step'].build-tile-current", 1
+      assert_select "[data-test='build-tile-theme-value'].build-tile-current-name .sr-only", text: "(in progress)"
+      assert_select "[data-current='true']", 1, "one step is in progress"
+      assert_select "[data-test='build-tile-agent'][data-current='false']:not(.build-tile-current)"
     end
+    refute_includes rendered, ">Not yet<"
+    assert_select "[data-test='build-status-card'][data-build-status-card].build-status-card", 1, "build_status.js finds the card to pop"
     assert_equal %w[build-tile-theme build-tile-agent build-tile-domain],
                  css_select("[data-test='build-status-card'] li").map { |li| li["data-test"] }, "Theme · Agent · Domain, as BuildIntake::STEPS"
     assert_select "[data-test='build-heading']", 0
@@ -259,10 +267,12 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='build-status-card'][data-complete='true']" do
       assert_select "[data-test='build-status-title']", "Client Portal", "the claimed address in words until the idea card names it"
       assert_select "[data-test='build-tile-agent'][data-done='true'] [data-test='build-tile-agent-portrait'][src*='cto_portraits/harbor']"
-      assert_select "[data-test='build-tile-agent-value']", text: "Nova"
+      assert_select "[data-test='build-tile-agent-value']", text: /Nova/
       assert_select "[data-test='build-tile-theme'][data-done='true'] span[style*='#15803d']"
-      assert_select "[data-test='build-tile-theme-value']", text: "Pitch"
-      assert_select "[data-test='build-tile-domain-value']", text: "client-portal.mcritchie.studio"
+      assert_select "[data-test='build-tile-theme-value']", text: /Pitch/
+      assert_select "[data-test='build-tile-domain-value']", text: /client-portal\.mcritchie\.studio/
+      %w[theme agent domain].each { |tile| assert_select "[data-test='build-tile-#{tile}-check']", 1 }
+      assert_select "[data-current='true']", 0, "nothing in progress once every step is set"
     end
   end
 

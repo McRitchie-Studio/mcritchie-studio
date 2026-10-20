@@ -495,7 +495,7 @@ class ReleaseShipFinalGemTest < ReleaseCliHarness
     def settle_producer_locks(*) = puts("ACT producer-locks")
     def restore_primaries(*) = nil
     def sync_agent_docs = nil
-    def refresh_dispatcher_service = nil
+    def refresh_local_services = nil
     def git_capture(*) = ["", true]
     def sh(*) = ["", true]
   RUBY

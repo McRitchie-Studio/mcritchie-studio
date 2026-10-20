@@ -63,9 +63,10 @@ begin
   when "list"
     LocalServices::Registry.load.each do |s|
       requires = [ s.claude_auth && "claude_auth: #{s.claude_auth}",
-                   s.commands.any? && "commands: #{s.commands.join(', ')}" ].select { |r| r }
-      puts "#{s.name}\n  install:  #{s.install}\n  status:   #{s.status}\n  sop:      #{s.sop}\n  " \
-           "requires: #{requires.empty? ? 'nothing' : requires.join('; ')}"
+                   s.commands.any? && "commands: #{s.commands.join(', ')}",
+                   s.dotenv.any? && "dotenv: #{s.dotenv.join(', ')}" ].select { |r| r }
+      puts "#{s.name}\n  install:  #{s.install}\n  status:   #{s.status}\n  refresh:  #{s.refresh || 'none'}\n  " \
+           "sop:      #{s.sop}\n  requires: #{requires.empty? ? 'nothing' : requires.join('; ')}"
     end
   when "restore"
     unless File.directory?(hub)

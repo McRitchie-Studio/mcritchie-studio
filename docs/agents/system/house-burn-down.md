@@ -50,7 +50,8 @@ bin/setup-1pass-token
 #    from Heroku config), clones sibling repos (GitHub auth comes from 1Password),
 #    bundles + DBs + Anchor, installs the root AGENTS.md + shared user-global agent
 #    skills, bounces active Rails servers, then restores the always-on services
-#    (Phase 10: the agent dispatcher, the Claude Code allow-rules).
+#    (Phase 10: the agent dispatcher, the client build launcher, the Claude
+#    Code allow-rules).
 bin/ecosystem-build
 
 # 5. Do the numbered checklist the build printed last ("What only you can do"),
@@ -61,7 +62,7 @@ bin/ecosystem-build --phase services
 
 That's it. You copy the token, run the commands above, and work down the checklist the build ends on; you do not need to remember any service or SOP name. On every later machine a single pass walks checkmarks, re-bounces the servers, and ends on a checklist that reads "Nothing" once every step is done.
 
-**Always-on services** come from one registry, `config/local_services.yml`; the first (and, as of 2026-10-15, only) entry is the agent dispatcher (SOP [`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md)). For each service, Phase 10 checks its prerequisites (the dispatcher needs `launchctl`, `claude`, and Claude Code signed in with `claude.ai`); met and not running, it installs it and checks status again; unmet, it skips it and puts the missing step on the checklist. It also merges `config/claude_allow_rules.json` into your **user** `~/.claude/settings.json` (adds only: every other key and rule stays, nothing is duplicated, the file is replaced atomically). It never logs in for you and never fails the build. `bin/local-services list` prints the registry.
+**Always-on services** come from one registry, `config/local_services.yml`. As of 2026-10-19 it holds two launchd agents: the agent dispatcher (SOP [`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md)) and the client build launcher, which builds the first version of every `/build` app (runbook [`client-build-launcher.md`](client-build-launcher.md)). For each service, Phase 10 checks its prerequisites (both need `launchctl`, `claude`, Claude Code signed in with `claude.ai`, and `AGENT_API_SECRET` in the hub checkout's `.env`: a launchd job has no 1Password session, so the board secret must sit there); met and not running, it installs it and checks status again; unmet, it skips it and puts the missing step on the checklist (the `.env` step is listed once for both). After every production ship, `bin/release.rb#refresh_local_services` runs each service's registered `refresh` (`install --if-changed`) from the hub primary, so a changed plist template reaches the installed job; new code needs nothing, since each service restarts itself. It also merges `config/claude_allow_rules.json` into your **user** `~/.claude/settings.json` (adds only: every other key and rule stays, nothing is duplicated, the file is replaced atomically). It never logs in for you and never fails the build. `bin/local-services list` prints the registry.
 
 **Re-running anytime:** `bin/ecosystem-build` is fully idempotent. Run it after pulling new commits, switching branches, or anytime you want to confirm "everything still works." It will reset active Rails servers to a clean dev state.
 
@@ -116,10 +117,12 @@ Every step a first run of this runbook asks for, and who does it now (audited 20
 | 33 | Sign Claude Code in with claude.ai | not in the runbook before | Alex-only: his claude.ai login in a browser. Phase 10 reads `claude auth status` and puts `claude auth login` on the checklist; it never logs in for him |
 | 34 | Chrome avatar-menu profiles | Appendix D | Alex-only: Google asks the person to sign each account in. Then `bin/chrome-profiles apply` and `pin-dock` restore the order from 1Password; on the checklist until the ordered launcher exists |
 | 35 | Subagent definitions in `~/.claude/agents/` | soul docs (`claude-agent.md`) | Follow-up: copied by hand today; `bin/agent-runtime install` could mirror them |
+| 36 | Client build launcher service | not in the runbook before | Automated by task `launcher-in-burn-down` (Phase 10, the second entry in `config/local_services.yml`) |
+| 37 | `AGENT_API_SECRET` in the hub's `.env` for the launchd services | not in the runbook before | On the checklist when missing: Phase 10 names the `op read` that appends it. The build does not write the secret itself (Phase 4 writes `.env` without it on purpose) |
 
 Totals, 35 steps: 19 automated, 5 automated by this task, 8 Alex-only, 3 follow-up. Row 15 counts once, as automated; its deployer half is a fourth follow-up.
 
-**Follow-ups, named, not built:** the deployer-lane check (15); `bin/tm up` in Phase 8 (21); `anchor test` as an opt-in smoke (28); an unattended Claude Code install (32); mirroring subagent definitions (35); and the production ship's `bin/release.rb#refresh_dispatcher_service`, which still names the dispatcher alone and should walk `config/local_services.yml`.
+**Follow-ups, named, not built:** the deployer-lane check (15); `bin/tm up` in Phase 8 (21); `anchor test` as an opt-in smoke (28); an unattended Claude Code install (32); and mirroring subagent definitions (35). The production ship's service refresh now walks `config/local_services.yml` (`bin/release.rb#refresh_local_services`, task `launcher-in-burn-down`).
 
 ---
 
@@ -576,7 +579,8 @@ Season bootstrap and free-entry token operations now live with the app that runs
 4. **Solana keypair**: `solana address` returns your pubkey
 5. **Anchor local test**: `cd ~/projects/turf-vault && anchor test` — suite passes
 6. **Agent dispatcher**: `cd ~/projects/mcritchie-studio && bin/dispatcher status` reads `running` (Phase 10 installed it; the SOP's Verify step posts a test message)
-7. **Nothing owed**: `bin/ecosystem-build --phase services` ends with "Nothing. Every service is running and nothing waits on you."
+7. **Client build launcher**: `cd ~/projects/mcritchie-studio && bin/client-build-launcher status` reads `running` (Phase 10 installed it; `bin/client-build-launcher run --dry-run` says what it would claim)
+8. **Nothing owed**: `bin/ecosystem-build --phase services` ends with "Nothing. Every service is running and nothing waits on you."
 
 ---
 
@@ -633,7 +637,7 @@ Phases execute in order. Each phase: detect current state → install/configure 
 | 7. Anchor + e2e | `yarn install` + `anchor build` for `turf-vault`; `npm install` for active Rails apps; `npx playwright install chromium` (~90 MB cached for e2e tests) |
 | 8. Servers | Always kills + restarts active Rails apps on their registered ports, curls each to verify HTTP 2xx/3xx |
 | 9. Env snapshot | Writes `mcritchie-studio/tmp/env-snapshot-YYYY-MM-DD.json` containing both apps' `.env` contents (raw, faithfully): what the operator added past the two lines Phase 4 writes. Gitignored, chmod 600. Skipped silently if no `.env` files exist yet. |
-| 10. Always-on services | `bin/local-services allow-rules` merges `config/claude_allow_rules.json` into the user `~/.claude/settings.json`; `bin/local-services restore` reads `claude auth status`, then installs each `config/local_services.yml` service whose prerequisites are met and that is not running (the agent dispatcher: `bin/dispatcher install`), from the hub's primary checkout. Then it checks for the 1Password admin token and the Chrome profile launcher. Warns only; never fails the build. `bin/ecosystem-build --phase services` runs it alone |
+| 10. Always-on services | `bin/local-services allow-rules` merges `config/claude_allow_rules.json` into the user `~/.claude/settings.json`; `bin/local-services restore` reads `claude auth status`, then installs each `config/local_services.yml` service whose prerequisites are met and that is not running (the agent dispatcher, `bin/dispatcher install`, and the client build launcher, `bin/client-build-launcher install`; each needs `AGENT_API_SECRET` in the hub's `.env`), from the hub's primary checkout. Then it checks for the 1Password admin token and the Chrome profile launcher. Warns only; never fails the build. `bin/ecosystem-build --phase services` runs it alone |
 | Checklist | The build's last output, "What only you can do": every operator-only step found on the way, numbered in the order to do them, each with its command or link. It prints on a stopped build too |
 
 If any phase fails, the script prints what to do, prints the checklist, and exits. Re-running picks up where it left off.
@@ -669,6 +673,7 @@ What this protocol installed last successful run:
 - `docs/agents/system/ecosystem-build.md` — the `bin/ecosystem-build` script reference (phases, when to run, idempotency, reset semantics)
 - `docs/agents/agents/steffon/sops/chrome-profiles.md` — the operator's Chrome avatar-menu roster. NOT restored by `bin/ecosystem-build`: the accounts must be signed back in by hand, after which `bin/chrome-profiles apply` rebuilds the order from the 1Password roster. The build's closing checklist names those commands until the ordered launcher exists.
 - `docs/agents/agents/steffon/sops/agent-dispatcher.md` — the agent dispatcher, the first entry in `config/local_services.yml`, installed by Phase 10.
+- `docs/agents/system/client-build-launcher.md` — the client build launcher, the second entry in `config/local_services.yml`, installed by Phase 10.
 - `docs/agents/system/bootstrap.md` — first-time setup (one app, simpler)
 - `docs/agents/modules/credentials.md` — credential rules and 1Password operating model
 - `docs/agents/modules/credential-inventory.md` — known 1Password item names

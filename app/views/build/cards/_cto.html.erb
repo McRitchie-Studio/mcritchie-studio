@@ -1,5 +1,5 @@
 <%# locals: (card:, message:, request_row:) %>
-<%# The CTO card, "Customize your CTO", one centred stack (Alex, 2026-10-18): the portrait on top (tap it, or New image, to open the picker of BuildIntake::Portraits), the name Ray suggested PREFILLED in an input the visitor may edit, his other names as taps under it (which fill the field), and Hatch CTO at the bottom, which saves both and relays the visitor's turn so Ray moves on to the domain (BuildIntake::Choice "cto"). The picker is a native dialog inside the form (build_chat.js opens it and swaps the preview; a tap on a portrait or Done closes it, while the arrow keys only move the pick, and Enter closes it without submitting); its radios submit with the form, so a pick needs no extra request. %>
+<%# The CTO card, "Customize your CTO", one centred stack (Alex, 2026-10-18): the portrait on top (tap it, or New image, to open the picker of BuildIntake::Portraits), the name Ray suggested PREFILLED in an input the visitor may edit, his other names as taps under it (which fill the field), and Wake Up your CTO at the bottom (Alex, 2026-10-19; it was Hatch CTO), which saves both and relays the visitor's turn so Ray moves on to the domain (BuildIntake::Choice "cto"). The picker is a native dialog inside the form (build_chat.js opens it and swaps the preview; a tap on a portrait or Done closes it, while the arrow keys only move the pick, and Enter closes it without submitting); its radios submit with the form, so a pick needs no extra request. %>
 <% keys = BuildIntake::Portraits::KEYS %>
 <% picked_name = request_row.cto_name.presence || card["names"].first %>
 <% picked_portrait = BuildIntake::Portraits.key?(request_row.cto_avatar) ? request_row.cto_avatar : (card["portrait"] || BuildIntake::Portraits.default_for(request_row.token)) %>
@@ -36,8 +36,9 @@
     <% end %>
     <%# The chosen theme's colours carry on here (cta-glow); spent once the CTO is set. %>
     <%= tag.span class: "cta-glow w-full", style: cta_glow_style(request_row.palette), data: { test: "build-cto-glow", glow: ("off" if chosen) } do %>
-      <button type="submit" class="btn btn-primary w-full" data-test="build-choose-cto">
-        <%= chosen ? "Save my CTO" : "Hatch CTO" %>
+      <%# Taller than a plain CTA: the card's one action (Alex, 2026-10-19). %>
+      <button type="submit" class="btn btn-primary w-full min-h-14 py-3.5 text-base" data-test="build-choose-cto">
+        <%= chosen ? "Save my CTO" : "Wake Up your CTO" %>
       </button>
     <% end %>
   </div>

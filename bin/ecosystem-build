@@ -95,8 +95,9 @@ local_env_owed() {
   echo "                        $app/config/master.key. 1Password $vault lists 'agent.rails_master_key',"
   echo "                        but docs/agents/modules/credential-inventory.md does not say which"
   echo "                        app's key it holds: confirm before using it."
-  echo "      AGENT_API_SECRET  not needed in .env: bin/task and the board scripts read 1Password"
-  echo "                        '$vault/Agent API Secret' themselves (bin/lib/agent_api.rb)."
+  echo "      AGENT_API_SECRET  bin/task and the board scripts read 1Password '$vault/Agent API Secret'"
+  echo "                        themselves (bin/lib/agent_api.rb). The launchd services cannot: Phase 10"
+  echo "                        puts it on the checklist for mcritchie-studio/.env when they need it."
   echo "      GOOGLE_CLIENT_*   optional (the magic link signs in without it). The dev-only client is"
   echo "                        1Password '$vault/google.studio.local': set GOOGLE_CLIENT_ID to its"
   echo "                        client-id field, then run bin/dev-google-client --write."
@@ -1108,8 +1109,8 @@ phase_env_snapshot() {
 }
 
 # ─── Phase 10: Always-on services + what only the operator can do ──────────
-# The always-on local services (config/local_services.yml, first entry the agent
-# dispatcher) and what they need from this Mac, via bin/local-services:
+# The always-on local services (config/local_services.yml: the agent dispatcher
+# and the client build launcher) and what they need from this Mac, via bin/local-services:
 #   - the Claude Code allow-rules (config/claude_allow_rules.json) merged into
 #     the USER ~/.claude/settings.json: adds only, keeps every other key
 #   - `claude auth status` must read authMethod claude.ai (never logged in for

@@ -5,8 +5,10 @@
 # root holding a copy of the hub (bin/dispatcher refuses to install from a task
 # desk under .worktrees/, so the hub is copied, not linked), and fake
 # `launchctl` and `claude` first on PATH. The real script runs the real
-# bin/local-services, which runs the real `bin/dispatcher install`; only the two
-# binaries are stubs. Nothing here can reach the live service or the real
+# bin/local-services, which runs the real `bin/dispatcher install` and
+# `bin/client-build-launcher install`; only the two binaries are stubs. The hub
+# copy's .env holds a stand-in AGENT_API_SECRET unless a case removes it. Nothing
+# here can reach the live services or the real
 # ~/.claude/settings.json: HOME is the temp dir and every launchctl call lands
 # in the fake's log (the precondition below refuses to run otherwise).
 require "minitest/autorun"
@@ -20,6 +22,7 @@ class EcosystemBuildServicesPhaseTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   SCRIPT = File.join(ROOT, "bin/ecosystem-build")
   LABEL = "studio.mcritchie.agent-dispatcher"
+  LAUNCHER_LABEL = "studio.mcritchie.client-build-launcher"
   # The directories bin/ecosystem-build puts AHEAD of the caller's PATH (its
   # `export PATH=` line). A real launchctl or claude in one of them would win
   # over the fakes, so the test refuses to run rather than risk the live service.
@@ -28,14 +31,14 @@ class EcosystemBuildServicesPhaseTest < Minitest::Test
   FAKE_LAUNCHCTL = <<~'SH'
     #!/bin/bash
     # Records every call; bootstrap loads the label, bootout unloads it, print
-    # answers only while it is loaded (as launchctl does).
+    # answers only while that label is loaded (as launchctl does).
     state="${FAKE_LAUNCHCTL_STATE:?}"
     echo "$*" >> "$state.log"
     case "$1" in
-      bootstrap) touch "$state.loaded" ;;
-      bootout) rm -f "$state.loaded" ;;
+      bootstrap) touch "$state.$(basename "$3" .plist).loaded" ;;
+      bootout) rm -f "$state.${2##*/}.loaded" ;;
       print)
-        if [ -f "$state.loaded" ]; then printf 'state = running\n\tpid = 4242\n'; else echo "Could not find service" >&2; exit 113; fi ;;
+        if [ -f "$state.${2##*/}.loaded" ]; then printf 'state = running\n\tpid = 4242\n'; else echo "Could not find service" >&2; exit 113; fi ;;
     esac
     exit 0
   SH
@@ -75,6 +78,7 @@ class EcosystemBuildServicesPhaseTest < Minitest::Test
     %w[bin config lib].each { |d| FileUtils.cp_r(File.join(ROOT, d), @hub) }
     write_exe("launchctl", FAKE_LAUNCHCTL)
     write_exe("claude", FAKE_CLAUDE)
+    File.write(File.join(@hub, ".env"), "AGENT_API_SECRET=stand-in-not-a-secret\n")
   end
 
   def teardown = FileUtils.rm_rf(@tmp)
@@ -93,6 +97,12 @@ class EcosystemBuildServicesPhaseTest < Minitest::Test
     assert_includes calls, "bootstrap gui/#{Process.uid} #{plist}", "loaded through launchctl"
     assert_includes out, "agent-dispatcher  installed and running"
 
+    launcher = File.join(@home, "Library/LaunchAgents/#{LAUNCHER_LABEL}.plist")
+    assert File.exist?(launcher), "the client build launcher is restored beside the dispatcher\n#{out}"
+    assert_includes File.read(launcher), "<string>#{@hub}/bin/client-build-launcher</string>"
+    assert_includes calls, "bootstrap gui/#{Process.uid} #{launcher}"
+    assert_includes out, "client-build-launcher  installed and running"
+
     settings = JSON.parse(File.read(File.join(@home, ".claude/settings.json")))
     allow = settings.dig("permissions", "allow")
     assert_includes allow, "Bash(bin/dispatcher status)"
@@ -110,8 +120,10 @@ class EcosystemBuildServicesPhaseTest < Minitest::Test
     before = File.read(settings_path)
     out = build(signed_in: true)
 
-    assert_equal [ "print gui/#{Process.uid}/#{LABEL}" ], launchctl_calls, "status only: no bootout, no bootstrap"
+    assert_equal [ "print gui/#{Process.uid}/#{LABEL}", "print gui/#{Process.uid}/#{LAUNCHER_LABEL}" ], launchctl_calls,
+                 "status only: no bootout, no bootstrap"
     assert_includes out, "agent-dispatcher  running"
+    assert_includes out, "client-build-launcher  running"
     assert_equal before, File.read(settings_path), "no duplicate rules, no rewrite"
   end
 
@@ -129,6 +141,17 @@ class EcosystemBuildServicesPhaseTest < Minitest::Test
     assert_includes items[login], "bin/ecosystem-build --phase services"
     assert_match(/\A  1\. Sign Claude Code in with your claude\.ai account/, items[login - 1],
                  "the sign-in is numbered first: nothing ranks ahead of it here")
+  end
+
+  def test_no_board_secret_in_the_hub_env_skips_both_services_and_owes_it_once
+    File.delete(File.join(@hub, ".env"))
+    out = build(signed_in: true)
+
+    assert_empty launchctl_calls, "no service is installed that could not reach the board"
+    assert_includes out, "agent-dispatcher skipped  needs AGENT_API_SECRET"
+    assert_includes out, "client-build-launcher skipped  needs AGENT_API_SECRET"
+    owed = checklist(out).select { |l| l.include?("Put AGENT_API_SECRET in #{@hub}/.env") }
+    assert_equal 1, owed.size, "one step for both services\n#{out}"
   end
 
   def test_help_installs_no_service_and_writes_no_settings
