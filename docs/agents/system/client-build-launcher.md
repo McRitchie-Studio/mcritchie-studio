@@ -15,7 +15,7 @@ at `<sub>.<preview domain>`. Nobody waits for a person to pick it up.
 | Logs | `~/Library/Logs/client-build-launcher.log` |
 | Heartbeat | a minute ping to `/api/v1/agent_dispatchers/ping` listing the one soul `client-build-launcher` (`AgentDispatcher::LAUNCHER_SOUL`) |
 | Publish session | a studio login for the one build task the run holds, minted per run (below); no standing publish secret |
-| Scratch directories | `~/.client-builds/<sub>/<run>`: outside every repo, one per run, kept for inspection |
+| Scratch directories | `~/.client-builds/<sub>/<run>`: outside every repo, one per run, kept for inspection (they hold the customer's bundle; no sweep removes them yet, see [Failure](#failure)) |
 
 ## What one build does
 
@@ -135,12 +135,20 @@ outside, and the run wrote `done.txt`.
   when the stop came keeps `preview_ready`, and its task ships: its bundle is live,
   and a release would rebuild it and spend another attempt. A crash leaves a run in
   `building`; the next start releases it ("the build launcher stopped mid-run").
+  The board guards both paths: `finish` with `released` ships the task instead when
+  the app published a bundle after the run started (`AppPreviewVersion`), so a
+  crash between publish and finish never rebuilds a live app.
 - **Two launchers.** Both would run as one worker id, and each one's start would
   release the other's runs as orphans. So `run` takes an exclusive flock on
   `~/.client-builds/launcher.lock` (`InstanceLock`); a second `run` on the same Mac
   exits 1 with "another launcher is already running on this Mac (pid N …)". The
   kernel drops the lock when the holder exits, so a crash leaves no stale lock.
   `--dry-run` claims nothing and takes no lock.
+- **Scratch directories.** Each run's `~/.client-builds/<sub>/<run>` stays on disk
+  for inspection, and nothing sweeps it yet. It holds only the bundle the builder
+  wrote (the customer's words reach the builder on stdin, and the transcript is not
+  persisted), but remove it by hand once a failure is understood:
+  `rm -rf ~/.client-builds/<sub>/<run>`.
 - **New code.** The launcher re-reads a digest of its own files every minute;
   new code seen twice stops claiming, lets the runs finish, and exits 0, and
   launchd starts the new code.

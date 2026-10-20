@@ -161,6 +161,32 @@ module Api
         end
       end
 
+      # The orphan path the launcher's own guard cannot see: it crashed after the
+      # publish and its next start releases the run. The board ships it instead.
+      test "a release of a run whose app already published ships the task" do
+        task = launch!("pawsome")
+        claim(task.slug)
+        App.find_by!(slug: "pawsome").preview_versions.create!(version: "20261019T201500Z-1a2b3c4d", published_by: "pokemon",
+                                                                file_count: 1, byte_size: 10, manifest: {}, published_at: 1.second.from_now)
+        post finish_api_v1_client_build_url(task.slug), params: { run: "r1", outcome: "released", reason: "the build launcher stopped mid-run" },
+                                                        headers: @auth, as: :json
+        assert_response :success
+        task.reload
+        assert_equal [ "shipped", "preview_ready", "20261019T201500Z-1a2b3c4d" ],
+                     [ task.stage, *task.devops["client_build"].values_at("state", "version") ]
+        assert_includes thread("pawsome").last.response_text, "(https://pawsome.mcritchie.si)"
+      end
+
+      test "a release still goes back in line when the app's only bundle predates the run" do
+        task = launch!("pawsome")
+        App.find_by!(slug: "pawsome").preview_versions.create!(version: "20261018T201500Z-1a2b3c4d", published_by: "pokemon",
+                                                                file_count: 1, byte_size: 10, manifest: {}, published_at: 1.day.ago)
+        claim(task.slug)
+        post finish_api_v1_client_build_url(task.slug), params: { run: "r1", outcome: "released" }, headers: @auth, as: :json
+        assert_response :success
+        assert_equal [ "designed", "released" ], [ task.reload.stage, task.devops.dig("client_build", "state") ]
+      end
+
       test "a refused finish revokes nothing" do
         task = launch!("pawsome")
         claim(task.slug)

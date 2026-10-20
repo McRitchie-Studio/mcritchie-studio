@@ -13,7 +13,8 @@
   as released within ExitTimeOut: the task goes back to designed, in line, and
   the attempt stays spent. A run that had already published keeps preview_ready
   (the task ships). A run it could not report is released at the next start
-  ("the build launcher stopped mid-run"). Nothing is blocked by a stop.
+  ("the build launcher stopped mid-run"), and the board ships it instead when the
+  app published during the run. Nothing is blocked by a stop.
 
   One per Mac: `run` holds a flock on ~/.client-builds/launcher.lock, so a second
   launcher (a hand-run beside this job) exits 1 naming the holder's pid.
