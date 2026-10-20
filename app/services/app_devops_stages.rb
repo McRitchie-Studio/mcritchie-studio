@@ -26,7 +26,9 @@
 # (Release#current_stage "prod_deploying"). A task whose release has shipped, or
 # that carries completed_at, is done and counts nowhere.
 #
-# THE PILLS. A lane with tasks is live and carries its count. A lane with none is
+# THE PILLS. A lane with tasks is live; it carries its count from two tasks up
+# ("Building 2"), and a lane of one reads just its label ("Building", never
+# "Building 1"; task cto-pill-count-and-links, Alex 2026-10-20). A lane with none is
 # muted, except that while the app's own build task is in flight the lanes it has
 # passed keep their check (the launch's progress, as before). With nothing in
 # flight every pill is muted and the card says "Nothing in progress": never three
@@ -43,13 +45,17 @@
 #   assembled   On QA             on a release, in QA
 #   deploying   Going live        its release is deploying production
 #
+# A sub-label that only repeats the pill's own label (a Building lane whose head
+# is building) is not shown: the pill reads "Building", not "Building" over
+# "Building" (shown_sub_label; the ETA still shows beneath).
+#
 # THE PREPPING LANE (task cto-chat-quality-pass, Alex 2026-10-19). A Building
 # lane whose tasks are ALL designed has nobody building: its pill reads
-# "Prepping" as its label, with no count and no sub-label, never "Building 1"
+# "Prepping" as its label, with no count and no sub-label, never "Building 2"
 # over "Prepping" over "no builder". It keeps a real wait ("~20 min") when a
 # launcher is live; the "no builder" wait stays on the list row only. The pill's
 # data-stage stays `building`. One task past designed and the lane is Building,
-# with its count, as above.
+# with its count (from two up), as above.
 #
 # Each list row says the same for its own task ("Prepping · waiting for a
 # builder"). THE PREVIEW SEAM: once a task's first version is live on its
@@ -64,10 +70,13 @@ class AppDevopsStages
     def done? = state == :done
     def live? = state == :live
     def prepping? = prepping == true
-    # The count the pill prints: none on a prepping lane, where nobody builds yet.
-    def shown_count = prepping? ? 0 : count
-    # A second line under the label: the sub-label, or a prepping lane's ETA.
-    def second_line? = sub_label.present? || (prepping? && eta.present?)
+    # The count the pill prints: none for a lane of one task ("Building", not
+    # "Building 1"), and none on a prepping lane, where nobody builds yet.
+    def shown_count = prepping? || count.to_i < 2 ? 0 : count
+    # The sub-label the pill prints: none when it repeats the label.
+    def shown_sub_label = sub_label.to_s.casecmp?(label.to_s) ? nil : sub_label.presence
+    # A second line under the label: the shown sub-label, or the ETA.
+    def second_line? = shown_sub_label.present? || eta.present?
   end
 
   # One line of the card's list. `slug` is set for an admin only; an owner's

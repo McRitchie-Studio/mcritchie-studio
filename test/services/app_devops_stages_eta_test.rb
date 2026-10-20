@@ -104,7 +104,7 @@ class AppDevopsStagesEtaTest < ActiveSupport::TestCase
 
     card_task("Add a footer", "building", started_at: 1.minute.ago)
     building = lane(AppDevopsStages.board_for(eta_app), "building")
-    assert_equal [ "Building", false, 3, 3, "Building" ], [ building.label, building.prepping?, building.count, building.shown_count, building.sub_label ]
+    assert_equal [ "Building", false, 3, 3, "Building", nil ], [ building.label, building.prepping?, building.count, building.shown_count, building.sub_label, building.shown_sub_label ]
     assert_not lane(AppDevopsStages.board_for(eta_app), "releasing").prepping?, "only the Building lane can be prepping"
   end
 
@@ -160,5 +160,21 @@ class AppDevopsStagesEtaTest < ActiveSupport::TestCase
     building = lane(AppDevopsStages.board_for(eta_app), "building")
     assert_equal "Preview ready", building.sub_label
     assert_nil building.eta
+  end
+
+  test "[unit] a live lane of one shows no count; the count shows from two up" do
+    stage = ->(count, **opts) { AppDevopsStages::Stage.new(key: "building", label: "Building", state: :live, count: count, **opts) }
+    assert_equal [ 0, 0, 2, 5 ], [ 0, 1, 2, 5 ].map { |count| stage.(count).shown_count }
+    assert_equal 0, stage.(3, prepping: true).shown_count, "a prepping lane never shows a count"
+  end
+
+  test "[unit] a sub-label that repeats the label, in any case, is not shown; a different one is" do
+    stage = ->(sub_label, eta: nil) { AppDevopsStages::Stage.new(key: "building", label: "Building", state: :live, count: 1, sub_label: sub_label, eta: eta) }
+    assert_nil stage.("Building").shown_sub_label
+    assert_nil stage.("building").shown_sub_label
+    assert_not stage.("Building").second_line?, "nothing under the label when the sub-label is hidden and there is no ETA"
+    assert stage.("Building", eta: Object.new).second_line?, "the ETA still shows beneath"
+    assert_equal "Reviewing", stage.("Reviewing").shown_sub_label
+    assert stage.("Reviewing").second_line?
   end
 end

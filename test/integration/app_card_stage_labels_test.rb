@@ -56,9 +56,24 @@ class AppCardStageLabelsTest < ActionDispatch::IntegrationTest
 
     @launch.task.update_columns(stage: "building", started_at: 1.minute.ago)
     get chat_status_application_path("pawsome")
-    assert_select "#{building_pill} [data-test='devops-stage-sub-label']", text: "Building"
     assert_select "#{building_pill}[data-prepping]", 0, "a task a builder holds makes the lane Building again"
-    assert_select "#{building_pill} [data-test='devops-stage-count']", text: "1"
+    # One building task (task cto-pill-count-and-links): the pill reads Building, never
+    # "Building 1" over "Building"; the wait still shows, and a screen reader still hears the count.
+    assert_select "#{building_pill}", text: /\A\s*Building\s*~2 h\s*, 1 task under way, ~2 h left\s*\z/
+    assert_select "#{building_pill} [data-test='devops-stage-count']", 0
+    assert_select "#{building_pill} [data-test='devops-stage-sub-label']", 0
     assert_select "#{building_pill} [data-test='devops-stage-eta']", text: "~2 h"
+  end
+
+  test "[integration] a Building lane of two shows its count, and a sub-label that differs from the label" do
+    @launch.task.update_columns(stage: "submitted", started_at: 1.hour.ago, submitted_at: 1.minute.ago)
+    Task.create!(title: "Add a gallery", stage: "building", priority: 1, started_at: 1.minute.ago,
+                 metadata: { "devops" => { "repositories" => [ "pawsome" ] } })
+
+    log_in_as(@owner)
+    get chat_status_application_path("pawsome")
+    pill = "[data-test='devops-stage'][data-stage='building'][data-state='live'][data-count='2']"
+    assert_select "#{pill} [data-test='devops-stage-count']", text: "2"
+    assert_select "#{pill} [data-test='devops-stage-sub-label']", text: "Reviewing"
   end
 end
