@@ -30,6 +30,11 @@ class ClientAppHost
   HUB_COOKIE_DOMAIN = "mcritchie.studio"
   # One DNS label, as AppRequest::SUBDOMAIN_FORMAT spells a subdomain.
   LABEL = /\A[a-z0-9][a-z0-9-]{1,28}[a-z0-9]\z/
+  # The registries whose production_url and qa_url hosts are ours: a preview
+  # domain at, under or above any of them would serve model-written code on (or
+  # beside, or over) a production host.
+  REGISTRIES = %w[config/apps.yml config/satellites.yml].freeze
+  REGISTRY_URL_KEYS = %w[production_url qa_url].freeze
 
   class << self
     # The preview domain, or nil when the host is off.
@@ -39,15 +44,55 @@ class ClientAppHost
     #   unset, QA (production + QA_ENV) off: a QA app never claims prod's domain
     #   unset, development or test      localhost
     def domain(env = ENV, production: Rails.env.production?, qa: qa_environment?)
-      value = env[ENV_NAME].to_s.strip.downcase.delete_prefix(".")
+      # A fully qualified "mcritchie.studio." is the same name as "mcritchie.studio".
+      value = env[ENV_NAME].to_s.strip.downcase.delete_prefix(".").delete_suffix(".")
       return nil if OFF.include?(value)
       if value == HUB_COOKIE_DOMAIN || value.end_with?(".#{HUB_COOKIE_DOMAIN}")
         raise ArgumentError, "#{ENV_NAME}=#{value} is inside the hub session cookie's domain; use a separate registrable domain"
       end
-      return value unless value.empty?
+      unless value.empty?
+        if (host = clashing_host(value))
+          raise ArgumentError, "#{ENV_NAME}=#{value} is at, under or above #{host}, a production host " \
+                               "(#{REGISTRIES.join(' or ')}); use a separate registrable domain"
+        end
+        return value
+      end
       return (qa ? nil : PRODUCTION_DOMAIN) if production
 
       LOCAL_DOMAIN
+    end
+
+    # The first registry host that VALUE equals, sits under, or sits above
+    # ("studio" is above mcritchie.studio, "media" above turfmonster.media), or nil.
+    def clashing_host(value, hosts: production_hosts)
+      hosts.find { |host| host == value || host.end_with?(".#{value}") || value.end_with?(".#{host}") }
+    end
+
+    # Every production and QA host config/apps.yml and config/satellites.yml
+    # name, read once per process (the registries ship with the code).
+    def production_hosts(root = Rails.root)
+      return registry_hosts(root) unless root == Rails.root
+
+      @production_hosts ||= registry_hosts(root)
+    end
+
+    def registry_hosts(root)
+      REGISTRIES.flat_map { |path| urls_in(YAML.safe_load_file(File.join(root.to_s, path), aliases: true)) }
+                .filter_map { |url| url_host(url) }.uniq.freeze
+    end
+
+    def urls_in(node)
+      case node
+      when Hash then node.flat_map { |key, value| REGISTRY_URL_KEYS.include?(key.to_s) && value.is_a?(String) ? [ value ] : urls_in(value) }
+      when Array then node.flat_map { |value| urls_in(value) }
+      else []
+      end
+    end
+
+    def url_host(url)
+      URI.parse(url.strip).host.to_s.downcase.delete_suffix(".").presence
+    rescue URI::InvalidURIError
+      nil
     end
 
     # Whether HOST (no port) is on the preview domain: any subdomain of it, and
@@ -85,15 +130,23 @@ class ClientAppHost
     def request_host(env)
       raw = env["HTTP_HOST"].to_s.presence || env["SERVER_NAME"].to_s
       raw = raw.strip.downcase
-      raw.start_with?("[") ? raw : raw.sub(/:\d+\z/, "")
+      # A trailing dot ("x.mcritchie.si.") names the same host, and DNS routes it the same way.
+      raw.start_with?("[") ? raw : raw.sub(/:\d+\z/, "").delete_suffix(".")
     end
 
     # The hosts X-Forwarded-Host and Forwarded name. Rack, HostAuthorization and
     # the hub's request.host believe them, so a hub request naming a preview host
     # there is the door's (a 404: its sub comes only from HTTP_HOST), never the hub's.
+    #
+    # Forwarded is read twice: by Rack's own parser, which is what request.host
+    # believes (it takes `host = x` with spaces and unescapes a quoted
+    # `host="a\.x"`), and by a plain scan, since Rack answers nil for a header it
+    # cannot parse and a proxy might still read a host out of it.
     def forwarded_hosts(env)
-      names = env["HTTP_X_FORWARDED_HOST"].to_s.split(",") + env["HTTP_FORWARDED"].to_s.scan(/host="?([^";,\s]+)/i).flatten
-      names.map { |name| name.strip.downcase.sub(/:\d+\z/, "") }
+      forwarded = env["HTTP_FORWARDED"].to_s
+      names = env["HTTP_X_FORWARDED_HOST"].to_s.split(",") + forwarded.scan(/host\s*=\s*"?([^";,\s]+)/i).flatten
+      names += Array(Rack::Utils.forwarded_values(forwarded)&.[](:host))
+      names.map { |name| name.to_s.strip.downcase.sub(/:\d+\z/, "").delete_suffix(".") }.uniq
     end
   end
 
