@@ -131,9 +131,9 @@ test("nav links work without errors @quarantine", async ({ page }) => {
 
   // Signed out, the navbar's primary button is "Build App" once the bundled
   // studio-engine has Studio.navbar_signed_out_cta (config/initializers/studio.rb),
-  // with sign-in kept as a quiet "Log in" link; before the relock the button
-  // itself is "Log in". The phone row's copy of the link is hidden at this
-  // width, so one visible "Log in" answers on either engine.
+  // and the navbar carries no sign-in link: Log in sits first in the link
+  // sidebar (/tasks/drop-hero-meet-alex). Before the relock the button itself
+  // is "Log in".
   await page.goto("/");
   const buildApp = page.getByRole("link", { name: "Build App", exact: true });
   if (await buildApp.count()) {
@@ -141,7 +141,14 @@ test("nav links work without errors @quarantine", async ({ page }) => {
     await expect(page).toHaveURL("/build");
     await page.goto("/");
   }
-  await page.getByRole("link", { name: "Log in", exact: true }).click();
+  const navLogIn = page.getByRole("link", { name: "Log in", exact: true });
+  if (await navLogIn.count()) {
+    await navLogIn.first().click();
+  } else {
+    await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
+    await page.locator("button[data-link-sidebar-trigger]:visible").first().click();
+    await page.locator('#studio-link-sidebar a[href="/login"]').click();
+  }
   await expect(page).toHaveURL("/signin");
 });
 

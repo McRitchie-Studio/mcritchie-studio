@@ -158,7 +158,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     sections = sidebar_link_sections
 
-    assert_equal ["NFL", "Services", "Apps"], sections.map { |section| section.fetch(:title) }
+    assert_equal ["Account", "NFL", "Services", "Apps"], sections.map { |section| section.fetch(:title) }
     labels = sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:label] }
     refute_includes labels, "Studio dashboard"
     refute_includes labels, "Admin dashboard"
@@ -235,6 +235,19 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     refute public_link_sections.any? { |section| section.fetch(:title) == "Directory" }
   end
 
+  # The navbar carries no sign-in link, so a visitor finds Log in at the top of
+  # the sidebar (/tasks/drop-hero-meet-alex); a signed-in user does not.
+  test "a visitor's sidebar leads with Log in; a signed-in user's has none" do
+    first = sidebar_link_sections.first
+    assert_equal "Account", first.fetch(:title)
+    assert_equal [ [ "Log in", "/login" ] ], first.fetch(:links).map { |link| link.values_at(:label, :href) }
+
+    self.logged_in_enabled = true
+    self.current_user = nil
+    refute sidebar_link_sections.any? { |section| section[:title] == "Account" }
+    refute sidebar_link_sections.flat_map { |section| section.fetch(:links) }.any? { |link| link[:href] == "/login" }
+  end
+
   private
 
   attr_accessor :admin_enabled, :logged_in_enabled, :current_user
@@ -243,8 +256,9 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     !!admin_enabled
   end
 
+  # An admin is always signed in.
   def logged_in?
-    !!logged_in_enabled
+    !!(logged_in_enabled || admin_enabled)
   end
 
   test "the Studio section links the source videos beside the body archetypes" do
@@ -285,6 +299,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def packages_path = "/packages"
   def integrations_path = "/integrations"
   def build_path = "/build"
+  def login_path = "/login"
   def build_requests_path = "/build/requests"
   def stack_path = "/stack"
   def credentials_path = "/credentials"

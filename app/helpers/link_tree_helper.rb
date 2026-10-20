@@ -31,7 +31,16 @@ module LinkTreeHelper
   def sidebar_link_sections
     sections = public_link_sections
     sections = admin_link_sections.map { |section| section.merge(admin: true) } + sections if admin?
-    owner_link_sections + sections
+    visitor_link_sections + owner_link_sections + sections
+  end
+
+  # A signed-out visitor's way in, first in the sidebar. The navbar keeps only
+  # the Build App button, so Log in lives here (Alex, 2026-10-20;
+  # /tasks/drop-hero-meet-alex). Nothing once signed in.
+  def visitor_link_sections
+    return [] if logged_in?
+
+    [ { title: "Account", links: [ { label: Studio.sign_in_label, href: login_path, emoji: "🔑", hover_emoji: "👋", desc: "Pick up where you left off" } ] } ]
   end
 
   # An app owner's links, first in the sidebar: their app (or "Applications")
