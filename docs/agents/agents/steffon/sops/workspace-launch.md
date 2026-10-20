@@ -68,7 +68,7 @@ bin/agent-activity heartbeat steffon
 | # | Step | SOP | Who acts | Package |
 |---|------|-----|----------|---------|
 | 0 | Open the launch task | this file | Steffon | pro |
-| 1 | Buy the domain | [`domain-purchase`](./domain-purchase.md) | **Alex** buys · Steffon checks | pro |
+| 1 | Buy the domain | [`domain-purchase`](./domain-purchase.md) | **Alex** OKs the price · Steffon buys on Cloudflare (or **Alex** buys on Squarespace) and checks | pro |
 | 2 | Sign up for Google Workspace, create `alex@` + `team@` (Pro and up: 2 seats included) | [`workspace-signup`](./workspace-signup.md) | **Alex** · Steffon checks | pro |
 | 3 | Publish email DNS (verify, MX, SPF, DKIM, DMARC); Pro and up move the zone to Cloudflare in row 4 | [`domain-dns`](./domain-dns.md) | Steffon writes records · **Alex** pastes · Steffon checks | pro |
 | 4 | Launch the hosted website (our app + database) | [`website-launch`](./website-launch.md) | **Alex** approves cost · Steffon builds and checks | pro |
