@@ -50,7 +50,7 @@ class CtoChatFirstNameTest < ActionDispatch::IntegrationTest
     open_chat
     reply = nil
     assert_no_difference -> { AgentMessage.where(status: "received").count }, "no model is asked" do
-      assert_enqueued_with(job: AgentMessageReplyJob) { reply = send_chat("I'm ada") }
+      assert_enqueued_with(job: AgentMessageReplyJob) { reply = send_chat("my name is ada") }
     end
     assert_equal [ "completed", "first name", "saved" ], [ reply.status, reply.action_summary, reply.run_meta["first_name"] ]
     assert_match(/\ANice to meet you, Ada!/, reply.response_text)

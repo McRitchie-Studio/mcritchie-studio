@@ -14,7 +14,9 @@ class FirstNameAskTest < ActiveSupport::TestCase
     assert_equal "Mary Jane", name_of("Mary Jane")
     assert_equal "Ada Lovelace", name_of("Ada Lovelace")
     assert_equal "Ada Lovelace", name_of("I'm Ada Lovelace")
-    assert_equal "Ada Lovelace", name_of("i'm ada lovelace"), "after a cue, any case, capitalized"
+    assert_equal "Ada Lovelace", name_of("my name is ada lovelace"), "after a strong cue, any case, capitalized"
+    assert_equal "Ada", name_of("I'm Ada")
+    assert_equal "Bob", name_of("Hey, I'm Bob")
     assert_equal "Jo", name_of("call me jo!")
     assert_equal "Alex", name_of("call me alex")
     assert_equal "Mary-Jane", name_of("Hi, my name is Mary-Jane")
@@ -37,7 +39,10 @@ class FirstNameAskTest < ActiveSupport::TestCase
   test "[unit] anything that is not a name goes to the model" do
     (CARL_PROBES + [ "Can you add a booking page?", "yes", "hello", "what do you need", "1234", "a b c d", "",
                      "ok", "Add dark mode to the site please", "dark mode", "ada lovelace", "Pricing", "Logo",
-                     "Will", "It's fine", "This is great", "Book Now Please", "make it pop" ]).each do |text|
+                     "Will", "It's fine", "This is great", "Book Now Please", "make it pop",
+                     # Carl's re-review: a weak cue ("I'm", "it's", "this is") before ordinary words
+                     "I'm so excited!", "I'm excited", "I'm confused", "I'm ready", "I am happy", "Hi, I'm new here",
+                     "It's broken", "It's missing reviews", "This is really exciting", "I'm thinking blue" ]).each do |text|
       assert_nil Ask.parse(text), "#{text.inspect} must reach the model"
     end
     assert_nil Ask.parse("A" * 41), "past the engine's per-name cap"
@@ -81,6 +86,9 @@ class FirstNameAskTest < ActiveSupport::TestCase
                          soul_slug: AppCto::SOUL, status: "completed", run_meta: { "first_name" => "saved" })
     assert_nil Ask.answer_for(user.reload, thread, "Add dark mode")
     assert_nil Ask.answer_for(user, thread, "Al")
+    assert_nil Ask.answer_for(user, thread, "It's missing reviews"), "an answer to the next-step question, not a correction"
+    assert_nil Ask.answer_for(user, thread, "I'm Al"), "a correction takes a strong cue only"
+    assert_equal "Ada", user.reload.first_name
     correction = Ask.answer_for(user, thread, "call me Al")
     assert correction.correction
     assert_equal "Got it, Al. #{Ask::NEXT_STEP}", Ask.reply!(user, correction)

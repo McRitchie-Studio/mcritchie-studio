@@ -113,12 +113,13 @@ and no name, the greeting ends "Before we dive in, what should I call you? Just 
 is fine, or say skip." and carries `run_meta.asks_first_name`. The owner's next message, if it
 reads as a name or a skip ("skip", "not now"), is answered in code with no model
 (`AgentMessages::FirstNameAsk`). **When in doubt it goes to the model**: a name is ONE word
-("Ada"), TWO words each typed with a capital ("Mary Jane"), or up to three after a cue ("I'm",
-"call me", "my name is", "it's"), and any word in `STOP_WORDS` (acknowledgements, common
+("Ada"), TWO words each typed with a capital ("Mary Jane"), up to three in any case after a
+strong cue ("call me", "my name is"), or up to three each typed with a capital after a weak one
+("I'm Ada", never "I'm so excited"), and any word in `STOP_WORDS` (acknowledgements, common
 request verbs, function words, app nouns: "Add dark mode", "Sounds good", "Ship it") rejects it.
 A name is written as the engine's onboarding step writes it (`Studio::NameParts`, the same caps,
 `update_columns`, `name` backfilled); the reply says how to fix it ("Not right? Say "call me" and
-your name."), and the very next message, only if cued, corrects it. A skip sets the engine's
+your name."), and the very next message, only with a strong cue ("call me Al"), corrects it. A skip sets the engine's
 session skip. Anything else goes to the model and ends the ask. The chat pages
 never arm the engine's first-name modal (`CtoChatsController` → `skip_first_name_modal!`;
 `ApplicationController#first_name_modal?`); every other page still does.

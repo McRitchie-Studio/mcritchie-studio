@@ -159,7 +159,7 @@ module AgentUsage
 
   # The allowance month: [start, reset), from 1:00 America/Denver on the 1st to
   # 1:00 on the next 1st (task cto-chat-quality-pass, Alex 2026-10-19: "Resets
-  # Nov 1 at 1am MST"). So the half hour after Denver midnight on the 1st still
+  # Nov 1 at 1am MST"). So the hour after Denver midnight on the 1st (two on a fall-back Sunday) still
   # belongs to the month before. A 1:00 that happens twice (the fall-back Sunday,
   # as on Nov 1 2026) is the SECOND one, standard time: 1am MST, as the meter says.
   def month_range(now = Time.current)

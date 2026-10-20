@@ -13,8 +13,9 @@ module AgentMessages
   # #parse and STOP_WORDS):
   #
   #   a name       "Ada", "Mary Jane", "I'm Ada Lovelace",    saved, answered in code;
-  #                "call me jo"                               a cued correction on the
-  #                                                          very next message re-saves
+  #                "call me jo"                               a strongly cued correction
+  #                                                          ("call me Al") on the very
+  #                                                          next message re-saves
   #   a skip       "skip", "no thanks", "not now"             answered in code; the
   #                                                          controller records the
   #                                                          engine's session skip
@@ -36,7 +37,11 @@ module AgentMessages
     SKIP = /\A(?:skip(?:\s+(?:it|this|for now))?|pass|no(?:pe)?|no,?\s+thanks?|nah|not now|later|maybe later|rather not|i'?d rather not|prefer not to say)\z/i
     # An explicit cue that what follows is a name. Only after one may the name
     # run to MAX_WORDS words, typed in any case.
-    INTRO = /\A(?:(?:hi|hey|hello)[\s,!.]+)?(?:i'?m|i am|it'?s|its|call me|my name is|my name'?s|name'?s|this is)\s+/i
+    # A STRONG cue ("call me", "my name is") admits any case; a WEAK one ("I'm",
+    # "it's", "this is") opens ordinary sentences too ("I'm so excited", "It's
+    # missing reviews"), so after it every word must be typed with a capital.
+    STRONG_INTRO = /\A(?:(?:hi|hey|hello)[\s,!.]+)?(?:call me|my name is|my name'?s|name'?s)\s+/i
+    WEAK_INTRO = /\A(?:(?:hi|hey|hello)[\s,!.]+)?(?:i'?m|i am|it'?s|its|this is)\s+/i
     WORD = /\A\p{L}[\p{L}\p{M}'’.-]*\z/u
     MAX_WORDS = 3
     # WHEN IN DOUBT, THE MODEL ANSWERS (Carl's review of this task: "Add dark
@@ -103,33 +108,39 @@ module AgentMessages
     end
 
     # The Answer `text` gives the ask, or nil when it is neither a name nor a
-    # skip (nil: the model answers it). A name is, after a cue ("I'm", "call
-    # me", "my name is", "it's"), up to MAX_WORDS name-shaped words in any
-    # case; with no cue, ONE word, or TWO words each typed with a capital
-    # ("Mary Jane"). Any STOP_WORDS word rejects it either way. `cue_required`:
-    # only a cued answer counts (a correction after the name was saved).
+    # skip (nil: the model answers it). A name is, after a STRONG cue ("call
+    # me", "my name is"), up to MAX_WORDS name-shaped words in any case; after
+    # a WEAK cue ("I'm", "it's", "this is"), up to MAX_WORDS each typed with a
+    # capital ("I'm Ada", not "I'm so excited"); with no cue, ONE word, or TWO
+    # words each typed with a capital ("Mary Jane"). Any STOP_WORDS word rejects
+    # it either way. `cue_required`: only a STRONG cue counts (a correction
+    # after the name was saved: "It's missing reviews" is not one).
     def parse(text, cue_required: false)
       value = text.to_s.strip.gsub(/\s+/, " ").sub(/[.!]+\z/, "").strip
       return nil if value.empty? || value.length > Studio::FULL_NAME_MAX_LENGTH + 20
       return Answer.new(kind: :skip) if !cue_required && value.match?(SKIP)
 
-      cued = value.match?(INTRO)
-      return nil if cue_required && !cued
+      cue = if value.match?(STRONG_INTRO) then :strong
+            elsif value.match?(WEAK_INTRO) then :weak
+            end
+      return nil if cue_required && cue != :strong
 
-      value = value.sub(INTRO, "").strip
+      value = value.sub(cue == :strong ? STRONG_INTRO : WEAK_INTRO, "").strip if cue
       words = value.split(" ")
-      return nil unless name_words?(words, cued: cued)
+      return nil unless name_words?(words, cue: cue)
       return nil if value.length > Studio::FULL_NAME_MAX_LENGTH
 
       name = value == value.downcase ? words.map(&:capitalize).join(" ") : value
       Answer.new(kind: :name, name: name)
     end
 
-    def name_words?(words, cued:)
+    def name_words?(words, cue:)
       return false if words.empty? || words.size > MAX_WORDS
       return false unless words.all? { |w| w.match?(WORD) && w.length <= Studio::FIRST_NAME_MAX_LENGTH }
       return false if words.any? { |w| STOP_WORDS.include?(w.downcase) }
-      return true if cued || words.size == 1
+      return true if cue == :strong
+      return words.all? { |w| w.match?(CAPITAL) } if cue == :weak
+      return true if words.size == 1
 
       words.size == 2 && words.all? { |w| w.match?(CAPITAL) }
     end
