@@ -141,6 +141,35 @@ module Api
         assert_includes thread("pawsome").last.response_text, "hit a snag"
       end
 
+      # A failed run leaves its task building (blocked), where a task_claim login
+      # would otherwise stay live for up to 24 hours: every finish revokes it.
+      %w[failed preview_ready released].each do |outcome|
+        test "a #{outcome} finish revokes the run's publish session" do
+          task = launch!("pawsome")
+          claim(task.slug)
+          session = AgentSession.issue_studio!(soul: ClientBuilds::BUILDER, task: task.reload, issued_by: "task_claim")
+          other = Task.create!(title: "Another build", stage: "building")
+          bystander = AgentSession.issue_studio!(soul: "pokemon", task: other, issued_by: "task_claim")
+
+          post finish_api_v1_client_build_url(task.slug), params: { run: "r1", outcome: outcome, reason: "why", version: "v1" },
+                                                          headers: @auth, as: :json
+          assert_response :success
+          session.reload
+          assert session.revoked?, "the finish ends the run's login whatever the outcome"
+          assert_equal ClientBuilds::ACTOR, session.revoked_by
+          refute bystander.reload.revoked?, "another task's login is untouched"
+        end
+      end
+
+      test "a refused finish revokes nothing" do
+        task = launch!("pawsome")
+        claim(task.slug)
+        session = AgentSession.issue_studio!(soul: ClientBuilds::BUILDER, task: task.reload, issued_by: "task_claim")
+        post finish_api_v1_client_build_url(task.slug), params: { run: "stale", outcome: "failed" }, headers: @auth, as: :json
+        assert_response :conflict
+        refute session.reload.revoked?, "a stale run's finish must not end the live run's login"
+      end
+
       test "a finish from a run that does not hold the build is refused and changes nothing" do
         task = launch!("pawsome")
         claim(task.slug)

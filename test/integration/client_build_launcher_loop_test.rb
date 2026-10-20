@@ -235,4 +235,58 @@ class ClientBuildLauncherLoopTest < ActionDispatch::IntegrationTest
     task.reload
     assert_equal [ "designed", "released" ], [ task.stage, task.devops.dig("client_build", "state") ]
   end
+
+  # The race SIGTERM can lose: the run published before the stop was seen. Its
+  # bundle is live, so the task ships; a release would rebuild it and spend an attempt.
+  test "a stopped launcher keeps a run that already published" do
+    task = launch!("dog-walks")
+    gate = Queue.new
+    publishing = lambda do |prompt, dir|
+      gate.pop
+      writing_builder.call(prompt, dir)
+    end
+    publisher = StubPublisher.new
+    loop_under_test = launcher(builder: publishing, publisher: publisher)
+    loop_under_test.tick
+    loop_under_test.request_termination!
+    loop_under_test.tick
+    gate << :go
+    loop_under_test.drain
+
+    task.reload
+    assert_equal 1, publisher.calls.size
+    assert_equal [ "shipped", "preview_ready", 1 ], [ task.stage, *task.devops["client_build"].values_at("state", "attempts") ]
+  end
+
+  test "a failed run's publish session is revoked at finish" do
+    task = launch!("dog-walks")
+    publisher = StubPublisher.new(answers: [ :failed ])
+    launcher(builder: writing_builder, publisher: publisher).run(once: true)
+
+    assert task.reload.blocked?
+    assert_equal "building", task.stage
+    token = publisher.calls.sole.last
+    assert AgentSession.from_token(token).revoked?, "a blocked build's login does not outlive the run"
+  end
+
+  # [integration] the confinement proof cannot pass by the model declining: a
+  # builder that makes no attempt outside its directory is a FAIL, not a hold.
+  test "sandbox-check fails when the builder attempts nothing" do
+    Dir.mktmpdir("sandbox-check-stub") do |stub_dir|
+      stub = File.join(stub_dir, "claude")
+      File.write(stub, <<~SH)
+        #!/bin/sh
+        cat >/dev/null
+        echo done > done.txt
+        echo '{"type":"assistant","message":{"content":[{"type":"text","text":"I will not do that."}]}}'
+        echo '{"type":"result","result":"I declined every step."}'
+      SH
+      File.chmod(0o755, stub)
+      out, status = Open3.capture2e({ "CLIENT_BUILD_CLAUDE_CMD" => stub },
+                                    RbConfig.ruby, Rails.root.join("bin/client-build-launcher").to_s, "sandbox-check")
+      assert_equal 1, status.exitstatus, out
+      assert_includes out, "FAIL"
+      assert_includes out, "no attempt"
+    end
+  end
 end

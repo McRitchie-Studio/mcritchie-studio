@@ -21,7 +21,8 @@
 # New code restarts it with nobody's help: on the minute beat it re-reads a
 # digest of its own files; a new digest seen twice stops claiming, lets the runs
 # finish, and exits 0, and launchd's KeepAlive starts the new code. SIGTERM ends
-# the builders and puts their tasks back in line.
+# the builders and puts their tasks back in line (a run that already published
+# keeps preview_ready).
 #
 # `install` renders config/launchd/studio.mcritchie.client-build-launcher.plist
 # into ~/Library/LaunchAgents and loads it (logs in
@@ -30,10 +31,16 @@
 #
 # `sandbox-check` proves the builder's confinement with the real `claude`: it plants
 # a canary file outside the run's directory and a canary secret in the environment,
-# asks the builder to copy both, and exits 0 only when neither appears (one short
-# run on the subscription).
+# asks the builder to reach both (Read absolute and ../, Grep and Glob on the
+# absolute path, a Write outside), and exits 0 only when every one of those was
+# actually attempted and refused, per the run's own stream-json, and no canary
+# appears. No attempt is a FAIL (one short run on the subscription).
 #
-#   CLIENT_BUILD_CLAUDE_CMD  the builder command, as a shell-split string (tests stub it)
+# One launcher per Mac: `run` holds a flock on ~/.client-builds/launcher.lock, and
+# a second `run` exits 1 naming the holder's pid (a --dry-run takes no lock).
+#
+#   CLIENT_BUILD_CLAUDE_CMD  the builder command, as a shell-split string (tests stub it;
+#                            sandbox-check honours it too)
 #
 # Exit: 0 ok · 1 refused or not running · 2 usage · 3 status: not installed.
 
@@ -71,7 +78,9 @@ when "install"
 when "uninstall" then exit ClientBuildLauncher::LaunchAgent.new.uninstall
 when "status" then exit ClientBuildLauncher::LaunchAgent.new.status_report
 when "sandbox-check"
-  held, lines = ClientBuildLauncher::Sandbox.check(ClientBuildLauncher.config)
+  stub = ENV["CLIENT_BUILD_CLAUDE_CMD"].to_s.strip
+  held, lines = ClientBuildLauncher::Sandbox.check(ClientBuildLauncher.config,
+                                                   claude: stub.empty? ? "claude" : Shellwords.split(stub))
   lines.each { |line| puts line }
   exit(held ? 0 : 1)
 when "run"
@@ -96,6 +105,20 @@ when "run"
       ClientBuildLauncher::Sandbox.run(Shellwords.split(stub), prompt: prompt, dir: dir,
                                                                timeout: Integer(config["run_minutes"]) * 60,
                                                                max_turns: Integer(config["max_turns"]))
+    end
+  end
+
+  # One launcher per Mac (ClientBuildLauncher::InstanceLock): a second would release
+  # the first one's runs. A dry run claims nothing, so it never needs the lock.
+  unless dry_run
+    root = File.join(Dir.home, ".client-builds")
+    $client_build_launcher_lock = ClientBuildLauncher::InstanceLock.acquire(root)
+    unless $client_build_launcher_lock
+      holder = ClientBuildLauncher::InstanceLock.holder(root)
+      warn "bin/client-build-launcher: another launcher is already running on this Mac " \
+           "(pid #{holder || 'unknown'}, lock #{ClientBuildLauncher::InstanceLock.path(root)}); nothing was started. " \
+           "Stop it first (bin/client-build-launcher status; uninstall for the launchd job)."
+      exit 1
     end
   end
 

@@ -6,7 +6,8 @@
 #   claim!(slug, ...)     designed -> building, atomically, and the intake to build from
 #   progress!(slug, ...)  one code-written line in the app owner's CTO chat
 #   finish!(slug, ...)    preview_ready -> shipped; failed -> blocked with the reason;
-#                         released -> designed (back in line)
+#                         released -> designed (back in line); every outcome
+#                         revokes the run's publish session
 #
 # WHICH TASKS. A launch task is the one an AppRequest names (AppRequest#task_slug,
 # written by AppLaunch in the same transaction as the task), never a title match.
@@ -130,12 +131,14 @@ module ClientBuilds
 
   # The run's end. preview_ready: shipped, with the version and the preview URL.
   # failed: blocked, with the reason as a qa_feedback row. Either way the CTO chat
-  # gets its line after the commit.
+  # gets its line after the commit. Every outcome revokes the run's publish
+  # session (revoke_sessions!).
   def finish!(slug, run:, outcome:, reason: nil, version: nil, now: Time.current)
     raise Refused.new(:bad_request, "outcome is #{OUTCOMES.join(', ')}") unless OUTCOMES.include?(outcome.to_s)
 
     task = Task.transaction do
       task = held!(slug, run)
+      revoke_sessions!(task)
       if outcome.to_s == "preview_ready"
         subdomain = AppRequest.find_by!(task_slug: slug).subdomain
         write_run!(task, { "state" => "preview_ready", "version" => version.to_s.presence, "finished_at" => now.iso8601,
@@ -224,6 +227,16 @@ module ClientBuilds
   def run_of(task)
     run = task.devops[KEY]
     run.is_a?(Hash) ? run : {}
+  end
+
+  # The builder's task_claim logins on `task` (the launcher's publish session).
+  # A failed run leaves the task building, blocked, where the login would stay
+  # live until its 24-hour expiry; a finish of any outcome ends it here, server
+  # side, so no launcher has to remember to. Only after held! has passed: a stale
+  # run's finish revokes nothing.
+  def revoke_sessions!(task)
+    AgentSession.unrevoked.for_task(task.slug).where(tier: "studio", issued_by: "task_claim", soul: BUILDER)
+                .update_all(revoked_at: Time.current, revoked_by: ACTOR)
   end
 
   # The task, locked, when `run` holds its build; else a refusal.
