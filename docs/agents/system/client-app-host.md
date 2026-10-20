@@ -71,8 +71,10 @@ host is the same host.
 
 **Not live yet.** Alex chose `mcritchie.app` on 2026-10-19 (it replaced `mcritchie.si`).
 It is bought on Cloudflare Registrar, so the zone lands in our Cloudflare account with no
-nameserver move. Until it is wired, production answers no preview host. To go live, in
-this order:
+nameserver move. The whole `.app` TLD is on the browsers' HSTS preload list, so a
+preview is reachable over https only (a browser upgrades every http request to it
+before sending), and the certificate in step 2 is required before anyone can see a page.
+Until it is wired, production answers no preview host. To go live, in this order:
 
 1. Put the zone on Cloudflare, with a proxied wildcard `*.mcritchie.app` record.
 2. Add `*.mcritchie.app` as a Heroku custom domain. Heroku's ACM does not issue wildcard
