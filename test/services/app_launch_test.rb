@@ -62,6 +62,16 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert AgentMessages::ClientCtoHandover.greeting(cto, user).start_with?("Hi there, I'm Nova"), "never the email's local part"
   end
 
+  test "[unit] only a nameless owner's greeting ends with the first-name ask" do
+    user = users(:viewer)
+    cto = launch.app_cto
+    ask = AgentMessages::FirstNameAsk::QUESTION
+    user.update_columns(first_name: nil, name: nil)
+    assert AgentMessages::ClientCtoHandover.greeting(cto, user).end_with?("\n\n#{ask}")
+    user.update_columns(name: "Viewer User")
+    assert_not_includes AgentMessages::ClientCtoHandover.greeting(cto, user), ask, "a name's first word is enough to greet by"
+  end
+
   test "the handover carries the CTO's code-written greeting, so no model runs; the owner's own next words are answered as the app's owner" do
     launched = launch
     handover = launched.handover
