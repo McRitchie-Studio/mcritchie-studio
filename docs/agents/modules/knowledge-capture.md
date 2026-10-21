@@ -93,7 +93,7 @@ meaning comes from documents read against each other:
   detailed knowledge files at each agent's access level → **re-weigh the
   BRIEF as a whole** (rewrite, never append) → sweep the discrepancy record
   with cross-document eyes → return substantive questions.
-- Until the agents (Samson/Dawn) stand up, filed items simply queue; the
+- Until the agents (Samson/Hank) stand up, filed items simply queue; the
   first distillation batch is the birth event of the agent that reads it.
 
 ## The sweep (the email leg's act)

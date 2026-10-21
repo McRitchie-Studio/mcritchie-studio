@@ -79,12 +79,12 @@ class CommunicationsPersistenceTest < ActionDispatch::IntegrationTest
                         "role" => "counsel", "side" => "theirs" } ],
       key_points: [ "The date moved", "The figure did not" ],
       tags: [ "schedule" ],
-      access: { "samson" => "full", "dawn" => "aware" }
+      access: { "samson" => "full", "hank" => "aware" }
     ).reload
 
     assert_equal "counsel", row.participants.first["role"]
     assert_equal 2, row.key_points.size
-    assert_equal "aware", row.access["dawn"]
+    assert_equal "aware", row.access["hank"]
     assert_instance_of Array, row.key_points
     assert_instance_of Hash, row.access
   end

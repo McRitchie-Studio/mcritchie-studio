@@ -221,7 +221,7 @@ number moved, months before anyone asks. Reconcile every figure against what is
 already filed and send contradictions to the discrepancy record. **Keep the
 quotes themselves in the entity's private store**, never in this repo.
 
-**3. Access defaults to the deal side.** `samson: full`, `dawn: none` unless
+**3. Access defaults to the deal side.** `samson: full`, `hank: none` unless
 there is a reason otherwise. A channel shared with an external organization
 carries their commercial positions; promoting later is one edit.
 
@@ -241,7 +241,7 @@ cd /Users/alex/projects/mcritchie-industries
 bin/rails runner '
   doc = Studio::KnowledgeDoc.find_by(s3_key: "knowledge/<entity>/<path>/<channel>-<YYYY-MM>.json")
   doc.update!(
-    access: { "samson" => "full", "dawn" => "aware" },   # per-agent, aware needs a safe summary
+    access: { "samson" => "full", "hank" => "aware" },   # per-agent, aware needs a safe summary
     summary: "One safe sentence plus the boundary line, for aware-level agents.",
     source_note: doc.source_note + " Triaged <date>: <what this month holds, what it contradicts>.",
     expectation_id: <id>,                                 # link the expectation it satisfies
