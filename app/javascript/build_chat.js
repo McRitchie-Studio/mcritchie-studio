@@ -143,7 +143,9 @@ function showPick(radio) {
   const art = radio.nextElementSibling;
   if (!preview || !art) return;
   const copy = art.cloneNode(true);
-  copy.setAttribute("class", preview.dataset.artClass || "block h-full w-full rounded-full");
+  // The size is the preview's; .cto-animal stays, as it picks the palette's light or dark set.
+  const sized = preview.dataset.artClass || "block h-full w-full rounded-full";
+  copy.setAttribute("class", copy.classList.contains("cto-animal") ? `cto-animal ${sized}` : sized);
   preview.replaceChildren(copy);
   preview.dataset.avatar = radio.value;
 }
