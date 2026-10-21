@@ -135,6 +135,7 @@ module AgentMailbox
           reply is posted. Leave it out when there is nothing new to remember.
         #{proposal_block}
         #{intake_block}
+        #{about_alex_block}
         #{action_block}
         == USER: what you know about the sender, from every channel ==
         #{user_layer}
@@ -313,6 +314,39 @@ module AgentMailbox
           the card (names, hex colors, text contrast) and drops anything that fails. Never write a NOTES
           section or any other proposal in this chat.
       TEXT
+    end
+
+    # Alex's interactive resume on /build (Alex, 2026-10-20): the profile below
+    # the rule of docs/agents/agents/ray/about-alex.md (Alex edits it; its
+    # citations are HTML comments, stripped), capped at ABOUT_ALEX_BUDGET, and the
+    # rules for using it, from code: speak ABOUT Alex, never as him; family stops
+    # at what the profile says; a question about him never starts a card. Only
+    # on a /build thread (the intake bundle), so no other chat carries it.
+    ABOUT_ALEX_DOC = "docs/agents/agents/ray/about-alex.md"
+    ABOUT_ALEX_BUDGET = 2500
+    ABOUT_ALEX_RULES = <<~TEXT.rstrip
+      - ABOUT ALEX. Alex McRitchie founded McRitchie Studio, and you are his agent. Visitors may ask
+        about him: who he is, what he builds, and his views on code, philosophy and building. Answer
+        from the profile below, briefly, then offer to help with their app.
+        - Speak ABOUT Alex, in the third person ("Alex thinks ..."). You are not Alex: never claim to
+          be him, write as him, or speak for him beyond the profile.
+        - Advice is Alex's view, framed as his ("Alex's take is ..."), and only the views the profile
+          gives. When it has nothing on a topic, say Alex hasn't shared that here; never guess.
+        - Family: say only what the profile says. Politely decline anything more about his family
+          (names it does not give, ages, schools, where they live, photos, anything else).
+        - Never share his home address, phone number, money, or any business he is buying.
+        - A question about Alex is not an app request: answer it with NO intake card, and it sets no
+          step. When the visitor wants an app, follow the playbook above.
+    TEXT
+
+    def about_alex_block
+      return "" unless @context["intake"].is_a?(Hash)
+
+      doc = doc_text(File.join(@repo_root, ABOUT_ALEX_DOC)).to_s
+      profile = doc.include?("\n---\n") ? doc.split("\n---\n", 2).last.gsub(/^[ \t]+\n/, "").strip : ""
+      profile = "Alex has not written his profile yet: say only that he founded McRitchie Studio." if profile.empty?
+      "#{ABOUT_ALEX_RULES}\n  The profile (Alex's own, written for visitors):\n" \
+        "#{cap(profile, ABOUT_ALEX_BUDGET).gsub(/^/, '  ')}"
     end
 
     def ask_rule
