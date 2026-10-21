@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "open3"
+require "securerandom"
 
 module ClientApps
   module StudioKit
@@ -20,94 +21,138 @@ module ClientApps
     #
     # Only the classes the kit's templates (and the engine toggle partial they
     # render) use are emitted, plus the engine primitives the builder is told
-    # it may use (SAFELIST), so it stays small (about 15 KB).
+    # it may use (SAFELIST).
     #
-    # Built at deploy (`bin/rails studio_kit:build`, run by assets:precompile)
-    # into tmp/studio_kit/<digest of the inputs>.css; a process that finds no
-    # file for the current inputs compiles it then (dev, test, a cold dyno).
-    # The digest covers the engine version, so an engine bump is a new kit.
+    # BUILT AT DEPLOY. `bin/rails studio_kit:build` is a prerequisite of
+    # assets:precompile (lib/tasks/studio_kit.rake), which the Heroku build runs,
+    # and writes app/assets/builds/studio_kit/<digest>.css into the slug. The
+    # digest is of CONTENT only (the engine and Tailwind versions, and each
+    # input's bytes under its path RELATIVE to its root), never an absolute
+    # path: Heroku builds in /tmp/build_<hash> and runs in /app, and the two
+    # must name the same file, or every dyno would compile on its first
+    # client-app request.
+    #
+    # A process that finds no file for the current digest (development, test,
+    # a deploy that skipped the build) compiles it once: a process-wide mutex
+    # serialises threads, an flock serialises processes (each re-checks for the
+    # file once it holds the lock), and the output is written under a unique
+    # temporary name and renamed into place.
     module Css
       # The engine primitives a bundle may use in its own markup, compiled even
       # though no kit template uses them.
       SAFELIST = %w[btn btn-primary btn-secondary btn-outline btn-neutral btn-sm btn-lg card card-hover badge
                     input-field label-upper empty-state].freeze
-      OUT_DIR = Rails.root.join("tmp/studio_kit")
+      OUT_SUBDIR = "app/assets/builds/studio_kit"
+      ENGINE_TOKEN = "{{ENGINE_ROOT}}"
+      CONFIG_TOKEN = "{{CONFIG}}"
+      ENGINE_CSS = "app/assets/tailwind/studio_engine/engine.css"
+      ENGINE_CONFIG = "tailwind/studio.tailwind.config.js"
+      ENGINE_SOURCES = %w[app/views/components/_theme_toggle.html.erb].freeze
+      SHELL_CSS = "app/assets/studio_kit/shell.css"
 
       class BuildFailed < StandardError; end
 
-      module_function
+      @mutex = Mutex.new
 
-      def compiled
-        path = output_path
-        return path.read if path.file?
+      class << self
+        def compiled
+          path = output_path
+          return path.read if path.file?
 
-        build!(path)
-      end
-
-      def build!(path = output_path)
-        FileUtils.mkdir_p(path.dirname)
-        Dir.mktmpdir("studio-kit") do |dir|
-          input = File.join(dir, "input.css")
-          config = File.join(dir, "tailwind.config.js")
-          File.write(config, config_js)
-          File.write(input, input_css(config))
-          out = File.join(dir, "out.css")
-          _stdout, stderr, status = Open3.capture3(executable, "-i", input, "-o", out, "--minify", chdir: Rails.root.to_s)
-          raise BuildFailed, "tailwindcss failed: #{stderr.lines.last(5).join}" unless status.success? && File.file?(out)
-
-          css = "/* McRitchie Studio kit #{digest} (studio-engine #{engine_version}) */\n#{File.read(out)}"
-          tmp = "#{path}.#{Process.pid}.tmp"
-          File.write(tmp, css)
-          File.rename(tmp, path)
-          css
+          @mutex.synchronize { locked_build(path) }
         end
-      end
 
-      def output_path = OUT_DIR.join("#{digest}.css")
+        # Compiles the kit, unless another thread or process already did.
+        def locked_build(path = output_path)
+          return path.read if path.file?
 
-      def digest
-        parts = [ engine_version, executable_version, config_js, input_css("CONFIG"), *sources.map { |f| File.read(f) } ]
-        Digest::SHA256.hexdigest(parts.join("\0"))[0, 16]
-      end
+          FileUtils.mkdir_p(path.dirname)
+          File.open(path.dirname.join(".build.lock"), File::RDWR | File::CREAT, 0o644) do |lock|
+            lock.flock(File::LOCK_EX)
+            path.file? ? path.read : build!(path)
+          end
+        end
 
-      def engine_root = Studio::Engine.root
+        # Compiles the kit into PATH (always; the rake task's entry point).
+        def build!(path = output_path)
+          FileUtils.mkdir_p(path.dirname)
+          Dir.mktmpdir("studio-kit") do |dir|
+            input = File.join(dir, "input.css")
+            config = File.join(dir, "tailwind.config.js")
+            File.write(config, config_js)
+            File.write(input, input_css(config))
+            out = File.join(dir, "out.css")
+            _stdout, stderr, status = Open3.capture3(executable, "-i", input, "-o", out, "--minify", chdir: Rails.root.to_s)
+            raise BuildFailed, "tailwindcss failed: #{stderr.lines.last(5).join}" unless status.success? && File.file?(out)
 
-      def engine_version = Gem.loaded_specs["studio-engine"]&.version.to_s
+            css = "/* McRitchie Studio kit #{digest} (studio-engine #{engine_version}) */\n#{File.read(out)}"
+            tmp = path.dirname.join(".#{path.basename}.#{Process.pid}.#{SecureRandom.hex(6)}.tmp")
+            File.write(tmp, css)
+            File.rename(tmp, path)
+            css
+          ensure
+            FileUtils.rm_f(tmp) if tmp
+          end
+        end
 
-      def executable
-        require "tailwindcss/ruby"
-        Tailwindcss::Ruby.executable
-      end
+        def output_path(root = Rails.root) = Pathname(root).join(OUT_SUBDIR, "#{digest}.css")
 
-      def executable_version = Gem.loaded_specs["tailwindcss-ruby"]&.version.to_s
+        # The digest of everything the compile reads, by content. Absolute
+        # paths are replaced by tokens, and each source is named by its path
+        # relative to its own root, so two checkouts of one tree (a build
+        # directory and the running slug) agree.
+        def digest(app_root: Rails.root, engine_root: self.engine_root)
+          parts = [ engine_version, executable_version,
+                    config_js(ENGINE_TOKEN), input_css(CONFIG_TOKEN, app_root: app_root, engine_root: engine_root, tokens: true) ]
+          sources(app_root: app_root, engine_root: engine_root).each do |root, relative|
+            parts << relative << File.binread(File.join(root.to_s, relative))
+          end
+          parts << File.binread(File.join(engine_root.to_s, ENGINE_CSS)) << File.binread(File.join(engine_root.to_s, ENGINE_CONFIG))
+          Digest::SHA256.hexdigest(parts.join("\0"))[0, 16]
+        end
 
-      # What Tailwind scans for class names: the kit's own templates and the
-      # engine partials the kit renders.
-      def sources
-        [ *Dir[Rails.root.join("app/views/client_apps/kit/*.erb").to_s].sort,
-          engine_root.join("app/views/components/_theme_toggle.html.erb").to_s ]
-      end
+        def engine_root = Studio::Engine.root
 
-      def config_js
-        <<~JS
-          const studio = require(#{engine_root.join('tailwind/studio.tailwind.config.js').to_s.to_json});
-          module.exports = { darkMode: 'class', content: [], theme: studio.theme };
-        JS
-      end
+        def engine_version = Gem.loaded_specs["studio-engine"]&.version.to_s
 
-      def input_css(config)
-        engine_css = engine_root.join("app/assets/tailwind/studio_engine/engine.css")
-        <<~CSS
-          @layer theme, base, components, utilities;
-          @import "tailwindcss/theme.css" layer(theme);
-          @import "tailwindcss/utilities.css" layer(utilities) source(none);
-          @import #{engine_css.to_s.to_json};
-          @config #{config.to_json};
-          @source not #{engine_root.join('app/components').to_s.to_json};
-          #{sources.map { |file| "@source #{file.to_json};" }.join("\n")}
-          @source inline(#{SAFELIST.join(' ').to_json});
-          #{ASSET_DIR.join('shell.css').read}
-        CSS
+        def executable
+          require "tailwindcss/ruby"
+          Tailwindcss::Ruby.executable
+        end
+
+        def executable_version = Gem.loaded_specs["tailwindcss-ruby"]&.version.to_s
+
+        # What Tailwind scans for class names, as [root, relative path]: the
+        # kit's own templates and the engine partials the kit renders.
+        def sources(app_root: Rails.root, engine_root: self.engine_root)
+          kit = Dir.glob("app/views/client_apps/kit/*.erb", base: app_root.to_s).sort.map { |rel| [ app_root, rel ] }
+          kit + ENGINE_SOURCES.map { |rel| [ engine_root, rel ] }
+        end
+
+        def config_js(engine = engine_root)
+          path = engine == ENGINE_TOKEN ? "#{ENGINE_TOKEN}/#{ENGINE_CONFIG}" : File.join(engine.to_s, ENGINE_CONFIG)
+          <<~JS
+            const studio = require(#{path.to_json});
+            module.exports = { darkMode: 'class', content: [], theme: studio.theme };
+          JS
+        end
+
+        # The Tailwind input. With tokens: true every absolute path is a token
+        # (for the digest); otherwise the real paths (for the compile).
+        def input_css(config, app_root: Rails.root, engine_root: self.engine_root, tokens: false)
+          at = ->(root, rel) { tokens ? "#{root == engine_root ? ENGINE_TOKEN : '{{APP_ROOT}}'}/#{rel}" : File.join(root.to_s, rel) }
+          <<~CSS
+            @layer theme, base, components, utilities;
+            @import "tailwindcss/theme.css" layer(theme);
+            @import "tailwindcss/utilities.css" layer(utilities) source(none);
+            @import #{at.call(engine_root, ENGINE_CSS).to_json};
+            @config #{config.to_json};
+            @source not #{at.call(engine_root, 'app/components').to_json};
+            #{sources(app_root: app_root, engine_root: engine_root).map { |root, rel| "@source #{at.call(root, rel).to_json};" }.join("\n")}
+            @source inline(#{SAFELIST.join(' ').to_json});
+            #{File.read(File.join(app_root.to_s, SHELL_CSS))}
+          CSS
+        end
       end
     end
   end

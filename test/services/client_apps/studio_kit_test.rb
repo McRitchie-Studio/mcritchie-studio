@@ -31,11 +31,11 @@ class ClientApps::StudioKitTest < ActiveSupport::TestCase
 
   test "[unit] a page missing its tags still gets the whole shell, in order" do
     out = wrap("<!doctype html><title>T</title><main data-studio-content>x</main>")
-    assert_match %r{\A<!doctype html>\n<head>\n<HEAD/>\n</head>\n<body data-studio-kit>\n<NAV/>\n\n<title>T</title>}, out
+    assert_match %r{\A<!doctype html>\n<head>\n<HEAD/>\n</head>\n\n<body data-studio-kit>\n<NAV/>\n<title>T</title>}, out
     assert out.end_with?("<FOOT/>\n")
 
     bare = wrap("<p>hi</p>")
-    assert_equal [ 0, 1, 1 ], [ bare.index("<head>"), bare.scan("<NAV/>").size, bare.scan("<FOOT/>").size ]
+    assert_equal [ true, 1, 1 ], [ bare.lstrip.start_with?("<head>"), bare.scan("<NAV/>").size, bare.scan("<FOOT/>").size ]
     assert_operator bare.index("<NAV/>"), :<, bare.index("<p>hi</p>")
   end
 
@@ -66,9 +66,9 @@ class ClientApps::StudioKitTest < ActiveSupport::TestCase
   end
 
   test "[unit] a client's words never break out of the shell" do
-    identity = Kit::Identity.new(name: %(<script>alert(1)</script> "Pets"), mark_uri: nil,
+    identity = Kit::Identity.new(name: %(<script>alert(1)</script> "Pets"),
                                  light: ClientApps::Pages::DEFAULT_LIGHT, dark: ClientApps::Pages::DEFAULT_DARK)
-    shell = Kit.render_shell(identity, "k")
+    shell = Kit.render_shell(identity)
     [ shell.navbar, shell.footer ].each do |html|
       assert_not_includes html, "<script>alert"
       assert_includes html, "&lt;script&gt;"
@@ -87,5 +87,123 @@ class ClientApps::StudioKitTest < ActiveSupport::TestCase
   test "[unit] the kit fits inside a bundle's own limits with room to spare" do
     total = Kit.assets.values.sum(&:bytesize)
     assert_operator total, :<, 100_000, "the kit is #{total} bytes, served once per app and cached a year"
+  end
+
+  # --- Carl's tricky pages (PR 2213 review): the wrap and the publish check read
+  # a page through one scanner, so neither is fooled by a <body> that is text.
+
+  TRICKY = {
+    "a comment in head" => %(<!doctype html><html><head><!-- layout: <body> --><title>T</title></head><body><main data-studio-content>C</main></body></html>),
+    "body in title" => %(<!doctype html><html><head><title>Use <body> wisely</title></head><body><main data-studio-content>C</main></body></html>),
+    "body in a meta attribute" => %(<!doctype html><html><head><meta name="x" content="<body>"></head><body><main data-studio-content>C</main></body></html>),
+    "body in a script" => %(<!doctype html><html><head><script src="a.js">document.write("<body>")</script></head><body><main data-studio-content>C</main></body></html>),
+    "uppercase BODY" => %(<!DOCTYPE html><HTML><HEAD><TITLE>T</TITLE></HEAD><BODY><main data-studio-content>C</main></BODY></HTML>),
+    "body with attributes" => %(<!doctype html><html><head></head><body class="app" data-x='a>b'><main data-studio-content>C</main></body></html>),
+    "missing body" => %(<!doctype html><html><head><title>T</title></head><main data-studio-content>C</main></html>),
+    "two bodies" => %(<!doctype html><html><head></head><body id="one"><main data-studio-content>C</main><body id="two"></body></html>)
+  }.freeze
+
+  test "[unit] Carl's eight tricky pages: the shell lands whole, in place, and nothing else moves" do
+    shell = Kit::Shell.new(head: %(<link rel="stylesheet" href="/k.css" data-studio-kit>), navbar: %(<header data-studio-navbar>N</header>),
+                           footer: %(<footer data-studio-footer>F</footer>), digest: "d")
+    TRICKY.each do |name, page|
+      assert_empty ClientAppBundle.template_errors("index.html", page), "#{name}: publish accepts it"
+      out = Kit::Wrap.call(page, shell)
+      doc = Nokogiri::HTML5(out)
+      body = doc.at_css("body")
+      assert_equal 1, doc.css("header[data-studio-navbar]").size, "#{name}: one navbar"
+      assert_equal "header", body.element_children.first.name, "#{name}: the navbar opens the body"
+      assert body.key?("data-studio-kit"), "#{name}: the body carries the kit hook"
+      assert_equal "footer", body.element_children.last.name, "#{name}: the footer closes the body"
+      assert doc.at_css("head link[data-studio-kit]"), "#{name}: the kit's head pieces are in the head"
+      assert_operator out.index("data-studio-navbar"), :<, out.index("data-studio-content"), "#{name}: navbar before content"
+      assert_equal 1, doc.css("main[data-studio-content]").size, "#{name}: the content is untouched"
+    end
+    assert_equal "Use <body> wisely", Nokogiri::HTML5(Kit::Wrap.call(TRICKY["body in title"], shell)).title
+    assert_equal "<body>", Nokogiri::HTML5(Kit::Wrap.call(TRICKY["body in a meta attribute"], shell)).at_css("meta")["content"]
+    assert_includes Kit::Wrap.call(TRICKY["a comment in head"], shell), "<!-- layout: <body> -->"
+    assert_equal "app", Nokogiri::HTML5(Kit::Wrap.call(TRICKY["body with attributes"], shell)).at_css("body")["class"]
+  end
+
+  test "[unit] publish refuses a page the host would wrap wrongly: a late <body>, or a region only in a comment" do
+    late = %(<html><head></head><main data-studio-content>C</main><body></body></html>)
+    assert(ClientAppBundle.template_errors("index.html", late).any? { |e| e.include?("opens <body> after its content region") })
+    commented = %(<body><!-- <main data-studio-content> --><p>x</p></body>)
+    assert(ClientAppBundle.template_errors("index.html", commented).any? { |e| e.include?("no content region") })
+    in_title = %(<head><title><main data-studio-content></title></head><body><p>x</p></body>)
+    assert(ClientAppBundle.template_errors("index.html", in_title).any? { |e| e.include?("no content region") })
+  end
+
+  test "[unit] a portrait that follows the colour scheme becomes one fixed mark per theme" do
+    svg = %(<svg xmlns="http://www.w3.org/2000/svg"><style>.f{fill:#111}@media (prefers-color-scheme: dark){.f{fill:#eee}}</style><rect class="f"/></svg>)
+    light, dark = Kit::Mark.variants(svg)
+    assert_equal %(<svg xmlns="http://www.w3.org/2000/svg"><style>.f{fill:#111}</style><rect class="f"/></svg>), light
+    assert_equal %(<svg xmlns="http://www.w3.org/2000/svg"><style>.f{fill:#111}.f{fill:#eee}</style><rect class="f"/></svg>), dark
+    assert_equal [ "<svg/>", nil ], Kit::Mark.variants("<svg/>"), "a fixed portrait is one mark"
+
+    identity = Kit::Identity.new(name: "Pets", mark_light_uri: Kit::Mark.data_uri(light), mark_dark_uri: Kit::Mark.data_uri(dark),
+                                 light: ClientApps::Pages::DEFAULT_LIGHT, dark: ClientApps::Pages::DEFAULT_DARK)
+    navbar = Nokogiri::HTML5.fragment(Kit.render_shell(identity).navbar)
+    assert_equal %w[light dark], navbar.css("img.nav-logo").map { |img| img["data-studio-kit-when"] },
+                 "the kit's CSS shows the one matching the root's dark class"
+  end
+
+  test "[unit] the CSS digest is content-only: two checkouts of one tree agree, an edit does not" do
+    Dir.mktmpdir do |one|
+      Dir.mktmpdir do |two|
+        copy = lambda do |root|
+          app, engine = File.join(root, "hub"), File.join(root, "deep/engine")
+          Kit::Css.sources.each do |source_root, rel|
+            dest = File.join(source_root == Kit::Css.engine_root ? engine : app, rel)
+            FileUtils.mkdir_p(File.dirname(dest))
+            FileUtils.cp(File.join(source_root.to_s, rel), dest)
+          end
+          [ [ Rails.root, Kit::Css::SHELL_CSS, app ], [ Kit::Css.engine_root, Kit::Css::ENGINE_CSS, engine ],
+            [ Kit::Css.engine_root, Kit::Css::ENGINE_CONFIG, engine ] ].each do |from, rel, to|
+            FileUtils.mkdir_p(File.dirname(File.join(to, rel)))
+            FileUtils.cp(File.join(from.to_s, rel), File.join(to, rel))
+          end
+          [ Pathname(app), Pathname(engine) ]
+        end
+        app_one, engine_one = copy.call(one)
+        app_two, engine_two = copy.call(two)
+        first = Kit::Css.digest(app_root: app_one, engine_root: engine_one)
+        assert_equal first, Kit::Css.digest(app_root: app_two, engine_root: engine_two), "a moved checkout names the same file"
+        assert_equal Kit::Css.digest, first, "and the real checkout names it too"
+
+        File.write(app_two.join(Kit::Css::SHELL_CSS), "/* edited */", mode: "a")
+        assert_not_equal first, Kit::Css.digest(app_root: app_two, engine_root: engine_two), "an edited input is a new kit"
+      end
+    end
+  end
+
+  test "[unit] concurrent cold requests compile the kit once, and read the prebuilt file after" do
+    Dir.mktmpdir do |dir|
+      path = Pathname(dir).join("app/assets/builds/studio_kit/abc.css")
+      builds = Concurrent::AtomicFixnum.new(0)
+      build = lambda do |target|
+        builds.increment
+        sleep 0.05
+        FileUtils.mkdir_p(target.dirname)
+        File.write(target, "/* kit */")
+        "/* kit */"
+      end
+      Kit::Css.stub(:output_path, path) do
+        Kit::Css.stub(:build!, build) do
+          results = Array.new(6) { Thread.new { Kit::Css.compiled } }.map(&:value)
+          assert_equal [ "/* kit */" ], results.uniq
+          assert_equal 1, builds.value, "six threads, one compile"
+          Kit::Css.compiled
+          assert_equal 1, builds.value, "the file on disk is read, never rebuilt"
+        end
+      end
+    end
+  end
+
+  test "[unit] the deploy build compiles the kit: studio_kit:build is a prerequisite of assets:precompile" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("studio_kit:build")
+    assert_includes Rake::Task["assets:precompile"].prerequisites, "studio_kit:build",
+                    "the Heroku Ruby buildpack runs assets:precompile, so the slug carries the compiled kit"
+    assert_equal Rails.root.join(Kit::Css::OUT_SUBDIR, "#{Kit::Css.digest}.css"), Kit::Css.output_path
   end
 end

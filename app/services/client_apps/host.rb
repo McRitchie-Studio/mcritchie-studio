@@ -128,15 +128,22 @@ module ClientApps
 
     # An HTML page wears the Studio template (StudioKit): the shell is placed
     # at serve time, so a kit or engine change reaches every app on its next
-    # request. The ETag covers the page's bytes AND the shell, so a new kit
-    # or a renamed app is a new ETag.
+    # request. The ETag covers the page's bytes AND the rendered shell, so a
+    # new template, a footer fact or a renamed app is a new ETag; a returning
+    # visitor's revalidation never keeps an old shell.
+    #
+    # The ETag is answered before any storage read. When the kit cannot be
+    # built or rendered (StudioKit.shell_for answers nil, in its backoff), the
+    # page is served exactly as the bundle wrote it, never a 500.
     def serve_page(app, version, path, entry)
       shell = StudioKit.shell_for(app)
-      etag = %("#{entry.fetch('sha256')[0, 32]}-#{shell.digest}")
+      sha = entry.fetch("sha256")
+      etag = shell ? %("#{sha[0, 32]}-#{shell.digest}") : %("#{sha}")
       headers = bundle_headers(entry.fetch("content_type"), HTML_CACHE, etag)
       return [ 304, headers, [] ] if fresh?(etag)
 
-      html = StudioKit.wrap(BundleStore.read(version.key_for(path), sha256: entry.fetch("sha256")), shell)
+      bytes = BundleStore.read(version.key_for(path), sha256: sha)
+      html = shell ? StudioKit.wrap(bytes, shell, key: sha) : bytes
       headers["content-length"] = html.bytesize.to_s
       [ 200, headers, @head ? [] : [ html ] ]
     end

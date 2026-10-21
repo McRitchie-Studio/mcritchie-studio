@@ -47,30 +47,42 @@ module ClientApps
     class Drift < StandardError; end
 
     # Who the shell names: the app's name, split as the engine's navbar splits
-    # it, its CTO's portrait as the mark, and both sides of its palette.
-    Identity = Struct.new(:name, :mark_uri, :light, :dark, keyword_init: true) do
+    # it, its CTO's portrait as the mark (one per theme when the portrait follows
+    # the colour scheme: Mark), and both sides of its palette.
+    Identity = Struct.new(:name, :mark_light_uri, :mark_dark_uri, :light, :dark, keyword_init: true) do
       def words = name.to_s.split
       def name_lead = words[0..-2].join(" ")
       def name_last = words.last.to_s
 
       def digest
-        Digest::SHA256.hexdigest(JSON.generate([ name, mark_uri, light, dark ]))
+        Digest::SHA256.hexdigest(JSON.generate([ name, mark_light_uri, mark_dark_uri, light, dark ]))
       end
     end
 
     # The page frame for one app: what goes in the <head>, after <body>, and
-    # before </body>. `digest` names it, for the wrapped page's ETag.
+    # before </body>. `digest` is the digest of those rendered bytes, so ANY
+    # change to what a visitor would see (a template, a footer fact, the menu,
+    # the theme, the kit's version) is a new ETag on every page.
     Shell = Struct.new(:head, :navbar, :footer, :digest, keyword_init: true)
 
     SHELL_CACHE_LIMIT = 256
+    # After the kit fails to build or render, pages are served without it, and
+    # nothing retries the build (a Tailwind run) until this many seconds pass.
+    FAILURE_BACKOFF = 300
     @shell_cache = {}
     @shell_cache_mutex = Mutex.new
+    @kit_mutex = Mutex.new
+    @failed_at = nil
 
     class << self
       # { "studio-kit.css" => bytes, "studio-kit.js" => bytes }, built once per
-      # process.
+      # process, under a lock, so concurrent first requests build it once.
+      # Raises when it cannot be built; callers go through shell_for and
+      # asset_for, which never raise.
       def assets
-        @assets ||= { CSS_FILE => Css.compiled + footer_css, JS_FILE => ASSET_DIR.join(JS_FILE).binread }.freeze
+        @assets || @kit_mutex.synchronize do
+          @assets ||= { CSS_FILE => Css.compiled + footer_css, JS_FILE => ASSET_DIR.join(JS_FILE).binread }.freeze
+        end
       end
 
       # The kit's version: the digest of what it serves, so a changed kit is a
@@ -82,14 +94,15 @@ module ClientApps
       def asset_path(file) = "#{PATH_PREFIX}#{version}/#{file}"
 
       # The kit file a request path names, as [bytes, content_type, current?],
-      # or nil. A path naming an older version answers with the current files
-      # (a page rendered just before a deploy still gets a kit), but is not
-      # cached as immutable: `current?` is false.
+      # or nil (an unknown file, or a kit that cannot be built now). A path
+      # naming an older version answers with the current files (a page rendered
+      # just before a deploy still gets a kit), but is not cached as immutable:
+      # `current?` is false.
       def asset_for(path)
         match = path.to_s.match(%r{\A#{Regexp.escape(PATH_PREFIX)}([0-9a-f]{12})/([a-z.-]+)\z})
-        return nil unless match && assets.key?(match[2])
+        return nil unless match && CONTENT_TYPES.key?(match[2])
 
-        [ assets.fetch(match[2]), CONTENT_TYPES.fetch(match[2]), match[1] == version ]
+        guarded { [ assets.fetch(match[2]), CONTENT_TYPES.fetch(match[2]), match[1] == version ] }
       end
 
       # The identity for APP: its CTO's palette and portrait, else the app's
@@ -98,34 +111,52 @@ module ClientApps
       def identity_for(app)
         site = BeingBuilt.for(app.slug, app)
         name = (site&.name.presence || app.name.presence || app.slug).to_s.squish
-        svg = site&.portrait_svg
-        Identity.new(name: name, mark_uri: svg && "data:image/svg+xml;base64,#{Base64.strict_encode64(svg)}",
+        light_svg, dark_svg = Mark.variants(site&.portrait_svg)
+        Identity.new(name: name, mark_light_uri: Mark.data_uri(light_svg), mark_dark_uri: Mark.data_uri(dark_svg),
                      light: Pages.colours(site&.light, Pages::DEFAULT_LIGHT),
                      dark: Pages.colours(site&.dark, Pages::DEFAULT_DARK))
       end
 
       # The rendered shell for APP, cached per kit version and identity, so a
-      # page view renders no template.
+      # page view renders no template. nil when the kit cannot be built or
+      # rendered: the host then serves the page as the bundle wrote it, and the
+      # build is not retried for FAILURE_BACKOFF seconds (the failure is
+      # recorded once per window). A broken kit never takes an app down.
       def shell_for(app)
-        identity = identity_for(app)
-        key = "#{version}:#{identity.digest}"
-        cached = shell_cache_mutex.synchronize { shell_cache[key] }
-        return cached if cached
+        return nil if backing_off?
 
-        shell = render_shell(identity, key)
-        shell_cache_mutex.synchronize do
-          shell_cache.shift while shell_cache.size >= SHELL_CACHE_LIMIT
-          shell_cache[key] = shell
+        identity = identity_for(app) # a database error is the host's 500, never the kit's backoff
+        guarded do
+          key = "#{version}:#{identity.digest}"
+          cached = shell_cache_mutex.synchronize { shell_cache[key] }
+          next cached if cached
+
+          shell = render_shell(identity)
+          shell_cache_mutex.synchronize do
+            shell_cache.shift while shell_cache.size >= SHELL_CACHE_LIMIT
+            shell_cache[key] = shell
+          end
         end
       end
 
-      def render_shell(identity, digest)
-        Shell.new(head: head_html(identity), navbar: Renderer.navbar(identity, kit_toggle(Renderer.engine_toggle)),
-                  footer: Renderer.footer(identity), digest: Digest::SHA256.hexdigest(digest)[0, 16])
+      def render_shell(identity)
+        head = head_html(identity)
+        navbar = Renderer.navbar(identity, kit_toggle(Renderer.engine_toggle))
+        footer = Renderer.footer(identity)
+        Shell.new(head: head, navbar: navbar, footer: footer,
+                  digest: Digest::SHA256.hexdigest([ head, navbar, footer ].join("\0"))[0, 16])
+      end
+
+      # Whether the kit is in its failure backoff.
+      def backing_off?
+        failed_at = @failed_at
+        !failed_at.nil? && clock - failed_at < FAILURE_BACKOFF
       end
 
       # The page HTML wrapped in the shell (Wrap does the placing).
-      def wrap(html, shell) = Wrap.call(html, shell)
+      # KEY names the page's bytes (its sha256), so the insertion points are
+      # found once per page per process.
+      def wrap(html, shell, key: nil) = Wrap.call(html, shell, key: key)
 
       # What goes at the top of <head>: the kit's stylesheet, the app's theme,
       # then the kit's script, which sets the theme before the first paint. The
@@ -181,11 +212,27 @@ module ClientApps
       end
 
       def reset!
-        @assets = @version = nil
+        @assets = @version = @failed_at = nil
         shell_cache_mutex.synchronize { shell_cache.clear }
       end
 
       private
+
+      # Runs the block unless the kit is backing off; a failure starts the
+      # backoff, is recorded (once per window, since nothing retries inside
+      # one), and answers nil.
+      def guarded
+        return nil if backing_off?
+
+        yield
+      rescue StandardError => e
+        @failed_at = clock
+        Rails.logger.error("[studio-kit] serving pages without the kit for #{FAILURE_BACKOFF}s: #{e.class}: #{e.message}")
+        Host.record_failure(e, nil)
+        nil
+      end
+
+      def clock = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       attr_reader :shell_cache, :shell_cache_mutex
     end

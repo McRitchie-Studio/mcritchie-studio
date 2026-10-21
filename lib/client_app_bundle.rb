@@ -3,6 +3,7 @@
 require "digest"
 require "find"
 require "pathname"
+require_relative "client_app_markup"
 
 # A client app's static bundle: the files one version of an app serves at
 # <sub>.<preview domain> (docs/agents/system/client-app-host.md).
@@ -59,14 +60,14 @@ class ClientAppBundle
   # The Studio template (docs/agents/system/client-app-host.md, "The Studio
   # template"). The host wraps every page in the Studio navbar and footer at
   # serve time, so a page carries only its content, in its content region.
-  CONTENT_REGION = %r{<main\b[^>]*?\sdata-studio-content(?=[\s=>/])[^>]*>}i
+  CONTENT_ATTRIBUTE = "data-studio-content"
   # The shell's own hooks: a page carrying one is shipping a copy of the shell.
-  SHELL_HOOK = /\sdata-(?:studio-(?:navbar|footer|menu|kit|theme)|site-footer)\b/i
+  SHELL_HOOKS = %w[data-studio-navbar data-studio-footer data-studio-menu data-studio-kit data-studio-theme data-site-footer].freeze
   # What the host's kit owns: the bundle never names it, and never ships a
   # file under it.
   KIT_ROOT = "_studio"
   # Page chrome outside the content region would be a second navbar or footer.
-  CHROME_TAG = /<(header|footer|nav)\b/i
+  CHROME_TAGS = %w[header footer nav].freeze
 
   class Invalid < StandardError
     attr_reader :errors
@@ -154,33 +155,58 @@ class ClientAppBundle
   def byte_size = files.values.sum(&:bytesize)
 
   # Why the page at PATH breaks the Studio template; empty when it keeps it.
-  # Plain text matching, so the CLI, the launcher and the hub all run it
-  # without an HTML parser:
+  # Read through ClientAppMarkup, the SAME tag scanner the host's wrap uses (so
+  # a page this accepts is a page the host places the shell in correctly), and
+  # pure Ruby, so the CLI, the launcher and the hub all run it:
   #   - exactly one <main data-studio-content>, the region the content lives in;
   #   - no <header>, <footer> or <nav> before or after that region (the host
   #     puts the navbar and footer there; the app's own navigation goes inside);
   #   - none of the shell's own hooks (data-studio-navbar, data-site-footer, ...);
   #   - no reference to the kit's /_studio/ path.
   def self.template_errors(path, bytes)
-    html = bytes.to_s.dup.force_encoding(Encoding::UTF_8).scrub.gsub(/<!--.*?-->/m, "")
-    regions = html.scan(CONTENT_REGION).size
+    html = bytes.to_s.dup.force_encoding(Encoding::UTF_8).scrub
+    tags = ClientAppMarkup.tags(html)
+    starts = tags.select(&:start?)
+    regions = starts.select { |tag| tag.name == "main" && tag.attributes.key?(CONTENT_ATTRIBUTE) }
     list = []
-    if regions != 1
-      list << "#{path} has #{regions.zero? ? 'no' : regions} content region#{'s' if regions > 1} " \
+    if regions.size != 1
+      list << "#{path} has #{regions.empty? ? 'no' : regions.size} content region#{'s' if regions.size > 1} " \
               "(one <main data-studio-content> holds the page; the host adds the Studio navbar and footer)"
     end
-    list << "#{path} carries the Studio shell's own hooks (the host adds the navbar and footer; never ship a copy)" if html.match?(SHELL_HOOK)
-    list << "#{path} names /#{KIT_ROOT}/, the host's kit path" if html.include?("/#{KIT_ROOT}/")
-    if regions == 1
-      start = html.index(CONTENT_REGION)
-      finish = html.rindex(%r{</main\s*>}i) || html.length
-      outside = html[0...start] + html[finish..].to_s
-      outside.scan(CHROME_TAG).flatten.map(&:downcase).uniq.each do |tag|
-        list << "#{path} has a <#{tag}> outside <main data-studio-content> (the host adds the Studio navbar and footer; " \
-                "put the app's own navigation inside the content region)"
-      end
+    if starts.any? { |tag| (tag.attributes.keys & SHELL_HOOKS).any? }
+      list << "#{path} carries the Studio shell's own hooks (the host adds the navbar and footer; never ship a copy)"
+    end
+    list << "#{path} names /#{KIT_ROOT}/, the host's kit path" if html.gsub(/<!--.*?-->/m, "").include?("/#{KIT_ROOT}/")
+    return list unless regions.size == 1
+
+    region = regions.first
+    finish = region_end(tags, region)
+    outside = starts.select { |tag| tag.from < region.from || tag.from >= finish }
+    outside.map(&:name).select { |name| CHROME_TAGS.include?(name) }.uniq.each do |name|
+      list << "#{path} has a <#{name}> outside <main data-studio-content> (the host adds the Studio navbar and footer; " \
+              "put the app's own navigation inside the content region)"
+    end
+    # The host puts the navbar right after the page's <body> tag (the same
+    # scanner finds it), so that tag must open the page before its content.
+    body = starts.find { |tag| tag.name == "body" }
+    if body && body.from > region.from
+      list << "#{path} opens <body> after its content region (the host would put the Studio navbar below the content)"
     end
     list
+  end
+
+  # Where the content region ends: its own </main>, counting nested <main>s.
+  def self.region_end(tags, region)
+    depth = 0
+    tags.each do |tag|
+      next if tag.from <= region.from || tag.name != "main"
+
+      if tag.start? then depth += 1
+      elsif depth.zero? then return tag.to
+      else depth -= 1
+      end
+    end
+    Float::INFINITY
   end
 
   # { path => { "size", "sha256", "content_type" } }, sorted by path: what the

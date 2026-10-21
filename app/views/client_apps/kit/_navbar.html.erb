@@ -8,15 +8,20 @@
     leading words and its last word in the primary colour), drawn statically:
     no session, no hub route, no Alpine. The engine's own theme-toggle partial is
     rendered into it with its Alpine bindings rewritten to the kit's data hooks
-    (StudioKit.kit_toggle), so its icons are the engine's.
+    (StudioKit.kit_toggle), so its icons are the engine's. A portrait that
+    follows the colour scheme is drawn once per theme (StudioKit::Mark), so the
+    mark follows the kit's toggle, not the device.
 
     Locals: identity (ClientApps::StudioKit::Identity), toggle (SafeBuffer). %>
 <header class="nav-shell" data-studio-navbar>
   <div class="nav-row flex items-center">
     <div class="flex-1 min-w-0 px-4">
       <a href="/" class="nav-logo-link inline-flex items-center gap-3 min-w-0" aria-label="<%= identity.name %> home">
-        <% if identity.mark_uri %>
-          <img src="<%= identity.mark_uri %>" alt="" class="nav-logo rounded-full shadow-lg">
+        <% if identity.mark_dark_uri %>
+          <img src="<%= identity.mark_light_uri %>" alt="" class="nav-logo rounded-full shadow-lg" data-studio-kit-when="light">
+          <img src="<%= identity.mark_dark_uri %>" alt="" class="nav-logo rounded-full shadow-lg" data-studio-kit-when="dark">
+        <% elsif identity.mark_light_uri %>
+          <img src="<%= identity.mark_light_uri %>" alt="" class="nav-logo rounded-full shadow-lg">
         <% end %>
         <div class="nav-title font-extrabold text-heading tracking-tight min-w-0"><% if identity.name_lead.present? %><span class="truncate"><%= identity.name_lead %></span><% end %><span class="text-primary truncate"><%= identity.name_last %></span></div>
       </a>

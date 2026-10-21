@@ -171,4 +171,55 @@ class ClientAppStudioKitTest < ActionDispatch::IntegrationTest
     assert(error.errors.any? { |e| e.include?("under _studio/") })
     assert_nil app.reload.preview_version, "nothing was published"
   end
+
+  test "[integration] a kit that cannot build serves every page unwrapped, records once, and backs off" do
+    publish!(client_app_with_build_task!(slug: "pawsome"))
+    preview("pawsome")
+    attempts = 0
+    failing = ->(*) { attempts += 1; raise ClientApps::StudioKit::Css::BuildFailed, "tailwindcss failed: boom" }
+
+    ClientApps::StudioKit::Css.stub(:compiled, failing) do
+      assert_difference -> { ErrorLog.count }, 1 do
+        get "/"
+        assert_response :success, "a broken kit never takes the app down"
+        assert_includes response.body, "<main data-studio-content><h1>Pawsome</h1></main>"
+        assert_not_includes response.body, "data-studio-navbar", "served as the bundle wrote it"
+        etag = response.headers["etag"]
+        assert_equal %("#{Digest::SHA256.hexdigest(bundle_files['index.html'])}"), etag
+
+        get "/", headers: { "If-None-Match" => etag }
+        assert_response :not_modified
+        get "/about"
+        assert_response :success
+        get "/_studio/kit/000000000000/studio-kit.css"
+        assert_response :not_found
+      end
+      assert_equal 1, attempts, "one compile attempt, then the backoff: no Tailwind run per request"
+    end
+
+    # Past the backoff, one request tries again and the shell is back.
+    ClientApps::StudioKit.instance_variable_set(:@failed_at, ClientApps::StudioKit.send(:clock) - ClientApps::StudioKit::FAILURE_BACKOFF - 1)
+    get "/"
+    assert_includes response.body, "data-studio-navbar"
+  end
+
+  test "[integration] a footer fact change is a new ETag, so a returning visitor gets the new shell" do
+    publish!(client_app_with_build_task!(slug: "pawsome"))
+    preview("pawsome")
+    get "/"
+    etag = response.headers["etag"]
+
+    kit.reset!
+    renderer = ClientApps::StudioKit::Renderer
+    original = renderer.method(:footer_facts)
+    facts = ->(identity) { original.call(identity).merge(tagline: "Now with a tagline") }
+    renderer.stub(:footer_facts, facts) do
+      get "/", headers: { "If-None-Match" => etag }
+      assert_response :success, "the template changed, so the old ETag no longer matches"
+      assert_includes response.body, "Now with a tagline"
+      assert_not_equal etag, response.headers["etag"]
+    end
+  ensure
+    kit.reset!
+  end
 end

@@ -77,15 +77,15 @@ to the engine or to the template reaches every app on its next request, with no 
   `card-hover`, `badge`, `input-field`, `label-upper`, `empty-state`. No other Tailwind
   utility is in the kit.
 
-`ClientAppBundle.template_errors` holds the contract (plain text matching, so the CLI,
-the launcher and the hub all run it), and publish refuses a page that breaks it. Bundles
+`ClientAppBundle.template_errors` holds the contract (pure Ruby, so the CLI, the launcher
+and the hub all run it), and publish refuses a page that breaks it. Bundles
 published before the rule (team-notes, table-ready) keep serving and are wrapped too.
 Their own hand-written `footer[data-site-footer]` stays in the page and the kit's CSS
 hides it, so only the Studio footer shows.
 
-**Where the host puts it.** `StudioKit::Wrap` never parses and re-serialises the page,
-because that would rewrite model-written markup. It inserts at three tag boundaries and
-leaves every other byte as written:
+**Where the host puts it.** `StudioKit::Wrap` never re-serialises the page, because
+that would rewrite model-written markup. It inserts at three tag boundaries, found by
+`ClientAppMarkup` (below), and leaves every other byte as written:
 
 | Where | What |
 |-------|------|
@@ -96,8 +96,10 @@ leaves every other byte as written:
 A page missing a tag still gets the whole shell: the head goes after `<html>` or the
 doctype; with no `<body>` tag the host opens one after the head; with no `</body>` the
 footer goes before `</html>`, or last. The rendered shell is cached in process per kit
-version and app identity (name, portrait, palette), so a page view renders no template.
-The page's ETag covers its bytes and the shell, so a new kit or a renamed app is a new ETag.
+version and app identity (name, portrait, palette), and each page's insertion points per
+its bytes, so a page view renders and scans nothing. The page's ETag covers its bytes and
+the digest of the RENDERED shell (head, navbar and footer), so any template, footer fact,
+menu, theme or kit change is a new ETag and a returning visitor never keeps an old shell.
 
 **The one shared kit.** `GET /_studio/kit/<version>/studio-kit.css` and `studio-kit.js`,
 on every app host that answers (a live bundle or a "being built" app):
@@ -121,13 +123,30 @@ on every app host that answers (a live bundle or a "being built" app):
 | Theme | `Studio::ThemeResolver`'s full token set, once per side of the app's palette, under `html:not(.dark)` and `html.dark`, plus the palette's own `--primary`, `--accent`, `--surface` and `--text`. Those selectors outrank a bundle's `:root`, so even an older bundle's colours follow the toggle |
 | Script | `app/assets/studio_kit/studio-kit.js`: the theme (a saved choice, else the device's setting) and the menu (its button, Escape, a click outside). Storage failures are caught |
 
-**Built at deploy, or on first use.** `bin/rails studio_kit:build` (run after
-`assets:precompile`) compiles the CSS into `tmp/studio_kit/<digest of the inputs>.css`.
-A process that finds no file for the current inputs compiles it on first use (about a
-second). The digest covers the engine and Tailwind versions, so an engine bump is a new kit.
+**Built at deploy, or on first use.** `bin/rails studio_kit:build` is a prerequisite of
+`assets:precompile`, which the Heroku Ruby buildpack runs, so the slug carries
+`app/assets/builds/studio_kit/<digest>.css` and no dyno compiles. The digest is of content
+only (the engine and Tailwind versions, and each input's bytes under its path relative to
+its root), so the build directory (`/tmp/build_<hash>`) and the running slug (`/app`) name
+the same file. A process that finds no file for the current digest compiles it once, in
+about a second: a mutex serialises its threads, a file lock serialises processes, and the
+output is renamed into place from a unique temporary name.
 
-**Not covered yet.** The "being built" page does not wear the template. A page whose
-`<head>` holds a literal `<body>` inside a comment would take the navbar there.
+**A broken kit never takes an app down.** If the kit cannot be built or rendered (a
+Tailwind failure, an engine partial the kit no longer understands), every page is served
+exactly as its bundle wrote it, with no shell, and the failure is recorded once
+(`ErrorLog`, Sentry). Nothing retries the build for five minutes
+(`StudioKit::FAILURE_BACKOFF`); then one request tries again.
+
+**Where the host finds the tags.** `ClientAppMarkup` (`lib/client_app_markup.rb`, pure
+Ruby) reads a page as a browser's tokenizer does: a `<body>` inside a comment, a quoted
+attribute, or a `title`, `script`, `style` or `textarea` is text, not a tag. The wrap and
+the publish check both use it, so a page publish accepts is a page the host wraps
+correctly. Publish also refuses a page whose `<body>` tag comes after its content region.
+A portrait that follows the colour scheme is drawn once per theme in the navbar, so the
+mark follows the kit's toggle, not the device.
+
+**Not covered yet.** The "being built" page does not wear the template.
 
 ## The domain
 
