@@ -5,7 +5,9 @@ require "tmpdir"
 # it is published (docs/agents/system/client-app-host.md). The CLI and the hub
 # run the same class.
 class ClientAppBundleTest < ActiveSupport::TestCase
-  def bundle(files) = ClientAppBundle.new({ "index.html" => "<!doctype html>" }.merge(files))
+  PAGE = "<!doctype html><title>x</title><main data-studio-content><h1>x</h1></main>"
+
+  def bundle(files) = ClientAppBundle.new({ "index.html" => PAGE }.merge(files))
 
   def assert_refused(files, pattern)
     errors = bundle(files).errors
@@ -72,7 +74,7 @@ class ClientAppBundleTest < ActiveSupport::TestCase
   test "[unit] from_directory reads regular files and refuses symlinks" do
     Dir.mktmpdir do |dir|
       FileUtils.mkdir_p(File.join(dir, "assets"))
-      File.write(File.join(dir, "index.html"), "<!doctype html>")
+      File.write(File.join(dir, "index.html"), PAGE)
       File.write(File.join(dir, "assets/app.js"), "1")
       b = ClientAppBundle.from_directory(dir)
       assert_equal %w[assets/app.js index.html], b.files.keys.sort

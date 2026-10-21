@@ -19,7 +19,7 @@ class ClientBundleCliTest < ActiveSupport::TestCase
 
   test "[unit] check and publish refuse a symlink and server code, sending nothing" do
     Dir.mktmpdir do |dir|
-      File.write(File.join(dir, "index.html"), "<!doctype html>")
+      File.write(File.join(dir, "index.html"), "<!doctype html><main data-studio-content></main>")
       File.write(File.join(dir, "server.rb"), "puts 1")
       File.symlink("/etc/hosts", File.join(dir, "hosts.txt"))
 

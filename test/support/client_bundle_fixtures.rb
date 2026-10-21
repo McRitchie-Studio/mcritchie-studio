@@ -7,11 +7,17 @@ module ClientBundleFixtures
 
   DEMO_DIR = Rails.root.join("test/fixtures/files/client_bundles/demo").to_s
 
+  # A page on the Studio template: its content in one <main data-studio-content>
+  # (the host adds the navbar and footer).
+  def template_page(title, body = "")
+    "<!doctype html><title>#{title}</title><main data-studio-content>#{body}</main>"
+  end
+
   def bundle_files(**extra)
-    { "index.html" => "<!doctype html><title>Pawsome</title><script src=\"/app.js\"></script>",
+    { "index.html" => template_page("Pawsome", "<h1>Pawsome</h1>") + "<script src=\"/app.js\"></script>",
       "app.js" => "console.log('hi')",
       "assets/app-3f9a2c1b.css" => "body{color:red}",
-      "about.html" => "<!doctype html><title>About</title>" }.merge(extra)
+      "about.html" => template_page("About") }.merge(extra)
   end
 
   # A client app (App + CTO) whose /build request holds the name and names a

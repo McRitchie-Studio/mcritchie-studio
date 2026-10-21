@@ -24,7 +24,10 @@ require "pathname"
 #   - only the extensions in CONTENT_TYPES (no server code: no .rb, .php, .erb…);
 #   - relative paths of plain segments ([A-Za-z0-9_-] and inner dots), no
 #     dot-files, no "..", no absolute path, no backslash, at most MAX_DEPTH deep;
-#   - when read from disk: regular files only, no symlinks (to a file or a dir).
+#   - when read from disk: regular files only, no symlinks (to a file or a dir);
+#   - THE STUDIO TEMPLATE (template_errors): every page puts its content in one
+#     <main data-studio-content>, and nothing of the shell the host wraps it in
+#     (the Studio navbar and footer, the kit under /_studio/) is the bundle's own.
 class ClientAppBundle
   MAX_BYTES = 5 * 1024 * 1024
   MAX_FILE_BYTES = 3 * 1024 * 1024
@@ -52,6 +55,18 @@ class ClientAppBundle
   }.freeze
 
   SEGMENT = /\A[A-Za-z0-9_-][A-Za-z0-9_.-]*\z/
+
+  # The Studio template (docs/agents/system/client-app-host.md, "The Studio
+  # template"). The host wraps every page in the Studio navbar and footer at
+  # serve time, so a page carries only its content, in its content region.
+  CONTENT_REGION = %r{<main\b[^>]*?\sdata-studio-content(?=[\s=>/])[^>]*>}i
+  # The shell's own hooks: a page carrying one is shipping a copy of the shell.
+  SHELL_HOOK = /\sdata-(?:studio-(?:navbar|footer|menu|kit|theme)|site-footer)\b/i
+  # What the host's kit owns: the bundle never names it, and never ships a
+  # file under it.
+  KIT_ROOT = "_studio"
+  # Page chrome outside the content region would be a second navbar or footer.
+  CHROME_TAG = /<(header|footer|nav)\b/i
 
   class Invalid < StandardError
     attr_reader :errors
@@ -123,6 +138,7 @@ class ClientAppBundle
       list << "the bundle is #{byte_size} bytes, over #{MAX_BYTES}" if byte_size > MAX_BYTES
       list << "#{INDEX} is required at the root" unless files.key?(INDEX)
       files.each { |path, bytes| list.concat(path_errors(path, bytes)) }
+      files.each { |path, bytes| list.concat(self.class.template_errors(path, bytes)) if self.class.extension(path) == "html" }
       list
     end
   end
@@ -136,6 +152,36 @@ class ClientAppBundle
   end
 
   def byte_size = files.values.sum(&:bytesize)
+
+  # Why the page at PATH breaks the Studio template; empty when it keeps it.
+  # Plain text matching, so the CLI, the launcher and the hub all run it
+  # without an HTML parser:
+  #   - exactly one <main data-studio-content>, the region the content lives in;
+  #   - no <header>, <footer> or <nav> before or after that region (the host
+  #     puts the navbar and footer there; the app's own navigation goes inside);
+  #   - none of the shell's own hooks (data-studio-navbar, data-site-footer, ...);
+  #   - no reference to the kit's /_studio/ path.
+  def self.template_errors(path, bytes)
+    html = bytes.to_s.dup.force_encoding(Encoding::UTF_8).scrub.gsub(/<!--.*?-->/m, "")
+    regions = html.scan(CONTENT_REGION).size
+    list = []
+    if regions != 1
+      list << "#{path} has #{regions.zero? ? 'no' : regions} content region#{'s' if regions > 1} " \
+              "(one <main data-studio-content> holds the page; the host adds the Studio navbar and footer)"
+    end
+    list << "#{path} carries the Studio shell's own hooks (the host adds the navbar and footer; never ship a copy)" if html.match?(SHELL_HOOK)
+    list << "#{path} names /#{KIT_ROOT}/, the host's kit path" if html.include?("/#{KIT_ROOT}/")
+    if regions == 1
+      start = html.index(CONTENT_REGION)
+      finish = html.rindex(%r{</main\s*>}i) || html.length
+      outside = html[0...start] + html[finish..].to_s
+      outside.scan(CHROME_TAG).flatten.map(&:downcase).uniq.each do |tag|
+        list << "#{path} has a <#{tag}> outside <main data-studio-content> (the host adds the Studio navbar and footer; " \
+                "put the app's own navigation inside the content region)"
+      end
+    end
+    list
+  end
 
   # { path => { "size", "sha256", "content_type" } }, sorted by path: what the
   # host serves from (a path not in it is never fetched from storage).
@@ -162,6 +208,7 @@ class ClientAppBundle
     return [ "#{shown} is nested more than #{MAX_DEPTH} deep" ] if segments.size > MAX_DEPTH
     return [ "#{shown} has a dot-file or an empty, '.' or '..' segment" ] if segments.any? { |s| s.start_with?(".") || s.empty? }
     return [ "#{shown} has a character outside A-Z, a-z, 0-9, '.', '_' and '-'" ] unless segments.all? { |s| s.match?(SEGMENT) }
+    return [ "#{shown} is under #{KIT_ROOT}/, which the host serves the Studio kit from" ] if segments.first == KIT_ROOT
     return [ "#{shown} is not a static file type (allowed: #{CONTENT_TYPES.keys.join(', ')})" ] unless self.class.content_type(path)
     return [ "#{shown} is #{bytes.bytesize} bytes, over #{MAX_FILE_BYTES} for one file" ] if bytes.bytesize > MAX_FILE_BYTES
 
