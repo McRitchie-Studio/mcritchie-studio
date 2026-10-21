@@ -35,11 +35,12 @@ module AdminWall
   # controller_path => actions any visitor may reach that are not site pages.
   PUBLIC_ACTIONS = {
     # The customer funnel's writes and its live subdomain probe, and the chat
-    # with Ray before sign-in: a message, the answer poll and a card tap. Each
+    # with Ray before sign-in: a message, the answer poll, a card tap and the CTO
+    # card's "New set" (cto_animals, reads only). Each
     # is gated past the wall by the request's secret token (BuildController#load_request).
     # Build My App (update) too: signed out it only remembers the press and
     # opens the sign-in modal; the launch itself needs an account.
-    "build" => %w[create check message turns choose update],
+    "build" => %w[create check message turns choose update cto_animals],
     "contact_submissions" => %w[create],
     # Email: the unsubscribe page and the open/click/goal tracking pixels.
     "unsubscribes" => %w[show create resubscribe],
@@ -79,7 +80,7 @@ module AdminWall
     "applications" => %w[index show health usage pipeline],
     "agent_settings" => %w[index show update],
     # The app's CTO web chat: 404 unless the viewer owns the app or is an admin (CtoChatsController).
-    "cto_chats" => %w[show status create],
+    "cto_chats" => %w[show status create avatars avatar],
     # Its files: upload, and show a sent one, under the same 404 (CtoChatAttachmentsController).
     "cto_chat_attachments" => %w[create show]
   }.transform_values(&:freeze).freeze
