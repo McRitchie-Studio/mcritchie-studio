@@ -37,6 +37,8 @@ Rails.application.routes.draw do
   post  "build/:token/messages", to: "build#message", as: :build_request_messages
   get   "build/:token/turns",    to: "build#turns",   as: :build_request_turns
   patch "build/:token/intake",   to: "build#choose",  as: :build_request_intake
+  # The CTO card's "New set": another set of animal avatars in the request's colours.
+  get   "build/:token/cto_animals", to: "build#cto_animals", as: :build_request_cto_animals
   # The public contact form, which is also the SMS opt-in page carriers review.
   get  "contact", to: "contact_submissions#new", as: :contact_form
   # Both routes are named. An unnamed `post "contact"` is auto-named `contact`

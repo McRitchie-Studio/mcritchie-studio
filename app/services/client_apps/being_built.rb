@@ -28,10 +28,15 @@ module ClientApps
           light: AppPalette.side(request.palette, "light"), dark: AppPalette.side(request.palette, "dark"))
     end
 
-    # The portrait's SVG bytes when it names a default portrait, else nil (an
-    # upload ref, or nothing): the page then shows the CTO's initial.
+    # The portrait's SVG bytes when it names an animal (drawn in the app's
+    # palette, light and dark by the visitor's scheme: BuildIntake::Animals
+    # .document) or a default portrait, else nil (an upload ref, or nothing):
+    # the page then shows the CTO's initial.
     def portrait_svg
       key = portrait.to_s
+      if BuildIntake::Animals.avatar?(key)
+        return BuildIntake::Animals.document(key, { "light" => light, "dark" => dark })
+      end
       return nil unless BuildIntake::Portraits.key?(key)
 
       path = Rails.root.join("app/assets/images/cto_portraits/#{key}.svg")

@@ -10,7 +10,8 @@ recolours it from the client's theme at render time.
 - **Source:** Microsoft Fluent UI Emoji, the *High Contrast* (monochrome) style,
   <https://github.com/microsoft/fluentui-emoji>, taken through the Iconify
   packaging `@iconify-json/fluent-emoji-high-contrast` 1.2.6 (the `body` of each
-  icon, wrapped unchanged in an `<svg>`).
+  icon, wrapped in an `<svg>`; the only edit is dropping a no-op full-box
+  `clipPath` sixteen files carried, so inline copies share no ids).
 - **Licence:** MIT, Copyright (c) Microsoft Corporation. Commercial use and
   modification are allowed; the notice in `LICENSE` must ride with the files.
 - **Authors:** Microsoft Corporation.

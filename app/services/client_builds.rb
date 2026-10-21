@@ -126,7 +126,7 @@ module ClientBuilds
       "prompt" => request.prompt.to_s, "title" => answers["title"], "idea" => answers["idea"],
       "features" => Array(answers["features"]), "audience" => answers["audience"], "day_one" => answers["day_one"],
       "palette" => AppPalette.normalize(app_cto.palette).merge("name" => (request.palette || {})["name"]).compact,
-      "cto" => { "name" => app_cto.name, "portrait" => app_cto.portrait_asset ? app_cto.portrait : nil },
+      "cto" => { "name" => app_cto.name, "portrait" => app_cto.portrait_drawn? ? app_cto.portrait : nil },
       "preview_url" => preview_url(request.subdomain) }
   end
 

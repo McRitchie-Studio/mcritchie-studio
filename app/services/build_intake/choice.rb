@@ -8,7 +8,8 @@ module BuildIntake
   #   idea       message_id            → answers (title, features, idea)
   #   idea_else  message_id            → nothing set; the idea this card set is cleared
   #   palette    message_id, index     → palette (the visitor reads "theme")
-  #   cto        name or custom_name, portrait → cto_name, cto_avatar
+  #   cto        name or custom_name, portrait (an "animal:<id>" or an older
+  #              portrait key, Portraits.choosable?) → cto_name, cto_avatar
   #   address    subdomain             → subdomain (claimed only at Build)
   #
   # Listed in the order Ray asks (BuildIntake::STEPS). No tap checks that the
@@ -94,7 +95,7 @@ module BuildIntake
       raise Refused, "Use 2 to 24 letters for your CTO's name." unless name
 
       portrait = params[:portrait].to_s
-      raise Refused, "Pick a portrait." unless Portraits.key?(portrait)
+      raise Refused, "Pick an avatar." unless Portraits.choosable?(portrait)
 
       @request.cto_name = name
       @request.cto_avatar = portrait

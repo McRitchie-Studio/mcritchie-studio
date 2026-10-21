@@ -15,7 +15,8 @@ module BuildIntake
   #   palette  palettes (1 to 3), each { name, light, dark }, each mode exactly
   #            { primary, accent, surface, text } as hex colours, the text
   #            readable on the surface (WCAG AA, 4.5:1) in BOTH modes
-  #   cto      names (1 to 3), portrait (a BuildIntake::Portraits key)
+  #   cto      names (1 to 3), portrait (a BuildIntake::Portraits key or an
+  #            "animal:<id>"; the card starts on an animal either way)
   #   address  names (1 to 3): domain suggestions, each a valid, unreserved name
   #   summary  nothing: the app as the request now stands, drawn by the page from
   #            the request's own fields, with Build My App. Code also attaches
@@ -144,7 +145,7 @@ module BuildIntake
       return refuse("no valid name") if names.empty?
 
       portrait = raw["portrait"]
-      return refuse("unknown portrait #{portrait.to_s[0, 20].inspect}") unless portrait.nil? || Portraits.key?(portrait)
+      return refuse("unknown portrait #{portrait.to_s[0, 20].inspect}") unless portrait.nil? || Portraits.choosable?(portrait)
 
       Verdict.new(card: { "card" => "cto", "names" => names.uniq(&:downcase), "portrait" => portrait,
                           "dropped" => dropped }.compact)

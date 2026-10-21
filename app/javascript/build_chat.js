@@ -18,10 +18,15 @@
 //     disables Use Domain (the server re-checks on the tap). The field is the source of truth for the
 //     glows (build_domain.js): the chip it matches glows, and a chip tap fills
 //     the field without focusing it. The server draws a taken chip disabled;
-//   - the CTO card ([data-build-cto]): the portrait or "New image" opens the
-//     picker dialog; a pick swaps the preview; a tap on a portrait, Done or
-//     Enter closes it (the arrow keys only move the pick); a tap on one of
-//     Ray's names fills the name field;
+//   - the CTO card ([data-build-cto]): the avatar or "New image" opens the
+//     picker dialog (build/_animal_picker: a set of the animal bank in the
+//     app's colours); a pick swaps the preview; "New set" fetches another set
+//     from the server and swaps the grid; a tap on an avatar, Done or Enter
+//     closes it (the arrow keys only move the pick); a tap on one of Ray's
+//     names fills the name field. The same picker sits in an app's CTO chat
+//     (cto_chats/_avatar_picker, a form marked data-build-portrait-save): there
+//     a tap on an avatar saves it, and the CTO's "Pick a new avatar" button
+//     ([data-cto-avatar-open]) opens it;
 //   - the theme card ([data-build-theme]): the Dark / Light toggle swaps every
 //     column's preview (a tap on the side already showing flips to the other,
 //     build_status.js), and the choice survives the card's re-render;
@@ -126,20 +131,50 @@ document.addEventListener("change", (event) => {
   // A theme option picked: the glow behind Choose Theme takes its colours.
   const themeCard = event.target.matches?.("input[name='index']") && event.target.closest("[data-build-theme]");
   if (themeCard) { syncThemeGlow(themeCard); return; }
-  const radio = event.target.closest?.("[data-build-portrait-src]");
+  const radio = event.target.closest?.("[data-build-portrait-option]");
   if (!radio) return;
-  const card = radio.closest("[data-build-cto]");
-  const preview = card?.querySelector("[data-build-portrait-preview]");
-  if (preview) {
-    preview.src = radio.dataset.buildPortraitSrc;
-    const label = radio.closest("label")?.title;
-    if (label) preview.alt = `${label} portrait`;
-  }
+  showPick(radio);
 });
+
+// The preview takes a copy of the picked avatar's own drawing (an inline SVG
+// in the app's colours, or an older portrait's <img>).
+function showPick(radio) {
+  const preview = radio.closest("[data-build-cto]")?.querySelector("[data-build-portrait-preview]");
+  const art = radio.nextElementSibling;
+  if (!preview || !art) return;
+  const copy = art.cloneNode(true);
+  copy.setAttribute("class", preview.dataset.artClass || "block h-full w-full rounded-full");
+  preview.replaceChildren(copy);
+  preview.dataset.avatar = radio.value;
+}
+
+// "New set": the server draws another set (BuildController#cto_animals,
+// CtoChatsController#avatars): the current pick leads it, the rest are animals
+// not on screen. The pick survives, so a reshuffle never loses it.
+async function newAnimalSet(button) {
+  const dialog = button.closest("[data-build-portrait-dialog]");
+  const grid = dialog?.querySelector("[data-build-portrait-grid]");
+  if (!grid || button.disabled) return;
+  const params = new URLSearchParams();
+  const picked = grid.querySelector("input[name='portrait']:checked");
+  if (picked) params.set("keep", picked.value);
+  grid.querySelectorAll("input[name='portrait']").forEach((input) => params.append("except[]", input.value));
+  button.disabled = true;
+  try {
+    const response = await fetch(`${button.dataset.buildPortraitShuffle}?${params}`, { headers: { Accept: "text/html" } });
+    if (!response.ok) return;
+    grid.innerHTML = await response.text();
+    grid.querySelector("input[name='portrait']:checked")?.focus();
+  } catch (_error) {
+    // Offline: the set on screen stays.
+  } finally {
+    button.disabled = false;
+  }
+}
 
 // Enter on a portrait closes the picker instead of submitting the CTO form.
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter" || !event.target.closest?.("[data-build-portrait-src]")) return;
+  if (event.key !== "Enter" || !event.target.closest?.("[data-build-portrait-option]")) return;
   event.preventDefault();
   event.target.closest("[data-build-portrait-dialog]")?.close();
 });
@@ -172,12 +207,27 @@ document.addEventListener("click", (event) => {
     open.closest("[data-build-cto]")?.querySelector("[data-build-portrait-dialog]")?.showModal();
     return;
   }
+  const chatOpen = event.target.closest?.("[data-cto-avatar-open]");
+  if (chatOpen) {
+    document.querySelector("[data-cto-avatar-form] [data-build-portrait-dialog]")?.showModal();
+    return;
+  }
+  const shuffle = event.target.closest?.("[data-build-portrait-shuffle]");
+  if (shuffle) { newAnimalSet(shuffle); return; }
   const close = event.target.closest?.("[data-build-portrait-close]");
   if (close) { close.closest("dialog")?.close(); return; }
-  // A tap on a portrait's picture (the label) closes the picker. The arrow
-  // keys also fire click, but on the radio itself, so they never land here.
+  // A tap on an avatar's picture (the label) closes the picker; in the CTO
+  // chat's picker it saves the pick. The arrow keys also fire click, but on the
+  // radio itself, so they never land here.
   const portrait = event.target.closest?.("[data-build-portrait-dialog] label");
   if (portrait && !event.target.matches("input")) {
+    const form = portrait.closest("form[data-build-portrait-save]");
+    const input = portrait.querySelector("input[name='portrait']");
+    if (form && input) {
+      event.preventDefault();
+      input.checked = true;
+      form.requestSubmit();
+    }
     portrait.closest("dialog")?.close();
     return;
   }

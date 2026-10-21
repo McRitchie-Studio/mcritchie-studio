@@ -1,0 +1,11 @@
+<%# locals: (avatars:, picked:, palette:) %>
+<%# One set of the CTO picker (build/_animal_picker): a radio per avatar, drawn in the app's palette (cto_avatar_tag). Rendered in the page and alone, as "New set"'s answer (BuildController#cto_animals, CtoChatsController#avatars). %>
+<% avatars.each do |avatar| %>
+  <% label = cto_avatar_label(avatar) %>
+  <label class="cursor-pointer" title="<%= label %>">
+    <input type="radio" name="portrait" value="<%= avatar %>" class="peer sr-only" <%= "checked" if avatar == picked %>
+           data-build-portrait-option data-test="build-portrait">
+    <%= cto_avatar_tag avatar, palette, label: label,
+          css_class: "block w-full aspect-square rounded-full ring-offset-2 ring-offset-surface peer-checked:ring-2 peer-checked:ring-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary" %>
+  </label>
+<% end %>

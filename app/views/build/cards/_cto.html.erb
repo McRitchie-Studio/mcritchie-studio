@@ -1,8 +1,10 @@
 <%# locals: (card:, message:, request_row:) %>
-<%# The CTO card, "Customize your CTO", one centred stack (Alex, 2026-10-18): the portrait on top (tap it, or New image, to open the picker of BuildIntake::Portraits), the name Ray suggested PREFILLED in an input the visitor may edit, his other names as taps under it (which fill the field), and Wake Up your CTO at the bottom (Alex, 2026-10-19; it was Hatch CTO), which saves both and relays the visitor's turn so Ray moves on to the domain (BuildIntake::Choice "cto"). The picker is a native dialog inside the form (build_chat.js opens it and swaps the preview; a tap on a portrait or Done closes it, while the arrow keys only move the pick, and Enter closes it without submitting); its radios submit with the form, so a pick needs no extra request. %>
-<% keys = BuildIntake::Portraits::KEYS %>
+<%# The CTO card, "Customize your CTO", one centred stack (Alex, 2026-10-18): the avatar on top (tap it, or New image, to open the picker: build/_animal_picker, a set of the 100-animal bank BuildIntake::Animals drawn in the theme the visitor picked, with "New set" for another; task cto-animal-avatar-bank, Alex 2026-10-20; a draft that picked one of the older BuildIntake::Portraits keeps it), the name Ray suggested PREFILLED in an input the visitor may edit, his other names as taps under it (which fill the field), and Wake Up your CTO at the bottom (Alex, 2026-10-19; it was Hatch CTO), which saves both and relays the visitor's turn so Ray moves on to the domain (BuildIntake::Choice "cto"). The picker is a native dialog inside the form (build_chat.js opens it and swaps the preview; a tap on an avatar or Done closes it, while the arrow keys only move the pick, and Enter closes it without submitting); its radios submit with the form, so a pick needs no extra request (only "New set" asks the server, for the next set's drawings). The card starts on the stored avatar, else an animal Ray named, else the request's stable default animal; an older portrait key Ray names is not offered. %>
 <% picked_name = request_row.cto_name.presence || card["names"].first %>
-<% picked_portrait = BuildIntake::Portraits.key?(request_row.cto_avatar) ? request_row.cto_avatar : (card["portrait"] || BuildIntake::Portraits.default_for(request_row.token)) %>
+<% picked_portrait = if BuildIntake::Portraits.choosable?(request_row.cto_avatar) then request_row.cto_avatar
+                     elsif BuildIntake::Animals.avatar?(card["portrait"]) then card["portrait"]
+                     else BuildIntake::Animals.default_for(request_row.token) end %>
+<% preview_class = "block h-full w-full rounded-full" %>
 <% chosen = request_row.cto_name.present? %>
 <%= form_with url: build_request_intake_path(request_row.token), method: :patch,
       class: "rounded-2xl border #{chosen ? 'border-primary' : 'border-subtle'} bg-surface p-3 sm:p-4",
@@ -14,9 +16,11 @@
   <div class="mx-auto flex max-w-sm flex-col items-center gap-3" data-test="build-cto-stack">
     <div class="flex flex-col items-center gap-1" data-test="build-cto-portrait">
       <button type="button" class="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ring-offset-2 ring-offset-surface"
-              data-build-portrait-open aria-haspopup="dialog" aria-label="Choose a different portrait" data-test="build-portrait-open">
-        <%= image_tag BuildIntake::Portraits.path(picked_portrait), alt: "#{BuildIntake::Portraits.label(picked_portrait)} portrait",
-              class: "block h-24 w-24 sm:h-28 sm:w-28 rounded-full border border-subtle", data: { build_portrait_preview: true, test: "build-portrait-preview" } %>
+              data-build-portrait-open aria-haspopup="dialog" aria-label="Choose a different avatar" data-test="build-portrait-open">
+        <span class="block h-24 w-24 sm:h-28 sm:w-28 rounded-full border border-subtle overflow-hidden"
+              data-build-portrait-preview data-art-class="<%= preview_class %>" data-avatar="<%= picked_portrait %>" data-test="build-portrait-preview">
+          <%= cto_avatar_tag picked_portrait, request_row.palette, css_class: preview_class, label: cto_avatar_label(picked_portrait) %>
+        </span>
       </button>
       <button type="button" class="text-xs text-primary-ink hover:underline underline-offset-2" data-build-portrait-open data-test="build-portrait-new">New image</button>
     </div>
@@ -43,21 +47,6 @@
     <% end %>
   </div>
 
-  <dialog class="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-2xl border border-subtle bg-surface p-4 text-body backdrop:bg-black/60"
-          aria-label="Pick a portrait" data-build-portrait-dialog data-test="build-portrait-dialog">
-    <div class="flex items-center justify-between mb-3">
-      <p class="font-semibold text-heading">Pick a portrait</p>
-      <button type="button" class="btn btn-secondary btn-sm" data-build-portrait-close>Done</button>
-    </div>
-    <div class="grid grid-cols-4 gap-2" data-test="build-portraits">
-      <% keys.each do |key| %>
-        <label class="cursor-pointer" title="<%= BuildIntake::Portraits.label(key) %>">
-          <input type="radio" name="portrait" value="<%= key %>" class="peer sr-only" <%= "checked" if key == picked_portrait %>
-                 data-build-portrait-src="<%= image_path(BuildIntake::Portraits.path(key)) %>" data-test="build-portrait">
-          <%= image_tag BuildIntake::Portraits.path(key), alt: "#{BuildIntake::Portraits.label(key)} portrait",
-                class: "block w-full aspect-square rounded-full ring-offset-2 ring-offset-surface peer-checked:ring-2 peer-checked:ring-primary peer-focus-visible:ring-2 peer-focus-visible:ring-primary" %>
-        </label>
-      <% end %>
-    </div>
-  </dialog>
+  <%= render "build/animal_picker", picked: picked_portrait, palette: request_row.palette, seed: request_row.token,
+                                   set_url: build_request_cto_animals_path(request_row.token) %>
 <% end %>

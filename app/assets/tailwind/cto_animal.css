@@ -1,0 +1,12 @@
+/* A CTO animal avatar (BuildIntake::Animals#inline_svg): the glyph and its disc
+   take the client's palette, light or dark by the page's mode. The helper sets
+   both sets on the <svg> as variables; this rule picks one. */
+.cto-animal {
+  --ava-fg: var(--ava-fg-l);
+  --ava-bg: var(--ava-bg-l);
+}
+
+.dark .cto-animal {
+  --ava-fg: var(--ava-fg-d);
+  --ava-bg: var(--ava-bg-d);
+}

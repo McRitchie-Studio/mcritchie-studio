@@ -28,6 +28,8 @@
 
 /* Build My App's launch panel and the app chat's glowing stage pills, in the app's colours. */
 @import './build_launch.css';
+/* The CTO's animal avatar in the client's palette (BuildIntake::Animals). */
+@import './cto_animal.css';
 
 @config '../../../config/tailwind.config.js';
 
