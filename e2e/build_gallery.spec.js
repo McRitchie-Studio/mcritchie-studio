@@ -1,7 +1,7 @@
 // [e2e] /build — the "Built with McRitchie Studio" gallery, as a visitor sees it.
 //
-// e2e/seed.rb seeds three LIVE showcase apps (plus Cyvasse from
-// config/build_examples.yml). What only a browser proves: the row really scrolls
+// e2e/seed.rb seeds three LIVE showcase apps (plus Cyvasse and Turf Monster
+// from config/build_examples.yml). What only a browser proves: the row really scrolls
 // sideways, a still really loads, the edge fade follows the scroll, and a card's
 // motion loop plays on hover (and not under reduced motion).
 const { test, expect } = require("@playwright/test");
@@ -17,7 +17,7 @@ test("the gallery scrolls sideways, its still loads, and the fade follows the sc
 
   const row = page.locator("[data-test='build-gallery-row']");
   await expect(row).toBeVisible();
-  await expect(page.locator("[data-test='build-gallery-item']")).toHaveCount(4);
+  await expect(page.locator("[data-test='build-gallery-item']")).toHaveCount(5);
   await expect(page.locator("[data-test='build-gallery-all']")).toHaveCount(0); // visitors see no admin button
 
   // About 3.3 cards: one card is roughly 30% of the row.
@@ -29,9 +29,10 @@ test("the gallery scrolls sideways, its still loads, and the fade follows the sc
   const widths = await row.evaluate((el) => [...el.children].map((li) => Math.round(li.getBoundingClientRect().width)));
   expect(new Set(widths).size).toBe(1);
 
-  // Cyvasse, Prisoners Dilemma and Rantly lead (config/build_examples.yml `lead`).
-  const hosts = await page.locator("[data-test='build-example']").evaluateAll((links) => links.map((a) => new URL(a.href).host.split(".")[0]));
-  expect(hosts.slice(0, 3)).toEqual(["cyvasse", "prisoners-dilemma", "rantly"]);
+  // Cyvasse, Turf Monster, Prisoners Dilemma and Rantly lead
+  // (config/build_examples.yml `lead`); the first two on their own domains.
+  const hosts = await page.locator("[data-test='build-example']").evaluateAll((links) => links.map((a) => new URL(a.href).host));
+  expect(hosts.slice(0, 4)).toEqual(["cyvasse.xyz", "turfmonster.media", "prisoners-dilemma.mcritchie.studio", "rantly.mcritchie.studio"]);
 
   // The description is one line, cut with an ellipsis. Measured, not read off
   // the class: fill one with far more than a line of text and it must still

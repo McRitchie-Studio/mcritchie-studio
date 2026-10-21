@@ -292,15 +292,31 @@ class AppRequestTest < ActiveSupport::TestCase
     end
   end
 
-  test "the gallery leads with Cyvasse, Prisoners Dilemma and Rantly, the rest after in their usual order" do
+  test "the gallery leads with Cyvasse, Turf Monster, Prisoners Dilemma and Rantly, the rest after in their usual order" do
     %w[portfolio rantly weekly-lock prisoners-dilemma].each_with_index do |subdomain, i|
       live = draft(user: users(:alex)).queue!("zz-lead-#{i}")
       live.update_columns(subdomain: subdomain, status: "live", updated_at: i.minutes.ago)
     end
     subdomains = BuildGallery.examples.map { |e| BuildGallery.subdomain(e.url) }
 
-    assert_equal %w[cyvasse prisoners-dilemma rantly], subdomains.first(3)
-    assert_equal %w[portfolio weekly-lock], subdomains.drop(3) & %w[portfolio weekly-lock], "newest first after the lead"
+    assert_equal %w[cyvasse turfmonster prisoners-dilemma rantly], subdomains.first(4)
+    assert_equal %w[portfolio weekly-lock], subdomains.drop(4) & %w[portfolio weekly-lock], "newest first after the lead"
+  end
+
+  test "[unit] Cyvasse and Turf Monster cards link to their own domains, each with its still and loop" do
+    cards = BuildGallery.configured.index_by(&:name)
+
+    assert_equal "https://cyvasse.xyz", cards.fetch("Cyvasse").url
+    assert_equal "https://turfmonster.media", cards.fetch("Turf Monster").url
+    assert_equal "build_gallery/turf-monster.webp", cards.fetch("Turf Monster").image
+    assert_equal "build_gallery/turf-monster.mp4", cards.fetch("Turf Monster").motion
+    # The card's address is the app's production domain, never the old
+    # mcritchie.studio host that only redirects there.
+    { "cyvasse" => "Cyvasse", "turf-monster" => "Turf Monster" }.each do |slug, name|
+      app = AppCatalog.apps.find { |a| a.slug == slug }
+      assert app, "config/apps.yml lists #{slug}"
+      assert_equal app.production_url, cards.fetch(name).url, "#{name}'s card matches config/apps.yml"
+    end
   end
 
   test "a showcase card takes its name from the config, else titleizes the subdomain" do

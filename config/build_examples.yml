@@ -15,10 +15,14 @@
 # Point it at the page that shows what the app IS (Cyvasse's game board, not its
 # landing text). A live showcase request needs no entry: its files are found
 # by convention at build_gallery/<subdomain>.webp and .mp4.
-# `lead` names the apps shown first, in this order, by subdomain; every other
+# Each `url` is the app's own production domain (config/apps.yml
+# production_url), never an older mcritchie.studio host that only redirects.
+# `lead` names the apps shown first, in this order, by subdomain (the URL's
+# first label: "turfmonster" for turfmonster.media); every other
 # app follows in its usual order (this list, then showcase apps newest first).
 lead:
   - cyvasse
+  - turfmonster
   - prisoners-dilemma
   - rantly
 
@@ -30,8 +34,14 @@ names:
 
 examples:
   - name: Cyvasse
-    url: https://cyvasse.mcritchie.studio
+    url: https://cyvasse.xyz
     emoji: "🐉"
     blurb: The hex strategy board game from Alex's first app, rebuilt as a live multiplayer game.
     image: build_gallery/cyvasse.webp
     motion: build_gallery/cyvasse.mp4
+  - name: Turf Monster
+    url: https://turfmonster.media
+    emoji: "🐊"
+    blurb: Pick six NFL teams and stack their points; a smart underdog beats the favorite.
+    image: build_gallery/turf-monster.webp
+    motion: build_gallery/turf-monster.mp4
