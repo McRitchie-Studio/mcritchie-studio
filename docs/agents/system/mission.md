@@ -37,6 +37,7 @@ the human owner.
 | Turf Monster | The Turf Monster app's operator: scores, contests, markets |
 | Tyrion | Cyvasse's house player; client-facing, holds no credentials |
 | Tywin | The Cyvasse app's operator and admin; internal, holds the keys |
+| Hank | The Commercial Welding business agent; not yet launched |
 | Rex | Marketing strategy (CMO) |
 | Mason | Brand voice and launches |
 | Mack | General worker |
