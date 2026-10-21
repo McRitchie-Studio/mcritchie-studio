@@ -75,6 +75,10 @@ which writes to a local database nobody sees.
    It writes `app/assets/images/build_gallery/<subdomain>.webp` (a dark-mode
    still) and `<subdomain>.mp4` (a five-second loop the card plays on hover),
    which the "Built with McRitchie Studio" row on `/build` finds by convention.
+   An app on its own domain (Cyvasse at `cyvasse.xyz`, Turf Monster at
+   `turfmonster.media`) is a hand-kept entry in `config/build_examples.yml`
+   instead, with its `url` set to that domain and its files named in `image` and
+   `motion`.
    Without the still the card shows an emoji instead. The app must answer dark
    mode (`prefers-color-scheme: dark`); the script asks for it. When production
    is asleep, run the app locally and add `--from http://127.0.0.1:<port>`.

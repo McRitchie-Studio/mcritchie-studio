@@ -36,11 +36,11 @@ class BuildViewTest < ActionView::TestCase
   test "the gallery lists live examples under the prompt" do
     signed_in(nil)
     @draft = nil
-    @examples = [ BuildGallery::Example.new(name: "Cyvasse", url: "https://cyvasse.mcritchie.studio", emoji: "🐉", blurb: "Hex strategy.") ]
+    @examples = [ BuildGallery::Example.new(name: "Cyvasse", url: "https://cyvasse.xyz", emoji: "🐉", blurb: "Hex strategy.") ]
     render template: "build/new"
 
     assert_select "[data-test='build-gallery'] h2", text: "Built with McRitchie Studio"
-    assert_select "[data-test='build-example'][href='https://cyvasse.mcritchie.studio'][target='_blank']", text: /Cyvasse/
+    assert_select "[data-test='build-example'][href='https://cyvasse.xyz'][target='_blank']", text: /Cyvasse/
   end
 
   def example(name, image: nil, motion: nil, blurb: "An app.")
