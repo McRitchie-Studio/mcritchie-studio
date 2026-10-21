@@ -72,6 +72,7 @@ site connection, primary-domain setting, disabled `www` prefix, and
 - `public/denver-hero.avif` — Landing page hero background (Denver skyline)
 - `public/brand/` — the saved Studio kit's files (`icon-*`, `navbar-*`, `stacked-*` in light, dark and watermark, plus `kit.json`), written by `bin/rails logos:install BRAND=studio`; the navbar, footer, sign-in card and SSO logo draw from it ([`logos.md`](logos.md#installing-a-kit-into-an-app))
 - `public/favicon.png`, `public/icon.png` — favicon and PWA icon, rasterized from `public/brand/icon-dark.svg` by `script/brand_png.cjs`: the favicon edge to edge (the icon's box is its ink), the PWA icon with a 0.16 safe zone on every edge, because the manifest serves it as `"purpose": "maskable"` (`node script/brand_png.cjs public/brand/icon-dark.svg public/icon.png 512 '#1A1535' 0.16`)
+- `public/og.png` — the last-resort link preview image (1200 × 630): `public/brand/stacked-dark.svg` centred on `#1A1535`, regenerated with the ImageMagick command in [`logos.md`](logos.md) after a kit change; an image uploaded at `/admin/link_preview` outranks it
 - `public/studio-logo.svg` — the old chest artwork, now only the (stub) video watermark in `Content::Finalize`
 - `public/logo-icon.svg` — the old white chest, no longer drawn by the hub; kept so links to it in sent mail still resolve
 
