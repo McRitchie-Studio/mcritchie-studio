@@ -25,6 +25,14 @@ the CTO's colours: [`client-app-host.md`](client-app-host.md).
 | Task | "Build Launch App `<sub>`", `designed`, `repositories: [<sub>]`, so the tier's lane cap governs it. `bin/client-build-launcher` claims it and builds the first version automatically ([`client-build-launcher.md`](client-build-launcher.md)) |
 | Handover | Ray's first chat turn (`AgentMessages::ClientCtoHandover`) |
 
+The CTO's portrait is an avatar id: `animal:<id>` from the 100-animal bank
+(`BuildIntake::Animals`, glyphs in `app/assets/images/cto_animals/`, Microsoft Fluent
+Emoji, MIT) drawn at render time in the app's palette (`CtoAvatarHelper#cto_avatar_tag`),
+or one of the twelve older portrait keys (`BuildIntake::Portraits`), which still render.
+The owner re-picks it in the chat: the head's portrait, or the CTO's code answer to an
+avatar ask (`AgentMessages::AvatarAsk`), opens the picker, and `CtoChatsController#avatar`
+saves it.
+
 Any failure rolls every row back. After the commit: `AppRequestDiscordJob` (the
 announcement) and `AppIntakeMoveJob` (the files). An incomplete intake raises
 `AppLaunch::Incomplete` before anything is written, naming the checklist items still
