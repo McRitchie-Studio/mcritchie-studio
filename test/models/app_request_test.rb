@@ -315,7 +315,7 @@ class AppRequestTest < ActiveSupport::TestCase
     refute BuildGallery.examples.any? { |e| e.url.include?("customer-app") }
   end
 
-  test "[unit] the status card waits for Ray's theme card: a locked idea alone is not a start; the theme card or any later step is" do
+  test "[unit] the status card waits for Ritch's theme card: a locked idea alone is not a start; the theme card or any later step is" do
     row = AppRequest.create!(prompt: "A league site")
     thread = BuildIntake.thread_key(row.token)
     turn = lambda do |n, card, status: "completed"|
@@ -328,7 +328,7 @@ class AppRequestTest < ActiveSupport::TestCase
 
     row.update!(answers: { "title" => "League Standings Hub", "idea" => "League Standings Hub" })
     assert row.idea_locked?
-    refute row.intake_started?, "Start App locks the idea, but the card waits while Ray types the theme card"
+    refute row.intake_started?, "Start App locks the idea, but the card waits while Ritch types the theme card"
 
     turn.call(2, { "card" => "palette", "palettes" => [] }, status: "received")
     refute row.intake_started?, "a theme card on an answer not yet completed is not shown in the thread"
@@ -339,7 +339,7 @@ class AppRequestTest < ActiveSupport::TestCase
     refute row.intake_started?, "another request's theme card is not this one's"
 
     turn.call(3, { "card" => "palette", "palettes" => [] })
-    assert row.intake_started?, "Ray's theme card is in the thread: the status card appears"
+    assert row.intake_started?, "Ritch's theme card is in the thread: the status card appears"
 
     %w[palette cto address].each do |step|
       fresh = AppRequest.create!(prompt: "An old draft")

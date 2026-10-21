@@ -207,7 +207,7 @@ module AgentMessages
     # A user mention that is only in the mention LIST, not written in the text,
     # is Discord's reply ping: replying to an answer pings the shared bot that
     # posted it. That names the bot, not a soul, so the thread's soul still wins
-    # (a reply to Turf's answer stays with Turf though Ray's bot posted it).
+    # (a reply to Turf's answer stays with Turf though Ritch's bot posted it).
     def inherit_from(parent, result, raw = {})
       return result if parent.soul_slug.blank?
       return result if result.routed_by == "role"

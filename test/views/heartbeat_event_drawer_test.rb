@@ -2,7 +2,7 @@ require "test_helper"
 
 # [component] the per-SPAN grading drawer body (heartbeat/activity_drawer) — the span-level
 # mirror of the per-action drawer. It shows the span summary (status + measured
-# token/cost/model of the activity) and two grade editors (Ray + the McRitchie audit)
+# token/cost/model of the activity) and two grade editors (Ritch + the McRitchie audit)
 # that POST to E2's grade_event endpoint. No inline radios — the editors use the same
 # disposition TOGGLE buttons as the per-action drawer.
 class HeartbeatEventDrawerTest < ActionView::TestCase
@@ -16,7 +16,7 @@ class HeartbeatEventDrawerTest < ActionView::TestCase
                            seq: attrs.fetch(:seq, 0), occurred_at: Time.current }.merge(attrs))
   end
 
-  test "[component] the span drawer renders Ray + McRitchie editors posting to the E2 endpoint" do
+  test "[component] the span drawer renders Ritch + McRitchie editors posting to the E2 endpoint" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "found the seam",
                model: "claude-opus-4-8", tokens_in: 9500, tokens_out: 610, cost: 0.2579)
     a1 = action(agent_activity_id: ev.id, seq: 0, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
@@ -41,13 +41,13 @@ class HeartbeatEventDrawerTest < ActionView::TestCase
     refute_includes rendered, "9.4k/360"
   end
 
-  test "[component] only Ray's span editor carries the bank/discard controls" do
+  test "[component] only Ritch's span editor carries the bank/discard controls" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
 
     render partial: "heartbeat/activity_drawer",
            locals: { event: ev, actions: [], ray: nil, mcr: nil }
 
-    # Ray banks; the McRitchie audit does not
+    # Ritch banks; the McRitchie audit does not
     assert_select "form[data-grader=ray] button[value=bank]", 1
     assert_select "form[data-grader=mcr] button[value=bank]", false
   end

@@ -3,7 +3,7 @@ require "test_helper"
 module Api
   module V1
     # [integration] the bearer AGENT grading path for the Ray heartbeat grade-events
-    # loop: awaiting_grade lists resolved ungraded spans; grade upserts Ray's grade.
+    # loop: awaiting_grade lists resolved ungraded spans; grade upserts Ritch's grade.
     # The grader is FORCED to ray — the mcr audit stays admin-browser-only.
     class ActivityGradesControllerTest < ActionDispatch::IntegrationTest
       setup do
@@ -40,7 +40,7 @@ module Api
 
       # ---- grade ----------------------------------------------------------------
 
-      test "[integration] grade upserts Ray's grade of a span and returns it" do
+      test "[integration] grade upserts Ritch's grade of a span and returns it" do
         span = resolved_span(session_id: "ctl-grade")
 
         assert_difference -> { ActionGrade.count }, 1 do

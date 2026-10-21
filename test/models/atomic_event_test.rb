@@ -520,7 +520,7 @@ class AgentActivityTest < ActiveSupport::TestCase
     assert_equal [newer.id, older.id], ids, "resolved spans, newest-resolved first"
   end
 
-  test "[integration] awaiting_grade excludes an OPEN span and one Ray already graded" do
+  test "[integration] awaiting_grade excludes an OPEN span and one Ritch already graded" do
     AgentActivity.open_event!(session_id: "aw-open", category: "Edit", reason_slug: "still open") # never closed
     graded = resolved_span(session_id: "aw-graded", reason: "already graded span")
     ActionGrade.create!(agent_activity: graded, grader: "ray", slug: "seen this one", disposition: "good")
@@ -529,7 +529,7 @@ class AgentActivityTest < ActiveSupport::TestCase
     ids = AgentActivity.awaiting_grade(grader: "ray").map(&:id)
 
     assert_includes ids, fresh.id
-    refute_includes ids, graded.id, "a span Ray already graded is not awaiting"
+    refute_includes ids, graded.id, "a span Ritch already graded is not awaiting"
     assert(ids.none? { |id| AgentActivity.find(id).open? }, "open spans are never awaiting")
   end
 

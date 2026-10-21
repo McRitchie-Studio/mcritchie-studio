@@ -1,5 +1,5 @@
 <%# Inline quick-grade for an activity — the good/not disposition radios for ONE grader
-    (Ray, or the McRitchie audit of Ray). The activity analogue of the per-action
+    (Ritch, or the McRitchie audit of Ritch). The activity analogue of the per-action
     _feedback_cell radios: they POST grader + disposition to the JSON activity grade
     endpoint via the activity row's `quickGrade` fetch (@change), which dispatches
     hb:activity-graded so the row's live markers update in place. The fuller "grade ▸"
@@ -31,7 +31,7 @@
   </span>
   <button type="button" class="hb-gradeclear <%= "is-visible" if grade.present? %>"
           data-test="event-grade-clear" title="Clear feedback"
-          aria-label="Clear <%= grader == "mcr" ? "McRitchie" : "Ray" %> feedback"
+          aria-label="Clear <%= grader == "mcr" ? "McRitchie" : "Ritch" %> feedback"
           :class="{ 'is-visible': !!grades.<%= grader %> }"
           :disabled="!grades.<%= grader %>"
           @click.stop="clearGrade($event)">&times;</button>

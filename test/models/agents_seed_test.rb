@@ -97,13 +97,13 @@ class AgentsSeedTest < ActiveSupport::TestCase
     end
   end
 
-  test "Ray is the single identity holding the documentation review seat" do
+  test "Ritch is the single identity holding the documentation review seat" do
     run_seed
     docs = Agent.active.detect do |a|
       a.metadata["reviewer"] && Array(a.metadata["domains"]).include?("documentation")
     end
     assert docs, "a documentation-domain reviewer must resolve from the seed"
-    assert_equal "ray", docs.slug, "Ray holds the documentation seat (no separate persona)"
+    assert_equal "ray", docs.slug, "Ritch holds the documentation seat (no separate persona)"
     assert_equal "Lead Orchestrator", docs.title, "still the orchestrator identity"
     refute Agent.exists?(slug: "alex-docs"), "the separate alex-docs persona is retired (folded into ray)"
   end
@@ -179,13 +179,13 @@ class AgentsSeedTest < ActiveSupport::TestCase
   end
 
   # [unit] Regression: on a fresh database the seed creates the orchestrator under
-  # its slug `ray`, named Ray, and exactly once.
-  test "a fresh seed keys the orchestrator ray and names it Ray" do
+  # its slug `ray`, named Ritch, and exactly once.
+  test "a fresh seed keys the orchestrator ray and names it Ritch" do
     Agent.where(slug: "ray").find_each { |a| a.skill_assignments.delete_all; a.activities.delete_all; a.usages.delete_all; a.tasks.update_all(agent_slug: nil); a.delete }
     run_seed
 
-    assert_equal "Ray", Agent.find_by!(slug: "ray").name
-    assert_equal 1, Agent.where(name: "Ray").count, "one orchestrator row"
+    assert_equal "Ritch", Agent.find_by!(slug: "ray").name
+    assert_equal 1, Agent.where(name: "Ritch").count, "one orchestrator row"
   end
 
   # [unit] A desk seeded from a pre-rename tree holds the seat as `xan`: the seed
@@ -193,7 +193,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
   # a second orchestrator.
   test "a legacy xan row is renamed to ray in place, keeping its id and children" do
     Agent.where(slug: "ray").find_each { |a| a.skill_assignments.delete_all; a.activities.delete_all; a.usages.delete_all; a.tasks.update_all(agent_slug: nil); a.delete }
-    legacy = Agent.create!(name: "Ray", slug: "xan", status: "active", agent_type: "orchestrator")
+    legacy = Agent.create!(name: "Ritch", slug: "xan", status: "active", agent_type: "orchestrator")
     Activity.insert_all([{ agent_slug: "xan", activity_type: "comment", description: "legacy row", created_at: Time.current, updated_at: Time.current }])
     run_seed
 

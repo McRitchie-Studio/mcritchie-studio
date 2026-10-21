@@ -16,7 +16,7 @@ class AgentAudienceTest < ActiveSupport::TestCase
     FileUtils.mkdir_p(File.join(@root, "docs/agents/agents/ray"))
     FileUtils.mkdir_p(File.join(@root, "docs/agents/modules"))
     FileUtils.mkdir_p(File.join(@root, "config"))
-    File.write(File.join(@root, "docs/agents/agents/ray/role.md"), "Ray orchestrates. INTERNAL ROLE DOC: op://vault.")
+    File.write(File.join(@root, "docs/agents/agents/ray/role.md"), "Ritch orchestrates. INTERNAL ROLE DOC: op://vault.")
     FileUtils.cp(Rails.root.join(A::SOP_PATH), File.join(@root, A::SOP_PATH))
     File.write(File.join(@root, "config/agent_domains.yml"), <<~YAML)
       domains:
@@ -140,7 +140,7 @@ class AgentAudienceTest < ActiveSupport::TestCase
     outside = outside_fences(text)
     assert_includes outside, "You are speaking with: owner"
     rules["audiences"]["owner"]["may"].each { |r| assert_includes outside, r }
-    assert_includes text, "Ray orchestrates."
+    assert_includes text, "Ritch orchestrates."
     assert_includes text, "BOARD: 2 building"
     assert_includes text, "read the task board. Its output is below."
     rules["audiences"]["client"]["never"].each { |r| refute_includes text, r }
@@ -170,11 +170,11 @@ class AgentAudienceTest < ActiveSupport::TestCase
   end
 
   test "a public prompt has the public rules only, and a soul's public.md stands in for its role doc" do
-    File.write(File.join(@root, "docs/agents/agents/ray/public.md"), "<!-- note -->\nRay helps visitors find their way.")
+    File.write(File.join(@root, "docs/agents/agents/ray/public.md"), "<!-- note -->\nRitch helps visitors find their way.")
     text = prompt(aud("public"))
     assert_includes text, "You are speaking with: public"
     assert_includes text, rules["audiences"]["public"]["never"].first
-    assert_includes text, "Ray helps visitors find their way."
+    assert_includes text, "Ritch helps visitors find their way."
     refute_includes text, "INTERNAL ROLE DOC"
     refute_includes text, "BOARD: 2 building"
   end

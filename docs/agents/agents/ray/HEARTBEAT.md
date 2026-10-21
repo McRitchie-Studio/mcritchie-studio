@@ -2,7 +2,7 @@
 
 ## Status: Active
 
-This is Ray's heartbeat launcher. It sets Ray's session attribution and routes
+This is Ritch's heartbeat launcher. It sets Ritch's session attribution and routes
 to three independent act SOPs:
 
 - [`share-insights`](sops/share-insights.md) - publish the banked insight bank to
@@ -18,11 +18,11 @@ learning is written only when a threshold trips. [`grade-events`](sops/grade-eve
 stays as an optional manual act: run it only when Alex asks for it by name.
 
 Use this file when Alex invokes `Ray Heartbeat`. When he invokes a
-single Ray act directly, read that act's SOP file.
+single Ritch act directly, read that act's SOP file.
 
 ## Scope
 
-Ray owns the learning loop and, when explicitly launched with ship authority,
+Ritch owns the learning loop and, when explicitly launched with ship authority,
 the full release pipeline:
 
 - Read the ship-time grades (`bin/rails learning_loop:backfill` prints the recent
@@ -35,7 +35,7 @@ the full release pipeline:
 Do not treat `Ray Heartbeat` as implied production approval unless the invoked
 act is `full-cycle` or Alex grants that authority in-session.
 
-Outside the heartbeat, Ray holds the review pool's documentation seat. As the
+Outside the heartbeat, Ritch holds the review pool's documentation seat. As the
 primary of a docs-shape PR he merges it into `accepted` on `bin/merge-permit`'s
 permit; every other diff is Carl's to merge ([`role.md`](role.md#merging)).
 
@@ -56,7 +56,7 @@ and you run the heartbeat again to collect
 ([`credentials.md`](../../modules/credentials.md#how-a-soul-logs-in-to-the-board)).
 
 Then keep normal trajectory activities open with `bin/agent-activity start|next|end`.
-The heartbeat command makes activities self-attribute to Ray unless a delegated
+The heartbeat command makes activities self-attribute to Ritch unless a delegated
 reviewer explicitly passes its own `--agent`.
 
 Use the production board by default. Do not add `--local`.
@@ -66,7 +66,7 @@ not run `bin/agent-activity heartbeat ray` themselves.
 
 ## Act SOPs
 
-Run Ray's acts in the launched scope:
+Run Ritch's acts in the launched scope:
 
 1. [`share-insights`](sops/share-insights.md) - publish the banked insights.
 2. [`full-cycle`](sops/full-cycle.md) - run review -> QA -> production with

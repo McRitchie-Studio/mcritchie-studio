@@ -32,7 +32,7 @@ async function adminToken(browser) {
   return token;
 }
 
-// Ray answers the first waiting message whose content passes `matches`, through
+// Ritch answers the first waiting message whose content passes `matches`, through
 // the real mailbox API; the page polls. Any other message gets a plain "ok".
 async function rayAnswers(page, auth, matches, text, card) {
   const worker = `e2e-cards-${Date.now()}`;
@@ -53,7 +53,7 @@ async function rayAnswers(page, auth, matches, text, card) {
 async function start(page, idea) {
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": `198.51.100.${1 + Math.floor(Math.random() * 250)}` });
   await page.goto("/build");
-  const box = page.getByLabel("Tell Ray what you want to build");
+  const box = page.getByLabel("Tell Ritch what you want to build");
   await box.fill(idea);
   await page.waitForTimeout(2200);
   await box.press("Enter");
@@ -69,7 +69,7 @@ async function sidewaysOverflow(page) {
   });
 }
 
-test("the theme card pops a status card of Theme, Agent, Domain; the theme card toggles, glows in its ring at 375px, and asks Ray for new themes", async ({ page, browser }) => {
+test("the theme card pops a status card of Theme, Agent, Domain; the theme card toggles, glows in its ring at 375px, and asks Ritch for new themes", async ({ page, browser }) => {
   test.setTimeout(90_000);
   await blockThirdPartyRequests(page);
   const { pageErrors, report } = watchPageErrors(page);
@@ -80,7 +80,7 @@ test("the theme card pops a status card of Theme, Agent, Domain; the theme card 
   await rayAnswers(page, auth, (c) => c === idea, "Here's the app.",
                    { card: "idea", title: "Weekly Trivia With Friends", features: ["Rounds", "Scores"] });
 
-  // 1. Start App locks the idea, but the status card waits for Ray's theme card
+  // 1. Start App locks the idea, but the status card waits for Ritch's theme card
   //    (task status-card-waits-theme); it arrives with that card and pops
   //    (agent_shell.js's enter animation, which plays only with motion); the
   //    tiles name their steps.
@@ -97,7 +97,7 @@ test("the theme card pops a status card of Theme, Agent, Domain; the theme card 
   await expect(page.locator("#build-checklist[data-heading='locked'] [data-test='build-heading-title']")).toHaveText("Weekly Trivia With Friends");
   await expect(status).toHaveCount(0);
 
-  // The Start App relay brings Ray's theme card, and the status card with it.
+  // The Start App relay brings Ritch's theme card, and the status card with it.
   const themes = ["Pitch", "Field", "Court"].map((name) => ({ ...PALETTE, name }));
   await rayAnswers(page, auth, (c) => c.startsWith("Let's build"), "Pick a theme.", { card: "palette", palettes: themes });
   const themeCard = page.locator("[data-test='build-card-palette']");

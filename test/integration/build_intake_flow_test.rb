@@ -1,11 +1,11 @@
 require "test_helper"
 
-# [integration] A signed-out visitor builds with Ray through real requests: the
-# first message (bot-shielded) starts a draft and Ray's thread, Ray's answers
+# [integration] A signed-out visitor builds with Ritch through real requests: the
+# first message (bot-shielded) starts a draft and Ritch's thread, Ritch's answers
 # (completed here as bin/dispatcher would, with intake cards) render as cards,
 # the status card appears once Start App locks the idea, and each tap after it
-# fills its tiles in the order Ray asks (Theme, Agent, Domain), and signing in adopts the request and Build queues it
-# through the existing claim path. The Build control itself is Ray's summary
+# fills its tiles in the order Ritch asks (Theme, Agent, Domain), and signing in adopts the request and Build queues it
+# through the existing claim path. The Build control itself is Ritch's summary
 # card's (build-cards-advance-chat); this test posts what it posts.
 class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
@@ -32,10 +32,10 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     AppRequest.recent.first
   end
 
-  # Ray's answer, as the dispatcher completes it.
+  # Ritch's answer, as the dispatcher completes it.
   def ray_answers(text, card = nil)
     claim = AgentMessage.claim!(soul: "ray", worker: "mac-1")
-    assert claim.message, "Ray should have a message to answer"
+    assert claim.message, "Ritch should have a message to answer"
     body = card ? "#{text}\n===PROPOSAL===\n#{card.to_json}" : text
     claim.message.complete!(worker: "mac-1", response_text: body)
     perform_enqueued_jobs(only: AgentMessageReplyJob)
@@ -53,7 +53,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
   end
 
   # A tap, and the visitor turn it relays: the stream appends it, pending, and
-  # it is the next row the dispatcher claims for Ray.
+  # it is the next row the dispatcher claims for Ritch.
   def tap_and_relay(request_row, field, line, **params)
     tap_card(request_row, field, client_id: SecureRandom.uuid, **params)
     assert_response :success
@@ -61,7 +61,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_equal line, relay.content
     assert_includes response.body, %(target="#{AgentMessages::WebChat::MESSAGES_TARGET}"), "#{field}: the relayed turn is appended"
     assert_includes response.body, %(id="build-turn-#{relay.id}")
-    assert_includes response.body, %(data-pending="true"), "#{field}: the page polls for Ray's answer"
+    assert_includes response.body, %(data-pending="true"), "#{field}: the page polls for Ritch's answer"
     relay
   end
 
@@ -74,7 +74,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     get build_request_path(request_row.token)
     assert_response :success
     assert_select "[data-test=build-chat-page]"
-    assert_select "[data-test=build-turn][data-pending=true]", 1, "Ray's answer is pending, so the page polls"
+    assert_select "[data-test=build-turn][data-pending=true]", 1, "Ritch's answer is pending, so the page polls"
     assert_select "#build-checklist[data-card=false] [data-test=build-heading]", 1, "no card yet: the heading, not an empty form"
     assert_select "[data-test=build-my-app]", 0, "the status card carries no Build control"
 
@@ -90,9 +90,9 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=build-card-idea] [data-test=build-choose-idea]", "Start App"
     assert_select "[data-test=build-status-card]", 0
 
-    # Start App: the idea locks, and the visitor's line goes to Ray, who answers
+    # Start App: the idea locks, and the visitor's line goes to Ritch, who answers
     # with the THEME card. The status card waits for that card (Alex,
-    # 2026-10-20): the tap's stream and every poll while Ray types redraw the
+    # 2026-10-20): the tap's stream and every poll while Ritch types redraw the
     # heading, now naming the locked idea.
     relay = tap_and_relay(request_row, "idea", "Let's build League Standings Hub.", message_id: idea.id)
     assert_equal "League Standings Hub", request_row.reload.answers["title"]
@@ -100,12 +100,12 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     status = Nokogiri::HTML(response.body).css("turbo-stream[target=build-checklist] template").map(&:inner_html).join
     assert_select Nokogiri::HTML.fragment(status), "[data-test=build-status-card]", 0, "Start App alone does not bring the status card"
     assert_select Nokogiri::HTML.fragment(status), "#build-checklist[data-card=false][data-heading=locked] [data-test=build-heading-title]",
-                  "League Standings Hub", "the heading names the locked idea while Ray types"
+                  "League Standings Hub", "the heading names the locked idea while Ritch types"
     get build_request_turns_path(request_row.token), params: { ids: relay.id }
-    refute_includes response.body, "data-test=\"build-status-card\"", "a poll while Ray types keeps the heading"
+    refute_includes response.body, "data-test=\"build-status-card\"", "a poll while Ritch types keeps the heading"
     get build_request_path(request_row.token)
     assert_select "#build-checklist[data-heading=locked] [data-test=build-heading-title]", "League Standings Hub"
-    assert_select "[data-test=build-status-card]", 0, "a reload while Ray types shows the heading too"
+    assert_select "[data-test=build-status-card]", 0, "a reload while Ritch types shows the heading too"
 
     themes = ray_answers("Pick a theme.", { kind: "intake", card: "palette", palettes: [ PALETTE, PALETTE.merge("name" => "Pitch Two"), PALETTE.merge("name" => "Pitch Three") ] })
     assert_equal relay, themes, "the dispatcher claimed the relayed turn"
@@ -146,7 +146,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_equal "league-hub", request_row.reload.subdomain
     assert_includes response.body, "data-complete=\"true\"", "the tap's stream redraws the status card complete"
 
-    # Ray sums up; with every step set, code gives the answer the summary card.
+    # Ritch sums up; with every step set, code gives the answer the summary card.
     summary = ray_answers("Here's your app.")
     assert_equal({ "card" => "summary" }, summary.intake_card)
     get build_request_path(request_row.token)
@@ -188,7 +188,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_includes task.metadata.dig("devops", "agent_context"), "Key features: Live standings; Game schedules"
   end
 
-  test "Build something else relays to Ray, who asks for a new direction" do
+  test "Build something else relays to Ritch, who asks for a new direction" do
     request_row = first_message
     idea = ray_answers("Here's the idea.", { kind: "intake", card: "idea", title: "League Standings Hub", features: %w[Standings Schedules] })
     tap_and_relay(request_row, "idea_else", "I'd like to build something else.", message_id: idea.id)
@@ -232,7 +232,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     assert_equal "held", AgentMessage.where(thread_key: BuildIntake.thread_key(too_fast.token)).last.status
   end
 
-  test "past the per-request cap Ray's reply asks the visitor to sign in" do
+  test "past the per-request cap Ritch's reply asks the visitor to sign in" do
     BuildIntake.policy = BuildIntake.policy.dup.tap { |p| p.turns_per_request = 1 }
     request_row = first_message
     ray_answers("What is it for?")

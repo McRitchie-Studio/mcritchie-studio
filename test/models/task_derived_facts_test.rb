@@ -139,7 +139,7 @@ class TaskDerivedFactsTest < ActiveSupport::TestCase
   # witness box is not an exonerating one. MEASURED 2026-09-27 on PR #1587, whose one
   # commit carries `xan@mcritchie.studio`: with a fresh token the read yields
   # ["ray"], with the desk's stale GITHUB_TOKEN it 401s, and #derived_authors gave
-  # `[]` either way — which is how `--builder none` seated Ray on Ray's own PR.
+  # `[]` either way — which is how `--builder none` seated Ritch on Ritch's own PR.
 
   test "[unit] the author probe reports a completed read with nothing unread" do
     t = task(devops: { "pr_url" => HUB_PR })

@@ -124,7 +124,7 @@ class HeartbeatActivityGradeTest < ActionDispatch::IntegrationTest
          params: { grader: "mcr", disposition: "good", slug: "agree, tighten the reason slug" }
 
     assert_equal 2, e.action_grades.count
-    assert grade_for(e, "mcr").mcr?, "the McRitchie row audits Ray's span grade"
+    assert grade_for(e, "mcr").mcr?, "the McRitchie row audits Ritch's span grade"
   end
 
   test "[integration] an invalid grade returns a 422 JSON error and writes no row" do

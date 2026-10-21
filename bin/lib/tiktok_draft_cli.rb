@@ -24,7 +24,7 @@ module TiktokDraftCli
   ADMIN_TOKEN_ENV = "AGENT_ADMIN_SESSION_TOKEN"
 
   # What to do about a missing, expired or refused admin session.
-  ADMIN_SESSION_HOWTO = "A draft needs an admin session (Ray or Steffon). Ask the board for one:\n" \
+  ADMIN_SESSION_HOWTO = "A draft needs an admin session (Ritch or Steffon). Ask the board for one:\n" \
                         "  bin/agent-activity heartbeat ray      (or steffon; it prints a login-… slug)\n" \
                         "Alex grants it on the board's tasks page: the Approve tap on the row with that slug, or the row's " \
                         "one-time code, which you post with `bin/agent-activity heartbeat ray --code <code>`. It lasts 8 hours; " \

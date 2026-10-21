@@ -17,7 +17,7 @@
 #      visit to the CTO's chat plays the launch animation, task build-sign-in-modal)
 #   5. the board task "Build Launch App <sub>", designed, repositories [<sub>],
 #      so the tier's lane cap (BuildingLanes) governs its build
-#   6. Ray's handover, the first turn of the owner's chat with the new CTO
+#   6. Ritch's handover, the first turn of the owner's chat with the new CTO
 #      (AgentMessages::ClientCtoHandover), stored already answered with the CTO's
 #      code-written greeting, so the dispatcher never claims it
 #
@@ -40,7 +40,7 @@ class AppLaunch
     end
   end
 
-  # What Ray's intake gathered (the request's intake columns, owned by the
+  # What Ritch's intake gathered (the request's intake columns, owned by the
   # build-with-xan-intake task): the CTO's name and portrait key, the palette
   # ({ "name", "light", "dark" }) and the sharpened answers ({ "idea",
   # "title", "features" }, or a v1 draft's "audience" and "day_one").
@@ -122,7 +122,7 @@ class AppLaunch
 
   def palette = @palette ||= AppPalette.normalize(intake.palette)
 
-  # The app's name: the title the visitor confirmed on Ray's idea card
+  # The app's name: the title the visitor confirmed on Ritch's idea card
   # (answers["title"], the confirmed branch of AppRequest#working_title),
   # squished and capped; else its address in words ("pawsome-grooming" reads
   # "Pawsome Grooming"). The CTO's greeting (AgentMessages::ClientCtoHandover)

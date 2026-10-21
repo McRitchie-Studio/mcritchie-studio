@@ -88,7 +88,7 @@ the whole run" is `qa-release` · `prepare`, whoever runs the release.
 | | What it holds | Who admits it | Where it lives |
 |---|---|---|---|
 | **Dream** | a question, a good answer, the reason, the story | Alex signs off each one | `docs/agents/dreams/<sequence>/<slug>.md`, tracked |
-| **Insight** | a one-line lesson graded from an activity | Ray banks it (`grade-events`) | the board's Insight Bank |
+| **Insight** | a one-line lesson graded from an activity | Ritch banks it (`grade-events`) | the board's Insight Bank |
 | **Provider memory** | one session's private notes | nobody | `~/.claude/…/memory/`, scratch |
 
 A dream is the only one of the three that carries its reasoning, and the only one

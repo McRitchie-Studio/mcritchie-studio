@@ -21,7 +21,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
     ERB
   end
 
-  test "[component] every row carries inline good/not radios for Ray and the McRitchie audit" do
+  test "[component] every row carries inline good/not radios for Ritch and the McRitchie audit" do
     a = action(stage: "building")
 
     render_table(a, {})
