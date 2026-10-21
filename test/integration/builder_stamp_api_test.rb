@@ -160,7 +160,7 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
   # builder mid-work and another soul finishes it. Rule 1 RE-POINTS built_by on the
   # second claim, so the first author vanished from the only field the reviewer pool
   # consulted — and on 2026-08-30 `bin/reviewer-select` seated ALEX as the light on a
-  # diff Ray had written every test on (PR #1081, built_by=steffon).
+  # diff Ritch had written every test on (PR #1081, built_by=steffon).
 
   # A handoff is a claim by a DIFFERENT session — the payload `bin/task move <slug>
   # building --actor <soul>` sends when a killed builder's desk is picked up in a new

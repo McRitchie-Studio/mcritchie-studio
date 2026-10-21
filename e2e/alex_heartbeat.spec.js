@@ -1,6 +1,6 @@
 const { test, expect } = require("@playwright/test");
 
-// The Ray avenue (/ray/heartbeat) renders the agent-narrated EVENT trajectory from
+// The Ritch avenue (/ray/heartbeat) renders the agent-narrated EVENT trajectory from
 // the seeded spans — each row an AgentActivity (category · reason -> outcome) that
 // drills down (Alpine) into the raw tool-calls attributed to it. The seed narrates a
 // couple of closed spans, a final OPEN span ("…in progress"), plus one pre-narration
@@ -141,8 +141,8 @@ test("activity + action timestamps render at second precision", async ({ page })
   await expect(explore.locator("[data-test='action-span']").first()).toContainText("created at");
 });
 
-// The launcher's Ray avenue links straight to the heartbeat trajectory.
-test("the session launcher Ray avenue links to the heartbeat trajectory", async ({ page }) => {
+// The launcher's Ritch avenue links straight to the heartbeat trajectory.
+test("the session launcher Ritch avenue links to the heartbeat trajectory", async ({ page }) => {
   await page.goto("/launcher");
 
   const ray = page.locator("a[data-avenue='ray']");

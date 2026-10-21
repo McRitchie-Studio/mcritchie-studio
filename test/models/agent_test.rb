@@ -27,7 +27,7 @@ class AgentTest < ActiveSupport::TestCase
   # given slug, or the seed on a fresh database makes a row keyed by the name and
   # orphans every child of the real slug.
   test "an explicit slug survives a create whose name parameterizes differently" do
-    agent = Agent.create!(name: "Ray", slug: "ray-regression", status: "active", agent_type: "orchestrator")
+    agent = Agent.create!(name: "Ritch", slug: "ray-regression", status: "active", agent_type: "orchestrator")
     assert_equal "ray-regression", agent.reload.slug
   end
 end

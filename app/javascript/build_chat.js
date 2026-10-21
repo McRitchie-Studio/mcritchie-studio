@@ -1,6 +1,6 @@
-// The /build chat with Ray (app/views/build/_chat.html.erb; BuildController#turns).
+// The /build chat with Ritch (app/views/build/_chat.html.erb; BuildController#turns).
 // A signed-out visitor has no /cable socket, so instead of a Turbo stream the
-// page POLLS: while any turn is still waiting for Ray (data-pending="true"), it
+// page POLLS: while any turn is still waiting for Ritch (data-pending="true"), it
 // asks the server about exactly those turns and renders the Turbo Streams it
 // gets back (each turn replaced in place, and the checklist).
 //
@@ -21,7 +21,7 @@
 //   - the CTO card ([data-build-cto]): the portrait or "New image" opens the
 //     picker dialog; a pick swaps the preview; a tap on a portrait, Done or
 //     Enter closes it (the arrow keys only move the pick); a tap on one of
-//     Ray's names fills the name field;
+//     Ritch's names fills the name field;
 //   - the theme card ([data-build-theme]): the Dark / Light toggle swaps every
 //     column's preview (a tap on the side already showing flips to the other,
 //     build_status.js), and the choice survives the card's re-render;

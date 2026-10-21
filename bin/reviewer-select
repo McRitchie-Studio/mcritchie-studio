@@ -83,8 +83,8 @@
 # `--builder none` IS NOT A ROUTINE ESCAPE, and it is no longer offered as one. It
 # asserts something about somebody else's work, and it was the ONE input here that
 # lifted a safety check on the caller's word alone. MEASURED 2026-09-24 on
-# data-flow-doc-contradicts-code (PR #1587, a docs PR Ray wrote, task unstamped): it
-# seated **ray** as the light on Ray's own diff and reported the no-self-review
+# data-flow-doc-contradicts-code (PR #1587, a docs PR Ritch wrote, task unstamped): it
+# seated **ray** as the light on Ritch's own diff and reported the no-self-review
 # property upheld, while `--builder ray` correctly excluded him. It stopped covering
 # a Pokémon build on 2026-09-24 as well, when `pokemon` joined the roster — a Pokémon
 # build names `--builder pokemon` like any other. What is left for it is the
@@ -753,8 +753,8 @@ pr_url = devops["pr_url"].to_s.strip
 # build path there is. It is also the ONLY input here that fails OPEN — nothing can
 # check the assertion, so a wrong one seats the author and still reports the
 # no-self-review property upheld. Measured 2026-09-24 on
-# data-flow-doc-contradicts-code (a docs PR Ray wrote, task unstamped):
-# `--builder none` seated ray as the light on Ray's own diff; `--builder ray` — and
+# data-flow-doc-contradicts-code (a docs PR Ritch wrote, task unstamped):
+# `--builder none` seated ray as the light on Ritch's own diff; `--builder ray` — and
 # `--builder alex`, via the retired-slug alias — excluded him and seated jasper.
 # See /tasks/builder-none-fails-open.
 # The durable fix is upstream: `bin/task move <slug> building --actor <soul>`
@@ -780,9 +780,9 @@ end
 #
 # `--builder none` is a statement about somebody else's work, and it is the only
 # input to this tool that used to lift a safety check on the caller's word alone.
-# MEASURED 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a docs PR Ray
+# MEASURED 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a docs PR Ritch
 # wrote while the task carried no stamp): `--builder none` seated **ray** as the
-# light on Ray's own diff and printed the no-self-review property as upheld, while
+# light on Ritch's own diff and printed the no-self-review property as upheld, while
 # `--builder ray` correctly excluded him. The operator who asserted it was honest;
 # the help text had advertised the hatch, and nothing checked the claim.
 #
@@ -859,7 +859,7 @@ unless decision["builder_known"]
     # `xan@mcritchie.studio`, the desk's static GITHUB_TOKEN 401s, and
     # Task#derived_authors flattens the failure into the same `[]` an authorless PR
     # gives. The operator read the sentence, believed the derivation had run, and
-    # asserted `--builder none` — which seated Ray on Ray's own PR. The false
+    # asserted `--builder none` — which seated Ritch on Ritch's own PR. The false
     # sentence is upstream of the false assertion, so it is fixed here too.
     warn!("  devops.built_by is blank and no `→ building` BUILD CLAIM names a soul. The PR")
     warn!("  COULD HAVE named one — its commits carry `<soul>@mcritchie.studio` — but the")

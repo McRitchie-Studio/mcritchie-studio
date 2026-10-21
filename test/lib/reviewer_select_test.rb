@@ -113,8 +113,8 @@ class ReviewerSelectCliTest < Minitest::Test
   # --- the `none` assertion is CROSS-EXAMINED, end to end (builder-none-fails-open) ---
   #
   # THE DEFECT, measured 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a
-  # docs PR Ray wrote while the task carried no stamp): `--builder none` seated RAY
-  # as the light on Ray's own diff and reported the no-self-review property upheld,
+  # docs PR Ritch wrote while the task carried no stamp): `--builder none` seated RAY
+  # as the light on Ritch's own diff and reported the no-self-review property upheld,
   # while `--builder ray` correctly excluded him. It was the ONE input to this tool
   # that lifted a safety check on the caller's word alone.
   #
@@ -936,7 +936,7 @@ class ReviewerSelectCliTest < Minitest::Test
 
   # --- THE AUTHOR SET, end to end through the CLI ------------------------------
   # (reviewer-select-seats-authors) devops.built_by holds ONE soul; a task can have
-  # SEVERAL. On 2026-08-30 this very command seated ALEX as the light on a diff Ray
+  # SEVERAL. On 2026-08-30 this very command seated ALEX as the light on a diff Ritch
   # had written every test on, because built_by said "steffon" (PR #1081). The CLI
   # is where a human is present to choose, so it FAILS CLOSED where the in-app
   # recorder must keep degrading.

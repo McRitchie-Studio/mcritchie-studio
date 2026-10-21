@@ -3,23 +3,23 @@
   The /build shell's status slot (agent_chats/_shell), and the stream target every
   tap and poll replaces (id build-checklist; BuildController#replace_checklist).
 
-  Until Ray's theme card is in the thread (`started`: AppRequest#intake_started?;
+  Until Ritch's theme card is in the thread (`started`: AppRequest#intake_started?;
   or, on an old draft, any of theme, CTO or address is set), it is the page's
   heading, on /build and on a new /build/:token alike, so a visitor still shaping
   the idea never sees a form of empty tiles. The heading has two faces
   (data-heading): "intro" asks what to build; "locked", once Start App has locked
-  the idea in and Ray is still typing the theme card, names the app and says the
+  the idea in and Ritch is still typing the theme card, names the app and says the
   theme is next (Alex, 2026-10-20). From then on it is the STATUS CARD: the app's working title over
-  three tiles in the order Ray asks (BuildIntake::STEPS), Theme · Agent · Domain,
+  three tiles in the order Ritch asks (BuildIntake::STEPS), Theme · Agent · Domain,
   each filling as its card is tapped (BuildIntake::Choice): the palette's swatches
-  and name, the CTO's portrait and name, the address. It carries no Build control: Ray's summary card
+  and name, the CTO's portrait and name, the address. It carries no Build control: Ritch's summary card
   in the thread does (build/cards, build-cards-advance-chat).
 
   A tile not yet set reads its step's name, never "Not yet" (Alex, 2026-10-19): Theme,
-  Agent, Domain. The step Ray is on now (AppRequest#next_intake_step) is marked
+  Agent, Domain. The step Ritch is on now (AppRequest#next_intake_step) is marked
   data-current and shimmers (build_cards.css; under reduced motion the shimmer stops
   and a still primary border marks it); a set tile carries a check over its value.
-  The card pops when it first appears (the poll that brings Ray's theme card;
+  The card pops when it first appears (the poll that brings Ritch's theme card;
   agent_shell.js, agent-shell-pop-in)
   and again when Build My App is pressed (build_status.js, build_cards.css); under
   reduced motion both play only the pop's glow.
@@ -79,7 +79,7 @@
     <header class="agent-shell-heading text-center" data-test="build-heading">
       <% if locked %>
         <h1 class="text-3xl sm:text-5xl font-bold text-heading tracking-tight mb-3 break-words" data-test="build-heading-title"><%= request_row.working_title || "Your app" %></h1>
-        <p class="agent-shell-subtitle text-muted max-w-xl mx-auto">Locked in. Next, Ray picks a theme for it.</p>
+        <p class="agent-shell-subtitle text-muted max-w-xl mx-auto">Locked in. Next, Ritch picks a theme for it.</p>
       <% else %>
         <h1 class="text-3xl sm:text-5xl font-bold text-heading tracking-tight mb-3">Want to Build Something?</h1>
         <p class="agent-shell-subtitle text-muted max-w-xl mx-auto">Let our agents build &amp; host your flow or website totally free, on the Studio Stack.</p>

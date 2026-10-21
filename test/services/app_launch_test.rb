@@ -2,7 +2,7 @@ require "test_helper"
 require_relative "../support/client_cto_fixtures"
 
 # [unit] AppLaunch (Build my app): from a complete intake, ONE transaction makes
-# the App, its owner membership, its AppCto, the queued board task and Ray's
+# the App, its owner membership, its AppCto, the queued board task and Ritch's
 # handover; a failure anywhere leaves none of them; an incomplete intake is
 # refused before anything is written; the Discord and intake-move jobs run only
 # after the commit.
@@ -42,7 +42,7 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert task.metadata.dig("devops", "agent_context").end_with?(AppRequest::BUILDER_POINTER)
 
     handover = result.handover
-    assert_equal [ "web", "pawsome", "web:pawsome:#{users(:viewer).id}", "client_cto", "completed", "Ray" ],
+    assert_equal [ "web", "pawsome", "web:pawsome:#{users(:viewer).id}", "client_cto", "completed", "Ritch" ],
                  [ handover.channel, handover.channel_ref, handover.thread_key, handover.soul_slug, handover.status, handover.author_name ]
     assert_equal "Meet Nova, your CTO. I'll hand you over.", handover.content
   end

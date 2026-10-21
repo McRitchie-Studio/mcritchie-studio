@@ -41,7 +41,7 @@ Alex starts this SOP by saying only `agent-dispatcher`. Run this default, from
      with `bin/agent-inbox show <id>`);
    - the time of the last completed answer (the log's last `completed #N` line).
 
-   Then ask Alex to post `@Ray what is building?` in `lobster-tank` (Verify
+   Then ask Alex to post `@Ritch what is building?` in `lobster-tank` (Verify
    step 2) and to tell you when it is in. When he says it is in, show that
    message with `bin/agent-inbox show <id>`: the ingest path, claim-to-completion
    time, reply link and notes saved.

@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [component][integration] The HEARTBEAT section on the agent profile page
-# (agents/show). Souls that own a heartbeat (Carl / Avi / Steffon / Ray / Turf
+# (agents/show). Souls that own a heartbeat (Carl / Avi / Steffon / Ritch / Turf
 # Monster — the entries in ApplicationHelper#heartbeat_launchers) get a section listing their
 # heartbeat name plus each launcher act as a copyable phrase + a one-line
 # description. Agents that do NOT own a heartbeat (Shannon / Jasper) render no
@@ -20,7 +20,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
   setup do
     Agent.find_or_create_by!(slug: "carl") { |a| a.name = "Carl" }
     Agent.find_or_create_by!(slug: "avi")  { |a| a.name = "Avi" }
-    Agent.find_or_create_by!(slug: "ray") { |a| a.name = "Ray" }
+    Agent.find_or_create_by!(slug: "ray") { |a| a.name = "Ritch" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "shannon") { |a| a.name = "Shannon" }
     # The name must parameterize BACK to the slug — Agent includes Sluggable, which
@@ -68,7 +68,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_match "Expedite ONE task to prod (asks: what task?)", response.body
   end
 
-  test "Ray's heartbeat soul renders its acts + descriptions" do
+  test "Ritch's heartbeat soul renders its acts + descriptions" do
     get agent_path("ray")
     assert_response :success
 
@@ -85,8 +85,8 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     # the operator reads next to the phrase they are about to copy, so assert it
     # where it is rendered. "banked", not "confirmed" —
     # Insights::DocGenerator publishes ActionGrade.banked with NO grader filter, and
-    # a `grader: "mcr"` row is McRitchie's audit OF an Ray grade, which the agent
-    # API cannot even write. The old wording told Ray to publish a subset that does
+    # a `grader: "mcr"` row is McRitchie's audit OF an Ritch grade, which the agent
+    # API cannot even write. The old wording told Ritch to publish a subset that does
     # not exist and stood the act down over a full bank
     # (/tasks/sop-precondition-blocks-sharing, corrected in the docs by PR 1321).
     assert_select "[data-test='action'][data-action='share-insights'] span",
@@ -102,7 +102,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     card = css_select("[data-test='agent-heartbeat-section'][data-agent='ray']").to_s
     assert card.present?, "no Ray heartbeat card rendered — this guard would pass vacuously"
     assert_includes card, "share-insights",
-                     "the Ray card no longer renders the share-insights act, so this guard reads "\
+                     "the Ritch card no longer renders the share-insights act, so this guard reads "\
                      "the wrong markup and its silence means nothing"
 
     refute_match(/confirmed/i, card,

@@ -22,7 +22,7 @@ tasks between 2026-09-20 and 2026-09-28, and only 18 were features. The rest wer
 mostly corrections to its own comments and docs, and every review minted more.
 
 - A healthy session that is simply done runs [`/wrap`](../../../skills/wrap/SKILL.md).
-- The whole board, not one session, runs Ray's [`clean-up`](../../ray/sops/clean-up.md).
+- The whole board, not one session, runs Ritch's [`clean-up`](../../ray/sops/clean-up.md).
 - Your own designed cards, worked a few at a time, is [`work-backlog`](../../../modules/work-backlog.md).
 
 ## Why two sessions

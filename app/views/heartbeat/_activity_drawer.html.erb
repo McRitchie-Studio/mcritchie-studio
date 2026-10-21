@@ -1,7 +1,7 @@
 <%# The per-activity grading drawer body, lazy-loaded into the shared turbo-frame when the
     operator clicks an activity's grade button. The activity-level mirror of _drawer: a header,
     a key/value summary (category, status, opened, the measured token/cost/model of the
-    activity span), then Ray's activity grade editor and the McRitchie audit editor.
+    activity span), then Ritch's activity grade editor and the McRitchie audit editor.
     The editors POST to the activity grade endpoint via fetch (heartbeatActivityEditor),
     so the drawer stays a read-only GET. Locals: activity, actions (its attributed
     AgentActions), ray (ActionGrade | nil), mcr (ActionGrade | nil). %>
@@ -40,11 +40,11 @@
     </div>
 
     <%= render "heartbeat/activity_grade_editor", activity: activity, grader: ActionGrade::RAY,
-          who: "Ray", role_label: "grades this activity", grade: ray,
-          save_label: "Save Ray grade", allow_bank: true %>
+          who: "Ritch", role_label: "grades this activity", grade: ray,
+          save_label: "Save Ritch grade", allow_bank: true %>
 
     <%= render "heartbeat/activity_grade_editor", activity: activity, grader: ActionGrade::MCR,
-          who: "Mr. McRitchie → Ray", role_label: "audits Ray's activity grade", grade: mcr,
+          who: "Mr. McRitchie → Ritch", role_label: "audits Ritch's activity grade", grade: mcr,
           save_label: "Save audit", allow_bank: false %>
   </div>
 <% end %>

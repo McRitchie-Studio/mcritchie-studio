@@ -17,7 +17,7 @@ module AgentShellHelper
   MEDIUM_AT = 2
   COMPACT_AT = 3
 
-  # Ray's Agent row, for the portrait in a pending /build turn's thinking look
+  # Ritch's Agent row, for the portrait in a pending /build turn's thinking look
   # (build/_turn, agent_chats/_typing): read once per render, however many turns wait.
   def build_typing_agent
     return @build_typing_agent if defined?(@build_typing_agent)

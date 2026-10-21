@@ -1,5 +1,5 @@
 module BuildIntake
-  # How much Ray answers on /build before asking the visitor to sign in
+  # How much Ritch answers on /build before asking the visitor to sign in
   # (config/agent_answerers.yml `public_intake`). Checked by BuildIntake::Ingest
   # BEFORE a message is stored as answerable: past a cap the message is stored
   # already answered, with a line from code (#reply), and no model ever runs.
@@ -33,7 +33,7 @@ module BuildIntake
       @now = now
     end
 
-    # nil when Ray may answer, else the cap's code (:request, :ip, :daily).
+    # nil when Ritch may answer, else the cap's code (:request, :ip, :daily).
     # No policy (the config has no public_intake) caps nobody: the answerers
     # then hold every signed-out message instead.
     def check(token:, signed_in:, ip_hash: nil)

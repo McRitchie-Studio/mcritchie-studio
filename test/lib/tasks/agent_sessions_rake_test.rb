@@ -45,7 +45,7 @@ class AgentSessionsGrantAdminRakeTest < ActiveSupport::TestCase
     refute_includes err, out.strip, "the token is never echoed where a person reads"
   end
 
-  test "it defaults to Ray and takes Steffon" do
+  test "it defaults to Ritch and takes Steffon" do
     assert_equal "ray", AgentSession.from_token(grant.first.strip).soul
     assert_equal "steffon", AgentSession.from_token(grant("SOUL" => "steffon").first.strip).soul
   end

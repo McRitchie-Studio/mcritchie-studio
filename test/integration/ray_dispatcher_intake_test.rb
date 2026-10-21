@@ -6,7 +6,7 @@ require Rails.root.join("bin/lib/agent_dispatcher").to_s
 # first /build message is routed to `ray`, and bin/dispatcher's loop
 # (AgentMailbox::Dispatcher), serving the souls config/agent_routes.yml routes,
 # claims it through the REAL mailbox API in process, answers it with a STUBBED
-# Claude prompted as Ray, and completes it. A dispatcher still running a
+# Claude prompted as Ritch, and completes it. A dispatcher still running a
 # pre-rename config (serving `xan`) is handed the same row through the claim
 # alias (Task::SOUL_ALIASES), so no /build visitor waits on a soul nobody serves
 # between the deploy and the dispatcher's own restart. Nothing reaches Discord,
@@ -14,7 +14,7 @@ require Rails.root.join("bin/lib/agent_dispatcher").to_s
 class RayDispatcherIntakeTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
 
-  # Answers every Claude call with Ray's opening line and keeps the prompt.
+  # Answers every Claude call with Ritch's opening line and keeps the prompt.
   class StubClaude
     attr_reader :prompts
 
@@ -64,7 +64,7 @@ class RayDispatcherIntakeTest < ActionDispatch::IntegrationTest
     flunk "condition never held; log:\n#{@out.string}"
   end
 
-  test "the dispatcher serves ray, not xan, and answers a /build intake turn as Ray" do
+  test "the dispatcher serves ray, not xan, and answers a /build intake turn as Ritch" do
     souls = AgentMailbox.routed_souls
     assert_includes souls, "ray"
     refute_includes souls, "xan", "the retired slug is no longer a served soul"
@@ -78,7 +78,7 @@ class RayDispatcherIntakeTest < ActionDispatch::IntegrationTest
 
     assert_equal "Hi! What would you like to build?", message.response_text
     assert_equal "disp-ray-1", message.claimed_by
-    assert_match(/You are Ray/, runner.prompts.pop, "Claude is prompted as Ray, by the roster's name")
+    assert_match(/You are Ritch/, runner.prompts.pop, "Claude is prompted as Ritch, by the roster's name")
     assert_includes AgentDispatcher.find_by!(worker_id: "disp-ray-1").souls, "ray"
   end
 

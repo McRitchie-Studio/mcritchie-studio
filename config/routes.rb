@@ -32,7 +32,7 @@ Rails.application.routes.draw do
   # return_to and the Google path through LandingController): it launches only
   # with the press's intent in this session (BuildIntake::PendingLaunch).
   get   "build/:token/launch", to: "build#launch", as: :build_request_launch
-  # The /build chat with Ray (BuildIntake): a message, the poll for answers, and
+  # The /build chat with Ritch (BuildIntake): a message, the poll for answers, and
   # a tap on an intake card.
   post  "build/:token/messages", to: "build#message", as: :build_request_messages
   get   "build/:token/turns",    to: "build#turns",   as: :build_request_turns
@@ -306,7 +306,7 @@ Rails.application.routes.draw do
   get "links", to: "links#index", as: :links
 
   # Session entry launcher — terminal-styled chooser for the avenue you enter a
-  # session as (Session agent · Avi · Ray). Selecting Ray routes to the learning
+  # session as (Session agent · Avi · Ritch). Selecting Ritch routes to the learning
   # heartbeat at /ray/heartbeat, the per-action atomic trajectory table
   # (HeartbeatController#show). The named route (ray_heartbeat_path) is stable, so
   # the launcher anchor follows it; it was repointed off LauncherController's
@@ -328,7 +328,7 @@ Rails.application.routes.draw do
   # the cross-session analogue of the per-session heartbeat.
   get  "ray/heartbeat/activities", to: "heartbeat#all_activities", as: :heartbeat_all_activities
   get  "ray/insights", to: "heartbeat#insights", as: :ray_insights
-  # The OPSD distillation pipeline, left→right: Activities → Insights (Ray's
+  # The OPSD distillation pipeline, left→right: Activities → Insights (Ritch's
   # grades) → Confirmations (McRitchie's mcr grades). `confirm` records the McRitchie
   # (mcr) confirmation of an insight and redirects back (a no-JS form action).
   get  "ray/pipeline", to: "heartbeat#pipeline", as: :ray_pipeline
@@ -959,8 +959,8 @@ Rails.application.routes.draw do
       end
       # Learning-loop grading — the bearer AGENT path for the Ray heartbeat
       # grade-events loop. `awaiting` lists resolved activities still ungraded by
-      # Ray; `grade` upserts Ray's grade of one activity. The grader is FORCED to ray here
-      # (the mcr audit-of-Ray stays admin-browser-only), so the shared agent token
+      # Ritch; `grade` upserts Ritch's grade of one activity. The grader is FORCED to ray here
+      # (the mcr audit-of-Ritch stays admin-browser-only), so the shared agent token
       # can never forge McRitchie's audit.
       get  "agent_activities/awaiting_grade", to: "activity_grades#awaiting", as: :awaiting_grade_agent_activities
       post "agent_activities/:id/grade",      to: "activity_grades#create",   as: :grade_agent_activity

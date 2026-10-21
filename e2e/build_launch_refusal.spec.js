@@ -48,7 +48,7 @@ test("a refused Build My App shows its reason and next step on the summary card,
 
   const refusal = page.locator("[data-test='build-card-summary'] [data-test='build-summary-refusal']");
   await expect(refusal).toContainText("That name is taken.");
-  await expect(refusal.locator("[data-test='build-summary-next']")).toContainText("Ask Ray for another address");
+  await expect(refusal.locator("[data-test='build-summary-next']")).toContainText("Ask Ritch for another address");
   await expect(refusal).toBeInViewport();
 
   // The same page: no reload, the address kept, nothing appended outside the body,

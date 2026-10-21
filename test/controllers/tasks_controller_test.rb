@@ -168,7 +168,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "[integration] deployments renders every soul launcher in the Workflows card" do
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
-    Agent.find_or_create_by!(slug: "ray") { |a| a.name = "Ray" }
+    Agent.find_or_create_by!(slug: "ray") { |a| a.name = "Ritch" }
     Agent.find_or_create_by!(slug: "turf-monster") { |a| a.name = "Turf Monster" }
 
     get deployments_path
@@ -189,7 +189,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] a[data-test='heartbeat-avatar-link'][href='/agents/turf-monster']"
     # Each launcher exposes a prompt-like heartbeat row (row 1) plus its atom action rows —
     # Carl owns pr-review + pr-review-slow, Avi owns qa-release, Steffon owns
-    # production-deploy + clean-infra, Ray carries full-cycle, Turf Monster watches scores.
+    # production-deploy + clean-infra, Ritch carries full-cycle, Turf Monster watches scores.
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='heartbeat'][data-clip='Carl Heartbeat']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='action'][data-clip='pr-review']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='action'][data-clip='pr-review-slow']"
@@ -293,7 +293,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#current-release code", { text: /Avi Heartbeat Slow/, count: 0 }
     assert_select "#current-release code", { text: /Merge, Assemble, Deploy/, count: 0 }
     # The launchers now live in the Workflows card — one per soul, including
-    # Carl's pr-review-slow and Ray's full-cycle acts.
+    # Carl's pr-review-slow and Ritch's full-cycle acts.
     assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: ApplicationController.helpers.heartbeat_launchers.size
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] code", text: "pr-review-slow"
     assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] code", text: "full-cycle"
@@ -440,7 +440,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[component] deployments board links to the Ray pipeline and insights" do
+  test "[component] deployments board links to the Ritch pipeline and insights" do
     get deployments_path
     assert_response :success
     assert_select %(nav[aria-label="Board sections"] a[href="#{ray_pipeline_path}"]),
@@ -1420,7 +1420,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Carl per PR"              # review is Carl-owned, not Avi-supervised
     assert_includes response.body, "FROZEN ship SHA"          # Steffon's ship-time suite
     assert_includes response.body, "qa-release"               # Avi's QA release lane
-    assert_includes response.body, "full-cycle"               # the Ray full-cycle ship launcher
+    assert_includes response.body, "full-cycle"               # the Ritch full-cycle ship launcher
   end
 
   test "deployments and stages send a visitor to sign-in" do
@@ -2414,7 +2414,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # email's local part matched the orchestrator seat's slug, so an operator
     # comment was attributed to the agent. The seat is `ray` now, so his
     # comment carries no soul slug; the user_id below is what names him.
-    assert_nil activity.agent_slug, "the operator is not the Ray seat"
+    assert_nil activity.agent_slug, "the operator is not the Ritch seat"
     assert_equal @admin.id, activity.metadata["user_id"]
     assert_equal "task_conversation", activity.metadata["source"]
   end

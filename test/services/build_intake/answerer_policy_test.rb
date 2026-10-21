@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [unit] The answerer policy for public intake, with the shipped
-# config/agent_answerers.yml: Ray answers a signed-out visitor ONLY on a web row
+# config/agent_answerers.yml: Ritch answers a signed-out visitor ONLY on a web row
 # of a web:build: thread, the claim's SQL guard agrees with allowed?, the config
 # cannot widen the prefix, and the caps hold per request, per IP and per day.
 class BuildIntakeAnswererPolicyTest < ActiveSupport::TestCase
@@ -70,7 +70,7 @@ class BuildIntakeAnswererPolicyTest < ActiveSupport::TestCase
              "signed_in_turns_per_request" => 40, "per_ip_per_hour" => 20, "daily_total" => 400 }
     assert AgentMessages::Answerers.new(%w[owner], public_intake: base).public_intake
 
-    [ { "thread_prefix" => "web:" }, { "thread_prefix" => "" }, { "soul" => "Ray; DROP" },
+    [ { "thread_prefix" => "web:" }, { "thread_prefix" => "" }, { "soul" => "Ritch; DROP" },
       { "turns_per_request" => 0 }, { "daily_total" => "400" } ].each do |bad|
       assert_raises(AgentMessages::Answerers::Invalid, bad.inspect) do
         AgentMessages::Answerers.new(%w[owner], public_intake: base.merge(bad))

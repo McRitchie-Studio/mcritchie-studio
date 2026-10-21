@@ -1,5 +1,5 @@
 <%# locals: (message:, request_row:, error: nil) %>
-<%# One turn of the /build chat: the shared agent_chats turn, a typing line while Ray's answer is pending (the poll replaces the whole turn when it lands), and the intake card the answer carried (BuildIntake::Card, already checked in code). A bot-shield hold reads as "send it again", never as an admin wait. %>
+<%# One turn of the /build chat: the shared agent_chats turn, a typing line while Ritch's answer is pending (the poll replaces the whole turn when it lands), and the intake card the answer carried (BuildIntake::Card, already checked in code). A bot-shield hold reads as "send it again", never as an admin wait. %>
 <% pending = %w[received claimed].include?(message.status) %>
 <% card = message.status == "completed" && message.intake_card.is_a?(Hash) ? message.intake_card : nil %>
 <div id="build-turn-<%= message.id %>" class="flex flex-col gap-2" data-test="build-turn" data-build-turn
@@ -15,7 +15,7 @@
                                        phase: message.typing_phase || "thinking", agent: build_typing_agent %>
     <% end %>
     <% if card && BuildIntake::Card::KINDS.include?(card["card"]) %>
-      <%# The point of action: the card keeps its bubble while Ray's words around it are plain text (agent_chats/_turn), and it waits for those words to finish typing (agent-action, app/assets/tailwind/agent_reply.css). %>
+      <%# The point of action: the card keeps its bubble while Ritch's words around it are plain text (agent_chats/_turn), and it waits for those words to finish typing (agent-action, app/assets/tailwind/agent_reply.css). %>
       <div class="agent-action self-start w-full max-w-xl" data-test="build-card" data-card="<%= card["card"] %>" data-action-card>
         <% card_locals = { card: card, message: message, request_row: request_row } %>
         <%# A launch the sign-in landing refused shows its reason on the newest summary card (BuildController#launch_refusal_for). %>

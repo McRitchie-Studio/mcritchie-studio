@@ -1,22 +1,22 @@
-# /build — the McRitchie Studio app funnel, as a chat with Ray
+# /build — the McRitchie Studio app funnel, as a chat with Ritch
 # (.agents/epics/build-with-xan-design.md, build-with-ray-v2.md; BuildIntake). A
-# visitor tells Ray what they want to build; Ray asks for the idea, a theme, a CTO
+# visitor tells Ritch what they want to build; Ritch asks for the idea, a theme, a CTO
 # and an address, one card at a time, and the visitor's taps fill the status
 # card. Build my app asks for sign-in only then, claims the subdomain and queues
 # the build for an agent. Nothing is generated here; builds are asynchronous.
 # Every page is the agent shell (app/views/agent_chats/_shell.html.erb).
 #
 #   GET   /build                   the opening question
-#   POST  /build                   the first message → a draft and Ray's thread
+#   POST  /build                   the first message → a draft and Ritch's thread
 #                                  (no account needed; bot-shielded). From the
 #                                  page it answers IN PLACE: Turbo Streams swap
 #                                  the empty thread for the draft's chat and
 #                                  move the address to /build/:token
 #   GET   /build/check?subdomain=  live availability, JSON
 #   GET   /build/requests          admin: every requested app, filterable by status
-#   GET   /build/:token            a draft: the chat with Ray under its status card;
+#   GET   /build/:token            a draft: the chat with Ritch under its status card;
 #                                  once queued, the request's status page
-#   POST  /build/:token/messages   one more message to Ray
+#   POST  /build/:token/messages   one more message to Ritch
 #   GET   /build/:token/turns      the poll: pending turns and the status card,
 #                                  as Turbo Streams (no /cable socket signed out)
 #   PATCH /build/:token/intake     a tap on an intake card (BuildIntake::Choice):
@@ -74,7 +74,7 @@ class BuildController < ApplicationController
   # owner's first visit (CtoChatsController#show).
   LAUNCH_ID = "build-launch".freeze
   # The intake agent as the page names it. The soul slug stays BuildIntake.soul.
-  AGENT_NAME = "Ray".freeze
+  AGENT_NAME = "Ritch".freeze
   AGENT_ROLE = "AI build agent".freeze
 
   # Every app requested through the funnel, newest first. ?status= narrows it;
@@ -175,7 +175,7 @@ class BuildController < ApplicationController
       end
       # An admin opening an unsigned draft from /build/requests only reads it;
       # attaching it would lock the visitor out of their own chat. Anyone else
-      # signing in ADOPTS the draft and its thread with Ray.
+      # signing in ADOPTS the draft and its thread with Ritch.
       @app_request.update!(user: current_user) if @app_request.user.nil? && !current_user.admin?
       session.delete(:build_draft_token)
     end
@@ -183,7 +183,7 @@ class BuildController < ApplicationController
     load_launch_refusal if @app_request.draft?
   end
 
-  # One more message to Ray, from the chat's composer.
+  # One more message to Ritch, from the chat's composer.
   def message
     return redirect_to(build_request_path(@app_request.token), status: :see_other) unless @app_request.draft?
 
@@ -220,9 +220,9 @@ class BuildController < ApplicationController
   end
 
   # A tap on an intake card: the only write to an intake field, and the
-  # visitor's turn it relays to Ray (BuildIntake::Choice), so Ray answers with
+  # visitor's turn it relays to Ritch (BuildIntake::Choice), so Ritch answers with
   # the next step without the visitor typing. The stream redraws the card, adds
-  # the relayed turn (pending, so the page polls for Ray's answer) and the checklist.
+  # the relayed turn (pending, so the page polls for Ritch's answer) and the checklist.
   def choose
     error = nil
     choice = BuildIntake::Choice.new(@app_request, user: (current_user if logged_in?), ip: request.remote_ip)
@@ -368,7 +368,7 @@ class BuildController < ApplicationController
   # CtoChatsController#show: the new CTO's portrait, the app's name, three
   # steps in the app's colours, then the chat). Turbo follows the 303 as a
   # visit, and the draft and the panel both opt in to a view transition, so
-  # Ray's portrait morphs into the CTO's.
+  # Ritch's portrait morphs into the CTO's.
   def launched(outcome)
     redirect_to chat_application_path(outcome.app_slug), status: :see_other
   end

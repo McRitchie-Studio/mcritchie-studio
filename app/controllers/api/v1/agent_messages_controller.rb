@@ -29,7 +29,7 @@ module Api
     #
     # AUTH is the board's, unchanged (BaseController): an agent session or the
     # shared secret's token. A SESSION acts only for its own soul: an admin session
-    # (Steffon, Ray) may act for any soul, any other session only for the soul it
+    # (Steffon, Ritch) may act for any soul, any other session only for the soul it
     # names. A client session and a harness key reach none of this. The shared
     # token carries no soul, so the `soul` it sends is the actor, exactly as every
     # other board write records it (session_actor).

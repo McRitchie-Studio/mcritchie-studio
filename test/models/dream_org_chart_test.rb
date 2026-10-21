@@ -10,7 +10,7 @@ class DreamOrgChartTest < ActiveSupport::TestCase
   SOULS = {
     "pokemon" => { "slug" => "pokemon", "name" => "Pokémon", "title" => "General builder", "position" => 2 },
     "carl" => { "slug" => "carl", "name" => "Carl", "title" => "Lead Architect", "position" => 1 },
-    "ray" => { "slug" => "ray", "name" => "Ray", "title" => "Lead Orchestrator", "position" => 0 },
+    "ray" => { "slug" => "ray", "name" => "Ritch", "title" => "Lead Orchestrator", "position" => 0 },
     "turf-monster" => { "slug" => "turf-monster", "name" => "Turf Monster", "title" => "Operator", "position" => 3 }
   }.freeze
 
