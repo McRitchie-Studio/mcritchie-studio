@@ -11,7 +11,7 @@
 #
 # ONLY ADDRESSED MESSAGES ARE STORED. A message is kept, and routed to a soul, by:
 #   1. a mention of a user listed under that soul's `users` (a per-soul bot user),
-#   2. a mention of a role listed under its `roles` (one shared bot, @Avi/@Ray roles),
+#   2. a mention of a role listed under its `roles` (one shared bot, @Avi/@Ritch roles),
 #   3. a reply to a message the mailbox holds, or to an agent's reply (same thread,
 #      same soul unless the reply names another),
 #   4. the channel override's `default_soul`.
@@ -30,9 +30,9 @@
 # not ingested at all, so the agents' own replies never come back as inbound.
 #
 discord:
-  # The shared bot is Ray's own app (1Password `agents.discord.xan`): it reads the
+  # The shared bot is Ritch's own app (1Password `agents.discord.xan`): it reads the
   # guild and posts every reply.
-  bot_user_id: "1481150857809760399"   # Ray (bot user)
+  bot_user_id: "1481150857809760399"   # Ritch (bot user)
   # Where the floor alert (AgentDispatcherAlertJob) posts, as the same bot: a
   # silent bin/dispatcher, or a routed message waiting too long. One alert per
   # incident and one recovery line. lobster-tank until an ops channel exists.
@@ -47,10 +47,10 @@ discord:
         avi:
           roles: []
           users: ["1560516264378507334"]   # @Avi (bot user)
-        # Ray stays routed for Alex as a helper; he has no catalog.
+        # Ritch stays routed for Alex as a helper; he has no catalog.
         ray:
           roles: []
-          users: ["1481150857809760399"]   # @Ray, the bot user itself
+          users: ["1481150857809760399"]   # @Ritch, the bot user itself
         # Turf (the turf_monster soul), the Turf Monster domain's front door: a
         # mention of the existing "Turf Monster" Discord app's bot user, found
         # 2026-10-15 as a member of this guild. Its replies still post through
@@ -78,7 +78,7 @@ discord:
   #         roles: ["333333333333333333"]   # @Avi
   #         users: []                       # or a per-soul bot user id
   #       ray:
-  #         roles: ["444444444444444444"]   # @Ray
+  #         roles: ["444444444444444444"]   # @Ritch
   #         users: []
 
 # EMAIL (docs/agents/system/agent-message-loop.md, "Email"), read by
@@ -143,8 +143,8 @@ email:
 # answers through OpenClaw) is answered in the web chat: no guild is read for
 # him, so nothing is answered twice.
 #
-# Ray is listed for the /build intake chat (BuildIntake::Ingest), which is not a
-# CTO chat: no app's CTO is Ray, so listing him opens no /applications chat. It
+# Ritch is listed for the /build intake chat (BuildIntake::Ingest), which is not a
+# CTO chat: no app's CTO is Ritch, so listing him opens no /applications chat. It
 # makes bin/dispatcher serve his web rows even if he leaves the Discord routes.
 #
 # `client_cto` is the ONE soul every client app's chat routes to: its persona is

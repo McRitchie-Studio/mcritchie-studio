@@ -1,7 +1,7 @@
-# /build as a chat with Ray (.agents/epics/build-with-xan-design.md;
+# /build as a chat with Ritch (.agents/epics/build-with-xan-design.md;
 # docs/agents/system/agent-message-loop.md, "Build intake").
 #
-# A visitor tells Ray what they want to build. Ray asks, one at a time: the idea
+# A visitor tells Ritch what they want to build. Ritch asks, one at a time: the idea
 # (at most two follow-ups), the theme, the CTO, the address. Each question
 # arrives as a CARD inside the chat, and only the visitor's tap writes a field
 # on their AppRequest.
@@ -9,14 +9,14 @@
 #   thread    `web:build:<request token>`: the request's own conversation, so a
 #             signed-out visitor has one before an account exists, and signing
 #             in at Build only changes who the next message is from
-#   cards     Ray's answer ends with a PROPOSAL block of kind "intake"
+#   cards     Ritch's answer ends with a PROPOSAL block of kind "intake"
 #             (AgentMailbox::ProposalBlock, the same delimiter as every other
 #             proposal). BuildIntake::Card checks it in code; a card that fails is
 #             an `intake_refused` event and is never shown
 #   taps      BuildIntake::Choice writes cto_name, cto_avatar, palette, answers or
 #             the subdomain, each re-validated on the server, and relays the
-#             visitor's turn into the thread so Ray answers with the next step
-#   who       Ray answers the public here and nowhere else, within BuildIntake::Caps
+#             visitor's turn into the thread so Ritch answers with the next step
+#   who       Ritch answers the public here and nowhere else, within BuildIntake::Caps
 #             (AgentMessages::Answerers, config/agent_answerers.yml `public_intake`)
 module BuildIntake
   THREAD_PREFIX = "web:build:".freeze
@@ -26,14 +26,14 @@ module BuildIntake
   TOKEN = /\A[A-Za-z0-9_-]{16,64}\z/
 
   # The four things a request needs before Build my app lights up, in the
-  # order Ray asks for them. The theme comes before the CTO: it is the easier
+  # order Ritch asks for them. The theme comes before the CTO: it is the easier
   # question (Alex, 2026-10-18). The order is only the asking order: a tap on
   # any card writes its field whatever is set already (BuildIntake::Choice), so
   # a draft that picked its CTO under the old order simply goes on to the theme.
   #
   # The theme step was named "colors" until task build-flow-polish (the visitor
   # always read "Theme"). The step name is never stored: a request holds the
-  # theme in its `palette` column, and the checklist, the next step and Ray's
+  # theme in its `palette` column, and the checklist, the next step and Ritch's
   # intake context are worked out from the columns on every read. So no draft
   # needs migrating. STEP_ALIASES keeps the old name readable for anything that
   # still asks for it (an intake bundle built before the deploy, a stale
@@ -82,7 +82,7 @@ module BuildIntake
     remove_instance_variable(:@policy) if defined?(@policy)
   end
 
-  # The soul that runs intake: Ray unless the config names another.
+  # The soul that runs intake: Ritch unless the config names another.
   def soul = policy&.soul || "ray"
 
   def history(token, limit: AgentMessages::WebChat::HISTORY)

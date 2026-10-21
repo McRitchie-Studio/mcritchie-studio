@@ -12,7 +12,7 @@ class AgentMessages::RouterTest < ActiveSupport::TestCase
                                             mention_users: users, mention_roles: roles, parent_id: parent)
   end
 
-  test "a role mention routes to that role's soul (one shared bot with @Avi/@Ray roles)" do
+  test "a role mention routes to that role's soul (one shared bot with @Avi/@Ritch roles)" do
     result = route("<@&#{RAY_ROLE}> what's on the board?", roles: [ RAY_ROLE ])
     assert_equal "ray", result.soul
     assert_equal "role", result.routed_by
@@ -59,7 +59,7 @@ class AgentMessages::RouterTest < ActiveSupport::TestCase
     assert_nil route("anyone?", routes: routes, channel: LOUNGE).soul
   end
 
-  test "the shipped config lists the McRitchie Studio guild with no channel entries and routes @Ray anywhere in it" do
+  test "the shipped config lists the McRitchie Studio guild with no channel entries and routes @Ritch anywhere in it" do
     routes = AgentMessages::Routes.load
     ray = "1481150857809760399"
     studio = "1332466565203103744"

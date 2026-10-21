@@ -3,7 +3,7 @@
 
 <%# The OPSD distillation pipeline as three columns, left→right:
     1. ACTIVITIES    — recent narrated activities
-    2. INSIGHTS      — Ray's banked grades (the distilled lessons)
+    2. INSIGHTS      — Ritch's banked grades (the distilled lessons)
     3. CONFIRMATIONS — Mr. McRitchie's mcr grades (the confirmed subset)
     Reuses the heartbeat surface (hb-* styles, category meta, agent cell). %>
 <%= render "heartbeat/styles" %>
@@ -65,7 +65,7 @@
   /* Test runs band — recent release test-scope VERDICTS, each a gradeable unit.
      Mirrors the Candidates band's grid layout; sits above the loop as raw material
      that FEEDS it (a graded test run → a lesson). Neutral (blue) header, not the
-     red candidates edge; a per-row red inset appears only on a Ray "not" grade. */
+     red candidates edge; a per-row red inset appears only on a Ritch "not" grade. */
   #ray-heartbeat .pl-truns { margin-bottom:18px; border:1px solid var(--hb-line); border-radius:12px; overflow:hidden; background:var(--hb-panel); }
   #ray-heartbeat .pl-truns .pl-colhd h2 { color:var(--hb-accent); }
   #ray-heartbeat .pl-truns .pl-list { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:0; max-height:none; }
@@ -80,7 +80,7 @@
     <div>
       <h1>&#127869;&#65039; Distillation Pipeline</h1>
       <p class="pl-sub">
-        The learning loop, left to right: narrated <strong>Activities</strong> &rarr; Ray's
+        The learning loop, left to right: narrated <strong>Activities</strong> &rarr; Ritch's
         distilled <strong>Insights</strong> &rarr; the <strong>Confirmations</strong> you keep.
         Confirm an insight to promote it toward the docs.
       </p>
@@ -161,7 +161,7 @@
               </div>
             </div>
             <div class="pl-meta">
-              <% if is_not %><span class="pl-notpill" data-test="pl-not" title="Ray graded this NOT">not</span><% end %>
+              <% if is_not %><span class="pl-notpill" data-test="pl-not" title="Ritch graded this NOT">not</span><% end %>
               <span class="pl-cost"><%= cost.positive? ? number_to_currency(cost, precision: 4) : "—" %></span>
             </div>
           </div>
@@ -169,7 +169,7 @@
       </div>
     </div>
 
-    <%# ── Column 2 · Insights (Ray's banked grades) ─────────────────────── %>
+    <%# ── Column 2 · Insights (Ritch's banked grades) ─────────────────────── %>
     <div class="pl-col" id="col-insights">
       <div class="pl-colhd">
         <div class="pl-step">Column 2</div>
@@ -177,7 +177,7 @@
       </div>
       <div class="pl-list">
         <% if @insights.empty? %>
-          <div class="pl-empty">No insights yet — Ray banks them with <code>grade-events</code>.</div>
+          <div class="pl-empty">No insights yet — Ritch banks them with <code>grade-events</code>.</div>
         <% end %>
         <% @insights.each do |insight| %>
           <%# An insight targets EITHER an activity OR a raw action (the XOR) — the

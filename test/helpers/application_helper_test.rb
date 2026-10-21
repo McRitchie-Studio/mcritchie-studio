@@ -649,7 +649,7 @@ class ApplicationHelperTest < ActionView::TestCase
     # workspace-launch rides Steffon's card too: it is not a heartbeat act, but the
     # operator launches it by name and wanted it one copy away.
     assert_equal ["production-deploy", "clean-infra", "workspace-launch"], launchers[2][:actions]
-    # ship-clock is Ray's typing-to-shipping benchmark, one copy away.
+    # ship-clock is Ritch's typing-to-shipping benchmark, one copy away.
     assert_equal ["grade-events", "share-insights", "full-cycle", "ship-clock"], launchers[3][:actions]
     # Turf Monster gained the rehearsal launcher after the first watched QA run —
     # an operator asked to be able to kick the whole contest cycle off from the
@@ -1287,7 +1287,7 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   def seed_workflow_souls
-    { "carl" => "Carl", "avi" => "Avi", "steffon" => "Steffon", "ray" => "Ray",
+    { "carl" => "Carl", "avi" => "Avi", "steffon" => "Steffon", "ray" => "Ritch",
       "turf-monster" => "Turf Monster", "pokemon" => "Pokémon" }.each do |slug, name|
       Agent.find_or_create_by!(slug: slug) { |agent| agent.name = name }
     end

@@ -146,7 +146,7 @@ module AgentMessages
     def turn_id(message) = "cto-chat-turn-#{message.id}"
 
     # The heading agent's name, from the row's own soul, whichever agent that
-    # is (a CTO, or Ray on a /build thread): the domain's reply_name, else the
+    # is (a CTO, or Ritch on a /build thread): the domain's reply_name, else the
     # Agent's name, else the slug titleized. Nothing here assumes a CTO.
     # A client app's CTO is named by its AppCto row (the one `client_cto` soul
     # wears every client app's name).

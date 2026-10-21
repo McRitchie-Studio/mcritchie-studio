@@ -74,7 +74,7 @@ class AgentActivity < ApplicationRecord
   # closing/removing an activity never destroys the actions it framed.
   has_many :agent_actions, dependent: :nullify, inverse_of: :agent_activity
 
-  # The grades targeting this activity — Ray's grade and the McRitchie audit-of-Ray
+  # The grades targeting this activity — Ritch's grade and the McRitchie audit-of-Ritch
   # are two ActionGrade rows (distinguished by grader), the activity-level mirror of
   # AgentAction#action_grades. Nullify (not destroy), matching the FK's
   # on_delete: :nullify — removing an activity orphans its grades rather than deleting

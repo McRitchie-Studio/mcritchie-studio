@@ -73,10 +73,10 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal "shannon", light_slug(result)
   end
 
-  test "a docs-shaped task selects Ray (the documentation seat) as the light" do
+  test "a docs-shaped task selects Ritch (the documentation seat) as the light" do
     result = ReviewerSelector.select(task_for(shape: "docs"))
     assert_equal "carl", primary_slug(result)
-    assert_equal "ray", light_slug(result), "the docs shape routes the light to Ray"
+    assert_equal "ray", light_slug(result), "the docs shape routes the light to Ritch"
   end
 
   # --- who may merge: the decision says so beside the pair ---
@@ -353,8 +353,8 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   # --- `--builder none` is CROSS-EXAMINED, not believed (builder-none-fails-open) ---
   #
   # THE DEFECT, measured 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a
-  # docs PR Ray wrote while the task carried no stamp): `--builder none` seated RAY
-  # as the light on Ray's own diff and printed the no-self-review property upheld,
+  # docs PR Ritch wrote while the task carried no stamp): `--builder none` seated RAY
+  # as the light on Ritch's own diff and printed the no-self-review property upheld,
   # while `--builder ray` correctly excluded him. `none` made the builder KNOWN and
   # returned an empty author set, so every source that could have named an author was
   # skipped unread — the one input to this class that failed OPEN.
@@ -882,8 +882,8 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   # --- THE AUTHOR SET (reviewer-select-seats-authors) --------------------------
   # devops.built_by holds ONE soul, but a task can have SEVERAL: a session limit
   # kills a builder mid-work and another soul finishes it. built_by then names the
-  # LAST claimant, and the pool excluded one author of two — which seated Ray on a
-  # diff Ray had written every test on (PR #1081, 2026-08-30).
+  # LAST claimant, and the pool excluded one author of two — which seated Ritch on a
+  # diff Ritch had written every test on (PR #1081, 2026-08-30).
 
   def multi_author_task(shape: "backend", built_by: "steffon", builders: %w[steffon ray], unattributed: nil)
     devops = { "shape" => shape, "built_by" => built_by, "builders" => builders }

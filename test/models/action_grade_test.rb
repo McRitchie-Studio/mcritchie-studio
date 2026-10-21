@@ -182,7 +182,7 @@ class ActionGradeTest < ActiveSupport::TestCase
 
   # ---- [integration] ray grade + mcr audit are two rows on one action -------
 
-  test "[integration] an action carries Ray's grade and the McRitchie audit as two rows" do
+  test "[integration] an action carries Ritch's grade and the McRitchie audit as two rows" do
     graded = action(session_id: "two-row-sess")
 
     ray = ActionGrade.create!(
@@ -199,7 +199,7 @@ class ActionGradeTest < ActiveSupport::TestCase
     assert_equal 2, graded.action_grades.count
     assert_equal [ray.id], graded.action_grades.by_grader(ActionGrade::RAY).pluck(:id)
     assert_equal [mcr.id], graded.action_grades.by_grader(ActionGrade::MCR).pluck(:id)
-    assert mcr.mcr?, "the McRitchie row audits Ray's grade for that action"
+    assert mcr.mcr?, "the McRitchie row audits Ritch's grade for that action"
   end
 
   test "[integration] destroying the action destroys its grades" do
@@ -248,7 +248,7 @@ class ActionGradeTest < ActiveSupport::TestCase
     assert_includes dup.errors[:grader], "has already been taken"
   end
 
-  test "[unit] an event carries Ray's grade and the McRitchie audit as two rows" do
+  test "[unit] an event carries Ritch's grade and the McRitchie audit as two rows" do
     span = event(session_id: "ev-two-row")
     ray = ActionGrade.create!(event_valid_attrs(agent_activity: span, grader: ActionGrade::RAY))
     mcr  = ActionGrade.create!(event_valid_attrs(agent_activity: span, grader: ActionGrade::MCR))

@@ -22,7 +22,7 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     OmniAuth.config.mock_auth[:google_oauth2] = nil
   end
 
-  # A signed-out draft with every step set, and Ray's summary card in its thread.
+  # A signed-out draft with every step set, and Ritch's summary card in its thread.
   def ready_draft!(subdomain: "league-hub")
     post build_path, params: { app_request: { prompt: PROMPT } }
     draft = AppRequest.recent.first

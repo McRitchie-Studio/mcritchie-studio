@@ -29,10 +29,10 @@ class SopRegistryGeneratedTest < ActiveSupport::TestCase
     row = SopRegistry.entries(ROOT).find { |e| e.invocation == "clean-up" }
 
     refute_nil row, "`clean-up` is not in the SOP registry"
-    assert_equal "Ray", row.owner
+    assert_equal "Ritch", row.owner
     assert_path_exists Rails.root.join(row.path)
     assert_includes Rails.root.join(SopRegistry::REGISTRY_PATH).read,
-                    "| `clean-up` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/clean-up.md` |"
+                    "| `clean-up` | Ritch | `mcritchie-studio/docs/agents/agents/ray/sops/clean-up.md` |"
   end
 
   test "[unit] a soul's files register by location, a module only by its marker" do

@@ -254,7 +254,7 @@ module Insights
 
     # The insight feed reads ActionGrade.banked, and an ActionGrade must hang off an
     # action or an activity (its XOR). Like Insights::BlockMiner, hang it off the
-    # task's newest narrated activity Ray has not graded yet, builder lane first.
+    # task's newest narrated activity Ritch has not graded yet, builder lane first.
     # No activity → the learning stays on the task note and the grade, and the feed
     # does not carry it (recorded in facts so the gap is visible, not silent).
     def bank!(note, result)

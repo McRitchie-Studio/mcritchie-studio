@@ -1,4 +1,4 @@
-# The grading layer over the learning heartbeat — Ray's feedback record.
+# The grading layer over the learning heartbeat — Ritch's feedback record.
 #
 # A grade targets EXACTLY ONE of two things (an additive dual-FK, not a
 # polymorphic rewrite): a raw agent action OR a narrated agent activity. The model
@@ -7,12 +7,12 @@
 # Either target can carry up to TWO ActionGrade rows, distinguished by the
 # `grader` column:
 #
-#   grader = "ray"   — Ray's grade of the action/activity itself.
-#   grader = "mcr"   — Mr. McRitchie's audit OF Ray's grade for that target
-#                      (the recursive audit: McRitchie grades Ray's grading).
+#   grader = "ray"   — Ritch's grade of the action/activity itself.
+#   grader = "mcr"   — Mr. McRitchie's audit OF Ritch's grade for that target
+#                      (the recursive audit: McRitchie grades Ritch's grading).
 #
 # The (agent_action_id, grader) and (agent_activity_id, grader) pairs are each
-# unique, so a target holds at most one Ray grade and one McRitchie audit —
+# unique, so a target holds at most one Ritch grade and one McRitchie audit —
 # never two of either.
 #
 # Each grade is a 4–7 word feedback `slug` plus a BINARY `disposition`
@@ -29,7 +29,7 @@
 # (the heartbeat UI wiring, T4) is responsible for wrapping these in rescue_and_log
 # with target/parent context, per backend discipline.
 class ActionGrade < ApplicationRecord
-  # Who graded — TWO rows per action: Ray's grade, and the McRitchie audit of it.
+  # Who graded — TWO rows per action: Ritch's grade, and the McRitchie audit of it.
   RAY     = "ray"
   MCR     = "mcr"
   GRADERS = [RAY, MCR].freeze
@@ -90,7 +90,7 @@ class ActionGrade < ApplicationRecord
   # Exactly one target — a grade is of an action OR an activity, never both, never
   # neither (replaces the old agent_action presence guarantee).
   validate :exactly_one_target
-  # One Ray grade + one McRitchie audit PER TARGET — never two of either. The
+  # One Ritch grade + one McRitchie audit PER TARGET — never two of either. The
   # uniqueness is scoped per FK and only fires for the FK that is actually set,
   # so an action grade and an activity grade by the same grader never collide.
   validates :grader, uniqueness: { scope: :agent_action_id }, if: -> { agent_action_id.present? }
@@ -106,7 +106,7 @@ class ActionGrade < ApplicationRecord
   scope :seeded_candidates, -> { where.not(source_activity_slug: nil) }
   # Candidates still AWAITING grade — seeded but not yet banked into the Insight
   # Bank nor set aside. The read the pipeline surfaces (heartbeat#pipeline): the
-  # queue of block-mined lessons for the operator/Ray to promote or discard.
+  # queue of block-mined lessons for the operator/Ritch to promote or discard.
   scope :pending_candidates, -> { seeded_candidates.where(banked: false, discarded: false) }
 
   # The learning loop's OUTPUT — the curated lessons a FRESH session carries in.

@@ -53,10 +53,10 @@
   <%# The orbit glow (cta_glow.css): wedges of the selected theme's three colours turning round the CTA, clipped to its ring so nothing scrolls sideways (Alex, 2026-10-19: the Turf Monster team cards' moving glow). %>
   <%= tag.span class: "cta-glow cta-glow-orbit mt-6", style: cta_glow_style(palettes[selected]), data: { test: "build-palette-glow", build_theme_glow: true, glow: ("off" if selected == chosen_index) } do %>
     <span class="cta-glow-ring" aria-hidden="true" data-test="build-palette-glow-ring"></span>
-    <%# Disabled while the selection is the theme already chosen: a re-tap would spend a turn of Ray's for nothing (BuildIntake::Choice ignores it too). Picking another theme enables it (cta_glow.js). %>
+    <%# Disabled while the selection is the theme already chosen: a re-tap would spend a turn of Ritch's for nothing (BuildIntake::Choice ignores it too). Picking another theme enables it (cta_glow.js). %>
     <button type="submit" class="btn btn-primary w-full" data-test="build-choose-palette" <%= "disabled" if selected == chosen_index %>>Choose Theme</button>
   <% end %>
-  <%# Asking for other themes is a chat turn, not a card action: the tap writes the line into the chat box and sends it the same way a typed message goes (build_status.js, the shared composer), so Ray answers with a fresh theme card. %>
+  <%# Asking for other themes is a chat turn, not a card action: the tap writes the line into the chat box and sends it the same way a typed message goes (build_status.js, the shared composer), so Ritch answers with a fresh theme card. %>
   <p class="mt-3 text-center text-xs text-muted" data-test="build-theme-more">
     Want different colors?
     <button type="button" class="font-semibold text-primary-ink underline-offset-2 hover:underline focus-visible:underline"

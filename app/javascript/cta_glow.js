@@ -6,7 +6,7 @@
 //     colours. The colours are registered CSS properties, so the browser blends
 //     them. While the pick is the theme already chosen (the card's
 //     data-chosen-index) the glow is spent (data-glow="off") and Choose Theme is
-//     disabled: a re-tap would spend a turn of Ray's for nothing.
+//     disabled: a re-tap would spend a turn of Ritch's for nothing.
 //   - every glow: one IntersectionObserver marks a CTA scrolled off screen
 //     data-glow-visible="false", so it draws no blurred layer.
 //   - Turbo: before a page is cached the observer lets go of every element,

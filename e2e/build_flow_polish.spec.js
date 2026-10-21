@@ -6,7 +6,7 @@
 //      in letter by letter and while a new turn lands; a reader scrolled 200px up
 //      is not moved (app/javascript/chat_follow.js).
 //   2. Choose Theme on the theme already chosen posts nothing (no visitor turn,
-//      no turn of Ray's); picking another theme enables it again.
+//      no turn of Ritch's); picking another theme enables it again.
 //   3. The domain card makes no availability request of its own when it arrives
 //      (the server's render already checked every name once); a changed name is
 //      checked once.
@@ -34,7 +34,7 @@ async function adminToken(browser) {
   return token;
 }
 
-// Ray answers the visitor's message through the real mailbox API; the page polls.
+// Ritch answers the visitor's message through the real mailbox API; the page polls.
 async function rayAnswers(page, auth, content, text, card) {
   const worker = `e2e-polish-${Date.now()}`;
   for (let i = 0; i < 10; i += 1) {
@@ -59,7 +59,7 @@ async function rayAnswers(page, auth, content, text, card) {
 async function start(page, idea) {
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": `198.51.100.${1 + Math.floor(Math.random() * 250)}` });
   await page.goto("/build");
-  const box = page.getByLabel("Tell Ray what you want to build");
+  const box = page.getByLabel("Tell Ritch what you want to build");
   await box.fill(idea);
   await page.waitForTimeout(2200);
   await box.press("Enter");

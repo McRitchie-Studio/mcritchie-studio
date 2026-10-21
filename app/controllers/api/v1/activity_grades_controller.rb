@@ -3,17 +3,17 @@ module Api
     class ActivityGradesController < BaseController
       # The bearer AGENT path for the Ray heartbeat grade-events loop — the
       # first-class alternative to the admin browser drawer. `awaiting` returns the
-      # resolved activities still ungraded by Ray; `create` records Ray's grade.
+      # resolved activities still ungraded by Ritch; `create` records Ritch's grade.
       #
       # PROVENANCE, NOT A SECURITY BOUNDARY: this path ALWAYS grades as `ray` — the
-      # grader is never read from params, so there is no way to post an audit-OF-Ray
+      # grader is never read from params, so there is no way to post an audit-OF-Ritch
       # (`grader: "mcr"`) row THROUGH THIS ENDPOINT. The `mcr` lane is the heartbeat
       # browser surface, whose writes need an admin (HeartbeatController,
       # test/integration/heartbeat_grade_auth_test.rb), so an `mcr` row is an admin's.
 
       # GET /api/v1/agent_activities/awaiting_grade?limit=N
       #
-      # The resolved activities Ray hasn't graded yet, newest-resolved first (capped by
+      # The resolved activities Ritch hasn't graded yet, newest-resolved first (capped by
       # the model to 1..MAX_GRADE_BATCH). Each row carries what the grader needs to
       # judge it (id, category, reason, outcome, provenance).
       def awaiting
@@ -24,7 +24,7 @@ module Api
 
       # POST /api/v1/agent_activities/:id/grade
       #
-      # Upsert Ray's grade of the activity: { disposition: good|not, slug?, long_form?,
+      # Upsert Ritch's grade of the activity: { disposition: good|not, slug?, long_form?,
       # intent?: bank|discard }. Returns the recorded grade. A missing activity is a 404;
       # an invalid grade is a 422 (both via BaseController).
       def create

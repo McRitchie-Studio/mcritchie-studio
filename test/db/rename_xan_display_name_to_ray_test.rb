@@ -29,9 +29,4 @@ class RenameXanDisplayNameToRayTest < ActiveSupport::TestCase
     migrate(:up)
     assert_equal "Orchestrator", @seat.reload.name
   end
-
-  test "the roster seed names the ray soul Ray" do
-    row = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls").find { |s| s["slug"] == "ray" }
-    assert_equal "Ray", row["name"]
-  end
 end

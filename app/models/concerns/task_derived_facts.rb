@@ -209,7 +209,7 @@ module TaskDerivedFacts
   # `Github::TaskDerivation#authors` returns `["ray"]`. #derived_authors returned
   # `[]` — the desk's static GITHUB_TOKEN 401s and the rescue above flattened it.
   # `bin/reviewer-select --builder none` had nothing to check its assertion
-  # against and seated Ray as the light on Ray's own PR, reporting the
+  # against and seated Ritch as the light on Ritch's own PR, reporting the
   # no-self-review property upheld. This method is what lets that refuse instead.
   #
   # Returns a string-keyed hash with exactly one of the last two keys set:

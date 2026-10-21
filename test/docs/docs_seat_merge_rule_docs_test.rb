@@ -18,7 +18,7 @@ class DocsSeatMergeRuleDocsTest < ActiveSupport::TestCase
 
   # page => the sentence it must carry
   RULE_PAGES = {
-    "agents/carl/sops/pr-review-primary.md" => /Ray, the documentation seat, merges a docs-shape PR only/,
+    "agents/carl/sops/pr-review-primary.md" => /Ritch, the documentation seat, merges a docs-shape PR only/,
     "agents/carl/sops/pr-review.md" => /documentation seat merges docs-shape PRs only/,
     "agents/carl/sops/pr-review-light.md" => /documentation seat merges a docs-shape PR only as its PRIMARY/,
     "modules/focus-session.md" => /documentation seat merges docs-shape PRs only/,
@@ -56,7 +56,7 @@ class DocsSeatMergeRuleDocsTest < ActiveSupport::TestCase
     body = norm("modules/focus-session.md")
 
     assert_includes body, "records its verdict with --head, and merges on bin/merge-permit's permit"
-    assert_match(/If Ray reports a refusal .* the PR is tier B: spawn carl/, body)
+    assert_match(/If Ritch reports a refusal .* the PR is tier B: spawn carl/, body)
   end
 
   test "[docs] the commands the pages print are the script's own flags" do

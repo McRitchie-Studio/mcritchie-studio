@@ -25,7 +25,7 @@
       <input type="text" name="custom_name" value="<%= picked_name %>" maxlength="24" required autocomplete="off"
              class="input-field w-full text-center text-base font-semibold" data-build-cto-name-input data-test="build-cto-name-input">
     </label>
-    <%# Ray's names as taps, not a datalist: a datalist filters by the field's value, so with the first name prefilled the others stayed hidden until the field was cleared. A tap fills the field (build_chat.js); typing still wins. %>
+    <%# Ritch's names as taps, not a datalist: a datalist filters by the field's value, so with the first name prefilled the others stayed hidden until the field was cleared. A tap fills the field (build_chat.js); typing still wins. %>
     <% if card["names"].size > 1 %>
       <div class="flex flex-wrap items-center justify-center gap-1.5" role="group" aria-label="<%= BuildController::AGENT_NAME %>'s name ideas" data-test="build-cto-names">
         <% card["names"].each do |name| %>

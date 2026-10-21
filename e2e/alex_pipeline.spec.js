@@ -20,7 +20,7 @@ test.describe("ray pipeline admin wall", () => {
 });
 
 // [e2e] The OPSD distillation pipeline (/ray/pipeline) — three columns, left→right:
-// Activities (narrated AgentActivity rows) → Insights (Ray's banked grades) →
+// Activities (narrated AgentActivity rows) → Insights (Ritch's banked grades) →
 // Confirmations (McRitchie's mcr grades). An admin page; the happy path here is the
 // page rendering, as the seeded admin, with all three columns and the nav's link out
 // to the cross-session All Activities view.

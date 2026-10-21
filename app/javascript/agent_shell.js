@@ -19,7 +19,7 @@
 //     the head is full and slides away, for good on that page, at the first step;
 //   - the FIRST MESSAGE's move to /build/<token> (BuildController#create's
 //     streams): the thread slides in; the status card scales in the first time it
-//     replaces the heading (the poll that brings Ray's theme card); after any stream the chat box is kept in the window.
+//     replaces the heading (the poll that brings Ritch's theme card); after any stream the chat box is kept in the window.
 //
 // Under prefers-reduced-motion the steps and entrances still apply, unanimated
 // (the CSS turns the motion off; the gallery goes at once).
@@ -134,7 +134,7 @@ function animateOnce(element, className) {
   element.addEventListener("animationend", () => element.classList.remove(className), { once: true });
 }
 
-// The status card's arrival (the poll that brings Ray's theme card swaps the
+// The status card's arrival (the poll that brings Ritch's theme card swaps the
 // heading for it): the
 // agent-shell-pop-in entrance. Under reduced motion that entrance is still, so
 // the card plays build_status.js's pop instead, which reduced motion cuts to its
@@ -152,7 +152,7 @@ export function enterStatusCard(root = document, reduced = reducedMotion()) {
 // Whether a redraw of the status slot leaves the page's heading in place: both
 // are the heading (data-card false) with the same face (data-heading: "intro"
 // asks what to build, "locked" names the idea Start App locked in). A new face
-// (Start App's stream) is swapped in; the card (Ray's theme card) always is.
+// (Start App's stream) is swapped in; the card (Ritch's theme card) always is.
 export function keepsHeading(current, incoming) {
   if (current?.dataset?.card !== "false" || incoming?.dataset?.card !== "false") return false;
   return (current.dataset.heading || "intro") === (incoming.dataset.heading || "intro");

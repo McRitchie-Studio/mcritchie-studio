@@ -220,13 +220,13 @@ class HeartbeatEventTableTest < ActionView::TestCase
     assert_select "form[data-test=event-inline-grade][data-grader=mcr] button[data-test=event-grade-clear]", 1
   end
 
-  test "[component] the two graders' quick-grades sit in SEPARATE Ray + McRitchie cells, no grade button" do
+  test "[component] the two graders' quick-grades sit in SEPARATE Ritch + McRitchie cells, no grade button" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
 
     render partial: "heartbeat/activity_table",
            locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
-    # Grade split into two columns: an Ray cell and a McRitchie audit cell, each holding
+    # Grade split into two columns: an Ritch cell and a McRitchie audit cell, each holding
     # ONLY its own grader's inline quick-grade form (not one shared, side-by-side row).
     assert_select "td[data-test=event-grade-cell] .hb-evtfbstack", 1
     assert_select "td[data-test=event-grade-cell-mcr] .hb-evtfbstack", 1
@@ -463,7 +463,7 @@ class HeartbeatEventTableTest < ActionView::TestCase
            locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
                      activity_grades: { ev.id => { "ray" => grade } } }
 
-    # the Ray marker is server-rendered (Nokogiri-visible), carrying its slug
+    # the Ritch marker is server-rendered (Nokogiri-visible), carrying its slug
     assert_select "[data-test=event-grade-ray]"
     assert_includes rendered, "tight span with a clean outcome"
     # and the tbody carries the hydration data the Alpine row reads

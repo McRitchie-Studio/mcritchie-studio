@@ -15,7 +15,7 @@ const { loginWithMagicLink } = require("./helpers");
 // spec the next fixture breaks.
 
 // [e2e] The T5 feedback loop on the read-only event heartbeat: expand a span, open a
-// drilled-down action's grading drawer, write Ray's grade, bank it, and confirm it
+// drilled-down action's grading drawer, write Ritch's grade, bank it, and confirm it
 // surfaces in the Insight Bank. Grading moved entirely into the drawer — the event
 // table itself is read-only (no inline radios). The page reads without a login; the
 // grade and bank writes need an admin, so the spec signs in as one first.
@@ -30,7 +30,7 @@ test("grade a drilled-down action, bank it, and see it in the Insight Bank", asy
   await span.locator("tr[data-test='heartbeat-event-action']").first().click();
   await expect(drawer).toHaveClass(/hb-drawer-open/);
 
-  // The Ray grade editor is the first feedback block in the lazy-loaded drawer body.
+  // The Ritch grade editor is the first feedback block in the lazy-loaded drawer body.
   const alexForm = drawer.locator("form.hb-fbblock").first();
   await expect(alexForm.locator("input[name='slug']")).toBeVisible();
 
@@ -63,7 +63,7 @@ test("the event heartbeat table exposes no inline grading radios @quarantine", a
   await expect(page.locator("[data-test='heartbeat-event-table'] input[type='radio']")).toHaveCount(0);
 });
 
-// [e2e] Grade a whole SPAN from its drawer: open the span-grade drawer, write Ray's
+// [e2e] Grade a whole SPAN from its drawer: open the span-grade drawer, write Ritch's
 // grade, save (fetch -> E2 JSON), confirm the saved chip, and see the grade marker
 // land on the span row live and survive a reload.
 // STILL TAGGED — same design reversal. It opens the span drawer via
@@ -86,7 +86,7 @@ test("grade a span from its drawer and see the marker land on the row @quarantin
   // The editor confirms the save in place (JSON round-trip, no reload).
   await expect(alexForm.locator("[data-test='span-grade-saved']")).toBeVisible();
 
-  // The span row's Ray marker updates live via the hb:span-graded event.
+  // The span row's Ritch marker updates live via the hb:span-graded event.
   await expect(span.locator("[data-test='event-grade-ray']")).toContainText(lesson);
 
   // And it persists — a fresh load renders the marker server-side.
