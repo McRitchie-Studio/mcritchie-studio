@@ -56,7 +56,7 @@ records = [
     url: "https://mcritchie.studio", used_by: "The agent task API (AGENT_API_SECRET)",
     scope_summary: "Task-board API secret." },
   { vault: "studio-agents", title: "agent.solana", service: "solana", category: "Crypto Wallet",
-    scope_summary: "Legacy Ritch wallet; off both live signer sets since the 2026-06-02 key rotation." },
+    scope_summary: "Legacy Ray wallet; off both live signer sets since the 2026-06-02 key rotation." },
   { vault: "studio-agents", title: "agent.mason.solana", service: "solana", category: "Crypto Wallet",
     scope_summary: "Mason's vault signer; no longer a Squads member." },
   { vault: "studio-agents", title: "agent.mack.solana", service: "solana", category: "Crypto Wallet",
@@ -139,7 +139,7 @@ records = [
     notes: "Old name of github.mcritchie-admin (the App was renamed 2026-09-26). Refused by every code path " \
            "since 2026-09-26; the 1Password item is deleted once that change merges." },
   { vault: "studio-agents-admin", title: "agent.xan.solana", service: "solana", category: "Crypto Wallet",
-    scope_summary: "The Ritch signer; the rotated replacement for agent.solana." },
+    scope_summary: "The Ray signer; the rotated replacement for agent.solana." },
   # The one AWS credential still live, kept on purpose after the 2026-10-10 retirement.
   { vault: "studio-agents-admin", title: "AWS", service: "aws", category: "API Credential", url: "https://console.aws.amazon.com",
     used_by: "Mr. McRitchie's read-only foothold in the AWS account",
