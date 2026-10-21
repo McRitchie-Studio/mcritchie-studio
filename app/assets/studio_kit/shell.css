@@ -11,7 +11,9 @@
 /* Only a bundle built on the template (it marks its content region) gets the
    flex frame; an older bundle's own body layout is left exactly as it was. */
 body[data-studio-kit]:has(> [data-studio-content]) { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; }
-body[data-studio-kit] > [data-studio-content] { flex: 1 0 auto; width: 100%; }
+/* width 100% and border-box: a flex column item with auto side margins (the
+   usual centred max-width column) would otherwise shrink to its content. */
+body[data-studio-kit] > [data-studio-content] { flex: 1 0 auto; width: 100%; box-sizing: border-box; }
 body[data-studio-kit] > [data-studio-navbar],
 body[data-studio-kit] > [data-studio-footer] { flex: none; }
 
@@ -60,3 +62,18 @@ html.dark [data-studio-kit-when="light"] { display: none; }
 body[data-studio-kit] > footer[data-site-footer]:not([data-studio-footer]) { display: none; }
 
 [data-studio-footer] { margin-top: 3rem; }
+
+/* The shell runs edge to edge: the frame owns the body's margin (a bundle that
+   sets its own still wins, its rule being unlayered). */
+@layer base {
+  body[data-studio-kit] { margin: 0; }
+
+  /* The one piece of Tailwind's preflight the engine's primitives lean on: a
+     border is solid and zero wide until a utility widens it. Scoped to the
+     primitives and the shell, and in the base layer, so a utility (card's
+     border) and every rule of the bundle's own still win over it. */
+  :where(.btn, .btn-primary, .btn-secondary, .btn-outline, .btn-neutral, .card, .card-hover, .badge, .input-field,
+         [data-studio-navbar], [data-studio-navbar] *, [data-studio-footer], [data-studio-footer] *) {
+    border-width: 0; border-style: solid; border-color: var(--color-border);
+  }
+}
