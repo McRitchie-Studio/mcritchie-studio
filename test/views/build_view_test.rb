@@ -43,9 +43,33 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='build-example'][href='https://cyvasse.xyz'][target='_blank']", text: /Cyvasse/
   end
 
-  def example(name, image: nil, motion: nil, blurb: "An app.")
+  def example(name, image: nil, motion: nil, blurb: "An app.", palette: nil)
     BuildGallery::Example.new(name: name, url: "https://#{name.parameterize}.mcritchie.studio", emoji: "🧱", blurb: blurb,
-                              image: image, motion: motion)
+                              image: image, motion: motion, palette: palette)
+  end
+
+  test "[component] a card with a palette wears its app's colours, light and dark; one without keeps the Studio theme" do
+    signed_in(nil)
+    @draft = nil
+    palette = { "light" => { "surface" => "#ffffff", "primary" => "#2E7D32", "name" => "#246227", "text" => "#666667" },
+                "dark" => { "surface" => "#3C3853", "primary" => "#2E7D32", "name" => "#97BE99", "text" => "#A6A4B0" } }
+    @examples = [ example("Turf Monster", palette: palette), example("Rantly") ]
+    render template: "build/new"
+
+    themed, plain = css_select("[data-test='build-example']")
+    assert themed.key?("data-palette")
+    style = themed["style"]
+    { "surface" => %w[#ffffff #3C3853], "primary" => %w[#2E7D32 #2E7D32], "name" => %w[#246227 #97BE99], "text" => %w[#666667 #A6A4B0] }
+      .each do |key, (light, dark)|
+        assert_includes style, "--gc-#{key}-light: #{light}"
+        assert_includes style, "--gc-#{key}-dark: #{dark}"
+      end
+    assert_includes themed["class"].split, "build-gallery-card"
+    assert themed.at_css(".build-gallery-card-body .build-gallery-card-name"), "the name takes the palette's name colour"
+    assert_equal 2, themed.css(".build-gallery-card-text").size, "host and blurb take its text colour"
+
+    refute plain.key?("data-palette")
+    assert_nil plain["style"], "no palette, no inline colours: the Studio theme"
   end
 
   test "the gallery is a sideways row, about 3.3 cards wide, with a scroll-aware edge fade and centered card text" do

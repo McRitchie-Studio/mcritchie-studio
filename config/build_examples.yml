@@ -32,6 +32,51 @@ lead:
 names:
   10and5: "10&5 Hospitality"
 
+# `palettes` dresses an app's card in its own theme, by subdomain (the URL's
+# first label, as `lead`): the lower panel takes its `surface`, the name its
+# `name` colour, the host and blurb its `text`, and the border and hover glow
+# its `primary`, one set for light mode and one for dark. Every `name` and
+# `text` must read at WCAG AA (4.5:1) on its `surface`
+# (test/models/app_request_test.rb measures them). Values are #rrggbb only; an
+# app without an entry keeps the Studio theme. Each entry names its source.
+palettes:
+  # Engine app: theme_primary #C08A2E (cyvasse config/initializers/studio.rb);
+  # surface, primary-ink and text-muted as https://cyvasse.xyz serves them.
+  cyvasse:
+    light: { surface: "#ffffff", primary: "#C08A2E", name: "#77561D", text: "#666667" }
+    dark:  { surface: "#3C3853", primary: "#C08A2E", name: "#D9B982", text: "#A6A4B0" }
+  # Engine app: theme_primary #2E7D32 (turf-monster config/initializers/studio.rb);
+  # surface, primary-ink and text-muted as https://turfmonster.media serves them.
+  turfmonster:
+    light: { surface: "#ffffff", primary: "#2E7D32", name: "#246227", text: "#666667" }
+    dark:  { surface: "#3C3853", primary: "#2E7D32", name: "#97BE99", text: "#A6A4B0" }
+  # prisoners-dilemma app/assets/stylesheets/application.css: --surface, --accent, --muted.
+  prisoners-dilemma:
+    light: { surface: "#ffffff", primary: "#3b3fd8", name: "#3b3fd8", text: "#6b675d" }
+    dark:  { surface: "#1a1b1e", primary: "#8b8ff7", name: "#8b8ff7", text: "#9c9a93" }
+  # rantly app/assets/stylesheets/application.css: --surface, --accent, --ink-3.
+  rantly:
+    light: { surface: "#fffdf9", primary: "#d63c1f", name: "#d63c1f", text: "#6f675f" }
+    dark:  { surface: "#1f1b16", primary: "#ff6a4d", name: "#ff6a4d", text: "#a39990" }
+  # search-position app/assets/stylesheets/application.css: --surface, --accent, --muted.
+  search-position:
+    light: { surface: "#ffffff", primary: "#1a57c7", name: "#1a57c7", text: "#5b616c" }
+    dark:  { surface: "#1a1d23", primary: "#7eaaf5", name: "#7eaaf5", text: "#a5abb6" }
+  # weekly-lock app/assets/stylesheets/application.css: --surface, --gold, --muted.
+  # Its light --gold (#b7821f) reads 3.4:1 on white, so the light name takes
+  # its own darker gold, --pending #8a5a00 (5.9:1).
+  weekly-lock:
+    light: { surface: "#ffffff", primary: "#b7821f", name: "#8a5a00", text: "#62666d" }
+    dark:  { surface: "#171a1f", primary: "#e0ad4a", name: "#e0ad4a", text: "#9aa0a8" }
+  # portfolio app/assets/stylesheets/application.css: --surface, --accent, --muted.
+  portfolio:
+    light: { surface: "#ffffff", primary: "#1f5fa8", name: "#1f5fa8", text: "#5d626b" }
+    dark:  { surface: "#1a1c21", primary: "#7fb2f0", name: "#7fb2f0", text: "#a3a7af" }
+  # 10and5 app/assets/stylesheets/application.css: --surface, --accent, --muted.
+  10and5:
+    light: { surface: "#ffffff", primary: "#7a2437", name: "#7a2437", text: "#655f63" }
+    dark:  { surface: "#1c191c", primary: "#e48a9c", name: "#e48a9c", text: "#a39ca0" }
+
 examples:
   - name: Cyvasse
     url: https://cyvasse.xyz

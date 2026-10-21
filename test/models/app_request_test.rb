@@ -319,6 +319,53 @@ class AppRequestTest < ActiveSupport::TestCase
     end
   end
 
+  # WCAG relative luminance contrast of two #rrggbb colours.
+  def contrast(a, b)
+    lum = ->(hex) { hex.delete("#").scan(/../).map { |c| v = c.to_i(16) / 255.0; v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055)**2.4 }
+                       .then { |r, g, bl| 0.2126 * r + 0.7152 * g + 0.0722 * bl } }
+    hi, lo = [ lum.(a), lum.(b) ].sort.reverse
+    (hi + 0.05) / (lo + 0.05)
+  end
+
+  test "[unit] every gallery palette is complete and its name and text read at AA on its surface, light and dark" do
+    palettes = YAML.safe_load_file(BuildGallery::CONFIG).fetch("palettes")
+    assert_operator palettes.size, :>=, 8, "Cyvasse, Turf Monster and the six showcase apps"
+
+    palettes.each_key do |subdomain|
+      palette = BuildGallery.palette_for(subdomain)
+      assert palette, "#{subdomain}'s palette is complete (#{BuildGallery::PALETTE_KEYS.join(', ')}, light and dark)"
+      palette.each do |mode, colours|
+        %w[name text].each do |key|
+          ratio = contrast(colours.fetch(key), colours.fetch("surface"))
+          assert_operator ratio, :>=, 4.5, "#{subdomain} #{mode} #{key} #{colours[key]} on #{colours['surface']} is #{ratio.round(2)}:1"
+        end
+      end
+    end
+  end
+
+  test "[unit] a palette reaches the card only whole and only as #rrggbb; no entry keeps the Studio theme" do
+    assert_nil BuildGallery.palette_for("no-such-app")
+    good = { "surface" => "#ffffff", "primary" => "#123456", "name" => "#000000", "text" => "#333333" }
+    config = { "palettes" => {
+      "whole" => { "light" => good, "dark" => good },
+      "half" => { "light" => good },
+      "injected" => { "light" => good, "dark" => good.merge("primary" => "red; background:url(x)") }
+    } }
+    YAML.stub(:safe_load_file, config) do
+      assert_equal({ "light" => good, "dark" => good }, BuildGallery.palette_for("whole"))
+      assert_nil BuildGallery.palette_for("half"), "a mode missing"
+      assert_nil BuildGallery.palette_for("injected"), "only #rrggbb reaches the inline style"
+    end
+  end
+
+  test "[unit] configured and showcase cards carry their palettes by subdomain" do
+    assert_equal "#C08A2E", BuildGallery.configured.find { |e| e.name == "Cyvasse" }.palette.dig("light", "primary")
+    assert_equal "#97BE99", BuildGallery.configured.find { |e| e.name == "Turf Monster" }.palette.dig("dark", "name")
+    live = draft(user: users(:alex)).queue!("zz-palette")
+    live.update_columns(subdomain: "rantly", status: "live")
+    assert_equal "#d63c1f", BuildGallery.showcased.find { |e| e.url.include?("rantly") }.palette.dig("light", "primary")
+  end
+
   test "a showcase card takes its name from the config, else titleizes the subdomain" do
     assert_equal "10&5 Hospitality", BuildGallery.display_name("10and5")
     assert_equal "Weekly Lock", BuildGallery.display_name("weekly-lock")

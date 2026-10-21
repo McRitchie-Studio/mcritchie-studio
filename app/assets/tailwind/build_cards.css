@@ -102,3 +102,44 @@
   .build-tile-current-name { -webkit-text-fill-color: currentColor; background-image: none; }
   .build-status-pop { animation-name: build-status-flash; }
 }
+
+/* ── The gallery card's app theme (app/views/build/_gallery_card.html.erb) ──
+   Alex, 2026-10-20: each "Built with McRitchie Studio" card wears its app's
+   own colours. A card with a palette (data-palette; config/build_examples.yml
+   `palettes`) carries them as --gc-<key>-<mode> custom properties: the lower
+   panel takes the surface, the name the name colour, the host and blurb the
+   text colour, and the border a soft primary that goes full with a glow on
+   hover or keyboard focus. Light mode is the default; the hub's .dark class
+   switches to the dark set. A card without a palette is untouched (Studio
+   theme). Unlayered, so it wins over the utilities on the same elements. */
+
+.build-gallery-card[data-palette] {
+  --gc-surface: var(--gc-surface-light);
+  --gc-primary: var(--gc-primary-light);
+  --gc-name: var(--gc-name-light);
+  --gc-text: var(--gc-text-light);
+  border-color: color-mix(in srgb, var(--gc-primary) 40%, transparent);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.dark .build-gallery-card[data-palette] {
+  --gc-surface: var(--gc-surface-dark);
+  --gc-primary: var(--gc-primary-dark);
+  --gc-name: var(--gc-name-dark);
+  --gc-text: var(--gc-text-dark);
+}
+
+.build-gallery-card[data-palette]:hover,
+.build-gallery-card[data-palette]:focus-visible {
+  border-color: var(--gc-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gc-primary) 45%, transparent),
+              0 0 18px 2px color-mix(in srgb, var(--gc-primary) 35%, transparent);
+}
+
+.build-gallery-card[data-palette] .build-gallery-card-body { background-color: var(--gc-surface); }
+.build-gallery-card[data-palette] .build-gallery-card-name { color: var(--gc-name); }
+.build-gallery-card[data-palette] .build-gallery-card-text { color: var(--gc-text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .build-gallery-card[data-palette] { transition: none; }
+}

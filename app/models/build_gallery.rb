@@ -11,7 +11,14 @@ module BuildGallery
 
   # `image` is the card's dark-mode still; `motion` the short loop it plays on
   # hover (script/gallery_capture.cjs writes both). Either may be nil.
-  Example = Struct.new(:name, :url, :emoji, :blurb, :image, :motion, keyword_init: true)
+  # `palette` is the app's own theme for the card (#palette_for), or nil for
+  # the Studio theme.
+  Example = Struct.new(:name, :url, :emoji, :blurb, :image, :motion, :palette, keyword_init: true)
+
+  # A palette's modes and the colours each must give (config `palettes`).
+  PALETTE_MODES = %w[light dark].freeze
+  PALETTE_KEYS = %w[surface primary name text].freeze
+  HEX = /\A#\h{6}\z/
 
   IMAGE_DIR = "build_gallery".freeze
 
@@ -32,6 +39,19 @@ module BuildGallery
     names[subdomain.to_s].presence || subdomain.to_s.tr("-", " ").titleize
   end
 
+  # The config's `palettes` entry for a subdomain, as { "light" => {...},
+  # "dark" => {...} }, or nil (the card keeps the Studio theme). Only a
+  # complete entry of #rrggbb values counts: the card writes them into an
+  # inline style, so nothing else may reach it.
+  def palette_for(subdomain)
+    entry = (YAML.safe_load_file(CONFIG).fetch("palettes", {}) || {})[subdomain.to_s]
+    return nil unless entry.is_a?(Hash)
+
+    palette = PALETTE_MODES.to_h { |mode| [ mode, (entry[mode] || {}).to_h.slice(*PALETTE_KEYS) ] }
+    complete = palette.values.all? { |colours| PALETTE_KEYS.all? { |key| colours[key].to_s.match?(HEX) } }
+    complete ? palette : nil
+  end
+
   # "rantly" for https://rantly.mcritchie.studio.
   def subdomain(url)
     URI.parse(url.to_s).host.to_s.split(".").first
@@ -42,7 +62,8 @@ module BuildGallery
   def configured
     YAML.safe_load_file(CONFIG).fetch("examples", []).map do |attrs|
       Example.new(name: attrs.fetch("name"), url: attrs.fetch("url"), emoji: attrs["emoji"].presence || "🧱",
-                  blurb: attrs["blurb"].to_s, image: existing_image(attrs["image"]), motion: existing_image(attrs["motion"]))
+                  blurb: attrs["blurb"].to_s, image: existing_image(attrs["image"]), motion: existing_image(attrs["motion"]),
+                  palette: palette_for(subdomain(attrs.fetch("url"))))
     end
   end
 
@@ -50,7 +71,7 @@ module BuildGallery
     AppRequest.where(showcase: true, status: "live").order(updated_at: :desc).map do |req|
       Example.new(name: display_name(req.subdomain), url: req.url, emoji: "🧱",
                   blurb: first_sentence(req.prompt), image: existing_image("#{IMAGE_DIR}/#{req.subdomain}.webp"),
-                  motion: existing_image("#{IMAGE_DIR}/#{req.subdomain}.mp4"))
+                  motion: existing_image("#{IMAGE_DIR}/#{req.subdomain}.mp4"), palette: palette_for(req.subdomain))
     end
   end
 
