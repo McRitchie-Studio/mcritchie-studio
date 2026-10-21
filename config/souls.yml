@@ -234,3 +234,20 @@ souls:
   metadata:
     review_role:
     reviewer: false
+# The Commercial Welding business agent, renamed from Dawn (Alex, 2026-10-20):
+# the old name collided with the seller in every deal conversation. Holds a
+# knowledge-layer seat but no privileged deal access (samson holds that).
+# Not yet launched. Non-reviewing.
+- slug: hank
+  name: Hank
+  status: active
+  agent_type: specialist
+  title: Commercial Welding Business Agent
+  description: 'Runs the business side of Commercial Welding after the close: the books, purchasing and suppliers, and the shop''s seat on the knowledge layer. Holds no privileged deal access; Samson holds that.'
+  avatar: "/agents/hank.webp"
+  position: 12
+  emoji: "🦡"
+  color: "#475569"
+  metadata:
+    review_role:
+    reviewer: false
