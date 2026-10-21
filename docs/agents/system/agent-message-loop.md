@@ -1306,6 +1306,15 @@ Turbo hover prefetch gets a 204 and spends nothing.
   dark) are checked, unknown fields refuse the card, and the checked copy is stored on
   `agent_messages.intake_card` (`intake_card` / `intake_refused` events). A catalog
   proposal on a build thread is refused.
+- **About Alex** (Alex, 2026-10-20: his interactive resume). After the INTAKE section Ritch's
+  prompt on a build thread carries ABOUT ALEX (`ContextBuilder#about_alex_block`): Alex's
+  profile, the part of `docs/agents/agents/ray/about-alex.md` below its rule (he edits
+  it; its source citations and TODOs are HTML comments, stripped), capped at 2,500
+  characters, under rules written in CODE so an edit cannot drop them: speak about Alex
+  in the third person and never as him; give advice only as the views the profile
+  records, and say "Alex hasn't shared that here" otherwise; family stops at what the
+  profile says (married, a daughter), and anything more is politely declined; and a
+  question about him offers no intake card. No other thread carries it.
 - **Taps** (`BuildIntake::Choice`, `PATCH /build/:token/intake`) are the only writes to
   `app_requests.cto_name`, `cto_avatar` (a `BuildIntake::Portraits` key), `palette` and
   `answers`, and the subdomain; each value is checked again on the server, and a palette

@@ -30,6 +30,8 @@ import "modal_stream"
 import "chat_attachments"
 // The CTO chat usage meter's "Resets in 3d 4h" countdown, ticked each minute: inert where no meter counts down.
 import "usage_countdown"
+// The app chat status card's live pill countdown, MM:SS ticked each second: inert where no pill counts down.
+import "devops_countdown"
 
 // How a board page's chrome reaches the engine board it wraps (board/engine_board).
 // Installed here, on every page, so it is there before Alpine initialises a board

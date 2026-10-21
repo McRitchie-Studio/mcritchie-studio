@@ -59,10 +59,27 @@ class AppCardStageLabelsTest < ActionDispatch::IntegrationTest
     assert_select "#{building_pill}[data-prepping]", 0, "a task a builder holds makes the lane Building again"
     # One building task (task cto-pill-count-and-links): the pill reads Building, never
     # "Building 1" over "Building"; the wait still shows, and a screen reader still hears the count.
-    assert_select "#{building_pill}", text: /\A\s*Building\s*~2 h\s*, 1 task under way, ~2 h left\s*\z/
+    # The wait counts down (task live-build-countdown): H:MM:SS to the expected finish, the screen reader's line rounded and said once.
+    assert_select "#{building_pill}", text: /\A\s*Building\s*1:5[89]:\d\d\s*, 1 task under way, ~2 h left\s*\z/
     assert_select "#{building_pill} [data-test='devops-stage-count']", 0
     assert_select "#{building_pill} [data-test='devops-stage-sub-label']", 0
-    assert_select "#{building_pill} [data-test='devops-stage-eta']", text: "~2 h"
+    assert_select "#{building_pill} [data-test='devops-stage-eta'][data-devops-countdown][aria-hidden='true']", text: /\A1:5[89]:\d\d\z/
+  end
+
+  test "[integration] a first version the launcher is building counts down by the launcher's own runs" do
+    3.times { |i| TaskEvent.create!(task_slug: @launch.task.slug, from_stage: "building", to_stage: "submitted", seconds_in_from: 30.minutes.to_i, occurred_at: (i + 1).hours.ago) }
+    earlier = Task.create!(title: "Build Launch App earlier", stage: "shipped", priority: 1)
+    earlier.update_columns(metadata: { "devops" => { ClientBuilds::KEY => { "state" => "preview_ready", "started_at" => 2.hours.ago.iso8601, "finished_at" => (2.hours.ago + 6.minutes).iso8601 } } })
+    started = 1.minute.ago.change(usec: 0)
+    @launch.task.update_columns(stage: "building", started_at: started,
+                                metadata: @launch.task.metadata.deep_merge("devops" => { ClientBuilds::KEY => { "state" => "building", "started_at" => started.iso8601 } }))
+
+    log_in_as(@owner)
+    get chat_status_application_path("pawsome")
+    eta = css_select("#{building_pill} [data-test='devops-stage-eta']").sole
+    assert_equal (started + 6.minutes).utc.iso8601, eta["data-deadline"], "the run's start plus the launcher's 6 minutes, not the hub's 30"
+    assert_match(/\A0[45]:\d\d\z/, eta.text)
+    assert_select "[data-test='devops-task']", text: /Launching Pawsome\s+Building · ~5 min left/
   end
 
   test "[integration] a Building lane of two shows its count, and a sub-label that differs from the label" do

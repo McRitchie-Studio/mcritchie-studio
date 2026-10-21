@@ -36,16 +36,34 @@ class BuildViewTest < ActionView::TestCase
   test "the gallery lists live examples under the prompt" do
     signed_in(nil)
     @draft = nil
-    @examples = [ BuildGallery::Example.new(name: "Cyvasse", url: "https://cyvasse.mcritchie.studio", emoji: "🐉", blurb: "Hex strategy.") ]
+    @examples = [ BuildGallery::Example.new(name: "Cyvasse", url: "https://cyvasse.xyz", emoji: "🐉", blurb: "Hex strategy.") ]
     render template: "build/new"
 
     assert_select "[data-test='build-gallery'] h2", text: "Built with McRitchie Studio"
-    assert_select "[data-test='build-example'][href='https://cyvasse.mcritchie.studio'][target='_blank']", text: /Cyvasse/
+    assert_select "[data-test='build-example'][href='https://cyvasse.xyz'][target='_blank']", text: /Cyvasse/
   end
 
-  def example(name, image: nil, motion: nil, blurb: "An app.")
+  def example(name, image: nil, motion: nil, blurb: "An app.", palette: nil)
     BuildGallery::Example.new(name: name, url: "https://#{name.parameterize}.mcritchie.studio", emoji: "🧱", blurb: blurb,
-                              image: image, motion: motion)
+                              image: image, motion: motion, palette: palette)
+  end
+
+  test "[component] a card with a palette wears its app's colours on its dark panel; one without keeps the Studio theme" do
+    signed_in(nil)
+    @draft = nil
+    palette = { "panel" => "#1A1535", "primary" => "#2E7D32", "name" => "#97BE99", "text" => "#A6A4B0" }
+    @examples = [ example("Turf Monster", palette: palette), example("Rantly") ]
+    render template: "build/new"
+
+    themed, plain = css_select("[data-test='build-example']")
+    assert themed.key?("data-palette")
+    assert_equal "--gc-panel: #1A1535; --gc-primary: #2E7D32; --gc-name: #97BE99; --gc-text: #A6A4B0", themed["style"]
+    assert_includes themed["class"].split, "build-gallery-card"
+    assert themed.at_css(".build-gallery-card-body .build-gallery-card-name"), "the name takes the palette's name colour"
+    assert_equal 2, themed.css(".build-gallery-card-text").size, "host and blurb take its text colour"
+
+    refute plain.key?("data-palette")
+    assert_nil plain["style"], "no palette, no inline colours: the Studio theme"
   end
 
   test "the gallery is a sideways row, about 3.3 cards wide, with a scroll-aware edge fade and centered card text" do
@@ -194,8 +212,8 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='agent-shell'][data-shell='build']" do
       assert_select "[data-test='agent-chat-header'][data-agent-name='Ritch'] [data-test='agent-portrait'][style*='view-transition-name: agent-portrait']"
       assert_select "#build-checklist[data-card='false'] [data-test='build-heading']" do
-        assert_select "h1", text: "What do you want to build?"
-        assert_select "p", text: "Let our agents build & host your website on the McRitchie Studio stack, free."
+        assert_select "h1", text: "Want to Build Something?"
+        assert_select "p", text: "Let our agents build & host your flow or website totally free, on the Studio Stack."
       end
       assert_select "[data-test='agent-shell-status'] + [data-test='agent-shell-chat'] > #build-chat-page [data-test='build-form']", 1, "the chat box sits under the heading"
     end

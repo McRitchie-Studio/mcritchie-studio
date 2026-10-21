@@ -73,11 +73,75 @@ class AppDevopsStagesEtaTest < ActiveSupport::TestCase
     assert_equal "~25 min", Eta.estimate("submitted", entered_at: now, medians: medians, launcher: false, now: now).text
 
     long = Eta.estimate("submitted", entered_at: now - 1.hour, medians: medians, launcher: false, now: now)
-    assert_equal [ "running long", :long ], [ long.text, long.kind ], "never a negative or a zero promise"
+    assert_equal [ "Any minute now", :long ], [ long.text, long.kind ], "never a negative or a zero promise"
     assert_nil Eta.estimate("reviewed", entered_at: now, medians: medians, launcher: true, now: now), "no data: no ETA"
 
     assert_equal [ "3 min", "20 min", "1 h", "2 h", "3 days" ],
                  [ 150, 1190, 3500, 5400, 3 * 86_400 ].map { |seconds| Eta.format_duration(seconds) }
+  end
+
+  test "[unit] a step with a real start carries its expected finish: entered_at plus the usual time" do
+    now = Time.current.change(usec: 0)
+    medians = { "building" => 30.minutes.to_i, "designed" => 20.minutes.to_i }
+    eta = Eta.estimate("building", entered_at: now - 24.minutes - 12.seconds, medians: medians, launcher: false, now: now)
+    assert_equal now + 5.minutes + 48.seconds, eta.deadline
+    assert eta.countdown?
+    assert_equal "05:48", eta.pill_text(now: now), "the pill paints the clock; the row keeps the rounded words"
+    assert_equal [ "~6 min", "~6 min left" ], [ eta.text, eta.phrase ]
+
+    long = Eta.estimate("building", entered_at: now - 31.minutes, medians: medians, launcher: false, now: now)
+    assert_equal [ now - 1.minute, "Any minute now", :long ], [ long.deadline, long.pill_text(now: now), long.kind ]
+
+    prepping = Eta.estimate("designed", entered_at: now - 1.minute, medians: medians, launcher: true, now: now)
+    assert_nil prepping.deadline, "a designed task's created_at is no start: no countdown"
+    assert_equal "~20 min", prepping.pill_text(now: now)
+    assert_nil Eta.estimate("building", entered_at: nil, medians: medians, launcher: false, now: now).deadline, "no start time, no countdown"
+    assert_not Eta::WAITING.countdown?
+  end
+
+  test "[unit] the clock reads MM:SS, H:MM:SS from an hour up, and Any minute now at or past zero" do
+    assert_equal [ "05:48", "00:01", "59:59", "1:00:00", "1:02:03", "26:00:00" ],
+                 [ 348, 1.9, 3599, 3600, 3723, 26 * 3600 ].map { |seconds| Eta.clock(seconds) }
+    assert_equal [ "Any minute now" ] * 3, [ 0, 0.5, -90 ].map { |seconds| Eta.clock(seconds) }, "never a negative"
+  end
+
+  # A launch task's run record (ClientBuilds#write_run!), as the launcher leaves it.
+  def client_run(state, minutes, finished_ago: 1.hour)
+    finished = finished_ago.ago
+    card_task("Build Launch App run #{SecureRandom.hex(2)}", state == "building" ? "building" : "shipped", repos: [ "history-probe" ]).tap do |task|
+      run = { "state" => state, "started_at" => (finished - minutes.minutes).iso8601, "finished_at" => (finished.iso8601 unless state == "building") }
+      task.update_columns(metadata: task.metadata.deep_merge("devops" => { ClientBuilds::KEY => run.compact }))
+    end
+  end
+
+  test "[unit] a client build's usual time is the launcher's own preview_ready runs, else the configured default" do
+    assert_equal 8 * 60, Eta.client_build_usual, "no run yet: config/client_builds.yml typical_build_minutes"
+
+    client_run("preview_ready", 6)
+    client_run("preview_ready", 5)
+    client_run("failed", 40)
+    client_run("released", 1)
+    client_run("building", 2)
+    durations("building", [ 1800 ] * 3) # the hub's PR work is not a first version
+    assert_equal 330, Eta.client_build_usual, "the median of the runs that built a preview, nothing else"
+  end
+
+  test "[unit] a building client build counts down from its run's start by the launcher's time; a hub task keeps the board's" do
+    durations("building", [ 1800 ] * 3)
+    3.times { |i| client_run("preview_ready", 6, finished_ago: (i + 1).hours) }
+    launch = card_task("Build Launch App eta-probe", "building", repos: [], started_at: 10.minutes.ago)
+    started = 2.minutes.ago.change(usec: 0)
+    launch.update_columns(metadata: launch.metadata.deep_merge("devops" => { ClientBuilds::KEY => { "state" => "building", "started_at" => started.iso8601 } }))
+    AppRequest.create!(prompt: "A probe", subdomain: "eta-probe", task_slug: launch.slug)
+
+    board = AppDevopsStages.board_for(eta_app)
+    eta = lane(board, "building").eta
+    assert_equal [ started + 6.minutes, "~4 min" ], [ eta.deadline, eta.text ], "the run's start plus the launcher's median, not ~30 min"
+    assert_equal "Building · ~4 min left", board.items.sole.status
+
+    hub = card_task("Add a gallery", "building", started_at: 1.minute.ago.change(usec: 0))
+    hub_row = AppDevopsStages.board_for(eta_app).items.find { |item| item.title == "Add a gallery" }
+    assert_equal hub.started_at + 30.minutes, hub_row.eta.deadline, "a hub task reads the board's building median"
   end
 
   test "[unit] a designed task promises no minutes until a launcher is live" do

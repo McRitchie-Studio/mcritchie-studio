@@ -1541,7 +1541,7 @@ gallery_admin = User.find_by!(email: "alex@test.com")
 AppRequest.create!(prompt: "A trivia night scoreboard: teams, rounds and a live leaderboard.", user: gallery_admin)
   .queue!("trivia-night").update!(status: "live")
 # Two real showcase apps, so the spec sees the `lead` order of
-# config/build_examples.yml (Cyvasse, Prisoners Dilemma, Rantly) and real
+# config/build_examples.yml (Cyvasse, Turf Monster, Prisoners Dilemma, Rantly) and real
 # screenshots. Their names are reserved, so queue! refuses them: queue a
 # placeholder, then give it the real subdomain, as production holds it.
 { "prisoners-dilemma" => "A prisoner's dilemma tournament: pick or write a strategy and see the leaderboard.",
@@ -1832,6 +1832,28 @@ owner_proposal = AgentProposal.create!(thread_key: owner_ask.thread_key, channel
                                        expires_at: 1.day.from_now)
 owner_ask.update!(response_text: "I can open a task for that.\n\n#{owner_proposal.confirm_text}")
 puts "Seeded: Turf's owner with a pending change proposal"
+
+# The live pill countdown (e2e/devops_countdown.spec.js; task live-build-countdown):
+# a client app whose first version the launcher is building, with one earlier
+# launcher run that built a preview in six minutes, so the Building pill counts
+# down from the run's start by the launcher's own time (AppDevopsStages::Eta,
+# CLIENT BUILDS). The spec drives the browser clock from the pill's deadline, so
+# when this seed ran does not matter.
+countdown_palette = { "light" => { "primary" => "#0F766E", "accent" => "#F59E0B", "surface" => "#FFFFFF", "text" => "#111827" },
+                      "dark" => { "primary" => "#2DD4BF", "accent" => "#FBBF24", "surface" => "#0F172A", "text" => "#F8FAFC" } }
+countdown_app = App.find_or_create_by!(slug: "countdown-probe") do |app|
+  app.assign_attributes(name: "Countdown Probe", emoji: "⏱", color: "#0F766E", package_tier: "vibe", theme_colors: countdown_palette)
+end
+AppCto.find_or_create_by!(app_slug: countdown_app.slug) do |cto|
+  cto.assign_attributes(name: "Tick", portrait: "harbor", palette: countdown_palette, plan: "A countdown probe.", facts: {})
+end
+countdown_run = ->(state, started, finished = nil) { { ClientBuilds::KEY => { "state" => state, "started_at" => started.iso8601, "finished_at" => finished&.iso8601 }.compact } }
+earlier_build = Task.create!(title: "Build Launch App countdown-earlier", stage: "designed", priority: 1)
+earlier_build.update_columns(stage: "shipped", completed_at: 1.day.ago, metadata: { "devops" => countdown_run.("preview_ready", 1.day.ago - 6.minutes, 1.day.ago) })
+countdown_started = 1.minute.ago
+countdown_build = Task.create!(title: "Build Launch App countdown-probe", stage: "designed", priority: 1)
+countdown_build.update_columns(stage: "building", started_at: countdown_started, metadata: { "devops" => countdown_run.("building", countdown_started).merge("repositories" => [ "countdown-probe" ]) })
+puts "Seeded: a client app whose first version is building (the live pill countdown)"
 
 # A client app on the Studio template (e2e/client_app_studio_kit.spec.js; docs/agents/
 # system/client-app-host.md, "The Studio template"): kit-demo holds a /build request

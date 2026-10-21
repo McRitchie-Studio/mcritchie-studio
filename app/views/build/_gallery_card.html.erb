@@ -11,11 +11,22 @@
     data-playing, which the script sets only once it really plays, so a slow
     load shows the still, not a blank box. The focus ring is drawn INSIDE the
     card (-outline-offset-2): the row scrolls sideways, and its overflow would
-    clip a ring drawn outside. %>
+    clip a ring drawn outside.
+
+    An app with a palette (BuildGallery.palette_for; config/build_examples.yml
+    `palettes`) wears its own theme: the lower panel its dark-mode page
+    background in both hub themes, the name its primary, the host and blurb
+    its muted tone, the border and hover glow its primary (build_cards.css,
+    .build-gallery-card).
+    The colours ride in as custom properties; palette_for passes #rrggbb only.
+    Without one the card keeps the Studio theme. %>
 <% host = (URI.parse(example.url).host rescue nil) || example.url %>
+<% palette = example.palette %>
+<% palette_style = palette && BuildGallery::PALETTE_KEYS.map { |key| "--gc-#{key}: #{palette[key]}" }.join("; ") %>
 <%= link_to example.url, target: "_blank", rel: "noopener",
-      class: "group flex h-full flex-col overflow-hidden rounded-2xl border border-subtle bg-surface hover:border-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
-      data: { test: "build-example", gallery_motion: (true if example.motion) } do %>
+      class: "build-gallery-card group flex h-full flex-col overflow-hidden rounded-2xl border border-subtle bg-surface hover:border-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
+      style: palette_style,
+      data: { test: "build-example", gallery_motion: (true if example.motion), palette: (true if palette) } do %>
   <span class="relative block aspect-[16/10] overflow-hidden bg-surface-alt border-b border-subtle">
     <% if example.image %>
       <%= image_tag example.image, alt: "#{example.name}, as it looks live", loading: "lazy",
@@ -31,11 +42,11 @@
       <span class="flex h-full items-center justify-center text-5xl" aria-hidden="true"><%= example.emoji %></span>
     <% end %>
   </span>
-  <span class="block min-w-0 px-4 py-3 text-center" data-test="build-example-body">
-    <span class="block font-semibold text-heading group-hover:text-primary truncate"
+  <span class="build-gallery-card-body block flex-1 min-w-0 px-4 py-3 text-center" data-test="build-example-body">
+    <span class="build-gallery-card-name block font-semibold text-heading group-hover:text-primary truncate"
           data-test="build-example-name"><%= example.name %></span>
-    <span class="mt-0.5 block font-mono text-2xs leading-4 text-muted truncate" data-test="build-example-host"><%= host %></span>
-    <span class="mt-0.5 block text-2xs leading-4 text-muted truncate" title="<%= example.blurb %>"
+    <span class="build-gallery-card-text mt-0.5 block font-mono text-2xs leading-4 text-muted truncate" data-test="build-example-host"><%= host %></span>
+    <span class="build-gallery-card-text mt-0.5 block text-2xs leading-4 text-muted truncate" title="<%= example.blurb %>"
           data-test="build-example-blurb"><%= example.blurb %></span>
   </span>
 <% end %>

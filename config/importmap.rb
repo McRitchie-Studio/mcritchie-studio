@@ -24,6 +24,8 @@ pin "logo_download"
 pin "chat_attachments"
 # The CTO chat usage meter's reset countdown (app/views/agent_chats/_tokens_bar.html.erb).
 pin "usage_countdown"
+# The app chat status card's live pill countdown (app/views/agent_chats/_devops_stages.html.erb).
+pin "devops_countdown"
 pin "dreams_filter"
 # Build My App's launch panel (app/views/build/_launch.html.erb).
 pin "build_launch"
