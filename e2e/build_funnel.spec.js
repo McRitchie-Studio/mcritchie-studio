@@ -462,6 +462,34 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
       for (const m of measured) expect(m.ratio, `${theme}: ${selector} "${m.text}"`).toBeGreaterThanOrEqual(TEXT_ON_SURFACE);
     }
   });
+  // [e2e] task cto-animal-avatar-bank: the owner re-picks the CTO's avatar in the chat by KEYBOARD:
+  // Enter on the head's portrait opens the picker, an arrow moves the pick, Enter saves it in place.
+  const avatarHead = page.locator("[data-test='cto-chat-avatar-head']");
+  const avatarPicker = page.locator("[data-test='cto-chat-avatar-form'] [data-test='build-portrait-dialog']");
+  const headPortrait = page.locator("[data-test='agent-portrait'] [data-test='client-cto-portrait']");
+  const announce = page.locator("[data-test='cto-chat-avatar-announce']");
+  await avatarHead.focus();
+  await page.keyboard.press("Enter");
+  await expect(avatarPicker).toBeVisible();
+  const startPick = avatarPicker.locator("input[name='portrait']:checked");
+  await expect(startPick).toHaveAttribute("value", tappedAnimal);
+  await startPick.focus();
+  await page.keyboard.press("ArrowRight");
+  const keyed = await avatarPicker.locator("input[name='portrait']:checked").getAttribute("value");
+  expect(keyed).not.toBe(tappedAnimal);
+  await page.keyboard.press("Enter");
+  await expect(avatarPicker).toBeHidden();
+  await expect(headPortrait).toHaveAttribute("data-animal", keyed.replace("animal:", ""));
+  await expect(announce).toHaveText(/^Saved\. Marbles's new look: /);
+  // Done with nothing changed closes and says so; a reload draws the saved look.
+  await avatarHead.click();
+  await expect(avatarPicker).toBeVisible();
+  await avatarPicker.locator("[data-build-portrait-close]").click();
+  await expect(avatarPicker).toBeHidden();
+  await expect(announce).toHaveText("Nothing changed.");
+  await page.reload();
+  await expect(headPortrait).toHaveAttribute("data-animal", keyed.replace("animal:", ""));
+
   await page.setViewportSize({ width: 390, height: 844 });
   const chatOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(chatOverflow, "the CTO chat fits at 390px").toBeLessThanOrEqual(0);
