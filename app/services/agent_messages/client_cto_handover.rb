@@ -1,12 +1,12 @@
 module AgentMessages
-  # Ray's handover to a new client CTO (docs/agents/system/client-cto.md; design:
+  # Ritch's handover to a new client CTO (docs/agents/system/client-cto.md; design:
   # .agents/epics/build-with-xan-design.md, "Build my app"). AppLaunch calls it
   # inside the launch transaction, so a launched app always has its first chat
   # turn and a rolled-back launch has none.
   #
   # It stores ONE `web` AgentMessage in the owner's own chat thread with the
   # app's CTO (`web:<sub>:<user id>`), routed to `client_cto`: its content is
-  # Ray's handover line, and it is stored ALREADY ANSWERED with the CTO's
+  # Ritch's handover line, and it is stored ALREADY ANSWERED with the CTO's
   # opening message (#greeting), which code writes from the launch: the owner's
   # first name, the CTO's, the app's and its address. So the chat opens on the handover
   # and the greeting, never on a bare "typing…", and no model runs for it
@@ -23,7 +23,7 @@ module AgentMessages
   #
   # Idempotent on its external id (one handover per app per owner).
   module ClientCtoHandover
-    AUTHOR = "Ray".freeze
+    AUTHOR = "Ritch".freeze
     ACTOR = "app-launch".freeze
     VIA = "handover".freeze
     GREETING_SUMMARY = "code greeting".freeze

@@ -2,9 +2,9 @@
 
 require "test_helper"
 
-# [component] The /build views in isolation: the agent shell (Ray's portrait,
+# [component] The /build views in isolation: the agent shell (Ritch's portrait,
 # the heading or the status card, the thread, the chat box), the opening
-# composer (the first message to Ray, bot-shielded, answered in place), the
+# composer (the first message to Ritch, bot-shielded, answered in place), the
 # draft page (the same shell, signed in or out; an admin also gets the name
 # step), and the status page once queued.
 class BuildViewTest < ActionView::TestCase
@@ -15,7 +15,7 @@ class BuildViewTest < ActionView::TestCase
     view.define_singleton_method(:current_user) { user }
   end
 
-  test "the composer is the first message to Ray: a Turbo post answered in place, with the bot shield" do
+  test "the composer is the first message to Ritch: a Turbo post answered in place, with the bot shield" do
     signed_in(nil)
     @examples = []
     render template: "build/new"
@@ -36,16 +36,34 @@ class BuildViewTest < ActionView::TestCase
   test "the gallery lists live examples under the prompt" do
     signed_in(nil)
     @draft = nil
-    @examples = [ BuildGallery::Example.new(name: "Cyvasse", url: "https://cyvasse.mcritchie.studio", emoji: "🐉", blurb: "Hex strategy.") ]
+    @examples = [ BuildGallery::Example.new(name: "Cyvasse", url: "https://cyvasse.xyz", emoji: "🐉", blurb: "Hex strategy.") ]
     render template: "build/new"
 
     assert_select "[data-test='build-gallery'] h2", text: "Built with McRitchie Studio"
-    assert_select "[data-test='build-example'][href='https://cyvasse.mcritchie.studio'][target='_blank']", text: /Cyvasse/
+    assert_select "[data-test='build-example'][href='https://cyvasse.xyz'][target='_blank']", text: /Cyvasse/
   end
 
-  def example(name, image: nil, motion: nil, blurb: "An app.")
+  def example(name, image: nil, motion: nil, blurb: "An app.", palette: nil)
     BuildGallery::Example.new(name: name, url: "https://#{name.parameterize}.mcritchie.studio", emoji: "🧱", blurb: blurb,
-                              image: image, motion: motion)
+                              image: image, motion: motion, palette: palette)
+  end
+
+  test "[component] a card with a palette wears its app's colours on its dark panel; one without keeps the Studio theme" do
+    signed_in(nil)
+    @draft = nil
+    palette = { "panel" => "#1A1535", "primary" => "#2E7D32", "name" => "#97BE99", "text" => "#A6A4B0" }
+    @examples = [ example("Turf Monster", palette: palette), example("Rantly") ]
+    render template: "build/new"
+
+    themed, plain = css_select("[data-test='build-example']")
+    assert themed.key?("data-palette")
+    assert_equal "--gc-panel: #1A1535; --gc-primary: #2E7D32; --gc-name: #97BE99; --gc-text: #A6A4B0", themed["style"]
+    assert_includes themed["class"].split, "build-gallery-card"
+    assert themed.at_css(".build-gallery-card-body .build-gallery-card-name"), "the name takes the palette's name colour"
+    assert_equal 2, themed.css(".build-gallery-card-text").size, "host and blurb take its text colour"
+
+    refute plain.key?("data-palette")
+    assert_nil plain["style"], "no palette, no inline colours: the Studio theme"
   end
 
   test "the gallery is a sideways row, about 3.3 cards wide, with a scroll-aware edge fade and centered card text" do
@@ -173,8 +191,8 @@ class BuildViewTest < ActionView::TestCase
     render template: "build/new"
 
     box = css_select("[data-test='build-form'] textarea[name='app_request[prompt]'][maxlength='#{AppRequest::PROMPT_LIMIT}'][required]").sole
-    assert_select "label.sr-only", text: "Tell Ray what you want to build"
-    assert_select "[data-test='build-send'][aria-label='Send to Ray'].rounded-full"
+    assert_select "label.sr-only", text: "Tell Ritch what you want to build"
+    assert_select "[data-test='build-send'][aria-label='Send to Ritch'].rounded-full"
     assert box.attributes.key?("data-build-first-input"), "Enter sends through build_shell.js"
     examples = JSON.parse(box["data-typing-placeholder"])
     assert_equal 4, examples.size, "the examples are typed into the placeholder (app/javascript/typing_placeholder.js)"
@@ -184,7 +202,7 @@ class BuildViewTest < ActionView::TestCase
                   "the icon-only send has a status line a screen reader hears as Sending (build_shell.js)"
   end
 
-  test "/build is the agent shell: Ray's portrait, the heading, then the chat box; no banner, no chips, no three steps" do
+  test "/build is the agent shell: Ritch's portrait, the heading, then the chat box; no banner, no chips, no three steps" do
     signed_in(users(:viewer))
     AppRequest.create!(prompt: "An unfinished idea", user: users(:viewer))
     @intake_agent = nil
@@ -192,10 +210,10 @@ class BuildViewTest < ActionView::TestCase
     render template: "build/new"
 
     assert_select "[data-test='agent-shell'][data-shell='build']" do
-      assert_select "[data-test='agent-chat-header'][data-agent-name='Ray'] [data-test='agent-portrait'][style*='view-transition-name: agent-portrait']"
+      assert_select "[data-test='agent-chat-header'][data-agent-name='Ritch'] [data-test='agent-portrait'][style*='view-transition-name: agent-portrait']"
       assert_select "#build-checklist[data-card='false'] [data-test='build-heading']" do
-        assert_select "h1", text: "What do you want to build?"
-        assert_select "p", text: "Let our agents build & host your website on the McRitchie Studio stack, free."
+        assert_select "h1", text: "Want to Build Something?"
+        assert_select "p", text: "Let our agents build & host your flow or website totally free, on the Studio Stack."
       end
       assert_select "[data-test='agent-shell-status'] + [data-test='agent-shell-chat'] > #build-chat-page [data-test='build-form']", 1, "the chat box sits under the heading"
     end
@@ -210,27 +228,27 @@ class BuildViewTest < ActionView::TestCase
     @intake_agent = nil
     @started = started
     view.define_singleton_method(:composer_locals) do |error: nil, text: ""|
-      { url: "/build/#{request_row.token}/messages", scope: :build_chat, id: "build-chat-form", agent_name: "Ray", error: error, text: text }
+      { url: "/build/#{request_row.token}/messages", scope: :build_chat, id: "build-chat-form", agent_name: "Ritch", error: error, text: text }
     end
   end
 
-  test "signed out, a new draft is the same shell: Ray, the heading until a first card, the thread and the chat box" do
+  test "signed out, a new draft is the same shell: Ritch, the heading until a first card, the thread and the chat box" do
     signed_in(nil)
     chat_assigns(AppRequest.create!(prompt: "A client portal"))
     render template: "build/show"
 
     assert_select "[data-test='agent-shell'][data-shell='draft']" do
-      assert_select "[data-test='agent-chat-header'][data-agent-name='Ray']"
+      assert_select "[data-test='agent-chat-header'][data-agent-name='Ritch']"
       assert_select "#build-checklist[data-card='false'] [data-test='build-heading']", 1
       assert_select "#build-chat-page[data-build-chat-poll-url='/build/#{@app_request.token}/turns']"
       assert_select "form#build-chat-form[action='/build/#{@app_request.token}/messages'][style*='agent-composer'] textarea[name='build_chat[text]']"
     end
-    assert_select "[data-test='build-my-app']", 0, "no Build control in the shell: Ray's summary card carries it"
+    assert_select "[data-test='build-my-app']", 0, "no Build control in the shell: Ritch's summary card carries it"
     assert_select "[data-test='build-claim']", 0, "no name step for a visitor"
     assert_select "[data-test='build-register']", 0, "no sign-in before Build"
   end
 
-  test "once the intake is started, the status card shows the working title and three empty tiles, in the order Ray asks" do
+  test "once the intake is started, the status card shows the working title and three empty tiles, in the order Ritch asks" do
     signed_in(nil)
     chat_assigns(AppRequest.create!(prompt: "A client portal", answers: { "idea" => "A client portal" }), started: true)
     render template: "build/show"
@@ -238,7 +256,7 @@ class BuildViewTest < ActionView::TestCase
     assert_select "#build-checklist[data-card='true'] [data-test='build-status-card'][data-complete='false']" do
       assert_select "[data-test='build-status-title']", text: "Your app"
       # [component] Each empty tile reads its step's name, never "Not yet", and the
-      # step Ray is on now (the theme, after the idea) is marked current (Alex, 2026-10-19).
+      # step Ritch is on now (the theme, after the idea) is marked current (Alex, 2026-10-19).
       { "theme" => "Theme", "agent" => "Agent", "domain" => "Domain" }.each do |tile, name|
         assert_select "[data-test='build-tile-#{tile}'][data-done='false'] [data-test='build-tile-#{tile}-value']", text: /\A#{name}/
       end

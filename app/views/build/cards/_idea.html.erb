@@ -1,5 +1,5 @@
 <%# locals: (card:, message:, request_row:) %>
-<%# The idea card: the app Ray heard, as a title and two or three key features (BuildIntake::Card "idea"). Start App locks it in; the status card above the chat appears once Ray's theme card follows (AppRequest#intake_started?); Build something else sends Ray back to asking which direction to take. Each tap sets the field AND posts the visitor's turn (BuildIntake::Choice), so Ray answers next without the visitor typing. A v1 draft's card has no title: its one-sentence idea stands in. %>
+<%# The idea card: the app Ritch heard, as a title and two or three key features (BuildIntake::Card "idea"). Start App locks it in; the status card above the chat appears once Ritch's theme card follows (AppRequest#intake_started?); Build something else sends Ritch back to asking which direction to take. Each tap sets the field AND posts the visitor's turn (BuildIntake::Choice), so Ritch answers next without the visitor typing. A v1 draft's card has no title: its one-sentence idea stands in. %>
 <% answers = request_row.answers.is_a?(Hash) ? request_row.answers : {} %>
 <% title = card["title"].presence || card["idea"] %>
 <% chosen = answers["idea"].present? && (card["title"].present? ? answers["title"] == card["title"] : answers["idea"] == card["idea"]) %>

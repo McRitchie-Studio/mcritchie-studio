@@ -45,7 +45,7 @@ export function syncDomainGlow(card, { taken = false } = {}) {
   const held = (card.dataset?.chosenName || "") !== "" && domainName(input.value) === card.dataset.chosenName;
   if (submit) {
     submit.dataset.buildGlow = String(validDomain(input.value) && !taken && !held);
-    // A tap on the domain already held would spend a turn of Ray's for
+    // A tap on the domain already held would spend a turn of Ritch's for
     // nothing, and a known-taken one would only be refused: both disabled.
     submit.disabled = taken || held;
   }

@@ -79,7 +79,7 @@ Then Steffon:
    into a second database.
 2. For the shared bot, put its user ID in `config/agent_routes.yml` as
    `discord.bot_user_id`, quoted, in a small PR. A bot user can also route a
-   soul: list it under that soul's `users`, as the live test does for Ray.
+   soul: list it under that soul's `users`, as the live test does for Ritch.
 3. Build the invite URL. Scope `bot`, and exactly the four permissions the public
    guide names: View Channels (1024), Send Messages (2048), Read Message History
    (65536) and Send Messages in Threads (274877906944), which sum to

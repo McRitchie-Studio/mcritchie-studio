@@ -292,15 +292,77 @@ class AppRequestTest < ActiveSupport::TestCase
     end
   end
 
-  test "the gallery leads with Cyvasse, Prisoners Dilemma and Rantly, the rest after in their usual order" do
+  test "the gallery leads with Cyvasse, Turf Monster, Prisoners Dilemma and Rantly, the rest after in their usual order" do
     %w[portfolio rantly weekly-lock prisoners-dilemma].each_with_index do |subdomain, i|
       live = draft(user: users(:alex)).queue!("zz-lead-#{i}")
       live.update_columns(subdomain: subdomain, status: "live", updated_at: i.minutes.ago)
     end
     subdomains = BuildGallery.examples.map { |e| BuildGallery.subdomain(e.url) }
 
-    assert_equal %w[cyvasse prisoners-dilemma rantly], subdomains.first(3)
-    assert_equal %w[portfolio weekly-lock], subdomains.drop(3) & %w[portfolio weekly-lock], "newest first after the lead"
+    assert_equal %w[cyvasse turfmonster prisoners-dilemma rantly], subdomains.first(4)
+    assert_equal %w[portfolio weekly-lock], subdomains.drop(4) & %w[portfolio weekly-lock], "newest first after the lead"
+  end
+
+  test "[unit] Cyvasse and Turf Monster cards link to their own domains, each with its still and loop" do
+    cards = BuildGallery.configured.index_by(&:name)
+
+    assert_equal "https://cyvasse.xyz", cards.fetch("Cyvasse").url
+    assert_equal "https://turfmonster.media", cards.fetch("Turf Monster").url
+    assert_equal "build_gallery/turf-monster.webp", cards.fetch("Turf Monster").image
+    assert_equal "build_gallery/turf-monster.mp4", cards.fetch("Turf Monster").motion
+    # The card's address is the app's production domain, never the old
+    # mcritchie.studio host that only redirects there.
+    { "cyvasse" => "Cyvasse", "turf-monster" => "Turf Monster" }.each do |slug, name|
+      app = AppCatalog.apps.find { |a| a.slug == slug }
+      assert app, "config/apps.yml lists #{slug}"
+      assert_equal app.production_url, cards.fetch(name).url, "#{name}'s card matches config/apps.yml"
+    end
+  end
+
+  # WCAG relative luminance contrast of two #rrggbb colours.
+  def contrast(a, b)
+    lum = ->(hex) { hex.delete("#").scan(/../).map { |c| v = c.to_i(16) / 255.0; v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055)**2.4 }
+                       .then { |r, g, bl| 0.2126 * r + 0.7152 * g + 0.0722 * bl } }
+    hi, lo = [ lum.(a), lum.(b) ].sort.reverse
+    (hi + 0.05) / (lo + 0.05)
+  end
+
+  test "[unit] every gallery palette is complete and its name and text read at AA on its dark panel" do
+    palettes = YAML.safe_load_file(BuildGallery::CONFIG).fetch("palettes")
+    assert_operator palettes.size, :>=, 8, "Cyvasse, Turf Monster and the six showcase apps"
+
+    palettes.each_key do |subdomain|
+      palette = BuildGallery.palette_for(subdomain)
+      assert palette, "#{subdomain}'s palette is complete (#{BuildGallery::PALETTE_KEYS.join(', ')})"
+      %w[name text].each do |key|
+        ratio = contrast(palette.fetch(key), palette.fetch("panel"))
+        assert_operator ratio, :>=, 4.5, "#{subdomain} #{key} #{palette[key]} on #{palette['panel']} is #{ratio.round(2)}:1"
+      end
+      assert_operator contrast("#ffffff", palette.fetch("panel")), :>=, 12, "#{subdomain}'s panel is its dark-mode background"
+    end
+  end
+
+  test "[unit] a palette reaches the card only whole and only as #rrggbb; no entry keeps the Studio theme" do
+    assert_nil BuildGallery.palette_for("no-such-app")
+    good = { "panel" => "#111111", "primary" => "#123456", "name" => "#eeeeee", "text" => "#cccccc" }
+    config = { "palettes" => {
+      "whole" => good.merge("extra" => "ignored"),
+      "partial" => good.except("text"),
+      "injected" => good.merge("primary" => "red; background:url(x)")
+    } }
+    YAML.stub(:safe_load_file, config) do
+      assert_equal good, BuildGallery.palette_for("whole")
+      assert_nil BuildGallery.palette_for("partial"), "a colour missing"
+      assert_nil BuildGallery.palette_for("injected"), "only #rrggbb reaches the inline style"
+    end
+  end
+
+  test "[unit] configured and showcase cards carry their palettes by subdomain" do
+    assert_equal "#C08A2E", BuildGallery.configured.find { |e| e.name == "Cyvasse" }.palette["name"]
+    assert_equal "#1A1535", BuildGallery.configured.find { |e| e.name == "Turf Monster" }.palette["panel"]
+    live = draft(user: users(:alex)).queue!("zz-palette")
+    live.update_columns(subdomain: "rantly", status: "live")
+    assert_equal "#ff6a4d", BuildGallery.showcased.find { |e| e.url.include?("rantly") }.palette["primary"]
   end
 
   test "a showcase card takes its name from the config, else titleizes the subdomain" do
@@ -315,7 +377,7 @@ class AppRequestTest < ActiveSupport::TestCase
     refute BuildGallery.examples.any? { |e| e.url.include?("customer-app") }
   end
 
-  test "[unit] the status card waits for Ray's theme card: a locked idea alone is not a start; the theme card or any later step is" do
+  test "[unit] the status card waits for Ritch's theme card: a locked idea alone is not a start; the theme card or any later step is" do
     row = AppRequest.create!(prompt: "A league site")
     thread = BuildIntake.thread_key(row.token)
     turn = lambda do |n, card, status: "completed"|
@@ -328,7 +390,7 @@ class AppRequestTest < ActiveSupport::TestCase
 
     row.update!(answers: { "title" => "League Standings Hub", "idea" => "League Standings Hub" })
     assert row.idea_locked?
-    refute row.intake_started?, "Start App locks the idea, but the card waits while Ray types the theme card"
+    refute row.intake_started?, "Start App locks the idea, but the card waits while Ritch types the theme card"
 
     turn.call(2, { "card" => "palette", "palettes" => [] }, status: "received")
     refute row.intake_started?, "a theme card on an answer not yet completed is not shown in the thread"
@@ -339,7 +401,7 @@ class AppRequestTest < ActiveSupport::TestCase
     refute row.intake_started?, "another request's theme card is not this one's"
 
     turn.call(3, { "card" => "palette", "palettes" => [] })
-    assert row.intake_started?, "Ray's theme card is in the thread: the status card appears"
+    assert row.intake_started?, "Ritch's theme card is in the thread: the status card appears"
 
     %w[palette cto address].each do |step|
       fresh = AppRequest.create!(prompt: "An old draft")

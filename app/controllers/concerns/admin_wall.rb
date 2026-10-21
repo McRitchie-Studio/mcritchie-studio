@@ -35,7 +35,7 @@ module AdminWall
   # controller_path => actions any visitor may reach that are not site pages.
   PUBLIC_ACTIONS = {
     # The customer funnel's writes and its live subdomain probe, and the chat
-    # with Ray before sign-in: a message, the answer poll, a card tap and the CTO
+    # with Ritch before sign-in: a message, the answer poll, a card tap and the CTO
     # card's "New set" (cto_animals, reads only). Each
     # is gated past the wall by the request's secret token (BuildController#load_request).
     # Build My App (update) too: signed out it only remembers the press and

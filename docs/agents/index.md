@@ -7,12 +7,12 @@ to its detail. The long form it replaced is frozen verbatim in
 
 ## Who is who
 
-Alex is the human owner. Ray (slug `ray`) is the orchestrator agent.
+Alex is the human owner. Ritch (slug `ray`) is the orchestrator agent.
 
 | Soul | Seat | Soul docs |
 |------|------|-----------|
 | Pokémon | The general builder. Every task gets its own mascot; it builds the whole task to `submitted` | `docs/agents/agents/pokemon/` |
-| Ray | Orchestrator; runs focus sessions; the documentation reviewer | `docs/agents/agents/ray/` |
+| Ritch | Orchestrator; runs focus sessions; the documentation reviewer | `docs/agents/agents/ray/` |
 | Carl | Lead Architect; primary reviewer of code PRs; merges into `accepted` | `docs/agents/agents/carl/` |
 | Shannon · Jasper | Review lights for UI · on-chain | `docs/agents/agents/<soul>/` |
 | Avi | Product owner; runs `qa-release`; arbitrates contested blocks | `docs/agents/agents/avi/` |
@@ -43,12 +43,12 @@ Each SOP stands alone; a design doc is background, never an execution path.
 
 ```text
 Alex + focus session ──▶ Pokémon builder ──PR green──▶ reviewer ──merge──▶ (accepted)
-  (holds the epic plan)   desk · build · ship ◀─blocker─┘  Carl for code; Ray for prose*
+  (holds the epic plan)   desk · build · ship ◀─blocker─┘  Carl for code; Ritch for prose*
 (accepted) ──Avi runs qa-release──▶ release, QA green ──Steffon runs production-deploy──▶ (main)
                                                          within Alex's 30-minute window
 ```
 
-- \* Ray alone reviews prose only on the focus-session path. The `pr-review` sweep
+- \* Ritch alone reviews prose only on the focus-session path. The `pr-review` sweep
   still runs Carl plus a light on every PR.
 - Task stages: **Build** `designed → building → submitted` (the builder), then
   **Deploy** `submitted → reviewed → assembled → shipped`. `blocked` needs

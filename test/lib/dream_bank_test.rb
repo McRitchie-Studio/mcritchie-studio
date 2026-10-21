@@ -472,15 +472,15 @@ class DreamBankTest < Minitest::Test
   def test_unit_index_lists_a_dream_under_every_sequence_it_loads_in
     Dir.mktmpdir do |dir|
       write(dir, "platform/universal.md", DREAM)
-      write(dir, "carl/review.md", tagged("soul: [carl, ray]\ntopic: [review, merge]", question: "Carl | Ray?"))
+      write(dir, "carl/review.md", tagged("soul: [carl, ray]\ntopic: [review, merge]", question: "Carl | Ritch?"))
 
       index = DreamBank.index(dir: dir)
 
       assert_includes index, "2 dreams."
       assert_includes index, "## Platform (1)"
       assert_includes index, "## Carl (1)\n\nLoads at: `bin/dream carl`"
-      assert_includes index, "## Ray (1)", "the roster names the ray soul Ray"
-      assert_equal 2, index.scan("| [`review`](carl/review.md) | Carl \\| Ray? | topic: review, merge | approved |").size
+      assert_includes index, "## Ritch (1)", "the roster names the ray soul Ritch"
+      assert_equal 2, index.scan("| [`review`](carl/review.md) | Carl \\| Ritch? | topic: review, merge | approved |").size
       refute_includes index, "## Jasper"
     end
   end

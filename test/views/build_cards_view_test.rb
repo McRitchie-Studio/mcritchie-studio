@@ -63,7 +63,7 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "dialog[data-test='build-portrait-dialog'] input[name='portrait'][type='radio']", BuildIntake::Animals::SET_SIZE
     assert_select "dialog input[name='portrait'][value='animal:fox'][checked]"
     assert_select "[data-test='build-cto-name-input'][name='custom_name'][value='Marble']"
-    # Every one of Ray's names is a visible tap, not a datalist that filters the
+    # Every one of Ritch's names is a visible tap, not a datalist that filters the
     # others away while the first one is prefilled.
     assert_select "datalist", 0
     assert_equal %w[Marble Coach Scout], css_select("[data-test='build-cto-name-suggestion']").map { |b| b["data-build-cto-name"] }
@@ -115,7 +115,7 @@ class BuildCardsViewTest < ActionView::TestCase
     assert_select "#{intake_form('palette')} button[type='submit']", 1
     assert_select "#{intake_form('palette')} > .cta-glow > button[type='submit'][data-test='build-choose-palette']", "Choose Theme"
     # [component] Alex, 2026-10-19: more room above Choose Theme, the moving orbit
-    # glow (a clipped ring turning behind it), and under it a link asking Ray for
+    # glow (a clipped ring turning behind it), and under it a link asking Ritch for
     # three new themes through the chat box.
     glow = css_select("[data-test='build-palette-glow']").first
     assert_includes glow["class"].split, "cta-glow-orbit"
@@ -302,7 +302,7 @@ class BuildCardsViewTest < ActionView::TestCase
 
     @rendered = +"" # each render below is read on its own
     render(partial: "build/cards/summary", locals: locals.merge(refusal: { reason: "Subdomain That name is taken.", domain: true }))
-    assert_select "[data-test='build-summary-next']", /Ask Ray for another address/
+    assert_select "[data-test='build-summary-next']", /Ask Ritch for another address/
     assert_select "[data-test='build-summary-existing-app']", 0
 
     @rendered = +""

@@ -3,7 +3,7 @@ require "test_helper"
 # [unit] A tap on an intake card (BuildIntake::Choice): it sets the field from
 # the stored card or a checked post, AND posts the visitor's turn into the
 # request's thread (.agents/epics/build-with-ray-v2.md, 2-5), a line written
-# from the saved value, so Ray answers next without the visitor typing. A
+# from the saved value, so Ritch answers next without the visitor typing. A
 # refused tap writes nothing and posts nothing; a double tap posts once; at a
 # cap the turn is answered in code.
 class BuildIntakeChoiceTest < ActiveSupport::TestCase
@@ -26,7 +26,7 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
 
   def thread = AgentMessage.where(channel: "web", thread_key: BuildIntake.thread_key(@request.token)).order(:id)
 
-  # A completed answer of Ray's on this request's thread, carrying `card`.
+  # A completed answer of Ritch's on this request's thread, carrying `card`.
   def answer_with(card)
     message = AgentMessage.create!(channel: "web", external_id: "build:#{@request.token}:#{SecureRandom.uuid}", channel_ref: "build",
                                    thread_key: BuildIntake.thread_key(@request.token), soul_slug: "ray", content: "earlier",
@@ -65,7 +65,7 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
     assert_equal "address", @request.next_intake_step
   end
 
-  test "every field sets its value and relays the visitor's line as a turn Ray will answer" do
+  test "every field sets its value and relays the visitor's line as a turn Ritch will answer" do
     idea = answer_with({ "card" => "idea", "title" => "League Standings Hub", "features" => [ "Live standings", "Schedules" ] })
     themes = answer_with({ "card" => "palette", "palettes" => [ PALETTE ] })
 
@@ -78,7 +78,7 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
     relays = lines.map do |(field, params), line|
       relay = tap(field, **params).relay
       assert_equal line, relay.content, field
-      assert_equal %w[received ray chat], [ relay.status, relay.soul_slug, relay.routed_by ], "#{field}: answerable by Ray"
+      assert_equal %w[received ray chat], [ relay.status, relay.soul_slug, relay.routed_by ], "#{field}: answerable by Ritch"
       assert_equal "public", relay.person.role
       relay
     end
@@ -173,7 +173,7 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
     saved_at = @request.reload.updated_at
 
     again = tap("palette", message_id: themes.id, index: "0")
-    assert_nil again.relay, "no visitor turn, so Ray is not asked again"
+    assert_nil again.relay, "no visitor turn, so Ritch is not asked again"
     assert_equal turns, thread.count
     assert_equal saved_at, @request.reload.updated_at, "nothing written"
 

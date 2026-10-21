@@ -7,7 +7,7 @@ The News pipeline is a multi-stage content enrichment workflow. Articles enter a
 ```
 NEW → REVIEWED → PROCESSED → REFINED → CONCLUDED → ARCHIVED
  ↑       ↑          ↑          ↑           ↑          ↑
-Intake  Mason      Mack       Ray     Turf Monster   Ray
+Intake  Mason      Mack       Ritch     Turf Monster   Ritch
 ```
 
 ## Stages & Agent Assignments
@@ -17,9 +17,9 @@ Intake  Mason      Mack       Ray     Turf Monster   Ray
 | **New** | Intake (automated) | Raw article/tweet ingested | title, url, x_post_id, x_post_url, author, published_at |
 | **Reviewed** | Mason | Identify people, teams, action | primary_person, primary_team, primary_action, secondary_person, secondary_team, article_image_url |
 | **Processed** | Mack (automated) | Generate slugs from names | primary_person_slug, primary_team_slug, secondary_person_slug, secondary_team_slug |
-| **Refined** | Ray | Summarize, add tone | title_short, summary, feeling, feeling_emoji, what_happened |
+| **Refined** | Ritch | Summarize, add tone | title_short, summary, feeling, feeling_emoji, what_happened |
 | **Concluded** | Turf Monster | Form opinion, suggest follow-ups | opinion, callback |
-| **Archived** | Ray | Done — no longer active | archived_at |
+| **Archived** | Ritch | Done — no longer active | archived_at |
 
 ## Services
 
@@ -60,7 +60,7 @@ News::Process.new(news).call
 
 Also available via the UI: **Process (auto)** button on the show page when stage is `reviewed`.
 
-### `News::Refine` (Ray)
+### `News::Refine` (Ritch)
 ```ruby
 News::Refine.new(news).call(
   title_short: "Mahomes extends with Chiefs",
@@ -154,7 +154,7 @@ News::Review.new(n).call(
 # Step 2: Process (Mack) — automated
 News::Process.new(n).call
 
-# Step 3: Refine (Ray)
+# Step 3: Refine (Ritch)
 News::Refine.new(n).call(
   title_short: "...", summary: "...",
   feeling: "...", feeling_emoji: "...", what_happened: "..."

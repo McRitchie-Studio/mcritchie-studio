@@ -4,7 +4,7 @@
 
 ## Status: Active
 
-This is Ray's `full-cycle` SOP. It runs review, QA release, and production
+This is Ritch's `full-cycle` SOP. It runs review, QA release, and production
 deploy with explicit ship authority.
 
 ## Scope

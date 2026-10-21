@@ -10,7 +10,7 @@ The bank is the **single source of truth**; the tracked doc
 
 - **Curate a lesson** — bank it: `bin/agent-activity grade <activity-id> --disposition
   good|not --slug "<4–7 words>" [--long-form "<anchor>"] --bank` (Ray heartbeat
-  `grade-events`). The audit-of-Ray (`grader: mcr`) is Alex's admin path.
+  `grade-events`). The audit-of-Ritch (`grader: mcr`) is Alex's admin path.
 - **Feed it forward** — a fresh session loads the top-N via the `bin/session-insights`
   SessionStart loader, which GETs `/api/v1/insights`, so a new agent hatches already
   knowing them. Banking a lesson is what publishes it; the tracked doc below is the

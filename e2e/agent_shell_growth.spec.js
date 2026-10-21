@@ -3,8 +3,8 @@
 // build-launch-chat-growth and build-chat-reading-flow). Alex, 2026-10-18: the
 // conversation should take about 40% of the window at first and about 80% as it goes
 // on, the chat box always at the window's bottom; and the head's makeup (the gallery
-// gone, "What do you want to build?" shrunk) should follow the CHAT'S SIZE as it
-// grows, not the send of a message. A new answer from Ray types itself in, and his
+// gone, "Want to Build Something?" shrunk) should follow the CHAT'S SIZE as it
+// grows, not the send of a message. A new answer from Ritch types itself in, and his
 // words sit on the page, not in a bubble (app/javascript/agent_reveal.js).
 //
 // What only a browser shows: the first message animates in place (no reload) and
@@ -30,7 +30,7 @@ async function adminToken(browser) {
   return token;
 }
 
-// Ray answers the visitor's message through the real mailbox API; the page polls.
+// Ritch answers the visitor's message through the real mailbox API; the page polls.
 async function rayAnswers(page, auth, content, body) {
   const worker = `e2e-reveal-${Date.now()}`;
   for (let i = 0; i < 10; i += 1) {
@@ -102,7 +102,7 @@ test("on /build the first message leaves the hero standing; the head compacts as
       if (size && window.__sizes.at(-1) !== size) window.__sizes.push(size);
     }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["data-shell-size"] });
   });
-  const box = page.getByLabel("Tell Ray what you want to build");
+  const box = page.getByLabel("Tell Ritch what you want to build");
   await box.fill(`A recipe box for my family ${Date.now()}`);
   await page.waitForTimeout(2200); // past the bot shield's two seconds
   await box.press("Enter");
@@ -184,7 +184,7 @@ test("the CTO chat grows the same way: compact head, window-tall thread, chat bo
   expect(pageErrors, report()).toHaveLength(0);
 });
 
-test("a new answer from Ray types itself in on the page, its card after it; history and a reload show at once", async ({ page, browser }) => {
+test("a new answer from Ritch types itself in on the page, its card after it; history and a reload show at once", async ({ page, browser }) => {
   await blockThirdPartyRequests(page);
   const { pageErrors, report } = watchPageErrors(page);
   const auth = { Authorization: `Bearer ${await adminToken(browser)}`, "Content-Type": "application/json" };
@@ -192,7 +192,7 @@ test("a new answer from Ray types itself in on the page, its card after it; hist
   await page.goto("/build");
   await page.emulateMedia({ reducedMotion: "no-preference" });
   const idea = `A tide chart for surfers ${Date.now()}`;
-  const box = page.getByLabel("Tell Ray what you want to build");
+  const box = page.getByLabel("Tell Ritch what you want to build");
   await box.fill(idea);
   await page.waitForTimeout(2200);
   await box.press("Enter");
@@ -241,7 +241,7 @@ test("a new answer from Ray types itself in on the page, its card after it; hist
   expect(seen.lengths.length, "the words grew over several frames").toBeGreaterThan(3);
   expect(Math.min(...seen.lengths), "it started short").toBeLessThan(40);
 
-  // Ray's words sit on the page: no bubble behind them, in either theme.
+  // Ritch's words sit on the page: no bubble behind them, in either theme.
   const look = await reply.evaluate((el) => {
     const style = getComputedStyle(el);
     return { bg: style.backgroundColor, border: style.borderTopWidth, width: el.getBoundingClientRect().width,

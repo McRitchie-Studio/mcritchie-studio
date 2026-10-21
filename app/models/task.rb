@@ -200,7 +200,7 @@ class Task < ApplicationRecord
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
-  # Ray's ship-time grade (Insights::TaskGrader); its lesson lives on as an ActionGrade.
+  # Ritch's ship-time grade (Insights::TaskGrader); its lesson lives on as an ActionGrade.
   has_one :task_grade, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_transitions, foreign_key: :task_slug, primary_key: :slug,

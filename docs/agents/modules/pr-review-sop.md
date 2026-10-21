@@ -45,9 +45,9 @@ take a worktree, or write feature code.
 | UI — ERB, Tailwind, Alpine, theme | **Shannon** | `shannon` |
 | On-chain / Solana — turf-vault, `Solana::*`, wallets | **Jasper** | `jasper` |
 | Infra / deploy — Heroku, CI, env, buildpacks | **Steffon** | `steffon` |
-| Docs / operating-model — agent docs, runbooks, README | **Ray** | `ray` |
+| Docs / operating-model — agent docs, runbooks, README | **Ritch** | `ray` |
 
-Ray is also the pool's Documentation seat. Each review names **one PRIMARY** (Carl) and **one LIGHT**.
+Ritch is also the pool's Documentation seat. Each review names **one PRIMARY** (Carl) and **one LIGHT**.
 
 ## Step 1 — the session spins one Carl; Carl's gate-zero
 
@@ -118,8 +118,8 @@ Carl** (Agent tool, `subagent_type: carl`) as the **review OWNER**. Carl:
    **`--builder none` IS NOT A ROUTINE ESCAPE — reach for it last, and expect to be
    checked.** It asserts a fact about somebody else's work, and it was the one input
    that lifted a safety check on the caller's word alone. Measured 2026-09-24 on
-   `data-flow-doc-contradicts-code` (PR #1587, a docs PR **Ray** wrote while the task
-   carried no stamp): `--builder none` seated **ray** as the light on Ray's own diff
+   `data-flow-doc-contradicts-code` (PR #1587, a docs PR **Ritch** wrote while the task
+   carried no stamp): `--builder none` seated **ray** as the light on Ritch's own diff
    and reported the no-self-review property upheld, while `--builder ray` correctly
    excluded him. It stopped covering a **Pokémon** build on 2026-09-24 too, when
    `pokemon` joined the roster — a Pokémon build names `--builder pokemon` like any
@@ -342,7 +342,7 @@ so and wait one more round. A blocker found after the merge costs a whole new ta
   stops there.** Carl does NOT run `bin/release merge` and never touches
   `release`/`main`. Avi's **`qa-release`** (`bin/release prepare`) promotes the
   **ONE `accepted → release` batch PR per repo** and flips members `assembled` on
-  QA-green. **Bias to action: a clean merge-ready verdict = go.** When Ray is
+  QA-green. **Bias to action: a clean merge-ready verdict = go.** When Ritch is
   the primary of a docs-shape PR he merges it the same way, on
   `bin/merge-permit`'s permit; the documentation seat merges no other shape.
   For a registered **gem**, the merge is followed by a read-only

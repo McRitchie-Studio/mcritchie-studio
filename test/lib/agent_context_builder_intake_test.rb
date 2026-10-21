@@ -1,7 +1,7 @@
 require "test_helper"
 require Rails.root.join("bin/lib/agent_mailbox").to_s
 
-# [unit] Ray's prompt on a /build thread: the board's bundle carries the intake
+# [unit] Ritch's prompt on a /build thread: the board's bundle carries the intake
 # state (BuildIntake::Context via MemoryBundle), and the worker's ContextBuilder
 # prints the playbook, the state and the intake card format, fencing the one
 # free text (the confirmed idea). No intake section anywhere else.
@@ -63,7 +63,7 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
 
     assert_includes text, "THIS IS A /build INTAKE CHAT"
     assert_includes text, "Your job is four answers, asked ONE AT A TIME", "the playbook comes from docs/agents/agents/ray/intake.md"
-    refute_includes text, "The prompt text Ray answers from", "only the part below the doc's rule is printed"
+    refute_includes text, "The prompt text Ritch answers from", "only the part below the doc's rule is printed"
     assert_includes text, "The request now: idea: set, theme: not set, cto: not set, address: not set. Next step: theme."
     assert_includes text, "Set by the visitor: cto_name Coach."
     assert_includes text, '"card": "palette"'
@@ -92,11 +92,11 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
   end
 
   # The name the visitor reads is the roster's (config/souls.yml), never the slug.
-  test "the intake persona introduces itself as Ray, not by its slug" do
+  test "the intake persona introduces itself as Ritch, not by its slug" do
     text = prompt("intake" => { "steps" => BuildIntake::STEPS, "done" => {}, "values" => {} },
                   "audience" => { "role" => "public" })
-    assert text.start_with?("You are Ray, an agent in the McRitchie ecosystem"), text.lines.first
-    assert_includes text, "You are Ray, an AI agent of McRitchie Studio."
+    assert text.start_with?("You are Ritch, an agent in the McRitchie ecosystem"), text.lines.first
+    assert_includes text, "You are Ritch, an AI agent of McRitchie Studio."
     refute_match(/\bXan\b/, text)
   end
 end

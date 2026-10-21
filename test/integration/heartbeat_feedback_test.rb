@@ -87,7 +87,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
          params: { grader: "mcr", disposition: "good", slug: "agree check siblings first", surface: "drawer" }
 
     assert_equal 2, a.action_grades.count
-    assert grade_for(a, "mcr").mcr?, "the McRitchie row audits Ray's grade"
+    assert grade_for(a, "mcr").mcr?, "the McRitchie row audits Ritch's grade"
   end
 
   test "[integration] a banked grade appears on the Insight Bank page" do
@@ -133,7 +133,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
     assert_select "turbo-frame#hb-drawer"
     assert_select "input[type=hidden][name=grader][value=ray]"
     assert_select "input[type=hidden][name=grader][value=mcr]"
-    assert_select "button[value=bank]" # Ray editor only
+    assert_select "button[value=bank]" # Ritch editor only
   end
 
   test "[integration] the action drawer surfaces the FULL tool-call input and output" do

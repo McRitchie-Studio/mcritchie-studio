@@ -16,7 +16,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
   setup do
     @root = Dir.mktmpdir("ctx-root")
     FileUtils.mkdir_p(File.join(@root, "docs/agents/agents/ray"))
-    File.write(File.join(@root, "docs/agents/agents/ray/role.md"), "Ray orchestrates.")
+    File.write(File.join(@root, "docs/agents/agents/ray/role.md"), "Ritch orchestrates.")
     FileUtils.mkdir_p(File.join(@root, "config"))
     File.write(File.join(@root, "config/agent_domains.yml"), <<~YAML)
       domains:
@@ -63,7 +63,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
     positions = labels.map { |l| prompt.index(l) }
     assert positions.all?, "every label is present: #{labels.zip(positions).inspect}"
     assert_equal positions, positions.sort
-    assert_includes prompt, "Ray orchestrates."
+    assert_includes prompt, "Ritch orchestrates."
     assert_includes prompt, "The hub and its agents."
     refute_includes prompt, "authoring note", "a doc's HTML comments stay out"
     assert_match(%r{<#{FENCE}>\nAlex M:\n- Owner\.\n- Terse\.\n</#{FENCE}>}, prompt)
@@ -105,7 +105,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
   # raised "invalid byte sequence in US-ASCII" on every answer run. The docs must
   # be read as UTF-8 whatever the process locale says.
   test "a role and domain doc with non-ASCII text render while the default external encoding is US-ASCII" do
-    File.write(File.join(@root, "docs/agents/agents/ray/role.md"), "Ray orchestrates \u2014 café \u{1F680}.\n<!-- note é -->\n")
+    File.write(File.join(@root, "docs/agents/agents/ray/role.md"), "Ritch orchestrates \u2014 café \u{1F680}.\n<!-- note é -->\n")
     File.write(File.join(@root, "docs/studio.md"), "The hub \u2014 naïve.")
     original_external = Encoding.default_external
     original_internal = Encoding.default_internal
@@ -116,7 +116,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
 
     prompt = builder.prompt
 
-    assert_includes prompt, "Ray orchestrates \u2014 café \u{1F680}."
+    assert_includes prompt, "Ritch orchestrates \u2014 café \u{1F680}."
     assert_includes prompt, "The hub \u2014 naïve."
     refute_includes prompt, "note é"
     assert_equal Encoding::UTF_8, prompt.encoding
@@ -369,13 +369,13 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
   # The prompt names a soul by its roster name (config/souls.yml), and by its slug
   # only when the roster does not name it.
   test "the display name is the roster's name, else the slug's" do
-    assert builder.prompt.start_with?("You are Ray,"), "no roster under the root: the slug's name"
+    assert builder.prompt.start_with?("You are Ray,"), "no roster under the root: the slug's name (slug ray until the slug rename)"
 
-    File.write(File.join(@root, "config/souls.yml"), { "souls" => [ { "slug" => "ray", "name" => "Ray" } ] }.to_yaml)
-    assert builder.prompt.start_with?("You are Ray,")
+    File.write(File.join(@root, "config/souls.yml"), { "souls" => [ { "slug" => "ray", "name" => "Ritch" } ] }.to_yaml)
+    assert builder.prompt.start_with?("You are Ritch,")
     assert builder(soul: "mack").prompt.start_with?("You are Mack,"), "a soul the roster omits"
 
     File.write(File.join(@root, "config/souls.yml"), "souls: [unclosed")
-    assert builder.prompt.start_with?("You are Ray,"), "an unreadable roster falls back"
+    assert builder.prompt.start_with?("You are Ray,"), "an unreadable roster falls back to the slug's name"
   end
 end

@@ -1,6 +1,6 @@
 <% content_for :title, "Your app · McRitchie Studio" %>
 <% req = @app_request %>
-<%# A draft is the agent shell (agent_chats/_shell), the same page /build became when the first message was sent: Ray's portrait, the status card (build/_status_card), the thread and the chat box, and /build's gallery below it until the thread has grown (build/_gallery). Build my app swaps it for the launch panel (build/_launch), then moves it to the new CTO's chat; all opt in to a view transition, so the CTO's portrait on the panel morphs into the chat's head. %>
+<%# A draft is the agent shell (agent_chats/_shell), the same page /build became when the first message was sent: Ritch's portrait, the status card (build/_status_card), the thread and the chat box, and /build's gallery below it until the thread has grown (build/_gallery). Build my app swaps it for the launch panel (build/_launch), then moves it to the new CTO's chat; all opt in to a view transition, so the CTO's portrait on the panel morphs into the chat's head. %>
 <% content_for :head, tag.meta(name: "view-transition", content: "same-origin") %>
 <% turbo_refreshes_with method: :morph, scroll: :preserve %>
 

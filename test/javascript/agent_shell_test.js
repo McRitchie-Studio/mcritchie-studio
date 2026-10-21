@@ -113,13 +113,13 @@ test("no status card, no arrival", () => {
   assert.equal(enterStatusCard({ querySelector: () => null }, true), null);
 });
 
-// The status slot's redraws before Ray's theme card (task status-card-waits-theme):
+// The status slot's redraws before Ritch's theme card (task status-card-waits-theme):
 // the same heading stays in place; a new face (Start App locks the idea) or the
 // card (the theme card's poll) is swapped in.
 test("a redraw keeps the heading only when it is the same heading face", () => {
   const slot = (card, heading) => ({ dataset: heading ? { card, heading } : { card } });
   assert.ok(keepsHeading(slot("false", "intro"), slot("false", "intro")), "every poll before Start App keeps the heading");
-  assert.ok(keepsHeading(slot("false", "locked"), slot("false", "locked")), "every poll while Ray types the theme card keeps it");
+  assert.ok(keepsHeading(slot("false", "locked"), slot("false", "locked")), "every poll while Ritch types the theme card keeps it");
   assert.ok(keepsHeading(slot("false"), slot("false", "intro")), "a page from before the faces reads as the intro");
   assert.ok(!keepsHeading(slot("false", "intro"), slot("false", "locked")), "Start App's stream swaps in the locked face");
   assert.ok(!keepsHeading(slot("false", "locked"), slot("true")), "the theme card's poll swaps in the status card");

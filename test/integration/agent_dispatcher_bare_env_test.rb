@@ -82,7 +82,7 @@ class AgentDispatcherBareEnvTest < ActiveSupport::TestCase
     FileUtils.mkdir_p([ File.join(@root, "docs/agents/agents/ray"), File.join(@root, "config"),
                         File.join(@root, "bin"), @home ])
     File.write(File.join(@root, "docs/agents/agents/ray/role.md"),
-               "Ray orchestrates — the naïve café crowd \u{1F680}.\n")
+               "Ritch orchestrates — the naïve café crowd \u{1F680}.\n")
     File.write(File.join(@root, "config/agent_domains.yml"),
                "domains:\n  studio: { name: \"McRitchie Studio — hub\", doc: docs/studio.md }\nsouls: { ray: studio }\n")
     File.write(File.join(@root, "docs/studio.md"), "The hub — résumé of agents.\n")
@@ -120,7 +120,7 @@ class AgentDispatcherBareEnvTest < ActiveSupport::TestCase
     assert_equal [ 67 ], result["completed"].map { |c| c["id"] }
     assert_equal REPLY, result["completed"].first["text"]
     prompt = File.read(@prompt, encoding: "UTF-8")
-    assert_includes prompt, "Ray orchestrates — the naïve café crowd \u{1F680}."
+    assert_includes prompt, "Ritch orchestrates — the naïve café crowd \u{1F680}."
     assert_includes prompt, "The hub — résumé of agents."
     assert_includes prompt, "board — 2 building", "the action's non-ASCII output reached the prompt"
     assert_includes prompt, "You are speaking with: owner"
