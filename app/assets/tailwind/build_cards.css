@@ -102,3 +102,37 @@
   .build-tile-current-name { -webkit-text-fill-color: currentColor; background-image: none; }
   .build-status-pop { animation-name: build-status-flash; }
 }
+
+/* ── The gallery card's app theme (app/views/build/_gallery_card.html.erb) ──
+   Alex, 2026-10-20: each "Built with McRitchie Studio" card wears its app's
+   own colours. A card with a palette (data-palette; config/build_examples.yml
+   `palettes`) carries them as --gc-<key> custom properties: the lower panel
+   is filled with the app's dark-mode page background in BOTH hub themes (the
+   name and text are measured against that panel, so they read at AA either
+   way), the name takes its primary, the host and blurb its muted tone, and
+   the border a soft primary that goes full with a glow on hover or keyboard
+   focus. A card without a palette is untouched (Studio theme). Unlayered, so
+   it wins over the utilities on the same elements. */
+
+.build-gallery-card[data-palette] {
+  border-color: color-mix(in srgb, var(--gc-primary) 40%, transparent);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.build-gallery-card[data-palette]:hover,
+.build-gallery-card[data-palette]:focus-visible {
+  border-color: var(--gc-primary);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--gc-primary) 45%, transparent),
+              0 0 18px 2px color-mix(in srgb, var(--gc-primary) 35%, transparent);
+}
+
+.build-gallery-card[data-palette] .build-gallery-card-body {
+  background-color: var(--gc-panel);
+  border-top: 1px solid color-mix(in srgb, var(--gc-primary) 25%, transparent);
+}
+.build-gallery-card[data-palette] .build-gallery-card-name { color: var(--gc-name); }
+.build-gallery-card[data-palette] .build-gallery-card-text { color: var(--gc-text); }
+
+@media (prefers-reduced-motion: reduce) {
+  .build-gallery-card[data-palette] { transition: none; }
+}

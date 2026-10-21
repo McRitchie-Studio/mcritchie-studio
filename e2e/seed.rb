@@ -1541,7 +1541,7 @@ gallery_admin = User.find_by!(email: "alex@test.com")
 AppRequest.create!(prompt: "A trivia night scoreboard: teams, rounds and a live leaderboard.", user: gallery_admin)
   .queue!("trivia-night").update!(status: "live")
 # Two real showcase apps, so the spec sees the `lead` order of
-# config/build_examples.yml (Cyvasse, Prisoners Dilemma, Rantly) and real
+# config/build_examples.yml (Cyvasse, Turf Monster, Prisoners Dilemma, Rantly) and real
 # screenshots. Their names are reserved, so queue! refuses them: queue a
 # placeholder, then give it the real subdomain, as production holds it.
 { "prisoners-dilemma" => "A prisoner's dilemma tournament: pick or write a strategy and see the leaderboard.",

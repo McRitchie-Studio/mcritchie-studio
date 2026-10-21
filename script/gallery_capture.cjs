@@ -2,7 +2,8 @@
 // dark-mode still and a short motion loop the card plays on hover.
 //
 //   node script/gallery_capture.cjs <url> <slug> [--from <origin>]
-//   node script/gallery_capture.cjs https://cyvasse.mcritchie.studio/play cyvasse
+//   node script/gallery_capture.cjs https://cyvasse.xyz/play cyvasse
+//   node script/gallery_capture.cjs https://turfmonster.media/contests/<current-contest> turf-monster
 //
 // Writes, under app/assets/images/build_gallery/:
 //   <slug>.webp  the first screen at 1280x800 in dark mode, scaled to 960x600
@@ -54,8 +55,10 @@ async function scrollLoop(page) {
 // is what the loop records, starting from that state. `stillAfterMotion` takes
 // the still at the end of the loop instead.
 const SCENARIOS = {
-  // The still is the board once both armies stand; the loop is how it got
-  // there: three army setups, then Ready brings the opponent's side in.
+  // The still is the board once both armies stand, with the app's sidebar (its
+  // Links menu) open beside it; the loop is how it got there: three army
+  // setups, Ready brings the opponent's side in, then the menu button opens the
+  // sidebar.
   cyvasse: {
     stillAfterMotion: true,
     async motion(page) {
@@ -69,6 +72,9 @@ const SCENARIOS = {
       await page.waitForTimeout(1100);
       await press(/^Ready$/);
       await page.waitForTimeout(1800);
+      await page.locator("[data-link-sidebar-trigger]:visible").first().click();
+      await page.locator("#studio-link-sidebar").waitFor({ state: "visible" });
+      await page.waitForTimeout(900);
     }
   },
   // Type a check and run it; the still is the answer it gives.
