@@ -233,9 +233,23 @@ module ClientBuildLauncher
       File.write(File.join(dir, "styles.css"), css(intake["palette"]))
       File.write(File.join(dir, "index.html"), html(intake))
       File.write(File.join(dir, "app.js"), "// #{h(intake['app_name'] || intake['subdomain'])}: the app's script.\n")
-      portrait = portrait_path(intake.dig("cto", "portrait"))
-      FileUtils.cp(portrait, File.join(dir, "cto.svg")) if portrait
+      if (svg = animal_svg(intake))
+        File.write(File.join(dir, "cto.svg"), svg)
+      elsif (portrait = portrait_path(intake.dig("cto", "portrait")))
+        FileUtils.cp(portrait, File.join(dir, "cto.svg"))
+      end
       dir
+    end
+
+    # An animal avatar ("animal:<id>"): the hub sends it drawn, in the app's
+    # palette (ClientBuilds#cto_intake). Taken only when it is one plain SVG
+    # document with no script, link or event handler, under 64 KB.
+    def animal_svg(intake)
+      svg = intake.dig("cto", "svg")
+      return nil unless svg.is_a?(String) && svg.bytesize < 65_536 && svg.start_with?("<svg") && svg.rstrip.end_with?("</svg>")
+      return nil if svg.match?(/<script|<foreignObject|\son\w+\s*=|href\s*=|javascript:/i)
+
+      svg
     end
 
     def portrait_path(key)
@@ -278,7 +292,7 @@ module ClientBuildLauncher
     def html(intake)
       name = h(intake["app_name"].to_s.strip.empty? ? intake["subdomain"] : intake["app_name"])
       cto = h(intake.dig("cto", "name"))
-      img = portrait_path(intake.dig("cto", "portrait")) ? %(<img src="cto.svg" alt="#{cto}">) : ""
+      img = animal_svg(intake) || portrait_path(intake.dig("cto", "portrait")) ? %(<img src="cto.svg" alt="#{cto}">) : ""
       <<~HTML
         <!doctype html>
         <html lang="en">
