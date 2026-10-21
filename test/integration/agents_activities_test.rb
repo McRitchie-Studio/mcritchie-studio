@@ -2,7 +2,7 @@ require "test_helper"
 
 # [integration] GET /agents/activities — the reimagined cross-session activity feed.
 # Every narrated AgentActivity across ALL sessions, newest-first, with its raw actions
-# (also newest-first) drilled down underneath and inline Ray/McRitchie grade cells on
+# (also newest-first) drilled down underneath and inline Ritch/McRitchie grade cells on
 # BOTH. An optional ?sessions= (comma list) narrows to a multi-select of sessions. A
 # read-only meta surface BEHIND SIGN-IN, grading through the existing heartbeat endpoints.
 class AgentsActivitiesTest < ActionDispatch::IntegrationTest

@@ -13,7 +13,7 @@ All sensitive credentials are stored as environment variables, never in code.
 - `GOOGLE_CLIENT_ID` — Google OAuth client ID
 - `GOOGLE_CLIENT_SECRET` — Google OAuth client secret
 - `RAILS_MASTER_KEY` — Rails encrypted credentials key
-- `SOLANA_ADMIN_KEY` — Turf Monster's onchain signing key (base58). **Two different keys wear this name**: on `turf-monster-mainnet` it is `4S39…` (`solana.turf.server`) since 2026-10-14, replacing the retired Ray `8K81…`, and on `turf-monster-qa` it is `2eGs…` (`solana.turf.system.devnet`); a local `.env` written by `bin/ecosystem-build` holds none since 2026-10-06 (it was `solana.turf.admin`, `BLSBw8fX…`, a mainnet Squads seat). See **Onchain Admin** below
+- `SOLANA_ADMIN_KEY` — Turf Monster's onchain signing key (base58). **Two different keys wear this name**: on `turf-monster-mainnet` it is `4S39…` (`solana.turf.server`) since 2026-10-14, replacing the retired Ritch `8K81…`, and on `turf-monster-qa` it is `2eGs…` (`solana.turf.system.devnet`); a local `.env` written by `bin/ecosystem-build` holds none since 2026-10-06 (it was `solana.turf.admin`, `BLSBw8fX…`, a mainnet Squads seat). See **Onchain Admin** below
 - `ANTHROPIC_API_KEY` — Claude API key for AI chat (McRitchie Studio)
 - `X_BEARER_TOKEN` — X (Twitter) API bearer token for News intake (McRitchie Studio). See `docs/agents/system/news-pipeline.md` for setup.
 
@@ -38,7 +38,7 @@ note under the table):
 
 | Agent | Email | Purpose |
 |-------|-------|---------|
-| Ray | `admin@mcritchie.studio` | Orchestrator, admin notifications |
+| Ritch | `admin@mcritchie.studio` | Orchestrator, admin notifications |
 | Avi | `avi@mcritchie.studio` | Product Owner — PR review, release sign-off, ticket grooming |
 | Carl | `carl@mcritchie.studio` | Dev Backend Expert — Rails, ActiveRecord, jobs |
 | Shannon | `shannon@mcritchie.studio` | Dev UI Expert — frontend, Tailwind, Alpine, theme |
@@ -61,7 +61,7 @@ note under the table):
 >
 > These addresses are also seeded as app accounts — `User::PARKED_IDENTITIES` in
 > mcritchie-studio and turf-monster is the source of truth for which of them hold `admin`.
-> `admin@mcritchie.studio` is the super-admin seat shared by Ray and Steffon, and carries no
+> `admin@mcritchie.studio` is the super-admin seat shared by Ritch and Steffon, and carries no
 > Solana wallet on purpose.
 >
 > **Editing that list does not change an account that already exists.** The roster is read
@@ -73,13 +73,13 @@ note under the table):
 
 ## Solana Wallets
 
-Each agent has a dedicated Solana wallet. Credentials stored in 1Password. **2026-10-14: Ray (`8K81…`) and Mason (`CytJ…`) are retired** — off the mainnet `VaultState`, swept to 0 SOL, items archived. The mainnet `VaultState` set is now `3LTL…` (`solana.turf.governance.v2`), `7ZDJ…`, `4S39…` (`solana.turf.server`), `9gAC…`, `3Qj4…`. The sentence that follows is the 2026-09-05 history. The three vault-admin identities below (Ray, Alex's Phantom, Mason) were **the same keys on devnet and mainnet** — verified 2026-09-05 as the `VaultState.signers` set on both clusters. The other rows were not part of that verification: check the cluster before assuming any of them is devnet-only.
+Each agent has a dedicated Solana wallet. Credentials stored in 1Password. **2026-10-14: Ritch (`8K81…`) and Mason (`CytJ…`) are retired** — off the mainnet `VaultState`, swept to 0 SOL, items archived. The mainnet `VaultState` set is now `3LTL…` (`solana.turf.governance.v2`), `7ZDJ…`, `4S39…` (`solana.turf.server`), `9gAC…`, `3Qj4…`. The sentence that follows is the 2026-09-05 history. The three vault-admin identities below (Ritch, Alex's Phantom, Mason) were **the same keys on devnet and mainnet** — verified 2026-09-05 as the `VaultState.signers` set on both clusters. The other rows were not part of that verification: check the cluster before assuming any of them is devnet-only.
 
 ### Wallet Addresses
 
 | Agent | Address | Role |
 |-------|---------|------|
-| Ray (retired 2026-10-14) | `8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd` | Former server key; swept, item archived |
+| Ritch (retired 2026-10-14) | `8K81w4e6UcB7TiANhM9N8sAgijJvTxxybRi8AENRaRYd` | Former server key; swept, item archived |
 | Alex's Phantom | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Backup vault admin (recovery only) |
 | Mason (retired 2026-10-14) | `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR` | Former vault signer; swept, item archived |
 | Turf Monster server | `4S39sKHHPV8GPjUif9noN9gdsAFGs9WASuGxs7B9s5CY` | Production `SOLANA_ADMIN_KEY` and mainnet `VaultState` slot 2 (`solana.turf.server`) |
@@ -123,7 +123,7 @@ cd ~/projects/turf-monster && bin/setup-cdp-key   # no args → reads the key fr
 
 **Retrieve a wallet's private key** (items renamed 2026-05-03 to `agent.*` convention):
 ```bash
-# Ray (needs the ADMIN token — source ~/.zprofile.admin)
+# Ritch (needs the ADMIN token — source ~/.zprofile.admin)
 op item get "agent.xan.solana" --vault "studio-agents-admin" --account MWOV5OT5BRHATI4EGMN26C5DPA --fields "private key"
 
 # Mason
@@ -195,13 +195,13 @@ Attempting step 4 first does not fail harmlessly — it spends a ceremony and Al
 
 **It was TWO ceremonies, five minutes apart — not one transaction across both clusters.** Signature history: devnet executed **09:41:25 MDT** (its Squad's transaction #16), mainnet **09:46:51-55 MDT** (transaction #3), on 2026-09-15. The two carried the same membership change. The clusters diverged that AFTERNOON, in later transactions: mainnet #4 added `7auwTL…` at 13:27:29 MDT, and devnet #18 added `2eGs8G3w…`, re-added `8K81…` and removed `9gACbz…` at 14:02:10 MDT. Each cluster's Squad keeps its own transaction history, so say which cluster you mean. **Devnet proposal #17 is dead and needs no action.** It was open when #18 executed, and executing a config transaction stales every earlier index. Squads then refuses every move on it: reject fails `StaleProposal` (6007) and cancel fails `InvalidProposalStatus` (6008, because cancel needs an Approved proposal). So #17 stays `Active` with one approval (`BLSBw8…`) and can never execute (keyless simulations, 2026-09-16). A stale proposal that never reached Approved cannot be cancelled either; it is simply inert. One that had reached Approved still cancels, and a stale Approved vault transaction still executes (`credential-rotation.md`, "One transaction, not two").
 
-Both ceremonies removed Mason (`CytJ…`) and Ray (`8K81…`). Mason is still absent from each account. **Ray is not: devnet transaction #18 put `8K81…` back** (slot `498932200`), so today it is seated on devnet and absent on mainnet. Read at `finalized` 2026-09-16, from each Squad's config transactions. This paragraph has stated each half as the whole: "removed from both" (committed 10:32 MDT, true until 14:02) and then "removed from mainnet only" (committed that evening, reading the devnet re-seat as if the removal had never happened). Neither ceremony, nor #18, touched any `VaultState`. The upgrade tooling no longer depends on either seat: the rebuilt `squad-upgrade.js` reads membership off the chain, so it offers `8K81…` on devnet and never on mainnet (step 1 above). Ray remains a live `VaultState` cosigner throughout. A change to one authority is never a change to the other; read the one you mean, on the cluster you mean.
+Both ceremonies removed Mason (`CytJ…`) and Ritch (`8K81…`). Mason is still absent from each account. **Ritch is not: devnet transaction #18 put `8K81…` back** (slot `498932200`), so today it is seated on devnet and absent on mainnet. Read at `finalized` 2026-09-16, from each Squad's config transactions. This paragraph has stated each half as the whole: "removed from both" (committed 10:32 MDT, true until 14:02) and then "removed from mainnet only" (committed that evening, reading the devnet re-seat as if the removal had never happened). Neither ceremony, nor #18, touched any `VaultState`. The upgrade tooling no longer depends on either seat: the rebuilt `squad-upgrade.js` reads membership off the chain, so it offers `8K81…` on devnet and never on mainnet (step 1 above). Ritch remains a live `VaultState` cosigner throughout. A change to one authority is never a change to the other; read the one you mean, on the cluster you mean.
 
 **The first mainnet deployment is retired (2026-09-16).** The leaked `F6f8…` had kept a seat on it: program `mnzow…` under Squad `9dCLM…` (Squads 2-of-3: `7ZDJ…`, `CytJ…`, `F6f8…`). Alex signed both steps. Vault transaction #1 CLOSED `mnzow…` and swept its ~3.50 SOL of rent to `Bk9sS7ii…`, the live mainnet Squad's vault (executed 8:27 PM MDT, `02:27:09Z` on the 17th). Config transaction #2 removed `F6f8…` and `CytJ…` and set the threshold to 1, leaving `7ZDJ…` alone on `9dCLM…` (executed 8:38 PM MDT). Squads cannot close a multisig account, so `9dCLM…` persists with a little rent and controls nothing. The dead program's `VaultState` still holds `F6f8…`'s bytes, but a closed program cannot act on them. Neither transaction changed the live Squad `4H3fP3ot…` or the live program `DaFv83yo…`; the live vault only received the rent. Every signature and the post-flight chain reads are recorded on the board task `retire-leaked-key-mainnet-deployment`.
 
 ⚠ `3Qj4v9…`, `7ZDJ…` and `9gACbz…` are Alex's **personal** wallets. Their Squads seats differ by cluster: `3Qj4v9…` and `7ZDJ…` sit on both, and `9gACbz…` sits on mainnet only, because devnet transaction #18 removed it (read at `finalized` 2026-09-16). All three are deliberately filed in **no vault at all** — never file one into an agent-readable vault to unblock a ceremony. **Read the arithmetic before deciding how strict that rule is:** the agent already holds `BLSBw8…` by name and reaches `7auwTL…` through the same `studio-agents` vault, which is **two of the three** approvals a mainnet Squads transaction needs. So filing **one** of his wallets hands the agent the threshold outright — not three filings, one. The unblock is always his signature, never a filing.
 
-Deployment identity for both clusters lives in `turf-vault/docs/CURRENT_DEPLOYMENT.md`: each of its `## Devnet` and `## Mainnet` tables carries that cluster's program ID, Squads upgrade authority, threshold and three signer rows. **Read the heading you mean** — the two `VaultState` signer sets agree on both clusters today, but nothing in the program ties them together, so an address alone cannot tell you which cluster you are on. `turf-vault/scripts/squad.json` (`members`) is provenance and a script input — `scripts/initialize-mainnet.js` builds its `initialize` signer array from it — not the deployment record. Confirm the live set on-chain from `VaultState` (`seeds = [b"vault"]` against that cluster's program ID) rather than from any file. Turf Monster's **local** `.env` holds no `SOLANA_ADMIN_KEY`: `bin/ecosystem-build` stopped writing `solana.turf.admin` (`BLSBw8fX…`) on 2026-10-06, and since 2026-10-10 it reads no deployed app's config at all. **Production holds its own key**: `turf-monster-mainnet`'s `SOLANA_ADMIN_KEY` is Ray (`8K81…`, `agent.xan.solana`, vault `studio-agents-admin`), and the move onto `solana.turf.system` is a separate task gated on funding that wallet. Local holds no admin key on purpose.
+Deployment identity for both clusters lives in `turf-vault/docs/CURRENT_DEPLOYMENT.md`: each of its `## Devnet` and `## Mainnet` tables carries that cluster's program ID, Squads upgrade authority, threshold and three signer rows. **Read the heading you mean** — the two `VaultState` signer sets agree on both clusters today, but nothing in the program ties them together, so an address alone cannot tell you which cluster you are on. `turf-vault/scripts/squad.json` (`members`) is provenance and a script input — `scripts/initialize-mainnet.js` builds its `initialize` signer array from it — not the deployment record. Confirm the live set on-chain from `VaultState` (`seeds = [b"vault"]` against that cluster's program ID) rather than from any file. Turf Monster's **local** `.env` holds no `SOLANA_ADMIN_KEY`: `bin/ecosystem-build` stopped writing `solana.turf.admin` (`BLSBw8fX…`) on 2026-10-06, and since 2026-10-10 it reads no deployed app's config at all. **Production holds its own key**: `turf-monster-mainnet`'s `SOLANA_ADMIN_KEY` is Ritch (`8K81…`, `agent.xan.solana`, vault `studio-agents-admin`), and the move onto `solana.turf.system` is a separate task gated on funding that wallet. Local holds no admin key on purpose.
 
 ## AWS — S3 + Amazon SES (retired 2026-10-10)
 

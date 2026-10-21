@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [integration] The /build funnel through real requests: a signed-out visitor's
-# first message opens the chat with Ray, the draft survives the sign-in detour
+# first message opens the chat with Ritch, the draft survives the sign-in detour
 # (by the magic link's return_to AND by the Google path that always lands on the
 # home page), Build my app on a finished checklist queues the build, and a draft
 # is only ever visible to the account that finished it. The chat itself:
@@ -37,7 +37,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='build-form'] textarea[name='app_request[prompt]']"
   end
 
-  test "sending a prompt signed out saves a draft and opens the chat with Ray, no sign-in yet" do
+  test "sending a prompt signed out saves a draft and opens the chat with Ritch, no sign-in yet" do
     draft = send_prompt
 
     assert_redirected_to build_request_path(draft.token)
@@ -153,7 +153,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='agent-portrait'][style*='view-transition-name: agent-portrait'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
     assert_select "[data-test='cto-chat-head'][data-client-cto='true'] h1", text: "League Hub"
     assert_select "[data-test='devops-stage'][data-stage='building'][data-state='live']", 1, "the new build task is designed: Building, live"
-    assert_select "[data-test='cto-chat-handover']", text: /Ray\s+Meet Coach, your CTO. I'll hand you over./
+    assert_select "[data-test='cto-chat-handover']", text: /Ritch\s+Meet Coach, your CTO. I'll hand you over./
     # The CTO's opening message is there on arrival: code wrote it, no model ran, nothing is typing.
     assert_select "[data-test='cto-chat-turn'] [data-test='cto-chat-handover'] ~ [data-test='cto-chat-reply']", text: /Hi Viewer, I'm Coach, the agent who'll be managing League Hub\./
     assert_select "[data-test='cto-chat-typing']", 0
@@ -198,7 +198,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert draft.reload.draft?
   end
 
-  # The summary card's turn, as Ray's last answer carries it.
+  # The summary card's turn, as Ritch's last answer carries it.
   def summary_turn!(draft)
     AgentMessage.create!(channel: "web", external_id: "build:#{draft.token}:summary", channel_ref: "build",
                          thread_key: BuildIntake.thread_key(draft.token), soul_slug: BuildIntake.soul, content: "Let's use it.",
@@ -290,7 +290,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
       end
       assert_select "[data-test='build-launch'][style*='--cto-primary-light: 21 128 61;']", 1, "the app's own colours"
     end
-    assert_select "meta[name='view-transition'][content='same-origin']", { minimum: 1 }, "Ray's portrait morphs into the CTO's"
+    assert_select "meta[name='view-transition'][content='same-origin']", { minimum: 1 }, "Ritch's portrait morphs into the CTO's"
     assert_equal "no-store", response.headers["Cache-Control"]
     assert_not app_cto.reload.launch_animation_pending?, "spent as it rendered"
 

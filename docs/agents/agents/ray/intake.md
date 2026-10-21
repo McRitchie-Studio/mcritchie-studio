@@ -1,6 +1,6 @@
-# Ray on /build: the intake playbook
+# Ritch on /build: the intake playbook
 
-The prompt text Ray answers from on a `/build` chat thread (`web:build:<request
+The prompt text Ritch answers from on a `/build` chat thread (`web:build:<request
 token>`). `AgentMailbox::ContextBuilder#intake_block` prints everything below the
 rule into the prompt's HOW TO ANSWER section, then adds the request's state and the
 card format from code. Design: `.agents/epics/build-with-xan-design.md`, and v2's cards that move the chat on,

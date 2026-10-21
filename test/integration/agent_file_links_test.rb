@@ -14,7 +14,7 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
     end
 
     Agent.find_or_create_by!(slug: "ray") do |agent|
-      agent.name = "Ray"
+      agent.name = "Ritch"
       agent.title = "Lead Orchestrator"
       agent.status = "active"
       agent.agent_type = "orchestrator"

@@ -94,7 +94,7 @@ class AgentAction < ApplicationRecord
                             optional: true
   alias_attribute :atomic_event_id, :agent_activity_id
 
-  # The grading layer — Ray's grade and the McRitchie audit-of-Ray are two
+  # The grading layer — Ritch's grade and the McRitchie audit-of-Ritch are two
   # ActionGrade rows (distinguished by grader). The Insight Bank is the banked
   # subset. Destroyed with the action so grades never outlive what they grade.
   has_many :action_grades, dependent: :destroy, inverse_of: :agent_action

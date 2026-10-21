@@ -7,8 +7,8 @@
 # finishes the job) OVERWRITES the first author. Measured 2026-08-30 on two tasks in
 # one sitting: credential-prose-tells-truth reads built_by=avi and
 # agent-flag-silently-drops reads built_by=steffon, yet ALEX wrote the tests on the
-# first and the whole rework on the second. `bin/reviewer-select` then seated Ray as
-# the LIGHT on Ray's own diff (PR #1081).
+# first and the whole rework on the second. `bin/reviewer-select` then seated Ritch as
+# the LIGHT on Ritch's own diff (PR #1081).
 #
 # `builders` accumulates instead — append-only, SERVER-OWNED (absent from
 # DEVOPS_KEYS, so no client can write or shrink it). A claim that names NOBODY adds

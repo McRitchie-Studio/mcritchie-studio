@@ -74,7 +74,7 @@ A person with no row, a row with no role, or a board that sends no audience is
 the answered roles, `owner` alone today. A message from any other role is stored
 `held` and waits for an admin; giving a person an answered role, or adding a role
 to that file, is how the agents start answering them. There are two exceptions.
-Public intake: on a `/build` chat thread (`web:build:<token>`) Ray answers anyone,
+Public intake: on a `/build` chat thread (`web:build:<token>`) Ritch answers anyone,
 capped, with no actions (`public_intake:` in the same file;
 `docs/agents/system/agent-message-loop.md`, "Build intake"). App owners: an app's
 CTO answers a person who owns that app on that app's web CTO thread
@@ -87,7 +87,7 @@ meter (`app_owners:` in the same file; `docs/agents/system/agent-message-loop.md
    the `always` rules and that audience's `may` and `never`, outside the untrusted
    fence. Another audience's rules are never printed.
 2. **The action.** The soul's read-only action (`bin/task list`, the board read,
-   for Avi and Ray) runs only for `owner` and `team`. For a client or the
+   for Avi and Ritch) runs only for `owner` and `team`. For a client or the
    public it never runs, and the prompt says no action is enabled.
 3. **Internal context.** For a client or the public, the prompt leaves out:
    - the soul's role doc (it names the board, SOPs, and credential seats). The soul's

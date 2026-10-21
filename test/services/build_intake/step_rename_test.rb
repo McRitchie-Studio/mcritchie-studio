@@ -1,6 +1,6 @@
 require "test_helper"
 
-# [unit] The theme step's rename (task build-flow-polish): the step Ray asks
+# [unit] The theme step's rename (task build-flow-polish): the step Ritch asks
 # second was named "colors" while the visitor read "Theme". It is "theme" now.
 # The name was never stored (a request holds its theme in `palette`), so a
 # draft saved before the rename reads exactly as before, and anything still
@@ -30,7 +30,7 @@ class BuildIntakeStepRenameTest < ActiveSupport::TestCase
     assert_equal true, checklist["colors"], "the old name still reads the theme's value"
     assert_equal false, AppRequest.create!(prompt: "x").intake_checklist["colors"], "and an unset theme reads unset"
     assert_nil checklist["nonsense"], "only a retired step name is aliased"
-    refute_includes checklist.to_json, "colors", "Ray's context carries the new name only"
+    refute_includes checklist.to_json, "colors", "Ritch's context carries the new name only"
     assert_equal "cto", draft.next_intake_step, "the theme is set, so the CTO is next"
     assert draft.intake_started?
     refute draft.intake_complete?

@@ -6,7 +6,7 @@
 ## Status: Active
 
 This is the **light reviewer role SOP** — the focused second read one domain
-specialist (Shannon · Jasper · Steffon · Ray) runs when **Carl** (the standing
+specialist (Shannon · Jasper · Steffon · Ritch) runs when **Carl** (the standing
 primary and review OWNER) summons it as the **LIGHT** for a submitted PR.
 
 You are a **domain specialist reviewer**, summoned by Carl as his second set of
@@ -16,7 +16,7 @@ findings up to Carl. You are **not** the owner: you do **not** run the gates
 drive the verdict, you do **not** summon anyone, you do **not** move the task
 stage, and you do **not** merge, deploy, or publish. Carl collects your read
 alongside his deep review and drives the verdict to `reviewed` or `blocked`.
-That holds for Ray as a light too: the documentation seat merges a docs-shape PR
+That holds for Ritch as a light too: the documentation seat merges a docs-shape PR
 only as its PRIMARY ([`pr-review-primary.md`](pr-review-primary.md)).
 
 ## Scope

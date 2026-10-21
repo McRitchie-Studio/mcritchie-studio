@@ -5,7 +5,7 @@ require_relative "test_only_diff"
 
 # MergePermission — may this soul merge this PR into `accepted`?
 #
-# THE RULE. The documentation seat (Ray) merges a PR only when its diff measures
+# THE RULE. The documentation seat (Ritch) merges a PR only when its diff measures
 # `docs`: prose, inert media and docs-guard tests, with at least one prose file.
 # Any other diff is merged by the standing primary (Carl). Every other soul is
 # untouched by this rule, so what Carl may merge does not change.

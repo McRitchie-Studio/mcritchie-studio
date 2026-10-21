@@ -71,7 +71,7 @@ class AgentAudiencePromptTest < ActionDispatch::IntegrationTest
     @rules["always"].each { |r| assert_includes outside, r }
     @rules["audiences"]["owner"]["may"].each { |r| refute_includes prompt, r }
     refute_includes prompt, File.read(Rails.root.join("docs/agents/agents/ray/role.md")).lines.grep(/\S/).last.strip,
-                    "Ray's internal role doc is not in a client's prompt"
+                    "Ritch's internal role doc is not in a client's prompt"
 
     message.reload
     assert_equal "completed", message.status

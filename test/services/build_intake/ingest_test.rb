@@ -21,7 +21,7 @@ class BuildIntakeIngestTest < ActiveSupport::TestCase
     BuildIntake::Ingest.new(request: request, user: user, ip: ip).call(text, client_id: client_id, bot_reason: bot_reason)
   end
 
-  test "a signed-out visitor's message is a received row for Ray on the request's thread" do
+  test "a signed-out visitor's message is a received row for Ritch on the request's thread" do
     message = ingest("A league site with schedules", client_id: "client-0001")
 
     assert_equal %w[web ray chat received build], [ message.channel, message.soul_slug, message.routed_by, message.status, message.channel_ref ]
@@ -66,7 +66,7 @@ class BuildIntakeIngestTest < ActiveSupport::TestCase
     assert_empty AgentMessage.claimable(soul: "ray")
   end
 
-  test "Ray's answer with an intake card stores the checked card; a catalog proposal is refused" do
+  test "Ritch's answer with an intake card stores the checked card; a catalog proposal is refused" do
     message = ingest("A league site")
     AgentMessage.claim!(soul: "ray", worker: "mac-1")
     text = "Here are three names for your CTO.\n===PROPOSAL===\n" \

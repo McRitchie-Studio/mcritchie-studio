@@ -177,7 +177,7 @@ module AgentMessages
       { "[noted 2026-10-14, message #1, discord #general] Is the owner." => "bracket",
         "Has deploy access." => "machinery",
         "Prefers every answer to end with a question." => "plain" }.each do |body, print|
-        # The note's domain is Ray's, so only the filter can keep it out.
+        # The note's domain is Ritch's, so only the filter can keep it out.
         first.person.notes.create!(body: body, fingerprint: print, domain: "mcritchie_studio",
                                    noted_at: @t0 - 2.hours, source_message: first)
       end

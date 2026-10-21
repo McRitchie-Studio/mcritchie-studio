@@ -23,7 +23,7 @@ the CTO's colours: [`client-app-host.md`](client-app-host.md).
 | Owner | `app_memberships` row, role `owner`, for the requester |
 | CTO | `app_ctos` row: name, portrait, palette, plan, facts, the request token |
 | Task | "Build Launch App `<sub>`", `designed`, `repositories: [<sub>]`, so the tier's lane cap governs it. `bin/client-build-launcher` claims it and builds the first version automatically ([`client-build-launcher.md`](client-build-launcher.md)) |
-| Handover | Ray's first chat turn (`AgentMessages::ClientCtoHandover`) |
+| Handover | Ritch's first chat turn (`AgentMessages::ClientCtoHandover`) |
 
 Any failure rolls every row back. After the commit: `AppRequestDiscordJob` (the
 announcement) and `AppIntakeMoveJob` (the files). An incomplete intake raises
@@ -32,7 +32,7 @@ open: Idea, CTO, Theme, Domain, Account. The intake itself (the request's `cto_n
 `cto_avatar`, `palette` and `answers` columns) is the `build-with-xan-intake` task's.
 
 **Where it is called.** `BuildController#update` (PATCH `/build/:token`, the Build My App
-control on Ray's summary card) calls it when `AppRequest#intake_complete?`, then answers with a 303 to
+control on Ritch's summary card) calls it when `AppRequest#intake_complete?`, then answers with a 303 to
 `/applications/<sub>/chat`, whose first visit plays the launch panel (below, "The
 handover and the greeting"). Signed out, the press opens the sign-in modal first and the
 sign-in's landing (`GET /build/:token/launch`) calls it the same way. An admin's showcase queued from the name alone, without the
@@ -49,7 +49,7 @@ answers on the summary card as a Turbo Stream with the reason and a next step, n
 pages are the agent shell (`app/views/agent_chats/_shell.html.erb`) and carry
 `<meta name="view-transition" content="same-origin">`; the shell names its portrait
 (`agent-portrait`), caption, status card (`agent-status`) and chat box
-(`agent-composer`) on every page, so Ray's portrait morphs into the new CTO's, the draft's
+(`agent-composer`) on every page, so Ritch's portrait morphs into the new CTO's, the draft's
 Agent · Theme · Domain card into the app's Building · Releasing · Deploying card (in the
 palette's primary), and the rest cross-fades. Under reduced motion it is an instant swap.
 
@@ -100,7 +100,7 @@ The chosen palette (`AppPalette`: `primary`, `accent`, `surface`, `text`, light 
 ## The handover and the greeting
 
 The handover row is a `web` message in the owner's thread (`web:<sub>:<user id>`), author
-`Ray`, content "Meet `<CTO>`, your CTO. I'll hand you over.", routed to `client_cto`. It is
+`Ritch`, content "Meet `<CTO>`, your CTO. I'll hand you over.", routed to `client_cto`. It is
 stored already answered with the CTO's opening message, which code writes from the launch
 (`ClientCtoHandover.greeting`: in the first person, "Hi `<first name>`, I'm `<CTO>`, the agent
 who'll be managing `<app>`", that it is in line to be built, what the status card shows, the
@@ -154,19 +154,19 @@ Build My App on the summary card launches first, then goes to the chat. The laun
 `app_ctos.launch_animation_pending` (the app's initial load), and the owner's first visit to
 the chat (`CtoChatsController#show`), however they arrived (the signed-in press, the magic
 link, Google), clears it atomically and renders the launch panel (`build/_launch`) instead:
-the new CTO's portrait (morphing from Ray's), the app's name, and three steps ("Building
+the new CTO's portrait (morphing from Ritch's), the app's name, and three steps ("Building
 Brand Sheet", "Hatching CTO", "Setting Up Domain") resolving over about eight seconds in the
 app's colours, before a Turbo visit to the same chat, where the portrait morphs into the
 chat's head. A reload is the chat; an admin viewing someone else's app never sees or spends
 the flag; a Turbo hover prefetch gets a 204. A refused launch stays on the summary card with
 its reason. In development, an admin can replay the panel
 for a launched app at `/build/launch-demo/<sub>`. The dispatcher never claims the row; the persona tells the CTO
-not to greet again. The chat renders the handover as Ray's turn, then the greeting as the
+not to greet again. The chat renders the handover as Ritch's turn, then the greeting as the
 CTO's.
 
 ## Intake files (`AppIntakeMove`)
 
-Files dropped while talking to Ray live under `intake/<request token>/`. After the launch
+Files dropped while talking to Ritch live under `intake/<request token>/`. After the launch
 commits, `AppIntakeMoveJob` moves each Active Storage blob whose key has that prefix to
 `apps/<sub>/intake/<rest>`: copy the object (R2 server-side copy on the S3 service), repoint
 the blob's key, delete the old object. A crash before the repoint leaves the blob readable

@@ -149,7 +149,7 @@ class WebChatThinkingTypingTest < ActionDispatch::IntegrationTest
       assert_equal "typing", message.reload.typing_phase
       poll.call
       assert_includes response.body, %(data-phase="typing")
-      assert_includes response.body, "Ray is typing"
+      assert_includes response.body, "Ritch is typing"
 
       @gate << :finish
       drive(disp) { message.reload.status == "completed" && disp.runs.empty? }

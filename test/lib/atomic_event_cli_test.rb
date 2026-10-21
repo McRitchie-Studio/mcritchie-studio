@@ -242,7 +242,7 @@ class AgentActivityCliTest < Minitest::Test
     Dir.mktmpdir do |proj|
       keep_admin_login(proj, "ray")
       # A builder the same harness spawned declares its own lane: the admin login is
-      # Ray's, so the call keeps the shared token and the lane it declared.
+      # Ritch's, so the call keeps the shared token and the lane it declared.
       requests = run_cli(%w[start --category Explore --reason build-the-task --agent pokemon], proj: proj)
       requests += run_cli(%w[start --category Explore --reason no-lane-declared], proj: proj)
 
@@ -1085,8 +1085,8 @@ class AgentActivityCliTest < Minitest::Test
       out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN, "heartbeat", "alex")
 
       assert_predicate status, :success?
-      assert_includes out, "## Ray's dream sequence"
-      assert_operator out.index("heartbeat set"), :<, out.index("## Ray's dream sequence")
+      assert_includes out, "## Ritch's dream sequence"
+      assert_operator out.index("heartbeat set"), :<, out.index("## Ritch's dream sequence")
 
       out, _err, _status = Open3.capture3(env, RbConfig.ruby, BIN, "heartbeat", "--clear")
       refute_includes out, "dream sequence"

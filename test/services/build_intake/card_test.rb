@@ -1,6 +1,6 @@
 require "test_helper"
 
-# [unit] The intake card Ray's answer offers (BuildIntake::Card): names, hex
+# [unit] The intake card Ritch's answer offers (BuildIntake::Card): names, hex
 # colours and text contrast are checked in code, unknown fields refuse the card,
 # a failing item is dropped, and the stored copy is the normalized one.
 class BuildIntakeCardTest < ActiveSupport::TestCase
@@ -135,6 +135,6 @@ class BuildIntakeCardTest < ActiveSupport::TestCase
                  "a refused proposal still leaves the visitor the summary")
 
     stored = BuildIntake::Card.record_from!(message, { "kind" => "intake", "card" => "cto", "names" => [ "Nova" ] })
-    assert_equal "cto", stored["card"], "a card Ray offered wins over the summary"
+    assert_equal "cto", stored["card"], "a card Ritch offered wins over the summary"
   end
 end

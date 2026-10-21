@@ -33,7 +33,7 @@ test("the Approve tap on a pending admin login grants the session, collected onc
 
   const row = page.locator(`#admin-login-${slug}`);
   await expect(row).toBeVisible();
-  await expect(row).toContainText("Admin login · Ray");
+  await expect(row).toContainText("Admin login · Ritch");
   await expect(row.locator("[data-test='admin-login-slug']")).toHaveText(slug);
   await expect(row.locator("[data-test='admin-login-requested'] time")).toBeVisible();
   await expect(row.locator("[data-test='admin-login-code']")).toHaveText(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
