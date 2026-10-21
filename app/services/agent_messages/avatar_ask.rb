@@ -6,15 +6,25 @@ module AgentMessages
   # material effect on the agent."). Before this the model designed a bat in hex
   # colours and promised a human would follow up.
   #
-  # THE MATCH is narrow, in one message of at most MAX_LENGTH characters from
-  # the app's OWNER, with a change word (change, new, redesign, swap,
-  # different, pick, another, …) and EITHER the CTO's own picture ("your
-  # avatar", "your look", "the CTO's portrait", "a new avatar for you") OR a
-  # bare avatar word (avatar, portrait, pfp) with no word of app work (users,
-  # page, feature, upload, …), since "a new avatar upload for members" is a
-  # feature request. Anything else, or an admin, goes to the model, whose
-  # persona (docs/agents/agents/client_cto/persona.md) says the same thing in
-  # one line.
+  # THE MATCH is strict (Carl's review: a loose match hijacked "Change your
+  # image compression to webp"). WHEN IN DOUBT, THE MODEL ANSWERS: a missed ask
+  # costs one model reply, a false one swallows real app work. A message of at
+  # most MAX_LENGTH characters from the app's OWNER is an ask only when ALL of:
+  #
+  #   it names a change   CHANGE (change, new, redesign, swap, pick, …)
+  #   it is about the CTO's OWN picture
+  #                       OWN_PICTURE: "your avatar / portrait / pfp / profile
+  #                       pic / picture / look", "the CTO's avatar", "an avatar
+  #                       for you(rself)"; or a bare avatar word (avatar,
+  #                       portrait, pfp) — never photo, image, icon, face or
+  #                       pic on their own, which are app nouns far more often
+  #   it names no app work
+  #                       APP_WORDS, applied to EVERY branch: users, page,
+  #                       feature, upload, size, header, gallery, logo,
+  #                       compression, dashboard, "look and feel", …
+  #
+  # Anything else, or an admin, goes to the model, whose persona
+  # (docs/agents/agents/client_cto/persona.md) says the same thing in one line.
   #
   # THE REPLY carries run_meta META, which agent_chats/_turn draws as a "Pick a
   # new avatar" button; it opens the picker the owner's chat page holds
@@ -27,10 +37,9 @@ module AgentMessages
     BUTTON = "Pick a new avatar".freeze
     MAX_LENGTH = 200
 
-    PICTURE_WORD = /(?:avatar|portrait|pfp|profile\s+(?:pic(?:ture)?|photo|image|icon)|look|picture|pic|photo|icon|image|face|animal)/i
-    OWN_PICTURE = /\b(?:your|ur|yr|the\s+cto'?s|cto'?s?)\s+(?:own\s+|current\s+)?#{PICTURE_WORD.source}\b|\b(?:avatar|portrait|pfp|look)\s+for\s+(?:you|yourself)\b/i
+    OWN_PICTURE = /\b(?:your|ur|yr|the\s+cto'?s|cto'?s?)\s+(?:own\s+|current\s+)?(?:avatar|portrait|pfp|profile\s+pic(?:ture)?|picture|look)\b|\b(?:avatar|portrait|pfp|look)\s+for\s+(?:you|yourself)\b/i
     BARE_PICTURE = /\b(?:avatar|portrait|pfp)\b/i
-    APP_WORDS = /\b(?:users?|members?|customers?|clients?|people|accounts?|page|pages|screen|feature|upload|uploads|app|site|profiles?|settings|signup|sign-up|form)\b/i
+    APP_WORDS = /\b(?:users?|members?|customers?|clients?|people|community|visitors?|players?|accounts?|pages?|home(?:page)?|screens?|features?|fields?|forms?|pickers?|signup|sign-up|uploads?|files?|heic|webp|png|jpe?g|svg|size|sizes|header|footer|nav(?:bar)?|hero|gallery|galleries|logo|logos|favicon|icons?|icon\s+set|brand|branding|mascot|images?|photos?|compression|detection|model|dashboard|feel|style|css|theme|colou?rs?|button|settings|app|site|website|database|api)\b/i
     CHANGE = /\b(?:change|changing|new|redesign|re-?design|swap|switch|update|different|pick|choose|another|replace|redo|re-?pick|edit|instead|make|turn)\b/i
 
     module_function
@@ -39,7 +48,9 @@ module AgentMessages
       text = text.to_s
       return false if text.length > MAX_LENGTH || !text.match?(CHANGE)
 
-      text.match?(OWN_PICTURE) || (text.match?(BARE_PICTURE) && !text.match?(APP_WORDS))
+      return false if text.match?(APP_WORDS)
+
+      text.match?(OWN_PICTURE) || text.match?(BARE_PICTURE)
     end
 
     # Whether MESSAGE is a code reply that offers the picker.
