@@ -24,8 +24,9 @@ for (const motion of [ "no-preference", "reduce" ]) {
     const deadline = Date.parse(await page.locator(ETA).getAttribute("data-deadline"));
     expect(Number.isFinite(deadline), "the pill carries its expected finish").toBe(true);
 
-    // Ninety seconds before the deadline, then let the ticker run.
-    await page.clock.install({ time: deadline - 90_000 });
+    // Held at ninety seconds before the deadline; the ticker then runs only as the spec moves the clock.
+    await page.clock.install({ time: deadline - 120_000 });
+    await page.clock.pauseAt(deadline - 90_000);
     await page.reload();
     const eta = page.locator(ETA);
     await expect(eta).toHaveText("01:30");
