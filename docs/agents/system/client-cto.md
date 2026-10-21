@@ -142,7 +142,7 @@ left (`AppDevopsStages::Eta`). Each list row says the same for its own task.
 |-----------|------|-----------|-----|
 | `designed` | Building | Prepping | "no builder" unless a launcher is live, else the usual wait |
 | only `designed` in the lane | **Prepping**, no count | none | the usual wait while a launcher is live, else none ("waiting for a builder" stays on the row) |
-| `building` | Building | Building (On hold while blocked) | usual build time, less time spent |
+| `building` | Building | Building (On hold while blocked) | usual build time, less time spent; a first version reads the launcher's own runs |
 | `submitted` | Building | Reviewing | usual review time |
 | `reviewed` | Building | Approved | usual wait for a release |
 | `assembled` | Releasing | On QA | usual time to ship |
@@ -151,7 +151,23 @@ left (`AppDevopsStages::Eta`). Each list row says the same for its own task.
 - **The usual time** is the median `seconds_in_from` of the last 20 forward transitions out of
   that stage (`task_events`), board-wide, cached ten minutes; Deploying uses the last 20
   releases' `prod_deploy_started_at → shipped_at`. With fewer than three durations the pill
-  shows no ETA. Past the usual time it reads "running long".
+  shows no ETA.
+- **The countdown** (task `live-build-countdown`). A step with a real start (every step but
+  `designed`, whose `created_at` is no start) carries its expected finish, the step's start
+  plus the usual time, as the pill's `data-deadline`. The pill paints the clock to it,
+  `05:48` (`1:02:03` from an hour up; `Eta.clock`), in tabular numerals, and
+  `app/javascript/devops_countdown.js` ticks it each second, reduced motion included (it is
+  text). Past the deadline it reads "Any minute now", never a negative. The ticking span is
+  hidden from screen readers, which hear the rounded wait once ("~6 min left"); the list row
+  keeps the rounded words ("Building · ~6 min left", "taking longer than usual"). Prepping and
+  "no builder" keep their words, with no countdown.
+- **A client build's usual time** is the launcher's own record, not the board's: the median
+  `started_at → finished_at` of the last 20 `devops.client_build` runs that ended
+  `preview_ready` (the builder's wall clock; a failed or released run built nothing), and
+  `typical_build_minutes` in `config/client_builds.yml` (8) until one has. The hub's
+  `building → submitted` median is PR work, about half an hour, and a first version's own
+  move is `building → shipped`, which that median never reads. A building client build counts
+  down from its run's `started_at`.
 - **The launcher seam.** A designed task promises minutes only while a dispatcher ping
   (`AgentDispatcher`) carrying the soul `client-build-launcher` has been heard in the last five
   minutes and is not paused (`Eta.launcher_live?`).
