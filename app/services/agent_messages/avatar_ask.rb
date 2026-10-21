@@ -16,8 +16,11 @@ module AgentMessages
   #                       OWN_PICTURE: "your avatar / portrait / pfp / profile
   #                       pic / picture / look", "the CTO's avatar", "an avatar
   #                       for you(rself)"; or a bare avatar word (avatar,
-  #                       portrait, pfp) — never photo, image, icon, face or
-  #                       pic on their own, which are app nouns far more often
+  #                       portrait, pfp) ONLY when the whole message is that
+  #                       ask: BARE_MAX_WORDS words or fewer ("new avatar",
+  #                       "pick a portrait"), and never "my avatar" (the
+  #                       owner's own). Never photo, image, icon, face or pic
+  #                       on their own, which are app nouns far more often
   #   it names no app work
   #                       APP_WORDS, applied to EVERY branch: users, page,
   #                       feature, upload, size, header, gallery, logo,
@@ -36,6 +39,7 @@ module AgentMessages
     SUMMARY = "avatar picker".freeze
     BUTTON = "Pick a new avatar".freeze
     MAX_LENGTH = 200
+    BARE_MAX_WORDS = 4
 
     OWN_PICTURE = /\b(?:your|ur|yr|the\s+cto'?s|cto'?s?)\s+(?:own\s+|current\s+)?(?:avatar|portrait|pfp|profile\s+pic(?:ture)?|picture|look)\b|\b(?:avatar|portrait|pfp|look)\s+for\s+(?:you|yourself)\b/i
     BARE_PICTURE = /\b(?:avatar|portrait|pfp)\b/i
@@ -50,7 +54,15 @@ module AgentMessages
 
       return false if text.match?(APP_WORDS)
 
-      text.match?(OWN_PICTURE) || text.match?(BARE_PICTURE)
+      text.match?(OWN_PICTURE) || bare_ask?(text)
+    end
+
+    # "new avatar", "change avatar please": a bare avatar word in a message that
+    # is nothing but the ask (Carl's second review: "Change the default avatar
+    # for new signups" is app work).
+    def bare_ask?(text)
+      words = text.gsub(/[^\p{L}\p{N}'\s-]/u, " ").split
+      words.size <= BARE_MAX_WORDS && text.match?(BARE_PICTURE) && !text.match?(/\bmy\s+(?:avatar|portrait|pfp)\b/i)
     end
 
     # Whether MESSAGE is a code reply that offers the picker.
