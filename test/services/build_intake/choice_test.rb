@@ -112,7 +112,8 @@ class BuildIntakeChoiceTest < ActiveSupport::TestCase
 
     refusals = {
       [ "cto", { custom_name: "x", portrait: "harbor" } ] => /2 to 24 letters/,
-      [ "cto", { custom_name: "Marble", portrait: "pikachu" } ] => /portrait/,
+      [ "cto", { custom_name: "Marble", portrait: "pikachu" } ] => /avatar/,
+      [ "cto", { custom_name: "Marble", portrait: "animal:pikachu" } ] => /avatar/,
       [ "palette", { message_id: themes.id, index: "4" } ] => /themes/,
       [ "idea", { message_id: themes.id } ] => /no longer available/,
       [ "address", { subdomain: "taken-name" } ] => /taken|claimed|in use/i,

@@ -30,6 +30,7 @@ class AppCto < ApplicationRecord
   validates :name, presence: true, length: { maximum: NAME_LIMIT }
   validates :plan, length: { maximum: PLAN_LIMIT }
   validate :palette_is_complete
+  validate :portrait_is_storable, if: -> { portrait_changed? && portrait.present? }
 
   before_validation -> { self.name = name.to_s.squish.presence }
 
@@ -75,6 +76,10 @@ class AppCto < ApplicationRecord
   end
 
   private
+
+  def portrait_is_storable
+    errors.add(:portrait, "is not a known avatar") unless BuildIntake::Portraits.storable?(portrait)
+  end
 
   def palette_is_complete
     AppPalette.errors(palette).each { |message| errors.add(:palette, message) }

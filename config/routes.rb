@@ -453,6 +453,9 @@ Rails.application.routes.draw do
       post :chat, to: "cto_chats#create"
       # The chat's status card alone, for its live reload (AppDevopsStages::Live).
       get "chat/status", to: "cto_chats#status", as: :chat_status
+      # The owner's CTO avatar picker: "New set", and the pick.
+      get "chat/avatars", to: "cto_chats#avatars", as: :chat_avatars
+      patch "chat/avatar", to: "cto_chats#avatar", as: :chat_avatar
       # Its files (AgentMessages::Attachments): the composer's upload, and a sent file's expiring link.
       post "chat/attachments", to: "cto_chat_attachments#create", as: :chat_attachments
       get "chat/attachments/:attachment_id", to: "cto_chat_attachments#show", as: :chat_attachment,

@@ -10,3 +10,14 @@
   --ava-fg: var(--ava-fg-d);
   --ava-bg: var(--ava-bg-d);
 }
+
+/* The CTO chat's avatar openers (the "Pick a new avatar" answer, the head's
+   portrait) work only on a page holding the owner's picker
+   (cto_chats/_avatar_picker marks its page data-cto-avatar-picker). */
+[data-cto-avatar-open] {
+  display: none;
+}
+
+[data-cto-avatar-picker] [data-cto-avatar-open] {
+  display: inline-flex;
+}

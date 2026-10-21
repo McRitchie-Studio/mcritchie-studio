@@ -54,14 +54,14 @@ class BuildCardsViewTest < ActionView::TestCase
   end
 
   test "Customize your CTO: one stack of portrait, prefilled name, name ideas, then Wake Up your CTO" do
-    card("cto", "names" => %w[Marble Coach Scout], "portrait" => "harbor")
+    card("cto", "names" => %w[Marble Coach Scout], "portrait" => "animal:fox")
     assert_select "[data-test='build-cto-heading']", "Customize your CTO"
     refute_match(/Meet your CTO/, rendered)
-    assert_select "[data-test='build-portrait-preview'][src*='cto_portraits/harbor']"
+    assert_select "[data-test='build-portrait-preview'][data-avatar='animal:fox'] svg.cto-animal[data-animal='fox'][aria-label='Fox']"
     assert_select "[data-test='build-portrait-open'][aria-haspopup='dialog']"
     assert_select "[data-test='build-portrait-new']", "New image"
-    assert_select "dialog[data-test='build-portrait-dialog'] input[name='portrait'][type='radio']", BuildIntake::Portraits::KEYS.size
-    assert_select "dialog input[name='portrait'][value='harbor'][checked]"
+    assert_select "dialog[data-test='build-portrait-dialog'] input[name='portrait'][type='radio']", BuildIntake::Animals::SET_SIZE
+    assert_select "dialog input[name='portrait'][value='animal:fox'][checked]"
     assert_select "[data-test='build-cto-name-input'][name='custom_name'][value='Marble']"
     # Every one of Ray's names is a visible tap, not a datalist that filters the
     # others away while the first one is prefilled.

@@ -21,6 +21,10 @@
     <div class="agent-reply self-stretch min-w-0" data-test="cto-chat-reply" data-bubble="false">
       <p class="sr-only" data-test="cto-chat-reply-author"><%= agent_name %>:</p>
       <div class="agent-reply-body prose-themed break-words [&>*:last-child]:mb-0" data-agent-reveal><%= SafeMarkdown.render(message.response_text, images: false, new_tab: true) %></div>
+      <% if AgentMessages::AvatarAsk.picker?(message) %>
+        <%# The avatar ask's answer (AvatarAsk): opens the owner's picker (cto_chats/_avatar_picker). Shown only on a page that holds one (cto_animal.css), so an admin reading the thread sees the line alone. %>
+        <button type="button" class="btn btn-secondary btn-sm mt-2" data-cto-avatar-open data-test="cto-chat-avatar-pick"><%= AgentMessages::AvatarAsk::BUTTON %></button>
+      <% end %>
     </div>
   <% elsif message.status == "held" && (refusal = message.events.find_by(kind: "confirm_refused")) %>
     <p class="self-start text-xs text-warning-ink" data-test="cto-chat-confirm-held"><%= AgentMessages::ProposalConfirm.held_text(refusal.detail) %></p>

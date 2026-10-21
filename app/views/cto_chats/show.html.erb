@@ -3,12 +3,18 @@
 <% content_for :head, tag.meta(name: "view-transition", content: "same-origin") %>
 <% turbo_refreshes_with method: :morph, scroll: :preserve %>
 <% client = @cto.client? %>
-<div data-test="cto-chat-page" data-app="<%= @app.slug %>" data-soul="<%= @cto.soul %>">
+<%# The owner's page holds the avatar picker (cto_chats/_avatar_picker): data-cto-avatar-picker shows its openers (cto_animal.css), the head's portrait and an avatar ask's answer. %>
+<div data-test="cto-chat-page" data-app="<%= @app.slug %>" data-soul="<%= @cto.soul %>"<%= " data-cto-avatar-picker".html_safe if @avatar_owner %>>
   <% head = capture do %>
     <% role = capture do %>CTO of <%= @app.name %><% end %>
     <%# A client app's CTO wears its own colours and portrait (AppCto, docs/agents/system/client-cto.md). %>
-    <%= render "agent_chats/header", name: @cto.display_name, agent: @cto.agent, role: role,
-                                     portrait: (render("applications/cto_avatar", cto: @cto, size: "xl") if client) %>
+    <% portrait = (render("applications/cto_avatar", cto: @cto, size: "xl") if client) %>
+    <% if portrait && @avatar_owner %>
+      <% portrait = tag.button(portrait, type: "button", class: "rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ring-offset-2 ring-offset-surface",
+                                         aria: { haspopup: "dialog", label: "Pick a new avatar for #{@cto.display_name}" },
+                                         data: { cto_avatar_open: true, test: "cto-chat-avatar-head" }) %>
+    <% end %>
+    <%= render "agent_chats/header", name: @cto.display_name, agent: @cto.agent, role: role, portrait: portrait %>
   <% end %>
   <% status = render "agent_chats/devops_card", app: @app, board: @board, admin: @admin, meter: (@meter if @available), client: client,
                                                 palette_style: (client_cto_palette_style(@cto.app_cto) if client) %>
@@ -28,4 +34,5 @@
     <% end %>
   <% end %>
   <%= render "agent_chats/shell", page: "app", head: head, status: status, chat: chat, turns: (@messages.size if @available).to_i %>
+  <%= render "cto_chats/avatar_picker", app: @app, app_cto: @cto.app_cto if @avatar_owner %>
 </div>

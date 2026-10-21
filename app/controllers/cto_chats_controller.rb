@@ -24,14 +24,25 @@
 #           nameless owner's answer to the CTO's first-name ask saves the name
 #           (AgentMessages::FirstNameAsk); these pages never open the engine's
 #           first-name modal
+#   avatars "New set" in the owner's avatar picker (cto_chats/_avatar_picker;
+#           CtoAnimalSet): the next set of animals in the app's palette
+#   avatar  the owner's pick from that picker (task cto-animal-avatar-bank):
+#           saves AppCto#portrait (an animal, or a portrait key the app already
+#           had) and the launching request's cto_avatar, then reloads the chat,
+#           so the head, the typing pulse and the being-built page all show it.
+#           An avatar ask in the chat opens it (AgentMessages::AvatarAsk)
 #
-# Past the AdminWall (SIGNED_IN), all three answer 404, never 403, unless the viewer
-# owns the app or is an admin, exactly as the app's own page does. The CTO is the
+# Past the AdminWall (SIGNED_IN), every action answers 404, never 403, unless the viewer
+# owns the app or is an admin, exactly as the app's own page does; avatar and
+# avatars answer 404 to an admin who does not own the app too (the look is the
+# owner's to pick). The CTO is the
 # app's, from config/cto_reports.yml: nothing the request carries picks the soul.
 class CtoChatsController < ApplicationController
+  include CtoAnimalSet
   FORM_ID = "cto-chat-form".freeze
 
   before_action :load_app_and_cto
+  before_action :require_avatar_owner, only: %i[avatar avatars]
   # The CTO asks a nameless owner for their first name in the chat
   # (AgentMessages::FirstNameAsk), so the engine's first-name modal never opens
   # over the launch panel or the thread (Alex 2026-10-19).
@@ -48,6 +59,24 @@ class CtoChatsController < ApplicationController
     @answered = answered?
     @admin = AppOwnership.admin?(current_user)
     @board = AppDevopsStages.board_for(@app, admin: @admin)
+    @avatar_owner = avatar_owner?
+  end
+
+  def avatars
+    render_animal_set(@app_cto.palette)
+  end
+
+  def avatar
+    pick = params[:portrait].to_s
+    unless BuildIntake::Portraits.choosable?(pick)
+      return redirect_to(chat_application_path(@app.slug), alert: "Pick one of the avatars.", status: :see_other)
+    end
+
+    AppCto.transaction do
+      @app_cto.update!(portrait: pick)
+      AppRequest.holding.where(subdomain: @app.slug).update_all(cto_avatar: pick, updated_at: Time.current)
+    end
+    redirect_to chat_application_path(@app.slug), notice: "#{@app_cto.name} has a new look.", status: :see_other
   end
 
   # The status card's live half alone (agent_chats/_devops_stages, a turbo-frame),
@@ -168,6 +197,18 @@ class CtoChatsController < ApplicationController
     probe = AgentMessage.new(channel: "web", channel_ref: @app.slug, soul_slug: @cto.soul,
                              thread_key: AgentMessages::WebChat.thread_key(@app.slug, current_user.id))
     answerers.allowed?(person, message: probe)
+  end
+
+  # The app's owner (AppMembership), with a client CTO row to dress.
+  def avatar_owner?
+    @cto.client? && @cto.app_cto.present? &&
+      AppMembership.owners.exists?(app_slug: @app.slug, user_slug: current_user.slug)
+  end
+
+  def require_avatar_owner
+    raise ActiveRecord::RecordNotFound, "not the owner" unless avatar_owner?
+
+    @app_cto = @cto.app_cto
   end
 
   def load_app_and_cto

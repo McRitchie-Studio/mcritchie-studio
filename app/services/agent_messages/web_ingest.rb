@@ -38,7 +38,8 @@ module AgentMessages
   # for a role the agents do not answer, else `received`, with the files attached
   # in the same transaction. A nameless owner's first message after the CTO
   # asked for their name (FirstNameAsk) that gives a name or a skip is stored
-  # answered in code, and the name saved.
+  # answered in code, and the name saved. An owner's ask for a new avatar
+  # (AvatarAsk) is stored answered in code with the picker's button.
   #
   # Idempotent on (channel, external_id): the form carries a client id per send,
   # so a double submit stores one row.
@@ -92,7 +93,8 @@ module AgentMessages
 
       return store(attrs, person, blobs) unless blobs.empty?
 
-      confirm(text, attrs, person) || store(attrs, person, name_answer: name_answer(text, attrs))
+      confirm(text, attrs, person) ||
+        store(attrs, person, name_answer: name_answer(text, attrs), avatar_ask: avatar_ask?(text))
     rescue ActiveRecord::RecordNotUnique
       AgentMessage.find_by!(channel: "web", external_id: external_id)
     end
@@ -133,9 +135,17 @@ module AgentMessages
       FirstNameAsk.answer_for(@user, attrs[:thread_key], text)
     end
 
-    # `name_answer`: a FirstNameAsk::Answer, answered in code (no model, no
+    # Whether TEXT asks for a new avatar AND the sender owns this app: the
+    # picker is the owner's (CtoChatsController#avatar), so anyone else's ask
+    # goes to the model.
+    def avatar_ask?(text)
+      AvatarAsk.ask?(text) && AppMembership.owners.exists?(app_slug: @cto.app_slug, user_slug: @user.slug)
+    end
+
+    # `name_answer`: a FirstNameAsk::Answer, and `avatar_ask`: true for an
+    # owner's avatar ask (AvatarAsk); each answered in code (no model, no
     # tokens) when the message is not held, ahead of the cap.
-    def store(attrs, person, blobs = [], name_answer: nil)
+    def store(attrs, person, blobs = [], name_answer: nil, avatar_ask: false)
       capped = AgentMessage.transaction(requires_new: true) do
         limited = rate_limited?(attrs[:thread_key])
         # The probe carries no person: built with one, it would join the
@@ -157,6 +167,10 @@ module AgentMessages
         if name_answer && !held
           message.code_answered!(FirstNameAsk.reply!(@user, name_answer), summary: FirstNameAsk::SUMMARY,
                                  meta: { "first_name" => name_answer.skip? ? "skipped" : "saved" }, now: @now)
+          next [ message, true ]
+        end
+        if avatar_ask && !held
+          message.code_answered!(AvatarAsk::REPLY, summary: AvatarAsk::SUMMARY, meta: { AvatarAsk::META => true }, now: @now)
           next [ message, true ]
         end
         meter = owner_only && !held ? owner_meter : nil
