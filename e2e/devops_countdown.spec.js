@@ -16,8 +16,7 @@ const { watchPageErrors } = require("./helpers");
 const PILL = "[data-test='cto-chat-head'] [data-test='devops-stage'][data-stage='building'][data-state='live']";
 const ETA = `${PILL} [data-test='devops-stage-eta'][data-devops-countdown]`;
 
-for (const motion of [ "no-preference", "reduce" ]) {
-  test(`the Building pill counts down to its deadline, then reads Any minute now (motion: ${motion})`, async ({ page }) => {
+async function countsDown(page, motion) {
     const { pageErrors, report } = watchPageErrors(page);
     await page.emulateMedia({ reducedMotion: motion });
     await page.goto("/applications/countdown-probe/chat");
@@ -45,8 +44,15 @@ for (const motion of [ "no-preference", "reduce" ]) {
     await page.clock.runFor(120_000);
     await expect(eta, "never a negative").toHaveText("Any minute now");
     expect(pageErrors, report()).toEqual([]);
-  });
 }
+
+test("the Building pill counts down to its deadline, then reads Any minute now", async ({ page }) => {
+  await countsDown(page, "no-preference");
+});
+
+test("under reduced motion the countdown still ticks: it is text, with nothing to animate", async ({ page }) => {
+  await countsDown(page, "reduce");
+});
 
 test("the countdown runs from the launcher's own build time, and the row keeps its rounded words", async ({ page }) => {
   await page.goto("/applications/countdown-probe/chat");
