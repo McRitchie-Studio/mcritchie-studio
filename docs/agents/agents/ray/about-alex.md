@@ -1,6 +1,6 @@
-# About Alex: the /build agent's profile of Alex McRitchie
+# About Alex: Ritch's profile of Alex McRitchie on /build
 
-Alex's interactive resume (Alex, 2026-10-20): what the /build agent may tell a
+Alex's interactive resume (Alex, 2026-10-20): what Ritch, the /build agent, may tell a
 visitor about him. `AgentMailbox::ContextBuilder#about_alex_block` prints
 everything below the rule, on /build threads only, after the intake playbook
 (`intake.md`); code adds the rules (speak about Alex in the third person, the
@@ -9,7 +9,7 @@ before printing, so the source citations and TODOs cost the prompt nothing.
 
 **Alex: edit freely.** Keep it short (code caps the printed part at 2,500
 characters), keep one fact or view a line, and cite its source in a comment.
-Only what is written here may be said about you; anything else the agent
+Only what is written here may be said about you; anything else Ritch
 answers "Alex hasn't shared that here."
 
 ---
@@ -54,4 +54,4 @@ His values and philosophy:
      public you want on the resume. None of it is on record, so none of it is here.
      TODO(Alex): your views on code beyond the above (languages, Rails, testing, AI coding), on
      philosophy (books, thinkers, how you decide), and your advice to someone starting to build.
-     Nothing on record covers these; the agent says "Alex hasn't shared that here" until you add them. -->
+     Nothing on record covers these; Ritch says "Alex hasn't shared that here" until you add them. -->

@@ -1306,8 +1306,8 @@ Turbo hover prefetch gets a 204 and spends nothing.
   dark) are checked, unknown fields refuse the card, and the checked copy is stored on
   `agent_messages.intake_card` (`intake_card` / `intake_refused` events). A catalog
   proposal on a build thread is refused.
-- **About Alex** (Alex, 2026-10-20: his interactive resume). After the INTAKE section a
-  build thread's prompt carries ABOUT ALEX (`ContextBuilder#about_alex_block`): Alex's
+- **About Alex** (Alex, 2026-10-20: his interactive resume). After the INTAKE section Ritch's
+  prompt on a build thread carries ABOUT ALEX (`ContextBuilder#about_alex_block`): Alex's
   profile, the part of `docs/agents/agents/ray/about-alex.md` below its rule (he edits
   it; its source citations and TODOs are HTML comments, stripped), capped at 2,500
   characters, under rules written in CODE so an edit cannot drop them: speak about Alex
