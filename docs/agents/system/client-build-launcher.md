@@ -184,6 +184,9 @@ worker `client-build-launcher@<host>`, souls `["client-build-launcher"]`, with i
 running count, cap and state. The status card (task `app-card-stage-labels`)
 reads a launcher as live while such a ping is under five minutes old and not
 paused; until then a designed task reads "Prepping · waiting for a builder".
+Once a run holds the build, the card's Building pill counts down from the run's
+`started_at` by the launcher's own median build time (its `preview_ready` runs,
+else `typical_build_minutes`; task `live-build-countdown`, `docs/agents/system/client-cto.md`).
 A launcher row answers no mailbox, so `AgentDispatcher.mailbox` leaves it out of
 the primaries, the standbys and the floor alert: a live launcher can never hide a
 silent dispatcher.

@@ -45,6 +45,11 @@
 #   assembled   On QA             on a release, in QA
 #   deploying   Going live        its release is deploying production
 #
+# A step with a real start also counts down on the pill, MM:SS to its expected
+# finish, ticked each second in the browser ("Any minute now" past it; Eta, THE
+# COUNTDOWN). A client app's first version reads its usual time from the
+# launcher's own runs (Eta, CLIENT BUILDS).
+#
 # A sub-label that only repeats the pill's own label (a Building lane whose head
 # is building) is not shown: the pill reads "Building", not "Building" over
 # "Building" (shown_sub_label; the ETA still shows beneath).
@@ -144,6 +149,7 @@ class AppDevopsStages
       @medians = Eta.medians(steps)
       @launcher = steps.include?("designed") && Eta.launcher_live?(now: now)
       @previews = previews(shown.map { |task, _| task.slug })
+      @client_build = shown.any? { |task, lane| client_build?(task, AppDevopsStages.step_for(task, lane)) } ? Eta.client_build_usual : nil
     end
 
     # [sub_label, eta] for the lane's head task, or nil for an empty lane.
@@ -155,14 +161,31 @@ class AppDevopsStages
     def for_task(task, lane)
       step = AppDevopsStages.step_for(task, lane)
       label = AppDevopsStages.sub_label_for(step, blocked: task.blocked_at.present?, preview_ready: @previews.include?(task.slug))
-      eta = (Eta.estimate(step, entered_at: entered_at(task, step), medians: @medians, launcher: @launcher, now: @now) if label == SUB_LABELS[step])
+      medians = client_build?(task, step) ? @medians.merge("building" => @client_build) : @medians
+      eta = (Eta.estimate(step, entered_at: entered_at(task, step), medians: medians, launcher: @launcher, now: @now) if label == SUB_LABELS[step])
       [ label, eta ]
     end
 
     private
 
+    # A client app's first version, building under the launcher (Eta, CLIENT
+    # BUILDS): its devops.client_build run holds the build.
+    def client_build?(task, step)
+      step == "building" && run_of(task)["state"] == "building"
+    end
+
+    def run_of(task)
+      run = task.attributes["card_client_build"]
+      run.is_a?(Hash) ? run : {}
+    end
+
+    # A client build starts when the launcher claimed it (the run's started_at,
+    # which the claim also stamps as the task's started_at).
     def entered_at(task, step)
-      step == Eta::DEPLOYING ? task.release&.prod_deploy_started_at : task.public_send(Eta::ENTERED_AT.fetch(step))
+      return task.release&.prod_deploy_started_at if step == Eta::DEPLOYING
+
+      started = (Time.iso8601(run_of(task)["started_at"].to_s) rescue nil) if client_build?(task, step)
+      started || task.public_send(Eta::ENTERED_AT.fetch(step))
     end
 
     def previews(slugs)
@@ -183,6 +206,7 @@ class AppDevopsStages
     scope = scope.or(open.where(slug: launch_slug)) if launch_slug
     scope.select(*COLUMNS)
          .select("tasks.metadata -> 'devops' -> 'repositories' AS card_repositories")
+         .select("tasks.metadata -> 'devops' -> '#{ClientBuilds::KEY}' AS card_client_build")
          .preload(:release).order(updated_at: :desc, id: :desc).to_a
   end
 
