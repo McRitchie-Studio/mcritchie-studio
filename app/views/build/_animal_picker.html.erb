@@ -1,0 +1,19 @@
+<%# locals: (picked:, palette:, set_url:, seed: nil, title: "Pick your CTO", footer: nil) %>
+<%# The CTO avatar picker (task cto-animal-avatar-bank): a native dialog inside its form, showing one set of BuildIntake::Animals::SET_SIZE avatars from the bank of 100, in the app's own colours. "New set" asks SET_URL for another (build_chat.js#newAnimalSet): the pick leads it and the rest are animals not on screen, so the bank feels endless. Used by the /build CTO card (build/cards/_cto) and the app's CTO chat (cto_chats/_avatar_picker, whose FOOTER explains that a tap saves). The glyphs are Microsoft's Fluent Emoji (MIT): the credit line below, and app/assets/images/cto_animals/README.md. %>
+<dialog class="m-auto w-[min(28rem,calc(100vw-2rem))] rounded-2xl border border-subtle bg-surface p-4 text-body backdrop:bg-black/60"
+        aria-label="<%= title %>" data-build-portrait-dialog data-test="build-portrait-dialog">
+  <div class="flex items-center justify-between gap-2 mb-3">
+    <p class="font-semibold text-heading"><%= title %></p>
+    <div class="flex items-center gap-2">
+      <button type="button" class="btn btn-secondary btn-sm" data-build-portrait-shuffle="<%= set_url %>" data-test="build-portrait-shuffle">New set</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-build-portrait-close>Done</button>
+    </div>
+  </div>
+  <div class="grid grid-cols-4 gap-2" role="radiogroup" aria-label="<%= title %>" data-build-portrait-grid data-test="build-portraits">
+    <%= render "build/animal_options", avatars: cto_avatar_set(picked, seed: seed), picked: picked, palette: palette %>
+  </div>
+  <% if footer %><p class="mt-3 text-xs text-secondary"><%= footer %></p><% end %>
+  <%# The save's progress and any refusal, read politely (build_chat.js#saveAvatar; the CTO chat's picker only). %>
+  <p class="mt-2 text-xs text-danger-ink empty:hidden" role="status" aria-live="polite" data-build-portrait-status data-test="build-portrait-status"></p>
+  <p class="mt-3 text-2xs text-muted" data-test="build-portrait-credit">Animal art: Fluent Emoji by Microsoft, MIT licence.</p>
+</dialog>

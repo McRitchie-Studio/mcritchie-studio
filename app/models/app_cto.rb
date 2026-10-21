@@ -16,10 +16,12 @@ class AppCto < ApplicationRecord
   SOUL = "client_cto".freeze
   NAME_LIMIT = 40
   PLAN_LIMIT = 2000
-  # The portrait is the intake's cto_avatar, verbatim: a default portrait's KEY
-  # (BuildIntake::Portraits, one SVG per key under app/assets/images/cto_portraits/)
-  # or an upload ref ("upload:<ref>", chat media, a later task). Only a key
-  # renders today; anything else shows the initial on the palette's primary.
+  # The portrait is the intake's cto_avatar, verbatim: an animal from the bank
+  # ("animal:<id>", BuildIntake::Animals, drawn in this row's palette), an older
+  # default portrait's KEY (BuildIntake::Portraits, one SVG per key under
+  # app/assets/images/cto_portraits/), or an upload ref ("upload:<ref>", chat
+  # media, a later task). The owner may re-pick it in the CTO chat
+  # (CtoChatsController#avatar). An upload shows the initial on the primary.
   PORTRAIT_KEY = /\A[a-z]{2,20}\z/
 
   belongs_to :app, foreign_key: :app_slug, primary_key: :slug, inverse_of: :client_cto
@@ -28,6 +30,7 @@ class AppCto < ApplicationRecord
   validates :name, presence: true, length: { maximum: NAME_LIMIT }
   validates :plan, length: { maximum: PLAN_LIMIT }
   validate :palette_is_complete
+  validate :portrait_is_storable, if: -> { portrait_changed? && portrait.present? }
 
   before_validation -> { self.name = name.to_s.squish.presence }
 
@@ -47,8 +50,12 @@ class AppCto < ApplicationRecord
     taken == 1
   end
 
-  # The portrait's asset (for image_path), or nil: an upload ref, or nothing.
+  # The portrait's asset (for image_path), or nil: an animal (drawn inline,
+  # CtoAvatarHelper), an upload ref, or nothing.
   def portrait_asset = portrait.to_s.match?(PORTRAIT_KEY) ? "cto_portraits/#{portrait}.svg" : nil
+
+  # Whether the portrait draws as a picture (an animal or a portrait key).
+  def portrait_drawn? = BuildIntake::Portraits.choosable?(portrait)
 
   def light = AppPalette.side(palette, "light")
   def dark = AppPalette.side(palette, "dark")
@@ -69,6 +76,10 @@ class AppCto < ApplicationRecord
   end
 
   private
+
+  def portrait_is_storable
+    errors.add(:portrait, "is not a known avatar") unless BuildIntake::Portraits.storable?(portrait)
+  end
 
   def palette_is_complete
     AppPalette.errors(palette).each { |message| errors.add(:palette, message) }

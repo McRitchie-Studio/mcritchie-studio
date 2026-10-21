@@ -126,8 +126,18 @@ module ClientBuilds
       "prompt" => request.prompt.to_s, "title" => answers["title"], "idea" => answers["idea"],
       "features" => Array(answers["features"]), "audience" => answers["audience"], "day_one" => answers["day_one"],
       "palette" => AppPalette.normalize(app_cto.palette).merge("name" => (request.palette || {})["name"]).compact,
-      "cto" => { "name" => app_cto.name, "portrait" => app_cto.portrait_asset ? app_cto.portrait : nil },
+      "cto" => cto_intake(app_cto),
       "preview_url" => preview_url(request.subdomain) }
+  end
+
+  # The CTO as the starter bundle draws it (bin/lib/client_build_launcher.rb
+  # Starter): an animal comes as its finished SVG in the app's palette
+  # (BuildIntake::Animals.document), so the launcher needs no colour logic of
+  # its own; an older portrait as its key, which the launcher copies.
+  def cto_intake(app_cto)
+    portrait = app_cto.portrait_drawn? ? app_cto.portrait : nil
+    { "name" => app_cto.name, "portrait" => portrait,
+      "svg" => (BuildIntake::Animals.document(portrait, app_cto.palette) if BuildIntake::Animals.avatar?(portrait)) }.compact
   end
 
   # The run's end. preview_ready: shipped, with the version and the preview URL.

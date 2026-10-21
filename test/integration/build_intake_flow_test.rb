@@ -133,10 +133,19 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     get build_request_path(request_row.token)
     assert_select "[data-test=build-card-cto] [data-test=build-cto-name-input][value=Marble]", 1, "the name is prefilled"
     assert_select "[data-test=build-card-cto] [data-test=build-choose-cto]", "Wake Up your CTO"
-    assert_select "[data-test=build-card-cto] [data-test=build-portrait-dialog] [data-test=build-portrait]", BuildIntake::Portraits::KEYS.size
+    # [integration] task cto-animal-avatar-bank: the picker offers a set of the animal bank, drawn in the
+    # theme just chosen; Ray's older portrait key is not offered, and the card starts on an animal.
+    assert_select "[data-test=build-card-cto] [data-test=build-portrait-dialog] [data-test=build-portrait]", BuildIntake::Animals::SET_SIZE
+    offered = css_select("[data-test=build-card-cto] [data-test=build-portrait]").map { |input| input["value"] }
+    assert offered.all? { |value| BuildIntake::Animals.avatar?(value) }, "every option is an animal: #{offered.inspect}"
+    assert_equal offered.uniq, offered, "no animal twice in a set"
+    assert_select "[data-test=build-card-cto] [data-test=build-portrait-preview] svg.cto-animal", 1
+    first = offered.first
+    assert_select "[data-test=build-card-cto] svg[data-animal='#{BuildIntake::Animals.id_of(first)}'][style*='#{BuildIntake::Animals.colors(first, request_row.palette)['light']['bg']}']"
+    assert_select "[data-test=build-portrait-credit]", /Fluent Emoji by Microsoft, MIT/
 
-    tap_and_relay(request_row, "cto", "My CTO is Marbles.", message_id: cto.id, custom_name: "Marbles", portrait: "meadow")
-    assert_equal %w[Marbles meadow], [ request_row.reload.cto_name, request_row.cto_avatar ]
+    tap_and_relay(request_row, "cto", "My CTO is Marbles.", message_id: cto.id, custom_name: "Marbles", portrait: "animal:otter")
+    assert_equal %w[Marbles animal:otter], [ request_row.reload.cto_name, request_row.cto_avatar ]
     domains = ray_answers("And a domain.", { kind: "intake", card: "address", names: %w[league-hub] })
     get build_request_path(request_row.token)
     assert_select "[data-test=build-card-address] button[data-test=build-address-suggestion][aria-pressed=true]", text: "league-hub"
@@ -160,7 +169,7 @@ class BuildIntakeFlowTest < ActionDispatch::IntegrationTest
     # The status card above the thread holds the same facts, filled tap by tap, and no Build control.
     assert_select "#build-checklist [data-test=build-status-card][data-complete=true]" do
       assert_select "[data-test=build-status-title]", "League Standings Hub"
-      assert_select "[data-test=build-tile-agent][data-done=true] [data-test=build-tile-agent-portrait][src*='cto_portraits/meadow']"
+      assert_select "[data-test=build-tile-agent][data-done=true] svg[data-test=build-tile-agent-portrait][data-animal=otter]"
       assert_select "[data-test=build-tile-agent-value]", /Marbles/
       assert_select "[data-test=build-tile-theme-value]", /Pitch Two/
       assert_select "[data-test=build-tile-domain-value]", /league-hub\.mcritchie\.app/

@@ -46,8 +46,9 @@
                      <%= set ? 'border-primary/40 bg-primary/5' : (now ? 'build-tile-current border-primary/60' : 'border-dashed border-subtle') %>"
               data-test="build-tile-<%= key %>" data-done="<%= set %>" data-current="<%= now %>"<%= ' aria-current="step"'.html_safe if now %>>
             <span class="agent-shell-tile-icon flex h-10 items-center justify-center" aria-hidden="true">
-              <% if key == "agent" && set && (path = BuildIntake::Portraits.path(request_row.cto_avatar)) %>
-                <%= image_tag path, alt: "", class: "h-10 w-10 rounded-full border border-subtle", data: { test: "build-tile-agent-portrait" } %>
+              <%# The CTO's avatar in the app's palette (CtoAvatarHelper: an animal, or an older portrait). %>
+              <% if key == "agent" && set && (avatar = cto_avatar_tag(request_row.cto_avatar, request_row.palette, css_class: "h-10 w-10 rounded-full border border-subtle", data: { test: "build-tile-agent-portrait" })) %>
+                <%= avatar %>
               <% elsif key == "theme" && set %>
                 <span class="flex -space-x-1.5">
                   <% %w[primary accent surface].each do |role| %>

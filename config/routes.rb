@@ -37,6 +37,8 @@ Rails.application.routes.draw do
   post  "build/:token/messages", to: "build#message", as: :build_request_messages
   get   "build/:token/turns",    to: "build#turns",   as: :build_request_turns
   patch "build/:token/intake",   to: "build#choose",  as: :build_request_intake
+  # The CTO card's "New set": another set of animal avatars in the request's colours.
+  get   "build/:token/cto_animals", to: "build#cto_animals", as: :build_request_cto_animals
   # The public contact form, which is also the SMS opt-in page carriers review.
   get  "contact", to: "contact_submissions#new", as: :contact_form
   # Both routes are named. An unnamed `post "contact"` is auto-named `contact`
@@ -451,6 +453,9 @@ Rails.application.routes.draw do
       post :chat, to: "cto_chats#create"
       # The chat's status card alone, for its live reload (AppDevopsStages::Live).
       get "chat/status", to: "cto_chats#status", as: :chat_status
+      # The owner's CTO avatar picker: "New set", and the pick.
+      get "chat/avatars", to: "cto_chats#avatars", as: :chat_avatars
+      patch "chat/avatar", to: "cto_chats#avatar", as: :chat_avatar
       # Its files (AgentMessages::Attachments): the composer's upload, and a sent file's expiring link.
       post "chat/attachments", to: "cto_chat_attachments#create", as: :chat_attachments
       get "chat/attachments/:attachment_id", to: "cto_chat_attachments#show", as: :chat_attachment,

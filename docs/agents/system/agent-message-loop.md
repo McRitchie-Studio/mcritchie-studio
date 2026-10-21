@@ -1316,7 +1316,8 @@ Turbo hover prefetch gets a 204 and spends nothing.
   profile says (married, a daughter), and anything more is politely declined; and a
   question about him offers no intake card. No other thread carries it.
 - **Taps** (`BuildIntake::Choice`, `PATCH /build/:token/intake`) are the only writes to
-  `app_requests.cto_name`, `cto_avatar` (a `BuildIntake::Portraits` key), `palette` and
+  `app_requests.cto_name`, `cto_avatar` (an `animal:<id>` from `BuildIntake::Animals`, or an older
+  `BuildIntake::Portraits` key), `palette` and
   `answers`, and the subdomain; each value is checked again on the server, and a palette
   or idea is read from the stored card, never from the post. **Every tap also speaks**
   (`.agents/epics/build-with-ray-v2.md`, 2-5): once the field is saved, the tap posts the

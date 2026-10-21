@@ -150,6 +150,26 @@ class ClientBuildLauncherTest < Minitest::Test
     end
   end
 
+  # [unit] task cto-animal-avatar-bank: an animal CTO arrives drawn by the hub
+  # (ClientBuilds#cto_intake) and rides as cto.svg; a hostile one is dropped.
+  def test_an_animal_cto_rides_as_the_hub_drew_it
+    svg = %(<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><circle r="16" fill="#123456"/></svg>)
+    Dir.mktmpdir do |dir|
+      CL::Starter.seed(dir, intake("cto" => { "name" => "Nova", "portrait" => "animal:fox", "svg" => svg }))
+      assert_equal svg, File.read(File.join(dir, "cto.svg"))
+      assert_includes File.read(File.join(dir, "index.html")), %(<img src="cto.svg" alt="Nova">)
+      assert_empty CL::Validator.errors(dir, max_bytes: 100_000)
+    end
+    [ svg.sub("<circle", "<script>alert(1)</script><circle"), svg.sub("<circle", %(<circle onload="x()")),
+      svg.sub("<circle", %(<a href="https://evil.test"><circle)), "<html>nope</html>", 42 ].each do |bad|
+      Dir.mktmpdir do |dir|
+        CL::Starter.seed(dir, intake("cto" => { "name" => "Nova", "portrait" => "animal:fox", "svg" => bad }))
+        refute File.exist?(File.join(dir, "cto.svg")), bad.inspect
+        refute_includes File.read(File.join(dir, "index.html")), "cto.svg"
+      end
+    end
+  end
+
   def test_the_validator_refuses_what_the_host_would
     Dir.mktmpdir do |dir|
       CL::Starter.seed(dir, intake)

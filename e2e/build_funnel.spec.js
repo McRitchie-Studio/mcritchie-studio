@@ -9,7 +9,8 @@
 // fill in the order Ritch asks (theme before CTO). Every card's CTA sets its field and
 // posts the visitor's own line into the thread, so the next answer arrives without
 // typing: Start App on the idea, Choose Theme (the middle theme preselected, another
-// picked after the dark/light toggle), Wake Up your CTO (a portrait picked in the modal,
+// picked after the dark/light toggle), Wake Up your CTO (an animal picked in the modal
+// after New set reshuffles it,
 // the prefilled name edited), and Use Domain (a chip picked, the name edited and
 // typed back while the chip's glow follows the field). The summary card follows, and Build My App asks for sign-in only
 // then, in the sign-in MODAL (task build-sign-in-modal): dismissed, the draft stays and
@@ -218,26 +219,42 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(dialog).toBeHidden();
   await cto.locator("[data-test='build-portrait-new']").click();
   await expect(dialog).toBeVisible();
-  await expect(dialog.locator("[data-test='build-portraits'] img")).toHaveCount(12);
+  // The animal bank (task cto-animal-avatar-bank): twelve animals in the Field theme's colours.
+  const grid = dialog.locator("[data-test='build-portraits']");
+  await expect(grid.locator("svg.cto-animal")).toHaveCount(12);
+  const setOf = () => grid.locator("input[name='portrait']").evaluateAll((inputs) => inputs.map((i) => i.value));
+  const firstSet = await setOf();
+  expect(new Set(firstSet).size, "no animal twice in a set").toBe(12);
+  // [e2e] New set reshuffles: the pick stays first and checked; the other eleven are new animals.
+  const keep = await grid.locator("input[name='portrait']:checked").getAttribute("value");
+  await dialog.locator("[data-test='build-portrait-shuffle']").click();
+  await expect.poll(setOf, { message: "New set draws another set" }).not.toEqual(firstSet);
+  const secondSet = await setOf();
+  expect(secondSet[0]).toBe(keep);
+  await expect(grid.locator("input[name='portrait']:checked")).toHaveAttribute("value", keep);
+  expect(secondSet.slice(1).filter((v) => firstSet.includes(v)), "nothing repeats from the set on screen").toEqual([]);
+  expect(new Set(secondSet).size).toBe(12);
   // The keyboard: an arrow moves the pick (and the preview) and the picker stays
   // open for the next one; Enter closes it without submitting the card.
   const preview = cto.locator("[data-test='build-portrait-preview']");
   await dialog.locator("input[name='portrait']:checked").focus();
-  const before = await preview.getAttribute("src");
+  const before = await preview.getAttribute("data-avatar");
   await page.keyboard.press("ArrowRight");
-  await expect(preview).not.toHaveAttribute("src", before);
+  await expect(preview).not.toHaveAttribute("data-avatar", before);
+  await expect(preview.locator("svg.cto-animal")).toHaveCount(1);
   await expect(dialog, "an arrow key does not close the picker").toBeVisible();
   await page.keyboard.press("ArrowRight");
   await expect(dialog).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(dialog).toBeHidden();
   await expect(page.locator("[data-test='build-turn']", { hasText: "My CTO is" }), "Enter in the picker submits nothing").toHaveCount(0);
-  // A tap on a portrait picks it and closes the picker.
+  // A tap on an animal picks it and closes the picker.
   await cto.locator("[data-test='build-portrait-new']").click();
   await expect(dialog).toBeVisible();
-  await dialog.locator("label[title='Meadow']").click();
+  const tappedAnimal = await grid.locator("input[name='portrait']").nth(5).getAttribute("value");
+  await grid.locator("label").nth(5).click();
   await expect(dialog).toBeHidden();
-  await expect(cto.locator("[data-test='build-portrait-preview']")).toHaveAttribute("src", /cto_portraits\/meadow/);
+  await expect(preview).toHaveAttribute("data-avatar", tappedAnimal);
   // Every one of Ritch's names is a tap, though the first is prefilled.
   await cto.locator("[data-test='build-cto-name-suggestion']", { hasText: "Scout" }).click();
   await expect(cto.locator("[data-test='build-cto-name-input']")).toHaveValue("Scout");
@@ -245,7 +262,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await cto.locator("[data-test='build-cto-name-input']").fill("Marbles");
   await cto.getByRole("button", { name: "Wake Up your CTO" }).click();
   await expect(status.locator("[data-test='build-tile-agent-value']")).toHaveText("Marbles");
-  await expect(status.locator("[data-test='build-tile-agent-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
+  await expect(status.locator("[data-test='build-tile-agent-portrait']")).toHaveAttribute("data-animal", tappedAnimal.replace("animal:", ""));
 
   // The domain: one stack. Bare-name chips (a taken one, the seed's live trivia-night, drawn
   // disabled), the field with the suffix inside it, a glowing Use Domain. The field is the
@@ -380,7 +397,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   expect(Math.abs(portraitGlow.width - portraitGlow.height), "the round portrait's glow is a circle").toBeLessThanOrEqual(1);
   expect(portraitGlow.width - portraitGlow.box, "close round it: 3px each side").toBeLessThanOrEqual(6.5);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await expect(panel.locator("[data-test='build-launch-portrait'] [data-test='client-cto-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
+  await expect(panel.locator("[data-test='build-launch-portrait'] [data-test='client-cto-portrait']")).toHaveAttribute("data-animal", tappedAnimal.replace("animal:", ""));
   await expect(panel.locator("[data-test='build-launch-step']")).toHaveText(["Building Brand Sheet", "Hatching CTO", "Setting Up Domain"]);
   for (const step of await panel.locator("[data-test='build-launch-step']").all()) await expect(step).toHaveAttribute("data-state", "done");
   await page.waitForURL((u) => u.pathname === `/applications/${address}/chat`);
@@ -405,7 +422,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   expect(again.status()).toBe(303);
   expect(new URL(again.headers().location, page.url()).pathname).toBe(`/applications/${address}/chat`);
   await expect(page.locator("[data-test='agent-shell'][data-shell='app'] [data-test='agent-caption']")).toContainText("Marbles");
-  await expect(page.locator("[data-test='agent-portrait'] [data-test='client-cto-portrait']")).toHaveAttribute("src", /cto_portraits\/meadow/);
+  await expect(page.locator("[data-test='agent-portrait'] [data-test='client-cto-portrait']")).toHaveAttribute("data-animal", tappedAnimal.replace("animal:", ""));
   const head = page.locator("[data-test='cto-chat-head'][data-client-cto='true']");
   await expect(head.locator("h1")).toBeVisible();
   await expect(head.locator("[data-test='devops-stage'][data-stage='building']")).toHaveAttribute("data-state", "live");
@@ -445,6 +462,44 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
       for (const m of measured) expect(m.ratio, `${theme}: ${selector} "${m.text}"`).toBeGreaterThanOrEqual(TEXT_ON_SURFACE);
     }
   });
+  // [e2e] task cto-animal-avatar-bank: the owner re-picks the CTO's avatar in the chat by KEYBOARD:
+  // Enter on the head's portrait opens the picker, an arrow moves the pick, Enter saves it in place.
+  const avatarHead = page.locator("[data-test='cto-chat-avatar-head']");
+  const avatarPicker = page.locator("[data-test='cto-chat-avatar-form'] [data-test='build-portrait-dialog']");
+  const headPortrait = page.locator("[data-test='agent-portrait'] [data-test='client-cto-portrait']");
+  const announce = page.locator("[data-test='cto-chat-avatar-announce']");
+  await avatarHead.focus();
+  await page.keyboard.press("Enter");
+  await expect(avatarPicker).toBeVisible();
+  const startPick = avatarPicker.locator("input[name='portrait']:checked");
+  await expect(startPick).toHaveAttribute("value", tappedAnimal);
+  await startPick.focus();
+  await page.keyboard.press("ArrowRight");
+  const keyed = await avatarPicker.locator("input[name='portrait']:checked").getAttribute("value");
+  expect(keyed).not.toBe(tappedAnimal);
+  await page.keyboard.press("Enter");
+  await expect(avatarPicker).toBeHidden();
+  await expect(headPortrait).toHaveAttribute("data-animal", keyed.replace("animal:", ""));
+  await expect(announce).toHaveText(/^Saved\. Marbles's new look: /);
+  // A cancelled pick is not kept: arrow to another animal, Escape, reopen, Done
+  // says nothing changed and the head keeps the saved look (Carl's second review).
+  await avatarHead.click();
+  await expect(avatarPicker).toBeVisible();
+  await expect(avatarPicker.locator("input[name='portrait']:checked"), "the picker opens on the saved pick").toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(avatarPicker.locator("input[name='portrait']:checked")).not.toHaveAttribute("value", keyed);
+  await page.keyboard.press("Escape");
+  await expect(avatarPicker).toBeHidden();
+  await avatarHead.click();
+  await expect(avatarPicker).toBeVisible();
+  await expect(avatarPicker.locator("input[name='portrait']:checked")).toHaveAttribute("value", keyed);
+  await avatarPicker.locator("[data-build-portrait-close]").click();
+  await expect(avatarPicker).toBeHidden();
+  await expect(announce).toHaveText("Nothing changed.");
+  await expect(headPortrait).toHaveAttribute("data-animal", keyed.replace("animal:", ""));
+  await page.reload();
+  await expect(headPortrait).toHaveAttribute("data-animal", keyed.replace("animal:", ""));
+
   await page.setViewportSize({ width: 390, height: 844 });
   const chatOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(chatOverflow, "the CTO chat fits at 390px").toBeLessThanOrEqual(0);

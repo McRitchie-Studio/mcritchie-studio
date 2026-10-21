@@ -36,7 +36,8 @@
 # account, then that account (or an admin, to read). load_request is the gate
 # for every action that names a token.
 class BuildController < ApplicationController
-  before_action :load_request, only: %i[show update launch message turns choose]
+  include CtoAnimalSet
+  before_action :load_request, only: %i[show update launch message turns choose cto_animals]
   before_action :require_admin, only: %i[index launch_demo]
 
   # Public forms that write rows: bounded per IP, so they cannot fill a table or
@@ -217,6 +218,17 @@ class BuildController < ApplicationController
     rows = AgentMessage.where(id: ids, channel: "web", thread_key: BuildIntake.thread_key(@app_request.token)).order(:id)
     streams = rows.map { |row| turbo_stream.replace("build-turn-#{row.id}", partial: "build/turn", locals: { message: row, request_row: @app_request }) }
     render turbo_stream: streams + [ replace_checklist ]
+  end
+
+  # The CTO card's "New set" (build_chat.js#newAnimalSet): the next set of
+  # animal avatars, drawn in this request's palette, as the picker grid's HTML.
+  # KEEP (the visitor's pick) leads it; EXCEPT (the set on screen) is left out
+  # while the bank allows. A server render, not a client shuffle, so the colours
+  # come from the one place that checks their contrast (BuildIntake::Animals)
+  # and the page never carries the other 88 drawings. Reads only; the pick is
+  # saved by the card's own submit.
+  def cto_animals
+    render_animal_set(@app_request.palette)
   end
 
   # A tap on an intake card: the only write to an intake field, and the

@@ -18,10 +18,16 @@
 //     disables Use Domain (the server re-checks on the tap). The field is the source of truth for the
 //     glows (build_domain.js): the chip it matches glows, and a chip tap fills
 //     the field without focusing it. The server draws a taken chip disabled;
-//   - the CTO card ([data-build-cto]): the portrait or "New image" opens the
-//     picker dialog; a pick swaps the preview; a tap on a portrait, Done or
-//     Enter closes it (the arrow keys only move the pick); a tap on one of
-//     Ritch's names fills the name field;
+//   - the CTO card ([data-build-cto]): the avatar or "New image" opens the
+//     picker dialog (build/_animal_picker: a set of the animal bank in the
+//     app's colours); a pick swaps the preview; "New set" fetches another set
+//     from the server and swaps the grid; a tap on an avatar, Done or Enter
+//     closes it (the arrow keys only move the pick); a tap on one of Ritch's
+//     names fills the name field. The same picker sits in an app's CTO chat
+//     (cto_chats/_avatar_picker, a form marked data-build-portrait-save): there
+//     a tap, Enter or Space on an avatar, or Done, saves it in place
+//     (saveAvatar), and the CTO's "Pick a new avatar" button and the head's
+//     portrait ([data-cto-avatar-open]) open it;
 //   - the theme card ([data-build-theme]): the Dark / Light toggle swaps every
 //     column's preview (a tap on the side already showing flips to the other,
 //     build_status.js), and the choice survives the card's re-render;
@@ -126,22 +132,141 @@ document.addEventListener("change", (event) => {
   // A theme option picked: the glow behind Choose Theme takes its colours.
   const themeCard = event.target.matches?.("input[name='index']") && event.target.closest("[data-build-theme]");
   if (themeCard) { syncThemeGlow(themeCard); return; }
-  const radio = event.target.closest?.("[data-build-portrait-src]");
+  const radio = event.target.closest?.("[data-build-portrait-option]");
   if (!radio) return;
-  const card = radio.closest("[data-build-cto]");
-  const preview = card?.querySelector("[data-build-portrait-preview]");
-  if (preview) {
-    preview.src = radio.dataset.buildPortraitSrc;
-    const label = radio.closest("label")?.title;
-    if (label) preview.alt = `${label} portrait`;
-  }
+  showPick(radio);
 });
 
-// Enter on a portrait closes the picker instead of submitting the CTO form.
+// The preview takes a copy of the picked avatar's own drawing (an inline SVG
+// in the app's colours, or an older portrait's <img>).
+function showPick(radio) {
+  const preview = radio.closest("[data-build-cto]")?.querySelector("[data-build-portrait-preview]");
+  const art = radio.nextElementSibling;
+  if (!preview || !art) return;
+  const copy = art.cloneNode(true);
+  // The size is the preview's; .cto-animal stays, as it picks the palette's light or dark set.
+  const sized = preview.dataset.artClass || "block h-full w-full rounded-full";
+  copy.setAttribute("class", copy.classList.contains("cto-animal") ? `cto-animal ${sized}` : sized);
+  preview.replaceChildren(copy);
+  preview.dataset.avatar = radio.value;
+}
+
+// "New set": the server draws another set (BuildController#cto_animals,
+// CtoChatsController#avatars): the current pick leads it, the rest are animals
+// not on screen. The pick survives, so a reshuffle never loses it.
+async function newAnimalSet(button) {
+  const dialog = button.closest("[data-build-portrait-dialog]");
+  const grid = dialog?.querySelector("[data-build-portrait-grid]");
+  if (!grid || button.disabled) return;
+  const params = new URLSearchParams();
+  const picked = grid.querySelector("input[name='portrait']:checked");
+  if (picked) params.set("keep", picked.value);
+  grid.querySelectorAll("input[name='portrait']").forEach((input) => params.append("except[]", input.value));
+  button.disabled = true;
+  try {
+    const response = await fetch(`${button.dataset.buildPortraitShuffle}?${params}`, { headers: { Accept: "text/html" } });
+    if (!response.ok) return;
+    grid.innerHTML = await response.text();
+    grid.querySelector("input[name='portrait']:checked")?.focus();
+  } catch (_error) {
+    // Offline: the set on screen stays.
+  } finally {
+    button.disabled = false;
+  }
+}
+
+// The keyboard in the picker. The arrow keys are the radio group's own: they
+// move the pick (and the preview) and keep the picker open. Enter on an
+// avatar closes the /build card's picker without submitting the card (its
+// Wake Up button saves); in the CTO chat's picker Enter, or Space, SAVES the
+// focused avatar (saveAvatar).
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter" || !event.target.closest?.("[data-build-portrait-src]")) return;
+  const option = event.target.closest?.("[data-build-portrait-option]");
+  if (!option || (event.key !== "Enter" && event.key !== " ")) return;
+  const form = option.closest("form[data-build-portrait-save]");
+  if (form) {
+    event.preventDefault();
+    option.checked = true;
+    saveAvatar(form);
+    return;
+  }
+  if (event.key !== "Enter") return;
   event.preventDefault();
-  event.target.closest("[data-build-portrait-dialog]")?.close();
+  option.closest("[data-build-portrait-dialog]")?.close();
+});
+
+// The CTO chat's picker (cto_chats/_avatar_picker) saves in place: a fetch to
+// CtoChatsController#avatar (JSON), whose answer redraws the head's portrait.
+// The picker's status line shows "Saving…" and any refusal (the picker stays
+// open to try again); the page's polite live region tells a screen reader the
+// result, or that nothing changed. data-current-avatar is the saved one.
+function announceAvatar(form, text) {
+  const live = form.querySelector("[data-cto-avatar-announce]");
+  if (live) { live.textContent = ""; requestAnimationFrame(() => { live.textContent = text; }); }
+}
+
+async function saveAvatar(form) {
+  const dialog = form.querySelector("[data-build-portrait-dialog]");
+  const status = form.querySelector("[data-build-portrait-status]");
+  const picked = form.querySelector("input[name='portrait']:checked");
+  if (!picked || picked.value === form.dataset.currentAvatar) {
+    announceAvatar(form, "Nothing changed.");
+    dialog?.close();
+    return;
+  }
+  if (form.dataset.saving === "true") return;
+  form.dataset.saving = "true";
+  if (status) status.textContent = "Saving…";
+  try {
+    const token = document.querySelector("meta[name='csrf-token']")?.content;
+    const response = await fetch(form.action, {
+      method: "POST", body: new FormData(form),
+      headers: { Accept: "application/json", ...(token ? { "X-CSRF-Token": token } : {}) }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      if (status) status.textContent = data.error || "The new look did not save. Try again in a moment.";
+      return;
+    }
+    form.dataset.currentAvatar = data.avatar;
+    document.querySelectorAll("[data-cto-avatar-head]").forEach((head) => { head.innerHTML = data.portrait_html; });
+    if (status) status.textContent = "";
+    announceAvatar(form, data.message);
+    dialog?.close();
+  } catch (_error) {
+    if (status) status.textContent = "The new look did not save. Check your connection and try again.";
+  } finally {
+    delete form.dataset.saving;
+  }
+}
+
+// The picker opens with focus on the picked avatar (else the first), so the
+// arrow keys browse at once.
+function openPicker(dialog) {
+  if (!dialog) return;
+  dialog.showModal();
+  (dialog.querySelector("input[name='portrait']:checked") || dialog.querySelector("input[name='portrait']"))?.focus();
+}
+
+// The chat's picker closed WITHOUT a save (Escape, the backdrop, Done with
+// nothing new already handled): the pick goes back to the saved avatar, so
+// reopening and pressing Done never saves a cancelled pick (Carl's second
+// review). After a save currentAvatar is the new one, so this keeps it.
+// `close` does not bubble: listen in the capture phase.
+document.addEventListener("close", (event) => {
+  const form = event.target.closest?.("form[data-build-portrait-save]");
+  if (!form || !event.target.matches?.("[data-build-portrait-dialog]")) return;
+  form.querySelectorAll("input[name='portrait']").forEach((input) => { input.checked = input.value === form.dataset.currentAvatar; });
+  const status = form.querySelector("[data-build-portrait-status]");
+  if (status) status.textContent = "";
+}, true);
+
+// Any other submit of the chat's picker form (an implicit one) saves the same way.
+document.addEventListener("submit", (event) => {
+  const form = event.target.closest?.("form[data-build-portrait-save]");
+  if (!form) return;
+  event.preventDefault();
+  saveAvatar(form);
 });
 
 // The theme card's Dark / Light choice, per card (its turn's id). The server
@@ -169,15 +294,37 @@ function restoreThemeModes() {
 document.addEventListener("click", (event) => {
   const open = event.target.closest?.("[data-build-portrait-open]");
   if (open) {
-    open.closest("[data-build-cto]")?.querySelector("[data-build-portrait-dialog]")?.showModal();
+    openPicker(open.closest("[data-build-cto]")?.querySelector("[data-build-portrait-dialog]"));
     return;
   }
+  const chatOpen = event.target.closest?.("[data-cto-avatar-open]");
+  if (chatOpen) {
+    openPicker(document.querySelector("[data-cto-avatar-form] [data-build-portrait-dialog]"));
+    return;
+  }
+  const shuffle = event.target.closest?.("[data-build-portrait-shuffle]");
+  if (shuffle) { newAnimalSet(shuffle); return; }
+  // Done closes the picker; in the CTO chat's it saves the pick first (or
+  // says nothing changed).
   const close = event.target.closest?.("[data-build-portrait-close]");
-  if (close) { close.closest("dialog")?.close(); return; }
-  // A tap on a portrait's picture (the label) closes the picker. The arrow
-  // keys also fire click, but on the radio itself, so they never land here.
+  if (close) {
+    const form = close.closest("form[data-build-portrait-save]");
+    if (form) saveAvatar(form); else close.closest("dialog")?.close();
+    return;
+  }
+  // A tap on an avatar's picture (the label) closes the picker; in the CTO
+  // chat's picker it saves the pick. The arrow keys also fire click, but on the
+  // radio itself, so they never land here.
   const portrait = event.target.closest?.("[data-build-portrait-dialog] label");
   if (portrait && !event.target.matches("input")) {
+    const form = portrait.closest("form[data-build-portrait-save]");
+    const input = portrait.querySelector("input[name='portrait']");
+    if (form && input) {
+      event.preventDefault();
+      input.checked = true;
+      saveAvatar(form);
+      return;
+    }
     portrait.closest("dialog")?.close();
     return;
   }

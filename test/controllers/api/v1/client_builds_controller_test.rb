@@ -70,6 +70,21 @@ module Api
         assert_equal [ task.slug ], response.parsed_body.dig("meta", "in_flight").pluck("task_slug")
       end
 
+      test "[integration] an animal CTO's intake carries its drawing in the app's palette; a portrait key carries none" do
+        task = launch!("pawsome")
+        AppCto.find_by!(app_slug: "pawsome").update!(portrait: "animal:fox")
+        claim(task.slug)
+        assert_response :success
+        cto = response.parsed_body.dig("data", "intake", "cto")
+        assert_equal "animal:fox", cto["portrait"]
+        assert_equal BuildIntake::Animals.document("animal:fox", PALETTE), cto["svg"]
+        assert_includes cto["svg"], BuildIntake::Animals.colors("animal:fox", PALETTE)["light"]["bg"]
+
+        other = launch!("other-app")
+        claim(other.slug)
+        refute response.parsed_body.dig("data", "intake", "cto").key?("svg")
+      end
+
       test "a second claim of the same task is refused and changes nothing" do
         task = launch!("pawsome")
         claim(task.slug, run: "r1")
