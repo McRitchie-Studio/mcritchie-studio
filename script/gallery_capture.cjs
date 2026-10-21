@@ -3,7 +3,7 @@
 //
 //   node script/gallery_capture.cjs <url> <slug> [--from <origin>]
 //   node script/gallery_capture.cjs https://cyvasse.xyz/play cyvasse
-//   node script/gallery_capture.cjs https://turfmonster.media turf-monster
+//   node script/gallery_capture.cjs https://turfmonster.media/contests/<current-contest> turf-monster
 //
 // Writes, under app/assets/images/build_gallery/:
 //   <slug>.webp  the first screen at 1280x800 in dark mode, scaled to 960x600
