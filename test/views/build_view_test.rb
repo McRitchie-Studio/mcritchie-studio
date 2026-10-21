@@ -194,8 +194,8 @@ class BuildViewTest < ActionView::TestCase
     assert_select "[data-test='agent-shell'][data-shell='build']" do
       assert_select "[data-test='agent-chat-header'][data-agent-name='Ray'] [data-test='agent-portrait'][style*='view-transition-name: agent-portrait']"
       assert_select "#build-checklist[data-card='false'] [data-test='build-heading']" do
-        assert_select "h1", text: "What do you want to build?"
-        assert_select "p", text: "Let our agents build & host your website on the McRitchie Studio stack, free."
+        assert_select "h1", text: "Want to Build Something?"
+        assert_select "p", text: "Let our agents build & host your flow or website totally free, on the Studio Stack."
       end
       assert_select "[data-test='agent-shell-status'] + [data-test='agent-shell-chat'] > #build-chat-page [data-test='build-form']", 1, "the chat box sits under the heading"
     end

@@ -98,7 +98,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await page.goto("/build");
   // The shell: Ray's portrait on top, the heading, the chat box typing example ideas.
   await expect(page.locator("[data-test='agent-shell'][data-shell='build'] [data-test='agent-chat-header'][data-agent-name='Ray']")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "What do you want to build?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Want to Build Something?" })).toBeVisible();
   const box = page.getByLabel("Tell Ray what you want to build");
   // The suite runs under reduced motion (playwright.config.js), where the
   // placeholder holds the first example still; with motion it types.
@@ -127,7 +127,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(page).toHaveURL(/\/build\/[A-Za-z0-9_-]{10,}$/);
   expect(await page.evaluate(() => window.__buildShellMarker), "no reload on the first message").toBe("kept");
   await expect(page.locator("[data-test='auth-modal']")).toBeHidden();
-  await expect(page.getByRole("heading", { name: "What do you want to build?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Want to Build Something?" })).toBeVisible();
   await expect(page.locator("[data-test='build-status-card']")).toHaveCount(0);
   await expect(page.locator("[data-test='cto-chat-input']")).toBeFocused();
   expect(await page.evaluate(() => window.__composerSaid), "the send was announced").toContain("Sending…");
@@ -151,12 +151,12 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   // The status card waits for Start App: the heading holds until the idea is locked.
   const status = page.locator("[data-test='build-status-card']");
   await expect(status).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "What do you want to build?" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Want to Build Something?" })).toBeVisible();
   await ideaCard.getByRole("button", { name: "Start App" }).click();
   // Locked in, but the status card waits for Ray's theme card (Alex, 2026-10-20):
   // while he types, the heading names the idea.
   await expect(page.getByRole("heading", { name: "League Standings Hub" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "What do you want to build?" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Want to Build Something?" })).toHaveCount(0);
   await expect(status).toHaveCount(0);
 
   // The theme comes first: three options, dark first, the middle one preselected; one Choose Theme.

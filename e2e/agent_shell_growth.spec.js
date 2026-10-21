@@ -3,7 +3,7 @@
 // build-launch-chat-growth and build-chat-reading-flow). Alex, 2026-10-18: the
 // conversation should take about 40% of the window at first and about 80% as it goes
 // on, the chat box always at the window's bottom; and the head's makeup (the gallery
-// gone, "What do you want to build?" shrunk) should follow the CHAT'S SIZE as it
+// gone, "Want to Build Something?" shrunk) should follow the CHAT'S SIZE as it
 // grows, not the send of a message. A new answer from Ray types itself in, and his
 // words sit on the page, not in a bubble (app/javascript/agent_reveal.js).
 //
