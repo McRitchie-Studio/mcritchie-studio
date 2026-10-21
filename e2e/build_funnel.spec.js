@@ -481,12 +481,22 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(avatarPicker).toBeHidden();
   await expect(headPortrait).toHaveAttribute("data-animal", keyed.replace("animal:", ""));
   await expect(announce).toHaveText(/^Saved\. Marbles's new look: /);
-  // Done with nothing changed closes and says so; a reload draws the saved look.
+  // A cancelled pick is not kept: arrow to another animal, Escape, reopen, Done
+  // says nothing changed and the head keeps the saved look (Carl's second review).
   await avatarHead.click();
   await expect(avatarPicker).toBeVisible();
+  await expect(avatarPicker.locator("input[name='portrait']:checked"), "the picker opens on the saved pick").toBeFocused();
+  await page.keyboard.press("ArrowRight");
+  await expect(avatarPicker.locator("input[name='portrait']:checked")).not.toHaveAttribute("value", keyed);
+  await page.keyboard.press("Escape");
+  await expect(avatarPicker).toBeHidden();
+  await avatarHead.click();
+  await expect(avatarPicker).toBeVisible();
+  await expect(avatarPicker.locator("input[name='portrait']:checked")).toHaveAttribute("value", keyed);
   await avatarPicker.locator("[data-build-portrait-close]").click();
   await expect(avatarPicker).toBeHidden();
   await expect(announce).toHaveText("Nothing changed.");
+  await expect(headPortrait).toHaveAttribute("data-animal", keyed.replace("animal:", ""));
   await page.reload();
   await expect(headPortrait).toHaveAttribute("data-animal", keyed.replace("animal:", ""));
 

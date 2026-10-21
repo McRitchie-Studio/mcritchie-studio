@@ -240,6 +240,27 @@ async function saveAvatar(form) {
   }
 }
 
+// The picker opens with focus on the picked avatar (else the first), so the
+// arrow keys browse at once.
+function openPicker(dialog) {
+  if (!dialog) return;
+  dialog.showModal();
+  (dialog.querySelector("input[name='portrait']:checked") || dialog.querySelector("input[name='portrait']"))?.focus();
+}
+
+// The chat's picker closed WITHOUT a save (Escape, the backdrop, Done with
+// nothing new already handled): the pick goes back to the saved avatar, so
+// reopening and pressing Done never saves a cancelled pick (Carl's second
+// review). After a save currentAvatar is the new one, so this keeps it.
+// `close` does not bubble: listen in the capture phase.
+document.addEventListener("close", (event) => {
+  const form = event.target.closest?.("form[data-build-portrait-save]");
+  if (!form || !event.target.matches?.("[data-build-portrait-dialog]")) return;
+  form.querySelectorAll("input[name='portrait']").forEach((input) => { input.checked = input.value === form.dataset.currentAvatar; });
+  const status = form.querySelector("[data-build-portrait-status]");
+  if (status) status.textContent = "";
+}, true);
+
 // Any other submit of the chat's picker form (an implicit one) saves the same way.
 document.addEventListener("submit", (event) => {
   const form = event.target.closest?.("form[data-build-portrait-save]");
@@ -273,12 +294,12 @@ function restoreThemeModes() {
 document.addEventListener("click", (event) => {
   const open = event.target.closest?.("[data-build-portrait-open]");
   if (open) {
-    open.closest("[data-build-cto]")?.querySelector("[data-build-portrait-dialog]")?.showModal();
+    openPicker(open.closest("[data-build-cto]")?.querySelector("[data-build-portrait-dialog]"));
     return;
   }
   const chatOpen = event.target.closest?.("[data-cto-avatar-open]");
   if (chatOpen) {
-    document.querySelector("[data-cto-avatar-form] [data-build-portrait-dialog]")?.showModal();
+    openPicker(document.querySelector("[data-cto-avatar-form] [data-build-portrait-dialog]"));
     return;
   }
   const shuffle = event.target.closest?.("[data-build-portrait-shuffle]");
