@@ -50,6 +50,14 @@ class LinkPreviewAdoptionTest < ActionDispatch::IntegrationTest
     assert File.file?(Rails.public_path.join("og.png")), "public/og.png is the last-resort image"
   end
 
+  # 1200x630 is the large-card shape iMessage, Slack and X expect. The engine
+  # reads the meta size from this file, so this guards the shape, not agreement.
+  test "the last-resort image is the 1200x630 large-card shape" do
+    header = File.binread(Rails.public_path.join("og.png"), 24)
+    assert_equal "\x89PNG".b, header[0, 4]
+    assert_equal [1200, 630], header[16, 8].unpack("NN")
+  end
+
   test "iMessage's real user agent gets the slim page, not a 406" do
     get root_path, headers: { "User-Agent" => IMESSAGE_UA }
 
