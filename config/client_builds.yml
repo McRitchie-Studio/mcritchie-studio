@@ -19,6 +19,10 @@
 # model            the builder's model. Execution runs on Opus (focus-session.md, Step 6).
 # poll_seconds     how often the launcher asks the board for work when idle.
 # bundle_max_bytes the local validation's size limit, before publish validates again.
+# typical_build_minutes  the status card's Building ETA for a first version until a
+#                  launcher run has ended preview_ready (AppDevopsStages::Eta,
+#                  CLIENT BUILDS). The first two real runs took 5m38s and 5m58s
+#                  (2026-10-20/21); 8 leaves headroom without promising the 45-minute cap.
 preview_domain: mcritchie.app
 cap: 2
 max_attempts: 3
@@ -27,3 +31,4 @@ max_turns: 120
 model: opus
 poll_seconds: 30
 bundle_max_bytes: 5000000
+typical_build_minutes: 8
