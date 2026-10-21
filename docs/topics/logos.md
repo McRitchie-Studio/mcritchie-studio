@@ -1021,10 +1021,13 @@ crops a maskable icon to a circle.
 The last-resort link preview, `public/og.png` (task link-preview-stacked-logo), is
 `stacked-dark.svg` alone, 430 px tall and centred on 1200 × 630 `#1A1535`
 (Alex 2026-10-20: "just the stack logo for simplicity"). `brand_png.cjs` draws only
-squares, so it is ImageMagick: `magick -size 1200x630 'xc:#1A1535' \( -background none
+squares, so it is ImageMagick: `magick -size 1200x630 'xc:#1A1535' \( +size -background none
 -density 300 public/brand/stacked-dark.svg -resize x430 \) -gravity center -composite
--depth 8 -strip PNG24:public/og.png`. `test/integration/link_preview_adoption_test.rb`
-fails when it is not 1200 × 630, the size its meta tags claim.
+-depth 8 -strip PNG24:public/og.png`. The `+size` is load-bearing: without it the canvas's
+`-size` leaks into the SVG read, the logo layer comes out 819 × 430 instead of 458 × 430, and
+the wordmark falls off the frame, leaving only the chest. Look at the result.
+`test/integration/link_preview_adoption_test.rb` fails when it is not 1200 × 630, the
+large-card shape unfurlers expect.
 
 **Access.** Every route is behind the admin wall, like the rest of `/logos`;
 it is not public (opening it to the world is Alex's call). A build fetch needs

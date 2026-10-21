@@ -50,9 +50,9 @@ class LinkPreviewAdoptionTest < ActionDispatch::IntegrationTest
     assert File.file?(Rails.public_path.join("og.png")), "public/og.png is the last-resort image"
   end
 
-  # The page emits og:image:width/height 1200x630 for this file, so the PNG
-  # header must agree or unfurlers lay the card out wrong.
-  test "the last-resort image is 1200x630, the size the meta tags claim" do
+  # 1200x630 is the large-card shape iMessage, Slack and X expect. The engine
+  # reads the meta size from this file, so this guards the shape, not agreement.
+  test "the last-resort image is the 1200x630 large-card shape" do
     header = File.binread(Rails.public_path.join("og.png"), 24)
     assert_equal "\x89PNG".b, header[0, 4]
     assert_equal [1200, 630], header[16, 8].unpack("NN")
