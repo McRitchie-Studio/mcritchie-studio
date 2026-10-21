@@ -9,11 +9,12 @@ module ClientApps
     #   <head ...>     the kit's <link>, the theme, the kit's <script>, first,
     #                  so the bundle's own CSS still has the last word
     #   <body ...>     gains data-studio-kit, and the navbar right after it
+    #                  (a page with no <body> tag gets one, after its head)
     #   </body>        the footer right before the LAST one
     #
     # A page missing a tag still gets the whole shell: no <head>, the head goes
-    # after <html ...> (or first); no <body>, the navbar goes after </head> (or
-    # after the head part); no </body>, the footer goes before </html> (or last).
+    # after <html ...> or the doctype (or first); no </body>, the footer goes
+    # before </html> (or last).
     # Browsers build the same document from either placement.
     module Wrap
       HEAD_OPEN = /<head(?:\s[^>]*)?>/i
@@ -48,10 +49,12 @@ module ClientApps
           return "#{match.pre_match}#{tag}\n#{navbar}\n#{match.post_match}"
         end
 
-        # No <body> tag: the parser opens the body at the first content, so the
-        # navbar goes right after the head.
+        # No <body> tag: the kit opens one right after the head (the parser
+        # would open it at the first content anyway), so the hook and the
+        # navbar still lead the body.
         close = page.match(HEAD_CLOSE)
-        close ? after(page, close, "\n#{navbar}\n") : "#{page}\n#{navbar}"
+        opened = "\n<body data-studio-kit>\n#{navbar}\n"
+        close ? after(page, close, opened) : "#{opened}#{page}"
       end
 
       def insert_footer(page, footer)

@@ -162,6 +162,38 @@ class ClientBuildLauncherTest < Minitest::Test
     end
   end
 
+  def test_starter_seeds_the_studio_template_and_the_validator_holds_it
+    Dir.mktmpdir do |dir|
+      CL::Starter.seed(dir, intake)
+      html = File.read(File.join(dir, "index.html"))
+      assert_includes html, "<main data-studio-content>", "the starter is the template's page: one content region"
+      refute_includes html, "data-site-footer", "the host adds the Studio footer; the starter carries none"
+      refute_includes html, "<header", "the host adds the Studio navbar"
+      css = File.read(File.join(dir, "styles.css"))
+      assert_includes css, "html.dark {", "dark mode follows the navbar's toggle (the root's dark class)"
+      refute_includes css, "prefers-color-scheme", "never the device query, which the toggle cannot override"
+      assert_empty CL::Validator.errors(dir, max_bytes: 100_000)
+
+      File.write(File.join(dir, "index.html"), html.sub("<main data-studio-content>", "<header>My nav</header><main>"))
+      errors = CL::Validator.errors(dir, max_bytes: 100_000)
+      assert(errors.any? { |e| e.include?("no content region") }, errors.inspect)
+
+      File.write(File.join(dir, "index.html"), html.sub("</main>", "</main><footer data-site-footer>Mine</footer>"))
+      errors = CL::Validator.errors(dir, max_bytes: 100_000)
+      assert(errors.any? { |e| e.include?("<footer> outside") }, errors.inspect)
+      assert(errors.any? { |e| e.include?("shell's own hooks") }, errors.inspect)
+    end
+  end
+
+  def test_the_prompt_tells_the_builder_to_build_inside_the_template
+    prompt = CL::Prompt.build(intake)
+    assert_includes prompt, "<main data-studio-content>"
+    assert_includes prompt, "Never write a navbar, a site header or a site footer of your own"
+    assert_includes prompt, "btn-primary"
+    assert_includes prompt, "html.dark"
+    refute_includes prompt, "fonts.googleapis.com", "the host's CSP blocks every other origin, Google Fonts too"
+  end
+
   # --- Publisher --------------------------------------------------------------
 
   def test_the_publisher_presents_only_the_run_session_and_reads_the_version
