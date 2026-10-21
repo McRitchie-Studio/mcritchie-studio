@@ -369,13 +369,13 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
   # The prompt names a soul by its roster name (config/souls.yml), and by its slug
   # only when the roster does not name it.
   test "the display name is the roster's name, else the slug's" do
-    assert builder.prompt.start_with?("You are Ritch,"), "no roster under the root: the slug's name"
+    assert builder.prompt.start_with?("You are Ray,"), "no roster under the root: the slug's name (slug ray until the slug rename)"
 
     File.write(File.join(@root, "config/souls.yml"), { "souls" => [ { "slug" => "ray", "name" => "Ritch" } ] }.to_yaml)
     assert builder.prompt.start_with?("You are Ritch,")
     assert builder(soul: "mack").prompt.start_with?("You are Mack,"), "a soul the roster omits"
 
     File.write(File.join(@root, "config/souls.yml"), "souls: [unclosed")
-    assert builder.prompt.start_with?("You are Ritch,"), "an unreadable roster falls back"
+    assert builder.prompt.start_with?("You are Ray,"), "an unreadable roster falls back to the slug's name"
   end
 end

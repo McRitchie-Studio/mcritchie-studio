@@ -164,13 +164,13 @@ class AgentAudienceTest < ActiveSupport::TestCase
     refute_includes text, "ACTION OUTPUT"
     assert_includes text, "none is enabled for you yet"
     refute_includes text, "INTERNAL ROLE DOC", "the role doc is internal"
-    assert_includes text, "== GENERAL: who you are (your public profile) ==\nYou are Ritch, an AI agent of McRitchie Studio."
+    assert_includes text, "== GENERAL: who you are (your public profile) ==\nYou are Ray, an AI agent of McRitchie Studio."
     assert_includes text, "say that a person\n  will follow up"
     refute_includes text, "say what you would do"
   end
 
   test "a public prompt has the public rules only, and a soul's public.md stands in for its role doc" do
-    File.write(File.join(@root, "docs/agents/agents/ray/public.md"), "<!-- note -->\nRay helps visitors find their way.")
+    File.write(File.join(@root, "docs/agents/agents/ray/public.md"), "<!-- note -->\nRitch helps visitors find their way.")
     text = prompt(aud("public"))
     assert_includes text, "You are speaking with: public"
     assert_includes text, rules["audiences"]["public"]["never"].first

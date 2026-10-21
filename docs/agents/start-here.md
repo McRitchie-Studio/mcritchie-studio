@@ -107,11 +107,11 @@ its invocation exactly.
 | Pokemon `email-image` SOP (make an email header with Alex in a Claude Code session: show base assets, generate, iterate, approve on his word, export) | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | Pokemon `wrap-it-up` SOP (hand a stuck session to a fresh one, then clear its board) | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
 | `Ray Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/ray/HEARTBEAT.md` |
-| Ritch `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/ray/sops/clean-up.md` |
-| Ritch `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/full-cycle.md` |
-| Ritch `grade-events` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/grade-events.md` |
-| Ritch `share-insights` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/share-insights.md` |
-| Ritch `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/ray/sops/ship-clock.md` |
+| Ray `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/ray/sops/clean-up.md` |
+| Ray `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/full-cycle.md` |
+| Ray `grade-events` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/grade-events.md` |
+| Ray `share-insights` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/share-insights.md` |
+| Ray `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/ray/sops/ship-clock.md` |
 | `Rex Heartbeat` launcher (CMO) | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | Rex `constraint-diagnosis` SOP (find the one thing limiting demand) | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
 | Rex `content-sprint` SOP (the weekly test-at-volume loop) | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
