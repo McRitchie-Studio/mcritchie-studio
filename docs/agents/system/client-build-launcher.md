@@ -30,14 +30,18 @@ at `<sub>.<preview domain>`. Nobody waits for a person to pick it up.
    the run in `devops.client_build`, and answers the intake: the prompt, the
    sharpened idea, the palette, the CTO, the app name and the subdomain. The tier's
    lane cap still applies. The CTO chat gets "I've started building…".
-3. **Build.** A scratch directory is seeded with a starter bundle (`index.html`,
-   `styles.css` with the theme's light and dark tokens, `app.js`, the CTO's
-   portrait, the site footer with "Built with McRitchie Studio"). Then a headless
+3. **Build.** A scratch directory is seeded with a starter bundle on the Studio
+   template ([`client-app-host.md`](client-app-host.md#the-studio-template)):
+   `index.html` with its one content region (`<main data-studio-content>`),
+   `styles.css` on the theme variables, `app.js` and the CTO's portrait. The host
+   adds the navbar, the theme and the footer at serve time, so the prompt tells
+   the builder to build inside the region and never to write its own. Then a headless
    `claude -p` runs in it (the sandbox, below), capped at `run_minutes` and
    `max_turns`.
 4. **Check.** The launcher's local check refuses a bundle with no `index.html`,
    a non-static file, a link, an inline script or event handler, a script from
-   another host, no footer, or a size over `bundle_max_bytes`. Publish checks again.
+   another host, a page off the Studio template (`ClientAppBundle.template_errors`),
+   or a size over `bundle_max_bytes`. Publish checks again.
 5. **Publish.** `bin/client-bundle publish <sub> <dir>` posts the bundle to
    `POST /api/v1/client_bundles/<sub>` under the publish session; the hub uploads
    it to the private bucket, flips `App#preview_version` and records the

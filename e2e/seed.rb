@@ -1854,3 +1854,51 @@ countdown_started = 1.minute.ago
 countdown_build = Task.create!(title: "Build Launch App countdown-probe", stage: "designed", priority: 1)
 countdown_build.update_columns(stage: "building", started_at: countdown_started, metadata: { "devops" => countdown_run.("building", countdown_started).merge("repositories" => [ "countdown-probe" ]) })
 puts "Seeded: a client app whose first version is building (the live pill countdown)"
+
+# A client app on the Studio template (e2e/client_app_studio_kit.spec.js; docs/agents/
+# system/client-app-host.md, "The Studio template"): kit-demo holds a /build request
+# and a live bundle whose page carries only its content, so the shared host wraps it
+# in the Studio navbar, theme and footer at http://kit-demo.localhost:<port>/.
+kit_palette = {
+  "light" => { "primary" => "#9F1239", "accent" => "#D97706", "surface" => "#FFFBF5", "text" => "#1C1917" },
+  "dark" => { "primary" => "#FB7185", "accent" => "#FBBF24", "surface" => "#1C1917", "text" => "#FAFAF9" }
+}
+# Idempotent: a reseed starts kit-demo over (its CTO and published versions with it).
+ActiveRecord::Base.connection.disable_referential_integrity do
+  if (old = App.find_by(slug: "kit-demo"))
+    AppPreviewVersion.where(app_slug: old.slug).delete_all
+    AppCto.where(app_slug: old.slug).delete_all
+    old.delete
+  end
+end
+# The request first: it holds the name (an App row would make the name read as taken).
+# Created bare, with no board task, so no board or gallery spec sees a new row.
+AppRequest.create!(prompt: "A table-booking page for one restaurant", subdomain: "kit-demo", status: "queued")
+kit_app = App.find_or_create_by!(slug: "kit-demo") do |app|
+  app.assign_attributes(name: "Table Ready", emoji: "🍽", color: kit_palette["light"]["primary"], theme_colors: kit_palette)
+end
+AppCto.find_or_create_by!(app: kit_app) do |cto|
+  cto.assign_attributes(name: "Nova", portrait: "harbor", palette: kit_palette, plan: "A table-booking page for one restaurant.",
+                        facts: { "owner" => "Pat" })
+end
+kit_page = <<~HTML
+  <!doctype html>
+  <html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Table Ready</title><link rel="stylesheet" href="styles.css"></head>
+  <body>
+    <main data-studio-content>
+      <h1>Book a table tonight</h1>
+      <div class="card demo-card"><p>Pick a time and we will hold your table for fifteen minutes.</p>
+        <button type="button" class="btn btn-primary">Reserve</button></div>
+    </main>
+    <script src="app.js"></script>
+  </body>
+  </html>
+HTML
+kit_files = { "index.html" => kit_page, "app.js" => "// Table Ready\n",
+              "styles.css" => "[data-studio-content] { max-width: 720px; margin: 0 auto; padding: 24px 16px; }\n" \
+                              ".demo-card { padding: 20px; margin-top: 16px; }\n" \
+                              "body { background: var(--surface); color: var(--text); }\n" }
+ClientApps::Publish.new(app: kit_app, files: kit_files, by: "e2e-seed", source: "seed").call
+puts "Seeded: kit-demo, a client app on the Studio template"

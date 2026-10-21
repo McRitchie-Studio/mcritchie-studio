@@ -13,6 +13,10 @@ module ClientApps
   #   no bundle yet      the themed "being built" page, for a client app (an App
   #                      with a CTO) or a held /build request
   #   anything else      a bare 404 that names nothing of the hub's
+  #
+  # Every HTML page of a bundle is served wrapped in the Studio template (the
+  # navbar, the theme and the footer: StudioKit), and /_studio/kit/<version>/
+  # serves the one shared kit those pages load, on every app.
   class Host
     METHODS = %w[GET HEAD].freeze
 
@@ -96,7 +100,8 @@ module ClientApps
 
       app = App.find_by(slug: @sub)
       version = app&.current_preview
-      return serve(version) if version
+      return kit_asset(app, version) if kit_path?
+      return serve(app, version) if version
 
       site = BeingBuilt.for(@sub, app)
       site ? self.class.page(200, Pages.being_built(site), head: @head) : not_found
@@ -104,21 +109,70 @@ module ClientApps
 
     private
 
-    def serve(version)
+    def serve(app, version)
       path = resolve(version)
       return not_found unless path
 
       entry = version.entry(path)
+      return serve_page(app, version, path, entry) if page?(entry)
+
       etag = %("#{entry.fetch('sha256')}")
-      headers = SECURITY_HEADERS.merge("content-type" => entry.fetch("content_type"),
-                                       "content-security-policy" => BUNDLE_CSP,
-                                       "cache-control" => cache_control(path), "etag" => etag)
+      headers = bundle_headers(entry.fetch("content_type"), cache_control(path), etag)
       return [ 304, headers, [] ] if fresh?(etag)
 
       headers["content-length"] = entry.fetch("size").to_s
       return [ 200, headers, [] ] if @head
 
       [ 200, headers, [ BundleStore.read(version.key_for(path), sha256: entry.fetch("sha256")) ] ]
+    end
+
+    # An HTML page wears the Studio template (StudioKit): the shell is placed
+    # at serve time, so a kit or engine change reaches every app on its next
+    # request. The ETag covers the page's bytes AND the rendered shell, so a
+    # new template, a footer fact or a renamed app is a new ETag; a returning
+    # visitor's revalidation never keeps an old shell.
+    #
+    # The ETag is answered before any storage read. When the kit cannot be
+    # built or rendered (StudioKit.shell_for answers nil, in its backoff), the
+    # page is served exactly as the bundle wrote it, never a 500.
+    def serve_page(app, version, path, entry)
+      shell = StudioKit.shell_for(app)
+      sha = entry.fetch("sha256")
+      etag = shell ? %("#{sha[0, 32]}-#{shell.digest}") : %("#{sha}")
+      headers = bundle_headers(entry.fetch("content_type"), HTML_CACHE, etag)
+      return [ 304, headers, [] ] if fresh?(etag)
+
+      bytes = BundleStore.read(version.key_for(path), sha256: sha)
+      html = shell ? StudioKit.wrap(bytes, shell, key: sha) : bytes
+      headers["content-length"] = html.bytesize.to_s
+      [ 200, headers, @head ? [] : [ html ] ]
+    end
+
+    def page?(entry) = entry.fetch("content_type").to_s.start_with?("text/html")
+
+    # The shared kit (StudioKit.assets), on every app that answers at all: an
+    # app with a bundle, or one being built. Its URL carries its version, so the
+    # current one is cached for a year.
+    def kit_asset(app, version)
+      return not_found unless version || BeingBuilt.for(@sub, app)
+
+      found = StudioKit.asset_for(@env["PATH_INFO"])
+      return not_found unless found
+
+      bytes, type, current = found
+      etag = %("#{Digest::SHA256.hexdigest(bytes)[0, 32]}")
+      headers = bundle_headers(type, current ? HASHED_CACHE : ASSET_CACHE, etag)
+      return [ 304, headers, [] ] if fresh?(etag)
+
+      headers["content-length"] = bytes.bytesize.to_s
+      [ 200, headers, @head ? [] : [ bytes ] ]
+    end
+
+    def kit_path? = @env["PATH_INFO"].to_s.start_with?(StudioKit::PATH_PREFIX)
+
+    def bundle_headers(type, cache, etag)
+      SECURITY_HEADERS.merge("content-type" => type, "content-security-policy" => BUNDLE_CSP,
+                             "cache-control" => cache, "etag" => etag)
     end
 
     # The manifest path this request is for, or nil for a 404.

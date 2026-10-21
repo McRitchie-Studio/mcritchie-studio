@@ -19,7 +19,8 @@ written on a preview host.
 
 | Host | Answer |
 |------|--------|
-| `<sub>.<domain>`, the app has a live bundle | The file the path names, from `App#preview_version`. `/` and a directory serve their `index.html`; `/about` also tries `about/index.html` and `about.html`. An unknown path **without** an extension gets `index.html` (the SPA fallback). An unknown file (`/x.js`) gets a 404 |
+| `<sub>.<domain>`, any path under `/_studio/kit/` (an app with a bundle, or one being built) | The shared Studio kit ([The Studio template](#the-studio-template)) |
+| `<sub>.<domain>`, the app has a live bundle | The file the path names, from `App#preview_version`; an HTML page is wrapped in the Studio template. `/` and a directory serve their `index.html`; `/about` also tries `about/index.html` and `about.html`. An unknown path **without** an extension gets `index.html` (the SPA fallback). An unknown file (`/x.js`) gets a 404 |
 | `<sub>.<domain>`, a client app (an App with an `AppCto`) or a held `/build` request, no bundle yet | The "being built" page: the app's name, its CTO's name and portrait, and its palette in light and dark mode. It answers on **every** path (`/x.js` included) until a bundle exists |
 | Anything else: an unknown sub, a reserved name or one of our own apps, the apex, a nested name | A bare 404 that names nothing of the hub's |
 | A method other than GET or HEAD | 405 |
@@ -46,6 +47,106 @@ and no script.
 **Caching.** HTML gets `no-cache`, so a new publish shows at once; the ETag (the file's
 sha256) makes a revalidation a 304. A file whose name carries a content hash
 (`app-3f9a2c1b.css`) gets a year, `immutable`. Any other asset gets five minutes.
+
+## The Studio template
+
+Every app on the host wears the same frame: the **Studio navbar** (the app's name, split
+as the engine's navbar splits it, with its CTO's portrait as the mark, a dark-mode toggle
+and a menu) and the engine's **site footer** ("Built with McRitchie Studio", back to
+`https://mcritchie.studio`), in the app's own palette, light and dark. Alex, 2026-10-20:
+"We want to build all the apps to a standard and that should start with a template and
+have a continuity." So the frame is never copied into a bundle, where it would freeze
+and drift. The host owns it, in `ClientApps::StudioKit`
+(`app/services/client_apps/studio_kit.rb`), and applies it **at serve time**: a change
+to the engine or to the template reaches every app on its next request, with no rebuild.
+
+**The contract a bundle keeps.**
+
+- Every `.html` page puts its content in exactly one `<main data-studio-content>`.
+  The app's own navigation (tabs, a section menu) goes inside it.
+- Nothing before or after that region is page chrome: no `<header>`, `<footer>` or
+  `<nav>` there (a `<script src>` is fine).
+- No copy of the shell: no `data-studio-navbar`, `data-studio-footer`,
+  `data-studio-menu`, `data-studio-kit`, `data-studio-theme` or `data-site-footer`.
+- No reference to `/_studio/`, and no file under `_studio/`: that path is the host's.
+- Style on the theme variables (below). Dark mode is the root's `dark` class, which the
+  navbar's toggle sets, so a dark-only rule is `html.dark .thing`, never
+  `@media (prefers-color-scheme)`.
+- The engine primitives may be used in the content: `btn` with `btn-primary`,
+  `btn-secondary`, `btn-outline` or `btn-neutral` (and `btn-sm`, `btn-lg`), `card`,
+  `card-hover`, `badge`, `input-field`, `label-upper`, `empty-state`. No other Tailwind
+  utility is in the kit.
+
+`ClientAppBundle.template_errors` holds the contract (pure Ruby, so the CLI, the launcher
+and the hub all run it), and publish refuses a page that breaks it. Bundles
+published before the rule (team-notes, table-ready) keep serving and are wrapped too.
+Their own hand-written `footer[data-site-footer]` stays in the page and the kit's CSS
+hides it, so only the Studio footer shows.
+
+**Where the host puts it.** `StudioKit::Wrap` never re-serialises the page, because
+that would rewrite model-written markup. It inserts at three tag boundaries, found by
+`ClientAppMarkup` (below), and leaves every other byte as written:
+
+| Where | What |
+|-------|------|
+| Right after `<head>` | The kit's `<link>`, the app's theme (`<style data-studio-theme>`), the kit's `<script>`, first, so the bundle's own CSS has the last word and the theme is set before the first paint |
+| `<body>` | Gains `data-studio-kit`, and the navbar goes right after it |
+| The last `</body>` | The footer goes right before it |
+
+A page missing a tag still gets the whole shell: the head goes after `<html>` or the
+doctype; with no `<body>` tag the host opens one after the head; with no `</body>` the
+footer goes before `</html>`, or last. The rendered shell is cached in process per kit
+version and app identity (name, portrait, palette), and each page's insertion points per
+its bytes, so a page view renders and scans nothing. The page's ETag covers its bytes and
+the digest of the RENDERED shell (head, navbar and footer), so any template, footer fact,
+menu, theme or kit change is a new ETag and a returning visitor never keeps an old shell.
+
+**The one shared kit.** `GET /_studio/kit/<version>/studio-kit.css` and `studio-kit.js`,
+on every app host that answers (a live bundle or a "being built" app):
+
+- Same origin, so the bundle CSP's `'self'` covers it; no other origin, no inline
+  script, no cookie, no hub route.
+- `<version>` is the first 12 hex characters of the digest of both files, so the current
+  version is cached for a year, `immutable`. A path naming an older version (a page
+  rendered just before a deploy) gets the current files with the five-minute cache.
+- There is no unversioned alias on purpose. Pages are `no-cache` and always name the
+  current version, so an alias would only add a URL that can never be cached.
+
+**Engine-derived, never hand-copied.**
+
+| Piece | Source |
+|-------|--------|
+| CSS | The engine's `engine.css` (the `btn`/`card` utilities and the navbar's `nav-shell` band table) and its theme (`tailwind/studio.tailwind.config.js`, class-based dark mode), compiled by the hub's Tailwind (`tailwindcss-ruby`) against only the kit's templates, with no preflight; then `app/assets/studio_kit/shell.css` (the frame, the menu, the toggle's icon swap); then the footer's scoped CSS, lifted from the engine's `studio/site_footer/_assets`. About 25 KB |
+| Navbar | `app/views/client_apps/kit/_navbar.html.erb`: the engine navbar's markup contract (`nav-shell`, `nav-row`, `nav-logo`, `nav-title`), drawn statically, never sticky, so an app's own sticky bar or fixed tabs sit under it with no stacking fight |
+| Toggle | The engine's `components/_theme_toggle` partial, with its Alpine bindings rewritten to the kit's data hooks (`StudioKit.kit_toggle`). A binding the rewrite does not know raises `StudioKit::Drift`, so an engine change fails the test suite instead of shipping a dead button |
+| Footer | The engine's `studio/site_footer/_footer` partial, with facts for the app (`Studio::SiteFooter.resolve`), rendered with no booking popup |
+| Theme | `Studio::ThemeResolver`'s full token set, once per side of the app's palette, under `html:not(.dark)` and `html.dark`, plus the palette's own `--primary`, `--accent`, `--surface` and `--text`. Those selectors outrank a bundle's `:root`, so even an older bundle's colours follow the toggle |
+| Script | `app/assets/studio_kit/studio-kit.js`: the theme (a saved choice, else the device's setting) and the menu (its button, Escape, a click outside). Storage failures are caught |
+
+**Built at deploy, or on first use.** `bin/rails studio_kit:build` is a prerequisite of
+`assets:precompile`, which the Heroku Ruby buildpack runs, so the slug carries
+`app/assets/builds/studio_kit/<digest>.css` and no dyno compiles. The digest is of content
+only (the engine and Tailwind versions, and each input's bytes under its path relative to
+its root), so the build directory (`/tmp/build_<hash>`) and the running slug (`/app`) name
+the same file. A process that finds no file for the current digest compiles it once, in
+about a second: a mutex serialises its threads, a file lock serialises processes, and the
+output is renamed into place from a unique temporary name.
+
+**A broken kit never takes an app down.** If the kit cannot be built or rendered (a
+Tailwind failure, an engine partial the kit no longer understands), every page is served
+exactly as its bundle wrote it, with no shell, and the failure is recorded once
+(`ErrorLog`, Sentry). Nothing retries the build for five minutes
+(`StudioKit::FAILURE_BACKOFF`); then one request tries again.
+
+**Where the host finds the tags.** `ClientAppMarkup` (`lib/client_app_markup.rb`, pure
+Ruby) reads a page as a browser's tokenizer does: a `<body>` inside a comment, a quoted
+attribute, or a `title`, `script`, `style` or `textarea` is text, not a tag. The wrap and
+the publish check both use it, so a page publish accepts is a page the host wraps
+correctly. Publish also refuses a page whose `<body>` tag comes after its content region.
+A portrait that follows the colour scheme is drawn once per theme in the navbar, so the
+mark follows the kit's toggle, not the device.
+
+**Not covered yet.** The "being built" page does not wear the template.
 
 ## The domain
 
@@ -170,6 +271,8 @@ The CLI runs them before it sends anything, and the hub runs them again.
 - Relative paths of `[A-Za-z0-9_.-]` segments: no dot-files, no `..`, no absolute path,
   no backslash, at most 6 levels deep.
 - Read from disk: regular files only, no symlinks.
+- The Studio template: one `<main data-studio-content>` per page, no page chrome or shell
+  hook of its own, nothing under or naming `_studio/` ([The Studio template](#the-studio-template)).
 
 **The API.** `POST /api/v1/client_bundles/:sub` takes
 `{ "files": [ { "path", "content_base64" } ] }` and answers 201 with

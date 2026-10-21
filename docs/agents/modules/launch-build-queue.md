@@ -64,6 +64,9 @@ which writes to a local database nobody sees.
    Then confirm the card's second acceptance bullet, the footer on the home page:
    `curl -fsS https://<host>/ | grep -c 'data-site-footer'`
    (expect `1` or more; what a `0` means is under onboarding § 7's DONE line).
+   An app still on the shared preview host needs no hand check of its frame: the host
+   wraps every page in the Studio navbar and footer
+   ([the Studio template](../system/client-app-host.md#the-studio-template)).
 4. **Showcase builds only:** capture its gallery screenshot, pointed at the page
    that shows what the app IS (Cyvasse's game board, not its landing text), and
    commit it in a hub PR:

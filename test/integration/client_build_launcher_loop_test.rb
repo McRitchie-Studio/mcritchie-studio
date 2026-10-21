@@ -108,7 +108,8 @@ class ClientBuildLauncherLoopTest < ActionDispatch::IntegrationTest
     assert_equal "dog-walks", sub
     assert dir.start_with?(File.join(@root, "dog-walks", "")), "a scratch directory per run, outside the repo"
     assert_includes html, "Walk schedule", "the builder's bundle is what publishes"
-    assert_includes html, "data-site-footer"
+    assert_includes html, "<main data-studio-content>", "the bundle keeps the template's content region"
+    refute_includes html, "data-site-footer", "the host adds the footer; the bundle carries none"
     assert_includes @prompts.sole, "A dog-walk scheduler"
     assert_equal %w[started preview_ready], chat("dog-walks").map { |m| m.envelope["kind"] }
   end
@@ -159,7 +160,8 @@ class ClientBuildLauncherLoopTest < ActionDispatch::IntegrationTest
     launch!("cat-naps")
     @client.claim(task.slug, worker: "test-mac", run: "r1")
     token = @client.mint_session(task.slug)
-    files = { "index.html" => "<!doctype html><title>Dog Walks</title><script src=\"app.js\"></script>", "app.js" => "1" }
+    files = { "index.html" => "<!doctype html><title>Dog Walks</title><main data-studio-content></main><script src=\"app.js\"></script>",
+              "app.js" => "1" }
     body = { files: files.map { |path, bytes| { path: path, content_base64: Base64.strict_encode64(bytes) } } }.to_json
     headers = { "Authorization" => "Bearer #{token}", "Content-Type" => "application/json" }
 

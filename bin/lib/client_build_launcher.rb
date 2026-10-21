@@ -10,6 +10,7 @@ require "socket"
 require "time"
 require "tmpdir"
 require "yaml"
+require_relative "../../lib/client_app_bundle"
 require_relative "agent_api"
 require_relative "agent_dispatcher"
 require_relative "desk_context"
@@ -184,9 +185,27 @@ module ClientBuildLauncher
         #{body}
         #{token} END
 
-        The directory already holds a starter bundle: index.html, styles.css (the app's theme as CSS
-        variables; keep using them), app.js, and cto.svg (the app's CTO portrait). Keep the footer
-        (footer[data-site-footer], with "Built with McRitchie Studio") on every page.
+        The directory already holds a starter bundle built on the McRitchie Studio template:
+        index.html, styles.css (the app's own styles, written on the theme variables), app.js, and
+        cto.svg (the app's CTO portrait).
+
+        The Studio template, which every app on McRitchie Studio wears:
+        - The host wraps every page at serve time in the Studio navbar (the app's name and mark, a
+          dark-mode toggle and a menu) and the Studio site footer ("Built with McRitchie Studio").
+          Never write a navbar, a site header or a site footer of your own, and never copy one.
+        - Each page puts ALL of its content inside its one <main data-studio-content> element. Keep
+          that element; nothing goes before or after it in <body> except <script src> tags. The
+          app's own navigation (tabs, a section menu) belongs inside it, as part of the content.
+        - Style with the theme variables, which the host sets for light and dark mode from the app's
+          palette: --primary, --accent, --surface, --text, and the Studio tokens --color-page,
+          --color-surface, --color-surface-alt, --color-border, --color-text-secondary,
+          --color-text-muted. Dark mode follows the navbar's toggle, which puts class "dark" on
+          <html>: the variables switch on their own; write any other dark-only rule as
+          "html.dark .thing", never with @media (prefers-color-scheme).
+        - The Studio's classes are there to use: btn with btn-primary, btn-secondary, btn-outline
+          or btn-neutral (and btn-sm, btn-lg), card, card-hover, badge, input-field, label-upper.
+          Other utility classes are not; write your own CSS in styles.css.
+        - Never name /_studio/ (the host's own path) and never set the "dark" class yourself.
 
         Rules for the bundle:
         - Static files only, of these types: .html .css .js .json .svg .png .jpg .webp .woff2 .ico .txt.
@@ -194,12 +213,12 @@ module ClientBuildLauncher
         - It is served under a strict Content-Security-Policy: no inline <script>, no inline event
           handlers (onclick=...), no inline style attributes or <style> blocks. Put CSS in .css files
           and JavaScript in .js files, loaded by relative path.
-        - No network calls: no fetch, no CDNs, no external scripts or images. Fonts from Google Fonts
-          (fonts.googleapis.com / fonts.gstatic.com) are the one exception.
+        - No network calls: no fetch, no CDNs, no external scripts, fonts or images. Use the system
+          font stack; the policy blocks every other origin.
         - State lives in the browser (localStorage) if the app needs any. Seed realistic sample data
           so the first visit shows the app working.
-        - A single page app is fine. It must work on a phone and on a desktop, in light and dark mode
-          (the theme variables carry both), and look polished: this is the version the customer shows off.
+        - A single page app is fine. It must work on a phone and on a desktop, in light and dark mode,
+          and look polished: this is the version the customer shows off.
         - Stay inside the current directory. Keep the bundle under a few megabytes.
 
         When the app is done, stop. Reply with one short paragraph saying what you built.
@@ -217,8 +236,11 @@ module ClientBuildLauncher
     end
   end
 
-  # The starter bundle a run begins from: the app's theme tokens, its CTO, and the
-  # footer. Every client-written value is HTML-escaped; colours pass only as #rrggbb.
+  # The starter bundle a run begins from: the Studio template's page (its one
+  # content region, <main data-studio-content>; the host adds the navbar, the
+  # theme and the footer at serve time, docs/agents/system/client-app-host.md),
+  # the app's own styles on its palette, and its CTO. Every client-written value
+  # is HTML-escaped; colours pass only as #rrggbb.
   module Starter
     module_function
 
@@ -250,28 +272,27 @@ module ClientBuildLauncher
       KEYS.to_h { |k| [ k, given[k].to_s.match?(HEX) ? given[k] : FALLBACK[side][k] ] }
     end
 
+    # The app's own stylesheet. The palette here is only a fallback for the file
+    # opened on its own: on the host, the Studio theme sets these variables
+    # (and the --color-* tokens) for whichever mode the navbar's toggle chose.
     def css(palette)
       vars = ->(side) { colours(palette, side).map { |k, v| "  --#{k}: #{v};" }.join("\n") }
       <<~CSS
-        /* The app's theme (its brand sheet), light and dark. Keep building on these variables. */
+        /* The app's own styles. The Studio host sets the theme variables below
+           for light and dark mode (the navbar's toggle puts class "dark" on
+           <html>); these values are only the fallback. Build on the variables. */
         :root {
         #{vars.call('light')}
         }
-        @media (prefers-color-scheme: dark) {
-          :root {
-        #{vars.call('dark').gsub(/^/, '  ')}
-          }
+        html.dark {
+        #{vars.call('dark')}
         }
-        * { box-sizing: border-box; }
         body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
                background: var(--surface); color: var(--text); }
-        main { max-width: 960px; margin: 0 auto; padding: 24px 16px; }
+        [data-studio-content] { box-sizing: border-box; max-width: 960px; margin: 0 auto; padding: 24px 16px; }
         .cto { display: flex; align-items: center; gap: 12px; }
         .cto img { width: 48px; height: 48px; border-radius: 50%; }
         a { color: var(--primary); }
-        footer[data-site-footer] { max-width: 960px; margin: 48px auto 0; padding: 24px 16px;
-                                   border-top: 1px solid color-mix(in srgb, var(--text) 15%, transparent);
-                                   font-size: 14px; opacity: 0.8; }
       CSS
     end
 
@@ -289,13 +310,10 @@ module ClientBuildLauncher
           <link rel="stylesheet" href="styles.css">
         </head>
         <body>
-          <main>
+          <main data-studio-content>
             <h1>#{name}</h1>
             <p class="cto">#{img}<span>Built by #{cto}, #{name}'s CTO.</span></p>
           </main>
-          <footer data-site-footer>
-            <p>&copy; #{Time.now.year} #{name}. Built with <a href="https://mcritchie.studio">McRitchie Studio</a>.</p>
-          </footer>
           <script src="app.js"></script>
         </body>
         </html>
@@ -306,9 +324,10 @@ module ClientBuildLauncher
   end
 
   # The local check before publish (publish validates again, authoritatively): an
-  # index.html, static file types only, no links, the size limit, the footer, and
-  # nothing the host's CSP would block outright (an inline script or handler, or a
-  # script from another host).
+  # index.html, static file types only, no links, the size limit, the Studio
+  # template (ClientAppBundle.template_errors: one content region, no navbar or
+  # footer of its own), and nothing the host's CSP would block outright (an
+  # inline script or handler, or a script from another host).
   module Validator
     module_function
 
@@ -331,13 +350,16 @@ module ClientBuildLauncher
         elsif File.file?(path)
           total += File.size(path)
           list << "#{rel} is not a static file type" unless STATIC.include?(File.extname(rel).downcase)
-          list.concat(csp_errors(rel, File.read(path, encoding: "UTF-8").scrub)) if File.extname(rel).downcase == ".html"
+          if File.extname(rel).downcase == ".html"
+            html = File.read(path, encoding: "UTF-8").scrub
+            list.concat(csp_errors(rel, html))
+            list.concat(ClientAppBundle.template_errors(rel, html))
+          end
         end
       end
       list << "the bundle is #{total} bytes, over #{max_bytes}" if total > max_bytes
       files = Dir.glob("**/*", File::FNM_DOTMATCH, base: dir).count { |rel| File.file?(File.join(dir, rel)) }
       list << "the bundle has #{files} files, over #{MAX_FILES}" if files > MAX_FILES
-      list << "index.html has no site footer (footer[data-site-footer])" unless File.read(index).include?("data-site-footer")
       list
     end
 
