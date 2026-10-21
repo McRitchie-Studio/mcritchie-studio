@@ -60,7 +60,8 @@ Studio.configure do |config|
   # ---- Brand: the saved Studio kit (task studio-adopts-its-kit) ----
   # Every logo below is a file `bin/rails logos:install BRAND=studio` wrote into
   # public/brand/ from the kit saved at /logos/studio; favicon.png and icon.png
-  # are rasterized from public/brand/icon-dark.svg by script/brand_png.cjs. Never
+  # are rasterized from public/brand/icon-dark.svg by script/brand_png.cjs, and
+  # og.png from stacked-dark.svg (command in docs/topics/logos.md). Never
   # hand-edit a copy: change the kit, reinstall, and commit the files.
   #
   # The icon files come in two tones: icon-light (ink, for a light page) and
