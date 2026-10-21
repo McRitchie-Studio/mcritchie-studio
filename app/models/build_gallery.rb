@@ -15,9 +15,8 @@ module BuildGallery
   # the Studio theme.
   Example = Struct.new(:name, :url, :emoji, :blurb, :image, :motion, :palette, keyword_init: true)
 
-  # A palette's modes and the colours each must give (config `palettes`).
-  PALETTE_MODES = %w[light dark].freeze
-  PALETTE_KEYS = %w[surface primary name text].freeze
+  # The colours a palette must give (config `palettes`).
+  PALETTE_KEYS = %w[panel primary name text].freeze
   HEX = /\A#\h{6}\z/
 
   IMAGE_DIR = "build_gallery".freeze
@@ -39,17 +38,16 @@ module BuildGallery
     names[subdomain.to_s].presence || subdomain.to_s.tr("-", " ").titleize
   end
 
-  # The config's `palettes` entry for a subdomain, as { "light" => {...},
-  # "dark" => {...} }, or nil (the card keeps the Studio theme). Only a
-  # complete entry of #rrggbb values counts: the card writes them into an
-  # inline style, so nothing else may reach it.
+  # The config's `palettes` entry for a subdomain, as { "panel" => "#rrggbb",
+  # "primary" => ..., "name" => ..., "text" => ... }, or nil (the card keeps
+  # the Studio theme). Only a complete entry of #rrggbb values counts: the
+  # card writes them into an inline style, so nothing else may reach it.
   def palette_for(subdomain)
     entry = (YAML.safe_load_file(CONFIG).fetch("palettes", {}) || {})[subdomain.to_s]
     return nil unless entry.is_a?(Hash)
 
-    palette = PALETTE_MODES.to_h { |mode| [ mode, (entry[mode] || {}).to_h.slice(*PALETTE_KEYS) ] }
-    complete = palette.values.all? { |colours| PALETTE_KEYS.all? { |key| colours[key].to_s.match?(HEX) } }
-    complete ? palette : nil
+    palette = entry.slice(*PALETTE_KEYS)
+    PALETTE_KEYS.all? { |key| palette[key].to_s.match?(HEX) } ? palette : nil
   end
 
   # "rantly" for https://rantly.mcritchie.studio.

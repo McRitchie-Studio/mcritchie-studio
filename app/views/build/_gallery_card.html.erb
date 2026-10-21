@@ -14,15 +14,15 @@
     clip a ring drawn outside.
 
     An app with a palette (BuildGallery.palette_for; config/build_examples.yml
-    `palettes`) wears its own theme: the lower panel its surface, the name its
-    name colour, the host and blurb its text colour, the border and hover glow
-    its primary, light and dark each (build_cards.css, .build-gallery-card).
+    `palettes`) wears its own theme: the lower panel its dark-mode page
+    background in both hub themes, the name its primary, the host and blurb
+    its muted tone, the border and hover glow its primary (build_cards.css,
+    .build-gallery-card).
     The colours ride in as custom properties; palette_for passes #rrggbb only.
     Without one the card keeps the Studio theme. %>
 <% host = (URI.parse(example.url).host rescue nil) || example.url %>
 <% palette = example.palette %>
-<% palette_style = palette && BuildGallery::PALETTE_MODES.flat_map { |mode|
-     BuildGallery::PALETTE_KEYS.map { |key| "--gc-#{key}-#{mode}: #{palette.dig(mode, key)}" } }.join("; ") %>
+<% palette_style = palette && BuildGallery::PALETTE_KEYS.map { |key| "--gc-#{key}: #{palette[key]}" }.join("; ") %>
 <%= link_to example.url, target: "_blank", rel: "noopener",
       class: "build-gallery-card group flex h-full flex-col overflow-hidden rounded-2xl border border-subtle bg-surface hover:border-primary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
       style: palette_style,
