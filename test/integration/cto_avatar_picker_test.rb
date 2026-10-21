@@ -124,6 +124,38 @@ class CtoAvatarPickerTest < ActionDispatch::IntegrationTest
     assert_equal "animal:fox", AppCto.find_by!(app_slug: "pawsome").portrait, "an unknown pick changes nothing"
   end
 
+  test "[integration] the picker saves by JSON: the head's new portrait and a line to announce; a refusal or a failure answers an error it can show" do
+    request = launch!("animal:otter")
+    open_chat
+    assert_select "[data-test=cto-chat-avatar-form][data-current-avatar='animal:otter'] [data-test=cto-chat-avatar-announce][role=status][aria-live=polite]"
+    assert_select "[data-test=cto-chat-avatar-form] [data-test=build-portrait-status][role=status]"
+
+    patch chat_avatar_application_path("pawsome"), params: { portrait: "animal:fox" }, as: :json
+    assert_response :success
+    body = response.parsed_body
+    assert_equal [ true, "animal:fox", "Saved. Nova's new look: Fox." ], body.values_at("ok", "avatar", "message")
+    assert_includes body["portrait_html"], %(data-animal="fox")
+    assert_includes body["portrait_html"], %(data-test="client-cto-portrait")
+    assert_equal "animal:fox", AppCto.find_by!(app_slug: "pawsome").portrait
+
+    patch chat_avatar_application_path("pawsome"), params: { portrait: "animal:pikachu" }, as: :json
+    assert_response :unprocessable_entity
+    assert_equal({ "ok" => false, "error" => "Pick one of the avatars." }, response.parsed_body)
+
+    # A failed write is logged (rescue_and_log) and answered, never a bare 500 page.
+    failing = ->(*) { raise ActiveRecord::StatementInvalid, "boom" }
+    assert_difference -> { ErrorLog.count }, 1 do
+      AppRequest.stub(:holding, failing) do
+        patch chat_avatar_application_path("pawsome"), params: { portrait: "animal:owl" }, as: :json
+      end
+    end
+    assert_response :internal_server_error
+    assert_equal false, response.parsed_body["ok"]
+    assert_match(/did not save/, response.parsed_body["error"])
+    assert_equal "animal:fox", AppCto.find_by!(app_slug: "pawsome").portrait, "the transaction rolled back"
+    assert_equal "animal:fox", request.reload.cto_avatar
+  end
+
   test "[integration] an ordinary message still goes to the model" do
     launch!("animal:otter")
     open_chat

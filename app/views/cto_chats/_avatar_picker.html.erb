@@ -1,8 +1,10 @@
 <%# locals: (app:, app_cto:) %>
-<%# The owner's CTO avatar picker in the app's chat (task cto-animal-avatar-bank, Alex 2026-10-20): the /build card's picker (build/_animal_picker) in its own form. The head's portrait and an avatar ask's answer open it ([data-cto-avatar-open], build_chat.js); a tap on an animal saves it (data-build-portrait-save) through CtoChatsController#avatar, which reloads the chat. %>
+<%# The owner's CTO avatar picker in the app's chat (task cto-animal-avatar-bank, Alex 2026-10-20): the /build card's picker (build/_animal_picker) in its own form. The head's portrait and an avatar ask's answer open it ([data-cto-avatar-open], build_chat.js); a tap, Enter or Space on an animal, or Done, saves it in place (data-build-portrait-save; build_chat.js#saveAvatar) through CtoChatsController#avatar, which answers JSON with the head's new portrait. %>
 <%= form_with url: chat_avatar_application_path(app.slug), method: :patch, class: "contents",
-      data: { cto_avatar_form: true, build_portrait_save: true, test: "cto-chat-avatar-form" } do %>
+      data: { cto_avatar_form: true, build_portrait_save: true, current_avatar: app_cto.portrait, test: "cto-chat-avatar-form" } do %>
+  <%# What a screen reader hears once the picker closes: the saved look, or that nothing changed. %>
+  <p class="sr-only" role="status" aria-live="polite" data-cto-avatar-announce data-test="cto-chat-avatar-announce"></p>
   <%= render "build/animal_picker", picked: app_cto.portrait, palette: app_cto.palette,
                                    set_url: chat_avatars_application_path(app.slug), title: "Pick my new look",
-                                   footer: "Tap an animal to save it. #{app_cto.name} stays the same CTO; only the look changes." %>
+                                   footer: "Tap an animal, or press Enter on one, to save it. #{app_cto.name} stays the same CTO; only the look changes." %>
 <% end %>

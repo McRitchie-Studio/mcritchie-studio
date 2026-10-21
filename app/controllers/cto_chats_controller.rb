@@ -66,17 +66,37 @@ class CtoChatsController < ApplicationController
     render_animal_set(@app_cto.palette)
   end
 
+  # The picker saves with fetch (build_chat.js#saveAvatar, Accept JSON): the
+  # answer carries the head's new portrait, drawn here, and the line a screen
+  # reader hears; a refusal or a failure carries `error`, which the picker
+  # shows in its own status line. Without JavaScript the form posts as HTML
+  # and lands back on the chat. The write is logged on failure
+  # (rescue_and_log, docs/agents/modules/backend-discipline.md) and answered,
+  # never a bare 500.
   def avatar
     pick = params[:portrait].to_s
-    unless BuildIntake::Portraits.choosable?(pick)
-      return redirect_to(chat_application_path(@app.slug), alert: "Pick one of the avatars.", status: :see_other)
+    return avatar_refused("Pick one of the avatars.", :unprocessable_entity) unless BuildIntake::Portraits.choosable?(pick)
+
+    begin
+      rescue_and_log(target: @app_cto, parent: @app) do
+        AppCto.transaction do
+          @app_cto.update!(portrait: pick)
+          AppRequest.holding.where(subdomain: @app.slug).update_all(cto_avatar: pick, updated_at: Time.current)
+        end
+      end
+    rescue StandardError
+      return avatar_refused("The new look did not save. Try again in a moment.", :internal_server_error)
     end
 
-    AppCto.transaction do
-      @app_cto.update!(portrait: pick)
-      AppRequest.holding.where(subdomain: @app.slug).update_all(cto_avatar: pick, updated_at: Time.current)
+    message = "Saved. #{@app_cto.name}'s new look: #{helpers.cto_avatar_label(pick)}."
+    respond_to do |format|
+      format.json do
+        render json: { ok: true, avatar: pick, message: message,
+                       portrait_html: render_to_string(partial: "applications/cto_avatar", formats: [ :html ],
+                                                       locals: { cto: @cto, size: "xl" }) }
+      end
+      format.html { redirect_to chat_application_path(@app.slug), notice: message, status: :see_other }
     end
-    redirect_to chat_application_path(@app.slug), notice: "#{@app_cto.name} has a new look.", status: :see_other
   end
 
   # The status card's live half alone (agent_chats/_devops_stages, a turbo-frame),
@@ -197,6 +217,13 @@ class CtoChatsController < ApplicationController
     probe = AgentMessage.new(channel: "web", channel_ref: @app.slug, soul_slug: @cto.soul,
                              thread_key: AgentMessages::WebChat.thread_key(@app.slug, current_user.id))
     answerers.allowed?(person, message: probe)
+  end
+
+  def avatar_refused(error, status)
+    respond_to do |format|
+      format.json { render json: { ok: false, error: error }, status: status }
+      format.html { redirect_to chat_application_path(@app.slug), alert: error, status: :see_other }
+    end
   end
 
   # The app's owner (AppMembership), with a client CTO row to dress.

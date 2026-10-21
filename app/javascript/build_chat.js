@@ -25,8 +25,9 @@
 //     closes it (the arrow keys only move the pick); a tap on one of Ritch's
 //     names fills the name field. The same picker sits in an app's CTO chat
 //     (cto_chats/_avatar_picker, a form marked data-build-portrait-save): there
-//     a tap on an avatar saves it, and the CTO's "Pick a new avatar" button
-//     ([data-cto-avatar-open]) opens it;
+//     a tap, Enter or Space on an avatar, or Done, saves it in place
+//     (saveAvatar), and the CTO's "Pick a new avatar" button and the head's
+//     portrait ([data-cto-avatar-open]) open it;
 //   - the theme card ([data-build-theme]): the Dark / Light toggle swaps every
 //     column's preview (a tap on the side already showing flips to the other,
 //     build_status.js), and the choice survives the card's re-render;
@@ -174,11 +175,77 @@ async function newAnimalSet(button) {
   }
 }
 
-// Enter on a portrait closes the picker instead of submitting the CTO form.
+// The keyboard in the picker. The arrow keys are the radio group's own: they
+// move the pick (and the preview) and keep the picker open. Enter on an
+// avatar closes the /build card's picker without submitting the card (its
+// Wake Up button saves); in the CTO chat's picker Enter, or Space, SAVES the
+// focused avatar (saveAvatar).
 document.addEventListener("keydown", (event) => {
-  if (event.key !== "Enter" || !event.target.closest?.("[data-build-portrait-option]")) return;
+  const option = event.target.closest?.("[data-build-portrait-option]");
+  if (!option || (event.key !== "Enter" && event.key !== " ")) return;
+  const form = option.closest("form[data-build-portrait-save]");
+  if (form) {
+    event.preventDefault();
+    option.checked = true;
+    saveAvatar(form);
+    return;
+  }
+  if (event.key !== "Enter") return;
   event.preventDefault();
-  event.target.closest("[data-build-portrait-dialog]")?.close();
+  option.closest("[data-build-portrait-dialog]")?.close();
+});
+
+// The CTO chat's picker (cto_chats/_avatar_picker) saves in place: a fetch to
+// CtoChatsController#avatar (JSON), whose answer redraws the head's portrait.
+// The picker's status line shows "Saving…" and any refusal (the picker stays
+// open to try again); the page's polite live region tells a screen reader the
+// result, or that nothing changed. data-current-avatar is the saved one.
+function announceAvatar(form, text) {
+  const live = form.querySelector("[data-cto-avatar-announce]");
+  if (live) { live.textContent = ""; requestAnimationFrame(() => { live.textContent = text; }); }
+}
+
+async function saveAvatar(form) {
+  const dialog = form.querySelector("[data-build-portrait-dialog]");
+  const status = form.querySelector("[data-build-portrait-status]");
+  const picked = form.querySelector("input[name='portrait']:checked");
+  if (!picked || picked.value === form.dataset.currentAvatar) {
+    announceAvatar(form, "Nothing changed.");
+    dialog?.close();
+    return;
+  }
+  if (form.dataset.saving === "true") return;
+  form.dataset.saving = "true";
+  if (status) status.textContent = "Saving…";
+  try {
+    const token = document.querySelector("meta[name='csrf-token']")?.content;
+    const response = await fetch(form.action, {
+      method: "POST", body: new FormData(form),
+      headers: { Accept: "application/json", ...(token ? { "X-CSRF-Token": token } : {}) }
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      if (status) status.textContent = data.error || "The new look did not save. Try again in a moment.";
+      return;
+    }
+    form.dataset.currentAvatar = data.avatar;
+    document.querySelectorAll("[data-cto-avatar-head]").forEach((head) => { head.innerHTML = data.portrait_html; });
+    if (status) status.textContent = "";
+    announceAvatar(form, data.message);
+    dialog?.close();
+  } catch (_error) {
+    if (status) status.textContent = "The new look did not save. Check your connection and try again.";
+  } finally {
+    delete form.dataset.saving;
+  }
+}
+
+// Any other submit of the chat's picker form (an implicit one) saves the same way.
+document.addEventListener("submit", (event) => {
+  const form = event.target.closest?.("form[data-build-portrait-save]");
+  if (!form) return;
+  event.preventDefault();
+  saveAvatar(form);
 });
 
 // The theme card's Dark / Light choice, per card (its turn's id). The server
@@ -216,8 +283,14 @@ document.addEventListener("click", (event) => {
   }
   const shuffle = event.target.closest?.("[data-build-portrait-shuffle]");
   if (shuffle) { newAnimalSet(shuffle); return; }
+  // Done closes the picker; in the CTO chat's it saves the pick first (or
+  // says nothing changed).
   const close = event.target.closest?.("[data-build-portrait-close]");
-  if (close) { close.closest("dialog")?.close(); return; }
+  if (close) {
+    const form = close.closest("form[data-build-portrait-save]");
+    if (form) saveAvatar(form); else close.closest("dialog")?.close();
+    return;
+  }
   // A tap on an avatar's picture (the label) closes the picker; in the CTO
   // chat's picker it saves the pick. The arrow keys also fire click, but on the
   // radio itself, so they never land here.
@@ -228,7 +301,8 @@ document.addEventListener("click", (event) => {
     if (form && input) {
       event.preventDefault();
       input.checked = true;
-      form.requestSubmit();
+      saveAvatar(form);
+      return;
     }
     portrait.closest("dialog")?.close();
     return;

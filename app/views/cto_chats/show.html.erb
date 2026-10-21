@@ -12,7 +12,7 @@
     <% if portrait && @avatar_owner %>
       <% portrait = tag.button(portrait, type: "button", class: "rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ring-offset-2 ring-offset-surface",
                                          aria: { haspopup: "dialog", label: "Pick a new avatar for #{@cto.display_name}" },
-                                         data: { cto_avatar_open: true, test: "cto-chat-avatar-head" }) %>
+                                         data: { cto_avatar_open: true, cto_avatar_head: true, test: "cto-chat-avatar-head" }) %>
     <% end %>
     <%= render "agent_chats/header", name: @cto.display_name, agent: @cto.agent, role: role, portrait: portrait %>
   <% end %>
