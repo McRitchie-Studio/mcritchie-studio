@@ -136,6 +136,23 @@ his request in the current chat the gate. The 3-of-5 actions (among them settle,
 cancel, sweep, `register_currency`, `create_season`, `update_signers`,
 `set_governance` and unpause) still need one of his wallets.
 
+**Inside the app, by his ruling of 2026-10-24.** "You need two signatures? We
+should have it so you can do two signatures and I'm only important if you need
+a third." turf-monster holds `3LTL` as `SOLANA_PLATFORM_COSIGNER_KEY`
+(`Solana::PlatformCosigner`, which refuses any key of his). A
+`pending_transactions` settle carries `4S39` and `3LTL` from the moment it is
+built and asks him for one wallet, the third and final signature. The other
+3-of-5 rows, and an `update_signers` on `/admin/authorities`, take `3LTL` only
+when the operator ticks it. `close_contest` (2 of 5) can be completed by the
+two from an admin's click, written to the row and the hub activity feed. The
+pinch rule above is for actions signed outside the app and does not apply to
+those rows. Because the running app now holds both agent keys, anyone who
+controls a mainnet dyno reaches every 2-of-5 action without him; the app
+exposes only `close_contest`, on a click. `3LTL` is also a mask-7 seat on the
+mainnet Squad `4H3fP3ot…`, so the dyno holds one Squad vote too; `7auwTL` must
+stay out of `turf-monster-mainnet`'s config, or one dyno holds both agent votes. Turf-monster `docs/SOLANA.md`, "The
+platform's second signature", carries the flow and the config step.
+
 ## Preconditions
 
 - Mr. McRitchie named the move: the destination, the amount, and the asset. A card
