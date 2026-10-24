@@ -27,9 +27,33 @@
 #   data        — a curl `-d`/`--data…` argument carrying a secret-looking variable.
 #   op prefix   — `NAME=$(op read …) cmd`, the secret in the next command's env
 #                 AND, in shells that echo it, its trace.
+#   heroku run  — `heroku run --env "K=$V"` / `-e K=…` with a secret name or value.
+#   curl user   — `curl -u user:$PASS` / `--user`, basic auth on argv.
+#   shell -c    — `bash|sh|zsh -c "…$SECRET…"`: the outer shell expands a
+#                 DOUBLE-quoted script into the child's argv. Single quotes are
+#                 fine (the child reads its own environment).
+#   ruby argv   — Ruby that builds argv from a secret: `system`/`exec`/`spawn`/
+#                 `Open3.*`/`IO.popen`/`%x`/backticks with `#{secret}` interpolated,
+#                 or a bare secret-named identifier as an argv element. The bare
+#                 words `key`/`keys` are not secret in Ruby here (hash keys).
+#                 app/ and lib/ Ruby is scanned for this form as well.
 # Secret-looking: KEY, SECRET, TOKEN, PASSWORD, CREDENTIAL or PRIVATE in the name
 # (and the rotation SOP's own $NEW, $OLD, $T), unless it names a public half
 # (PUBKEY, PUBLIC_KEY, *_ID, *_URL, *_PATH, *_FILE, *_NAME).
+#
+# KNOWN FALSE NEGATIVES (pinned in FALSE_NEGATIVES below, so a fix moves a line
+# from there to OFFENDERS rather than going unnoticed). One line at a time and
+# by NAME, so the guard misses:
+#   - a secret laundered through a neutral name (`v=$HEROKU_API_KEY; cmd "$v"`,
+#     `x = token; system("curl #{x}")`);
+#   - argv assembled across lines (a Ruby array built then splatted, a heredoc,
+#     a multi-line `system(` call whose secret sits on a later line);
+#   - `env K=$SECRET cmd`, `xargs`, `eval`, and any language other than shell,
+#     Ruby and YAML workflows (Python, JS, Rust);
+#   - a secret whose name says none of KEY/SECRET/TOKEN/PASSWORD/CREDENTIAL/
+#     PRIVATE (`$DSN`, `$WEBHOOK`), and the public-half exemptions (`*_ID`,
+#     `*_URL`) when the value is in fact secret (a URL with a password in it).
+# Review still owns those; the guard keeps the common forms from coming back.
 #
 # NOT SCANNED: docs/agents/archive/, which is frozen verbatim history and says so
 # at the top of every file there. Ruby code that builds an HTTP header in Net::HTTP
@@ -44,6 +68,10 @@ class SecretsOnArgvGuardTest < ActiveSupport::TestCase
   ROOT = Rails.root
   SCANNED = %w[bin lib/tasks docs RUNBOOK.md README.md .github/workflows].freeze
   EXCLUDED_PREFIXES = %w[docs/agents/archive/].freeze
+  # The app's own Ruby is scanned too, for the Ruby argv forms (system, spawn,
+  # Open3, popen, %x, backticks): a server shelling out with a secret in argv is
+  # the same leak as a runbook line.
+  RUBY_SCANNED = %w[app lib].freeze
 
   SECRET_NAME = /KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|\A(?:NEW|OLD|T)\z/i
   PUBLIC_NAME = /PUB_?KEY|PUBLIC_?KEY|KEY_ID\z|_ID\z|_URL\z|_PATH\z|_FILE\z|_NAME\z/i
@@ -84,14 +112,78 @@ class SecretsOnArgvGuardTest < ActiveSupport::TestCase
       found << "secret in request data" if self.secret_ref?(parts.compact.first.to_s)
     end
     found << "op read prefix" if line.match?(/(?:\A|[\s;&|(])[A-Z][A-Z0-9_]*=["']?\$\((?:op read|op item get)[^)]*\)["']?[ \t]+[a-z.\/]/)
+    found << "heroku run env" if heroku_run_env?(line)
+    found << "curl user" if curl_user?(line)
+    found << "shell -c interpolation" if shell_c_interpolation?(line)
+    found << "ruby argv interpolation" if ruby_argv_interpolation?(line)
     found.uniq
+  end
+
+  # `heroku run --env "K=$V"` / `-e K=$V`: the one-off dyno's env is set from argv.
+  def self.heroku_run_env?(line)
+    return false unless line.match?(/\bheroku run\b/)
+
+    line.scan(/(?:--env|\s-e)[ =](?:"([^"]*)"|'([^']*)'|(\S+))/).any? do |dq, sq, bare|
+      value = dq || bare || sq.to_s
+      # Single quotes stop the local shell from expanding the variable, but the
+      # literal text still names it, and heroku sets it from that text: flag a
+      # secret-looking assignment either way.
+      value.scan(/([A-Z][A-Z0-9_]*)=([^;]*)/).any? { |name, val| secret_name?(name) || secret_ref?(val) }
+    end
+  end
+
+  # `curl -u user:$PASS` / `--user`: basic-auth credentials on argv.
+  def self.curl_user?(line)
+    return false unless line.match?(/\bcurl\b/)
+
+    line.scan(/(?:\s-u|--user)[ =]?(?:"([^"]*)"|'([^']*)'|(\S+))/).any? do |dq, _sq, bare|
+      secret_ref?((dq || bare).to_s)
+    end
+  end
+
+  # `bash -c "… $SECRET …"`: the DOUBLE-quoted script is expanded by the outer
+  # shell, so the value lands in the child's argv. A single-quoted script reads
+  # the variable inside the child, from its environment, and is not argv.
+  def self.shell_c_interpolation?(line)
+    line.scan(/\b(?:bash|sh|zsh)\s+(?:-[a-z]*\s+)*-[a-z]*c\s+"((?:[^"\\]|\\.)*)"/).flatten.any? { |script| secret_ref?(script) }
+  end
+
+  # A Ruby call that builds a child's argv. The backtick form counts only where a
+  # backtick OPENS an expression (after `=`, `(`, `,`, `return` or at the start of
+  # a statement), so prose in a string that quotes `code` in backticks is not a
+  # shell-out.
+  RUBY_ARGV_CALL = /\b(?:system|exec|spawn|Process\.spawn|IO\.popen|Open3\.\w+)\s*\(|%x[({\[|]|(?:\A\s*|[=(,]\s*|\breturn\s+)`/
+  RUBY_ARRAY_CALL = /\A(?:system|exec|spawn|Process\.spawn|IO\.popen|Open3\.\w+)\s*\(/
+  # A Ruby identifier names a secret on the same rule as a shell variable, except
+  # the bare words `key`/`keys` (a hash key, a gate key), which mean nothing secret
+  # in this tree's Ruby.
+  def self.ruby_secret_name?(name)
+    !%w[key keys].include?(name) && secret_name?(name)
+  end
+
+  # Ruby that BUILDS argv from a secret: `system("curl -H '…#{token}'")`,
+  # `%x(… #{ENV["HEROKU_API_KEY"]})`, backticks, Open3/spawn/popen, and a bare
+  # secret-named identifier passed as an argv element (`system("op", "x", password)`).
+  def self.ruby_argv_interpolation?(line)
+    call = line =~ RUBY_ARGV_CALL
+    return false unless call
+
+    tail = line[call..].lstrip.sub(/\A[=(,]\s*|\Areturn\s+/, "")
+    interpolated = tail.scan(/\#\{([^}]*)\}/).flatten.any? do |expr|
+      expr.scan(/[A-Za-z_][A-Za-z0-9_]*/).any? { |name| ruby_secret_name?(name) }
+    end
+    return true if interpolated
+    return false unless tail.match?(RUBY_ARRAY_CALL)
+
+    tail.scan(/,\s*@?([a-z_][a-z0-9_]*)\s*(?=[,)])/).flatten.any? { |name| ruby_secret_name?(name) }
   end
 
   def scanned_files
     Dir.chdir(ROOT) do
-      `git ls-files -- #{SCANNED.join(" ")}`.split("\n")
-                                             .reject { |f| EXCLUDED_PREFIXES.any? { |p| f.start_with?(p) } }
-                                             .select { |f| File.file?(f) }
+      ruby = `git ls-files -- #{RUBY_SCANNED.join(" ")}`.split("\n").select { |f| f.end_with?(".rb", ".rake") }
+      (`git ls-files -- #{SCANNED.join(" ")}`.split("\n") + ruby).uniq
+                                                             .reject { |f| EXCLUDED_PREFIXES.any? { |p| f.start_with?(p) } }
+                                                             .select { |f| File.file?(f) }
     end
   end
 
@@ -156,7 +248,32 @@ class SecretsOnArgvGuardTest < ActiveSupport::TestCase
     "curl -H \"Authorization: token ${{ secrets.GITHUB_TOKEN }}\" https://api.github.com",
     "HEROKU_API_KEY=$(op read 'op://v/heroku/credential') heroku apps",
     'curl -H "X-Edge-Secret: $EDGE_SECRET" https://origin.example',
-    'curl -X POST "$BASE/api/v1/auth" -d "{\\"secret\\": \\"$SECRET\\"}"'
+    'curl -X POST "$BASE/api/v1/auth" -d "{\\"secret\\": \\"$SECRET\\"}"',
+    # heroku run --env (N1)
+    'heroku run --env "ROTATION_TOKEN=$NEW" --app turf-monster-qa -- bin/rails runner x',
+    "heroku run -e API_SECRET=${API_SECRET} -a x -- true",
+    'heroku run --env "FOO=$(op read op://v/i/f)" -a x -- true',
+    # curl -u (N1)
+    'curl -u "admin:$ADMIN_PASSWORD" https://example.test',
+    "curl -sS --user api:$MAILGUN_API_KEY https://api.mailgun.net/v3",
+    # bash -c interpolation (N1)
+    'bash -c "curl -H \'Authorization: Bearer $CF_TOKEN\' https://x"',
+    'sh -lc "heroku config:get X --app $APP | grep $SECRET"',
+    # Ruby built argv (N1)
+    'system("curl -sS -H \'Authorization: Bearer #{token}\' #{url}")',
+    'out = %x(heroku apps --json #{ENV["HEROKU_API_KEY"]})',
+    'Open3.capture3("op", "item", "edit", item, "password=#{new_password}")',
+    'system("gh", "auth", "login", "--with-token", api_token)',
+    'listing = `curl -u user:#{password} https://x`'
+  ].freeze
+
+  # Each a real blind spot (see KNOWN FALSE NEGATIVES above). Pinned QUIET so that
+  # fixing one is a deliberate move into OFFENDERS, never a silent change.
+  FALSE_NEGATIVES = [
+    'v="$HEROKU_API_KEY"; curl -d "$v" https://x',
+    'x = token; system("curl #{x}")',
+    "env HEROKU_API_KEY=$NEW heroku apps",
+    'curl -H "X-Hook: $WEBHOOK" https://x'
   ].freeze
 
   QUIET = [
@@ -173,7 +290,19 @@ class SecretsOnArgvGuardTest < ActiveSupport::TestCase
     'request["Authorization"] = "Bearer #{token}"',
     "printf '{\"secret\": \"%s\"}' \"$SECRET\" | curl -sS -X POST \"$BASE/api/v1/auth\" --data-binary @-",
     "curl -H @<(printf 'X-Edge-Secret: %s\\n' \"$EDGE_SECRET\") https://origin.example",
-    'curl -d "$3" -H "Content-Type: application/json" "$BASE$2"'
+    'curl -d "$3" -H "Content-Type: application/json" "$BASE$2"',
+    # the argv-free rewrites of the N1 forms
+    "printf 'ROTATION_REHEARSAL=1\\n' | heroku run --no-tty --app turf-monster-qa -- bin/rails runner x",
+    "heroku run --env RAILS_ENV=production -a x -- true",
+    "curl --netrc-file \"$NETRC\" https://example.test",
+    "curl -u admin https://example.test",
+    "bash -c 'curl -H @<(printf \"Authorization: Bearer %s\\n\" \"$CF_TOKEN\") https://x'",
+    'bash -c "cd $ROOT && bin/rails test"',
+    'system("bin/rails", "test", chdir: root)',
+    'Open3.capture3({ "HEROKU_API_KEY" => token }, "heroku", "apps")',
+    'Open3.capture3("op", "item", "edit", item, stdin_data: JSON.generate(fields))',
+    'system(GATE_BIN, "open", "task", slug, key, out: File::NULL)',
+    'say("run `bin/gh-auth-refresh` and this shell\'s GH_TOKEN is #{identity} sha256:#{digest(token)}")'
   ].freeze
 
   test "control: every pattern fires on a known offender and stays quiet on its argv-free rewrite" do
@@ -182,6 +311,14 @@ class SecretsOnArgvGuardTest < ActiveSupport::TestCase
     end
     QUIET.each do |line|
       assert_empty self.class.offences(line), "the guard flags an argv-free line: #{line} (#{self.class.offences(line).inspect})"
+    end
+  end
+
+  test "control: the known false negatives are still quiet, so a fix to one is a deliberate move" do
+    FALSE_NEGATIVES.each do |line|
+      assert_empty self.class.offences(line),
+                   "the guard now catches a listed false negative: move it to OFFENDERS and strike it from " \
+                   "KNOWN FALSE NEGATIVES: #{line}"
     end
   end
 

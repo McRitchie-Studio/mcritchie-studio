@@ -87,7 +87,9 @@ class DeskServerEnvTest < Minitest::Test
     allowed = ChildEnv::SYSTEM_ALLOW + ChildEnv::DESK_SERVER_ALLOW + DESK_VALUES.keys + ["ENABLE_FIAT_RAILS"]
     extra = seen.keys - allowed - %w[PWD SHLVL _ OLDPWD]
     # ENABLE_* boot flags pass by prefix, and CI's runner exports its own (ENABLE_RUNNER_TRACING).
-    extra.reject! { |name| ChildEnv::DESK_SERVER_ALLOW_PREFIXES.any? { |prefix| name.start_with?(prefix) } }
+    # The locale family passes by prefix too (ChildEnv::LOCALE_PREFIXES).
+    prefixes = ChildEnv::DESK_SERVER_ALLOW_PREFIXES + ChildEnv::LOCALE_PREFIXES
+    extra.reject! { |name| prefixes.any? { |prefix| name.start_with?(prefix) } }
     assert_empty extra, "names outside the allow-list reached the desk server: #{extra.inspect}"
   end
 

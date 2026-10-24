@@ -38,6 +38,21 @@ class VideoLookCardTest < ActionView::TestCase
     assert_select "[data-test='look-cost-hint']", /Costs money: one sheet per press.*6,724–7,629 tokens per sheet/m
   end
 
+  # [component] admin-url-columns-use-http-href: the sheet's stored image_url is
+  # linked only as http(s); a javascript: value keeps the image, unlinked.
+  test "a sheet links its https image and withholds a javascript: one" do
+    sheet = Artifact.create!(kind: "character_sheet", image_url: "https://example.com/sheet.png",
+                             generator: @row.key, billable_units: 7_629)
+    render_card(sheet:)
+    assert_select "a[href='https://example.com/sheet.png'] img[data-test='look-sheet-image']"
+
+    sheet.update_columns(image_url: "javascript:alert(1)")
+    @rendered = +""
+    render_card(sheet: sheet.reload)
+    assert_select "a[href^='javascript']", 0
+    assert_select "span[data-test='link-withheld'][title] img[data-test='look-sheet-image']"
+  end
+
   test "a built sheet shows its image and the button offers a rebuild" do
     sheet = Artifact.create!(kind: "character_sheet", image_url: "https://example.com/sheet.png",
                              generator: @row.key, billable_units: 7_629)

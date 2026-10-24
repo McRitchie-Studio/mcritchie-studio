@@ -205,39 +205,14 @@ class AppearanceReferencePhoto < ApplicationRecord
   # means looking at where it came from, not only at the crop.
   #
   # READS THE LINKABLE FORM, not the raw column, so the caption's host and the
-  # caption's link can never disagree about which URL they describe.
-  def origin_url = page_link_url.presence || image_url
-
-  # ONLY THE SCHEMES A BROWSER MAY BE HANDED. nil for anything else.
-  LINKABLE_SCHEMES = %w[http https].freeze
-
-  # `page_url` AS SOMETHING SAFE TO PUT IN AN href, or nil.
-  #
-  # The column holds whatever a third-party search engine put in its answer, stored
-  # unvalidated ON PURPOSE: the row is evidence of what the search offered, and a
-  # refused value is part of that evidence. `image_url` is separately cleared by
-  # Appearances::FetchableUrl before anything is sent anywhere; `page_url` is never
-  # sent anywhere, so it was never cleared — and that is exactly why it must be
-  # judged here, at the one place it reaches a browser.
-  #
-  # TWO REAL SHAPES THIS REFUSES, and neither is hypothetical:
-  #
-  #   javascript://host/%0aalert(1)  parses with a host, so a host-presence check
-  #                                  alone passes it straight into an href.
-  #   espn.com                       a BARE DOMAIN, which the Serper parser emits
-  #                                  when a row carries `source` and no `link`
-  #                                  (see that parser's own note). As an href it is
-  #                                  RELATIVE, so today it navigates the operator
-  #                                  to /people/:person/models/espn.com on our own
-  #                                  site rather than to the page they clicked for.
-  def page_link_url
-    return nil if page_url.blank?
-    return nil unless LINKABLE_SCHEMES.include?(URI.parse(page_url).scheme&.downcase)
-
-    page_url
-  rescue URI::InvalidURIError
-    nil
-  end
+  # caption's link can never disagree about which URL they describe. The column
+  # holds whatever a third-party search engine put in its answer, stored
+  # unvalidated ON PURPOSE (a refused value is evidence of what the search
+  # offered), so it is judged where it reaches a browser, by the ONE rule every
+  # stored url obeys: ApplicationHelper.http_href. That rule refuses the two real
+  # shapes seen here — `javascript://host/%0aalert(1)`, which parses with a host,
+  # and a bare `espn.com` from the Serper parser, which as an href is relative.
+  def origin_url = ApplicationHelper.http_href(page_url) || image_url
 
   def from_search? = source == SOURCE_SEARCH
 

@@ -65,6 +65,20 @@ class Admin::AgentMessagesControllerTest < ActionDispatch::IntegrationTest
     refute_includes response.body, "<script>alert(1)</script>", "untrusted content is escaped"
   end
 
+  # [component] admin-url-columns-use-http-href: a timeline event's url is stored
+  # event detail; it links only as http(s).
+  test "a timeline event links an https url and withholds a javascript: one" do
+    message = agent_message!(soul: "avi", content: "release?")
+    message.record!("reply_posted", actor: "discord-bot", detail: { "url" => "https://discord.com/channels/1/2/3" })
+    message.record!("reply_posted", actor: "discord-bot", detail: { "url" => "javascript:alert(1)" })
+
+    log_in_as(admin)
+    get admin_agent_message_path(message)
+    assert_select "#am-timeline li[data-kind=reply_posted] a[href='https://discord.com/channels/1/2/3']", "reply on Discord"
+    assert_select "a[href^='javascript']", 0
+    assert_select "#am-timeline li[data-kind=reply_posted] span[data-test='link-withheld'][title]", 1
+  end
+
   test "mention tokens read as the soul they route to; a completed message shows its reply state" do
     routes = agent_routes
     message = agent_message!(soul: "avi", content: "<@&#{AVI_ROLE}> and <@&123> and <@#{SHARED_BOT}> hi")

@@ -64,6 +64,17 @@ If `op` rejects the one-field template, start from `op item template get "API Cr
 (it holds no secret), set its `credential` field the same way, and pipe that. Never fall back
 to `credential[concealed]=…` on the command line.
 
+**The pipe is honoured; NO pipe is the trap.** Rehearsed with `op item create --dry-run`
+on op 2.34.0 (2026-10-24, fake values): this exact command files the title, the category
+and the concealed `credential` from the piped template, and an empty or failed pipe is
+refused (`invalid JSON in piped input`), never filed. What makes an empty
+"Untitled SecureNote" is `op` getting no pipe at all (stdin a terminal or `/dev/null`):
+it then builds the item from the flags alone. So a template piped with `-` and a
+`--template <file>` (what [`secrets-rotation.md`](../../../system/secrets-rotation.md)
+step 2 uses) are equally right, a template that names its own category must not also get
+`--category` (op refuses the pair), and section 6's read-back is what proves the secret
+landed. Never `--dry-run` with the real secret: its preview prints the concealed value.
+
 - **`read -rs VALUE` is one way in, not the only one.** When the agent
   generated the credential itself, assign `VALUE` from the command that
   produced it and keep the refusal below it. When Alex holds the

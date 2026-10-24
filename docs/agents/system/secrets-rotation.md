@@ -35,11 +35,11 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 
 **Procedure** (run 2026-10-24; the `credential-rotation` SOP governs):
 1. Admin lane: `source ~/.zprofile.admin`. Only `HEROKU_STUDIO_ADMIN_API_KEY` may create or revoke authorizations; the agent key is refused.
-2. Mint with the admin key through the Platform API (`POST /oauth/authorizations`, description `heroku.studio.agents`, scope `identity,read-protected,write-protected`), with the key in a header, never on argv. Confirm `GET /account` under the new key answers `alex@mcritchie.studio`.
+2. Mint with the admin key through the Platform API (`POST /oauth/authorizations`, description `heroku.studio.agents`, scope `identity,read-protected,write-protected`), with the key in a header, never on argv. The CLI does the same: `J=$(HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" heroku authorizations:create -s identity,read-protected,write-protected -d heroku.studio.agents --json)` returns the id and the token in one object; take `.id` and `.access_token.token` from `$J` with `jq -r` inside the shell and print neither (`-S` prints the bare token and no id). Never run `heroku authorizations --json` bare: the list carries every authorization on the account with its token, the admin and CI lanes included, so in an agent session one run burns all of them; pipe it to `jq` for `.id` and `.description` only, or use the plain `heroku authorizations`, which prints description, id and scope and no token. Confirm `GET /account` under the new key answers `alex@mcritchie.studio`.
 3. File in 1Password FIRST: `credential` and `authorization-id`, the item JSON piped to `op item edit` on stdin (the `credential-rotation` 4.2 recipe), read back by digest. Run each `op` call with `OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"`: `~/.zprofile.admin` exports only `OP_ADMIN_SERVICE_ACCOUNT_TOKEN`, and `op` reads `OP_SERVICE_ACCOUNT_TOKEN`, so without the override the write runs on the agents token, which cannot write the item.
 4. Rewrite both profile lines in place (`~/.zprofile` `HEROKU_API_KEY`, `~/.zprofile.admin` `HEROKU_STUDIO_AGENTS_API_KEY`), mode 600, and compare digests.
 5. Prove from a fresh login shell with an empty environment, which loads `~/.zprofile` only when it has `HOME` and needs `LANG` so the Ruby-based CLIs read UTF-8: `env -i HOME="$HOME" LANG=en_US.UTF-8 /bin/zsh -l -c 'heroku apps --all --json | jq length'` prints 20, and `heroku run --no-tty --exit-code -a mcritchie-studio -- true` from the same kind of shell exits 0 while a `false` control exits 1.
-6. Revoke the old authorization with the admin key (`DELETE /oauth/authorizations/<old id>`); the old key must answer 401.
+6. Revoke the old authorization with the admin key (`DELETE /oauth/authorizations/<old id>`, or `heroku authorizations:revoke <old id>` under the admin key); the old key must answer 401, and the id must be absent from `heroku authorizations`.
 7. Every agent shell started before the rotation still holds the old key until it re-sources `~/.zprofile`; a 401 from one of them is expected.
 
 **Verify:** the vault and both profile digests match; `heroku auth:whoami` returns `alex@mcritchie.studio`; `heroku apps --all` lists 20 apps.
@@ -61,7 +61,7 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 6. The new master key is in `config/master.key`. Never print it.
 7. Set it on the app from the file, on stdin: `/Users/alex/projects/mcritchie-studio/bin/heroku-secret-set mcritchie-studio RAILS_MASTER_KEY < config/master.key` (or `turf-monster-mainnet`).
 8. Update the matching 1Password item (recommended naming: `mcritchie.studio/RAILS_MASTER_KEY`, `turf-monster/RAILS_MASTER_KEY`).
-9. Update local `.env` from the file, never typing the key: `{ grep -v '^RAILS_MASTER_KEY=' .env; printf 'RAILS_MASTER_KEY=%s\n' "$(cat config/master.key)"; } > .env.new && mv .env.new .env && chmod 600 .env`.
+9. Update local `.env` from the file, never typing the key. The subshell's `umask 077` creates `.env.new` owner-only, so the key is never world-readable, not even for the instant before a `chmod`: `( umask 077; { grep -v '^RAILS_MASTER_KEY=' .env; printf 'RAILS_MASTER_KEY=%s\n' "$(cat config/master.key)"; } > .env.new ) && mv .env.new .env && chmod 600 .env`.
 10. Commit `config/credentials.yml.enc` to the repo. Push.
 
 **Verify:** App boots locally (`bin/rails server`). `heroku logs --tail --app <app>` after a deploy shows no `:secret_key_base` errors. Direct login still works in each app.
@@ -227,9 +227,17 @@ shell history or the process list.
    authority or a Squads seat, and overwriting it strands them (step 8). Ruby
    converts the keypair to the 88-character base58 secret the env var holds and
    writes it into a `0600` template file, and `op item create --template` reads
-   that file. Do not pipe a template into `op item create -`: a piped template
-   can be ignored, and `op` then makes an empty "Untitled SecureNote". Never
-   fall back to a `field[concealed]=…` argument.
+   that file. A template piped into `op item create -` works too, and is what
+   [`credential-filing.md`](../agents/steffon/sops/credential-filing.md)
+   uses; the file is used here only because the Ruby step already writes one.
+   Both were rehearsed with `op item create --dry-run` on op 2.34.0
+   (2026-10-24, fake values): a piped template's title, category and concealed
+   field all land, and an empty or failed pipe is refused (`invalid JSON in
+   piped input`). The empty "Untitled SecureNote" this page once warned about
+   comes from `op` getting NO pipe at all (stdin a terminal or `/dev/null`), so
+   it builds the item from flags alone. Never `--dry-run` with the real secret:
+   its preview prints the concealed value. Step 3's read-back is what proves
+   the secret landed. Never fall back to a `field[concealed]=…` argument.
 
    ```bash
    t="$(mktemp -t new-admin-item)"                  # 0600 under the umask above
@@ -347,7 +355,9 @@ local env files on many desks. The rotation, the reference for the next one:
 2. **Mint and file.** `solana-keygen new --no-bip39-passphrase --silent --outfile <scratch>`
    with `umask 077`; base58 the 64 bytes in a process; write the item with
    `op item create --vault studio-agents-admin --template <600-mode file>`
-   (a piped template is ignored and makes an empty "Untitled SecureNote");
+   (on 2026-10-09 an empty "Untitled SecureNote" appeared instead; the 2026-10-24
+   dry runs trace that to `op` receiving no pipe at all, not to a piped template
+   being ignored: see the Solana admin key step 2);
    read it back and check it derives; delete both files. Print the public key only.
 3. **One config transaction per cluster**, built by
    `turf-vault/scripts/ceremony/rotate-admin-seat.js`:
@@ -606,6 +616,7 @@ public, and the log records WHAT and WHEN, never what the value is.
 | 2026-10-14 | `solana.turf.server` (`studio-agents-admin`) replaces `agent.xan.solana`; `solana.turf.governance.v2` (`studio-agents-admin`) replaces `solana.turf.governance`; `agent.mason.solana`, `agent.solana` and `solana.turf.deploy.mainnet-v026` retired | `4bKN…` was printed into a transcript on 2026-10-12; the mainnet signer set still held the agent keys `8K81…` and `CytJ…` | Mainnet Squad config tx #10 (`removeMember 4bKN…` + `addMember 3LTL…`, mask 7, executed 2026-10-14 20:49 MDT); mainnet `update_signers` to five slots; `turf-monster-mainnet` `SOLANA_ADMIN_KEY` and `SOLANA_MULTISIG_SIGNERS`; `SOLANA_DURABLE_NONCE_PUBKEY` unset | Read on chain 2026-10-14 by this row's task: `check-signer-slots.js --cluster mainnet` reads `3LTL…`, `7ZDJ…`, `4S39…`, `9gAC…`, `3Qj4…`; `squad-inventory.js --cluster=mainnet` reads 3 of 5 with `3LTL…` seated and `4bKN…` gone; the five items read as ARCHIVED in 1Password | Yes: `8K81…`, `CytJ…`, `4bKN…`, `HwqC…` and `F6f8…` swept to 0 SOL and their items archived; the durable nonce `2bSn…` closed. `Bxde…` (`solana.turf.settle-cosigner.devnet`) is NOT retired | https://mcritchie.studio/tasks/mainnet-rotation-follow-ups-sweep |
 | 2026-10-24 | `solana.mack.agent` (`studio-agents`) re-filed as a new item for `8UwJhRiN…`; the old item archived as `solana.mack.agent (RETIRED 2026-10-24 - foUu leaked)` | Mack's devnet secret (`foUu…`) sat as a literal in the PUBLIC turf-monster repo (`e2e/devnet-smoke.spec.js`, since 2026-04-12); git history keeps it, nothing rewrites it | Devnet `update_signers` in two steps (ADD `2mVU8cji…`, EVICT `2KGbPeFA…`), signed by agent keys only; `turf-monster-qa` `SOLANA_MULTISIG_SIGNERS` (v302); no GitHub secret: the `MACK_DEVNET_KEY` it would have needed is not owed, because task `turf-devnet-config-truth` deletes the Devnet Nightly workflow that read it | `check-signer-slots.js --cluster devnet` reads `2eGs…`, `8UwJ…`, `BVQH…`; the filed secret derives to `8UwJ…`; a guard test in turf-monster now fails CI on any committed Solana secret key | Yes: `foUu…` evicted, swept to 0 SOL, its 2,995 devnet USDC moved and the token account closed, item archived. Production and QA user rows holding it are cleared by `users:clear_rotated_out_wallet` (the task's post-deploy hook) | https://mcritchie.studio/tasks/rotate-leaked-devnet-mack-key |
 | 2026-10-24 | `heroku.studio.agents` (`studio-agents`); new authorization `c2454c62…` replaces `dec169b0…`, same description and scope | A builder subagent ran `pgrep -fl` on desk puma and sidekiq, and macOS shows a process's environment after a renamed process title, so `HEROKU_API_KEY` reached its transcript; the same key also sits in earlier transcript env dumps (since 2026-09-22) | 1Password `credential`, `authorization-id`, `used-by` and notes; `~/.zprofile` `HEROKU_API_KEY`; `~/.zprofile.admin` `HEROKU_STUDIO_AGENTS_API_KEY`. No `.env`, launchd plist, Heroku config var or Actions secret holds this key, and the item has no `legacy-personal-api-key` field, so `bin/ecosystem-build` resolves to the new key. Every agent shell started before about 16:20 UTC holds the revoked key until it re-sources `~/.zprofile`, so a 401 from one is expected | Digests of vault and both profiles match the minted key; from a fresh `env -i` login shell, `heroku apps --all` lists 20 apps and `heroku run --exit-code -a mcritchie-studio -- true` exits 0 (a `false` control exits 1) | Yes, 2026-10-24 about 16:20 UTC, with the admin key; the old key answers 401 and `dec169b0…` answers 404 | [/tasks/heroku-agents-key-rotation-2026-10-24](https://mcritchie.studio/tasks/heroku-agents-key-rotation-2026-10-24) |
+| 2026-10-24 | `heroku.studio.agents` (`studio-agents`); new authorization `42129f43…` replaces `c2454c62…` (the key minted that morning), same description and scope | While diagnosing a 401 after the morning rotation, a session grepped `~/.zprofile` for the key line and the whole line, value included, landed in a tool result, so the morning's key reached a transcript within four hours of its minting | 1Password `credential` and `authorization-id`; `~/.zprofile` `HEROKU_API_KEY`; `~/.zprofile.admin` `HEROKU_STUDIO_AGENTS_API_KEY` (found by digest to hold the burned value, rewritten in place). Still no `.env`, launchd plist, Heroku config var or Actions secret holds it. The old authorization was identified by digest against the account's list before anything was minted | Digests of the vault field and both profile lines equal the minted key and none is empty; under the new key alone `heroku auth:whoami` answers `alex@mcritchie.studio`, `heroku apps --all` lists 20 apps and `heroku config --json -a mcritchie-industries` reads 11 keys; after the revoke the account lists four authorizations and `c2454c62…` is not among them | Yes, 2026-10-24 19:51 UTC, with the admin key (`heroku authorizations:revoke`); the CLI path (`heroku authorizations:create -S` and `authorizations:revoke` under `HEROKU_API_KEY=$HEROKU_STUDIO_ADMIN_API_KEY`) works as well as the Platform API calls in the recipe | [/tasks/heroku-agents-key-rotation-receipt](https://mcritchie.studio/tasks/heroku-agents-key-rotation-receipt) |
 
 ---
 

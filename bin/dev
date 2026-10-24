@@ -13,4 +13,9 @@ export PORT="${PORT:-3000}"
 export RUBY_DEBUG_OPEN="true"
 export RUBY_DEBUG_LAZY="true"
 
-exec foreman start -f Procfile.dev "$@"
+# Foreman and every process it starts run under the desk-server allow-list
+# (bin/lib/child_env.rb): Puma renames its process title, and on macOS a renamed
+# process's environment is one `ps` away from a transcript, so the agent's
+# HEROKU_API_KEY, OP_SERVICE_ACCOUNT_TOKEN and the rest never reach it. The app
+# reads its own secrets from .env (dotenv). secrets-scrub-follow-ups.
+exec ruby "$(dirname "$0")/lib/child_env.rb" desk-server -- foreman start -f Procfile.dev "$@"

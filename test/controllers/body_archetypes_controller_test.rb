@@ -15,6 +15,22 @@ class BodyArchetypesControllerTest < ActionDispatch::IntegrationTest
     @look = Appearance.create!(person_slug: @person.slug, descriptor: "Comets home")
   end
 
+  # [component] admin-url-columns-use-http-href: an archetype's stored image_url is
+  # linked only as http(s). The refused value is a data: image, because image_tag
+  # itself raises on a javascript: src (a separate, pre-existing 500).
+  test "the page links an https archetype image and withholds a non-http one" do
+    log_in_as(@admin)
+    archetype = body_archetypes(:nfl_qb_skill)
+    archetype.update_columns(image_url: "https://assets.example.test/qb.png")
+    get body_archetypes_path
+    assert_select "a[href='https://assets.example.test/qb.png'] img"
+
+    archetype.update_columns(image_url: "data:image/svg+xml;base64,PHN2Zy8+")
+    get body_archetypes_path
+    assert_select "a[href^='data:']", 0
+    assert_select "span[data-test='link-withheld'][title] img", 1
+  end
+
   test "the page lists the three archetypes, imageless, each with a generate button" do
     log_in_as(@admin)
     get body_archetypes_path

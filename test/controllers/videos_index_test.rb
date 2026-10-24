@@ -17,6 +17,25 @@ class VideosIndexTest < ActionDispatch::IntegrationTest
     [tiled, lettered]
   end
 
+  # [component] admin-url-columns-use-http-href: the index row and the video page
+  # link the stored source_url only as http(s).
+  test "the index and the video page link an https source and withhold a javascript: one" do
+    log_in_as(users(:alex))
+    video = LetteredVideo.seed!
+    video.update_columns(source_url: "https://www.instagram.com/reel/abc/")
+    [ videos_path, video_path(video) ].each do |path|
+      get path
+      assert_select "a[href='https://www.instagram.com/reel/abc/']", { text: "Watch source" }, path
+    end
+
+    video.update_columns(source_url: "javascript:alert(1)")
+    [ videos_path, video_path(video) ].each do |path|
+      get path
+      assert_select "a[href^='javascript']", { count: 0 }, path
+      assert_select "span[data-test='link-withheld'][title]", { minimum: 1 }, path
+    end
+  end
+
   def page_queries
     count = 0
     counter = ->(_name, _start, _finish, _id, payload) do

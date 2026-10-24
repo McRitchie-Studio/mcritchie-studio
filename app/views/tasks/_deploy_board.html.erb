@@ -59,7 +59,7 @@
 <%# kanbanBoard stays inline. Alpine (deferred) starts before the importmap modules
     run, so a factory defined in app/javascript would not exist yet when x-data first
     evaluates. The live effects it hands cards to are modules (board/live_fx_dom). %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
 function kanbanBoard(live, liveFx) {
   return {
     live: !!live, // animate Turbo-Streamed card updates (turbo_stream_from "deployments")

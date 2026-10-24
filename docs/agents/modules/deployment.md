@@ -258,6 +258,47 @@ through Cloudflare, so a DNS-only hostname would answer 403 to all its visitors.
 Its ACM-issued certificate still serves until the date above; after that date
 the rollback is gone, so the cutover has to hold.
 
+### Content-Security-Policy (report-only)
+
+The hub sends **`Content-Security-Policy-Report-Only`** on every response.
+Nothing is blocked yet: browsers report what the policy would have refused to
+`POST /csp_reports` (its `report-uri`),
+which keeps one row per distinct violation (`CspReport`: page path, directive,
+blocked URI, source file and line, user agent, count, first and last seen).
+Query strings are dropped before storage. Rows not seen for 30 days are
+deleted nightly (`CspReportRetentionJob`, `config/recurring.yml`). The
+policy, and why each directive allows what it does, is in
+`config/initializers/content_security_policy.rb`.
+
+- **Read the reports** at `/admin/csp_reports` (Ops → CSP reports; 1, 7 or 30
+  days, top offenders first), or `bin/rails csp:reports` (`DAYS=`, `LIMIT=`;
+  on production, `heroku run bin/rails csp:reports -a mcritchie-studio`).
+- **The nonce** is minted per request and rides `script-src` only. Every
+  inline `<script>` renders `nonce="<%= content_security_policy_nonce %>"`;
+  `test/integration/content_security_policy_test.rb` scans `/`, `/build` and
+  `/tasks` for one that does not.
+- **Turbo visits.** The policy and its nonce belong to the full load. A Turbo
+  visit re-runs the new body's inline scripts under the old document's
+  policy, so a page-level inline script reports on a Turbo visit. The layout's
+  every-page scripts are also allowed by a pinned hash
+  (`HubCsp::PINNED_SCRIPT_HASHES`), so they stay quiet. Never carry a nonce
+  across documents. A page whose inline script must run under an enforced
+  policy moves the script into a module or forces a full load
+  (`turbo-visit-control: reload`).
+- **Flip to enforce** when a 7-day window of reports shows **zero genuine
+  violations**, by setting `config.content_security_policy_report_only` to
+  false. A genuine violation is anything the enforced policy would break.
+  Browser-extension noise (`chrome-extension:`, `moz-extension:` sources) does not
+  count. What stands between the hub and the flip today: Alpine needs
+  `'unsafe-eval'`; styles are `'unsafe-inline'` (387 `style=` attributes, and the
+  engine's `<style>` blocks carry no nonce); the 20 inline `on*=` handlers in hub
+  views; page-level inline scripts that a Turbo visit re-runs, and that a
+  snapshot-cache restore (Back, Forward, preview) re-runs with the browser-blanked
+  nonce, so they report even on the page that did the full load; and the
+  `csp-nonce` meta tag (`csp_meta_tag`, the engine head), whose value Turbo gives
+  to any script a frame or stream brings in. Strip scripts from incoming frames
+  and streams, or drop the meta, before enforcing.
+
 ## Turf Monster
 
 Production app: `turf-monster-mainnet`

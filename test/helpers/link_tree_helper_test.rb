@@ -324,6 +324,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def error_logs_path = "/error_logs"
   def admin_agent_messages_path = "/admin/agent_messages"
   def admin_report_destinations_path = "/admin/report_destinations"
+  def admin_csp_reports_path = "/admin/csp_reports"
   # [component] The owner section (AppOwnership.sidebar_links): first in the
   # sidebar, one app and one CTO by name, two of each as Applications and Agents,
   # absent for a signed-in user who owns nothing and for a visitor.

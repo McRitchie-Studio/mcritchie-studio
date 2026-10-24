@@ -44,6 +44,10 @@ Rails.application.routes.draw do
   # Both routes are named. An unnamed `post "contact"` is auto-named `contact`
   # and takes `contact_path` away from the mailing list's /contacts/:id.
   post "contact", to: "contact_submissions#create", as: :contact_form_submit
+  # The browser's Content-Security-Policy violation reports (report-uri and
+  # report-to in config/initializers/content_security_policy.rb). No session, no
+  # CSRF token: CspReportsController is outside the admin wall by construction.
+  post "csp_reports", to: "csp_reports#create", as: :csp_reports
   # Credential RECORDS by client workspace, with each workspace's 1Password
   # vault icon. Admin-only; no secret is ever stored or shown.
   get "credentials", to: "credential_vaults#index", as: :credentials
@@ -386,6 +390,8 @@ Rails.application.routes.draw do
     resources :agent_person_notes, only: [:destroy]
     # Which Discord channel each registered report posts to
     # (docs/agents/system/report-destinations.md).
+    # The hub's CSP violation reports, top offenders first (CspReport).
+    get "csp_reports", to: "csp_reports#index", as: :csp_reports
     get "report_destinations", to: "report_destinations#index", as: :report_destinations
     post "report_destinations/refresh", to: "report_destinations#refresh", as: :refresh_report_destinations
     patch "report_destinations/:report_key", to: "report_destinations#update", as: :report_destination

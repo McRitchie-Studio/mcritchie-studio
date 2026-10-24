@@ -60,10 +60,10 @@
         rel and referrerpolicy are not decoration: these are third-party URLs a
         search engine handed us, and neither the tab nor the referrer needs to carry
         anything of ours to them. %>
-    <a href="<%= photo.image_url %>" target="_blank" rel="noopener noreferrer nofollow"
-       referrerpolicy="no-referrer"
-       class="block aspect-square bg-inset overflow-hidden
-              <%= photo.chosen? ? "" : "opacity-60 group-hover:opacity-100 transition-opacity" %>">
+    <%= safe_link_to photo.image_url, target: "_blank", rel: "noopener noreferrer nofollow",
+          referrerpolicy: "no-referrer",
+          class: class_names("block aspect-square bg-inset overflow-hidden",
+                             "opacity-60 group-hover:opacity-100 transition-opacity" => !photo.chosen?) do %>
       <%# A FAILED IMAGE SHOWS ITS ALT TEXT, which is why alt carries the title or the
           host rather than being empty: plenty of search hits 404 or refuse hotlinking,
           and an empty alt turns every one of those into an identical blank square.
@@ -81,7 +81,7 @@
       <img src="<%= photo.display_url %>" loading="lazy" referrerpolicy="no-referrer"
            alt="<%= photo.title.presence || host || "reference photo" %>"
            class="w-full h-full object-cover text-3xs text-muted leading-tight p-1">
-    </a>
+    <% end %>
   <% end %>
 
   <figcaption class="p-2 space-y-1 flex-1 flex flex-col">
@@ -137,11 +137,11 @@
 
     <% if host.present? %>
       <p class="text-3xs text-muted truncate" title="<%= photo.origin_url %>">
-        <%# page_link_url, NEVER the raw page_url. The column holds whatever the
-            provider put in its answer, and only http and https may reach an href —
-            the model carries the judgement and the two shapes it refuses. %>
-        <% if photo.page_link_url.present? %>
-          <%= link_to host, photo.page_link_url, target: "_blank",
+        <%# http_href, NEVER the raw page_url. The column holds whatever the
+            provider put in its answer, and only http and https may reach an href:
+            ApplicationHelper.http_href is the one rule, models and views alike. %>
+        <% if (page_href = http_href(photo.page_url)) %>
+          <%= link_to host, page_href, target: "_blank",
                 rel: "noopener noreferrer nofollow", referrerpolicy: "no-referrer",
                 class: "hover:text-primary" %>
         <% else %>

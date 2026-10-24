@@ -250,8 +250,10 @@ module ConductorHost
       ok = LocalServices::Restorer.default_dotenv.call(@layout.hub, "AGENT_API_SECRET")
       item(:agent_secret, "Board secret in the hub .env", ok,
            ok ? "AGENT_API_SECRET set (value not read)" : "AGENT_API_SECRET missing from #{@layout.hub}/.env",
-           %(printf 'AGENT_API_SECRET=%s\\n' "$(op read '#{OpVaults.ref('Agent API Secret', 'AGENT_API_SECRET')}')" ) +
-             ">> #{@layout.hub}/.env",
+           # In a umask 077 subshell, so a .env this creates is owner-only from its
+           # first byte (secrets-scrub-follow-ups).
+           %{( umask 077; printf 'AGENT_API_SECRET=%s\\n' "$(op read '#{OpVaults.ref('Agent API Secret', 'AGENT_API_SECRET')}')" } +
+             ">> #{@layout.hub}/.env )",
            ConductorHost.op_agent_secret)
     end
 

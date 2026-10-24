@@ -14,12 +14,33 @@ Credential docs are split into two layers:
   stdin to `op item edit` (never a concealed-field assignment argument), through
   `bin/heroku-secret-set <app> <NAME>` for Heroku config (`heroku config:set` takes values only
   as arguments), or as a curl header from a file or `-H @<(printf 'Authorization: Bearer %s\n'
-  "$TOKEN")`. `test/docs/secrets_on_argv_guard_test.rb` (and its turf-monster twin) fails on a
-  new argv form in `bin/`, `lib/tasks`, `docs/`, `RUNBOOK.md`, `README.md` and `.github/workflows`.
-- **A long-lived child gets an allow-listed environment.** Desk servers start under
-  `bin/lib/child_env.rb` (`bin/agent-worktree`) and turf-monster `bin/tm`'s `TM_ENV_ALLOW`, so
-  no agent credential (`HEROKU_API_KEY`, `OP_*`, `CLAUDE_CODE_*`, `AGENT_API_*`, `GH_TOKEN`)
-  reaches puma or Sidekiq, whose renamed titles make macOS print their environment in `ps`.
+  "$TOKEN")`. Not `heroku run --env K=…`, `curl -u user:…`, a double-quoted `bash -c "…"`
+  that expands a secret, or Ruby `system`/`spawn`/`Open3`/`%x`/backticks interpolating one.
+  `test/docs/secrets_on_argv_guard_test.rb` (and its turf-monster twin) fails on a new argv form
+  in `bin/`, `lib/tasks`, `docs/`, `RUNBOOK.md`, `README.md`, `.github/workflows` and the Ruby in
+  `app/` and `lib/`; the forms it cannot see are listed beside it (KNOWN FALSE NEGATIVES).
+- **Into a one-off dyno, a secret rides stdin, read into its variable by name.** `heroku run`
+  re-quotes its command in double quotes, so the dyno's shell expands any `$` before the script
+  runs: `printf '%s\n' "$V" | heroku run --no-tty -- bash -c 'read -r NAME && export NAME && exec …'`
+  (rehearsed in [`credential-rotation`](../agents/steffon/sops/credential-rotation.md) §2.1;
+  `test/docs/heroku_run_quoting_guard_test.rb`).
+- **A child gets an allow-listed environment.** Every launcher starts its children through
+  `bin/lib/child_env.rb` (`ChildEnv`) with `unsetenv_others`, or turf-monster's
+  `bin/lib/desk_env.sh` (`tm_scrub_env`), so no agent credential (`HEROKU_API_KEY`, `OP_*`,
+  `CLAUDE_CODE_*`, `AGENT_API_*`, `GH_TOKEN`) reaches puma or Sidekiq, whose renamed titles make
+  macOS print their environment in `ps`: desk servers (`bin/agent-worktree`, `bin/tm`,
+  `bin/parallel-server`), hub `bin/dev`, `bin/ecosystem-build`'s primaries, turf
+  `bin/e2e-parallel`, and the lease renewers (`bin/devops-shift`, `review_claim_cli`,
+  `release_claim_cli`). A shell launcher execs through `ruby bin/lib/child_env.rb desk-server --
+  <cmd>`. A desk's mail keys reach its server only as the empty blank. `LaneRunner`
+  (fast-check's lanes) is the one pattern-based exception: it keeps every name that does not
+  look like a credential, because a suite's knobs are open-ended. A process that is itself an
+  agent tool and needs the credentials to work (`bin/submit` under `bin/submit-wait`, a
+  `bin/pr-review` reviewer, `gh` under `bin/ship-clock`) keeps the shell's environment; it renames
+  no title. A Heroku base-URL override (`HEROKU_API_BASE`, `ROTATE_HEROKU_CI_KEY_API_BASE`) may
+  name only `https://api.heroku.com` or loopback (`bin/lib/heroku_api_base.rb`).
+  `test/lib/launcher_child_env_test.rb` and turf's `tm_spawn_env_test.rb` /
+  `e2e_parallel_env_test.rb` prove each with a control.
 - Use `/opt/homebrew/bin/op` directly for targeted reads.
 - Prefer repo scripts that write or consume secrets without echoing them.
 - Do not scan vaults broadly unless Alex explicitly asks.
@@ -45,6 +66,11 @@ put a live secret in a transcript:
   print one bare newline. Test presence with a control:
   `heroku config --json -a <app> | jq 'length'` (0 means the read failed), then
   `jq '(.NAME // "") != ""'`.
+- **`heroku authorizations --json` prints every OAuth authorization on the account
+  with its token**, the admin and CI lanes included; one bare run in an agent session
+  burns them all. Pipe it to `jq` for `.id` and `.description`, or use the plain
+  `heroku authorizations`, which prints no token. `heroku authorizations:create --json`
+  returns the new id and token in one object to read inside the shell.
 - **Any "only stderr" redirect** uses the brace-group form in
   [`../system/coding-standards.md`](../system/coding-standards.md#shell-zsh-on-macos).
 

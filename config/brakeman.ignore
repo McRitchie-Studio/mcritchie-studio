@@ -380,60 +380,6 @@
       "note": "ReportDelivery#url builds the href itself as https://discord.com/channels/ followed by stored Discord ids."
     },
     {
-      "warning_type": "Cross-Site Scripting",
-      "warning_code": 4,
-      "fingerprint": "0fefd421254dd1f65af5875ee46acad3d263260d85b12cc1cbcb9a41415ed47c",
-      "check_name": "LinkToHref",
-      "message": "Potentially unsafe model attribute in `link_to` href",
-      "file": "app/views/appearances/_reference_photo.html.erb",
-      "line": 144,
-      "link": "https://brakemanscanner.org/docs/warning_types/link_to_href",
-      "code": "link_to(reference_photo_host((Unresolved Model).new), (Unresolved Model).new.page_link_url, :target => \"_blank\", :rel => \"noopener noreferrer nofollow\", :referrerpolicy => \"no-referrer\", :class => \"hover:text-primary\")",
-      "render_path": [
-        {
-          "type": "controller",
-          "class": "AppearancesController",
-          "method": "show",
-          "line": 40,
-          "file": "app/controllers/appearances_controller.rb",
-          "rendered": {
-            "name": "appearances/show",
-            "file": "app/views/appearances/show.html.erb"
-          }
-        },
-        {
-          "type": "template",
-          "name": "appearances/show",
-          "line": 66,
-          "file": "app/views/appearances/show.html.erb",
-          "rendered": {
-            "name": "appearances/_input_panel",
-            "file": "app/views/appearances/_input_panel.html.erb"
-          }
-        },
-        {
-          "type": "template",
-          "name": "appearances/_input_panel",
-          "line": 149,
-          "file": "app/views/appearances/_input_panel.html.erb",
-          "rendered": {
-            "name": "appearances/_reference_photo",
-            "file": "app/views/appearances/_reference_photo.html.erb"
-          }
-        }
-      ],
-      "location": {
-        "type": "template",
-        "template": "appearances/_reference_photo"
-      },
-      "user_input": "(Unresolved Model).new.page_link_url",
-      "confidence": "Weak",
-      "cwe_id": [
-        79
-      ],
-      "note": "page_link_url returns the url only for an http or https scheme (AppearanceReferencePhoto::LINKABLE_SCHEMES), else nil."
-    },
-    {
       "warning_type": "Command Injection",
       "warning_code": 14,
       "fingerprint": "04b3499ad10d58e6ee0e80ad4abe5df782e88ecff1df352b90f4ef332a036ca4",

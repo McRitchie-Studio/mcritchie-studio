@@ -124,6 +124,7 @@ pages:
   admin_fathom: { page: "admin/fathom#show", audience: admin, label: Fathom connection, emoji: "🎙️", hover_emoji: "🔐", desc: Meeting notes · transcripts · connect · disconnect }
   admin_agent_messages: { page: "admin/agent_messages#index", audience: admin, label: Agent inbox, emoji: "📬", hover_emoji: "💬", desc: Messages to agents · claims · replies }
   admin_report_destinations: { page: "admin/report_destinations#index", audience: admin, label: Report destinations, emoji: "📰", hover_emoji: "📡", desc: Which Discord channel each report posts to }
+  admin_csp_reports: { page: "admin/csp_reports#index", audience: admin, label: CSP reports, emoji: "🛡️", hover_emoji: "🚨", desc: Content-Security-Policy violations · top offenders }
   activities_agents:    { page: "agents#activities",   audience: admin, label: Activities, emoji: "🎭", hover_emoji: "🎬", desc: Cross-session agent activity feed }
 
   # ── Data ─────────────────────────────────────────────────────────────────
@@ -154,7 +155,7 @@ sidebar:
   - { title: Clients, group: admin, pages: [build_requests, stack, credentials] }
   # The mailing list and what is sent to it.
   - { title: Email,   group: admin, pages: [broadcasts, contacts, broadcast_analytics] }
-  - { title: Ops,     group: admin, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, activities_agents, admin_agent_messages, admin_report_destinations] }
+  - { title: Ops,     group: admin, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, activities_agents, admin_agent_messages, admin_report_destinations, admin_csp_reports] }
   - { title: Data,    group: admin, pages: [admin_ai_builder_multiple, workflow_news_index, merge_people, duplicates_people] }
   # The recast pipeline: every generated version of every source video.
   - { title: Video,   group: admin, pages: [alt_videos] }

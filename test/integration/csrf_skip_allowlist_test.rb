@@ -17,6 +17,8 @@ require "test_helper"
 # here, with the reason it is safe.
 class CsrfSkipAllowlistTest < ActiveSupport::TestCase
   ALLOWED = {
+    "csp_reports" => "the browser posts CSP violation reports on its own, with no page and no token; it only stores a capped, " \
+                     "query-stripped telemetry row and is rate-limited (CspReportsController)",
     "unsubscribes" => "the one-click List-Unsubscribe POST comes from the mail client with no page; the URL's token is the credential",
     "webhooks/resend_events" => "Resend's server posts it; the svix signature is the credential (Webhooks::SvixSignature)",
     "webhooks/resend_inbound" => "Resend's server posts it; the svix signature is the credential (Webhooks::SvixSignature)"

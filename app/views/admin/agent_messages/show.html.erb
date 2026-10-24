@@ -129,7 +129,7 @@
         <span class="text-xs opacity-70 break-all"><%= detail.map { |k, v| "#{k}: #{v.is_a?(Array) ? v.join(', ') : v}" }.join(" · ") %></span>
       <% end %>
       <% if event.detail["url"].present? %>
-        · <%= link_to "reply on Discord", event.detail["url"], target: "_blank", rel: "noopener", class: "underline text-xs" %>
+        · <%= safe_link_to "reply on Discord", event.detail["url"], target: "_blank", rel: "noopener", class: "underline text-xs" %>
       <% end %>
     </li>
   <% end %>

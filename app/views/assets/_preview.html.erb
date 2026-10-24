@@ -29,7 +29,7 @@
       <dt class="text-muted">Key</dt>
       <dd class="text-body break-all text-xs font-mono"><%= entry.key %></dd>
     </dl>
-    <a href="<%= preview.url %>" target="_blank" rel="noopener" class="btn btn-outline btn-sm">Open signed link</a>
+    <%= safe_link_to "Open signed link", preview.url, target: "_blank", rel: "noopener", class: "btn btn-outline btn-sm" %>
     <p class="text-xs text-muted">Signed links expire after 15 minutes.</p>
   </div>
 </div>

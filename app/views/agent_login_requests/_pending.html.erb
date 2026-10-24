@@ -41,7 +41,7 @@
       </div>
     <% end %>
   </div>
-  <script>
+  <script nonce="<%= content_security_policy_nonce %>">
     // Posts one answer, then swaps the row's code and buttons for the outcome.
     window.adminLoginAnswer = window.adminLoginAnswer || async function (btn) {
       const row = btn.closest("[data-test='admin-login-request']");

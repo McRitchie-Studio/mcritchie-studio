@@ -46,6 +46,20 @@ class EmailImageGeneratorsViewTest < ActionView::TestCase
     assert_select "[data-test='kit-model']", 0
   end
 
+  # [component] admin-url-columns-use-http-href: the model image's stored url is linked
+  # only as http(s); a javascript: value keeps the image, unlinked.
+  test "the model image links an https url and withholds a javascript: one" do
+    photo = turf_with_canonical_sheet
+    render_page("turf-monster")
+    assert_select "[data-test='model-image'] a[href='https://assets.example.test/canonical.png'] img"
+
+    photo.update_columns(image_url: "javascript:alert(1)")
+    @rendered = +""
+    render_page("turf-monster")
+    assert_select "a[href^='javascript']", 0
+    assert_select "[data-test='model-image'] span[data-test='link-withheld'][title] img"
+  end
+
   test "a character with no art says so and links his page" do
     Character.create!(name: "Turf Monster", kind: "mascot", brand: "turf-monster").appearances.create!(descriptor: "Classic")
     render_page("turf-monster")

@@ -124,7 +124,7 @@
     <%# Second row: release meta — task count, QA/Prod links, deployed SHA. %>
     <div class="mt-1 flex items-center gap-4 text-xs <%= meta_color %> flex-wrap">
         <span><%= members.size %> task<%= "s" unless members.size == 1 %></span>
-        <% if rel.qa_url.present? %><%= link_to "QA ↗", rel.qa_url, target: "_blank", rel: "noopener", class: link_class %><% end %>
+        <% if rel.qa_url.present? %><%= safe_link_to "QA ↗", rel.qa_url, target: "_blank", rel: "noopener", class: link_class %><% end %>
         <%# The deployment ARTIFACT. A gem-only release has no app deploy — its
             artifact is the published gem — so it shows "💎 <gem> <version>"
             instead of the Prod ↗ link + deployed SHA. Every other release keeps
@@ -134,7 +134,7 @@
             <span class="flex items-center gap-1" data-test="release-gem-artifact" title="published gem"><%= app_emoji_badge([gem_repo]) %><code class="text-muted"><%= gem_repo %><%= " #{gem_version}" if gem_version.present? %></code></span>
           <% end %>
         <% else %>
-          <% if rel.production_url.present? %><%= link_to "Prod ↗", rel.production_url, target: "_blank", rel: "noopener", class: link_class %><% end %>
+          <% if rel.production_url.present? %><%= safe_link_to "Prod ↗", rel.production_url, target: "_blank", rel: "noopener", class: link_class %><% end %>
           <% if rel.deployed_sha.present? %><code class="text-muted" title="deployed SHA"><%= rel.deployed_sha.first(7) %></code><% end %>
         <% end %>
       </div>

@@ -10,6 +10,12 @@ production:
     class: AgentActionRetentionJob
     schedule: "30 3 * * * America/Los_Angeles"
     args: []
+  # csp_reports retention: deletes violation rows not seen for 30 days
+  # (CspReport::RETENTION). See CspReportRetentionJob.
+  csp_report_retention:
+    class: CspReportRetentionJob
+    schedule: "45 3 * * * America/Los_Angeles"
+    args: []
   # Keeps docs/agents/shared/insights.md honest. The board is the only place that
   # holds BOTH the live bank and the deployed copy of the doc, so this is where the
   # comparison can run at all; a drift writes an ErrorLog receipt.

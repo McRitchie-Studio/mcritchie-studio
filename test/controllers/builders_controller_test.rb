@@ -157,6 +157,34 @@ class BuildersControllerTest < ActionDispatch::IntegrationTest
     assert_match "2/2 weeks", response.body
   end
 
+  # [component] admin-url-columns-use-http-href: the roster, all and history pages
+  # link a builder's stored website, X and GitHub profile urls only as http(s).
+  test "builders pages link https profile urls and withhold javascript: ones" do
+    person = Person.create!(first_name: "Link", last_name: "Check", website_url: "https://link.example",
+                            x_url: "https://x.com/linkcheck")
+    builder = Builder.create!(person: person, github_login: "link-check", github_profile_url: "https://github.com/link-check",
+                              primary_language: "Ruby", active: true, included_in_roster: true)
+    tracked = TrackedGithubBuilder.create!(github_login: builder.github_login, display_name: builder.display_name,
+                                           cohort: "control_builder", active: true)
+    create_cache(tracked, GithubCommitRange.for_week_start(Date.new(2022, 1, 1)), 3)
+    pages = [ builders_path(language: "Ruby"), all_builders_path(language: "Ruby"), history_builders_path ]
+
+    pages.each do |path|
+      get path
+      %w[https://link.example https://x.com/linkcheck https://github.com/link-check].each do |url|
+        assert_select "a[href=?]", url, { count: 1 }, "#{path} should link #{url}"
+      end
+    end
+
+    person.update_columns(website_url: "javascript:alert(1)", x_url: "javascript:alert(2)")
+    builder.update_columns(github_profile_url: "javascript:alert(3)")
+    pages.each do |path|
+      get path
+      assert_select "a[href^='javascript']", { count: 0 }, path
+      assert_select "span[data-test='link-withheld'][title]", { count: 3 }, path
+    end
+  end
+
   test "a visitor is sent to sign-in from every builders page" do
     reset!
     [builders_path, all_builders_path(language: "Ruby")].each do |path|
