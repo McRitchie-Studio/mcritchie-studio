@@ -94,10 +94,10 @@
                               rel: "noopener",
                               class: "text-xs text-primary hover:text-heading transition" %>
                         <% if person.website_url.present? %>
-                          <%= link_to "Website", person.website_url, target: "_blank", rel: "noopener", class: "text-xs text-secondary hover:text-heading transition" %>
+                          <%= safe_link_to "Website", person.website_url, target: "_blank", rel: "noopener", class: "text-xs text-secondary hover:text-heading transition" %>
                         <% end %>
                         <% if person.x_url.present? %>
-                          <%= link_to "X", person.x_url, target: "_blank", rel: "noopener", class: "text-xs text-secondary hover:text-heading transition" %>
+                          <%= safe_link_to "X", person.x_url, target: "_blank", rel: "noopener", class: "text-xs text-secondary hover:text-heading transition" %>
                         <% end %>
                       </div>
                     </div>

@@ -169,10 +169,10 @@
   <% if qa_url || production_url %>
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1.5">
       <% if qa_url %>
-        <%= link_to "QA", qa_url, class: "text-3xs text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+        <%= safe_link_to "QA", qa_url, class: "text-3xs text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
       <% end %>
       <% if production_url %>
-        <%= link_to "Prod", production_url, class: "text-3xs text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
+        <%= safe_link_to "Prod", production_url, class: "text-3xs text-primary hover:underline", target: "_blank", rel: "noopener", "@click.stop": true %>
       <% end %>
     </div>
   <% end %>

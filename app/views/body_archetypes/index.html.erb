@@ -27,7 +27,7 @@
         <div class="card p-4 flex flex-col gap-3 min-w-0" data-test="archetype" data-slug="<%= archetype.slug %>">
           <div class="aspect-[3/2] rounded-lg border border-subtle bg-surface-alt overflow-hidden flex items-center justify-center">
             <% if archetype.image? %>
-              <%= link_to archetype.image_url, target: "_blank", rel: "noopener", class: "block w-full h-full" do %>
+              <%= safe_link_to archetype.image_url, target: "_blank", rel: "noopener", class: "block w-full h-full" do %>
                 <%= image_tag archetype.image_url, alt: "#{archetype.name} body build", class: "w-full h-full object-contain" %>
               <% end %>
             <% else %>
