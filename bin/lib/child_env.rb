@@ -35,8 +35,14 @@ module ChildEnv
     PORT APP_PORT DATABASE_URL TEST_DATABASE_URL REDIS_URL
     TM_PORT TM_REDIS_DB TM_STRIPE_LISTENER
     PGHOST PGPORT PGUSER
+    BINDING PAYMENT_PROVIDER
     OBJC_DISABLE_INITIALIZE_FORK_SAFETY SCREENDIR
   ].freeze
+
+  # Feature flags an operator sets on the command line for one boot
+  # (`ENABLE_FIAT_RAILS=true … bin/tm up`, docs in turf-monster LOCAL_STACK.md).
+  # Flags, never credentials; FORBIDDEN still applies.
+  DESK_SERVER_ALLOW_PREFIXES = %w[ENABLE_].freeze
 
   # Never in a desk server's environment, whoever asks.
   FORBIDDEN_NAMES = %w[GH_TOKEN GITHUB_TOKEN AGENT_LEGACY_TOKEN].freeze
@@ -56,6 +62,7 @@ module ChildEnv
   # A desk server's whole environment: the system and desk-server names from the
   # parent, then the launcher's own `values` over them, minus every forbidden name.
   def desk_server(values, env = ENV)
-    allowed(env, SYSTEM_ALLOW + DESK_SERVER_ALLOW).merge(values.to_h).reject { |name, _| forbidden?(name) }
+    flags = env.to_h.select { |name, _| DESK_SERVER_ALLOW_PREFIXES.any? { |prefix| name.start_with?(prefix) } }
+    allowed(env, SYSTEM_ALLOW + DESK_SERVER_ALLOW).merge(flags).merge(values.to_h).reject { |name, _| forbidden?(name) }
   end
 end

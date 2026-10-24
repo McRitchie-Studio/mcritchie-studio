@@ -64,7 +64,8 @@ class DeskServerEnvTest < Minitest::Test
         60.times { break if File.size?(#{dump.inspect}); sleep 0.1 }
         puts pid
       RUBY
-      env = SessionEnv.neutralized(PLANTED.merge("LANG" => "en_US.UTF-8"))
+      env = SessionEnv.neutralized(PLANTED.merge("LANG" => "en_US.UTF-8", "BINDING" => "0.0.0.0",
+                                                  "ENABLE_FIAT_RAILS" => "true"))
       out, err, status = Open3.capture3(env, "ruby", "-e", script)
       assert status.success?, "the launcher subprocess failed:\n#{out}\n#{err}"
       assert File.size?(dump), "the stub server never wrote its environment (#{err})"
@@ -78,10 +79,12 @@ class DeskServerEnvTest < Minitest::Test
     PLANTED.each_key { |name| refute seen.key?(name), "#{name} reached the desk server" }
     refute(seen.values.any? { |v| v.start_with?("fake-") }, "a planted value reached the desk server (names: #{seen.keys.sort.inspect})")
     %w[PATH HOME LANG].each { |name| assert seen.key?(name), "#{name} is missing from the desk server" }
+    assert_equal "0.0.0.0", seen["BINDING"], "BINDING (bin/agent-worktree up's LAN mode) must reach the server"
+    assert_equal "true", seen["ENABLE_FIAT_RAILS"], "an ENABLE_* boot flag must reach the server"
     (DESK_VALUES.keys - ["HEROKU_API_KEY"]).each do |name|
       assert_equal DESK_VALUES[name], seen[name], "the desk value #{name} did not reach the server"
     end
-    allowed = ChildEnv::SYSTEM_ALLOW + ChildEnv::DESK_SERVER_ALLOW + DESK_VALUES.keys
+    allowed = ChildEnv::SYSTEM_ALLOW + ChildEnv::DESK_SERVER_ALLOW + DESK_VALUES.keys + ["ENABLE_FIAT_RAILS"]
     extra = seen.keys - allowed - %w[PWD SHLVL _ OLDPWD]
     assert_empty extra, "names outside the allow-list reached the desk server: #{extra.inspect}"
   end
