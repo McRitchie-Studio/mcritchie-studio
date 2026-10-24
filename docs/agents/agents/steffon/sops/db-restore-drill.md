@@ -116,21 +116,23 @@ credential by [`credential-filing`](credential-filing.md):
    exits non-zero, or the item is not in the vault afterwards), the
    authorization exists on the account and nothing holds its token: revoke it
    before you retry, or it lives on as an orphan credential. Its id is in the
-   account's list; take it through `jq`, which prints the id and the
-   description and never the token (bare `heroku authorizations --json` prints
-   every authorization's token on the account), then revoke it, still from the
-   admin profile:
+   account's list under the same description as the LIVE authorization, the one
+   the vault item's `authorization-id` field names, so the list excludes that id
+   and refuses to run without it. `jq` prints ids and dates, never a token (bare
+   `heroku authorizations --json` prints every token on the account). Every row it
+   prints is an orphan: revoke each, still from the admin profile, then run step 1
+   again. No row means Heroku never answered and nothing is orphaned.
 
    ```bash
    : "${HEROKU_STUDIO_ADMIN_API_KEY:?refusing -- source ~/.zprofile.admin first}"
-   HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" heroku authorizations --json |
-     jq -r '.[] | select(.description == "hub backup sweep") | "\(.id)  \(.created_at)"'
+   live="$(op item get heroku.mcritchie-studio.applications --vault studio-applications --fields label=authorization-id)" &&
+     [ -n "$live" ] && HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" heroku authorizations --json |
+     jq -r --arg live "$live" '.[] | select(.description == "hub backup sweep" and .id != $live) | "\(.id)  \(.created_at)"'
    HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" heroku authorizations:revoke <id>
    ```
 
-   More than one `hub backup sweep` row means an earlier attempt orphaned one
-   too: keep only the id the vault item's `authorization-id` field names (none
-   yet, so revoke them all), then run step 1 again.
+   On a first filing, before the item exists, the read refuses: every row is then
+   an orphan, so list them with `live=none` in place of the `op` read.
 2. Finish the item by [`credential-filing`](credential-filing.md) sections 3
    (the `notesPlain` permission matrix) and 6 (verify by read-back), and add its
    row to [`credential-inventory.md`](../../../modules/credential-inventory.md).
