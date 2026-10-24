@@ -17,7 +17,7 @@
             <div class="photo-face photo-front"><span><%= slot_label %></span></div>
             <div class="photo-face photo-back">
               <% if (large || small) %>
-                <img src="<%= large || small %>" alt="" loading="eager" decoding="sync">
+                <img src="<%= safe_image_src(large || small) %>" alt="" loading="eager" decoding="sync">
               <% end %>
             </div>
           </div>

@@ -4,7 +4,7 @@
             data: { test: "cast-card", character: character.slug } do %>
   <div class="w-20 h-20 shrink-0 rounded-lg bg-surface-alt border border-subtle flex items-center justify-center overflow-hidden">
     <% if avatar_url.present? %>
-      <img src="<%= avatar_url %>" alt="<%= character.name %>" class="max-h-full max-w-full object-contain" loading="lazy" data-test="cast-avatar">
+      <img src="<%= safe_image_src(avatar_url) %>" alt="<%= character.name %>" class="max-h-full max-w-full object-contain" loading="lazy" data-test="cast-avatar">
     <% else %>
       <span class="text-2xl font-bold text-muted" aria-hidden="true"><%= character.name.first %></span>
     <% end %>

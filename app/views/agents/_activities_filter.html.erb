@@ -33,7 +33,7 @@
           data: { turbo_frame: "aa-activities-frame", test: "aa-filter-session", session_id: session[:id], selected: session[:selected], name: session[:name].to_s.downcase } do %>
       <span class="aa-fs-check"><%= "✓" if session[:selected] %></span>
       <% if session[:sprite_url].present? %>
-        <img class="aa-fs-sprite" src="<%= session[:sprite_url] %>" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+        <img class="aa-fs-sprite" src="<%= safe_image_src(session[:sprite_url]) %>" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
       <% else %>
         <span class="aa-fs-sprite" style="display:inline-flex;align-items:center;justify-content:center;color:var(--hb-mascot);font-weight:700;"><%= session[:name].to_s.first %></span>
       <% end %>

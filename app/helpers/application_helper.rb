@@ -43,7 +43,7 @@ module ApplicationHelper
   # size); the block form also keeps its content. Only the link is dropped.
   #
   #   safe_link_to "View Post", @news.x_post_url, target: "_blank"
-  #   safe_link_to(sheet.image_url, target: "_blank") { image_tag ... }
+  #   safe_link_to(sheet.image_url, target: "_blank") { safe_image_tag sheet.image_url, ... }
   def safe_link_to(name = nil, url = nil, html_options = {}, &block)
     if block
       html_options = url || {}
@@ -57,6 +57,49 @@ module ApplicationHelper
     return content_tag(:span, capture(&block), withheld.merge(class: html_options[:class])) if block
 
     content_tag(:span, "—", withheld.merge(class: class_names(html_options[:class], "opacity-40")))
+  end
+
+  # The src for a STORED or agent-written image or video url, else nil. image_tag
+  # (and video_tag) read any string that is not a URL or a root-relative path as an
+  # ASSET FILE NAME, and the asset pipeline raises on a missing one, so a stored
+  # `javascript:alert(1)` used to answer the whole page with a 500. Admits:
+  #
+  #   - an absolute http or https url (the http_href rule),
+  #   - a root-relative path ("/rails/active_storage/...", "/brand/x.svg"), which
+  #     image_tag passes through untouched and which names this host's own files
+  #     (never "//host" or "/\host": a browser reads either as ANOTHER host),
+  #   - a data:image/* url: inline images (the client kit's SVG marks, the
+  #     generated-image fakes) are legitimate in an img and run nothing there.
+  #
+  # Everything else (another scheme, a bare word image_tag would hunt for, blank)
+  # is refused. safe_image_tag below is the rendering half.
+  SAFE_IMAGE_DATA = %r{\Adata:image/[\w.+-]+[;,]}i
+  SAFE_IMAGE_ROOT_PATH = %r{\A/(?![/\\])}
+  IMAGE_WITHHELD_TITLE = "Image withheld: the stored value is not an http(s) or inline image URL"
+
+  def self.safe_image_src(url)
+    text = url.to_s.strip
+    return nil if text.empty? || text.match?(HTTP_HREF_REFUSED_CHARS)
+    return text if text.match?(SAFE_IMAGE_ROOT_PATH) || text.match?(SAFE_IMAGE_DATA)
+
+    http_href(text)
+  end
+
+  def safe_image_src(url) = ApplicationHelper.safe_image_src(url)
+
+  # image_tag for a STORED or agent-written url: renders the image only when
+  # safe_image_src admits it. A refused value renders the grey "—" placeholder in
+  # the caller's class, titled "Image withheld" (a blank value renders it bare),
+  # so a bad row costs one picture, never the page.
+  #
+  #   safe_image_tag archetype.image_url, alt: archetype.name, class: "w-full"
+  def safe_image_tag(url, options = {})
+    src = safe_image_src(url)
+    return image_tag(src, options) if src
+
+    withheld = { data: { test: "image-withheld" }, role: "img", aria: { label: "Image withheld" } }
+    withheld[:title] = IMAGE_WITHHELD_TITLE if url.present?
+    content_tag(:span, "—", withheld.merge(class: class_names(options[:class], "inline-flex items-center justify-center opacity-40")))
   end
 
   def stage_scheme(stage)

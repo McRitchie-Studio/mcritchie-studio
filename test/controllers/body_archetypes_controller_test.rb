@@ -16,8 +16,8 @@ class BodyArchetypesControllerTest < ActionDispatch::IntegrationTest
   end
 
   # [component] admin-url-columns-use-http-href: an archetype's stored image_url is
-  # linked only as http(s). The refused value is a data: image, because image_tag
-  # itself raises on a javascript: src (a separate, pre-existing 500).
+  # linked only as http(s). A data: image is refused as a LINK but kept as an image;
+  # the javascript: case is the next test (image-tag-stored-url-500).
   test "the page links an https archetype image and withholds a non-http one" do
     log_in_as(@admin)
     archetype = body_archetypes(:nfl_qb_skill)
@@ -29,6 +29,29 @@ class BodyArchetypesControllerTest < ActionDispatch::IntegrationTest
     get body_archetypes_path
     assert_select "a[href^='data:']", 0
     assert_select "span[data-test='link-withheld'][title] img", 1
+  end
+
+  # [integration] image-tag-stored-url-500: image_tag reads a non-URL string as an
+  # asset file name and the asset pipeline raises, so a javascript: image_url used to
+  # answer 500. The page now answers 200 with the withheld placeholder and no image.
+  test "a javascript: archetype image renders the withheld placeholder, not a 500" do
+    log_in_as(@admin)
+    archetype = body_archetypes(:nfl_qb_skill)
+    archetype.update_columns(image_url: "javascript:alert(1)")
+    get body_archetypes_path
+
+    assert_response :success
+    assert_select "[data-test=archetype][data-slug=?]", archetype.slug do
+      assert_select "img", 0
+      assert_select "a", { count: 0, text: /./ }
+      assert_select "a[href^='javascript']", 0
+      assert_select "[data-test='image-withheld'][title]", 1
+    end
+
+    archetype.update_columns(image_url: "https://assets.example.test/qb.png")
+    get body_archetypes_path
+    assert_select "img[src='https://assets.example.test/qb.png']", 1
+    assert_select "[data-test='image-withheld']", 0
   end
 
   test "the page lists the three archetypes, imageless, each with a generate button" do

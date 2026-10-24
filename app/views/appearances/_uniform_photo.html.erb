@@ -9,7 +9,7 @@
   <%= safe_link_to photo.full_url, target: "_blank", rel: "noopener noreferrer", referrerpolicy: "no-referrer",
               class: "block relative aspect-[4/3] overflow-hidden bg-surface-alt",
               title: "Open the full image", data: { test: "uniform-photo-open" } do %>
-    <%= image_tag photo.display_url, alt: photo.title.presence || "Uniform photo", loading: "lazy",
+    <%= safe_image_tag photo.display_url, alt: photo.title.presence || "Uniform photo", loading: "lazy",
                   referrerpolicy: "no-referrer", class: "absolute inset-0 w-full h-full object-cover" %>
   <% end %>
   <div class="p-1.5 space-y-1 min-w-0 mt-auto">

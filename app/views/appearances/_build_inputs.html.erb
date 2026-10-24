@@ -20,7 +20,7 @@
     <div class="flex gap-3 items-start">
       <div class="w-20 h-14 shrink-0 rounded border border-subtle bg-surface overflow-hidden flex items-center justify-center">
         <% if @body_archetype&.image? %>
-          <%= image_tag @body_archetype.image_url, alt: "#{@body_archetype.name} body build", class: "w-full h-full object-contain" %>
+          <%= safe_image_tag @body_archetype.image_url, alt: "#{@body_archetype.name} body build", class: "w-full h-full object-contain" %>
         <% else %>
           <% if admin? %>
             <%= link_to "no image", body_archetypes_path, class: "text-3xs text-primary text-center px-1",

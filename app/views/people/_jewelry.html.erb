@@ -13,7 +13,7 @@
         <li class="rounded-lg border border-subtle p-3 space-y-2 min-w-0" data-test="jewelry-row" data-kind="<%= jewel.kind %>">
           <div class="flex items-start gap-3 min-w-0">
             <% if jewel.image_url.present? %>
-              <%= image_tag jewel.image_url, alt: jewel.name, class: "w-14 h-14 shrink-0 rounded-md object-cover border border-subtle" %>
+              <%= safe_image_tag jewel.image_url, alt: jewel.name, class: "w-14 h-14 shrink-0 rounded-md object-cover border border-subtle" %>
             <% end %>
             <div class="min-w-0 flex-1">
               <p class="text-sm font-bold text-heading break-words">

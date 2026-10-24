@@ -25,7 +25,7 @@
       no circles aligned with the rest. %>
   <div class="flex items-center justify-center gap-1 mb-1 h-5" data-test="dex-evolutions">
     <% entry.evolutions.select(&:revealed?).each do |evolution| %>
-      <img src="<%= evolution.pokemon.display_sprite %>"
+      <img src="<%= safe_image_src(evolution.pokemon.display_sprite) %>"
            alt="<%= evolution.pokemon.name %>" title="<%= evolution.pokemon.name %>"
            width="20" height="20" loading="lazy" data-test="dex-evolution-circle"
            class="w-5 h-5 rounded-full border border-subtle bg-surface-alt object-contain <%= dex_art_class(evolution) %>"
@@ -40,10 +40,10 @@
             title="<%= pokemon.name %> — click for shiny"
             class="aspect-square w-full flex items-center justify-center cursor-pointer"
             data-test="dex-shiny-toggle">
-      <img x-show="!shiny" src="<%= pokemon.display_avatar %>" alt="<%= pokemon.name %>"
+      <img x-show="!shiny" src="<%= safe_image_src(pokemon.display_avatar) %>" alt="<%= pokemon.name %>"
            loading="lazy" class="max-h-20 w-auto object-contain <%= dex_art_class(entry) %>"
            onerror="this.onerror=null; this.src='<%= pokemon.avatar_fallback_url.presence || pokemon.sprite_url %>'">
-      <img x-show="shiny" x-cloak src="<%= pokemon.display_avatar(shiny: true) %>" alt="<%= pokemon.name %> (shiny)"
+      <img x-show="shiny" x-cloak src="<%= safe_image_src(pokemon.display_avatar(shiny: true)) %>" alt="<%= pokemon.name %> (shiny)"
            loading="lazy" class="max-h-20 w-auto object-contain <%= dex_art_class(entry) %>"
            onerror="this.onerror=null; this.src='<%= pokemon.shiny_avatar_fallback_url.presence || pokemon.sprite_url %>'">
     </button>
@@ -51,7 +51,7 @@
     <%# An unseen species is inert: flipping a silhouette would just redraw the same
         silhouette, so it gets no button and no shiny image to fetch. %>
     <div class="aspect-square w-full flex items-center justify-center">
-      <img src="<%= pokemon.display_avatar %>" alt="<%= pokemon.name %> (not yet seen)"
+      <img src="<%= safe_image_src(pokemon.display_avatar) %>" alt="<%= pokemon.name %> (not yet seen)"
            loading="lazy" class="max-h-20 w-auto object-contain <%= dex_art_class(entry) %>"
            onerror="this.onerror=null; this.src='<%= pokemon.avatar_fallback_url.presence || pokemon.sprite_url %>'">
     </div>

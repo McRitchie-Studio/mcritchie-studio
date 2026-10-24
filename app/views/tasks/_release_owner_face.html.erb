@@ -14,7 +14,7 @@
       data-test="release-owner-face" data-role="<%= role %>" data-pokemon="<%= pokemon.slug %>"
       data-live="<%= live %>" title="<%= label %>" aria-label="<%= label %>">
   <% if sprite.present? %>
-    <img src="<%= sprite %>" alt="<%= name %>" width="28" height="28" loading="lazy"
+    <img src="<%= safe_image_src(sprite) %>" alt="<%= name %>" width="28" height="28" loading="lazy"
          class="w-7 h-7 shrink-0<%= " ring-2 ring-primary/50 rounded-full" if live %>"
          style="image-rendering: pixelated;">
   <% end %>

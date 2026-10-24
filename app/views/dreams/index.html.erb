@@ -46,7 +46,7 @@
                 style="background-color: <%= column.color.presence || "#64748b" %>;">
             <%= column.name.to_s.first %>
             <% if column.avatar.present? %>
-              <img src="<%= column.avatar %>" alt="" class="absolute inset-0 h-full w-full object-cover" loading="lazy" onerror="this.remove()">
+              <img src="<%= safe_image_src(column.avatar) %>" alt="" class="absolute inset-0 h-full w-full object-cover" loading="lazy" onerror="this.remove()">
             <% end %>
           </span>
           <div class="min-w-0">

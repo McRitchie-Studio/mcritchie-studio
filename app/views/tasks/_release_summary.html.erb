@@ -108,7 +108,7 @@
         <% if mascot %>
           <span class="flex items-center gap-1.5 min-w-0" data-test="release-mascot" title="Conductor: <%= mascot_name %>">
             <% if mascot.sprite_url.present? %>
-              <img src="<%= mascot.sprite_url %>" alt="<%= mascot_name %>" width="24" height="24" loading="lazy" class="w-6 h-6 shrink-0" style="image-rendering: pixelated;">
+              <img src="<%= safe_image_src(mascot.sprite_url) %>" alt="<%= mascot_name %>" width="24" height="24" loading="lazy" class="w-6 h-6 shrink-0" style="image-rendering: pixelated;">
             <% end %>
             <span class="font-medium truncate" style="<%= "color: #{mascot.signature_color};" if mascot.signature_color.present? %>"><%= mascot_name %></span>
           </span>

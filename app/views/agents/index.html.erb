@@ -18,7 +18,7 @@
             style: "background-color: #{agent.avatar_color};", aria: { label: "#{agent.name} profile" } do %>
           <span class="text-white font-bold text-5xl"><%= agent.avatar_initials %></span>
           <% if agent.avatar.present? %>
-            <img src="<%= agent.avatar %>"
+            <img src="<%= safe_image_src(agent.avatar) %>"
                  alt="<%= agent.name %>"
                  class="absolute inset-0 w-full h-full object-cover"
                  loading="lazy"

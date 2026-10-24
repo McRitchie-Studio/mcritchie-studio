@@ -32,7 +32,7 @@
       accident — it falls back to initials rather than to a broken image. %>
   <div class="flex items-start gap-2">
     <% if reading.avatar_url.present? %>
-      <img src="<%= reading.avatar_url %>" alt="<%= reading.display_name %>" loading="lazy"
+      <img src="<%= safe_image_src(reading.avatar_url) %>" alt="<%= reading.display_name %>" loading="lazy"
            data-test="look-card-avatar"
            class="w-8 h-8 rounded-full object-cover bg-surface-alt shrink-0">
     <% else %>

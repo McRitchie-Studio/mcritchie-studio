@@ -13,7 +13,7 @@
               class="rounded-lg border overflow-hidden bg-surface <%= approved ? 'border-success/60 ring-2 ring-success/30' : 'border-subtle' %> <%= 'opacity-50' if artifact.retired? %>">
         <%= link_to email_image_path(brief, candidate: artifact.slug), class: "block bg-surface-alt aspect-[2/1]",
                     title: "Preview in the email" do %>
-          <%= image_tag artifact.image_url, alt: brief.effective_alt_text, width: 600, height: 300,
+          <%= safe_image_tag artifact.image_url, alt: brief.effective_alt_text, width: 600, height: 300,
                         class: "w-full h-full object-cover", loading: "lazy" %>
         <% end %>
         <figcaption class="p-2 space-y-1.5">

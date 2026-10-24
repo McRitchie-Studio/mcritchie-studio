@@ -90,7 +90,7 @@
           <%= link_to deployment_path(entry.slug), class: "flex min-w-0 items-center gap-1.5 text-xs hover:underline",
                       title: [entry.slug, entry.mascot_name, entry.shipped_at&.in_time_zone&.strftime("%b %-d %-l:%M%P")].compact.join(" · ") do %>
             <% if entry.mascot&.sprite_url.present? %>
-              <img src="<%= entry.mascot.sprite_url %>" alt="" width="20" height="20" loading="lazy" class="h-5 w-5 shrink-0" style="image-rendering: pixelated;">
+              <img src="<%= safe_image_src(entry.mascot.sprite_url) %>" alt="" width="20" height="20" loading="lazy" class="h-5 w-5 shrink-0" style="image-rendering: pixelated;">
             <% else %>
               <span class="h-5 w-5 shrink-0" aria-hidden="true"></span>
             <% end %>

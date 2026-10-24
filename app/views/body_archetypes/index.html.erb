@@ -28,7 +28,7 @@
           <div class="aspect-[3/2] rounded-lg border border-subtle bg-surface-alt overflow-hidden flex items-center justify-center">
             <% if archetype.image? %>
               <%= safe_link_to archetype.image_url, target: "_blank", rel: "noopener", class: "block w-full h-full" do %>
-                <%= image_tag archetype.image_url, alt: "#{archetype.name} body build", class: "w-full h-full object-contain" %>
+                <%= safe_image_tag archetype.image_url, alt: "#{archetype.name} body build", class: "w-full h-full object-contain" %>
               <% end %>
             <% else %>
               <p class="text-2xs text-muted px-4 text-center" data-test="archetype-no-image">

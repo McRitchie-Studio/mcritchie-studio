@@ -35,6 +35,41 @@ class ApplicationHelperTest < ActionView::TestCase
     end
   end
 
+  # [unit] image-tag-stored-url-500: a stored image or video url reaches a src only
+  # as http(s), a root-relative path, or an inline data:image.
+  test "safe_image_src admits http(s), a root-relative path and data:image, and refuses the rest" do
+    assert_equal "https://cdn.example.com/a.png", safe_image_src(" https://cdn.example.com/a.png ")
+    assert_equal "http://example.com/a.png#t=0.001", safe_image_src("http://example.com/a.png#t=0.001")
+    assert_equal "/agents/carl.webp", safe_image_src("/agents/carl.webp")
+    assert_equal "/rails/active_storage/blobs/x/a.png", safe_image_src("/rails/active_storage/blobs/x/a.png")
+    assert_equal "data:image/svg+xml;base64,PHN2Zy8+", safe_image_src("data:image/svg+xml;base64,PHN2Zy8+")
+    assert_equal "DATA:image/png,abc", safe_image_src("DATA:image/png,abc")
+    [ nil, "", "  ", "javascript:alert(1)", "JaVaScRiPt:alert(1)", "java\tscript:alert(1)",
+      "data:text/html,<script>alert(1)</script>", "data:image", "vbscript:x", "file:///etc/passwd",
+      "logo.png", "pokemon/1.png", "not a url", "/a\u200Bb.png",
+      "//evil.example/x.png", "/\\evil.example/x.png" ].each do |url|
+      assert_nil safe_image_src(url), "safe_image_src let #{url.inspect} through"
+    end
+    assert_nil ApplicationHelper.safe_image_src("javascript:alert(1)"), "the module reader refuses too"
+  end
+
+  test "safe_image_tag renders an admitted url and a titled placeholder for anything else, never raising" do
+    html = safe_image_tag("https://cdn.example.com/a.png", alt: "A", class: "w-full")
+    assert_includes html, %(src="https://cdn.example.com/a.png")
+    assert_includes html, %(class="w-full")
+
+    withheld = safe_image_tag("javascript:alert(1)", alt: "A", class: "w-full h-full")
+    assert_not_includes withheld, "<img"
+    assert_not_includes withheld, "javascript"
+    assert_includes withheld, %(data-test="image-withheld")
+    assert_includes withheld, %(title="#{ApplicationHelper::IMAGE_WITHHELD_TITLE}")
+    assert_includes withheld, "w-full h-full"
+
+    blank = safe_image_tag(nil, class: "w-6")
+    assert_includes blank, %(data-test="image-withheld")
+    assert_not_includes blank, "title=", "a blank value is not a withheld one"
+  end
+
   test "safe_link_to links an http(s) url and withholds anything else behind a titled grey dash" do
     linked = Nokogiri::HTML5.fragment(safe_link_to("Post", "https://x.com/a/status/1", target: "_blank"))
     assert_equal "https://x.com/a/status/1", linked.at_css("a")["href"]

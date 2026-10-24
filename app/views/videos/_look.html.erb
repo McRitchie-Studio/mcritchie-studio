@@ -28,7 +28,7 @@
             <figure class="relative bg-inset aspect-video rounded-lg overflow-hidden" data-test="look-reference"
                     data-key="<%= key %>" data-visibility="<%= visibility %>">
               <% if url %>
-                <img src="<%= url %>" alt="<%= performer.name %>, still <%= key.split('/').last %>" loading="lazy"
+                <img src="<%= safe_image_src(url) %>" alt="<%= performer.name %>, still <%= key.split('/').last %>" loading="lazy"
                      class="block w-full h-full object-cover" onerror="this.hidden = true; this.nextElementSibling.hidden = false">
               <% end %>
               <figcaption class="absolute inset-0 flex items-center justify-center p-2 pt-7 text-3xs text-muted text-center break-all"
@@ -49,7 +49,7 @@
       <% if sheet %>
         <figure class="rounded-lg overflow-hidden border border-subtle bg-inset">
           <%= safe_link_to sheet.image_url, target: "_blank", rel: "noopener" do %>
-            <img src="<%= sheet.image_url %>" alt="Character sheet of <%= performer&.artist&.name %>" loading="lazy"
+            <img src="<%= safe_image_src(sheet.image_url) %>" alt="Character sheet of <%= performer&.artist&.name %>" loading="lazy"
                  class="block w-full h-auto" data-test="look-sheet-image">
           <% end %>
           <figcaption class="px-3 py-2 text-3xs text-muted flex flex-wrap gap-x-3 gap-y-1">

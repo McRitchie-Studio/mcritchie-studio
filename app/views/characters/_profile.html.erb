@@ -5,7 +5,7 @@
   <div class="flex flex-col sm:flex-row gap-4">
     <div class="w-32 h-32 shrink-0 rounded-lg bg-surface-alt border border-subtle flex items-center justify-center overflow-hidden">
       <% if avatar_url.present? %>
-        <img src="<%= avatar_url %>" alt="<%= character.name %>" class="max-h-full max-w-full object-contain" data-test="profile-avatar">
+        <img src="<%= safe_image_src(avatar_url) %>" alt="<%= character.name %>" class="max-h-full max-w-full object-contain" data-test="profile-avatar">
       <% else %>
         <span class="text-4xl font-bold text-muted" aria-hidden="true"><%= character.name.first %></span>
       <% end %>
