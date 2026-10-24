@@ -223,8 +223,11 @@ bin/rails agent_auth:legacy_census DAYS=7
 
 The first line gives the total and the count outside the mint doors (the exchange
 of the secret and the requests that mint a login, which the secret keeps). A line
-marked `*` is a use outside them. The shared token stops writing only after that
-count reads zero on production for the period Alex chooses.
+marked `*` is a use outside them, and a line marked `k` a door the harness key
+also opens (the reads, narration, a task's create and its claim, counted as
+`PATCH api/v1/tasks#update (claim)`): those fall as each machine holds a key. The
+shared token stops writing only after the count outside the mint doors reads zero
+on production for the period Alex chooses.
 
 ### Hooks and narration
 

@@ -11,8 +11,9 @@
 #   null, because the tier is the scope.
 # - client: Turf Monster and Tyrion. A runtime key (issued_by runtime_key) reaches
 #   the endpoints CLIENT_ENDPOINTS lists for its soul and nothing else.
-# - harness: one machine's key. It mints studio logins at the doors a controller
-#   opens with `accepts_harness_key`, and is never the session a request acts as.
+# - harness: one machine's key. At the doors a controller opens with
+#   `accepts_harness_key` it mints studio logins, reads the board, narrates,
+#   creates a task and makes its claim; it is never the session a request acts as.
 #
 # A tier is set at login and never raised: the soul decides which tiers it may
 # hold, and nothing updates a row's tier, soul or scope after create.
