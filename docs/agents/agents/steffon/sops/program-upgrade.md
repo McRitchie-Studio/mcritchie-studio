@@ -125,7 +125,7 @@ so two programs' cards cannot collide.
   good with the admin access") lets the Steffon lane sign with admin-vault keys
   for devnet-only Squad votes, the devnet upgrade, and devnet
   `init_governance`/`update_signers`/`set_action_threshold`. The devnet
-  `VaultState` holds three agent keys (`2eGs`, Mack `foUu`,
+  `VaultState` holds three agent keys (`2eGs`, Mack `8UwJ`,
   `solana.turf.governance.devnet` `BVQH`), so every devnet governance action
   needs no human tap; turf-vault `docs/CURRENT_DEPLOYMENT.md` lists the set.
   No key is a `VaultState` signer on both clusters: when the mainnet rotation
