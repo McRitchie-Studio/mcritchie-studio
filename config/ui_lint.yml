@@ -19,7 +19,6 @@ exempt:
   - app/views/**/*_mailer/**/*          # mailer views (user_mailer/, studio/newsletter_mailer/, ...)
   - app/views/**/mailers/**/*           # the engine's shared mailer partials
   - app/views/layouts/*mailer*          # layouts/mailer.html.erb, layouts/branded_mailer.html.erb
-  - app/views/studio/emails/**/*        # the engine's email studio
   # The hub's BroadcastMailer renders broadcasts/<template_key> in
   # layouts/broadcast_email: mailer views outside a *_mailer directory. Only the
   # email copy and its partials are listed; broadcasts/index and edit are app pages

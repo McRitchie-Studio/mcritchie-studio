@@ -102,7 +102,9 @@ class UiLintTest < Minitest::Test
 
   # --- which files: the include globs and the path exemptions ------------------------
 
-  def test_mailer_views_email_studio_and_svgs_are_exempt_by_path_and_nothing_else_is
+  # app/views/studio/emails/ is the engine's /admin/emails pages, rendered in the
+  # host's application layout: app pages, so they are scanned.
+  def test_mailer_views_and_svgs_are_exempt_by_path_and_nothing_else_is
     styled = %(<div style="color: #fff">x</div>\n)
     with_tree(
       "app/views/pages/home.html.erb" => styled,
@@ -117,8 +119,8 @@ class UiLintTest < Minitest::Test
     ) do |dir|
       scanned, exempt = UiLint.files(dir, config)
       assert_equal %w[app/components/card_component.html.erb app/views/emails/not_a_mailer.html.erb
-                      app/views/pages/home.html.erb], scanned
-      assert_equal 6, exempt.size, exempt.inspect
+                      app/views/pages/home.html.erb app/views/studio/emails/index.html.erb], scanned
+      assert_equal 5, exempt.size, exempt.inspect
     end
   end
 
