@@ -119,6 +119,12 @@ out, it skips the install and the build's closing checklist says
 ([house-burn-down.md § First-run audit](../../../system/house-burn-down.md#first-run-audit)).
 The commands below are for a repair, or for a Mac you are not rebuilding.
 
+**Moving it to another Mac** (the Mac mini conductor) is
+[`conductor-host`](conductor-host.md): the old Mac runs
+`bin/conductor-host-setup --hand-off-to <host>`, which uninstalls both services and
+leaves a `conductor-elsewhere` marker in `<projects>/.agents` that keeps the
+services phase from reinstalling them; the new Mac runs `--take-over`.
+
 Run from the hub's primary checkout, which the release moves to the shipped
 code. `bin/dispatcher install`, `status` and `uninstall` are allow-listed in Alex's
 `~/.claude/settings.json`, by bare name from the hub and by the absolute path

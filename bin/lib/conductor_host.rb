@@ -34,6 +34,7 @@ module ConductorHost
   BOARD_TASKS = "https://mcritchie.studio/tasks"
   LAUNCHER_SOUL = "client-build-launcher"
   LIVE_SECONDS = 5 * 60 # AgentDispatcher::SILENT_AFTER
+  PRE_CUTOVER = "the current conductor (until bin/conductor-host-setup --take-over)"
 
   # The 1Password names an operator needs. Named, never read here.
   def self.op_agent_token
@@ -437,17 +438,31 @@ module ConductorHost
     # secret) are checked one way. Only with --take-over: two dispatchers split
     # the mailbox and two launchers release each other's runs.
     def step_services
+      marker = LocalServices.handoff_path(@layout.hub)
       unless @take_over
+        # Until the cutover, keep bin/ecosystem-build's services phase from
+        # installing a second dispatcher here: the same marker a laptop keeps
+        # after it hands the role away. --take-over removes it.
+        unless File.file?(marker) || services_running?
+          FileUtils.mkdir_p(File.dirname(marker))
+          File.write(marker, "#{PRE_CUTOVER}\n")
+        end
         return say("launchd agents: not installed. Uninstall them on the laptop first (runbook, Cutover), " \
                    "then re-run with --take-over")
       end
 
-      marker = LocalServices.handoff_path(@layout.hub)
       if File.file?(marker)
         File.delete(marker)
         say("conductor role: taken back (removed the hand-off marker)")
       end
       LocalServices::Restorer.new(services: LocalServices::Registry.load, hub: @layout.hub, out: @out).run
+    end
+
+    def services_running?
+      LocalServices::Registry.load.any? do |svc|
+        _, ok = @runner.call(svc.status.split, @layout.hub)
+        ok
+      end
     end
 
     def step_harness_key(item)

@@ -171,6 +171,8 @@ class ConductorHostSetupTest < Minitest::Test
     assert_includes recorded, "harness-key request --label"
     refute_match(/^(dispatcher|client-build-launcher) install/, recorded, "a launchd agent was installed without --take-over")
     assert_includes out, "re-run with --take-over"
+    assert_includes File.read(File.join(@projects, ".agents", "conductor-elsewhere")), "until bin/conductor-host-setup --take-over",
+                    "before the cutover the new host must carry the marker that stops bin/ecosystem-build installing a second dispatcher"
     assert_match(/MISSING\s+launchd: agent-dispatcher\s+studio\.mcritchie\.dispatcher: not installed/, out)
     assert_equal 1, status.exitstatus, "the stubbed pmset still reads unset, so the closing check must miss: #{out}#{err}"
     assert_no_secret(out + err)

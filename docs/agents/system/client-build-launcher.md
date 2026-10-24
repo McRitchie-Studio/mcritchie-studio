@@ -233,7 +233,8 @@ primary checkout (install refuses a desk):
 ```
 
 `uninstall` unloads and removes it. `install --if-changed` reinstalls only when
-the plist template changed.
+the plist template changed. To move it, with the dispatcher, to the Mac mini
+conductor, follow [`conductor-host`](../agents/steffon/sops/conductor-host.md).
 
 **Restored by the burn-down.** The launcher is the second entry in
 `config/local_services.yml`, beside the dispatcher, so a fresh Mac gets it back

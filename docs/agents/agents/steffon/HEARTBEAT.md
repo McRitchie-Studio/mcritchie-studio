@@ -37,6 +37,10 @@ creates the agents' Discord bot once and connects each client who requests it.
 installs the mailbox's worker on Alex's Mac once, and runs again only when its
 floor alert posts in Discord.
 
+[`conductor-host`](sops/conductor-host.md) is not a heartbeat act either: it
+turns a new Mac mini into the always-on conductor (both launchd services, a
+harness key, power settings) and moves the services off the laptop, once.
+
 Use this file when Alex invokes `Steffon Heartbeat`. When he invokes a
 single Steffon act directly, read that act's SOP file.
 
