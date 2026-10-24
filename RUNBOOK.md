@@ -100,4 +100,4 @@ Troubleshooting guide for autonomous agents. Format: problem, diagnosis, fix.
 
 **CSRF token mismatch (422 on POST)**
 - Diagnosis: `ActionController::InvalidAuthenticityToken` after form submission. Common with Turbo Drive or stale browser tabs.
-- Fix: Ensure forms use `form_with` (includes CSRF token automatically). For JSON endpoints, skip CSRF with `skip_before_action :verify_authenticity_token` or include `X-CSRF-Token` header.
+- Fix: Ensure forms use `form_with` (includes CSRF token automatically). A browser `fetch` to a JSON endpoint sends the page's token as an `X-CSRF-Token` header, read from `<meta name="csrf-token">`. Never skip the check for a JSON format: a same-site page can POST a plain form to a `.json` route with the session cookie. A caller with no browser session uses the bearer-gated `/api/v1` route instead (`test/integration/csrf_skip_allowlist_test.rb`).

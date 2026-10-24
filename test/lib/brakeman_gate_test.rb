@@ -66,6 +66,10 @@ class BrakemanGateTest < Minitest::Test
                JSON.pretty_generate("ignored_warnings" => entries, "brakeman_version" => "test"))
   end
 
+  def test_the_wrapper_never_forces_exit_on_warn_off
+    refute_match(/--no-exit-on-warn|--no-z\b/, File.read(WRAPPER))
+  end
+
   def test_a_clean_app_passes_the_gate
     Dir.mktmpdir do |dir|
       status, out = scan(build_app(dir, CLEAN_CONTROLLER))
