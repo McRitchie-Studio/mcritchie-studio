@@ -320,6 +320,7 @@ require_relative "lib/code_diff"
 # (turf-monster-git-identity-wrong). See reconcile_desk_identity below.
 require_relative "../lib/commit_identity"
 require_relative "lib/approval_request_notice"
+require_relative "lib/task_cost_line"
 
 # THE ABSOLUTE `bin/task` A REFUSAL HANDS BACK — this very script, resolved from its
 # OWN __dir__. A RE-RUN remedy names the script for the tree the reader is ALREADY
@@ -1784,6 +1785,9 @@ def print_task(task)
   pairs = map_pairs(dv["pr_urls"])
   puts "  pr_urls: #{pairs.join("  ")}" if pairs.any?
   puts "  acceptance: #{Array(dv["acceptance"]).size} item(s)  risk: #{Array(dv["risk_tags"]).join(", ")}"
+  # What the task cost and how long each stage took (bin/lib/task_cost_line.rb),
+  # only when the record carries the fields: `show` does, a PATCH echo does not.
+  TaskCostLine.lines(task).each { |line| puts "  #{line}" }
   print_silent_claim(task["silent_claim"])
   print_approval_request_notice(task)
 end
