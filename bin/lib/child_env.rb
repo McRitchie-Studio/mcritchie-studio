@@ -53,9 +53,9 @@ module ChildEnv
   # The desk's mail credentials, exported EMPTY (bin/agent-worktree
   # local_email_values) so dotenv cannot fill them from a .env and a desk never
   # sends real mail. Kept only while empty: a SET value, from the parent or from
-  # a stack file, is replaced by the empty blank, never passed on. Twin of
-  # turf-monster bin/lib/desk_env.sh TM_ENV_KEEP_IF_EMPTY; the hub blanks where
-  # turf drops, because a dropped name is one dotenv would then fill.
+  # a stack file, is replaced by the empty blank, never passed on and never
+  # dropped, because a dropped name is one dotenv would then fill. Twin of
+  # turf-monster bin/lib/desk_env.sh TM_ENV_KEEP_IF_EMPTY, which blanks the same way.
   MAIL_KEEP_IF_EMPTY = %w[RESEND_API_KEY SES_SMTP_USERNAME SES_SMTP_PASSWORD].freeze
 
   # What a lease RENEWER (bin/devops-shift, bin/lib/review_claim_cli.rb,
@@ -96,7 +96,9 @@ module ChildEnv
   LEGACY_SWITCH = "AGENT_LEGACY_TOKEN"
   LEGACY_SWITCH_OFF = %w[off 0 false no].freeze
 
-  # Never in a child's environment, whoever asks.
+  # Never in a child's environment, whoever asks. AGENT_LEGACY_TOKEN is here so no
+  # value under that name ever reaches a child; renewer() alone re-adds it, and
+  # only with an OFF value (LEGACY_SWITCH_OFF above).
   FORBIDDEN_NAMES = %w[GH_TOKEN GITHUB_TOKEN AGENT_LEGACY_TOKEN].freeze
   FORBIDDEN_PREFIXES = %w[HEROKU_ OP_ CLAUDE_CODE_ ANTHROPIC_ AGENT_API_].freeze
 

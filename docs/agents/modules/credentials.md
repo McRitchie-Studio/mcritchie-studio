@@ -21,7 +21,7 @@ Credential docs are split into two layers:
   `app/` and `lib/`; the forms it cannot see are listed beside it (KNOWN FALSE NEGATIVES).
 - **Into a one-off dyno, a secret rides stdin, read into its variable by name.** `heroku run`
   re-quotes its command in double quotes, so the dyno's shell expands any `$` before the script
-  runs: `printf '%s\n' "$V" | heroku run --no-tty -- bash -c 'read -r NAME && export NAME && exec …'`
+  runs: `printf '%s\n' "$V" | heroku run --no-tty -- bash -c 'IFS= read -r NAME && export NAME && exec …'`
   (rehearsed in [`credential-rotation`](../agents/steffon/sops/credential-rotation.md) §2.1;
   `test/docs/heroku_run_quoting_guard_test.rb`).
 - **A child gets an allow-listed environment.** Every launcher starts its children through
@@ -284,6 +284,9 @@ shared token only when the board answers the login 401. Narration presents a
 login only when its soul is the lane the call declares. `AGENT_LEGACY_TOKEN=off`
 is the degraded mode: the shared token is neither read nor minted, a call with a
 login is made under it, and a call with none is not made, so nothing is recorded.
+The detached lease renewers inherit it (`ChildEnv.renewer` passes an OFF value and
+nothing else under that name), so a renewer never falls back to the shared token
+behind a session that turned it off.
 
 Admin sessions (Steffon, Ritch) are unscoped within the admin tier and expire after
 8 hours. `bin/agent-activity heartbeat steffon|ray` posts an admin login request

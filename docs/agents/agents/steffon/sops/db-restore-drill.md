@@ -150,7 +150,8 @@ credential by [`credential-filing`](credential-filing.md):
 A capture the sweep started shows as the newest `b…` backup; when it completed,
 the incident clears on the next night's run. `db_backup_sweep_failed` with
 `HTTP 401 key rejected`: the authorization was revoked or rotated; re-file the
-key (steps 1-3).
+key (steps 1-3), and if a re-file's pipe fails, revoke the orphan it leaves
+(step 1, "If the pipe fails after Heroku answered").
 
 ## 3. Drill — monthly
 

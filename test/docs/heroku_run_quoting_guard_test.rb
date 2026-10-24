@@ -8,7 +8,7 @@
 # script itself runs. Rehearsed on turf-monster-qa (credential-rotation §2.1):
 # `read -r K_NEW && export KEY="$K_NEW"` exported an EMPTY key, because "$K_NEW"
 # had expanded to nothing at launch. The working form reads straight into the
-# named variable and exports it bare (`read -r KEY && export KEY`), with no `$`.
+# named variable and exports it bare (`IFS= read -r KEY && export KEY`), with no `$`.
 #
 # WHAT COUNTS. One line at a time, backslash continuations joined: a `heroku run`
 # whose single-quoted `bash -c`/`sh -c` script contains `$`. A loop that RUNS
