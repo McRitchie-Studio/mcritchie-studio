@@ -231,10 +231,11 @@ hour, Discord gets one line, `<incident>: flapping, N since HH:MM`, in place of 
 line per flap and per recovery, and one more, `<incident>: steady again …`, once
 nothing has been open for 15 minutes.
 
-**Escalation to a person.** The floor emails `floor.escalation_email` once when an
-incident has stayed open 15 minutes or its episode is flapping, and once when the
-episode has had nothing open for 15 minutes. Never more than one email per
-episode per state. The subject reads `Floor alert: <incident> (open N min)` or
+**Escalation to a person.** The floor emails `floor.escalation_email` once when a
+floor-wide incident has stayed open 15 minutes or its episode is flapping, and once
+when the episode has had nothing open for 15 minutes. Never more than one email per
+episode per state. The per-card kinds (`submitted_unclaimed`,
+`change_build_refused`) stay on Discord and never email. The subject reads `Floor alert: <incident> (open N min)` or
 `(flapping, N since HH:MM)`, then `Floor clear: <incident>`; each names this SOP.
 The email goes out whether or not Discord is configured, and a failed send is
 retried on the next run. Read an email as "a person is needed now": open the

@@ -302,8 +302,9 @@ the live primary's `harness_failing_beats` reaches 5. An episode that reopens th
 times within an hour posts one `flapping, N since HH:MM` line instead of a line per
 flap. Without the bot token it logs a line and posts nothing. Escalation to a
 person does not depend on Discord: ONE email to `floor.escalation_email`
-(`config/agent_routes.yml`, through the outbox) when an incident stays open 15
-minutes or flaps, and ONE when the episode has been quiet 15 minutes.
+(`config/agent_routes.yml`, through the outbox) when a floor-wide incident stays
+open 15 minutes or flaps, and ONE when the episode has been quiet 15 minutes; the
+per-card kinds stay on Discord.
 
 **Reports.** The same bot also posts scheduled reports (the CTO daily
 application report first) into a channel Alex picks per report at
