@@ -16,7 +16,7 @@
   </div>
 
   <% if mp4_url.present? %>
-    <video src="<%= mp4_url %>" class="w-full max-w-sm mx-auto rounded-lg shadow-lg" autoplay loop muted playsinline></video>
+    <video src="<%= safe_image_src(mp4_url) %>" class="w-full max-w-sm mx-auto rounded-lg shadow-lg" autoplay loop muted playsinline></video>
   <% end %>
 
   <% if variants.any? %>

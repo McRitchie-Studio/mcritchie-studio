@@ -32,7 +32,7 @@
   <% if content.captions.present? %>
     <%= render "contents/x_post_preview", text: content.captions, video_url: content.final_video_url, weight: caption.weight %>
   <% elsif content.final_video_url.present? %>
-    <video src="<%= content.final_video_url %>" controls playsinline preload="metadata"
+    <video src="<%= safe_image_src(content.final_video_url) %>" controls playsinline preload="metadata"
            class="w-full max-h-96 rounded-lg bg-black" data-test="video-post-x-preview"></video>
   <% end %>
 

@@ -72,7 +72,7 @@
         </p>
       <% end %>
       <% if url %>
-        <video controls playsinline preload="metadata" src="<%= url %>" class="w-full max-h-[60vh] bg-black rounded-lg"
+        <video controls playsinline preload="metadata" src="<%= safe_image_src(url) %>" class="w-full max-h-[60vh] bg-black rounded-lg"
                data-test="full-video-player" data-key="<%= latest.object_key %>" data-signed-key="<%= latest.object_key %>"></video>
       <% else %>
         <p class="text-sm text-muted break-all" data-test="full-video-unreachable">Stitched file not reachable: <%= latest.object_key.split("/").last %></p>

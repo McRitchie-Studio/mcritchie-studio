@@ -8,7 +8,7 @@
     <div class="w-24 h-24 shrink-0 rounded-full bg-surface-alt border border-subtle overflow-hidden flex items-center justify-center">
       <% headshot = @person.athlete_profile&.espn_headshot_url.presence || @person.avatar_url.presence %>
       <% if headshot %>
-        <%= image_tag headshot, class: "object-cover w-full h-full" %>
+        <%= safe_image_tag headshot, class: "object-cover w-full h-full" %>
       <% else %>
         <span class="text-3xl opacity-40">👤</span>
       <% end %>
@@ -263,7 +263,7 @@
           <div class="rounded-lg border border-subtle overflow-hidden">
             <div class="h-44 bg-surface-alt flex items-center justify-center overflow-hidden">
               <% if artifact.image_url.present? %>
-                <%= image_tag artifact.image_url, class: "object-cover w-full h-full" %>
+                <%= safe_image_tag artifact.image_url, class: "object-cover w-full h-full" %>
               <% else %>
                 <span class="text-3xl opacity-40">🖼</span>
               <% end %>

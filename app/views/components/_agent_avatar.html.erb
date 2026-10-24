@@ -22,7 +22,7 @@
       style="background-color: <%= agent.avatar_color %>;">
   <span class="text-white font-bold <%= s[:text] %>"><%= agent.avatar_initials %></span>
   <% if agent.avatar.present? %>
-    <img src="<%= agent.avatar %>"
+    <img src="<%= safe_image_src(agent.avatar) %>"
          alt="<%= agent.name %>"
          class="absolute inset-0 w-full h-full rounded-full object-cover"
          loading="lazy"

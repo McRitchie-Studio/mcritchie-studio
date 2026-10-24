@@ -156,7 +156,7 @@
         <% if @content.hook_image_url.present? %>
           <div class="mb-4 rounded-lg overflow-hidden">
             <p class="label-upper mb-1">Hook Image</p>
-            <img src="<%= @content.hook_image_url %>" alt="Hook image" class="w-full h-48 object-cover rounded-lg">
+            <img src="<%= safe_image_src(@content.hook_image_url) %>" alt="Hook image" class="w-full h-48 object-cover rounded-lg">
           </div>
         <% end %>
 
@@ -203,7 +203,7 @@
                 <div class="bg-surface-alt rounded-lg p-3">
                   <p class="text-xs font-bold text-heading mb-1">Scene <%= asset["scene_number"] %></p>
                   <% if asset["image_url"] %>
-                    <img src="<%= asset["image_url"] %>" alt="Scene <%= asset["scene_number"] %>" class="w-full h-24 object-cover rounded">
+                    <img src="<%= safe_image_src(asset["image_url"]) %>" alt="Scene <%= asset["scene_number"] %>" class="w-full h-24 object-cover rounded">
                   <% end %>
                 </div>
               <% end %>

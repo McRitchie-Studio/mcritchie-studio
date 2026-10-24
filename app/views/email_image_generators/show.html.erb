@@ -37,7 +37,7 @@
         <% if (image = @page.model_image) %>
           <figure class="space-y-1" data-test="model-image" data-source="<%= image.source %>">
             <%= safe_link_to image.url, target: "_blank", rel: "noopener", class: "block rounded-lg border border-subtle bg-surface-alt overflow-hidden" do %>
-              <img src="<%= image.url %>" alt="<%= character.name %>: <%= image.label %>" class="w-full max-h-[32rem] object-contain">
+              <img src="<%= safe_image_src(image.url) %>" alt="<%= character.name %>: <%= image.label %>" class="w-full max-h-[32rem] object-contain">
             <% end %>
             <figcaption class="text-3xs text-muted break-words" data-test="model-caption"><%= image.label %></figcaption>
           </figure>
@@ -57,7 +57,7 @@
           <% kit.references.each do |ref| %>
             <figure class="space-y-1 min-w-0" data-test="kit-reference" data-role="<%= ref.role %>">
               <div class="aspect-square rounded border border-subtle bg-surface-alt flex items-center justify-center overflow-hidden">
-                <img src="<%= ref.display_url %>" alt="<%= ref.label %>" class="max-h-full max-w-full object-contain" loading="lazy">
+                <img src="<%= safe_image_src(ref.display_url) %>" alt="<%= ref.label %>" class="max-h-full max-w-full object-contain" loading="lazy">
               </div>
               <figcaption class="text-3xs text-muted break-words"><%= ref.role %> &middot; <%= ref.label %></figcaption>
             </figure>
@@ -116,7 +116,7 @@
       <div class="grid gap-4 sm:grid-cols-2">
         <% @page.examples.each do |example| %>
           <figure class="rounded-lg border border-subtle bg-surface p-3 space-y-2 min-w-0" data-test="example" data-source="<%= example.source %>">
-            <img src="<%= example.url %>" alt="<%= example.label %>" class="w-full aspect-[2/1] object-cover rounded" loading="lazy">
+            <img src="<%= safe_image_src(example.url) %>" alt="<%= example.label %>" class="w-full aspect-[2/1] object-cover rounded" loading="lazy">
             <figcaption class="space-y-0.5">
               <span class="badge text-3xs bg-primary/10 text-primary border-primary/40"><%= example.source %></span>
               <p class="text-xs text-heading font-semibold break-words" data-test="example-label"><%= example.label %></p>

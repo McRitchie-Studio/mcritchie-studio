@@ -49,7 +49,7 @@
         <div class="rounded-lg border border-subtle bg-surface p-3 space-y-2 min-w-0" data-test="reference"
              data-origin="<%= ref.origin %>" data-role="<%= ref.role %>" data-sent="<%= position.present? %>">
           <div class="aspect-square rounded bg-surface-alt border border-subtle flex items-center justify-center overflow-hidden">
-            <img src="<%= ref.display_url %>" alt="<%= ref.label %>" class="max-h-full max-w-full object-contain" loading="lazy">
+            <img src="<%= safe_image_src(ref.display_url) %>" alt="<%= ref.label %>" class="max-h-full max-w-full object-contain" loading="lazy">
           </div>
           <div class="flex flex-wrap items-center gap-1.5">
             <span class="badge text-3xs bg-primary/10 text-primary border-primary/40"><%= ref.role %></span>
@@ -155,7 +155,7 @@
         <% @approved_headers.each do |brief, artifact| %>
           <%= link_to email_image_path(brief), class: "block rounded-lg border border-subtle bg-surface p-3 space-y-2 hover:border-primary min-w-0",
                       data: { test: "approved-header", slug: brief.slug } do %>
-            <img src="<%= artifact.image_url %>" alt="<%= brief.effective_alt_text %>" class="w-full aspect-[2/1] object-cover rounded" loading="lazy">
+            <img src="<%= safe_image_src(artifact.image_url) %>" alt="<%= brief.effective_alt_text %>" class="w-full aspect-[2/1] object-cover rounded" loading="lazy">
             <p class="text-xs text-heading font-semibold break-words">&ldquo;<%= brief.headline %>&rdquo;</p>
             <p class="text-3xs text-muted break-words">
               <%= brief.app %> &middot; <span class="font-mono"><%= brief.email_key %></span> &middot; <%= brief.variant %>

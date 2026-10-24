@@ -78,7 +78,7 @@
           as grey alt-text. `display_url` falls back to the original wherever no
           thumbnail was reported, so a Serper row and every row filed before that column
           existed still render. %>
-      <img src="<%= photo.display_url %>" loading="lazy" referrerpolicy="no-referrer"
+      <img src="<%= safe_image_src(photo.display_url) %>" loading="lazy" referrerpolicy="no-referrer"
            alt="<%= photo.title.presence || host || "reference photo" %>"
            class="w-full h-full object-cover text-3xs text-muted leading-tight p-1">
     <% end %>

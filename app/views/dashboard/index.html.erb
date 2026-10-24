@@ -52,7 +52,7 @@
                 <div class="flex items-center gap-1 shrink-0">
                   <% agent = @agents.find { |a| a.slug == activity.agent_slug } %>
                   <% if agent&.avatar.present? %>
-                    <img src="<%= agent.avatar %>" alt="<%= activity.agent_slug %>" class="w-5 h-5 rounded-full object-cover">
+                    <img src="<%= safe_image_src(agent.avatar) %>" alt="<%= activity.agent_slug %>" class="w-5 h-5 rounded-full object-cover">
                   <% else %>
                     <div class="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center">
                       <span class="text-primary text-[9px] font-bold"><%= activity.agent_slug.first.upcase %></span>

@@ -16,7 +16,7 @@
   <%# Headshot %>
   <% headshot = athlete&.headshot_url(width: 400) %>
   <% if headshot %>
-    <img src="<%= headshot %>" alt="<%= person.full_name %>" class="w-10 h-10 rounded-full object-cover bg-surface-alt flex-shrink-0">
+    <img src="<%= safe_image_src(headshot) %>" alt="<%= person.full_name %>" class="w-10 h-10 rounded-full object-cover bg-surface-alt flex-shrink-0">
   <% else %>
     <span class="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold bg-surface-alt text-muted flex-shrink-0">
       <%= person ? "#{person.first_name[0]}#{person.last_name[0]}" : "—" %>

@@ -4,9 +4,9 @@
   <div class="bg-inset flex items-center justify-center">
     <% case entry.kind %>
     <% when :image %>
-      <img src="<%= preview.url %>" alt="<%= entry.name %>" class="max-h-[60vh] w-full object-contain">
+      <img src="<%= safe_image_src(preview.url) %>" alt="<%= entry.name %>" class="max-h-[60vh] w-full object-contain">
     <% when :video %>
-      <video src="<%= preview.url %>" controls preload="metadata" playsinline class="max-h-[60vh] w-full bg-black"></video>
+      <video src="<%= safe_image_src(preview.url) %>" controls preload="metadata" playsinline class="max-h-[60vh] w-full bg-black"></video>
     <% else %>
       <p class="px-4 py-10 text-sm text-muted" data-test="asset-preview-none">No preview for this type.</p>
     <% end %>

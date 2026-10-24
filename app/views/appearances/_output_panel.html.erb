@@ -56,7 +56,7 @@
                     one click from its original. %>
                 <%= safe_link_to artifact.image_url, target: "_blank", rel: "noopener",
                       class: "block w-full" do %>
-                  <%= image_tag artifact.image_url, loading: "lazy",
+                  <%= safe_image_tag artifact.image_url, loading: "lazy",
                         alt: artifact.subjects.first&.role.presence || artifact.kind.to_s.humanize,
                         class: "w-full h-auto object-contain" %>
                 <% end %>

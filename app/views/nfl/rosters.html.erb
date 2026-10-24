@@ -136,7 +136,7 @@
                   <% end %>
                   <div class="roster-spot relative">
                     <% if small %>
-                      <img src="<%= small %>"
+                      <img src="<%= safe_image_src(small) %>"
                            data-hover-src="<%= large %>"
                            alt="<%= person&.full_name %>"
                            loading="lazy"

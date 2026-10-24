@@ -21,7 +21,7 @@
     <div class="relative bg-inset aspect-video" data-test="clip-preview" data-key="<%= chunk&.object_key %>">
       <% if url %>
         <div x-data="clipPair()" class="absolute inset-0" data-test="clip-solo">
-          <video x-ref="original" src="<%= first_frame_src(url) %>" controls playsinline preload="metadata"
+          <video x-ref="original" src="<%= safe_image_src(first_frame_src(url)) %>" controls playsinline preload="metadata"
                  class="absolute inset-0 w-full h-full bg-black" data-test="clip-player" data-signed-key="<%= chunk.object_key %>"
                  @error="lost('original')"></video>
           <button type="button" x-show="!started" @click="playOriginal()"

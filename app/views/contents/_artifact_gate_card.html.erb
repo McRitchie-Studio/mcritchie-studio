@@ -55,7 +55,7 @@
               attaches. The look we would recolor FROM is named in words by
               `slot.detail`; this frame is reserved for what is actually on file. %>
           <% if slot.filled? %>
-            <%= image_tag slot.occupant.image_url, class: "object-cover w-full h-full" %>
+            <%= safe_image_tag slot.occupant.image_url, class: "object-cover w-full h-full" %>
           <% else %>
             <span class="text-3xl opacity-40">🖼</span>
           <% end %>

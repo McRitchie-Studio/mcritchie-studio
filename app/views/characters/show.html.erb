@@ -70,7 +70,7 @@
           <% subject = artifact.subjects.find { |s| s.character_slug == @character.slug } %>
           <figure class="rounded-lg border border-subtle bg-surface p-2 space-y-1 min-w-0" data-test="character-artifact" data-artifact="<%= artifact.slug %>">
             <%= safe_link_to artifact.image_url, target: "_blank", rel: "noopener", class: "block aspect-square rounded bg-surface-alt overflow-hidden" do %>
-              <img src="<%= artifact.image_url %>" alt="<%= subject&.role.presence || artifact.kind.humanize %>" class="w-full h-full object-contain" loading="lazy">
+              <img src="<%= safe_image_src(artifact.image_url) %>" alt="<%= subject&.role.presence || artifact.kind.humanize %>" class="w-full h-full object-contain" loading="lazy">
             <% end %>
             <figcaption class="text-3xs text-muted break-words">
               <%= artifact.kind.humanize %><% if subject&.appearance %> &middot; <%= subject.appearance.descriptor %><% end %>

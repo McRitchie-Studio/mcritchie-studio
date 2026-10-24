@@ -24,7 +24,7 @@
   <span class="dc-handle text-muted text-xs w-4 select-none">⋮⋮</span>
   <span class="text-muted text-xs font-mono w-5" data-depth><%= entry.depth %></span>
   <% if small %>
-    <img src="<%= small %>" alt="<%= person.full_name %>" loading="lazy"
+    <img src="<%= safe_image_src(small) %>" alt="<%= person.full_name %>" loading="lazy"
          class="w-7 h-7 rounded-full object-cover bg-surface-alt flex-shrink-0">
   <% else %>
     <div class="w-7 h-7 rounded-full bg-surface-alt flex-shrink-0"></div>

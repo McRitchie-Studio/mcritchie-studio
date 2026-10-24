@@ -27,7 +27,7 @@
                 overflow-hidden flex items-center justify-center">
       <% avatar = @person.athlete_profile&.espn_headshot_url.presence || @person.avatar_url.presence %>
       <% if avatar %>
-        <%= image_tag avatar, class: "object-cover w-full h-full", alt: @person.full_name %>
+        <%= safe_image_tag avatar, class: "object-cover w-full h-full", alt: @person.full_name %>
       <% else %>
         <span class="text-2xl opacity-40" aria-hidden="true">&#128100;</span>
       <% end %>
