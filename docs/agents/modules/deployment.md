@@ -252,6 +252,9 @@ curl -sI https://mcritchie.studio/up | grep -i '^cf-ray'   # present = proxied
 ```
 
 **Rollback for any one hostname:** set its Cloudflare record back to DNS only.
+Once `EDGE_SECRET` is set, first run `heroku config:unset EDGE_SECRET -a
+mcritchie-studio`: the armed guard refuses every request that did not come
+through Cloudflare, so a DNS-only hostname would answer 403 to all its visitors.
 Its ACM-issued certificate still serves until the date above; after that date
 the rollback is gone, so the cutover has to hold.
 
