@@ -69,6 +69,7 @@ async function measure(browser, url, width, userAgent) {
       for (let r = req.redirectedFrom(); r; r = r.redirectedFrom()) aliases.push(r.url());
       reqs.push({
         url: resp.url(), aliases, host: u.host, pathname: u.pathname, type: typeOf(resp),
+        svg: (resp.headers()["content-type"] || "").includes("svg"),
         bytes: sizes ? sizes.responseBodySize : 0, maxAge: maxAge(resp.headers()["cache-control"]),
       });
     })().catch(() => {}));
@@ -123,8 +124,11 @@ async function measure(browser, url, width, userAgent) {
   // other axis (hub's hero is 4700x1800 in a 507x720 box at 390px: 2.5x, not 9.3x).
   const imgBytes = {};
   for (const r of reqs) if (r.type === "img") for (const u of [r.url, ...r.aliases]) imgBytes[u] = Math.max(imgBytes[u] || 0, r.bytes);
+  // A vector scales to any box, so an SVG has no pixel ratio to judge.
+  const svgUrls = new Set(reqs.filter((r) => r.svg).flatMap((r) => [r.url, ...r.aliases]));
   const sized = images
     .filter((i) => i.naturalWidth > 0 && i.renderedWidth > 0 && i.renderedHeight > 0)
+    .filter((i) => !svgUrls.has(i.src) && !/^data:image\/svg|\.svg([?#]|$)/i.test(i.src))
     .map((i) => ({ ...i, bytes: imgBytes[i.src] || 0,
       ratio: (i.fit === "cover" ? Math.min : Math.max)(i.naturalWidth / i.renderedWidth, i.naturalHeight / i.renderedHeight) }))
     .sort((a, b) => b.bytes - a.bytes);
