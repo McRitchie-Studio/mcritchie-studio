@@ -61,6 +61,7 @@ require_relative "lib/projects_root"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/dev_secret_key"
 require_relative "lib/agent_worktree_cli"
+require_relative "lib/child_env"
 # Which repos are gems (config/release_repos.yml `gems:`): the desk lane that cuts a
 # desk with no port, Redis slot or database. See gem_desk_config.
 require_relative "lib/release_registry"
@@ -1512,17 +1513,34 @@ def start_generic_rails(dir, app, values)
     return
   end
 
-  env = command_env(app, values)
-  pid = Process.spawn(env, "bin/rails", "server", "-p", values.fetch("APP_PORT"),
-                      chdir: dir, in: File::NULL, out: [logfile, "a"], err: [:child, :out], pgroup: true)
-  Process.detach(pid)
+  pid = spawn_desk_server(command_env(app, values), ["bin/rails", "server", "-p", values.fetch("APP_PORT")],
+                          chdir: dir, logfile: logfile)
   File.write(pidfile, "#{pid}\n")
   puts "started web pid #{pid}"
 end
 
+# Start a long-lived desk server detached, under an ALLOW-LISTED environment
+# (ChildEnv.desk_server): the system names, the desk-server names and the desk's
+# own stack values, and never an agent credential. Puma and Sidekiq rename their
+# process titles, and on macOS `ps` and `pgrep -fl` then print a renamed process's
+# environment, so whatever a server inherits is one listing away from a
+# transcript (secrets-never-on-argv-or-desk-env). unsetenv_others is the half
+# that makes the hash an allow-list; without it Process.spawn merges it over ours.
+def spawn_desk_server(values, argv, chdir:, logfile:)
+  pid = Process.spawn(ChildEnv.desk_server(values), *argv, chdir: chdir, unsetenv_others: true,
+                      in: File::NULL, out: [logfile, "a"], err: [:child, :out], pgroup: true)
+  Process.detach(pid)
+  pid
+end
+
+# bin/tm launches web and Sidekiq itself, and scrubs its own children's
+# environment too; it starts here under the same allow-list so the wrapper never
+# holds an agent credential either.
 def start_tm(dir, app, values)
   prepare_rails(dir, app, values)
-  sh("bin/tm", "up", "--no-stripe", chdir: dir, env: command_env(app, values))
+  ok = system(ChildEnv.desk_server(command_env(app, values)), "bin/tm", "up", "--no-stripe",
+              chdir: dir, unsetenv_others: true)
+  abort "command failed in #{dir}: bin/tm up --no-stripe" unless ok
 end
 
 def wait_for_url(port)
