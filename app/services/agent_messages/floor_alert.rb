@@ -66,7 +66,7 @@ module AgentMessages
       tasks = Task.where(stage: "submitted", blocked_at: nil)
                   .where("COALESCE(tasks.submitted_at, tasks.updated_at) <= ?", cutoff)
                   .where("NOT EXISTS (SELECT 1 FROM task_review_claims trc WHERE trc.task_slug = tasks.slug " \
-                         "AND (trc.claim_expires_at > ? OR trc.acquired_at > ?))", now, cutoff)
+                         "AND (trc.claim_expires_at > ? OR trc.acquired_at > ? OR trc.updated_at > ?))", now, cutoff, cutoff)
                   .order(:submitted_at, :id).to_a
       return [] if tasks.empty?
 

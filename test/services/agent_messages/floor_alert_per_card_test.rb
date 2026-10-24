@@ -98,13 +98,23 @@ class AgentMessages::FloorAlertPerCardTest < ActiveSupport::TestCase
     claim!("under-review", at: @t0 - 40.minutes)
     submitted!("blocked-card").update_columns(blocked_at: @t0 - 1.hour)
     submitted!("just-released")
-    TaskReviewClaim.create!(task_slug: "just-released", acquired_at: @t0 - 10.minutes, claim_expires_at: @t0 - 1.minute)
+    # TaskReviewClaim.drop nils the lease fields on release; only updated_at dates it.
+    TaskReviewClaim.create!(task_slug: "just-released", updated_at: @t0 - 5.minutes)
 
     checks = @floor.call(now: @t0)
 
     assert_empty unclaimed
     assert_empty checks.select { |c| c.kind == "submitted_unclaimed" }
     assert_empty @recorder.posts
+  end
+
+  test "a claim released over 30 minutes ago no longer holds the alert back" do
+    submitted!("released-long-ago")
+    TaskReviewClaim.create!(task_slug: "released-long-ago", updated_at: @t0 - 31.minutes)
+
+    @floor.call(now: @t0)
+
+    assert_equal %w[released-long-ago], unclaimed.unresolved.pluck(:subject)
   end
 
   test "two waiting cards are two incidents, each resolving on its own" do
