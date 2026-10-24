@@ -1024,7 +1024,7 @@ module ClientBuildLauncher
 
       listing = @client.list(worker: @worker)
       max = Integer(listing.dig("meta", "max_attempts") || @config.fetch("max_attempts"))
-      picks = Picker.pick(Array(listing["data"]), slots: cap - @slots.size, running: @slots.map(&:slug),
+      picks = Picker.pick(Array(listing["data"]), slots: cap - @slots.size - @starts.size, running: @slots.map(&:slug),
                                                   max_attempts: max, desk_bound: desk_bound)
       if @dry_run
         log("dry run: #{Array(listing['data']).size} candidate(s); would claim #{picks.map { |p| p['task_slug'] }.inspect}; claimed nothing")

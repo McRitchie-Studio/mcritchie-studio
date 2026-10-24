@@ -59,4 +59,20 @@ class ClientBuildLauncherChangeStartTest < Minitest::Test
     refute result.ok
     assert_equal "bin/task begin ran past 1 minutes", result.reason
   end
+
+  # A start in flight holds a slot of the build cap too: at cap with starts alone,
+  # the build side claims nothing.
+  def test_starts_in_flight_count_against_the_build_cap
+    client = Object.new
+    claims = []
+    client.define_singleton_method(:list) { |**| { "data" => [ { "task_slug" => "launch-a", "created_at" => "2026-10-24T00:00:00Z", "attempts" => 0 } ] } }
+    client.define_singleton_method(:claim) { |slug, **| claims << slug; raise "claimed past the cap" }
+    publisher = Object.new
+    publisher.define_singleton_method(:available?) { true }
+    launcher = ClientBuildLauncher::Launcher.new(client: client, config: { "cap" => 1, "max_attempts" => 3 },
+                                                 publisher: publisher, desk_bound: ->(_) { false }, out: StringIO.new)
+    launcher.starts << ClientBuildLauncher::Launcher::Slot.new(slug: "change-a", run_id: "r", thread: Thread.new { })
+    assert_empty launcher.claim_free_slots
+    assert_empty claims
+  end
 end
