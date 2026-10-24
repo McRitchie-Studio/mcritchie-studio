@@ -59,6 +59,7 @@ class AssetBrowserListingViewTest < ActionView::TestCase
     render partial: "assets/preview", locals: { preview: AssetBrowser::Preview.new(entry: FILE, url: "https://signed.example/cover.jpg") }
     assert_select "a[href='https://signed.example/cover.jpg']", "Open signed link"
 
+    @rendered = +""
     render partial: "assets/preview", locals: { preview: AssetBrowser::Preview.new(entry: CLIP, url: "javascript:alert(1)") }
     assert_select "a[href^='javascript']", 0
     assert_select "span[data-test='link-withheld'][title]", "—"

@@ -47,6 +47,7 @@ class VideoLookCardTest < ActionView::TestCase
     assert_select "a[href='https://example.com/sheet.png'] img[data-test='look-sheet-image']"
 
     sheet.update_columns(image_url: "javascript:alert(1)")
+    @rendered = +""
     render_card(sheet: sheet.reload)
     assert_select "a[href^='javascript']", 0
     assert_select "span[data-test='link-withheld'][title] img[data-test='look-sheet-image']"
