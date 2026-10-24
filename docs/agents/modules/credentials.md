@@ -11,11 +11,11 @@ Credential docs are split into two layers:
 - **A secret never appears on a command line.** `ps` shows every process's arguments to every
   local process, so an argument is one process listing away from a transcript. Pass it by stdin
   (`printf '%s' "$V" | cmd`; `printf` is a shell builtin, not a process), as item JSON on
-  stdin to `op item edit` (never `<field>[concealed]=…`), through
+  stdin to `op item edit` (never a concealed-field assignment argument), through
   `bin/heroku-secret-set <app> <NAME>` for Heroku config (`heroku config:set` takes values only
   as arguments), or as a curl header from a file or `-H @<(printf 'Authorization: Bearer %s\n'
   "$TOKEN")`. `test/docs/secrets_on_argv_guard_test.rb` (and its turf-monster twin) fails on a
-  new argv form in `bin/`, `lib/tasks`, `docs/agents` and `.github/workflows`.
+  new argv form in `bin/`, `lib/tasks`, `docs/`, `RUNBOOK.md`, `README.md` and `.github/workflows`.
 - **A long-lived child gets an allow-listed environment.** Desk servers start under
   `bin/lib/child_env.rb` (`bin/agent-worktree`) and turf-monster `bin/tm`'s `TM_ENV_ALLOW`, so
   no agent credential (`HEROKU_API_KEY`, `OP_*`, `CLAUDE_CODE_*`, `AGENT_API_*`, `GH_TOKEN`)

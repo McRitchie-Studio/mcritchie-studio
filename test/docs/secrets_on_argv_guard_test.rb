@@ -8,7 +8,8 @@
 # itself told the operator to run `op item edit … <field>[concealed]=$NEW` and
 # `heroku config:set <VAR>=$NEW`, and four runbooks did the same with
 # placeholders, while admin-authority-rotation-plan-2026-10-06.md already forbade
-# it. This scans the places an agent copies commands from and fails on a new
+# it. This scans the places an agent copies commands from (bin/, lib/tasks, docs/,
+# RUNBOOK.md, README.md, .github/workflows) and fails on a new
 # argv form. The fixes it points at: stdin (`printf '%s' "$V" | cmd`, `op item edit`
 # reading item JSON on stdin), bin/heroku-secret-set for Heroku config, and a curl
 # header read from a file or process substitution
@@ -41,7 +42,7 @@ require "test_helper"
 
 class SecretsOnArgvGuardTest < ActiveSupport::TestCase
   ROOT = Rails.root
-  SCANNED = %w[bin lib/tasks docs/agents .github/workflows].freeze
+  SCANNED = %w[bin lib/tasks docs RUNBOOK.md README.md .github/workflows].freeze
   EXCLUDED_PREFIXES = %w[docs/agents/archive/].freeze
 
   SECRET_NAME = /KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|\A(?:NEW|OLD|T)\z/i
@@ -117,7 +118,7 @@ class SecretsOnArgvGuardTest < ActiveSupport::TestCase
     hits
   end
 
-  test "no command in bin/, lib/tasks, docs/agents or .github/workflows puts a secret on argv" do
+  test "no command in bin/, lib/tasks, docs/, the runbook or .github/workflows puts a secret on argv" do
     files = scanned_files
 
     assert_operator files.length, :>=, 300, "only #{files.length} files scanned; the file list has gone blind"
