@@ -20,7 +20,7 @@
 # the 1Password item to fetch it from.
 #
 # Runbook: docs/agents/agents/steffon/sops/conductor-host.md
-# Exit: 0 every item done (or the hand-off's uninstalls answered 0) · 1 a miss (or a step that could not run) · 2 usage.
+# Exit: 0 every item done (or the hand-off's uninstalls answered 0) · 1 a miss (or a step that could not run) · 2 usage or help.
 
 require "optparse"
 require_relative "lib/process_encoding"
@@ -42,9 +42,11 @@ parser = OptionParser.new do |o|
   o.on("--allow-admin-token", "accept a deployer token in ~/.zprofile.admin (only when Alex said so)") do
     opts[:allow_admin_token] = true
   end
-  o.on("-h", "--help", "print this and do nothing") do
+  # Help exits 2, not 0: `--check`'s exit 0 is a verdict, so `--check --help`
+  # must never read as "every item done".
+  o.on("-h", "--help", "print this and do nothing (exit 2)") do
     puts o
-    exit 0
+    exit 2
   end
 end
 begin

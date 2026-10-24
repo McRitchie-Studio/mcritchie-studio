@@ -122,7 +122,7 @@ The commands below are for a repair, or for a Mac you are not rebuilding.
 **Moving it to another Mac** (the Mac mini conductor) is
 [`conductor-host`](conductor-host.md): the old Mac runs
 `bin/conductor-host-setup --hand-off-to <host>`, which uninstalls both services and
-leaves a `conductor-elsewhere` marker in `<projects>/.agents` that keeps the
+leaves a `~/.config/mcritchie/conductor-elsewhere` marker that keeps the
 services phase from reinstalling them; the new Mac runs `--take-over`.
 
 Run from the hub's primary checkout, which the release moves to the shipped

@@ -134,7 +134,7 @@ module LocalServices
     attr_reader :items
 
     def initialize(services:, hub:, runner: Restorer.default_runner, which: Restorer.default_which,
-                   dotenv: Restorer.default_dotenv, handoff: LocalServices.method(:handed_off_to), out: $stdout)
+                   dotenv: Restorer.default_dotenv, handoff: ->(_hub) { LocalServices.handed_off_to }, out: $stdout)
       @services = services
       @handoff = handoff
       @hub = hub
@@ -176,7 +176,7 @@ module LocalServices
       # release each other's runs (docs/agents/agents/steffon/sops/conductor-host.md).
       if (host = @handoff.call(@hub))
         fail_line "services skipped", "this Mac handed the conductor role to #{host} " \
-                                      "(#{HANDOFF_FILE} in the projects root's .agents); " \
+                                      "(~/.config/mcritchie/#{HANDOFF_FILE}); " \
                                       "`bin/conductor-host-setup --take-over` takes it back"
         return @items
       end
@@ -341,10 +341,12 @@ module LocalServices
 
   # The marker a Mac keeps once it has handed the conductor role (the two
   # launchd services) to another host, written by `bin/conductor-host-setup
-  # --hand-off-to <host>` in <projects>/.agents and removed by `--take-over`.
+  # --hand-off-to <host>` and removed by `--take-over`. It lives in the user's
+  # ~/.config, outside every repo and outside <projects>/.agents (whose paths only
+  # the guarded seams may build: test/lib/state_store_containment_test.rb).
   # Its content is the new host's name. Returns that name, or nil.
-  def handed_off_to(hub)
-    path = handoff_path(hub)
+  def handed_off_to(home = Dir.home)
+    path = handoff_path(home)
     return nil unless File.file?(path)
 
     name = File.read(path, encoding: "UTF-8").strip
@@ -353,7 +355,7 @@ module LocalServices
     nil
   end
 
-  def handoff_path(hub) = File.join(File.dirname(File.expand_path(hub)), ".agents", HANDOFF_FILE)
+  def handoff_path(home = Dir.home) = File.join(File.expand_path(home), ".config", "mcritchie", HANDOFF_FILE)
 
   # The hub's primary checkout the services install from: PROJECTS_DIR's
   # mcritchie-studio when set (bin/ecosystem-build's own seam), else the one

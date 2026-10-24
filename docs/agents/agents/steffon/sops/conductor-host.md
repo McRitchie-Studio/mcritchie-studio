@@ -26,7 +26,7 @@ or **Script** (`bin/conductor-host-setup`, which the operator runs).
 | The two services | [`agent-dispatcher`](agent-dispatcher.md) and [`client-build-launcher.md`](../../../system/client-build-launcher.md), both from `config/local_services.yml` |
 | The toolchain | `bin/ecosystem-build` ([`ecosystem-build.md`](../../../system/ecosystem-build.md); manual fallback [`house-burn-down.md`](../../../system/house-burn-down.md)) |
 | The harness key | `bin/harness-key` ([`agent-sessions-design.md`](../../../system/agent-sessions-design.md), section 3) |
-| The hand-off marker | `conductor-elsewhere` in `~/projects/.agents/`: while it exists, the services phase of `bin/ecosystem-build` installs neither service on that Mac |
+| The hand-off marker | `~/.config/mcritchie/conductor-elsewhere`: while it exists, the services phase of `bin/ecosystem-build` installs neither service on that Mac |
 
 ## Roles
 
@@ -35,6 +35,10 @@ or **Script** (`bin/conductor-host-setup`, which the operator runs).
 | **Alex** | (1) creates the mini's 1Password service account and pastes its token on the mini, and keeps the FileVault recovery key; (2) signs Claude Code in with his claude.ai account; (3) approves the mini's harness key on the board. Also runs the laptop half of the cutover | His 1Password, his claude.ai login, the board |
 | **Operator** | Unboxes, cables, walks macOS setup, runs every command in this page on the mini | The mini, a temporary account password, this page. No secret: the operator never sees a token |
 | **Script** | `pmset`, the directory layout, the hub clone, the Claude Code install, the two launchd agents (with `--take-over`), the harness-key request, and `--check` | Run by the operator, in Terminal on the mini |
+
+Once the token is on the mini (step 5), anyone signed in as `alex` there can read
+the `studio-agents` vault through `op`. That is why the operator's account
+password is temporary and Alex replaces it in step 11.
 
 Never a secret in chat, a ticket or a screenshot. The script prints none: each
 item that needs one names the 1Password item instead.
@@ -106,8 +110,7 @@ bin/conductor-host-setup
 `sudo` asks for the account password once, for `pmset`. The script:
 
 - sets `sudo pmset -c sleep 0 displaysleep 10 disksleep 0 womp 1 autorestart 1`;
-- creates `~/Library/LaunchAgents`, `~/Library/Logs`, `~/projects/.agents` (mode 700)
-  and `~/.client-builds`;
+- creates `~/Library/LaunchAgents`, `~/Library/Logs` and `~/.client-builds`;
 - installs Claude Code (`curl -fsSL https://claude.ai/install.sh | bash`) when missing;
 - writes the hand-off marker, so nothing installs a second dispatcher on the mini
   before the cutover;
@@ -272,7 +275,7 @@ Back to the laptop, in the same order (give up first, take over second):
 # on the mini
 bin/conductor-host-setup --hand-off-to mac
 # on the laptop (Alex)
-rm ~/projects/.agents/conductor-elsewhere && bin/dispatcher install && bin/client-build-launcher install
+rm ~/.config/mcritchie/conductor-elsewhere && bin/dispatcher install && bin/client-build-launcher install
 ```
 
 ## After a power cut
@@ -285,6 +288,7 @@ and the recovery line posts. Under decision B it logs in and recovers alone.
 ## Done when
 
 - `bin/conductor-host-setup --check` exits 0 on the mini, board item included.
-- The laptop's `bin/dispatcher status` reads `not installed` and its `.agents`
-  holds the hand-off marker.
+- The laptop's `bin/dispatcher status` reads `not installed` and it holds
+  `~/.config/mcritchie/conductor-elsewhere`.
 - A `lobster-tank` message was answered from `conductor-mini`.
+- `bin/harness-key status` on the mini names a key the board accepts.

@@ -70,6 +70,7 @@ class ConductorHostSetupTest < Minitest::Test
     FileUtils.mkdir_p(File.join(@hub, ".git"))
     FileUtils.mkdir_p(File.join(@hub, "bin"))
     ConductorHost::Layout.new("HOME" => @home, "PROJECTS_DIR" => @projects).directories.each { |d| FileUtils.mkdir_p(d) }
+    FileUtils.mkdir_p(File.join(@projects, ".agents"))
     File.write(File.join(@projects, "AGENTS.md"), "# map\n")
     File.write(File.join(@projects, "CLAUDE.md"), "# adapter\n")
     File.write(File.join(@home, ".zprofile"), "export PATH=/x\nexport OP_SERVICE_ACCOUNT_TOKEN=#{TOKEN_SENTINEL}\n")
@@ -171,7 +172,7 @@ class ConductorHostSetupTest < Minitest::Test
     assert_includes recorded, "harness-key request --label"
     refute_match(/^(dispatcher|client-build-launcher) install/, recorded, "a launchd agent was installed without --take-over")
     assert_includes out, "re-run with --take-over"
-    assert_includes File.read(File.join(@projects, ".agents", "conductor-elsewhere")), "until bin/conductor-host-setup --take-over",
+    assert_includes File.read(File.join(@home, ".config", "mcritchie", "conductor-elsewhere")), "until bin/conductor-host-setup --take-over",
                     "before the cutover the new host must carry the marker that stops bin/ecosystem-build installing a second dispatcher"
     assert_match(/MISSING\s+launchd: agent-dispatcher\s+studio\.mcritchie\.dispatcher: not installed/, out)
     assert_equal 1, status.exitstatus, "the stubbed pmset still reads unset, so the closing check must miss: #{out}#{err}"
@@ -199,7 +200,7 @@ class ConductorHostSetupTest < Minitest::Test
     assert_predicate status, :success?, out + err
     assert_match(/^dispatcher uninstall$/, recorded)
     assert_match(/^client-build-launcher uninstall$/, recorded)
-    marker = File.join(@projects, ".agents", "conductor-elsewhere")
+    marker = File.join(@home, ".config", "mcritchie", "conductor-elsewhere")
     assert_equal "conductor-mini\n", File.read(marker)
 
     checked, = run_cli("--check", "--no-board")
@@ -223,8 +224,8 @@ class ConductorHostSetupTest < Minitest::Test
     assert_equal 2, status.exitstatus
     assert_includes err, "invalid option"
 
-    out, _, status = run_cli("--help", "--take-over")
-    assert_predicate status, :success?
+    out, _, status = run_cli("--check", "--help", "--take-over")
+    assert_equal 2, status.exitstatus, "help must not exit 0: --check's 0 is a verdict"
     assert_includes out, "usage: bin/conductor-host-setup"
     assert_equal before, tree
     assert_empty recorded, "--help ran a command"

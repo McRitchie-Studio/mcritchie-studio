@@ -43,7 +43,7 @@
 # beat); `refresh` covers a changed plist TEMPLATE only.
 #
 # A Mac that handed the conductor role to another host keeps the marker
-# <projects>/.agents/conductor-elsewhere (LocalServices.handed_off_to), and
+# ~/.config/mcritchie/conductor-elsewhere (LocalServices.handed_off_to), and
 # restore then installs neither service there: two dispatchers split the
 # mailbox. bin/conductor-host-setup --hand-off-to writes it; --take-over removes
 # it (docs/agents/agents/steffon/sops/conductor-host.md).

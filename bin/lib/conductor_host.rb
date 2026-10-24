@@ -74,14 +74,13 @@ module ConductorHost
     end
 
     def hub = File.join(projects, HUB_REPO)
-    def agents_dir = File.join(projects, ".agents")
     def zprofile = File.join(home, ".zprofile")
     def zprofile_admin = File.join(home, ".zprofile.admin")
 
     # The directories the two launchd agents and the harness write into.
     def directories
       [ File.join(home, "Library", "LaunchAgents"), File.join(home, "Library", "Logs"),
-        agents_dir, File.join(home, ".client-builds") ]
+        File.join(home, ".client-builds") ]
     end
   end
 
@@ -261,7 +260,7 @@ module ConductorHost
     end
 
     def role
-      to = LocalServices.handed_off_to(@layout.hub)
+      to = LocalServices.handed_off_to(@layout.home)
       item(:role, "Conductor role kept here", to.nil?, to ? "handed off to #{to}" : "no hand-off marker",
            "bin/conductor-host-setup --take-over   # only once the other host's agents are uninstalled")
     end
@@ -358,11 +357,11 @@ module ConductorHost
         @out.puts("  #{argv.join(' ')}: #{ok ? 'done' : 'FAILED'}  #{out.to_s.lines.last.to_s.strip}")
         ok
       end
-      marker = LocalServices.handoff_path(@layout.hub)
+      marker = LocalServices.handoff_path(@layout.home)
       FileUtils.mkdir_p(File.dirname(marker))
       File.write(marker, "#{@to}\n")
       @out.puts("  conductor role: handed to #{@to}; this Mac's bin/ecosystem-build will not reinstall the agents " \
-                "(marker: #{LocalServices::HANDOFF_FILE} in the projects root's .agents)")
+                "(marker: ~/.config/mcritchie/#{LocalServices::HANDOFF_FILE})")
       @out.puts("  next, on #{@to}: bin/conductor-host-setup --take-over")
       results.all?
     end
@@ -412,7 +411,6 @@ module ConductorHost
 
     def step_directories
       @layout.directories.each { |d| FileUtils.mkdir_p(d) }
-      File.chmod(0o700, @layout.agents_dir)
       say("directories: #{@layout.directories.size} present")
     end
 
@@ -438,7 +436,7 @@ module ConductorHost
     # secret) are checked one way. Only with --take-over: two dispatchers split
     # the mailbox and two launchers release each other's runs.
     def step_services
-      marker = LocalServices.handoff_path(@layout.hub)
+      marker = LocalServices.handoff_path(@layout.home)
       unless @take_over
         # Until the cutover, keep bin/ecosystem-build's services phase from
         # installing a second dispatcher here: the same marker a laptop keeps

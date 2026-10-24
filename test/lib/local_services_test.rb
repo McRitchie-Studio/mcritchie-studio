@@ -200,14 +200,13 @@ class LocalServicesTest < Minitest::Test
     assert_includes @out.string, "handed the conductor role to conductor-mini"
   end
 
-  def test_handed_off_to_reads_the_marker_beside_the_hub
-    hub = File.join(@dir, "projects", "mcritchie-studio")
-    FileUtils.mkdir_p([ hub, File.join(@dir, "projects", ".agents") ])
-    assert_nil LocalServices.handed_off_to(hub)
+  def test_handed_off_to_reads_the_marker_in_the_users_config
+    assert_nil LocalServices.handed_off_to(@dir)
 
-    File.write(LocalServices.handoff_path(hub), "conductor-mini\n")
-    assert_equal File.join(@dir, "projects", ".agents", "conductor-elsewhere"), LocalServices.handoff_path(hub)
-    assert_equal "conductor-mini", LocalServices.handed_off_to(hub)
+    FileUtils.mkdir_p(File.join(@dir, ".config", "mcritchie"))
+    File.write(LocalServices.handoff_path(@dir), "conductor-mini\n")
+    assert_equal File.join(@dir, ".config", "mcritchie", "conductor-elsewhere"), LocalServices.handoff_path(@dir)
+    assert_equal "conductor-mini", LocalServices.handed_off_to(@dir)
   end
 
   def test_re_running_with_the_service_up_installs_nothing
@@ -451,7 +450,8 @@ class LocalServicesTest < Minitest::Test
   # as holding every key unless a case passes `dotenv:`.
   def restorer(runner, which: ->(_) { true }, services: LocalServices::Registry.load.first(1),
                dotenv: ->(_hub, _key) { true })
-    LocalServices::Restorer.new(services: services, hub: "/hub", runner: runner, which: which, dotenv: dotenv, out: @out)
+    LocalServices::Restorer.new(services: services, hub: "/hub", runner: runner, which: which, dotenv: dotenv,
+                                handoff: ->(_) { nil }, out: @out)
   end
 
   def settings(data)
