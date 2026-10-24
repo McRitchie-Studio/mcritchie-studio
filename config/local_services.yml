@@ -41,6 +41,12 @@
 # Neither needs a refresh for new CODE: each re-reads a digest of its own files
 # and restarts itself (AgentMailbox::CodeFingerprint, on each one's minute
 # beat); `refresh` covers a changed plist TEMPLATE only.
+#
+# A Mac that handed the conductor role to another host keeps the marker
+# ~/.config/mcritchie/conductor-elsewhere (LocalServices.handed_off_to), and
+# restore then installs neither service there: two dispatchers split the
+# mailbox. bin/conductor-host-setup --hand-off-to writes it; --take-over removes
+# it (docs/agents/agents/steffon/sops/conductor-host.md).
 services:
   - name: agent-dispatcher
     sop: docs/agents/agents/steffon/sops/agent-dispatcher.md

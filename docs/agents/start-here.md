@@ -124,6 +124,7 @@ its invocation exactly.
 | Steffon `bucket-provision` SOP (per-app R2 pair + tokens) | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
 | Steffon `chrome-profiles` SOP (avatar-menu roster, fresh Mac) | `mcritchie-studio/docs/agents/agents/steffon/sops/chrome-profiles.md` |
 | Steffon `clean-infra` SOP (worktrees, disk, "no space") | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
+| Steffon `conductor-host` SOP (turn a new Mac mini into the always-on conductor: dispatcher, build launcher, harness key, power) | `mcritchie-studio/docs/agents/agents/steffon/sops/conductor-host.md` |
 | Steffon `credential-filing` SOP (naming, logos, vault lanes) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | Steffon `credential-rotation` SOP (rotate one secret everywhere) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
 | Steffon `discord-bot-setup` SOP (the agents' Discord bot, once, then each client's invite) | `mcritchie-studio/docs/agents/agents/steffon/sops/discord-bot-setup.md` |

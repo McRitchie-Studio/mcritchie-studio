@@ -192,6 +192,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `bucket-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |
 | `chrome-profiles` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/chrome-profiles.md` |
 | `clean-infra` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/clean-infra.md` |
+| `conductor-host` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/conductor-host.md` |
 | `credential-filing` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | `credential-rotation` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
 | `discord-bot-setup` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/discord-bot-setup.md` |

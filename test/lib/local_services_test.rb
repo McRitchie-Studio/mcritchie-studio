@@ -187,6 +187,28 @@ class LocalServicesTest < Minitest::Test
     assert_includes @out.string, "installed and running"
   end
 
+  # A laptop that handed the conductor role away must not take it back on its
+  # next bin/ecosystem-build: the marker skips every service, before any command.
+  def test_a_mac_that_handed_off_the_conductor_role_installs_nothing
+    runner = fake_runner(status: -> { false }, install: -> { flunk "installed on a handed-off Mac" })
+    items = LocalServices::Restorer.new(services: LocalServices::Registry.load, hub: "/hub", runner: runner,
+                                        which: ->(_) { true }, dotenv: ->(_, _) { true },
+                                        handoff: ->(_) { "conductor-mini" }, out: @out).run
+
+    assert_empty @calls, "a handed-off Mac runs no command at all"
+    assert_empty items
+    assert_includes @out.string, "handed the conductor role to conductor-mini"
+  end
+
+  def test_handed_off_to_reads_the_marker_in_the_users_config
+    assert_nil LocalServices.handed_off_to(@dir)
+
+    FileUtils.mkdir_p(File.join(@dir, ".config", "mcritchie"))
+    File.write(LocalServices.handoff_path(@dir), "conductor-mini\n")
+    assert_equal File.join(@dir, ".config", "mcritchie", "conductor-elsewhere"), LocalServices.handoff_path(@dir)
+    assert_equal "conductor-mini", LocalServices.handed_off_to(@dir)
+  end
+
   def test_re_running_with_the_service_up_installs_nothing
     running = false
     runner = fake_runner(status: -> { running }, install: -> { running = true })
@@ -428,7 +450,8 @@ class LocalServicesTest < Minitest::Test
   # as holding every key unless a case passes `dotenv:`.
   def restorer(runner, which: ->(_) { true }, services: LocalServices::Registry.load.first(1),
                dotenv: ->(_hub, _key) { true })
-    LocalServices::Restorer.new(services: services, hub: "/hub", runner: runner, which: which, dotenv: dotenv, out: @out)
+    LocalServices::Restorer.new(services: services, hub: "/hub", runner: runner, which: which, dotenv: dotenv,
+                                handoff: ->(_) { nil }, out: @out)
   end
 
   def settings(data)

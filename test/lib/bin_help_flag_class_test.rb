@@ -126,6 +126,11 @@ class BinHelpFlagClassTest < Minitest::Test
     # through OptionParser and prints before dispatch; an unknown flag, an unknown
     # command and a stray positional all refuse before any request or write.
     "harness-key"            => :optparse,
+    # Sets pmset (sudo), makes directories, clones the hub, installs launchd agents
+    # (--take-over) or uninstalls them (--hand-off-to). OptionParser parses every
+    # flag, --help exits before any step, and leftover positionals refuse (exit 2);
+    # test/commands/conductor_host_setup_test.rb proves `--help --take-over` runs nothing.
+    "conductor-host-setup"   => :optparse,
     "control-check"          => :cli_arg_guard,
     # Read-only: it runs the JS dependency audit and reports a verdict; it takes
     # no options and mutates nothing, so there is no first mutation for --help to

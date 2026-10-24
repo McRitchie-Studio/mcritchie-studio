@@ -1,0 +1,95 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/conductor-host-setup: make this Mac the always-on conductor host, or check it.
+#
+#   bin/conductor-host-setup --check                 every item, done or MISSING; exit 1 on a miss
+#   bin/conductor-host-setup                         the idempotent steps, then the same check
+#   bin/conductor-host-setup --take-over             ...and install the two launchd agents
+#   bin/conductor-host-setup --check --no-board      skip the board read (offline)
+#   bin/conductor-host-setup --hand-off-to <host>    on the Mac giving the role up: uninstall
+#                                                    both agents and keep them uninstalled
+#
+# The steps: pmset (sudo asks for this Mac's password), the directory layout, the
+# hub clone, the Claude Code install, the agent dispatcher and the client build
+# launcher (only with --take-over, once the laptop's copies are uninstalled: two
+# dispatchers split the mailbox), and the harness-key request. bin/ecosystem-build
+# and the 1Password token stay operator steps; --check verifies their results.
+#
+# It never asks for, reads out or prints a secret. Each item that needs one names
+# the 1Password item to fetch it from.
+#
+# Runbook: docs/agents/agents/steffon/sops/conductor-host.md
+# Exit: 0 every item done (or the hand-off's uninstalls answered 0) · 1 a miss (or a step that could not run) · 2 usage or help.
+
+require "optparse"
+require_relative "lib/process_encoding"
+ProcessEncoding.force_utf8!
+require_relative "lib/conductor_host"
+
+opts = { check: false, take_over: false, board: true, allow_admin_token: false, hand_off_to: nil }
+parser = OptionParser.new do |o|
+  o.banner = "usage: bin/conductor-host-setup [--check] [--take-over] [--no-board] [--allow-admin-token] | " \
+             "--hand-off-to <host>"
+  o.on("--check", "report each item as done or MISSING; change nothing") { opts[:check] = true }
+  o.on("--take-over", "also install the dispatcher and the build launcher (the laptop's are uninstalled)") do
+    opts[:take_over] = true
+  end
+  o.on("--hand-off-to HOST", "on the Mac giving the role up: uninstall both agents, keep them off") do |v|
+    opts[:hand_off_to] = v
+  end
+  o.on("--no-board", "skip the board read of the dispatcher pings") { opts[:board] = false }
+  o.on("--allow-admin-token", "accept a deployer token in ~/.zprofile.admin (only when Alex said so)") do
+    opts[:allow_admin_token] = true
+  end
+  # Help exits 2, not 0: `--check`'s exit 0 is a verdict, so `--check --help`
+  # must never read as "every item done".
+  o.on("-h", "--help", "print this and do nothing (exit 2)") do
+    puts o
+    exit 2
+  end
+end
+begin
+  parser.parse!(ARGV)
+rescue OptionParser::ParseError => e
+  warn "conductor-host-setup: #{e.message}"
+  warn parser.banner
+  exit 2
+end
+unless ARGV.empty?
+  warn "conductor-host-setup: unexpected argument(s): #{ARGV.join(' ')}"
+  warn parser.banner
+  exit 2
+end
+if opts[:check] && opts[:take_over]
+  warn "conductor-host-setup: --check changes nothing, so it does not take --take-over"
+  exit 2
+end
+
+if opts[:hand_off_to]
+  if opts[:check] || opts[:take_over]
+    warn "conductor-host-setup: --hand-off-to runs alone (no --check, no --take-over)"
+    exit 2
+  end
+  unless opts[:hand_off_to].match?(/\A[A-Za-z0-9][A-Za-z0-9.-]*\z/)
+    warn "conductor-host-setup: --hand-off-to wants the new host's name, e.g. conductor-mini"
+    exit 2
+  end
+  puts "conductor host: handing the role from #{ConductorHost.host_name} to #{opts[:hand_off_to]}"
+  exit(ConductorHost::HandOff.new(to: opts[:hand_off_to], env: ENV).run ? 0 : 1)
+end
+
+board = opts[:board] ? ConductorHost.default_board(ENV) : nil
+checker = ConductorHost::Checker.new(env: ENV, board: board, allow_admin_token: opts[:allow_admin_token])
+
+unless opts[:check]
+  puts "conductor host: setting up #{ConductorHost.host_name}"
+  setup_checker = ConductorHost::Checker.new(env: ENV, allow_admin_token: opts[:allow_admin_token])
+  ok = ConductorHost::Setup.new(checker: setup_checker, env: ENV, take_over: opts[:take_over]).run
+  puts
+  exit 1 unless ok
+end
+
+puts "conductor host: checking #{ConductorHost.host_name}"
+misses = ConductorHost.report(checker.items)
+exit(misses.zero? ? 0 : 1)
