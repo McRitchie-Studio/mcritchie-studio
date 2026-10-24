@@ -131,8 +131,8 @@ module HarnessKey
   # caller will send, for the two doors that are one case of a wider action: a
   # task's create (in designed) and its claim (a move to building that carries
   # only CLAIM_FIELDS).
-  def accepts?(method, path, body = nil)
-    route = path.to_s.split("?", 2).first.to_s
+  def accepts?(method, request_path, body = nil)
+    route = request_path.to_s.split("?", 2).first.to_s
     DOORS.any? do |verb, pattern, rule|
       verb == method.to_s.downcase.to_sym && pattern.match?(route) && body_passes?(rule, body)
     end
