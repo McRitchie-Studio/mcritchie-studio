@@ -983,7 +983,13 @@ module ClientBuildLauncher
         return log("#{slug}: change card not claimed (#{e.code || e.status}: #{e.message})")
       end
       starter = @change_start
-      @starts << Slot.new(slug: slug, run_id: run_id, thread: Thread.new { starter.call(slug) })
+      # The thread never raises (join would re-raise it into the loop): an error is a refusal.
+      thread = Thread.new do
+        starter.call(slug)
+      rescue StandardError => e
+        ChangeStart::Result.new(ok: false, reason: "bin/task begin could not run (#{e.class})")
+      end
+      @starts << Slot.new(slug: slug, run_id: run_id, thread: thread)
       log("#{slug}: change card claimed (run #{run_id}); running bin/task begin")
     end
 
@@ -991,12 +997,7 @@ module ClientBuildLauncher
       @starts.dup.each do |slot|
         next if slot.thread.alive?
 
-        result = begin
-          slot.thread.value
-        rescue StandardError => e
-          ChangeStart::Result.new(ok: false, reason: "bin/task begin could not run (#{e.class})")
-        end
-        report_start(slot, result)
+        report_start(slot, slot.thread.value)
         @starts.delete(slot)
       end
     end
