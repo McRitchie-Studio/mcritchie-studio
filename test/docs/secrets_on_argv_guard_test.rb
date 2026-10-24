@@ -89,7 +89,7 @@ class SecretsOnArgvGuardTest < ActiveSupport::TestCase
 
   def scanned_files
     Dir.chdir(ROOT) do
-      `git ls-files -- #{SCANNED.join(' ')}`.split("\n")
+      `git ls-files -- #{SCANNED.join(" ")}`.split("\n")
                                              .reject { |f| EXCLUDED_PREFIXES.any? { |p| f.start_with?(p) } }
                                              .select { |f| File.file?(f) }
     end
@@ -146,7 +146,7 @@ class SecretsOnArgvGuardTest < ActiveSupport::TestCase
     'heroku config:set "<VAR>=$NEW" --app "$app"',
     "heroku config:set ANTHROPIC_API_KEY=<new_value> --app mcritchie-studio",
     'heroku config:set GOOGLE_SERVICE_ACCOUNT_JSON="$(cat "$KEYFILE")" --app x',
-    'heroku config:set FOO=$(op read op://v/i/f) --app x',
+    "heroku config:set FOO=$(op read op://v/i/f) --app x",
     ': "${NEW:?}" && op item edit "<item>" --vault <vault> "<field>[concealed]=$NEW"',
     'op item create --vault v "credential[password]=hunter2"',
     'op item edit item "notes[text]=$API_SECRET"',
