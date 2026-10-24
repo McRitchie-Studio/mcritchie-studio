@@ -18,6 +18,37 @@ module Api
         }
       end
 
+      # [unit] task-show-prints-cost: show serializes what the task cost and how
+      # long each stage took, read off three priced events and the stage stamps;
+      # a stage that never happened serializes null, never 0.
+      test "show serves total_cost, cost_by_stage and durations_by_stage" do
+        created = Time.zone.parse("2026-04-01 10:00:00")
+        TaskEvent.create!(task_slug: @task.slug, from_stage: "designed", to_stage: "building", occurred_at: created,
+                          seconds_in_from: 3600)
+        [%w[building submitted 6.25], %w[submitted reviewed 2.5], %w[reviewed assembled 1.0]].each do |from, to, cost|
+          TaskEvent.create!(task_slug: @task.slug, from_stage: from, to_stage: to, occurred_at: created, cost: cost,
+                            seconds_in_from: from == "building" ? 7200 : nil)
+        end
+
+        get api_v1_task_path(@task.slug), headers: @headers
+        assert_response :success
+        data = JSON.parse(response.body)["data"]
+
+        assert_in_delta 9.75, data["total_cost"], 0.0001
+        assert_equal({ "build" => 6.25, "review" => 2.5, "deploy" => 1.0, "other" => nil }, data["cost_by_stage"])
+        assert_equal({ "design" => 3600, "build" => 7200, "review" => nil, "assemble" => nil, "ship" => nil },
+                     data["durations_by_stage"])
+      end
+
+      test "the cost fields are read-only: an update cannot write them" do
+        patch api_v1_task_path(@task.slug), headers: @headers,
+                                            params: { task: { total_cost: 99, cost_by_stage: { build: 99 } } }, as: :json
+
+        assert_equal 0, TaskEvent.where(task_slug: @task.slug).where.not(cost: nil).count
+        get api_v1_task_path(@task.slug), headers: @headers
+        assert_nil JSON.parse(response.body).dig("data", "total_cost")
+      end
+
       # [integration] tasks/show-mascot-gender-symbol: show derives the mascot's
       # DISPLAY gender, so a desk context can tell a genderless species (⚥) from a
       # pre-gender draw (bare) — the stored devops.mascot_gender is nil for both.

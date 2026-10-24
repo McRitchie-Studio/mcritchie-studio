@@ -79,8 +79,12 @@ module Api
         # `agent_session` is the soul logged in to this task (the newest studio
         # session that is live, AgentSession#live?), or nil when only the Pokémon
         # holds it.
-        render_data(task_json(@task).merge(derived, "mascot_display_gender" => mascot_display_gender(@task),
-                                                    "agent_session" => live_agent_session_json(@task)))
+        # `total_cost`, `cost_by_stage`, `durations_by_stage` (Task::CostSummary):
+        # what the task cost and how long each stage took, on show only, so the
+        # index pays no per-row sum. Read-only; nothing writes through them.
+        render_data(task_json(@task).merge(derived, Task::CostSummary.new(@task).as_json,
+                                           "mascot_display_gender" => mascot_display_gender(@task),
+                                           "agent_session" => live_agent_session_json(@task)))
       end
 
       def create
