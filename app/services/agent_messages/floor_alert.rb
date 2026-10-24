@@ -327,10 +327,13 @@ module AgentMessages
     # ESCALATION TO A PERSON: ONE email per episode when it escalates, ONE when
     # it is finally quiet, each stamped on the root under its row lock so two
     # overlapping runs cannot both send. A failed send stamps nothing and is
-    # tried again next run. Runs whether or not Discord is configured.
+    # tried again next run. Runs whether or not Discord is configured. Floor-wide
+    # kinds only: a per-card kind (SUBJECT_KINDS) is one card's wait, which its
+    # Discord line covers, not a person's page.
     def escalate(now)
       window = now - AgentMailboxIncident::FLAP_WINDOW
-      recent = AgentMailboxIncident.where("resolved_at IS NULL OR opened_at >= ?", window).map(&:root_id).uniq
+      recent = AgentMailboxIncident.where(subject: nil).where("resolved_at IS NULL OR opened_at >= ?", window)
+                                   .map(&:root_id).uniq
       AgentMailboxIncident.where(id: recent, escalated_at: nil, final_recovery_at: nil).order(:id).each do |root|
         reason = escalation_reason(root, now)
         next unless reason

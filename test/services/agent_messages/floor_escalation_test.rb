@@ -214,6 +214,17 @@ class AgentMessages::FloorEscalationTest < ActiveSupport::TestCase
     assert AgentMailboxIncident.sole.escalated_at
   end
 
+  test "control: a per-card kind stays on Discord; a review unclaimed 20 minutes emails nobody" do
+    f = floor
+    check = AgentMessages::FloorAlert::Check.new(kind: "submitted_unclaimed", failing: true, subject: "some-card",
+                                                 detail: { "slug" => "some-card" })
+    f.stub(:unclaimed_checks, [ check ]) do
+      [ 0, 15, 20 ].each { |m| ping!(at(m)) && f.call(now: at(m)) }
+    end
+    assert AgentMailboxIncident.open_for("submitted_unclaimed", subject: "some-card")
+    assert_equal 0, emails.count
+  end
+
   # Two overlapping job runs both read the root before either stamped it: the
   # row lock and the re-read under it let only the first send.
   test "an overlapping run holding a stale root sends no second email" do
