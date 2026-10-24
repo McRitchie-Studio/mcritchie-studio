@@ -66,19 +66,21 @@ module ApplicationHelper
   #
   #   - an absolute http or https url (the http_href rule),
   #   - a root-relative path ("/rails/active_storage/...", "/brand/x.svg"), which
-  #     image_tag passes through untouched and which names this host's own files,
+  #     image_tag passes through untouched and which names this host's own files
+  #     (never "//host" or "/\host": a browser reads either as ANOTHER host),
   #   - a data:image/* url: inline images (the client kit's SVG marks, the
   #     generated-image fakes) are legitimate in an img and run nothing there.
   #
   # Everything else (another scheme, a bare word image_tag would hunt for, blank)
   # is refused. safe_image_tag below is the rendering half.
   SAFE_IMAGE_DATA = %r{\Adata:image/[\w.+-]+[;,]}i
+  SAFE_IMAGE_ROOT_PATH = %r{\A/(?![/\\])}
   IMAGE_WITHHELD_TITLE = "Image withheld: the stored value is not an http(s) or inline image URL"
 
   def self.safe_image_src(url)
     text = url.to_s.strip
     return nil if text.empty? || text.match?(HTTP_HREF_REFUSED_CHARS)
-    return text if text.start_with?("/") || text.match?(SAFE_IMAGE_DATA)
+    return text if text.match?(SAFE_IMAGE_ROOT_PATH) || text.match?(SAFE_IMAGE_DATA)
 
     http_href(text)
   end

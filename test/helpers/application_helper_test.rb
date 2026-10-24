@@ -46,7 +46,8 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "DATA:image/png,abc", safe_image_src("DATA:image/png,abc")
     [ nil, "", "  ", "javascript:alert(1)", "JaVaScRiPt:alert(1)", "java\tscript:alert(1)",
       "data:text/html,<script>alert(1)</script>", "data:image", "vbscript:x", "file:///etc/passwd",
-      "logo.png", "pokemon/1.png", "not a url", "/a\u200Bb.png" ].each do |url|
+      "logo.png", "pokemon/1.png", "not a url", "/a\u200Bb.png",
+      "//evil.example/x.png", "/\\evil.example/x.png" ].each do |url|
       assert_nil safe_image_src(url), "safe_image_src let #{url.inspect} through"
     end
     assert_nil ApplicationHelper.safe_image_src("javascript:alert(1)"), "the module reader refuses too"
