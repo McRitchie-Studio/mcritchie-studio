@@ -6,7 +6,7 @@
 <div class="rounded border border-subtle bg-surface overflow-hidden flex flex-col min-w-0"
      data-test="uniform-photo" data-slug="<%= photo.slug %>" data-chosen="<%= chosen %>"
      data-hosted="<%= photo.hosted? %>">
-  <%= link_to photo.full_url, target: "_blank", rel: "noopener noreferrer", referrerpolicy: "no-referrer",
+  <%= safe_link_to photo.full_url, target: "_blank", rel: "noopener noreferrer", referrerpolicy: "no-referrer",
               class: "block relative aspect-[4/3] overflow-hidden bg-surface-alt",
               title: "Open the full image", data: { test: "uniform-photo-open" } do %>
     <%= image_tag photo.display_url, alt: photo.title.presence || "Uniform photo", loading: "lazy",
@@ -16,7 +16,7 @@
     <p class="text-3xs text-muted truncate" title="<%= photo.title %>">
       <%= photo.title.presence || photo.provider.presence || "Search result" %>
       <% if photo.page_url.present? %>
-        &middot; <%= link_to "source", photo.page_url, target: "_blank", rel: "noopener noreferrer", class: "text-primary" %>
+        &middot; <%= safe_link_to "source", photo.page_url, target: "_blank", rel: "noopener noreferrer", class: "text-primary" %>
       <% end %>
     </p>
     <% if admin? && (chosen || !full) %>

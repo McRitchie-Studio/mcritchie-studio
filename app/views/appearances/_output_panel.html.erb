@@ -54,7 +54,7 @@
                 <%# LINKS OUT TO THE FULL-SIZE FILE. Judging a likeness inside a
                     narrow column is judging a thumbnail, so the picture is always
                     one click from its original. %>
-                <%= link_to artifact.image_url, target: "_blank", rel: "noopener",
+                <%= safe_link_to artifact.image_url, target: "_blank", rel: "noopener",
                       class: "block w-full" do %>
                   <%= image_tag artifact.image_url, loading: "lazy",
                         alt: artifact.subjects.first&.role.presence || artifact.kind.to_s.humanize,
