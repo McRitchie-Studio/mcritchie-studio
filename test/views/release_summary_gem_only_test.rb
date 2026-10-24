@@ -54,6 +54,23 @@ class ReleaseSummaryGemOnlyTest < ActionView::TestCase
     assert_select "a", text: "Prod ↗", count: 1
   end
 
+  # [component] admin-url-columns-use-http-href: the QA and Prod links read the
+  # release's stored urls; each links only as http(s).
+  test "[component] the QA and Prod links render for https urls and are withheld for javascript: ones" do
+    rel = Release.open!(branch: "release/href-check")
+    add_member(rel, "mcritchie-studio", position: 10)
+    rel.update_columns(qa_url: "https://qa.mcritchie.studio", production_url: "https://mcritchie.studio")
+    render partial: "tasks/release_summary", locals: { release: rel.reload, variant: :last }
+    assert_select "a[href='https://qa.mcritchie.studio']", "QA ↗"
+    assert_select "a[href='https://mcritchie.studio']", "Prod ↗"
+
+    rel.update_columns(qa_url: "javascript:alert(1)", production_url: "javascript:alert(2)")
+    @rendered = +""
+    render partial: "tasks/release_summary", locals: { release: rel.reload, variant: :last }
+    assert_select "a[href^='javascript']", 0
+    assert_select "span[data-test='link-withheld'][title]", 2
+  end
+
   private
 
   def add_member(rel, repo, position:)
