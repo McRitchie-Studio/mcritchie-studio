@@ -46,7 +46,7 @@ bin/dispatcher ──ping every minute──▶ agent_dispatchers ◀── Agen
 | Typing | `bin/dispatcher` → `POST /api/v1/agent_messages/:id/typing` → `AgentMessageTypingJob` → `AgentMessages::DiscordBot#trigger_typing`, as the bot that will reply (below, "Typing") |
 | Worker API | `Api::V1::AgentMessagesController` (`/api/v1/agent_messages`) |
 | Worker | `bin/dispatcher` (`bin/lib/agent_dispatcher.rb`), under launchd on Alex's Mac; `bin/heartbeat` by hand. Both answer through `AgentMailbox::Responder` (`bin/lib/agent_mailbox.rb`) |
-| Dispatcher health | `POST /api/v1/agent_dispatchers/ping` → `agent_dispatchers`; `AgentDispatcherAlertJob` → `agent_mailbox_incidents` |
+| Dispatcher health | `POST /api/v1/agent_dispatchers/ping` (with the Mac's op, gh and power health) → `agent_dispatchers`; `AgentDispatcherAlertJob` → `agent_mailbox_incidents`, Discord, and one email per episode state to `floor.escalation_email` |
 | Operating it | Steffon's [`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md) SOP |
 | Observing | `/admin/agent_messages` (Ops → Agent inbox), `bin/agent-inbox` |
 

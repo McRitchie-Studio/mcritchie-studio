@@ -7,6 +7,12 @@
       <div class="am-dispatcher flex flex-wrap items-center gap-2" data-live="<%= dispatcher.live? %>">
         <span class="am-chip <%= dispatcher.live? ? 'am-status-completed' : 'am-status-dead' %>"><%= dispatcher.live? ? (dispatcher.paused? ? "paused" : "live") : "silent" %></span>
         <span class="font-mono break-all"><%= dispatcher.worker_id %></span>
+        <% if dispatcher.harness_checked_at %>
+          <span class="am-chip <%= dispatcher.op_ok == false || dispatcher.gh_ok == false ? 'am-status-dead' : 'am-status-completed' %>" data-test="dispatcher-harness" title="Measured on the Mac <%= agent_message_age(dispatcher.harness_checked_at) %> ago; harness_degraded opens at <%= AgentDispatcher::HARNESS_BEATS %> failing beats">
+            op <%= dispatcher.op_ok == false ? "failing" : "ok" %> · gh <%= dispatcher.gh_ok == false ? "failing" : "ok" %><% if dispatcher.harness_failing_beats.to_i.positive? %> · <%= dispatcher.harness_failing_beats %> bad beat(s)<% end %>
+          </span>
+        <% end %>
+        <% if dispatcher.power_source %><span class="am-chip" data-test="dispatcher-power"><%= dispatcher.power_source == "battery" ? "on battery" : "on AC" %></span><% end %>
         <% if dispatcher.role == "standby" %><span class="am-chip" data-test="dispatcher-role">standby · <%= Array(dispatcher.standby_domains).join(", ") %></span><% end %>
         <span class="opacity-70">
           pinged <%= agent_message_age(dispatcher.last_seen_at) %> ago ·

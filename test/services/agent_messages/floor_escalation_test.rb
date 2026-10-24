@@ -205,7 +205,9 @@ class AgentMessages::FloorEscalationTest < ActiveSupport::TestCase
     f = floor
     ping!(at(-6))
     f.call(now: at(0))
-    Studio::Email.stub(:deliver, ->(*_a, **_k) { raise "outbox down" }) { f.call(now: at(15)) }
+    assert_difference -> { ErrorLog.count }, 1, "an unsent escalation is an ErrorLog row, not only a log line" do
+      Studio::Email.stub(:deliver, ->(*_a, **_k) { raise "outbox down" }) { f.call(now: at(15)) }
+    end
     assert_nil AgentMailboxIncident.sole.escalated_at
     f.call(now: at(16))
     assert_equal 1, emails(:escalated).count

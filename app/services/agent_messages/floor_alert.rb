@@ -368,6 +368,7 @@ module AgentMessages
       end
     rescue StandardError => e
       @logger.warn("#{LOG} floor email for incident #{root.id} not sent (#{e.class}); tried again next run")
+      ErrorLog.capture!(e)
     end
 
     def deliver(action, *args)
