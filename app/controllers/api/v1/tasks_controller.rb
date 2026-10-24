@@ -205,7 +205,8 @@ module Api
       def harness_claim_refusal
         return "a harness key writes no task but its claim (stage building); this update is not the claim" unless params[:stage].to_s == "building"
 
-        extra = request.request_parameters.keys - HARNESS_CLAIM_FIELDS - [ "task" ]
+        # task_params reads the query string as well as the body, so both are checked.
+        extra = (request.request_parameters.keys | request.query_parameters.keys) - HARNESS_CLAIM_FIELDS - [ "task" ]
         return "a claim under a harness key carries only #{HARNESS_CLAIM_FIELDS.join(", ")}, not #{extra.sort.join(", ")}" if extra.any?
 
         stage = Task.where(slug: params[:slug].to_s).pick(:stage)

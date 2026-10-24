@@ -121,11 +121,12 @@ class HarnessKeyDoorsTest < ActionDispatch::IntegrationTest
       "checks" => [ @building, { devops: { checks: { "unit" => "pass" } } }, /this update is not the claim/ ],
       "a title" => [ @building, { title: "Renamed By A Key" }, /this update is not the claim/ ],
       "a claim that writes more than the claim" => [ @designed, { stage: "building", title: "Renamed In The Claim" }, /carries only stage, event, devops, dev_size, not title/ ],
+      "a claim that writes more in the query string" => [ @designed, { stage: "building" }, /carries only stage, event, devops, dev_size, not agent_slug, title/, "?title=Smuggled&agent_slug=ray" ],
       "a claim of a submitted task" => [ Task.create!(title: "Submitted Elsewhere", stage: "submitted"), { stage: "building" }, /claims a designed or building task; .* is submitted/ ]
     }
-    writes.each do |name, (task, params, reason)|
+    writes.each do |name, (task, params, reason, query)|
       before = task.reload.attributes.slice("stage", "title", "metadata")
-      patch api_v1_task_path(task.slug), params: params, headers: bearer(@key), as: :json
+      patch "#{api_v1_task_path(task.slug)}#{query}", params: params, headers: bearer(@key), as: :json
       assert_response :forbidden, name
       assert_equal "SESSION_FORBIDDEN", body["error_code"], name
       assert_match reason, body["error"], name
