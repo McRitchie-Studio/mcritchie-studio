@@ -93,8 +93,9 @@ credential by [`credential-filing`](credential-filing.md):
    `authorization-id` and `used-by: mcritchie-studio HEROKU_BACKUP_API_KEY
    (DbBackupSweepJob)`, and add its row to
    [`credential-inventory.md`](../../../modules/credential-inventory.md).
-3. Apply it from the item, never from a copy:
-   `op read 'op://studio-applications/heroku.mcritchie-studio.applications/credential' | xargs -I{} heroku config:set HEROKU_BACKUP_API_KEY={} -a mcritchie-studio >/dev/null`
+3. Apply it from the item, never from a copy, the value on stdin (an `xargs`
+   into `heroku config:set` would put it on a command line):
+   `op read 'op://studio-applications/heroku.mcritchie-studio.applications/credential' | /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set mcritchie-studio HEROKU_BACKUP_API_KEY`
 4. Verify without printing it: run the job once and read the log.
 
    ```bash
