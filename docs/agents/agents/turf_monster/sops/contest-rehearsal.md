@@ -48,8 +48,9 @@ devnet-only agent key Mack (`8UwJ…` since 2026-10-24), and the v0.26 lock and 
 two, so the whole run needs **no human tap**. The rehearsal refuses any key it
 loads, player or co-signer, that holds MAINNET authority (a mainnet `VaultState`
 signer, seated or incoming, or a mainnet Squads member), even on devnet
-(turf-monster `MainnetSignerFence`, `config/mainnet_vault_signers.yml`). That is
-why Mason (`CytJ…`, a mainnet signer until it was retired on 2026-10-14) no
+(turf-monster `MainnetSignerFence`, `config/mainnet_vault_signers.yml`), and it
+refuses Mr. McRitchie's personal wallets the same way (list `personal`: `DKbv…`,
+filed as `solana.turf.alex`). That is why Mason (`CytJ…`, a mainnet signer until it was retired on 2026-10-14) no
 longer plays.
 `--cosign link` still exists for a run Mr. McRitchie wants to sign himself in
 Phantom (`7ZDJ…` is no longer a devnet signer, so that path needs a wallet the
@@ -67,7 +68,7 @@ co-signs:
 | Slug | 1Password item | Plays as |
 |---|---|---|
 | `mack` | `solana.mack.agent` | mack-4 |
-| `turf` | `solana.turf.alex` | regal-parsley |
+| `turf` | `solana.turf.agent` | regal-parsley |
 
 > **There is no admin actor.** No agent-readable wallet signs in as an admin
 > account, so `KeyStore::ITEMS` files none: the house account holds no wallet,
