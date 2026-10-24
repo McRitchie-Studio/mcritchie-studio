@@ -27,6 +27,16 @@ class CspReportTest < ActiveSupport::TestCase
     refute_equal a.id, b.id
   end
 
+  test "a full table counts repeats but stores no new violation" do
+    known = { "documentURL" => "https://h.test/k", "effectiveDirective" => "img-src", "blockedURL" => "data" }
+    row = CspReport.record!(known)
+    CspReport.stub(:count, CspReport::MAX_ROWS) do
+      assert_nil CspReport.record!(known.merge("documentURL" => "https://h.test/new"))
+      assert_equal 2, CspReport.record!(known).count
+    end
+    assert_equal [ row.id ], CspReport.pluck(:id)
+  end
+
   test "retention deletes rows not seen for 30 days and keeps the rest" do
     now = Time.current
     old = CspReport.record!({ "documentURL" => "https://h.test/old", "effectiveDirective" => "img-src", "blockedURL" => "data" },

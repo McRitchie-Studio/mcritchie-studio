@@ -16,6 +16,9 @@
 class CspReport < ApplicationRecord
   RETENTION = 30.days
   MAX_FIELD = 255
+  # The endpoint is unauthenticated, so a caller can invent distinct violations.
+  # Past this many rows a repeat still counts, but a new fingerprint is dropped.
+  MAX_ROWS = 10_000
 
   validates :fingerprint, :document_path, :directive, :blocked_uri, :first_seen_at, :last_seen_at, presence: true
 
@@ -41,6 +44,8 @@ class CspReport < ApplicationRecord
     return nil if attrs[:document_path].blank? || attrs[:directive].blank?
 
     fingerprint = Digest::SHA256.hexdigest(attrs.values_at(:document_path, :directive, :blocked_uri, :source_file, :line_number).join("\u0000"))
+    return nil if count >= MAX_ROWS && !exists?(fingerprint:)
+
     ua = user_agent.to_s[0, MAX_FIELD].presence
     upsert(
       attrs.merge(fingerprint:, user_agent: ua, count: 1, first_seen_at: now, last_seen_at: now, created_at: now, updated_at: now),
