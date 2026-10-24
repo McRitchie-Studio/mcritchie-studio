@@ -88,7 +88,7 @@
                         <span class="block font-semibold text-heading truncate group-hover:text-primary transition"><%= builder.display_name %></span>
                       </button>
                       <div class="flex flex-wrap items-center gap-2 mt-0.5">
-                        <%= link_to "@#{builder.github_login}",
+                        <%= safe_link_to "@#{builder.github_login}",
                               builder.github_url,
                               target: "_blank",
                               rel: "noopener",

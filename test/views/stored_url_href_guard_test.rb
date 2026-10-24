@@ -37,7 +37,6 @@ class StoredUrlHrefGuardTest < ActiveSupport::TestCase
     "run_url" => "CI ladder: GitHub's own html_url for the workflow run",
     "ClientApps::StudioKit::STUDIO_URL" => "a constant",
     "STUDIO_URL" => "a constant",
-    "builder.github_url" => "Builder#github_url composes https://github.com/<login>",
     "message.reply_url" => "AgentMessage#reply_url composes a discord.com URL from ids",
     "@message.reply_url" => "AgentMessage#reply_url composes a discord.com URL from ids",
     "@message.discord_url" => "AgentMessage#discord_url composes a discord.com URL from ids",
