@@ -104,10 +104,10 @@
 #
 # REMOVED 2026-07-13 — `e2e_onchain`. It was demanded by `onchain` and `onchain-vertical`
 # and collected NOWHERE, and never had been: turf-vault (the Anchor program itself) has
-# no CI at all, and turf-monster's devnet-nightly.yml — the only workflow that could
-# serve — is gated on a repo variable, has completed `skipped` on every scheduled run,
-# and has never once executed. So the strictest-LOOKING tier in the ecosystem was the
-# emptiest, on the two shapes that move real money.
+# no CI at all, and turf-monster's scheduled devnet workflow — the only one that could
+# have served — was gated on a repo variable, completed `skipped` on every scheduled run,
+# and never once executed (it was deleted on 2026-10-24). So the strictest-LOOKING tier
+# in the ecosystem was the emptiest, on the two shapes that move real money.
 #
 # It is not coming back as a tier until it is a lane. A "FRESH devnet run for this
 # change" needs a funded bot wallet, a real cluster, SOL for a program deploy, and
@@ -117,13 +117,11 @@
 # below — NOT a pre-submit tier a builder self-certifies. Build the lane first — and note
 # that a TASK is not a lane: this line used to point at one, and it was archived with the
 # lane still unbuilt. The CONDITION for the tier's return is a workflow that RUNS.
-# turf-monster's .github/workflows/devnet-nightly.yml is gated on
-# `vars.DEVNET_NIGHTLY_ENABLED` and has completed `skipped` on every scheduled run. Ask
-# GitHub rather than trusting that sentence:
-#   gh run list --workflow devnet-nightly.yml -R McRitchie-Studio/turf-monster
-# Nothing guards THAT sentence, and one branch would stale both halves of it at once:
-# turf-monster carries a stranded `origin/feat/turn-on-devnet-nightly` that DELETES the
-# job-level `if:`. If it is ever merged, re-run the command above before trusting this.
+# Today no workflow runs the devnet specs: turf-monster deleted its scheduled devnet
+# workflow on 2026-10-24 (task turf-devnet-config-truth), and the devnet signal is the
+# per-release `contest-rehearsal` gauntlet that `qa-release` records on the release, an
+# operator/QA act, not a CI lane. Ask GitHub rather than trusting that sentence:
+#   ls turf-monster/.github/workflows   # no workflow carries a `schedule:` on devnet
 # test/lib/feature_shape_tiers_test.rb enforces the order — restore the tier before a runner
 # executes it and the primary guard goes red.
 #

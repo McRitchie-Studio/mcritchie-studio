@@ -1459,9 +1459,9 @@ canonical `dor_tiers` from `config/feature_shapes.yml`, and
 
 That guard exists because this table lied for months, in the way that costs the
 most. It demanded `devnet E2E (nightly)` of the two shapes that move real
-money — routing a **required** tier to `devnet-nightly.yml`, a workflow gated on
-`vars.DEVNET_NIGHTLY_ENABLED` that has completed `skipped` on every scheduled run
-and **has never once executed**. A required tier with no lane behind it is the
+money — routing a **required** tier to turf-monster's scheduled devnet workflow,
+which was gated on a repository variable, completed `skipped` on every scheduled
+run and **never once executed** (it was deleted on 2026-10-24). A required tier with no lane behind it is the
 same self-declaration disease this whole section exists to cure, and it survived
 here, in the canonical spec, precisely because prose and config were two
 independent copies of one truth. Now they are one truth with a test on it: adding

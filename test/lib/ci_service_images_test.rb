@@ -112,8 +112,8 @@ class CiServiceImagesTest < Minitest::Test
     assert on.key?("schedule") && on.key?("workflow_dispatch")
   end
 
-  # Satellites pull from the same mirror: turf-monster's ci.yml and devnet-nightly.yml
-  # start Postgres and Redis service containers from ghcr.io/mcritchie-studio, and
+  # Satellites pull from the same mirror: turf-monster's ci.yml
+  # starts Postgres and Redis service containers from ghcr.io/mcritchie-studio, and
   # cyvasse and moms-app pin Postgres 18. A row dropped here leaves that pull with no
   # package behind it, so every row a consumer needs is held, one by one.
   CONSUMER_ROWS = %w[postgres:17 postgres:18 redis:8].freeze

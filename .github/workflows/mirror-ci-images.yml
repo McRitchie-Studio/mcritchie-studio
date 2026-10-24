@@ -49,7 +49,7 @@ jobs:
     env:
       # One `<name>:<tag>` per line, from the official library. 17 is production's
       # Postgres major (the hub's CI default); 18 is what cyvasse and moms-app pin;
-      # redis:8 is turf-monster's Redis service (its ci.yml and devnet-nightly.yml).
+      # redis:8 is turf-monster's Redis service (its ci.yml).
       IMAGES: |
         postgres:17
         postgres:18
