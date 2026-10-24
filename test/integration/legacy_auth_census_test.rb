@@ -124,10 +124,23 @@ class LegacyAuthCensusTest < ActionDispatch::IntegrationTest
     out, = census
     assert_includes out, "1 outside the mint doors"
     assert_match(/^NOT ZERO: 1 request/, out)
-    assert_match(/1 \* PATCH api\/v1\/tasks#update/, out)
+    assert_match(/1 \*  PATCH api\/v1\/tasks#update /, out)
   end
 
-  test "every mint door is a real action, and every action a harness key may POST is a mint door" do
+  test "the rake names the doors a harness key opens and marks their lines" do
+    LegacyAuthUse.record!(endpoint: "GET api/v1/tasks#index", caller: "bin/task")
+    LegacyAuthUse.record!(endpoint: "PATCH api/v1/tasks#update (claim)", caller: "bin/task")
+    LegacyAuthUse.record!(endpoint: "PATCH api/v1/tasks#update", caller: "bin/task")
+    out, = census
+
+    assert_includes out, "Harness-key doors: 2 of those request(s) hit a door a harness key opens (each marked k)"
+    assert_includes out, "The doors: #{LegacyAuthUse.harness_key_doors.join(", ")}"
+    assert_match(/1 \*k GET api\/v1\/tasks#index /, out)
+    assert_match(/1 \*k PATCH api\/v1\/tasks#update \(claim\)/, out)
+    assert_match(/1 \*  PATCH api\/v1\/tasks#update  /, out)
+  end
+
+  test "every mint door is a real action, and every action a minting controller opens to a harness key by POST is a mint door" do
     posts = Rails.application.routes.routes.select { |r| r.verb == "POST" }
                  .map { |r| "POST #{r.defaults[:controller]}##{r.defaults[:action]}" }
     LegacyAuthUse::MINT_DOORS.each { |door| assert_includes posts, door }
@@ -144,8 +157,8 @@ class LegacyAuthCensusTest < ActionDispatch::IntegrationTest
 
     lines = out.lines.map(&:strip)
     assert_includes lines.first, "4 request(s), 4 outside the mint doors"
-    assert_match(/\A3 \* POST api\/v1\/agent_actions#create\s+bin\/atomic-capture-hook\s+last /, lines[2])
-    assert_match(/\A1 \* GET api\/v1\/athletes#index\s+turf-monster\/sync_athletes/, lines[3])
+    assert_match(/\A3 \*k POST api\/v1\/agent_actions#create\s+bin\/atomic-capture-hook\s+last /, lines[4])
+    assert_match(/\A1 \*  GET api\/v1\/athletes#index\s+turf-monster\/sync_athletes/, lines[5])
     assert_match(/By day: .*#{2.days.ago.utc.to_date} 1 · #{1.day.ago.utc.to_date} 0 · #{Time.current.utc.to_date} 3\z/, lines.last)
 
     _, err, status = census("DAYS" => "soon")

@@ -1,9 +1,9 @@
 require "test_helper"
 
 # [integration] One machine's harness key: the request, the operator's two grants,
-# the single collect, and what the key reaches. It mints studio logins and posts
-# login requests; every other endpoint answers it 403. Each refusal carries its
-# control.
+# the single collect, and the mint doors. What else the key reaches (the reads,
+# narration, a task's create and its claim) is HarnessKeyDoorsTest. Each refusal
+# carries its control.
 class HarnessKeyTest < ActionDispatch::IntegrationTest
   HARNESS = "harness-one".freeze
 
@@ -174,14 +174,11 @@ class HarnessKeyTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "harness key reaches only mint doors" do
+  test "harness key writes no task but its claim" do
     key = granted_key
     calls = {
-      "read the board" => -> { get api_v1_tasks_path, headers: bearer(key) },
-      "read a task" => -> { get api_v1_task_path(@task.slug), headers: bearer(key) },
       "write a task" => -> { patch api_v1_task_path(@task.slug), params: { title: "Renamed By A Key" }, headers: bearer(key), as: :json },
-      "create a task" => -> { post api_v1_tasks_path, params: { title: "Made By A Key" }, headers: bearer(key), as: :json },
-      "narrate" => -> { post "/api/v1/activities", params: { activity: { agent_slug: "ray", activity_type: "note" } }, headers: bearer(key), as: :json },
+      "post a task note" => -> { post "/api/v1/activities", params: { activity: { agent_slug: "ray", activity_type: "note" } }, headers: bearer(key), as: :json },
       "release a review claim" => -> { post review_claim_release_api_v1_task_path(@task.slug), params: { session: "s", nonce: "n" }, headers: bearer(key), as: :json },
       "log out" => -> { delete "/api/v1/agent_sessions/current", headers: bearer(key) }
     }
@@ -190,12 +187,14 @@ class HarnessKeyTest < ActionDispatch::IntegrationTest
         call.call
         assert_response :forbidden, name
         assert_equal "SESSION_FORBIDDEN", body["error_code"], name
-        assert_match(/a harness key mints studio logins/, body["error"], name)
+        assert_match(/a harness key reads the board, narrates, creates a task, makes its claim, mints studio logins/, body["error"], name)
       end
     end
     assert_equal "In Progress Task", @task.reload.title
 
-    # Control: the shared token still reads and writes.
+    # Control: the key reads the board, and the shared token still reads and writes.
+    get api_v1_tasks_path, headers: bearer(key)
+    assert_response :ok
     get api_v1_tasks_path, headers: @legacy
     assert_response :ok
     patch api_v1_task_path(@task.slug), params: { title: "Renamed By The Shared Token" }, headers: @legacy, as: :json
