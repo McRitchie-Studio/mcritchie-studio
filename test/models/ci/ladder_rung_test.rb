@@ -343,13 +343,13 @@ module Ci
 
     # THE CONTROL. Declaring a lane must admit exactly that lane and nothing else. If
     # this fails, someone widened the filter instead of declaring the workflow — the
-    # deny-list mistake that let "Devnet Nightly" hold a CI rung red for 36 hours.
+    # deny-list mistake that let a daily scheduled workflow (turf-monster, since deleted) hold a CI rung red for 36 hours.
     test "[unit] an undeclared turf-vault workflow still cannot redden its rung" do
       GithubWorkflowRun.delete_all
       sha = "anchor01aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       wf_run(repo: "turf-vault", branch: "accepted", sha: sha, workflow: "CI",
              conclusion: "success", id: 32)
-      wf_run(repo: "turf-vault", branch: "accepted", sha: sha, workflow: "Devnet Nightly",
+      wf_run(repo: "turf-vault", branch: "accepted", sha: sha, workflow: "Nightly Sweep",
              conclusion: "failure", id: 33)
 
       assert_equal :green, Ci::LadderRung.for(repo: "turf-vault", branch: "accepted").state,
@@ -396,8 +396,8 @@ module Ci
       assert_equal :not_built, Ci::LadderRung.for(repo: "studio-engine", branch: "main").state
     end
 
-    # BLOCKER 2, the live one. "Devnet Nightly" is a daily SCHEDULE on turf-monster —
-    # not a deploy, not a generated name — so the old deny-list admitted it. It both
+    # BLOCKER 2. A daily SCHEDULE on turf-monster (since deleted) was neither a deploy
+    # nor a generated name, so the old deny-list admitted it. It both
     # voted in the fold and ANCHORED the rung's sha/run_url. 23 completed/skipped rows
     # on `main` drew a false RED for windows of 1.5h, 7.5h and 36h, and STATE_RANK[:red]
     # sorted that card to the TOP of the row.
@@ -408,14 +408,14 @@ module Ci
       wf_run(repo: "turf-monster", branch: "main", sha: real, workflow: "CI",
              conclusion: "success", id: 26, started: 3.hours.ago)
       # NEWER than the real suite run, so it would anchor if it counted.
-      wf_run(repo: "turf-monster", branch: "main", sha: nightly, workflow: "Devnet Nightly",
+      wf_run(repo: "turf-monster", branch: "main", sha: nightly, workflow: "Nightly Sweep",
              conclusion: "failure", id: 27, started: 1.minute.ago)
 
       rung = Ci::LadderRung.for(repo: "turf-monster", branch: "main")
 
       assert_equal :green, rung.state, "a nightly must not vote in a CI rung"
       assert_equal real[0, 7], rung.short_sha, "and must not anchor the rung's sha"
-      refute_includes rung.lanes.map { |l| l[:name] }, "Devnet Nightly"
+      refute_includes rung.lanes.map { |l| l[:name] }, "Nightly Sweep"
     end
 
     test "an undeclared workflow fails closed rather than counting as a verdict" do

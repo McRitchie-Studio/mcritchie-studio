@@ -207,7 +207,7 @@ pre-flight that writes no evidence.
 | Repo | Adds | Gap today |
 |---|---|---|
 | mcritchie-studio | System tests for the board; docs registry tests; the production seal | None structural |
-| turf-monster | On-chain journey against devnet (`contest-rehearsal`) | The devnet nightly fires every night and skips itself (131 of 132 runs skipped); make the rehearsal a QA post-deploy lane for on-chain diffs or keep it an operator stop and say so |
+| turf-monster | On-chain journey against devnet (`contest-rehearsal`) | No CI lane runs devnet: the scheduled devnet workflow, which skipped itself on 131 of 132 runs, was deleted on 2026-10-24. The rehearsal is an operator stop, run per release and recorded on it by `qa-release` |
 | studio-engine | Consumer CI against both apps; engine Playwright | None |
 | solana-studio | Gem CI plus Playwright | None |
 | turf-vault | Node and Rust tests via `bin/release-check`; upgrades by hand through Squads | No desk lane; certify from a plain worktree |

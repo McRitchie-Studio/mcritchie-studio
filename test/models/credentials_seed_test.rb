@@ -74,6 +74,50 @@ class CredentialsSeedTest < ActiveSupport::TestCase
 
     assert_equal 0, CredentialRecord.where(title: "agent.mack.solana").count, "the old title is gone"
     assert_equal old.id, record("studio-agents", "solana.mack.agent").id, "renamed in place, not re-created"
-    assert record("studio-agents", "solana.turf.alex"), "the rehearsal player is filed under its new title"
+    assert record("studio-agents", "solana.turf.alex"), "phantom.turf is filed under its new title"
+  end
+
+  # The Turf wallet rows restate credential-inventory.md as corrected on
+  # 2026-10-24 (task devnet-nightly-reference-sweep): solana.turf.alex is Alex's
+  # personal wallet, misfiled in the agent vault; the rehearsal player is
+  # solana.turf.agent. A database seeded before, which told /credentials the
+  # personal wallet was the rehearsal player, is corrected in place.
+  test "the Turf wallet rows name each wallet's true owner and role" do
+    seed!
+    record("studio-agents", "solana.turf.alex").update!(
+      scope_summary: "The QA contest rehearsal's test player (39QT…, regal-parsley). Devnet test USDC only.",
+      used_by: "QA rehearsal"
+    )
+
+    seed!
+
+    alex = record("studio-agents", "solana.turf.alex")
+    assert_match(/personal Turf wallet \(DKbv…\)/, alex.scope_summary)
+    refute_match(/39QT|rehearsal/i, alex.scope_summary, "the personal wallet is not the rehearsal player")
+    assert_nil alex.used_by, "no agent lane reads Alex's own wallet"
+    assert_match(/MISFILED.*private vault/, alex.notes)
+
+    player = record("studio-agents", "solana.turf.agent")
+    assert_match(/test player \(39QT…/, player.scope_summary)
+    assert_equal "filed", player.status
+
+    assert_match(/devnet seat 8UwJ…/, record("studio-agents", "solana.mack.agent").scope_summary)
+    assert_match(/mainnet \(7auwTL…\)/, record("studio-agents", "solana.turf.system").scope_summary)
+    assert_match(/devnet and QA \(2eGs…\)/, record("studio-agents", "solana.turf.system.devnet").scope_summary)
+
+    admin = record("studio-agents", "solana.turf.admin")
+    assert_equal "retired", admin.status, "solana.turf.admin was archived 2026-10-09"
+    assert_nil admin.scope_summary
+  end
+
+  # This repo is PUBLIC: a Solana secret key is 64 bytes, 87-88 base58 chars. A
+  # wallet row may carry a truncated public address, never anything key-length.
+  test "no wallet row carries anything shaped like a secret key" do
+    seed!
+
+    CredentialRecord.where(service: "solana").find_each do |row|
+      text = [row.scope_summary, row.notes, row.used_by].compact.join(" ")
+      refute_match(/[1-9A-HJ-NP-Za-km-z]{60,}/, text, "#{row.title} carries a key-length base58 string")
+    end
   end
 end

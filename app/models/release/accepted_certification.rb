@@ -99,8 +99,8 @@ class Release
     # Declared here rather than inferred, because the alternative is a deny-list of
     # everything that is NOT a suite — and a deny-list is only ever as current as its
     # last editor. A scheduled job, a CodeQL scan or a Pages build then counts as a
-    # test verdict by default. Measured 2026-08-20: "Devnet Nightly" (turf-monster, a
-    # daily schedule) slipped exactly such a deny-list and reddened a CI rung for 36
+    # test verdict by default. Measured 2026-08-20: a daily scheduled turf-monster
+    # workflow (since deleted) slipped exactly such a deny-list and reddened a CI rung for 36
     # hours. An allow-list fails closed on the next one instead of admitting it.
     # turf-vault runs "Anchor Suite" (the Anchor/validator lanes) BESIDES its "CI".
     # Deliberately a second workflow: `certified?` refuses a `CI` carrying `paths:`,

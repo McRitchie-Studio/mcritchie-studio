@@ -207,14 +207,15 @@ concurrent CI/CD session.
   instructions**, which is what this task is for. Corrected 2026-09-01: this
   bullet used to say the repo had "zero CI: no `.github/workflows` at all",
   which stopped being true when that workflow shipped.
-- **`enable-or-delete-devnet-nightly`** — `devnet-nightly.yml` has **never once
-  executed.** It gates on `if: vars.DEVNET_NIGHTLY_ENABLED == true`, and all 30
-  scheduled runs since 2026-06-14 completed `skipped`. The `@devnet` on-chain e2e
-  specs therefore run **nowhere.**
+- **The scheduled devnet workflow: decided, delete.** turf-monster's scheduled
+  devnet workflow never once executed, and task `turf-devnet-config-truth` deleted
+  it on 2026-10-24. The devnet signal is the per-release `contest-rehearsal`
+  gauntlet, recorded on the release by `qa-release`; the `@devnet` Playwright
+  specs run by hand (`turf-monster/e2e/DEVNET_RUNBOOK.md`).
 
-**The decision they wait on is not technical:** either fund a devnet bot key so the
-lane is real, or delete the workflow so its absence is honest. That is
-Alex's call, and it costs money either way.
+**The decision the first item waits on is not technical:** fund a validator lane so
+the program's instructions execute in CI, or say plainly that they do not. That is
+Alex's call.
 
 ---
 

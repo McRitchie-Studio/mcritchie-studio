@@ -65,7 +65,7 @@ class CiPollBudgetTest < Minitest::Test
   # [unit] ONLY GATING WORKFLOWS SIZE THE WAIT (task ci-poll-refreshes-its-token). A
   # schedule- or dispatch-only workflow never runs on the SHA under test, so its chain,
   # however long, must not widen the hold.
-  NIGHTLY = "name: devnet-nightly\non:\n  schedule:\n    - cron: '0 6 * * *'\n  workflow_dispatch:\n" \
+  NIGHTLY = "name: nightly-sweep\non:\n  schedule:\n    - cron: '0 6 * * *'\n  workflow_dispatch:\n" \
             "jobs:\n  nightly:\n    runs-on: x\n"
 
   def test_a_schedule_only_workflow_does_not_size_the_budget

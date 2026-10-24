@@ -110,18 +110,18 @@ class FeatureShapeTiersTest < Minitest::Test
   # highest-consequence shapes in the ecosystem, the ones that move real money — and it
   # was collected NOWHERE, and never had been:
   #   · turf-vault (the Anchor program itself) has NO .github/workflows AT ALL.
-  #   · turf-monster's devnet-nightly.yml — the only workflow that could serve — is
-  #     gated `if: vars.DEVNET_NIGHTLY_ENABLED == 'true'`, every scheduled run has
-  #     completed `skipped`, and its own ci.yml says so in terms: "It has never run. Do
-  #     not read this pin as 'covered elsewhere' — it is covered nowhere today."
+  #   · turf-monster's scheduled devnet workflow — the only one that could have served —
+  #     was gated on a repo variable, completed `skipped` on every scheduled run, and was
+  #     deleted on 2026-10-24 without ever executing. The devnet signal is now the
+  #     per-release `contest-rehearsal` gauntlet, an operator/QA act.
   # So the strictest-LOOKING tier in the system was the emptiest, on the shapes where
   # emptiness costs the most. It is removed from dor_tiers rather than left as a
   # requirement satisfiable by typing: on-chain verification is real, but it is an
   # operator/QA-stop act, in the same category the shape file already carves out for
   # `manual` — NOT a pre-submit tier a builder self-certifies.
   #
-  # To bring it BACK: build the lane first (a per-change devnet job, or re-enable and
-  # fund devnet-nightly), add its pattern to TIER_COMMANDS, and only then re-add the
+  # To bring it BACK: build the lane first (a per-change devnet job, or a funded
+  # scheduled devnet workflow that runs), add its pattern to TIER_COMMANDS, and only then re-add the
   # tier to a shape. This guard will hold you to that order — which is the point.
   UNRUNNABLE_TIERS = %w[e2e_onchain].freeze
 
