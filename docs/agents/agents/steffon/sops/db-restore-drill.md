@@ -58,14 +58,22 @@ after Heroku's 02:00 captures). For every live app with `backups: true` it reads
 the app's Heroku Postgres transfers and:
 
 - records the latest completed backup's time and size on the app's `App` row;
-- when no backup completed in the last **26 hours**, starts a capture (unless one
-  it started is still running) and opens
-  the `db_backup_missing` incident;
+- when no backup completed since the **last scheduled slot** (02:00 Denver,
+  with 90 minutes' grace: at 03:30 that is the same night's 02:00), starts a
+  capture (unless one it started is still running) and opens the
+  `db_backup_missing` incident. The slot, not a rolling window, is what catches
+  a single missed night;
 - when it cannot read an app (API down, key rejected), opens
   `db_backup_sweep_failed`. Unread is not missing: it captures nothing.
 
 Both incidents post **once** to the ops channel through the dispatcher's floor
-(`AgentMessages::FloorAlert`), and once more when they clear. The 07:00 daily
+(`AgentMessages::FloorAlert`), and once more when they clear. A night the
+sweep cannot read never clears `db_backup_missing`: unread is not fresh. There is
+one open incident per kind, so a **second app going missing while
+`db_backup_missing` is open posts nothing new**; it joins the incident's detail
+and shows as `Backup MISSING` on the morning report. Read the report, not only
+the alert. The sweep's log lines name every app by slug (Commercial Welding
+included); the posts count an unannounced app without naming it. The 07:00 daily
 app report carries one line per app (`Backup 02:04, 48 MB`, `Backup MISSING`,
 `Backup unread (<reason>)`, `Backup not checked`) and a `Backups:` count in its
 headline. Code: `app/services/db_backup_sweep.rb`.
@@ -126,12 +134,16 @@ bin/release status        # do not drill on a QA app while a release is mid-QA
 2. **Name the backup.** Take the newest completed backup:
    `heroku pg:backups -a "$PROD"` (for example `a041`, finished 02:01).
 
-3. **Create the scratch add-on.** It attaches as `DRILL_URL`, beside the QA
-   app's own `DATABASE_URL`, which it never touches. The new config var restarts
-   the QA app's dynos once.
+3. **Create the scratch add-on** on the production database's own plan, so
+   the restore fits (the hub runs `essential-1`; read the plan, never assume
+   `essential-0`). It attaches as `DRILL_URL`, beside the QA app's own
+   `DATABASE_URL`, which it never touches. The new config var restarts the QA
+   app's dynos once.
 
    ```bash
-   heroku addons:create heroku-postgresql:essential-0 --as DRILL -a "$HOST"
+   PLAN=$(heroku addons -a "$PROD" --json | ruby -rjson -e 'puts JSON.parse(STDIN.read).find { |a| a["config_vars"].include?("DATABASE_URL") }.dig("plan", "name")')
+   echo "$PLAN"     # e.g. heroku-postgresql:essential-1
+   heroku addons:create "$PLAN" --as DRILL -a "$HOST"
    heroku pg:wait -a "$HOST"
    ```
 
@@ -144,15 +156,18 @@ bin/release status        # do not drill on a QA app while a release is mid-QA
 5. **Verify three tables against production.** Pick `users` and the app's two
    busiest tables
    (`heroku pg:psql -a "$PROD" -c "SELECT relname FROM pg_stat_user_tables ORDER BY n_live_tup DESC LIMIT 5"`).
-   For each, count the scratch copy, then count production up to the backup's
-   finish time, so rows written since the backup do not count against it:
+   For each, count the scratch copy, then count production as of the backup's
+   **start** time: `pg_dump` takes its snapshot when it starts, so a row written
+   while it ran is not in the backup. Read the start from
+   `heroku pg:backups:info <backup> -a "$PROD"` (`Started at`, UTC):
 
    ```bash
    heroku pg:psql DRILL_URL -a "$HOST" -c "SELECT count(*) FROM <table>"
-   heroku pg:psql -a "$PROD" -c "SELECT count(*) FROM <table> WHERE created_at <= '<backup finished_at, UTC>'"
+   heroku pg:psql -a "$PROD" -c "SELECT count(*) FROM <table> WHERE created_at < '<backup started_at, UTC>'"
    ```
 
-   The two counts must match. A table with deletes since the backup may run
+   The two counts must match (a transaction that straddled the start can move
+   one by a row or two; name it). A table with deletes since the backup may run
    higher on the scratch side; say which. A lower scratch count, a failed
    restore, or an empty table that production fills is a **failed drill**:
    report it to Alex at once with the backup name and the counts, and keep the

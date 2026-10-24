@@ -64,7 +64,7 @@ chat.
 **Backup line.** Each backed-up app's embed (`backups: true` in
 `config/apps.yml`) carries one more line under its counts, from what Steffon's
 03:30 `DbBackupSweepJob` recorded: `Backup 02:04, 48 MB` (the latest completed
-backup's Denver time and size), `Backup MISSING` (none in 26 hours; `(capture
+backup's Denver time and size), `Backup MISSING` (none since the 02:00 slot; `(capture
 started)` when the sweep started one), `Backup unread (<reason>)`, or `Backup
 not checked` (no sweep in 26 hours, as before `HEROKU_BACKUP_API_KEY` is set).
 The headline adds one count line, `Backups: 5 fresh, 1 missing`, over every

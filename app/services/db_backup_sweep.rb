@@ -8,8 +8,11 @@
 #      latest completed backup;
 #   2. records what it saw on the App row (apps.backup_status: finished_at, size,
 #      state), which the 07:00 daily app report turns into one line per app;
-#   3. when the latest completed backup is older than FRESH_WITHIN (26 h), or
-#      there is none, starts a capture and marks the app missing;
+#   3. when no backup completed since the last scheduled slot (02:00 Denver,
+#      read once GRACE has passed: at 03:30 that is today's 02:00), starts a
+#      capture and marks the app missing. Judging against the schedule, not a
+#      rolling window, is what catches ONE missed night: yesterday's 02:03
+#      backup is only 25.5 h old at 03:30;
 #   4. opens or resolves two incidents on the floor the agent dispatcher uses
 #      (AgentMailboxIncident): db_backup_missing and db_backup_sweep_failed.
 #      AgentMessages::FloorAlert, every minute, posts each incident ONCE to the
@@ -17,13 +20,23 @@
 #
 # A read failure (API down, key rejected) marks that app unreadable and opens
 # db_backup_sweep_failed; it never raises out of #call, so a dead API is one
-# incident, not a crash. Inert, with one log line, until HEROKU_BACKUP_API_KEY
+# incident, not a crash. An unread night never resolves an open
+# db_backup_missing: unread is not fresh, so no false all-clear posts.
+#
+# One open incident per kind: a second app going missing while
+# db_backup_missing is open updates its detail but posts nothing new; the
+# morning report's per-app line still names it. Inert, with one log line, until HEROKU_BACKUP_API_KEY
 # is set: then nothing is read, recorded or opened.
 #
 # Steffon's SOP: docs/agents/agents/steffon/sops/db-restore-drill.md.
 class DbBackupSweep
   TOKEN_ENV = "HEROKU_BACKUP_API_KEY".freeze
-  FRESH_WITHIN = 26.hours
+  # Heroku's scheduled capture (app-deploy-standard, db-restore-drill §1).
+  SLOT_HOUR = 2
+  # How long after the slot a scheduled backup may take to finish.
+  GRACE = 90.minutes
+  # A sweep record older than this is stale: the report says "not checked".
+  CHECK_STALE_AFTER = 26.hours
   ZONE = "America/Denver".freeze
   LOG = "[db-backup-sweep]".freeze
   MISSING = "db_backup_missing".freeze
@@ -44,6 +57,16 @@ class DbBackupSweep
 
   def self.configured?(env = ENV) = env[TOKEN_ENV].to_s.strip.present?
 
+  # The scheduled slot a backup must have finished after to count as current:
+  # the latest 02:00 Denver whose GRACE has elapsed by `now`.
+  def self.expected_slot(now)
+    local = (now - GRACE).in_time_zone(ZONE)
+    slot = local.change(hour: SLOT_HOUR, min: 0, sec: 0)
+    slot > local ? (local - 1.day).change(hour: SLOT_HOUR, min: 0, sec: 0) : slot
+  end
+
+  def self.slot_label(now) = expected_slot(now).strftime("%b %-d, %H:%M %Z")
+
   def initialize(client: nil, apps: AppCatalog.backed_up_apps, env: ENV, logger: Rails.logger)
     @client = client
     @apps = apps
@@ -61,7 +84,8 @@ class DbBackupSweep
 
     results = @apps.map { |app| check(app, now) }
     results.each { |result| record(result, now) }
-    reconcile(MISSING, results.select(&:missing?), now)
+    # An unread app is not fresh: a missing incident is not resolved while one is.
+    reconcile(MISSING, results.select(&:missing?), now, hold: results.any?(&:unreadable?))
     reconcile(FAILED, results.select(&:unreadable?), now)
     @logger.info("#{LOG} #{results.map { |r| "#{r.slug}=#{r.state}" }.join(' ')}")
     results
@@ -102,15 +126,15 @@ class DbBackupSweep
   # "Backup 02:04, 48 MB" · "Backup MISSING" (plus " (capture started)" when
   # the sweep started one) · "Backup unread (HTTP 401 key
   # rejected)" · "Backup not checked" (no sweep has recorded this app, or none
-  # since `now - FRESH_WITHIN`). `status` is an App#backup_status Hash.
+  # since `now - CHECK_STALE_AFTER`). `status` is an App#backup_status Hash.
   def self.report_line(status, now: Time.current)
     status = status.to_h
     checked = parse_time(status["checked_at"])
-    return "Backup not checked" if checked.nil? || checked < now - FRESH_WITHIN
+    return "Backup not checked" if checked.nil? || checked < now - CHECK_STALE_AFTER
     return "Backup unread (#{status['reason'].presence || 'unknown'})" if status["state"] == "unreadable"
 
     finished = parse_time(status["finished_at"])
-    if status["state"] == "missing" || finished.nil? || finished < checked - FRESH_WITHIN
+    if status["state"] == "missing" || finished.nil? || finished < expected_slot(checked)
       return [ "started", "in progress" ].include?(status["capture"]) ? "Backup MISSING (capture started)" : "Backup MISSING"
     end
 
@@ -157,7 +181,8 @@ class DbBackupSweep
     when MISSING
       failed = apps.reject { |a| [ "started", "in progress" ].include?(a["capture"]) }
       capture = failed.empty? ? "The sweep started a capture for each." : "Capture failed for #{names(failed)}."
-      "Database backup missing: no completed Heroku backup in #{FRESH_WITHIN.inspect} for #{names(apps)}. " \
+      "Database backup missing: no completed Heroku backup since the #{SLOT_HOUR.to_s.rjust(2, '0')}:00 Denver " \
+        "schedule for #{names(apps)}. " \
         "#{capture} Steffon: SOP db-restore-drill."
     when FAILED
       reasons = apps.map { |a| a["reason"] }.compact.uniq.first(3).join("; ")
@@ -168,7 +193,7 @@ class DbBackupSweep
 
   def self.recovery_text(incident, lasted_minutes)
     case incident.kind
-    when MISSING then "Database backups fresh again: every backed-up app has one from the last #{FRESH_WITHIN.inspect} " \
+    when MISSING then "Database backups fresh again: every backed-up app has one since its scheduled slot " \
                       "(incident lasted #{lasted_minutes} min)."
     when FAILED then "Database backup sweep reading again (incident lasted #{lasted_minutes} min)."
     end
@@ -183,7 +208,7 @@ class DbBackupSweep
     latest = self.class.latest_backup(transfers)
     base = { slug: app.slug, heroku_app: app.heroku_app, finished_at: latest&.dig(:finished_at),
              size_bytes: latest&.dig(:size_bytes), name: latest&.dig(:name) }
-    return Result.new(**base, state: "fresh") if latest && latest[:finished_at] >= now - FRESH_WITHIN
+    return Result.new(**base, state: "fresh") if latest && latest[:finished_at] >= self.class.expected_slot(now)
 
     Result.new(**base, state: "missing", capture: capture(app, transfers, now))
   rescue HerokuClient::Error => e
@@ -196,10 +221,10 @@ class DbBackupSweep
     return "in progress" if self.class.backup_running?(transfers, now)
 
     client.capture(app.heroku_app)
-    @logger.warn("#{LOG} #{app.slug}: no backup in #{FRESH_WITHIN.inspect}; capture started")
+    @logger.warn("#{LOG} #{app.slug}: no backup since #{self.class.slot_label(now)}; capture started")
     "started"
   rescue HerokuClient::Error => e
-    @logger.warn("#{LOG} #{app.slug}: no backup in #{FRESH_WITHIN.inspect}; capture failed (#{e.message})")
+    @logger.warn("#{LOG} #{app.slug}: no backup since #{self.class.slot_label(now)}; capture failed (#{e.message})")
     "failed (#{e.message})"
   end
 
@@ -211,7 +236,7 @@ class DbBackupSweep
 
   # One open incident per kind: opened on the first failing run, its detail kept
   # current while it lasts, resolved on the first passing run.
-  def reconcile(kind, failing, now)
+  def reconcile(kind, failing, now, hold: false)
     open = AgentMailboxIncident.open_for(kind)
     detail = { "apps" => failing.map { |r| r.to_h.slice(:slug, :heroku_app, :reason, :capture).compact.stringify_keys } }
     if failing.any? && open.nil?
@@ -219,7 +244,7 @@ class DbBackupSweep
       @logger.warn("#{LOG} incident opened: #{kind} #{detail.to_json}")
     elsif failing.any?
       open.update!(detail: detail)
-    elsif open
+    elsif open && !hold
       open.update!(resolved_at: now)
       @logger.info("#{LOG} incident resolved: #{kind}")
     end

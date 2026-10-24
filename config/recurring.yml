@@ -25,7 +25,7 @@ production:
     args: []
   # Steffon's nightly agent job over the database backups: after Heroku's 02:00
   # Denver captures, read each backed-up app's latest backup (config/apps.yml
-  # backups: true), capture one where none completed in 26 hours, record it for
+  # backups: true), capture one where none completed since the 02:00 slot, record it for
   # the 07:00 daily app report, and open the floor incidents the dispatcher's
   # alert posts once. Inert (one log line) until HEROKU_BACKUP_API_KEY is set.
   # See DbBackupSweepJob and docs/agents/agents/steffon/sops/db-restore-drill.md.

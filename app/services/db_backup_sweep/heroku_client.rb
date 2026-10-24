@@ -4,9 +4,9 @@ class DbBackupSweep
   # The two Heroku calls the sweep needs, over HTTPS with one bearer key
   # (ENV["HEROKU_BACKUP_API_KEY"]):
   #
-  #   transfers(app)  GET  postgres-api.heroku.com/client/v11/apps/<app>/transfers
+  #   transfers(app)  GET  api.data.heroku.com/client/v11/apps/<app>/transfers
   #                   every backup, restore and copy the app's databases have run
-  #   capture(app)    POST postgres-api.heroku.com/client/v11/databases/<add-on id>/backups
+  #   capture(app)    POST api.data.heroku.com/client/v11/databases/<add-on id>/backups
   #                   what `heroku pg:backups:capture -a <app>` sends; the add-on
   #                   id comes from the Platform API (api.heroku.com/apps/<app>/addons),
   #                   the heroku-postgresql add-on attached as DATABASE_URL
@@ -16,7 +16,7 @@ class DbBackupSweep
   class HerokuClient
     Error = Class.new(StandardError)
 
-    DATA_API = "https://postgres-api.heroku.com/client/v11".freeze
+    DATA_API = "https://api.data.heroku.com/client/v11".freeze
     PLATFORM_API = "https://api.heroku.com".freeze
     PLATFORM_ACCEPT = "application/vnd.heroku+json; version=3".freeze
     POSTGRES_SERVICE = "heroku-postgresql".freeze

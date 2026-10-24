@@ -127,9 +127,32 @@ class DbBackupSweepTest < ActiveSupport::TestCase
 
     assert_equal 1, recorder.posts.size
     text = recorder.posts.sole.last["content"]
-    assert_match(/Database backup missing: no completed Heroku backup in 26 hours for turf-monster\./, text)
+    assert_match(/Database backup missing: no completed Heroku backup since the 02:00 Denver schedule for turf-monster\./, text)
     assert_match(/The sweep started a capture for each\. Steffon: SOP db-restore-drill\./, text)
     assert_equal 1, AgentMailboxIncident.where(kind: "db_backup_missing").count
+  end
+
+  test "[unit] ONE missed night is caught: only yesterday's 02:03 backup, swept at 03:30, is MISSING" do
+    yesterday = Time.find_zone("America/Denver").local(2026, 10, 23, 2, 3)
+    assert_operator NOW - yesterday, :<, 26.hours, "the case a rolling 26-hour window reads as fresh"
+    client = FakeClient.new("cyvasse" => [ backup(yesterday) ])
+
+    result = sweep(client, [ entry("cyvasse") ]).call(now: NOW).sole
+
+    assert_equal [ "missing", "started" ], [ result.state, result.capture ]
+    assert_equal [ "cyvasse" ], client.captured
+    assert AgentMailboxIncident.open_for("db_backup_missing")
+    assert_equal "Backup MISSING (capture started)", DbBackupSweep.report_line(@cyvasse.reload.backup_status, now: NOW + 3.5.hours)
+  end
+
+  test "[unit] the expected slot is the latest 02:00 Denver whose 90-minute grace has passed" do
+    denver = Time.find_zone("America/Denver")
+    assert_equal denver.local(2026, 10, 24, 2), DbBackupSweep.expected_slot(denver.local(2026, 10, 24, 3, 30))
+    assert_equal denver.local(2026, 10, 23, 2), DbBackupSweep.expected_slot(denver.local(2026, 10, 24, 3, 29)),
+                 "inside the grace, last night's slot still counts"
+    assert_equal denver.local(2026, 10, 24, 2), DbBackupSweep.expected_slot(denver.local(2026, 10, 24, 23, 0))
+    # Across the fall-back change (Nov 1, 2026): still 02:00 local.
+    assert_equal denver.local(2026, 11, 1, 2), DbBackupSweep.expected_slot(denver.local(2026, 11, 1, 3, 30))
   end
 
   test "[unit] the incident resolves when every app is fresh again, and the recovery posts once" do
@@ -187,6 +210,14 @@ class DbBackupSweepTest < ActiveSupport::TestCase
     text = DbBackupSweep.alert_text(AgentMailboxIncident.open_for("db_backup_sweep_failed"))
     assert_match(/could not read 2 app\(s\): turf-monster, cyvasse \(timeout; HTTP 401 key rejected\)/, text)
     assert_equal "Backup unread (timeout)", DbBackupSweep.report_line(@turf.reload.backup_status, now: NOW + 1.day + 3.hours)
+  end
+
+  test "[unit] a missing incident stays open, with no all-clear, while an app it named goes unread" do
+    sweep(FakeClient.new("cyvasse" => []), [ entry("cyvasse") ]).call(now: NOW)
+    sweep(FakeClient.new("cyvasse" => Error.new("timeout")), [ entry("cyvasse") ]).call(now: NOW + 1.day)
+
+    assert AgentMailboxIncident.open_for("db_backup_missing"), "unread is not fresh: no recovery may post"
+    assert AgentMailboxIncident.open_for("db_backup_sweep_failed")
   end
 
   test "[unit] an unannounced app is counted, never named, in an alert" do

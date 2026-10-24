@@ -162,7 +162,7 @@ heroku pg:backups:capture -a <heroku-app>
 Then set the app's row to `database: true` and `backups: true`; the registry
 test fails a paid app with a database that has `backups: false`. From the next
 night the hub's `DbBackupSweepJob` (03:30 Denver) watches the backup, captures
-one when none completed in 26 hours, and puts a backup line in the 07:00 daily
+one when none completed since that night's 02:00 slot, and puts a backup line in the 07:00 daily
 app report; Steffon drills a restore monthly. The whole act:
 [`db-restore-drill`](db-restore-drill.md).
 

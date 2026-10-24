@@ -11,7 +11,7 @@
 # two more kinds on the same floor, so its alerts post through the same
 # once-per-incident announce:
 #
-#   db_backup_missing       a backed-up app has no completed backup in 26 hours
+#   db_backup_missing       a backed-up app has no completed backup since the 02:00 Denver slot
 #   db_backup_sweep_failed  the sweep could not read an app's backups (API down,
 #                           bad key), so it cannot say whether one is missing
 class AgentMailboxIncident < ApplicationRecord
