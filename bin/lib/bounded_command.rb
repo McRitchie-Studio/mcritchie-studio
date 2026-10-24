@@ -21,7 +21,9 @@ require "io/wait"
 #
 # Like IO.popen, it raises SystemCallError (Errno::ENOENT, Errno::EACCES) when
 # the binary cannot be started, and `$?` after it returns is the child's status.
-# Pure Ruby with no gems, because the bin/ tree travels on its own.
+# Pure Ruby with no gems, because the bin/ tree travels on its own, and Ruby 2.6
+# syntax (no endless defs): bin/gh-token loads this through op_meter.rb under
+# /usr/bin/ruby too.
 module BoundedCommand
   # Seconds. One beat of the dispatcher is sixty; a healthy `op read` takes a
   # few hundred milliseconds.
@@ -34,8 +36,12 @@ module BoundedCommand
   # out: stdout as read so far. status: the Process::Status (killed on a
   # timeout). timed_out: the deadline passed and the child was killed.
   Result = Struct.new(:out, :status, :timed_out, keyword_init: true) do
-    def timed_out? = timed_out == true
-    def success? = !timed_out? && !status.nil? && status.success?
+    def timed_out?
+      timed_out == true
+    end
+    def success?
+      !timed_out? && !status.nil? && status.success?
+    end
   end
 
   module_function
@@ -111,5 +117,7 @@ module BoundedCommand
     Result.new(out: buf.force_encoding(Encoding.default_external), status: status, timed_out: timed_out)
   end
 
-  def now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  def now
+    Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  end
 end
