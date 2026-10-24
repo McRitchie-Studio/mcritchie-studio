@@ -1,0 +1,125 @@
+# Nightly UI budget: every public page in config/ui_budget.yml, measured signed out
+# at 390 and 1280 and judged against its ceilings by bin/ui-budget (collector:
+# bin/lib/ui_budget/collect.cjs; evaluator: bin/lib/ui_budget.rb). Epic:
+# .agents/epics/ui-consistency-program.md, piece 4.
+#
+# SILENCE MEANS UNDER BUDGET, so anything else is loud. A run that finds a page
+# over, a page it could not measure, or a collector that crashed fails, and the
+# failure opens an issue titled "UI budget over: <date>" (the UTC date it first
+# went over). Later failing nights comment on that open issue rather than open
+# another; the next green run closes it. Same alert shape as r2-backup.yml.
+#
+# The run reads production as an anonymous visitor: GET requests only, no
+# cookies, no secrets, a user agent marked `ui-budget` so the apps' logs can tell
+# it apart. The table goes to the job summary and the raw JSON to an artifact.
+name: UI Budget
+
+on:
+  schedule:
+    # Off the hour on purpose: GitHub queues top-of-hour schedules behind
+    # everyone else's (r2-backup's runs at "0 9" started 5.5 and 8.3 hours late).
+    - cron: "23 10 * * *" # 10:23 UTC = 04:23 Denver (MDT), 03:23 (MST)
+  workflow_dispatch:
+
+concurrency:
+  group: ui-budget
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  budget:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The evaluator is plain Ruby (stdlib only), so no bundle install.
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Playwright and axe-core come from package-lock.json; axe is injected from
+      # node_modules, never fetched from a CDN at run time.
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Cache the Playwright browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Measure and judge
+        run: bin/ui-budget --collect --out ui-budget.json --summary ui-budget-summary.md
+
+      - name: Write the job summary
+        if: always()
+        run: |
+          if [ -f ui-budget-summary.md ]; then
+            cat ui-budget-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "UI budget: no table; the collector did not finish. Read the run log." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-budget-${{ github.run_id }}
+          path: ui-budget.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Alert on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          prefix="UI budget over:"
+          if [ -f ui-budget-summary.md ]; then
+            verdict=$(grep -m1 '^ui-budget:' ui-budget-summary.md || true)
+            rows=$(grep -E '\| (OVER|MISSING) \|$' ui-budget-summary.md || true)
+            body="$verdict. Run: $RUN_URL
+
+          | page | width | metric | value | ceiling | verdict |
+          |---|---|---|---|---|---|
+          $rows
+
+          The full table is the run's job summary; the raw numbers are its \`ui-budget-*\` artifact. Ceilings: config/ui_budget.yml. Reproduce one page: \`bin/ui-budget --collect --only <url>\`."
+          else
+            body="The UI budget run did not produce a table (the collector failed before judging): $RUN_URL. Read the run log."
+          fi
+          existing=$(gh issue list --state open --search "\"$prefix\" in:title" --json number,title \
+            --jq "[.[] | select(.title | startswith(\"$prefix\"))][0].number // empty")
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "$prefix $(date -u +%F)" --body "$body"
+          fi
+
+      - name: Close a resolved alert
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prefix="UI budget over:"
+          for n in $(gh issue list --state open --search "\"$prefix\" in:title" --json number,title \
+            --jq ".[] | select(.title | startswith(\"$prefix\")) | .number"); do
+            gh issue close "$n" --comment "Every page is within budget again: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          done
