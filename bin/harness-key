@@ -13,8 +13,9 @@
 #
 # The operator grants a harness key once per machine, on the board's tasks page:
 # the row reads `Harness key · <machine>` and carries the slug `request` printed.
-# The key mints studio logins (`bin/task begin`, a review claim) and posts login
-# requests. It is kept owner-only in <projects>/.agents/harness-key.json and is
+# The key mints studio logins (`bin/task begin`, a review claim), posts login
+# requests, reads the board, narrates, creates a task and makes its claim
+# (HarnessKey::DOORS); the tooling presents it before the shared token there. It is kept owner-only in <projects>/.agents/harness-key.json and is
 # never printed: every command reports its length only.
 #
 # Exit codes: 0 done · 1 refused or failed · 2 still pending · 3 usage.
@@ -156,7 +157,7 @@ class HarnessKeyCli
     unless token
       pending = HarnessKey.open_request(dir, env: @env)
       @out.puts(pending ? "harness-key: #{pending['request']} is pending until #{pending['ends_at']}" :
-                          "harness-key: this machine holds no harness key; logins are minted with the shared token")
+                          "harness-key: this machine holds no harness key; its logins, reads and narration use the shared token")
       return pending ? PENDING : OK
     end
 

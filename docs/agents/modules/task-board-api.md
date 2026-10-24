@@ -28,7 +28,8 @@ this file in the same pass.
 
 ## Authentication
 
-Every endpoint except `POST /api/v1/auth` requires a bearer token.
+Every endpoint except `POST /api/v1/auth` requires a bearer token: the shared
+token, an agent session's token, or a machine's harness key (step 4).
 
 1. The board reads a shared secret from
    `Rails.application.credentials.agent_api_secret || ENV["AGENT_API_SECRET"]`.
@@ -61,7 +62,31 @@ Every endpoint except `POST /api/v1/auth` requires a bearer token.
    in the legacy-use census, and it stops writing once that reads zero
    ([`credentials.md`](credentials.md#how-a-soul-logs-in-to-the-board)). Send
    `X-Agent-Caller: <script>` so the census can name the caller.
-4. **One token per ship.** `bin/task` and `bin/dor-check` send a bearer handed
+4. **The harness key.** A machine the operator has granted one
+   (`bin/harness-key request`) presents its key as the bearer on these
+   endpoints, and the board counts no legacy use for it:
+   - the reads: `GET /tasks`, `/tasks/:slug`, `/tasks/:slug/building_lane`,
+     `/tasks/:slug/review_claim`, `/activities`, `/gates/:type/:slug`,
+     `/release_conductor_claims/live`, `/releases/:slug/conductor_claim`,
+     `/review_pending_actions`, `/devops_shifts`, `/desk_records`, `/agents`,
+     `/agents/:slug`, `/insights`, `/agent_activities/windows`,
+     `/agent_activities/awaiting_grade`;
+   - narration: `POST /agent_activities` (and `/close`, `/close_all`,
+     `/turn_open`, `/reconcile`) and `POST /agent_actions`;
+   - a task's create, `POST /tasks`, in `designed`;
+   - its claim, `PATCH /tasks/:slug` with `stage: building` on a `designed` or
+     `building` task, carrying only `stage`, `event`, `devops` and `dev_size`;
+   - the login doors: `POST /agent_sessions`, a review claim, a login request,
+     and `GET /agent_sessions/current`.
+
+   Every other call answers the key `403 SESSION_FORBIDDEN`, so it writes no task
+   but the claim; a revoked or unknown key answers `401` naming
+   `bin/harness-key request`. The key names no soul: a call under it declares its
+   actor or lane as a call under the shared token does. `bin/task`, `bin/agent-activity`
+   and the hooks present it before the shared token wherever it is accepted, and
+   fall back to the shared token on a machine with no key or when the board
+   refuses it (agent-sessions-design.md, section 3).
+5. **One token per ship.** `bin/task` and `bin/dor-check` send a bearer handed
    down in `AGENT_API_TOKEN` when one is set, and mint their own from the
    secret only when it is not. `bin/submit` mints once per run and exports it to
    every board call it spawns (`bin/lib/task_board.rb#handed_token`). When the
