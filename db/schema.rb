@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -156,10 +156,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_200000) do
   create_table "agent_dispatchers", force: :cascade do |t|
     t.integer "capacity"
     t.datetime "created_at", null: false
+    t.boolean "gh_ok"
+    t.datetime "harness_checked_at"
+    t.integer "harness_failing_beats", default: 0, null: false
     t.string "host"
     t.datetime "last_seen_at", null: false
+    t.boolean "op_ok"
     t.string "pause_reason"
     t.datetime "paused_until"
+    t.string "power_source"
     t.string "role", default: "primary", null: false
     t.integer "running", default: 0, null: false
     t.jsonb "souls", default: [], null: false
@@ -235,15 +240,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_200000) do
     t.datetime "alert_posted_at"
     t.datetime "created_at", null: false
     t.jsonb "detail", default: {}, null: false
+    t.bigint "episode_id"
+    t.datetime "escalated_at"
+    t.datetime "final_posted_at"
+    t.datetime "final_recovery_at"
+    t.datetime "flap_posted_at"
     t.string "kind", null: false
     t.datetime "opened_at", null: false
     t.datetime "recovery_posted_at"
     t.datetime "resolved_at"
     t.string "subject"
     t.datetime "updated_at", null: false
+    t.index ["episode_id"], name: "index_agent_mailbox_incidents_on_episode_id"
     t.index ["kind", "subject"], name: "index_agent_mailbox_incidents_one_open_per_subject", unique: true, where: "((resolved_at IS NULL) AND (subject IS NOT NULL))"
     t.index ["kind"], name: "index_agent_mailbox_incidents_one_open_per_kind", unique: true, where: "((resolved_at IS NULL) AND (subject IS NULL))"
-    t.check_constraint "kind::text = ANY (ARRAY['dispatcher_silent'::character varying::text, 'message_waiting'::character varying::text, 'db_backup_missing'::character varying::text, 'db_backup_sweep_failed'::character varying::text, 'submitted_unclaimed'::character varying::text, 'change_build_refused'::character varying::text])", name: "agent_mailbox_incidents_kind_known"
+    t.check_constraint "kind::text = ANY (ARRAY['dispatcher_silent'::character varying::text, 'message_waiting'::character varying::text, 'db_backup_missing'::character varying::text, 'db_backup_sweep_failed'::character varying::text, 'submitted_unclaimed'::character varying::text, 'change_build_refused'::character varying::text, 'harness_degraded'::character varying::text])", name: "agent_mailbox_incidents_kind_known"
   end
 
   create_table "agent_message_cursors", force: :cascade do |t|
