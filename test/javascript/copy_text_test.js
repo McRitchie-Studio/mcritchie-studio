@@ -8,7 +8,8 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const PARTIAL = new URL("../../app/views/components/_copy_text_script.html.erb", import.meta.url);
-const SCRIPT = /<script>([\s\S]*?)<\/script>/.exec(readFileSync(PARTIAL, "utf8"))[1];
+// The open tag carries an ERB nonce attribute, whose "%>" is not the tag's end.
+const SCRIPT = /<script\b(?:<%[\s\S]*?%>|[^>])*>([\s\S]*?)<\/script>/.exec(readFileSync(PARTIAL, "utf8"))[1];
 
 // A page with the partial rendered. `clipboard`: "resolves", "rejects" or "absent"
 // (an insecure context). `exec`: what document.execCommand("copy") returns, or
