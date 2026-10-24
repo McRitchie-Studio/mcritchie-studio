@@ -8,6 +8,18 @@ Credential docs are split into two layers:
 ## Contract
 
 - Never print secrets into the terminal or transcript.
+- **A secret never appears on a command line.** `ps` shows every process's arguments to every
+  local process, so an argument is one process listing away from a transcript. Pass it by stdin
+  (`printf '%s' "$V" | cmd`; `printf` is a shell builtin, not a process), as item JSON on
+  stdin to `op item edit` (never `<field>[concealed]=…`), through
+  `bin/heroku-secret-set <app> <NAME>` for Heroku config (`heroku config:set` takes values only
+  as arguments), or as a curl header from a file or `-H @<(printf 'Authorization: Bearer %s\n'
+  "$TOKEN")`. `test/docs/secrets_on_argv_guard_test.rb` (and its turf-monster twin) fails on a
+  new argv form in `bin/`, `lib/tasks`, `docs/agents` and `.github/workflows`.
+- **A long-lived child gets an allow-listed environment.** Desk servers start under
+  `bin/lib/child_env.rb` (`bin/agent-worktree`) and turf-monster `bin/tm`'s `TM_ENV_ALLOW`, so
+  no agent credential (`HEROKU_API_KEY`, `OP_*`, `CLAUDE_CODE_*`, `AGENT_API_*`, `GH_TOKEN`)
+  reaches puma or Sidekiq, whose renamed titles make macOS print their environment in `ps`.
 - Use `/opt/homebrew/bin/op` directly for targeted reads.
 - Prefer repo scripts that write or consume secrets without echoing them.
 - Do not scan vaults broadly unless Alex explicitly asks.
@@ -22,7 +34,13 @@ put a live secret in a transcript:
 - **`heroku releases:info <v>` prints every config var in plaintext.** For a
   release's log use `heroku releases:output <v>`.
 - **`heroku config:set VAR=…` echoes the value it set**, multi-line secrets
-  included. Run it as `heroku config:set … >/dev/null 2>&1; echo "exit $?"`.
+  included, and takes it as an argument. For a secret use `bin/heroku-secret-set`,
+  which prints only the HTTP status; for a public value, run `config:set` as
+  `heroku config:set … >/dev/null 2>&1; echo "exit $?"`.
+- **`pgrep -fl`, `ps aux`, `ps -ef`, `ps e` and `ps eww` print command lines, and on
+  macOS a renamed process's environment.** One `pgrep -fl` on a desk puma put
+  `HEROKU_API_KEY` in a transcript (2026-10-24). Find a process by port or pidfile
+  ([`ports-and-processes.md`](ports-and-processes.md#processes-on-a-shared-machine)).
 - **`heroku config:get` cannot verify anything**: absent, empty and a failed read all
   print one bare newline. Test presence with a control:
   `heroku config --json -a <app> | jq 'length'` (0 means the read failed), then

@@ -107,15 +107,24 @@ reaches theirs.
   require a new PID before trusting a restart.
 - **Never kill a process by walking to its parent.** A stray `postgres` backend's
   parent is the postmaster, and killing it takes down every desk, cert lane and
-  ship. Read the parent first: `ps -o pid,ppid,command -p <ppid>`.
+  ship. Read the parent first: `ps -o pid,ppid,comm -p <ppid>`.
 - **`Process.kill(0, pid)` succeeds for a zombie.** Read `ps -o state= -p <pid>`
   (`Z`) to tell a dead child from a live one.
 - **A process near 100% CPU, hours old, with PPID 1 is an orphan**, often a load
-  fixture whose cleanup line never ran: `ps -eo pid,ppid,%cpu,etime,command | sort
-  -k3 -rn | head`. Save the command lines before reaping. A load fixture should stop
-  itself on a deadline.
-- **Do not list processes with `ps aux`, `ps -ef` or `pgrep -fl`.** A command line
-  can carry a secret. Use `pgrep -f` (PIDs only) or `ps -o pid,etime,comm -p <pid>`.
+  fixture whose cleanup line never ran: `ps -eo pid,ppid,%cpu,etime,comm | sort
+  -k3 -rn | head`. Note what each one is (`comm`, its cwd from `lsof -a -p <pid> -d cwd`)
+  before reaping. A load fixture should stop itself on a deadline.
+- **Agents never run `pgrep -fl`, `pgrep -a`, `ps aux`, `ps -ef`, `ps e`, `ps eww`,
+  a `command`/`args` column, or a bare `env`.** A command line can carry a secret, and
+  on macOS a process that renamed itself (puma, Sidekiq) shows its ENVIRONMENT after
+  its title: one `pgrep -fl` on a desk puma put `HEROKU_API_KEY` in a transcript on
+  2026-10-24, and the key was rotated. Find a desk server by its port
+  (`lsof -tiTCP:<port> -sTCP:LISTEN`) or its pidfile (`tmp/pids/agent-web.pid`,
+  `tmp/pids/tm-web.pid`, `tmp/pids/tm-sidekiq.pid`), then read only
+  `ps -o pid,etime,comm -p <pid>`; `pgrep -f` (PIDs only) when you must match. Desk
+  servers start with an allow-listed environment
+  ([`credentials.md`](credentials.md#contract)), but a process you did not start may
+  not have.
 - **`vm_stat` "Pages free" and swap usage look alarming on a healthy Mac.** Read
   `memory_pressure` and name the top consumers before reporting a resource problem.
 - **An instant `getaddrinfo: nodename nor servname provided` is usually a poisoned

@@ -71,7 +71,7 @@ mkdir -p "$HOME/.mcr-r2"
 token's id (from `tokens/verify`); its secret is the SHA-256 of the token.
 
 ```bash
-export ADMIN_ID=$(curl -s -H "Authorization: Bearer $CF_TOKEN" \
+export ADMIN_ID=$(curl -s -H @<(printf 'Authorization: Bearer %s\n' "$CF_TOKEN") \
   "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/tokens/verify" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["id"])')
 export ADMIN_SECRET=$(printf %s "$CF_TOKEN" | shasum -a 256 | cut -d' ' -f1)

@@ -155,9 +155,10 @@ refused, never wrongly believed, but it is still an outage for the visitors it s
    (for the hub, `mcritchie.studio` and `mcritchie.app`), setting `X-Edge-Secret` to the
    **same** long random value on every request; there is one `EDGE_SECRET`. Do this
    BEFORE the proxy flip, then flip the records back to back.
-2. Set the same value on the app and let it restart:
+2. Set the same value on the app and let it restart. It travels on stdin, never as an
+   argument ([`credentials.md`](../modules/credentials.md)); with the value in `$EDGE_SECRET`:
    ```bash
-   heroku config:set EDGE_SECRET="<the same value>" --app mcritchie-studio
+   printf '%s' "$EDGE_SECRET" | /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set mcritchie-studio EDGE_SECRET
    ```
 3. Prove both halves:
    ```bash
@@ -166,7 +167,7 @@ refused, never wrongly believed, but it is still an outage for the visitors it s
    # direct to origin — expect 403
    curl -s -o /dev/null -w '%{http_code}\n' https://mcritchie-studio-039470649719.herokuapp.com/tasks
    # direct to origin WITH the secret, from this Mac (not a Cloudflare address) — expect 403
-   curl -s -o /dev/null -w '%{http_code}\n' -H "X-Edge-Secret: $EDGE_SECRET" https://mcritchie-studio-039470649719.herokuapp.com/tasks
+   curl -s -o /dev/null -w '%{http_code}\n' -H @<(printf 'X-Edge-Secret: %s\n' "$EDGE_SECRET") https://mcritchie-studio-039470649719.herokuapp.com/tasks
    # health check still direct — expect 200
    curl -s -o /dev/null -w '%{http_code}\n' https://mcritchie-studio-039470649719.herokuapp.com/up
    # a live client-app preview (second zone's rule) — expect 200; 403 = mcritchie.app rule missing or mismatched

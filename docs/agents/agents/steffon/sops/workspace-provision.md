@@ -380,8 +380,15 @@ through. File the pair under the admin writing lane
 ([`credential-filing`](credential-filing.md)) and set it on the app:
 
 ```bash
-heroku config:set -a mcritchie-studio GOOGLE_CONNECT_CLIENT_ID=… GOOGLE_CONNECT_CLIENT_SECRET=…
+op item get <item> --vault <vault> --format json |
+  ruby -rjson -e 'f = JSON.parse(STDIN.read)["fields"].to_h { |x| [x["label"], x["value"]] }
+    print JSON.generate("GOOGLE_CONNECT_CLIENT_ID" => f.fetch("client-id"),
+                        "GOOGLE_CONNECT_CLIENT_SECRET" => f.fetch("client-secret"))' |
+  /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set mcritchie-studio --json
 ```
+
+The pair travels on stdin from the filed item, never as arguments
+([`credentials.md`](../../../modules/credentials.md)).
 
 Locally, `GOOGLE_CALENDAR_STAND_IN=1` walks the whole flow against a stand-in
 (`config/initializers/google_connect_stand_in.rb`) that grants whichever scopes
@@ -474,8 +481,8 @@ KEYFILE=<absolute path to the downloaded key .json>
 # The value is multi-line. A filter that matches only the first line lets the
 # REST of a private key through, which is exactly how one reached a transcript
 # on 2026-09-19.
-heroku config:set GOOGLE_SERVICE_ACCOUNT_JSON="$(cat "$KEYFILE")" \
-  --app <app> >/dev/null 2>&1
+# The key goes on stdin, never as an argument; the script prints only the HTTP status.
+/Users/alex/projects/mcritchie-studio/bin/heroku-secret-set <app> GOOGLE_SERVICE_ACCOUNT_JSON < "$KEYFILE"
 
 # VERIFY ON THE DYNO, and verify the ENV VAR — not the resolved credential.
 # A bare `bin/rails` runs on your desk, not on the app you just wrote to. And

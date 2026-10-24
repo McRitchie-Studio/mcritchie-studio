@@ -4,7 +4,9 @@
 
 > **The PROCEDURE is the `credential-rotation` SOP** — `docs/agents/agents/steffon/sops/credential-rotation.md`. It owns store enumeration, ordering, verification, rollback and the receipt, and it applies to every secret including the ones with no section here. **This file is the per-credential appendix**: what each secret is, where it lives, and how to regenerate it at the source. Run the SOP; reach for the matching section below as an accelerator. Where the two disagree, the SOP wins and the section below gets fixed in the same pass.
 
-The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGMN26C5DPA`). There are **six vaults**, not two: `studio-agents` (agent lane), `studio-agents-admin` (ship lane — separate service account, `bin/setup-1pass-token --admin`), `studio-applications` (app runtime and CI), `industries-agents`, `family-agents`, and `Commercial Welding`. Vault choice and the lane that may write each one are [`credential-filing`](../agents/steffon/sops/credential-filing.md) §§1-4. The Heroku fleet is **ten apps**, not two: `mcritchie-studio(-qa)`, `turf-monster-mainnet`, `turf-monster-qa`, `mcritchie-industries(-qa)`, `rolio-prod`, `rolio-qa`, `tax-studio`, `moms-app` — a per-app section below that names only one or two of them is describing that secret's consumers, not the fleet, and the `credential-rotation` SOP's Phase 1 sweeps all ten regardless. After every rotation, re-run `bin/ecosystem-build` so the dev `.env` files refresh from Heroku's new config.
+The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGMN26C5DPA`). There are **six vaults**, not two: `studio-agents` (agent lane), `studio-agents-admin` (ship lane — separate service account, `bin/setup-1pass-token --admin`), `studio-applications` (app runtime and CI), `industries-agents`, `family-agents`, and `Commercial Welding`. Vault choice and the lane that may write each one are [`credential-filing`](../agents/steffon/sops/credential-filing.md) §§1-4. The Heroku fleet is **20 apps** (`heroku apps --all`, measured 2026-10-24): `mcritchie-studio(-qa)`, `turf-monster-mainnet`, `turf-monster-qa`, `mcritchie-industries(-qa)`, `rolio-prod`, `rolio-qa`, `commercial-welding(-qa)`, `tax-studio`, `moms-app`, `dads-app`, `cyvasse`, `mcr-10and5`, `mcr-portfolio`, `mcr-prisoners-dilemma`, `mcr-rantly`, `mcr-search-position`, `mcr-weekly-lock`. A per-app section below that names only one or two of them describes that secret's consumers, not the fleet, and the `credential-rotation` SOP's Phase 1 sweeps every app regardless.
+
+**A secret never goes on a command line**, here or anywhere ([`credentials.md`](../modules/credentials.md)): `ps` shows arguments to every local process. Heroku config takes the value on stdin through `/Users/alex/projects/mcritchie-studio/bin/heroku-secret-set <app> <NAME>` (`heroku config:set` takes values only as arguments); 1Password takes it as item JSON on stdin (`credential-rotation` 4.2). After every rotation, re-run `bin/ecosystem-build` so the dev `.env` files refresh from Heroku's new config.
 
 ---
 
@@ -34,9 +36,9 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 **Procedure** (run 2026-10-24; the `credential-rotation` SOP governs):
 1. Admin lane: `source ~/.zprofile.admin`. Only `HEROKU_STUDIO_ADMIN_API_KEY` may create or revoke authorizations; the agent key is refused.
 2. Mint with the admin key through the Platform API (`POST /oauth/authorizations`, description `heroku.studio.agents`, scope `identity,read-protected,write-protected`), with the key in a header, never on argv. Confirm `GET /account` under the new key answers `alex@mcritchie.studio`.
-3. File in 1Password FIRST: `credential` and `authorization-id`, the item JSON piped to `op item edit` on stdin, read back by digest.
+3. File in 1Password FIRST: `credential` and `authorization-id`, the item JSON piped to `op item edit` on stdin (the `credential-rotation` 4.2 recipe), read back by digest. Run each `op` call with `OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"`: `~/.zprofile.admin` exports only `OP_ADMIN_SERVICE_ACCOUNT_TOKEN`, and `op` reads `OP_SERVICE_ACCOUNT_TOKEN`, so without the override the write runs on the agents token, which cannot write the item.
 4. Rewrite both profile lines in place (`~/.zprofile` `HEROKU_API_KEY`, `~/.zprofile.admin` `HEROKU_STUDIO_AGENTS_API_KEY`), mode 600, and compare digests.
-5. Prove from a fresh `env -i` login shell: `heroku apps --all` lists the fleet (20 apps), and `heroku run --no-tty --exit-code -a mcritchie-studio -- true` exits 0 while a `false` control exits 1.
+5. Prove from a fresh login shell with an empty environment, which loads `~/.zprofile` only when it has `HOME` and needs `LANG` so the Ruby-based CLIs read UTF-8: `env -i HOME="$HOME" LANG=en_US.UTF-8 /bin/zsh -l -c 'heroku apps --all --json | jq length'` prints 20, and `heroku run --no-tty --exit-code -a mcritchie-studio -- true` from the same kind of shell exits 0 while a `false` control exits 1.
 6. Revoke the old authorization with the admin key (`DELETE /oauth/authorizations/<old id>`); the old key must answer 401.
 7. Every agent shell started before the rotation still holds the old key until it re-sources `~/.zprofile`; a 401 from one of them is expected.
 
@@ -56,10 +58,10 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 3. Delete `config/credentials.yml.enc` and `config/master.key`.
 4. Regenerate: `EDITOR='code --wait' bin/rails credentials:edit` — Rails creates a fresh `master.key` + empty `credentials.yml.enc`.
 5. Paste your scratch-file credentials back into the editor. Save.
-6. Capture the new master key: `cat config/master.key`.
-7. `heroku config:set RAILS_MASTER_KEY=<new_key> --app mcritchie-studio` (or `--app turf-monster-mainnet`).
+6. The new master key is in `config/master.key`. Never print it.
+7. Set it on the app from the file, on stdin: `/Users/alex/projects/mcritchie-studio/bin/heroku-secret-set mcritchie-studio RAILS_MASTER_KEY < config/master.key` (or `turf-monster-mainnet`).
 8. Update the matching 1Password item (recommended naming: `mcritchie.studio/RAILS_MASTER_KEY`, `turf-monster/RAILS_MASTER_KEY`).
-9. Update local `.env`: `sed -i '' '/^RAILS_MASTER_KEY=/d' .env && echo "RAILS_MASTER_KEY=<new_key>" >> .env`.
+9. Update local `.env` from the file, never typing the key: `{ grep -v '^RAILS_MASTER_KEY=' .env; printf 'RAILS_MASTER_KEY=%s\n' "$(cat config/master.key)"; } > .env.new && mv .env.new .env && chmod 600 .env`.
 10. Commit `config/credentials.yml.enc` to the repo. Push.
 
 **Verify:** App boots locally (`bin/rails server`). `heroku logs --tail --app <app>` after a deploy shows no `:secret_key_base` errors. Direct login still works in each app.
@@ -387,8 +389,8 @@ it. About 3.69 devnet SOL remains, which has no value.
 **Procedure:**
 1. https://console.anthropic.com → Settings → API Keys → "Create Key" (name it e.g. `mcritchie-studio-2026-Q2`).
 2. Copy the `sk-ant-api...` value (only shown once).
-3. Update 1Password `anthropic` → field `api key` → paste the new value. Save.
-4. `heroku config:set ANTHROPIC_API_KEY=<new_value> --app mcritchie-studio`.
+3. Update 1Password `anthropic` → field `api key` → paste the new value. Save. (The item's vault is not yet recorded; `credential-inventory.md` names where it is not.)
+4. Set it on the app from the vault, on stdin: `op read 'op://<vault>/anthropic/api key' | /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set mcritchie-studio ANTHROPIC_API_KEY`.
 5. Re-run `bin/ecosystem-build`.
 6. After 24h of confirmed normal operation, revoke the old key in the Anthropic console.
 
@@ -411,7 +413,15 @@ it. About 3.69 devnet SOL remains, which has no value.
 1. https://developer.x.com/en/portal/projects → the `mcritchie-studio` project → app keys & tokens.
 2. For each of the 5 values, click "Regenerate" → copy → save to 1Password `agent.turf.x`, into the field whose LABEL matches (the item has no `api_key`/`api_secret` fields; they are `Consumer Key` / `Consumer Key Secret`).
 3. The app MUST have "Read and Write" permission — verify on the User authentication settings page. If not, the post will silently 401.
-4. `heroku config:set X_BEARER_TOKEN=... X_API_KEY=... X_API_SECRET=... X_ACCESS_TOKEN=... X_ACCESS_TOKEN_SECRET=... --app mcritchie-studio`.
+4. Set all five from the item in one release, the values on stdin (the field labels are the item's):
+   ```bash
+   op item get agent.turf.x --vault studio-agents --format json |
+     ruby -rjson -e 'f = JSON.parse(STDIN.read)["fields"].to_h { |x| [x["label"], x["value"]] }
+       print JSON.generate("X_BEARER_TOKEN" => f.fetch("Bearer Token"), "X_API_KEY" => f.fetch("Consumer Key"),
+                           "X_API_SECRET" => f.fetch("Consumer Key Secret"), "X_ACCESS_TOKEN" => f.fetch("Access Token"),
+                           "X_ACCESS_TOKEN_SECRET" => f.fetch("Access Token Secret"))' |
+     /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set mcritchie-studio --json
+   ```
 5. Re-run `bin/ecosystem-build`.
 
 **Verify:** `bin/rails news:intake` succeeds (uses bearer). For write creds, post a test Content via `Content::PostToX` against a draft contest, then delete the tweet.
@@ -544,7 +554,7 @@ of AWS is listed there under **What remains of AWS**.
 2. Click "Reset Secret" — confirm.
 3. Copy the new client secret. (Client ID does NOT change on reset.)
 4. Update 1Password.
-5. `heroku config:set GOOGLE_CLIENT_SECRET=... --app mcritchie-studio` (and `--app turf-monster-mainnet` if they share — currently they have separate OAuth clients).
+5. Set it on the app from the vault, on stdin: `op read 'op://<vault>/<item>/<field>' | /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set mcritchie-studio GOOGLE_CLIENT_SECRET` (and `turf-monster-mainnet` if they share; they have separate OAuth clients).
 6. Re-run `bin/ecosystem-build`.
 
 **Verify:** Sign in via Google on each app.

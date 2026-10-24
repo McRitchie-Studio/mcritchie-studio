@@ -157,7 +157,7 @@ APP=mcritchie-studio
 APP_ID=$(heroku apps:info -a $APP --json | ruby -rjson -e 'puts JSON.parse(STDIN.read)["app"]["id"]')
 START=2026-10-03T00:00:00Z; END=2026-10-06T00:00:00Z   # set to the window
 for P in dyno/memory router/status; do
-  curl -s -H "Authorization: Bearer $HEROKU_API_KEY" \
+  curl -s -H @<(printf 'Authorization: Bearer %s\n' "$HEROKU_API_KEY") \
        -H "Accept: application/vnd.heroku+json; version=3" \
        "https://api.metrics.heroku.com/metrics/$APP_ID/$P?process_type=web&start_time=$START&end_time=$END&step=10m" \
        > "web-${P//\//-}.json"

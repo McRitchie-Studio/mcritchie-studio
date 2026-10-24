@@ -195,7 +195,7 @@ missing the wiring**: a bug, not a chore. The manual refresh is for a hand-run `
   `gh[psou]_[A-Za-z0-9_.-]+`.
 - Verify a token by **length and 4-character prefix** only.
 - **If a token reaches a transcript it is compromised.** Revoke immediately:
-  `curl -X DELETE https://api.github.com/installation/token -H "Authorization: Bearer $TOKEN"`
+  `curl -X DELETE https://api.github.com/installation/token -H @<(printf 'Authorization: Bearer %s\n' "$TOKEN")`
   (HTTP 204), then `bin/gh-auth-refresh --force`.
 
 ## Usage In The Standard Workflow
