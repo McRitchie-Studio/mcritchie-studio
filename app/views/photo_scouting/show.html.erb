@@ -11,7 +11,7 @@
     unreadable row. %>
 <% content_for :title, "Photo scouting for #{@person.full_name}" %>
 
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   // THE CALIBRATION COMPONENT, defined INLINE rather than in an importmap module.
   // Alpine is loaded with `defer` and evaluates `x-data` before a module import has
   // run, so a component referenced below and defined in a module is undefined at the

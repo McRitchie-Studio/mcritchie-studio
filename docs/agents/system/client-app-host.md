@@ -15,7 +15,8 @@ code a model wrote.
 and before `CanonicalHost`. A request whose host is under the preview domain is answered
 there, by `ClientApps::Host`. It never reaches the cookie jar, the session, flash, the
 CSP middleware, Rack::Attack, OmniAuth, or any hub route. So no `Set-Cookie` can be
-written on a preview host.
+written on a preview host, and the hub's own report-only Content-Security-Policy
+never reaches a preview response, which carries the bundle policy below.
 
 | Host | Answer |
 |------|--------|

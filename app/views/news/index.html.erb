@@ -25,7 +25,7 @@
     refresh) back to the inner studioBoard via window.HubEngineBoard so there is ONE toast host
     and one count path. The FOCUS + ARCHIVED toggles are NOT here — they live on the
     studioBoard scope (board_state), reached by the column labels + header slot. %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
 function newsBoardChrome() {
   return {
     _pending: {},

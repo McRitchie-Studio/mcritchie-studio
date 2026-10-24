@@ -25,7 +25,7 @@
 <% cards = local_assigns.fetch(:app_ladder_cards, []) %>
 <% flow = local_assigns.fetch(:release_flow, nil) %>
 <%= render "components/copy_text_script" %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
 // Defined inline, before the markup, for the reason kanbanBoard is: x-data must find
 // the function when Alpine (or a Turbo visit's MutationObserver) first walks the node.
 function deploySummary() {

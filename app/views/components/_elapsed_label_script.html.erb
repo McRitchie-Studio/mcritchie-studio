@@ -2,7 +2,7 @@
     on window so any Alpine x-text — the board crew AND the task timeline — shares
     one formatter. Idempotent (the `||` guard) so rendering it on a page that also
     has the board never clobbers the definition. %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   window.elapsedLabel = window.elapsedLabel || function (e) {
     e = Math.max(0, e | 0);
     if (e < 60) return e + 's';

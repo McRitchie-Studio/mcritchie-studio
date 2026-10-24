@@ -4,7 +4,7 @@
     falls back to a hidden-textarea execCommand('copy'). It answers false when
     the fallback did not copy either, so a caller can say so. Idempotent (the `||`
     guard) so rendering it on a page more than once never clobbers the definition. %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   window.__copyTextFallback = window.__copyTextFallback || function (text) {
     try {
       var ta = document.createElement('textarea');

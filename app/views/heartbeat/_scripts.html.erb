@@ -1,4 +1,4 @@
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   // Inline factory for the section's x-data. Defined inline (plain script, not a
   // module) because Alpine loads via `defer` and evaluates BEFORE importmap modules
   // — an x-data referencing a module-exported factory would be undefined at init.

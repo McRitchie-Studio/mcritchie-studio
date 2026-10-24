@@ -64,7 +64,7 @@
     (toast host, count refresh, exit animation) back to the inner studioBoard via
     window.HubEngineBoard (board/engine_board) so there is ONE toast host and one
     animation path. %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
 function taskBoardChrome() {
   return {
     agentFilter: '',

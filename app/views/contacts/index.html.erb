@@ -157,7 +157,7 @@
 
 <%# The live watch: reload the stats frame every 10s, never while the tab is hidden,
     and once at once when it comes back. Stops when the frame leaves the page. %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   (() => {
     if (window.__contactsStatsPoll) clearInterval(window.__contactsStatsPoll);
     const tick = () => {
