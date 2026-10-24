@@ -243,7 +243,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_200000) do
     t.datetime "updated_at", null: false
     t.index ["kind", "subject"], name: "index_agent_mailbox_incidents_one_open_per_subject", unique: true, where: "((resolved_at IS NULL) AND (subject IS NOT NULL))"
     t.index ["kind"], name: "index_agent_mailbox_incidents_one_open_per_kind", unique: true, where: "((resolved_at IS NULL) AND (subject IS NULL))"
-    t.check_constraint "kind::text = ANY (ARRAY['dispatcher_silent'::character varying, 'message_waiting'::character varying, 'db_backup_missing'::character varying, 'db_backup_sweep_failed'::character varying, 'submitted_unclaimed'::character varying, 'change_build_refused'::character varying]::text[])", name: "agent_mailbox_incidents_kind_known"
+    t.check_constraint "kind::text = ANY (ARRAY['dispatcher_silent'::character varying::text, 'message_waiting'::character varying::text, 'db_backup_missing'::character varying::text, 'db_backup_sweep_failed'::character varying::text, 'submitted_unclaimed'::character varying::text, 'change_build_refused'::character varying::text])", name: "agent_mailbox_incidents_kind_known"
   end
 
   create_table "agent_message_cursors", force: :cascade do |t|
