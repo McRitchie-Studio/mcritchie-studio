@@ -7,6 +7,18 @@ class ApplicationHelperTest < ActionView::TestCase
   # broken gem-side rename fails on this line instead of somewhere downstream.
   include Studio::AtTimeHelper
 
+  # [unit] hub-security-gates-pass: a stored url reaches an href only as http(s).
+  test "http_href passes an http or https url and refuses every other scheme" do
+    assert_equal "https://docs.google.com/d/1", http_href("https://docs.google.com/d/1")
+    assert_equal "http://example.com/a", http_href("  http://example.com/a ")
+    assert_equal "HTTPS://example.com", http_href("HTTPS://example.com")
+    [ nil, "", "javascript:alert(1)", "JaVaScRiPt:alert(1)", "java\tscript:alert(1)", " javascript:alert(1)",
+      "data:text/html,<script>x</script>", "vbscript:x", "//evil.example/x", "/relative/path", "http://exa mple.com",
+      "http://[" ].each do |url|
+      assert_nil http_href(url), "http_href let #{url.inspect} through"
+    end
+  end
+
   test "compact_time_ago renders the smallest legible unit and guards blank/future times" do
     now = Time.utc(2026, 7, 7, 12, 0, 0)
 

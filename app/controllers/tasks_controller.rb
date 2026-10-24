@@ -7,7 +7,6 @@ class TasksController < ApplicationController
   include TaskCardPreloads
   board_reorderable model: Task, id_attr: :slug, param: :slugs
 
-  skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
   # Every action needs an admin (AdminWall) except `local_review`, the board's
   # WAITING APPROVAL CTA: a logged-out click must reach the desk's own sign-in,
   # because require_authentication keeps no return_to and would throw the click away.

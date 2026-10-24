@@ -6,7 +6,6 @@ class NewsController < ApplicationController
   include Studio::Board::Reorderable
   board_reorderable model: News, id_attr: :slug, param: :slugs
 
-  skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
   before_action :require_admin
   before_action :set_news, only: [:show, :edit, :update, :destroy, :archive, :review, :process_step, :refine, :conclude, :create_content]
 

@@ -44,7 +44,6 @@ class ModelPipelineController < ApplicationController
   include Studio::Board::Reorderable
   board_reorderable model: Appearance, id_attr: :slug, param: :slugs
 
-  skip_before_action :verify_authenticity_token, if: -> { request.format.json? }
   before_action :require_admin
 
   def index
