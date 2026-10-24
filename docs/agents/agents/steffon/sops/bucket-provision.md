@@ -58,7 +58,7 @@ source ~/.zprofile.admin
 export OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
 export CF_TOKEN=$(op read "op://studio-agents-admin/cloudflare.studio.provision/api-token")
 export CF_ACCOUNT=$(op read "op://studio-agents-admin/cloudflare.studio.provision/account-id")
-curl -s -H "Authorization: Bearer $CF_TOKEN" \
+curl -s -H @<(printf 'Authorization: Bearer %s\n' "$CF_TOKEN") \
   "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/tokens/verify" | grep -o '"status":"[a-z]*"'
 # must print "status":"active"
 ```

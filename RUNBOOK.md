@@ -18,7 +18,7 @@ Troubleshooting guide for autonomous agents. Format: problem, diagnosis, fix.
 
 **Missing RAILS_MASTER_KEY**
 - Diagnosis: App crashes on boot with `ActiveSupport::MessageEncryptor::InvalidMessage`.
-- Fix: `heroku config:set RAILS_MASTER_KEY=$(cat config/master.key) --app mcritchie-studio`
+- Fix: `bin/heroku-secret-set mcritchie-studio RAILS_MASTER_KEY < config/master.key` (the key on stdin, never an argument)
 
 ## Server Won't Start Locally
 

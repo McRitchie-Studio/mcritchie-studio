@@ -5,6 +5,7 @@ require "tmpdir"
 require "fileutils"
 require "digest"
 require "open3"
+require "json"
 
 # GUARD (guard-credential-rotation-shell, 2026-09-09): the SIBLING guard
 # (credential_rotation_sop_docs_test.rb) proves the SOP is REGISTERED and
@@ -185,13 +186,15 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     "### 4.4 Write the runtime stores"   => ["$NEW", 2],
     # managed-wallet-key-rotation: the one Heroku write that must carry TWO
     # values -- the new key AND the retiring one -- in a single release.
-    MW_HEADING                           => ["config:set", 1]
+    # secrets-never-on-argv-or-desk-env (2026-10-24): the value rides on stdin
+    # through bin/heroku-secret-set, never as a `config:set` argument.
+    MW_HEADING                           => ["heroku-secret-set", 1]
   }.freeze
 
   # What counts as MUTATING a store. Any fenced block matching this must live under
   # a WRITE_LANES heading, so the coverage claim cannot quietly go false again —
   # see the test at the bottom of this file.
-  MUTATING = /heroku config:set|heroku config:unset|op item edit|op item create|\brm -f\b|\bmv\b|>>[ \t]/
+  MUTATING = /heroku config:set|heroku config:unset|heroku-secret-set|op item edit|op item create|\brm -f\b|\bmv\b|>>[ \t]/
 
   # Names a snippet may expand without assigning, each with the reason it is
   # supplied from outside the SOP. Anything NOT on this list must be assigned by
@@ -358,11 +361,28 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     # One stub per external writer the SOP's blocks call. Each records its argv and
     # writes nothing, so a block that SHOULD have refused is caught by the call it
     # made rather than by the damage it did.
-    { "heroku" => "heroku.log", "op" => "op.log" }.each do |cmd, log|
-      path = File.join(bin, cmd)
-      File.write(path, "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"#{File.join(dir, log)}\"\n")
-      FileUtils.chmod(0o755, path)
-    end
+    #
+    # The writers that take the value on STDIN (secrets-never-on-argv-or-desk-env)
+    # also record what they were fed, one `argv<TAB>stdin` line per call, so the
+    # control can prove the value arrived by stdin AND never as an argument. `op
+    # item get` answers with a fixture item JSON, as the real one does.
+    item_json = JSON.generate("id" => "fixture", "fields" => [{ "id" => "f1", "label" => FIXTURE_FIELD,
+                                                                "type" => "CONCEALED", "value" => LIVE_VALUE }])
+    File.write(File.join(bin, "heroku"), "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"#{File.join(dir, 'heroku.log')}\"\n")
+    File.write(File.join(bin, "op"), <<~SH)
+      #!/bin/sh
+      case "$*" in
+        *"item get"*"--format json"*) printf '%s\\n' '#{item_json}' ;;
+      esac
+      case "$*" in
+        *"item edit"*) printf '%s\\t%s\\n' "$*" "$(cat)" >> "#{File.join(dir, 'op.log')}" ;;
+        *) printf '%s\\n' "$*" >> "#{File.join(dir, 'op.log')}" ;;
+      esac
+    SH
+    secret_set = File.join(dir, "mcritchie-studio", "bin", "heroku-secret-set")
+    FileUtils.mkdir_p(File.dirname(secret_set))
+    File.write(secret_set, "#!/bin/sh\nprintf '%s\\t%s\\n' \"$*\" \"$(cat)\" >> \"#{File.join(dir, 'secret-set.log')}\"\n")
+    [File.join(bin, "heroku"), File.join(bin, "op"), secret_set].each { |path| FileUtils.chmod(0o755, path) }
 
     dir
   end
@@ -412,6 +432,16 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     stub_calls(dir, "op.log")
   end
 
+  # bin/heroku-secret-set calls, each [argv, stdin].
+  def secret_set_calls(dir)
+    stub_calls(dir, "secret-set.log").map { |line| line.split("\t", 2) }
+  end
+
+  # `op item edit` calls, each [argv, stdin].
+  def op_edit_calls(dir)
+    op_calls(dir).select { |c| c.include?("item edit") }.map { |line| line.split("\t", 2) }
+  end
+
   def stub_calls(dir, log)
     path = File.join(dir, log)
     File.exist?(path) ? File.readlines(path).map(&:chomp) : []
@@ -454,11 +484,12 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
                         "`#{FIXTURE_VAR}=`, every command exiting 0.\nFile now:\n#{File.read(file)}"
       end
 
-      emptied = heroku_calls(dir).select { |c| c.include?("#{FIXTURE_VAR}=") && c =~ /#{FIXTURE_VAR}=(\s|$)/ }
+      emptied = secret_set_calls(dir)
 
       assert_empty emptied,
-                   "heroku config:set was called with an EMPTY value: #{emptied.inspect}. On the real " \
-                   "fleet that blanks the credential on every app in the list."
+                   "bin/heroku-secret-set was reached with $NEW unset: #{emptied.inspect}. On the real " \
+                   "fleet that blanks the credential on every app in the list (the script refuses an " \
+                   "empty stdin too, but the SOP's own guard must not lean on it)."
 
       mw = heroku_calls(dir).select { |c| c.include?("MANAGED_WALLET_ENCRYPTION_KEY") }
 
@@ -479,12 +510,17 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
 
       lanes.each_value { |blocks| blocks.each { |block| run_block(block[:body], dir, env) } }
 
-      filed = op_calls(dir).select { |c| c.include?("item edit") && c.include?("#{FIXTURE_FIELD}[concealed]=#{NEW_VALUE}") }
+      filed = op_edit_calls(dir).select do |argv, stdin|
+        item = JSON.parse(stdin.to_s) rescue nil
+        field = item && item["fields"].find { |f| f["label"] == FIXTURE_FIELD }
+        field && field["value"] == NEW_VALUE && !argv.include?(NEW_VALUE)
+      end
 
       assert_operator filed.length, :>=, 1,
-                      "with $NEW set, no `op item edit … #{FIXTURE_FIELD}[concealed]=<value>` reached the " \
-                      "stub. The 4.2 refusal above is then VACUOUS — a block that never writes refuses " \
-                      "perfectly and proves nothing. Calls seen: #{op_calls(dir).inspect}"
+                      "with $NEW set, no `op item edit` received item JSON on STDIN carrying " \
+                      "#{FIXTURE_FIELD} = the new value (with the value absent from its argv). The 4.2 " \
+                      "refusal above is then VACUOUS — a block that never writes refuses perfectly and " \
+                      "proves nothing. Calls seen: #{op_calls(dir).inspect}"
 
       rewritten = desk_envs(dir).select { |f| File.read(f).include?("#{FIXTURE_VAR}=#{NEW_VALUE}") }
 
@@ -493,26 +529,31 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
                       "`.env` files were rewritten. The refusal above therefore proves NOTHING — a block " \
                       "that never writes refuses perfectly. Fix the harness or the desk loop."
 
-      calls = heroku_calls(dir)
+      calls = secret_set_calls(dir)
+      written = calls.select { |argv, stdin| argv.split == ["fixture-app-one", FIXTURE_VAR] && stdin == NEW_VALUE }
 
-      assert(calls.any? { |c| c.include?("config:set") && c.include?("#{FIXTURE_VAR}=#{NEW_VALUE}") },
-             "with $NEW set, no `heroku config:set #{FIXTURE_VAR}=<value>` reached the stub. The refusal " \
-             "assertion above is then vacuous. Calls seen: #{calls.inspect}")
+      assert_equal 1, written.length,
+                   "with $NEW set, bin/heroku-secret-set was not called once for fixture-app-one with " \
+                   "#{FIXTURE_VAR} as its argument and the value on STDIN. The refusal assertion above is " \
+                   "then vacuous. Calls seen: #{calls.inspect}"
+      assert_operator calls.length, :>=, 2, "every app in APPS must be written: #{calls.inspect}"
+      assert(calls.none? { |argv, _| argv.include?(NEW_VALUE) || argv.include?(OLD_VALUE) },
+             "a secret reached a command line: #{calls.inspect}")
 
       desk_envs(dir).each do |file|
         assert_includes File.read(file), "OTHER_KEY=untouched",
                         "the desk loop clobbered an unrelated line in #{file}; it must replace only its own"
       end
 
-      both = calls.select do |c|
-        c.include?("config:set") &&
-          c.include?("MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS=#{OLD_VALUE}") &&
-          c.include?("MANAGED_WALLET_ENCRYPTION_KEY=#{NEW_VALUE}")
+      both = calls.select do |argv, stdin|
+        argv.split == ["turf-monster-mainnet", "--json"] &&
+          (JSON.parse(stdin) rescue {}) == { "MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS" => OLD_VALUE,
+                                             "MANAGED_WALLET_ENCRYPTION_KEY" => NEW_VALUE }
       end
 
       assert_equal 1, both.length,
                    "with $NEW and $OLD set, §2.1 must write BOTH managed-wallet variables in ONE " \
-                   "config:set -- one release, so the app never runs on the new key alone. " \
+                   "PATCH -- one release, so the app never runs on the new key alone. " \
                    "Calls seen: #{calls.inspect}"
     end
   end
@@ -533,8 +574,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
           refute_equal 0, result[:status], "§2.1's write ran to success with #{label}"
         end
 
-        assert_empty heroku_calls(dir).select { |c| c.include?("MANAGED_WALLET_ENCRYPTION_KEY") },
-                     "§2.1's write reached heroku with #{label}"
+        assert_empty secret_set_calls(dir), "§2.1's write reached bin/heroku-secret-set with #{label}"
       end
     end
   end
@@ -573,13 +613,9 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
                           "File now:\n#{File.read(file)}"
         end
 
-        emptied = heroku_calls(dir).select { |c| c =~ /#{FIXTURE_VAR}=(\s|$)/ }
+        reached = secret_set_calls(dir)
 
-        assert_empty emptied, "interactive #{sh}: heroku config:set ran with an EMPTY value: #{emptied.inspect}"
-
-        mw = heroku_calls(dir).select { |c| c.include?("MANAGED_WALLET_ENCRYPTION_KEY") }
-
-        assert_empty mw, "interactive #{sh}: §2.1's managed-wallet write reached heroku with $NEW unset: #{mw.inspect}"
+        assert_empty reached, "interactive #{sh}: bin/heroku-secret-set was reached with $NEW unset: #{reached.inspect}"
 
         edits = op_calls(dir).select { |c| c.include?("item edit") }
 

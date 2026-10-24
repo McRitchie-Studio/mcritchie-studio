@@ -103,17 +103,20 @@ day each time. `bin/task` and the rest of the CLIs resolve it that way already
 (`ENV` → `.env` → 1Password; see `bin/lib/task_board.rb#agent_secret`), so you
 usually never touch the secret directly.
 
-If you must call the API by hand, never inline the secret or echo it — read it at
-call time and pipe it straight into the request:
+If you must call the API by hand, never inline the secret, echo it or pass it as an
+argument — read it at call time and pipe it straight into the request:
 
 ```bash
 # ENV first, then the repo .env. Quotes stripped; a set-but-empty value is no value.
 SECRET="${AGENT_API_SECRET:-$(grep -m1 '^AGENT_API_SECRET=' .env | cut -d= -f2- | tr -d "\"'")}"
 [ -n "$SECRET" ] || { echo "no AGENT_API_SECRET in ENV or .env" >&2; exit 1; }
-TOKEN="$(curl -sS -X POST https://mcritchie.studio/api/v1/auth \
-  -H 'Content-Type: application/json' \
-  -d "{\"secret\": \"$SECRET\"}" | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')"
-# use $TOKEN; never print $SECRET or $TOKEN
+# The body goes on stdin (`--data-binary @-`): a `-d` argument is visible to `ps`.
+TOKEN="$(printf '{"secret": "%s"}' "$SECRET" | curl -sS -X POST https://mcritchie.studio/api/v1/auth \
+  -H 'Content-Type: application/json' --data-binary @- |
+  python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')"
+# use $TOKEN through a header file, never an argument:
+#   curl -H @<(printf 'Authorization: Bearer %s\n' "$TOKEN") ...
+# never print $SECRET or $TOKEN
 ```
 
 **Only** on a fresh machine mid-bootstrap, which has no `.env` yet, fall back to
@@ -870,10 +873,13 @@ See footgun 4 for the full set of fields that live outside `devops`.
 BASE=https://mcritchie.studio
 # ENV, then the repo .env — never the vault on a provisioned machine (see Secret hygiene).
 SECRET="${AGENT_API_SECRET:-$(grep -m1 '^AGENT_API_SECRET=' .env | cut -d= -f2- | tr -d "\"'")}"
-auth() { curl -sS -X POST "$BASE/api/v1/auth" -H 'Content-Type: application/json' \
-  -d "{\"secret\": \"$SECRET\"}" | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])'; }
+# The secret and the token ride on stdin and a header file, never as curl
+# arguments (`ps` shows arguments to every local process).
+auth() { printf '{"secret": "%s"}' "$SECRET" | curl -sS -X POST "$BASE/api/v1/auth" \
+  -H 'Content-Type: application/json' --data-binary @- |
+  python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])'; }
 TOKEN="$(auth)"
-api() { curl -sS -X "$1" "$BASE$2" -H "Authorization: Bearer $TOKEN" \
+api() { curl -sS -X "$1" "$BASE$2" -H @<(printf 'Authorization: Bearer %s\n' "$TOKEN") \
   ${3:+-H 'Content-Type: application/json' -d "$3"}; }
 
 # 1. Create (list values are arrays; the KEY decides commas: footgun 2)

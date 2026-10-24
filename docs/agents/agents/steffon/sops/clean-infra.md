@@ -140,7 +140,7 @@ bin/agent-worktree cleanup --reclaim --yes   # full teardown + Redis band shrink
   teardown spares a process it cannot prove is the desk's, prints a
   `teardown-leak:` line per spared pid, closes that desk's ledger record `leaked`,
   runs on through the batch, and exits 3 once at the end. Read each pid with
-  `ps -o pid,command -p <pid>` and stop it by hand only if it is the desk's. Exit 0
+  `ps -o pid,etime,comm -p <pid>` and its cwd (`lsof -a -p <pid> -d cwd`) and stop it by hand only if it is the desk's. Exit 0
   is not proof on a turf-monster desk: its `bin/tm down` reports no leaks yet.
 - **`_ship` and `_gate` are infrastructure, not desks.** Safe to reclaim BETWEEN
   releases (`bin/release.rb` re-creates them on demand); withheld automatically

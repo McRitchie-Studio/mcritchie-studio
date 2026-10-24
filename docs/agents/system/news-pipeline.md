@@ -99,9 +99,10 @@ bin/rails news:intake    # Fetch latest Schefter tweet
    X_BEARER_TOKEN=<bearer-token-from-1password>
    ```
 
-3. **Heroku** (production): Set via config var:
+3. **Heroku** (production): set the config var from the vault, the value on stdin:
    ```bash
-   heroku config:set X_BEARER_TOKEN=<token> --app mcritchie-studio
+   op read 'op://studio-agents/agent.turf.x/Bearer Token' |
+     /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set mcritchie-studio X_BEARER_TOKEN
    ```
 
 ### X Developer Portal

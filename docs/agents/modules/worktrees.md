@@ -182,7 +182,7 @@ cost:** a bound desk stands through the whole release cycle.
 - `remove <app> <task-slug> --yes` is the operator override (warns on a live claim, refuses
   a dirty desk): record first, then stack, Redis DB, Postgres DBs, worktree and branch.
 - **A spared process is a leak**: `teardown-leak: …`, a **`leaked`** record, exit **3**.
-  Check `ps -o pid,command -p <pid>`; stop it by hand only if it is the desk's.
+  Check `ps -o pid,etime,comm -p <pid>` and its cwd (`lsof -a -p <pid> -d cwd`); stop it by hand only if it is the desk's.
 
 Deletion stays approval-gated: `cleanup <app>`, confirm `doctor <app>` shows no unique
 work, `remove <app> <task-slug> --yes` after approval, then `bin/qa-intake --refresh --apps

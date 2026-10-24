@@ -15,6 +15,11 @@ value (sourcing alone leaves `op` on the agents token, and `studio-agents-admin`
 `<app>` `<file>` `<repo>` `<env>` one target; substitute each. This SOP assigns `$NEW`, `$OLD`,
 `$APPS`, `$ROTATED_AT`.
 
+**Never put the value on a command line.** `ps` shows every process's arguments to every local
+process, so a value passes only by stdin, a pipe or a header file: `printf` (a shell builtin, not a
+process) into a pipe, `op item edit` reading item JSON on stdin, and
+`/Users/alex/projects/mcritchie-studio/bin/heroku-secret-set` for Heroku config (`heroku config:set`
+takes values only as arguments). `test/docs/secrets_on_argv_guard_test.rb` fails on a new argv form.
 **Never print the value** anywhere durable. List key names (`jq -r 'keys[]'`) and file names
 (`grep -rl`); hold the value in one shell variable; keep digests in the shell (the repo is
 public). A pushed value survives a force-push; a GitHub Support purge is Alex's call.
@@ -103,23 +108,29 @@ heroku config --json --app turf-monster-mainnet | jq -r '.["MANAGED_WALLET_ENCRY
 [[ "$OLD" =~ ^[0-9a-fA-F]{64}$ ]] && echo "OLD: 64 hex" || echo "OLD: NOT 64 hex"
 ```
 Rehearse on a one-off dyno, app untouched. Pass only on header `ROTATION`, the counts
-`total: N  would-migrate: N  already-new: 0  failed: 0`, and a last line `DRY RUN CLEAN`:
+`total: N  would-migrate: N  already-new: 0  failed: 0`, and a last line `DRY RUN CLEAN`. The two
+keys reach the dyno on its stdin and are read there, so neither is an argument of the local
+`heroku` process or of the dyno's command:
 ```bash
 : "${NEW:?NEW is not set}" && : "${OLD:?OLD is not set}" && [ "$NEW" != "$OLD" ] &&
-heroku run --exit-code --app turf-monster-mainnet \
-  --env "DRY_RUN=1;MANAGED_WALLET_ENCRYPTION_KEY=$NEW;MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS=$OLD" \
-  bin/rails solana:reencrypt_managed_wallets
+printf '%s\n%s\n' "$NEW" "$OLD" |
+heroku run --no-tty --exit-code --app turf-monster-mainnet -- bash -c \
+  'set -e; read -r K_NEW && read -r K_OLD && export DRY_RUN=1 MANAGED_WALLET_ENCRYPTION_KEY="$K_NEW" MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS="$K_OLD" && exec bin/rails solana:reencrypt_managed_wallets'
 ```
 File both (replaces 4.2): add field `previous encryption key` = `$OLD` to `agent.managed_wallet`
-first, then replace `encryption key`; read both back. Write the app in ONE command (replaces
-4.4); from here `$NEW` never leaves the app:
+first, then replace `encryption key`; read both back. Write the app in ONE PATCH, so one release
+carries both keys (replaces 4.4); from here `$NEW` never leaves the app:
 ```bash
 : "${NEW:?refusing -- NEW is empty}" && : "${OLD:?refusing -- OLD is empty}" &&
 [ "$NEW" != "$OLD" ] &&
-heroku config:set "MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS=$OLD" \
-  "MANAGED_WALLET_ENCRYPTION_KEY=$NEW" --app turf-monster-mainnet
+printf '%s\n%s\n' "$OLD" "$NEW" |
+  ruby -rjson -e 'prev, cur = STDIN.read.split("\n")
+    print JSON.generate("MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS" => prev, "MANAGED_WALLET_ENCRYPTION_KEY" => cur)' |
+  /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set turf-monster-mainnet --json
 ```
-Migrate (replaces 4.5): the same task with `--env "DRY_RUN=1"`, then without it. Complete only on
+Migrate (replaces 4.5): the same task, with both keys now on the app:
+`heroku run --exit-code --app turf-monster-mainnet --env "DRY_RUN=1" bin/rails solana:reencrypt_managed_wallets`,
+then without the `--env`. Complete only on
 `failed: 0`, `Read-back: T of T` and a last line `COMPLETE`; `NOT COMPLETE` is safe to re-run.
 A COMPROMISED key is an incident (old backups still open with it): rotate, move funds, tell Alex.
 
@@ -208,9 +219,16 @@ printf '%s' "$NEW" | digest    # non-EMPTY, matches the provider's copy
 
 ### 4.2 File it in 1Password FIRST
 On the writing lane, which field history makes reversible. Update `authorization-id`, `used-by`
-and the scope notes in the same edit when they changed:
+and the scope notes in the same edit when they changed. The value never rides as an assignment
+argument (`op`'s own help warns those are visible to other processes): the item's JSON, with the
+field replaced, goes to `op item edit` on stdin, and `$NEW` reaches Ruby on the same pipe:
 ```bash
-: "${NEW:?refusing to file an empty value}" && op item edit "<item>" --vault <vault> "<field>[concealed]=$NEW"
+: "${NEW:?refusing to file an empty value}" &&
+{ printf '%s\n' "$NEW"; op item get "<item>" --vault <vault> --format json; } |
+  ruby -rjson -e 'value = STDIN.readline.chomp; item = JSON.parse(STDIN.read)
+    field = item.fetch("fields").find { |f| f["label"] == ARGV[0] } or abort "refusing: no field #{ARGV[0]}"
+    field["value"] = value; print JSON.generate(item)' "<field>" |
+  op item edit "<item>" --vault <vault> > /dev/null
 op item get "<item>" --vault <vault> --fields label="<field>" --reveal | digest   # equals $NEW's digest
 ```
 
@@ -219,14 +237,15 @@ Per registration row: update it, then make the far side accept the new identity 
 read, a signed request, a test webhook). A dashboard that looks updated is not a proof.
 
 ### 4.4 Write the runtime stores
-Heroku, never for `MANAGED_WALLET_ENCRYPTION_KEY` (§2.1):
+Heroku, never for `MANAGED_WALLET_ENCRYPTION_KEY` (§2.1). `bin/heroku-secret-set` reads the value
+on stdin, refuses an empty one, and prints only the HTTP status; `ROTATED_AT` is stamped only when
+every app answered 200:
 ```bash
 : "${NEW:?refusing to write — NEW is empty and this would blank <VAR> on every app}" &&
 APPS="${APPS:?set APPS to the apps from your Phase 1 list, space separated}" &&
-for app in $APPS; do
-  heroku config:set "<VAR>=$NEW" --app "$app"
-done
-ROTATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)   # keep only if EVERY app reported success
+failed=0 && for app in $APPS; do
+  printf '%s' "$NEW" | /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set "$app" <VAR> || failed=1
+done && [ "$failed" = 0 ] && ROTATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ```
 GitHub: Actions by the Phase 1 recipe; Dependabot is Alex's tab, given the repos and secret
 names, the value handed over per `credential-filing` §5. Primaries: `bin/ecosystem-build`.
@@ -290,7 +309,7 @@ the 1Password field from history, and re-run Phase 5. After Phase 6: forward onl
 |---|---|
 | The far side rejects the app | old value back on the app, finish 4.3, re-flip |
 | The app cannot read credentials | restore the old `RAILS_MASTER_KEY`; deploy key and `.enc` together |
-| Managed-wallet reads fail | one `config:set` of `MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS=$OLD`, keeping the new key |
+| Managed-wallet reads fail | put `$OLD` back as `MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS` (`printf '%s' "$OLD" \| bin/heroku-secret-set <app> MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS`), keeping the new key |
 | Stores read `<VAR>=` and Phase 5 said MATCH | restore the old value everywhere; restart at 4.1 |
 
 ## Phase 7 — The receipt

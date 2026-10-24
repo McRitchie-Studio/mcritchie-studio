@@ -41,10 +41,16 @@ scripts) in the same pass.
 read -rs VALUE
 [ -n "$VALUE" ] || { echo "VALUE is unset or empty — refusing to file an empty credential"; exit 1; }
 
+# The secret goes to `op` as a one-field JSON template on stdin (the `-`), never
+# as an assignment argument: `ps` shows arguments to every local process, and
+# op's own help says so. Only public values ride on the command line.
+printf '%s' "$VALUE" |
+  ruby -rjson -e 'print JSON.generate("fields" => [{ "id" => "credential", "label" => "credential",
+                                                     "type" => "CONCEALED", "value" => STDIN.read }])' |
 op item create --category "API Credential" --vault <vault> \
   --title "<service>.<entity>.<lane>" \
   --url "https://<the service's dashboard>" \
-  "credential[concealed]=$VALUE" \
+  - \
   "username[text]=<account email>" \
   "authorization-id[text]=<lane/key id, if the provider has one>" \
   "used-by[text]=<one line: which sessions/apps consume it, via which env var>" \
@@ -53,6 +59,10 @@ CAN: <the acts the scope permits, one line>
 CANNOT: <the acts the scope refuses, one line>
 <any SOP-only prohibition the platform cannot enforce, stated as such>"
 ```
+
+If `op` rejects the one-field template, start from `op item template get "API Credential"`
+(it holds no secret), set its `credential` field the same way, and pipe that. Never fall back
+to `credential[concealed]=…` on the command line.
 
 - **`read -rs VALUE` is one way in, not the only one.** When the agent
   generated the credential itself, assign `VALUE` from the command that

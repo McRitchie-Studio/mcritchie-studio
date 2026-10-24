@@ -15,6 +15,7 @@ require_relative "agent_context_builder"
 require_relative "agent_media"
 require_relative "agent_proposal_block"
 require_relative "agent_warm_session"
+require_relative "child_env"
 
 # The worker and observer side of the agent mailbox
 # (docs/agents/system/agent-message-loop.md): `bin/heartbeat` and `bin/dispatcher`
@@ -180,11 +181,10 @@ module AgentMailbox
   # agent API); none of them routes Claude. No action reads Heroku, so no Heroku
   # credential is passed: bin/release status needed a Heroku login launchd does
   # not have (HEROKU_NONINTERACTIVE_LOGIN, measured 2026-10-15).
-  CHILD_ENV_ALLOW = %w[
-    PATH HOME USER LOGNAME SHELL TMPDIR LANG LC_ALL LC_CTYPE TERM TZ __CF_USER_TEXT_ENCODING
-    GEM_HOME GEM_PATH
+  # The system names are ChildEnv::SYSTEM_ALLOW, shared with the desk-server launcher.
+  CHILD_ENV_ALLOW = (ChildEnv::SYSTEM_ALLOW + %w[
     ATOMIC_CAPTURE_URL AGENT_API_SECRET AGENT_LEGACY_TOKEN PROJECTS_DIR CLAUDE_PROJECTS_DIR TASK_API_BASE
-  ].freeze
+  ]).freeze
 
   def self.child_env(env = ENV)
     CHILD_ENV_ALLOW.each_with_object({}) { |name, kept| kept[name] = env[name] if env.key?(name) }

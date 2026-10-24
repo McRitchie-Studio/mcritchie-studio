@@ -72,7 +72,7 @@ After prompts, confirm summary and proceed.
    ```bash
    heroku create <heroku_app> --region us
    heroku addons:create heroku-postgresql:essential-0 --app <heroku_app>
-   heroku config:set RAILS_MASTER_KEY=<from new app's config/master.key> --app <heroku_app>
+   /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set <heroku_app> RAILS_MASTER_KEY < config/master.key
    heroku config:set RAILS_SERVE_STATIC_FILES=true --app <heroku_app>
    ```
 5. **Add to 1Password** — store the RAILS_MASTER_KEY as item `<slug>/RAILS_MASTER_KEY` in the AGENT vault (`bin/lib/op_vaults.rb` names it; do not hardcode).

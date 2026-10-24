@@ -298,6 +298,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # run before HEROKU_API_KEY is read. Behavioural proof:
     # test/lib/secret_key_base_swap_script_test.rb.
     "secret-key-base-swap"   => :own_guard,
+    # PATCHes a Heroku app's config with the value from stdin. OptionParser with a
+    # -h arm that exits before stdin or the network is touched; a wrong argument
+    # count exits 2. Behavioural proof: test/lib/heroku_secret_set_test.rb.
+    "heroku-secret-set"      => :optparse,
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/docs-installer-help-publishes).
     # These two were the sharpest pair in the gap bucket, because the thing they
     # publish is GLOBAL and shared. `bin/install-agent-docs install --help` read its

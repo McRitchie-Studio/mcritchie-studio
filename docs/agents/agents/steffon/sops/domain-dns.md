@@ -263,7 +263,7 @@ export OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN"
 CF_TOKEN=$(op read "op://studio-agents-admin/cloudflare.studio.provision/api-token")
 [ -n "$CF_TOKEN" ] || { echo "cloudflare.studio.provision read empty: stop" >&2; false; }
 curl -s -X PATCH https://api.cloudflare.com/client/v4/zones/<zone-id>/dnssec \
-  -H "Authorization: Bearer $CF_TOKEN" -H "content-type: application/json" --data '{"status":"active"}' \
+  -H @<(printf 'Authorization: Bearer %s\n' "$CF_TOKEN") -H "content-type: application/json" --data '{"status":"active"}' \
   | jq '.result | {status, key_tag, algorithm, digest_type, digest}'
 ```
 
