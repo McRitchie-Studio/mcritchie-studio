@@ -7,6 +7,22 @@ module ApplicationHelper
   # partial at all: it renders studio/banners/stack as the header's sibling, and
   # the stack decides which bars — environment, impersonation — belong on the page.
 
+  # The url when it is an absolute http or https link, else nil. A column an
+  # agent or an outside answer writes can hold a `javascript:` or `data:` url,
+  # and an href runs it on click; read such a column through this before it
+  # reaches an href, and render no link on nil.
+  HTTP_HREF_SCHEMES = %w[http https].freeze
+
+  def http_href(url)
+    text = url.to_s.strip
+    return nil if text.empty? || text.match?(/[\x00-\x20\x7F]/)
+
+    scheme = URI.parse(text).scheme
+    HTTP_HREF_SCHEMES.include?(scheme&.downcase) ? text : nil
+  rescue URI::InvalidURIError
+    nil
+  end
+
   def stage_scheme(stage)
     case stage.to_s
     when "designed"                          then "info"

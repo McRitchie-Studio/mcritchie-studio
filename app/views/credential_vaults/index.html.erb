@@ -63,7 +63,7 @@
                 <% else %>
                   <% icon = WorkspaceIconConfig.asset(service, entity) || tile %>
                   <div class="flex flex-col items-center gap-0.5" title="<%= lines.join("\n") %>"
-                       data-test="matrix-icon" data-live="<%= live %>"<%= %( data-delegation="#{delegation}").html_safe if delegation %>>
+                       data-test="matrix-icon" data-live="<%= live %>"<% if delegation %> data-delegation="<%= delegation %>"<% end %>>
                     <%= image_tag icon, alt: "#{CredentialRecord.service_label(service)} for #{@workspaces.dig(entity, 'name') || entity}",
                                         class: "w-14 h-14 #{'opacity-40 grayscale' unless live}" if icon %>
                     <% if records.size > 1 %>

@@ -2,6 +2,11 @@
 require "rubygems"
 require "bundler/setup"
 
-ARGV.unshift("--no-exit-on-warn")
+# Any warning not in config/brakeman.ignore exits non-zero, so CI's static lane
+# fails on a new finding. An ignore entry must carry a note saying why it is a
+# false positive, and an entry whose code no longer exists fails too, so the
+# file never outlives the code it excuses. --ensure-latest stays off: it fails
+# on Brakeman's release cadence, not on a finding; bump the Gemfile instead.
+ARGV.unshift("--ensure-ignore-notes", "--ensure-no-obsolete-ignore-entries")
 
 load Gem.bin_path("brakeman", "brakeman")
