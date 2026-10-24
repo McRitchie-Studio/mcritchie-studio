@@ -121,6 +121,15 @@ Exit 10 has two meanings; read the line it prints:
 A Carl and his light are two agents toward the five-at-a-time cap (First Rule 6),
 so count both before you spawn them.
 
+**When nobody launched it.** A card that sits `submitted` with a green builder DoR
+and no review claim for 30 minutes opens a `submitted_unclaimed` incident on the
+dispatcher's floor alert, which posts once to the ops channel:
+`Review not started: <slug> … Start it: cd /Users/alex/projects/mcritchie-studio &&
+bin/task review-claim acquire <slug> --agent carl, then one Carl subagent (SOP
+pr-review, single-task entry).` The reader runs exactly this entry for that slug.
+The incident recovers, with one line, when a claim appears or the card leaves
+`submitted` ([agent-dispatcher](../../steffon/sops/agent-dispatcher.md#the-alerts-and-what-each-means)).
+
 ## Preconditions
 
 At least one task is in `submitted` with green CI. If `bin/task claim-next-review`

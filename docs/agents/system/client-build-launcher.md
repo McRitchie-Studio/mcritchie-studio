@@ -15,6 +15,7 @@ at `<sub>.<preview domain>`. Nobody waits for a person to pick it up.
 | Logs | `~/Library/Logs/client-build-launcher.log` |
 | Heartbeat | a minute ping to `/api/v1/agent_dispatchers/ping` listing the one soul `client-build-launcher` (`AgentDispatcher::LAUNCHER_SOUL`) |
 | Publish session | a studio login for the one build task the run holds, minted per run (below); no standing publish secret |
+| Change cards | `ChangeBuilds` (`app/services/change_builds.rb`) behind `/api/v1/change_builds`, `ClientBuildLauncher::ChangeStart` on the Mac ([below](#change-cards)) |
 | Scratch directories | `~/.client-builds/<sub>/<run>`: outside every repo, one per run, kept for inspection (they hold the customer's bundle; no sweep removes them yet, see [Failure](#failure)) |
 
 ## What one build does
@@ -49,6 +50,62 @@ at `<sub>.<preview domain>`. Nobody waits for a person to pick it up.
    launcher reads the version from its `published <sub> <version>` line.
 6. **Report.** `POST …/finish` with `preview_ready` ships the task and posts the
    preview link in the CTO chat; with `failed` it blocks the task.
+
+## Change cards
+
+The same service starts the builder of a change an app owner asked for in the
+app's web chat. An owner's `go` on a change proposal opens a `designed` card
+(`AgentProposals::Executor#change`,
+[agent-message-loop.md](agent-message-loop.md)); each tick, while a slot of the
+same `cap` is free, the launcher takes the oldest startable one.
+
+**Which cards.** Every rule is required, and none is a title match:
+
+- `designed`, not blocked, no assignee, not a launch task (no `AppRequest` names it);
+- `devops.kind` is `feature`, `bug` or `chore`, and `devops.source_thread` is set;
+- exactly one repository, an app in `config/apps.yml` that is live and tier
+  `studio` or `product` (a `basic` app's card waits for a session);
+- **owner-confirmed**: an `AgentProposal` of kind `change` on the `web` channel,
+  status `executed`, settled by the person who said `go`, whose `result` names
+  this card's slug. `AgentProposalJob` writes that result only after the owner's
+  `go` ran ([app-owner-confirms-proposals](agent-message-loop.md)), so an
+  unconfirmed card has no such row and is never started;
+- never started before, or its last refusal is over 10 minutes old, or its start
+  was left `starting` over 30 minutes (a launcher that died mid-begin); at most
+  `max_attempts` starts, the same limit launch tasks take.
+
+**What a start does.**
+
+1. `POST /api/v1/change_builds/<slug>/claim` records the start in
+   `devops.change_build` (state `starting`) under the card's row lock.
+2. A thread runs our own `/Users/alex/projects/.agents/bin/task begin <slug>
+   --agent pokemon` from the hub primary (the hub's `bin/task` when the fixed path
+   is missing), capped at 15 minutes. It cuts the desk, claims the card
+   (`designed → building`) and launches Avi's intent scout. The slug is the
+   board's, checked against a kebab-case rule; no chat text reaches the command.
+3. `POST …/finish` with `started` and the desk path begin printed: the card stores
+   `devops.change_build.launch_line`, the card's web thread gets one code-written
+   line, "Building started, task `<slug>`.", and the ops channel gets the builder
+   launch line:
+
+   ```bash
+   cd <desk> && claude --agent pokemon "Build task <slug> to submitted: run /Users/alex/projects/.agents/bin/task begin <slug> to take the desk, then building-sop from Step 2."
+   ```
+
+   A dispatcher soul or Alex's session starts the builder with that one command.
+4. A begin that fails reports `refused` with its last lines (never a link or token
+   line). The card stays `designed`, the thread hears nothing, and the floor alert
+   opens one `change_build_refused` incident for the card
+   ([agent-dispatcher](../agents/steffon/sops/agent-dispatcher.md)), which
+   recovers when a later start succeeds or the card leaves `designed`.
+
+**Why the launcher stops at the desk.** Its builder is a sandboxed headless Claude
+built for static bundles: no secrets in its environment, no file outside its run
+directory, no git (below). A hub app's builder needs the opposite: a desk in a
+primary checkout, a database, `gh` credentials to push and open a PR, and
+`bin/submit`, with instructions that came from a chat message. So the launcher
+runs only our own tooling, and a session with the operator's permissions runs the
+builder.
 
 ## The stage flow, and why
 
