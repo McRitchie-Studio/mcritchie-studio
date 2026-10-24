@@ -65,7 +65,10 @@ put a live secret in a transcript:
 - **`heroku config:get` cannot verify anything**: absent, empty and a failed read all
   print one bare newline. Test presence with a control:
   `heroku config --json -a <app> | jq 'length'` (0 means the read failed), then
-  `jq '(.NAME // "") != ""'`.
+  `jq '(.NAME // "") != ""'`. A config read can lag a PATCH (`bin/heroku-secret-set`)
+  by about a minute: an old answer just after a `200` is a stale read, so wait a
+  minute and read again before writing twice; the new release's boot log line is
+  the authoritative read-back.
 - **`heroku authorizations --json` prints every OAuth authorization on the account
   with its token**, the admin and CI lanes included; one bare run in an agent session
   burns them all. Pipe it to `jq` for `.id` and `.description`, or use the plain

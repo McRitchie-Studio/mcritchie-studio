@@ -87,13 +87,18 @@ credential by [`credential-filing`](credential-filing.md):
    `identity,read-protected,write-protected` (reading transfers and starting a
    capture), described "hub backup sweep", and file it in the same pipe as
    **`heroku.mcritchie-studio.applications`** in the `studio-applications` vault
-   (app-scoped: only the hub's runtime uses it). Run it from the admin lane. The
-   token goes from `--json` through `jq` into the item's concealed field on
-   stdin, so it never reaches the terminal, a variable or an argument; plain
-   `authorizations:create` would print it.
+   (app-scoped: only the hub's runtime uses it). Run it from the admin lane:
+   `source ~/.zprofile.admin` first, which stages `HEROKU_STUDIO_ADMIN_API_KEY`
+   (only that key may create or revoke an authorization; the agent key is
+   refused), and give it to the CLI as `HEROKU_API_KEY` in the command's own
+   environment, never on its argv. The token goes from `--json` through `jq`
+   into the item's concealed field on stdin, so it never reaches the terminal,
+   a variable or an argument; plain `authorizations:create` would print it.
 
    ```bash
-   heroku authorizations:create -d "hub backup sweep" -s identity,read-protected,write-protected --json |
+   set -o pipefail
+   HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" \
+     heroku authorizations:create -d "hub backup sweep" -s identity,read-protected,write-protected --json |
      jq '{title: "heroku.mcritchie-studio.applications", category: "API_CREDENTIAL",
           fields: [{id: "credential", label: "credential", type: "CONCEALED", value: .access_token.token},
                    {id: "authorization-id", label: "authorization-id", type: "STRING", value: .id}]}' |
@@ -104,6 +109,25 @@ credential by [`credential-filing`](credential-filing.md):
    The template names its own category, so no `--category` (op refuses both).
    This pipe was rehearsed with `op item create --dry-run` and a fake
    authorization on 2026-10-24.
+
+   **If the pipe fails after Heroku answered** (`jq` or `op` errors, the pipe
+   exits non-zero, or the item is not in the vault afterwards), the
+   authorization exists on the account and nothing holds its token: revoke it
+   before you retry, or it lives on as an orphan credential. Its id is in the
+   account's list; take it through `jq`, which prints the id and the
+   description and never the token (bare `heroku authorizations --json` prints
+   every authorization's token on the account), then revoke it, still from the
+   admin profile:
+
+   ```bash
+   HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" heroku authorizations --json |
+     jq -r '.[] | select(.description == "hub backup sweep") | "\(.id)  \(.created_at)"'
+   HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" heroku authorizations:revoke <id>
+   ```
+
+   More than one `hub backup sweep` row means an earlier attempt orphaned one
+   too: keep only the id the vault item's `authorization-id` field names (none
+   yet, so revoke them all), then run step 1 again.
 2. Finish the item by [`credential-filing`](credential-filing.md) sections 3
    (the `notesPlain` permission matrix) and 6 (verify by read-back), and add its
    row to [`credential-inventory.md`](../../../modules/credential-inventory.md).
