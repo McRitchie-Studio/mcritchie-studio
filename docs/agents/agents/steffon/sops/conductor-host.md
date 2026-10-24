@@ -97,7 +97,12 @@ item that needs one names the 1Password item instead.
 xcode-select --install          # a macOS dialog; wait for it to finish
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 # then run the two `eval "$(/opt/homebrew/bin/brew shellenv)"` lines the installer prints
+brew install ruby@3.3 && export PATH="/opt/homebrew/opt/ruby@3.3/bin:$PATH"
 ```
+
+The script needs Ruby 3, and macOS ships Ruby 2.6, which cannot parse it. The
+`export` lasts for this Terminal window; `bin/ecosystem-build` writes it into
+`~/.zshrc` in step 4 (Phase 3).
 
 ## 3. Clone the hub and run the script (Operator + Script)
 
