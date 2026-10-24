@@ -26,6 +26,9 @@ require_relative "process_table"
 #               re-read the code fingerprint on the ping beat; new code seen twice
 #               stops claiming, drains, exits 0, and launchd starts the new code
 #               claim the oldest designed launch tasks while a slot is free
+#               start the oldest chat-sourced change card while a slot is still
+#               free (ChangeStart: bin/task begin; board side ChangeBuilds behind
+#               /api/v1/change_builds)
 #
 # One run: a scratch directory (~/.client-builds/<sub>/<run>, outside every repo),
 # seeded with a starter bundle (Starter), then a headless Claude builder confined
@@ -115,9 +118,22 @@ module ClientBuildLauncher
       call(:post, member(slug, "finish"), body)["data"]
     end
 
+    # Change cards (ChangeBuilds): the startable list, the start record, the report.
+    def change_list = call(:get, "/api/v1/change_builds")
+
+    def change_claim(slug, worker:, run:)
+      call(:post, change_member(slug, "claim"), { "worker" => worker, "run" => run })["data"]
+    end
+
+    def change_finish(slug, run:, outcome:, reason: nil, desk: nil)
+      body = { "run" => run, "outcome" => outcome, "reason" => reason, "desk" => desk }.compact
+      call(:post, change_member(slug, "finish"), body)["data"]
+    end
+
     private
 
     def member(slug, verb) = "/api/v1/client_builds/#{URI.encode_www_form_component(slug)}/#{verb}"
+    def change_member(slug, verb) = "/api/v1/change_builds/#{URI.encode_www_form_component(slug)}/#{verb}"
 
     def call(method, path, body = nil)
       res = AgentApi.call(@api, method, path, body)
@@ -795,17 +811,77 @@ module ClientBuildLauncher
 
   # The loop. One process, one worker id; runs on threads, board calls on the main
   # thread only.
+  # Starting one chat-sourced change card: our own `bin/task begin <slug> --agent
+  # pokemon` from the hub primary, which cuts the desk, claims the card (designed ->
+  # building) and launches Avi's scout. No model runs here, and no chat text reaches
+  # a command: the slug is the board's, checked against SLUG_RULE. The builder itself
+  # is not started (ChangeBuilds, "WHY THE LAUNCHER STOPS AT THE DESK"): its launch
+  # line goes to the ops channel and onto the card.
+  class ChangeStart
+    TIMEOUT = 15 * 60
+    SLUG_RULE = /\A[a-z0-9][a-z0-9-]{0,99}\z/
+    FIXED_TASK_BIN = "/Users/alex/projects/.agents/bin/task"
+    Result = Struct.new(:ok, :desk, :reason, keyword_init: true)
+
+    def self.task_bin = File.executable?(FIXED_TASK_BIN) ? FIXED_TASK_BIN : File.join(REPO_ROOT, "bin/task")
+
+    # `runner`: (argv, chdir:, timeout:) -> [output, Process::Status or nil on a timeout].
+    def initialize(task_bin: self.class.task_bin, chdir: REPO_ROOT, timeout: TIMEOUT, runner: nil)
+      @task_bin = task_bin
+      @chdir = chdir
+      @timeout = timeout
+      @runner = runner || method(:spawn_and_wait)
+    end
+
+    def call(slug)
+      return Result.new(ok: false, reason: "the board named an unusable slug") unless slug.to_s.match?(SLUG_RULE)
+
+      output, status = @runner.call([ @task_bin, "begin", slug, "--agent", SOUL ], chdir: @chdir, timeout: @timeout)
+      return Result.new(ok: false, reason: "bin/task begin ran past #{@timeout / 60} minutes") if status.nil?
+
+      desk = output.to_s[/^worktree: (\S+)$/, 1]
+      return Result.new(ok: true, desk: desk) if status.success? && desk
+
+      Result.new(ok: false, reason: self.class.reason(output, status))
+    end
+
+    # The refusal's last lines, without any line that carries a link or a token.
+    def self.reason(output, status)
+      lines = output.to_s.lines.map(&:strip).reject { |l| l.empty? || l.match?(/magic link|token|https?:\/\/\S*[?&]/i) }
+      tail = lines.last(3).join(" | ")
+      "bin/task begin exited #{status.exitstatus.inspect}#{tail.empty? ? '' : ": #{tail}"}"[0, 300]
+    end
+
+    private
+
+    def spawn_and_wait(argv, chdir:, timeout:)
+      out = +""
+      Open3.popen2e(*argv, chdir: chdir) do |stdin, io, wait|
+        stdin.close
+        reader = Thread.new { io.each_line { |line| out << line } rescue nil }
+        unless wait.join(timeout)
+          Process.kill("TERM", wait.pid) rescue nil
+          wait.join(10) || (Process.kill("KILL", wait.pid) rescue nil)
+          reader.join(1)
+          return [ out, nil ]
+        end
+        reader.join(5)
+        [ out, wait.value ]
+      end
+    end
+  end
+
   class Launcher
     PING_EVERY = 60
     # Restart drain: how long runs in flight may take to finish after new code is
     # seen (a build is long; launchd's ExitTimeOut covers only the SIGTERM case).
     Slot = Struct.new(:slug, :run_id, :thread, :dir, keyword_init: true)
 
-    attr_reader :slots
+    attr_reader :slots, :starts
 
     def initialize(client:, config:, worker: ClientBuildLauncher.default_worker, builder: nil, publisher: Publisher.new,
                    desk_bound: nil, root: File.join(Dir.home, ".client-builds"), out: $stdout, dry_run: false,
-                   fingerprint: nil, clock: -> { Time.now }, sleeper: ->(s) { sleep(s) })
+                   fingerprint: nil, clock: -> { Time.now }, sleeper: ->(s) { sleep(s) }, change_start: nil)
       @client = client
       @config = config
       @worker = worker
@@ -821,6 +897,8 @@ module ClientBuildLauncher
       @clock = clock
       @sleeper = sleeper
       @slots = []
+      @starts = []
+      @change_start = change_start || ChangeStart.new
       @stopping = false
       @next_ping = nil
       @started_at = clock.call
@@ -850,7 +928,7 @@ module ClientBuildLauncher
       recover_orphans unless @dry_run
       loop do
         tick
-        break if once || (@stopping && @slots.empty?)
+        break if once || (@stopping && @slots.empty? && @starts.empty?)
 
         @slots.empty? ? @sleeper.call(Integer(@config.fetch("poll_seconds"))) : @slots.first.thread.join(5)
       end
@@ -860,17 +938,79 @@ module ClientBuildLauncher
     def tick
       terminate! if @terminate_requested && !@terminated
       reap
+      reap_starts
       check_code
       claim_free_slots unless @stopping
+      start_changes unless @stopping
     end
 
     # Wait for every run in flight (each thread's own join, not a sleep), reporting
     # each as it ends.
     def drain
-      until @slots.empty?
-        @slots.first.thread.join(5)
+      until @slots.empty? && @starts.empty?
+        (@slots.first || @starts.first).thread.join(5)
         reap
+        reap_starts
       end
+    end
+
+    # The oldest startable change card, one per tick, while a slot is free: a start
+    # holds a slot of the same cap as a build until bin/task begin returns.
+    def start_changes
+      return [] if cap - @slots.size - @starts.size <= 0
+
+      listing = @client.change_list
+      max = Integer(listing.dig("meta", "max_attempts") || @config.fetch("max_attempts"))
+      picks = Picker.pick(Array(listing["data"]), slots: 1, running: @starts.map(&:slug), max_attempts: max,
+                                                  desk_bound: desk_bound)
+      if @dry_run
+        log("dry run: #{Array(listing['data']).size} change card(s); would start #{picks.map { |p| p['task_slug'] }.inspect}; started nothing")
+        return picks
+      end
+      picks.each { |pick| start_change(pick) }
+      picks
+    rescue ApiError => e
+      log("board: change cards: #{e.message}")
+      []
+    end
+
+    def start_change(pick)
+      slug = pick.fetch("task_slug")
+      run_id = "#{@clock.call.utc.strftime('%Y%m%d%H%M%S')}-#{SecureRandom.hex(3)}"
+      begin
+        @client.change_claim(slug, worker: @worker, run: run_id)
+      rescue ApiError => e
+        return log("#{slug}: change card not claimed (#{e.code || e.status}: #{e.message})")
+      end
+      starter = @change_start
+      @starts << Slot.new(slug: slug, run_id: run_id, thread: Thread.new { starter.call(slug) })
+      log("#{slug}: change card claimed (run #{run_id}); running bin/task begin")
+    end
+
+    def reap_starts
+      @starts.dup.each do |slot|
+        next if slot.thread.alive?
+
+        result = begin
+          slot.thread.value
+        rescue StandardError => e
+          ChangeStart::Result.new(ok: false, reason: "bin/task begin could not run (#{e.class})")
+        end
+        report_start(slot, result)
+        @starts.delete(slot)
+      end
+    end
+
+    def report_start(slot, result)
+      if result.ok
+        @client.change_finish(slot.slug, run: slot.run_id, outcome: "started", desk: result.desk)
+        log("#{slot.slug}: building; desk #{result.desk}")
+      else
+        @client.change_finish(slot.slug, run: slot.run_id, outcome: "refused", reason: result.reason)
+        log("#{slot.slug}: not started (#{result.reason}); the card stays designed")
+      end
+    rescue ApiError => e
+      log("#{slot.slug}: start not recorded (#{e.message}); the board retries it once the start goes stale")
     end
 
     # Each claimable task: claim it, post "started", start its run.
@@ -979,7 +1119,7 @@ module ClientBuildLauncher
     def ping(now)
       paused = !@publisher.available?
       @client.ping({ "worker" => @worker, "host" => Socket.gethostname.split(".").first, "souls" => [ LAUNCHER_SOUL ],
-                     "running" => @slots.size, "capacity" => cap, "state" => if @stopping then "stopping"
+                     "running" => @slots.size + @starts.size, "capacity" => cap, "state" => if @stopping then "stopping"
                                                                                elsif paused then "paused"
                                                                                else "running"
                                                                                end,
