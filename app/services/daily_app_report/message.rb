@@ -5,9 +5,10 @@ module DailyAppReport
   # detail until it fits (lengths in UTF-16 units, as Discord counts).
   #
   #   content  the headline: date, the window, "7 apps: 3 quiet, 1 with errors, …",
-  #            the not-wired apps, and any app that did not get an embed
+  #            "Backups: 5 fresh, 1 missing", the not-wired apps, and any app
+  #            that did not get an embed
   #   embeds   one per fetched or unreachable app (at most 10), worst first:
-  #            counts, then the top error groups; green / amber / red
+  #            counts, the backup line, then the top error groups; green / amber / red
   class Message
     CONTENT_LIMIT = ReportDestinations::CONTENT_LIMIT
     EMBEDS_LIMIT = ReportDestinations::EMBEDS_LIMIT
@@ -45,9 +46,12 @@ module DailyAppReport
       out << "…"
     end
 
-    def initialize(ending:, results:)
+    # `backups` is slug => backup line (DbBackupSweep.report_lines) for every
+    # backed-up app, embedded or not; the headline counts all of them.
+    def initialize(ending:, results:, backups: {})
       @ending = ending.in_time_zone(DailyAppReport::ZONE)
       @results = results
+      @backups = backups.to_h
     end
 
     def to_h = { content: content, embeds: embeds }
@@ -57,6 +61,8 @@ module DailyAppReport
 
     def content
       head = [ "**Daily app report · #{@ending.strftime('%a, %b %-d, %Y')}**", headline, "Window: #{window_label}" ]
+      backups = DbBackupSweep.report_summary(@backups)
+      head << backups if backups
       not_wired = @results.select(&:not_wired?)
       head << "Not wired (no token): #{not_wired.map(&:name).join(', ')}" if not_wired.any?
       lines = head.map { |line| self.class.clip(line, 400) }
@@ -116,9 +122,12 @@ module DailyAppReport
 
     # Whole lines while they fit `room`; a group that does not fit is counted.
     def description(app, room)
-      return self.class.clip("Unreachable (#{app.reason})", room) if app.unreachable?
+      backup = @backups[app.slug]
+      if app.unreachable?
+        return self.class.clip([ "Unreachable (#{app.reason})", backup ].compact.join("\n"), room)
+      end
 
-      lines = [ counts_line(app) ]
+      lines = [ counts_line(app), backup ].compact
       groups = Array(app.error_groups)
       if groups.any?
         kinds = [ app.error_kinds.to_i, groups.size ].max

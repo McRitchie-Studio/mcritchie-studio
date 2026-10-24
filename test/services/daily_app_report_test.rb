@@ -20,10 +20,13 @@ class DailyAppReportTest < ActiveSupport::TestCase
     @rantly = app_entry("rantly", name: "Rantly")
   end
 
-  def run_report(apps, answers, env: {}, logger: Rails.logger)
+  # Backup lines are their own test below; the rest see none.
+  def run_report(apps, answers, env: {}, logger: Rails.logger, backups: {})
     fetcher = FakeFetcher.new(answers)
     result = DailyAppReport.stub(:apps, apps) do
-      DailyAppReport.run(ending: ENDING, fetcher: fetcher, env: env, logger: logger)
+      DailyAppReport.stub(:backup_lines, ->(_ending) { backups }) do
+        DailyAppReport.run(ending: ENDING, fetcher: fetcher, env: env, logger: logger)
+      end
     end
     [ result, fetcher ]
   end
@@ -164,5 +167,38 @@ class DailyAppReportTest < ActiveSupport::TestCase
     assert_equal :posted, result.status
     assert_equal "777", result.message_id
     assert_empty fetcher.calls
+  end
+
+  test "[unit] each backed-up app's embed carries last night's backup line, and the headline counts them" do
+    App.where(slug: %w[turf-monster cyvasse]).delete_all
+    App.create!(slug: "turf-monster", name: "Turf Monster",
+                backup_status: { "state" => "fresh", "checked_at" => (ENDING - 210.minutes).iso8601,
+                                 "finished_at" => (ENDING - 5.hours).iso8601, "size_bytes" => 48 * 1024 * 1024 })
+    App.create!(slug: "cyvasse", name: "Cyvasse",
+                backup_status: { "state" => "missing", "checked_at" => (ENDING - 210.minutes).iso8601, "capture" => "started" })
+    lines = DailyAppReport.backup_lines(ENDING)
+    assert_equal "Backup 02:00, 48 MB", lines.fetch("turf-monster")
+    assert_equal "Backup MISSING (capture started)", lines.fetch("cyvasse")
+
+    capture_deliveries do |calls|
+      run_report([ @turf, @cyvasse, @rantly ],
+                 { @turf.production_url => health_body, @cyvasse.production_url => health_body(app: "Cyvasse"),
+                   @rantly.production_url => health_body(app: "Rantly") },
+                 env: { "HEALTH_TOKEN_TURF_MONSTER" => "t", "HEALTH_TOKEN_CYVASSE" => "c", "HEALTH_TOKEN_RANTLY" => "r" },
+                 backups: lines)
+      call = calls.sole
+      by_title = call[:embeds].to_h { |e| [ e[:title], e[:description] ] }
+      assert_equal "Signups 0 · Errors 0\nBackup 02:00, 48 MB", by_title.fetch("Turf Monster")
+      assert_equal "Signups 0 · Errors 0\nBackup MISSING (capture started)", by_title.fetch("Cyvasse")
+      assert_equal "Signups 0 · Errors 0", by_title.fetch("Rantly"), "a basic app without backups gets no line"
+      assert_match(/^Backups: \d+ fresh, 1 missing/, call[:content])
+      refute_match(/commercial/i, call[:content])
+    end
+  end
+
+  test "[unit] a backup-line failure costs the lines, never the report" do
+    DbBackupSweep.stub(:report_lines, ->(**) { raise ActiveRecord::StatementInvalid, "boom" }) do
+      assert_equal({}, DailyAppReport.backup_lines(ENDING))
+    end
   end
 end
