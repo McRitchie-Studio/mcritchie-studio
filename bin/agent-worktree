@@ -3675,7 +3675,7 @@ def cleanup_condition(record, status:, leaked: nil)
   if status == "leaked"
     pids = Array(leaked).map { |entry| entry["pid"] }
     return "Removed with `#{command}`, but pid #{pids.join(", ")} was left running. " \
-           "Check it with `ps -o pid,command -p #{pids.join(",")}` and stop it by hand only if it is this desk's."
+           "Check it with `ps -o pid,etime,comm -p #{pids.join(",")}` (and its cwd, `lsof -a -d cwd -p <pid>`) and stop it by hand only if it is this desk's."
   end
 
   "Remove with `#{command}` after operator approval."
@@ -4181,7 +4181,7 @@ def run_remove(app, raw_task, yes: false, force: false)
 
   pids = spared.map { |entry| entry["pid"] }
   puts "remove: #{app.fetch("slug")}/#{task} is torn down, but left #{spared.size} process(es) running " \
-       "(pid #{pids.join(", ")}). Check with `ps -o pid,command -p #{pids.join(",")}` and stop it by hand " \
+       "(pid #{pids.join(", ")}). Check with `ps -o pid,etime,comm -p #{pids.join(",")}` (and its cwd, `lsof -a -d cwd -p <pid>`) and stop it by hand " \
        "only if it is this desk's."
   exit TEARDOWN_LEAK_EXIT
 end

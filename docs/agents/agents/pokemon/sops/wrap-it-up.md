@@ -136,7 +136,7 @@ Then say **WRAPPED** and stop. Alex quits this session once he has copied the pr
   `shape`, and by day. A column of `bug`/`chore`/`docs` follow-ups beside a handful
   of features is the loop's signature. Name its fuel: in the founding case it was
   essay-length code comments that reviewers kept finding false.
-- **Check for live work.** `ps aux | grep <session-id>` and `bin/release status`.
+- **Check for live work.** `pgrep -f <session-id>` (PIDs only; never `ps aux` or `pgrep -fl`, which print command lines) and `bin/release status`.
   If the stuck session is still mutating, wait for it.
 
 ### 2. Read the note as testimony
