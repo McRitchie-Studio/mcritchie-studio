@@ -19,6 +19,50 @@ class ApplicationHelperTest < ActionView::TestCase
     end
   end
 
+  # [unit] admin-url-columns-use-http-href: an international domain is a real link.
+  test "http_href admits a non-ASCII (IDN) host and returns the text as stored" do
+    assert_equal "https://bücher.de/katalog", http_href("https://bücher.de/katalog")
+    assert_equal "http://例え.jp/パス?q=値", http_href("http://例え.jp/パス?q=値")
+    assert_equal "https://xn--bcher-kva.de", http_href("https://xn--bcher-kva.de")
+    assert_equal "https://bücher.de", ApplicationHelper.http_href("https://bücher.de"),
+                 "the module-level reader the models call applies the same rule"
+  end
+
+  test "http_href still refuses a non-http scheme, and invisible characters, when the text is non-ASCII" do
+    [ "javascript:alert('ü')", "jävascript:alert(1)", "data:text/html,ü", "https://bücher\u00A0de",
+      "https://bü\u200Bcher.de", "https://\u202Eed.rehcüb", "\u00A0javascript:alert(1)", "//bücher.de" ].each do |url|
+      assert_nil http_href(url), "http_href let #{url.inspect} through"
+    end
+  end
+
+  test "safe_link_to links an http(s) url and withholds anything else behind a titled grey dash" do
+    linked = Nokogiri::HTML5.fragment(safe_link_to("Post", "https://x.com/a/status/1", target: "_blank"))
+    assert_equal "https://x.com/a/status/1", linked.at_css("a")["href"]
+    assert_equal "_blank", linked.at_css("a")["target"]
+
+    refused = Nokogiri::HTML5.fragment(safe_link_to("Post", "javascript:alert(1)", target: "_blank"))
+    assert_nil refused.at_css("a"), "a javascript: value must render no link"
+    span = refused.at_css("span[data-test='link-withheld']")
+    assert_equal "—", span.text
+    assert_equal ApplicationHelper::HTTP_HREF_WITHHELD_TITLE, span["title"]
+    assert_includes span["class"], "opacity-40"
+
+    blank = Nokogiri::HTML5.fragment(safe_link_to("Post", nil))
+    assert_nil blank.at_css("a")
+    assert_nil blank.at_css("span")["title"], "a blank value was not withheld, it was never there"
+  end
+
+  test "safe_link_to block form keeps its content and drops only the link" do
+    linked = Nokogiri::HTML5.fragment(safe_link_to("https://cdn.example/a.png", target: "_blank") { tag.img(src: "t.png") })
+    assert_equal "https://cdn.example/a.png", linked.at_css("a")["href"]
+    assert linked.at_css("a img")
+
+    refused = Nokogiri::HTML5.fragment(safe_link_to("javascript:alert(1)", target: "_blank") { tag.img(src: "t.png") })
+    assert_nil refused.at_css("a")
+    assert refused.at_css("span[data-test='link-withheld'] img"), "the image still renders, unlinked"
+    assert_equal ApplicationHelper::HTTP_HREF_WITHHELD_TITLE, refused.at_css("span")["title"]
+  end
+
   test "compact_time_ago renders the smallest legible unit and guards blank/future times" do
     now = Time.utc(2026, 7, 7, 12, 0, 0)
 
