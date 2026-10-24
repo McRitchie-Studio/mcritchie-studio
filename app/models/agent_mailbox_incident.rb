@@ -14,15 +14,26 @@
 #   db_backup_missing       a backed-up app has no completed backup since the 02:00 Denver slot
 #   db_backup_sweep_failed  the sweep could not read an app's backups (API down,
 #                           bad key), so it cannot say whether one is missing
+#
+# Two kinds are PER CARD: each open row names its task slug in `subject`, so the
+# dedupe is one open row per (kind, subject) instead of one per kind:
+#
+#   submitted_unclaimed   a submitted card, DoR green, no review claim for 30 min
+#   change_build_refused  the build launcher could not start a chat-sourced change
+#                         card (bin/task begin refused); the card stays designed
 class AgentMailboxIncident < ApplicationRecord
-  KINDS = %w[dispatcher_silent message_waiting db_backup_missing db_backup_sweep_failed].freeze
+  KINDS = %w[dispatcher_silent message_waiting db_backup_missing db_backup_sweep_failed
+             submitted_unclaimed change_build_refused].freeze
+  SUBJECT_KINDS = %w[submitted_unclaimed change_build_refused].freeze
 
   validates :kind, inclusion: { in: KINDS }
   validates :opened_at, presence: true
+  validates :subject, presence: true, if: -> { SUBJECT_KINDS.include?(kind) }
+  validates :subject, absence: true, unless: -> { SUBJECT_KINDS.include?(kind) }
 
   scope :unresolved, -> { where(resolved_at: nil) }
 
-  def self.open_for(kind) = unresolved.find_by(kind: kind)
+  def self.open_for(kind, subject: nil) = unresolved.find_by(kind: kind, subject: subject)
 
   def open? = resolved_at.nil?
 end
