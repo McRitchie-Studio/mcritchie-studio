@@ -96,6 +96,8 @@ credential by [`credential-filing`](credential-filing.md):
    a variable or an argument; plain `authorizations:create` would print it.
 
    ```bash
+   source ~/.zprofile.admin
+   : "${HEROKU_STUDIO_ADMIN_API_KEY:?refusing -- the admin profile staged no key}"
    set -o pipefail
    HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" \
      heroku authorizations:create -d "hub backup sweep" -s identity,read-protected,write-protected --json |
@@ -120,6 +122,7 @@ credential by [`credential-filing`](credential-filing.md):
    admin profile:
 
    ```bash
+   : "${HEROKU_STUDIO_ADMIN_API_KEY:?refusing -- source ~/.zprofile.admin first}"
    HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" heroku authorizations --json |
      jq -r '.[] | select(.description == "hub backup sweep") | "\(.id)  \(.created_at)"'
    HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" heroku authorizations:revoke <id>
