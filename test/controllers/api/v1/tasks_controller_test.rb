@@ -23,9 +23,11 @@ module Api
       # a stage that never happened serializes null, never 0.
       test "show serves total_cost, cost_by_stage and durations_by_stage" do
         created = Time.zone.parse("2026-04-01 10:00:00")
-        @task.update_columns(created_at: created, started_at: created + 1.hour, submitted_at: created + 3.hours)
+        TaskEvent.create!(task_slug: @task.slug, from_stage: "designed", to_stage: "building", occurred_at: created,
+                          seconds_in_from: 3600)
         [%w[building submitted 6.25], %w[submitted reviewed 2.5], %w[reviewed assembled 1.0]].each do |from, to, cost|
-          TaskEvent.create!(task_slug: @task.slug, from_stage: from, to_stage: to, occurred_at: created, cost: cost)
+          TaskEvent.create!(task_slug: @task.slug, from_stage: from, to_stage: to, occurred_at: created, cost: cost,
+                            seconds_in_from: from == "building" ? 7200 : nil)
         end
 
         get api_v1_task_path(@task.slug), headers: @headers

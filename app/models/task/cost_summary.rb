@@ -9,6 +9,10 @@
 #   summary.cost_by_stage       # => { "build" => 8.0, "review" => 3.0, "deploy" => nil, "other" => nil }
 #   summary.durations_by_stage  # => { "design" => 7380, "build" => 2700, "review" => nil, ... } (seconds)
 #
+# Both sums read every event kind's cost (as Task#total_cost does), but only
+# transitions' durations. Two grouped queries per task; the show API calls it for
+# one task, never per row of the index.
+#
 # COST comes from `task_events.cost` (see docs/agents/system/agent-usage.md, "Task
 # cost"). Each priced row is the usage a session burned in the stage it was
 # standing in when it wrote the row, which is the row's `from_stage` for a
@@ -24,19 +28,22 @@
 # A bucket with no priced row is nil, never 0: "nothing was measured" and "it was
 # free" are different facts.
 #
-# DURATIONS come from the stage-stamp columns Task#set_stage_timestamp writes, in
-# whole seconds, keyed by the stage the span covers:
+# DURATIONS are the whole seconds the task spent in each stage, summed over the
+# transition spine: each transition's `seconds_in_from` is the time since the
+# previous transition, which is time spent in its `from_stage` (the reading
+# TaskIntelligence#seconds_by_stage and AppDevopsStages::Eta already use). Summing
+# per stage counts every pass, so a blocked and resubmitted task's build time is
+# both builds and its review time both reviews. Keyed by the span the stage covers:
 #
-#   design    created_at   -> started_at    (created to claimed)
-#   build     started_at   -> submitted_at
-#   review    submitted_at -> reviewed_at
-#   assemble  reviewed_at  -> assembled_at
-#   ship      assembled_at -> completed_at  (completed_at is the shipped stamp)
+#   design    time in designed   (created -> claimed)
+#   build     time in building   (claimed -> submitted; a block lands here)
+#   review    time in submitted  (submitted -> reviewed, or -> sent back)
+#   assemble  time in reviewed   (reviewed -> assembled)
+#   ship      time in assembled  (assembled -> shipped)
 #
-# A span is nil when either end is missing (the stage never happened) or the end
-# precedes the start (a later re-entry restamped the start, so the pair no longer
-# brackets one pass). Each stamp holds the LATEST entry into its stage, so a
-# resubmitted task's build span runs from its claim to its last submit.
+# A span is nil, never 0, when no transition ever LEFT that stage: the stage never
+# happened, or the task is in it now. Intents and checkpoints carry no
+# seconds_in_from and are not stage boundaries, so only transitions count.
 class Task::CostSummary
   COST_BUCKETS = {
     "build"  => [nil, "designed", "building"],
@@ -46,12 +53,13 @@ class Task::CostSummary
   OTHER_BUCKET = "other"
   COST_KEYS = [*COST_BUCKETS.keys, OTHER_BUCKET].freeze
 
-  DURATION_SPANS = {
-    "design"   => %i[created_at started_at],
-    "build"    => %i[started_at submitted_at],
-    "review"   => %i[submitted_at reviewed_at],
-    "assemble" => %i[reviewed_at assembled_at],
-    "ship"     => %i[assembled_at completed_at]
+  # Duration key => the stage whose time it measures.
+  DURATION_STAGES = {
+    "design"   => "designed",
+    "build"    => "building",
+    "review"   => "submitted",
+    "assemble" => "reviewed",
+    "ship"     => "assembled"
   }.freeze
 
   # USD is rounded to four places, the column's own scale.
@@ -86,13 +94,8 @@ class Task::CostSummary
   end
 
   def durations_by_stage
-    DURATION_SPANS.transform_values do |(from, to)|
-      start = @task.public_send(from)
-      finish = @task.public_send(to)
-      next nil if start.nil? || finish.nil? || finish < start
-
-      (finish - start).round
-    end
+    seconds = seconds_by_from_stage
+    DURATION_STAGES.transform_values { |stage| seconds[stage] }
   end
 
   private
@@ -102,6 +105,14 @@ class Task::CostSummary
   def priced_sums_by_from_stage
     @priced_sums_by_from_stage ||=
       TaskEvent.where(task_slug: @task.slug).where.not(cost: nil).group(:from_stage).sum(:cost)
+  end
+
+  # One grouped query over the transition spine: { from_stage => Integer }. A
+  # stage no transition left is absent (SUM over no row), and a row whose
+  # seconds_in_from is NULL (the genesis row) adds nothing.
+  def seconds_by_from_stage
+    TaskEvent.transitions.where(task_slug: @task.slug).where.not(seconds_in_from: nil)
+             .group(:from_stage).sum(:seconds_in_from).transform_values(&:to_i)
   end
 
   def bucket_for(from_stage)

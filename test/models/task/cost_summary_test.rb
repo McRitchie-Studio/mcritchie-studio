@@ -51,22 +51,31 @@ class Task::CostSummaryTest < ActiveSupport::TestCase
     assert(summary.cost_by_stage.values.all?(&:nil?))
   end
 
-  test "durations span the stage stamps in whole seconds" do
-    @task.update_columns(created_at: @created, started_at: @created + 2.hours + 3.minutes,
-                         submitted_at: @created + 3.hours, reviewed_at: @created + 3.hours + 20.minutes,
-                         assembled_at: @created + 5.hours, completed_at: @created + 5.hours + 30.seconds)
-
-    assert_equal({ "design" => 7380, "build" => 3420, "review" => 1200, "assemble" => 6000, "ship" => 30 },
-                 Task::CostSummary.new(@task.reload).durations_by_stage)
+  def moved(from, to, seconds, kind: TaskEvent::TRANSITION)
+    TaskEvent.create!(task_slug: @task.slug, from_stage: from, to_stage: to, kind: kind,
+                      occurred_at: @created, seconds_in_from: seconds)
   end
 
-  # The control: a task still in review has no reviewed/assembled/completed
-  # stamps, so those spans are nil — never 0, which would read as "instant".
-  test "a stage that never happened is nil, not zero" do
-    @task.update_columns(created_at: @created, started_at: @created + 1.hour, submitted_at: @created + 2.hours,
-                         reviewed_at: nil, assembled_at: nil, completed_at: nil)
+  test "durations sum the seconds spent in each stage, in whole seconds" do
+    moved(nil, "designed", nil) # the genesis row measures nothing
+    moved("designed", "building", 7380)
+    moved("building", "submitted", 3420)
+    moved("submitted", "reviewed", 1200)
+    moved("reviewed", "assembled", 6000)
+    moved("assembled", "shipped", 30)
 
-    spans = Task::CostSummary.new(@task.reload).durations_by_stage
+    assert_equal({ "design" => 7380, "build" => 3420, "review" => 1200, "assemble" => 6000, "ship" => 30 },
+                 Task::CostSummary.new(@task).durations_by_stage)
+  end
+
+  # The control: a task still in review has left designed and building but never
+  # left submitted, so review, assemble and ship are nil — never 0, which would
+  # read as "instant".
+  test "a stage that never happened is nil, not zero" do
+    moved("designed", "building", 3600)
+    moved("building", "submitted", 3600)
+
+    spans = Task::CostSummary.new(@task).durations_by_stage
 
     assert_equal 3600, spans["design"]
     assert_equal 3600, spans["build"]
@@ -75,9 +84,26 @@ class Task::CostSummaryTest < ActiveSupport::TestCase
     assert_nil spans["ship"]
   end
 
-  test "an end stamped before its start (a later re-entry restamped the start) is nil" do
-    @task.update_columns(created_at: @created, started_at: @created + 3.hours, submitted_at: @created + 2.hours)
+  test "a reworked task sums every pass through a stage" do
+    moved("building", "submitted", 1000)
+    moved("submitted", "building", 300) # the reviewer's send-back
+    moved("building", "submitted", 500)
+    moved("submitted", "reviewed", 200)
 
-    assert_nil Task::CostSummary.new(@task.reload).durations_by_stage["build"]
+    spans = Task::CostSummary.new(@task).durations_by_stage
+
+    assert_equal 1500, spans["build"]
+    assert_equal 500, spans["review"]
+  end
+
+  test "intents and checkpoints are not stage boundaries" do
+    moved("building", "submitted", 600)
+    moved("submitted", "reviewed", 999, kind: TaskEvent::INTENT)
+    moved("submitted", "heavy_review", 999, kind: TaskEvent::CHECKPOINT)
+
+    spans = Task::CostSummary.new(@task).durations_by_stage
+
+    assert_equal 600, spans["build"]
+    assert_nil spans["review"]
   end
 end

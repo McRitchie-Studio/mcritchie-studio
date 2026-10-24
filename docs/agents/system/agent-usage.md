@@ -222,6 +222,11 @@ through assemble and ship. A blocked and resubmitted task adds each pass.
   stays `NULL`.
 - The first move a session makes on a task it never touched records no delta
   (no baseline yet).
+- A model with no row in `lib/usage_pricing.rb` prices to `NULL`, never a guess.
+  The 5-series rows landed 2026-09-25, so rows from the weeks before carry tokens
+  and a `NULL` cost, and `task_events:backfill` recovers only the model, never
+  tokens or cost. `bin/task usage-audit` sweeps the baseline store for suspect
+  rows.
 - The window is the session's whole spend, not only this task's: a session
   working two tasks at once charges the same tokens to both.
 
@@ -243,6 +248,15 @@ a bucket with no priced row, or a stage that never happened; it is never a
 measured zero. At ship, a blank `actual_size` is derived from the total
 (`Task::ACTUAL_SIZE_COST_THRESHOLDS`). The board card does not show cost yet: the
 card reads only its preloads, and a cost needs its own batch.
+
+`time:` is the seconds spent in each stage, summed over the transition spine
+(`seconds_in_from` by `from_stage`), so a reworked task counts every pass: design
+(in designed), build (in building, a block included), review (in submitted),
+assemble (in reviewed), ship (in assembled). A stage no transition has left yet,
+because it never happened or the task is in it now, prints `-`.
+
+The activity feed prices the same transcripts per activity rather than per
+stage move: [`atomic-capture-hook.md`](atomic-capture-hook.md).
 
 ## Not built here
 
