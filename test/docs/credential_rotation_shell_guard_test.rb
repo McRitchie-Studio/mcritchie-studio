@@ -137,7 +137,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # solana.turf.alex; and the address-only agent.turf.solana.team became
   # solana.turf.agent. solana.turf.alex is named for its Phantom login
   # (alex@turfmonster.media), but its key is the devnet test player 39QT…, NOT
-  # Mr. McRitchie's 7ZDJ…. The other two are foUu… and DvnZ…, so the
+  # Mr. McRitchie's 7ZDJ…. The other two are 8UwJ… (foUu… until 2026-10-24) and DvnZ…, so the
   # "no filed item at all" row still holds.
   # 2026-10-14 (mainnet-rotation-follow-ups-sweep): the mainnet key rotation
   # filed solana.turf.governance.v2 (3LTL…, the agent's governance seat) and

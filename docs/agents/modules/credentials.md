@@ -98,8 +98,8 @@ not write either: it names where each comes from and leaves the choice to the
 operator.
 
 ⚠ **Local turf has no devnet admin signer either way**: the devnet `VaultState`
-seats `2eGs…`, Mack `foUu…`, `BVQH…`, `9gAC…` and `3Qj4…` (read on chain
-2026-10-14), and the retired `8K81…` a local `.env` may still derive holds no
+seats `2eGs…`, Mack `8UwJ…` and `BVQH…`, slots 4 and 5 empty (read on chain
+2026-10-24), and the retired `8K81…` a local `.env` may still derive holds no
 slot, so `fix` removing `SOLANA_ADMIN_KEY` costs local dev nothing it still had
 until a devnet-only signer is filed for it (turf-monster
 `docs/qa-signing-key-rotation.md`, "What this ceremony does not fix").

@@ -44,7 +44,7 @@ ceremony: the cast's keys are real wallets.
 **Agents co-sign on devnet.** Devnet runs turf-vault v0.26 with `settle_contest`
 at 2 signatures (card `devnet-v026-upgrade`, 2026-10-12). The default
 `conclude --cosign agent` settles with the QA server key (`2eGs…`) plus the
-devnet-only agent key Mack (`foUu…`), and the v0.26 lock and close take the same
+devnet-only agent key Mack (`8UwJ…` since 2026-10-24), and the v0.26 lock and close take the same
 two, so the whole run needs **no human tap**. The rehearsal refuses any key it
 loads, player or co-signer, that holds MAINNET authority (a mainnet `VaultState`
 signer, seated or incoming, or a mainnet Squads member), even on devnet
