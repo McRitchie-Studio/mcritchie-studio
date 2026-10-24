@@ -830,4 +830,76 @@ class FastCheckTest < Minitest::Test
       assert_includes lane_calls(lines, "TEST"), ["test/lib/e2e_quarantine_ratchet_test.rb"]
     end
   end
+
+  # --- [unit] the advisory ui-lint lane: printed, never part of the verdict ---------
+
+  def ui_lint_stub_env(dir)
+    { "FAST_CHECK_UI_LINT_CMD" => "#{File.join(dir, 'lane-stub').shellescape} UILINT" }
+  end
+
+  def test_list_shows_the_advisory_ui_lint_lane_for_a_tree_with_templates
+    with_repo do |dir, write|
+      write.call("app/views/widgets/show.html.erb", "<p></p>\n")
+      out, code, lines = run_check(dir, args: ["--list"])
+
+      assert_equal 0, code, out
+      assert_match(%r{^advisory ui-lint: \S*bin/ui-lint #{Regexp.escape(dir)}$}, out)
+      assert_empty lines, "--list runs nothing, the advisory lane included"
+    end
+    with_repo do |dir, _|
+      out, = run_check(dir, args: ["--list"])
+      refute_match(/advisory ui-lint/, out, "control: a tree with no templates has no ui-lint lane")
+    end
+  end
+
+  def test_a_failing_ui_lint_never_reddens_the_verdict
+    with_repo do |dir, write|
+      write.call("app/views/widgets/show.html.erb", "<p></p>\n")
+      out, code, lines = run_check(dir, fail_token: "UILINT", extra_env: ui_lint_stub_env(dir))
+
+      assert_equal 0, code, out
+      assert_equal [[dir]], lane_calls(lines, "UILINT"), "the lane ran, against the root"
+      assert_match(/ui-lint \(advisory\): FAIL/, out)
+      assert_match(/not part of the verdict below, so its failure above is stepped over/, out)
+      assert_match(/pre-flight green/, out)
+    end
+  end
+
+  def test_a_green_ui_lint_cannot_mask_a_red_test_lane
+    with_repo do |dir, write|
+      write.call("app/views/widgets/show.html.erb", "<p></p>\n")
+      out, code, lines = run_check(dir, fail_token: "widget_test", extra_env: ui_lint_stub_env(dir))
+
+      assert_equal 1, code, out
+      assert_equal [[dir]], lane_calls(lines, "UILINT")
+      assert_match(/lane\(s\) RED: mapped-tests/, out)
+      refute_match(/RED: .*ui-lint/, out, "the advisory lane is never named among the red lanes")
+    end
+  end
+
+  def test_a_hung_ui_lint_is_cut_off_and_still_never_reddens
+    with_repo do |dir, write|
+      write.call("app/views/widgets/show.html.erb", "<p></p>\n")
+      out, code, = run_check(dir, extra_env: { "FAST_CHECK_UI_LINT_CMD" => "sh -c 'sleep 30' advisory",
+                                              "FAST_CHECK_LANE_TIMEOUT" => "1" })
+
+      assert_equal 0, code, out
+      assert_match(/ui-lint \(advisory\): TIMED OUT/, out)
+      refute_match(/HUNG RUNNER|lane\(s\) RED/, out, "the hang is narrated, not reported as a verdict")
+    end
+  end
+
+  def test_the_real_ui_lint_prints_its_report_with_this_diffs_counts
+    with_repo do |dir, write|
+      write.call("app/views/widgets/show.html.erb", %(<div style="margin: 0"></div>\n))
+      out, code, = run_check(dir, extra_env: { "FAST_CHECK_CHANGED_FILES" => "app/views/widgets/show.html.erb" })
+
+      assert_equal 0, code, out
+      assert_match(/== ui-lint \(advisory\): /, out)
+      assert_match(/inline_style\s+1\s+1/, out)
+      assert_match(/diff: 1 changed file\(s\), 1 scanned template\(s\), 1 offense\(s\) in 1 file\(s\)/, out)
+      assert_match(/pre-flight green/, out)
+    end
+  end
+
 end

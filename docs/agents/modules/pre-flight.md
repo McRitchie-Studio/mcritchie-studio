@@ -81,8 +81,17 @@ Lanes, in order:
     are its workflow-citation and dated-comment ratchets. About 30 of 139 failed
     PR jobs in the 14 days to 2026-10-12 were one of these. Each repo carries only
     its own files, so each desk runs only its own.
+- `ui-lint (advisory)` — `bin/ui-lint <root>`, the front-end house-rule
+  report (inline style, raw hex in a class or style, arbitrary pixel utilities,
+  scripts without a nonce, long `x-data`), printed whenever the tree has
+  `app/views` or `app/components`. It reads the hub's `config/ui_lint.yml` and
+  scans the desk's tree, so a Turf or Cyvasse desk gets the same rules, and it
+  names this diff's counts. It is a REPORT: its counts, its exit status, a hang
+  (cut off at 120s) or a missing script never change the verdict. Run it by hand
+  over any tree with `bin/ui-lint ../turf-monster`; `--strict` exits 1 on an
+  offense.
 
-Exit 0 means every lane that ran is green, including a run where **no test
+Exit 0 means every lane that ran is green (the advisory lane never counts), including a run where **no test
 lane ran at all** (a diff that maps to nothing on a checkout with no spine),
 which the script says out loud: CI runs the full suite on the PR either way.
 Exit 1 means a lane was red, hung (`FAST_CHECK_LANE_TIMEOUT`, default 900s,
