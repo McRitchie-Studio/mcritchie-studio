@@ -89,6 +89,14 @@ class OpMeterBoundTest < Minitest::Test
     assert_equal %w[timeout timeout], outcomes
   end
 
+  # perl's alarm truncates, and alarm 0 is no alarm: 0.5 must round up, not unbound.
+  def test_unit_a_fractional_deadline_still_bounds_the_attempt
+    value, rc, _cache, seconds = run_metered("bash", hung_until_uncached, deadline: "0.5")
+    assert_equal %w[FRESH 0], [value, rc]
+    assert_operator seconds, :<, 6
+    assert_equal %w[timeout ok], outcomes
+  end
+
   # CONTROL: a healthy op runs once, cache untouched, its exact status passed back.
   def test_unit_control_a_fast_op_is_run_once_and_its_status_kept
     op = stub("printf 'SECRET'\nexit 0")

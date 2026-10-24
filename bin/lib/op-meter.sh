@@ -139,12 +139,15 @@ op_meter_record() {
 # is on every macOS and Linux box. It FORKS and kills the child from the parent
 # rather than `alarm N; exec op`: op is a Go binary, and the Go runtime catches
 # SIGALRM and ignores it, so an alarm inherited across exec would never fire.
+# perl's alarm takes whole seconds and alarm 0 means NONE, so the deadline is
+# rounded up, and anything not a positive number falls back to 20.
 # Exit 124 is the watchdog's timeout (GNU timeout's code); 127 and 126 are the
 # shell's not-found and not-executable, so the log keeps one vocabulary.
 OP_METER_TIMEOUT_RC=124
 # shellcheck disable=SC2016
 OP_METER_WATCHDOG='use POSIX ();
 my $t = shift @ARGV;
+$t = ($t =~ /^[0-9]*[.]?[0-9]+$/ && $t > 0) ? POSIX::ceil($t) : 20;
 my $pid = fork;
 exit 126 unless defined $pid;
 if ($pid == 0) { exec { $ARGV[0] } @ARGV; POSIX::_exit($!{ENOENT} ? 127 : 126); }
