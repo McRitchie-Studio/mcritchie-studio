@@ -355,7 +355,9 @@ local env files on many desks. The rotation, the reference for the next one:
 2. **Mint and file.** `solana-keygen new --no-bip39-passphrase --silent --outfile <scratch>`
    with `umask 077`; base58 the 64 bytes in a process; write the item with
    `op item create --vault studio-agents-admin --template <600-mode file>`
-   (a piped template is ignored and makes an empty "Untitled SecureNote");
+   (on 2026-10-09 an empty "Untitled SecureNote" appeared instead; the 2026-10-24
+   dry runs trace that to `op` receiving no pipe at all, not to a piped template
+   being ignored: see the Solana admin key step 2);
    read it back and check it derives; delete both files. Print the public key only.
 3. **One config transaction per cluster**, built by
    `turf-vault/scripts/ceremony/rotate-admin-seat.js`:

@@ -94,18 +94,21 @@ bin/rails news:intake    # Fetch latest Schefter tweet
    below and is never printed: no `op item get --reveal` to a terminal, whose
    output lands in a transcript.
 
-2. **Local .env**: append it to the McRitchie Studio app-local `.env` (mode
-   `600`) in one pipe, the value never in a shell variable, an argument or the
+2. **Local .env**: append it to the McRitchie Studio app-local `.env` (created
+   `600`, or tightened to `600` if an older writer left it wider) in one pipe, the value never in a shell variable, an argument or the
    screen. The Ruby refuses an empty read, which is what a failed `op read`
    produces:
    ```bash
    op read 'op://studio-agents/agent.turf.x/Bearer Token' |
      ruby -e 'v = $stdin.read.chomp; abort "refusing: empty read, nothing written" if v.empty?
-              File.open(ARGV[0], "a", 0o600) { |f| f.puts "X_BEARER_TOKEN=" + v }' \
+              File.open(ARGV[0], "a", 0o600) { |f| f.puts "X_BEARER_TOKEN=" + v }
+              File.chmod(0o600, ARGV[0])' \
        /Users/alex/projects/mcritchie-studio/.env
    ```
 
-3. **Heroku** (production): set the config var from the vault, the value on stdin:
+3. **Heroku** (production): set the config var from the vault, the value on stdin
+   (rotating all four X credentials at once is
+   [`secrets-rotation.md`](secrets-rotation.md#x-twitter-api-credentials)'s one `--json` release):
    ```bash
    op read 'op://studio-agents/agent.turf.x/Bearer Token' |
      /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set mcritchie-studio X_BEARER_TOKEN

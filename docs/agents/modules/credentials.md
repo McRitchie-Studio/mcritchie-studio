@@ -34,7 +34,11 @@ Credential docs are split into two layers:
   `release_claim_cli`). A shell launcher execs through `ruby bin/lib/child_env.rb desk-server --
   <cmd>`. A desk's mail keys reach its server only as the empty blank. `LaneRunner`
   (fast-check's lanes) is the one pattern-based exception: it keeps every name that does not
-  look like a credential, because a suite's knobs are open-ended.
+  look like a credential, because a suite's knobs are open-ended. A process that is itself an
+  agent tool and needs the credentials to work (`bin/submit` under `bin/submit-wait`, a
+  `bin/pr-review` reviewer, `gh` under `bin/ship-clock`) keeps the shell's environment; it renames
+  no title. A Heroku base-URL override (`HEROKU_API_BASE`, `ROTATE_HEROKU_CI_KEY_API_BASE`) may
+  name only `https://api.heroku.com` or loopback (`bin/lib/heroku_api_base.rb`).
   `test/lib/launcher_child_env_test.rb` and turf's `tm_spawn_env_test.rb` /
   `e2e_parallel_env_test.rb` prove each with a control.
 - Use `/opt/homebrew/bin/op` directly for targeted reads.

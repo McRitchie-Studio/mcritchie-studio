@@ -39,6 +39,7 @@ require "net/http"
 require "open3"
 require "time"
 require "uri"
+require_relative "heroku_api_base"
 
 module HerokuCiKeyRotation
   REPO = "McRitchie-Studio/mcritchie-studio"
@@ -81,8 +82,12 @@ module HerokuCiKeyRotation
   # Net::HTTP, not the `heroku` CLI: the key goes in a header, and the slug read
   # (which SHA an app is running) has no CLI command.
   class HerokuApi
-    def initialize(base: ENV.fetch("ROTATE_HEROKU_CI_KEY_API_BASE", "https://api.heroku.com"))
-      @base = URI(base)
+    # The override is a test seam, held to the real API or loopback
+    # (HerokuApiBase) so it can never carry the key elsewhere.
+    def initialize(base: ENV.fetch("ROTATE_HEROKU_CI_KEY_API_BASE", HerokuApiBase::REAL))
+      @base = HerokuApiBase.resolve!(base, name: "ROTATE_HEROKU_CI_KEY_API_BASE")
+    rescue HerokuApiBase::Refused => e
+      raise Abort, e.message
     end
 
     def account_email(key) = request(:get, "/account", key).fetch("email")
