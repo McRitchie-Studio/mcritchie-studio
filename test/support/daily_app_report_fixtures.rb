@@ -8,7 +8,8 @@ module DailyAppReportFixtures
   def app_entry(slug, name: slug.titleize, url: "https://#{slug}.example.test")
     AppCatalog::Entry.new(slug: slug, name: name, emoji: "x", color: "#000000", tier: "product", status: "active",
                           port: nil, repo: nil, heroku_app: nil, production_url: url, qa_url: nil, engine: true,
-                          hosted: true, workspace: nil, description: "")
+                          hosted: true, workspace: nil, database: true, backups: true, restore_drilled: nil,
+                          description: "")
   end
 
   def health_body(app: "Turf Monster", signups: 0, errors: 0, groups: [], contacts: nil)

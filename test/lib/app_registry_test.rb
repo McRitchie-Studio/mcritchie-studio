@@ -30,6 +30,15 @@ class AppRegistryTest < Minitest::Test
                  "(satellites-legend-and-catalog-urls, 2026-10-06)"
   }.freeze
 
+  # Basic apps that keep nightly backups anyway, each with Alex's reason. Nightly
+  # backups are a paid-plan benefit (studio and product tiers); a row here is the
+  # only way a basic app keeps them. test_every_backup_exception_is_still_needed
+  # fails once a row stops being an exception.
+  BACKUP_EXCEPTIONS = {
+    "moms-app" => "Alex's family app: the orchestrator kept its 02:00 schedule when backups moved to the paid " \
+                  "plans, by Alex's exception, unless he says otherwise (backups-paid-tier-and-agent-job, 2026-10-24)"
+  }.freeze
+
   def self.load_yaml(rel) = YAML.safe_load_file(File.join(ROOT, rel))
 
   CATALOG = AppCatalog.parse(File.read(File.join(ROOT, "config/apps.yml")))
@@ -153,6 +162,21 @@ class AppRegistryTest < Minitest::Test
     end
   end
 
+  # Nightly database backups are a paid-plan benefit: every live studio or
+  # product app with a database has backups on; a basic app has them off unless
+  # BACKUP_EXCEPTIONS names it; an archived app is not backed up.
+  def backup_policy_disagreements(catalog, exceptions = BACKUP_EXCEPTIONS)
+    catalog.apps.filter_map do |app|
+      if app.backups_owed? && app.backups != true
+        "#{app.slug}: #{app.tier} app with a database has backups: false (nightly backups are a paid-plan benefit)"
+      elsif app.archived? && app.backups
+        "#{app.slug}: archived in apps.yml but backups: true (turn its schedule off and set false)"
+      elsif app.tier == "basic" && app.backups && !exceptions.key?(app.slug)
+        "#{app.slug}: basic app with backups: true and no BACKUP_EXCEPTIONS row (backups are a paid-plan benefit)"
+      end
+    end
+  end
+
   # --- the live files agree ----------------------------------------------------
 
   def test_satellites_yml_agrees_with_the_catalog
@@ -165,6 +189,10 @@ class AppRegistryTest < Minitest::Test
 
   def test_qa_environments_yml_agrees_with_the_catalog
     assert_empty qa_environment_disagreements(CATALOG, QA_ENVIRONMENTS)
+  end
+
+  def test_backups_follow_the_paid_plan_rule
+    assert_equal [], backup_policy_disagreements(CATALOG)
   end
 
   def test_every_catalog_workspace_is_a_stack_workspace
@@ -264,5 +292,44 @@ class AppRegistryTest < Minitest::Test
                     "rolio: production_app rolio in qa_environments.yml, heroku_app \"rolio-prod\" in apps.yml"
     assert_includes qa_environment_disagreements(CATALOG, QA_ENVIRONMENTS.except("turf-monster")),
                     "turf-monster: apps.yml names qa_url https://qa.turfmonster.media but qa_environments.yml has no row"
+  end
+
+  def with_app(slug, **changes)
+    apps = CATALOG.apps.map { |app| app.slug == slug ? app.with(**changes) : app }
+    AppCatalog::Catalog.new(apps: apps, libraries: CATALOG.libraries)
+  end
+
+  def test_a_paid_app_with_a_database_and_no_backups_is_named
+    assert_includes backup_policy_disagreements(with_app("cyvasse", backups: false)),
+                    "cyvasse: product app with a database has backups: false (nightly backups are a paid-plan benefit)"
+    assert_includes backup_policy_disagreements(with_app("mcritchie-studio", backups: false)),
+                    "mcritchie-studio: studio app with a database has backups: false (nightly backups are a paid-plan benefit)"
+    assert_equal [], backup_policy_disagreements(with_app("cyvasse", database: false, backups: false)),
+                 "a paid app with no database owes no backup"
+  end
+
+  def test_a_basic_app_without_the_flag_passes_and_with_it_needs_an_exception
+    dads = CATALOG.apps.find { |app| app.slug == "dads-app" }
+    assert_equal ["basic", false], [dads.tier, dads.backups], "control: a basic app without the flag"
+    refute dads.backups_watched?, "the sweep leaves a basic app without the flag alone"
+    assert_equal [], backup_policy_disagreements(with_app("dads-app", database: true)),
+                 "a basic app with a database but no flag is not owed backups"
+    assert_includes backup_policy_disagreements(with_app("dads-app", database: true, backups: true)),
+                    "dads-app: basic app with backups: true and no BACKUP_EXCEPTIONS row (backups are a paid-plan benefit)"
+    assert_includes backup_policy_disagreements(CATALOG, {}),
+                    "moms-app: basic app with backups: true and no BACKUP_EXCEPTIONS row (backups are a paid-plan benefit)"
+  end
+
+  def test_an_archived_app_with_backups_is_named
+    assert_includes backup_policy_disagreements(with_app("tax-studio", backups: true)),
+                    "tax-studio: archived in apps.yml but backups: true (turn its schedule off and set false)"
+  end
+
+  def test_every_backup_exception_is_still_needed
+    BACKUP_EXCEPTIONS.each_key do |slug|
+      app = CATALOG.apps.find { |entry| entry.slug == slug }
+      assert app, "BACKUP_EXCEPTIONS names #{slug}, which is not in config/apps.yml"
+      assert_equal ["basic", true], [app.tier, app.backups], "#{slug} is no longer a basic app with backups; drop its row"
+    end
   end
 end
