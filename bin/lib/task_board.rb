@@ -5,6 +5,7 @@ require "net/http"
 require "uri"
 require_relative "op_vaults"
 require_relative "op_meter"
+require_relative "harness_key"
 
 # TaskBoard — the shared TRANSPORT under the task-board CLI stack (bin/task,
 # bin/dor-check, bin/reviewer-select, bin/session-preflight, bin/devops-cycle).
@@ -17,6 +18,11 @@ require_relative "op_meter"
 # with "<METHOD> <path> -> <code>", reviewer-select adds a GET-404 special case,
 # bin/session-preflight and bin/devops-cycle raise for their callers to rescue).
 # Each script keeps its exact error rendering in its own thin `api` wrapper.
+#
+# A machine that holds a harness key presents it where the board takes it
+# (`keyed_request`, HarnessKey::DOORS): the board's reads, a task's create and its
+# claim. The shared bearer below is the path for every other call, and for a
+# machine with no key.
 #
 # Tokens stay per-process: every CLI mints its own 24h token per run (the
 # memoized `token` helper stays in each script) UNLESS a parent handed one down
@@ -90,6 +96,23 @@ module TaskBoard
       http.write_timeout = open_timeout
     end
     http.request(req)
+  end
+
+  # One request that presents this machine's harness key where the board takes it
+  # (HarnessKey.accepts?) and the shared bearer everywhere else. `key` is the
+  # machine's key or nil; `fallback` returns the shared bearer and is called only
+  # when the request goes without the key, or the key was refused
+  # (HarnessKey.fall_back?), so a keyed machine never exchanges the secret for a
+  # call the key makes. `refused` is told about a refused key. The other options
+  # are #request's.
+  def keyed_request(method, path_or_uri, key:, fallback:, refused: nil, body: nil, **options)
+    path = path_or_uri.is_a?(URI::Generic) ? path_or_uri.request_uri : path_or_uri
+    if key && HarnessKey.accepts?(method, path, body)
+      return HarnessKey.call(key, fallback: fallback, refused: refused) do |bearer|
+        request(method, path_or_uri, token: bearer, body: body, **options)
+      end
+    end
+    request(method, path_or_uri, token: fallback.call, body: body, **options)
   end
 
   # LENIENT body parse: {} on an empty or non-JSON body — the die!-family
