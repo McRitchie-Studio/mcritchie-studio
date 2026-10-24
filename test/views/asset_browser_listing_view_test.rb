@@ -53,6 +53,17 @@ class AssetBrowserListingViewTest < ActionView::TestCase
     assert_select "[data-test='asset-preview-modified'] time[datetime='2026-09-02T00:00:00Z']"
   end
 
+  # [component] admin-url-columns-use-http-href: the signed link reaches its href only
+  # as http(s), like every other stored or minted url.
+  test "the signed link renders for an https url and is withheld for a javascript: one" do
+    render partial: "assets/preview", locals: { preview: AssetBrowser::Preview.new(entry: FILE, url: "https://signed.example/cover.jpg") }
+    assert_select "a[href='https://signed.example/cover.jpg']", "Open signed link"
+
+    render partial: "assets/preview", locals: { preview: AssetBrowser::Preview.new(entry: CLIP, url: "javascript:alert(1)") }
+    assert_select "a[href^='javascript']", 0
+    assert_select "span[data-test='link-withheld'][title]", "—"
+  end
+
   test "an image preview is an img, and anything else offers only the signed download" do
     render partial: "assets/preview", locals: { preview: AssetBrowser::Preview.new(entry: FILE, url: "https://signed.example/cover.jpg") }
     assert_select "[data-test='asset-preview'] img[src='https://signed.example/cover.jpg']"
