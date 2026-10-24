@@ -46,14 +46,16 @@ class AgentHarnessProbeTest < Minitest::Test
   end
 
   def test_unit_op_ok_asks_the_launchd_daemon_and_the_per_user_one
+    # Off macOS getconf knows no per-user temp dir: one daemon, asked once.
     user_tmp = `getconf DARWIN_USER_TEMP_DIR 2>/dev/null`.strip
-    skip "no per-user temp dir off macOS" if user_tmp.empty?
     Dir.mktmpdir do |dir|
       File.write("#{dir}/op", "#!/bin/sh\necho \"${TMPDIR:-unset}\" >> #{dir}/calls\n")
       File.chmod(0o755, "#{dir}/op")
       env = { "PATH" => "#{dir}:/usr/bin:/bin" }
       assert system(env, "/bin/sh", "-c", Probe::OP_SCRIPT, unsetenv_others: true)
-      assert_equal ["unset", user_tmp], File.readlines("#{dir}/calls", chomp: true), "both daemons asked"
+      assert_equal ["unset", user_tmp].reject(&:empty?), File.readlines("#{dir}/calls", chomp: true), "both daemons asked"
+      next if user_tmp.empty?
+
       File.delete("#{dir}/calls")
       assert system(env.merge("TMPDIR" => user_tmp), "/bin/sh", "-c", Probe::OP_SCRIPT, unsetenv_others: true)
       assert_equal [user_tmp], File.readlines("#{dir}/calls", chomp: true), "control: one daemon, asked once"
