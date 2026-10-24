@@ -246,8 +246,10 @@ same rows show on `/admin/agent_messages`. Then **Alex** posts
 `completed #N` within about a minute.
 
 Last, **Alex** changes the account password the operator used (System Settings >
-Users & Groups) and keeps it in his own 1Password. The operator's access ends
-there.
+Users & Groups) and keeps it in his own 1Password. Under decision A he also
+replaces the FileVault recovery key, which Setup Assistant showed the operator:
+`sudo fdesetup changerecovery -personal`, the new key into his own 1Password.
+The operator's access ends there.
 
 ## Caffeinate, and why it no longer keeps the box awake
 
