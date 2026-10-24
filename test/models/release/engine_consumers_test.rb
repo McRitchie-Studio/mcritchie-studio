@@ -55,7 +55,7 @@ class Release::EngineConsumersTest < ActiveSupport::TestCase
   # The live registries: the two apps that drifted are consumers, and an
   # engine-free showcase app is not.
   test "the real catalog and registry name moms-app and rantly, and not dads-app" do
-    registry = YAML.load_file(Rails.root.join("config/release_repos.yml"))
+    registry = Release::Repos.config
     consumers = Release::EngineConsumers.all(registry, AppCatalog.apps)
     assert_includes consumers, "moms-app"
     assert_includes consumers, "rantly"

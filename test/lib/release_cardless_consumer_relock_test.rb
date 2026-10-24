@@ -11,9 +11,9 @@ require "tmpdir"
 # behind: on 2026-10-24 moms-app locked studio-engine 0.101.0 and rantly 0.87.0
 # while the hub locked 0.112.0.
 #
-# A file of its own, as config/test_health.yml asks of new release-CLI work. Same
+# A file of its own, as the test-health ratchet asks of new release-CLI work. Same
 # pattern as test/lib/release_producer_lock_bump_test.rb: the REAL function runs
-# against the real registries (config/release_repos.yml, config/apps.yml), with
+# against the real release registry and app catalog, with
 # `sh`/`git_capture` and the workspace stubbed.
 class ReleaseCardlessConsumerRelockTest < Minitest::Test
   BIN = File.expand_path("../../bin/release.rb", __dir__)
