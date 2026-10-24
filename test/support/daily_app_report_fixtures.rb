@@ -8,7 +8,8 @@ module DailyAppReportFixtures
   def app_entry(slug, name: slug.titleize, url: "https://#{slug}.example.test")
     AppCatalog::Entry.new(slug: slug, name: name, emoji: "x", color: "#000000", tier: "product", status: "active",
                           port: nil, repo: nil, heroku_app: nil, production_url: url, qa_url: nil, engine: true,
-                          hosted: true, workspace: nil, description: "")
+                          hosted: true, workspace: nil, database: true, backups: true, restore_drilled: nil,
+                          description: "")
   end
 
   def health_body(app: "Turf Monster", signups: 0, errors: 0, groups: [], contacts: nil)
@@ -71,7 +72,7 @@ module DailyAppReportFixtures
         headers[name.downcase] = value.to_s.strip
       end
       path, query = line.split(" ")[1].to_s.split("?", 2)
-      @requests << { path: path, query: URI.decode_www_form(query.to_s).to_h, headers: headers }
+      @requests << { method: line.split(" ")[0], path: path, query: URI.decode_www_form(query.to_s).to_h, headers: headers }
       answer = @routes.fetch(path, [ 404, "{}" ])
       return sleep(5) if answer == :hang
 

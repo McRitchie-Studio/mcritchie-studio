@@ -24,7 +24,7 @@ It has four acts, each runnable on its own:
 day. The archive keeps each overwritten or deleted object for **30 days**; the
 current mirror keeps the latest copy of every live object indefinitely.
 
-**Run is automated nightly.** The workflow `.github/workflows/r2-backup.yml`
+**Run is automated nightly (objects only).** The workflow `.github/workflows/r2-backup.yml`
 runs `bin/r2-backup run <app>` for every app in its matrix at 09:37 UTC (03:37
 Denver in summer; off the hour, because GitHub runs top-of-hour schedules hours
 late). A failed night opens an issue titled `R2 backup failing:
@@ -39,6 +39,11 @@ operation or to recover from a failure. The automation landed in task
 `DeskCapture`'s captured inbound mail, which has no dev/production pair. A
 single-bucket store is enabled by §2a instead of §2; every other act is the
 same, with the store's name in place of `<app>`.
+
+**Databases are a separate act.** This SOP backs up R2 files. Heroku Postgres
+databases are backed up nightly by Heroku's schedule, watched by the hub's
+`DbBackupSweepJob`, and drilled monthly:
+[`db-restore-drill`](db-restore-drill.md).
 
 ## What this act is NOT
 

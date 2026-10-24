@@ -3,7 +3,7 @@
 ## Status: Active
 
 This is Steffon's heartbeat launcher. It sets Steffon's session attribution and
-routes to three independent act SOPs (a fourth, `workspace-launch`, is invoked
+routes to four independent act SOPs (a fifth, `workspace-launch`, is invoked
 by name — see below):
 
 - [`production-deploy`](sops/production-deploy.md) - ship a QA-green release to
@@ -15,6 +15,12 @@ by name — see below):
 - [`archive-shipped`](sops/archive-shipped.md) - archive shipped work, retire
   frozen docs, and **sweep for orphaned PRs**. Chained by `production-deploy`;
   still invocable on its own.
+
+- [`db-restore-drill`](sops/db-restore-drill.md) - **monthly**: restore one
+  backed-up app's latest database backup into a scratch add-on on a QA app,
+  check three tables against production, destroy the add-on, and record the
+  date. Its nightly half is an agent job that runs without a person
+  (`DbBackupSweepJob`, 03:30 Denver); the heartbeat owns only the drill.
 
 [`program-upgrade`](sops/program-upgrade.md) is not a heartbeat act: it upgrades an
 on-chain program devnet then mainnet, and runs when Alex names it. The heartbeat's
@@ -122,7 +128,18 @@ Run Steffon's heartbeat composition downstream-first:
 2. [`clean-infra`](sops/clean-infra.md) - sweep the machine: reclaim finished
    desks, contract the Redis band, sweep regenerable disk.
 
-When Alex launches `Steffon Heartbeat`, run both acts in that order.
+3. [`db-restore-drill`](sops/db-restore-drill.md) - **monthly, when due**. Read
+   which backed-up app was drilled longest ago:
+
+   ```bash
+   ruby -Ilib -rapp_catalog -e 'AppCatalog.backed_up_apps.sort_by { |a| a.restore_drilled.to_s }.each { |a| puts "#{a.slug} #{a.restore_drilled || "never"}" }'
+   ```
+
+   The first line is due when it reads `never` or a date more than 30 days ago;
+   then run the drill (§3) on that one app. Otherwise report the next due date
+   and skip it.
+
+When Alex launches `Steffon Heartbeat`, run the acts in that order.
 When an act is invoked directly, run only that act.
 
 **Nothing ready to ship?** `production-deploy` is an idempotent no-op that reports
@@ -163,6 +180,8 @@ End every Steffon heartbeat with a short report:
   **plus any app it could not boot**, by name. Same rule as the orphaned-PR bullet
   above: an unchecked app is never reported as capped, and only the audit's own
   `rotation_verdict: capped` is a pass
+- **restore drill**: the app drilled, its backup, the three tables and counts,
+  and the scratch add-on destroyed; or "not due" with the next app and date
 - **the improvement suggestion `clean-infra` requires** — one concrete proposal
   for making the next sweep smaller
 - any blocker and the failing evidence

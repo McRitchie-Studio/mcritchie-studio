@@ -23,6 +23,16 @@ production:
     class: DeskHealthJob
     schedule: "0 7 * * * America/Denver"
     args: []
+  # Steffon's nightly agent job over the database backups: after Heroku's 02:00
+  # Denver captures, read each backed-up app's latest backup (config/apps.yml
+  # backups: true), capture one where none completed since the 02:00 slot, record it for
+  # the 07:00 daily app report, and open the floor incidents the dispatcher's
+  # alert posts once. Inert (one log line) until HEROKU_BACKUP_API_KEY is set.
+  # See DbBackupSweepJob and docs/agents/agents/steffon/sops/db-restore-drill.md.
+  db_backup_sweep:
+    class: DbBackupSweepJob
+    schedule: "30 3 * * * America/Denver"
+    args: []
   # The morning CTO summary: every live studio-engine app's health for the day
   # ending 07:00 Denver, in ONE Discord message under the report key
   # daily_app_report (Alex picks the channel at /admin/report_destinations).

@@ -12,7 +12,8 @@ class AppCatalogTest < Minitest::Test
     "slug" => "demo-app", "name" => "Demo App", "emoji" => "🧪", "color" => "#123456",
     "tier" => "basic", "status" => "active", "port" => 5000, "repo" => "McRitchie-Studio/demo-app",
     "heroku_app" => "demo-app", "production_url" => "https://demo.example", "qa_url" => nil,
-    "engine" => false, "hosted" => true, "workspace" => nil, "description" => "A demo"
+    "engine" => false, "hosted" => true, "workspace" => nil, "database" => false, "backups" => false,
+    "restore_drilled" => nil, "description" => "A demo"
   }.freeze
   LIBRARY = { "slug" => "demo-gem", "name" => "Demo Gem", "emoji" => "💠", "color" => "#654321",
               "aliases" => ["gem-alias"], "description" => "A gem" }.freeze
@@ -139,6 +140,33 @@ class AppCatalogTest < Minitest::Test
     rows = AppCatalog.seed_rows
     assert_equal (0...rows.size).to_a, rows.map { |row| row[:position] }
     assert_equal "showcase", rows.find { |row| row[:slug] == "cyvasse" }[:status]
+  end
+
+  def test_backup_fields_are_typed_and_backups_need_a_database
+    assert_match(/backups must be true or false/, refusal(apps: [APP.merge("backups" => "yes")]))
+    assert_match(/database must be true or false/, refusal(apps: [APP.merge("database" => nil)]))
+    assert_match(/backups needs database: true/, refusal(apps: [APP.merge("backups" => true)]))
+    assert_match(/restore_drilled must be null or a quoted/, refusal(apps: [APP.merge("database" => true, "restore_drilled" => "last May")]))
+    assert_match(/does not parse/, refusal(apps: [APP.merge("restore_drilled" => Date.new(2026, 11, 1))]))
+    app = parse(apps: [APP.merge("database" => true, "backups" => true, "restore_drilled" => "2026-11-01")]).apps.first
+    assert_equal "2026-11-01", app.restore_drilled
+  end
+
+  def test_backups_owed_and_watched_follow_tier_status_and_flags
+    owed = ->(row) { parse(apps: [APP.merge(row)]).apps.first }
+    assert owed.(APP.merge("tier" => "product", "database" => true, "backups" => true)).backups_owed?
+    refute owed.(APP.merge("tier" => "product", "database" => false)).backups_owed?, "no database, nothing to back up"
+    refute owed.(APP.merge("tier" => "basic", "database" => true)).backups_owed?, "basic is not a paid plan"
+    refute owed.(APP.merge("tier" => nil, "status" => "archived", "database" => true)).backups_owed?
+
+    assert owed.(APP.merge("database" => true, "backups" => true)).backups_watched?
+    refute owed.(APP.merge("database" => true, "backups" => true, "heroku_app" => nil)).backups_watched?
+    refute owed.(APP.merge("database" => true, "backups" => false)).backups_watched?
+  end
+
+  def test_the_real_catalog_watches_the_paid_apps_and_moms_app
+    assert_equal %w[mcritchie-studio turf-monster cyvasse mcritchie-industries commercial-welding moms-app],
+                 AppCatalog.backed_up_apps.map(&:slug)
   end
 
   def test_for_workspace_finds_the_stack_client_s_app

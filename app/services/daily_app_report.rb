@@ -15,6 +15,10 @@
 # fetched; an app that cannot be read is "unreachable (<reason>)" plus an
 # ErrorLog row, and the report still goes out for the rest.
 #
+# Each backed-up app's embed also carries one backup line ("Backup 02:04,
+# 48 MB" or "Backup MISSING"), and the headline one count line ("Backups: 5
+# fresh, 1 missing"), read from what Steffon's 03:30 DbBackupSweepJob recorded.
+#
 # Counts only: no names or emails reach Discord (error messages are redacted).
 module DailyAppReport
   REPORT_KEY = "daily_app_report".freeze
@@ -86,13 +90,23 @@ module DailyAppReport
     end
 
     results = apps.map { |app| healths[app.slug] ||= health_for(app, ending, fetcher: fetcher, env: env) }
-    message = Message.new(ending: ending, results: results).to_h
+    message = Message.new(ending: ending, results: results, backups: backup_lines(ending)).to_h
     result = ReportDestinations.deliver(REPORT_KEY, **message, idempotency_key: key)
     log_result(logger, key, result)
     # deliver recorded the failure (and an ErrorLog); the job retries it with
     # back-off under the same key, so it still posts at most once.
     ReportDeliveryJob.set(wait: 1.minute).perform_later(REPORT_KEY, **message, idempotency_key: key) if result.status == :failed
     result
+  end
+
+  # slug => "Backup 02:04, 48 MB" / "Backup MISSING" for every backed-up app,
+  # from what last night's DbBackupSweepJob recorded. A failure here costs the
+  # backup lines, never the report.
+  def backup_lines(ending)
+    DbBackupSweep.report_lines(now: ending)
+  rescue StandardError => e
+    Rails.logger.warn("[daily-app-report] backup lines unavailable: #{e.class}")
+    {}
   end
 
   def health_for(app, ending, fetcher:, env:)

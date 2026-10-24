@@ -129,8 +129,9 @@ These are measured against Cloudflare's S3-compatibility page, not assumed.
   The undo is Steffon's [`r2-backup`](../agents/steffon/sops/r2-backup.md)
   SOP: a per-app `<app>-backup` bucket holding a mirror of production plus a
   30-day archive of everything overwritten or deleted, collected by R2
-  lifecycle rules. Its nightly run is `.github/workflows/r2-backup.yml`, for the
-  apps in its matrix. On a production
+  lifecycle rules. Its nightly object run is `.github/workflows/r2-backup.yml`,
+  for the apps in its matrix (databases have their own nightly backup:
+  [`db-restore-drill`](../agents/steffon/sops/db-restore-drill.md)). On a production
   bucket without backup enabled, a destructive bulk operation needs Alex's
   explicit yes; with it enabled, run a backup first and read its receipt.
 - **No tags, ACLs, or bucket policies.** Cost lines come from bucket names, and
