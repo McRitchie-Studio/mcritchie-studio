@@ -58,7 +58,7 @@ apps:
       - { path: /packages }
       - { path: /about }
       - { path: /nfl }
-      - { path: /login, sign_in: true }
+      - { path: /signin, sign_in: true }
   turf-monster:
     host: https://turfmonster.media
     pages:
