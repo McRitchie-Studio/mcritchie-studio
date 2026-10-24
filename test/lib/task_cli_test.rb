@@ -1130,6 +1130,60 @@ class TaskCliTest < Minitest::Test
     refute_match(/- only bullet/, out)
   end
 
+  # --- the cost and time lines (task-show-prints-cost) -----------------------
+  #
+  # [unit] `show` renders the API's total_cost / cost_by_stage / durations_by_stage
+  # as a `cost:` and a `time:` line, in the terse view and in --verbose. A stage
+  # that never happened arrives as null and prints `-`, never `0s` or `$0.00`.
+
+  COST_COLUMNS = {
+    "total_cost" => 12.3456,
+    "cost_by_stage" => { "build" => 8.0, "review" => 3.0956, "deploy" => 1.25, "other" => nil },
+    "durations_by_stage" => { "design" => 7380, "build" => 2700, "review" => 45, "assemble" => nil, "ship" => nil }
+  }.freeze
+
+  def test_show_prints_the_cost_and_time_lines
+    [["show", "demo-task"], ["show", "demo-task", "--verbose"]].each do |args|
+      form = args.join(" ")
+      _requests, out, _err, status = run_task(args, stub_columns: COST_COLUMNS)
+      assert status.success?, form
+      assert_includes out, "  cost: $12.35  build $8.00 · review $3.10 · deploy $1.25\n", form
+      assert_includes out, "  time: design 2h 3m · build 45m · review 45s · assemble - · ship -\n", form
+      refute_match(/other/, out, "#{form}: an unpriced `other` bucket stays off the line")
+    end
+  end
+
+  def test_show_prints_dashes_for_an_unmeasured_task
+    _requests, out, _err, status = run_task(
+      ["show", "demo-task"],
+      stub_columns: { "total_cost" => nil,
+                      "cost_by_stage" => { "build" => nil, "review" => nil, "deploy" => nil, "other" => nil },
+                      "durations_by_stage" => { "design" => nil, "build" => nil, "review" => nil,
+                                                "assemble" => nil, "ship" => nil } }
+    )
+    assert status.success?
+    assert_includes out, "  cost: -  build - · review - · deploy -\n"
+    assert_includes out, "  time: design - · build - · review - · assemble - · ship -\n"
+  end
+
+  def test_show_json_carries_the_cost_fields
+    _requests, out, _err, status = run_task(["show", "demo-task", "--json"], stub_columns: COST_COLUMNS)
+    assert status.success?
+    data = JSON.parse(out)
+    assert_in_delta 12.3456, data["total_cost"], 0.00001
+    assert_equal COST_COLUMNS["cost_by_stage"], data["cost_by_stage"]
+    assert_equal COST_COLUMNS["durations_by_stage"], data["durations_by_stage"]
+  end
+
+  # An older board (or a PATCH echo) carries none of the fields: no lines at all,
+  # rather than a `cost: -` that would claim the task was measured and empty.
+  def test_show_prints_no_cost_line_when_the_record_lacks_the_fields
+    _requests, out, _err, status = run_task(["show", "demo-task"])
+    assert status.success?
+    refute_match(/^  cost:/, out)
+    refute_match(/^  time:/, out)
+  end
+
   # --- the top-level columns in --verbose (merged / release_slug) -------------
   #
   # `merged` is the stamp the release sweep reads to decide whether a `reviewed`
