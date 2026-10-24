@@ -43,7 +43,7 @@ module ApplicationHelper
   # size); the block form also keeps its content. Only the link is dropped.
   #
   #   safe_link_to "View Post", @news.x_post_url, target: "_blank"
-  #   safe_link_to(sheet.image_url, target: "_blank") { image_tag ... }
+  #   safe_link_to(sheet.image_url, target: "_blank") { safe_image_tag sheet.image_url, ... }
   def safe_link_to(name = nil, url = nil, html_options = {}, &block)
     if block
       html_options = url || {}

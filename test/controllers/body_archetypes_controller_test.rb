@@ -16,8 +16,8 @@ class BodyArchetypesControllerTest < ActionDispatch::IntegrationTest
   end
 
   # [component] admin-url-columns-use-http-href: an archetype's stored image_url is
-  # linked only as http(s). The refused value is a data: image, because image_tag
-  # itself raises on a javascript: src (a separate, pre-existing 500).
+  # linked only as http(s). A data: image is refused as a LINK but kept as an image;
+  # the javascript: case is the next test (image-tag-stored-url-500).
   test "the page links an https archetype image and withholds a non-http one" do
     log_in_as(@admin)
     archetype = body_archetypes(:nfl_qb_skill)

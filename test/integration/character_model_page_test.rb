@@ -542,8 +542,8 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
 
     ref.update_columns(image_url: "javascript:alert(1)")
     uni.update_columns(image_url: "javascript:alert(2)", page_url: "javascript:alert(3)")
-    # image_tag raises on a javascript: src (the asset pipeline reads it as a file name),
-    # which is a separate, pre-existing 500; a data: image is the refused value here.
+    # A data: image is refused as a LINK but kept as an image; the javascript: image
+    # case (once a 500) is the image-tag-stored-url-500 test below.
     shot.update_columns(image_url: "data:image/svg+xml;base64,PHN2Zy8+")
     get page_path
     assert_select "a[href^='javascript']", 0
