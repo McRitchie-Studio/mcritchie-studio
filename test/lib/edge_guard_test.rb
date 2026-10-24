@@ -75,13 +75,16 @@ class EdgeGuardTest < ActiveSupport::TestCase
     refute @downstream.called?, "bypass traffic must not reach the app at all"
   end
 
+  # Both secret cases arrive from a genuine Cloudflare peer, so the range check passes and
+  # the refusal can only come from the secret comparison. Cloudflare's ranges are shared by
+  # every Cloudflare customer; against one of them the secret is the half doing the work.
   test "refuses a request presenting the wrong secret" do
-    assert_equal 403, call(headers: { "HTTP_X_EDGE_SECRET" => "not-the-secret" })
+    assert_equal 403, call(headers: through_edge(secret: "not-the-secret"))
     refute @downstream.called?
   end
 
   test "refuses a near-miss secret rather than accepting a prefix" do
-    assert_equal 403, call(headers: { "HTTP_X_EDGE_SECRET" => SECRET[0..-2] })
+    assert_equal 403, call(headers: through_edge(secret: SECRET[0..-2]))
     refute @downstream.called?
   end
 
