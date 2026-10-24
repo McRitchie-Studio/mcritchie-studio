@@ -292,7 +292,12 @@ policy, and why each directive allows what it does, is in
   count. What stands between the hub and the flip today: Alpine needs
   `'unsafe-eval'`; styles are `'unsafe-inline'` (387 `style=` attributes, and the
   engine's `<style>` blocks carry no nonce); the 20 inline `on*=` handlers in hub
-  views; and page-level inline scripts that a Turbo visit re-runs.
+  views; page-level inline scripts that a Turbo visit re-runs, and that a
+  snapshot-cache restore (Back, Forward, preview) re-runs with the browser-blanked
+  nonce, so they report even on the page that did the full load; and the
+  `csp-nonce` meta tag (`csp_meta_tag`, the engine head), whose value Turbo gives
+  to any script a frame or stream brings in. Strip scripts from incoming frames
+  and streams, or drop the meta, before enforcing.
 
 ## Turf Monster
 
