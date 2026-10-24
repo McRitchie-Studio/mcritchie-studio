@@ -161,11 +161,21 @@ def api_token(base_url, secret)
   api_request(base_url, :post, "/api/v1/auth", body: { secret: secret }).fetch("token")
 end
 
+# This machine's harness key, or nil. Loaded here and not at the top: the key
+# store needs lib/, and this script also runs from a bin-only tree, where there
+# is no key to read and the shared token serves.
+def machine_harness_key
+  require_relative "lib/harness_key"
+  HarnessKey.token(HarnessKey.projects_dir)
+rescue LoadError
+  nil
+end
+
 # The read presents this machine's harness key when it holds one (a read the
 # board takes it on), and exchanges the secret only when it holds none or the
 # board refuses the key.
 def fetch_latest_task_activity(slug)
-  key = HarnessKey.token(HarnessKey.projects_dir)
+  key = machine_harness_key
   secret = key ? nil : agent_secret
   return [nil, "AGENT_API_SECRET not found for activities fallback"] if !key && secret.empty?
 

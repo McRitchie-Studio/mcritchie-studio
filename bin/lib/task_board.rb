@@ -5,7 +5,6 @@ require "net/http"
 require "uri"
 require_relative "op_vaults"
 require_relative "op_meter"
-require_relative "harness_key"
 
 # TaskBoard — the shared TRANSPORT under the task-board CLI stack (bin/task,
 # bin/dor-check, bin/reviewer-select, bin/session-preflight, bin/devops-cycle).
@@ -106,6 +105,10 @@ module TaskBoard
   # call the key makes. `refused` is told about a refused key. The other options
   # are #request's.
   def keyed_request(method, path_or_uri, key:, fallback:, refused: nil, body: nil, **options)
+    # Required here, not at the top: harness_key needs lib/, and this file must
+    # still load in a bin-only tree (test/lib/op_meter_test.rb). A caller with a key
+    # has the whole checkout.
+    require_relative "harness_key" if key
     path = path_or_uri.is_a?(URI::Generic) ? path_or_uri.request_uri : path_or_uri
     if key && HarnessKey.accepts?(method, path, body)
       return HarnessKey.call(key, fallback: fallback, refused: refused) do |bearer|
