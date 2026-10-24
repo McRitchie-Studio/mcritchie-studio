@@ -264,4 +264,51 @@ class ConductorHostSetupTest < Minitest::Test
     assert_equal [ "no live dispatcher ping from conductor-mini", "no live launcher ping from conductor-mini" ],
                  verdict([ row("conductor-mini", seen: 900) ])
   end
+
+  # The printed AGENT_API_SECRET fix, RUN as printed (secrets-scrub-review-notes).
+  # A failed `op read` prints nothing; the fix used to append a blank
+  # `AGENT_API_SECRET=` line anyway, which then reads as "set". It must refuse
+  # and write nothing, and a good read must land in a 600 .env.
+  def agent_secret_fix_line(out)
+    line = out.lines.map(&:strip).find { |l| l.start_with?("fix: ") && l.include?("AGENT_API_SECRET") }
+    assert line, "no AGENT_API_SECRET fix line in:\n#{out}"
+    line.delete_prefix("fix: ")
+  end
+
+  def run_fix(fix, op_body)
+    stub("op", op_body)
+    Open3.capture2e({ "PATH" => "#{@stubs}:#{RbConfig::CONFIG['bindir']}:/usr/bin:/bin" }, "/bin/sh", "-c", fix,
+                    unsetenv_others: true)
+  end
+
+  def test_the_printed_secret_fix_refuses_an_empty_read_and_writes_nothing
+    out, = run_cli("--check", "--no-board")
+    fix = agent_secret_fix_line(out)
+    env = File.join(@hub, ".env")
+    FileUtils.mkdir_p(@hub)
+
+    msg, status = run_fix(fix, "exit 1")
+    refute_predicate status, :success?, "a failed op read let the fix succeed: #{msg}"
+    assert_includes msg, "refusing: empty read"
+    refute File.exist?(env), "a failed op read still created #{env}"
+
+    File.write(env, "LOCAL_EMAIL_CAPTURE=1\n")
+    run_fix(fix, "exit 1")
+    assert_equal "LOCAL_EMAIL_CAPTURE=1\n", File.read(env), "a failed op read appended to the .env"
+  end
+
+  def test_the_printed_secret_fix_appends_a_good_read_owner_only
+    out, = run_cli("--check", "--no-board")
+    fix = agent_secret_fix_line(out)
+    env = File.join(@hub, ".env")
+    FileUtils.mkdir_p(@hub)
+    File.write(env, "LOCAL_EMAIL_CAPTURE=1\n")
+    File.chmod(0o644, env)
+
+    msg, status = run_fix(fix, "printf '%s\\n' '#{SECRET_SENTINEL}'")
+    assert_predicate status, :success?, msg
+    assert_equal "LOCAL_EMAIL_CAPTURE=1\nAGENT_API_SECRET=#{SECRET_SENTINEL}\n", File.read(env)
+    assert_equal 0o600, File.stat(env).mode & 0o777, "the fix left the .env wider than 600"
+    refute_includes msg, SECRET_SENTINEL, "the fix echoed the secret"
+  end
 end

@@ -87,13 +87,20 @@ credential by [`credential-filing`](credential-filing.md):
    `identity,read-protected,write-protected` (reading transfers and starting a
    capture), described "hub backup sweep", and file it in the same pipe as
    **`heroku.mcritchie-studio.applications`** in the `studio-applications` vault
-   (app-scoped: only the hub's runtime uses it). Run it from the admin lane. The
-   token goes from `--json` through `jq` into the item's concealed field on
-   stdin, so it never reaches the terminal, a variable or an argument; plain
-   `authorizations:create` would print it.
+   (app-scoped: only the hub's runtime uses it). Run it from the admin lane:
+   `source ~/.zprofile.admin` first, which stages `HEROKU_STUDIO_ADMIN_API_KEY`
+   (only that key may create or revoke an authorization; the agent key is
+   refused), and give it to the CLI as `HEROKU_API_KEY` in the command's own
+   environment, never on its argv. The token goes from `--json` through `jq`
+   into the item's concealed field on stdin, so it never reaches the terminal,
+   a variable or an argument; plain `authorizations:create` would print it.
 
    ```bash
-   heroku authorizations:create -d "hub backup sweep" -s identity,read-protected,write-protected --json |
+   source ~/.zprofile.admin
+   : "${HEROKU_STUDIO_ADMIN_API_KEY:?refusing -- the admin profile staged no key}"
+   set -o pipefail
+   HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" \
+     heroku authorizations:create -d "hub backup sweep" -s identity,read-protected,write-protected --json |
      jq '{title: "heroku.mcritchie-studio.applications", category: "API_CREDENTIAL",
           fields: [{id: "credential", label: "credential", type: "CONCEALED", value: .access_token.token},
                    {id: "authorization-id", label: "authorization-id", type: "STRING", value: .id}]}' |
@@ -104,6 +111,28 @@ credential by [`credential-filing`](credential-filing.md):
    The template names its own category, so no `--category` (op refuses both).
    This pipe was rehearsed with `op item create --dry-run` and a fake
    authorization on 2026-10-24.
+
+   **If the pipe fails after Heroku answered** (`jq` or `op` errors, the pipe
+   exits non-zero, or the item is not in the vault afterwards), the
+   authorization exists on the account and nothing holds its token: revoke it
+   before you retry, or it lives on as an orphan credential. Its id is in the
+   account's list under the same description as the LIVE authorization, the one
+   the vault item's `authorization-id` field names, so the list excludes that id
+   and refuses to run without it. `jq` prints ids and dates, never a token (bare
+   `heroku authorizations --json` prints every token on the account). Every row it
+   prints is an orphan: revoke each, still from the admin profile, then run step 1
+   again. No row means Heroku never answered and nothing is orphaned.
+
+   ```bash
+   : "${HEROKU_STUDIO_ADMIN_API_KEY:?refusing -- source ~/.zprofile.admin first}"
+   live="$(op item get heroku.mcritchie-studio.applications --vault studio-applications --fields label=authorization-id)" &&
+     [ -n "$live" ] && HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" heroku authorizations --json |
+     jq -r --arg live "$live" '.[] | select(.description == "hub backup sweep" and .id != $live) | "\(.id)  \(.created_at)"'
+   HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" heroku authorizations:revoke <id>
+   ```
+
+   On a first filing, before the item exists, the read refuses: every row is then
+   an orphan, so list them with `live=none` in place of the `op` read.
 2. Finish the item by [`credential-filing`](credential-filing.md) sections 3
    (the `notesPlain` permission matrix) and 6 (verify by read-back), and add its
    row to [`credential-inventory.md`](../../../modules/credential-inventory.md).
@@ -123,7 +152,8 @@ credential by [`credential-filing`](credential-filing.md):
 A capture the sweep started shows as the newest `b…` backup; when it completed,
 the incident clears on the next night's run. `db_backup_sweep_failed` with
 `HTTP 401 key rejected`: the authorization was revoked or rotated; re-file the
-key (steps 1-3).
+key (steps 1-3), and if a re-file's pipe fails, revoke the orphan it leaves
+(step 1, "If the pipe fails after Heroku answered").
 
 ## 3. Drill — monthly
 

@@ -53,9 +53,9 @@ module ChildEnv
   # The desk's mail credentials, exported EMPTY (bin/agent-worktree
   # local_email_values) so dotenv cannot fill them from a .env and a desk never
   # sends real mail. Kept only while empty: a SET value, from the parent or from
-  # a stack file, is replaced by the empty blank, never passed on. Twin of
-  # turf-monster bin/lib/desk_env.sh TM_ENV_KEEP_IF_EMPTY; the hub blanks where
-  # turf drops, because a dropped name is one dotenv would then fill.
+  # a stack file, is replaced by the empty blank, never passed on and never
+  # dropped, because a dropped name is one dotenv would then fill. Twin of
+  # turf-monster bin/lib/desk_env.sh TM_ENV_KEEP_IF_EMPTY, which blanks the same way.
   MAIL_KEEP_IF_EMPTY = %w[RESEND_API_KEY SES_SMTP_USERNAME SES_SMTP_PASSWORD].freeze
 
   # What a lease RENEWER (bin/devops-shift, bin/lib/review_claim_cli.rb,
@@ -86,7 +86,19 @@ module ChildEnv
   # A name that says it carries a credential.
   SECRET_SHAPED = /KEY|SECRET|TOKEN|PASSW|CREDENTIAL|PRIVATE|SESSION|COOKIE|AUTH|SIGN/i
 
-  # Never in a child's environment, whoever asks.
+  # AgentApi's off-switch for the shared board token (AgentApi::LEGACY_ENV and
+  # LEGACY_OFF, copied so this file stays loadable on its own; a unit test pins
+  # the two lists equal). Its OFF values are a setting, not a credential, and a
+  # renewer must keep one: a session running with AGENT_LEGACY_TOKEN=off whose
+  # renewer lost the name would re-mint with the shared token behind its back
+  # (secrets-scrub-review-notes). Any OTHER value stays dropped, so the name can
+  # never carry a token into a child even if somebody pastes one there.
+  LEGACY_SWITCH = "AGENT_LEGACY_TOKEN"
+  LEGACY_SWITCH_OFF = %w[off 0 false no].freeze
+
+  # Never in a child's environment, whoever asks. AGENT_LEGACY_TOKEN is here so no
+  # value under that name ever reaches a child; renewer() alone re-adds it, and
+  # only with an OFF value (LEGACY_SWITCH_OFF above).
   FORBIDDEN_NAMES = %w[GH_TOKEN GITHUB_TOKEN AGENT_LEGACY_TOKEN].freeze
   FORBIDDEN_PREFIXES = %w[HEROKU_ OP_ CLAUDE_CODE_ ANTHROPIC_ AGENT_API_].freeze
 
@@ -126,8 +138,17 @@ module ChildEnv
   end
 
   # A detached lease renewer's environment; `values` carries its session and nonce.
+  # AGENT_LEGACY_TOKEN passes only with an OFF value (LEGACY_SWITCH_OFF).
   def renewer(values, env = ENV, allow: [])
-    build(values, env, allow: RENEWER_ALLOW + allow)
+    kept = build(values, env, allow: RENEWER_ALLOW + allow)
+    switch = env[LEGACY_SWITCH]
+    kept[LEGACY_SWITCH] = switch if legacy_off?(switch)
+    kept
+  end
+
+  # True when `value` is one of the shared token's OFF spellings.
+  def legacy_off?(value)
+    !value.nil? && LEGACY_SWITCH_OFF.include?(value.to_s.strip.downcase)
   end
 
   # A pre-flight lane's environment; `values` is what the caller sets for the lane.
