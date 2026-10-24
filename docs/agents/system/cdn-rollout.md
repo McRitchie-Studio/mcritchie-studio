@@ -78,7 +78,8 @@ Cloudflare flattens the apex automatically, so the existing Heroku `ALIAS/ANAME`
 a proxied apex record — no change of approach needed.
 
 Set the records that serve the app to **Proxied** (orange cloud). Leave anything used
-for domain-ownership or mail delivery **DNS-only** (grey).
+for domain-ownership or mail delivery **DNS-only** (grey). For the hub, hold this flip
+until Step 5: the transform rules go in first, so the shared-address window stays minutes.
 
 ### Step 3 — Solve certificates BEFORE cutting over
 
@@ -150,8 +151,10 @@ Before arming, diff `EdgeGuard::CLOUDFLARE_RANGES` against
 `https://www.cloudflare.com/ips-v4` and `/ips-v6`. A range missing from the constant is
 refused, never wrongly believed, but it is still an outage for the visitors it serves.
 
-1. Add a **Transform Rule → Modify Request Header** on the zone: set `X-Edge-Secret` to
-   a long random value on every request to the origin.
+1. Add a **Transform Rule → Modify Request Header** on **each** zone that reaches the app
+   (for the hub, `mcritchie.studio` and `mcritchie.app`), setting `X-Edge-Secret` to the
+   **same** long random value on every request; there is one `EDGE_SECRET`. Do this
+   BEFORE the proxy flip, then flip the records back to back.
 2. Set the same value on the app and let it restart:
    ```bash
    heroku config:set EDGE_SECRET="<the same value>" --app mcritchie-studio
@@ -166,6 +169,8 @@ refused, never wrongly believed, but it is still an outage for the visitors it s
    curl -s -o /dev/null -w '%{http_code}\n' -H "X-Edge-Secret: $EDGE_SECRET" https://mcritchie-studio-039470649719.herokuapp.com/tasks
    # health check still direct — expect 200
    curl -s -o /dev/null -w '%{http_code}\n' https://mcritchie-studio-039470649719.herokuapp.com/up
+   # a live client-app preview (second zone's rule) — expect 200; 403 = mcritchie.app rule missing or mismatched
+   curl -s -o /dev/null -w '%{http_code}\n' https://<a-live-preview>.mcritchie.app/
    ```
 
 Rollback at any point is `heroku config:unset EDGE_SECRET`, which returns the guard to
