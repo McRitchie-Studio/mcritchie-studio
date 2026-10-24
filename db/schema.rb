@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_21_060000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -241,7 +241,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_060000) do
     t.datetime "resolved_at"
     t.datetime "updated_at", null: false
     t.index ["kind"], name: "index_agent_mailbox_incidents_one_open_per_kind", unique: true, where: "(resolved_at IS NULL)"
-    t.check_constraint "kind::text = ANY (ARRAY['dispatcher_silent'::character varying::text, 'message_waiting'::character varying::text])", name: "agent_mailbox_incidents_kind_known"
+    t.check_constraint "kind::text = ANY (ARRAY['dispatcher_silent'::character varying, 'message_waiting'::character varying, 'db_backup_missing'::character varying, 'db_backup_sweep_failed'::character varying]::text[])", name: "agent_mailbox_incidents_kind_known"
   end
 
   create_table "agent_message_cursors", force: :cascade do |t|
@@ -607,6 +607,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_21_060000) do
   end
 
   create_table "apps", force: :cascade do |t|
+    t.jsonb "backup_status", default: {}, null: false
     t.string "color"
     t.datetime "created_at", null: false
     t.datetime "cto_cap_lifted_at"

@@ -8,6 +8,10 @@ module AgentMessages
   #                      not an outage: before the first ping this check is quiet.
   #   message_waiting    a routed message has sat `received` for WAIT_LIMIT (10 min)
   #
+  # The nightly database-backup sweep (DbBackupSweep) opens and resolves its own
+  # two kinds on the same table; this announce posts them too, with the sweep's
+  # text, so a backup alert reaches the ops channel once, like these.
+  #
   # Dedupe is the incidents table (AgentMailboxIncident, one open row per kind):
   # an incident opens on the first failing run, resolves on the first passing
   # one, and its alert_posted_at / recovery_posted_at say what was announced. A
@@ -76,6 +80,7 @@ module AgentMessages
         pause = d["paused_until"] ? " The dispatcher is paused until #{d['paused_until']} (#{d['pause_reason'] || 'paused'})." : ""
         "Agent mailbox: #{d['count']} routed message(s) waiting over #{WAIT_LIMIT.inspect}; oldest is ##{d['oldest_id']} " \
           "for #{d['oldest_soul']}, #{minutes_since(d['oldest_at'], now)} min old.#{pause} Steffon: SOP agent-dispatcher."
+      else DbBackupSweep.alert_text(incident)
       end
     end
 
@@ -84,6 +89,7 @@ module AgentMessages
       case incident.kind
       when "dispatcher_silent" then "Agent dispatcher back: pinging again (incident lasted #{lasted} min)."
       when "message_waiting" then "Agent mailbox clear: no routed message has waited over #{WAIT_LIMIT.inspect} (incident lasted #{lasted} min)."
+      else DbBackupSweep.recovery_text(incident, lasted)
       end
     end
 

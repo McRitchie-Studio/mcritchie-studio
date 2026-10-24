@@ -72,7 +72,7 @@ module DailyAppReportFixtures
         headers[name.downcase] = value.to_s.strip
       end
       path, query = line.split(" ")[1].to_s.split("?", 2)
-      @requests << { path: path, query: URI.decode_www_form(query.to_s).to_h, headers: headers }
+      @requests << { method: line.split(" ")[0], path: path, query: URI.decode_www_form(query.to_s).to_h, headers: headers }
       answer = @routes.fetch(path, [ 404, "{}" ])
       return sleep(5) if answer == :hang
 
