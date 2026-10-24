@@ -490,6 +490,72 @@ class AgentApiTest < Minitest::Test
     assert api.invalidated
   end
 
+  # ── [unit] AgentApi.call on a machine that holds a harness key ─────────────
+
+  Refusal = Struct.new(:code, :body)
+
+  class KeyedApi < ScriptedApi
+    def initialize(answers, key: "KEY", **options)
+      super(answers, **options)
+      @key = key
+    end
+
+    def harness_key = @key
+
+    def http_json(method, path, body, bearer:)
+      answer = @answers[bearer]
+      return super unless answer.is_a?(Refusal)
+
+      @bearers << bearer
+      answer
+    end
+  end
+
+  def test_unit_call_presents_the_key_before_the_shared_token_where_the_board_takes_it
+    { [:post, "/api/v1/agent_activities"] => "narration", [:post, "/api/v1/agent_activities/close"] => "a close",
+      [:post, "/api/v1/agent_actions"] => "an action", [:get, "/api/v1/agent_activities/windows?session_id=s"] => "a read" }.each do |(verb, path), what|
+      api = KeyedApi.new({ "KEY" => 201 })
+      assert_equal "201", AgentApi.call(api, verb, path, {}).code, what
+      assert_equal %w[KEY], api.bearers, "#{what}: the key, and no shared token"
+    end
+  end
+
+  def test_unit_call_keeps_a_login_ahead_of_the_key
+    api = KeyedApi.new({ "LOGIN" => 201 })
+    AgentApi.call(api, :post, "/api/v1/agent_activities", {}, session: LOGIN)
+    assert_equal %w[LOGIN], api.bearers
+
+    ended = KeyedApi.new({ "LOGIN" => 401, "KEY" => 201 })
+    assert_equal "201", AgentApi.call(ended, :post, "/api/v1/agent_activities", {}, session: LOGIN).code
+    assert_equal %w[LOGIN KEY], ended.bearers, "an ended login falls to the key, not the shared token"
+  end
+
+  def test_unit_call_presents_the_shared_token_where_the_board_does_not_take_the_key
+    api = KeyedApi.new({ "SHARED" => 201 })
+    AgentApi.call(api, :post, "/api/v1/agent_activities/7/grade", {})
+    AgentApi.call(api, :get, "/api/v1/agent_messages")
+    assert_equal %w[SHARED SHARED], api.bearers
+  end
+
+  def test_unit_call_falls_back_to_the_shared_token_when_the_key_is_refused
+    forbidden = Refusal.new("403", JSON.generate("error_code" => "SESSION_FORBIDDEN"))
+    { "a revoked key" => Refusal.new("401", "{}"), "a board that predates the door" => forbidden }.each do |why, refusal|
+      api = KeyedApi.new({ "KEY" => refusal, "SHARED" => 201 })
+      assert_equal "201", AgentApi.call(api, :post, "/api/v1/agent_activities", {}).code, why
+      assert_equal %w[KEY SHARED], api.bearers, why
+    end
+
+    other = KeyedApi.new({ "KEY" => 422, "SHARED" => 201 })
+    assert_equal "422", AgentApi.call(other, :post, "/api/v1/agent_activities", {}).code, "any other answer is the key's"
+    assert_equal %w[KEY], other.bearers
+  end
+
+  def test_unit_degraded_mode_still_narrates_with_the_key
+    api = KeyedApi.new({ "KEY" => 201 }, token: nil)
+    assert_equal "201", AgentApi.call(api, :post, "/api/v1/agent_activities", {}).code
+    assert_equal %w[KEY], api.bearers
+  end
+
   def test_unit_call_in_degraded_mode_sends_nothing_without_a_login
     api = ScriptedApi.new({ "LOGIN" => 401 }, token: nil)
     assert_nil AgentApi.call(api, :post, "/x", {})

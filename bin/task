@@ -1305,7 +1305,11 @@ def api(method, path, body = nil, opts = {})
 
   # A move to `archived` is an admin transition: the desk's studio login can never
   # make it, so it is not offered.
-  session_token = auth && !archive_move?(method, path, body) ? desk_session_token(method, path) : nil
+  # opts[:login] is a login the caller found for this call (begin's owed note,
+  # posted from the primary with the login the desk just minted).
+  login = auth ? opts[:login].to_s.strip : ""
+  login = nil if login.empty?
+  session_token = login || (auth && !archive_move?(method, path, body) ? desk_session_token(method, path) : nil)
   res = if auth && !session_token
           # No login for this call: the machine's harness key where the board takes
           # it (a read, a task's create, its claim), else the shared token.
@@ -1322,8 +1326,10 @@ def api(method, path, body = nil, opts = {})
     # review login is forgotten instead (DeskSession.refused).
     reason = TaskBoard.parse_body(res)["error"] || "HTTP 401"
     warn!("note: this desk's agent session was refused (#{reason}); dropping it and retrying with the shared token")
-    DeskSession.refused(DeskSession.task_slug_for(method, path), root: desk_session_root,
-                                                                 harness_session_id: session_identity.first)
+    unless login
+      DeskSession.refused(DeskSession.task_slug_for(method, path), root: desk_session_root,
+                                                                   harness_session_id: session_identity.first)
+    end
     res = TaskBoard.request(method, path, base_url: BASE_URL, token: token, body: body,
                                           headers: desk_session_dropped_header(method, path), **deadline)
   end
@@ -2595,7 +2601,10 @@ end
 def record_scout_owed(slug, worktree_dir, launch = nil)
   body = { "task_slug" => slug, "activity_type" => IntentScout::NOTE_TYPE,
            "description" => IntentScout.owed_note(slug, worktree_dir, launch) }
-  api(:post, "/api/v1/activities", body, timeout: IntentScout.board_timeout)
+  # The note is a write on the task, which the harness key does not make: it
+  # presents the login begin just kept in the desk, else the shared token.
+  login = DeskSession.token_for(slug, root: worktree_dir, harness_session_id: session_identity.first)
+  api(:post, "/api/v1/activities", body, timeout: IntentScout.board_timeout, login: login)
 rescue StandardError, SystemExit => e
   # api() dies (SystemExit) on a refused write after printing why; the claim is
   # already recorded, so that refusal is a warning here and begin finishes.
