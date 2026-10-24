@@ -26,7 +26,7 @@
             title="Clear the fixture release"
             class="px-2 py-1 rounded-md text-xs font-medium bg-surface text-secondary border border-subtle hover:text-danger-ink disabled:opacity-40 transition">Reset</button>
   </div>
-  <script>
+  <script nonce="<%= content_security_policy_nonce %>">
     // x-data factory — defined inline before the deferred Alpine CDN runs.
     function devDeployTools() {
       return {

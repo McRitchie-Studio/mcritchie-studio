@@ -10,7 +10,7 @@
       name as it goes, focuses itself once no modal is open (sign-in and the
       first-name step come first), and TYPES example names into its
       placeholder until the user starts typing their own. %>
-  <script>
+  <script nonce="<%= content_security_policy_nonce %>">
     window.buildNameField = function (examples, initial, checkUrl) {
       return {
         name: initial || '', state: 'idle', reason: '', timer: null,

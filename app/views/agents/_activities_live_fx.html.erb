@@ -3,7 +3,7 @@
     (aa-activity-<id> / aa-action-<id>), briefly flashes the freshly-patched element after
     Turbo swaps it in. Only replaces flash (an UPDATE); create inserts (after/append) do
     not. Idempotent (guards against a double render). %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   (function () {
     if (window.__aaLiveFx) return;
     window.__aaLiveFx = true;

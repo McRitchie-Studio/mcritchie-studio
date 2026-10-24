@@ -23,7 +23,7 @@
     delegating the shared toast + count refresh back to the inner studioBoard via
     window.HubEngineBoard (board/engine_board). The FOCUS toggle is NOT here — it lives on the studioBoard chrome-state
     home (board_state), reached by the column labels. %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
 function contentBoardChrome() {
   return {
     _pending: {},

@@ -238,7 +238,7 @@
   <div class="footer">@TURF<span class="at">·</span>MONSTER</div>
 </div>
 
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   (function () {
     const photos = Array.from(document.querySelectorAll('[data-photo]'));
     if (!photos.length) return;

@@ -3,7 +3,7 @@
     Only touches textContent, so the server-rendered Tailwind classes survive. Runs
     on load and after Turbo navigations; the server output is an app-TZ fallback for
     the no-JS / pre-hydration case. %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   (function () {
     if (window.__deploymentRangeFmt) return;
     window.__deploymentRangeFmt = true;

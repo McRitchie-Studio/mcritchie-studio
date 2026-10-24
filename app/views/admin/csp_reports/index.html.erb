@@ -1,0 +1,63 @@
+<%# /admin/csp_reports: the hub's CSP violation reports (CspReport), top offenders first, for a window of 1, 7 or 30 days. The policy is report-only; this is the data the enforce flip is read from. %>
+<% content_for(:title, "CSP reports") %>
+<% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%b %-d, %-l:%M %p") } %>
+<section class="max-w-6xl mx-auto px-4 py-10 space-y-6" data-test="csp-reports-page">
+  <div>
+    <h1 class="text-3xl font-bold text-heading">CSP reports</h1>
+    <p class="text-secondary mt-2">
+      Violations of the hub's Content-Security-Policy, reported by browsers. The policy is report-only, so nothing is blocked yet.
+      It can be enforced once a 7-day window shows no genuine violation. Rows not seen for 30 days are deleted.
+    </p>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-2" data-test="csp-window">
+    <% Admin::CspReportsController::WINDOWS.each_key do |days| %>
+      <%= link_to "#{days} day#{'s' unless days == '1'}", admin_csp_reports_path(days: days),
+                  class: "btn btn-sm #{days == @window_key ? 'btn-primary' : 'btn-secondary'}",
+                  aria: { current: (days == @window_key ? "page" : nil) } %>
+    <% end %>
+    <span class="text-sm text-body ml-auto" data-test="csp-totals">
+      <%= pluralize(@distinct, "distinct violation") %> · <%= pluralize(@total, "report") %>
+    </span>
+  </div>
+
+  <% if @reports.empty? %>
+    <div class="card p-6 text-body" data-test="csp-empty">No violations reported in this window.</div>
+  <% else %>
+    <div class="card overflow-x-auto">
+      <table class="w-full text-sm" data-test="csp-table">
+        <thead class="text-left text-secondary">
+          <tr>
+            <th class="p-3 font-semibold">Count</th>
+            <th class="p-3 font-semibold">Directive</th>
+            <th class="p-3 font-semibold">Blocked</th>
+            <th class="p-3 font-semibold">Page</th>
+            <th class="p-3 font-semibold">Source</th>
+            <th class="p-3 font-semibold">First seen</th>
+            <th class="p-3 font-semibold">Last seen</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% @reports.each do |report| %>
+            <tr class="border-t border-subtle align-top" data-test="csp-row">
+              <td class="p-3 tabular-nums text-heading font-semibold"><%= number_with_delimiter(report.count) %></td>
+              <td class="p-3 font-mono text-xs text-body"><%= report.directive %></td>
+              <td class="p-3 font-mono text-xs text-body break-all">
+                <%= report.blocked_uri %>
+                <% if report.sample.present? %>
+                  <div class="text-muted mt-1" title="The first characters the browser blocked"><%= report.sample %></div>
+                <% end %>
+              </td>
+              <td class="p-3 font-mono text-xs text-body break-all"><%= report.document_path %></td>
+              <td class="p-3 font-mono text-xs text-muted break-all">
+                <%= [ report.source_file, report.line_number ].compact.join(":").presence || "—" %>
+              </td>
+              <td class="p-3 whitespace-nowrap text-muted"><%= stamp.(report.first_seen_at) %></td>
+              <td class="p-3 whitespace-nowrap text-muted" title="<%= report.user_agent %>"><%= stamp.(report.last_seen_at) %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% end %>
+</section>

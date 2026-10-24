@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_220000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1164,6 +1164,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_200000) do
     t.index ["slug"], name: "index_credential_vaults_on_slug", unique: true
     t.index ["workspace_domain"], name: "index_credential_vaults_on_workspace_domain"
     t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'reserved'::character varying::text, 'retired'::character varying::text])", name: "credential_vaults_status_known"
+  end
+
+  create_table "csp_reports", force: :cascade do |t|
+    t.string "blocked_uri", null: false
+    t.integer "count", default: 1, null: false
+    t.datetime "created_at", null: false
+    t.string "directive", null: false
+    t.string "disposition"
+    t.string "document_path", null: false
+    t.string "fingerprint", null: false
+    t.datetime "first_seen_at", null: false
+    t.datetime "last_seen_at", null: false
+    t.integer "line_number"
+    t.string "sample"
+    t.string "source_file"
+    t.datetime "updated_at", null: false
+    t.string "user_agent"
+    t.index ["fingerprint"], name: "index_csp_reports_on_fingerprint", unique: true
+    t.index ["last_seen_at"], name: "index_csp_reports_on_last_seen_at"
   end
 
   create_table "depth_chart_entries", force: :cascade do |t|

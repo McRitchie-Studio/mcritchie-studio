@@ -54,7 +54,7 @@
         the host when it renders, so this must come BEFORE the host. The sign-in
         card needs more than the default max-w-sm for its Google button and
         two-line title. %>
-    <script>
+    <script nonce="<%= content_security_policy_nonce %>">
       window.StudioModals = window.StudioModals || {};
       window.StudioModals.CARD_WIDTHS = Object.assign({}, window.StudioModals.CARD_WIDTHS || {}, { 'auth': 'max-w-md' });
     </script>
@@ -102,7 +102,7 @@
     <% if first_name_modal? %>
       <div id="onboarding-ask-first-name" hidden></div>
     <% end %>
-    <script>
+    <script nonce="<%= content_security_policy_nonce %>">
       (function () {
         if (window.__onboardingAskArmed) return;
         window.__onboardingAskArmed = true;
@@ -165,7 +165,7 @@
 
     <%# Magic-link request. Inline so it is always defined before the auth
         card's Alpine form or the check-inbox modal can call it. %>
-    <script>
+    <script nonce="<%= content_security_policy_nonce %>">
       // `returnTo` (optional) is where the emailed link lands after sign-in —
       // /build's sign-in modal passes its launch landing (/build/<token>/launch),
       // which finishes Build My App in the browser that pressed it and only

@@ -10,7 +10,7 @@
 <% content_for(:title, "Epic #{@epic.slug}") %>
 <%= render "tasks/release_ticker" %>
 <%= render "components/elapsed_label_script" %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   window.epicCards = window.epicCards || function () {
     const send = async (slug, method, body) => {
       const csrf = document.querySelector('meta[name="csrf-token"]')?.content;

@@ -44,7 +44,7 @@
   }
 </style>
 
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   document.addEventListener("mouseover", (e) => {
     const img = e.target.closest(".roster-img[data-hover-src]");
     if (!img) return;

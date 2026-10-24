@@ -1,5 +1,5 @@
 <%# The players and controls the cast page and the alt video page share: a clip row's lazy preview and prompt copy, the full-video player that plays clips back to back as if stitched, a stitch's progress poll, a clip's drop zone, and signedLinks, which keeps the alt video page's signed links fresh. Rendered once per page. %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   // The page's signed links, kept fresh. Every video, image and link the alt
   // video page shows is a signed URL that lapses SIGNED_URL_TTL after it was
   // signed, and the page is left open far longer than that. Each such element
@@ -163,7 +163,7 @@
     },
   };
 </script>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   // One clip row: load the signed clip only when asked, and copy its prompt.
   window.clipRow = function () {
     return {

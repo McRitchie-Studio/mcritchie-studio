@@ -1,5 +1,5 @@
 <% content_for :title, "#{@video.title} · Cast · McRitchie Studio" %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   // What both cast-card typeaheads share: a debounced search whose answer is
   // dropped once a newer search or a pick has superseded it, and the list keys.
   window.typeaheadSearch = function () {

@@ -4,7 +4,7 @@
     markers from server-rendered data-*, quick-grade + clear by fetch, live update via
     the aa:graded event); the activity row composes it with expand + mobile-detail
     state, the action row uses it bare and inherits the parent tbody's `open`. %>
-<script>
+<script nonce="<%= content_security_policy_nonce %>">
   // Shared inline-grade state for one gradable row (an activity or an action). idField
   // ("agent_activity_id" | "agent_action_id") comes from the element's data so the same
   // code services both; onGraded only reacts to the aa:graded event whose payload
