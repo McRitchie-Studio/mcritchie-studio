@@ -122,7 +122,7 @@ reaches theirs.
   (`lsof -tiTCP:<port> -sTCP:LISTEN`) or its pidfile (`tmp/pids/agent-web.pid`,
   `tmp/pids/tm-web.pid`, `tmp/pids/tm-sidekiq.pid`), then read only
   `ps -o pid,etime,comm -p <pid>`; `pgrep -f` (PIDs only) when you must match. Desk
-  servers start with an allow-listed environment
+  servers, `bin/dev`, the primaries and the lease renewers start with an allow-listed environment
   ([`credentials.md`](credentials.md#contract)), but a process you did not start may
   not have.
 - **`vm_stat` "Pages free" and swap usage look alarming on a healthy Mac.** Read

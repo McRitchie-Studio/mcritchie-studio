@@ -109,14 +109,24 @@ heroku config --json --app turf-monster-mainnet | jq -r '.["MANAGED_WALLET_ENCRY
 ```
 Rehearse on a one-off dyno, app untouched. Pass only on header `ROTATION`, the counts
 `total: N  would-migrate: N  already-new: 0  failed: 0`, and a last line `DRY RUN CLEAN`. The two
-keys reach the dyno on its stdin and are read there, so neither is an argument of the local
-`heroku` process or of the dyno's command:
+keys reach the dyno on its stdin and `read` puts them straight into the variables the task reads,
+so neither is an argument of the local `heroku` process or of the dyno's command:
 ```bash
 : "${NEW:?NEW is not set}" && : "${OLD:?OLD is not set}" && [ "$NEW" != "$OLD" ] &&
 printf '%s\n%s\n' "$NEW" "$OLD" |
 heroku run --no-tty --exit-code --app turf-monster-mainnet -- bash -c \
-  'set -e; read -r K_NEW && read -r K_OLD && export DRY_RUN=1 MANAGED_WALLET_ENCRYPTION_KEY="$K_NEW" MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS="$K_OLD" && exec bin/rails solana:reencrypt_managed_wallets'
+  'set -e; read -r MANAGED_WALLET_ENCRYPTION_KEY && read -r MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS && export DRY_RUN=1 MANAGED_WALLET_ENCRYPTION_KEY MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS && exec bin/rails solana:reencrypt_managed_wallets'
 ```
+**No `$` in the dyno's command.** `heroku run` joins its arguments into one string, wraps it in
+double quotes and hands it to the dyno's shell, which expands every `$` BEFORE your script runs.
+Rehearsed on `turf-monster-qa` 2026-10-24 with heroku/11.12.0 and fake values: stdin arrives
+byte-exact, but the earlier form, which read into a scratch variable `K_NEW` and exported the key
+by expanding it, exported an EMPTY key: the expansion ran at launch, before `read`. The form above, with
+`read` naming the variable and a bare `export NAME`, passed: a stand-in
+(`ROTATION_REHEARSAL=1` plus two fake keys) printed `["1", true, true]` from `bin/rails runner`,
+the command `heroku run` printed carried no value, and the app's config never held
+`ROTATION_REHEARSAL` (checked before and after; a one-off dyno's env dies with it).
+`test/docs/heroku_run_quoting_guard_test.rb` refuses a `$` in a `heroku run … bash -c` script.
 File both (replaces 4.2): add field `previous encryption key` = `$OLD` to `agent.managed_wallet`
 first, then replace `encryption key`; read both back. Write the app in ONE PATCH, so one release
 carries both keys (replaces 4.4); from here `$NEW` never leaves the app:

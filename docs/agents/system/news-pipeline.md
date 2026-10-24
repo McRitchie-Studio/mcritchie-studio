@@ -89,14 +89,20 @@ bin/rails news:intake    # Fetch latest Schefter tweet
 
 ### X (Twitter) API — Bearer Token
 
-1. **1Password**: Stored in `agent.turf.x` in the agent vault
-   ```bash
-   op item get zz3uigmkrwjlnnksst33butc4e --vault txqp6ijdo3ujsfhsfzdj5h5dzq --field "Bearer Token" --reveal
-   ```
+1. **1Password**: stored in `agent.turf.x` (field `Bearer Token`) in the
+   `studio-agents` vault. It goes straight from the vault into its consumer
+   below and is never printed: no `op item get --reveal` to a terminal, whose
+   output lands in a transcript.
 
-2. **Local .env**: Add to the McRitchie Studio app-local `.env`:
-   ```
-   X_BEARER_TOKEN=<bearer-token-from-1password>
+2. **Local .env**: append it to the McRitchie Studio app-local `.env` (mode
+   `600`) in one pipe, the value never in a shell variable, an argument or the
+   screen. The Ruby refuses an empty read, which is what a failed `op read`
+   produces:
+   ```bash
+   op read 'op://studio-agents/agent.turf.x/Bearer Token' |
+     ruby -e 'v = $stdin.read.chomp; abort "refusing: empty read, nothing written" if v.empty?
+              File.open(ARGV[0], "a", 0o600) { |f| f.puts "X_BEARER_TOKEN=" + v }' \
+       /Users/alex/projects/mcritchie-studio/.env
    ```
 
 3. **Heroku** (production): set the config var from the vault, the value on stdin:
@@ -123,18 +129,11 @@ bin/rails db:seed        # Creates 7 sample news articles across all stages
 ```
 
 ### 2. X API Credentials
-```bash
-# Fetch bearer token from 1Password
-export OP_SERVICE_ACCOUNT_TOKEN='<token-from-zshrc>'
-X_TOKEN=$(op item get zz3uigmkrwjlnnksst33butc4e \
-  --vault txqp6ijdo3ujsfhsfzdj5h5dzq \
-  --field "Bearer Token" --reveal)
 
-# Add to app-local .env
-echo "X_BEARER_TOKEN=$X_TOKEN" >> /Users/alex/projects/mcritchie-studio/.env
-```
-
-Or manually: copy the Bearer Token from 1Password and paste into `.env`.
+`source ~/.zprofile` (it exports the 1Password service-account token; never
+paste a token into a command), then run the one-pipe append in
+[Credentials Setup](#x-twitter-api--bearer-token) step 2. Or copy the Bearer
+Token from the 1Password app and paste it into `.env` by hand.
 
 ### 3. Verify Intake
 ```bash
