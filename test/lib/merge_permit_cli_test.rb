@@ -15,7 +15,7 @@ class MergePermitCliTest < Minitest::Test
   HEAD = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
   LATER = "ffffffffffffffffffffffffffffffffffffffff"
   PR = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/4242"
-  SOULS = %w[xan carl shannon jasper steffon avi pokemon].freeze
+  SOULS = %w[ray carl shannon jasper steffon avi pokemon].freeze
 
   class FakeBoard
     attr_accessor :task_record, :reports, :task_error, :reports_error
@@ -61,7 +61,7 @@ class MergePermitCliTest < Minitest::Test
     @board = FakeBoard.new
     @board.task_record = { "slug" => "tidy-the-sop", "metadata" => { "devops" => { "pr_url" => PR, "built_by" => "pokemon",
                                                                                    "builders" => %w[pokemon] } } }
-    @board.reports = [report("merge-ready", "xan", HEAD, "2026-10-08T10:00:00Z", 2)]
+    @board.reports = [report("merge-ready", "ray", HEAD, "2026-10-08T10:00:00Z", 2)]
     @github = FakeGithub.new
     @github.heads = [HEAD]
     @github.file_list = %w[docs/agents/modules/focus-session.md test/docs/focus_session_docs_test.rb]
@@ -79,12 +79,12 @@ class MergePermitCliTest < Minitest::Test
     MergePermitCli.new(board: @board, github: @github, souls: SOULS, out: @out, err: @err).run(argv)
   end
 
-  def as_xan(head = HEAD) = run_cli("tidy-the-sop", "--agent", "xan", "--head", head)
+  def as_ray(head = HEAD) = run_cli("tidy-the-sop", "--agent", "ray", "--head", head)
 
   def test_permits_the_documentation_seat_and_prints_the_pinned_merge
-    assert_equal MergePermitCli::PERMIT, as_xan
+    assert_equal MergePermitCli::PERMIT, as_ray
 
-    assert_match(/PERMIT tidy-the-sop: xan may merge: the diff measures docs at a1b2c3d/, @out.string)
+    assert_match(/PERMIT tidy-the-sop: ray may merge: the diff measures docs at a1b2c3d/, @out.string)
     assert_includes @out.string, "gh pr merge #{PR} --merge --match-head-commit #{HEAD}"
     assert_empty @err.string
   end
@@ -92,8 +92,8 @@ class MergePermitCliTest < Minitest::Test
   def test_refuses_a_code_file_with_the_rule_and_who_merges
     @github.file_list = %w[docs/a.md bin/submit]
 
-    assert_equal MergePermitCli::REFUSED, as_xan
-    assert_match(/REFUSED tidy-the-sop: the documentation seat \(xan\) merges docs-shape PRs only/, @err.string)
+    assert_equal MergePermitCli::REFUSED, as_ray
+    assert_match(/REFUSED tidy-the-sop: the documentation seat \(ray\) merges docs-shape PRs only/, @err.string)
     assert_match(/measures mixed .*bin\/submit.*Carl, the standing primary, merges it/, @err.string)
     refute_includes @out.string, "gh pr merge", "a refusal must never print a merge to run"
     refute_match(/\.rb:\d+:in /, @err.string, "a refusal is a sentence, never a backtrace")
@@ -105,12 +105,12 @@ class MergePermitCliTest < Minitest::Test
     @board.task_record["shape"] = "docs"
     @github.file_list = %w[app/models/task.rb]
 
-    assert_equal MergePermitCli::REFUSED, as_xan
+    assert_equal MergePermitCli::REFUSED, as_ray
     assert_match(/measures code/, @err.string)
   end
 
   def test_the_head_is_read_on_both_sides_of_the_file_list
-    as_xan
+    as_ray
 
     assert_equal %i[commit_text head files head], @github.calls
   end
@@ -118,29 +118,29 @@ class MergePermitCliTest < Minitest::Test
   def test_refuses_when_the_head_moves_during_the_file_read
     @github.heads = [HEAD, LATER]
 
-    assert_equal MergePermitCli::REFUSED, as_xan
+    assert_equal MergePermitCli::REFUSED, as_ray
     assert_match(/not the validated a1b2c3d/, @err.string)
   end
 
   def test_refuses_when_the_head_moved_after_the_verdict
     @github.heads = [LATER]
 
-    assert_equal MergePermitCli::REFUSED, as_xan
+    assert_equal MergePermitCli::REFUSED, as_ray
     assert_match(/head is fffffff, not the validated a1b2c3d/, @err.string)
   end
 
   def test_refuses_the_seat_named_by_a_commit_on_the_pr
-    # No stamp names her: only the PR's own commits do.
-    @github.commits = "pokemon@mcritchie.studio\nTidy\n\nCo-Authored-By: Xan <xan@mcritchie.studio>\n"
+    # No stamp names him: only the PR's own commits do.
+    @github.commits = "pokemon@mcritchie.studio\nTidy\n\nCo-Authored-By: Ritch <xan@mcritchie.studio>\n"
 
-    assert_equal MergePermitCli::REFUSED, as_xan
-    assert_match(/xan is one of this PR's authors \(pokemon, xan\)/, @err.string)
+    assert_equal MergePermitCli::REFUSED, as_ray
+    assert_match(/ray is one of this PR's authors \(pokemon, ray\)/, @err.string)
   end
 
   def test_refuses_the_seat_named_by_a_fix_forward_or_a_retired_stamp
     @board.task_record["metadata"]["devops"]["fix_forward"] = %w[alex]
 
-    assert_equal MergePermitCli::REFUSED, as_xan
+    assert_equal MergePermitCli::REFUSED, as_ray
     assert_match(/never merges its own work/, @err.string)
   end
 
@@ -148,30 +148,30 @@ class MergePermitCliTest < Minitest::Test
     @board.task_record["metadata"]["devops"] = { "pr_url" => PR, "built_by" => "sess-123", "builders" => [] }
     @github.commits = "amcritchie@gmail.com\nteam@mcritchie.studio\nTidy\n"
 
-    assert_equal MergePermitCli::REFUSED, as_xan
+    assert_equal MergePermitCli::REFUSED, as_ray
     assert_match(/author set could not be established/, @err.string)
   end
 
   def test_the_latest_scout_report_is_the_verdict
-    @board.reports = [report("merge-ready", "xan", HEAD, "2026-10-08T10:00:00Z", 2),
+    @board.reports = [report("merge-ready", "ray", HEAD, "2026-10-08T10:00:00Z", 2),
                       report("request-changes", "steffon", HEAD, "2026-10-08T11:00:00Z", 3),
                       { "id" => 9, "agent_slug" => "pokemon", "created_at" => "2026-10-08T12:00:00Z", "metadata" => {} }]
 
-    assert_equal MergePermitCli::REFUSED, as_xan
+    assert_equal MergePermitCli::REFUSED, as_ray
     assert_match(/latest verdict is a request-changes report, not merge-ready/, @err.string)
   end
 
   def test_refuses_a_verdict_recorded_without_a_head
-    @board.reports = [report("merge-ready", "xan", nil, "2026-10-08T10:00:00Z", 2)]
+    @board.reports = [report("merge-ready", "ray", nil, "2026-10-08T10:00:00Z", 2)]
 
-    assert_equal MergePermitCli::REFUSED, as_xan
+    assert_equal MergePermitCli::REFUSED, as_ray
     assert_match(/names no head; record it again with --head a1b2c3d/, @err.string)
   end
 
   def test_refuses_a_card_with_no_scout_report
     @board.reports = []
 
-    assert_equal MergePermitCli::REFUSED, as_xan
+    assert_equal MergePermitCli::REFUSED, as_ray
     assert_match(/latest verdict is no scout report/, @err.string)
   end
 
@@ -181,7 +181,7 @@ class MergePermitCliTest < Minitest::Test
       setup
       @github.errors[read] = "HTTP 401: Bad credentials"
 
-      assert_equal MergePermitCli::NO_PERMIT, as_xan, "a failed #{read} read"
+      assert_equal MergePermitCli::NO_PERMIT, as_ray, "a failed #{read} read"
       assert_match(sentence, @err.string)
       assert_match(/NO PERMIT tidy-the-sop: .*Bad credentials.*do not merge/, @err.string)
       assert_empty @out.string
@@ -190,25 +190,25 @@ class MergePermitCliTest < Minitest::Test
 
   def test_an_unreadable_board_is_no_permit
     @board.task_error = "task tidy-the-sop failed -> HTTP 502"
-    assert_equal MergePermitCli::NO_PERMIT, as_xan
+    assert_equal MergePermitCli::NO_PERMIT, as_ray
 
     setup
     @board.reports_error = "activities failed -> HTTP 502"
-    assert_equal MergePermitCli::NO_PERMIT, as_xan
+    assert_equal MergePermitCli::NO_PERMIT, as_ray
     assert_match(/could not read the card's scout reports/, @err.string)
   end
 
   def test_a_raising_reader_is_a_sentence_not_a_backtrace
     def @github.files(_url) = raise(Errno::ENOENT, "gh")
 
-    assert_equal MergePermitCli::NO_PERMIT, as_xan
+    assert_equal MergePermitCli::NO_PERMIT, as_ray
     assert_match(/NO PERMIT tidy-the-sop: Errno::ENOENT/, @err.string)
   end
 
   def test_a_task_with_no_pr_is_no_permit
     @board.task_record["metadata"]["devops"].delete("pr_url")
 
-    assert_equal MergePermitCli::NO_PERMIT, as_xan
+    assert_equal MergePermitCli::NO_PERMIT, as_ray
     assert_match(/records no PR/, @err.string)
   end
 
@@ -224,7 +224,7 @@ class MergePermitCliTest < Minitest::Test
   end
 
   def test_json_carries_the_code_and_the_merge
-    assert_equal MergePermitCli::PERMIT, run_cli("tidy-the-sop", "--agent", "xan", "--head", HEAD, "--json")
+    assert_equal MergePermitCli::PERMIT, run_cli("tidy-the-sop", "--agent", "ray", "--head", HEAD, "--json")
     body = JSON.parse(@out.string)
 
     assert_equal [true, "docs_seat"], body.values_at("permitted", "code")
@@ -232,9 +232,9 @@ class MergePermitCliTest < Minitest::Test
   end
 
   def test_usage_errors_refuse
-    assert_equal MergePermitCli::REFUSED, run_cli("--agent", "xan")
+    assert_equal MergePermitCli::REFUSED, run_cli("--agent", "ray")
     assert_equal MergePermitCli::REFUSED, run_cli("tidy-the-sop")
-    assert_equal MergePermitCli::REFUSED, run_cli("tidy-the-sop", "--agent", "xan", "--nope")
+    assert_equal MergePermitCli::REFUSED, run_cli("tidy-the-sop", "--agent", "ray", "--nope")
     assert_match(/usage: bin\/merge-permit/, @err.string)
   end
 

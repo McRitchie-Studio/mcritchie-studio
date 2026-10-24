@@ -5,8 +5,9 @@ const { watchPageErrors, openDeploySidebar } = require("./helpers");
 // designed / building / submitted.
 //
 // _deploy_board.html.erb collapses the three upstream lanes of the six-lane
-// Deployments board below 1400px unless "All Stages" is on:
-//   :class="showAllCols ? '' : 'max-[1399px]:hidden'"
+// Deployments board while the board is narrower than six lanes (83rem, a container
+// query on the lane row) unless "All Stages" is on:
+//   :class="showAllCols ? '' : '@max-[83rem]/lanes:hidden'"
 // Playwright configures no viewport, so Chromium's 1280x720 default hid every card
 // these specs wait on. The card is in the DOM the whole time and `toBeVisible` reports
 // "hidden", which reads like a broken spec rather than a layout rule — that is why

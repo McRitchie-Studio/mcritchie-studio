@@ -41,7 +41,7 @@ Alex starts this SOP by saying only `agent-dispatcher`. Run this default, from
      with `bin/agent-inbox show <id>`);
    - the time of the last completed answer (the log's last `completed #N` line).
 
-   Then ask Alex to post `@Xan what is building?` in `lobster-tank` (Verify
+   Then ask Alex to post `@Ritch what is building?` in `lobster-tank` (Verify
    step 2) and to tell you when it is in. When he says it is in, show that
    message with `bin/agent-inbox show <id>`: the ingest path, claim-to-completion
    time, reply link and notes saved.
@@ -83,13 +83,16 @@ The dispatcher will take it on its next poll; a hand claim only competes with it
 | Its plist | Rendered from `config/launchd/studio.mcritchie.agent-dispatcher.plist` into `~/Library/LaunchAgents/` by `bin/dispatcher install` |
 | Its log | `~/Library/Logs/agent-dispatcher.log`: ids and states only, never message text. A raised run adds its error class, its first backtrace line, and its error message's first line with every quoted span redacted, capped at 200 characters |
 | The answer path | `AgentMailbox::Responder` in `bin/lib/agent_mailbox.rb`, shared with `bin/heartbeat` |
-| "typing…" while it answers | Each live run asks `POST /api/v1/agent_messages/:id/typing` at its start and every 7 seconds, up to 3 minutes; the hub's `AgentMessageTypingJob` shows typing as the bot that will reply ([loop doc](../../../system/agent-message-loop.md), "Typing") |
+| "typing…" while it answers | Each live run asks `POST /api/v1/agent_messages/:id/typing` at its start and every 7 seconds, up to 3 minutes; the hub's `AgentMessageTypingJob` shows typing as the bot that will reply ([loop doc](../../../system/agent-message-loop.md), "Typing"). A web-chat run streams (`stream-json`, partial messages) so its pulse says `thinking` until the answer's text starts, then `typing`, sent at once on the change ([loop doc](../../../system/agent-message-loop.md), "Web chat") |
 | Its ping and the alerts | `POST /api/v1/agent_dispatchers/ping`; `AgentDispatcherAlertJob` every minute on the worker dyno (`config/recurring.yml`) |
 | Where alerts post | `discord.ops_channel_id` in `config/agent_routes.yml` (`lobster-tank` today), as the shared bot |
 | What you watch | `/admin/agent_messages`: the dispatcher row (live, paused, silent) above the message list |
 
 **Billing.** Claude runs as `claude -p --safe-mode --tools "" --output-format json`
-under Alex's claude.ai login. Every child gets an allow-listed environment
+under Alex's claude.ai login (a web chat message with images or PDFs runs the same
+command with `--output-format stream-json --input-format stream-json --verbose`, and
+the Mac needs ImageMagick's `magick` on the launch agent's PATH to shrink and strip
+the images: `docs/agents/system/agent-message-loop.md`, "Files"). Every child gets an allow-listed environment
 (`AgentMailbox::CHILD_ENV_ALLOW`: the basics and the agent board's own names; no
 Heroku credential, since no action reads Heroku), so no API key, auth token, base URL or
 Bedrock/Vertex switch can reach Claude, including ones Anthropic adds later.
@@ -136,7 +139,7 @@ tail -n 20 ~/Library/Logs/agent-dispatcher.log
 ```
 
 The log's first line names the worker, the souls and the version:
-`start dispatcher-<host>-<pid>-<rand> serving avi,xan,turf_monster on discord (cap 5, version <sha>, code <digest>)`.
+`start dispatcher-<host>-<pid>-<rand> serving avi,ray,turf_monster on discord (cap 5, version <sha>, code <digest>)`.
 
 `bin/dispatcher install` is safe to re-run: it unloads the running copy first.
 If it prints `launchctl bootstrap failed`, run it again: the unload of the old copy
@@ -166,7 +169,8 @@ A release needs no step from anyone, two mechanisms between them:
   restart it, and a routing change in `agent_routes.yml` does.
 - **The ship reinstalls it when the plist template changes.** After the production
   ship restores the primaries and syncs the agent docs, it runs the hub primary's
-  `bin/dispatcher install --if-changed` (`bin/release.rb#refresh_dispatcher_service`).
+  `bin/dispatcher install --if-changed` (the dispatcher's `refresh` in
+  `config/local_services.yml`, run by `bin/release.rb#refresh_local_services`).
   With no plist in `~/Library/LaunchAgents` it does nothing. Otherwise it renders
   the new template with the installed plist's own ruby and PATH (the ship's
   environment is not the shell that installed it) and reinstalls only when that
@@ -245,32 +249,54 @@ gateway is failing before READY, so read the worker log's
 | **Reply from the wrong bot**: a soul with its own bot answered through the shared bot, signed `**Soul** ·` | `bin/agent-inbox show <id>`: a `reply_bot_refused` event names the var (`DISCORD_BOT_TOKEN_<SOUL>`) and Discord's answer, with an `ErrorLog` row targeted at the message; `reply_posted` reads `via: shared_bot`. No `reply_bot_refused` and `via: shared_bot` means the var is unset | 401: the token is wrong or reset; re-file it and set the var again. 403: the bot is not in that guild or lacks a channel permission; invite it with the four permissions. Both are Steffon's [`discord-bot-setup`](discord-bot-setup.md), Part 1b. Nothing was lost: the shared bot posted the reply |
 | **No typing**: an answer posts but nobody saw "typing…" | The log: `typing for #N refused: …` (the board refused the ask; the answer went on) or `typing for #N stopped (<why>)`. The message's timeline: `typing_bot_refused` means the soul's bot could not type and the shared bot did. No log line and no event: the hub's worker log carries `typing pulse for message N dropped: <Class>` (Discord refused or rate-limited it) | Typing is best effort and never holds an answer. A `typing_bot_refused` is the same fix as **Reply from the wrong bot**. An answer over 3 minutes stops typing at the cap by design |
 | **Typing, then no reply**: "typing…" showed and faded, and no answer came | The log after `claimed #N`: `releasing #N: …` (the run failed, raised, hit a usage limit or a signed-out CLI) or `completed #N` (then the reply job: `bin/agent-inbox show <id>`, `reply_failed` or `reply_skipped`) | Typing stops with the run by design and fades within 10 seconds. Fix the cause by its own row: **Claude failing**, **Usage pause**, **Signed out**, **Answer run raising**, or **Reply from the wrong bot** |
-| **Reading one answer**: why did it say that? | `bin/agent-inbox show <id>`: `session`, `resume`, `run`, `reasoning` | Run the printed `cd ~/.agents/mailbox/<soul> && claude --resume <id>` on the Mac that answered. It is for reading only; the answer path never resumes |
+| **Reading one answer**: why did it say that? | `bin/agent-inbox show <id>`: `session`, `resume`, `run`, `reasoning` | Run the printed `cd ~/.agents/mailbox/<soul> && claude --resume <id>` on the Mac that answered. It is for reading only. The answer path resumes only a warm domain's session, never an answer's own |
 | **Unrouted**: a reply to a kept message that named no soul | The row reads `unrouted` | Nothing: it addressed no agent. A message that addresses nobody is not stored at all. Routing changes go through `discord-bot-setup` |
 | **Held**: someone asked why an agent did not answer, or the row reads `held` | `/admin/agent_messages?status=held` or `bin/agent-inbox list --status held`; the row's event says why: `held`, the owner-only guard (the sender's role is not one `config/agent_answerers.yml` answers, owner only today), or `confirm_refused`, a non-owner's `go`, `no` or `change:` on an open proposal (only the owner confirms). No claim will ever take either ([loop doc](../../../system/agent-message-loop.md), "Held") | Leave it, unless Alex wants it answered. To answer that one message: **Release and answer** on its page (admin), or `bin/rails agent_people:release MESSAGE=<id>` on the hub. To answer a sender for good: only if Alex says so, give them an answered role (the **Wrong audience** row); to answer a whole role, add it to the yml and ship it. Never flip the status by hand |
 
-## Standby on a second machine (designed, not built)
+## Standby on a second machine
 
-Phase 7 plans a standby dispatcher on Alex's work machine that takes over a
-domain's warm session when this Mac's lease lapses
-([loop doc](../../../system/agent-message-loop.md), "Warm sessions (next step,
-not built)"). **None of it runs yet.** Until it ships, the rule above stands:
-one dispatcher, and never a second copy. When it ships, the setup is:
+A standby dispatcher on Alex's work machine takes over a warm domain's session
+when this Mac's lease lapses, and hands it back between turns
+([loop doc](../../../system/agent-message-loop.md), "Warm sessions"). The code
+ships; **nothing is registered**, so today there is one dispatcher and the rule
+above stands: never a second copy unless it is registered as a standby first.
+It needs a domain with `warm_session: true` (a reviewed config change) and Alex's
+OK to install on the work machine. The setup:
 
 1. On the work machine: clone the hub to `/Users/<user>/projects/mcritchie-studio`,
    `bundle install`, and sign the `claude` CLI in to the same claude.ai account
    (`claude` once, interactively). The dispatcher bills that subscription; it
    carries no API key.
 2. Give it board auth the way the agent CLI gets it (`bin/lib/agent_api.rb`),
-   with no new secret.
-3. Register it as `standby` for the warm domains on the board (admin, on
-   `/admin/agent_messages`). A standby claims nothing while the primary pings.
-4. `bin/dispatcher install` there, as on this Mac. Verify with
-   `bin/dispatcher status` on both: the primary `live`, the standby `standby`.
-5. Test a failover: `bin/dispatcher uninstall` on the primary, post `@Avi ping`
-   in `lobster-tank`, and expect the standby to answer within about 5 minutes
-   (the lease's lapse) from the last checkpoint. Reinstall the primary; it
-   takes the session back only after the standby's turn completes.
+   with no new secret. That token alone reads no transcript: each lease call
+   also carries the lease key the board answers the acquire that took it, held
+   only in the dispatcher's memory, so a dispatcher that crashed holding a lease waits out its own
+   old lease (5 minutes) before it is warm again.
+3. Let it ping once so the board knows its host: `bin/dispatcher run` in a
+   terminal for a minute, then Ctrl-C. Until step 4 it is a primary, so do this
+   while this Mac's dispatcher is paused or stopped, never alongside it.
+4. Register it on the hub (its short hostname is the `host=` that
+   `bin/rails agent_dispatchers:list` shows):
+   `heroku run -a mcritchie-studio --no-tty -- bin/rails agent_dispatchers:role HOST=<host> ROLE=standby DOMAINS=mcritchie_studio`.
+   Only warm domains are accepted. `ROLE=primary` undoes it.
+5. `bin/dispatcher install` there, as on this Mac. Its log reads `board role:
+   standby`, and it claims nothing while this Mac pings.
+6. Test a failover: `bin/dispatcher uninstall` on the primary (its last ping says
+   `stopping`, so the standby starts at once), post `@Avi ping` in
+   `lobster-tank`, and expect the standby to answer, its log reading
+   `warm mcritchie_studio: restored the checkpoint of …`. Reinstall the primary;
+   the standby releases the lease after its turn (`lease released (the primary is
+   back)`), and the primary's next turn restores the standby's checkpoint. The
+   standby's log then reads `removed N local transcript(s)`: it keeps no copy
+   of the owner's conversation once it hands back.
+   `bin/rails agent_dispatchers:sessions` shows the holder at each step.
+
+| Symptom | Look | Fix |
+|---------|------|-----|
+| The standby answers while the primary is up | `agent_dispatchers:list`: is the primary's row `role=primary` and pinging? | A primary registered as standby by mistake: `ROLE=primary` for its host |
+| Warm answers fell back to one run per message | The log: `warm <domain>: another dispatcher holds the lease` or `lease released (<why>)` | Expected during a handback or a failed turn. A lease stuck on a dead holder lapses in 5 minutes |
+| `CHECKPOINT FAILED` in the log, or `FAULT checkpoint_failed` in `agent_dispatchers:sessions` | ErrorLog (`warm session <domain>`), then storage (R2) health | The answer went out; the session falls back to the board's last good checkpoint and the next good checkpoint clears the fault. Repeated faults mean storage is refusing uploads |
+| `the checkpoint would not restore`, or `FAULT restore_failed` | `agent_dispatchers:sessions`: checkpoint size, head and the fault; ErrorLog | Each warm turn falls back to one run per message until it is fixed. Start the domain fresh: `bin/rails agent_dispatchers:reset_session DOMAIN=<key>` on the hub (it drops the head, the checkpoint and the lease; the next turn starts a new session) |
 
 ## Uninstall
 
@@ -285,5 +311,13 @@ the stop is deliberate.
 
 This SOP runs the service. It does not change routing (that is
 [`discord-bot-setup`](discord-bot-setup.md)), give a soul more actions, or
-answer messages itself. `bin/heartbeat <soul> --channel discord` stays the manual
-form of the same answer path, for a test or a one-off.
+answer messages itself. The service serves every channel, Discord, email and
+the web chat (`bin/dispatcher run --channel all`, the default;
+`--channel discord|email|web` narrows it), so an email to a CTO on team@ and a
+message in a CTO's chat on McRitchie Studio are answered by the same loop
+([`agent-message-loop.md`](../../../system/agent-message-loop.md), "Email" and
+"Web chat"). It serves the souls `config/agent_routes.yml` routes, the `web:`
+block's included (Tyrion is served for the web chat only). A running service
+picks up a routes change by itself on the next ship; do not reinstall it for one.
+`bin/heartbeat <soul> --channel discord|email|web` stays the manual form of the same
+answer path, for a test or a one-off.

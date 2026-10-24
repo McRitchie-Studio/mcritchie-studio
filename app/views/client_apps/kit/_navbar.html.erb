@@ -1,0 +1,47 @@
+<%# The Studio navbar on a client app (docs/agents/system/client-app-host.md,
+    "The Studio template"). The shared host injects it after every page's
+    <body> at serve time; ClientApps::StudioKit renders it once per app and
+    kit version.
+
+    It is the engine navbar's markup contract (layouts/_navbar in studio-engine:
+    nav-shell, nav-row, nav-logo-link, nav-logo, nav-title split into the name's
+    leading words and its last word in the primary colour), drawn statically:
+    no session, no hub route, no Alpine. The engine's own theme-toggle partial is
+    rendered into it with its Alpine bindings rewritten to the kit's data hooks
+    (StudioKit.kit_toggle), so its icons are the engine's. A portrait that
+    follows the colour scheme is drawn once per theme (StudioKit::Mark), so the
+    mark follows the kit's toggle, not the device.
+
+    Locals: identity (ClientApps::StudioKit::Identity), toggle (SafeBuffer). %>
+<header class="nav-shell" data-studio-navbar>
+  <div class="nav-row flex items-center">
+    <div class="flex-1 min-w-0 px-4">
+      <a href="/" class="nav-logo-link inline-flex items-center gap-3 min-w-0" aria-label="<%= identity.name %> home">
+        <% if identity.mark_dark_uri %>
+          <img src="<%= identity.mark_light_uri %>" alt="" class="nav-logo rounded-full shadow-lg" data-studio-kit-when="light">
+          <img src="<%= identity.mark_dark_uri %>" alt="" class="nav-logo rounded-full shadow-lg" data-studio-kit-when="dark">
+        <% elsif identity.mark_light_uri %>
+          <img src="<%= identity.mark_light_uri %>" alt="" class="nav-logo rounded-full shadow-lg">
+        <% end %>
+        <div class="nav-title font-extrabold text-heading tracking-tight min-w-0"><% if identity.name_lead.present? %><span class="truncate"><%= identity.name_lead %></span><% end %><span class="text-primary truncate"><%= identity.name_last %></span></div>
+      </a>
+    </div>
+    <div class="flex flex-shrink-0 items-center gap-1 pr-3 md:pr-4">
+      <%= toggle %>
+      <button type="button" data-studio-kit-icon-button data-studio-kit-menu-toggle aria-controls="studio-kit-menu"
+              aria-expanded="false" aria-haspopup="true" aria-label="Open the menu" title="Menu">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+        </svg>
+      </button>
+    </div>
+  </div>
+  <nav id="studio-kit-menu" data-studio-menu aria-label="<%= identity.name %> menu" hidden>
+    <ul>
+      <li><a href="/"><%= identity.name %></a></li>
+      <li><a href="<%= ClientApps::StudioKit::STUDIO_URL %>/build" target="_blank" rel="noopener">Build your own app</a></li>
+      <li><a href="<%= ClientApps::StudioKit::STUDIO_URL %>" target="_blank" rel="noopener">McRitchie Studio</a></li>
+    </ul>
+    <p class="studio-menu-note">Built with McRitchie Studio</p>
+  </nav>
+</header>

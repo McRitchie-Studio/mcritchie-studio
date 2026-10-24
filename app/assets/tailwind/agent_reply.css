@@ -1,0 +1,70 @@
+/* The agent chat's reading flow (agent_chats/_turn, build/_turn; task
+   build-chat-reading-flow). Unlayered, like agent_shell.css, so it beats the
+   utilities the partials carry.
+
+   1. An agent's words are plain text on the page: no bubble, no border, no name
+      box, the thread's full width, set to read (.agent-reply). The visitor keeps
+      the right-hand bubble, and the bubble is kept for what asks for a tap: the
+      intake cards (.agent-action, build/_turn), the point of action.
+   2. A NEW answer types itself in (app/javascript/agent_reveal.js): while it does,
+      its turn carries data-agent-revealing and what follows the words (a card)
+      waits, then fades in once the last word is down.
+   Light and dark read the theme's own tokens. Under prefers-reduced-motion the
+   script shows the answer at once and the fade is off. */
+
+.agent-reply {
+  color: var(--color-text-body);
+}
+
+.agent-reply .agent-reply-body {
+  font-size: 0.9375rem;
+  line-height: 1.7;
+  max-width: 68ch;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 640px) {
+  .agent-reply .agent-reply-body { font-size: 1rem; }
+}
+
+.agent-reply .agent-reply-body > :first-child { margin-top: 0; }
+
+.agent-reply .agent-reply-body p,
+.agent-reply .agent-reply-body li { line-height: 1.7; }
+
+/* A link in an answer wears the theme's text-safe primary (--color-primary-ink:
+   darkened on the light page, lightened on the dark one), at rest and on hover,
+   so it reads in both themes; hover thickens the underline instead of changing
+   the colour (task build-flow-polish: the raw primary read dim on dark). */
+.agent-reply .agent-reply-body a {
+  color: var(--color-primary-ink);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.agent-reply .agent-reply-body a:hover,
+.agent-reply .agent-reply-body a:focus-visible {
+  color: var(--color-primary-ink);
+  text-decoration-thickness: 2px;
+}
+
+/* An answer still typing: an element whose first letter is not due yet waits
+   (so a list's bullets never stand empty), and so does what follows its words. */
+[data-agent-unrevealed] { display: none !important; }
+
+/* An answer still typing: what follows its words waits off the page. */
+[data-agent-revealing] .agent-action { display: none; }
+
+.agent-action-enter {
+  animation: agent-action-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes agent-action-in {
+  from { opacity: 0; transform: translateY(0.5rem); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-action-enter { animation: none; }
+}

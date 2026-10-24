@@ -38,9 +38,13 @@ module AgentMessages
     def dispatcher_check(now)
       last = AgentDispatcher.last_ping_at
       failing = !last.nil? && last < now - AgentDispatcher::SILENT_AFTER
-      newest = AgentDispatcher.newest_first.first
+      newest = AgentDispatcher.primaries.newest_first.first
+      # A standby answering for the primary's domains is named, never counted
+      # as the primary: the alert still fires, and says who is covering.
+      standby = failing ? AgentDispatcher.live_standbys(now: now).newest_first.first : nil
       Check.new(kind: "dispatcher_silent", failing: failing,
-                detail: { "last_ping_at" => last&.iso8601, "host" => newest&.host, "worker" => newest&.worker_id }.compact)
+                detail: { "last_ping_at" => last&.iso8601, "host" => newest&.host, "worker" => newest&.worker_id,
+                          "standby_host" => standby&.host }.compact)
     end
 
     def waiting_check(now)
@@ -49,7 +53,7 @@ module AgentMessages
       oldest = scope.order(:id).first
       return Check.new(kind: "message_waiting", failing: false, detail: {}) unless oldest
 
-      paused = AgentDispatcher.newest_first.first
+      paused = AgentDispatcher.mailbox.newest_first.first
       detail = { "count" => scope.count, "oldest_id" => oldest.id, "oldest_soul" => oldest.soul_slug,
                  "oldest_at" => oldest.created_at.iso8601 }
       if paused&.paused?(now: now)
@@ -65,8 +69,9 @@ module AgentMessages
       case incident.kind
       when "dispatcher_silent"
         "Agent dispatcher silent: no ping from bin/dispatcher#{d['host'] ? " on #{d['host']}" : ''} for " \
-          "#{minutes_since(d['last_ping_at'], now)} min. Routed Discord messages wait until it is back. " \
-          "Steffon: SOP agent-dispatcher."
+          "#{minutes_since(d['last_ping_at'], now)} min. " \
+          "#{d['standby_host'] ? "The standby on #{d['standby_host']} is answering its domains; the rest wait" : 'Routed Discord messages wait'} " \
+          "until it is back. Steffon: SOP agent-dispatcher."
       when "message_waiting"
         pause = d["paused_until"] ? " The dispatcher is paused until #{d['paused_until']} (#{d['pause_reason'] || 'paused'})." : ""
         "Agent mailbox: #{d['count']} routed message(s) waiting over #{WAIT_LIMIT.inspect}; oldest is ##{d['oldest_id']} " \

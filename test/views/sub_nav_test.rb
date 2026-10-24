@@ -37,8 +37,8 @@ class SubNavTest < ActionView::TestCase
     render_nav :board_sections, current: :deployments
 
     assert_not_includes hrefs, stages_path
-    assert_equal [ xan_pipeline_path, xan_insights_path, recent_tasks_path ], hrefs.last(3)
-    assert_select %(nav a[href="#{xan_insights_path}"]), text: "Insights"
+    assert_equal [ ray_pipeline_path, ray_insights_path, recent_tasks_path ], hrefs.last(3)
+    assert_select %(nav a[href="#{ray_insights_path}"]), text: "Insights"
   end
 
   test "[component] the link row wraps instead of overflowing a phone" do
@@ -58,20 +58,23 @@ class SubNavTest < ActionView::TestCase
     assert_select %(a[href="#{deployments_path}"] span[title="0 assembled"].text-muted), text: "0"
   end
 
-  test "[component] board_views shows Tasks below 1400px only on the Deploy board" do
+  test "[component] board_views shows Tasks only while the Deploy board is too narrow for six lanes" do
     render_nav :board_views, current: :deployments, counts: { building: 1 }
     tasks_link = css_select(%(a[href="#{tasks_path}"])).first
-    assert_includes tasks_link["class"].split, "min-[1400px]:hidden"
+    assert_equal "boardNarrow", tasks_link["x-show"], "keyed on the board's container query, not the window"
+    assert_equal "display: none", tasks_link["style"]
+    assert_not_includes tasks_link["class"].split, "min-[1400px]:hidden"
     assert_select %(a[href="#{tasks_path}"] span[title="1 building"]), text: "1"
 
     render_nav :board_views, current: :stages, counts: {}
     stages_tasks_link = css_select(%(a[href="#{tasks_path}"])).last
-    assert_not_includes stages_tasks_link["class"].split, "min-[1400px]:hidden"
+    assert_nil stages_tasks_link["x-show"], "no board on /stages, so nothing hides the link"
+    assert_nil stages_tasks_link["style"]
     assert_select %(a[href="#{tasks_path}"] span[title="0 building"]), minimum: 1
   end
 
   test "[component] the heartbeat chips link back to Deployments on every heartbeat page" do
-    %i[xan_heartbeat heartbeat_all_activities xan_pipeline].each do |current|
+    %i[ray_heartbeat heartbeat_all_activities ray_pipeline].each do |current|
       render_nav :heartbeat, current: current, counts: { insights: 4 }
 
       link = css_select("a[data-test=hb-nav-deployments]").last
@@ -87,16 +90,16 @@ class SubNavTest < ActionView::TestCase
     render_nav :heartbeat, current: :heartbeat_all_activities, counts: { insights: 4 }
 
     assert_select %(nav[aria-label="Heartbeat"].contents), 1
-    assert_select %(a[href="#{xan_insights_path}"] span#hb-insight-count), text: "4"
-    assert_select %(a[href="#{xan_insights_path}"]), text: /Insight Bank \(4\)/
+    assert_select %(a[href="#{ray_insights_path}"] span#hb-insight-count), text: "4"
+    assert_select %(a[href="#{ray_insights_path}"]), text: /Insight Bank \(4\)/
     current = css_select("a[aria-current=page]")
     assert_equal [ "hb-nav-all-spans" ], current.map { |link| link["data-test"] }
     assert_includes current.first["class"].split, "primary"
-    assert_select %(a[data-test=hb-nav-session][href="#{xan_heartbeat_path}"]), text: /Per-session heartbeat/
+    assert_select %(a[data-test=hb-nav-session][href="#{ray_heartbeat_path}"]), text: /Per-session heartbeat/
   end
 
   test "[component] the per-session chip shows on All Activities only" do
-    render_nav :heartbeat, current: :xan_heartbeat, counts: { insights: 0 }
+    render_nav :heartbeat, current: :ray_heartbeat, counts: { insights: 0 }
 
     assert_select "a[data-test=hb-nav-session]", 0
     assert_select "a[aria-current]", 0

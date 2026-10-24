@@ -42,6 +42,21 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # The hero's call to action is the /build funnel, in the rainbow glow (Alex,
+  # 2026-10-19; /tasks/landing-build-ctas). It stands alone: the Meet Alex link
+  # was dropped (Alex, 2026-10-20; /tasks/drop-hero-meet-alex).
+  test "hero CTA is Build Your App to /build in the rainbow glow" do
+    get root_path
+
+    assert_response :success
+    assert_select "span.cta-glow.cta-glow-rainbow[data-test='hero-build-glow']", 1 do
+      assert_select "> a.btn.btn-primary[href='#{build_path}']", text: "Build Your App"
+    end
+    assert_select "[data-test='hero-meet-alex']", 0, "the hero has no Meet Alex link"
+    assert_select "a", text: "Meet Alex", count: 0
+    assert_select "section#about", 1, "the About section still renders"
+  end
+
   # Was "shows only the full-width video chat card", pinning the "Chat Over
   # Video" heading. That card held the Sprintful widget; the section now holds
   # the Google booking frame and no card heading (/tasks/professional-site-footer).

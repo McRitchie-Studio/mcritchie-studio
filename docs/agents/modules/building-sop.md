@@ -109,6 +109,14 @@ The desk is the build claim. `begin` refuses only when another live session's
 desk is bound to the task with uncommitted changes, and names it. Add `--steal`
 only for that case.
 
+**A client app's lane cap.** A task for a client app with a package tier may take
+a building lane only while one is free: Vibe 1, Builder 2, Pro 3, Team 4,
+Enterprise unlimited. Past the cap `begin` stops before it cuts a desk, with a
+message naming the tier and the upgrade; the task stays in `designed`, in order,
+and `bin/task begin <slug>` resumes it once a lane frees up. The claim itself
+refuses the same way, so `bin/task move <slug> building` cannot bypass it. The hub and any app without a tier are never capped. Detail:
+[`../system/client-pipeline.md`](../system/client-pipeline.md).
+
 **Read the preflight output before writing code.** `begin` runs it on the desk
 before the claim, and after the claim it only reports. It prints the latest
 feedback, the branch's distance from `accepted`, the PR's merge and check state,
@@ -330,7 +338,7 @@ A task idling on `submitted` until a sweep finds it is dead time. So the moment
   the single-task entry in [`pr-review`](../agents/carl/sops/pr-review.md#single-task-entry-on-submit).
 
 Either way the reviewer is a **separate reviewer** subagent, never you: Carl, or
-Xan for a prose-only PR on the focus-session path (tier A in
+Ritch for a prose-only PR on the focus-session path (tier A in
 [`focus-session.md`](focus-session.md)). The author set keeps a builder off its own PR. The builder's part is to start the review, not to
 do it. Review's gate-zero still owns the CI verdict and the merge.
 

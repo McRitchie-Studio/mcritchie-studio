@@ -200,7 +200,7 @@ class Task < ApplicationRecord
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
-  # Xan's ship-time grade (Insights::TaskGrader); its lesson lives on as an ActionGrade.
+  # Ritch's ship-time grade (Insights::TaskGrader); its lesson lives on as an ActionGrade.
   has_one :task_grade, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_transitions, foreign_key: :task_slug, primary_key: :slug,
@@ -220,6 +220,14 @@ class Task < ApplicationRecord
   # The per-task review claim (TaskReviewClaim): at most one live pr-review session.
   has_one :review_claim, class_name: "TaskReviewClaim",
           foreign_key: :task_slug, primary_key: :slug, dependent: :destroy
+  # The files a client sent with the request a `go` turned into this task
+  # (AgentProposals::Executor): the SAME blobs as the chat message's, referenced,
+  # never copied. dependent: false, because the message owns them (they live as
+  # long as its thread); removing the task leaves them. Writing them into a desk
+  # at task begin is a later step (.agents/epics/chat-media-design.md, flow 5).
+  # Same private service as the message's, so the copy never lands in the hub's
+  # public bucket.
+  has_many_attached :attachments, dependent: false, service: AgentMessages::Attachments::SERVICE
 
   validates :title, presence: true
   validates :slug, presence: true, uniqueness: true
@@ -232,6 +240,9 @@ class Task < ApplicationRecord
   # Gated on change: a task must stay saveable after a dependency it named is
   # archived.
   validate :dependencies_name_real_tasks, if: :dependencies_changed?
+  # The client app's concurrent task lanes (BuildingLanes): a claim into
+  # `building` past its tier's cap is refused, and the task waits in `designed`.
+  validate :building_lane_available, if: :claims_a_building_lane?
   # Normalized in #normalize_epic_slug before this runs; a bad slug is a 422.
   validates :epic_slug, format: { with: EPIC_SLUG,
                                   message: "must be a slug — lowercase letters, digits and single " \
@@ -348,6 +359,9 @@ class Task < ApplicationRecord
   after_update_commit :broadcast_block_change, if: :saved_change_to_blocked_at?
   # A destroy fires no TaskEvent, so broadcast the card removal.
   after_destroy_commit :broadcast_removal_to_deployments_board
+  # The app chat's status card (AppDevopsStages::Live) reloads when a task for
+  # the app appears, leaves, changes stage, release or title.
+  after_commit :broadcast_app_devops_card, on: %i[create update destroy]
 
   def to_param
     slug
@@ -376,6 +390,12 @@ class Task < ApplicationRecord
     ))
   }
   scope :requires_migration, -> { where(requires_migration: true) }
+  # Tasks whose devops.repositories names `repo` (an App slug is its repo slug).
+  # Stored lists are arrays (Task.normalize_devops_metadata), so containment finds
+  # them on the jsonb; a multi-repo task matches each of its repos.
+  scope :for_repository, ->(repo) {
+    where("tasks.metadata -> 'devops' -> 'repositories' @> ?::jsonb", [ repo.to_s ].to_json)
+  }
   # Everything but shipped and archived: a live task's mascot is taken, and this is
   # the WIP metric (.wip_count).
   scope :live, -> { where.not(stage: %w[shipped archived]) }
@@ -924,6 +944,15 @@ class Task < ApplicationRecord
     devops_list("risk_tags")
   end
 
+  # The refusal a move to building would meet now, or nil (the read-only check
+  # GET /api/v1/tasks/:slug/building_lane answers; bin/task begin asks it before
+  # it cuts a desk). Writes nothing and takes no lock.
+  def building_lane_refusal
+    return nil if stage == "building" || !self.class.lane_claim_move?(stage, started_at)
+
+    BuildingLanes.refusal_for(self)
+  end
+
   # Naming advice from the last save; both task controllers answer with it.
   def warnings
     @warnings || []
@@ -1304,6 +1333,14 @@ class Task < ApplicationRecord
   # #release_repo.
   def release_repos
     ([ release_repo ] + release_pr_urls.keys + devops_repositories).compact_blank.uniq
+  end
+
+  # The release train this task rides (release-trains-design.md §2): an app's own
+  # train only when every repo it names belongs to that train in
+  # config/release_trains.yml, else the hub. So a gem task, hub plus engine, app plus
+  # engine and app plus hub all ride "hub", where gems publish producer-first.
+  def release_train
+    Release::Trains.train_for(release_repos)
   end
 
   # The primary repo, the unit classified as gem or app: parsed from the PR url,
@@ -2040,6 +2077,46 @@ class Task < ApplicationRecord
     {}
   end
 
+  # Stages a task is sent BACK to building from (a rework block, a QA bounce). The
+  # task held a lane before, so the return takes none, but only when it was ever
+  # claimed: a task created straight at `submitted` has no started_at, and its
+  # first move to building is a claim.
+  LANE_SENDBACK_STAGES = %w[submitted reviewed assembled].freeze
+
+  # A lane is taken by a CLAIM: a create at `building`; a move into building from
+  # anywhere but a send-back of a claimed task (so `designed`, a reopen from
+  # `shipped` or `archived`, and an unclaimed send-back); or a client repo added to
+  # a task already building. A rework block and a re-claim take no new lane.
+  def claims_a_building_lane?
+    return false unless stage == "building"
+    return true if new_record?
+    return lane_repositories_added.any? unless will_save_change_to_stage?
+
+    self.class.lane_claim_move?(stage_in_database, started_at_in_database)
+  end
+
+  # Is a move from `from` into building a claim? Every move is, except the
+  # send-back of a task that was claimed once (it has a started_at).
+  def self.lane_claim_move?(from, started_at)
+    !(LANE_SENDBACK_STAGES.include?(from.to_s) && started_at.present?)
+  end
+
+  # A task already building is checked only for the repos this save adds: the
+  # lanes it held under its other repos are already counted.
+  def building_lane_available
+    only = will_save_change_to_stage? || new_record? ? nil : lane_repositories_added
+    refusal = BuildingLanes.refusal_for(self, only: only, lock: true)
+    errors.add(:base, refusal) if refusal
+  end
+
+  # The repos this save adds to devops.repositories.
+  def lane_repositories_added
+    return [] unless will_save_change_to_metadata?
+
+    stored = metadata_in_database.is_a?(Hash) ? metadata_in_database.dig("devops", "repositories") : nil
+    devops_repositories - self.class.normalize_devops_list(stored || [], split_commas: true)
+  end
+
   def set_stage_timestamp
     case stage
     when "building"
@@ -2090,10 +2167,13 @@ class Task < ApplicationRecord
   SOUL_ROSTER = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls")
                     .map { |soul| soul.fetch("slug") }.freeze
 
-  # Retired slugs that still resolve on read: `alex` became `xan` (the human owner
-  # is Alex). Nothing writes the legacy slug; every stamp goes through
-  # .canonical_soul. Retire the alias one release after the rename.
-  SOUL_ALIASES = { "alex" => "xan" }.freeze
+  # Retired slugs that still resolve on read: `alex` became `xan` on 2026-09-24
+  # (the human owner is Alex), and `xan` became `ray` on 2026-10-18 (Alex's middle
+  # name). Nothing writes a legacy slug; every stamp goes through .canonical_soul.
+  # RenameXanSoulToRay repointed the stored rows; the alias covers what it cannot
+  # reach: sticky session markers, typed `--actor xan`, commit emails
+  # `xan@mcritchie.studio`, and a dispatcher still claiming for `xan`.
+  SOUL_ALIASES = { "alex" => "ray", "xan" => "ray" }.freeze
 
   # The slug a soul is recorded under: an alias resolves to its successor, anything
   # else passes through stripped. Every soul stamp calls this.
@@ -2445,6 +2525,13 @@ class Task < ApplicationRecord
 
   def broadcast_block_change
     DeploymentsBroadcaster.block_change(self)
+  end
+
+  def broadcast_app_devops_card
+    return unless destroyed? || previously_new_record? ||
+                  saved_change_to_stage? || saved_change_to_release_slug? || saved_change_to_title?
+
+    AppDevopsStages::Live.task_changed(self)
   end
 
   # devops.checks_run carries two namespaces. The author owns the tier tags

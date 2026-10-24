@@ -15,7 +15,7 @@ module AgentMailbox
   # ONE SOUL, ONE CATALOG. Only a domain's `soul` (its front door) has a
   # catalog. Another soul mapped to the domain under `souls:` gets the domain's
   # doc and nothing it can propose. A proposal is checked against the
-  # proposing soul's OWN domain, so Avi cannot propose a Turf query (and Xan,
+  # proposing soul's OWN domain, so Avi cannot propose a Turf query (and Ritch,
   # mapped to a domain with no catalog, proposes nothing).
   #
   # THE AUDIENCE GATE is AgentMailbox::Audience (bin/lib/agent_audience.rb):
@@ -75,6 +75,34 @@ module AgentMailbox
     end
 
     def reply_name(soul) = front_door(soul)&.dig("reply_name").to_s.strip.then { |n| n.empty? ? nil : n }
+
+    # WARM SESSIONS (docs/agents/system/agent-message-loop.md, "Warm sessions").
+    # A domain opts in with `warm_session: true`; absent or anything else is off,
+    # and off is today's one-run-per-message path. Only the domain's FRONT-DOOR
+    # soul answers from the warm session: another soul mapped to the domain keeps
+    # one run per message, so one session never speaks as two souls.
+    CONSOLIDATE_AT = 150_000
+    CONSOLIDATE_RANGE = (10_000..1_000_000)
+
+    def warm_session?(domain)
+      entry = domains[domain.to_s]
+      entry.is_a?(Hash) && entry["warm_session"] == true
+    end
+
+    # The warm domain this soul is the front door of, or nil.
+    def warm_domain_for(soul)
+      door = front_door(soul)
+      door && door["warm_session"] == true ? door["key"] : nil
+    end
+
+    # The context size (input + cache read + cache write tokens of one turn)
+    # past which the holder consolidates: the domain's `consolidate_at` when it
+    # is an integer in CONSOLIDATE_RANGE, else CONSOLIDATE_AT.
+    def consolidate_at(domain)
+      entry = domains[domain.to_s]
+      value = entry.is_a?(Hash) ? entry["consolidate_at"] : nil
+      value.is_a?(Integer) && CONSOLIDATE_RANGE.cover?(value) ? value : CONSOLIDATE_AT
+    end
 
     # May this audience REQUEST a capability of `kind` with this min_audience in
     # this domain? The Audience rows, the min_audience, and a client's own domain.

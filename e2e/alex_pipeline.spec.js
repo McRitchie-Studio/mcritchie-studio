@@ -4,23 +4,23 @@ const { VISITOR } = require("./helpers");
 // [e2e] The pipeline sits behind the admin wall (app/controllers/concerns/admin_wall.rb).
 // @qa-readonly: bin/prod-smoke runs this against QA and PRODUCTION as a visitor, so it
 // asserts the wall — a signed-out visitor is sent to sign-in and never sees the page.
-test.describe("xan pipeline admin wall", () => {
+test.describe("ray pipeline admin wall", () => {
   test.use({ storageState: VISITOR });
 
-  test("xan pipeline sends a visitor to sign-in @qa-readonly", async ({ page, request }) => {
-    const res = await request.get("/xan/pipeline", { maxRedirects: 0 });
+  test("ray pipeline sends a visitor to sign-in @qa-readonly", async ({ page, request }) => {
+    const res = await request.get("/ray/pipeline", { maxRedirects: 0 });
     expect(res.status()).toBe(302);
     expect(new URL(res.headers()["location"], "http://host").pathname).toBe("/login");
 
-    await page.goto("/xan/pipeline");
+    await page.goto("/ray/pipeline");
     expect(new URL(page.url()).pathname).toMatch(/^\/(login|signin)$/);
     await expect(page.locator('input[name="email"]')).toBeVisible();
-    await expect(page.locator("[data-test='xan-pipeline']")).toHaveCount(0);
+    await expect(page.locator("[data-test='ray-pipeline']")).toHaveCount(0);
   });
 });
 
-// [e2e] The OPSD distillation pipeline (/xan/pipeline) — three columns, left→right:
-// Activities (narrated AgentActivity rows) → Insights (Xan's banked grades) →
+// [e2e] The OPSD distillation pipeline (/ray/pipeline) — three columns, left→right:
+// Activities (narrated AgentActivity rows) → Insights (Ritch's banked grades) →
 // Confirmations (McRitchie's mcr grades). An admin page; the happy path here is the
 // page rendering, as the seeded admin, with all three columns and the nav's link out
 // to the cross-session All Activities view.
@@ -30,11 +30,11 @@ test.describe("xan pipeline admin wall", () => {
 // from the scope registry, and a grade link; and a banked test-run grade surfaces
 // as a Column-2 insight with an ACTION Confirm button (confirm-of-action parity).
 // Seeded and signed in as the admin, so local lane only — NOT @qa-readonly.
-test("xan pipeline renders the distillation columns and the gradeable test-runs band", async ({ page }) => {
-  const res = await page.goto("/xan/pipeline");
+test("ray pipeline renders the distillation columns and the gradeable test-runs band", async ({ page }) => {
+  const res = await page.goto("/ray/pipeline");
   expect(res.ok()).toBe(true);
 
-  const root = page.locator("[data-test='xan-pipeline']");
+  const root = page.locator("[data-test='ray-pipeline']");
   await expect(root).toBeVisible();
 
   // All three pipeline columns are present.
@@ -55,7 +55,7 @@ test("xan pipeline renders the distillation columns and the gradeable test-runs 
   // The nav's required link out to the cross-session All Activities view.
   const allActivities = page.locator("[data-test='hb-nav-all-spans']");
   await expect(allActivities).toBeVisible();
-  await expect(allActivities).toHaveAttribute("href", "/xan/heartbeat/activities");
+  await expect(allActivities).toHaveAttribute("href", "/ray/heartbeat/activities");
 
   // The A2 "Test runs" band.
   const band = page.locator("[data-test='pl-test-runs']");

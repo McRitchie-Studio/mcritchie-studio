@@ -2,11 +2,11 @@ require "test_helper"
 require_relative "../support/agent_message_fixtures"
 
 # [unit] The CTO usage meter (AgentUsage, docs/agents/system/agent-usage.md):
-# the rollup reads each answer's run summary, only client and public answers
-# count against an app's allowance, the gate warns at 80% and stops at 100%
+# the rollup reads each answer's run summary, only client answers count
+# against an app's allowance (public ones are metered apart), the gate warns at 80% and stops at 100%
 # before a claim, owner and team are never capped, an admin's lift wins, and the
 # upgrade rule names a price only from the tiers config. Allowances are stubbed;
-# the shipped config has none (caps off until priced).
+# the shipped config caps only Vibe (25,000, the free tier).
 class AgentUsageTest < ActiveSupport::TestCase
   include AgentMessageFixtures
 
@@ -37,8 +37,10 @@ class AgentUsageTest < ActiveSupport::TestCase
     message
   end
 
-  test "the shipped config caps nothing: every package's allowance is blank" do
-    assert WorkspacePackage.all.all? { |p| p.cto_monthly_tokens.nil? }
+  test "the shipped config caps only the free tier: Vibe at 25,000, every paid package blank" do
+    allowances = WorkspacePackage.all.to_h { |p| [ p.key, p.cto_monthly_tokens ] }
+    assert_equal 25_000, allowances.delete("vibe"), "Alex, 2026-10-19: the free budget is very small"
+    assert allowances.values.all?(&:nil?), "paid tiers unchanged: #{allowances.inspect}"
     assert_equal 80, AgentUsage.warn_percent
     assert AgentUsage.meter(@app, now: NOW).unlimited?
   end
@@ -65,17 +67,19 @@ class AgentUsageTest < ActiveSupport::TestCase
     assert_equal [ 0, 10, 20 ], days.map { |_, t| t.tokens }
   end
 
-  test "the meter counts only client and public answers this month" do
+  test "the meter counts only client answers this month; the public is metered apart" do
     answered!(person: @client, tokens: 300)
+    answered!(person: AgentPerson.create!(display_name: "Visitor", role: "public"), tokens: 7_000)
     answered!(person: @owner, tokens: 5_000)
     answered!(person: @client, tokens: 9_000, at: NOW - 30.days)
     with_allowances do
       meter = AgentUsage.meter(@app, now: NOW)
-      assert_equal 300, meter.used
+      assert_equal 300, meter.used, "public tokens never consume the allowance"
+      assert_equal 7_000, meter.public_used
       assert_equal 1_000, meter.allowance
       assert_equal 30, meter.percent
       assert_equal :ok, meter.state
-      assert_equal 2, meter.totals.messages
+      assert_equal 3, meter.totals.messages
     end
   end
 
@@ -184,10 +188,47 @@ class AgentUsageTest < ActiveSupport::TestCase
     answered!(person: @client, tokens: 1_000)
     with_allowances do
       meter = AgentUsage.meter(@app, now: NOW)
-      assert_match(/used its monthly agent allowance.*resets Nov 1\. Pro \(\$500\/month\) raises it\./, AgentUsage.cap_reply(meter))
+      reply = AgentUsage.cap_reply(meter)
+      assert_match(/used its monthly agent allowance.*resets Nov 1 at 1am MST\. Pro \(\$500\/month\) raises it\. \[Upgrade your plan\]\(http:\/\/www\.example\.com\/packages\) or contact us\.\z/, reply)
+      refute_match(/owner can raise/, reply)
     end
     with_allowances(builder: 1_200) do
       assert_match(/\A_83% of this app's monthly agent allowance is used\./, AgentUsage.warn_line(AgentUsage.meter(@app, now: NOW)))
     end
+  end
+
+  test "an unlimited meter skips the capped-count query; a metered one reads it" do
+    queries = []
+    counter = ->(*, payload) { queries << payload[:sql] if payload[:sql].include?("agent_message_events") }
+    ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { AgentUsage.meter(@app, now: NOW) }
+    assert_empty queries, "the shipped config has no allowance, so nothing reads the events"
+
+    with_allowances do
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record") { AgentUsage.meter(@app, now: NOW) }
+    end
+    assert_equal 1, queries.size, "control: with an allowance the capped count is read"
+  end
+
+  test "a claim reads each app's meter once, however many capped candidates it skips" do
+    answered!(person: @client, tokens: 1_000)
+    3.times { agent_message!(soul: "turf_monster", person: @client) }
+    calls = 0
+    real = AgentUsage.method(:meter)
+    with_allowances do
+      AgentUsage.stub(:meter, ->(*args, **kw) { calls += 1; real.call(*args, **kw) }) do
+        AgentMessage.claim!(soul: "turf_monster", worker: "w1", now: NOW)
+      end
+    end
+    assert_equal 3, AgentMessage.where(action_summary: "usage cap").count
+    assert_equal 1, calls
+  end
+
+  test "an owner's totals and meter drop the dollar figure; an admin's keep it" do
+    answered!(person: @client, tokens: 100, cost: 0.25)
+    totals = AgentUsage.totals(souls: %w[turf_monster], from: NOW - 3.days, to: NOW)
+    assert_match(/\$0\.25/, AgentUsage.totals_line(totals))
+    refute_match(/\$/, AgentUsage.totals_line(totals.without_cost))
+    refute AgentUsage.meter(@app, now: NOW).without_cost.as_json["month"].key?("cost_usd")
+    assert_in_delta 0.25, AgentUsage.meter(@app, now: NOW).as_json.dig("month", "cost_usd")
   end
 end

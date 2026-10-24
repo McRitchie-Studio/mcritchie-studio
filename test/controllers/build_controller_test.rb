@@ -1,15 +1,25 @@
 require "test_helper"
 
 # [integration] The /build funnel through real requests: a signed-out visitor's
-# prompt survives the sign-in detour (by the magic link's return_to AND by the
-# Google path that always lands on the home page), claiming a name queues the
-# build, and a draft is only ever visible to the account that finished it.
+# first message opens the chat with Ritch, the draft survives the sign-in detour
+# (by the magic link's return_to AND by the Google path that always lands on the
+# home page), Build my app on a finished checklist queues the build, and a draft
+# is only ever visible to the account that finished it. The chat itself:
+# test/integration/build_intake_flow_test.rb.
 class BuildControllerTest < ActionDispatch::IntegrationTest
   PROMPT = "A league site with schedules, scores and standings".freeze
 
   def send_prompt(text = PROMPT)
     post build_path, params: { app_request: { prompt: text } }
     AppRequest.recent.first
+  end
+
+  # The four taps, written as BuildIntake::Choice would write them.
+  def complete_intake!(draft, subdomain: "league-hub")
+    draft.reload.update!(answers: { "idea" => "A league site" }, cto_name: "Coach", cto_avatar: "harbor", subdomain: subdomain,
+                         palette: { "name" => "Pitch",
+                                    "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },
+                                    "dark" => { "primary" => "#4ade80", "accent" => "#fbbf24", "surface" => "#0b1220", "text" => "#f1f5f9" } })
   end
 
   def sign_in_through_email_link(user, return_to)
@@ -27,15 +37,54 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='build-form'] textarea[name='app_request[prompt]']"
   end
 
-  test "sending a prompt signed out saves a draft and asks the visitor to register" do
+  test "sending a prompt signed out saves a draft and opens the chat with Ritch, no sign-in yet" do
     draft = send_prompt
 
     assert_redirected_to build_request_path(draft.token)
     assert draft.draft?
     assert_nil draft.user
     follow_redirect!
-    assert_select "[data-test='build-register']"
-    assert_select "[data-test='build-echo']", text: PROMPT
+    assert_select "[data-test='build-chat-page']"
+    assert_select "[data-test='build-register']", 0
+    assert_select "[data-test='cto-chat-sent']", text: PROMPT
+  end
+
+  test "the page's first message answers in place: the draft's chat streams over the empty thread and the address moves, no redirect" do
+    get build_path
+    assert_select "#build-chat-page form#build-first-form[action='/build']"
+    assert_select "##{BuildController::GALLERY_ID}", 1
+
+    proof = BrowserProof.new(BuildController::PROOF_PURPOSE).issue(5.seconds.ago).reverse
+    post build_path, params: { app_request: { prompt: PROMPT, form_proof: proof } }, as: :turbo_stream
+    draft = AppRequest.recent.first
+
+    assert_response :success
+    assert_equal "text/vnd.turbo-stream.html", response.media_type
+    assert_select "turbo-stream[action='replace'][target='build-chat-page'] template" do
+      assert_select "[data-test='build-chat-page'][data-build-chat-poll-url='/build/#{draft.token}/turns']"
+      assert_select "[data-test='build-turn'][data-pending='true'] [data-test='cto-chat-sent']", text: PROMPT
+      assert_select "form#build-chat-form[action='/build/#{draft.token}/messages']"
+    end
+    assert_select "turbo-stream[action='replace'][target='build-checklist'] template [data-test='build-heading']", 1,
+                  "no card yet, so the heading stays: a visitor may only be saying hi"
+    assert_select "turbo-stream[action='replace_url'][url='/build/#{draft.token}']", 1
+    # The first message leaves the gallery in place: it slides away once the
+    # thread has grown (app/javascript/agent_shell.js), and a reload of
+    # /build/<token> draws it too, so the two pages agree.
+    assert_select "turbo-stream[action='remove'][target='#{BuildController::GALLERY_ID}']", 0
+    assert draft.draft?
+    get build_request_path(draft.token)
+    assert_select "##{BuildController::GALLERY_ID}", 1
+  end
+
+  test "a refused first message comes back in the same box, with the reason and the text kept" do
+    post build_path, params: { app_request: { prompt: "x" * (AppRequest::PROMPT_LIMIT + 1) } }, as: :turbo_stream
+
+    assert_response :unprocessable_content
+    assert_select "turbo-stream[action='replace'][target='build-first-form'] template" do
+      assert_select "[data-test='build-form-error']"
+      assert_select "textarea[name='app_request[prompt]']", text: "x" * (AppRequest::PROMPT_LIMIT + 1)
+    end
   end
 
   test "the signed-out composer gets JSON back: the draft's token and path, for the sign-in modal" do
@@ -51,7 +100,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_match(/Prompt/, response.parsed_body["error"])
   end
 
-  test "the prompt survives an emailed sign-in link and lands on the name step" do
+  test "the draft survives an emailed sign-in link and lands back in the chat" do
     draft = send_prompt
     user = users(:viewer)
 
@@ -59,7 +108,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to build_request_path(draft.token)
     follow_redirect!
 
-    assert_select "[data-test='build-claim']"
+    assert_select "[data-test='build-chat-page']"
     assert_equal user, draft.reload.user, "signing in attaches the draft to its finisher"
   end
 
@@ -74,38 +123,220 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_response :success, "the forward happens once, not on every visit home"
   end
 
-  test "claiming a name queues the build and shows the status page" do
+  test "Build my app on a finished checklist launches the app and moves to its new CTO's chat" do
     draft = send_prompt
     log_in_as users(:viewer)
     get build_request_path(draft.token)
+    complete_intake!(draft)
 
-    assert_difference -> { Task.count }, 1 do
+    assert_difference [ -> { Task.count }, -> { App.count }, -> { AppCto.count }, -> { AgentMessage.where(soul_slug: "client_cto").count } ], 1 do
       patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" } }
     end
-    assert_redirected_to build_request_path(draft.token)
-    follow_redirect!
-
-    assert_select "[data-test='build-status']"
-    assert_select "[data-test='build-host']", text: "league-hub.mcritchie.studio"
+    assert_redirected_to chat_application_path("league-hub")
+    assert_response :see_other
     assert draft.reload.queued?
+    assert AppOwnership.manage_app?(users(:viewer).reload, "league-hub"), "the requester owns the new app"
+    cto = App.find_by!(slug: "league-hub").client_cto
+    assert_equal [ "Coach", "harbor", "#15803D" ], [ cto.name, cto.portrait, cto.light["primary"] ]
+    assert_equal "#15803D", App.find_by!(slug: "league-hub").theme_colors.dig("light", "primary")
+
+    # The owner's first visit is the app's initial load: the launch panel, once
+    # (AppCto launch_animation_pending, task build-sign-in-modal); then the chat.
+    follow_redirect!
+    assert_response :success
+    assert_select "[data-test='build-launch-landing'] [data-test='build-launch'][data-app='league-hub']", 1
+    assert_not cto.reload.launch_animation_pending?
+    get chat_application_path("league-hub")
+    assert_response :success
+    assert_select "[data-test='build-launch']", 0
+    assert_select "[data-test='agent-shell'][data-shell='app'] [data-test='agent-caption']", text: /Coach\s+· CTO of League Hub/
+    assert_select "[data-test='agent-portrait'][style*='view-transition-name: agent-portrait'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
+    assert_select "[data-test='cto-chat-head'][data-client-cto='true'] h1", text: "League Hub"
+    assert_select "[data-test='devops-stage'][data-stage='building'][data-state='live']", 1, "the new build task is designed: Building, live"
+    assert_select "[data-test='cto-chat-handover']", text: /Ritch\s+Meet Coach, your CTO. I'll hand you over./
+    # The CTO's opening message is there on arrival: code wrote it, no model ran, nothing is typing.
+    assert_select "[data-test='cto-chat-turn'] [data-test='cto-chat-handover'] ~ [data-test='cto-chat-reply']", text: /Hi Viewer, I'm Coach, the agent who'll be managing League Hub\./
+    assert_select "[data-test='cto-chat-typing']", 0
+    assert_select "meta[name='view-transition'][content='same-origin']"
+
     # The card the claim opened is what an agent builds from: it asks for the
     # footer and names the SOP, after the requester's own words.
     devops = Task.find_by!(slug: draft.task_slug).metadata.fetch("devops")
-    assert_includes devops.fetch("acceptance"), "league-hub.mcritchie.studio's home page renders the site footer (footer[data-site-footer])"
+    assert_includes devops.fetch("acceptance"), "league-hub.mcritchie.app's home page renders the site footer (footer[data-site-footer])"
     assert_includes devops.fetch("agent_context"), "docs/agents/modules/launch-build-queue.md"
+    assert_includes devops.fetch("agent_context"), "CTO: Coach (portrait harbor)"
+    assert_equal [ "league-hub" ], devops.fetch("repositories")
   end
 
-  test "a refused name re-renders the name step with the reason, and queues nothing" do
+  test "Build my app on a checklist whose colours do not read is refused and launches nothing" do
     draft = send_prompt
     log_in_as users(:viewer)
     get build_request_path(draft.token)
+    complete_intake!(draft)
+    draft.update_columns(palette: draft.palette.merge("dark" => draft.palette["dark"].except("accent")))
+
+    assert_no_difference [ -> { Task.count }, -> { App.count } ] do
+      patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" } }
+    end
+    assert_redirected_to build_request_path(draft.token)
+    assert_match(/Theme/, flash[:alert])
+    assert draft.reload.draft?
+  end
+
+  test "a refused name re-renders the chat with the reason, and queues nothing" do
+    draft = send_prompt
+    log_in_as users(:viewer)
+    get build_request_path(draft.token)
+    complete_intake!(draft)
 
     assert_no_difference -> { Task.count } do
       patch build_request_path(draft.token), params: { app_request: { subdomain: "www" } }
     end
     assert_response :unprocessable_entity
-    assert_select "[data-test='build-errors']", text: /reserved/
+    assert_match(/reserved/, flash[:alert])
+    assert_select "[data-test='build-chat-page']"
     assert draft.reload.draft?
+  end
+
+  # The summary card's turn, as Ritch's last answer carries it.
+  def summary_turn!(draft)
+    AgentMessage.create!(channel: "web", external_id: "build:#{draft.token}:summary", channel_ref: "build",
+                         thread_key: BuildIntake.thread_key(draft.token), soul_slug: BuildIntake.soul, content: "Let's use it.",
+                         status: "completed", completed_at: Time.current, response_text: "Here's your app.", intake_card: { "card" => "summary" })
+  end
+
+  def with_vibe_apps_limit(limit, &)
+    config = WorkspacePackage.config
+    config["packages"].find { |pkg| pkg["key"] == "vibe" }["apps_per_account"] = limit
+    WorkspacePackage.stub(:config, config, &)
+  end
+
+  test "[integration] a free-plan owner over the plan's limit gets the refusal ON the summary card, with their app and the plans, as a stream" do
+    viewer = users(:viewer)
+    log_in_as viewer
+    first = send_prompt("A checkers game")
+    get build_request_path(first.token)
+    complete_intake!(first, subdomain: "first-checkers")
+    patch build_request_path(first.token), params: { app_request: { subdomain: "first-checkers" } }
+    assert_redirected_to chat_application_path("first-checkers")
+
+    draft = send_prompt
+    get build_request_path(draft.token)
+    complete_intake!(draft)
+    card = summary_turn!(draft)
+
+    with_vibe_apps_limit(1) do
+      assert_no_difference [ -> { App.count }, -> { Task.count } ] do
+        patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: card.id }, as: :turbo_stream
+      end
+    end
+    assert_response :unprocessable_content
+    assert_equal "text/vnd.turbo-stream.html", response.media_type, "a stream, never a page Turbo would morph"
+    assert_select "turbo-stream[action='replace'][target='#{BuildController.summary_dom_id(card)}'] template" do
+      assert_select "[data-test='build-card-summary'][data-refused='true'][data-ready='true']"
+      assert_select "[data-test='build-summary-refusal'][role='alert']" do
+        assert_select "[data-test='build-summary-refusal-reason']", "Your Vibe plan includes 1 app, and you already have one."
+        assert_select "a[data-test='build-summary-existing-app'][href='/applications/first-checkers/chat']"
+        assert_select "a[data-test='build-summary-upgrade'][href='/packages']"
+      end
+      assert_select "[data-test='build-summary-build']", 1, "Build My App stays, to try again"
+    end
+    assert draft.reload.draft?
+  end
+
+  test "[integration] with the data's unlimited tier the same owner launches a second app" do
+    log_in_as users(:viewer)
+    first = send_prompt("A checkers game")
+    get build_request_path(first.token)
+    complete_intake!(first, subdomain: "first-checkers")
+    patch build_request_path(first.token), params: { app_request: { subdomain: "first-checkers" } }
+
+    draft = send_prompt
+    get build_request_path(draft.token)
+    complete_intake!(draft)
+    patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: summary_turn!(draft).id }, as: :turbo_stream
+    assert_redirected_to chat_application_path("league-hub")
+    assert App.exists?(slug: "league-hub")
+  end
+
+  # Tasks build-launch-handoff and build-sign-in-modal: the launch happens on the
+  # server FIRST, then the press goes to the CTO's chat, whose first visit by the
+  # owner is the app's initial load: the launch panel (AppCto
+  # launch_animation_pending), cleared as it renders, so a reload is the chat.
+  test "[integration] Build My App from the summary card launches, then the chat's first visit plays the launch panel once" do
+    log_in_as users(:viewer)
+    draft = send_prompt
+    get build_request_path(draft.token)
+    complete_intake!(draft)
+    card = summary_turn!(draft)
+
+    assert_difference [ -> { App.count }, -> { AppCto.count }, -> { Task.count } ], 1 do
+      patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: card.id }, as: :turbo_stream
+    end
+    assert_redirected_to chat_application_path("league-hub")
+    assert_response :see_other
+    assert draft.reload.queued?, "launched before the panel is drawn"
+    app_cto = AppCto.find_by!(app_slug: "league-hub")
+    assert app_cto.launch_animation_pending?, "the launch sets the initial load"
+
+    follow_redirect!
+    assert_response :success
+    assert_select "[data-test='build-launch-landing']" do
+      assert_select "build-launch#build-launch[data-test='build-launch'][data-href='/applications/league-hub/chat']" do
+        assert_select "[data-test='build-launch-portrait'][style*='view-transition-name: agent-portrait'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
+        assert_select "[data-test='build-launch-caption']", text: /Coach\s+· CTO of League Hub/
+        assert_select "[data-test='build-launch-app']", text: "League Hub"
+        assert_select "[data-test='build-launch-step']", 3
+      end
+      assert_select "[data-test='build-launch'][style*='--cto-primary-light: 21 128 61;']", 1, "the app's own colours"
+    end
+    assert_select "meta[name='view-transition'][content='same-origin']", { minimum: 1 }, "Ritch's portrait morphs into the CTO's"
+    assert_equal "no-store", response.headers["Cache-Control"]
+    assert_not app_cto.reload.launch_animation_pending?, "spent as it rendered"
+
+    # A reload is a plain visit to the chat: the CTO is already speaking.
+    get chat_application_path("league-hub")
+    assert_response :success
+    assert_select "[data-test='build-launch']", 0
+    assert_select "[data-test='cto-chat-reply']", text: /Hi Viewer, I'm Coach, the agent who'll be managing League Hub\./
+    assert_select "[data-test='cto-chat-typing']", 0
+
+    # The draft's own address (Back, an old link) takes its owner to the chat too;
+    # an admin reading the request from /build/requests stays on its page.
+    get build_request_path(draft.token)
+    assert_redirected_to chat_application_path("league-hub")
+    log_in_as users(:alex)
+    get build_request_path(draft.token)
+    assert_response :success
+    assert_select "[data-test='build-request'][data-status='queued']"
+  end
+
+  test "[integration] the launch replay is an admin's, in development only" do
+    refute Rails.application.routes.url_helpers.respond_to?(:build_launch_demo_path), "no route outside development"
+    assert_raises(ActionController::RoutingError) { Rails.application.routes.recognize_path("/build/launch-demo/league-hub") }
+  end
+
+  test "[integration] a name taken after the tap is refused on the card with a next step; without a card the composer says why" do
+    log_in_as users(:viewer)
+    draft = send_prompt
+    get build_request_path(draft.token)
+    complete_intake!(draft)
+    card = summary_turn!(draft)
+    App.create!(slug: "league-hub", name: "League Hub", emoji: "🏟", color: "#22C55E")
+
+    assert_no_difference -> { Task.count } do
+      patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" }, message_id: card.id }, as: :turbo_stream
+    end
+    assert_response :unprocessable_content
+    assert_select "turbo-stream[target='#{BuildController.summary_dom_id(card)}'] template [data-test='build-summary-refusal']" do
+      assert_select "[data-test='build-summary-refusal-reason']", /That name is taken\./
+      assert_select "[data-test='build-summary-next']", /another address/
+      assert_select "[data-test='build-summary-upgrade']", 0
+    end
+
+    patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" } }, as: :turbo_stream
+    assert_response :unprocessable_content
+    assert_select "turbo-stream[action='replace'][target='#{BuildController::FORM_ID}'] template [data-test='cto-chat-error']", /That name is taken/
   end
 
   test "a draft that belongs to someone else is not shown" do
@@ -132,6 +363,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     draft = send_prompt
     log_in_as users(:viewer)
     get build_request_path(draft.token)
+    complete_intake!(draft)
     patch build_request_path(draft.token), params: { app_request: { subdomain: "league-hub" } }
     assert draft.reload.queued?
 
@@ -163,7 +395,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     get build_requests_path
     assert_response :success
     assert_select "[data-test='app-request']", 1, "the default tab is real requests, not drafts"
-    assert_select "[data-test='app-request-host']", text: "league-hub.mcritchie.studio"
+    assert_select "[data-test='app-request-host']", text: "league-hub.mcritchie.app"
     assert_select "[data-test='app-request-prompt']", text: "A league site"
     assert_select "[data-test='app-request-task']"
     assert_select "[data-test='app-request-tab'][data-status='draft']", text: /Drafts\s*1/
@@ -196,7 +428,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     live.update!(status: "live")
 
     get build_path
-    assert_select "[data-test='build-example'][href='https://coin-toss.mcritchie.studio']", text: /Coin Toss/
+    assert_select "[data-test='build-example'][href='https://coin-toss.mcritchie.app']", text: /Coin Toss/
     assert_select "[data-test='build-example']", text: /A coin toss tournament\./
   end
 

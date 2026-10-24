@@ -105,17 +105,17 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   test "[unit] gate_run_reviewer resolves a lane's soul from the run actor" do
-    agent = agents(:xan_agent)
+    agent = agents(:ray_agent)
 
     # Preloaded-map path (the /tasks/recent batch that avoids an N+1).
-    assert_same agent, gate_run_reviewer(GateRun.new(actor: "xan"), lookup: { "xan" => agent })
+    assert_same agent, gate_run_reviewer(GateRun.new(actor: "ray"), lookup: { "ray" => agent })
     # Single-lookup path when no map is supplied.
-    assert_equal agent, gate_run_reviewer(GateRun.new(actor: "xan"))
+    assert_equal agent, gate_run_reviewer(GateRun.new(actor: "ray"))
 
-    assert_nil gate_run_reviewer(GateRun.new(actor: nil), lookup: { "xan" => agent }),
+    assert_nil gate_run_reviewer(GateRun.new(actor: nil), lookup: { "ray" => agent }),
                "a run with no actor resolves to no soul"
     assert_nil gate_run_reviewer(nil), "nil-safe for a lane that never ran"
-    assert_nil gate_run_reviewer(GateRun.new(actor: "ghost"), lookup: { "xan" => agent }),
+    assert_nil gate_run_reviewer(GateRun.new(actor: "ghost"), lookup: { "ray" => agent }),
                "an unresolved actor slug stays faceless, never raises"
   end
 
@@ -634,10 +634,10 @@ class ApplicationHelperTest < ActionView::TestCase
     launchers = heartbeat_launchers
 
     assert_equal 6, launchers.size
-    assert_equal %w[carl avi steffon xan turf-monster pokemon], launchers.map { |l| l[:agent_slug] }
+    assert_equal %w[carl avi steffon ray turf-monster pokemon], launchers.map { |l| l[:agent_slug] }
     # Row 1 is the prompt-like soul heartbeat phrase; acts are the launcher atoms.
     # The general Pokémon owns no HEARTBEAT, so its row 1 is nil and it renders acts only.
-    assert_equal ["Carl Heartbeat", "Avi Heartbeat", "Steffon Heartbeat", "Xan Heartbeat",
+    assert_equal ["Carl Heartbeat", "Avi Heartbeat", "Steffon Heartbeat", "Ray Heartbeat",
                   "Turf Monster Heartbeat", nil],
                  launchers.map { |l| l[:heartbeat] }
     # Acts read across the souls in pipeline order: review → assemble → ship.
@@ -649,7 +649,7 @@ class ApplicationHelperTest < ActionView::TestCase
     # workspace-launch rides Steffon's card too: it is not a heartbeat act, but the
     # operator launches it by name and wanted it one copy away.
     assert_equal ["production-deploy", "clean-infra", "workspace-launch"], launchers[2][:actions]
-    # ship-clock is Xan's typing-to-shipping benchmark, one copy away.
+    # ship-clock is Ritch's typing-to-shipping benchmark, one copy away.
     assert_equal ["grade-events", "share-insights", "full-cycle", "ship-clock"], launchers[3][:actions]
     # Turf Monster gained the rehearsal launcher after the first watched QA run —
     # an operator asked to be able to kick the whole contest cycle off from the
@@ -788,8 +788,8 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='2'] button[data-clip='production-deploy']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='3'] button[data-clip='clean-infra']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='4'] button[data-clip='intent-scout']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='xan'] [data-copy-row-index='4'] button[data-clip='full-cycle']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='xan'] [data-copy-row-index='5'] button[data-clip='ship-clock']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] [data-copy-row-index='4'] button[data-clip='full-cycle']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] [data-copy-row-index='5'] button[data-clip='ship-clock']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] [data-copy-row-index='2'] button[data-clip='live-score-watch']"
     # Pokémon has no heartbeat, so wrap-it-up is its FIRST row, described by what it does.
     assert_select "[data-test='heartbeat-launcher'][data-agent='pokemon'] [data-copy-row-index='1'] button[data-clip='wrap-it-up']"
@@ -834,7 +834,7 @@ class ApplicationHelperTest < ActionView::TestCase
 
     card = css_select("[data-test='agents-summary-card']").first
     refute_nil card, "the summary variant renders the Workflows summary card"
-    assert_equal "turf-monster,pokemon,carl,avi,steffon,xan", card["data-agents"],
+    assert_equal "turf-monster,pokemon,carl,avi,steffon,ray", card["data-agents"],
                  "the wheel starts on Turf Monster and walks the rest in canonical order, wrapping"
     assert_equal "turf-monster", card["data-active-agent"]
     assert_equal ApplicationHelper::AGENTS_CAROUSEL_ROTATE_MS.to_s, card["data-rotate-ms"]
@@ -842,7 +842,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "agents", card["data-panel"], "a click opens the Workflows sidebar"
 
     slides = css_select("[data-test='soul-slide']")
-    assert_equal %w[turf-monster pokemon carl avi steffon xan], slides.map { |slide| slide["data-agent"] }
+    assert_equal %w[turf-monster pokemon carl avi steffon ray], slides.map { |slide| slide["data-agent"] }
     assert_equal %w[active waiting waiting waiting waiting waiting], slides.map { |slide| slide["data-place"] }
     assert_nil slides.first["inert"], "the soul in frame is interactive"
     slides.drop(1).each { |slide| refute_nil slide["inert"], "#{slide['data-agent']} is off-frame, so inert" }
@@ -1192,7 +1192,7 @@ class ApplicationHelperTest < ActionView::TestCase
                  "these launcher captions claim a confirmation the act neither requires nor "\
                  "produces: #{offenders.inspect}. Insights::DocGenerator publishes "\
                  "ActionGrade.banked with no grader filter, and the agent API always grades as "\
-                 "`xan`, so a 'confirmed' caption stands the act down over the whole bank "\
+                 "`ray`, so a 'confirmed' caption stands the act down over the whole bank "\
                  "(/tasks/sop-precondition-blocks-sharing). Say what is published: the banked set."
   end
 
@@ -1287,7 +1287,7 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   def seed_workflow_souls
-    { "carl" => "Carl", "avi" => "Avi", "steffon" => "Steffon", "xan" => "Xan",
+    { "carl" => "Carl", "avi" => "Avi", "steffon" => "Steffon", "ray" => "Ritch",
       "turf-monster" => "Turf Monster", "pokemon" => "Pokémon" }.each do |slug, name|
       Agent.find_or_create_by!(slug: slug) { |agent| agent.name = name }
     end

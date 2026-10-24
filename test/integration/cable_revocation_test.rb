@@ -4,7 +4,8 @@ require "test_helper"
 # unless something closes it: /cable checks only at connect. These tests open a
 # REAL connection through ApplicationCable::Connection, revoke the user the way
 # the app does, and assert the disconnect lands on that connection's own internal
-# channel, and that the reconnect it asks for is then refused.
+# channel, and that the reconnect it asks for is then refused (a rotated token)
+# or admitted only as what the user now is (a demotion).
 class CableRevocationConnectionTest < ActionCable::Connection::TestCase
   tests ApplicationCable::Connection
   include ActionCable::TestHelper
@@ -29,7 +30,14 @@ class CableRevocationConnectionTest < ActionCable::Connection::TestCase
     @admin.update!(role: "viewer")
 
     assert_equal 1, disconnects_on(channel).size, "the open socket must be told to drop"
-    assert_reject_connection { connect session: session_for(@admin.reload) }
+    # /cable admits any signed-in user since the CTO web chat, so the reconnect is
+    # admitted as the viewer they now are; what keeps them off the ops streams is
+    # the channel, which refuses a non-admin at subscribe
+    # (test/channels/turbo_streams_channel_admin_test.rb). The drop is what makes
+    # that check run again: their old subscriptions do not survive it.
+    connect session: session_for(@admin.reload)
+    assert_equal @admin, connection.current_user
+    assert_not connection.current_user.admin?
   end
 
   test "[integration] a rotated token closes the open connection and refuses the reconnect" do

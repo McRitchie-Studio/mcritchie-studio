@@ -113,9 +113,9 @@ class ReviewerSelectCliTest < Minitest::Test
   # --- the `none` assertion is CROSS-EXAMINED, end to end (builder-none-fails-open) ---
   #
   # THE DEFECT, measured 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a
-  # docs PR Xan wrote while the task carried no stamp): `--builder none` seated XAN
-  # as the light on Xan's own diff and reported the no-self-review property upheld,
-  # while `--builder xan` correctly excluded her. It was the ONE input to this tool
+  # docs PR Ritch wrote while the task carried no stamp): `--builder none` seated RAY
+  # as the light on Ritch's own diff and reported the no-self-review property upheld,
+  # while `--builder ray` correctly excluded him. It was the ONE input to this tool
   # that lifted a safety check on the caller's word alone.
   #
   # These boot the real script, because the REFUSAL is the CLI's job — the selector
@@ -189,7 +189,7 @@ class ReviewerSelectCliTest < Minitest::Test
 
   # --- the seat line states the mechanism that seated the soul, not an inference ---
   # (selector-picks-fit-zero-light). Driven from the exact measured payload: a docs
-  # shape with one soul on the needed domains (xan, fit 2) and everyone else at 0.
+  # shape with one soul on the needed domains (ray, fit 2) and everyone else at 0.
 
   def test_the_standing_primary_seat_never_claims_a_tiebreak
     out, code = select({ "shape" => "docs", "built_by" => "steffon" })
@@ -207,7 +207,7 @@ class ReviewerSelectCliTest < Minitest::Test
       "he is never ranked and never rolled; a tiebreak claim here read as a coin toss beating a fit-2 soul")
     refute_match(/roll \d/, primary, "and no roll is printed for a seat that was never rolled")
 
-    assert_match(/LIGHT\s+xan/, light, "the docs soul takes the light seat")
+    assert_match(/LIGHT\s+ray/, light, "the docs soul takes the light seat")
     assert_match(/fit 2/, light, "the seat states its fit score")
     assert_match(/top domain fit/, light, "and the mechanism that won it")
   end
@@ -232,7 +232,7 @@ class ReviewerSelectCliTest < Minitest::Test
     assert_equal 0, code, out
 
     primary = out.lines.find { |l| l.start_with?("PRIMARY") }
-    assert_match(/PRIMARY\s+xan/, primary, "fit decides the primary seat wherever it is allowed to")
+    assert_match(/PRIMARY\s+ray/, primary, "fit decides the primary seat wherever it is allowed to")
     assert_match(/fit 2/, primary)
     assert_match(/top domain fit/, primary, "and the seat names fit as the mechanism")
   end
@@ -285,16 +285,16 @@ class ReviewerSelectCliTest < Minitest::Test
     pair = decision["reviewers"].map { |r| r["slug"] }
     assert_equal 2, pair.uniq.size, "a pair still forms"
     # shannon (builder) + jasper (busy) are out; steffon is eligible again (avi is the
-    # QA owner now), so the light is one of {steffon, xan}.
+    # QA owner now), so the light is one of {steffon, ray}.
     %w[shannon jasper].each { |s| refute_includes pair, s, "#{s} is not the light reviewer" }
-    assert_includes %w[steffon xan], pair.last, "the light is one of the remaining specialists"
+    assert_includes %w[steffon ray], pair.last, "the light is one of the remaining specialists"
   end
 
   def test_busy_filter_keeps_a_pair_rather_than_starve_the_pool
     # built_by carl → Carl yields the primary seat, so BOTH seats come from the
     # light pool; marking the rest busy can't drop below a formable pair — the
     # least-bad busy souls are KEPT eligible (starve guard).
-    out, code = select({ "shape" => "backend", "built_by" => "carl" }, "--busy shannon,jasper,xan --json")
+    out, code = select({ "shape" => "backend", "built_by" => "carl" }, "--busy shannon,jasper,ray --json")
     assert_equal 0, code, out
 
     line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
@@ -936,29 +936,29 @@ class ReviewerSelectCliTest < Minitest::Test
 
   # --- THE AUTHOR SET, end to end through the CLI ------------------------------
   # (reviewer-select-seats-authors) devops.built_by holds ONE soul; a task can have
-  # SEVERAL. On 2026-08-30 this very command seated ALEX as the light on a diff Xan
+  # SEVERAL. On 2026-08-30 this very command seated ALEX as the light on a diff Ritch
   # had written every test on, because built_by said "steffon" (PR #1081). The CLI
   # is where a human is present to choose, so it FAILS CLOSED where the in-app
   # recorder must keep degrading.
 
   def test_every_author_on_the_task_is_excluded_from_the_light
     out, code = select({ "shape" => "backend", "built_by" => "steffon",
-                         "builders" => %w[steffon xan] }, "--json")
+                         "builders" => %w[steffon ray] }, "--json")
     assert_equal 0, code, out
 
     decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
-    assert_equal %w[steffon xan], decision["builders"]
-    refute_includes decision["candidates"], "xan", "the co-author is out of the light pool"
+    assert_equal %w[steffon ray], decision["builders"]
+    refute_includes decision["candidates"], "ray", "the co-author is out of the light pool"
     refute_includes decision["candidates"], "steffon"
-    refute_includes decision["reviewers"].map { |r| r["slug"] }, "xan",
-                    "THE LIVE FAILURE: xan took this seat on his own diff"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "ray",
+                    "THE LIVE FAILURE: ray took this seat on his own diff"
   end
 
   def test_human_output_names_every_author_not_just_built_by
-    out, code = select("shape" => "backend", "built_by" => "steffon", "builders" => %w[steffon xan])
+    out, code = select("shape" => "backend", "built_by" => "steffon", "builders" => %w[steffon ray])
     assert_equal 0, code, out
     assert_match(/steffon \(author/, out)
-    assert_match(/xan \(author/, out, "the co-author must appear on the excluded line too")
+    assert_match(/ray \(author/, out, "the co-author must appear on the excluded line too")
   end
 
   def test_a_legacy_unnamed_marker_no_longer_refuses
@@ -966,7 +966,7 @@ class ReviewerSelectCliTest < Minitest::Test
     # carrying it selects on its named authors.
     out, code = select({ "shape" => "backend", "built_by" => "steffon",
                          "builders" => %w[steffon],
-                         "builders_unattributed" => "sess-xan-0001" }, "--json --no-record")
+                         "builders_unattributed" => "sess-ray-0001" }, "--json --no-record")
     assert_equal 0, code, out
     decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
     refute_includes decision["candidates"], "steffon"
@@ -978,7 +978,7 @@ class ReviewerSelectCliTest < Minitest::Test
     # he yields the primary seat, so BOTH seats come from a light pool of four, and
     # three authors cannot all be dropped.
     out, code = select_verbose({ "shape" => "backend", "built_by" => "shannon",
-                                 "builders" => %w[shannon jasper steffon xan] },
+                                 "builders" => %w[shannon jasper steffon ray] },
                                "--qa-owner carl --no-record")
     assert_equal 2, code, out
     assert_match(/AN AUTHOR WOULD BE SEATED/, out)
@@ -999,7 +999,7 @@ class ReviewerSelectCliTest < Minitest::Test
 
   def test_a_PARTIAL_typo_in_the_builder_list_REFUSES
     # The sharp case: `steffon` resolves, `alexx` does not, so the set is non-empty
-    # and the authors read as KNOWN — while xan, the soul the caller meant to keep
+    # and the authors read as KNOWN — while ray, the soul the caller meant to keep
     # out, never registered. Honoring the half we understood is criterion 2's
     # fail-open wearing criterion 1's clothes.
     out, code = select_verbose({ "shape" => "backend" }, "--builder steffon,alexx --no-record")
@@ -1010,11 +1010,11 @@ class ReviewerSelectCliTest < Minitest::Test
   end
 
   def test_a_fully_resolved_builder_list_still_selects
-    out, code = select({ "shape" => "backend" }, "--builder steffon,xan --json")
+    out, code = select({ "shape" => "backend" }, "--builder steffon,ray --json")
     assert_equal 0, code, out
     decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
     assert_empty decision["builder_override_unresolved"]
-    assert_equal %w[steffon xan], decision["builders"]
+    assert_equal %w[steffon ray], decision["builders"]
   end
 
   def test_a_typod_built_by_on_the_record_REFUSES
@@ -1053,12 +1053,12 @@ class ReviewerSelectCliTest < Minitest::Test
   # SOME value clears the refusal.
   FLAG_VALUES = {
     "--builder" => %w[shannon none],
-    "--qa-owner" => %w[carl shannon jasper steffon xan avi mack],
+    "--qa-owner" => %w[carl shannon jasper steffon ray avi mack],
     "--busy" => %w[shannon]
   }.freeze
 
   def test_every_flag_the_seated_refusal_offers_can_actually_clear_it
-    authors = %w[shannon jasper steffon xan]
+    authors = %w[shannon jasper steffon ray]
     devops = { "shape" => "backend", "built_by" => "shannon", "builders" => authors }
     out, code = select_verbose(devops, "--no-record")
 

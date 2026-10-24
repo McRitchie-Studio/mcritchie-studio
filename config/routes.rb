@@ -16,7 +16,7 @@ Rails.application.routes.draw do
   get "integrations", to: "integrations#index", as: :integrations
   # How a client gives its agents a home in Discord (the Discord card's Connect).
   get "integrations/discord", to: "integrations#discord", as: :integrations_discord
-  # The app funnel: prompt → sign in → claim <name>.mcritchie.studio → queued
+  # The app funnel: prompt → sign in → claim <name>.mcritchie.app → queued
   # for an agent. `check` is the live subdomain availability probe.
   get   "build",        to: "build#new",    as: :build
   post  "build",        to: "build#create"
@@ -24,8 +24,21 @@ Rails.application.routes.draw do
   # Admin: every app requested through the funnel. Before build/:token, or
   # "requests" would be read as a token.
   get   "build/requests", to: "build#index", as: :build_requests
+  # Development only: replay the Build My App launch panel for a launched app.
+  get   "build/launch-demo/:slug", to: "build#launch_demo", as: :build_launch_demo if Rails.env.development?
   get   "build/:token", to: "build#show",   as: :build_request
   patch "build/:token", to: "build#update"
+  # The landing after a signed-out Build My App's sign-in (both the magic link's
+  # return_to and the Google path through LandingController): it launches only
+  # with the press's intent in this session (BuildIntake::PendingLaunch).
+  get   "build/:token/launch", to: "build#launch", as: :build_request_launch
+  # The /build chat with Ritch (BuildIntake): a message, the poll for answers, and
+  # a tap on an intake card.
+  post  "build/:token/messages", to: "build#message", as: :build_request_messages
+  get   "build/:token/turns",    to: "build#turns",   as: :build_request_turns
+  patch "build/:token/intake",   to: "build#choose",  as: :build_request_intake
+  # The CTO card's "New set": another set of animal avatars in the request's colours.
+  get   "build/:token/cto_animals", to: "build#cto_animals", as: :build_request_cto_animals
   # The public contact form, which is also the SMS opt-in page carriers review.
   get  "contact", to: "contact_submissions#new", as: :contact_form
   # Both routes are named. An unnamed `post "contact"` is auto-named `contact`
@@ -295,33 +308,46 @@ Rails.application.routes.draw do
   get "links", to: "links#index", as: :links
 
   # Session entry launcher — terminal-styled chooser for the avenue you enter a
-  # session as (Session agent · Avi · Xan). Selecting Xan routes to the learning
-  # heartbeat at /xan/heartbeat, the per-action atomic trajectory table
-  # (HeartbeatController#show). The named route (xan_heartbeat_path) is stable, so
+  # session as (Session agent · Avi · Ritch). Selecting Ritch routes to the learning
+  # heartbeat at /ray/heartbeat, the per-action atomic trajectory table
+  # (HeartbeatController#show). The named route (ray_heartbeat_path) is stable, so
   # the launcher anchor follows it; it was repointed off LauncherController's
   # placeholder once the real view (T2) landed.
   get "launcher", to: "launcher#index", as: :launcher
-  get "xan/heartbeat", to: "heartbeat#show", as: :xan_heartbeat
+  get "ray/heartbeat", to: "heartbeat#show", as: :ray_heartbeat
   # Feedback layer over the read-only trajectory (T5): a per-action grading drawer
   # (GET, lazy-loaded into a turbo-frame), the upsert/bank/discard write, and the
   # curated Insight Bank page. Like the view itself, this is an open meta surface.
-  get  "xan/heartbeat/actions/:id/feedback", to: "heartbeat#feedback", as: :heartbeat_feedback
-  post "xan/heartbeat/actions/:id/grade",    to: "heartbeat#grade",    as: :heartbeat_grade
+  get  "ray/heartbeat/actions/:id/feedback", to: "heartbeat#feedback", as: :heartbeat_feedback
+  post "ray/heartbeat/actions/:id/grade",    to: "heartbeat#grade",    as: :heartbeat_grade
   # Activity-level grade: upsert one grade for a narrated AgentActivity. JSON only
   # by design so it stays view-free from the drawer/turbo stream path.
-  post "xan/heartbeat/activities/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_activity_grade
+  post "ray/heartbeat/activities/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_activity_grade
   # The per-activity grading drawer body, lazy-loaded into the shared turbo-frame
   # on an activity's grade click.
-  get  "xan/heartbeat/activities/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_activity_feedback
+  get  "ray/heartbeat/activities/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_activity_feedback
   # Every AgentActivity across ALL sessions, newest-first, paginated 100/page —
   # the cross-session analogue of the per-session heartbeat.
-  get  "xan/heartbeat/activities", to: "heartbeat#all_activities", as: :heartbeat_all_activities
-  get  "xan/insights", to: "heartbeat#insights", as: :xan_insights
-  # The OPSD distillation pipeline, left→right: Activities → Insights (Xan's
+  get  "ray/heartbeat/activities", to: "heartbeat#all_activities", as: :heartbeat_all_activities
+  get  "ray/insights", to: "heartbeat#insights", as: :ray_insights
+  # The OPSD distillation pipeline, left→right: Activities → Insights (Ritch's
   # grades) → Confirmations (McRitchie's mcr grades). `confirm` records the McRitchie
   # (mcr) confirmation of an insight and redirects back (a no-JS form action).
-  get  "xan/pipeline", to: "heartbeat#pipeline", as: :xan_pipeline
-  post "xan/pipeline/confirm/:id", to: "heartbeat#confirm", as: :xan_pipeline_confirm
+  get  "ray/pipeline", to: "heartbeat#pipeline", as: :ray_pipeline
+  post "ray/pipeline/confirm/:id", to: "heartbeat#confirm", as: :ray_pipeline_confirm
+
+  # LEGACY /xan/* — the seat's slug from 2026-09-24 to 2026-10-18 (ray-slug-rename;
+  # Ray is Alex's middle name). Every GET under it 301s to the same path under
+  # /ray, QUERY STRING INCLUDED, so a bookmarked `?session_id=…` deep link or a
+  # printed handoff still lands on the page it named. The POST endpoints (grade,
+  # confirm) are form actions the pages themselves render, never a public URL, so
+  # they moved without a shim. Retire alongside the `xan` entry in
+  # Task::SOUL_ALIASES.
+  legacy_seat = redirect { |_params, request| request.fullpath.sub(%r{\A/xan/}, "/ray/") }
+  get "xan/heartbeat",       to: legacy_seat
+  get "xan/heartbeat/*rest", to: legacy_seat, format: false
+  get "xan/insights",        to: legacy_seat
+  get "xan/pipeline",        to: legacy_seat
 
   resources :chat, only: [:index, :create]
   resources :schedule, only: [:index]
@@ -416,10 +442,24 @@ Rails.application.routes.draw do
   resources :applications, only: [:index, :show], param: :slug do
     member do
       get :health
+      # The app's tasks by lane, sanitized for its owner (docs/agents/system/client-pipeline.md).
+      get :pipeline
       # CTO usage (docs/agents/system/agent-usage.md): the meter as JSON, and
       # the admin's tier and cap-lift form.
       get :usage
       patch :usage_cap
+      # The live chat with the app's CTO (docs/agents/system/agent-message-loop.md, "Web chat").
+      get :chat, to: "cto_chats#show"
+      post :chat, to: "cto_chats#create"
+      # The chat's status card alone, for its live reload (AppDevopsStages::Live).
+      get "chat/status", to: "cto_chats#status", as: :chat_status
+      # The owner's CTO avatar picker: "New set", and the pick.
+      get "chat/avatars", to: "cto_chats#avatars", as: :chat_avatars
+      patch "chat/avatar", to: "cto_chats#avatar", as: :chat_avatar
+      # Its files (AgentMessages::Attachments): the composer's upload, and a sent file's expiring link.
+      post "chat/attachments", to: "cto_chat_attachments#create", as: :chat_attachments
+      get "chat/attachments/:attachment_id", to: "cto_chat_attachments#show", as: :chat_attachment,
+                                             constraints: { attachment_id: /\d+/ }
     end
   end
 
@@ -676,12 +716,18 @@ Rails.application.routes.draw do
           post :retire
         end
       end
+      # Publish a client app's static bundle to the shared host (bin/client-bundle;
+      # docs/agents/system/client-app-host.md). Agent sessions only.
+      post "client_bundles/:sub", to: "client_bundles#create", as: :client_bundle
       # Rename one record's slug with every row that names it (admin sessions).
       patch "slugs/:kind/:slug", to: "slug_renames#update", as: :slug_rename
       # The person/athlete projection turf-monster syncs from. Read-only by
       # design: MS masters durable facts, TM masters events, and neither writes
       # into the other's master.
       resources :athletes, only: [:index]
+      # Written by bin/game-model (the game-character-models SOP): a layered sheet built
+      # on the operator's Mac, filed on the player's look for that game and its iced twin.
+      resources :game_looks, only: [:create]
       # Written by bin/digest-video (stage 1), the cast vision pass (stage 2), bin/find-clips (stage 5),
       # bin/clip-references (lettered frames) and bin/stitch-video (the final stitch).
       # Drawn twice: /api/v1/videos is canonical, and /api/v1/music_videos (the
@@ -760,6 +806,28 @@ Rails.application.routes.draw do
           post :typing
         end
       end
+      # The warm-session lease per domain (AgentDomainSessionsController): bin/dispatcher
+      # acquires, renews, checkpoints, restores, consolidates and releases it.
+      resources :agent_domain_sessions, only: [:index], param: :domain do
+        member do
+          post :acquire
+          post :renew
+          post :checkpoint
+          post :checkpoint_read, action: :download
+          post :release
+          post :consolidate
+          post :fault
+        end
+      end
+      # bin/client-build-launcher, the automatic first version of a /build app
+      # (ClientBuilds; docs/agents/system/client-build-launcher.md).
+      resources :client_builds, only: [:index], param: :slug do
+        member do
+          post :claim
+          post :progress
+          post :finish
+        end
+      end
       # bin/dispatcher's minute ping, read by the floor alert (AgentDispatcherAlertJob).
       resources :agent_dispatchers, only: [:index] do
         collection do
@@ -796,6 +864,9 @@ Rails.application.routes.draw do
           patch :block
           # Clears a live block (Task#unblock!); `bin/task begin` on a blocked task calls it.
           patch :unblock
+          # Read-only: would a claim into building fit the app's lane cap? `bin/task begin`
+          # asks before it cuts a desk (BuildingLanes, docs/agents/system/client-pipeline.md).
+          get :building_lane
           post "review_events", to: "review_events#create", as: :review_events
           # Per-task REVIEW claim (per-task-pr-review-claim) — the review LANE's
           # per-task lease, so many pr-review sessions run in parallel and skip a
@@ -881,7 +952,7 @@ Rails.application.routes.draw do
         end
       end
       # DevOps SHIFT lease (devops-shift-lease) — at most one live conductor per role
-      # lane (avi/steffon/xan), so two same-role sessions can't collide. `acquire` is
+      # lane (avi/steffon/ray), so two same-role sessions can't collide. `acquire` is
       # the atomic take-or-stand-down, `renew` the heartbeat, `release` the clean
       # session-end drop; `index` is the "who's on shift" read.
       resources :devops_shifts, only: [:index] do
@@ -891,10 +962,10 @@ Rails.application.routes.draw do
           post :release
         end
       end
-      # Learning-loop grading — the bearer AGENT path for the Xan heartbeat
+      # Learning-loop grading — the bearer AGENT path for the Ray heartbeat
       # grade-events loop. `awaiting` lists resolved activities still ungraded by
-      # Xan; `grade` upserts Xan's grade of one activity. The grader is FORCED to xan here
-      # (the mcr audit-of-Xan stays admin-browser-only), so the shared agent token
+      # Ritch; `grade` upserts Ritch's grade of one activity. The grader is FORCED to ray here
+      # (the mcr audit-of-Ritch stays admin-browser-only), so the shared agent token
       # can never forge McRitchie's audit.
       get  "agent_activities/awaiting_grade", to: "activity_grades#awaiting", as: :awaiting_grade_agent_activities
       post "agent_activities/:id/grade",      to: "activity_grades#create",   as: :grade_agent_activity

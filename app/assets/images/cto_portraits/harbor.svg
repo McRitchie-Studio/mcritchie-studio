@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="Harbor, a placeholder CTO portrait">
+  <circle cx="80" cy="80" r="80" fill="#bae6fd"/>
+  <path d="M30 160 C32 126 56 112 80 112 C104 112 128 126 130 160Z" fill="#0369a1"/>
+  <rect x="70" y="98" width="20" height="18" rx="6" fill="#8d5524"/>
+  <ellipse cx="80" cy="78" rx="31" ry="34" fill="#8d5524"/>
+  <circle cx="50" cy="54" r="11" fill="#111827"/><circle cx="60" cy="48" r="11" fill="#111827"/><circle cx="70" cy="54" r="11" fill="#111827"/><circle cx="80" cy="48" r="11" fill="#111827"/><circle cx="90" cy="54" r="11" fill="#111827"/><circle cx="100" cy="48" r="11" fill="#111827"/><circle cx="110" cy="54" r="11" fill="#111827"/>
+  <circle cx="68" cy="76" r="3.5" fill="#1f2937"/>
+  <circle cx="92" cy="76" r="3.5" fill="#1f2937"/>
+  <path d="M70 92 Q80 100 90 92" fill="none" stroke="#7c2d12" stroke-width="3" stroke-linecap="round"/>
+  <g fill="none" stroke="#1f2937" stroke-width="2.5"><circle cx="68" cy="76" r="8"/><circle cx="92" cy="76" r="8"/><path d="M76 76 H84"/></g>
+</svg>

@@ -22,7 +22,7 @@ A soul's skills are its dream sequence plus its role page. The tags decide the
 layer: a dream with `sop:` and `step:` tags is a step dream; otherwise a dream with
 no `soul` tag is platform. A dream tagged for several souls loads in each of their
 sequences and lives under the first. Directories use the `config/souls.yml` slugs
-(`turf-monster`, `xan`). The design behind the layers is
+(`turf-monster`, `ray`). The design behind the layers is
 [`../system/context-layers-design.md`](../system/context-layers-design.md).
 [`../dreams/INDEX.md`](../dreams/INDEX.md) lists every dream by sequence and step.
 The hub's `/dreams` page (admin only, linked from `/agents`) shows the bank as
@@ -88,7 +88,7 @@ the whole run" is `qa-release` · `prepare`, whoever runs the release.
 | | What it holds | Who admits it | Where it lives |
 |---|---|---|---|
 | **Dream** | a question, a good answer, the reason, the story | Alex signs off each one | `docs/agents/dreams/<sequence>/<slug>.md`, tracked |
-| **Insight** | a one-line lesson graded from an activity | Xan banks it (`grade-events`) | the board's Insight Bank |
+| **Insight** | a one-line lesson graded from an activity | Ritch banks it (`grade-events`) | the board's Insight Bank |
 | **Provider memory** | one session's private notes | nobody | `~/.claude/…/memory/`, scratch |
 
 A dream is the only one of the three that carries its reasoning, and the only one

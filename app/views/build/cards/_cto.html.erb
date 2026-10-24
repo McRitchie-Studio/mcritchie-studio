@@ -1,0 +1,52 @@
+<%# locals: (card:, message:, request_row:) %>
+<%# The CTO card, "Customize your CTO", one centred stack (Alex, 2026-10-18): the avatar on top (tap it, or New image, to open the picker: build/_animal_picker, a set of the 100-animal bank BuildIntake::Animals drawn in the theme the visitor picked, with "New set" for another; task cto-animal-avatar-bank, Alex 2026-10-20; a draft that picked one of the older BuildIntake::Portraits keeps it), the name Ray suggested PREFILLED in an input the visitor may edit, his other names as taps under it (which fill the field), and Wake Up your CTO at the bottom (Alex, 2026-10-19; it was Hatch CTO), which saves both and relays the visitor's turn so Ray moves on to the domain (BuildIntake::Choice "cto"). The picker is a native dialog inside the form (build_chat.js opens it and swaps the preview; a tap on an avatar or Done closes it, while the arrow keys only move the pick, and Enter closes it without submitting); its radios submit with the form, so a pick needs no extra request (only "New set" asks the server, for the next set's drawings). The card starts on the stored avatar, else an animal Ritch named, else the request's stable default animal; an older portrait key Ritch names is not offered. %>
+<% picked_name = request_row.cto_name.presence || card["names"].first %>
+<% picked_portrait = if BuildIntake::Portraits.choosable?(request_row.cto_avatar) then request_row.cto_avatar
+                     elsif BuildIntake::Animals.avatar?(card["portrait"]) then card["portrait"]
+                     else BuildIntake::Animals.default_for(request_row.token) end %>
+<% preview_class = "block h-full w-full rounded-full" %>
+<% chosen = request_row.cto_name.present? %>
+<%= form_with url: build_request_intake_path(request_row.token), method: :patch,
+      class: "rounded-2xl border #{chosen ? 'border-primary' : 'border-subtle'} bg-surface p-3 sm:p-4",
+      data: { test: "build-card-cto", chosen: chosen, build_cto: true } do %>
+  <%= hidden_field_tag :field, "cto" %>
+  <%= hidden_field_tag :message_id, message.id %>
+  <%= hidden_field_tag :client_id, SecureRandom.uuid %>
+  <p class="text-center text-base font-semibold text-heading mb-3" data-test="build-cto-heading">Customize your CTO</p>
+  <div class="mx-auto flex max-w-sm flex-col items-center gap-3" data-test="build-cto-stack">
+    <div class="flex flex-col items-center gap-1" data-test="build-cto-portrait">
+      <button type="button" class="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ring-offset-2 ring-offset-surface"
+              data-build-portrait-open aria-haspopup="dialog" aria-label="Choose a different avatar" data-test="build-portrait-open">
+        <span class="block h-24 w-24 sm:h-28 sm:w-28 rounded-full border border-subtle overflow-hidden"
+              data-build-portrait-preview data-art-class="<%= preview_class %>" data-avatar="<%= picked_portrait %>" data-test="build-portrait-preview">
+          <%= cto_avatar_tag picked_portrait, request_row.palette, css_class: preview_class, label: cto_avatar_label(picked_portrait) %>
+        </span>
+      </button>
+      <button type="button" class="text-xs text-primary-ink hover:underline underline-offset-2" data-build-portrait-open data-test="build-portrait-new">New image</button>
+    </div>
+    <label class="block w-full">
+      <span class="sr-only">Your CTO's name</span>
+      <input type="text" name="custom_name" value="<%= picked_name %>" maxlength="24" required autocomplete="off"
+             class="input-field w-full text-center text-base font-semibold" data-build-cto-name-input data-test="build-cto-name-input">
+    </label>
+    <%# Ritch's names as taps, not a datalist: a datalist filters by the field's value, so with the first name prefilled the others stayed hidden until the field was cleared. A tap fills the field (build_chat.js); typing still wins. %>
+    <% if card["names"].size > 1 %>
+      <div class="flex flex-wrap items-center justify-center gap-1.5" role="group" aria-label="<%= BuildController::AGENT_NAME %>'s name ideas" data-test="build-cto-names">
+        <% card["names"].each do |name| %>
+          <button type="button" class="rounded-full border border-subtle px-2.5 py-1 text-xs text-body hover:border-primary aria-pressed:border-primary aria-pressed:bg-primary/10 aria-pressed:text-heading"
+                  aria-pressed="<%= name == picked_name %>" data-build-cto-name="<%= name %>" data-test="build-cto-name-suggestion"><%= name %></button>
+        <% end %>
+      </div>
+    <% end %>
+    <%# The chosen theme's colours carry on here (cta-glow); spent once the CTO is set. %>
+    <%= tag.span class: "cta-glow w-full", style: cta_glow_style(request_row.palette), data: { test: "build-cto-glow", glow: ("off" if chosen) } do %>
+      <%# Taller than a plain CTA: the card's one action (Alex, 2026-10-19). %>
+      <button type="submit" class="btn btn-primary w-full min-h-14 py-3.5 text-base" data-test="build-choose-cto">
+        <%= chosen ? "Save my CTO" : "Wake Up your CTO" %>
+      </button>
+    <% end %>
+  </div>
+
+  <%= render "build/animal_picker", picked: picked_portrait, palette: request_row.palette, seed: request_row.token,
+                                   set_url: build_request_cto_animals_path(request_row.token) %>
+<% end %>

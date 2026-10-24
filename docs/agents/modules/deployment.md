@@ -303,7 +303,7 @@ Cutover sequence:
 Deploys, gem publishes, provider changes, and production env-var changes are
 Release-lane work. A feature agent can recommend deploy, but only the designated
 release conductor should run it after explicit approval from Alex or an
-already-approved rollout prompt. Xan's `full-cycle` launcher, Steffon's
+already-approved rollout prompt. Ritch's `full-cycle` launcher, Steffon's
 `production-deploy`, and Avi's `deploy-with-task` acts are such pre-approved
 production prompts; `pr-review` and Avi's `qa-release` sweep are not — they stop
 before prod. A grant lasts for the window Alex names ("for the night"); outside it,
@@ -314,6 +314,14 @@ at QA assembly** (see below) — the one irreversible act inside Avi's
 otherwise prod-stopping `qa-release` lane, taken only after a fail-closed
 preflight over every swept gem. `bin/release ship` re-verifies each gem
 idempotently (already-live → skip). Neither is a separate ad-hoc step.
+
+**Release trains.** Every `bin/release` command takes `--train <slug>` (default
+`hub`). An app listed in `config/release_trains.yml` ships on its own train when a
+task names only its repos; gems, the hub, and any task naming two repos ride the hub,
+which publishes gems producer-first. The file lists **no train until task C** of
+`/Users/alex/projects/.agents/epics/release-trains-design.md` (the nightly standing
+grant), so today every release is the hub's. A repo rides one active train at a time;
+the sweep holds a task naming a repo another train holds before any promote.
 
 ## QA And Production URLs
 

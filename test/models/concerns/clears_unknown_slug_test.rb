@@ -15,9 +15,9 @@ class ClearsUnknownSlugTest < ActiveSupport::TestCase
   end
 
   test "[unit] a handle that differs from an agent only by case takes the agent" do
-    note = Activity.create!(activity_type: "comment", description: "cased", agent_slug: "Xan")
+    note = Activity.create!(activity_type: "comment", description: "cased", agent_slug: "Ray")
 
-    assert_equal "xan", note.agent_slug
+    assert_equal "ray", note.agent_slug
     assert_nil note.metadata["agent_handle"]
   end
 

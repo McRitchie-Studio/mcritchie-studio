@@ -8,7 +8,8 @@ module Api
     #   GET  /api/v1/agent_messages/next       the message a claim would take now; writes nothing
     #   GET  /api/v1/agent_messages/:id        one message with its event timeline
     #   POST /api/v1/agent_messages/claim      { soul | souls[], worker, channel?, wait? } -> the claimed message or null
-    #   GET  /api/v1/agent_messages/:id/context?worker=W  the holder's context bundle (AgentMessages::MemoryBundle)
+    #   GET  /api/v1/agent_messages/:id/context?worker=W  the holder's context bundle (AgentMessages::MemoryBundle),
+    #                                             with the message's files as expiring URLs (`attachments`)
     #   POST /api/v1/agent_messages/:id/complete { worker, response_text, action_summary?,
     #                                             claude_session_id?, claude_cwd?, reasoning?, run_meta?,
     #                                             notes? }  notes: facts about the sender, filed under the message's author
@@ -28,11 +29,15 @@ module Api
     #
     # AUTH is the board's, unchanged (BaseController): an agent session or the
     # shared secret's token. A SESSION acts only for its own soul: an admin session
-    # (Steffon, Xan) may act for any soul, any other session only for the soul it
+    # (Steffon, Ritch) may act for any soul, any other session only for the soul it
     # names. A client session and a harness key reach none of this. The shared
     # token carries no soul, so the `soul` it sends is the actor, exactly as every
     # other board write records it (session_actor).
     class AgentMessagesController < BaseController
+      # The context bundle's file URLs (AgentMessages::Attachments.for_worker) on a
+      # Disk service need the request's host; R2 URLs do not.
+      include ActiveStorage::SetCurrent
+
       before_action :load_message, only: [ :show, :context, :complete, :release, :renew, :typing ]
       before_action :require_soul_scope!, only: [ :next_message, :claim, :context, :complete, :release, :renew, :typing ]
 
@@ -65,11 +70,19 @@ module Api
       # normal idle answer, so a polling worker never mistakes it for an error.
       def claim
         wait = params[:wait].to_f.clamp(0, WAIT_CAP)
+        # A standby dispatcher claims nothing while a primary is live, and then
+        # only its standby domains' souls (AgentDispatcher.claim_scope). Its
+        # empty answer is immediate: a standby never holds a long poll.
+        souls, standby_reason = AgentDispatcher.claim_scope(params[:worker], acting_souls)
+        if standby_reason
+          return render_data(nil, meta: { reason: standby_reason, waited: false })
+        end
+
         deadline = Time.current + wait
         result = nil
         loop do
           result = guarded do
-            AgentMessage.claim!(soul: acting_souls, worker: params[:worker], channel: params[:channel].presence,
+            AgentMessage.claim!(soul: souls, worker: params[:worker], channel: params[:channel].presence,
                                 actor: claim_actor)
           end
           return if performed?
@@ -92,10 +105,12 @@ module Api
 
       # One "typing…" pulse in the message's channel, as the bot that will reply
       # (AgentMessageTypingJob). HOLDER-ONLY (409 NOT_HOLDER). Otherwise always
-      # 200: meta.typing is "queued", or why no pulse was sent ("not_discord",
+      # 200: meta.typing is "queued", or why no pulse was sent ("not_typing_channel",
       # "not_answered", "capped"), and bin/dispatcher stops pulsing that run on
       # anything but "queued". The Discord call runs on the job, so a slow
-      # Discord never holds the dispatcher's main loop.
+      # Discord never holds the dispatcher's main loop. `phase` (optional) is a
+      # web chat run's thinking or typing; anything else, or none, is typing
+      # (AgentMessage.typing_phase).
       def typing
         refusal = @message.typing_refusal(worker: params[:worker])
         if refusal == "not_holder"
@@ -105,7 +120,10 @@ module Api
           ))
         end
 
-        AgentMessageTypingJob.perform_later(@message.id, params[:worker].to_s.strip) if refusal.nil?
+        if refusal.nil?
+          AgentMessageTypingJob.perform_later(@message.id, params[:worker].to_s.strip,
+                                              AgentMessage.typing_phase(params[:phase]))
+        end
         render_data({ "id" => @message.id }, meta: { typing: refusal || "queued" })
       end
 
@@ -178,7 +196,7 @@ module Api
       # The soul this call acts for: the message's own on a member route, else the
       # `soul` param.
       def acting_soul
-        @message ? @message.soul_slug.to_s : params[:soul].to_s.strip
+        @message ? @message.soul_slug.to_s : Task.canonical_soul(params[:soul])
       end
 
       # Every soul this call acts for: the message's own on a member route, else
@@ -187,7 +205,10 @@ module Api
         return [ acting_soul ].reject(&:empty?) if @message
 
         listed = params[:souls].is_a?(Array) ? params[:souls] : params[:souls].to_s.split(",")
-        (listed.map { |s| s.to_s.strip } + [ params[:soul].to_s.strip ]).reject(&:empty?).uniq
+        # A retired slug claims for its successor (Task::SOUL_ALIASES): a
+        # dispatcher still running a pre-rename config asks for `xan` and is
+        # handed the `ray` rows, so no message waits on a soul nobody serves.
+        (listed.map { |s| Task.canonical_soul(s) } + [ Task.canonical_soul(params[:soul]) ]).reject(&:empty?).uniq
       end
 
       # A single-soul claim keeps its actor as before; a multi-soul claim records

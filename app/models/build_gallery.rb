@@ -9,7 +9,15 @@ module BuildGallery
   CONFIG = Rails.root.join("config/build_examples.yml")
   BLURB_LIMIT = 120
 
-  Example = Struct.new(:name, :url, :emoji, :blurb, :image, keyword_init: true)
+  # `image` is the card's dark-mode still; `motion` the short loop it plays on
+  # hover (script/gallery_capture.cjs writes both). Either may be nil.
+  # `palette` is the app's own theme for the card (#palette_for), or nil for
+  # the Studio theme.
+  Example = Struct.new(:name, :url, :emoji, :blurb, :image, :motion, :palette, keyword_init: true)
+
+  # The colours a palette must give (config `palettes`).
+  PALETTE_KEYS = %w[panel primary name text].freeze
+  HEX = /\A#\h{6}\z/
 
   IMAGE_DIR = "build_gallery".freeze
 
@@ -30,6 +38,18 @@ module BuildGallery
     names[subdomain.to_s].presence || subdomain.to_s.tr("-", " ").titleize
   end
 
+  # The config's `palettes` entry for a subdomain, as { "panel" => "#rrggbb",
+  # "primary" => ..., "name" => ..., "text" => ... }, or nil (the card keeps
+  # the Studio theme). Only a complete entry of #rrggbb values counts: the
+  # card writes them into an inline style, so nothing else may reach it.
+  def palette_for(subdomain)
+    entry = (YAML.safe_load_file(CONFIG).fetch("palettes", {}) || {})[subdomain.to_s]
+    return nil unless entry.is_a?(Hash)
+
+    palette = entry.slice(*PALETTE_KEYS)
+    PALETTE_KEYS.all? { |key| palette[key].to_s.match?(HEX) } ? palette : nil
+  end
+
   # "rantly" for https://rantly.mcritchie.studio.
   def subdomain(url)
     URI.parse(url.to_s).host.to_s.split(".").first
@@ -40,19 +60,21 @@ module BuildGallery
   def configured
     YAML.safe_load_file(CONFIG).fetch("examples", []).map do |attrs|
       Example.new(name: attrs.fetch("name"), url: attrs.fetch("url"), emoji: attrs["emoji"].presence || "🧱",
-                  blurb: attrs["blurb"].to_s, image: existing_image(attrs["image"]))
+                  blurb: attrs["blurb"].to_s, image: existing_image(attrs["image"]), motion: existing_image(attrs["motion"]),
+                  palette: palette_for(subdomain(attrs.fetch("url"))))
     end
   end
 
   def showcased
     AppRequest.where(showcase: true, status: "live").order(updated_at: :desc).map do |req|
       Example.new(name: display_name(req.subdomain), url: req.url, emoji: "🧱",
-                  blurb: first_sentence(req.prompt), image: existing_image("#{IMAGE_DIR}/#{req.subdomain}.jpg"))
+                  blurb: first_sentence(req.prompt), image: existing_image("#{IMAGE_DIR}/#{req.subdomain}.webp"),
+                  motion: existing_image("#{IMAGE_DIR}/#{req.subdomain}.mp4"), palette: palette_for(req.subdomain))
     end
   end
 
-  # An image path for image_tag, or nil when the file is not there — a card
-  # then shows its emoji instead of a broken image.
+  # An asset path (a still or a loop), or nil when the file is not there — a
+  # card then shows its emoji, or just its still, instead of a broken file.
   def existing_image(path)
     return nil if path.blank?
 

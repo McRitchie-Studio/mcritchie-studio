@@ -69,13 +69,13 @@ class AgentMessages::DiscordPollTest < ActiveSupport::TestCase
   end
 
   test "[unit] a channel with no entry is in scope: a mention there is stored and routed" do
-    message = ingest(discord_raw(1014, content: "<@&#{XAN_ROLE}> board?", channel: LOUNGE, roles: [ XAN_ROLE ]))
+    message = ingest(discord_raw(1014, content: "<@&#{RAY_ROLE}> board?", channel: LOUNGE, roles: [ RAY_ROLE ]))
 
-    assert_equal [ "xan", "role", LOUNGE ], [ message.soul_slug, message.routed_by, message.channel_ref ]
+    assert_equal [ "ray", "role", LOUNGE ], [ message.soul_slug, message.routed_by, message.channel_ref ]
   end
 
   test "[unit] ingesting the same message twice stores one row" do
-    raw = discord_raw(1003, content: "<@&#{XAN_ROLE}> board?", roles: [ XAN_ROLE ])
+    raw = discord_raw(1003, content: "<@&#{RAY_ROLE}> board?", roles: [ RAY_ROLE ])
     first = ingest(raw)
     again = ingest(raw)
 
@@ -106,9 +106,9 @@ class AgentMessages::DiscordPollTest < ActiveSupport::TestCase
 
   test "[unit] a reply that names another soul goes to that soul, in the same thread" do
     parent = ingest(discord_raw(1009, content: "<@&#{AVI_ROLE}> status?", roles: [ AVI_ROLE ]))
-    follow_up = ingest(discord_raw(1010, content: "<@&#{XAN_ROLE}> your view?", roles: [ XAN_ROLE ], reply_to: 1009))
+    follow_up = ingest(discord_raw(1010, content: "<@&#{RAY_ROLE}> your view?", roles: [ RAY_ROLE ], reply_to: 1009))
 
-    assert_equal "xan", follow_up.soul_slug
+    assert_equal "ray", follow_up.soul_slug
     assert_equal parent.thread_key, follow_up.thread_key
   end
 
@@ -130,9 +130,9 @@ class AgentMessages::DiscordPollTest < ActiveSupport::TestCase
     assert_nil ingest(forward(1023, of: 1021, from_channel: LOUNGE, into: DESK, content: "")),
                "a forward of the agent's answer is chatter too"
 
-    addressed = ingest(forward(1024, of: 1020, from_channel: LOUNGE, into: DESK, content: "<@&#{XAN_ROLE}> see this",
-                               roles: [ XAN_ROLE ]))
-    assert_equal [ "xan", "role", "discord:#{DESK}:1024" ],
+    addressed = ingest(forward(1024, of: 1020, from_channel: LOUNGE, into: DESK, content: "<@&#{RAY_ROLE}> see this",
+                               roles: [ RAY_ROLE ]))
+    assert_equal [ "ray", "role", "discord:#{DESK}:1024" ],
                  [ addressed.soul_slug, addressed.routed_by, addressed.thread_key ],
                  "an addressed forward starts its own thread"
     refute_equal held.thread_key, addressed.thread_key
@@ -221,9 +221,9 @@ class AgentMessages::DiscordPollTest < ActiveSupport::TestCase
     pages = {
       DESK => [ discord_raw(2001, content: "<@&#{AVI_ROLE}> release?", roles: [ AVI_ROLE ], at: now - 1.minute),
                 discord_raw(2002, content: "no one in particular", at: now - 30.seconds) ],
-      LOUNGE => [ discord_raw(2003, content: "<@&#{XAN_ROLE}> board?", channel: LOUNGE, roles: [ XAN_ROLE ],
+      LOUNGE => [ discord_raw(2003, content: "<@&#{RAY_ROLE}> board?", channel: LOUNGE, roles: [ RAY_ROLE ],
                               at: now - 20.seconds) ],
-      MUTED => [ discord_raw(2004, content: "<@&#{XAN_ROLE}> hi", channel: MUTED, roles: [ XAN_ROLE ], at: now) ],
+      MUTED => [ discord_raw(2004, content: "<@&#{RAY_ROLE}> hi", channel: MUTED, roles: [ RAY_ROLE ], at: now) ],
       DESK_THREAD => [ discord_raw(2005, content: "<@&#{AVI_ROLE}> in the thread", channel: DESK_THREAD,
                                    roles: [ AVI_ROLE ], at: now - 10.seconds) ]
     }
@@ -238,7 +238,7 @@ class AgentMessages::DiscordPollTest < ActiveSupport::TestCase
     assert_equal [ DESK, LOUNGE, DESK_THREAD ], fake.message_reads.uniq, "text, announcement and thread; never muted, voice, category or forum"
     assert_equal 3, summary.channels
     assert_equal 3, summary.stored
-    assert_equal({ "2001" => "avi", "2003" => "xan", "2005" => "avi" },
+    assert_equal({ "2001" => "avi", "2003" => "ray", "2005" => "avi" },
                  AgentMessage.where(external_id: %w[2001 2002 2003 2004 2005]).to_h { |m| [ m.external_id, m.soul_slug ] })
     assert_equal "2002", AgentMessageCursor.find_by(source_ref: DESK).cursor, "the cursor passes dropped chatter too"
     assert fake.calls.all? { |_, _, auth| auth == "Bot test-token" }

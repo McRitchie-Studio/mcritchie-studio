@@ -3,11 +3,14 @@
 **What it is.** A message to an agent on Discord reaches the hub, is routed to a
 soul, waits in a queue, and is answered in the same channel by `bin/dispatcher`,
 the always-on worker on Alex's Mac (`bin/heartbeat` is the manual form of the
-same answer path). Phase 1 is Discord only. Two domain front doors are routed,
+same answer path). Discord came first; since Phase 4 an email to a CTO on team@
+is answered by email too (below, "Email"), and since Phase 7 an app's owner or an
+admin can chat with the app's CTO on McRitchie Studio itself (below, "Web chat").
+Two domain front doors are routed,
 Avi (`avi`, McRitchie Studio's CTO, Alex 2026-10-15) and Turf (`turf_monster`,
 Turf Monster), and each may PROPOSE what its domain's catalog allows, for the
-owner to confirm by reply (below, "Proposals and confirm"). Xan stays routed as a
-helper (orchestration, docs review) with no catalog. Avi and Xan keep one
+owner to confirm by reply (below, "Proposals and confirm"). Ritch stays routed as a
+helper (orchestration, docs review) with no catalog. Avi and Ritch keep one
 read-only action each, the same board read (`bin/task list`). Later phases add channels, agents and clients without
 changing the tables: `channel` plus a provider-neutral `external_id` name every
 row.
@@ -137,10 +140,10 @@ override's `default_soul`. A message that meets none of these is dropped without
 being stored: across a whole guild, keeping it would hoard everyone's chatter. A
 reply to a kept message that itself had no soul is kept `unrouted`, visible and
 never handed to a worker. Among several mentioned souls, the one written first
-wins. One shared bot with `@Avi`/`@Xan` roles and one bot user per soul both
+wins. One shared bot with `@Avi`/`@Ritch` roles and one bot user per soul both
 work; the config lists either.
 
-**Held: the agents answer only the owner.** `config/agent_answerers.yml` lists
+**Held: the agents answer the owner, with two narrow exceptions.** `config/agent_answerers.yml` lists
 the ROLES the agents answer (below, "Audience"); today it is `owner` alone, so
 Alex is answered because his `agent_people` row is the owner, and so is every
 identity linked to him. A routed message from anyone whose role is not listed
@@ -159,6 +162,27 @@ answer** on its page (admin only, a form post) or run
 again. To answer a sender for good, give them an answered role
 (`bin/rails agent_people:role`); to answer a whole role, add it to the yml and
 deploy. What the agent may then say to them is the audience's rules.
+
+**The app-owner exception** (Alex, 2026-10-17; `app_owners:` in the same yml,
+`AgentMessages::Answerers#app_owner_thread?`). An app's CTO, ours from
+`config/cto_reports.yml` or a client app's `client_cto`, answers a `public` or
+`client` person whose hub user owns that app (`AppMembership` owner), on that app's
+web CTO thread and nowhere else. The rule reads only what code wrote: the row is
+`web`, its thread key is exactly `web:<channel_ref>:<the person's user id>`, its soul
+is that app's CTO (`AppOwnership.cto_for_app`), and the membership is read at the
+moment of the check. The same person stays `held` on another app's thread, on
+Discord, by email, and on an app they do not own. The claim's SQL guard carries
+the same rule. They are answered as that app's `client` (`Answerers#audience_for`,
+`MemoryBundle#audience`): no read action, no internal context, the client catalog.
+On that same thread they may say `go`, `no` or `change: …` on a `change` proposal
+while the app is under its cap ("Confirm by reply" below; Alex, 2026-10-18). Their
+answers are metered as `client`, against `AgentUsage.owner_meter`: the tier's
+`cto_monthly_tokens` (Vibe, the free tier: 25,000), else
+`app_owners.default_monthly_tokens` (1,000,000) for a tier that names none,
+unless an admin lifted the cap. At the cap,
+`WebIngest` stores the message already answered with `AgentUsage.cap_reply` and
+no model runs. An owner or team person is answered by their role, never by this
+rule. Remove the block to hold app owners again.
 
 **Claim.** `POST /api/v1/agent_messages/claim {soul | souls[], worker, wait?}`
 runs one transaction. It first dead-letters exhausted leases, then selects the oldest
@@ -268,7 +292,7 @@ every 15 minutes. The contract other sessions build against,
 **The heartbeat.** `bin/heartbeat <soul> --channel discord [--once] [--worker ID]
 [--dry-run]` is the manual form: it claims a message and reads its context
 bundle, which carries the sender's audience (below, "Audience"). For an owner or
-team sender it runs the soul's one read-only action (avi and xan: `bin/task list`,
+team sender it runs the soul's one read-only action (avi and ray: `bin/task list`,
 the board through the agent API; no action reads Heroku, which launchd cannot log
 in to); for anyone else it runs nothing. It builds the prompt from
 the five layers (below, "Memory"), the audience's rules, the action output and the
@@ -293,7 +317,9 @@ agent CLI is (`bin/lib/agent_api.rb`).
 An answer remembers the person it answers, on every channel they use. The
 memory is rebuilt from the hub's rows on every answer, never from a resumed
 Claude session, so any dispatcher on any machine builds the same context for the
-same rows (Alex's decision of 2026-10-14, option A). On 2026-10-15 Alex dropped
+same rows (Alex's decision of 2026-10-14, option A). The one exception is a warm
+domain's owner and team turns, behind a per-domain flag that is off ("Warm
+sessions" below); even those rebuild the audience, rules and thread per message. On 2026-10-15 Alex dropped
 the per-channel silo: "Let's give continuity for our people over omnichannel."
 The channel still matters in one way. The thread a message continues is the focus
 of its answer. Two pieces build the memory:
@@ -315,8 +341,8 @@ of its answer. Two pieces build the memory:
 
 **The person.** A person is one identity across platforms. `agent_people` holds
 the display name and, optionally, the hub `User`. `agent_person_identities` holds
-each place the person speaks, as `(platform, external_id)`: a Discord user id
-today, an email address later. The pair is unique, so one id is always one person.
+each place the person speaks, as `(platform, external_id)`: a Discord user id,
+or a verified email address (below, "Email"). The pair is unique, so one id is always one person.
 Every stored message with an author is stamped with its `person_id` when it is
 created (`AgentMessage` calls `AgentPerson.resolve!`), and the first message from an
 unknown id makes a new person. The migration backfilled every existing row from
@@ -369,9 +395,10 @@ conversation you are answering" and tells the model to read a short or vague
 message ("what's next?") inside it first. A Discord reply joins the thread of the
 message it answers. Every message in a Discord thread channel shares one key,
 `discord:<thread id>:<thread id>`. `DiscordIngest` knows a thread channel by the
-parent the reader gives it, or from the channel directory. An email thread will
-key the same way. The layer comes only from this channel and guild: a Discord
-forward, or any reference into another channel, brings nothing from there.
+parent the reader gives it, or from the channel directory. An email thread keys
+by its root Message-ID (below, "Email"). The layer comes only from this channel
+and guild: a Discord forward, or any reference into another channel, brings
+nothing from there.
 **A turn shown in the THREAD layer is not repeated in the PERSON layer.** Over
 budget, the oldest thread turns fold first and the newest is cut rather than
 dropped.
@@ -400,12 +427,12 @@ is built, not when the note was filed (`AgentPersonNote.visible_for`):
   such as his favorite color, is true whichever agent hears it, so a note Turf
   files is in Avi's USER layer too. A fact filed in two domains is shown once.
 - **Client and public.** A soul reads only the notes filed in its own domain.
-  What a Turf client told Turf stays with Turf's souls; Avi, Xan and the other
+  What a Turf client told Turf stays with Turf's souls; Avi, Ritch and the other
   `mcritchie_studio` souls never see it, and Turf never sees what that person told
-  Xan.
+  Ritch.
 
 The conversation history (the PERSON layer) is per person per soul either way:
-Avi does not see what Alex told Xan.
+Avi does not see what Alex told Ritch.
 
 **Notes.** The USER layer has a writer: the answer itself. The prompt lets the
 model end its reply with a line reading exactly `===NOTES===`, then a JSON array
@@ -576,7 +603,7 @@ board and the worker read one file the same way). Each domain names its `soul`
 | `operate` | empty | Phase 2 (a confirmed SOP, headless in a desk) |
 | `change` | both domains (`repo`, `default_shape`) | A `designed` board task (title, kind, shape, accept, test, risk) with the Discord link in `devops.source_thread`. A session still starts the builder |
 
-Only the front door has a catalog. Xan (and every other studio soul) maps to the
+Only the front door has a catalog. Ritch (and every other studio soul) maps to the
 studio domain for its DOMAIN layer and proposes nothing. An `internal: true` domain (Commercial Welding) has no
 catalog and no prompt names it. Turf Monster has no aggregate entries endpoint the
 hub can read, so there is no entries-for-week ask yet.
@@ -585,8 +612,10 @@ hub can read, so there is no entries-for-week ask yet.
 `AgentMailbox::Audience::CAPABILITIES` (`propose_ask`, `propose_change`,
 `propose_operate`) and the capability's `min_audience` on `Audience::RANK`
 (public < client < team < owner). A client may request only in the domain it is a
-client of. Confirming is `confirm_proposal`, the owner's alone, read from the
-person's role (`agent_people.role`), never from a Discord id or the message text.
+client of. Confirming is `confirm_proposal`, the owner's, read from the
+person's role (`agent_people.role`), never from a Discord id or the message text,
+with one exception decided in code: an **app owner** on their own app's web CTO
+thread (`ProposalConfirm#owner_verdict`, below).
 
 **In the prompt.** The context bundle carries `proposals.catalog`: this soul's
 catalog, filtered on the board by the sender's audience. ContextBuilder lists it
@@ -641,7 +670,38 @@ and with none pending it is about nothing. A go in another thread, or a
 top-level go outside a Discord thread (which starts a thread of its own), finds
 no proposal and is routed as usual.
 
-| Word | From the owner | From anyone else |
+**An app owner's word** (Alex, 2026-10-18: "the app owner should have that
+access"). A person who is not the owner role may still confirm, drop or change a
+proposal when `ProposalConfirm#owner_verdict` passes all three, each from facts
+code wrote:
+
+1. **Their own app's thread.** `Answerers#app_owner_thread?` holds for the word
+   (the `web` channel, the key `web:<app>:<user id>` built server-side, the app's
+   CTO soul, a live `AppMembership` owner row, a `public` or `client` person), and
+   the proposal is on that very thread.
+2. **A kind a client's build may do.** `ProposalConfirm::OWNER_KINDS` is `change`
+   only (a `designed` task in the app's own repo), and the registry must still let
+   this owner, as the app's `client`, request it (`DomainRegistry#validate`). An
+   `ask` (the catalog's queries are `min_audience` team or owner) and an `operate`
+   are refused with `reason: kind`. Today that means Turf Monster's and McRitchie
+   Studio's owners may confirm `change task`; a client app (`client_cto`) and
+   Cyvasse (`tyrion`) have no catalog, so nothing is proposed there to confirm.
+   `test/services/agent_messages/proposal_confirm_app_owner_test.rb` fails when a
+   client catalog grows, so a new kind is a decision, not a drift.
+3. **Under the cap.** `AgentUsage.owner_meter` for the app is not spent. At the cap
+   the word is answered with `AgentUsage.cap_reply` (code, `usage_capped`), with a
+   `confirm_refused` event (`reason: usage_cap`), and the proposal is untouched.
+   An admin's lift removes the cap.
+
+Refused everywhere else: Discord, email, another app's thread, another user's
+thread on the same app, an app they do not own, a team-role owner, and any held
+person (`reason: not_app_owner`). The owner role is unchanged: any thread, any
+kind, never capped. A refused word in the web chat reads
+`ProposalConfirm.held_text`: "This account can't confirm or drop proposals in this
+chat, so nothing has run.", or, for a kind they may not confirm, "Only the
+McRitchie team can confirm this kind of proposal, so nothing has run."
+
+| Word | From the owner (or an app owner, as above) | From anyone else |
 |------|----------------|------------------|
 | `go` | `confirmed`; `AgentProposalJob` runs it; the result posts as the answer to the go | `held`, with a `confirm_refused` event; nothing runs, nothing posts |
 | `no` | `rejected`; "Dropped. Nothing will run." | `held` / `confirm_refused` |
@@ -681,13 +741,593 @@ short reason (an error class, never a message that could carry a secret).
 
 **Replies come from the front door's own bot** once its token is set
 (`DISCORD_BOT_TOKEN_AVI`, `DISCORD_BOT_TOKEN_TURF_MONSTER`; above, "Which bot
-replies"); until then they post through Xan's shared bot, signed by the domain's
+replies"); until then they post through Ritch's shared bot, signed by the domain's
 `reply_name` (`**Turf** · …`). Avi is routed by a mention of his own
 Discord app's bot user (`1560516264378507334`, 1Password `agents.discord.avi`,
 in the McRitchie guild, reply-only permissions); Turf by a mention of the
 existing "Turf Monster" Discord app's bot user (`1405042649479647293`, in the
 McRitchie guild). Tyrion is not routed: he answers through OpenClaw with his own
 bot, and Alex has not chosen between the two runtimes.
+
+## Email: the CTOs answer team@ (Phase 4)
+
+Mail reaches a CTO through the desk's own inbound, never through a mailbox an
+agent reads: `team@mcritchie.studio` (a Google group whose members are alex@ and
+`team@in.mcritchie.studio`) → Resend inbound (Amazon SES) → the svix-signed
+webhook → `DeskCaptureResendIngestJob`. The job captures the mail on the desk
+exactly as before, then hands the raw to `AgentMessages::EmailIngest`. Most mail
+returns nil there and stays a plain desk capture. The Gmail read of alex@'s
+mailbox (`Gmail::MailboxIngest`) never reaches this branch. A failure in the
+branch writes an `ErrorLog` row targeted at the desk item and never undoes or
+retries the capture.
+
+```text
+team@ ─▶ Resend inbound ─▶ DeskCaptureResendIngestJob ─▶ desk item (always)
+                                       └─▶ EmailIngest ─▶ agent_messages (channel email), or nothing
+bin/dispatcher (every channel) ─▶ answer ─▶ AgentMessageReplyJob ─▶ EmailReply
+   ─▶ Studio::Email.deliver (outbox) ─▶ AgentReplyMailer via Resend: From the CTO, Reply-To team@
+```
+
+**Which mail is for a CTO** (`AgentMessages::EmailRoutes`, the `email:` block of
+`config/agent_routes.yml`). The first rule that matches wins:
+
+1. **Alias.** A To or Cc address is a CTO's own: `avi@mcritchie.studio` → Avi.
+   The soul addresses are groups that redirect into team@, so the original To
+   survives the hop.
+2. **Name.** The mail is to team@ and its subject (after any `Re:`/`Fwd:`) or the
+   first non-blank line of its NEW text starts with a CTO's name used as an
+   address: `Avi, …`, `Avi: …`, `Hi Avi, …`, `@Avi …`. A name inside a sentence
+   ("Turf scores look off") is not one. Turf has no alias into team@
+   (`turf@mcritchie.studio` was deleted; `team@turfmonster.media` is a mailbox on
+   another domain), so Turf is reached by name.
+3. **Thread.** A reply whose In-Reply-To or References names an email the mailbox
+   holds continues that thread's soul.
+
+The NEW text (`AgentMessages::EmailBody`) is what the sender wrote this time: it
+stops at the first quoted line (`>`), an `On … wrote:` line (one or two lines),
+an Outlook `From:`/`Sent:` block, a forwarded or original-message marker, a `-- `
+signature, or `Sent from my …`. The row's content is `Subject: …`, a blank line,
+then that text.
+
+**Trust: who sent it** (`AgentMessages::EmailTrust`). The group hop breaks SPF,
+and any sender can write `Authentication-Results` lines into its own headers, so
+exactly one header decides, and it is read defensively, because SES copies the
+SMTP envelope-from and HELO (sender-chosen text) into it:
+
+- **Position.** It is the TOPMOST `Authentication-Results`, its authserv-id is
+  `amazonses.com` (Resend's receiver, the hop before us), every header above it
+  is one of SES's trace headers (`Return-Path`, `Received`, `Received-SPF`,
+  `X-SES-*`), and it sits ABOVE the first `X-SES-RECEIPT`, as measured on desk
+  item 762. No `X-SES-RECEIPT` at all: the public. This refuses every forged
+  verdict that sits below SES's receipt, which is wherever a sender's own lines
+  land while SES stamps its receipt. It cannot help if SES ever wrote neither its
+  verdict nor its receipt: a sender mailing SES directly could then lay out a
+  whole fake trace block.
+- **Parse.** Quoted strings and comments are removed first, so an envelope-from
+  like `"x;dkim=pass …"@evil.example` leaves nothing behind. SES folds one result
+  per line; only a `method=result` that starts a folded line is a result, and a
+  result keyword anywhere else (a HELO of `x;dkim=pass<TAB>header.d=…`) refuses
+  the whole header. Results on the authserv-id line refuse it too. There must be
+  exactly one `dmarc` result, and it must be the last; `dkim` is read only from
+  the run of dkim results just before it.
+- **Pass.** That run holds a `dkim=pass` whose `header.d` (or `header.i`'s
+  domain) is the From domain or a parent or child of it, AND the dmarc result is
+  `pass` with `header.from` equal to the From domain. One From header and one
+  address only (`From :` with a space is still a From).
+- **Pinned selector.** Passing proves the DOMAIN, not the mailbox:
+  `resend._domainkey.mcritchie.studio` exists, so anyone holding `RESEND_API_KEY`
+  could send a DKIM-passing `From: alex@mcritchie.studio`. For a domain under
+  `email.pinned_dkim` in `config/agent_routes.yml` (`mcritchie.studio: [google]`),
+  every `DKIM-Signature` aligned with the From domain must be the exact pinned
+  pair, `d=` the pinned domain itself (not a subdomain) and `s=` a pinned
+  selector, and one must exist. SES's verdict does not print the selector,
+  so it is read from the signatures: if every aligned one is `d=mcritchie.studio
+  s=google`, the aligned pass SES reports is a Google one; a real `s=resend`
+  signature, or a `s=google` key on a subdomain, beside the real one still
+  refuses. A pass under any other pair is the public, held.
+- **Pin at boot.** Production refuses to boot (`EmailRoutes::PinsMissing`, from
+  `config/initializers/agent_email_pins.rb`) when `email.pinned_dkim` is missing,
+  misspelled, names a domain with no selector, or does not pin the team
+  address's domain; without the pin, any DKIM pass for mcritchie.studio would be
+  trusted as Alex. Other environments boot without it.
+
+Every lower `Authentication-Results`, every `ARC-Authentication-Results`, and
+`DeskCapture::Reader.dkim_from_raw` (which greps them all for a human reading
+provenance) are ignored. As of 2026-10-16 13:15 MDT Alex's mail to team@ passes:
+Google DKIM (`google._domainkey`) is published, and SES reads `dkim=pass
+header.i=@mcritchie.studio; dmarc=pass header.from=mcritchie.studio`, folded one
+result per line.
+
+**The person.** A VERIFIED sender resolves to a person by the `email` identity
+(`AgentPerson.resolve!(platform: "email", external_id: <From>)`): Alex's
+`alex@mcritchie.studio` is an identity of the owner's person (the
+`AddEnvelopeToAgentMessages` migration and `AgentPerson.seed_owner!`). A verified
+stranger becomes their own `public` person; link another of Alex's addresses
+with `bin/rails agent_people:link PERSON=<id> PLATFORM=email EXTERNAL_ID=<addr>`.
+An UNVERIFIED sender gets no person at all: the row's author is
+`<addr> (unverified)`, its audience is the public, and a row with no person is
+never claimable. The trust verdict is kept in the row's `envelope`
+(`trust.verified`, `trust.reason`) and shown on `/admin/agent_messages/:id`.
+
+**The audience gate is Discord's.** A routed email from a role
+`config/agent_answerers.yml` does not answer (today everyone but the owner) is
+stored `held` with a `held` event; the claim guard holds it again on the server.
+Email has no typing pulse (`typing_refusal` answers `not_typing_channel`).
+
+**Loop safety** (`AgentMessages::EmailLoopGuard`), checked before anything is
+stored; guarded mail stays a desk capture only:
+
+| Mail | How it is known |
+|---|---|
+| Our own outbound | it carries `X-McRitchie-Agent`, which every reply sets |
+| A CTO to a CTO | From is a fleet address: a soul alias, team@, or any `agent_addresses` entry |
+| An auto reply | `Auto-Submitted` other than `no`, `X-Autoreply`, `X-Autorespond` |
+| A list or bulk mail | a `List-Id`, or `Precedence: bulk/list/junk/auto_reply` |
+| A bounce | a mailer-daemon, postmaster or no-reply sender, a null `Return-Path`, or a `multipart/report` |
+
+A header that only suppresses an answer is safe to read from the sender. Our own
+Google groups are not outside lists: a `List-Id` under `mcritchie.studio`, and
+the `Precedence: list` beside it, are not read as one. If the group is ever set
+to rewrite From for DMARC ("via team"), mail would arrive From team@ and be
+dropped as fleet mail: unanswered, never misanswered.
+
+**Rate limit.** Past `EmailIngest::RATE_LIMIT` (10) email rows from VERIFIED
+senders in one thread within an hour, a new row is stored `held` with a
+`rate_limited` event. Unverified rows never count, so a stranger cannot fill the
+owner's thread.
+
+**Thread.** `thread_key` is `email:<root>`, where the root is the first
+References id, else In-Reply-To, else the mail's own Message-ID. A reply that
+names a stored email (its Message-ID in In-Reply-To or References) joins that
+row's thread, soul and `channel_ref`, so the THREAD layer and the proposal scope
+(thread key, channel, `guild_id` nil, `channel_ref`) hold across the hop from
+avi@ to team@. `external_id` is the Message-ID, unique per channel. `channel_ref`
+is the CTO's alias (else team@).
+
+**Proposals by email.** The same words, in code, before any model: when the NEW
+text is exactly `go`, `no` or `change: …` and the thread holds a proposal
+(`AgentProposal.for_word`, with In-Reply-To as the reference), it is handled by
+`AgentMessages::ProposalConfirm`, as on Discord. A forged or unverified `go` has
+no person, so it is the public's: `held` with `confirm_refused`, and nothing runs.
+A task opened from an email thread records the message's admin page as its
+source thread.
+
+**The reply** (`AgentMessages::EmailReply` → `AgentReplyMailer#reply`), sent once:
+the row is locked and a row with a `reply_external_id` is never sent again; it
+goes through `Studio::Email.deliver`, the hub's durable outbox
+(`studio_email_deliveries`), and Resend's ActionMailer delivery, carrying the
+row's `reply_nonce` as Resend's idempotency key, scoped by environment and app
+host (`<Rails.env>:<APP_HOST>:<nonce>`), so QA and production never share a key.
+
+| Header | Value |
+|---|---|
+| From | the soul's `from` in `config/agent_routes.yml`: `Avi <avi@mcritchie.studio>`; Turf replies as `Turf <team@mcritchie.studio>`. `mcritchie.studio` is the domain verified in the hub's Resend account; no sending domain was added |
+| To | the VERIFIED sender only (the envelope's From), never a Reply-To the mail named. A row whose sender is not verified (an admin may still release one) is `reply_skipped`, never mailed |
+| Reply-To | `team@mcritchie.studio`, so the next turn comes back through the inbound |
+| Subject | `Re: <subject>` |
+| In-Reply-To, References | the answered mail's Message-ID; its References plus that id (20 kept) |
+| Message-ID | `agentmsg-<id>.<created second>@mcritchie.studio`, stored as `reply_external_id`. If Resend replaces it, the thread still joins through References |
+| Auto-Submitted, X-McRitchie-Agent | `auto-replied` and the soul, so no auto-responder answers us and we never answer ourselves |
+
+The body is plain text: the answer with markdown bold removed, then a `-- `
+signature with the soul's name. The prompt tells the model it is writing a
+plain-text email. The model still runs with no tools.
+
+**Serving email.** `bin/dispatcher run` serves every channel by default
+(`--channel all|discord|email|web` narrows it); `bin/heartbeat <soul> --channel email`
+answers one by hand. Observe with `/admin/agent_messages?channel=email` or
+`bin/agent-inbox list --channel email`.
+
+**Test protocol (email).** From alex@mcritchie.studio, mail `avi@mcritchie.studio`
+"What is on QA?". Expect: a desk item, an `email` row for Avi `received` with
+`trust.verified` true, Avi's answer from avi@ with Reply-To team@ in the same
+Gmail thread. Reply `go` to a proposal and the ask runs. Before trusting a new
+relay path, read one real raw's header order (`bin/mail desk <id> --save DIR`,
+headers only): the trusted verdict must sit in SES's trace block. Tests:
+`test/services/agent_messages/email_trust_test.rb`, `email_routes_test.rb`,
+`email_ingest_test.rb`, and `test/integration/agent_email_loop_test.rb`.
+
+## Web chat: the CTOs answer on McRitchie Studio (Phase 7, step 3)
+
+Alex, 2026-10-16: "when you're speaking with your agent via website, discord or
+email they respond in real time." A signed-in app owner (`app_memberships`) or an
+admin opens `/applications/:slug/chat` (the **Chat** button on the app's page and
+on its CTO's settings page) and talks with that app's CTO: Avi, Turf or Tyrion, or,
+for a client app built through `/build`, the one `client_cto` soul wearing that app's
+`AppCto` row ([`client-cto.md`](client-cto.md)).
+Each message is a new CHANNEL of this same loop, not a second loop: a `web`
+`AgentMessage`, claimed, answered with no tools and delivered exactly once.
+
+```text
+/applications/:slug/chat ─POST─▶ CtoChatsController ─▶ AgentMessages::WebIngest ─▶ agent_messages (channel web)
+bin/dispatcher (every channel) ─▶ claim ─▶ typing pulse ─▶ AgentMessageTypingJob ─▶ WebChat.broadcast_typing ─┐
+                               └▶ answer (claude -p --tools "") ─▶ complete ─▶ AgentMessageReplyJob ─▶ WebChat.deliver! ─┤
+                                         the page's Turbo stream (CtoChatChannel, ActionCable on Redis) ◀──────────────┘
+```
+
+| Piece | Where |
+|-------|-------|
+| The page and the post | `CtoChatsController`, `app/views/cto_chats/show.html.erb`; signed-in (`AdminWall::SIGNED_IN`), 404 unless the viewer owns the app or is an admin |
+| The chat itself | the shared agent chat, `app/views/agent_chats/` (`_shell`: the one page structure /build, /build/:token and this page share, portrait, status card, then chat; `_header`: the agent's portrait, centered, and its name; `_devops_card`: this page's status card, its `_devops_stages` frame (the app's Building · Releasing · Deploying pills with a count per lane and the newest five open tasks, from `AppDevopsStages.board_for`; an admin's titles link to the board, an owner's are plain and sanitized) and its `_tokens_bar`; `_chat`: stream, thread, typing slot, composer for any agent and stream; `_attachments_slot`: empty, rendered inside the composer for chat media) and `app/javascript/agent_chat.js` (`cto_chat` stays pinned to it) |
+| Inbound | `AgentMessages::WebIngest` |
+| Outbound, typing, the stream | `AgentMessages::WebChat`; `CtoChatChannel` |
+| The status card's live reload | `AppDevopsStages::Live`: a task for the app created, moved in stage, release or title, or destroyed, or a release starting or ending production, replaces the card's frame with one whose src is `GET /applications/:slug/chat/status` (`CtoChatsController#status`), so each viewer refetches their own card; the per-app stream (`AppDevopsChannel`, owner or admin) carries no task content |
+| Which CTOs have a chat | the `web: souls:` block of `config/agent_routes.yml` |
+
+**Nothing in the request picks the soul.** The CTO is the app's, from
+`config/cto_reports.yml` (else, for a client app, its `AppCto` row: soul `client_cto`), and only when the `web:` block lists it; a CTO not listed
+has no chat and the page says so. The thread is `web:<app slug>:<user id>`, so
+history persists per user per app, and the THREAD layer and the proposal scope
+never cross users or apps. `channel_ref` is the app slug and `guild_id` is nil.
+
+**The person and the audience.** The session vouches for the hub USER, the way
+Discord vouches for an author id. The message's person is the user's `web`
+identity (`AgentPersonIdentity`, external id the user id), else the person an
+operator already linked to that user (`agent_people.user_id`; Alex's
+`alex@mcritchie.studio` is the owner's, by `AgentPerson.seed_owner!`), else a new
+`public` person for the user. It is never matched by name. The audience is that
+person's role, exactly as on Discord and email, so the same envelope, rules,
+catalog and usage gate apply. **An app owner is answered here as that app's
+client**: an owner who is not the platform owner is a `public` person, answered on
+this app's thread by the app-owner exception ("Held" above), as a `client` of the
+app, capped by the owner meter, and `held` everywhere else, as a Discord message
+from them would be. Ownership never grants the `owner` audience: that would print
+"Alex McRitchie, the owner" and the internal role doc into their answers. When the
+exception is off, the page tells them their messages wait for an admin
+(`CtoChatsController#answered?` asks the same rule).
+Alex owns each app through a different hub account, so each of
+`AgentPerson::OWNER_HUB_EMAILS` (alex@mcritchie.studio, alex@turfmonster.media,
+amcritchie@gmail.com) is a `web` identity of the owner's person, linked by the
+`LinkOwnerWebIdentities` migration and `AgentPerson.seed_owner!`; his chat is
+answered as the owner from any of them. Link any other account by hand:
+`bin/rails agent_people:link PERSON=<id> PLATFORM=web EXTERNAL_ID=<user id>`.
+
+**Before any model**, as on Discord: a message that is exactly `go`, `no` or
+`change: …` in a thread with a proposal is handled by
+`AgentMessages::ProposalConfirm`. The whole Change flow runs in the chat: the
+CTO's answer may end with a PROPOSAL, the reply shows the confirm line (the
+capability and its params), the owner's `go` in the same web thread opens a
+`designed` task, and the answer to the go carries its link. The task's
+`devops.source_thread` is the app's chat page (`/applications/<slug>/chat`) and its
+description says "Requested in the <slug> web chat" and links the message's admin
+page. The app's owner may say that `go` whether or not they are Alex (the app-owner
+word, "Confirm by reply" above). A `go` in another web thread, or from a person who
+may not confirm, changes nothing (`test/integration/cto_web_chat_change_flow_test.rb`). Past `WebIngest::RATE_LIMIT` (30)
+messages in a thread within an hour the next is `held` with a `rate_limited`
+event. A message is at most 4,000 characters, the prompt's message budget. The
+form carries a client id per send, so a double submit stores one row.
+
+**Real time.** The page subscribes with `turbo_stream_from <stream>, channel:
+CtoChatChannel`, one stream per user per app (`cto_chat:<app slug>:<user id>`).
+
+- **Typing** reuses the dispatcher's pulse (above, "Typing"): the run's first
+  pulse, then one every 7 seconds, capped at 3 minutes, checked by
+  `typing_refusal`. For a web row `AgentMessageTypingJob` broadcasts the
+  indicator into the page's typing slot instead of calling a bot. The page fades it
+  `WebChat::TYPING_FADE` (12) seconds after the last pulse, so a run that dies
+  stops typing within seconds, and drops a pulse older than an answer already
+  shown.
+- **Thinking, then typing** (Alex, 2026-10-18: "a distinction in thinking and
+  typing"). A web pulse carries a phase, read off the run itself: a web answer
+  runs on `--output-format stream-json --include-partial-messages`
+  (`AgentMailbox::ClaudeStream.cmd`, still `--safe-mode` and `--tools ""`), the
+  runner hands each stdout line to `ClaudeStream::Phase` as it arrives, and the
+  phase is `thinking` from the claim until the first line that starts the
+  answer's text, then `typing` for good. The dispatcher pulses at once when the
+  phase moves (`Dispatcher#type_due`), not on the next 7-second beat. The board
+  allow-lists it (`AgentMessage.typing_phase`: `thinking` or `typing`; anything
+  else, or none, is `typing`, so a dispatcher from before phases looks as it
+  did), and `agent_chats/_typing` draws it: THINKING is the agent's small
+  portrait in a turning ring with a glow and "<Agent> is thinking" shimmering;
+  TYPING is a chat bubble of wave dots and "<Agent> is typing". Both looks share
+  one grid cell (`app/assets/tailwind/agent_typing.css`), so the swap never moves
+  the page, `app/javascript/agent_chat.js` carries the old phase across a redraw
+  so it crossfades, and reduced motion holds the ring and dots still. The answer
+  is still read from the stream's `result` line only (`ClaudeRun.parse(...,
+  stream: true)`, the json envelope's own object), and a stream with no result
+  line keeps none of the model's words in its error text. A `/build` page polls
+  instead of listening, so its pulse records the phase on the claimed row
+  (`run_meta.typing_phase`, overwritten by the answer's run summary at complete)
+  and `build/_turn` draws it. Discord's pulse has one look and carries no phase.
+- **The answer** is delivered by `AgentMessageReplyJob` through
+  `WebChat.deliver!`: under the row lock it is marked posted once
+  (`reply_external_id` `web:<id>`, a `reply_posted` event `via: web_chat`), then
+  the turn is replaced in place, typing is cleared and the usage meter redrawn.
+  The answer is on the row before any broadcast, so a failed broadcast (an
+  `ErrorLog` row) loses nothing: the page shows it on its next load.
+- **Streaming** is not built, for the two reasons in "Streaming" below: the
+  sections are cut from the final text, and status is read only from the
+  envelope. The web chat gets typing and a live append; a streamed draft would
+  follow that design and broadcast drafts on this stream.
+
+**The meter** is the app's usage meter (`applications/_usage_meter`,
+[`agent-usage.md`](agent-usage.md)) in tokens: the page passes
+`AgentUsage.meter(app).without_cost`, so no viewer of the chat sees dollars, and
+the public never reaches the page.
+
+**Who may listen.** `/cable` admits any signed-in user with a current session
+token (`ApplicationCable::Connection`; before this it admitted admins only).
+What a socket may hear is each channel's check: `Turbo::StreamsChannel`, which
+carries the ops streams (the deployments board, the activity feed), stays admins
+only (`ApplicationCable::TurboStreamsAdminOnly`, prepended by
+`config/initializers/turbo_streams_admin_only.rb`); `CtoChatChannel` admits only
+the user its stream names, while they may manage that app; and every
+`ApplicationCable::Channel` refuses a non-admin unless it overrides `authorized?`.
+
+**The dispatcher** serves the web chat by default: `AgentMailbox.routed_souls`
+reads the `web:` block too, which is how Tyrion, whom no guild routes (he answers
+Discord through OpenClaw), is answered in the chat; `--channel web` narrows a
+dispatcher to it. Its typing applies to `TYPING_CHANNELS` (discord, web). A
+running dispatcher picks the change up by itself on the next ship (it restarts on
+a new digest of its files and `config/agent_routes.yml`).
+
+**Observe** with `/admin/agent_messages?channel=web` or `bin/agent-inbox list
+--channel web`; a web row's place label is `[web]`, and the prompt tells the model
+its reply renders as Markdown in the chat. Tests:
+`test/services/agent_messages/web_ingest_test.rb`, `web_chat_test.rb`,
+`test/channels/cto_chat_channel_test.rb`, `test/controllers/cto_chats_controller_test.rb`,
+`test/views/agent_chat_component_test.rb` (the shared chat for a non-CTO agent),
+`test/integration/cto_web_chat_loop_test.rb` (the dispatcher's loop end to end) and
+`e2e/cto_web_chat.spec.js` (typing and the answer over a real socket). Files:
+`test/services/agent_messages/web_ingest_attachments_test.rb`, `test/lib/agent_media_test.rb`,
+`test/integration/cto_web_chat_attachments_test.rb` and `e2e/cto_web_chat_attachments.spec.js`.
+
+### Files: images and PDFs in the chat
+
+Alex, 2026-10-17: "drop assets that the agent can respond to. That is table
+stakes for a client facing chat." The design is
+`.agents/epics/chat-media-design.md`; this is its step 1, images and PDFs.
+
+```text
+composer (Attach, paste, drop) ─POST each file─▶ CtoChatAttachmentsController#create ─▶ R2 apps/<slug>/chat/u<user>-<token>/<file>
+                                 ◀─ a signed token (never a blob URL) ─┘
+Send (waits for uploads) ─▶ WebIngest: types, sizes, count, prefix ─▶ message.attachments (same transaction)
+bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─▶ Media: fetch, magick shrink + strip
+               ─▶ ONE stream-json user message: [label, image|document]… + the prompt ─▶ claude -p --safe-mode --tools ""
+```
+
+| Piece | Where |
+|-------|-------|
+| The rules (types from the bytes, sizes, count, key prefix, tokens, who may see) | `AgentMessages::Attachments` |
+| Upload and the sent file's link | `CtoChatAttachmentsController` (`create`, `show`); signed-in, 404 unless owner or admin |
+| The composer and the sent files | the shared chat's attachments slot: `app/views/agent_chats/_attachments_slot.html.erb` renders `_attachments` (and `_attachment_chip`) when the composer locals carry `attachments`; `_sent_files.html.erb`; `app/javascript/chat_attachments.js` |
+| What the model gets | `bin/lib/agent_media.rb` (`AgentMailbox::Media`); `Responder#respond`; `ClaudeRun.parse(stream: true)` |
+| Into the build | `AgentProposals::Executor#change` attaches the message's blobs to the task (`Task#attachments`) |
+
+- **Types and limits** (`Attachments`): PNG, JPEG, WebP, GIF, HEIC/HEIF and PDF,
+  read from the BYTES (Marcel, plus the HEIF `ftyp` brands Marcel misreads), never
+  the name or the browser. Images 20 MB, a PDF 32 MB, 10 files a message, 60
+  uploads per user per hour. A message may be files with no text. A message with
+  files is never a `go`/`no`.
+- **Storage: a PRIVATE bucket, and OFF until it exists.** Chat files go to the
+  `chat_private` Active Storage service (`has_many_attached :attachments,
+  service: :chat_private` on `AgentMessage` and `Task`), never the hub's bucket:
+  that one has a public custom domain (`assets.mcritchie.studio`, `assets-dev`)
+  that serves any key to anyone, so a file there is public once its key leaks
+  (Carl's review, 2026-10-17). `chat_private` is its own R2 pair with NO public
+  domain, built by `StorageBackend.chat_private_service`:
+
+  | | |
+  |---|---|
+  | Buckets | `mcritchie-studio-chat-production` (production), `mcritchie-studio-chat-dev` (QA and desks); location `enam`; the `expire-trash-3d` lifecycle rule (StudioTrashS3 moves deletes under `trash/`); NO custom domain, NO r2.dev URL |
+  | Env (per Heroku app, and `.env.development`) | `CHAT_R2_ACCESS_KEY_ID`, `CHAT_R2_SECRET_ACCESS_KEY`: the pair's bucket-scoped keys (prod pair on production, dev pair on QA and desks). The endpoint is the existing `R2_ENDPOINT` |
+  | 1Password | `r2.mcritchie-studio-chat` in `studio-agents`, made by Steffon's [`bucket-provision`](../agents/steffon/sops/bucket-provision.md) act with app `mcritchie-studio-chat` |
+  | Switch on | Alex's yes, then bucket-provision, then set the two vars; no deploy needed beyond the config restart |
+
+  While the two variables are unset (`StorageBackend.chat_private_configured?`
+  false; the default), `Attachments.enabled?` is false: the composer has no
+  Attach, an upload or a send with files is refused (`ATTACHMENTS_OFF`, "Attaching
+  files is not switched on for this chat yet."), and text chat is unchanged. The
+  service is then built on the unreachable placeholder host, never a real bucket,
+  and a missing key never fails a boot. The test suite uses a Disk service.
+- **Keys.** Each object key is `apps/<app slug>/chat/u<user id>-<token>/<file>`;
+  the prefix is written on the server and is the proof of whose upload a blob is,
+  so a message attaches only its own sender's blobs for its own app. Uploads are
+  marked analyzed, so Active Storage never decodes an untrusted image on the hub.
+- **Logs.** `config.filter_redirect` (config/initializers/filter_parameter_logging.rb)
+  logs a redirect to a signed storage URL (`r2.cloudflarestorage.com`,
+  `X-Amz-Signature`, the Disk service's path) as `Redirected to [FILTERED]`, so a
+  file's key and live signature never reach a log line.
+- **Upload path.** The browser posts each file to the HUB, which writes it to R2;
+  it is not an Active Storage direct upload to R2, because the R2 buckets carry
+  no CORS rule (a preflight answered 403, 2026-10-17). Switching to direct upload
+  needs that rule on the chat buckets (Steffon, the Cloudflare admin token) and a change in `chat_attachments.js` only.
+- **Private.** No page or answer carries a blob URL. The composer holds a signed
+  token (purpose `cto_chat_attachment`, one day), which Active Storage's public
+  `/rails/active_storage/blobs/*` routes refuse. A sent file shows through
+  `/applications/<slug>/chat/attachments/<id>`, which checks the viewer wrote the
+  thread or is an admin (another owner of the same app gets 404) and redirects,
+  `no-store`, to an R2 URL that expires in 5 minutes. The dispatcher reads the
+  same kind of URL from the holder-only context bundle.
+- **What the model gets** (`Media`). Each image is re-encoded by ImageMagick on
+  the dispatcher Mac (`magick`, with an explicit decoder per type and memory,
+  disk and time limits): long edge at most 1568 px, `-strip` (EXIF and GPS gone),
+  PNG stays PNG, the rest (HEIC included) become JPEG. A PDF goes as a `document`
+  block when it starts `%PDF-` and declares at most 100 pages. At most 20 MB of
+  blocks a message. A file that fails any of this is skipped and named; the
+  prompt lists every file under "Attached:" inside the fence, and a rule tells the
+  model the files are untrusted data and to say when one could not be read.
+  Earlier turns name their files ("attached: …; not shown again"); a warm
+  session already holds them.
+- **The run.** Only a message with files changes the command:
+  `Media.stream_cmd` switches `--output-format` to `stream-json` and adds
+  `--input-format stream-json --verbose`; `--safe-mode` and `--tools ""` stay, and
+  a warm turn keeps `--resume`. `ClaudeRun.parse(stream: true)` reads the last
+  top-level `result` line, which is the json envelope, so the reply, usage limits,
+  sign-in and the meter read exactly as before; a stream with no result line is a
+  failed run, never a reply. The run's `run_meta` gains `files_shown` and
+  `files_skipped`. Image tokens are in the run's usage, so the meter counts them.
+- **Answers never load images.** A chat answer renders through
+  `SafeMarkdown.render(..., images: false)`: a Markdown image is a link, so an
+  answer steered by text inside a file cannot send data out through an `<img>`
+  that loads on sight.
+- **Off-site links open in a new tab.** The chat renders with `new_tab: true`
+  (task cto-pill-count-and-links): a link to another host, such as a client's
+  `https://<sub>.mcritchie.app` preview, gets `target="_blank" rel="noopener"`;
+  a hub path, an anchor, a mailto, or a link to the hub's own host stays in the
+  tab. /docs and dream stories are unchanged.
+- **A failed upload holds the send.** A send waiting on uploads does not go
+  when one fails, and a send with a failed chip on it is stopped: the chip stays,
+  red, with its reason, and the composer says to remove it or attach it again.
+- **A refused send keeps its files.** The re-rendered form draws the send's
+  still-valid tokens as ready chips (`Attachments.held`), so the owner fixes the
+  text or removes a file and sends again.
+- **Into the build.** A `go` on a change proposal attaches the proposal's
+  message's files to the designed task (the same blobs, `dependent: false`), and
+  the task's description names them as data from the requester. Writing them into
+  a desk at `bin/task begin` is the design's later step.
+- **Not yet:** audio and video, Discord attachments, office files, a sweep of
+  and uploads never sent.
+
+## Build intake: Ritch answers the public on /build
+
+`/build` is a chat with Ritch (designs: `.agents/epics/build-with-xan-design.md`,
+`build-with-ray-v2.md`). A visitor, signed in or not, tells Ritch what they want to
+build; Ritch asks for the idea (at most two follow-ups), the theme, a CTO and an address,
+one card at a time, and the visitor's taps fill the status card. Ritch's summary card
+carries **Build My App**, which asks for sign-in only then; it launches through `AppLaunch`.
+Signed out, the press opens the sign-in modal (`modals/_auth`, magic link or Google) through
+an `open_modal` Turbo Stream (`app/javascript/modal_stream.js`), adding nothing to the thread,
+and is remembered in that browser's session for an hour (`BuildIntake::PendingLaunch`, bound
+afresh by every press, so a dismissed modal opens again on the next). The sign-in lands on
+`GET /build/:token/launch` (the link's `return_to`; Google via the home page, which forwards
+only while the draft is still a draft with no account or theirs, else forgets the press),
+which claims the draft, launches it once and redirects to `/applications/:slug/chat`. Without
+that session's press (a forwarded link, a refresh, a stale press) the landing only opens the draft.
+
+**The initial load.** `AppLaunch` sets `app_ctos.launch_animation_pending`; the owner's
+first visit to the CTO's chat (`CtoChatsController#show`), however they arrived (the
+signed-in press's 303, the magic link, Google), clears it atomically and renders the launch
+panel (`build/_launch`, `app/javascript/build_launch.js`: Building Brand Sheet, Hatching
+CTO, Setting Up Domain over about eight seconds), which then visits the same chat. A refresh
+goes straight to the chat; an admin viewing someone else's app neither sees nor spends it; a
+Turbo hover prefetch gets a 204 and spends nothing.
+
+- **The page** is the agent shell (`app/views/agent_chats/_shell.html.erb`): Ritch's
+  portrait, a status slot, the thread, the chat box. The status slot
+  (`build/_status_card`, stream target `build-checklist`) is the heading until Ritch's
+  theme card (`palette`) is in the thread, or a draft already holds a theme, CTO or
+  address (`AppRequest#intake_started?`). Start App alone only turns the heading to
+  the locked idea's title while Ritch types (Alex, 2026-10-20). Then it is the app's
+  working title over Theme · Agent · Domain tiles, in the order Ritch asks, popping in
+  on the same poll that brings the theme card. It carries no Build control.
+- **The first message stays on /build.** The composer posts through Turbo;
+  `BuildController#create` answers with Turbo Streams that replace the empty thread
+  (`build-chat-page`) with the draft's chat and end with a `replace_url` stream
+  (`app/javascript/build_shell.js`), which moves the address to `/build/<token>`
+  through Turbo's history, with no reload. A JSON post still gets the token and path.
+  The thread slides in (`app/javascript/agent_shell.js`); the send itself compacts
+  nothing, so the hero and the gallery stand while the thread is short; the status
+  card scales in the first time it replaces the heading.
+- **The shell grows with the conversation.** It is a column no taller than the window
+  below its own top; the thread grows with its turns, then scrolls inside it, so the
+  chat box sits at the window's bottom. The head and status card compact in steps as
+  the THREAD'S HEIGHT grows, never because a message was sent (task
+  `build-chat-reading-flow`): `data-shell-size` goes full, then medium past
+  `MEDIUM_SHARE` of the shell's room, then compact past `COMPACT_SHARE`, and one step
+  on whenever the thread no longer fits beside the head (`AgentShellHelper`). A
+  ResizeObserver on the thread and its turns drives it, once a frame; it moves forward
+  only on a page; a load measures afresh, unanimated, so a reload opens at its step,
+  and a morph refresh keeps the step reached. At the first step /build's gallery
+  ("Built with McRitchie Studio", `build/_gallery`, drawn on `/build` and on a
+  draft's `/build/<token>`) slides away for good. Same on the app chat. Styles:
+  `app/assets/tailwind/agent_shell.css`; reduced motion keeps the steps, unanimated.
+- **The reading flow.** The agent's words are plain text on the page (no bubble, no
+  name box; the name stays for a screen reader), the visitor's keep their right-hand
+  bubble, and the intake cards keep theirs as the point of action (`.agent-action`;
+  `app/assets/tailwind/agent_reply.css`). A NEW answer (a stream's or the poll's
+  turn replace) types itself in (`app/javascript/agent_reveal.js`): its rendered
+  HTML kept, text nodes filled in order at about 420 characters a second, 0.45s at
+  least and 2.6s at most, the card after the last word. While it types the thread is
+  `aria-busy` and the words are `inert`, so a screen reader hears the answer once, when
+  it is done, and no link in it takes focus mid-typing. History, a reload, a morph and
+  reduced motion show the answer at once.
+  The height cap is declared in `100vh` before `100dvh`, so a browser without `dvh`
+  (iOS before 15.4) still caps the thread.
+- **Following the newest line** (`app/javascript/chat_follow.js`, task
+  `build-flow-polish`). A reader within 20px of the thread's end when it grows (an
+  answer typing in, a turn or a card arriving, the head stepping down) is kept at the
+  end; one scrolled further up is not moved. The reader's own send goes to the end.
+  One binding per thread element, so nothing piles up across stream renders. Same on
+  `/build` and every agent chat.
+- **No-op re-taps.** Choose Theme and Use Domain are disabled while the pick is the
+  answer already saved, and `BuildIntake::Choice` ignores such a tap (no write, no
+  visitor turn, no turn of Ritch's). The domain card checks every suggestion's
+  availability once, in its render (`AppRequest.unavailable_reasons`), and asks
+  `/build/check` only when the name changes.
+- **A refused Build My App** (the plan's app limit, a name taken since the tap, an
+  incomplete intake) answers ON the summary card: a Turbo Stream redraws the card by
+  its id (`build-summary-<message id>`) with the reason and a next step, 422. Never a
+  422 page: Turbo renders a failed form's page as a same-URL refresh, the shell morphs
+  it, and the morph strips Alpine's `display:none` from every `x-show` (on 2026-10-18 it
+  opened the Links drawer; task `build-launch-chat-growth`).
+- **A launched Build My App** (task `build-launch-handoff`) launches first, on the
+  server, then answers with Turbo Streams: the shell is swapped in place for the launch
+  panel (`build/_launch`: the new CTO's portrait, the app's name, and "Building Brand
+  Sheet", "Hatching CTO", "Setting Up Domain" resolving over about eight seconds in the
+  app's colours; `app/javascript/build_launch.js`, `app/assets/tailwind/build_launch.css`),
+  and the address moves to the app chat at once, so a reload lands there. Then a Turbo
+  visit opens the chat, the portrait morphing into its head. Reduced motion shows the
+  steps done and moves on after a short pause. A launched request's own address sends its
+  owner to the chat.
+- **Page moves** between /build, /build/:token and the app chat are Turbo visits with a
+  view transition (`<meta name="view-transition">`): the shell names its portrait,
+  caption, status card and chat box, so Ritch's portrait becomes the CTO's. Turbo skips
+  the transition under `prefers-reduced-motion`.
+
+- **The thread** is `web:build:<request token>` on the `web` channel, `channel_ref`
+  `build`, written only by `BuildIntake::Ingest` (`app/services/build_intake/ingest.rb`).
+  A signed-out visitor writes as the request's own public person (web identity
+  `build:<token>`); signed in, as their user's web person. Signing in adopts the draft,
+  and the thread continues.
+- **Who is answered.** `config/agent_answerers.yml` `public_intake:` lets its soul (Ritch)
+  answer ANY person, but only on a `web` row whose thread key starts with `web:build:`
+  (the prefix is pinned in code; `AgentMessages::Answerers#intake?` and its SQL twin in
+  `#sql_guard`). Nowhere else is the public answered. The public still gets no action
+  (`Audience#may?(:read_action)` is owner and team) and Ritch has no catalog.
+- **Caps** (`BuildIntake::Caps`, from the same block), checked at ingest before a row is
+  answerable: 12 answers per request signed out (40 signed in), 20 signed-out answers per
+  visitor IP per hour (the IP is stored only as a keyed hash), 400 signed-out answers per
+  Denver day. Past a cap the row is stored already answered with a line from code asking
+  the visitor to sign in (`intake_capped` event); no model runs.
+- **Bot shield.** The first message carries `/contact`'s defences (`BrowserProof`): a
+  honeypot (a hit stores nothing) and a signed render time the page's script writes in.
+  A first message without it, or under two seconds, is stored `held` with a `bot_shield`
+  event and never answered; the visitor reads "send it again".
+- **Cards.** Ritch's prompt gains an INTAKE section (`ContextBuilder#intake_block`): the
+  playbook from `docs/agents/agents/ray/intake.md`, the request's state from the bundle's
+  `intake` key (`BuildIntake::Context`), and the card format. Ritch offers a card as a
+  PROPOSAL block of kind `intake` (`idea`: a title and 2 to 3 key features; `cto`;
+  `palette`, which the visitor reads as the theme; `address`, read as the domain;
+  `summary`, no fields). Once every step is set, an answer that offered no card gets
+  the `summary` card from code, so Build My App is always in the thread. On a build thread
+  `AgentMessage#complete!` hands the block to `BuildIntake::Card.record_from!` instead of
+  `AgentProposal`: names, hex colours and WCAG text-on-surface contrast (4.5:1, light and
+  dark) are checked, unknown fields refuse the card, and the checked copy is stored on
+  `agent_messages.intake_card` (`intake_card` / `intake_refused` events). A catalog
+  proposal on a build thread is refused.
+- **About Alex** (Alex, 2026-10-20: his interactive resume). After the INTAKE section Ritch's
+  prompt on a build thread carries ABOUT ALEX (`ContextBuilder#about_alex_block`): Alex's
+  profile, the part of `docs/agents/agents/ray/about-alex.md` below its rule (he edits
+  it; its source citations and TODOs are HTML comments, stripped), capped at 2,500
+  characters, under rules written in CODE so an edit cannot drop them: speak about Alex
+  in the third person and never as him; give advice only as the views the profile
+  records, and say "Alex hasn't shared that here" otherwise; family stops at what the
+  profile says (married, a daughter), and anything more is politely declined; and a
+  question about him offers no intake card. No other thread carries it.
+- **Taps** (`BuildIntake::Choice`, `PATCH /build/:token/intake`) are the only writes to
+  `app_requests.cto_name`, `cto_avatar` (an `animal:<id>` from `BuildIntake::Animals`, or an older
+  `BuildIntake::Portraits` key), `palette` and
+  `answers`, and the subdomain; each value is checked again on the server, and a palette
+  or idea is read from the stored card, never from the post. **Every tap also speaks**
+  (`.agents/epics/build-with-ray-v2.md`, 2-5): once the field is saved, the tap posts the
+  visitor's turn ("Let's build ...", "My CTO is ...") into the thread through
+  `BuildIntake::Ingest`, in the same transaction, so the dispatcher answers it with the
+  next step within the caps; a refused tap posts nothing, and a double tap posts once
+  (one client id). "Build something else" (`idea_else`) sets nothing and only relays.
+- **Delivery.** A signed-out visitor has no `/cable` socket, so the page polls
+  (`GET /build/:token/turns`, `app/javascript/build_chat.js`) while a turn is pending;
+  `WebChat.deliver!` marks a build-thread answer posted without a broadcast.
 
 ## Viewing a run
 
@@ -712,10 +1352,11 @@ They are stored on the row (`AgentMessage.run_record` caps each). `/admin/agent_
 the machine that ran it:
 
 ```bash
-cd ~/.agents/mailbox/xan && claude --resume <session_id>
+cd ~/.agents/mailbox/ray && claude --resume <session_id>
 ```
 
-Resuming is for an operator reading a run. The answer path never resumes.
+Resuming is for an operator reading a run. The answer path resumes only in a
+warm domain, for owner and team turns ("Warm sessions" below).
 
 ## Typing: the bot shows it is answering
 
@@ -744,11 +1385,11 @@ that will post the reply shows "typing…" in the message's channel or thread.
   token, nothing types.
 - **Only for answers that will come.** The board re-checks every pulse
   (`AgentMessage#typing_refusal`): the message is `claimed` by that worker, it is
-  a Discord message, its sender is answered (`AgentMessages::Answerers`, or a hold
+  a Discord or web-chat message (`AgentMessage::TYPING_CHANNELS`), its sender is answered (`AgentMessages::Answerers`, or a hold
   an admin released), and the claim is under `AgentMessage::TYPING_CAP` old. A
   held or unrouted message is never claimed, so it never types. Anyone but the
   holder gets 409 `NOT_HOLDER`; a quiet "no" is a 200 whose `meta.typing` says
-  `not_discord`, `not_answered` or `capped`, and the dispatcher stops pulsing
+  `not_typing_channel`, `not_answered` or `capped`, and the dispatcher stops pulsing
   that run on any answer but `queued`.
 - **How it stops.** The dispatcher reaps a finished run before it pulses, so
   pulses end with the run, whatever the end: the reply, a failed or raised run, a
@@ -806,95 +1447,159 @@ The design, for the step that builds it:
 - **Failure deletes the draft.** A run whose envelope ends `is_error` (a usage
   limit, a signed-out CLI, a failure) deletes the draft and is handled as today.
 
-### Warm sessions (next step, not built)
+### Warm sessions
 
-Phase 7 step 2 shipped the usage half (run summaries, tiers, the allowance and
-the meter; [`agent-usage.md`](agent-usage.md)). The warm session per domain is
-designed here and not built. It changes the dispatcher's loop, adds a board
-table, a checkpoint store and a standby role, and it reverses the memory rule
-above ("never from a resumed Claude session"). That is its own reviewable PR,
-not a rider on the meter. Until it ships, every answer stays one
-`claude -p` run per message.
+Phase 7 step 2 (Alex, 2026-10-16; plan: `.agents/epics/domain-agents.md`). A warm
+domain answers its owner and team messages by resuming ONE Claude session, held
+by a board lease and checkpointed after every turn, so a standby machine can take
+it over. **Off by default**: no domain sets the flag, and with it off the
+dispatcher's path is exactly the one-run-per-message path above
+(`test/lib/agent_warm_session_test.rb` and `agent_dispatcher_warm_test.rb` pin
+this).
 
-**Scope.** Owner and team traffic only. A client's or the public's message stays
-one run per message, so untrusted text never persists in a session. A held
-message an admin released is answered per message too, whoever sent it. Later:
-one session per (domain, user).
+**Scope.** The domain's front-door soul only (`soul:` in
+`config/agent_domains.yml`), for owner and team senders only. A client's or the
+public's message, a released hold, and any helper soul mapped to the domain stay
+one run per message, so untrusted text never persists in a session
+(`WarmSession.eligible?`, from the board's audience in the bundle). Every text a
+warm prompt carries must be the sender's own, so these answer cold too: a thread
+holding any turn that is not the sender's (`own`, set on the board); a message,
+or an own earlier turn, carrying quoted or forwarded material
+(`WarmSession.quotes?`: a `>` line, an "On … wrote:" line, a forwarded or
+original-message banner, a From: header followed by Sent:/Date:); and a thread
+whose newest proposal was not offered to this sender on a turn the prompt shows
+(the bundle's `proposals.last.own` and `source_message_id`). A verbatim paste
+with no such marker cannot be told from the sender's own words and is treated as
+theirs. Later: one session per (domain, user).
 
-**The switch.** `warm_session: true` on a domain in `config/agent_domains.yml`;
-absent or false (the default) is today's path. The flag lives in config so that
-turning it on is a reviewed deploy, not a click.
+**The switch.** `warm_session: true` on a domain in `config/agent_domains.yml`
+(literally `true`; anything else is off), and optionally `consolidate_at` (an
+integer from 10,000 to 1,000,000; default 150,000). The flag lives in config so
+that turning it on is a reviewed deploy, not a click.
 
-**The lease.** A new table, `agent_domain_sessions` (not `agent_sessions`: that
-name belongs to the builder sessions, `app/models/agent_session.rb`), one row per
-domain: `domain`, `holder` (the worker id), `lease_expires_at`, `heartbeat_at`,
-`claude_session_id`, `generation`, `turns`, `context_tokens`, `checkpoint`
-(an Active Storage attachment, the hub's blob convention) and `checkpointed_at`.
-The lease lives on the row, as `AgentMessage`'s and `lib/claim_lease.rb`'s do: a
-holder that dies loses it when the lease lapses, with no sweeper. The dispatcher
-renews it on its minute ping. Lease 5 minutes; a turn in flight renews it like a
-message lease.
+**The lease.** `agent_domain_sessions` (`AgentDomainSession`; not
+`agent_sessions`, which are the builder sessions), one row per domain: `holder`,
+`lease_expires_at` (5 minutes), `heartbeat_at`, `claude_session_id` (the head),
+`generation`, `turns`, `context_tokens`, the `checkpoint` (an Active Storage
+attachment: the gzipped transcript, at most 4 MB), `checkpointed_at`,
+`lease_key_digest`, and the last reported fault (`last_fault`, `last_fault_at`).
+The lease lives on the row, as `AgentMessage`'s does: a holder that dies loses it
+when it lapses, with no sweeper. The dispatcher renews it on its minute ping.
+Every write is holder-checked (409 `NOT_HOLDER`), and a lapsed holder's late
+checkpoint or consolidation is refused (409 `LEASE_LAPSED`). The endpoints, under
+`/api/v1/agent_domain_sessions/:domain/`, all POST: `acquire`, `renew`,
+`checkpoint` (upload), `checkpoint_read` (restore), `release`, `consolidate` and
+`fault`. They take the shared token or an admin session; a soul's own session
+reaches none of them, because a checkpoint is owner and team conversation text.
 
-**A turn.**
+**The lease key.** The shared token is in every agent shell, the worker name is
+the caller's word, and `GET` index shows the holder's name, so a name opens
+nothing. The acquire that takes a lease mints a random key and answers it once
+(`meta.lease_key`); the board keeps only its SHA-256. Every holder call, the
+checkpoint read included, presents it in the request body (never a URL), and a
+wrong or missing key reads as `NOT_HOLDER`. A live lease the caller holds by name
+but not by key is `LEASE_HELD`, so a process that lost its key (a crash) waits
+out the 5-minute lease like any other worker. Release and reset clear the key.
+Not admin-session-only: the standby restoring a checkpoint is a dispatcher, which
+holds only the shared token. The remaining reach is a lease that is free or
+lapsed: whoever takes it gets its transcript, which is the takeover itself, and
+the row and log name the taker.
 
-1. The dispatcher claims an owner or team message in a warm domain, exactly as
-   today (same guard, same thread and person order).
-2. It takes or renews the domain lease (`POST /api/v1/agent_domain_sessions/:domain/acquire`).
-   Another live holder answers 409: the message is answered per message instead,
-   never queued behind the lease.
-3. When its local transcript (`~/.claude/projects/<cwd slug>/<id>.jsonl`) is
-   missing or older than the board's `checkpointed_at`, it downloads the
-   checkpoint first.
-4. It runs `claude -p --resume <claude_session_id> --safe-mode --tools ""
-   --output-format json`, still with no tools and the allow-listed environment.
-5. **Every turn carries the board's rules again.** The bundle is built and read
-   per message as today. The turn prompt holds GENERAL (the audience and its
-   rules), the THREAD focus and the fenced message. USER and PERSON are left out,
-   because the session already holds them. The audience is still resolved on the
-   board from the person's role, so a resumed session cannot skip the
-   audience or owner checks: those are server-side (`claimable`, the bundle's
-   `audience`, `AgentProposal.record_from!`), not remembered.
-6. It completes the message (the run summary as today), then uploads the
-   transcript (`POST …/checkpoint { worker, session_id, turns, context_tokens }`).
-   The envelope's `session_id` becomes the new head each turn, whether or not the
-   CLI kept the id.
-7. A failed run, a failed checkpoint, or a transcript that will not restore
-   drops the lease, and that message is answered per message. The fallback is
-   always today's path.
+**Checkpoint storage.** The board uploads the blob before the row says
+checkpointed (`ActiveStorage::Blob.create_and_upload!` inside the holder's lock,
+not `attach(io:)`, which uploads after commit). An upload that fails rolls the row
+back to its previous, readable checkpoint and answers 500 (ErrorLog through
+`rescue_and_log`), so the row never names a blob storage never received.
+
+**A turn** (`AgentMailbox::Dispatcher#warm_turn`, all board calls on the main loop):
+
+1. The dispatcher claims the message exactly as today (same guard, same thread
+   and person order) and reads its bundle.
+2. When the message is eligible and no warm turn is already running on that
+   domain here, it acquires the lease. Another live holder answers 409
+   `LEASE_HELD`: the message is answered per message, never queued.
+3. Unless the local transcript is the one THIS PROCESS last checkpointed or
+   restored in this lease (same head, same `checkpointed_at`, same SHA-256), it
+   downloads the checkpoint and writes it under the soul folder's Claude project
+   folder, 0600 in a 0700 folder. No clock is compared: a file's mtime is this
+   machine's clock and `checkpointed_at` the board's, and a machine that lost
+   the lease mid-turn can hold a newer-looking file that is not the session.
+4. It runs `claude -p --safe-mode --tools "" --output-format json --resume <id>`:
+   the cold command plus `--resume`, the same allow-listed environment, the
+   envelope read by the same status rules (`ClaudeRun`). A domain's first turn,
+   or the first after a consolidation, runs without `--resume`.
+5. **Every turn carries the board's rules again** (`ContextBuilder#warm_prompt`).
+   A resumed turn's prompt is the audience and its rules, HOW TO ANSWER (the
+   fence, the catalog, the action output), USER, THREAD and the fenced message,
+   each cut byte for byte from the cold prompt. The role doc, DOMAIN and PERSON
+   are left out: the session already holds them. The audience is still resolved
+   on the board from the person's role, and `claimable`, the bundle's audience
+   and `AgentProposal.record_from!` are server-side, so a resumed session cannot
+   skip the audience or owner checks.
+6. It completes the message (the run summary as today, plus `run_meta.warm`:
+   `fresh` or `resumed`; the reasoning is the last turn's only), then uploads the
+   transcript of the envelope's `session_id`, which becomes the new head whether
+   or not the CLI kept the id. A superseded transcript in the soul's folder is
+   deleted.
+7. A failed run, a failed checkpoint, or a checkpoint that will not restore drops
+   the lease; the message's own handling is today's. The fallback is always the
+   cold path. A failed checkpoint or restore is also reported to the board
+   (`fault`: one of `checkpoint_failed` or `restore_failed` and the error's class,
+   never its text), which keeps it on the row and records it in ErrorLog; the next
+   good checkpoint clears it. The dispatcher log says `CHECKPOINT FAILED`.
+8. Giving a lease up (a release, a handback, a refused renew, a stop, a
+   consolidation) removes the transcripts this process held for it, so a standby
+   keeps no copy of the owner's conversation once it hands back.
 
 **The standby.** A second dispatcher (Alex's work machine) is registered on the
-board as `standby` for a list of domains (`agent_dispatchers.role`, set at
-`/admin/agent_messages`). It claims nothing while a primary pings. When a
-domain's lease lapses (no heartbeat for 5 minutes), the standby acquires it,
-restores the checkpoint and answers. **Handback is only between turns.** A
-primary that comes back asks for the lease. The board marks it `handback_requested`,
-the standby releases it after its current turn completes and checkpoints, and the
-primary resumes from that checkpoint. Neither side ever resumes a session the
-other is mid-turn in.
+board as `standby` for a list of warm domains: `agent_dispatchers.role` and
+`standby_domains`, set by `bin/rails agent_dispatchers:role` (the
+[`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md) SOP, "Standby on
+a second machine"). The role belongs to the host, so a restart inherits it. While
+a primary pings (and its last ping is not `stopping`), the board answers a
+standby's claim empty at once (`standby_primary_live`, no long poll), and the
+dispatcher does not ask. When the primary is silent for 5 minutes, the standby
+claims its domains' souls only, takes each lapsed lease, restores the checkpoint
+and answers. **Handback is only between turns.** A primary refused by a standby's
+lease marks the row `handback_requested`; the standby releases after its current
+turn checkpoints (or on its next ping when idle, and whenever a primary is live
+again), and the primary's next turn restores that checkpoint. Neither side ever
+resumes a session the other is mid-turn in. The floor alert reads primaries only,
+so a live standby never hides a silent primary; its alert names the standby that
+is covering.
 
 **Consolidation.** When a turn's `context_tokens` (input + cache read + cache
-write) pass a threshold (`CONSOLIDATE_AT`, 150,000 to start), the holder runs one
-more no-tools turn asking for a domain summary. The board stores it as an
+write) reach the domain's `consolidate_at`, or its transcript passes the 4 MB
+checkpoint limit, the holder runs one more no-tools `--resume` turn asking for its
+own notes (`WarmSession::SUMMARY_PROMPT`). The board stores them as an
 `agent_domain_summaries` row (domain, generation, text, source session, turns
-covered), and the next turn starts a fresh session seeded with that summary
-inside the fence, labelled as the soul's own notes. Only owner and team text ever
-reaches a warm session, so the summary carries no untrusted client text forward.
-That is why this stays off for client and public traffic.
+covered), bumps the generation and clears the session. The next turn starts a
+fresh session from the whole cold prompt with the summary inside the fence,
+labelled as the soul's own notes. Only owner and team text ever reaches a warm
+session, so the summary carries no client or public text forward.
 
 **Usage.** Each turn's run summary is stored as today. A warm turn is mostly
 cache reads, which the meter shows as such. Owner and team turns are never
 metered against an allowance.
 
-**What the build owes.** A migration (the two tables and the dispatcher role)
-and the board endpoints (acquire, renew, checkpoint, release, handback), with
-holder checks. The dispatcher's warm path behind the flag, plus its restore,
-checkpoint and fallback. The standby role and the floor alert's view of it.
-Tests: lease races (two acquirers, a lapsed holder's late checkpoint refused),
-a turn that resumes, a restore from checkpoint on a second machine, a handback
-only between turns, a client message never warm, and consolidation at the
-threshold. The setup steps for the standby machine are in
-[`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md), "Standby on a
-second machine".
+**Observing.** `bin/rails agent_dispatchers:sessions` (each domain's lease, head,
+checkpoint size, any handback and the last fault), `agent_dispatchers:list` (each row's role),
+and `GET /api/v1/agent_domain_sessions`. The dispatcher log says `warm <domain>:`
+for every lease event (took, restored, checkpointed, consolidating, released and
+why); it never logs message text.
+
+**Tests.** `test/models/agent_domain_session_test.rb` (acquire, renew, lapse,
+takeover, handback, the late checkpoint, consolidation, the lease key, the
+upload that fails, faults),
+`test/integration/agent_domain_session_race_test.rb` (two acquirers on real
+connections), `test/models/agent_dispatcher_standby_test.rb` (the role, the claim
+scope, the floor alert), `test/lib/agent_warm_session_test.rb` (eligibility, the
+trigger, the transcript round trip, the per-turn prompt, the flag-off path) and
+`test/integration/agent_dispatcher_warm_test.rb` (a resumed turn and its
+checkpoint, a standby resuming after a lapse, handback between turns, a client
+kept one-shot, consolidation, flag off, a newer-looking local file never
+resumed, transcripts removed with the lease, a failed checkpoint reported, a
+quoted owner message kept cold).
 
 ## Setup
 
@@ -916,9 +1621,9 @@ Nothing reads Discord until a bot token is set. The code ships inert.
 - **The client's own half** (server, `#agents` channel, mentionable roles,
   Developer Mode, the IDs): the public guide at `/integrations/discord`
   (`app/views/integrations/discord.html.erb`).
-- **Our own live test** (2026-10-14) uses Xan's own bot, not roles: the whole
+- **Our own live test** (2026-10-14) uses Ritch's own bot, not roles: the whole
   McRitchie Studio guild (`1332466565203103744`, no channel entries), and the soul
-  `xan` routed by a mention of the Xan bot user (`users`, not `roles`). The ids
+  `ray` routed by a mention of the Ritch bot user (`users`, not `roles`). The ids
   are in `config/agent_routes.yml`. `DISCORD_AGENT_BOT_TOKEN` is set from
   `agents.discord.xan` on `mcritchie-studio` only
   ([`credential-inventory.md`](../modules/credential-inventory.md)).
@@ -926,17 +1631,17 @@ Nothing reads Discord until a bot token is set. The code ships inert.
 ## Test protocol
 
 Post in any channel or thread of the McRitchie Studio guild (`lobster-tank` is the
-quiet one), mentioning the Xan bot user (`@Xan`). The gateway stores it within a
+quiet one), mentioning the Ritch bot user (`@Ritch`). The gateway stores it within a
 second or two; with the dispatcher installed the answer follows and nothing else is needed;
 the rows below run the heartbeat by hand, with the dispatcher stopped
-(`bin/dispatcher uninstall`) so the two do not compete. Avi, Xan and Turf are
-routed there; the rows use Xan, and any routed soul works the same way.
+(`bin/dispatcher uninstall`) so the two do not compete. Avi, Ritch and Turf are
+routed there; the rows use Ritch, and any routed soul works the same way.
 
 | Scenario | Do | Expect |
 |----------|----|--------|
-| Serial | Post `@Xan what is building?`. Run `bin/heartbeat xan --channel discord`, then run it again | The first run answers in the channel; the second prints `nothing for xan` |
-| Parallel | Post `@Xan one` and `@Xan two` as separate messages. Start two `bin/heartbeat xan --channel discord --once` at the same moment | Each message is answered once. Neither is read twice and no reply is doubled |
-| Two agents | Needs a second soul routed in the guild (a role, or a second bot user such as Mack's). Then post to each and run `bin/heartbeat xan --channel discord` | Xan answers only its own message; the other stays `received` until that soul's heartbeat runs |
+| Serial | Post `@Ritch what is building?`. Run `bin/heartbeat ray --channel discord`, then run it again | The first run answers in the channel; the second prints `nothing for ray` |
+| Parallel | Post `@Ritch one` and `@Ritch two` as separate messages. Start two `bin/heartbeat ray --channel discord --once` at the same moment | Each message is answered once. Neither is read twice and no reply is doubled |
+| Two agents | Needs a second soul routed in the guild (a role, or a second bot user such as Mack's). Then post to each and run `bin/heartbeat ray --channel discord` | Ritch answers only its own message; the other stays `received` until that soul's heartbeat runs |
 | Unaddressed | Post a message that mentions nobody and replies to nothing | No row is stored; the admin page does not list it |
 
 The inbound half (guild scope, the addressed-only filter, overrides, the backstop)
@@ -955,7 +1660,13 @@ long poll is in `test/controllers/api/v1/agent_messages_controller_test.rb`.
 Typing is `test/integration/agent_dispatcher_typing_test.rb` (pulses, then the
 reply as the same bot; stop on failure and at the cap) and
 `test/jobs/agent_message_typing_job_test.rb` (the bot choice, the fallback, the
-guard and the unanswered audiences).
+guard and the unanswered audiences). The web chat's thinking and typing phases
+are `test/lib/agent_claude_stream_test.rb` (the phase off a recorded stream,
+`test/fixtures/files/claude_stream_thinking.jsonl`, and the same answer as the
+json envelope), `test/integration/web_chat_thinking_typing_test.rb` (the loop:
+thinking, an immediate typing pulse, the answer; the `/build` poll; Discord
+unchanged), `test/views/agent_typing_component_test.rb` and
+`test/javascript/agent_chat_test.js`.
 
 ## Observing
 
@@ -989,7 +1700,9 @@ guard and the unanswered audiences).
 
 ## Limits of phase 1
 
-- Discord only. The gateway stores a message within seconds; while it is down
+- Discord, email and the web chat only. Email reaches a CTO only through the team@ Resend
+  inbound, and is trusted only by the topmost SES verdict ("Email"). The web chat
+  answers whole messages, with typing but no streaming ("Web chat"). The gateway stores a Discord message within seconds; while it is down
   (a deploy, a reconnect, a stood-down leader) the backstop catches up within 10
   minutes, so an answer takes the Claude run plus, at worst, that.
 - One gateway connection, unsharded. That holds below 2,500 guilds; past it
@@ -1000,8 +1713,10 @@ guard and the unanswered audiences).
 - One read-only action per soul, for owner and team senders only. The only write
   on a message's behalf is a proposal the owner confirmed with `go`: a named
   query, or a `designed` board task. Operations wait for Phase 2.
-- One dispatcher, on one Mac. It answers only while that Mac is awake and signed
-  in to Claude; the floor alert says when it is not. A dispatcher that dies
+- One primary dispatcher, on one Mac. It answers only while that Mac is awake and
+  signed in to Claude; the floor alert says when it is not. A standby on a second
+  machine is built but registered nowhere yet ("Warm sessions"); until it is,
+  nothing answers while the Mac sleeps. A dispatcher that dies
   mid-answer stops renewing, so its claim lapses after 10 minutes and its late
   complete is refused (409) when another worker has taken the message.
 - Routing ids (guilds, souls, overrides) live in `config/agent_routes.yml`, so changing them takes a deploy,

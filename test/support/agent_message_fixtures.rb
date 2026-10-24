@@ -10,7 +10,15 @@ module AgentMessageFixtures
     def person_ids = []
     def roles = AgentPerson::ROLES
     def held_reason(_person) = "unguarded"
-    def allowed?(_person) = true
+    def allowed?(_person, message: nil) = true
+    def public_intake = nil
+    def public_intake_soul = nil
+    def intake?(_message) = false
+    def app_owners = nil
+    def role_answered?(_person) = true
+    def app_owner_thread?(_message, _person = nil) = false
+    def app_owner_user?(_user, app_slug:, soul:) = false
+    def audience_for(message, person = message.person) = AgentPerson.audience_for(person)
     def sql_guard = ->(_table) { "TRUE" }
   end
 
@@ -31,7 +39,7 @@ module AgentMessageFixtures
   DESK_THREAD = "900000000000000006".freeze
   OTHER_GUILD = "900000000000000007".freeze
   AVI_ROLE = "900000000000000010".freeze
-  XAN_ROLE = "900000000000000011".freeze
+  RAY_ROLE = "900000000000000011".freeze
   AVI_BOT = "900000000000000020".freeze
   SHARED_BOT = "900000000000000099".freeze
 
@@ -48,7 +56,7 @@ module AgentMessageFixtures
             "channels" => { DESK => { "name" => "agent-desk", "default_soul" => default_soul.to_s },
                             MUTED => { "name" => "random", "ignore" => true } },
             "souls" => { "avi" => { "roles" => [ AVI_ROLE ], "users" => [ AVI_BOT ] },
-                         "xan" => { "roles" => [ XAN_ROLE ], "users" => [] } }
+                         "ray" => { "roles" => [ RAY_ROLE ], "users" => [] } }
           }
         }
       }

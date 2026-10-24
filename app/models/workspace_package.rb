@@ -62,7 +62,7 @@ class WorkspacePackage
     # The software keys (config/workspace_icons.yml) this feature puts in a
     # client's stack. A planned feature provisions nothing: it is a promise. A
     # tier below `brand_from` gets the row but not the software (Vibe's web
-    # address is a mcritchie.studio subdomain, so no Squarespace domain).
+    # address is a mcritchie.app subdomain, so no Squarespace domain).
     def software_keys(package_key = nil)
       return [] unless delivered?
       return [] if below_brand_from?(package_key)
@@ -97,7 +97,7 @@ class WorkspacePackage
     # The brands a package card names for this row: the lead brand and every
     # software it shows. A planned row is a promise, so it names none, and a
     # tier below `brand_from` gets the row but not the brand (Vibe's web
-    # address is a mcritchie.studio subdomain, not a Squarespace domain).
+    # address is a mcritchie.app subdomain, not a Squarespace domain).
     def card_brands(package_key = nil)
       return [] if planned?
       return [] if below_brand_from?(package_key)
@@ -132,6 +132,13 @@ class WorkspacePackage
   # The monthly CTO token allowance (config `cto_monthly_tokens`): a positive
   # integer, or nil for unlimited (AgentUsage, docs/agents/system/agent-usage.md).
   attr_reader :cto_monthly_tokens
+  # The app's concurrent task lanes (config `building_lanes`): how many of its
+  # tasks may be in `building` at once, a positive integer, or nil for unlimited
+  # (BuildingLanes, docs/agents/system/client-pipeline.md).
+  attr_reader :building_lanes
+  # How many apps one account may hold on this tier (config `apps_per_account`):
+  # a positive integer, or nil for unlimited (AppRequest#apps_per_account_limit).
+  attr_reader :apps_per_account
 
   def initialize(attrs, annual_discount_percent: 0)
     @key = attrs.fetch("key")
@@ -149,6 +156,10 @@ class WorkspacePackage
     @annual_discount_percent = annual_discount_percent.to_i
     tokens = attrs["cto_monthly_tokens"]
     @cto_monthly_tokens = tokens.is_a?(Integer) && tokens.positive? ? tokens : nil
+    lanes = attrs["building_lanes"]
+    @building_lanes = lanes.is_a?(Integer) && lanes.positive? ? lanes : nil
+    apps = attrs["apps_per_account"]
+    @apps_per_account = apps.is_a?(Integer) && apps.positive? ? apps : nil
   end
 
   # The CTO usage settings (config `cto_usage`): warn_percent and topup.

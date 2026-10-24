@@ -18,7 +18,7 @@ class RetiredSopNamesTest < ActiveSupport::TestCase
     "the g1_cert gate (the local cert; the PR's settled CI replaced it)" => /\bg1[-_]cert\b|\bG1 Cert\b/i,
     "the qa-deploy SOP alias (qa-release; the qa-deploy.yml workflow is live)" => /\bqa-deploy\b(?!\.yml)/,
     "the archive-completed SOP alias (archive-shipped)" => /\barchive-completed\b/,
-    "the Alex Heartbeat alias (Xan Heartbeat)" => /\bAlex Heartbeat\b/
+    "the Alex Heartbeat alias (Ray Heartbeat)" => /\bAlex Heartbeat\b/
   }.freeze
 
   # bin/ship and bin/ship-wait are aliases of bin/submit and bin/submit-wait for one
@@ -57,7 +57,7 @@ class RetiredSopNamesTest < ActiveSupport::TestCase
       refute_empty retired_hits([["probe", probe]]), "the scan missed #{probe.inspect}"
     end
 
-    ["dispatch `qa-deploy.yml`", "run `qa-release`", "`archive-shipped`", "`Xan Heartbeat`"].each do |live|
+    ["dispatch `qa-deploy.yml`", "run `qa-release`", "`archive-shipped`", "`Ray Heartbeat`"].each do |live|
       assert_empty retired_hits([["probe", live]]), "the scan refused a live name: #{live.inspect}"
     end
   end

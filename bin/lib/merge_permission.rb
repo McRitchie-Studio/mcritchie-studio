@@ -5,7 +5,7 @@ require_relative "test_only_diff"
 
 # MergePermission — may this soul merge this PR into `accepted`?
 #
-# THE RULE. The documentation seat (Xan) merges a PR only when its diff measures
+# THE RULE. The documentation seat (Ritch) merges a PR only when its diff measures
 # `docs`: prose, inert media and docs-guard tests, with at least one prose file.
 # Any other diff is merged by the standing primary (Carl). Every other soul is
 # untouched by this rule, so what Carl may merge does not change.
@@ -24,17 +24,17 @@ require_relative "test_only_diff"
 # Pure: no gh, no board. bin/lib/merge_permit_cli.rb does the reads.
 module MergePermission
   # The shape-limited seats: soul => the one diff shape that seat may merge.
-  SHAPE_LIMITED = { "xan" => "docs" }.freeze
+  SHAPE_LIMITED = { "ray" => "docs" }.freeze
 
   # Who merges what a shape-limited seat may not.
   STANDING_PRIMARY = "carl"
 
   # Retired slugs that still resolve (Task::SOUL_ALIASES; this file runs without Rails).
-  SOUL_ALIASES = { "alex" => "xan" }.freeze
+  SOUL_ALIASES = { "alex" => "ray", "xan" => "ray" }.freeze
 
   # The souls whose merge-ready verdict can authorise a merge: the review pool
   # (ReviewerSelector::POOL, pinned by test/lib/merge_permission_test.rb).
-  REVIEWERS = %w[shannon carl jasper steffon xan].freeze
+  REVIEWERS = %w[shannon carl jasper steffon ray].freeze
 
   AUTHORISING_VERDICT = "merge-ready"
 

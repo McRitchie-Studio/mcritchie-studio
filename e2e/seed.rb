@@ -67,9 +67,9 @@ User.create!(email: "newcomer-turbo@test.com", role: "viewer")
 User.create!(email: "newcomer-back@test.com", role: "viewer")
 
 # Agents
-xan = Agent.create!(
-  name: "Xan",
-  slug: "xan",
+ray = Agent.create!(
+  name: "Ritch",
+  slug: "ray",
   status: "active",
   agent_type: "orchestrator",
   title: "Lead Orchestrator",
@@ -97,13 +97,13 @@ Agent.create!(name: "Avi", slug: "avi", status: "active", agent_type: "product",
 scraping = Skill.create!(name: "Web Scraping", slug: "web-scraping", category: "data", description: "Extract data from websites")
 rails_dev = Skill.create!(name: "Rails Development", slug: "rails-development", category: "development", description: "Build Rails applications")
 
-SkillAssignment.create!(agent_slug: "xan", skill_slug: "rails-development")
+SkillAssignment.create!(agent_slug: "ray", skill_slug: "rails-development")
 SkillAssignment.create!(agent_slug: "mack", skill_slug: "web-scraping")
 
 # Tasks in different workflow stages
-Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "designed", priority: 0, agent_slug: "xan")
+Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "designed", priority: 0, agent_slug: "ray")
 Task.create!(title: "Scrape odds data", description: "Pull latest odds from sportsbooks.", stage: "building", priority: 1, agent_slug: "mack", started_at: 2.hours.ago)
-Task.create!(title: "Deploy v2 release", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "xan", started_at: 2.days.ago)
+Task.create!(title: "Deploy v2 release", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "ray", started_at: 2.days.ago)
 # A block is no longer a STAGE — it is an attribute of a `building` task (blocked_at
 # + blocked_from + blocked_by + block_kind), per the blocked-as-building collapse.
 # Seeding stage: "blocked" now fails validation and takes the whole e2e run down with
@@ -114,7 +114,7 @@ Task.create!(
   description: "Fixture for the production sidebar back-navigation regression.",
   stage: "building",
   priority: 1,
-  agent_slug: "xan",
+  agent_slug: "ray",
   started_at: 1.day.ago,
   blocked_at: 6.hours.ago,
   blocked_from: "submitted",
@@ -135,7 +135,7 @@ Task.create!(
   description: "Fixture for the session-resume board widget (last-4 + resume copy).",
   stage: "building",
   priority: 0,
-  agent_slug: "xan",
+  agent_slug: "ray",
   metadata: { "devops" => {
     "kind" => "feature",
     "repositories" => ["mcritchie-studio"],
@@ -145,7 +145,7 @@ Task.create!(
 )
 
 # Activities
-Activity.create!(agent_slug: "xan", activity_type: "task_assigned", description: "Assigned scrape task to Mack")
+Activity.create!(agent_slug: "ray", activity_type: "task_assigned", description: "Assigned scrape task to Mack")
 Activity.create!(agent_slug: "mack", activity_type: "task_started", description: "Started scraping odds data")
 
 coach_person = Person.create!(
@@ -205,7 +205,7 @@ timeline_task = Task.create!(
   description: "Fixture for the task Stage Timeline — genesis, transitions, durations, and reported model cost.",
   stage: "reviewed",
   priority: 1,
-  agent_slug: "xan",
+  agent_slug: "ray",
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
 )
 timeline_task.task_events.delete_all # replace the auto-genesis with a curated, time-spaced sequence
@@ -234,7 +234,7 @@ intent_task = Task.create!(
   description: "Fixture for the agentic-intent live block — the senior pair reviewing now.",
   stage: "submitted",
   priority: 1,
-  agent_slug: "xan",
+  agent_slug: "ray",
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
 )
 intent_task.record_intent_event(
@@ -897,7 +897,7 @@ GateRun.open!(subject_type: "task", subject_slug: tp.slug, key: "g2b_light", act
 # so materializing earlier would cache pre-evidence windows.
 Task::TestingPhases.backfill!
 
-# /xan/heartbeat demo: a representative agent-narrated EVENT trajectory so the
+# /ray/heartbeat demo: a representative agent-narrated EVENT trajectory so the
 # learning heartbeat renders spans in the e2e env (capture is forward-only, so it
 # is otherwise empty). Trimmed mirror of lib/tasks/atomic.rake's demo — a couple of
 # closed spans, a final OPEN span (renders "…in progress"), and one pre-narration
@@ -1016,7 +1016,7 @@ evolution_task.assemble!
 
 # ── Distillation pipeline · Test runs band + a gradeable test-run insight ──────
 # A couple of release test-scope VERDICTS (kind:test_scope with a pass|fail
-# result_slug) so the pipeline's "Test runs" band renders, plus a banked Xan
+# result_slug) so the pipeline's "Test runs" band renders, plus a banked Ritch
 # grade on the passing one so it also surfaces as a Column-2 insight carrying an
 # ACTION Confirm button (the confirm-of-action path). The scope keys resolve to
 # phase/tier/host via config/devops_test_suites.yml at render.
@@ -1031,7 +1031,7 @@ AgentAction.create!(
   result_slug: "fail", occurred_at: Time.current, duration_ms: 4_200,
   summary: "test scope qa_up_smoke FAILED · qa · fail · http 503 · 4.2s · /up poll"
 )
-ActionGrade.create!(agent_action: test_run_pass, grader: "xan", disposition: "good",
+ActionGrade.create!(agent_action: test_run_pass, grader: "ray", disposition: "good",
                     slug: "ship gate stayed green").bank!
 
 # Model-pricing demo: two REAL production sessions replayed verbatim (a pokedex
@@ -1541,7 +1541,7 @@ gallery_admin = User.find_by!(email: "alex@test.com")
 AppRequest.create!(prompt: "A trivia night scoreboard: teams, rounds and a live leaderboard.", user: gallery_admin)
   .queue!("trivia-night").update!(status: "live")
 # Two real showcase apps, so the spec sees the `lead` order of
-# config/build_examples.yml (Cyvasse, Prisoners Dilemma, Rantly) and real
+# config/build_examples.yml (Cyvasse, Turf Monster, Prisoners Dilemma, Rantly) and real
 # screenshots. Their names are reserved, so queue! refuses them: queue a
 # placeholder, then give it the real subdomain, as production holds it.
 { "prisoners-dilemma" => "A prisoner's dilemma tournament: pick or write a strategy and see the leaderboard.",
@@ -1729,7 +1729,7 @@ answered.record!("completed", actor: "avi", detail: { "worker" => "e2e-laptop-10
 answered.record!("reply_posted", actor: "discord-bot", detail: { "reply_id" => "910000000000000099", "url" => answered.reply_url })
 mailbox.call("e2e-mail-2", soul: "avi", status: "claimed", content: "@Avi what shipped yesterday?",
              claimed_by: "e2e-laptop-202-def456", claimed_at: Time.current, lease_expires_at: 8.minutes.from_now, attempts: 1)
-mailbox.call("e2e-mail-3", soul: "xan", status: "received", content: "@Xan what is building on the board?")
+mailbox.call("e2e-mail-3", soul: "ray", status: "received", content: "@Ritch what is building on the board?")
 mailbox.call("e2e-mail-4", soul: nil, status: "unrouted", content: "just thinking out loud in the e2e channel")
 puts "Seeded: #{AgentMessage.count} agent messages"
 
@@ -1760,11 +1760,17 @@ App.find_or_create_by!(slug: "cyvasse") { |app| app.assign_attributes(name: "Cyv
 Agent.find_or_create_by!(slug: "turf-monster") { |agent| agent.assign_attributes(name: "Turf Monster", status: "active", agent_type: "specialist", title: "Sports Domain Specialist") }
 turf_owner = User.find_or_create_by!(email: "owner@turf.test") { |user| user.assign_attributes(name: "Turf Owner", role: "viewer") }
 AppMembership.create!(app: turf_app, user: turf_owner)
+# Cyvasse's owner, for the chat specs that SEND as an app owner
+# (e2e/cto_web_chat.spec.js, e2e/agent_chat_component.spec.js): the app-owner
+# rule answers them, so their rows are claimable by tyrion, a soul no spec claims,
+# and never sit ahead of the admin's turf_monster turns.
+cyvasse_owner = User.find_or_create_by!(email: "owner@cyvasse.test") { |user| user.assign_attributes(name: "Cyvasse Owner", role: "viewer") }
+AppMembership.find_or_create_by!(app_slug: "cyvasse", user_slug: cyvasse_owner.slug) { |m| m.role = "owner" }
 puts "Seeded: #{AppMembership.count} app owner(s)"
 
 # The CTO usage meter (e2e/app_usage_meter.spec.js; docs/agents/system/agent-usage.md):
 # Turf on the Builder tier, and one answered client message this month with its
-# run summary. The shipped allowances are blank, so the meter reads unlimited.
+# run summary. Builder's shipped allowance is blank (only Vibe's is set), so the meter reads unlimited.
 turf_app.update!(package_tier: "builder", cto_cap_lifted_at: nil, cto_cap_lifted_by: nil)
 usage_client = AgentPerson.find_or_create_by!(display_name: "E2E Turf Client") { |p| p.assign_attributes(role: "client", client_domain: "turf_monster") }
 AgentMessage.where(external_id: "e2e-usage-1").destroy_all
@@ -1774,3 +1780,125 @@ AgentMessage.create!(channel: "discord", external_id: "e2e-usage-1", channel_ref
                      run_meta: { "input_tokens" => 1_200, "cache_read_tokens" => 18_000, "cache_creation_tokens" => 0,
                                  "output_tokens" => 300, "total_cost_usd" => 0.05, "duration_ms" => 4_000, "audience" => "client" })
 puts "Seeded: one metered Turf answer"
+
+# The CTO web chat (e2e/cto_web_chat.spec.js; docs/agents/system/agent-message-loop.md,
+# "Web chat"): the admin's hub user is linked to an owner-role person, as Alex's
+# alex@mcritchie.studio is in production (AgentPerson.seed_owner!), so the agents
+# answer his chat. App owners keep no person until their first message; the
+# app-owner rule then answers them on their own app's chat only.
+AgentMessage.where(channel: "web").destroy_all
+AgentPersonIdentity.where(platform: "web").delete_all
+AgentPerson.find_or_create_by!(user: admin) { |p| p.assign_attributes(display_name: "E2E Chat Owner", role: "owner") }
+puts "Seeded: the web chat's owner person"
+
+# A refused Build My App (e2e/build_launch_refusal.spec.js): a finished draft
+# whose address another app took after the visitor tapped it. Build My App is
+# refused ("That name is taken."), and the refusal must land ON the summary
+# card. The draft's token is fixed so the spec can open it.
+refused_palette = { "name" => "Pitch",
+                    "light" => { "primary" => "#15803d", "accent" => "#f59e0b", "surface" => "#ffffff", "text" => "#111827" },
+                    "dark" => { "primary" => "#4ade80", "accent" => "#fbbf24", "surface" => "#0b1220", "text" => "#f1f5f9" } }
+refused_owner = User.find_or_create_by!(email: "refused-launch@test.com") { |user| user.assign_attributes(name: "Pat Planner", role: "viewer") }
+refused_draft = AppRequest.create!(prompt: "A star checkers game", user: refused_owner, token: "e2e-refused-launch-draft",
+                                   answers: { "idea" => "Star checkers", "title" => "Star Checkers", "features" => [ "Play a friend" ] },
+                                   cto_name: "Hop", cto_avatar: "meadow", palette: refused_palette, subdomain: "taken-meanwhile")
+App.find_or_create_by!(slug: "taken-meanwhile") { |app| app.assign_attributes(name: "Taken Meanwhile", emoji: "🧩", color: "#22C55E") }
+AgentMessage.create!(channel: "web", external_id: "build:#{refused_draft.token}:1", channel_ref: "build",
+                     thread_key: BuildIntake.thread_key(refused_draft.token), soul_slug: BuildIntake.soul, content: "Let's use taken-meanwhile.",
+                     status: "completed", completed_at: Time.current, response_text: "Here's your app. Ready when you are.",
+                     intake_card: { "card" => "summary" })
+puts "Seeded: a finished draft whose address was taken meanwhile"
+
+# An app owner's word on a proposal (e2e/cto_web_chat.spec.js; Alex, 2026-10-18;
+# AgentMessages::ProposalConfirm#owner_verdict): Turf's owner, a plain viewer with
+# no agent role, has an answered question on their own Turf chat and a pending
+# change proposal under it, so the spec can say `go` and see the designed task.
+# Answered 40 days ago, so this month's usage (e2e/app_usage_meter.spec.js: "1
+# answer") is unchanged; the proposal's own clock is expires_at.
+AgentProposal.where(channel: "web").delete_all
+owner_person = AgentMessages::WebIngest.person_for(turf_owner)
+owner_ask = AgentMessage.create!(channel: "web", external_id: "e2e-owner-ask", channel_ref: "turf-monster",
+                                 thread_key: AgentMessages::WebChat.thread_key("turf-monster", turf_owner.id),
+                                 soul_slug: "turf_monster", routed_by: "chat", person: owner_person, author_ref: turf_owner.id.to_s,
+                                 author_name: turf_owner.display_name, content: "Can the slate show kickoff times?",
+                                 status: "completed", completed_at: 40.days.ago, reply_status: "posted", reply_posted_at: 40.days.ago,
+                                 reply_nonce: "agentmsg-e2e-owner-ask", sent_at: 40.days.ago)
+owner_proposal = AgentProposal.create!(thread_key: owner_ask.thread_key, channel: "web", channel_ref: "turf-monster",
+                                       soul_slug: "turf_monster", person: owner_person, source_message: owner_ask, kind: "change",
+                                       capability: "task", summary: "Open a task to show kickoff times on the slate",
+                                       params: { "title" => "E2E owner kickoff times", "kind" => "feature", "shape" => "backend",
+                                                 "accept" => [ "Each game row shows its kickoff time" ],
+                                                 "test" => [ "[unit] kickoff time renders" ], "risk" => [] },
+                                       expires_at: 1.day.from_now)
+owner_ask.update!(response_text: "I can open a task for that.\n\n#{owner_proposal.confirm_text}")
+puts "Seeded: Turf's owner with a pending change proposal"
+
+# The live pill countdown (e2e/devops_countdown.spec.js; task live-build-countdown):
+# a client app whose first version the launcher is building, with one earlier
+# launcher run that built a preview in six minutes, so the Building pill counts
+# down from the run's start by the launcher's own time (AppDevopsStages::Eta,
+# CLIENT BUILDS). The spec drives the browser clock from the pill's deadline, so
+# when this seed ran does not matter.
+countdown_palette = { "light" => { "primary" => "#0F766E", "accent" => "#F59E0B", "surface" => "#FFFFFF", "text" => "#111827" },
+                      "dark" => { "primary" => "#2DD4BF", "accent" => "#FBBF24", "surface" => "#0F172A", "text" => "#F8FAFC" } }
+countdown_app = App.find_or_create_by!(slug: "countdown-probe") do |app|
+  app.assign_attributes(name: "Countdown Probe", emoji: "⏱", color: "#0F766E", package_tier: "vibe", theme_colors: countdown_palette)
+end
+AppCto.find_or_create_by!(app_slug: countdown_app.slug) do |cto|
+  cto.assign_attributes(name: "Tick", portrait: "harbor", palette: countdown_palette, plan: "A countdown probe.", facts: {})
+end
+countdown_run = ->(state, started, finished = nil) { { ClientBuilds::KEY => { "state" => state, "started_at" => started.iso8601, "finished_at" => finished&.iso8601 }.compact } }
+earlier_build = Task.create!(title: "Build Launch App countdown-earlier", stage: "designed", priority: 1)
+earlier_build.update_columns(stage: "shipped", completed_at: 1.day.ago, metadata: { "devops" => countdown_run.("preview_ready", 1.day.ago - 6.minutes, 1.day.ago) })
+countdown_started = 1.minute.ago
+countdown_build = Task.create!(title: "Build Launch App countdown-probe", stage: "designed", priority: 1)
+countdown_build.update_columns(stage: "building", started_at: countdown_started, metadata: { "devops" => countdown_run.("building", countdown_started).merge("repositories" => [ "countdown-probe" ]) })
+puts "Seeded: a client app whose first version is building (the live pill countdown)"
+
+# A client app on the Studio template (e2e/client_app_studio_kit.spec.js; docs/agents/
+# system/client-app-host.md, "The Studio template"): kit-demo holds a /build request
+# and a live bundle whose page carries only its content, so the shared host wraps it
+# in the Studio navbar, theme and footer at http://kit-demo.localhost:<port>/.
+kit_palette = {
+  "light" => { "primary" => "#9F1239", "accent" => "#D97706", "surface" => "#FFFBF5", "text" => "#1C1917" },
+  "dark" => { "primary" => "#FB7185", "accent" => "#FBBF24", "surface" => "#1C1917", "text" => "#FAFAF9" }
+}
+# Idempotent: a reseed starts kit-demo over (its CTO and published versions with it).
+ActiveRecord::Base.connection.disable_referential_integrity do
+  if (old = App.find_by(slug: "kit-demo"))
+    AppPreviewVersion.where(app_slug: old.slug).delete_all
+    AppCto.where(app_slug: old.slug).delete_all
+    old.delete
+  end
+end
+# The request first: it holds the name (an App row would make the name read as taken).
+# Created bare, with no board task, so no board or gallery spec sees a new row.
+AppRequest.create!(prompt: "A table-booking page for one restaurant", subdomain: "kit-demo", status: "queued")
+kit_app = App.find_or_create_by!(slug: "kit-demo") do |app|
+  app.assign_attributes(name: "Table Ready", emoji: "🍽", color: kit_palette["light"]["primary"], theme_colors: kit_palette)
+end
+AppCto.find_or_create_by!(app: kit_app) do |cto|
+  cto.assign_attributes(name: "Nova", portrait: "harbor", palette: kit_palette, plan: "A table-booking page for one restaurant.",
+                        facts: { "owner" => "Pat" })
+end
+kit_page = <<~HTML
+  <!doctype html>
+  <html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Table Ready</title><link rel="stylesheet" href="styles.css"></head>
+  <body>
+    <main data-studio-content>
+      <h1>Book a table tonight</h1>
+      <div class="card demo-card"><p>Pick a time and we will hold your table for fifteen minutes.</p>
+        <button type="button" class="btn btn-primary">Reserve</button></div>
+    </main>
+    <script src="app.js"></script>
+  </body>
+  </html>
+HTML
+kit_files = { "index.html" => kit_page, "app.js" => "// Table Ready\n",
+              "styles.css" => "[data-studio-content] { max-width: 720px; margin: 0 auto; padding: 24px 16px; }\n" \
+                              ".demo-card { padding: 20px; margin-top: 16px; }\n" \
+                              "body { background: var(--surface); color: var(--text); }\n" }
+ClientApps::Publish.new(app: kit_app, files: kit_files, by: "e2e-seed", source: "seed").call
+puts "Seeded: kit-demo, a client app on the Studio template"

@@ -27,8 +27,11 @@ class Agent < ApplicationRecord
     AVATAR_COLORS[Digest::MD5.hexdigest(seed.to_s).hex % AVATAR_COLORS.size]
   end
 
+  # The slug a create writes (Sluggable). An explicit slug wins: a soul's display
+  # name can differ from its key (slug `xan` read "Ray" until ray-slug-rename), and the name must never
+  # rename the row it is created with.
   def name_slug
-    name.parameterize
+    slug.presence || name.parameterize
   end
 
   def avatar_initials

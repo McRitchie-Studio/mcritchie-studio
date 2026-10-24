@@ -20,13 +20,13 @@ test("dashboard loads with agent cards", async ({ page }) => {
 
 test("agents page loads", async ({ page }) => {
   await page.goto("/agents");
-  await expect(page.locator("body")).toContainText("Xan");
+  await expect(page.locator("body")).toContainText("Ritch");
   await expect(page.locator("body")).toContainText("Mack");
 });
 
 test("agent detail loads", async ({ page }) => {
-  await page.goto("/agents/xan");
-  await expect(page.locator("body")).toContainText("Xan");
+  await page.goto("/agents/ray");
+  await expect(page.locator("body")).toContainText("Ritch");
   await expect(page.locator("body")).toContainText("orchestrator");
 });
 
@@ -129,8 +129,26 @@ test("nav links work without errors @quarantine", async ({ page }) => {
   await page.getByRole("link", { name: /Agents/ }).first().click();
   await expect(page).toHaveURL("/agents");
 
+  // Signed out, the navbar's primary button is "Build App" once the bundled
+  // studio-engine has Studio.navbar_signed_out_cta (config/initializers/studio.rb),
+  // and the navbar carries no sign-in link: Log in sits first in the link
+  // sidebar (/tasks/drop-hero-meet-alex). Before the relock the button itself
+  // is "Log in".
   await page.goto("/");
-  await page.getByRole("link", { name: "Log in" }).click();
+  const buildApp = page.getByRole("link", { name: "Build App", exact: true });
+  if (await buildApp.count()) {
+    await buildApp.first().click();
+    await expect(page).toHaveURL("/build");
+    await page.goto("/");
+  }
+  const navLogIn = page.getByRole("link", { name: "Log in", exact: true });
+  if (await navLogIn.count()) {
+    await navLogIn.first().click();
+  } else {
+    await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
+    await page.locator("button[data-link-sidebar-trigger]:visible").first().click();
+    await page.locator('#studio-link-sidebar a[href="/login"]').click();
+  }
   await expect(page).toHaveURL("/signin");
 });
 

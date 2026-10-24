@@ -39,6 +39,10 @@ its invocation exactly.
 | Agent usage (run summaries, tiers, the CTO allowance and meter) | `mcritchie-studio/docs/agents/system/agent-usage.md` |
 | Report destinations (deliver a report to a Discord channel Alex picks: `ReportDestinations.deliver`) | `mcritchie-studio/docs/agents/system/report-destinations.md` |
 | App owners (who owns which app; the owner's app page and CTO settings, 404 for everyone else) | `mcritchie-studio/docs/agents/system/app-owners.md` |
+| Client CTOs (Build my app: App, owner, `AppCto`, task in one transaction; the one `client_cto` soul; theme colours; intake files to `apps/<sub>/intake/`) | `mcritchie-studio/docs/agents/system/client-cto.md` |
+| Shared client-app host (`<sub>.mcritchie.app` serves an app's static bundle; no cookie, strict CSP; `bin/client-bundle publish`; `preview_ready` event) | `mcritchie-studio/docs/agents/system/client-app-host.md` |
+| Client pipeline (an owner's sanitized view of their app's tasks by lane; building lanes per tier, enforced on the claim) | `mcritchie-studio/docs/agents/system/client-pipeline.md` |
+| Client build launcher (every /build app's automatic first version: the Mac service, the sandboxed builder, the stage flow, install) | `mcritchie-studio/docs/agents/system/client-build-launcher.md` |
 | Daily app report (the 07:00 Denver CTO summary of every app's health, in Discord; `HEALTH_TOKEN_<SLUG>`) | `mcritchie-studio/docs/agents/system/daily-app-report.md` |
 | Modular PR review SOP | `mcritchie-studio/docs/agents/modules/pr-review-sop.md` |
 | Zap protocol (small mid-cycle fixes, no new task) | `mcritchie-studio/docs/agents/modules/zap-protocol.md` |
@@ -48,6 +52,7 @@ its invocation exactly.
 | Workflows (five soul launchers) | `mcritchie-studio/docs/agents/modules/heartbeats.md` |
 | Tyrion soul (Cyvasse's house player: character, game style, five setups, voice) | `mcritchie-studio/docs/agents/agents/tyrion/soul.md` |
 | Tyrion runtime design (isolated runner, bot API, threat model; not built) | `mcritchie-studio/docs/agents/agents/tyrion/runtime.md` |
+| Hank soul (Commercial Welding business agent, renamed from Dawn; badger; not yet launched) | `mcritchie-studio/docs/agents/agents/hank/soul.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Fast lane (`bin/task begin` / `bin/submit`) | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Fast lane entry rules (where each command runs, author set, submit-wait, long form) | `mcritchie-studio/docs/agents/modules/fast-lane.md` |
@@ -102,6 +107,12 @@ its invocation exactly.
 | Pokemon `download-youtube` SOP (yt-dlp H.264 download of a YouTube video or section) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
 | Pokemon `email-image` SOP (make an email header with Alex in a Claude Code session: show base assets, generate, iterate, approve on his word, export) | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | Pokemon `wrap-it-up` SOP (hand a stuck session to a fresh one, then clear its board) | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
+| `Ray Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/ray/HEARTBEAT.md` |
+| Ray `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/ray/sops/clean-up.md` |
+| Ray `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/full-cycle.md` |
+| Ray `grade-events` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/grade-events.md` |
+| Ray `share-insights` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/share-insights.md` |
+| Ray `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/ray/sops/ship-clock.md` |
 | `Rex Heartbeat` launcher (CMO) | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | Rex `constraint-diagnosis` SOP (find the one thing limiting demand) | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
 | Rex `content-sprint` SOP (the weekly test-at-volume loop) | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
@@ -117,7 +128,7 @@ its invocation exactly.
 | Steffon `credential-rotation` SOP (rotate one secret everywhere) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
 | Steffon `discord-bot-setup` SOP (the agents' Discord bot, once, then each client's invite) | `mcritchie-studio/docs/agents/agents/steffon/sops/discord-bot-setup.md` |
 | Steffon `domain-dns` SOP (verify, MX, SPF, DKIM, DMARC) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-dns.md` |
-| Steffon `domain-purchase` SOP (buy on Squarespace, prove ownership) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-purchase.md` |
+| Steffon `domain-purchase` SOP (buy on Cloudflare by API or on Squarespace, prove ownership) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-purchase.md` |
 | Steffon `production-deploy` SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | Steffon `program-upgrade` SOP (on-chain program upgrade, devnet then mainnet, through Squads) | `mcritchie-studio/docs/agents/agents/steffon/sops/program-upgrade.md` |
 | Steffon `r2-backup` SOP (backup bucket, nightly run, garbage collection, restore) | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |
@@ -132,18 +143,13 @@ its invocation exactly.
 | Turf Monster `content-build` SOP (drain the idea queue, write the takes) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/content-build.md` |
 | Turf Monster `contest-rehearsal` SOP (QA devnet lifecycle) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
 | Turf Monster `entry-forfeit` SOP (withdraw one entrant, forfeit fee) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
+| Turf Monster `game-character-models` SOP (a starting QB as he looked in one game, plus the iced twin) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/game-character-models.md` |
 | Turf Monster `live-score-watch` SOP | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | Turf Monster `market-refresh` SOP (rebuild a span's benchmarks from fresh lines) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/market-refresh.md` |
 | Turf Monster `post-to-x` SOP (winning team + video in, drafted and approved post on @turfmonstershow out) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/post-to-x.md` |
 | Turf Monster `roster-sync` SOP (refresh players/teams before a season) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/roster-sync.md` |
 | Turf Monster `sleeper-auction-watch` SOP (live draft valuation) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
 | Turf Monster `tiktok-draft` SOP (clip slug in, a notification in Alex's TikTok inbox and its code-written caption out) | `mcritchie-studio/docs/agents/agents/turf_monster/sops/tiktok-draft.md` |
-| `Xan Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
-| Xan `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/xan/sops/clean-up.md` |
-| Xan `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |
-| Xan `grade-events` SOP | `mcritchie-studio/docs/agents/agents/xan/sops/grade-events.md` |
-| Xan `share-insights` SOP | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
-| Xan `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/xan/sops/ship-clock.md` |
 | `address-blocker` (recontextualize, fix, resubmit) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `agent-communication` (what an agent may discuss with owner, team, client and public) | `mcritchie-studio/docs/agents/modules/agent-communication.md` |
 | `building-sop` (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |

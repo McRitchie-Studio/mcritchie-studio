@@ -4,9 +4,15 @@
 ## Status: Active
 
 `/build` is McRitchie Studio's app funnel. A visitor describes an app, creates a
-free account, and claims `<name>.mcritchie.studio`. Nothing is generated
-automatically: each request is **queued** and an agent builds it, asynchronously.
-This SOP is how an agent works that queue.
+free account, and claims `<name>.mcritchie.app`. Each request is **queued**
+and built asynchronously.
+
+**Since 2026-10-19 the first version is automatic.** `bin/client-build-launcher`
+on Alex's Mac claims every launch task `AppLaunch` opens, builds a static bundle
+with a sandboxed builder, and publishes it to the shared preview host
+([`client-build-launcher.md`](../system/client-build-launcher.md)). This SOP is
+the hand path: a launch task the launcher left for a person (blocked past its
+attempts), a request from before the launcher, or an app moving to its own repo.
 
 ## The pieces
 
@@ -44,26 +50,41 @@ which writes to a local database nobody sees.
 1. Build it on our stack from the app template, the way any satellite is built,
    with the site footer (and legal pages if it takes accounts or personal data)
    in the first build: [new-app onboarding § 7](../system/new-app-onboarding-sop.md#7-build-conventions).
-2. **Point the name at it by hand.** `mcritchie.studio` has no wildcard DNS: add a
-   CNAME for `<subdomain>` to the app's Heroku DNS target, then
-   `heroku certs:auto --app <app>` until its certificate is issued. The DNS
-   records live with the domain (see [deployment](deployment.md), the
-   subdomain cutover steps).
-3. Confirm it answers: `curl -fsS https://<subdomain>.mcritchie.studio/up`.
+2. **Point the name at it by hand.** The request's address is `<subdomain>.mcritchie.app`
+   (the card's acceptance names it). The `mcritchie.app` wildcard sends every name
+   to the shared preview host ([client-app-host](../system/client-app-host.md)), so
+   an app on its own Heroku app needs its own record: `heroku domains:add
+   <subdomain>.mcritchie.app --app <app>`, a DNS-only CNAME for `<subdomain>` in the
+   `mcritchie.app` zone to the app's Heroku DNS target (an exact name outranks the
+   wildcard), then `heroku certs:auto --app <app>` until its certificate is issued.
+   A request from before 2026-10-20 may hold a `<subdomain>.mcritchie.studio`
+   address instead; its records live with that domain (see
+   [deployment](deployment.md), the subdomain cutover steps).
+3. Confirm it answers at the card's address (`<host>`): `curl -fsS https://<host>/up`.
    Then confirm the card's second acceptance bullet, the footer on the home page:
-   `curl -fsS https://<subdomain>.mcritchie.studio/ | grep -c 'data-site-footer'`
+   `curl -fsS https://<host>/ | grep -c 'data-site-footer'`
    (expect `1` or more; what a `0` means is under onboarding § 7's DONE line).
+   An app still on the shared preview host needs no hand check of its frame: the host
+   wraps every page in the Studio navbar and footer
+   ([the Studio template](../system/client-app-host.md#the-studio-template)).
 4. **Showcase builds only:** capture its gallery screenshot, pointed at the page
    that shows what the app IS (Cyvasse's game board, not its landing text), and
    commit it in a hub PR:
 
    ```bash
-   node script/gallery_screenshot.cjs https://<subdomain>.mcritchie.studio/<page> <subdomain>
+   node script/gallery_capture.cjs https://<host>/<page> <subdomain>
    ```
 
-   It writes `app/assets/images/build_gallery/<subdomain>.jpg`, which the
-   "Built with McRitchie Studio" row on `/build` finds by convention. Without
-   it the card shows an emoji instead.
+   It writes `app/assets/images/build_gallery/<subdomain>.webp` (a dark-mode
+   still) and `<subdomain>.mp4` (a five-second loop the card plays on hover),
+   which the "Built with McRitchie Studio" row on `/build` finds by convention.
+   An app on its own domain (Cyvasse at `cyvasse.xyz`, Turf Monster at
+   `turfmonster.media`) is a hand-kept entry in `config/build_examples.yml`
+   instead, with its `url` set to that domain and its files named in `image` and
+   `motion`.
+   Without the still the card shows an emoji instead. The app must answer dark
+   mode (`prefers-color-scheme: dark`); the script asks for it. When production
+   is asleep, run the app locally and add `--from http://127.0.0.1:<port>`.
 5. Mark it live. The requester's page then links to it (and a showcase app
    joins the /build gallery):
 

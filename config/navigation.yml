@@ -28,7 +28,8 @@
 #             back               true to lead with a back arrow
 #             only / except      page keys the item shows on / hides on
 #             hide_when_current  drop the item on its own page
-#             narrow_only_on     page keys where it shows below 1400px only
+#             narrow_only_on     page keys where it shows only while that page's board is
+#                                too narrow for all its lanes (the board's boardNarrow)
 #             badges             count badges, by stage
 #             count              { key:, id: } a tally the caller supplies
 #             test_id            the data-test hook
@@ -141,10 +142,10 @@ pages:
   intelligence:             { page: "intelligence#index",       audience: admin, label: Intelligence }
   pokedex:                  { page: "pokemon#index",            audience: admin, label: Pokédex }
   recent_tasks:             { page: "tasks#recent",             audience: admin, label: Recent tasks }
-  xan_heartbeat:            { page: "heartbeat#show",           audience: admin, label: Per-session heartbeat }
+  ray_heartbeat:            { page: "heartbeat#show",           audience: admin, label: Per-session heartbeat }
   heartbeat_all_activities: { page: "heartbeat#all_activities", audience: admin, label: All Activities, emoji: "🗃" }
-  xan_insights:             { page: "heartbeat#insights",       audience: admin, label: Insight Bank, emoji: "💡" }
-  xan_pipeline:             { page: "heartbeat#pipeline",       audience: admin, label: Pipeline }
+  ray_insights:             { page: "heartbeat#insights",       audience: admin, label: Insight Bank, emoji: "💡" }
+  ray_pipeline:             { page: "heartbeat#pipeline",       audience: admin, label: Pipeline }
 
 sidebar:
   - { title: Site,    group: admin, pages: [admin_dashboard, deployments, admin_theme, admin_style, admin_schema, logos, admin_emails, admin_link_preview, asset_browser] }
@@ -179,13 +180,14 @@ sub_navs:
       - { page: activities_agents, icon: true }
       - { page: pokedex }
       # The learning-loop surfaces and the recency list belong to the Deploy lane.
-      - { page: xan_pipeline, only: [deployments] }
-      - { page: xan_insights, label: Insights, only: [deployments] }
+      - { page: ray_pipeline, only: [deployments] }
+      - { page: ray_insights, label: Insights, only: [deployments] }
       - { page: recent_tasks, label: Recent, only: [deployments] }
 
   # The board switcher beside the title. The title already says where you are,
-  # so the button for the current board is dropped. At full width the Deploy
-  # board shows the whole Build lane, so its Tasks button shows below 1400px only.
+  # so the button for the current board is dropped. A Deploy board wide enough for
+  # six lanes shows the whole Build lane, so its Tasks button shows only while the
+  # board is too narrow for six (its container query, not a window breakpoint).
   board_views:
     style: buttons
     label: Board views
@@ -200,6 +202,6 @@ sub_navs:
     label: Heartbeat
     items:
       - { page: deployments, back: true, test_id: hb-nav-deployments }
-      - { page: xan_insights, icon: true, count: { key: insights, id: hb-insight-count } }
+      - { page: ray_insights, icon: true, count: { key: insights, id: hb-insight-count } }
       - { page: heartbeat_all_activities, icon: true, test_id: hb-nav-all-spans }
-      - { page: xan_heartbeat, back: true, only: [heartbeat_all_activities], test_id: hb-nav-session }
+      - { page: ray_heartbeat, back: true, only: [heartbeat_all_activities], test_id: hb-nav-session }

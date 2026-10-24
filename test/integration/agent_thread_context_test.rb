@@ -52,12 +52,12 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
   teardown { [ @mailbox, @claude_home ].each { |d| FileUtils.rm_rf(d) } }
 
   def heartbeat(runner)
-    AgentMailbox::Heartbeat.new(soul: "xan", client: @client, runner: runner, out: @out, claude_cmd: %w[fake-claude],
+    AgentMailbox::Heartbeat.new(soul: "ray", client: @client, runner: runner, out: @out, claude_cmd: %w[fake-claude],
                                 once: true, worker: "laptop-1", mailbox_home: @mailbox, claude_home: @claude_home)
   end
 
   def say(content, author: ALEX, name: "Alex", **attrs)
-    agent_message!(soul: "xan", content: content, author_ref: author, author_name: name, **attrs)
+    agent_message!(soul: "ray", content: content, author_ref: author, author_name: name, **attrs)
   end
 
   test "the second answer to one person carries their first exchange, and another person's message is absent" do
@@ -83,11 +83,11 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     second.reload
     assert_equal "completed", second.status
     assert_equal "00000002-aaaa-bbbb-cccc-dddddddddddd", second.claude_session_id
-    assert_equal File.join(@mailbox, "xan"), second.claude_cwd
-    assert_equal [ File.join(@mailbox, "xan") ] * 2, runner.chdirs, "each answer ran from the soul's own folder"
+    assert_equal File.join(@mailbox, "ray"), second.claude_cwd
+    assert_equal [ File.join(@mailbox, "ray") ] * 2, runner.chdirs, "each answer ran from the soul's own folder"
     assert_equal 5, second.run_meta["thinking_tokens"]
     assert_equal "no_transcript", second.run_meta["reasoning_source"]
-    assert_equal "cd #{File.join(@mailbox, 'xan')} && claude --resume 00000002-aaaa-bbbb-cccc-dddddddddddd",
+    assert_equal "cd #{File.join(@mailbox, 'ray')} && claude --resume 00000002-aaaa-bbbb-cccc-dddddddddddd",
                  second.resume_command
   end
 
@@ -125,7 +125,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
   end
 
   test "a Discord reply answers inside its thread: the thread is the focus, and its turns are not repeated" do
-    ingest = AgentMessages::DiscordIngest.new(routes: agent_routes(default_soul: "xan"))
+    ingest = AgentMessages::DiscordIngest.new(routes: agent_routes(default_soul: "ray"))
     root = ingest.call(discord_raw(8001, content: "ship the footer task next", author: BEA, at: 2.hours.ago), guild_id: GUILD)
     runner = EnvelopeRunner.new("Footer task queued next.", "Earlier answer.", "Next is the footer task.")
     heartbeat(runner).run
@@ -208,7 +208,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     assert_response :conflict
     assert_match(/NOT_HOLDER/, response.body)
 
-    AgentMessage.claim!(soul: "xan", worker: "laptop-1")
+    AgentMessage.claim!(soul: "ray", worker: "laptop-1")
     get context_api_v1_agent_message_url(message, worker: "someone-else"), headers: auth
     assert_response :conflict
     get context_api_v1_agent_message_url(message, worker: "laptop-1"), headers: auth
@@ -232,7 +232,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     out = StringIO.new
     AgentMailbox::InboxCli.new([ "show", message.id.to_s ], client: @client, out: out).run
     assert_includes out.string, "session: 00000001-aaaa-bbbb-cccc-dddddddddddd"
-    assert_includes out.string, "resume:  cd #{File.join(@mailbox, 'xan')} && claude --resume 00000001-aaaa-bbbb-cccc-dddddddddddd"
+    assert_includes out.string, "resume:  cd #{File.join(@mailbox, 'ray')} && claude --resume 00000001-aaaa-bbbb-cccc-dddddddddddd"
     assert_includes out.string, "Read the board first."
     assert_match(/person:  Alex \(#\d+\) discord:#{ALEX}/, out.string)
 
@@ -240,7 +240,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     log_in_as(admin)
     get admin_agent_message_path(message)
     assert_response :success
-    assert_select "#am-run code", text: "cd #{File.join(@mailbox, 'xan')} && claude --resume 00000001-aaaa-bbbb-cccc-dddddddddddd"
+    assert_select "#am-run code", text: "cd #{File.join(@mailbox, 'ray')} && claude --resume 00000001-aaaa-bbbb-cccc-dddddddddddd"
     assert_select "#am-run", /thinking_tokens/
     assert_select "#am-reasoning", text: /Read the board first\./
     assert_select "#am-person", /discord:#{ALEX}/
@@ -268,7 +268,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     runner = EnvelopeRunner.new("agent-thread-context.")
     previous = ENV["AGENT_MAILBOX_HOME"]
     ENV["AGENT_MAILBOX_HOME"] = @mailbox
-    disp = AgentMailbox::Dispatcher.new(client: @client, souls: %w[xan], worker: "disp-ctx", runner: runner,
+    disp = AgentMailbox::Dispatcher.new(client: @client, souls: %w[ray], worker: "disp-ctx", runner: runner,
                                         claude_cmd: %w[fake-claude], out: @out, sleeper: ->(_) { }, idle_wait: 0,
                                         busy_wait: 0, version: "test")
     200.times do
@@ -281,7 +281,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     assert_equal "completed", second.status, @out.string
     assert_includes runner.prompts.last, "#{first.author_name}: what is building?\nYou answered: Two tasks."
     assert_equal "00000001-aaaa-bbbb-cccc-dddddddddddd", second.claude_session_id
-    assert_equal File.join(@mailbox, "xan"), second.claude_cwd
+    assert_equal File.join(@mailbox, "ray"), second.claude_cwd
   ensure
     ENV["AGENT_MAILBOX_HOME"] = previous
   end
@@ -292,7 +292,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
       def context(*) = raise(AgentMailbox::ApiError, "GET context -> HTTP 503: down")
     end.new(@client)
     runner = EnvelopeRunner.new("never")
-    disp = AgentMailbox::Dispatcher.new(client: client, souls: %w[xan], worker: "disp-ctx", runner: runner,
+    disp = AgentMailbox::Dispatcher.new(client: client, souls: %w[ray], worker: "disp-ctx", runner: runner,
                                         claude_cmd: %w[fake-claude], out: @out, sleeper: ->(_) { }, idle_wait: 0,
                                         busy_wait: 0, version: "test")
     disp.tick

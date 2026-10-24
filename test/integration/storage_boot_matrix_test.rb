@@ -163,6 +163,7 @@ class StorageBootMatrixTest < ActiveSupport::TestCase
   test "the test environment itself booted without any R2 variable requirement" do
     refute StorageBackend.strict?
     parsed = ActiveSupport::ConfigurationFile.parse(Rails.root.join("config/storage.yml"))
-    assert_equal %w[amazon amazon_dev local test], parsed.keys.map(&:to_s).sort
+    # chat_private: the chat's files (Disk here; off, never strict, without CHAT_R2_* elsewhere).
+    assert_equal %w[amazon amazon_dev chat_private local test], parsed.keys.map(&:to_s).sort
   end
 end

@@ -138,14 +138,14 @@ class TaskDerivedFactsTest < ActiveSupport::TestCase
   # none`, which uses the PR as a WITNESS against the caller's assertion: an empty
   # witness box is not an exonerating one. MEASURED 2026-09-27 on PR #1587, whose one
   # commit carries `xan@mcritchie.studio`: with a fresh token the read yields
-  # ["xan"], with the desk's stale GITHUB_TOKEN it 401s, and #derived_authors gave
-  # `[]` either way — which is how `--builder none` seated Xan on Xan's own PR.
+  # ["ray"], with the desk's stale GITHUB_TOKEN it 401s, and #derived_authors gave
+  # `[]` either way — which is how `--builder none` seated Ritch on Ritch's own PR.
 
   test "[unit] the author probe reports a completed read with nothing unread" do
     t = task(devops: { "pr_url" => HUB_PR })
-    probe = t.derived_authors_probe(derivation: FakeTaskDerivation.new(authors: { HUB_PR => %w[xan] }))
+    probe = t.derived_authors_probe(derivation: FakeTaskDerivation.new(authors: { HUB_PR => %w[ray] }))
 
-    assert_equal %w[xan], probe["authors"]
+    assert_equal %w[ray], probe["authors"]
     assert_nil probe["unreadable"], "the read happened"
     assert_nil probe["absent"], "and there WAS something to read"
   end

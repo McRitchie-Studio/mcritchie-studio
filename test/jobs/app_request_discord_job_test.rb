@@ -62,7 +62,7 @@ class AppRequestDiscordJobTest < ActiveJob::TestCase
     request_row = queued_request
     embed = AppRequestDiscordJob.embed(request_row)
 
-    assert_includes embed[:title], "league-hub.mcritchie.studio"
+    assert_includes embed[:title], "league-hub.mcritchie.app"
     assert_equal "A league site with schedules", embed[:description]
     values = embed[:fields].map { |f| f[:value] }.join("\n")
     assert_includes values, users(:viewer).email

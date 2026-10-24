@@ -156,9 +156,9 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
 
     decision = ReviewerSelector.explain(task.reload)
     assert_equal true, decision["builder_known"], "the retired slug still names somebody"
-    assert_equal %w[xan], decision["builders"], "and it resolves to the one identity"
-    refute_includes decision["candidates"], "xan",
-      "a historical alex stamp must keep xan out of the pool — same soul, other name"
+    assert_equal %w[ray], decision["builders"], "and it resolves to the one identity"
+    refute_includes decision["candidates"], "ray",
+      "a historical alex stamp must keep ray out of the pool — same soul, other name"
     assert_empty Array(decision["kept_builders"])
   end
 

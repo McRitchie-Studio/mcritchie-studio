@@ -1,10 +1,13 @@
 require "test_helper"
+require "action_cable/channel/test_case" # ConnectionStub, for the board-stream subscribe below
 
-# /cable admits admins only, proven through the real sign-in door: a user logs in by
-# magic link, the hub's session cookie is decoded the way the cookie store decodes
-# it, and that session opens (or fails to open) ApplicationCable::Connection. Then
-# the deployments board's signed stream name, as the admin page renders it,
-# subscribes an admin to the live board and carries a broadcast.
+# The board's live stream reaches admins only, proven through the real sign-in
+# door: a user logs in by magic link, the hub's session cookie is decoded the way
+# the cookie store decodes it, and that session opens (or fails to open)
+# ApplicationCable::Connection. A visitor gets no connection. Since the CTO web
+# chat a signed-in non-admin does get one, and the deployments board's signed
+# stream name refuses them at subscribe (ApplicationCable::TurboStreamsAdminOnly);
+# an admin's subscribes to the live board.
 class CableAdmitsOnlyAdminsTest < ActionDispatch::IntegrationTest
   SIGNED_STREAM = /signed-stream-name="([^"]+)"/
 
@@ -33,7 +36,7 @@ class CableAdmitsOnlyAdminsTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[integration] a signed-in non-admin gets no board stream name and no cable connection" do
+  test "[integration] a signed-in non-admin gets no board stream name, and the cable refuses them the board stream" do
     viewer = users(:viewer)
     log_in_as(viewer)
     session_hash = cable_session_from_cookie
@@ -43,7 +46,13 @@ class CableAdmitsOnlyAdminsTest < ActionDispatch::IntegrationTest
     assert_response :redirect
     assert_no_match SIGNED_STREAM, response.body
 
-    assert_raises(ActionCable::Connection::Authorization::UnauthorizedError) { open_cable(session_hash) }
+    connection = open_cable(session_hash)
+    assert_equal viewer, connection.current_user, "the cable admits a signed-in user (the CTO web chat needs it)"
+
+    stub = ActionCable::Channel::ConnectionStub.new(current_user: connection.current_user)
+    board = Turbo::StreamsChannel.new(stub, "board", { "signed_stream_name" => Turbo::StreamsChannel.signed_stream_name(DeploymentsBroadcaster::STREAM) })
+    board.subscribe_to_channel
+    assert_equal "reject_subscription", stub.transmissions.last&.dig("type"), "the board stream refuses a non-admin, so nothing streams to them"
   end
 
   test "[integration] an admin's cookie opens the cable and the board's signed stream is the live deployments stream" do

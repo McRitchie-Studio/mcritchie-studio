@@ -1,9 +1,10 @@
 // [e2e] An app owner reads their CTO's usage (docs/agents/system/agent-usage.md).
 // owner@turf.test owns Turf Monster (e2e/seed.rb seeds one answered client
 // message this month on the Builder tier). The app page shows the usage card:
-// the meter (unlimited, since the shipped allowances are blank), this month's
-// totals and today's; the CTO's settings page shows the same meter; the admin
-// levers are not offered to an owner. At phone width nothing runs off the side.
+// the meter (unlimited, since Builder's shipped allowance is blank), this month's
+// totals and today's, in tokens (never dollars, which are an admin's); the
+// CTO's settings page shows the same meter; the admin levers are not offered to
+// an owner. At phone width nothing runs off the side.
 //
 // NOT @qa-readonly: it reads rows only e2e/seed.rb creates. Nothing here talks to Discord.
 const { test, expect } = require("@playwright/test");
@@ -21,6 +22,9 @@ test("an owner sees Turf's usage meter and totals on the app and CTO pages", asy
   await expect(card.locator("[data-test='usage-meter-line']")).toContainText("19,500 metered tokens this month");
   await expect(card).toContainText("Builder tier");
   await expect(card.locator("[data-test='application-usage-month']")).toContainText("1 answer, 19,500 tokens");
+  // Dollars are an admin's: the owner reads tokens and the meter only.
+  await expect(card.locator("[data-test='application-usage-totals']")).not.toContainText("$");
+  await expect(card).toContainText("counts answers to clients only");
   await expect(card.locator("[data-test='application-usage-admin']")).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });

@@ -11,7 +11,7 @@
 #
 # ONLY ADDRESSED MESSAGES ARE STORED. A message is kept, and routed to a soul, by:
 #   1. a mention of a user listed under that soul's `users` (a per-soul bot user),
-#   2. a mention of a role listed under its `roles` (one shared bot, @Avi/@Xan roles),
+#   2. a mention of a role listed under its `roles` (one shared bot, @Avi/@Ritch roles),
 #   3. a reply to a message the mailbox holds, or to an agent's reply (same thread,
 #      same soul unless the reply names another),
 #   4. the channel override's `default_soul`.
@@ -30,9 +30,9 @@
 # not ingested at all, so the agents' own replies never come back as inbound.
 #
 discord:
-  # The shared bot is Xan's own app (1Password `agents.discord.xan`): it reads the
+  # The shared bot is Ritch's own app (1Password `agents.discord.xan`): it reads the
   # guild and posts every reply.
-  bot_user_id: "1481150857809760399"   # Xan (bot user)
+  bot_user_id: "1481150857809760399"   # Ritch (bot user)
   # Where the floor alert (AgentDispatcherAlertJob) posts, as the same bot: a
   # silent bin/dispatcher, or a routed message waiting too long. One alert per
   # incident and one recovery line. lobster-tank until an ops channel exists.
@@ -47,10 +47,10 @@ discord:
         avi:
           roles: []
           users: ["1560516264378507334"]   # @Avi (bot user)
-        # Xan stays routed for Alex as a helper; he has no catalog.
-        xan:
+        # Ritch stays routed for Alex as a helper; he has no catalog.
+        ray:
           roles: []
-          users: ["1481150857809760399"]   # @Xan, the bot user itself
+          users: ["1481150857809760399"]   # @Ritch, the bot user itself
         # Turf (the turf_monster soul), the Turf Monster domain's front door: a
         # mention of the existing "Turf Monster" Discord app's bot user, found
         # 2026-10-15 as a member of this guild. Its replies still post through
@@ -77,6 +77,80 @@ discord:
   #       avi:
   #         roles: ["333333333333333333"]   # @Avi
   #         users: []                       # or a per-soul bot user id
-  #       xan:
-  #         roles: ["444444444444444444"]   # @Xan
+  #       ray:
+  #         roles: ["444444444444444444"]   # @Ritch
   #         users: []
+
+# EMAIL (docs/agents/system/agent-message-loop.md, "Email"), read by
+# AgentMessages::EmailRoutes. Mail to team@ reaches the hub through the Resend
+# inbound (DeskCaptureResendIngestJob), is captured on the desk as always, and
+# becomes an agent message only when it is for a CTO:
+#   1. a To/Cc address is a CTO's `addresses` (avi@ is a Google group that
+#      redirects into team@, so the original To survives), else
+#   2. the mail is to team@ and its subject or first new line starts with a CTO's
+#      `names` as an address: "Avi, …", "Avi: …", "Hi Avi, …", "@Avi …", else
+#   3. it replies (In-Reply-To/References) to an email the mailbox holds.
+# `from` is the From line of that CTO's replies, sent through Resend on the
+# verified mcritchie.studio domain with Reply-To team@. Turf has no alias into
+# team@ (turf@mcritchie.studio was deleted; team@turfmonster.media is a real
+# mailbox on another domain), so it is reached by name and replies from team@.
+# `agent_addresses` are the fleet's own: mail FROM any of them, the aliases or
+# team@ is never answered (no CTO answers a CTO, and no reply answers itself).
+email:
+  team_address: team@mcritchie.studio
+  # Mail From these domains (or their subdomains) is verified only when every
+  # DKIM-Signature aligned with the From domain is signed by exactly the listed
+  # domain (d=) under one of these selectors (s=). Production refuses to boot
+  # without a pin for team_address's domain (config/initializers/agent_email_pins.rb). mcritchie.studio also has
+  # a `resend` key (resend._domainkey), so anyone holding RESEND_API_KEY could
+  # send a DKIM-passing `From: alex@mcritchie.studio`; only Alex's Google
+  # Workspace key (`google._domainkey`) proves his mailbox. A pass under any
+  # other selector is the public, held (AgentMessages::EmailTrust).
+  pinned_dkim:
+    mcritchie.studio: [google]
+  souls:
+    avi:
+      addresses: ["avi@mcritchie.studio"]
+      names: ["Avi"]
+      from: "Avi <avi@mcritchie.studio>"
+    turf_monster:
+      addresses: []
+      names: ["Turf"]
+      from: "Turf <team@mcritchie.studio>"
+  agent_addresses:
+    - admin@mcritchie.studio
+    - ray@mcritchie.studio
+    - xan@mcritchie.studio    # the seat's address until ray-slug-rename (2026-10-18)
+    - carl@mcritchie.studio
+    - shannon@mcritchie.studio
+    - jasper@mcritchie.studio
+    - steffon@mcritchie.studio
+    - mack@mcritchie.studio
+    - mason@mcritchie.studio
+    - rex@mcritchie.studio
+    - pokemon@mcritchie.studio
+    - team@turfmonster.media
+
+# WEB CHAT (docs/agents/system/agent-message-loop.md, "Web chat"), read by
+# AgentMessages::Routes#web_souls and bin/dispatcher (AgentMailbox.routed_souls).
+# A signed-in app owner or admin chats with the app's CTO on
+# /applications/:slug/chat; AgentMessages::WebIngest stores each message as a
+# `web` AgentMessage routed to that app's CTO (config/cto_reports.yml, else a
+# client app's AppCto row, soul client_cto), and the
+# dispatcher answers it exactly as Discord. A CTO NOT listed here has no web
+# chat: the page says so and nothing is stored. Listing a soul here also makes
+# bin/dispatcher serve it, which is how Tyrion (not routed on Discord, where he
+# answers through OpenClaw) is answered in the web chat: no guild is read for
+# him, so nothing is answered twice.
+#
+# Ritch is listed for the /build intake chat (BuildIntake::Ingest), which is not a
+# CTO chat: no app's CTO is Ritch, so listing him opens no /applications chat. It
+# makes bin/dispatcher serve his web rows even if he leaves the Discord routes.
+#
+# `client_cto` is the ONE soul every client app's chat routes to: its persona is
+# filled per app from that app's AppCto row (docs/agents/system/client-cto.md).
+# It reads no guild and has no email route. Listing it here is what makes
+# bin/dispatcher serve it (a running dispatcher restarts itself when this file
+# changes: AgentMailbox::CodeFingerprint).
+web:
+  souls: [avi, turf_monster, tyrion, ray, client_cto]

@@ -214,7 +214,7 @@ advisors and brokers, captured verbatim — excellent evidence of *what was said
 and when*, and not filed facts. Reconcile every figure against what is already
 filed and send contradictions to the discrepancy record.
 
-**3. Access defaults to the deal side.** `samson: full`, `dawn: none` unless
+**3. Access defaults to the deal side.** `samson: full`, `hank: none` unless
 there is a reason otherwise. Promoting later is one edit; a leak the other way
 is not.
 

@@ -31,6 +31,15 @@
     <%= @message.channel %> · <span class="font-mono text-xs break-all"><%= @message.channel_ref %></span>
     <% if @message.discord_url %> · <%= link_to "original", @message.discord_url, target: "_blank", rel: "noopener", class: "underline" %><% end %>
   </dd>
+  <% if @message.email? %>
+    <% envelope = @message.envelope.to_h %>
+    <dt class="opacity-60">Email</dt>
+    <dd id="am-email-trust">
+      <span class="font-mono text-xs break-all"><%= envelope["from"] || "no From" %></span>
+      · <%= envelope.dig("trust", "verified") ? "verified" : "NOT verified (treated as the public)" %>
+      <span class="opacity-60 text-xs"><%= envelope.dig("trust", "reason") %></span>
+    </dd>
+  <% end %>
   <dt class="opacity-60">Thread</dt><dd class="font-mono text-xs break-all"><%= @message.thread_key %></dd>
   <dt class="opacity-60">Sent</dt><dd><%= (@message.sent_at || @message.created_at).strftime("%b %-d %H:%M:%S") %></dd>
   <dt class="opacity-60">Claim</dt>

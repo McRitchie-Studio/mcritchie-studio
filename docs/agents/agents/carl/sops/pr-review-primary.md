@@ -8,9 +8,9 @@
 This is the **primary reviewer role SOP**: the deep review **Carl** runs as the
 **standing primary AND owner** of one submitted PR. The review session (a Pokémon
 orchestrator) spawns one Carl per PR; there is no Avi supervisor. In a focus
-session, Xan runs this same SOP alone on a prose-only PR and merges it.
+session, Ritch runs this same SOP alone on a prose-only PR and merges it.
 
-**Who may merge.** Carl merges any PR he reviews. Xan, the documentation seat,
+**Who may merge.** Carl merges any PR he reviews. Ritch, the documentation seat,
 merges a **docs-shape** PR only: prose, inert media and docs-guard tests, measured
 from the PR's own files at the head being merged, never from the task's declared
 shape. `bin/merge-permit` makes that measurement and step 6 runs it. Any other
@@ -56,7 +56,7 @@ tasks. If anything is missing, note it as a finding; do not guess.
    pair, and recording takes the task's review claim.
 
    ```bash
-   bin/reviewer-select <task> --no-record        # preview the domain light (Shannon / Jasper / Steffon / Xan)
+   bin/reviewer-select <task> --no-record        # preview the domain light (Shannon / Jasper / Steffon / Ritch)
    ```
 
    Spawn that soul via the Agent tool, `description`: `light review: <soul>`,
@@ -182,10 +182,10 @@ tasks. If anything is missing, note it as a finding; do not guess.
      bin/task note <task-slug> --handoff "Carl review approved; merged into accepted; ready for Avi's qa-release sweep." --agent carl
      ```
 
-     - **The permit decides who merges.** For Carl it answers at once. For Xan
+     - **The permit decides who merges.** For Carl it answers at once. For Ritch
        it re-reads the PR at that moment and permits only when the live head is
        the validated one, the card's latest scout report is a `merge-ready` for
-       that head from a pool reviewer outside the author set, Xan is not an
+       that head from a pool reviewer outside the author set, Ritch is not an
        author, and the diff measures docs. A PR that was prose when reviewed and
        gained a code file since is refused. Exit 2 is a refusal that names the
        rule and who merges instead: leave the task `submitted`, release the
@@ -241,7 +241,7 @@ tasks. If anything is missing, note it as a finding; do not guess.
      do nothing; a moved head is refused; an expired window does not run late; and
      it stands down while a live review claim is held. **The documentation seat
      does not arm:** an armed merge measures no diff, so the board refuses it for
-     Xan. She waits for CI and merges in person on the permit.
+     Ritch. He waits for CI and merges in person on the permit.
      - Arming is REFUSED unless the task's **latest** scout report is
        `merge-ready`. To change your mind, record a later scout report; the armed
        merge refuses at fire time. You do not have to disarm. The latest report

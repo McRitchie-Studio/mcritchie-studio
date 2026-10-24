@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="Ember, a placeholder CTO portrait">
+  <circle cx="80" cy="80" r="80" fill="#fecaca"/>
+  <path d="M30 160 C32 126 56 112 80 112 C104 112 128 126 130 160Z" fill="#b91c1c"/>
+  <rect x="70" y="98" width="20" height="18" rx="6" fill="#c68642"/>
+  <ellipse cx="80" cy="78" rx="31" ry="34" fill="#c68642"/>
+  <circle cx="80" cy="34" r="13" fill="#7f1d1d"/><path d="M48 70 C48 42 112 42 112 70 C100 58 60 58 48 70Z" fill="#7f1d1d"/>
+  <circle cx="68" cy="76" r="3.5" fill="#1f2937"/>
+  <circle cx="92" cy="76" r="3.5" fill="#1f2937"/>
+  <path d="M70 92 Q80 100 90 92" fill="none" stroke="#7c2d12" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="51" cy="88" r="3" fill="#facc15"/>
+</svg>

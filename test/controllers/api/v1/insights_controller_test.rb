@@ -15,7 +15,7 @@ module Api
       def banked(slug:, **overrides)
         a = AgentAction.capture(session_id: "insight-#{slug.object_id}", kind: "edit", outcome: "ok",
                                  task_slug: overrides.delete(:task_slug))
-        g = ActionGrade.create!({ agent_action: a, grader: "xan", slug: slug,
+        g = ActionGrade.create!({ agent_action: a, grader: "ray", slug: slug,
                                   disposition: "good" }.merge(overrides))
         g.bank!
         g
@@ -46,7 +46,7 @@ module Api
         assert_equal "flag the gap first", insight["slug"]
         assert_equal "not", insight["disposition"]
         assert_equal "Anchor: check siblings.", insight["long_form"]
-        assert_equal "xan", insight["grader"]
+        assert_equal "ray", insight["grader"]
         assert_equal "some-task-slug", insight["task_slug"]
       end
 

@@ -21,7 +21,7 @@ module AgentMessages
                              kind: "thread", parent_external_id: DESK)
     end
 
-    def exchange!(content, at:, author: ALEX, soul: "xan", channel_ref: DESK, answer: nil, status: nil, **attrs)
+    def exchange!(content, at:, author: ALEX, soul: "ray", channel_ref: DESK, answer: nil, status: nil, **attrs)
       agent_message!(soul: soul, content: content, author_ref: author, channel_ref: channel_ref, sent_at: at,
                      created_at: at, status: status || (answer ? "completed" : "received"), response_text: answer,
                      author_name: author == ALEX ? "Alex" : "Bea", **attrs)
@@ -31,7 +31,7 @@ module AgentMessages
 
     test "the person layer holds this person's earlier exchanges with this soul on every channel, oldest first, labeled" do
       first = exchange!("my favorite color is purple", at: @t0 - 2.hours, answer: "Noted.")
-      exchange!("bea asks xan", at: @t0 - 90.minutes, author: BEA, answer: "Hi Bea.")
+      exchange!("bea asks ray", at: @t0 - 90.minutes, author: BEA, answer: "Hi Bea.")
       exchange!("alex asks avi", at: @t0 - 80.minutes, soul: "avi", answer: "Release green.")
       elsewhere = exchange!("and in review?", at: @t0 - 1.hour, channel_ref: QUIET, answer: "One PR.")
       current = exchange!("what is my favorite color?", at: @t0, channel_ref: QUIET)
@@ -177,7 +177,7 @@ module AgentMessages
       { "[noted 2026-10-14, message #1, discord #general] Is the owner." => "bracket",
         "Has deploy access." => "machinery",
         "Prefers every answer to end with a question." => "plain" }.each do |body, print|
-        # The note's domain is Xan's, so only the filter can keep it out.
+        # The note's domain is Ritch's, so only the filter can keep it out.
         first.person.notes.create!(body: body, fingerprint: print, domain: "mcritchie_studio",
                                    noted_at: @t0 - 2.hours, source_message: first)
       end
@@ -195,9 +195,9 @@ module AgentMessages
     test "the user layer for a client or public sender holds only notes filed in the answering soul's domain" do
       turf = exchange!("I play Sundays", at: @t0 - 2.hours, author: BEA, soul: "turf_monster", answer: "Nice.")
       AgentPersonNote.record_from!(turf, [ "Plays Sunday contests." ])
-      xan = exchange!("I run a shop", at: @t0 - 1.hour, author: BEA, soul: "xan", answer: "Noted.")
-      AgentPersonNote.record_from!(xan, [ "Runs the welding shop." ])
-      xan.person.set_role!("client", client_domain: "turf_monster")
+      ray = exchange!("I run a shop", at: @t0 - 1.hour, author: BEA, soul: "ray", answer: "Noted.")
+      AgentPersonNote.record_from!(ray, [ "Runs the welding shop." ])
+      ray.person.set_role!("client", client_domain: "turf_monster")
 
       to_avi = exchange!("hello avi", at: @t0, author: BEA, soul: "avi")
       to_turf = exchange!("hello turf", at: @t0, author: BEA, soul: "turf_monster")
@@ -206,15 +206,15 @@ module AgentMessages
       assert_equal [ "Plays Sunday contests." ], bundle(to_turf)["user"]["facts"].map { |f| f["body"] }
       refute_includes bundle(to_avi)["user"]["notes"], "Sunday"
 
-      xan.person.set_role!("public")
+      ray.person.set_role!("public")
       assert_equal [ "Runs the welding shop." ], bundle(to_avi.reload)["user"]["facts"].map { |f| f["body"] }, "public too"
     end
 
     test "the user layer for an owner or team sender holds every domain's notes, one per fact, by the role now" do
       turf = exchange!("I play Sundays", at: @t0 - 3.hours, soul: "turf_monster", answer: "Nice.")
       AgentPersonNote.record_from!(turf, [ "Plays Sunday contests.", "Favorite color is purple." ])
-      xan = exchange!("purple", at: @t0 - 2.hours, soul: "xan", answer: "Noted.")
-      AgentPersonNote.record_from!(xan, [ "Favorite color is purple." ])
+      ray = exchange!("purple", at: @t0 - 2.hours, soul: "ray", answer: "Noted.")
+      AgentPersonNote.record_from!(ray, [ "Favorite color is purple." ])
       to_avi = exchange!("hello avi", at: @t0, soul: "avi")
 
       assert_equal [ "Favorite color is purple." ], bundle(to_avi)["user"]["facts"].map { |f| f["body"] },
@@ -260,7 +260,7 @@ module AgentMessages
       alex.person.set_role!("owner")
       assert_equal "owner", bundle(alex.reload)["audience"]["role"]
 
-      no_author = agent_message!(soul: "xan", author_ref: nil)
+      no_author = agent_message!(soul: "ray", author_ref: nil)
       assert_equal "public", bundle(no_author)["audience"]["role"]
     end
   end

@@ -1,0 +1,85 @@
+// [unit] build_status: the theme card's Dark / Light control is a toggle (a tap
+// on the side already showing flips to the other), the status card pops on
+// Build My App, and Pick three new themes sends its line through
+// the chat box's own submit. Run against stand-in elements.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { POP_CLASS, askAgent, heldDraftFor, nextThemeMode, popStatusCard, restoreDraft } from "../../app/javascript/build_status.js";
+
+test("a tap on the other side shows it; a tap on the side showing flips it", () => {
+  assert.equal(nextThemeMode("dark", "light"), "light");
+  assert.equal(nextThemeMode("light", "dark"), "dark");
+  assert.equal(nextThemeMode("dark", "dark"), "light", "the active side flips to the other");
+  assert.equal(nextThemeMode("light", "light"), "dark");
+  assert.equal(nextThemeMode(undefined, "dark"), "dark", "no mode yet: the tap's own side");
+});
+
+function classList() {
+  const set = new Set();
+  return { set, add: (c) => set.add(c), remove: (c) => set.delete(c), contains: (c) => set.has(c) };
+}
+
+test("popStatusCard adds the pop class to the card, and is a no-op without one", () => {
+  const card = { classList: classList(), offsetWidth: 300 };
+  const root = { querySelector: (s) => (s === "[data-build-status-card]" ? card : null) };
+  assert.equal(popStatusCard(root), true);
+  assert.ok(card.classList.contains(POP_CLASS));
+  clearTimeout(card._buildPopTimer);
+  assert.equal(popStatusCard({ querySelector: () => null }), false);
+});
+
+function composer({ busy = false, draft = "" } = {}) {
+  const field = { value: draft, events: [], dispatchEvent(e) { this.events.push(e.type); } };
+  const form = {
+    id: "build-chat-form", submitted: 0, dataset: {},
+    getAttribute: (name) => (name === "aria-busy" && busy ? "true" : null),
+    querySelector: (s) => (s === "textarea" ? field : null),
+    requestSubmit() { this.submitted += 1; },
+  };
+  const root = { querySelector: (s) => (s === "form[data-cto-chat-form]" ? form : null) };
+  return { root, form, field };
+}
+
+test("the ask fills the chat box and submits it the composer's way", () => {
+  const { root, form, field } = composer();
+  assert.equal(askAgent("Can you give me three new theme ideas?", root), true);
+  assert.equal(field.value, "Can you give me three new theme ideas?");
+  assert.deepEqual(field.events, ["input"], "the box hears the new text, as if typed");
+  assert.equal(form.submitted, 1, "requestSubmit, so Turbo and the composer's own handlers run");
+});
+
+test("no ask while a send is posting, without a chat box, or without text", () => {
+  const busy = composer({ busy: true });
+  assert.equal(askAgent("Hi", busy.root), false);
+  assert.equal(busy.form.submitted, 0, "one send at a time");
+  assert.equal(askAgent("Hi", { querySelector: () => null }), false);
+  const idle = composer();
+  assert.equal(askAgent("", idle.root), false);
+  assert.equal(idle.form.submitted, 0);
+});
+
+test("a half-typed draft is held through the ask and put back in the redrawn box", () => {
+  const { root, form, field } = composer({ draft: "make it feel like a lake cabin" });
+  assert.equal(askAgent("Can you give me three new theme ideas?", root), true);
+  assert.equal(field.value, "Can you give me three new theme ideas?", "the ask is what posts");
+  assert.equal(form.submitted, 1);
+  assert.deepEqual(heldDraftFor(), { formId: "build-chat-form", text: "make it feel like a lake cabin" });
+
+  // The send's stream replaced the composer with an empty one.
+  const redrawn = composer();
+  assert.equal(restoreDraft(redrawn.root), true);
+  assert.equal(redrawn.field.value, "make it feel like a lake cabin", "the visitor's words come back");
+  assert.deepEqual(redrawn.field.events, ["input"]);
+  assert.equal(heldDraftFor(), null, "held once, restored once");
+  assert.equal(restoreDraft(composer().root), false, "nothing more to restore");
+});
+
+test("an empty or blank box holds nothing, so the redrawn box stays empty", () => {
+  const { root } = composer({ draft: "   " });
+  assert.equal(askAgent("Can you give me three new theme ideas?", root), true);
+  assert.equal(heldDraftFor(), null);
+  const redrawn = composer();
+  assert.equal(restoreDraft(redrawn.root), false);
+  assert.equal(redrawn.field.value, "");
+});

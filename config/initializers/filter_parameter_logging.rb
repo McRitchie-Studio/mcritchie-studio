@@ -20,6 +20,9 @@ Rails.application.config.filter_parameters += [
   # String, so Api::V1::FactsController#mask_logged_parameters masks a number or
   # a boolean, and every other parameter that is not a name.
   /\Afact\.value\z/,
+  # A client bundle's file bodies (POST /api/v1/client_bundles/:sub): megabytes of
+  # base64 that the request log has no use for.
+  :content_base64,
   # An admin login's one-time code, nested and at the top level of its own API.
   /\Aagent_login_request\.code\z/,
   lambda do |key, value, params = nil|
@@ -38,4 +41,12 @@ Rails.application.config.filter_parameters += [
 
     value.replace("[FILTERED]") if params.is_a?(Hash) && params["controller"].to_s == "api/v1/facts"
   end
+]
+
+# A redirect to a SIGNED storage URL logs as "Redirected to [FILTERED]": the URL
+# carries the object key and a live signature (CtoChatAttachmentsController#show
+# sends a chat file's 5-minute R2 link), and a log line outlives both the link
+# and the reader's right to it. Strings match anywhere in the location.
+Rails.application.config.filter_redirect += [
+  "r2.cloudflarestorage.com", "X-Amz-Signature", "/rails/active_storage/disk/"
 ]

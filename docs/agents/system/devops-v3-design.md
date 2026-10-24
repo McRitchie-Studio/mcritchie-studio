@@ -8,7 +8,7 @@
 > land; until then v2 describes the mechanics still in force.
 >
 > **Names.** From this document on, **Alex** is the human owner and operator,
-> and **Xan** is the orchestrator agent that used to be called Alex. Active docs
+> and **Ritch** is the orchestrator agent that used to be called Alex. Active docs
 > adopt these names as they are rewritten; archived snapshots stay as written.
 
 A focus session holds the epic, files tasks only when they are startable, builds
@@ -33,21 +33,24 @@ Alex's answers on 2026-09-24, each mapped to the design consequence it drives.
 | Docs | AGENTS.md as a general view; agents drill into micro layers as needed. | Three layers: map, capability pages, archive (§8). |
 | Guards | Prefer things that just work. | The catalog in §7 with a disposition per guard. |
 | Learning loop | Bake it into the flow; grade on size, blockers, tokens, lines; 0 or 1 learning per task. | Auto-grade at ship, one line at most, only when a threshold trips (§9). |
-| Names | Alex is the human; the agent is Xan. | §1. |
+| Names | Alex is the human; the agent is Ritch. | §1. |
 
-## 1. Names: Alex and Xan
+## 1. Names: Alex and Ritch
 
-The agent seat formerly named Alex becomes **Xan**: slug `xan`, Lead
-Orchestrator, holder of the Documentation review seat, owner of `full-cycle` and
-the learning loop. The Solana signing identity already called Xan
-(`agent.xan.solana`, renamed from "Alex bot" on 2026-09-15) is unrelated and
-does not change. The human is **Alex** everywhere; "Mr. McRitchie" retires from
-active docs as they are rewritten.
+The agent seat formerly named Alex became **Xan** on 2026-09-24 (slug `xan`), and
+**Ray** on 2026-10-18 (Alex's middle name; display in `ray-display-rename`, slug
+`ray` in `ray-slug-rename`), and **Ritch** on
+2026-10-20 (display in `ritch-display-rename`; the slug stays `ray` until a
+later step): Lead Orchestrator, holder of the Documentation review seat, owner of `full-cycle` and the learning loop. The Solana signing identity
+`agent.xan.solana` (renamed from "Alex bot" on 2026-09-15, retired 2026-10-14) is
+unrelated and keeps its name. The human is **Alex** everywhere; "Mr. McRitchie"
+retires from active docs as they are rewritten.
 
-Mechanics: the slug `alex` is a foreign key in activities, scout reports, task
-events, builder stamps and review claims. The rename is one task: add the `xan`
-agent row, migrate the rows, keep `alex` as a read alias for one release, then
-drop it.
+Mechanics: the slug is a foreign key in activities, scout reports, task events,
+builder stamps and review claims. Each rename is one task: a data migration
+repoints every stored value, the old slug stays a read alias
+(`Task::SOUL_ALIASES`: `alex` and `xan` both read as `ray`), and the old URLs
+301 to the new ones.
 
 ## 2. The shape of v3
 
@@ -73,7 +76,7 @@ Three rules:
 
 1. **The focus session owns build and review.** It files tasks just-in-time,
    spawns builders in parallel, and spawns each PR's reviewer the moment it is
-   green: Carl for code, Xan alone for prose (§4 tiers). Rework happens in the same desk with the same context.
+   green: Carl for code, Ritch alone for prose (§4 tiers). Rework happens in the same desk with the same context.
 2. **One suite per tree.** A tree hash earns one verdict, from CI. Every gate
    reads it; nothing re-runs an identical tree. Local certs become optional
    pre-flights that write no evidence.
@@ -120,7 +123,7 @@ shows its age. No refusal, no cap.
 
 **The flow.** When a builder's `bin/submit` reaches `submitted` with a green PR,
 the focus session spawns that PR's reviewer with the epic plan, the task, and the
-recorded head: Carl for code, Xan alone for prose (tiers below). Carl runs the
+recorded head: Carl for code, Ritch alone for prose (tiers below). Carl runs the
 primary review he runs today: gate-zero on the CI
 verdict, the deep read, an optional light, a verdict, and the merge into
 `accepted`. A blocker comes straight back to the session, which still has the
@@ -134,7 +137,7 @@ path for PRs whose session died.
   `--agent` disappears from the build lane. The mascot is the crew member on the
   card. Its soul document is written and polished as its own piece of work.
 - **The specialists live at review.** Carl for backend, Shannon for UI, Jasper
-  for on-chain, Steffon for infrastructure, Xan for docs. Their `role.md`
+  for on-chain, Steffon for infrastructure, Ritch for docs. Their `role.md`
   checklists are the written standards. A block is structured so it can be
   learned from: the regression, the trigger that reaches it, and what right
   looks like.
@@ -148,7 +151,7 @@ path for PRs whose session died.
 - **The session owns the verdict.** One review owner per PR by construction.
 
 Souls to write or re-read in phase 1: the Pokémon builder soul and role, Avi's
-soul plus `arbitrate-block`, the five specialists' review checklists, Xan's soul.
+soul plus `arbitrate-block`, the five specialists' review checklists, Ritch's soul.
 
 **What the reviews did.** 3,439 scout reports. Request-changes share fell from
 35% in July to 17% in September. In 1,151 rounds with a second reader: both clean
@@ -160,7 +163,7 @@ of SOP before reading a diff.
 
 | Tier | The change | Who reads | Model |
 |---|---|---|---|
-| A · prose | Markdown, inert media, docs-guard tests only (`CodeDiff` decides) | One read by the documentation seat (Xan). No light. | fast |
+| A · prose | Markdown, inert media, docs-guard tests only (`CodeDiff` decides) | One read by the documentation seat (Ritch). No light. | fast |
 | B · code, no risk tag | App or tooling code, under 400 insertions, one repo, no `payment` `solana` `auth` `migration` tag | Carl. Light at his discretion. | capable |
 | C · risk or size | Any risk tag, or over 400 insertions, or more than one repo, or a schema change | Carl plus the domain light, mandatory. | strongest |
 
@@ -347,7 +350,7 @@ resolves, every link resolves.
 Manual grading banked 13 insights against 416 discards; 132 triage findings are
 open with none closed.
 
-1. At `shipped`, Xan grades the task once from facts: forecast size against
+1. At `shipped`, Ritch grades the task once from facts: forecast size against
    measured cost, bounces, gate failures, cycle time against the median, lines
    changed, tokens.
 2. A learning is written only when a threshold trips: two or more bounces, cost
@@ -364,7 +367,7 @@ and cost is captured on every task (34% today, falling).
 
 | Phase | Delivers | Mostly | Depends on |
 |---|---|---|---|
-| 0 | This document; the Xan rename with its data migration | docs, one migration | Alex's decisions (§11) |
+| 0 | This document; the Ritch rename with its data migration | docs, one migration | Alex's decisions (§11) |
 | 1 | The focus-session SOP; the Pokémon builder soul; `arbitrate-block` and Avi's soul; the specialists' checklists; `epic_slug` and the epic chip | docs, small board change | 0 |
 | 2 | One verdict per tree: `dor-check` reads the CI verdict only; G3 and G4 credit the tree; the evidence system and its guards deleted | tooling deletions | 1 |
 | 3 | Operator windows: the fields, the wait command, the countdown, the launch mode | board and tooling | 1 |
@@ -378,7 +381,7 @@ from day 4.
 
 | Day | Lane A · docs | Lane B · board | Lane C · tooling |
 |---|---|---|---|
-| 1 | 0 · land this design | 0 · Xan rename | 2a · `dor-check` reads the CI verdict only |
+| 1 | 0 · land this design | 0 · Ritch rename | 2a · `dor-check` reads the CI verdict only |
 | 2 | 1 · SOP, builder soul, `arbitrate-block`, checklists | 1 · `epic_slug` and the epic chip | 2b · G3 and G4 credit the tree; delete the evidence system |
 | 3 | 1 · continued | 3 · operator windows | 4a · `merged` from git, PR from branch, authors from git |
 | 4 to 5 | 5 · AGENTS.md map and capability pages | 6 · auto-grade, actor and cost | 4b · delete batches with their tests |
@@ -422,7 +425,7 @@ has reached `main`, because the v3 batch still waits on Alex's ship authority.
 
 | Phase | Landed on `accepted` (PR) |
 |---|---|
-| 0 | design 1577 · Xan rename 1579 |
+| 0 | design 1577 · Ritch rename 1579 |
 | 1 | focus-session SOP and souls 1578 · `epic_slug` and the chip 1580 |
 | 2 | `dor-check` reads the CI verdict 1582 · evidence system deleted 1589 · G4 reads the tree verdict 1584 |
 | 3 | operator windows 1586 · ship grant scoped to its request 1591 |
@@ -438,7 +441,7 @@ outside any checkout. 4c starts after the v3 batch reaches `main`.
 
 ## 11. Decisions recorded on 2026-09-24
 
-1. **Xan** is the agent's name; Alex is the human.
+1. **Ritch** is the agent's name; Alex is the human.
 2. **Production window:** per-launch mode, `timed` by default; changeable in
    `config/release_builder.yml`. Alex's clearance in chat is its own mode,
    `cleared`, which records his words on the release and asks no window.

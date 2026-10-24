@@ -26,12 +26,22 @@ require Rails.root.join("bin/lib/agent_proposal_block").to_s
 #
 # THE CONTENT IS UNTRUSTED. It came from whoever can post in a listed guild; a worker hands it to a model fenced as data, never as instructions.
 class AgentMessage < ApplicationRecord
-  CHANNELS = %w[discord].freeze
+  # discord: DiscordIngest. email: AgentMessages::EmailIngest, from the team@
+  # Resend inbound after desk capture; its envelope (from, subject, Message-ID,
+  # References, the trust verdict) lives in `envelope`. web: AgentMessages::WebIngest,
+  # from a signed-in app owner's or admin's chat with the app's CTO on
+  # /applications/:slug/chat (docs/agents/system/agent-message-loop.md, "Web chat").
+  CHANNELS = %w[discord email web].freeze
+  # The channels whose reader shows "typing…" while an answer runs: Discord
+  # through the replying bot, the web chat over its Turbo stream. Email has none.
+  TYPING_CHANNELS = %w[discord web].freeze
   STATUSES = %w[received claimed completed dead unrouted held].freeze
   # Statuses a thread waits on: an older message in one of these holds the
   # thread's newer messages back, so a conversation is answered in order.
   OPEN_STATUSES = %w[received claimed].freeze
-  ROUTED_BY = %w[user role thread default none].freeze
+  # alias and name are email's (AgentMessages::EmailRoutes): a CTO's own address,
+  # or a CTO named in a mail to team@. chat is the web chat's: the app's CTO.
+  ROUTED_BY = %w[user role thread default none alias name chat].freeze
   REPLY_STATUSES = %w[queued posted skipped failed].freeze
 
   # How long a claim holds before another worker may take the message. A
@@ -60,6 +70,15 @@ class AgentMessage < ApplicationRecord
   # run can never type forever. Shorter than a long answer may take: such an
   # answer types for three minutes and then posts without it.
   TYPING_CAP = 180
+  # What a web chat's pulse may say the answer is doing (bin/dispatcher reads it
+  # off Claude's stream, AgentMailbox::ClaudeStream): thinking until the
+  # answer's first words, then typing. Anything else, or none (a Discord pulse,
+  # a dispatcher from before phases), is typing: the look every pulse had.
+  TYPING_PHASES = %w[thinking typing].freeze
+
+  def self.typing_phase(value)
+    TYPING_PHASES.include?(value.to_s) ? value.to_s : "typing"
+  end
 
   # Candidates a single claim may answer with the usage-cap reply before it
   # gives up for this call (the next claim carries on).
@@ -71,11 +90,12 @@ class AgentMessage < ApplicationRecord
   # usage meter's source (AgentUsage, docs/agents/system/agent-usage.md). The
   # NUMERIC keys keep a number only, so a worker cannot plant text where the
   # rollup sums. `audience` is never the worker's: complete! stamps it from the
-  # sender's role on the board, and the meter counts only client and public
-  # rows against an app's allowance.
+  # sender's role on the board, and the meter counts only client rows against
+  # an app's allowance (public rows are metered apart).
   RUN_META_NUMERIC = %w[input_tokens cache_read_tokens cache_creation_tokens output_tokens thinking_tokens
                         total_cost_usd num_turns duration_ms].freeze
-  RUN_META_KEYS = (RUN_META_NUMERIC + %w[model reasoning_source]).freeze
+  # files_shown, files_skipped: a run with media (AgentMailbox::Media), the files sent and not.
+  RUN_META_KEYS = (RUN_META_NUMERIC + %w[model reasoning_source warm files_shown files_skipped]).freeze
 
   ClaimResult = Struct.new(:message, :reason, keyword_init: true)
 
@@ -93,6 +113,12 @@ class AgentMessage < ApplicationRecord
   # (channel, author_ref), so every stored message with an author resolves to a
   # person. A row with no author_ref has none.
   belongs_to :person, class_name: "AgentPerson", optional: true, inverse_of: :messages
+  # The files a web chat message carries (images and PDFs, AgentMessages::Attachments):
+  # private R2 objects under apps/<app>/chat/, shown only to the thread's owner
+  # and admins (CtoChatAttachmentsController) and read by the dispatcher through
+  # the holder-only context bundle.
+  # On the PRIVATE service (no public domain), never the hub's bucket.
+  has_many_attached :attachments, service: AgentMessages::Attachments::SERVICE
 
   before_create :resolve_person
 
@@ -132,8 +158,10 @@ class AgentMessage < ApplicationRecord
   #
   # THE OWNER-ONLY GUARD (AgentMessages::Answerers) is enforced here, on the
   # server, not only at ingest: a row is claimable only when its person's role is
-  # one config/agent_answerers.yml answers (owner only today) or an admin released
-  # its hold (hold_released_at).
+  # one config/agent_answerers.yml answers (owner only today), an admin released
+  # its hold (hold_released_at), or one of the file's two exceptions holds: a
+  # /build row for the intake soul, or an app owner's row on their own app's
+  # CTO thread (Answerers#app_owner_thread?, its SQL twin in sql_guard).
   # A row with no person is never claimable. A row that fails the guard is not
   # "open" for the two wait rules either, so a stranger's message that is somehow
   # `received` cannot hold a thread back forever; `held` rows are never open.
@@ -187,11 +215,14 @@ class AgentMessage < ApplicationRecord
       # before a run starts: a client or public message whose app is at its
       # monthly allowance is answered here, in code, with the cap reply, and
       # the next candidate is tried. Owner and team are never capped.
+      # Each app's meter is read once per claim, however many of its
+      # candidates the loop meets.
+      meters = {}
       MAX_CAP_SKIPS.times do
         candidate = claimable(soul: soul, now: now, channel: channel).lock("FOR UPDATE SKIP LOCKED").first
         break unless candidate
 
-        gate = AgentUsage.gate(candidate, now: now)
+        gate = AgentUsage.gate(candidate, now: now, meters: meters)
         unless gate.stop?
           message = candidate
           break
@@ -228,7 +259,7 @@ class AgentMessage < ApplicationRecord
   # rollup neither meters nor counts it as an answered message.
   def usage_capped!(meter, now: Time.current)
     update!(status: "completed", completed_at: now, claimed_by: nil, claimed_at: nil, lease_expires_at: nil,
-            response_text: AgentUsage.cap_reply(meter), action_summary: "usage cap",
+            response_text: AgentUsage.cap_reply(meter, audience: usage_audience), action_summary: "usage cap",
             reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued",
             run_meta: { "audience" => usage_audience, "usage_capped" => true })
     record!("usage_capped", actor: "system",
@@ -236,8 +267,22 @@ class AgentMessage < ApplicationRecord
                                       "suggestion" => meter.suggestion&.as_json }.compact)
   end
 
+  # Answered in code, before any claim: `text` is the whole reply and no model
+  # runs (AgentMessages::FirstNameAsk). Queued for AgentMessageReplyJob, as the
+  # cap reply is. `meta` joins the run summary; it carries no tokens.
+  def code_answered!(text, summary:, meta: {}, now: Time.current)
+    update!(status: "completed", completed_at: now, claimed_by: nil, claimed_at: nil, lease_expires_at: nil,
+            response_text: text, action_summary: summary,
+            reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued",
+            run_meta: { "audience" => usage_audience, "code_reply" => true }.merge(meta))
+    record!("completed", actor: "web-chat", detail: { "via" => "code_reply", "summary" => summary })
+  end
+
   # The notice a warned answer ends with, when its current claim was warned.
+  # Never on an answer to the public: the meter is the owner's.
   def usage_warning_line(now: Time.current)
+    return nil if AgentUsage::PUBLIC_AUDIENCES.include?(usage_audience)
+
     warned = events.reorder(id: :desc).find_by(kind: "usage_warned")
     return nil unless warned && warned.detail["attempt"].to_i == attempts
 
@@ -308,7 +353,8 @@ class AgentMessage < ApplicationRecord
   # worker's parsed `proposal` wins; else the one the board found. It is then
   # VALIDATED here (AgentProposal.record_from!): accepted, it is stored and the
   # reply gains the confirm line; refused, it is an event and the reply is
-  # posted without it. The block itself never posts.
+  # posted without it. The block itself never posts. On a /build thread the
+  # block is an intake card instead (BuildIntake::Card.record_from!).
   def complete!(worker:, response_text:, action_summary: nil, actor: nil, now: Time.current, run: {}, notes: nil,
                 proposal: nil)
     worker = worker.to_s.strip
@@ -331,7 +377,11 @@ class AgentMessage < ApplicationRecord
               reply_nonce: reply_nonce.presence || "agentmsg-#{id}", reply_status: "queued",
               **usage_stamped(self.class.run_record(run)))
       stored = Array(notes).any? ? AgentPersonNote.record_from!(self, notes, now: now) : []
-      if (offered = AgentProposal.record_from!(self, proposal, now: now))
+      # A /build thread takes intake cards only (BuildIntake::Card): checked and
+      # stored on this row for the chat to render, never an AgentProposal.
+      if BuildIntake.thread?(thread_key)
+        BuildIntake::Card.record_from!(self, proposal)
+      elsif (offered = AgentProposal.record_from!(self, proposal, now: now))
         update!(response_text: "#{self.response_text}\n\n#{offered.confirm_text}")
       end
       if (warning = usage_warning_line(now: now))
@@ -437,7 +487,11 @@ class AgentMessage < ApplicationRecord
 
   # The audience the usage meter files this answer under: the sender's role as
   # the board knows it now (AgentPerson#role), public for a row with no person.
+  # On an app owner's own CTO thread (AgentMessages::Answerers#app_owner_thread?)
+  # a public or client person is that app's client: metered against its allowance.
   def usage_audience
+    return "client" if AgentMessages::Answerers.current.app_owner_thread?(self)
+
     person&.role.presence || "public"
   end
 
@@ -455,7 +509,7 @@ class AgentMessage < ApplicationRecord
 
   # Why the bot must NOT show typing for this message now, or nil when it may.
   # Typing is a promise that an answer is coming, so it is shown only for a
-  # Discord message `worker` holds the claim on (a claim is taken only for a
+  # Discord or web-chat message (TYPING_CHANNELS) `worker` holds the claim on (a claim is taken only for a
   # message the board will answer) whose sender is still answered
   # (AgentMessages::Answerers, or a hold an admin released), and only within
   # TYPING_CAP of the claim. "not_holder" is the caller's error; the rest are
@@ -463,12 +517,22 @@ class AgentMessage < ApplicationRecord
   def typing_refusal(worker:, now: Time.current, answerers: AgentMessages::Answerers.current)
     worker = worker.to_s.strip
     return "not_holder" unless status == "claimed" && worker.present? && claimed_by == worker
-    return "not_discord" unless channel == "discord" && channel_ref.present?
-    return "not_answered" unless hold_released_at.present? || answerers.allowed?(person)
+    return "not_typing_channel" unless TYPING_CHANNELS.include?(channel) && channel_ref.present?
+    return "not_answered" unless hold_released_at.present? || answerers.allowed?(person, message: self)
     return "capped" if claimed_at.nil? || now - claimed_at > TYPING_CAP
 
     nil
   end
+
+  # A pending /build turn's phase as the last pulse left it (WebChat.broadcast_typing
+  # records it, since that page polls instead of listening), or nil before any.
+  def typing_phase
+    value = run_meta.is_a?(Hash) ? run_meta["typing_phase"] : nil
+    TYPING_PHASES.include?(value) ? value : nil
+  end
+
+  def email? = channel == "email"
+  def web? = channel == "web"
 
   def unrouted? = status == "unrouted"
   def held? = status == "held"
@@ -494,7 +558,7 @@ class AgentMessage < ApplicationRecord
                  :lease_expires_at, :attempts, :usage_refunds, :response_text, :action_summary, :reply_external_id, :reply_status,
                  :reply_posted_at, :completed_at, :sent_at, :hold_released_at, :hold_released_by,
                  :created_at, :updated_at,
-                 :claude_session_id, :claude_cwd, :reasoning, :run_meta).as_json
+                 :claude_session_id, :claude_cwd, :reasoning, :run_meta, :envelope).as_json
     data["resume_command"] = resume_command
     data["url"] = discord_url
     data["reply_url"] = reply_url

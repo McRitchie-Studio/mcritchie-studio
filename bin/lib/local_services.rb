@@ -6,6 +6,7 @@ require "open3"
 require "shellwords"
 require "yaml"
 require_relative "agent_mailbox"
+require_relative "op_vaults"
 require_relative "projects_root"
 
 # The always-on local services a rebuilt Mac must be running, restored from one
@@ -31,13 +32,20 @@ module LocalServices
 
   class Error < StandardError; end
 
-  Service = Struct.new(:name, :sop, :install, :status, :claude_auth, :commands, keyword_init: true)
+  Service = Struct.new(:name, :sop, :install, :status, :refresh, :claude_auth, :commands, :dotenv, keyword_init: true)
+
+  # Where each `dotenv:` key a service needs comes from, as [1Password item,
+  # field] in the agent lane, so the checklist can name a command that fills it
+  # without printing the value. A key not listed here gets a plain "add it" step.
+  DOTENV_SOURCES = {
+    "AGENT_API_SECRET" => [ "Agent API Secret", "AGENT_API_SECRET" ]
+  }.freeze
 
   # The registry, read and checked. A malformed entry raises Error naming it:
   # a registry that half-loads would restore half the services and say nothing.
   module Registry
-    KEYS = %w[name sop install status requires].freeze
-    REQUIRES = %w[claude_auth commands].freeze
+    KEYS = %w[name sop install status refresh requires].freeze
+    REQUIRES = %w[claude_auth commands dotenv].freeze
 
     module_function
 
@@ -68,9 +76,15 @@ module LocalServices
       unknown = requires.keys - REQUIRES
       raise Error, "#{where}: unknown prerequisite(s) #{unknown.join(', ')}" if unknown.any?
 
+      if entry.key?("refresh") && entry["refresh"].to_s.strip.empty?
+        raise Error, "#{where}: `refresh` is blank (leave it out when the service has none)"
+      end
+
       commands = Array(requires["commands"]).map(&:to_s)
+      dotenv = Array(requires["dotenv"]).map(&:to_s)
       Service.new(name: entry["name"].to_s, sop: entry["sop"].to_s, install: entry["install"].to_s,
-                  status: entry["status"].to_s, claude_auth: requires["claude_auth"]&.to_s, commands: commands)
+                  status: entry["status"].to_s, refresh: entry["refresh"]&.to_s,
+                  claude_auth: requires["claude_auth"]&.to_s, commands: commands, dotenv: dotenv)
     end
   end
 
@@ -118,11 +132,13 @@ module LocalServices
   class Restorer
     attr_reader :items
 
-    def initialize(services:, hub:, runner: Restorer.default_runner, which: Restorer.default_which, out: $stdout)
+    def initialize(services:, hub:, runner: Restorer.default_runner, which: Restorer.default_which,
+                   dotenv: Restorer.default_dotenv, out: $stdout)
       @services = services
       @hub = hub
       @runner = runner
       @which = which
+      @dotenv = dotenv
       @out = out
       @items = []
     end
@@ -133,6 +149,23 @@ module LocalServices
 
     def self.default_which
       ->(cmd) { ENV.fetch("PATH", "").split(File::PATH_SEPARATOR).any? { |d| File.executable?(File.join(d, cmd)) } }
+    end
+
+    # Whether KEY is set, not blank, in the hub checkout's .env. The same rule as
+    # AgentApi#dotenv_secret (a `KEY=` line with an empty value is not set), read
+    # without keeping the value. An unreadable file or a directory reads as unset.
+    def self.default_dotenv
+      lambda do |hub, key|
+        path = File.join(hub, ".env")
+        next false unless File.file?(path) && File.readable?(path)
+
+        line = File.readlines(path, encoding: "UTF-8").find { |l| l.start_with?("#{key}=") }
+        value = line.to_s.split("=", 2)[1].to_s.strip
+        value = value[1..-2] if value.length >= 2 && %w[" '].include?(value[0]) && value[-1] == value[0]
+        !value.to_s.strip.empty?
+      rescue SystemCallError
+        false
+      end
     end
 
     def run
@@ -177,6 +210,12 @@ module LocalServices
         end
         return
       end
+      unset = service.dotenv.reject { |key| @dotenv.call(@hub, key) }
+      if unset.any?
+        fail_line "#{service.name} skipped", "needs #{unset.join(', ')} in #{File.join(@hub, '.env')}"
+        unset.each { |key| owe_dotenv(key) }
+        return
+      end
       if service.claude_auth && sign_in.last != service.claude_auth
         fail_line "#{service.name} skipped", "waits on Claude Code signed in with #{service.claude_auth}"
         return
@@ -208,6 +247,22 @@ module LocalServices
       @runner.call(Shellwords.split(line), @hub)
     rescue SystemCallError => e
       [ "#{e.class}: #{e.message}", nil ]
+    end
+
+    # Under launchd a service has no 1Password session (the plist passes no
+    # OP_SERVICE_ACCOUNT_TOKEN), so a secret it reads must sit in the hub's .env.
+    # The text names no service, so two services owed the same key list it once.
+    def owe_dotenv(key)
+      env = File.join(@hub, ".env")
+      item, field = DOTENV_SOURCES[key]
+      command = if item
+                  ref = OpVaults.ref(item, field)
+                  %(printf '#{key}=%s\\n' "$(op read '#{ref}')" >> #{Shellwords.escape(env)}   # then: #{RERUN})
+                else
+                  "$EDITOR #{Shellwords.escape(env)}   # add #{key}=…, then: #{RERUN}"
+                end
+      owe :service, "Put #{key} in #{env}: the launchd services read it only there (they have no 1Password session)",
+          command
     end
 
     def owe(rank, text, command)

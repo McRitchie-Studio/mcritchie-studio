@@ -56,7 +56,7 @@ class ReleaseArgvGuardTest < ActionDispatch::IntegrationTest
   # The five flags bin/release consumes from ARGV at LOAD time, before the
   # dispatcher runs. They are deliberately absent from COMMANDS: by the time the
   # guard reads the line they are already gone.
-  GLOBAL_FLAGS = %w[--dry-run --prod --local --yes --skip-test-gate].freeze
+  GLOBAL_FLAGS = %w[--dry-run --prod --local --yes --skip-test-gate --train].freeze
 
   # Drive the REAL `guard_argv!` for each command line, in a subprocess that
   # requires bin/release.rb without dispatching. Returns one result hash per line:

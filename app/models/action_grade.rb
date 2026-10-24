@@ -1,4 +1,4 @@
-# The grading layer over the learning heartbeat — Xan's feedback record.
+# The grading layer over the learning heartbeat — Ritch's feedback record.
 #
 # A grade targets EXACTLY ONE of two things (an additive dual-FK, not a
 # polymorphic rewrite): a raw agent action OR a narrated agent activity. The model
@@ -7,12 +7,12 @@
 # Either target can carry up to TWO ActionGrade rows, distinguished by the
 # `grader` column:
 #
-#   grader = "alex"  — Xan's grade of the action/activity itself.
-#   grader = "mcr"   — Mr. McRitchie's audit OF Xan's grade for that target
-#                      (the recursive audit: McRitchie grades Xan's grading).
+#   grader = "ray"   — Ritch's grade of the action/activity itself.
+#   grader = "mcr"   — Mr. McRitchie's audit OF Ritch's grade for that target
+#                      (the recursive audit: McRitchie grades Ritch's grading).
 #
 # The (agent_action_id, grader) and (agent_activity_id, grader) pairs are each
-# unique, so a target holds at most one Xan grade and one McRitchie audit —
+# unique, so a target holds at most one Ritch grade and one McRitchie audit —
 # never two of either.
 #
 # Each grade is a 4–7 word feedback `slug` plus a BINARY `disposition`
@@ -29,14 +29,16 @@
 # (the heartbeat UI wiring, T4) is responsible for wrapping these in rescue_and_log
 # with target/parent context, per backend discipline.
 class ActionGrade < ApplicationRecord
-  # Who graded — TWO rows per action: Xan's grade, and the McRitchie audit of it.
-  XAN     = "xan"
+  # Who graded — TWO rows per action: Ritch's grade, and the McRitchie audit of it.
+  RAY     = "ray"
   MCR     = "mcr"
-  GRADERS = [XAN, MCR].freeze
-  # The seat's retired slug (renamed 2026-09-24). Kept one release as a
-  # compile-time alias for an out-of-tree caller; every in-tree reference says XAN,
-  # and a row posted as "alex" is normalized to XAN before validation below.
-  ALEX    = XAN
+  GRADERS = [RAY, MCR].freeze
+  # The seat's retired slugs (`alex` until 2026-09-24, `xan` until 2026-10-18).
+  # Kept as compile-time aliases for an out-of-tree caller; every in-tree
+  # reference says RAY, and a row posted as "alex" or "xan" is normalized to RAY
+  # before validation below.
+  ALEX    = RAY
+  XAN     = RAY
 
   # Binary disposition — the credit signal. No "pending" here: a row only exists
   # once a grader has committed to a verdict (the UI's pending state is the
@@ -88,7 +90,7 @@ class ActionGrade < ApplicationRecord
   # Exactly one target — a grade is of an action OR an activity, never both, never
   # neither (replaces the old agent_action presence guarantee).
   validate :exactly_one_target
-  # One Xan grade + one McRitchie audit PER TARGET — never two of either. The
+  # One Ritch grade + one McRitchie audit PER TARGET — never two of either. The
   # uniqueness is scoped per FK and only fires for the FK that is actually set,
   # so an action grade and an activity grade by the same grader never collide.
   validates :grader, uniqueness: { scope: :agent_action_id }, if: -> { agent_action_id.present? }
@@ -104,7 +106,7 @@ class ActionGrade < ApplicationRecord
   scope :seeded_candidates, -> { where.not(source_activity_slug: nil) }
   # Candidates still AWAITING grade — seeded but not yet banked into the Insight
   # Bank nor set aside. The read the pipeline surfaces (heartbeat#pipeline): the
-  # queue of block-mined lessons for the operator/Xan to promote or discard.
+  # queue of block-mined lessons for the operator/Ritch to promote or discard.
   scope :pending_candidates, -> { seeded_candidates.where(banked: false, discarded: false) }
 
   # The learning loop's OUTPUT — the curated lessons a FRESH session carries in.
@@ -136,8 +138,8 @@ class ActionGrade < ApplicationRecord
   # invalid write (a grade is a deliberate act, not best-effort telemetry).
   #
   # `grader` is the CALLER's responsibility to constrain — the agent path passes
-  # XAN and NEVER MCR. That makes `grader` PROVENANCE, NOT PROOF: it records who
-  # wrote the row. The two writers are the bearer agent API (grader forced to XAN)
+  # RAY and NEVER MCR. That makes `grader` PROVENANCE, NOT PROOF: it records who
+  # wrote the row. The two writers are the bearer agent API (grader forced to RAY)
   # and the heartbeat browser surface (admin only), so an `mcr` row is an admin's;
   # test/integration/heartbeat_grade_auth_test.rb holds that line.
   def self.record_activity_grade(activity:, grader:, disposition: nil, slug: nil, long_form: :unset, intent: nil)
@@ -178,10 +180,11 @@ class ActionGrade < ApplicationRecord
     update!(discarded: true, banked: false)
   end
 
-  def xan?
-    grader == XAN
+  def ray?
+    grader == RAY
   end
-  alias alex? xan? # retired name, one release (see ALEX above)
+  alias alex? ray? # retired names (see ALEX and XAN above)
+  alias xan? ray?
 
   def mcr?
     grader == MCR

@@ -9,7 +9,11 @@
     props.returnTo — where the emailed link lands after sign-in (kept to a
                      same-origin path by the server). Google cannot carry it: a
                      page that needs Google to come back must also leave itself
-                     in the session (see LandingController and /build).
+                     in the session (see LandingController). /build's signed-out
+                     Build My App does: its press binds BuildIntake::PendingLaunch
+                     on the server, then opens this modal with an open_modal
+                     Turbo Stream (BuildController#sign_in_to_launch,
+                     app/javascript/modal_stream.js), returnTo its launch landing.
     props.title / props.subtitle — optional copy; sensible defaults below. %>
 <div x-data="{
        email: '', sending: false, error: '',

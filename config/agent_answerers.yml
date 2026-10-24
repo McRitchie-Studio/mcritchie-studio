@@ -5,7 +5,8 @@
 #
 # Owner only while answering is restricted: an addressed message from anyone
 # else (team, client, public, or no person) is stored `held` and never claimed
-# until an admin releases it (the Release button on /admin/agent_messages/:id, or
+# (except under the two exceptions below: public intake and app owners) until
+# an admin releases it (the Release button on /admin/agent_messages/:id, or
 # `bin/rails agent_people:release MESSAGE=<id>`). Add a role here to answer it;
 # what the agent may then SAY to that role is the agent-communication SOP.
 #
@@ -13,3 +14,46 @@
 # takes effect on deploy. Roles: owner, team, client, public.
 answered_roles:
   - owner
+
+# PUBLIC INTAKE (.agents/epics/build-with-xan-design.md; AgentMessages::Answerers
+# #intake?). The one exception to the roles above: on /build, `soul` answers
+# ANYONE, signed out included, but only on threads whose key starts with
+# `thread_prefix` (web:build:<request token>, written only by BuildIntake::Ingest),
+# and only within the caps below (BuildIntake::Caps), which the ingest enforces
+# before a message is stored as answerable. Past a cap the visitor reads a line
+# from code asking them to sign in. Nothing here gives the public any action: the
+# soul's read action is the owner's and team's (AgentMailbox::Audience), and on a
+# build thread the board takes only `intake` cards from a proposal block.
+public_intake:
+  soul: ray
+  thread_prefix: "web:build:"
+  # Answers per request: signed out, then signed in (the signed-in cap only
+  # bounds cost; the signed-out one is the "sign in to keep going" line).
+  turns_per_request: 12
+  signed_in_turns_per_request: 40
+  # Answers per visitor IP (hashed, never stored raw) per hour, across requests.
+  per_ip_per_hour: 20
+  # Signed-out answers across ALL public intake per Denver day.
+  daily_total: 400
+
+# APP OWNERS (Alex, 2026-10-17: "yes, have CTOs answer their own app's owner";
+# AgentMessages::Answerers#app_owner_thread?). The second exception: an app's CTO
+# (a configured one from config/cto_reports.yml, or a client app's client_cto)
+# answers a person whose hub user OWNS that app (AppMembership), but only on that
+# app's web CTO thread, web:<app>:<their user id>, written by
+# AgentMessages::WebIngest. The same person stays held everywhere else: another
+# app's thread, Discord, email. They are answered as a CLIENT of that app (no
+# owner or team action). On that thread only, they may say go / no / change: on a
+# `change` proposal while the app is under its cap (Alex, 2026-10-18;
+# AgentMessages::ProposalConfirm#owner_verdict).
+#
+# Their answers count against the app's usage meter (AgentUsage.owner_meter):
+# the tier's cto_monthly_tokens (config/workspace_packages.yml: Vibe, the free
+# tier every /build app starts on, is 25,000), or, when the app's tier names
+# none, the default below. An admin's lift (apps.cto_cap_lifted_at)
+# removes the cap. At the cap WebIngest answers in code with
+# AgentUsage.cap_reply and no model runs. Remove this block to hold app owners again.
+app_owners:
+  # A conservative default chosen with the feature (not priced by Alex): one
+  # million tokens a month, roughly a few dozen answers (input + cache + output).
+  default_monthly_tokens: 1000000

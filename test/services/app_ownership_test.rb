@@ -25,7 +25,7 @@ class AppOwnershipTest < ActiveSupport::TestCase
     assert_nil ctos.fetch("mcritchie_studio").agent, "no avi Agent row here: the soul still maps"
     assert_equal "avi", ctos.fetch("mcritchie_studio").slug
     assert_equal "turf_monster", AppOwnership.cto_for_agent("turf-monster").domain
-    assert_nil AppOwnership.cto_for_agent("xan"), "a soul that is no app's CTO has no settings page"
+    assert_nil AppOwnership.cto_for_agent("ray"), "a soul that is no app's CTO has no settings page"
   end
 
   test "[unit] an owner manages only their own app; an admin manages every app; nobody else any" do
@@ -44,13 +44,14 @@ class AppOwnershipTest < ActiveSupport::TestCase
     assert_equal 3, AppOwnership.visible_ctos(users(:alex)).size
   end
 
-  test "[unit] sidebar: one app and one CTO by name, two of each as Applications and Agents, none for a non-owner" do
+  test "[unit] sidebar: one app (and its pipeline) and one CTO by name, two of each as Applications and Agents, none for a non-owner" do
     assert_empty AppOwnership.sidebar_links(@stranger)
     assert_empty AppOwnership.sidebar_links(users(:alex)), "an admin who owns nothing gets no owner links"
 
     own!(@owner, apps(:turf_monster))
     single = AppOwnership.sidebar_links(@owner)
-    assert_equal [ [ "Turf Monster", "/applications/turf-monster" ], [ "Turf", "/agents/turf-monster/settings" ] ],
+    assert_equal [ [ "Turf Monster", "/applications/turf-monster" ], [ "Pipeline", "/applications/turf-monster/pipeline" ],
+                   [ "Turf", "/agents/turf-monster/settings" ] ],
                  single.map { |l| [ l.label, l.href ] }
     assert_equal "🐲", single.last.emoji
 
@@ -64,7 +65,7 @@ class AppOwnershipTest < ActiveSupport::TestCase
     alex.save! # fixtures skip callbacks, so give the row its slug
     own!(alex, apps(:mcritchie_studio))
 
-    assert_equal [ "McRitchie Studio", "Avi" ], AppOwnership.sidebar_links(alex).map(&:label)
+    assert_equal [ "McRitchie Studio", "Pipeline", "Avi" ], AppOwnership.sidebar_links(alex).map(&:label)
   end
 
   test "[unit] report channels: the CTO's own bot's postable set when its token is set, else the shared bot's" do

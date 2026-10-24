@@ -228,6 +228,28 @@ what keeps them apart: every degrade writes an `ErrorLog` row with the `Appearan
 as its target. So a thin gallery is read by looking for a row on that look FIRST,
 not by re-running the search.
 
+### Game character models — a player as he looked in one game, built locally in layers
+
+The one-call sheet below anchors on the ESPN headshot, and every video then looks
+like the headshot. A **game character model** is built instead from the player's
+own bare-head photographs and the game's frames (team and league media only), in
+layers: a ten-view face pack, a numberless uniform template, two full bodies and
+six head panels, each through `/v1/images/edits` on the pinned
+`gpt-image-2.5-sunburst-2026-09-08`. The layers are stitched into the 5x2 grid on
+the operator's Mac. A one-call grid laid out wrong 14 times in 14.
+
+**The face gate is local and a floor.** ArcFace (insightface `buffalo_l`) scores
+each generated face against his own bare-head photos. Under **0.70** a face has
+always looked wrong to the operator; above it the score does not rank, so the eye
+picks. Identity in the harvest is the same score against the headshot: a real
+photo scores 0.39 or more, other men 0.31 or less. A vision model labels headwear
+only, because it once called the wrong man the player.
+
+`bin/game-model` runs it and `POST /api/v1/game_looks` files it: the look for that
+game, its iced twin (`Appearances::IcedTwin`), and one `character_sheet` artifact
+each, stamped `game_model_layered` (`Appearances::FileGameLook`). The procedure is
+the `game-character-models` SOP.
+
 ### Character sheets — one headshot in, a whole sheet out
 
 **Training is a stage that can refuse, and it kept refusing.** Six measured

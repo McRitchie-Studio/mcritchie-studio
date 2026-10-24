@@ -1,0 +1,6 @@
+:root { --primary: #0E7490; --surface: #F0FDFA; --text: #134E4A; }
+body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: var(--surface); color: var(--text); }
+.hero { max-width: 520px; margin: 0 auto; padding: 48px 16px; text-align: center; }
+h1 { color: var(--primary); }
+button { background: var(--primary); color: #fff; border: 0; border-radius: 999px; padding: 12px 24px; font-size: 16px; cursor: pointer; }
+footer { text-align: center; padding: 24px 16px; opacity: 0.7; }

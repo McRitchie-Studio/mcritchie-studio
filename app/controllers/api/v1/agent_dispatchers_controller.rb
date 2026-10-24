@@ -8,7 +8,8 @@ module Api
     #
     # AUTH is the board's (BaseController): any agent session or the shared token.
     # A ping names no soul and writes only its own dispatcher row, so it carries no
-    # soul scope; the floor alert reads the newest ping.
+    # soul scope; the floor alert reads the newest primary ping. The answer carries
+    # the row's role and meta.primary_live, which a standby dispatcher reads.
     class AgentDispatchersController < BaseController
       LIST_LIMIT = 20
 
@@ -28,7 +29,9 @@ module Api
         end
         return render_error(error.message, status: :unprocessable_entity, error_code: "WORKER_REQUIRED") if error
 
-        render_data(row.as_api_json)
+        # The role is the board's (AgentDispatcher.set_role!): the dispatcher reads
+        # it, and whether a primary is live, from this answer every minute.
+        render_data(row.as_api_json, meta: { primary_live: AgentDispatcher.primary_live? })
       end
     end
   end

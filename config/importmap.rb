@@ -4,12 +4,33 @@ pin "application"
 pin "@hotwired/turbo-rails", to: "turbo.min.js"
 pin "dropping_text"
 pin "alex_chat"
+pin "agent_chat"
+pin "build_chat"
+pin "build_domain"
+pin "cta_glow"
+pin "build_status"
+pin "build_shell"
+pin "agent_shell"
+pin "agent_reveal"
+pin "chat_follow"
+pin "typing_placeholder"
+pin "cto_chat", to: "agent_chat.js" # the old name, kept import-compatible
 pin "depth_chart"
 pin "scroll_tab_stop"
 pin "logo_gallery"
 pin "logo_editor"
 pin "logo_download"
+# The chat composer's files (app/views/agent_chats/_attachments.html.erb).
+pin "chat_attachments"
+# The CTO chat usage meter's reset countdown (app/views/agent_chats/_tokens_bar.html.erb).
+pin "usage_countdown"
+# The app chat status card's live pill countdown (app/views/agent_chats/_devops_stages.html.erb).
+pin "devops_countdown"
 pin "dreams_filter"
+# Build My App's launch panel (app/views/build/_launch.html.erb).
+pin "build_launch"
+# Turbo Stream action that opens an engine modal (BuildController#sign_in_to_launch).
+pin "modal_stream"
 # chart.js is the self-contained jsDelivr/esm.sh "auto" bundle (auto-registers
 # controllers + scales, @kurkle/color inlined). chartkick is the ESM build,
 # pinned to a UNIQUE filename so propshaft serves THIS file and not the chartkick
@@ -21,3 +42,4 @@ pin "chartkick", to: "chartkick.esm.js" # @5.0.1
 # modules (live_fx, release_fx, ticker, colors) and the *_dom modules that wire them to
 # the page. The partials that need them import the *_dom entry.
 pin_all_from "app/javascript/board", under: "board"
+pin "gallery_motion"

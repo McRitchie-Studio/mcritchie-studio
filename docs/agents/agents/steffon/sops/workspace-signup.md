@@ -57,6 +57,6 @@ the operator's screen plus DNS readiness:
 - Ask for (or read from the screenshot) the Users list showing both addresses.
 - Collect the Google verification TXT value for [`domain-dns`](./domain-dns.md).
 
-Record: `bin/task update <launch-task> --checks "[control] workspace-signup: alex@ + team@ exist; verify TXT collected"`.
+Record: `bin/task note <launch-task> --comment "workspace-signup: alex@ + team@ exist; verify TXT collected"`.
 The real proof lands in step 4, when `workspace:check_mailbox` gets a token as
 each address.

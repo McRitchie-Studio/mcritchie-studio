@@ -85,7 +85,7 @@ class DreamOrgChart
   def souls_of(dream) = dream.souls.map { |soul| DreamBank.canonical_soul(soul) }
 
   # The canonical soul slug an entry's directory names (turf_monster -> turf-monster,
-  # alex -> xan), or nil for a shared module.
+  # alex/xan -> ray), or nil for a shared module.
   def soul_dir(entry)
     match = %r{\Adocs/agents/agents/([^/]+)/}.match(entry.path)
     match && DreamBank.canonical_soul(match[1])

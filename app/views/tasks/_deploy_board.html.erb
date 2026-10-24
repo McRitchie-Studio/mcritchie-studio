@@ -84,6 +84,11 @@ function kanbanBoard(live, liveFx) {
     // Whether the lane row NEEDS its horizontal scroller right now — see the wrapper's
     // own comment for why that question decides whether the headers can pin at all.
     laneScroll: false,
+    // Whether the BOARD is too narrow for six lanes. The container query on the lane row
+    // decides that (see the wrapper); this only reads its answer back off the probe, so
+    // the All Stages toggle shows exactly when lanes are collapsed and the threshold lives
+    // in one place, the stylesheet.
+    boardNarrow: false,
     _laneRo: null,
 
     stageLabels: <%= raw Task::STAGE_LABELS.to_json %>,
@@ -135,6 +140,16 @@ function kanbanBoard(live, liveFx) {
       // cannot oscillate: turning the scroller on does not make the content narrower.
       const lanes = this.$refs.lanes;
       if (lanes) this.laneScroll = lanes.scrollWidth > lanes.clientWidth + 1;
+      const probe = this.$refs.laneProbe;
+      if (probe) this.boardNarrow = getComputedStyle(probe).display !== 'none';
+    },
+
+    // All Stages changes how many lanes the row holds without changing the row's own
+    // box, so the ResizeObserver never hears it: re-measure once Alpine has applied the
+    // collapse classes, on the next tick.
+    toggleAllStages() {
+      this.showAllCols = !this.showAllCols;
+      this.$nextTick(() => this.measureLanes());
     },
 
     // ONLY THE LANE ROW IS WATCHED NOW, and only for whether it overflows.
@@ -451,7 +466,6 @@ document.addEventListener('turbo:before-cache', function() {
     ONE place instead of restating it. A spec that restated it went stale the day the
     beat changed, and its failure looked like a broken animation rather than a stale test. %>
 <section x-data="kanbanBoard(<%= live_updates.to_json %>, <%= (live_updates && crew_board == :deploy).to_json %>)" data-test="kanban-board"
-         @scroll.window="measureLanes()"
          @resize.window="measureLanes()"
          data-beat-ms="<%= (Release::BOARD_FLIP_CADENCE * 1000).round %>" class="min-h-screen">
   <!-- Header — Dashboard/Stages as small links above the title; the title says
@@ -465,11 +479,16 @@ document.addEventListener('turbo:before-cache', function() {
           New Task / Archived are pushed to the far right with ml-auto. %>
       <%= render "components/sub_nav", nav: :board_views, current: current_page %>
       <% if columns.size > 4 %>
-        <%# Below 1400px the upstream lanes collapse (Building stays — it carries
-            blocked, needs-attention tasks); this reveals all six (x-scroll).
-            Hidden at wider widths where all six already fit. %>
-        <button type="button" @click="showAllCols = !showAllCols"
-                class="hidden max-[1399px]:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition bg-surface text-secondary border border-subtle hover:text-heading"
+        <%# When the board is too narrow for six lanes the upstream ones collapse
+            (Building with them — it carries blocked, needs-attention tasks); this
+            reveals all six (x-scroll). Shown only while the lane row's container query
+            reports the board narrow (boardNarrow, read off its probe), so it never
+            offers a toggle that does nothing. x-show owns display. %>
+        <button type="button" @click="toggleAllStages()"
+                x-show="boardNarrow" style="display: none"
+                data-test="all-stages-toggle"
+                :aria-pressed="showAllCols ? 'true' : 'false'"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition bg-surface text-secondary border border-subtle hover:text-heading"
                 :class="showAllCols ? 'bg-primary text-white border-primary' : ''">
           <span>All Stages</span>
         </button>
@@ -560,36 +579,47 @@ document.addEventListener('turbo:before-cache', function() {
       So the scroller is applied only while the lanes ACTUALLY overflow (measureLanes
       reads scrollWidth vs clientWidth, which reports the same either way). On the wide
       board that is never — six lanes at their 13rem floor plus gaps measure 1328px,
-      which the board's 1336px at a 1400px window holds, and below 1400px the board
-      collapses to three — so the headers pin. (At 13.5rem the six measured 1376px,
-      which overflowed every window from 1400 to 1439px: the scroller came on there,
-      and the headers' pinned-stack `top` then pushed them DOWN inside it, 123px over
-      their lane's first card at rest and 36px once the navbar had collapsed.) It
-      switches itself on for the one case that needs it, All Stages forcing six lanes
-      into a viewport that cannot hold them, and there the headers stop pinning: they
-      go `position: static` (application.css, keyed on data-lane-scroll), because a sticky header
-      inside the scroller does not ride up harmlessly, it is offset by its `top`
-      from the scroller's own top edge, over the cards. That is the
-      honest trade, and it is measured rather than guessed at a breakpoint: a fixed
-      `min-[1440px]` override was tried first and LOST to `sm:overflow-x-auto`, because
-      Tailwind v4 emits arbitrary `min-[…]` media queries BEFORE its named ones, so the
-      later `sm` rule won at every width and the headers silently never pinned. %>
-  <div class="flex flex-col gap-4 overflow-x-visible pb-4 sm:flex-row"
+      which is 83rem, and the row collapses to three below exactly that width — so the
+      headers pin. It switches itself on for the one case that needs it, All Stages
+      forcing six lanes into a board that cannot hold them, and there the headers stop
+      pinning: they go `position: static` (the header's `group-data-[lane-scroll=true]/lanes`
+      variant), because a sticky header inside the scroller does not ride up harmlessly,
+      it is offset by its `top` from the scroller's own top edge, over the cards.
+
+      HOW MANY LANES IS ASKED OF THE BOARD, NOT THE WINDOW. The row is a container
+      (`@container/lanes`) and each collapsible lane hides below `@max-[83rem]/lanes`.
+      A window breakpoint (`max-[1399px]`) guessed the board's width from the window's,
+      and the guess was wrong twice: a media query's width includes a classic 17px
+      scrollbar the board does not get, and the page gutters are not the window's. At
+      13.5rem lanes and a 1400px breakpoint the six overflowed every window from 1400 to
+      1439px, the scroller came on, and each header sat 123px over its first card
+      (board-lane-header-overlap). The container query cannot drift from the board, and
+      the probe below hands its answer to Alpine for the All Stages toggle.
+
+      The container is the lane row itself, which is safe because nothing in a lane is
+      `position: fixed` (layout containment would make the row their containing block)
+      and the row's own stacking context sits under the z-50 nav as the headers did.
+      (A `min-[1440px]` override was once tried here and LOST to `sm:overflow-x-auto`:
+      Tailwind v4 emits arbitrary `min-[…]` media queries BEFORE its named ones.) %>
+  <div class="@container/lanes group/lanes flex flex-col gap-4 overflow-x-visible pb-4 sm:flex-row"
        data-test="kanban-lanes"
        x-ref="lanes"
        :class="laneScroll ? 'sm:overflow-x-auto' : ''"
        :data-lane-scroll="laneScroll">
+    <%# The container query's answer, readable from script: displayed only while the
+        board is too narrow for six lanes. Absolute, so it takes no flex slot or gap. %>
+    <span class="absolute hidden @max-[83rem]/lanes:block" x-ref="laneProbe" data-lane-probe aria-hidden="true"></span>
     <% columns.each_with_index do |stage, idx| %>
       <%# Blocked tasks ride Building, but active building work stays first so a
           re-claimed blocked task becomes topical again. %>
       <% column_tasks = Task.board_column_tasks(@tasks_by_stage, stage) %>
-      <%# On a six-lane board (Deployments) the upstream lanes collapse below 1400px
-          unless "All Stages" is on, leaving just the last three (reviewed · assembled
-          · shipped). Building collapses with them; blocked/needs-attention tasks ride
+      <%# On a six-lane board (Deployments) the upstream lanes collapse while the board
+          is narrower than six 13rem lanes and their gaps (83rem), unless "All Stages"
+          is on, leaving just the last three (reviewed · assembled · shipped). Building collapses with them; blocked/needs-attention tasks ride
           the Building lane, so a stalled task stays reachable via "All Stages" at narrow. %>
       <% collapsible = columns.size > 4 && idx < columns.size - 3 %>
       <div class="w-full flex-none sm:flex-1 <%= columns.size > 4 ? "sm:min-w-[13rem]" : "sm:min-w-[190px]" %>"
-           <% if collapsible %>:class="showAllCols ? '' : 'max-[1399px]:hidden'"<% end %>>
+           <% if collapsible %>:class="showAllCols ? '' : '@max-[83rem]/lanes:hidden'"<% end %>>
         <!-- Column Header -->
         <%# PINNED, so the lane you are reading keeps its name while you scroll its cards.
             It sticks to the bottom of the engine's pinned stack, so it never
@@ -605,7 +635,12 @@ document.addEventListener('turbo:before-cache', function() {
             edges" was tried and is exactly wrong: it made every header 8px wider than its
             lane, which overflowed the row by 4px, which turned the measured scroller back
             on, which un-stuck all six headers. %>
-        <div class="sticky z-30 mb-3 rounded-t-lg bg-page px-1 py-2"
+        <%# `group-data-[lane-scroll=true]/lanes:static`: while the lane row scrolls
+            sideways (All Stages on a narrow board) the header sits in the flow — inside
+            the scroller its `top` would offset it from the scroller's edge, over its
+            first card. A variant on the header, not an Alpine style bind (that would
+            fight the composed top) and not a stylesheet rule keyed on test hooks. %>
+        <div class="sticky group-data-[lane-scroll=true]/lanes:static z-30 mb-3 rounded-t-lg bg-page px-1 py-2"
              data-test="stage-header"
              data-stage="<%= stage %>"
              <%# THE PINNED STACK, COMPOSED BY THE ENGINE. One variable, and the

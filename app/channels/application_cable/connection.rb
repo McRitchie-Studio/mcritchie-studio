@@ -1,9 +1,20 @@
 module ApplicationCable
-  # /cable admits admins only. Every stream the hub broadcasts (the deployments
-  # board, the activity feed) carries ops HTML, and every page that subscribes to
-  # one sits behind the admin wall (app/controllers/concerns/admin_wall.rb). A
-  # signed Turbo stream name never expires, so a name saved while those pages were
-  # public would otherwise keep streaming board HTML to whoever holds it.
+  # /cable admits any SIGNED-IN user with a current session; what they may hear
+  # is each channel's own check, made at subscribe:
+  #
+  #   Turbo::StreamsChannel  admins only (TurboStreamsAdminOnly, below). Every
+  #                          stream it carries (the deployments board, the
+  #                          activity feed) is ops HTML behind the admin wall
+  #                          (app/controllers/concerns/admin_wall.rb). A signed
+  #                          Turbo stream name never expires, so a name saved
+  #                          while those pages were public would otherwise keep
+  #                          streaming board HTML to whoever holds it.
+  #   CtoChatChannel         the one user a CTO web chat stream names, while they
+  #                          may manage that app (app owners are not admins).
+  #
+  # Until the CTO web chat (2026-10-16) the connection itself refused non-admins.
+  # A channel added later must make its own check: ApplicationCable::Channel
+  # refuses a non-admin unless the channel overrides `authorized?`.
   #
   # The user is read from the session cookie exactly as the engine's controller
   # auth reads it (Studio::ErrorHandling#current_user and #verify_session_token):
@@ -44,18 +55,18 @@ module ApplicationCable
     end
 
     def connect
-      self.current_user = admin_from_session || reject_unauthorized_connection
+      self.current_user = user_from_session || reject_unauthorized_connection
     end
 
     private
 
-    def admin_from_session
+    def user_from_session
       session = request.session
       user_id = session[Studio.session_key.to_s] || session[Studio.session_key]
       return nil if user_id.blank?
 
       user = User.find_by(id: user_id)
-      return nil unless user&.admin?
+      return nil if user.nil?
       return nil unless session_token_current?(user, session)
 
       user

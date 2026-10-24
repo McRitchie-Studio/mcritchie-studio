@@ -17,7 +17,7 @@ summons a light specialist at his discretion, drives the verdict, and merges.
 
 A focus session reviews its own epic's PRs by tier instead
 ([`../../../modules/focus-session.md`](../../../modules/focus-session.md)): there,
-a prose-only PR gets Xan alone, who reviews and merges it. The documentation
+a prose-only PR gets Ritch alone, who reviews and merges it. The documentation
 seat merges docs-shape PRs only, measured by `bin/merge-permit` at the merge
 ([`pr-review-primary.md`](pr-review-primary.md)); every other PR is Carl's to
 merge. This sweep runs Carl plus a light on every PR.
@@ -44,7 +44,7 @@ cd /Users/alex/projects/mcritchie-studio
    summons a **light specialist** at his discretion, drives the verdict, and
    **merges the feat PR into `accepted`** himself. Runs
    [`pr-review-primary.md`](pr-review-primary.md).
-   - **The light specialist** (Shannon · Jasper · Steffon · Xan) is Carl's second
+   - **The light specialist** (Shannon · Jasper · Steffon · Ritch) is Carl's second
      set of eyes, not a co-owner. Runs [`pr-review-light.md`](pr-review-light.md).
      The light does not run the gates or drive the verdict; a defect it spots
      reaches Carl as a scout report. `bin/reviewer-select <task> --no-record`

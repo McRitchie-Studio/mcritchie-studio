@@ -1,0 +1,182 @@
+/* The CTA glow primitive (app/helpers/cta_glow_helper.rb; app/javascript/cta_glow.js).
+
+   A wrapper around ONE button:
+
+     <span class="cta-glow" style="--glow-a: #…; --glow-b: #…; --glow-c: #…">
+       <button class="btn btn-primary w-full">Choose Theme</button>
+     </span>
+
+   Two blurred layers behind the button, each the wrapper's own shape 3px
+   larger: ::before a conic gradient of --glow-a, --glow-b and --glow-c, and
+   ::after the same gradient turned half way round. ::after fades in and out
+   over ::before, so the colours trade places round the button. Without the
+   variables it takes the studio's own primary and accent. The three colours
+   are registered properties, so a change (picking another theme on the theme
+   card) blends over 600ms instead of jumping. The wrapper isolates, so the
+   glow paints above the card's background and below the button; the button's
+   own focus ring is drawn on the button, above the glow.
+
+   Why a fade and not a turn (task build-flow-polish): the motion is OPACITY,
+   so the compositor runs it and nothing repaints a frame (the first version
+   animated a registered angle inside the gradient, repainting the blurred
+   layer every frame), and neither layer ever grows past 3px beyond the CTA (a
+   rotated layer's corners count as scrollable overflow: a turning square
+   behind a full-width button gave every chat thread, and the launch page on a
+   phone, a pulsing sideways scroll). The blur that reaches further is paint,
+   not layout, so it never scrolls anything.
+
+   GPU: two layers per CTA, and none when it cannot be seen or is spent:
+   data-glow-visible="false" (cta_glow.js, an IntersectionObserver, when the
+   CTA is scrolled off screen), data-glow="off" (a spent CTA, or the domain
+   card's Use Domain with no valid name), or a disabled button. Under
+   prefers-reduced-motion the glow holds still. Unlayered, like
+   agent_typing.css.
+
+   More than three colours: --glow-stops, when set, is the gradient's whole
+   colour list (comma separated, first colour repeated last so the ring closes)
+   and replaces --glow-a/b/c. It is a plain, unregistered property, so it does
+   not blend on a change; the theme card keeps the three registered colours.
+   --glow-reach (how far past the CTA each layer sits, default 3px),
+   --glow-blur (12px) and --glow-strength (the layers' peak opacity, 0.75)
+   tune one glow louder or quieter. A larger reach is layout overflow, so use
+   it only where the CTA's container clips (the landing hero does).
+   .cta-glow-rainbow is the one preset (task landing-build-ctas: the landing
+   hero's Build Your App); it carries its own deeper stops in light mode.
+
+   The ORBIT variant (task build-cards-quality-pass; Alex, 2026-10-19: Choose
+   Theme wears the MOVING multi-colour glow of the Turf Monster team cards,
+   turf-monster .holo-border-glow). `.cta-glow-orbit` on the wrapper and one
+   `<span class="cta-glow-ring" aria-hidden="true">` inside it, before the
+   button. The ring is the wrapper's shape --glow-reach larger, with
+   overflow: hidden, and its ::before is a conic gradient of wedges in
+   --glow-a, --glow-b and --glow-c, three times the ring's width, turning
+   round. The turn is a TRANSFORM, so the compositor runs it, and the ring
+   clips it: the turning square lives inside a box only 3px past the CTA, so
+   it adds no scrollable overflow (the earlier turning glow without the clip
+   gave every chat thread a sideways scroll; e2e/build_cards_quality.spec.js
+   checks a 375px phone). The ring's own blur is paint, so the bloom spreads
+   without scrolling anything. The fading ::after is dropped and ::before
+   stays, quieter, as the steady base. Spent, off screen or disabled, the ring
+   is gone like the rest; under reduced motion the wedges hold still. */
+
+@property --glow-a { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --glow-b { syntax: "<color>"; inherits: true; initial-value: transparent; }
+@property --glow-c { syntax: "<color>"; inherits: true; initial-value: transparent; }
+
+.cta-glow {
+  --glow-a: rgb(var(--color-primary-rgb));
+  --glow-b: var(--color-accent);
+  --glow-c: rgb(var(--color-primary-rgb));
+  position: relative;
+  isolation: isolate;
+  display: block;
+  transition: --glow-a 600ms ease, --glow-b 600ms ease, --glow-c 600ms ease;
+}
+
+.cta-glow::before,
+.cta-glow::after {
+  content: "";
+  position: absolute;
+  inset: calc(-1 * var(--glow-reach, 3px));
+  z-index: -1;
+  border-radius: 9999px;
+  background: conic-gradient(from var(--glow-from, 0deg), var(--glow-stops, var(--glow-a), var(--glow-b), var(--glow-c), var(--glow-a)));
+  filter: blur(var(--glow-blur, 12px));
+  opacity: var(--glow-strength, 0.75);
+  pointer-events: none;
+}
+
+.cta-glow::after {
+  --glow-from: 180deg;
+  opacity: 0;
+  animation: cta-glow-trade 3s ease-in-out infinite alternate;
+}
+
+.cta-glow[data-glow="off"]::before,
+.cta-glow[data-glow="off"]::after,
+.cta-glow[data-glow-visible="false"]::before,
+.cta-glow[data-glow-visible="false"]::after,
+.cta-glow:has(> :disabled)::before,
+.cta-glow:has(> :disabled)::after,
+.cta-glow:has(> [data-build-glow="false"])::before,
+.cta-glow:has(> [data-build-glow="false"])::after {
+  display: none;
+}
+
+/* The orbit variant (see the header). */
+.cta-glow-orbit {
+  --glow-strength: 0.45;
+}
+
+.cta-glow-orbit::after {
+  display: none;
+}
+
+.cta-glow-ring {
+  position: absolute;
+  inset: calc(-1 * var(--glow-reach, 3px));
+  z-index: -1;
+  border-radius: 9999px;
+  overflow: hidden;
+  filter: blur(var(--glow-ring-blur, 6px)) saturate(1.3);
+  pointer-events: none;
+}
+
+.cta-glow-ring::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 300%;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%) rotate(0deg);
+  background: conic-gradient(
+    transparent 0%, var(--glow-a) 10%, transparent 22%,
+    transparent 28%, var(--glow-b) 40%, transparent 52%,
+    transparent 58%, var(--glow-c) 70%, transparent 82%,
+    transparent 86%, var(--glow-a) 94%, transparent 100%);
+  animation: cta-glow-orbit 4s linear infinite;
+}
+
+@keyframes cta-glow-orbit {
+  to { transform: translate(-50%, -50%) rotate(1turn); }
+}
+
+.cta-glow[data-glow="off"] > .cta-glow-ring,
+.cta-glow[data-glow-visible="false"] > .cta-glow-ring,
+.cta-glow:has(> :disabled) > .cta-glow-ring {
+  display: none;
+}
+
+/* The rainbow preset: seven stops round the ring, the first repeated to close
+   it. These 500-weight stops read as a halo on the dark navy page. */
+.cta-glow-rainbow {
+  --glow-stops: #ef4444, #f97316, #eab308, #22c55e, #06b6d4, #6366f1, #d946ef, #ef4444;
+  --glow-reach: 8px;
+  --glow-blur: 16px;
+  --glow-strength: 1;
+}
+
+/* Light mode (task preview-domain-mcritchie-app; Alex, 2026-10-19: a louder
+   rainbow in light mode). Over the pale hero the 16px blur spread each colour
+   thin and the ring read as a faint smudge in which yellow and cyan vanished.
+   The light theme (the html element without .dark) takes a tighter blur (8px)
+   and a slightly longer reach (10px), so each band stays dense, and swaps four
+   stops: deeper red, green and indigo hold their hue on white, and a brighter
+   yellow (#facc15) stays yellow where the 500 weight muddied to olive. The
+   hero's section clips the reach (e2e/landing_build_cta.spec.js samples a
+   375px phone for sideways scroll); the dark theme keeps the preset above. */
+:root:not(.dark) .cta-glow-rainbow {
+  --glow-stops: #dc2626, #f97316, #facc15, #16a34a, #06b6d4, #4f46e5, #c026d3, #dc2626;
+  --glow-reach: 10px;
+  --glow-blur: 8px;
+}
+
+@keyframes cta-glow-trade {
+  to { opacity: var(--glow-strength, 0.75); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta-glow::after { animation: none; }
+  .cta-glow-ring::before { animation: none; }
+}

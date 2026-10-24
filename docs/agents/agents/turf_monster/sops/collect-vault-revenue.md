@@ -93,7 +93,7 @@ So hop 1 needs **two human signatures**: `GovernanceConfig` stores 3 for
 `sweep_operator_revenue` (read on chain 2026-10-14), the server supplies one, and
 two of Alex's wallets supply the rest: `7ZDJ`, then `3Qj4`, then `9gAC`. Hop 2 needs
 **three** Squads approvals: the two agent seats cast theirs, so it needs **one**
-of Alex's. The retired keys `8K81…` (Xan) and `CytJ…` (Mason) left the set on
+of Alex's. The retired keys `8K81…` (Ritch) and `CytJ…` (Mason) left the set on
 2026-10-14 and can no longer sign.
 
 ## The money model — why sweeping strands no payout

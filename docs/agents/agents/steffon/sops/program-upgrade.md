@@ -163,7 +163,7 @@ so two programs' cards cannot collide.
   mainnet signature needs Mr. McRitchie's ruling on that one instance. The app's
   own server key (`4S39`, `solana.turf.server`, since 2026-10-14) signing inside
   the running app is the app, not an agent. The
-  v0.26 mainnet `init_governance` followed at `5KqNaY9r…` (slot 456162765), signed by an agent with `8K81` and `CytJ` under Mr. McRitchie's one-word ruling "A" on Xan's offer of "a one-time grant: right after you execute, an agent runs init_governance with 8K81 + Mason's CytJ" (`mainnet-v026-upgrade`, activity-18004).
+  v0.26 mainnet `init_governance` followed at `5KqNaY9r…` (slot 456162765), signed by an agent with `8K81` and `CytJ` under Mr. McRitchie's one-word ruling "A" on Ritch's offer of "a one-time grant: right after you execute, an agent runs init_governance with 8K81 + Mason's CytJ" (`mainnet-v026-upgrade`, activity-18004).
   Outside the exception, an agent runs only reads and dry runs on mainnet:
   `squad-upgrade.js` without `--send`, `squad-inventory.js`,
   `check-signer-slots.js`, `bin/program-drift`.

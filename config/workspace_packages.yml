@@ -32,6 +32,16 @@
 #                   ("Custom"), or "Pricing coming soon" without one
 #   cto_monthly_tokens  the app's monthly CTO token allowance; blank = unlimited
 #                   (see `cto_usage` below)
+#   apps_per_account  how many apps one account may hold on this tier (requests
+#                   queued, building or live; AppRequest#apps_per_account_limit);
+#                   blank = unlimited. Admins are never capped (showcase builds).
+#                   Vibe was one app until 2026-10-18, when Mr. McRitchie set it
+#                   unlimited "for now", kept here so it can change back
+#   building_lanes  how many of the app's tasks may sit in `building` at once
+#                   (its concurrent task lanes); blank = unlimited. More work
+#                   waits in `designed`, in order. Enforced on the claim to
+#                   building (BuildingLanes, docs/agents/system/client-pipeline.md);
+#                   an app with no tier, and the hub itself, is never capped
 #   comp            the real client the tier was worked back from. Internal: the
 #                   cards do not name clients; the admin SOP map does
 #   card_groups     the card_lanes groups this card shows, in order
@@ -97,7 +107,8 @@ billing:
 # may use in a calendar month (America/Denver), summed from each answer's run
 # summary (input + cache read + cache write + output). Blank (~) is UNLIMITED:
 # Mr. McRitchie's default of 2026-10-16 is caps present but off until he prices
-# them. Owner and team answers never count and are never capped.
+# them; the first one priced is Vibe's, 25,000 (2026-10-19). Owner and team
+# answers never count and are never capped (an APP owner is metered as a client).
 #
 #   warn_percent  a reply past this share of the allowance carries a notice
 #   topup         a token top-up offered when no higher package has a bigger
@@ -167,21 +178,29 @@ card_lanes:
 packages:
   - key: vibe
     name: Vibe
-    tagline: A real app built by our agents, live at your-app.mcritchie.studio.
+    tagline: A real app built by our agents, live at your-app.mcritchie.app.
     price_monthly: 0
-    cto_monthly_tokens: ~
+    # The free tier's CTO chat allowance: very small (Mr. McRitchie, 2026-10-19),
+    # about 15-25 replies a month. The first version's build never counts: the
+    # launcher's runs write no answer rows (AgentUsage#scope also skips its
+    # build-progress lines). At the cap the CTO answers AgentUsage.cap_reply.
+    cto_monthly_tokens: 25000
+    apps_per_account: ~
+    building_lanes: 1
     comp: 10and5
     card_groups: [Application]
     lanes:
       app: { sub: Bring your idea to life }
       host_storage: { sub: "light server, read-only data" }
-      domain: { sub: on your-app.mcritchie.studio, status: missing }
+      domain: { sub: on your-app.mcritchie.app, status: missing }
     cta: { label: Build your app, action: build }
   - key: builder
     name: Builder
     tagline: Your app on your own domain, with real data behind it.
     price_monthly: 100
     cto_monthly_tokens: ~
+    apps_per_account: ~
+    building_lanes: 2
     comp: Cyvasse
     card_groups: [Application, Marketing]
     lanes:
@@ -194,6 +213,8 @@ packages:
     tagline: "Your fractional CTO: we build, run and secure your product."
     price_monthly: 500
     cto_monthly_tokens: ~
+    apps_per_account: ~
+    building_lanes: 3
     comp: Commercial Welding
     card_groups: [Application, Marketing, Agents]
     lanes:
@@ -210,6 +231,8 @@ packages:
     tagline: "Your founding team: a CTO and a CMO."
     price_monthly: 900
     cto_monthly_tokens: ~
+    apps_per_account: ~
+    building_lanes: 4
     comp: Turf Monster
     featured: true
     card_groups: [Application, Marketing, Agents]
@@ -231,12 +254,14 @@ packages:
   - key: enterprise
     name: Enterprise
     talk_to_us: true
-    tagline: Need more apps, white label or custom connectors? Talk to us.
+    tagline: Need white label, more domains or custom connectors? Talk to us.
     price_label: Custom
     cto_monthly_tokens: ~
+    apps_per_account: ~
+    building_lanes: ~
     comp: McRitchie Industries
     highlights:
-      - More than one app, and more than one domain
+      - More than one domain under one account
       - White label on your own accounts
       - Custom connectors to the systems you already use (coming soon)
       - Payments, crypto and AI features as add-ons
@@ -249,11 +274,11 @@ features:
     category: application
     icon: "glyph:app"
     blurb: Built by our agents from your description, then reviewed and shipped through our own pipeline.
-    vibe: 1 app
-    builder: 1 app
-    pro: 1 app + workers
-    team: 1 app + workers
-    enterprise: Multiple apps
+    vibe: Unlimited apps
+    builder: Unlimited apps
+    pro: Unlimited apps + workers
+    team: Unlimited apps + workers
+    enterprise: Unlimited apps + workers
     sop: app-deploy-standard
     you_do: Describe what you want built
     status: live
@@ -370,7 +395,7 @@ features:
     category: domain
     icon: "glyph:domain"
     blurb: Your app's address, from our subdomain up to your own domain.
-    vibe: your-app.mcritchie.studio
+    vibe: your-app.mcritchie.app
     builder: www.your-app.com
     pro: your-app.com + www.your-app.com
     team: your-app.com + www.your-app.com

@@ -115,8 +115,8 @@ class Release
     #                   release slug). Where they don't, a stray word refuses
     #                   instead of being silently ignored.
     #
-    # NOT LISTED, on purpose: the five GLOBAL flags (--dry-run, --prod, --local,
-    # --yes, --skip-test-gate). bin/release consumes those from ARGV at load time,
+    # NOT LISTED, on purpose: the six GLOBAL flags (--dry-run, --prod, --local,
+    # --yes, --skip-test-gate, --train). bin/release consumes those from ARGV at load time,
     # BEFORE the dispatcher runs, so by the time the guard reads the line they are
     # already gone and listing them here would describe a token the guard can never
     # see. (`--skip-test-gate` is read only by `ship`'s test gate; passing it to
@@ -211,7 +211,7 @@ class Release
             "ship [--finalize-only [<release>]]|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]} " \
             "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto|cleared] [--clearance \"<Alex's words>\"] " \
             "[--feedback …] [--clean-only] [--expedite] " \
-            "[--worked …] [--friction …] [--followup …] [--file-tasks] [--local] [--dry-run] [--yes]"
+            "[--worked …] [--friction …] [--followup …] [--file-tasks] [--train SLUG] [--local] [--dry-run] [--yes]"
 
     # The line bin/release prints after a ship (or finalize) posts release notes,
     # from the conductor's { notes_delivered, notes_error, notes_messages } JSON.
@@ -234,7 +234,7 @@ class Release
     # The global flags, consumed before the dispatcher — named in every
     # per-subcommand help so the guard's silence about them is not read as
     # "unsupported".
-    GLOBAL_FLAGS = "[--dry-run] [--local] [--yes] [--skip-test-gate] (global — consumed before dispatch)"
+    GLOBAL_FLAGS = "[--dry-run] [--local] [--yes] [--skip-test-gate] [--train SLUG] (global — consumed before dispatch)"
 
     # `--help` and a refusal both exit 1, never 0.
     #

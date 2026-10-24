@@ -4,7 +4,7 @@
 # the Lead Architect, deep reviewer, and OWNER of every PR review. The selection
 # here only chooses the LIGHT (the focused second read): a domain-fit pick from
 # the specialist pool {Shannon=UI · Jasper=Web3 · Steffon=DevOps/Platform ·
-# Xan=Documentation}. Carl is no longer a pool pick — he sits above it as the
+# Ritch=Documentation}. Carl is no longer a pool pick — he sits above it as the
 # fixed primary.
 #
 # The LIGHT is chosen by DOMAIN FIT (the task's shape + repositories + risk tags →
@@ -18,10 +18,10 @@
 # THE TWO SEATS ARE FILLED BY DIFFERENT MECHANISMS, and each seat now SAYS which
 # one filled it (#seat's "basis", SEAT_BASIS_* below). The primary is seated by
 # ROLE and is neither ranked nor rolled; the light is ranked on fit and rolled only
-# to break a tie. So a light out-fitting the primary — Xan at fit 2 beside Carl at
+# to break a tie. So a light out-fitting the primary — Ritch at fit 2 beside Carl at
 # fit 0 on a docs PR — is the policy working, not an ordering defect. Fit reaches
 # the PRIMARY seat only when Carl yields, and then #pair draws both seats from the
-# one ranked list (measured 2026-09-22: Xan takes primary at fit 2 there).
+# one ranked list (measured 2026-09-22: Ritch takes primary at fit 2 there).
 #
 # The tiebreak RNG is seeded per-task by default (see #seed_for), so the LIGHT
 # pick is REPRODUCIBLE across processes: `bin/reviewer-select` (.decision) and the
@@ -36,7 +36,7 @@
 # standing-primary policy.
 #
 # The specialist pool is {shannon=UI · jasper=Web3 · steffon=DevOps/Platform ·
-# xan=Documentation}. The QA owner (Avi by default — after the 2026-07-22 reslot he
+# ray=Documentation}. The QA owner (Avi by default — after the 2026-07-22 reslot he
 # owns qa-release: the accepted→release sweep + the QA deploy that flips members
 # `assembled`) is EXCLUDED as a LIGHT so one soul never both reviews AND QAs the same
 # change — "no self-gating". Avi isn't in the specialist pool, so his default
@@ -102,7 +102,7 @@
 #
 # THAT ASSERTION IS CHECKED, NOT TRUSTED (see NO_BUILDER). It is the only input the
 # caller can state about somebody else's work, it was the only one that failed OPEN,
-# and on 2026-09-24 it seated a soul on her own PR. It is now cross-examined against
+# and on 2026-09-24 it seated a soul on his own PR. It is now cross-examined against
 # the record and the PR's commits — two witnesses the caller does not control — so a
 # false assertion is contradicted, and an assertion whose witness could not be READ
 # is reported as unverified rather than as cleared. The class still degrades (the
@@ -144,9 +144,10 @@ require "zlib"
 class ReviewerSelector
   # The full senior soul pool (slugs). Carl is the standing primary (removed from
   # the specialist draw below); the other four are the LIGHT specialists.
-  # `xan` holds the Documentation seat (the orchestrator, slugged `alex` until
-  # 2026-09-24 — Task::SOUL_ALIASES still reads the old slug as this one).
-  POOL = %w[shannon carl jasper steffon xan].freeze
+  # `ray` holds the Documentation seat (the orchestrator, slugged `alex` until
+  # 2026-09-24 and `xan` until 2026-10-18 — Task::SOUL_ALIASES still reads the old
+  # slugs as this one).
+  POOL = %w[shannon carl jasper steffon ray].freeze
 
   # Carl — the Lead Architect. He owns EVERY PR review as the STANDING PRIMARY
   # (deep review + owner), so he is never a light-pool pick.
@@ -157,7 +158,7 @@ class ReviewerSelector
   # that from the PR's files (bin/lib/merge_permission.rb), never from the task's
   # declared shape, which is all this class reads. Every other diff is merged by
   # the standing primary. #merge_rule is the sentence the decision carries.
-  DOCS_SEAT = "xan"
+  DOCS_SEAT = "ray"
 
   # The soul who runs qa-release — the accepted→release sweep + the QA deploy at the
   # `assembled` step — excluded from the light pool by default so a reviewer never
@@ -185,9 +186,9 @@ class ReviewerSelector
   # fails closed — a blank builder refuses, a typo refuses — precisely because an
   # unnamed author might be sitting in the pool. `none` lifted that refusal on the
   # caller's word alone. MEASURED 2026-09-24 on data-flow-doc-contradicts-code, a
-  # docs PR Xan wrote while the task carried no stamp: `--builder none` seated
-  # **xan** as the light on Xan's own diff, while `--builder xan` (and `--builder
-  # alex`, through the alias) correctly excluded her and seated jasper. A false
+  # docs PR Ritch wrote while the task carried no stamp: `--builder none` seated
+  # **ray** as the light on Ritch's own diff, while `--builder ray` (and `--builder
+  # alex`, through the alias) correctly excluded him and seated jasper. A false
   # `none` did not merely skip an exclusion — it produced the confidently-wrong
   # seating this class's header calls the worse failure, and reported the property
   # upheld.
@@ -196,7 +197,7 @@ class ReviewerSelector
   # and the PR are witnesses the caller does not control, and the assertion is now
   # checked against both — see #builder_none_contradicted_by. Re-measured 2026-09-27
   # on the same PR: with a readable credential the PR's one commit names
-  # `xan@mcritchie.studio`, so the assertion is CONTRADICTED and Xan is excluded
+  # `xan@mcritchie.studio`, so the assertion is CONTRADICTED and Ritch is excluded
   # anyway; with the stale one the read 401s, so it is UNVERIFIED and the CLI
   # refuses. Either way the author is no longer seated.
   #
@@ -236,7 +237,7 @@ class ReviewerSelector
     "carl"    => %w[backend],
     "jasper"  => %w[web3 onchain],
     "steffon" => %w[devops platform],
-    "xan"     => %w[docs documentation]
+    "ray"     => %w[docs documentation]
   }.freeze
 
   # WHY A SOUL HOLDS A SEAT — the mechanism that actually put them there, carried
@@ -284,8 +285,8 @@ class ReviewerSelector
     "onchain"          => %w[web3 onchain],
     "onchain-vertical" => %w[web3 onchain ui backend],
     # A documentation-only change (SOP / runbook / operating-model / README) needs
-    # the pool's Documentation seat — Xan, whose seeded domains carry both `docs`
-    # and `documentation`. Both tokens map here so a doc-shaped task fits Xan
+    # the pool's Documentation seat — Ritch, whose seeded domains carry both `docs`
+    # and `documentation`. Both tokens map here so a doc-shaped task fits Ritch
     # (fit 2) and nobody else (fit 0), landing him the LIGHT seat. Read by BOTH the
     # CLI preview (.decision) and the recorder (.select), so they stay reproducible.
     "docs"             => %w[docs documentation],
@@ -359,7 +360,7 @@ class ReviewerSelector
     @qa_owner = qa_owner.to_s
     @builder_override = builder.to_s.strip.presence
     # Every soul read here goes through Task.canonical_soul, so `--busy alex` or a
-    # `builders` set stamped under the retired slug still lands on `xan` in the
+    # `builders` set stamped under the retired slug still lands on `ray` in the
     # pool it is compared against — an alias that did not reach the exclusion
     # would be the fail-open this class exists to close.
     @busy = Array(busy).map { |s| Task.canonical_soul(s) }.reject(&:empty?).uniq
@@ -672,7 +673,7 @@ class ReviewerSelector
         # THE ASSERTION IS CHECKED, NOT TAKEN ON TRUST. This returned a bare `[]`
         # until 2026-09-27 — the caller said nobody, so nobody was excluded, and
         # every source that could have named an author was skipped unread. On
-        # data-flow-doc-contradicts-code that seated Xan on Xan's own PR. The
+        # data-flow-doc-contradicts-code that seated Ritch on Ritch's own PR. The
         # assertion now yields whatever the EVIDENCE names (#evidence_authors), so
         # it is `[]` only when nothing anywhere contradicts it, and a false
         # assertion can no longer subtract an exclusion.
@@ -844,7 +845,7 @@ class ReviewerSelector
   #                 break), and `bin/reviewer-select` refuses outright.
   #   UNVERIFIED    a witness could not be read → #builder_none_unverified. NOT a
   #                 clean bill of health, and the state this whole defect lived in:
-  #                 a 401 on the PR read turned `["xan"]` into `[]`, and an empty
+  #                 a 401 on the PR read turned `["ray"]` into `[]`, and an empty
   #                 witness box read as an exonerating one. The CLI refuses, and
   #                 the remedy is one command.
   #   UNFALSIFIED   every witness answered and named nobody. The assertion stands

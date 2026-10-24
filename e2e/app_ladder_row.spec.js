@@ -462,7 +462,7 @@ test("no card shows a green meter over a lane that is red or running", async ({ 
 // stretching the summary row.
 //
 // A WIDE VIEWPORT, like the other Deployments specs in this suite: the six-lane board
-// collapses its upstream lanes below 1400px, and a spec that scrolls this page should
+// collapses its upstream lanes on a board narrower than six, and a spec that scrolls this page should
 // be scrolling the page the operator actually looks at.
 test.describe("the applications summary card", () => {
   test.use({ viewport: { width: 1600, height: 900 } });

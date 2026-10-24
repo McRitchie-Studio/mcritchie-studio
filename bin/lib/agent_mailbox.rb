@@ -10,8 +10,11 @@ require "timeout"
 require "tmpdir"
 require "uri"
 require_relative "agent_api"
+require_relative "agent_claude_stream"
 require_relative "agent_context_builder"
+require_relative "agent_media"
 require_relative "agent_proposal_block"
+require_relative "agent_warm_session"
 
 # The worker and observer side of the agent mailbox
 # (docs/agents/system/agent-message-loop.md): `bin/heartbeat` and `bin/dispatcher`
@@ -23,7 +26,17 @@ require_relative "agent_proposal_block"
 module AgentMailbox
   REPO_ROOT = File.expand_path("../..", __dir__)
 
-  class ApiError < StandardError; end
+  # status: the HTTP status (nil when the board never answered). code: the
+  # board's error_code, so a caller can tell a refusal (LEASE_HELD) from a fault.
+  class ApiError < StandardError
+    attr_reader :status, :code
+
+    def initialize(message = nil, status: nil, code: nil)
+      super(message)
+      @status = status
+      @code = code
+    end
+  end
 
   # The mailbox endpoints, over AgentApi. Every call returns the parsed body or
   # raises ApiError naming the status and the board's reason; a mailbox command
@@ -59,9 +72,13 @@ module AgentMailbox
     end
 
     # One "typing…" pulse for a held message (AgentMessageTypingJob on the
-    # board). meta.typing says "queued" or why not.
-    def typing(id, worker:)
-      call(:post, "/api/v1/agent_messages/#{Integer(id)}/typing", { "worker" => worker })
+    # board). meta.typing says "queued" or why not. `phase` ("thinking" or
+    # "typing", a web-chat run's ClaudeStream::Phase) is sent only when given;
+    # a Discord pulse carries none, and the board reads none as typing.
+    def typing(id, worker:, phase: nil)
+      body = { "worker" => worker }
+      body["phase"] = phase if phase
+      call(:post, "/api/v1/agent_messages/#{Integer(id)}/typing", body)
     end
 
     # bin/dispatcher's minute ping (AgentDispatcher on the board).
@@ -88,7 +105,54 @@ module AgentMailbox
       call(:post, "/api/v1/agent_messages/#{Integer(id)}/release", body)
     end
 
+    # The warm-session lease per domain (AgentDomainSession on the board). The
+    # acquire that takes a lease answers its key once (meta.lease_key); every
+    # other call presents it, in the body, never in a URL.
+    def domain_acquire(domain, worker:, lease_key: nil)
+      call(:post, domain_path(domain, "acquire"), lease_body(worker, lease_key))
+    end
+
+    def domain_renew(domain, worker:, lease_key:) = call(:post, domain_path(domain, "renew"), lease_body(worker, lease_key))
+    def domain_release(domain, worker:, lease_key:) = call(:post, domain_path(domain, "release"), lease_body(worker, lease_key))
+
+    # `data`: the gzipped transcript (WarmSession.pack), sent base64.
+    def domain_checkpoint(domain, worker:, lease_key:, session_id:, data:, turns:, context_tokens:)
+      call(:post, domain_path(domain, "checkpoint"),
+           lease_body(worker, lease_key).merge("session_id" => session_id, "turns" => turns,
+                                               "context_tokens" => context_tokens, "data" => [ data ].pack("m0")))
+    end
+
+    # The checkpoint's gzipped bytes and the session it is, for the holder.
+    def domain_checkpoint_read(domain, worker:, lease_key:)
+      data = call(:post, domain_path(domain, "checkpoint_read"), lease_body(worker, lease_key))["data"] || {}
+      [ data["session_id"], data["data"].to_s.unpack1("m0") ]
+    end
+
+    def domain_consolidate(domain, worker:, lease_key:, text:, source_session_id:, turns_covered:, context_tokens:)
+      call(:post, domain_path(domain, "consolidate"),
+           lease_body(worker, lease_key).merge("text" => text, "source_session_id" => source_session_id,
+                                               "turns_covered" => turns_covered, "context_tokens" => context_tokens))
+    end
+
+    # The holder's report that a checkpoint or restore failed: `fault` one of
+    # AgentDomainSession::FAULTS, `detail` an error class and code, never text.
+    def domain_fault(domain, worker:, lease_key:, fault:, detail: nil)
+      call(:post, domain_path(domain, "fault"), lease_body(worker, lease_key).merge("fault" => fault, "detail" => detail))
+    end
+
     private
+
+    def lease_body(worker, lease_key)
+      body = { "worker" => worker }
+      body["lease_key"] = lease_key unless lease_key.to_s.empty?
+      body
+    end
+
+    def domain_path(domain, verb)
+      raise ArgumentError, "unsafe domain #{domain.inspect}" unless domain.to_s.match?(/\A[a-z][a-z0-9_]{0,40}\z/)
+
+      "/api/v1/agent_domain_sessions/#{domain}/#{verb}"
+    end
 
     def path(base, params)
       query = params.reject { |_, v| v.nil? || v.to_s.empty? }
@@ -102,7 +166,8 @@ module AgentMailbox
       parsed = JSON.parse(res.body.to_s) rescue {}
       return parsed if res.code.to_i.between?(200, 299)
 
-      raise ApiError, "#{method.upcase} #{path} -> HTTP #{res.code}: #{parsed['error'] || res.body.to_s[0, 200]}"
+      raise ApiError.new("#{method.upcase} #{path} -> HTTP #{res.code}: #{parsed['error'] || res.body.to_s[0, 200]}",
+                         status: res.code.to_i, code: parsed.is_a?(Hash) ? parsed["error_code"] : nil)
     end
   end
 
@@ -159,7 +224,10 @@ module AgentMailbox
   # output for an action (an operator reads it) but kept apart for Claude.
   # The child runs in its own process group under child_env. On timeout the
   # group gets TERM, then KILL after kill_grace.
-  def self.run_command(argv, stdin:, timeout:, chdir:, kill_grace: KILL_GRACE)
+  # `on_line`: called with each stdout line as it arrives (a web-chat answer's
+  # stream-json, ClaudeStream::Phase); the output returned is the same either
+  # way. A callback that raises is ignored: it can never cut the read short.
+  def self.run_command(argv, stdin:, timeout:, chdir:, kill_grace: KILL_GRACE, on_line: nil)
     Open3.popen3(child_env, *argv, chdir: chdir, unsetenv_others: true, pgroup: true) do |i, o, e, wait|
       Children.add(wait.pid)
       begin
@@ -169,7 +237,7 @@ module AgentMailbox
           nil
         end
         i.close
-        reader = Thread.new { o.read }
+        reader = Thread.new { on_line ? read_lines(o, on_line) : o.read }
         err = Thread.new { e.read }
         unless wait.join(timeout)
           signal_group(wait.pid, "TERM")
@@ -187,6 +255,31 @@ module AgentMailbox
     end
   rescue SystemCallError, IOError => e
     [ "could not run #{argv.first}: #{e.message}", 127, "" ]
+  end
+
+  # stdout read line by line, every line handed to `on_line` (as UTF-8, scrubbed),
+  # all of it returned as bytes (drained reads it as UTF-8, as for #read).
+  def self.read_lines(io, on_line)
+    out = String.new(encoding: Encoding::BINARY)
+    io.each_line do |line|
+      out << line.b
+      begin
+        on_line.call(line.b.force_encoding(Encoding::UTF_8).scrub)
+      rescue StandardError
+        nil
+      end
+    end
+    out
+  end
+
+  # Whether `runner` takes an `on_line:` keyword (run_command does; a test's
+  # stub may not). Only such a runner is handed a stream to watch, so a stub
+  # that answers in plain text keeps the json path it was written for.
+  def self.streams_lines?(runner)
+    callable = runner.is_a?(Method) || runner.is_a?(Proc) ? runner : runner.method(:call)
+    callable.parameters.any? { |kind, name| %i[key keyreq].include?(kind) && name == :on_line }
+  rescue NameError
+    false
   end
 
   # A child's output, read as UTF-8 whatever the process locale says (launchd
@@ -218,12 +311,24 @@ module AgentMailbox
   # Stdout that is not an envelope (a stub, or a CLI crash before it could write
   # one) is a reply on exit 0 and error text otherwise: in json mode the model's
   # words only ever arrive inside the envelope.
+  #
+  # STREAM (`stream: true`: a run with media, Media.stream_cmd, or a web-chat
+  # run whose phase is watched, ClaudeStream.cmd; --output-format stream-json):
+  # stdout is one JSON object per line, and the envelope is the
+  # LAST line whose top-level `type` is "result", the same object json mode
+  # prints, read the same way. The model's words sit only inside `assistant`
+  # lines' string values, so no text it writes can be a top-level line. A
+  # stream with no result line is a FAILED run, never a reply: its stdout is
+  # the CLI's own event stream, not an answer to post.
   module ClaudeRun
     Parsed = Struct.new(:reply, :error_text, :api_status, :session_id, :meta, keyword_init: true)
 
-    def self.parse(stdout, status, stderr)
-      env = envelope(stdout)
+    def self.parse(stdout, status, stderr, stream: false)
+      env = stream ? stream_envelope(stdout) : envelope(stdout)
       ok = status&.zero? ? true : false
+      if stream && env.nil?
+        return Parsed.new(reply: nil, error_text: join([ stream_tail(stdout), stderr ]), api_status: nil)
+      end
       if env
         failed = !ok || env["is_error"] == true || env["subtype"].to_s.start_with?("error")
         reply = failed ? nil : env["result"].to_s.strip
@@ -268,12 +373,45 @@ module AgentMailbox
       nil
     end
 
+    def self.stream_envelope(stdout)
+      stdout.to_s.each_line.reverse_each do |line|
+        next unless line.include?('"result"')
+
+        data = begin
+          JSON.parse(line.strip)
+        rescue JSON::ParserError
+          next
+        end
+        return data if data.is_a?(Hash) && data["type"] == "result"
+      end
+      nil
+    end
+
+    # A failed stream's own lines, for the error text: the last 2000 characters
+    # of what the CLI said, without the lines that carry the model's words
+    # (`assistant`, and the `stream_event` deltas partial messages add), so
+    # nothing the model wrote is read as a usage limit or a sign-out.
+    def self.stream_tail(stdout)
+      kept = stdout.to_s.each_line.reject do |line|
+        type = begin
+          data = JSON.parse(line.strip)
+          data["type"] if data.is_a?(Hash)
+        rescue JSON::ParserError
+          nil
+        end
+        MODEL_LINES.include?(type)
+      end.join
+      tail = kept[-2000..] || kept
+      tail.strip.empty? ? "the stream ended without a result line" : tail
+    end
+    MODEL_LINES = %w[assistant stream_event user].freeze
+
     def self.join(parts)
       return nil if parts.nil?
 
       parts.compact.map { |p| p.is_a?(String) ? p : JSON.generate(p) }.join("\n")
     end
-    private_class_method :envelope, :join, :session_id, :meta
+    private_class_method :envelope, :stream_envelope, :stream_tail, :join, :session_id, :meta
   end
 
   # A headless run's session transcript, read for its REASONING: the text of
@@ -287,7 +425,10 @@ module AgentMailbox
 
     # [text or nil, source]: source is "transcript", "redacted" (thinking blocks
     # with no text), "none" (no thinking blocks), or "no_transcript".
-    def self.reasoning(session_id, claude_home: File.join(Dir.home, ".claude"))
+    # `last_turn_only`: a warm session's transcript holds every earlier turn, so
+    # only the thinking after its last prompt (the last `user` entry) is this
+    # run's. A cold run has one prompt, so it reads the same either way.
+    def self.reasoning(session_id, claude_home: File.join(Dir.home, ".claude"), last_turn_only: false)
       return [ nil, "no_transcript" ] unless session_id.to_s.match?(/\A[0-9A-Za-z-]{8,100}\z/)
 
       path = Dir.glob(File.join(claude_home, "projects", "*", "#{session_id}.jsonl")).first
@@ -295,6 +436,10 @@ module AgentMailbox
 
       blocks = []
       File.foreach(path, encoding: "UTF-8") do |line|
+        if last_turn_only && line.include?('"type":"user"')
+          blocks.clear
+          next
+        end
         next unless line.include?("thinking")
 
         entry = JSON.parse(line) rescue next
@@ -444,8 +589,11 @@ module AgentMailbox
   #
   # Each soul's Claude runs from its OWN folder, mailbox_home/<soul> (created on
   # demand), so its transcripts sit together and `claude --resume <id>` from that
-  # folder reopens a run. Memory never comes from a resumed session: every answer
-  # is rebuilt from the board's rows.
+  # folder reopens a run. Memory is rebuilt from the board's rows for every
+  # answer. The one exception is a WARM turn (`warm:`, a WarmSession::Turn that
+  # bin/dispatcher passes only for a warm domain's owner and team messages): it
+  # resumes the domain's session, and its prompt is still built from this
+  # message's own bundle (ContextBuilder#warm_prompt).
   class Responder
     # The ONE read-only action each soul may take, run from the hub checkout.
     # A soul with none still answers, from its role alone. It runs only when the
@@ -456,7 +604,7 @@ module AgentMailbox
     # release_status ask (AgentProposals::Queries), read in process on the board.
     ACTIONS = {
       "avi" => { argv: %w[bin/task list], what: "the task board" },
-      "xan" => { argv: %w[bin/task list], what: "the task board" }
+      "ray" => { argv: %w[bin/task list], what: "the task board" }
     }.freeze
     ACTION_TIMEOUT = 90
     ACTION_OUTPUT_LIMIT = 6000
@@ -475,8 +623,9 @@ module AgentMailbox
     # the facts the run returned about the sender (NoteBlock), already cut from
     # the reply. proposal: the parsed PROPOSAL block (ProposalBlock), also cut
     # from the reply; the board alone decides whether it stands.
+    # warm: the WarmSession::Turn the answer ran on, or nil for a cold run.
     Answer = Struct.new(:reply, :action, :status, :usage_limit, :signed_out, :session_id, :cwd, :reasoning, :meta,
-                        :notes, :proposal, keyword_init: true) do
+                        :notes, :proposal, :warm, keyword_init: true) do
       # The complete call's run fields (AgentMessage.run_record on the board),
       # plus `notes`, which the board files under the message's author, and
       # `proposal`, which the board validates (AgentProposal.record_from!).
@@ -489,7 +638,8 @@ module AgentMailbox
     end
 
     def initialize(soul:, claude_cmd: DEFAULT_CLAUDE_CMD, runner: nil, repo_root: REPO_ROOT, clock: -> { Time.now },
-                   mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"))
+                   mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"), media: nil)
+      @media = media
       @soul = soul.to_s
       @claude_cmd = claude_cmd
       @runner = runner || AgentMailbox.method(:run_command)
@@ -500,20 +650,84 @@ module AgentMailbox
     end
 
     # `context`: the board's bundle for this message (Client#context), or nil.
-    def respond(message, context: nil)
+    # `warm`: a WarmSession::Turn, or nil (every caller but a warm dispatcher
+    # turn, and then this path is exactly the cold one).
+    # `phase`: a ClaudeStream::Phase for a web-chat answer (bin/dispatcher passes
+    # one only when #streams? holds). The run then prints stream-json with
+    # partial messages, each line feeds the phase as it arrives, and the answer
+    # is read from the stream's result line: the same envelope, so the reply,
+    # usage and session id are what json mode would have read.
+    def respond(message, context: nil, warm: nil, phase: nil)
       audience = Audience.from_context(context)
       action = run_action(audience)
       cwd = soul_folder
-      output, status, error = @runner.call(@claude_cmd, stdin: prompt_for(message, action, context: context, audience: audience),
-                                                         timeout: CLAUDE_TIMEOUT, chdir: cwd)
-      run = ClaudeRun.parse(output, status, error)
+      stdin = if warm
+                ContextBuilder.new(soul: @soul, message: message, context: context, action: action,
+                                   action_what: ACTIONS.dig(@soul, :what), repo_root: @repo_root,
+                                   audience: audience).warm_prompt(warm)
+              else
+                prompt_for(message, action, context: context, audience: audience)
+              end
+      cmd = warm ? warm_cmd(warm.resume_id) : @claude_cmd
+      media = prepared_media(context)
+      if media&.any?
+        stdin = Media.user_message(media.blocks, stdin)
+        cmd = Media.stream_cmd(cmd)
+      end
+      watch = phase && streams?
+      cmd = ClaudeStream.cmd(cmd) if watch
+      output, status, error = if watch
+                                @runner.call(cmd, stdin: stdin, timeout: CLAUDE_TIMEOUT, chdir: cwd, on_line: phase.to_proc)
+                              else
+                                @runner.call(cmd, stdin: stdin, timeout: CLAUDE_TIMEOUT, chdir: cwd)
+                              end
+      run = ClaudeRun.parse(output, status, error, stream: (watch || media&.any?) ? true : false)
       limit = UsageLimit.detect(run, now: @clock.call)
-      reasoning, source = run.session_id ? Transcript.reasoning(run.session_id, claude_home: @claude_home) : [ nil, nil ]
-      meta = (run.meta || {}).merge(source ? { "reasoning_source" => source } : {})
+      reasoning, source = if run.session_id
+                            Transcript.reasoning(run.session_id, claude_home: @claude_home, **(warm ? { last_turn_only: true } : {}))
+                          else
+                            [ nil, nil ]
+                          end
+      meta = (run.meta || {}).merge(source ? { "reasoning_source" => source } : {}).merge(media ? media.meta : {})
       reply, notes, proposal = run.reply && !limit ? ProposalBlock.split(run.reply) : [ nil, [], nil ]
       Answer.new(reply: reply.to_s.empty? ? nil : reply, notes: notes, proposal: proposal, action: action, status: status, usage_limit: limit,
                  signed_out: limit.nil? && ClaudeAuth.signed_out?(run), session_id: run.session_id, cwd: cwd,
-                 reasoning: reasoning, meta: meta)
+                 reasoning: reasoning, meta: meta.merge(warm ? { "warm" => warm.resumed? ? "resumed" : "fresh" } : {}),
+                 warm: warm)
+    end
+
+    # Whether this responder's runner hands stdout over line by line (the real
+    # one does), so a run's phase can be watched (respond's `phase:`).
+    def streams? = AgentMailbox.streams_lines?(@runner)
+
+    # The message's files as content blocks (Media), or nil when it has none.
+    # The text prompt is unchanged; it names every file (ContextBuilder#files_line),
+    # and the blocks go ahead of it in ONE stream-json user message.
+    def prepared_media(context)
+      files = Media.attachments(context)
+      return nil if files.empty?
+
+      (@media ||= Media::Preparer.new).prepare(files)
+    end
+
+    # The consolidation turn: the session `resume_id` asked for its own notes
+    # (WarmSession::SUMMARY_PROMPT), no tools, read from the envelope as any run.
+    # Returns [summary text or nil, ClaudeRun::Parsed].
+    def summarize(resume_id)
+      output, status, error = @runner.call(warm_cmd(resume_id), stdin: WarmSession::SUMMARY_PROMPT,
+                                                                 timeout: CLAUDE_TIMEOUT, chdir: soul_folder)
+      run = ClaudeRun.parse(output, status, error)
+      text = run.reply && !UsageLimit.detect(run, now: @clock.call) ? ProposalBlock.reply(run.reply).to_s.strip : ""
+      [ text.empty? ? nil : text[0, WarmSession::SUMMARY_LIMIT], run ]
+    end
+
+    # The Claude command for a warm turn: the cold command, unchanged (still
+    # --safe-mode, no tools, json), plus --resume when a session exists.
+    def warm_cmd(resume_id)
+      return @claude_cmd if resume_id.nil?
+      raise ArgumentError, "not a Claude session id" unless resume_id.to_s.match?(WarmSession::SESSION_ID)
+
+      @claude_cmd + [ "--resume", resume_id.to_s ]
     end
 
     def prompt_for(message, action, context: nil, audience: nil)

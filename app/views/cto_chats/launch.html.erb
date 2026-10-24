@@ -1,0 +1,6 @@
+<% content_for :title, "Launching #{@app.name} · McRitchie Studio" %>
+<%# CtoChatsController#show on a newly launched app's FIRST visit by its owner (AppCto launch_animation_pending, task build-sign-in-modal): the launch panel (build/_launch), which plays its three steps and then visits this same address, now the CTO's chat. Every way in lands here: the signed-in Build My App (its 303), the magic link's landing and Google's (BuildController#launch). The flag is already cleared, so a reload is the chat. Both this page and the /build draft opt in to a view transition: Ritch's portrait morphs into the CTO's here, and the CTO's into the chat's head after. %>
+<% content_for :head, tag.meta(name: "view-transition", content: "same-origin") %>
+<section data-test="build-launch-landing">
+  <%= render "build/launch", **@launch_locals %>
+</section>

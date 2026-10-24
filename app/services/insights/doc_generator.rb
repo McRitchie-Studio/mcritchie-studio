@@ -105,7 +105,7 @@ module Insights
     def grader_label(grader)
       case grader.to_s
       when "mcr" then "McRitchie audit"
-      when "xan", "alex" then "Xan" # `alex` is the seat's retired slug (Task::SOUL_ALIASES)
+      when "ray", "xan", "alex" then "Ritch" # `xan` and `alex` are the seat's retired slugs (Task::SOUL_ALIASES)
       end
     end
 

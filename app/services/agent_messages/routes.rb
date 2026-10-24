@@ -30,7 +30,14 @@ module AgentMessages
       @ops_channel_id = discord["ops_channel_id"].to_s.presence
       @guilds = (discord["guilds"] || {}).to_h { |id, guild| [ id.to_s, guild || {} ] }
       @overrides = build_overrides
+      # The CTOs the web chat may route to (the `web:` block). A soul not
+      # listed has no web chat.
+      @web_souls = Array((config["web"] || {})["souls"]).map { |soul| soul.to_s.strip }.reject(&:empty?).uniq
     end
+
+    attr_reader :web_souls
+
+    def web_soul?(soul) = @web_souls.include?(soul.to_s)
 
     # Every listed guild id, in config order.
     def guild_ids = @guilds.keys
@@ -67,10 +74,20 @@ module AgentMessages
       end
     end
 
-    # Every soul this config can route to.
+    # Every soul this config can route to: the guilds' souls, each override's
+    # default_soul, and the web chat's CTOs.
     def souls
       (@guilds.values.flat_map { |g| (g["souls"] || {}).keys.map(&:to_s) } +
-        overrides.map(&:default_soul).compact).uniq
+        overrides.map(&:default_soul).compact + @web_souls).uniq
+    end
+
+    # The process's routes, read once. Tests swap them with `current=` and `reset!`.
+    class << self
+      def current = @current ||= load
+
+      attr_writer :current
+
+      def reset! = @current = nil
     end
 
     private

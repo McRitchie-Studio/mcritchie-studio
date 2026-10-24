@@ -23,7 +23,7 @@ never promote `accepted → release`, never touch `main`, never deploy.
 **Who runs it.** Any session, under its own Pokémon identity. The builders you
 spawn are Pokémon too ([`../agents/pokemon/role.md`](../agents/pokemon/role.md)):
 one general builder soul, legion. The reviewers you spawn are the specialists:
-Carl, Shannon, Jasper, Steffon, or Xan for prose.
+Carl, Shannon, Jasper, Steffon, or Ritch for prose.
 
 > **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
 
@@ -226,7 +226,7 @@ Pick the tier from what the diff actually changed, plus the task's risk tags:
 
 | Tier | The change | Spawn |
 |---|---|---|
-| A | only prose: markdown, inert media, docs-guard tests | one `xan` (the documentation seat) on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md) as the PRIMARY: a single read, no light summoned; it claims as `--agent xan`, records its verdict with `--head`, and merges on `bin/merge-permit`'s permit |
+| A | only prose: markdown, inert media, docs-guard tests | one `ray` (the documentation seat) on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md) as the PRIMARY: a single read, no light summoned; it claims as `--agent ray`, records its verdict with `--head`, and merges on `bin/merge-permit`'s permit |
 | B | code, under 400 insertions, one repo, no risk tag | one `carl` on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md); a light at his discretion |
 | C | any of `payment` `solana` `auth` `migration`, or over 400 insertions, or two repos, or a schema change | `carl` on the primary SOP with the domain light mandatory, strongest model |
 
@@ -235,7 +235,7 @@ tags are on the task.
 
 **The documentation seat merges docs-shape PRs only.** Tier A is your read of
 the diff; `bin/merge-permit` measures it again at the merge, from the PR's own
-files at the head being merged. If Xan reports a refusal (a code file landed, or
+files at the head being merged. If Ritch reports a refusal (a code file landed, or
 the diff was never prose), the PR is tier B: spawn `carl`.
 
 Spawn the reviewer with this brief, filled in:
@@ -244,7 +244,7 @@ Spawn the reviewer with this brief, filled in:
 Review PR <url> for task <slug> (https://mcritchie.studio/tasks/<slug>), base accepted.
 Run docs/agents/agents/carl/sops/pr-review-primary.md end to end, as the soul named here.
 Claim by slug, naming that soul; the claim prints the dreams selected for the task, so read them before the diff:
-  bin/task review-claim acquire <slug> --agent <xan for tier A | carl for tiers B and C>
+  bin/task review-claim acquire <slug> --agent <ray for tier A | carl for tiers B and C>
 Recorded head: <sha>. Tier <A|B|C>: <A: single read, summon no light | B: light at your discretion | C: light mandatory>.
 The builder is the task's Pokémon, so no specialist is an author.
 Acceptance is in the task AND in the epic plan at /Users/alex/projects/.agents/epics/<epic-slug>.md, piece <n>; read both.

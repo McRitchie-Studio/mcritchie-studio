@@ -43,10 +43,29 @@ class LocalServicesTest < Minitest::Test
     assert File.exist?(File.join(ROOT, first.sop)), "the SOP the registry names must exist: #{first.sop}"
   end
 
+  def test_the_real_registry_restores_the_client_build_launcher
+    launcher = LocalServices::Registry.load.find { |s| s.name == "client-build-launcher" }
+
+    refute_nil launcher, "a fresh Mac reinstalls the client build launcher (Alex 2026-10-19)"
+    assert_equal "bin/client-build-launcher install", launcher.install
+    assert_equal "bin/client-build-launcher status", launcher.status
+    assert_equal "bin/client-build-launcher install --if-changed", launcher.refresh
+    assert_equal "docs/agents/system/client-build-launcher.md", launcher.sop
+    assert_equal "claude.ai", launcher.claude_auth, "it builds with the real claude on the subscription"
+    assert_equal %w[launchctl claude], launcher.commands
+    assert_equal %w[AGENT_API_SECRET], launcher.dotenv, "under launchd the board secret comes only from the hub's .env"
+  end
+
+  def test_every_registered_service_needs_the_board_secret_in_the_hub_env
+    LocalServices::Registry.load.each do |s|
+      assert_includes s.dotenv, "AGENT_API_SECRET", "#{s.name} reaches the board through bin/lib/agent_api.rb"
+    end
+  end
+
   def test_every_registered_sop_and_command_exists
     LocalServices::Registry.load.each do |s|
       assert File.exist?(File.join(ROOT, s.sop)), "#{s.name}: #{s.sop} is missing"
-      [ s.install, s.status ].each do |line|
+      [ s.install, s.status, s.refresh ].compact.each do |line|
         exe = Shellwords.split(line).first
         assert File.executable?(File.join(ROOT, exe)), "#{s.name}: #{exe} is not an executable in the repo"
       end
@@ -78,6 +97,80 @@ class LocalServicesTest < Minitest::Test
 
     assert_equal "claude.ai", service.claude_auth
     assert_equal %w[launchctl claude], service.commands
+    assert_empty service.dotenv
+    assert_nil service.refresh, "refresh is optional"
+  end
+
+  def test_refresh_and_dotenv_parse_and_a_blank_refresh_is_refused
+    text = entry("x", requires: "{ dotenv: [AGENT_API_SECRET] }")
+           .sub("    requires:", "    refresh: bin/x install --if-changed\n    requires:")
+    service = load_yaml(text).first
+
+    assert_equal "bin/x install --if-changed", service.refresh
+    assert_equal %w[AGENT_API_SECRET], service.dotenv
+    error = assert_raises(LocalServices::Error) { load_yaml(text.sub("bin/x install --if-changed", '""')) }
+    assert_match(/`refresh` is blank/, error.message)
+  end
+
+  # ------------------------------------------------- the hub .env prerequisite ----
+
+  def test_an_unset_board_secret_skips_every_service_and_owes_one_step
+    runner = fake_runner(status: -> { false }, install: -> { flunk "must not install" })
+    items = restorer(runner, services: LocalServices::Registry.load, dotenv: ->(_hub, _key) { false }).run
+
+    assert_equal [ %w[claude auth status] ], @calls.map(&:first), "no service is touched without the secret"
+    assert_includes @out.string, "agent-dispatcher skipped  needs AGENT_API_SECRET in /hub/.env"
+    assert_includes @out.string, "client-build-launcher skipped  needs AGENT_API_SECRET in /hub/.env"
+    lines = items.map { |i| LocalServices::Checklist.line(i) }.uniq
+    assert_equal 1, lines.size, "both services owe the SAME step, so the checklist lists it once"
+    assert_equal LocalServices::Checklist::RANKS[:service], items.first.rank
+    assert_includes items.first.command, "op read 'op://"
+    assert_includes items.first.command, "/Agent API Secret/AGENT_API_SECRET'"
+    assert_includes items.first.command, ">> /hub/.env"
+    assert_includes items.first.command, LocalServices::RERUN
+  end
+
+  def test_the_secret_check_asks_about_the_hub_env
+    asked = []
+    restorer(fake_runner(status: -> { true }, install: -> { }), dotenv: ->(hub, key) { asked << [ hub, key ] }).run
+
+    assert_equal [ [ "/hub", "AGENT_API_SECRET" ] ], asked
+  end
+
+  def test_default_dotenv_reads_a_set_value_only
+    check = LocalServices::Restorer.default_dotenv
+    refute check.call(@dir, "AGENT_API_SECRET"), "no .env"
+    {
+      "AGENT_API_SECRET=\n" => false, %(AGENT_API_SECRET=""\n) => false, "AGENT_API_SECRET=  \n" => false,
+      "OTHER=x\n" => false, "AGENT_API_SECRET=s3cret\n" => true, %(A=1\nAGENT_API_SECRET="s3cret"\n) => true
+    }.each do |text, want|
+      File.write(File.join(@dir, ".env"), text)
+      assert_equal want, check.call(@dir, "AGENT_API_SECRET"), text.inspect
+    end
+    FileUtils.rm_f(File.join(@dir, ".env"))
+    FileUtils.mkdir_p(File.join(@dir, ".env"))
+    refute check.call(@dir, "AGENT_API_SECRET"), "a directory named .env is not a set secret"
+  end
+
+  def test_the_restorer_walks_every_registered_service
+    running = Hash.new(false)
+    runner = lambda do |argv, dir|
+      @calls << [ argv, dir ]
+      next [ signed_in_json, Status.new(true) ] if argv == %w[claude auth status]
+
+      script, verb = argv
+      case verb
+      when "status" then [ "", Status.new(running[script]) ]
+      when "install" then running[script] = true
+                          [ "installed", Status.new(true) ]
+      else flunk "unexpected command #{argv.inspect}"
+      end
+    end
+    items = restorer(runner, services: LocalServices::Registry.load).run
+
+    installs = @calls.map(&:first).select { |argv| argv[1] == "install" }
+    assert_equal [ %w[bin/dispatcher install], %w[bin/client-build-launcher install] ], installs
+    assert_empty items
   end
 
   # ------------------------------------------- install if missing, idempotent ----
@@ -331,9 +424,11 @@ class LocalServicesTest < Minitest::Test
     end
   end
 
-  def restorer(runner, which: ->(_) { true })
-    LocalServices::Restorer.new(services: LocalServices::Registry.load.first(1), hub: "/hub", runner: runner,
-                                which: which, out: @out)
+  # The dispatcher alone unless a case passes `services:`; the hub's .env reads
+  # as holding every key unless a case passes `dotenv:`.
+  def restorer(runner, which: ->(_) { true }, services: LocalServices::Registry.load.first(1),
+               dotenv: ->(_hub, _key) { true })
+    LocalServices::Restorer.new(services: services, hub: "/hub", runner: runner, which: which, dotenv: dotenv, out: @out)
   end
 
   def settings(data)

@@ -1,8 +1,10 @@
 require "test_helper"
 
-# /cable admits admins only (app/channels/application_cable/connection.rb). The
-# session is the one the engine's controller auth reads: session[Studio.session_key]
-# names the user and session[:session_token] must match the user's rotating token.
+# /cable admits any signed-in user with a current session
+# (app/channels/application_cable/connection.rb); what each may hear is the
+# channel's check (TurboStreamsChannelAdminTest, CtoChatChannelTest). The session is
+# the one the engine's controller auth reads: session[Studio.session_key] names the
+# user and session[:session_token] must match the user's rotating token.
 class ApplicationCable::ConnectionTest < ActionCable::Connection::TestCase
   setup do
     @admin = users(:alex)
@@ -18,9 +20,14 @@ class ApplicationCable::ConnectionTest < ActionCable::Connection::TestCase
     assert_reject_connection { connect }
   end
 
-  test "[unit] a signed-in non-admin is rejected" do
+  test "[unit] a signed-in non-admin connects, identified as that user (channels decide what they hear)" do
     assert_not @viewer.admin?
-    assert_reject_connection { connect session: session_for(@viewer) }
+    connect session: session_for(@viewer)
+    assert_equal @viewer, connection.current_user
+  end
+
+  test "[unit] a non-admin whose session token was rotated is rejected" do
+    assert_reject_connection { connect session: session_for(@viewer, token: "stale") }
   end
 
   test "[unit] an admin connects, identified as that user" do

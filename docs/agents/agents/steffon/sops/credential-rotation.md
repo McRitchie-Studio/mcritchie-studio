@@ -137,7 +137,7 @@ is now `solana.turf.server` (`4S39…`):
 |---|---|---|
 | turf-vault `VaultState.signers` | `update_signers`, cosigned by signers who stay | read `VaultState` back |
 | Squads V4 upgrade multisig, per cluster | one config transaction, `app.squads.so` | `check_squads_rotation` below |
-| `scripts/squad-upgrade.js` devnet seat `xan` (`scripts/lib/squad-clusters.js`) | a turf-vault PR to the seat's `pubkey` | the bot key comes per run from `SQUAD_KEY_XAN`, filled by an admin-lane 1Password read; Alex's key (`7ZDJ…`) is a Phantom export with no filed item |
+| `scripts/squad-upgrade.js` devnet seat `ray` (`scripts/lib/squad-clusters.js`) | a turf-vault PR to the seat's `pubkey` | the bot key comes per run from `SQUAD_KEY_XAN`, filled by an admin-lane 1Password read; Alex's key (`7ZDJ…`) is a Phantom export with no filed item |
 
 `update_signers` replaces the whole set (v0.26: five slots, 3 signatures) and its cosigners must
 survive it (`SignerContinuityRequired`, 6017), so **the outgoing key never signs**. Fund the new

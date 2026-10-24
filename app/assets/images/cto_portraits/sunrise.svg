@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="Sunrise, a placeholder CTO portrait">
+  <circle cx="80" cy="80" r="80" fill="#fde68a"/>
+  <path d="M30 160 C32 126 56 112 80 112 C104 112 128 126 130 160Z" fill="#ea580c"/>
+  <rect x="70" y="98" width="20" height="18" rx="6" fill="#f1c27d"/>
+  <ellipse cx="80" cy="78" rx="31" ry="34" fill="#f1c27d"/>
+  <path d="M48 70 C48 40 112 40 112 70 C104 56 90 52 80 54 C70 52 56 56 48 70Z" fill="#3b2414"/>
+  <circle cx="68" cy="76" r="3.5" fill="#1f2937"/>
+  <circle cx="92" cy="76" r="3.5" fill="#1f2937"/>
+  <path d="M70 92 Q80 100 90 92" fill="none" stroke="#7c2d12" stroke-width="3" stroke-linecap="round"/>
+</svg>

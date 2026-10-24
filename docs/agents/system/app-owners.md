@@ -24,6 +24,12 @@ idempotent, for `db/seeds/04_app_memberships.rb` and the task's
 `post_deploy_cmd`; it also gives a slugless user its slug. To add an owner:
 `AppMembership.create!(app: App.find_by!(slug: "…"), user: User.find_by!(email: "…"))`.
 
+A client app built through `/build` gets its owner row from **Build my app**
+(`AppLaunch`), in the same transaction as the App, its CTO and its build task. Its
+CTO is an `AppCto` row worn by the one `client_cto` soul, not a `cto_reports.yml`
+entry, so it has a chat but no report and no settings page
+([`client-cto.md`](client-cto.md)).
+
 ## Who sees what
 
 | Viewer | Sees |
@@ -39,13 +45,22 @@ exist for them and an unannounced app's slug never leaks. The routes are in
 (`AppOwnership.manage_app?`). `test/integration/app_owners_flow_test.rb` proves
 it per page and for the write.
 
+**The CTO answers its app's owner** in that app's chat (`/applications/:slug/chat`)
+and nowhere else, as the app's client and within the app's usage meter: the
+app-owner exception in [`agent-message-loop.md`](agent-message-loop.md) ("Held").
+An admin who does not own the app is answered by their own role, never by it.
+In that chat the owner may also say `go`, `no` or `change: …` on a `change`
+proposal (a `designed` task in the app's repo) while the app is under its cap,
+and nowhere else ("Confirm by reply" in the same page; Alex, 2026-10-18).
+
 ## The sidebar
 
 Owners get a **Your apps** section at the top of the link sidebar
 (`LinkTreeHelper#owner_link_sections`, `AppOwnership.sidebar_links`). The labels
 count the viewer's OWN memberships, admins included:
 
-- one owned app reads as its name (`Cyvasse`), two or more as **Applications**;
+- one owned app reads as its name (`Cyvasse`), followed by its **Pipeline**; two
+  or more as **Applications** (each app's page links its own pipeline);
 - one CTO among them reads as its name (`Turf`), two or more as **Agents**;
 - a user who owns nothing gets no section, admin or not. An admin still reaches
   every app at `/applications`.
@@ -59,9 +74,11 @@ A CTO's name is its domain's `reply_name` in `config/agent_domains.yml`
 |------|---------------|
 | `/applications` | The visible apps, each with its CTO |
 | `/applications/:slug` | Name, emoji and colour, health, the CTO card, and agent usage (the meter, this month's and today's totals); owners listed for admins, and for admins the tier and cap-lift form |
+| `/applications/:slug/pipeline` | The app's tasks by lane, read-only and sanitized for an owner; the building lanes in use. Detail: [`client-pipeline.md`](client-pipeline.md) |
 | `/applications/:slug/health` | The lazy health frame, cached 15 minutes per app |
 | `/applications/:slug/usage` | The usage meter as JSON |
 | `/applications/:slug/usage_cap` | `PATCH`, admin only (the wall refuses anyone else): the app's package tier and the cap lift |
+| `/applications/:slug/chat` | `GET` and `POST`: the viewer's own live chat with the app's CTO, with typing, the answer streamed in, and the usage meter in tokens. Detail: [`agent-message-loop.md`](agent-message-loop.md#web-chat-the-ctos-answer-on-mcritchie-studio-phase-7-step-3) |
 | `/agents/settings` | The visible CTOs and where each one reports |
 | `/agents/:slug/settings` | The CTO's name, avatar and app, its report setting, and the app's usage meter |
 
@@ -111,4 +128,6 @@ channel is in the McRitchie Studio guild, so an owner sees our internal channels
 ## What a setting can never do
 
 A setting here changes where a CTO posts. It gives the CTO no tool, capability or
-credential, and it never reaches another app's row.
+credential, and it never reaches another app's row. Owning an app does not make
+its CTO answer you as the owner either: the chat's audience is your agent
+person's role, set by an operator, as on Discord.

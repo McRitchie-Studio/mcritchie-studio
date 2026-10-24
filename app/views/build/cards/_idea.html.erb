@@ -1,0 +1,36 @@
+<%# locals: (card:, message:, request_row:) %>
+<%# The idea card: the app Ritch heard, as a title and two or three key features (BuildIntake::Card "idea"). Start App locks it in; the status card above the chat appears once Ritch's theme card follows (AppRequest#intake_started?); Build something else sends Ritch back to asking which direction to take. Each tap sets the field AND posts the visitor's turn (BuildIntake::Choice), so Ritch answers next without the visitor typing. A v1 draft's card has no title: its one-sentence idea stands in. %>
+<% answers = request_row.answers.is_a?(Hash) ? request_row.answers : {} %>
+<% title = card["title"].presence || card["idea"] %>
+<% chosen = answers["idea"].present? && (card["title"].present? ? answers["title"] == card["title"] : answers["idea"] == card["idea"]) %>
+<div class="rounded-2xl border <%= chosen ? 'border-primary' : 'border-subtle' %> bg-surface p-3 sm:p-4" data-test="build-card-idea" data-chosen="<%= chosen %>">
+  <p class="text-xs font-semibold uppercase tracking-wider text-muted mb-1">Your app</p>
+  <p class="text-lg text-heading font-bold leading-snug break-words" data-test="build-idea-title"><%= title %></p>
+  <% if card["features"].present? %>
+    <p class="mt-3 text-xs font-semibold uppercase tracking-wider text-muted">Key features</p>
+    <ul class="mt-1 list-disc pl-5 space-y-0.5 text-sm text-body" data-test="build-idea-features">
+      <% card["features"].each do |feature| %>
+        <li class="break-words"><%= feature %></li>
+      <% end %>
+    </ul>
+  <% end %>
+  <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+    <%= form_with url: build_request_intake_path(request_row.token), method: :patch do %>
+      <%= hidden_field_tag :field, "idea" %>
+      <%= hidden_field_tag :message_id, message.id %>
+      <%= hidden_field_tag :client_id, SecureRandom.uuid %>
+      <%# The studio's own primary and accent glow (cta-glow with no palette): no theme is chosen yet. Spent once chosen (disabled). %>
+      <span class="cta-glow inline-block" data-test="build-idea-glow">
+        <button type="submit" class="btn btn-primary btn-sm" data-test="build-choose-idea" <%= "disabled" if chosen %>>
+          <%= chosen ? "Building this" : "Start App" %>
+        </button>
+      </span>
+    <% end %>
+    <%= form_with url: build_request_intake_path(request_row.token), method: :patch do %>
+      <%= hidden_field_tag :field, "idea_else" %>
+      <%= hidden_field_tag :message_id, message.id %>
+      <%= hidden_field_tag :client_id, SecureRandom.uuid %>
+      <button type="submit" class="text-sm text-primary-ink underline-offset-2 hover:underline" data-test="build-idea-else">Build something else</button>
+    <% end %>
+  </div>
+</div>

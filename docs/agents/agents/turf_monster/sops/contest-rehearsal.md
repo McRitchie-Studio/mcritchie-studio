@@ -81,7 +81,7 @@ Two exclusions, and neither is a preference:
   and contest creator, and when the player is also the fee payer the
   transaction needs one signature slot, not two — `prepare_entry` refuses.
   Production's key (`4S39…`, `solana.turf.server`, since 2026-10-14; the retired
-  Xan `8K81…` before it) is in no devnet signer set and is not filed for the
+  Ritch `8K81…` before it) is in no devnet signer set and is not filed for the
   rehearsal.
 - **turf-5 cannot play.** Its username is the reserved on-chain prefix `turf`
   and it has no `UserAccount`, so the program refuses to register it.

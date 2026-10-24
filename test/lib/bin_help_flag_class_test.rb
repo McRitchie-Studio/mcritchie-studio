@@ -91,6 +91,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # redirect rules, adds Heroku domains and moves APP_HOST. One guard with a
     # per-subcommand flag dictionary, ahead of the first credential read.
     "domain-cutover"         => :cli_arg_guard,
+    # Buys domains on Cloudflare Registrar: the registration POST charges Alex's
+    # card. One guard with a per-subcommand flag dictionary, ahead of the first
+    # credential read, so `register <d> --price x --ok y --help` buys nothing.
+    "domain-register"        => :cli_arg_guard,
     # --- retrofitted 2026-08-31, /tasks/qa-server-help-provisions -------------
     # It sat in :subcommand looking classified while `provision <app> --yes --help`
     # ran a REAL provision — heroku create, billable add-ons, domains, ACM and a
@@ -133,6 +137,10 @@ class BinHelpFlagClassTest < Minitest::Test
     "importmap-audit-ci"     => :optparse,
     # Generate enqueues a PAID image round; the guard runs before the Rails boot.
     "email-image"            => :cli_arg_guard,
+    "game-model"             => :cli_arg_guard, # PAID image calls; the guard runs before bundler
+    # PUBLISHES a client app's bundle (flips its live preview); the guard runs
+    # before the bundle is read or anything is sent.
+    "client-bundle"          => :cli_arg_guard,
     # COPIES the credential helper's whole closure to disk and repoints a symlink,
     # so it is guarded like the rest of the mutating flat scripts. Its --check and
     # --print-config arms install nothing, but the DEFAULT arm (no flags at all)
@@ -180,6 +188,9 @@ class BinHelpFlagClassTest < Minitest::Test
     # CLAIMS a message on the board; bin/agent-inbox only reads. Both guard first.
     "heartbeat"              => :cli_arg_guard,
     "dispatcher"             => :cli_arg_guard,
+    # bin/dispatcher's sibling service: install writes ~/Library/LaunchAgents and
+    # run claims board tasks, so every subcommand guards first.
+    "client-build-launcher"  => :cli_arg_guard,
     # The services phase of bin/ecosystem-build: `restore` installs launchd
     # services and `allow-rules` rewrites ~/.claude/settings.json, so the guard
     # runs (per subcommand) before either.
@@ -590,6 +601,7 @@ class BinHelpFlagClassTest < Minitest::Test
   # Ruby scripts must call it before their first mutating call — asserted by
   # position, because "it is in the file somewhere" is not the property that matters.
   FIRST_MUTATION = {
+    "client-bundle"       => "ClientAppBundle",
     "program-drift"       => "ProgramDrift.readings",
     "archive-docs"        => "DocsArchive.roll_ledger!",
     "clean-artifacts"     => "ArtifactSweep",
@@ -649,8 +661,12 @@ class BinHelpFlagClassTest < Minitest::Test
     # ~/Library/LaunchAgents write) is the first arm that writes anything, and the
     # run loop's claims come after it.
     "dispatcher"          => "AgentMailbox::LaunchAgent.new",
+    # The same shape: install is the first arm that writes, and run's claims come after it.
+    "client-build-launcher" => "ClientBuildLauncher::LaunchAgent.new",
     # The first 1Password read; every Cloudflare and Heroku write follows it.
-    "domain-cutover"      => "DomainCutover::Credentials.cloudflare"
+    "domain-cutover"      => "DomainCutover::Credentials.cloudflare",
+    # The first 1Password read; the domain-check and the registration POST follow it.
+    "domain-register"     => "DomainRegister::Credentials.cloudflare"
   }.freeze
 
   def test_the_guard_runs_before_the_first_mutation

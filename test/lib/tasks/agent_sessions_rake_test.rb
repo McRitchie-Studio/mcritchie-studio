@@ -33,20 +33,20 @@ class AgentSessionsGrantAdminRakeTest < ActiveSupport::TestCase
   end
 
   test "it grants an admin session and prints only its token on stdout" do
-    out, err, status = grant("SOUL" => "xan")
+    out, err, status = grant("SOUL" => "ray")
     session = AgentSession.from_token(out.strip)
 
     assert_equal 0, status
     assert_equal 1, out.lines.size, "stdout is the token alone"
-    assert_equal %w[xan admin operator_grant], [session.soul, session.tier, session.issued_by]
+    assert_equal %w[ray admin operator_grant], [session.soul, session.tier, session.issued_by]
     assert_nil session.task_slug
     assert_in_delta 8.hours.from_now, session.expires_at, 5.seconds
-    assert_match(/#{session.slug}.*xan.*admin/, err)
+    assert_match(/#{session.slug}.*ray.*admin/, err)
     refute_includes err, out.strip, "the token is never echoed where a person reads"
   end
 
-  test "it defaults to Xan and takes Steffon" do
-    assert_equal "xan", AgentSession.from_token(grant.first.strip).soul
+  test "it defaults to Ritch and takes Steffon" do
+    assert_equal "ray", AgentSession.from_token(grant.first.strip).soul
     assert_equal "steffon", AgentSession.from_token(grant("SOUL" => "steffon").first.strip).soul
   end
 
@@ -65,7 +65,7 @@ class AgentSessionsGrantAdminRakeTest < ActiveSupport::TestCase
       out, err, status = grant("SOUL" => "carl")
 
       assert_equal ["", 1], [out, status]
-      assert_match(/admin is held only by steffon and xan, not carl/, err)
+      assert_match(/admin is held only by steffon and ray, not carl/, err)
     end
   end
 end

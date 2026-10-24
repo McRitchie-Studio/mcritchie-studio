@@ -47,7 +47,7 @@ class AgentSessionTest < ActiveSupport::TestCase
   end
 
   test "an admin session refuses a task scope: the tier is the scope" do
-    session = AgentSession.new(soul: "xan", tier: "admin", task_slug: @task.slug, issued_by: "operator_grant")
+    session = AgentSession.new(soul: "ray", tier: "admin", task_slug: @task.slug, issued_by: "operator_grant")
 
     refute session.valid?
     assert_includes session.errors[:task_slug].join, "unscoped within the admin tier"
@@ -57,7 +57,7 @@ class AgentSessionTest < ActiveSupport::TestCase
     session = AgentSession.new(soul: "carl", tier: "admin", issued_by: "operator_grant")
 
     refute session.valid?
-    assert_includes session.errors[:tier].join, "steffon and xan"
+    assert_includes session.errors[:tier].join, "steffon and ray"
   end
 
   test "an admin soul may hold a narrower studio session" do
@@ -72,7 +72,7 @@ class AgentSessionTest < ActiveSupport::TestCase
 
   test "a slug that is no soul is refused, and an alias resolves to its successor" do
     refute AgentSession.new(soul: "nobody", tier: "studio", task_slug: @task.slug, issued_by: "task_claim").valid?
-    assert_equal "xan", AgentSession.create!(soul: "alex", tier: "admin", issued_by: "operator_grant").soul
+    assert_equal "ray", AgentSession.create!(soul: "alex", tier: "admin", issued_by: "operator_grant").soul
   end
 
   test "a harness key is held as the logged-out builder, scoped to no task, and granted by the operator" do
@@ -81,7 +81,7 @@ class AgentSessionTest < ActiveSupport::TestCase
     assert key.expires_at > 50.years.from_now
     refute key.covers_task?(@task.slug)
 
-    refute AgentSession.new(soul: "xan", tier: "harness", issued_by: "operator_grant").valid?
+    refute AgentSession.new(soul: "ray", tier: "harness", issued_by: "operator_grant").valid?
     refute AgentSession.new(soul: "pokemon", tier: "harness", issued_by: "operator_grant", task_slug: @task.slug).valid?
     refute AgentSession.new(soul: "pokemon", tier: "harness", issued_by: "task_claim").valid?
     assert_raises(ActiveRecord::ReadonlyAttributeError) { key.update!(label: "another-mac") }
@@ -92,7 +92,7 @@ class AgentSessionTest < ActiveSupport::TestCase
 
     assert studio.covers_task?(@task.slug)
     refute studio.covers_task?(other.slug)
-    admin = AgentSession.create!(soul: "xan", tier: "admin", issued_by: "launch_phrase")
+    admin = AgentSession.create!(soul: "ray", tier: "admin", issued_by: "launch_phrase")
     assert admin.covers_task?(other.slug)
     refute AgentSession.create!(soul: "tyrion", tier: "client", issued_by: "runtime_key").covers_task?(@task.slug)
   end
@@ -358,7 +358,7 @@ class AgentSessionTest < ActiveSupport::TestCase
 
   test "transition_refusal: archived is an admin transition from any stage" do
     builder = studio
-    admin = AgentSession.create!(soul: "xan", tier: "admin", issued_by: "operator_grant")
+    admin = AgentSession.create!(soul: "ray", tier: "admin", issued_by: "operator_grant")
 
     assert_match(/building to archived is an admin transition; pokemon holds a studio session/,
                  builder.transition_refusal(@task, "archived"))

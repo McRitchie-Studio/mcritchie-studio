@@ -3,11 +3,11 @@ require "rake"
 require_relative "../support/agent_message_fixtures"
 
 # [integration] The owner-only guard end to end, with the shipped
-# config/agent_answerers.yml: a stranger's @Xan arriving through the ingest the
+# config/agent_answerers.yml: a stranger's @Ritch arriving through the ingest the
 # gateway and poll share is stored held, the claim API (bin/dispatcher's call)
 # never hands it out, the admin page shows it with a CSRF-guarded Release button,
 # and releasing it (the button or `bin/rails agent_people:release`) makes it
-# claimable. Alex's own @Xan is claimed, completed and queued for reply as before.
+# claimable. Alex's own @Ritch is claimed, completed and queued for reply as before.
 class AgentOwnerOnlyGuardTest < ActionDispatch::IntegrationTest
   include AgentMessageFixtures
 
@@ -23,17 +23,17 @@ class AgentOwnerOnlyGuardTest < ActionDispatch::IntegrationTest
   end
 
   def ingest(id, author:)
-    raw = discord_raw(id, content: "<@&#{XAN_ROLE}> what is on the board?", author: author, roles: [ XAN_ROLE ], guild: GUILD)
+    raw = discord_raw(id, content: "<@&#{RAY_ROLE}> what is on the board?", author: author, roles: [ RAY_ROLE ], guild: GUILD)
     AgentMessages::DiscordIngest.new(routes: agent_routes).call(raw, guild_id: GUILD, source: "discord-gateway")
   end
 
   def claim_over_http(worker)
-    post claim_api_v1_agent_messages_url, params: { souls: %w[xan avi], worker: worker }, headers: @shared, as: :json
+    post claim_api_v1_agent_messages_url, params: { souls: %w[ray avi], worker: worker }, headers: @shared, as: :json
     assert_response :success
     response.parsed_body["data"]
   end
 
-  test "a stranger's @Xan is held and never claimed; Alex's is answered as before" do
+  test "a stranger's @Ritch is held and never claimed; Alex's is answered as before" do
     held = ingest(2001, author: STRANGER)
     assert_equal "held", held.status
 
@@ -64,7 +64,7 @@ class AgentOwnerOnlyGuardTest < ActionDispatch::IntegrationTest
 
     mine = ingest(2202, author: ALEX)
     assert_equal mine.id, claim_over_http("mac-1")["id"]
-    assert_enqueued_with(job: AgentMessageTypingJob, args: [ mine.id, "mac-1" ]) do
+    assert_enqueued_with(job: AgentMessageTypingJob, args: [ mine.id, "mac-1", "typing" ]) do
       post typing_api_v1_agent_message_url(mine), params: { worker: "mac-1" }, headers: @shared, as: :json
     end
     assert_equal "queued", response.parsed_body.dig("meta", "typing")

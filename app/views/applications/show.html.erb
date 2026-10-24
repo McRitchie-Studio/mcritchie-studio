@@ -8,6 +8,14 @@
     </div>
   </div>
 
+  <div class="card p-4 text-sm flex flex-col sm:flex-row sm:items-center gap-3" data-test="application-pipeline-card">
+    <div class="min-w-0 flex-1">
+      <h2 class="font-semibold text-heading text-base">Pipeline</h2>
+      <p class="text-secondary">Your app's work by lane: queued, building, in review, on QA and shipped.</p>
+    </div>
+    <%= link_to "Open pipeline", pipeline_application_path(@app.slug), class: "btn btn-secondary btn-sm w-full sm:w-auto shrink-0", data: { test: "application-pipeline-link" } %>
+  </div>
+
   <div class="card p-4 space-y-2 text-sm" data-test="application-health-card">
     <h2 class="font-semibold text-heading text-base">Health</h2>
     <%= turbo_frame_tag "application-health", src: health_application_path(@app.slug), loading: :lazy do %>
@@ -23,10 +31,21 @@
           <%= render "applications/cto_avatar", cto: @cto %>
           <div class="min-w-0">
             <p class="font-semibold text-heading" data-test="application-cto-name"><%= @cto.display_name %></p>
-            <p class="text-secondary"><%= @app.name %>'s CTO. Sends a daily report to the Discord channel you choose.</p>
+            <% if @cto.client? %>
+              <p class="text-secondary"><%= @app.name %>'s CTO. Chat to shape the app, see it on QA, and approve each change.</p>
+            <% else %>
+              <p class="text-secondary"><%= @app.name %>'s CTO. Sends a daily report to the Discord channel you choose.</p>
+            <% end %>
           </div>
         </div>
-        <%= link_to "Settings", settings_agent_path(@cto.slug), class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0", data: { test: "application-cto-settings" } %>
+        <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto shrink-0">
+          <% if AgentMessages::WebIngest.available?(@cto) %>
+            <%= link_to "Chat", chat_application_path(@app.slug), class: "btn btn-primary btn-sm w-full sm:w-auto", data: { test: "application-cto-chat" } %>
+          <% end %>
+          <% if @cto.settings? %>
+            <%= link_to "Settings", settings_agent_path(@cto.slug), class: "btn btn-secondary btn-sm w-full sm:w-auto", data: { test: "application-cto-settings" } %>
+          <% end %>
+        </div>
       </div>
     <% else %>
       <p class="text-secondary" data-test="application-no-cto">This app has no CTO yet.</p>

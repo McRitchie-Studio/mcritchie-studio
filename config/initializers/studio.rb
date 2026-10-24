@@ -60,7 +60,8 @@ Studio.configure do |config|
   # ---- Brand: the saved Studio kit (task studio-adopts-its-kit) ----
   # Every logo below is a file `bin/rails logos:install BRAND=studio` wrote into
   # public/brand/ from the kit saved at /logos/studio; favicon.png and icon.png
-  # are rasterized from public/brand/icon-dark.svg by script/brand_png.cjs. Never
+  # are rasterized from public/brand/icon-dark.svg by script/brand_png.cjs, and
+  # og.png from stacked-dark.svg (command in docs/topics/logos.md). Never
   # hand-edit a copy: change the kit, reinstall, and commit the files.
   #
   # The icon files come in two tones: icon-light (ink, for a light page) and
@@ -91,6 +92,15 @@ Studio.configure do |config|
   # that has the setting.
   if Studio.respond_to?(:navbar_scroll_timeline=)
     config.navbar_scroll_timeline = true
+  end
+  # The signed-out navbar's primary button sells the funnel (Alex 2026-10-19):
+  # "Build App" to /build, with sign-in kept as a quiet link beside it and in
+  # the phone row (studio-engine's Studio.navbar_signed_out_cta). Sign-in's own
+  # words stay Studio.sign_in_label, which also words the engine's auth pages.
+  # Guarded the same way: inert until the release relocks an engine that has
+  # the setting.
+  if Studio.respond_to?(:navbar_signed_out_cta=)
+    config.navbar_signed_out_cta = { label: "Build App", path: "/build" }
   end
   # ---- Site footer and booking (studio-engine docs/SITE_FOOTER.md) ----
   # The engine renders the footer, the map, the booking frame and the booking

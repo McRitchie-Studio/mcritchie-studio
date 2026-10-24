@@ -1,6 +1,6 @@
-xan_agent:
-  name: Xan
-  slug: xan
+ray_agent:
+  name: Ritch
+  slug: ray
   status: active
   agent_type: orchestrator
   title: Lead Orchestrator

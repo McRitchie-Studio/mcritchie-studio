@@ -1,13 +1,15 @@
 module AgentMessages
   # The memory one answer is given: the context bundle for a claimed message,
-  # rebuilt from the hub's rows on every answer (never a resumed Claude session),
-  # so every dispatcher on every machine sees the same context for the same rows.
-  # docs/agents/system/agent-message-loop.md, "Memory".
+  # rebuilt from the hub's rows on every answer, so every dispatcher on every
+  # machine sees the same context for the same rows. A warm domain's owner and
+  # team turns also resume the domain's Claude session, but still read this
+  # bundle per message for the audience, rules and thread.
+  # docs/agents/system/agent-message-loop.md, "Memory" and "Warm sessions".
   #
   # THE PERSON LAYER is one person's exchanges with one soul on EVERY channel and
   # platform: every earlier row with the same (soul_slug, person_id), oldest first,
   # each labeled with the place it happened (`[discord #release-notes]`). What
-  # Alex told Xan in one channel, Xan knows in the next. Another person's messages
+  # Alex told Ritch in one channel, Ritch knows in the next. Another person's messages
   # are never in it.
   #
   # THE THREAD LAYER is the focus: the conversation this message continues, every
@@ -40,6 +42,25 @@ module AgentMessages
   # role of the message's person, resolved here on the board and never from the
   # message text. No person is public. The worker gates the action and the
   # internal layers on it (AgentMailbox::Audience).
+  #
+  # A CLIENT CTO (soul `client_cto`, docs/agents/system/client-cto.md) is one soul
+  # for every client app, so its PERSON layer is cut to THIS app's rows
+  # (channel_ref): an owner of two client apps never hears one app's CTO recall
+  # the other's chat. Its bundle also carries `persona`, the app's AppCto row
+  # (AppCto#persona_json), which the worker fills its persona template from,
+  # inside the untrusted fence. Every other soul's bundle has `persona: nil`.
+  # And its audience: a sender the board knows only as `public` who OWNS the app
+  # (an AppMembership owner, a server-side fact, never the message's) is that
+  # app's client, scoped to it (`client_domain` the app slug, underscored), so
+  # the CTO may talk about their own project.
+  #
+  # AN APP OWNER on their own app's CTO thread (Answerers#app_owner_thread?,
+  # any CTO, ours or a client's) is answered there, and is that app's client
+  # (Answerers#audience_for): never higher, so no read action, no internal
+  # context, only the domain's notes, and the proposal catalog a client sees.
+  # The audience is the same one the notes, the catalog and the proposal check
+  # (AgentProposal.record_from!) read, so no layer answers a higher role than
+  # the rules the worker prints.
   #
   # `ledger` and `user.notes` (a string) repeat the pre-omnichannel shape for a
   # worker still running the older ContextBuilder; drop them once every
@@ -80,7 +101,7 @@ module AgentMessages
         "message_id" => @message.id,
         "as_of" => as_of.iso8601,
         "place" => place(@message),
-        "audience" => AgentPerson.audience_for(person),
+        "audience" => audience,
         "person" => {
           "id" => @message.person_id, "display_name" => person&.display_name, "soul" => @message.soul_slug,
           "total" => total, "unread" => [ total - fetched.size, 0 ].max, "in_thread" => fetched.size - rows.size,
@@ -92,13 +113,43 @@ module AgentMessages
         },
         "user" => user_json,
         "proposals" => proposals_json,
+        "persona" => persona_json,
         "ledger" => { "turns" => person_turns, "summary" => summary, "pin" => thread_turns.last }
-      }
+      }.merge(intake_json).merge(attachments_json)
     end
+
+    # The audience this message is answered as ({"role", "client_domain"}). See
+    # THE AUDIENCE above. Public: AgentProposal.record_from! checks a proposal
+    # against the same audience the catalog offered.
+    def audience = @audience ||= audience_json
 
     private
 
     def person = @message.person
+
+    # Whose role the answer is held to. A /build thread is read by whoever holds
+    # the request's token (BuildIntake), so every turn there is answered as the
+    # public, whoever sent it: no read action, internal context or owner notes.
+    def audience_person = BuildIntake.thread?(@message.thread_key) ? nil : person
+
+    # A /build thread's intake state (BuildIntake::Context): what Ritch asks next.
+    # No key at all on any other thread.
+    def intake_json
+      return {} unless BuildIntake.thread?(@message.thread_key)
+
+      intake = BuildIntake::Context.for(@message)
+      intake ? { "intake" => intake } : {}
+    end
+
+    # THE FILES the message carries (web chat: images and PDFs), each with a URL
+    # that expires (AgentMessages::Attachments.for_worker), so the holder can read
+    # them; absent when there are none. Only this message's own files: a cold run
+    # sends the newest message's media, and older ones stay in the warm session.
+    def attachments_json
+      return {} unless @message.attachments.attached?
+
+      { "attachments" => Attachments.for_worker(@message) }
+    end
 
     # The notes this soul may read about this sender (AgentPersonNote.visible_for,
     # by the role the board resolves now), oldest first, one per fact. A note
@@ -107,7 +158,7 @@ module AgentMessages
     def visible_notes
       return [] unless person
 
-      role = AgentPerson.audience_for(person)["role"]
+      role = audience["role"]
       AgentPersonNote.visible_for(person, soul: @message.soul_slug, role: role)
                      .includes(:source_message).order(:noted_at, :id).to_a
                      .select { |note| AgentPersonNote.admissible?(note.body) }.uniq(&:fingerprint)
@@ -117,26 +168,55 @@ module AgentMessages
     # AgentMailbox::DomainRegistry, filtered by the sender's audience, which the
     # board resolves from the person's role), and the thread's newest proposal,
     # so a `change: …` is answered with the offer it changes in view. A soul
-    # that is no domain's front door gets an empty catalog.
+    # that is no domain's front door gets an empty catalog. `last` carries, from
+    # code, whether it was offered to this sender (`own`) and on which message
+    # (`source_message_id`): a warm turn takes it only from a shown own turn
+    # (AgentMailbox::WarmSession.eligible?).
     def proposals_json
-      audience = AgentProposal.audience_for(person)
+      audience = AgentMailbox::Audience.new(role: self.audience["role"], client_domain: self.audience["client_domain"])
       last = AgentProposal.in_thread(@message).where("agent_proposals.created_at <= ?", @message.created_at)
                           .order(id: :desc).first
       { "catalog" => AgentProposal.registry.catalog(@message.soul_slug, audience: audience),
-        "last" => last&.as_context_json }
+        "last" => last && last.as_context_json.merge(
+          "own" => last.person_id.present? && last.person_id == @message.person_id,
+          "source_message_id" => last.source_message_id
+        ) }
     end
 
     def person_scope
       return AgentMessage.none if @message.person_id.blank? || @message.soul_slug.blank?
 
-      AgentMessage.where(soul_slug: @message.soul_slug, person_id: @message.person_id)
-                  .where("agent_messages.id < ?", @message.id)
-                  .where.not(status: UNSEEN_STATUSES)
+      scope = AgentMessage.where(soul_slug: @message.soul_slug, person_id: @message.person_id)
+                          .where("agent_messages.id < ?", @message.id)
+                          .where.not(status: UNSEEN_STATUSES)
+      client_cto? ? scope.where(channel_ref: @message.channel_ref) : scope
+    end
+
+    def client_cto? = @message.soul_slug == AppCto::SOUL
+
+    def audience_json
+      base = audience_person ? Answerers.current.audience_for(@message, audience_person) : AgentPerson.audience_for(nil)
+      return base unless client_cto? && base["role"] == "public" && app_owner?
+
+      base.merge("role" => "client", "client_domain" => @message.channel_ref.to_s.tr("-", "_"))
+    end
+
+    def app_owner?
+      user = person&.user
+      user&.slug.present? && AppMembership.owners.exists?(app_slug: @message.channel_ref, user_slug: user.slug)
+    end
+
+    # The client CTO's persona for this app, or nil (every other soul, or a
+    # client app whose row is gone: the worker then answers as a plain CTO).
+    def persona_json
+      return nil unless client_cto?
+
+      AppCto.includes(:app).find_by(app_slug: @message.channel_ref)&.persona_json
     end
 
     # Oldest first, the newest FETCH_LIMIT.
     def person_rows
-      person_scope.order(created_at: :desc, id: :desc).limit(FETCH_LIMIT).to_a.reverse
+      person_scope.order(created_at: :desc, id: :desc).limit(FETCH_LIMIT).with_attached_attachments.to_a.reverse
     end
 
     def thread_scope
@@ -148,7 +228,7 @@ module AgentMessages
 
     # Oldest first, the newest THREAD_TURNS.
     def thread_rows
-      thread_scope.order(id: :desc).limit(THREAD_TURNS).to_a.reverse
+      thread_scope.order(id: :desc).limit(THREAD_TURNS).with_attached_attachments.to_a.reverse
     end
 
     def user_json
@@ -190,6 +270,7 @@ module AgentMessages
       { "id" => row.id, "at" => sent(row).iso8601, "place" => place(row), "author_name" => row.author_name,
         "author_ref" => row.author_ref, "own" => row.person_id.present? && row.person_id == @message.person_id,
         "content" => row.content.to_s, "answer" => row.response_text, "status" => row.status }
+        .merge(row.attachments.any? ? { "files" => row.attachments.map { |a| a.blob.filename.to_s } } : {})
     end
 
     # The place label, CODE-SHAPED on purpose: it is printed outside the prompt's

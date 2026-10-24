@@ -12,6 +12,7 @@
     "sm" => { container: "w-10 h-10", text: "text-sm" },
     "md" => { container: "w-14 h-14", text: "text-xl" },
     "lg" => { container: "w-16 h-16", text: "text-2xl" },
+    "xl" => { container: "w-24 h-24", text: "text-3xl" },
   }
   s = sizes[size] || sizes["md"]
   shiny_badge = shiny.nil? ? (agent.respond_to?(:shiny?) && agent.shiny?) : shiny

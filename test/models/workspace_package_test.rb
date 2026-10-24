@@ -17,16 +17,41 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     line = WorkspacePackage.talk_to_us
     assert_equal "enterprise", line.key
     refute line.card?
-    assert_match(/Need more apps, white label or custom connectors\? Talk to us/, line.tagline)
+    assert_match(/Need white label, more domains or custom connectors\? Talk to us/, line.tagline)
+    # Every tier holds unlimited apps (apps_per_account: ~), so Enterprise must
+    # not sell "more apps" as its difference.
+    assert WorkspacePackage.all.all? { |pkg| pkg.apps_per_account.nil? }, "every tier is unlimited on apps"
+    refute_match(/more apps/i, line.tagline)
+    refute(line.highlights.any? { |h| h =~ /more than one app/i }, "no Enterprise highlight implies lower tiers get one app")
     assert_equal({ "label" => "Book a call", "action" => "enterprise_booking" }, line.cta)
     assert_includes WorkspacePackage.keys, "enterprise", "Enterprise keeps its key for the clients stored on it"
     refute_includes WorkspacePackage.keys, "growth", "Growth split into Pro and Team on 2026-10-12"
   end
 
-  test "[unit] CTO allowances: every tier has the key, blank (unlimited) until priced; a bad value reads as none" do
+  test "[unit] building lanes: Vibe 1, Builder 2, Pro 3, Team 4, Enterprise unlimited; a bad value reads as none" do
+    raw = WorkspacePackage.config.fetch("packages")
+    assert raw.all? { |attrs| attrs.key?("building_lanes") }, "each tier names its building_lanes"
+    assert_equal({ "vibe" => 1, "builder" => 2, "pro" => 3, "team" => 4, "enterprise" => nil },
+                 WorkspacePackage.all.to_h { |pkg| [ pkg.key, pkg.building_lanes ] })
+    [ 0, -1, "3", 2.5 ].each do |bad|
+      assert_nil WorkspacePackage.new({ "key" => "x", "name" => "X", "building_lanes" => bad }).building_lanes, bad.inspect
+    end
+  end
+
+  test "[unit] apps per account: every tier has the key, all unlimited for now; a bad value reads as none" do
+    raw = WorkspacePackage.config.fetch("packages")
+    assert raw.all? { |attrs| attrs.key?("apps_per_account") }, "each tier names its apps_per_account"
+    assert_equal [ nil ] * 5, WorkspacePackage.all.map(&:apps_per_account), "Mr. McRitchie set every tier unlimited on 2026-10-18"
+    assert_equal 1, WorkspacePackage.new({ "key" => "x", "name" => "X", "apps_per_account" => 1 }).apps_per_account
+    [ 0, -1, "3", 2.5 ].each do |bad|
+      assert_nil WorkspacePackage.new({ "key" => "x", "name" => "X", "apps_per_account" => bad }).apps_per_account, bad.inspect
+    end
+  end
+
+  test "[unit] CTO allowances: every tier has the key; Vibe's is 25,000, the paid tiers blank (unlimited) until priced; a bad value reads as none" do
     raw = WorkspacePackage.config.fetch("packages")
     assert raw.all? { |attrs| attrs.key?("cto_monthly_tokens") }, "each tier names its cto_monthly_tokens"
-    assert_equal [ nil ] * 5, WorkspacePackage.all.map(&:cto_monthly_tokens)
+    assert_equal [ 25_000, nil, nil, nil, nil ], WorkspacePackage.all.map(&:cto_monthly_tokens)
     assert_equal 80, WorkspacePackage.cto_usage["warn_percent"]
     assert_equal({ "tokens" => nil, "price" => nil }, WorkspacePackage.cto_usage["topup"])
 
@@ -359,6 +384,8 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     refute WorkspacePackage.features.any? { |f| f.name.match?(/Google Workspace|Managed Workspace/) },
            "Managed Workspace is a paid add-on, not a tier feature, and the row is Integrations now"
     app = feature("Custom Web App")
+    assert_equal [ "Unlimited apps", "Unlimited apps", "Unlimited apps + workers", "Unlimited apps + workers", "Unlimited apps + workers" ],
+                 TIERS.map { |key| app.value_for(key) }, "every tier is unlimited on apps, so no row sells one app"
     assert_equal "app", app.glyph, "the app leads with the drawn custom-app mark, not the GitHub logo"
     refute app.brand?
     assert_includes WorkspacePackage::GLYPHS, app.glyph
@@ -368,7 +395,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   test "[unit] the web address reads three domain levels across the tiers" do
     address = feature("Web address")
 
-    assert_equal [ "your-app.mcritchie.studio", "www.your-app.com", "your-app.com + www.your-app.com",
+    assert_equal [ "your-app.mcritchie.app", "www.your-app.com", "your-app.com + www.your-app.com",
                    "your-app.com + www.your-app.com", "Multiple domains" ], TIERS.map { |key| address.value_for(key) }
     assert_equal "Your app's address, from our subdomain up to your own domain.", address.blurb,
                  "one short line: the cells already show the steps"
@@ -381,7 +408,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   test "[unit] the domain lane reads Custom Domain up to Builder and Premium Domain from Pro, Cloudflare in no card line" do
     lines = WorkspacePackage.cards.to_h { |card| [ card.key, card.card_lines.find { |l| l.key == "domain" } ] }
 
-    assert_equal [ "Custom Domain", "on your-app.mcritchie.studio", "missing" ], lines["vibe"].to_h.values_at(:title, :sub, :status)
+    assert_equal [ "Custom Domain", "on your-app.mcritchie.app", "missing" ], lines["vibe"].to_h.values_at(:title, :sub, :status)
     assert_equal [ "Custom Domain", "www.your-app.com", "included" ], lines["builder"].to_h.values_at(:title, :sub, :status)
     %w[pro team].each do |key|
       assert_equal [ "Premium Domain", "best-in-class speed & security", "included" ], lines[key].to_h.values_at(:title, :sub, :status), key
@@ -485,7 +512,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
                    "pro" => team_marketing + [ [ "Fractional CMO", "Team" ], [ "Email drafting agent", "Team" ] ],
                    "team" => [] }, missing)
     vibe_domain = WorkspacePackage.find(:vibe).card_lines.find { |l| l.key == "domain" }
-    assert_equal "on your-app.mcritchie.studio", vibe_domain.sub
+    assert_equal "on your-app.mcritchie.app", vibe_domain.sub
     assert_equal "Bring your idea to life", WorkspacePackage.find(:vibe).card_lines.find { |l| l.key == "app" }.sub
     # ", nightly backups" wrapped at 1280px, so it left all three (the stack carries backups).
     assert_equal [ "light server, read-only data", "always on, 11 GB", "background jobs, 60 GB", "background jobs, 132 GB" ],
@@ -513,7 +540,7 @@ class WorkspacePackageTest < ActiveSupport::TestCase
     end
     vibe = domain.call(:vibe)
     assert vibe.missing?
-    assert_equal [ "Custom Domain", "on your-app.mcritchie.studio", "Builder" ], [ vibe.title, vibe.sub, vibe.in_tier.name ],
+    assert_equal [ "Custom Domain", "on your-app.mcritchie.app", "Builder" ], [ vibe.title, vibe.sub, vibe.in_tier.name ],
                  "a missing lane keeps the lane's own title"
     assert_equal "Custom Domain", WorkspacePackage.card_lanes.assoc("Application").last.find { |l| l.key == "domain" }.title,
                  "the override lives on the package, not the lane list"

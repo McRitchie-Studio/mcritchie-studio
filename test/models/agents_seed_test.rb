@@ -84,7 +84,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
       "shannon" => "ui",
       "jasper"  => "web3",
       "steffon" => "devops",
-      "xan"    => "documentation"
+      "ray"    => "documentation"
     }.each do |slug, domain|
       agent = Agent.find_by!(slug: slug)
       assert agent.metadata["reviewer"], "#{slug} must be a light-pool specialist"
@@ -97,15 +97,15 @@ class AgentsSeedTest < ActiveSupport::TestCase
     end
   end
 
-  test "Xan is the single identity holding the documentation review seat" do
+  test "Ritch is the single identity holding the documentation review seat" do
     run_seed
     docs = Agent.active.detect do |a|
       a.metadata["reviewer"] && Array(a.metadata["domains"]).include?("documentation")
     end
     assert docs, "a documentation-domain reviewer must resolve from the seed"
-    assert_equal "xan", docs.slug, "Xan holds the documentation seat (no separate persona)"
+    assert_equal "ray", docs.slug, "Ritch holds the documentation seat (no separate persona)"
     assert_equal "Lead Orchestrator", docs.title, "still the orchestrator identity"
-    refute Agent.exists?(slug: "xan-docs"), "the separate xan-docs persona is retired (folded into xan)"
+    refute Agent.exists?(slug: "alex-docs"), "the separate alex-docs persona is retired (folded into ray)"
   end
 
   # EVERY SOUL RENDERS A FACE — the property the board actually needs, which is not
@@ -143,7 +143,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
   # persona_identity). The seed owns each soul's emoji + an explicit color.
   test "each senior soul carries a status-line emoji and an explicit color" do
     run_seed
-    %w[xan avi carl shannon jasper steffon].each do |slug|
+    %w[ray avi carl shannon jasper steffon].each do |slug|
       agent = Agent.find_by!(slug: slug)
       assert agent.emoji.present?, "#{slug} must have a status-line emoji"
       assert_match(/\A#\h{6}\z/, agent.status_color, "#{slug} must carry an explicit hex color")
@@ -176,5 +176,29 @@ class AgentsSeedTest < ActiveSupport::TestCase
     YAML.stub(:safe_load_file, fake) { run_seed }
 
     assert Agent.exists?(slug: "probe-soul"), "the seed reads its roster from config/souls.yml"
+  end
+
+  # [unit] Regression: on a fresh database the seed creates the orchestrator under
+  # its slug `ray`, named Ritch, and exactly once.
+  test "a fresh seed keys the orchestrator ray and names it Ritch" do
+    Agent.where(slug: "ray").find_each { |a| a.skill_assignments.delete_all; a.activities.delete_all; a.usages.delete_all; a.tasks.update_all(agent_slug: nil); a.delete }
+    run_seed
+
+    assert_equal "Ritch", Agent.find_by!(slug: "ray").name
+    assert_equal 1, Agent.where(name: "Ritch").count, "one orchestrator row"
+  end
+
+  # [unit] A desk seeded from a pre-rename tree holds the seat as `xan`: the seed
+  # renames that row in place (same id, its activities follow) instead of making
+  # a second orchestrator.
+  test "a legacy xan row is renamed to ray in place, keeping its id and children" do
+    Agent.where(slug: "ray").find_each { |a| a.skill_assignments.delete_all; a.activities.delete_all; a.usages.delete_all; a.tasks.update_all(agent_slug: nil); a.delete }
+    legacy = Agent.create!(name: "Ritch", slug: "xan", status: "active", agent_type: "orchestrator")
+    Activity.insert_all([{ agent_slug: "xan", activity_type: "comment", description: "legacy row", created_at: Time.current, updated_at: Time.current }])
+    run_seed
+
+    refute Agent.exists?(slug: "xan")
+    assert_equal legacy.id, Agent.find_by!(slug: "ray").id
+    assert_equal 1, Activity.where(agent_slug: "ray").count
   end
 end

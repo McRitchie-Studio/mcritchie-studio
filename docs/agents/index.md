@@ -7,12 +7,12 @@ to its detail. The long form it replaced is frozen verbatim in
 
 ## Who is who
 
-Alex is the human owner. Xan is the orchestrator agent.
+Alex is the human owner. Ritch (slug `ray`) is the orchestrator agent.
 
 | Soul | Seat | Soul docs |
 |------|------|-----------|
 | Pokémon | The general builder. Every task gets its own mascot; it builds the whole task to `submitted` | `docs/agents/agents/pokemon/` |
-| Xan | Orchestrator; runs focus sessions; the documentation reviewer | `docs/agents/agents/xan/` |
+| Ritch | Orchestrator; runs focus sessions; the documentation reviewer | `docs/agents/agents/ray/` |
 | Carl | Lead Architect; primary reviewer of code PRs; merges into `accepted` | `docs/agents/agents/carl/` |
 | Shannon · Jasper | Review lights for UI · on-chain | `docs/agents/agents/<soul>/` |
 | Avi | Product owner; runs `qa-release`; arbitrates contested blocks | `docs/agents/agents/avi/` |
@@ -20,6 +20,7 @@ Alex is the human owner. Xan is the orchestrator agent.
 | Turf Monster | The Turf Monster app's operator: scores, contests, markets | `docs/agents/agents/turf_monster/` |
 | Tyrion | Cyvasse's house player: plays and chats with visitors; client-facing, holds no credentials | `docs/agents/agents/tyrion/` |
 | Tywin | The Cyvasse app's operator and admin: internal, holds the keys | `docs/agents/agents/tywin/` |
+| Hank | The Commercial Welding business agent (books, suppliers); not yet launched | `docs/agents/agents/hank/` |
 | Rex · Mason · Mack | Marketing strategy (CMO) · brand voice and launches · general worker | `docs/agents/agents/<soul>/` |
 
 ## SOP Invocation Standard
@@ -43,12 +44,12 @@ Each SOP stands alone; a design doc is background, never an execution path.
 
 ```text
 Alex + focus session ──▶ Pokémon builder ──PR green──▶ reviewer ──merge──▶ (accepted)
-  (holds the epic plan)   desk · build · ship ◀─blocker─┘  Carl for code; Xan for prose*
+  (holds the epic plan)   desk · build · ship ◀─blocker─┘  Carl for code; Ritch for prose*
 (accepted) ──Avi runs qa-release──▶ release, QA green ──Steffon runs production-deploy──▶ (main)
                                                          within Alex's 30-minute window
 ```
 
-- \* Xan alone reviews prose only on the focus-session path. The `pr-review` sweep
+- \* Ritch alone reviews prose only on the focus-session path. The `pr-review` sweep
   still runs Carl plus a light on every PR.
 - Task stages: **Build** `designed → building → submitted` (the builder), then
   **Deploy** `submitted → reviewed → assembled → shipped`. `blocked` needs
@@ -142,7 +143,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | **Credentials** and GitHub auth | `docs/agents/modules/token-session.md` (a broken session), `docs/agents/modules/source-control.md` (how auth works), `docs/agents/modules/credentials.md` (1Password) |
 | **Business facts**: an entity's name, EIN, address, code, headcount or advisors; a form to fill | Pull from `business-data/FACTS.md` (private `mcritchie-industries` repo) first, and add any durable fact you learn in the same pass: `docs/agents/modules/knowledge-capture.md` (the quick reference rule). Forms: `docs/agents/modules/form-fill.md` |
 | **Communication**: reporting to Alex | `docs/agents/modules/communication-style.md` |
-| **Learning**: grades and insights | `docs/agents/agents/xan/sops/grade-events.md` |
+| **Learning**: grades and insights | `docs/agents/agents/ray/sops/grade-events.md` |
 | **Dreams**: good answers from past sessions; the platform sequence at every start, a soul's with `bin/dream <soul>` | `docs/agents/modules/dream.md`; the bank in `docs/agents/dreams/` |
 | History cut from a page | `docs/agents/archive/<page>-2026-09-25.md` |
 
@@ -174,6 +175,12 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `download-youtube` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
 | `email-image` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | `wrap-it-up` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
+| `Ray Heartbeat` | Ray | `mcritchie-studio/docs/agents/agents/ray/HEARTBEAT.md` |
+| `clean-up` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/clean-up.md` |
+| `full-cycle` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/full-cycle.md` |
+| `grade-events` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/grade-events.md` |
+| `share-insights` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/share-insights.md` |
+| `ship-clock` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/ship-clock.md` |
 | `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | `constraint-diagnosis` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
 | `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
@@ -204,18 +211,13 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `content-build` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/content-build.md` |
 | `contest-rehearsal` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/contest-rehearsal.md` |
 | `entry-forfeit` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/entry-forfeit.md` |
+| `game-character-models` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/game-character-models.md` |
 | `live-score-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/live-score-watch.md` |
 | `market-refresh` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/market-refresh.md` |
 | `post-to-x` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/post-to-x.md` |
 | `roster-sync` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/roster-sync.md` |
 | `sleeper-auction-watch` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/sleeper-auction-watch.md` |
 | `tiktok-draft` | Turf Monster | `mcritchie-studio/docs/agents/agents/turf_monster/sops/tiktok-draft.md` |
-| `Xan Heartbeat` | Xan | `mcritchie-studio/docs/agents/agents/xan/HEARTBEAT.md` |
-| `clean-up` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/clean-up.md` |
-| `full-cycle` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/full-cycle.md` |
-| `grade-events` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/grade-events.md` |
-| `share-insights` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/share-insights.md` |
-| `ship-clock` | Xan | `mcritchie-studio/docs/agents/agents/xan/sops/ship-clock.md` |
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `agent-communication` | Shared | `mcritchie-studio/docs/agents/modules/agent-communication.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |

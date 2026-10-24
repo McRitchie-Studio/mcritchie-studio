@@ -648,7 +648,7 @@ class AtomicCaptureHookTest < Minitest::Test
   # `agent` lane, so the login only authenticates the call.
   def test_integration_hook_presents_a_held_login_and_mints_no_shared_token
     Dir.mktmpdir do |proj|
-      AdminLogin.write(SESSION, proj, { "soul" => "xan", "session" => "sess-admin", "token" => "ADMIN-TOKEN",
+      AdminLogin.write(SESSION, proj, { "soul" => "ray", "session" => "sess-admin", "token" => "ADMIN-TOKEN",
                                         "expires_at" => (Time.now + 3600).utc.iso8601 }, env: { "CLAUDE_PROJECTS_DIR" => proj })
       event = { "session_id" => SESSION, "cwd" => "/nope", "tool_name" => "Bash",
                 "tool_input" => { "command" => "ls -la" }, "tool_response" => { "stdout" => "total 0", "interrupted" => false } }
@@ -791,7 +791,7 @@ class AtomicCaptureHookTest < Minitest::Test
 
   # ── [unit] secret redaction (audit 2026-07-02 high finding #6) ───────────
   # tool_input / tool_response are the sole source of AgentAction.input/output,
-  # which render on the PUBLIC /xan/heartbeat surface. The hook must never ship a
+  # which render on the PUBLIC /ray/heartbeat surface. The hook must never ship a
   # secret off the machine. Two layers: whole-field suppression for secret-reading
   # commands/files (a bare value has no key to match), and pattern redaction for
   # KEY=VALUE + known credential formats everywhere.

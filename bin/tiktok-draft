@@ -16,7 +16,7 @@
 #
 # A draft needs an ADMIN agent session: the hub refuses the shared token on the
 # request that creates one. Ask the board for it (`bin/agent-activity heartbeat
-# xan|steffon`; Alex grants it on the tasks page) and this command presents the
+# ray|steffon`; Alex grants it on the tasks page) and this command presents the
 # login the harness session then holds. When the board cannot grant, a shell on
 # that hub can (`bin/rails agent_sessions:grant_admin` into
 # AGENT_ADMIN_SESSION_TOKEN; the refusal prints the exact line). --dry-run,

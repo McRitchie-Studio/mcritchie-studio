@@ -18,17 +18,17 @@
 #               review_weight  NUMERIC weight (2.0 heavy, 1.0 light), never a label
 #
 # Carl is the standing primary and owner on every PR; he summons one domain light
-# from Shannon (UI), Jasper (Web3), Steffon (DevOps) and Xan (Documentation). Avi
+# from Shannon (UI), Jasper (Web3), Steffon (DevOps) and Ritch (Documentation). Avi
 # is the qa_owner and stays out of the light pool, so no soul both reviews and QAs
 # one change. See docs/agents/agents/carl/sops/pr-review.md.
 souls:
-- slug: xan
-  name: Xan
+- slug: ray
+  name: Ritch
   status: active
   agent_type: orchestrator
   title: Lead Orchestrator
   description: 'Coordinates all agents, manages task assignment, and oversees system operations — the central brain of McRitchie Studio. Also holds the senior review pool''s Documentation seat: reviews docs, runbooks, the agent operating model, and READMEs on PRs that touch them.'
-  avatar: "/agents/xan.webp"
+  avatar: "/agents/ray.webp"
   position: 0
   emoji: "🧭"
   color: "#818CF8"
@@ -231,6 +231,23 @@ souls:
   position: 11
   emoji: "🦁"
   color: "#B45309"
+  metadata:
+    review_role:
+    reviewer: false
+# The Commercial Welding business agent, renamed from Dawn (Alex, 2026-10-20):
+# the old name collided with the seller in every deal conversation. Holds a
+# knowledge-layer seat but no privileged deal access (samson holds that).
+# Not yet launched. Non-reviewing.
+- slug: hank
+  name: Hank
+  status: active
+  agent_type: specialist
+  title: Commercial Welding Business Agent
+  description: 'Runs the business side of Commercial Welding after the close: the books, purchasing and suppliers, and the shop''s seat on the knowledge layer. Holds no privileged deal access; Samson holds that.'
+  avatar: "/agents/hank.webp"
+  position: 12
+  emoji: "🦡"
+  color: "#475569"
   metadata:
     review_role:
     reviewer: false

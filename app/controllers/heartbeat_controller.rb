@@ -1,5 +1,5 @@
 class HeartbeatController < ApplicationController
-  # Xan learning / distillation heartbeat — the agent-narrated activity log.
+  # Ritch learning / distillation heartbeat — the agent-narrated activity log.
   #
   # #show reads AgentActivity.for_session(...).chronological (oldest -> newest) as the
   # PRIMARY rows — agent-narrated activities (category · reason -> result) — and rolls the
@@ -12,7 +12,7 @@ class HeartbeatController < ApplicationController
   # Every action, read or write, needs an admin (AdminWall). A banked grade's text
   # is served by GET /api/v1/insights and printed into every new agent session's
   # context, so a public write is a prompt-injection path. The agent write path is
-  # the bearer-gated /api/v1 endpoint, which forces `grader: xan`.
+  # the bearer-gated /api/v1 endpoint, which forces `grader: ray`.
   # test/controllers/heartbeat_controller_test.rb pins every heartbeat route behind the wall.
 
   # The shared feed read-layer (session_options, pokemon/soul/grade/transition
@@ -84,7 +84,7 @@ class HeartbeatController < ApplicationController
 
   # The OPSD distillation pipeline as three columns, left→right:
   #   1. ACTIVITIES    — recent narrated activities
-  #   2. INSIGHTS      — Xan's banked grades (the distilled lessons)
+  #   2. INSIGHTS      — Ritch's banked grades (the distilled lessons)
   #   3. CONFIRMATIONS — McRitchie's mcr grades (the confirmed subset)
   # Admin-only, like the rest of the heartbeat; the column-2 Confirm button posts
   # an mcr grade through #confirm.
@@ -95,7 +95,7 @@ class HeartbeatController < ApplicationController
   PIPELINE_TEST_RUNS = 20
 
   def pipeline
-    # Column 1 — activities + their attributed actions (for cost) + their Xan grade
+    # Column 1 — activities + their attributed actions (for cost) + their Ritch grade
     # (for the "not" indicator).
     @activities = AgentActivity.order(opened_at: :desc, seq: :desc, id: :desc).limit(PIPELINE_ACTIVITIES).to_a
     actions_by_activity = AgentAction.where(agent_activity_id: @activities.map(&:id))
@@ -115,7 +115,7 @@ class HeartbeatController < ApplicationController
     # analytics, not a grading target. This band is the newest-N read only.
     @test_runs = AgentAction.where(kind: "test_scope").where.not(result_slug: nil)
                             .order(occurred_at: :desc).limit(PIPELINE_TEST_RUNS).to_a
-    # Their Xan grades, in one query, keyed { action_id => { grader => grade } } —
+    # Their Ritch grades, in one query, keyed { action_id => { grader => grade } } —
     # feeds the "not" left-rail (parity with Column 1's activity grades).
     @test_run_grades = ActionGrade.where(agent_action_id: @test_runs.map(&:id))
                                   .group_by(&:agent_action_id)
@@ -124,17 +124,17 @@ class HeartbeatController < ApplicationController
     # Candidates awaiting grade — disposition:"not" grades MINED from resolved QA
     # blocks (Insights::BlockMiner), not yet banked into an insight nor discarded.
     # The block ledger surfaced as the learning loop's newest raw material: each is
-    # a pre-labeled failure the operator/Xan promotes (bank) or sets aside.
-    @candidates = ActionGrade.pending_candidates.by_grader(ActionGrade::XAN)
+    # a pre-labeled failure the operator/Ritch promotes (bank) or sets aside.
+    @candidates = ActionGrade.pending_candidates.by_grader(ActionGrade::RAY)
                              .includes(:agent_activity, :source_activity)
                              .order(created_at: :desc).limit(PIPELINE_INSIGHTS).to_a
 
-    # Column 2 — Xan's banked insights (the distilled lessons), newest curation first.
-    @insights = ActionGrade.banked.by_grader(ActionGrade::XAN)
+    # Column 2 — Ritch's banked insights (the distilled lessons), newest curation first.
+    @insights = ActionGrade.banked.by_grader(ActionGrade::RAY)
                            .includes(:agent_activity, :agent_action)
                            .order(updated_at: :desc).limit(PIPELINE_INSIGHTS).to_a
 
-    # Column 3 — McRitchie's confirmations (audit-of-Xan), newest first.
+    # Column 3 — McRitchie's confirmations (audit-of-Ritch), newest first.
     @confirmations = ActionGrade.by_grader(ActionGrade::MCR)
                                 .includes(:agent_activity, :agent_action)
                                 .order(updated_at: :desc).limit(PIPELINE_INSIGHTS).to_a
@@ -170,13 +170,13 @@ class HeartbeatController < ApplicationController
     grade.disposition = ActionGrade::GOOD
     grade.slug        = params[:slug].presence || grade.slug.presence || slug_default
     rescue_and_log(target: grade) { grade.save! }
-    redirect_to xan_pipeline_path(anchor: "col-confirmations"), notice: "Confirmed “#{grade.slug}”."
+    redirect_to ray_pipeline_path(anchor: "col-confirmations"), notice: "Confirmed “#{grade.slug}”."
   rescue ActiveRecord::RecordNotFound
-    redirect_to xan_pipeline_path, alert: "That insight no longer exists."
+    redirect_to ray_pipeline_path, alert: "That insight no longer exists."
   end
 
   # The per-action grading drawer body, lazy-loaded into the shared turbo-frame on
-  # row click. Renders Xan's grade editor, the McRitchie audit editor, and the
+  # row click. Renders Ritch's grade editor, the McRitchie audit editor, and the
   # bank/discard actions for the action's existing (or fresh) grades.
   def feedback
     @action = AgentAction.find(params[:id])
@@ -186,7 +186,7 @@ class HeartbeatController < ApplicationController
   # The per-activity grading drawer body — the activity-level analogue of #feedback,
   # lazy-loaded into the same shared turbo-frame when the operator clicks an activity's
   # grade affordance. Loads the activity's attributed actions once (for the rolled-up
-  # token/cost/model summary the drawer shows) plus its current Xan grade + McRitchie
+  # token/cost/model summary the drawer shows) plus its current Ritch grade + McRitchie
   # audit. Its editors POST to the JSON grade_activity endpoint (client-side fetch), so
   # this action, like #feedback, only READS.
   def feedback_activity
@@ -195,7 +195,7 @@ class HeartbeatController < ApplicationController
     grades  = @activity.action_grades.index_by(&:grader)
     render partial: "heartbeat/activity_drawer",
            locals: { activity: @activity, actions: actions,
-                     xan: grades[ActionGrade::XAN], mcr: grades[ActionGrade::MCR],
+                     ray: grades[ActionGrade::RAY], mcr: grades[ActionGrade::MCR],
                      stage_transitions: stage_transitions_for([@activity]) }
   end
   alias_method :feedback_event, :feedback_activity
@@ -241,19 +241,19 @@ class HeartbeatController < ApplicationController
 
       @from_drawer = params[:surface] == "drawer"
       @counts = grade_counts(@action.session_id)
-      @xan = ActionGrade.for_action(@action).by_grader(ActionGrade::XAN).first
+      @ray = ActionGrade.for_action(@action).by_grader(ActionGrade::RAY).first
       @mcr  = ActionGrade.for_action(@action).by_grader(ActionGrade::MCR).first
       respond_to do |format|
         format.turbo_stream
         format.json { render json: grade_json(@grade) }
-        format.html { redirect_to xan_heartbeat_path(session_id: @action.session_id) }
+        format.html { redirect_to ray_heartbeat_path(session_id: @action.session_id) }
       end
     end
   rescue StandardError => e
     respond_to do |format|
       format.turbo_stream { render turbo_stream: turbo_stream.replace("hb-drawer", partial: "heartbeat/drawer_error", locals: { message: e.message }), status: :unprocessable_entity }
       format.json { render json: { error: e.message }, status: :unprocessable_entity }
-      format.html { redirect_to xan_heartbeat_path(session_id: @action.session_id), alert: "Could not save feedback." }
+      format.html { redirect_to ray_heartbeat_path(session_id: @action.session_id), alert: "Could not save feedback." }
     end
   end
 
@@ -308,7 +308,7 @@ class HeartbeatController < ApplicationController
   def insights
     # A banked grade targets EITHER a raw action OR a narrated activity (ActionGrade's
     # XOR), so eager-load BOTH — the view reads whichever target is set. Loading
-    # only :agent_action left a banked activity grade (the Xan heartbeat's normal
+    # only :agent_action left a banked activity grade (the Ray heartbeat's normal
     # output) dereferencing nil and 500ing the whole bank.
     @insights = ActionGrade.banked.includes(:agent_action, :agent_activity)
                            .order(updated_at: :desc).to_a
@@ -338,7 +338,7 @@ class HeartbeatController < ApplicationController
     groups
   end
 
-  # The three live feedback tallies for a session: how many Xan graded, how many
+  # The three live feedback tallies for a session: how many Ritch graded, how many
   # McRitchie audited, and how many are banked into the Insight Bank. Counts grades
   # on BOTH the session's raw actions AND its narrated activities, so activity grading
   # reflects in the header stats on the next render, exactly as action grading does.
@@ -351,16 +351,16 @@ class HeartbeatController < ApplicationController
 
     grades = ActionGrade.where(agent_action_id: action_ids)
                         .or(ActionGrade.where(agent_activity_id: activity_ids))
-    { graded:   grades.by_grader(ActionGrade::XAN).count,
+    { graded:   grades.by_grader(ActionGrade::RAY).count,
       audited:  grades.by_grader(ActionGrade::MCR).count,
       insights: grades.banked.count }
   end
 
-  # Locals for the drawer partial — the action plus its current Xan grade and
+  # Locals for the drawer partial — the action plus its current Ritch grade and
   # McRitchie audit (nil when ungraded).
   def drawer_locals(action)
     grades = action.action_grades.index_by(&:grader)
-    { action: action, xan: grades[ActionGrade::XAN], mcr: grades[ActionGrade::MCR] }
+    { action: action, ray: grades[ActionGrade::RAY], mcr: grades[ActionGrade::MCR] }
   end
 
   # A starter slug for an inline-radio grade (which carries no slug of its own): the

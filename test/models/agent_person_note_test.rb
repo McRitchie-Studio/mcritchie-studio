@@ -10,7 +10,7 @@ class AgentPersonNoteTest < ActiveSupport::TestCase
   include AgentMessageFixtures
 
   def message_from(author, name: "Alex", **attrs)
-    agent_message!(soul: "xan", author_ref: author, author_name: name, **attrs)
+    agent_message!(soul: "ray", author_ref: author, author_name: name, **attrs)
   end
 
   test "a plain short fact is kept, whitespace folded; links, mentions, markup and over-long text are refused" do
@@ -31,7 +31,7 @@ class AgentPersonNoteTest < ActiveSupport::TestCase
 
     assert_equal [ "Runs the hub." ], stored.map(&:body)
     assert_equal message.id, stored.first.source_message_id
-    assert_equal "xan", stored.first.soul_slug
+    assert_equal "ray", stored.first.soul_slug
     assert_equal now, stored.first.noted_at
     assert_equal [ "Favorite color is purple.", "Runs the hub." ], message.person.notes.map(&:body)
   end
@@ -66,7 +66,7 @@ class AgentPersonNoteTest < ActiveSupport::TestCase
 
   test "complete! files the notes once, on the completing call, under the message's author, and posts none of them" do
     message = message_from("500")
-    AgentMessage.claim!(soul: "xan", worker: "w1")
+    AgentMessage.claim!(soul: "ray", worker: "w1")
     message.reload.complete!(worker: "w1", response_text: "Purple, noted.\n===NOTES===\n[\"Hidden.\"]",
                              notes: [ "Favorite color is purple." ])
 
@@ -132,11 +132,11 @@ class AgentPersonNoteTest < ActiveSupport::TestCase
   test "a note records the domain of the soul that filed it, from the registry's souls map" do
     person_ref = "520"
     turf = agent_message!(soul: "turf_monster", author_ref: person_ref)
-    xan = agent_message!(soul: "xan", author_ref: person_ref)
+    ray = agent_message!(soul: "ray", author_ref: person_ref)
     stray = agent_message!(soul: "tyrion", author_ref: person_ref)
 
     assert_equal [ "turf_monster" ], AgentPersonNote.record_from!(turf, [ "Plays Sunday contests." ]).map(&:domain)
-    assert_equal [ "mcritchie_studio" ], AgentPersonNote.record_from!(xan, [ "Runs the hub." ]).map(&:domain)
+    assert_equal [ "mcritchie_studio" ], AgentPersonNote.record_from!(ray, [ "Runs the hub." ]).map(&:domain)
     assert_equal [ "" ], AgentPersonNote.record_from!(stray, [ "Plays cyvasse." ]).map(&:domain),
                  "a soul the souls map names no domain for files under the empty domain"
     assert_equal "turf_monster", turf.person.notes.first.as_api_json["domain"]
@@ -144,20 +144,20 @@ class AgentPersonNoteTest < ActiveSupport::TestCase
 
   test "the same fact said in two domains is a note in each; within one domain it is deduped" do
     turf = agent_message!(soul: "turf_monster", author_ref: "521")
-    xan = agent_message!(soul: "xan", author_ref: "521")
+    ray = agent_message!(soul: "ray", author_ref: "521")
 
     AgentPersonNote.record_from!(turf, [ "Favorite color is purple." ])
     assert_empty AgentPersonNote.record_from!(turf, [ "favorite color is PURPLE" ])
-    assert_equal 1, AgentPersonNote.record_from!(xan, [ "Favorite color is purple." ]).size
+    assert_equal 1, AgentPersonNote.record_from!(ray, [ "Favorite color is purple." ]).size
 
     assert_equal %w[mcritchie_studio turf_monster], turf.person.notes.map(&:domain).sort
   end
 
   test "pruning keeps the newest thirty notes per domain, so one domain's chatter never evicts another's" do
     turf = agent_message!(soul: "turf_monster", author_ref: "522")
-    xan = agent_message!(soul: "xan", author_ref: "522")
+    ray = agent_message!(soul: "ray", author_ref: "522")
     t0 = Time.zone.parse("2026-10-01 00:00:00")
-    AgentPersonNote.record_from!(xan, [ "Runs the hub." ], now: t0)
+    AgentPersonNote.record_from!(ray, [ "Runs the hub." ], now: t0)
     32.times { |i| AgentPersonNote.record_from!(turf, [ "Fact number #{i}." ], now: t0 + (i + 1).hours) }
 
     notes = turf.person.notes.to_a
@@ -167,9 +167,9 @@ class AgentPersonNoteTest < ActiveSupport::TestCase
 
   test "visible_for: owner and team read every domain's notes; client and public read only the soul's domain" do
     turf = agent_message!(soul: "turf_monster", author_ref: "523")
-    xan = agent_message!(soul: "xan", author_ref: "523")
+    ray = agent_message!(soul: "ray", author_ref: "523")
     AgentPersonNote.record_from!(turf, [ "Plays Sunday contests." ])
-    AgentPersonNote.record_from!(xan, [ "Runs the hub." ])
+    AgentPersonNote.record_from!(ray, [ "Runs the hub." ])
     person = turf.person
 
     %w[owner team].each do |role|
@@ -188,7 +188,7 @@ class AgentPersonNoteTest < ActiveSupport::TestCase
   test "complete! finds the facts in a mangled section the worker left in, and posts none of them" do
     NoteBlockFixtures::CASES.each_with_index do |(text, reply, facts), i|
       message = message_from("6#{i}")
-      AgentMessage.claim!(soul: "xan", worker: "w1")
+      AgentMessage.claim!(soul: "ray", worker: "w1")
       next if reply.empty?
 
       message.reload.complete!(worker: "w1", response_text: text)

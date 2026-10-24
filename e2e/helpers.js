@@ -398,7 +398,11 @@ async function openDeploySidebar(page, panel) {
   // AbortError — it has still ended, so a cancel counts as done. Then the box must hold
   // still across two frames, which is the property the callers actually rely on.
   await sidebar.evaluate(async (el) => {
-    await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => {})));
+    // Only time-based animations finish. A scroll-driven one (studio-engine 0.111.1 puts
+    // `animation-timeline: scroll()` on a sidebar panel's [data-pin-edge]) never does, so
+    // awaiting it hangs until the test times out.
+    const timed = el.getAnimations().filter((a) => a.timeline === document.timeline);
+    await Promise.all(timed.map((a) => a.finished.catch(() => {})));
     const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
     let last = "";
     for (let i = 0; i < 60; i += 1) {

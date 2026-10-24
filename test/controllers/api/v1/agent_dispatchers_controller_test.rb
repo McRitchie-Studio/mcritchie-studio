@@ -18,7 +18,7 @@ module Api
       test "a ping upserts the dispatcher's row and the list reads it back" do
         2.times do |i|
           post ping_api_v1_agent_dispatchers_url,
-               params: { worker: "d1", host: "alex-mac", souls: %w[xan], running: i, capacity: 5, state: "running",
+               params: { worker: "d1", host: "alex-mac", souls: %w[ray], running: i, capacity: 5, state: "running",
                          version: "abc1234", started_at: 1.hour.ago.iso8601, unexpected: "ignored" },
                headers: @shared, as: :json
           assert_response :success

@@ -23,7 +23,7 @@ module Api
           "release" => ["/api/v1/releases/#{@release.slug}/events/ship_gate/complete",
                         { event: { actor: "avi", source: "agent" }.merge(extra) }],
           "task" => ["/api/v1/tasks/#{@task.slug}/events/smoke_check/complete",
-                     { event: { actor: "xan", source: "agent" }.merge(extra) }],
+                     { event: { actor: "ray", source: "agent" }.merge(extra) }],
           "review" => ["/api/v1/tasks/#{@task.slug}/review_events",
                        { review_event: { role: "light", moment: "completed", actor: "shannon",
                                          source: "agent" }.merge(extra) }]

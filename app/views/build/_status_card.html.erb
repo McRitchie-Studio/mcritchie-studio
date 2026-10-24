@@ -1,0 +1,90 @@
+<%# locals: (request_row: nil, started: false) %>
+<%#
+  The /build shell's status slot (agent_chats/_shell), and the stream target every
+  tap and poll replaces (id build-checklist; BuildController#replace_checklist).
+
+  Until Ritch's theme card is in the thread (`started`: AppRequest#intake_started?;
+  or, on an old draft, any of theme, CTO or address is set), it is the page's
+  heading, on /build and on a new /build/:token alike, so a visitor still shaping
+  the idea never sees a form of empty tiles. The heading has two faces
+  (data-heading): "intro" asks what to build; "locked", once Start App has locked
+  the idea in and Ritch is still typing the theme card, names the app and says the
+  theme is next (Alex, 2026-10-20). From then on it is the STATUS CARD: the app's working title over
+  three tiles in the order Ritch asks (BuildIntake::STEPS), Theme · Agent · Domain,
+  each filling as its card is tapped (BuildIntake::Choice): the palette's swatches
+  and name, the CTO's portrait and name, the address. It carries no Build control: Ritch's summary card
+  in the thread does (build/cards, build-cards-advance-chat).
+
+  A tile not yet set reads its step's name, never "Not yet" (Alex, 2026-10-19): Theme,
+  Agent, Domain. The step Ritch is on now (AppRequest#next_intake_step) is marked
+  data-current and shimmers (build_cards.css; under reduced motion the shimmer stops
+  and a still primary border marks it); a set tile carries a check over its value.
+  The card pops when it first appears (the poll that brings Ritch's theme card;
+  agent_shell.js, agent-shell-pop-in)
+  and again when Build My App is pressed (build_status.js, build_cards.css); under
+  reduced motion both play only the pop's glow.
+%>
+<% show_card = request_row.present? && started %>
+<% locked = !show_card && request_row.present? && request_row.idea_locked? %>
+<div id="build-checklist" data-test="build-status" data-card="<%= show_card %>"<% unless show_card %> data-heading="<%= locked ? "locked" : "intro" %>"<% end %>>
+  <% if show_card %>
+    <% done = request_row.intake_checklist %>
+    <% current = { "theme" => "theme", "cto" => "agent", "address" => "domain" }[request_row.next_intake_step] %>
+    <div class="agent-shell-card build-status-card card p-4 sm:p-5 space-y-4" data-test="build-status-card" data-build-status-card data-complete="<%= request_row.intake_complete? %>">
+      <h1 class="agent-shell-card-title text-xl sm:text-2xl font-bold text-heading text-center break-words" data-test="build-status-title">
+        <%= request_row.working_title || "Your app" %>
+      </h1>
+      <ul class="grid grid-cols-3 gap-2 sm:gap-3">
+        <% tiles = [
+             [ "theme", "Theme", done["theme"], (request_row.palette["name"] if done["theme"]) ],
+             [ "agent", "Agent", done["cto"], (request_row.cto_name if done["cto"]) ],
+             [ "domain", "Domain", done["address"], (request_row.host if done["address"]) ]
+           ] %>
+        <% tiles.each do |key, label, set, value| %>
+          <% now = !set && key == current %>
+          <li class="agent-shell-tile relative flex flex-col items-center gap-1.5 min-w-0 rounded-2xl border px-2 py-3 text-center
+                     <%= set ? 'border-primary/40 bg-primary/5' : (now ? 'build-tile-current border-primary/60' : 'border-dashed border-subtle') %>"
+              data-test="build-tile-<%= key %>" data-done="<%= set %>" data-current="<%= now %>"<%= ' aria-current="step"'.html_safe if now %>>
+            <span class="agent-shell-tile-icon flex h-10 items-center justify-center" aria-hidden="true">
+              <%# The CTO's avatar in the app's palette (CtoAvatarHelper: an animal, or an older portrait). %>
+              <% if key == "agent" && set && (avatar = cto_avatar_tag(request_row.cto_avatar, request_row.palette, css_class: "h-10 w-10 rounded-full border border-subtle", data: { test: "build-tile-agent-portrait" })) %>
+                <%= avatar %>
+              <% elsif key == "theme" && set %>
+                <span class="flex -space-x-1.5">
+                  <% %w[primary accent surface].each do |role| %>
+                    <span class="h-6 w-6 rounded-full border border-subtle" style="background-color: <%= request_row.palette.dig("light", role) %>"></span>
+                  <% end %>
+                </span>
+              <% elsif key == "domain" && set %>
+                <svg viewBox="0 0 24 24" class="h-7 w-7 text-primary" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>
+                </svg>
+              <% else %>
+                <span class="h-9 w-9 rounded-full border-2 border-dashed <%= now ? 'build-tile-current-dot border-primary' : 'border-subtle' %>"></span>
+              <% end %>
+            </span>
+            <% if set %>
+              <span class="agent-shell-tile-label text-2xs font-semibold uppercase tracking-wider text-muted"><%= label %></span>
+              <span class="flex w-full min-w-0 items-center justify-center gap-1 text-xs sm:text-sm font-semibold text-heading" data-test="build-tile-<%= key %>-value">
+                <svg viewBox="0 0 20 20" class="h-3.5 w-3.5 shrink-0 text-primary" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-test="build-tile-<%= key %>-check"><path d="M5 10.5l3 3 7-7"/></svg>
+                <span class="truncate"><%= value %></span>
+              </span>
+            <% else %>
+              <span class="block w-full truncate text-xs sm:text-sm font-semibold <%= now ? 'build-tile-current-name text-heading' : 'text-muted' %>" data-test="build-tile-<%= key %>-value"><%= label %><% if now %><span class="sr-only"> (in progress)</span><% end %></span>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+  <% else %>
+    <header class="agent-shell-heading text-center" data-test="build-heading">
+      <% if locked %>
+        <h1 class="text-3xl sm:text-5xl font-bold text-heading tracking-tight mb-3 break-words" data-test="build-heading-title"><%= request_row.working_title || "Your app" %></h1>
+        <p class="agent-shell-subtitle text-muted max-w-xl mx-auto">Locked in. Next, Ritch picks a theme for it.</p>
+      <% else %>
+        <h1 class="text-3xl sm:text-5xl font-bold text-heading tracking-tight mb-3">Want to Build Something?</h1>
+        <p class="agent-shell-subtitle text-muted max-w-xl mx-auto">Let our agents build &amp; host your flow or website totally free, on the Studio Stack.</p>
+      <% end %>
+    </header>
+  <% end %>
+</div>

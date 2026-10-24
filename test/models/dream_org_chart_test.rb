@@ -10,7 +10,7 @@ class DreamOrgChartTest < ActiveSupport::TestCase
   SOULS = {
     "pokemon" => { "slug" => "pokemon", "name" => "Pokémon", "title" => "General builder", "position" => 2 },
     "carl" => { "slug" => "carl", "name" => "Carl", "title" => "Lead Architect", "position" => 1 },
-    "xan" => { "slug" => "xan", "name" => "Xan", "title" => "Lead Orchestrator", "position" => 0 },
+    "ray" => { "slug" => "ray", "name" => "Ritch", "title" => "Lead Orchestrator", "position" => 0 },
     "turf-monster" => { "slug" => "turf-monster", "name" => "Turf Monster", "title" => "Operator", "position" => 3 }
   }.freeze
 
@@ -34,11 +34,11 @@ class DreamOrgChartTest < ActiveSupport::TestCase
     assert_equal files, placed, "a dream file went missing from the chart"
     assert_equal %w[list-the-candidates report-what-you-verified], @chart.platform.dreams.map(&:slug).sort
     assert_includes column("carl").dreams.map(&:slug), "wait-for-the-light"
-    assert_includes column("xan").dreams.map(&:slug), "wait-for-the-light", "a multi-soul dream shows under each soul"
+    assert_includes column("ray").dreams.map(&:slug), "wait-for-the-light", "a multi-soul dream shows under each soul"
   end
 
   test "columns follow the roster position order and keep empty souls" do
-    assert_equal %w[xan carl pokemon turf-monster], @chart.columns.map(&:slug)
+    assert_equal %w[ray carl pokemon turf-monster], @chart.columns.map(&:slug)
     assert_empty column("turf-monster").dreams
   end
 

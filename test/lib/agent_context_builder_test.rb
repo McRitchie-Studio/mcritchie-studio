@@ -15,14 +15,14 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
 
   setup do
     @root = Dir.mktmpdir("ctx-root")
-    FileUtils.mkdir_p(File.join(@root, "docs/agents/agents/xan"))
-    File.write(File.join(@root, "docs/agents/agents/xan/role.md"), "Xan orchestrates.")
+    FileUtils.mkdir_p(File.join(@root, "docs/agents/agents/ray"))
+    File.write(File.join(@root, "docs/agents/agents/ray/role.md"), "Ritch orchestrates.")
     FileUtils.mkdir_p(File.join(@root, "config"))
     File.write(File.join(@root, "config/agent_domains.yml"), <<~YAML)
       domains:
         studio: { name: McRitchie Studio, doc: docs/studio.md }
         welding: { name: Commercial Welding, doc: docs/missing.md }
-      souls: { xan: studio, mack: welding }
+      souls: { ray: studio, mack: welding }
     YAML
     File.write(File.join(@root, "docs/studio.md"), "<!-- authoring note -->\nThe hub and its agents.")
     FileUtils.mkdir_p(File.join(@root, "docs/agents/modules"))
@@ -42,7 +42,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
   # The audience tests (agent_audience_test.rb) cover the others.
   OWNER = AgentMailbox::Audience.new(role: "owner")
 
-  def builder(context: nil, soul: "xan", message: @message, audience: OWNER)
+  def builder(context: nil, soul: "ray", message: @message, audience: OWNER)
     AgentMailbox::ContextBuilder.new(soul: soul, message: message, context: context, repo_root: @root, fence: FENCE,
                                      audience: audience)
   end
@@ -63,7 +63,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
     positions = labels.map { |l| prompt.index(l) }
     assert positions.all?, "every label is present: #{labels.zip(positions).inspect}"
     assert_equal positions, positions.sort
-    assert_includes prompt, "Xan orchestrates."
+    assert_includes prompt, "Ritch orchestrates."
     assert_includes prompt, "The hub and its agents."
     refute_includes prompt, "authoring note", "a doc's HTML comments stay out"
     assert_match(%r{<#{FENCE}>\nAlex M:\n- Owner\.\n- Terse\.\n</#{FENCE}>}, prompt)
@@ -105,7 +105,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
   # raised "invalid byte sequence in US-ASCII" on every answer run. The docs must
   # be read as UTF-8 whatever the process locale says.
   test "a role and domain doc with non-ASCII text render while the default external encoding is US-ASCII" do
-    File.write(File.join(@root, "docs/agents/agents/xan/role.md"), "Xan orchestrates \u2014 café \u{1F680}.\n<!-- note é -->\n")
+    File.write(File.join(@root, "docs/agents/agents/ray/role.md"), "Ritch orchestrates \u2014 café \u{1F680}.\n<!-- note é -->\n")
     File.write(File.join(@root, "docs/studio.md"), "The hub \u2014 naïve.")
     original_external = Encoding.default_external
     original_internal = Encoding.default_internal
@@ -116,7 +116,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
 
     prompt = builder.prompt
 
-    assert_includes prompt, "Xan orchestrates \u2014 café \u{1F680}."
+    assert_includes prompt, "Ritch orchestrates \u2014 café \u{1F680}."
     assert_includes prompt, "The hub \u2014 naïve."
     refute_includes prompt, "note é"
     assert_equal Encoding::UTF_8, prompt.encoding
@@ -129,7 +129,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
   end
 
   test "general, domain, user and message are each cut to their budget" do
-    File.write(File.join(@root, "docs/agents/agents/xan/role.md"), "r" * (B[:general] * 2))
+    File.write(File.join(@root, "docs/agents/agents/ray/role.md"), "r" * (B[:general] * 2))
     File.write(File.join(@root, "docs/studio.md"), "d" * (B[:domain] * 2))
     b = builder(context: { "user" => { "facts" => [ { "body" => "n" * (B[:user] * 2) } ] } },
                 message: @message.merge("content" => "m" * (B[:message] * 2)))
@@ -272,7 +272,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
     mailbox = Dir.mktmpdir("mailbox")
     envelope = ENVELOPE.merge("result" => "Purple.\n===NOTES===\n[\"Favorite color is purple.\"]")
     runner = ->(argv, stdin:, timeout:, chdir:) { stdin.nil? ? [ "board", 0 ] : [ JSON.generate(envelope), 0, "" ] }
-    answer = AgentMailbox::Responder.new(soul: "xan", runner: runner, repo_root: @root, mailbox_home: mailbox,
+    answer = AgentMailbox::Responder.new(soul: "ray", runner: runner, repo_root: @root, mailbox_home: mailbox,
                                          claude_home: mailbox).respond(@message)
 
     assert_equal "Purple.", answer.reply
@@ -280,7 +280,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
 
     only_notes = ENVELOPE.merge("result" => "===NOTES===\n[\"x\"]")
     runner = ->(argv, stdin:, timeout:, chdir:) { stdin.nil? ? [ "board", 0 ] : [ JSON.generate(only_notes), 0, "" ] }
-    assert_nil AgentMailbox::Responder.new(soul: "xan", runner: runner, repo_root: @root, mailbox_home: mailbox,
+    assert_nil AgentMailbox::Responder.new(soul: "ray", runner: runner, repo_root: @root, mailbox_home: mailbox,
                                            claude_home: mailbox).respond(@message).reply, "notes alone are no answer"
   ensure
     FileUtils.rm_rf(mailbox)
@@ -321,7 +321,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
 
   test "the transcript's thinking text is the reasoning; redacted or absent thinking says which" do
     home = Dir.mktmpdir("claude-home")
-    dir = File.join(home, "projects", "-Users-x--agents-mailbox-xan")
+    dir = File.join(home, "projects", "-Users-x--agents-mailbox-ray")
     FileUtils.mkdir_p(dir)
     write = lambda do |id, blocks|
       File.write(File.join(dir, "#{id}.jsonl"), [
@@ -350,19 +350,32 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
       calls << chdir
       stdin.nil? ? [ "board", 0 ] : [ JSON.generate(ENVELOPE), 0, "" ]
     end
-    responder = AgentMailbox::Responder.new(soul: "xan", runner: runner, repo_root: @root, mailbox_home: mailbox,
+    responder = AgentMailbox::Responder.new(soul: "ray", runner: runner, repo_root: @root, mailbox_home: mailbox,
                                             claude_home: mailbox)
     answer = responder.respond(@message)
 
-    assert_equal File.join(mailbox, "xan"), calls.last
-    assert File.directory?(File.join(mailbox, "xan"))
+    assert_equal File.join(mailbox, "ray"), calls.last
+    assert File.directory?(File.join(mailbox, "ray"))
     assert_equal ENVELOPE["session_id"], answer.session_id
-    assert_equal File.join(mailbox, "xan"), answer.run_record["claude_cwd"]
+    assert_equal File.join(mailbox, "ray"), answer.run_record["claude_cwd"]
     assert_equal "no_transcript", answer.run_record.dig("run_meta", "reasoning_source")
     assert_raises(ArgumentError) do
       AgentMailbox::Responder.new(soul: "../x", runner: runner, mailbox_home: mailbox).soul_folder
     end
   ensure
     FileUtils.rm_rf(mailbox)
+  end
+
+  # The prompt names a soul by its roster name (config/souls.yml), and by its slug
+  # only when the roster does not name it.
+  test "the display name is the roster's name, else the slug's" do
+    assert builder.prompt.start_with?("You are Ray,"), "no roster under the root: the slug's name (slug ray until the slug rename)"
+
+    File.write(File.join(@root, "config/souls.yml"), { "souls" => [ { "slug" => "ray", "name" => "Ritch" } ] }.to_yaml)
+    assert builder.prompt.start_with?("You are Ritch,")
+    assert builder(soul: "mack").prompt.start_with?("You are Mack,"), "a soul the roster omits"
+
+    File.write(File.join(@root, "config/souls.yml"), "souls: [unclosed")
+    assert builder.prompt.start_with?("You are Ray,"), "an unreadable roster falls back to the slug's name"
   end
 end

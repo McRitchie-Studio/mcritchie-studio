@@ -25,16 +25,43 @@ class Release
     # A task that ALSO names a live repo is held whole: sweeping only its live half
     # would stamp it assembled/shipped for a repo that never moved. `bin/release
     # prepare` reads "parked" to print the HELD line (Release::SweepPlan#compute).
-    def sweep_candidates(release = Release.current)
-      reviewed, parked_reviewed = Task.where(stage: "reviewed").order(:position).to_a
-                                      .partition { |task| parked_repos(task).empty? }
-      stragglers, parked_stragglers = straggler_tasks(release).partition { |task| parked_repos(task).empty? }
+    #
+    # ONE TRAIN AT A TIME (release-trains-design.md §2). `train:` names the train this
+    # sweep assembles (default: the hub, so every argument-less caller reads exactly
+    # the hub's queue). A task that rides ANOTHER train (Task#release_train) is HELD
+    # out of both sweepable lists and reported under "other_train" instead, so the
+    # hub never promotes an app train's repo and an app train never sweeps hub work.
+    # `release` defaults to that train's current release.
+    def sweep_candidates(release = CURRENT_RELEASE, train: Release::DEFAULT_TRAIN)
+      release = Release.current(train) if release.equal?(CURRENT_RELEASE)
+      # A task ALREADY attached to this train's current release keeps riding it
+      # whatever its repos say (a member swept before its app's train existed), so
+      # the train never strands its own member.
+      reviewed, other_reviewed = Task.where(stage: "reviewed").order(:position).to_a
+                                     .partition { |task| task.release_train == train || (release && task.release_slug == release.slug) }
+      reviewed, parked_reviewed = reviewed.partition { |task| parked_repos(task).empty? }
+      stragglers, parked_stragglers = straggler_tasks(release, train: train).partition { |task| parked_repos(task).empty? }
       {
-        "reviewed"   => reviewed,
-        "stragglers" => stragglers,
-        "parked"     => parked_reviewed + parked_stragglers
+        "reviewed"    => reviewed,
+        "stragglers"  => stragglers,
+        "parked"      => parked_reviewed + parked_stragglers,
+        "other_train" => other_reviewed + other_train_stragglers(release, train: train)
       }
     end
+
+    # [{ "repo", "train", "slug" }] for every repo another train's ACTIVE release
+    # holds (a member names it): the read bin/release takes BEFORE the promote, so the
+    # sweep HOLDS a candidate naming one of these repos instead of promoting its
+    # `accepted` and then failing at Release#add (release-trains-design.md §2).
+    def repos_held_by_other_trains(train = Release::DEFAULT_TRAIN)
+      Release.held_repos(except_train: train).map do |repo, release|
+        { "repo" => repo, "train" => release.train, "slug" => release.slug }
+      end
+    end
+
+    # The default for sweep_candidates' / straggler_tasks' `release`: "the train's
+    # current release", told apart from an explicit nil (no active release).
+    CURRENT_RELEASE = Object.new.freeze
 
     # { repo => ladder } for every repo this task names that the registry parks —
     # empty for a task the conductor may sweep. One rule for detection and for the
@@ -48,7 +75,21 @@ class Release
     # straggler (assembled work always belongs on the next candidate). NULL-safe
     # by hand: `where.not(release_slug: nil-slug)` would match nothing under SQL
     # null semantics.
-    def straggler_tasks(release = Release.current)
+    #
+    # Only stragglers that ride `train` (Task#release_train): an assembled task that
+    # rides another train is that train's straggler, never this one's.
+    def straggler_tasks(release = CURRENT_RELEASE, train: Release::DEFAULT_TRAIN)
+      assembled_off_release(release, train: train).select { |task| task.release_train == train }
+    end
+
+    # The assembled leftovers that ride ANOTHER train — the "other_train" half of the
+    # straggler read, so the CLI can name them on a HELD line.
+    def other_train_stragglers(release = CURRENT_RELEASE, train: Release::DEFAULT_TRAIN)
+      assembled_off_release(release, train: train).reject { |task| task.release_train == train }
+    end
+
+    def assembled_off_release(release, train:)
+      release = Release.current(train) if release.equal?(CURRENT_RELEASE)
       scope = Task.where(stage: "assembled")
       scope = scope.where("release_slug IS NULL OR release_slug != ?", release.slug) if release
       scope.order(:position).to_a
@@ -76,8 +117,14 @@ class Release
     # paper-trail row on the audit spine — never a silent skip — and the swept
     # member then rides the standard reviewed→assembled QA-green flip. The flag
     # resets in `ensure` so it can't leak onto a later (in-process) transition.
-    def sweep!(task, override: false)
-      release = Release.current_or_open!
+    #
+    # `train:` is the train whose release the task joins (default: the hub, exactly
+    # as before trains). Release#add refuses a task whose repo another active train
+    # holds. sweep! does NOT refuse a task routed to another train: the sweep read
+    # (sweep_candidates) and bin/release's plan hold those, while a slug an operator
+    # NAMES (curate!'s task_slugs) is curation, exactly as before trains.
+    def sweep!(task, override: false, train: Release::DEFAULT_TRAIN)
+      release = Release.current_or_open!(train)
       stamp_session_mascot(release)
       # The first sweep IS the start of assembly — record it so the stage
       # timeline stamps `assembling` (tracker node 2 goes live) without relying
@@ -988,9 +1035,19 @@ class Release
     # `shipped` task that is NOT a member of Release.last_shipped. Pre-conductor
     # shipped tasks (no release_slug → in no release) fall in this set; the last
     # release's own members stay shipped as the board's read-only "Last Release".
+    #
+    # PER TRAIN (release-trains-design.md §2): each train keeps its own last shipped
+    # release's members, so archiving after a hub ship never empties an app train's
+    # "Last Release", and the reverse. With only the hub train this is the old rule.
     def archivable_completed_slugs
-      keep = Release.last_shipped&.tasks&.pluck(:slug) || []
+      keep = last_shipped_member_slugs
       Task.where(stage: "shipped").where.not(slug: keep).pluck(:slug)
+    end
+
+    # The members of every train's last shipped release, hub first.
+    def last_shipped_member_slugs
+      trains = [ Release::DEFAULT_TRAIN ] + Release.where(state: "shipped").distinct.pluck(:train)
+      trains.uniq.flat_map { |train| Release.last_shipped(train)&.tasks&.pluck(:slug) || [] }.uniq
     end
 
     # Archive every shipped task not carried by the last shipped release
@@ -1020,7 +1077,7 @@ class Release
     # `pause` defaults to 0 (tests and any programmatic caller run at full speed);
     # `bin/release archive` passes the operator-facing cadence.
     def archive_completed!(pause: 0)
-      kept     = Release.last_shipped&.tasks&.pluck(:slug) || []
+      kept     = last_shipped_member_slugs
       pause    = pause.to_f
       archived = []
       clock    = nil

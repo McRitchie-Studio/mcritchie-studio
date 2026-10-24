@@ -1,0 +1,45 @@
+Return-Path: <alex@mcritchie.studio>
+Received: from mail-ej1-f70.google.com (mail-ej1-f70.google.com [209.85.218.70])
+ by inbound-smtp.us-east-1.amazonaws.com with SMTP id fixture0000000000000000000000000000000001
+ for team@in.mcritchie.studio;
+ Fri, 16 Oct 2026 19:14:58 +0000 (UTC)
+X-SES-Spam-Verdict: PASS
+X-SES-Virus-Verdict: PASS
+Received-SPF: pass (spfCheck: domain of mcritchie.studio designates 209.85.218.70 as permitted sender) client-ip=209.85.218.70; envelope-from=alex@mcritchie.studio; helo=mail-ej1-f70.google.com;
+Authentication-Results: amazonses.com;
+ spf=pass (spfCheck: domain of mcritchie.studio designates 209.85.218.70 as permitted sender) client-ip=209.85.218.70; envelope-from=alex@mcritchie.studio; helo=mail-ej1-f70.google.com;
+ dkim=pass header.i=@mcritchie.studio;
+ dmarc=pass header.from=mcritchie.studio;
+X-SES-RECEIPT: fixture-receipt
+X-SES-DKIM-SIGNATURE: a=rsa-sha256; q=dns/txt; b=fixture; c=relaxed/simple; s=fixture; d=amazonses.com; t=1792178098; v=1; bh=fixture; h=From:To:Cc:Bcc:Subject:Date:Message-ID:MIME-Version:Content-Type:X-SES-RECEIPT;
+Received: by mail-ej1-f70.google.com with SMTP id fixture-relay-1
+        for <team@in.mcritchie.studio>; Fri, 16 Oct 2026 12:14:58 -0700 (PDT)
+ARC-Seal: i=2; a=rsa-sha256; t=1792178098; cv=pass; d=google.com; s=arc-20240605; b=fixture
+ARC-Message-Signature: i=2; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605; h=to:subject:message-id:date:from:mime-version; bh=fixture; b=fixture
+ARC-Authentication-Results: i=2; mx.google.com;
+       dkim=pass header.i=@mcritchie.studio header.s=google header.b=fixture;
+       spf=pass (google.com: domain of alex@mcritchie.studio designates 209.85.220.41 as permitted sender) smtp.mailfrom=alex@mcritchie.studio;
+       dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=mcritchie.studio
+Return-Path: <alex@mcritchie.studio>
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
+        by mx.google.com with SMTPS id fixture-relay-2
+        for <avi@mcritchie.studio>; Fri, 16 Oct 2026 12:14:55 -0700 (PDT)
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@mcritchie.studio header.s=google header.b=fixture;
+       spf=pass (google.com: domain of alex@mcritchie.studio designates 209.85.220.41 as permitted sender) smtp.mailfrom=alex@mcritchie.studio;
+       dmarc=pass (p=NONE sp=NONE dis=NONE) header.from=mcritchie.studio
+ARC-Seal: i=1; a=rsa-sha256; t=1792178095; cv=none; d=google.com; s=arc-20240605; b=fixture
+ARC-Authentication-Results: i=1; mx.google.com; arc=none
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=mcritchie.studio; s=google; t=1792178095; h=to:subject:message-id:date:from:mime-version:from:to:cc:subject:date:message-id:reply-to; bh=fixture; b=fixture
+MIME-Version: 1.0
+From: Alex McRitchie <alex@mcritchie.studio>
+Date: Fri, 16 Oct 2026 13:14:44 -0600
+Message-ID: <CAfixture-owner-to-avi-0001@mail.gmail.com>
+Subject: What is on QA?
+To: Avi <avi@mcritchie.studio>
+Content-Type: text/plain; charset="UTF-8"
+
+What is on QA right now, and is anything blocked?
+
+Best,
+Alex

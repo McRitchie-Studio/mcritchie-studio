@@ -1,0 +1,16 @@
+<%# locals: (app:, board:, admin: false, meter: nil, client: false, palette_style: nil) %>
+<%# The app chat's status card (agent_chats/_shell): the app's title, its client-facing devops: the three pills, Building · Releasing · Deploying, and the open tasks under them (agent_chats/_devops_stages, AppDevopsStages.board_for; the live pills wear the shared CTA glow, cta-glow, in the CTO palette's colours (build_launch.css sets --glow-a, --glow-b, --glow-c; the studio primary is the fallback); the glow holds still under prefers-reduced-motion), which refreshes itself over AppDevopsChannel when a task for the app moves, and the token meter in #cto-chat-meter ("1,840 of 25,000 tokens this month"), which each answer re-renders. A client app's card wears its CTO's palette (AppCto; ClientCtoHelper). %>
+<div class="agent-shell-card card p-4 sm:p-5 space-y-4 <%= "border-t-4 border-t-[rgb(var(--cto-primary))] bg-[rgb(var(--cto-primary)/0.08)] #{ClientCtoHelper::PALETTE_SWITCH}" if client %>"
+     <% if palette_style.present? %>style="<%= palette_style %>"<% end %>
+     data-test="cto-chat-head" data-client-cto="<%= client %>">
+  <h1 class="agent-shell-card-title text-xl sm:text-2xl font-bold text-heading text-center break-words">
+    <%= link_to app.name, application_path(app.slug), class: "hover:underline", data: { test: "cto-chat-app-link" } %>
+  </h1>
+  <%= turbo_stream_from AppDevopsStages::Live.stream_name(app.slug), channel: AppDevopsChannel, class: "hidden" %>
+  <%= render "agent_chats/devops_stages", app: app, board: board, admin: admin %>
+  <% if meter %>
+    <div id="<%= AgentMessages::WebChat::METER_TARGET %>" data-test="cto-chat-usage">
+      <%= render "agent_chats/tokens_bar", meter: meter %>
+    </div>
+  <% end %>
+</div>

@@ -142,7 +142,7 @@ class CommunicationTest < ActiveSupport::TestCase
 
   test "the access map uses the knowledge layer's own levels" do
     assert_equal Studio::KnowledgeDoc::ACCESS_LEVELS.sort, %w[aware full none]
-    assert ask(access: { "samson" => "full", "dawn" => "none" }).valid?
+    assert ask(access: { "samson" => "full", "hank" => "none" }).valid?
     refute ask(access: { "samson" => "readonly" }).valid?
     refute ask(access: [ "samson" ]).valid?
   end
