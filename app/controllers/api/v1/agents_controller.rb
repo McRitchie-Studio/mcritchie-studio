@@ -5,6 +5,8 @@ module Api
     # stay open to every bearer.
     class AgentsController < BaseController
       require_admin_session only: :update
+      # A harness key reads agents (agent-sessions-design.md, section 2).
+      accepts_harness_key :index, :show
 
       def index
         agents = Agent.all.order(:position)

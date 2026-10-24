@@ -11,6 +11,8 @@ module Api
     # does on every gate, for the one release it stays accepted.
     class DevopsShiftsController < BaseController
       require_admin_session only: %i[acquire renew release]
+      # A harness key reads the board here (agent-sessions-design.md, section 2).
+      accepts_harness_key :index
 
       # GET /api/v1/devops_shifts — every lane's current holder (dashboard + CLI status).
       def index

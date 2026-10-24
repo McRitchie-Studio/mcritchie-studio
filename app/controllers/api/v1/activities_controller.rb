@@ -1,6 +1,9 @@
 module Api
   module V1
     class ActivitiesController < BaseController
+      # A harness key reads the board here (agent-sessions-design.md, section 2).
+      accepts_harness_key :index
+
       def index
         activities = Activity.recent
         activities = activities.where(agent_slug: params[:agent_slug]) if params[:agent_slug].present?

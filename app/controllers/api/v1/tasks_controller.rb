@@ -21,6 +21,19 @@ module Api
       # API and the page can never disagree about which tasks an epic holds.
       INDEX_PARAMS = %w[stage agent_slug epic reviewable page per_page full].freeze
 
+      # A harness key reads the board, creates a task and makes its claim, so that
+      # `bin/task begin` reaches its login mint with no shared token
+      # (agent-sessions-design.md, section 2). It writes no task beyond that: every
+      # other update answers it 403.
+      accepts_harness_key :index, :show, :building_lane
+      accepts_harness_key :create, refusal: :harness_create_refusal
+      accepts_harness_key :update, refusal: :harness_claim_refusal, census: "claim"
+      # The fields a claim carries: `bin/task move <slug> building` and begin's
+      # resume claim send the stage, the event, the devops they read and merged, and
+      # the builder's size estimate.
+      HARNESS_CLAIM_FIELDS = %w[stage event devops dev_size].freeze
+      HARNESS_CLAIM_FROM = %w[designed building].freeze
+
       before_action :capture_task_event_context, only: [:create, :update, :intent, :block, :unblock]
       before_action :set_task, only: [:show, :update, :destroy, :intent, :block, :unblock, :building_lane]
       require_task_scope only: [:update, :destroy, :intent, :block, :unblock]
@@ -176,6 +189,29 @@ module Api
         return if @task
 
         render_error("task not found", status: :not_found, error_code: "NOT_FOUND")
+      end
+
+      # nil when a harness key may create this task: it starts in designed.
+      def harness_create_refusal
+        stage = params[:stage].to_s
+        return nil if stage.empty? || stage == "designed"
+
+        "a harness key creates a task in designed, not #{stage}"
+      end
+
+      # nil when this update is the claim a harness key may make: a move to building
+      # of a designed or building task, carrying only HARNESS_CLAIM_FIELDS. An
+      # unknown task passes here and answers 404 from set_task.
+      def harness_claim_refusal
+        return "a harness key writes no task but its claim (stage building); this update is not the claim" unless params[:stage].to_s == "building"
+
+        extra = request.request_parameters.keys - HARNESS_CLAIM_FIELDS - [ "task" ]
+        return "a claim under a harness key carries only #{HARNESS_CLAIM_FIELDS.join(", ")}, not #{extra.sort.join(", ")}" if extra.any?
+
+        stage = Task.where(slug: params[:slug].to_s).pick(:stage)
+        return nil if stage.nil? || HARNESS_CLAIM_FROM.include?(stage)
+
+        "a harness key claims a designed or building task; #{params[:slug]} is #{stage}"
       end
 
       # A session may make only the transitions its tier allows

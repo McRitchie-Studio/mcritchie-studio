@@ -1,6 +1,9 @@
 module Api
   module V1
     class InsightsController < BaseController
+      # A harness key reads the board here (agent-sessions-design.md, section 2).
+      accepts_harness_key :index
+
       # The learning loop's feed-forward READ path. The Insight Bank
       # (ActionGrade.banked) is the curated set of lessons past sessions kept;
       # this endpoint serves the top-N (newest curation first) as a compact list so
