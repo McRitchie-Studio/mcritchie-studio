@@ -6,7 +6,8 @@ require "test_helper"
 #
 # WHAT IT SCANS: every ERB output tag under app/views and app/components that is an
 # href attribute value (`href="<%= ... %>"`) or that calls link_to / button_to or
-# passes `href:`. Inside such a tag, every url-named expression (`*_url`, `.url`,
+# passes `href:`. An href attribute's expression with no url-named token is judged
+# as a whole (a local can carry a url). Inside such a tag, every url-named expression (`*_url`, `.url`,
 # `["url"]`, `[:url]`, `*_URL`) must be either:
 #
 #   - in a tag that goes through `safe_link_to` or `http_href(`, or
@@ -59,10 +60,15 @@ class StoredUrlHrefGuardTest < ActiveSupport::TestCase
     "app/views/contact_submissions/new.html.erb" => { "url" => "the link TEXT; the href is privacy_path" },
     "app/views/integrations/discord.html.erb" => { "[:url]" => "a constant setup-step table in the template" },
     "app/views/tasks/_release_phase_meter.html.erb" => { "[:url]" => "release_ci_run_url: GitHub's run URL" },
-    "app/views/contents/_tiktok_assembly_card.html.erb" => { "mp4_url" => "a presence test; the button posts to a route path" }
+    "app/views/contents/_tiktok_assembly_card.html.erb" => { "mp4_url" => "a presence test; the button posts to a route path" },
+    "app/views/videos/_sighting_chip.html.erb" => { "href" => "assigned from http_href(video.timecode_url(...))" },
+    "app/views/layouts/broadcast_email.html.erb" => {
+      "hero_link" => "assigned from broadcast_link(:hero, ApplicationHelper.http_href(@broadcast.hero_url))",
+      "unsubscribe_href" => "the mailer's unsubscribe_url route or the ESP's merge tag"
+    }
   }.freeze
 
-  TAG = /(href=["']?\s*)?<%(=|-)?(.*?)-?%>/m
+  TAG = /((?<![\w-])href=["']?\s*)?<%(=|-)?(.*?)-?%>/m
   URL_TOKEN = /(?:[@\w.]|::)*(?:_url|\burl)\b|\[["']url["']\]|\[:url\]/i
   WRAPPED = /\bsafe_link_to\b|\bhttp_href\(/
 
@@ -76,13 +82,18 @@ class StoredUrlHrefGuardTest < ActiveSupport::TestCase
         next [] if code.match?(WRAPPED)
 
         line = src[0...m.begin(0)].count("\n") + 1
-        code.scan(URL_TOKEN).uniq.reject { |tok| allowed?(path, tok, route_helpers) }.map { |tok| [ path, line, tok, code.strip ] }
+        tokens = code.scan(URL_TOKEN).uniq
+        # AN href ATTRIBUTE IS JUDGED WHOLE: `href="<%= href %>"` names no url, but a
+        # local can carry one (the sighting chip's did). Its expression must be
+        # allowed as itself when it carries no url-named token.
+        tokens = [ code.strip ] if pre && tokens.empty?
+        tokens.reject { |tok| allowed?(path, tok, route_helpers) }.map { |tok| [ path, line, tok, code.strip ] }
       end
     end
   end
 
   def self.allowed?(path, tok, route_helpers)
-    return true if tok.end_with?("_path")
+    return true if tok.end_with?("_path") || tok.match?(/\A[\w:]+\.path\(|\A\w+_path\(/)
     return true if ALLOWED.key?(tok) || SITE_ALLOWED.dig(path, tok)
     return true if route_helpers.include?(tok.delete_prefix("main_app."))
 
@@ -119,14 +130,15 @@ class StoredUrlHrefGuardTest < ActiveSupport::TestCase
       "app/views/x/multi.html.erb" => %(<%= link_to "Watch",\n      video.source_url, class: "a" %>),
       "app/views/x/block.html.erb" => %(<%= link_to sheet.image_url, target: "_blank" do %>img<% end %>),
       "app/views/x/json.html.erb" => %(<%= link_to "reply", event.detail["url"] %>),
-      "app/views/x/attr.html.erb" => %(<% opts.merge!(href: rel.qa_url) %>)
+      "app/views/x/attr.html.erb" => %(<% opts.merge!(href: rel.qa_url) %>),
+      "app/views/x/local.html.erb" => %(<% href = video.timecode_url(t) %><a href="<%= href %>">t</a>)
     }
     flagged = self.class.violations(bad, route_helpers: routes).map(&:first).uniq
     assert_equal bad.keys.sort, flagged.sort, "every raw shape must be flagged"
 
     good = {
       "app/views/x/safe.html.erb" => %(<%= safe_link_to "View", @news.x_post_url, target: "_blank" %>),
-      "app/views/x/href.html.erb" => %(<% if (h = http_href(@news.url)) %><a href="<%= h %>">x</a><% end %>),
+      "app/views/x/href.html.erb" => %(<a href="<%= http_href(@news.url) %>">x</a>),
       "app/views/x/route.html.erb" => %(<%= link_to "News", news_url(@news) %> <%= link_to "Path", news_path(@news) %>),
       "app/views/x/img.html.erb" => %(<img src="<%= @news.image_url %>">),
       "app/views/x/comment.html.erb" => %(<%# link_to "x", @news.url %>)
