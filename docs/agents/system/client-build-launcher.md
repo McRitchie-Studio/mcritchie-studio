@@ -78,9 +78,9 @@ same `cap` is free, the launcher takes the oldest startable one.
 
 1. `POST /api/v1/change_builds/<slug>/claim` records the start in
    `devops.change_build` (state `starting`) under the card's row lock.
-2. A thread runs our own `/Users/alex/projects/.agents/bin/task begin <slug>
-   --agent pokemon` from the hub primary (the hub's `bin/task` when the fixed path
-   is missing), capped at 15 minutes. It cuts the desk, claims the card
+2. A thread runs our own `bin/task begin <slug> --agent pokemon` from the hub
+   primary (the launcher's own checkout, which the production ship keeps current),
+   capped at 15 minutes. It cuts the desk, claims the card
    (`designed → building`) and launches Avi's intent scout. The slug is the
    board's, checked against a kebab-case rule; no chat text reaches the command.
 3. `POST …/finish` with `started` and the desk path begin printed: the card stores

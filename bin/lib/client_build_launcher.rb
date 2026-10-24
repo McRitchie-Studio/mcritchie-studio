@@ -820,10 +820,11 @@ module ClientBuildLauncher
   class ChangeStart
     TIMEOUT = 15 * 60
     SLUG_RULE = /\A[a-z0-9][a-z0-9-]{0,99}\z/
-    FIXED_TASK_BIN = "/Users/alex/projects/.agents/bin/task"
     Result = Struct.new(:ok, :desk, :reason, keyword_init: true)
 
-    def self.task_bin = File.executable?(FIXED_TASK_BIN) ? FIXED_TASK_BIN : File.join(REPO_ROOT, "bin/task")
+    # The launcher's own checkout is the hub primary (install refuses a desk), which
+    # the production ship keeps current, so its bin/task is the shipped one.
+    def self.task_bin = File.join(REPO_ROOT, "bin/task")
 
     # `runner`: (argv, chdir:, timeout:) -> [output, Process::Status or nil on a timeout].
     def initialize(task_bin: self.class.task_bin, chdir: REPO_ROOT, timeout: TIMEOUT, runner: nil)
