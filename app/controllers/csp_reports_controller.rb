@@ -1,6 +1,6 @@
 # POST /csp_reports: the browser's Content-Security-Policy violation reports for
 # the hub's report-only policy (config/initializers/content_security_policy.rb
-# names this path in report-uri and, through Reporting-Endpoints, in report-to).
+# names this path in report-uri).
 # Each report is stored as a CspReport row, read at /admin/csp_reports.
 #
 # ActionController::Base, not ApplicationController: a browser posts here on its
@@ -9,7 +9,7 @@
 # Outside the admin wall by construction (AdminWall's header); in
 # CsrfSkipAllowlistTest's ALLOWED with the reason.
 #
-# Two body shapes:
+# Two body shapes, so the policy can move to report-to without a change here:
 #   report-uri   {"csp-report": {"document-uri": ..., "violated-directive": ...}}
 #                (Content-Type application/csp-report)
 #   report-to    [{"type": "csp-violation", "body": {"documentURL": ...}}, ...]

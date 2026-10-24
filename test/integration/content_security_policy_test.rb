@@ -33,8 +33,7 @@ class ContentSecurityPolicyTest < ActionDispatch::IntegrationTest
       "frame-ancestors 'self'",
       "base-uri 'self'",
       "form-action 'self' https://accounts.google.com",
-      "report-uri /csp_reports",
-      "report-to csp-endpoint"
+      "report-uri /csp_reports"
     ].join("; ")
   end
 
@@ -67,7 +66,6 @@ class ContentSecurityPolicyTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_nil response.headers["Content-Security-Policy"], "report-only phase: nothing may be enforced yet"
     assert_equal expected_policy(header_nonce), response.headers[REPORT_ONLY]
-    assert_equal 'csp-endpoint="/csp_reports"', response.headers["Reporting-Endpoints"]
   end
 
   test "/build sends the exact policy and every inline script carries its nonce" do

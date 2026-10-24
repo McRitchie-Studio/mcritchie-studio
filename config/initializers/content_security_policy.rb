@@ -44,16 +44,18 @@
 #   form-action  'self' and accounts.google.com: Sign in with Google posts to
 #                /auth/google_oauth2, which redirects there, and form-action covers
 #                the redirect.
-#   report-uri   /csp_reports, and report-to csp-endpoint, which the
-#                Reporting-Endpoints header below names. Browsers that know report-to
-#                use it; the rest use report-uri.
+#   report-uri   /csp_reports. NOT report-to, measured: with report-to and a
+#                Reporting-Endpoints header (relative or absolute) Chromium posted
+#                nothing in 80 seconds, and a browser that knows report-to ignores
+#                report-uri, so Chrome's reports would be lost; with report-uri alone
+#                the report arrived within two seconds (2026-10-24, Playwright
+#                Chromium against the test server).
 #
 # NEVER READ A DIRECTIVE BY CALLING IT. policy.script_src with no arguments returns
 # the list AND sets it to nil (docs/agents/modules/backend-discipline.md, Rails
 # Traps). Read policy.directives["script-src"].
 module HubCsp
   REPORT_PATH = "/csp_reports".freeze
-  REPORT_GROUP = "csp-endpoint".freeze
 
   CROPPER_JS = "https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js".freeze
   CROPPER_CSS = "https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css".freeze
@@ -128,8 +130,6 @@ Rails.application.configure do
     policy.base_uri        :self
     policy.form_action     :self, HubCsp::GOOGLE_ACCOUNTS
     policy.report_uri      HubCsp::REPORT_PATH
-    # Rails has no report_to method; the directive hash takes it as written.
-    policy.directives["report-to"] = [ HubCsp::REPORT_GROUP ]
   end
 
   # THE ENFORCE SWITCH. true: report only. The flip criterion is in the header.
@@ -140,7 +140,4 @@ Rails.application.configure do
   # that a Turbo visit brings into a later document.
   config.content_security_policy_nonce_generator = ->(_request) { SecureRandom.base64(16) }
   config.content_security_policy_nonce_directives = %w[script-src]
-
-  # report-to's endpoint. A relative URL resolves against the page's own URL.
-  config.action_dispatch.default_headers["Reporting-Endpoints"] = %(#{HubCsp::REPORT_GROUP}="#{HubCsp::REPORT_PATH}")
 end
