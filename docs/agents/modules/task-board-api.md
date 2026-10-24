@@ -178,6 +178,23 @@ never-attempted gate carries the all-nil row. `gate_runs` stays the source of
 truth (`GET /gates/...` above for the full attempt history); show self-heals a
 stale cache, index serves the raw column. Release-grain gates (G3/G4) are not
 projected — read them via `GET /gates/release/<slug>`.
+
+Show (not index) also carries what the task cost and how long each stage took,
+read-only, from `Task::CostSummary`:
+
+- `total_cost`: USD summed over every priced `task_events.cost` row, or `null`
+  when no row is priced.
+- `cost_by_stage`: `{ "build", "review", "deploy", "other" }`, USD per bucket,
+  bucketed by each row's `from_stage` (build: genesis, designed, building;
+  review: submitted; deploy: reviewed, assembled; other: anything else). A bucket
+  with no priced row is `null`, never `0`.
+- `durations_by_stage`: `{ "design", "build", "review", "assemble", "ship" }`,
+  whole seconds between the stage stamps (created→started, started→submitted,
+  submitted→reviewed, reviewed→assembled, assembled→completed). `null` when a
+  stage never happened, or a re-entry restamped its start past its end.
+
+`bin/task show` prints them as its `cost:` and `time:` lines. What the cost
+covers and leaves out: [`../system/agent-usage.md`](../system/agent-usage.md#task-cost).
 (There are also `agents`, `activities`, and `usages` resources, and the dream
 bank's `dream_approvals`, `dream_retirements`, `dream_grades`, `dream_swaps` and
 `dream_rulings` (Alex's ruling given in chat, with his quoted words); out of scope

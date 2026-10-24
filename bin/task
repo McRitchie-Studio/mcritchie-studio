@@ -31,6 +31,11 @@
 #       (no token dance); --verbose/-v expands the acceptance BULLETS, agent_context,
 #       test_plan, checks_run, claim state, pr_url/local_url, and the top-level
 #       `merged` + `release_slug` columns for a human read. )
+#     ( every form prints the task's `cost:` (total USD, then build · review ·
+#       deploy) and `time:` (design · build · review · assemble · ship elapsed)
+#       lines from the record's total_cost / cost_by_stage / durations_by_stage;
+#       `-` means nothing measured or a stage that never happened. Keys and
+#       sources: docs/agents/system/agent-usage.md, "Task cost". )
 #     ( `merged` and `release_slug` are TOP-LEVEL Task columns, NOT devops keys:
 #       `.metadata.devops.<either>` is null on every task, stamped or not — the
 #       server refuses a devops write to both names (Task::DEVOPS_COLUMN_KEYS).

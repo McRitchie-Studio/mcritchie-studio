@@ -182,6 +182,68 @@ no allowance skips the capped-count query (`agent_message_events` is indexed on
 
 The meter and the cap reply show it. No prompt receives a price.
 
+## Task cost
+
+A board task carries its own cost, apart from the CTO answers above: each
+`task_events` row may hold `model`, `tokens_in`, `tokens_out`, the two cache
+buckets and `cost` (USD, four places). The CTO run summaries never write it.
+
+**Who writes it.** The CLI that moves the task, from the moving session's own
+transcript (`lib/agent_session_usage.rb`, `lib/task_usage_baseline.rb`):
+
+- `bin/task move` and `bin/task block` (so `bin/submit`'s move to `submitted`, a
+  reviewer's move to `reviewed`, and a send-back), and `bin/release`'s moves
+  (assemble, ship). Each reads the session's cumulative usage, subtracts the
+  baseline it stored for that (session, task) at the last touch, posts the
+  delta, and advances the baseline. The baseline is seeded at `bin/task create`,
+  at the build claim, and at a review or deploy intent.
+- A checkpoint or review event posted with usage (`POST
+  /api/v1/tasks/:slug/events/:stage/complete`, `POST
+  /api/v1/tasks/:slug/review_events`) carries what its caller sent.
+- The server prices the posted tokens through `UsagePricing`, so an operator's
+  rate override applies; the CLI's own `cost` is the fallback for an unpriced
+  model. `bin/task move --model/--tokens-in/--tokens-out/--cost` replaces the
+  capture.
+
+**What it covers.** The spend of every session that moved the task, in the
+window since that session last touched it: the builder's session from claim to
+submit, the reviewer's session through its verdict, and the release session
+through assemble and ship. A blocked and resubmitted task adds each pass.
+
+**What it does not cover.**
+
+- Avi's intent scout, and any other detached run that never moves the task.
+- A subagent's own tokens. The capture reads the session's main transcript
+  (`~/.claude/projects/<dir>/<session-id>.jsonl`), not the
+  `subagents/agent-*.jsonl` children, so a builder or reviewer spawned as a
+  subagent records its PARENT session's delta for that window instead of its own.
+- A move with no session transcript behind it (a plain shell, CI, a server-side
+  move such as the armed-merge autopilot): it records the spine only, and `cost`
+  stays `NULL`.
+- The first move a session makes on a task it never touched records no delta
+  (no baseline yet).
+- The window is the session's whole spend, not only this task's: a session
+  working two tasks at once charges the same tokens to both.
+
+**How to read a card's cost.** `Task#total_cost` sums every row (`NULL` as 0).
+`GET /api/v1/tasks/:slug` serves it, read-only, as `total_cost`, with
+`cost_by_stage` and `durations_by_stage` (`Task::CostSummary`;
+[`../modules/task-board-api.md`](../modules/task-board-api.md)), and `bin/task
+show` prints them:
+
+```text
+  cost: $12.35  build $8.00 · review $3.00 · deploy $1.35
+  time: design 2h 3m · build 45m · review 20m · assemble - · ship -
+```
+
+A row's bucket is its `from_stage`, the stage the session stood in while it
+spent: build (created, designed, building), review (submitted), deploy
+(reviewed, assembled), other (anything else, printed only when priced). `-` is
+a bucket with no priced row, or a stage that never happened; it is never a
+measured zero. At ship, a blank `actual_size` is derived from the total
+(`Task::ACTUAL_SIZE_COST_THRESHOLDS`). The board card does not show cost yet: the
+card reads only its preloads, and a cost needs its own batch.
+
 ## Not built here
 
 - Paid tiers' allowance numbers and top-up prices: Alex's call (Vibe's is set).
