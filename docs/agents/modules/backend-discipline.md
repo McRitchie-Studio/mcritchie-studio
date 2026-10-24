@@ -282,7 +282,9 @@ Persist external IDs, transaction signatures, payment intent IDs, and webhook ev
   header-printing service before recording what a server saw.
 - **Rack 3 trusts a client-sent `Forwarded:` header over `X-Forwarded-For`.** Behind
   the Heroku router set `Rack::Request.forwarded_priority = [:x_forwarded]` (the hub:
-  `config/initializers/forwarded_headers.rb`), after confirming no proxy hop sits in front.
+  `config/initializers/forwarded_headers.rb`). The one proxy hop in front, Cloudflare,
+  is believed only through `EdgeGuard`: the rightmost `X-Forwarded-For` entry must be a
+  Cloudflare range and the request must carry the edge secret.
 - **Tests run the async cable adapter.** After shipping a cable feature, probe
   production with `ActionCable.server.pubsub.broadcast`; a 101 on `/cable` proves only
   the route.

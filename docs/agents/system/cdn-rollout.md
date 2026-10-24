@@ -162,6 +162,8 @@ refused, never wrongly believed, but it is still an outage for the visitors it s
    curl -s -o /dev/null -w '%{http_code}\n' https://mcritchie.studio/tasks
    # direct to origin — expect 403
    curl -s -o /dev/null -w '%{http_code}\n' https://mcritchie-studio-039470649719.herokuapp.com/tasks
+   # direct to origin WITH the secret, from this Mac (not a Cloudflare address) — expect 403
+   curl -s -o /dev/null -w '%{http_code}\n' -H "X-Edge-Secret: $EDGE_SECRET" https://mcritchie-studio-039470649719.herokuapp.com/tasks
    # health check still direct — expect 200
    curl -s -o /dev/null -w '%{http_code}\n' https://mcritchie-studio-039470649719.herokuapp.com/up
    ```

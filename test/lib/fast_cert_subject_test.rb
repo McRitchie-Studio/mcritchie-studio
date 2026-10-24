@@ -444,7 +444,10 @@ class FastCertSubjectTest < Minitest::Test
     # off position 0 turns that test red, and a diff touching this initializer alone
     # should run it. Grow this list only for an entry that genuinely asserts the wiring
     # — a coincidental token match is the thing assert_equal exists to catch.
+    # client_ip_spoof_test.rb earns its place the same way: its armed-guard cases build
+    # EdgeGuard ahead of RemoteIp and Rack::Attack and assert what each reader sees.
     assert_equal ["test/integration/canonical_host_wiring_test.rb",
+                  "test/integration/client_ip_spoof_test.rb",
                   "test/integration/edge_guard_wiring_test.rb",
                   "test/lib/edge_guard_test.rb"],
                  mapped,

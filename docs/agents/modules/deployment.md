@@ -128,7 +128,8 @@ Launch status as of 2026-06-15:
 
 - Production deploy: Heroku release `v63`, commit `4831ebcd`.
 - Heroku ACM: certs issued for `mcritchie.studio`, `www.mcritchie.studio`, and
-  `app.mcritchie.studio`.
+  `app.mcritchie.studio`. Superseded: ACM is now off and those certificates do not
+  renew; see [Certificates and the Edge](#certificates-and-the-edge).
 - Rails host config: `APP_HOST=mcritchie.studio`,
   `MAILER_HOST=mcritchie.studio`, and `APP_HOST_ALIASES` includes
   `app.mcritchie.studio`, `www.mcritchie.studio`, and the Heroku fallback host.

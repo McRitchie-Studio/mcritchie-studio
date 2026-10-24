@@ -17,8 +17,11 @@
 # The header the platform controls is X-Forwarded-For. The Heroku router
 # appends the address it received the request from to the right of any list
 # the client sent (https://devcenter.heroku.com/articles/http-routing). An armed
-# EdgeGuard sets both REMOTE_ADDR and that list to Cloudflare's
-# CF-Connecting-IP, and a public REMOTE_ADDR already outranks `Forwarded`, so
+# EdgeGuard reads that rightmost entry as the peer, requires it to be one of
+# Cloudflare's ranges AND the request to carry the edge secret, and only then
+# sets both REMOTE_ADDR and that list to Cloudflare's CF-Connecting-IP (a
+# request failing either is refused before anything reads an address). A
+# public REMOTE_ADDR already outranks `Forwarded`, so
 # the gap this line closes is every request EdgeGuard does not rewrite. Rack
 # and Rails both walk the list from the right and stop at the first address
 # that is not a private one, so a value the client put on the left is never
