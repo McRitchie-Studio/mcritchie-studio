@@ -148,6 +148,19 @@ class DbBackupSweepTest < ActiveSupport::TestCase
     assert_match(/Database backups fresh again/, recorder.posts.last.last["content"])
   end
 
+  test "[unit] a capture already running is not started twice (a retried or second run)" do
+    running = { "num" => 50, "from_type" => "pg_dump", "to_type" => "gof3r", "succeeded" => false, "finished_at" => nil,
+                "canceled_at" => nil, "created_at" => (NOW - 5.minutes).utc.strftime("%Y-%m-%d %H:%M:%S +0000") }
+    client = FakeClient.new("cyvasse" => [ backup(NOW - 30.hours), running ])
+    result = sweep(client, [ entry("cyvasse") ]).call(now: NOW).sole
+
+    assert_equal [ "missing", "in progress" ], [ result.state, result.capture ]
+    assert_equal [], client.captured
+    assert_match(/The sweep started a capture for each\./, DbBackupSweep.alert_text(AgentMailboxIncident.open_for("db_backup_missing")))
+    stuck = running.merge("created_at" => (NOW - 3.hours).utc.strftime("%Y-%m-%d %H:%M:%S +0000"))
+    refute DbBackupSweep.backup_running?([ stuck ], NOW), "a capture stuck for hours is not waited on"
+  end
+
   test "[unit] a failed capture is named in the alert" do
     client = FakeClient.new({ "cyvasse" => [] }, capture_error: Error.new("HTTP 403 key rejected"))
     sweep(client, [ entry("cyvasse") ]).call(now: NOW)

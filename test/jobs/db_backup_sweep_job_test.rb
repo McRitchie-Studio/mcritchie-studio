@@ -42,5 +42,6 @@ class DbBackupSweepJobTest < ActiveJob::TestCase
         assert_nothing_raised { DbBackupSweepJob.perform_now }
       end
     end
+    assert_equal "db-backup-sweep", ErrorLog.order(:id).last.target_name
   end
 end

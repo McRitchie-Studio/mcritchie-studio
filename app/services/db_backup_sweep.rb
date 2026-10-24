@@ -81,6 +81,16 @@ class DbBackupSweep
     backups.max_by { |b| b[:finished_at] }
   end
 
+  # A backup started in the last two hours that has neither finished nor been
+  # canceled.
+  def self.backup_running?(transfers, now)
+    Array(transfers).any? do |t|
+      started = parse_time(t["created_at"])
+      t["from_type"] == "pg_dump" && t["to_type"] == "gof3r" && t["finished_at"].blank? && t["canceled_at"].blank? &&
+        started && started > now - 2.hours
+    end
+  end
+
   def self.parse_time(value)
     value.present? ? Time.zone.parse(value.to_s) : nil
   rescue ArgumentError
@@ -101,7 +111,7 @@ class DbBackupSweep
 
     finished = parse_time(status["finished_at"])
     if status["state"] == "missing" || finished.nil? || finished < checked - FRESH_WITHIN
-      return status["capture"] == "started" ? "Backup MISSING (capture started)" : "Backup MISSING"
+      return [ "started", "in progress" ].include?(status["capture"]) ? "Backup MISSING (capture started)" : "Backup MISSING"
     end
 
     size = ActiveSupport::NumberHelper.number_to_human_size(status["size_bytes"].to_i)
@@ -145,7 +155,7 @@ class DbBackupSweep
     apps = Array(incident.detail["apps"])
     case incident.kind
     when MISSING
-      failed = apps.reject { |a| a["capture"] == "started" }
+      failed = apps.reject { |a| [ "started", "in progress" ].include?(a["capture"]) }
       capture = failed.empty? ? "The sweep started a capture for each." : "Capture failed for #{names(failed)}."
       "Database backup missing: no completed Heroku backup in #{FRESH_WITHIN.inspect} for #{names(apps)}. " \
         "#{capture} Steffon: SOP db-restore-drill."
@@ -169,17 +179,22 @@ class DbBackupSweep
   def client = (@client ||= HerokuClient.new(token: @env[TOKEN_ENV].to_s.strip))
 
   def check(app, now)
-    latest = self.class.latest_backup(client.transfers(app.heroku_app))
+    transfers = client.transfers(app.heroku_app)
+    latest = self.class.latest_backup(transfers)
     base = { slug: app.slug, heroku_app: app.heroku_app, finished_at: latest&.dig(:finished_at),
              size_bytes: latest&.dig(:size_bytes), name: latest&.dig(:name) }
     return Result.new(**base, state: "fresh") if latest && latest[:finished_at] >= now - FRESH_WITHIN
 
-    Result.new(**base, state: "missing", capture: capture(app))
+    Result.new(**base, state: "missing", capture: capture(app, transfers, now))
   rescue HerokuClient::Error => e
     Result.new(slug: app.slug, heroku_app: app.heroku_app, state: "unreadable", reason: e.message)
   end
 
-  def capture(app)
+  # A retried run (or a second one the same night) finds its own capture still
+  # running and does not start another.
+  def capture(app, transfers, now)
+    return "in progress" if self.class.backup_running?(transfers, now)
+
     client.capture(app.heroku_app)
     @logger.warn("#{LOG} #{app.slug}: no backup in #{FRESH_WITHIN.inspect}; capture started")
     "started"

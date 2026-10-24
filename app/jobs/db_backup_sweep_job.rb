@@ -18,6 +18,7 @@ class DbBackupSweepJob < ApplicationJob
 
     DbBackupSweep.new.call
   rescue StandardError => e
-    ErrorLog.capture!(e)
+    log = ErrorLog.capture!(e)
+    log.update(target_name: "db-backup-sweep")
   end
 end

@@ -675,6 +675,7 @@ What this protocol installed last successful run:
 - `docs/agents/agents/steffon/sops/agent-dispatcher.md` — the agent dispatcher, the first entry in `config/local_services.yml`, installed by Phase 10.
 - `docs/agents/system/client-build-launcher.md` — the client build launcher, the second entry in `config/local_services.yml`, installed by Phase 10.
 - `docs/agents/system/bootstrap.md` — first-time setup (one app, simpler)
+- `docs/agents/agents/steffon/sops/db-restore-drill.md` — production databases. A burned Mac loses no data: every paid app's Heroku Postgres is backed up nightly on Heroku and watched by the hub, and the drill there is how a backup is restored into a scratch database.
 - `docs/agents/modules/credentials.md` — credential rules and 1Password operating model
 - `docs/agents/modules/credential-inventory.md` — known 1Password item names
 - `docs/agents/system/news-pipeline.md` — News pipeline + X API setup

@@ -58,7 +58,8 @@ after Heroku's 02:00 captures). For every live app with `backups: true` it reads
 the app's Heroku Postgres transfers and:
 
 - records the latest completed backup's time and size on the app's `App` row;
-- when no backup completed in the last **26 hours**, starts a capture and opens
+- when no backup completed in the last **26 hours**, starts a capture (unless one
+  it started is still running) and opens
   the `db_backup_missing` incident;
 - when it cannot read an app (API down, key rejected), opens
   `db_backup_sweep_failed`. Unread is not missing: it captures nothing.

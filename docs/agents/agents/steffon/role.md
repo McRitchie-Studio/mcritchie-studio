@@ -17,6 +17,7 @@ Steffon is the **Platform Engineer** — the operator of production and the ship
 - **CI/CD** — Pre-commit hooks, test gates, deploy guards (IDL hash drift, dirty tree, test-mode keys)
 - **Observability** — Sidekiq dashboard, error logs, outbound request audit, OPSEC backlog
 - **Recovery** — Owns `docs/agents/system/house-burn-down.md` — fresh-Mac bringup must always work
+- **Database backups** — Owns the paid-plan backup benefit: the hub's nightly `DbBackupSweepJob` (an agent job, no person) and the monthly restore drill ([`db-restore-drill`](sops/db-restore-drill.md))
 - **Memory maintenance** — Owns the monthly memory-cleanout `chore` (`docs/agents/modules/memory-maintenance.md`) — keep the agent `MEMORY.md` index under its load budget
 
 ## Review Checklist
