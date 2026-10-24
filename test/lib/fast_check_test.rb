@@ -88,8 +88,9 @@ class FastCheckTest < Minitest::Test
     File.chmod(0o755, shim)
   end
 
-  # A stub CLI: appends "<MARKER>\t<argv...>" to STUB_LOG; exits 1 when FAIL_TOKEN is
-  # set and appears in its argv. The TASK stub serves `show` from TASK_SHOW_JSON.
+  # A stub CLI: appends "<MARKER>\t<argv...>" to STUB_LOG; exits 1 when FAIL_ARG is
+  # set and appears in its argv (not FAIL_TOKEN: a lane drops a credential-shaped
+  # name, ChildEnv.lane). The TASK stub serves `show` from TASK_SHOW_JSON.
   def write_stub(dir, name, marker)
     stub = File.join(dir, name)
     File.write(stub, <<~RUBY)
@@ -100,7 +101,7 @@ class FastCheckTest < Minitest::Test
         json = ENV["TASK_SHOW_JSON"].to_s
         puts json unless json.empty?
       end
-      token = ENV["FAIL_TOKEN"].to_s
+      token = ENV["FAIL_ARG"].to_s
       exit(!token.empty? && ARGV.join(" ").include?(token) ? 1 : 0)
     RUBY
     FileUtils.chmod("+x", stub)
@@ -149,7 +150,7 @@ class FastCheckTest < Minitest::Test
       "FAST_CHECK_RUBOCOP_CMD" => "#{lane.shellescape} RUBOCOP",
       "FAST_CHECK_TASK_BIN" => task,
       "STUB_LOG" => log,
-      "FAIL_TOKEN" => fail_token
+      "FAIL_ARG" => fail_token
     }.merge(extra_env))
     cmd = "#{bin.shellescape} #{args.map(&:shellescape).join(' ')}"
     out =

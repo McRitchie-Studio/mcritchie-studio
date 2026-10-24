@@ -85,14 +85,28 @@ credential by [`credential-filing`](credential-filing.md):
 
 1. Create a dedicated Heroku OAuth authorization on the company account, scope
    `identity,read-protected,write-protected` (reading transfers and starting a
-   capture), described "hub backup sweep":
-   `heroku authorizations:create -d "hub backup sweep" -s identity,read-protected,write-protected`.
-   Run it from the admin lane; the command prints the token once.
-2. File it as **`heroku.mcritchie-studio.applications`** in the
-   `studio-applications` vault (app-scoped: only the hub's runtime uses it), with
-   `authorization-id` and `used-by: mcritchie-studio HEROKU_BACKUP_API_KEY
-   (DbBackupSweepJob)`, and add its row to
-   [`credential-inventory.md`](../../../modules/credential-inventory.md).
+   capture), described "hub backup sweep", and file it in the same pipe as
+   **`heroku.mcritchie-studio.applications`** in the `studio-applications` vault
+   (app-scoped: only the hub's runtime uses it). Run it from the admin lane. The
+   token goes from `--json` through `jq` into the item's concealed field on
+   stdin, so it never reaches the terminal, a variable or an argument; plain
+   `authorizations:create` would print it.
+
+   ```bash
+   heroku authorizations:create -d "hub backup sweep" -s identity,read-protected,write-protected --json |
+     jq '{title: "heroku.mcritchie-studio.applications", category: "API_CREDENTIAL",
+          fields: [{id: "credential", label: "credential", type: "CONCEALED", value: .access_token.token},
+                   {id: "authorization-id", label: "authorization-id", type: "STRING", value: .id}]}' |
+     op item create --vault studio-applications --url "https://dashboard.heroku.com/account/applications" - \
+       "used-by[text]=mcritchie-studio HEROKU_BACKUP_API_KEY (DbBackupSweepJob)" > /dev/null
+   ```
+
+   The template names its own category, so no `--category` (op refuses both).
+   This pipe was rehearsed with `op item create --dry-run` and a fake
+   authorization on 2026-10-24.
+2. Finish the item by [`credential-filing`](credential-filing.md) sections 3
+   (the `notesPlain` permission matrix) and 6 (verify by read-back), and add its
+   row to [`credential-inventory.md`](../../../modules/credential-inventory.md).
 3. Apply it from the item, never from a copy, the value on stdin (an `xargs`
    into `heroku config:set` would put it on a command line):
    `op read 'op://studio-applications/heroku.mcritchie-studio.applications/credential' | /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set mcritchie-studio HEROKU_BACKUP_API_KEY`

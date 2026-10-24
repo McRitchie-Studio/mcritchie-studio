@@ -61,7 +61,7 @@ The 1Password account is `alex@mcritchie.studio` (account ID `MWOV5OT5BRHATI4EGM
 6. The new master key is in `config/master.key`. Never print it.
 7. Set it on the app from the file, on stdin: `/Users/alex/projects/mcritchie-studio/bin/heroku-secret-set mcritchie-studio RAILS_MASTER_KEY < config/master.key` (or `turf-monster-mainnet`).
 8. Update the matching 1Password item (recommended naming: `mcritchie.studio/RAILS_MASTER_KEY`, `turf-monster/RAILS_MASTER_KEY`).
-9. Update local `.env` from the file, never typing the key: `{ grep -v '^RAILS_MASTER_KEY=' .env; printf 'RAILS_MASTER_KEY=%s\n' "$(cat config/master.key)"; } > .env.new && mv .env.new .env && chmod 600 .env`.
+9. Update local `.env` from the file, never typing the key. The subshell's `umask 077` creates `.env.new` owner-only, so the key is never world-readable, not even for the instant before a `chmod`: `( umask 077; { grep -v '^RAILS_MASTER_KEY=' .env; printf 'RAILS_MASTER_KEY=%s\n' "$(cat config/master.key)"; } > .env.new ) && mv .env.new .env && chmod 600 .env`.
 10. Commit `config/credentials.yml.enc` to the repo. Push.
 
 **Verify:** App boots locally (`bin/rails server`). `heroku logs --tail --app <app>` after a deploy shows no `:secret_key_base` errors. Direct login still works in each app.
@@ -227,9 +227,17 @@ shell history or the process list.
    authority or a Squads seat, and overwriting it strands them (step 8). Ruby
    converts the keypair to the 88-character base58 secret the env var holds and
    writes it into a `0600` template file, and `op item create --template` reads
-   that file. Do not pipe a template into `op item create -`: a piped template
-   can be ignored, and `op` then makes an empty "Untitled SecureNote". Never
-   fall back to a `field[concealed]=…` argument.
+   that file. A template piped into `op item create -` works too, and is what
+   [`credential-filing.md`](../agents/steffon/sops/credential-filing.md)
+   uses; the file is used here only because the Ruby step already writes one.
+   Both were rehearsed with `op item create --dry-run` on op 2.34.0
+   (2026-10-24, fake values): a piped template's title, category and concealed
+   field all land, and an empty or failed pipe is refused (`invalid JSON in
+   piped input`). The empty "Untitled SecureNote" this page once warned about
+   comes from `op` getting NO pipe at all (stdin a terminal or `/dev/null`), so
+   it builds the item from flags alone. Never `--dry-run` with the real secret:
+   its preview prints the concealed value. Step 3's read-back is what proves
+   the secret landed. Never fall back to a `field[concealed]=…` argument.
 
    ```bash
    t="$(mktemp -t new-admin-item)"                  # 0600 under the umask above
@@ -347,7 +355,9 @@ local env files on many desks. The rotation, the reference for the next one:
 2. **Mint and file.** `solana-keygen new --no-bip39-passphrase --silent --outfile <scratch>`
    with `umask 077`; base58 the 64 bytes in a process; write the item with
    `op item create --vault studio-agents-admin --template <600-mode file>`
-   (a piped template is ignored and makes an empty "Untitled SecureNote");
+   (on 2026-10-09 an empty "Untitled SecureNote" appeared instead; the 2026-10-24
+   dry runs trace that to `op` receiving no pipe at all, not to a piped template
+   being ignored: see the Solana admin key step 2);
    read it back and check it derives; delete both files. Print the public key only.
 3. **One config transaction per cluster**, built by
    `turf-vault/scripts/ceremony/rotate-admin-seat.js`:

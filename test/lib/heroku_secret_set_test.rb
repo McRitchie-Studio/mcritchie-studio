@@ -109,4 +109,37 @@ class HerokuSecretSetTest < Minitest::Test
       assert_empty seen
     end
   end
+
+  # N6 (secrets-scrub-follow-ups): HEROKU_API_BASE may point only at the real API
+  # or a loopback stand-in, so a planted base cannot collect the bearer token.
+  def test_a_non_heroku_api_base_is_refused_before_the_token_is_used
+    [
+      "https://evil.example",
+      "https://api.heroku.com.evil.example",
+      "https://api.heroku.com@evil.example",
+      "http://api.heroku.com",
+      "https://api.heroku.com:8443",
+      "http://10.0.0.5:9000",
+      "https://api.heroku.com/elsewhere",
+      "not a url"
+    ].each do |base|
+      out, err, status = run_bin("fixture-app", "FIXTURE_SECRET", stdin: "v\n", base: base)
+
+      assert_equal 1, status.exitstatus, "#{base} was accepted"
+      assert_match(/HEROKU_API_BASE (may name only|is not a URL)/, err, base)
+      assert_includes err, "NOTHING WAS SET", base
+      refute_includes out + err, "fake-heroku-token", "the token was printed for #{base}"
+    end
+  end
+
+  # The control: the guard is not simply refusing everything. A loopback base is
+  # the one every test above uses, and it still reaches the stand-in.
+  def test_control_a_loopback_base_still_reaches_the_stand_in
+    with_api do |base, seen|
+      _out, err, status = run_bin("fixture-app", "FIXTURE_SECRET", stdin: "v\n", base: base.sub("127.0.0.1", "localhost"))
+
+      assert status.success?, err
+      assert_equal 1, seen.length
+    end
+  end
 end

@@ -70,6 +70,7 @@ require_relative "harness_key"
 require_relative "session_markers"
 require_relative "shift_renewer"
 require_relative "anchor_heartbeat"
+require_relative "child_env"
 require_relative "review_worker_pulse"
 require_relative "dream_bank"
 require_relative "../../lib/claim_holder"
@@ -860,8 +861,13 @@ class ReviewClaimCli
     nil
   end
 
+  # The renewer lives as long as the lease, so it starts under an ALLOW-LISTED
+  # environment (ChildEnv.renewer): its session and nonce, the board URL, the
+  # token cache's directory and its interval, and never the agent's credentials
+  # (secrets-scrub-follow-ups). unsetenv_others makes the hash the whole env.
   def spawn_detached(env, argv)
-    pid = Process.spawn(env, *argv, out: File::NULL, err: File::NULL, pgroup: true)
+    child = ChildEnv.renewer(env, @env, allow: %w[TASK_REVIEW_CLAIM_RENEW_INTERVAL])
+    pid = Process.spawn(child, *argv, unsetenv_others: true, out: File::NULL, err: File::NULL, pgroup: true)
     Process.detach(pid)
     pid
   end

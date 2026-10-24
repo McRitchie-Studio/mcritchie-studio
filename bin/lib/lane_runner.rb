@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require_relative "child_env"
+
 # LaneRunner — run one pre-flight lane in its OWN process group, bounded by a
 # ceiling, and never leave the suite behind.
 #
@@ -24,9 +26,15 @@ module LaneRunner
   end
 
   # `timeout` is in seconds; nil (or non-positive) means no ceiling.
+  #
+  # The lane starts under an ALLOW-LISTED environment (ChildEnv.lane): the
+  # toolchains, the test databases, the CI runner's names and the caller's `env`,
+  # and never the agent's credentials. A suite's parallel workers rename their
+  # process titles, and a renamed process's environment is one `ps` away from a
+  # transcript (secrets-scrub-follow-ups). unsetenv_others makes it the whole env.
   def self.run(env, cmd, chdir:, timeout: nil)
     pid = begin
-      Process.spawn(env, cmd, chdir: chdir, pgroup: true)
+      Process.spawn(ChildEnv.lane(env), cmd, chdir: chdir, unsetenv_others: true, pgroup: true)
     rescue Errno::ENOENT, Errno::EACCES, Errno::ENOEXEC => e
       return Result.new(ok: false, outcome: :unlaunchable, detail: "#{cmd}: #{e.message}")
     end
