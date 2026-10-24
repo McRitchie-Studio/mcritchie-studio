@@ -90,7 +90,8 @@ module UiLint
 
   # `(?<!&)`: `&#128274;` is an HTML entity, not a colour.
   HEX = /(?<!&)#(?:\h{8}|\h{6}|\h{3,4})(?!\h)/
-  PX_UTILITY = /(?<![\w\[-])(?:[\w-]+:)*[a-z][\w-]*-\[-?\d*\.?\d+px\]/
+  # `-?`: a negative utility (`-mt-[2px]`, `md:-left-[9999px]`) is one too.
+  PX_UTILITY = /(?<![\w\[-])(?:[\w-]+:)*-?[a-z][\w-]*-\[-?\d*\.?\d+px\]/
   SCRIPT_TAG = /<script\b((?:<%.*?%>|"[^"]*"|'[^']*'|[^>])*)>/mi
   SCRIPT_HELPER = /\b(?:javascript_tag|tag\.script)\b/
   # A nonce ATTRIBUTE or OPTION (`nonce="..."`, `nonce: true`, `"nonce" => x`) or the

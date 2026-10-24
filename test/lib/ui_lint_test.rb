@@ -95,6 +95,12 @@ class UiLintTest < Minitest::Test
     assert_equal({ "inline_style" => 1, "raw_hex" => 2 }, found.map(&:rule).tally)
   end
 
+  def test_a_negative_pixel_utility_is_flagged_and_a_spacing_token_is_not
+    source = %(<p class="-mt-[2px] md:-left-[9999px] -mx-2 px-4">x</p>\n)
+    assert_equal %w[-mt-[2px] md:-left-[9999px]],
+                 UiLint.check(source, "x.html.erb", config).select { |o| o.rule == "px_utility" }.map(&:snippet)
+  end
+
   def test_an_erb_tag_with_its_own_quotes_stays_inside_the_class_value
     source = %(<div class="<%= on ? "bg-[#000]" : "p-2" %> rounded">x</div>\n)
     assert_equal ["raw_hex"], UiLint.check(source, "x.html.erb", config).map(&:rule)
