@@ -847,7 +847,8 @@ class AgentActivityCli
 
   # ── HTTP + auth (the shared AgentApi client; 401 drops the cached token) ───
 
-  # `session` is a login to present first (AgentApi.call); nil keeps the shared token.
+  # `session` is a login to present first (AgentApi.call); nil presents the
+  # machine's harness key where the board takes it, else the shared token.
   def post(path, body, session: nil)
     AgentApi.call(@api, :post, path, body, session: session)
   rescue StandardError => e
@@ -858,7 +859,8 @@ class AgentActivityCli
   # The login a narration call presents: one this harness session holds whose soul
   # is the lane the call declares, so the board stamps what the call would have
   # sent. A lane with no matching login (the logged-out builder, or another agent
-  # of the same harness) keeps the shared token.
+  # of the same harness) presents the machine's harness key, which names no soul,
+  # so the lane stays the one the call declares; with no key, the shared token.
   def narration_session(sid, agent)
     return nil unless present?(agent)
 
@@ -875,13 +877,10 @@ class AgentActivityCli
     nil
   end
 
+  # A read: the machine's harness key where the board takes it, else the shared
+  # token (AgentApi.call; a 401 on the shared token drops its cache).
   def get(path)
-    tok = @api.token
-    return nil unless tok
-
-    res = @api.http_json(:get, path, nil, bearer: tok)
-    @api.invalidate_token! if res && res.code.to_i == 401
-    res
+    AgentApi.call(@api, :get, path)
   rescue StandardError => e
     warn_note("atomic-event GET #{path} failed (ignored): #{e.class}")
     nil

@@ -1082,7 +1082,7 @@ APPROVAL_REQUEST_STAGES = %w[designed building submitted].freeze
 # still succeed when the board is briefly unreadable; only the warning's accuracy
 # depends on this read, and it fails loud (see half 2) rather than quiet.
 def read_task_softly(slug)
-  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
+  res = keyed_get("/api/v1/tasks/#{slug}")
   return nil unless res.code.to_i.between?(200, 299)
 
   data = TaskBoard.parse_body(res)["data"]
@@ -1305,10 +1305,20 @@ def api(method, path, body = nil, opts = {})
 
   # A move to `archived` is an admin transition: the desk's studio login can never
   # make it, so it is not offered.
-  session_token = auth && !archive_move?(method, path, body) ? desk_session_token(method, path) : nil
-  res = TaskBoard.request(method, path, base_url: BASE_URL, token: session_token || (auth ? token : nil), body: body,
-                                        headers: (auth && !session_token ? desk_session_dropped_header(method, path) : nil),
-                                        **deadline)
+  # opts[:login] is a login the caller found for this call (begin's owed note,
+  # posted from the primary with the login the desk just minted).
+  login = auth ? opts[:login].to_s.strip : ""
+  login = nil if login.empty?
+  session_token = login || (auth && !archive_move?(method, path, body) ? desk_session_token(method, path) : nil)
+  res = if auth && !session_token
+          # No login for this call: the machine's harness key where the board takes
+          # it (a read, a task's create, its claim), else the shared token.
+          TaskBoard.keyed_request(method, path, key: machine_harness_key, fallback: -> { token },
+                                                refused: ->(r) { harness_key_refused(r) }, base_url: BASE_URL, body: body,
+                                                headers: desk_session_dropped_header(method, path), **deadline)
+        else
+          TaskBoard.request(method, path, base_url: BASE_URL, token: session_token, body: body, **deadline)
+        end
   if session_token && res.code.to_i == 401
     # The desk's login ended (revoked, expired, or the task moved on). The shared
     # token is still accepted, so drop the login (keeping its slug, which this and
@@ -1316,8 +1326,10 @@ def api(method, path, body = nil, opts = {})
     # review login is forgotten instead (DeskSession.refused).
     reason = TaskBoard.parse_body(res)["error"] || "HTTP 401"
     warn!("note: this desk's agent session was refused (#{reason}); dropping it and retrying with the shared token")
-    DeskSession.refused(DeskSession.task_slug_for(method, path), root: desk_session_root,
-                                                                 harness_session_id: session_identity.first)
+    unless login
+      DeskSession.refused(DeskSession.task_slug_for(method, path), root: desk_session_root,
+                                                                   harness_session_id: session_identity.first)
+    end
     res = TaskBoard.request(method, path, base_url: BASE_URL, token: token, body: body,
                                           headers: desk_session_dropped_header(method, path), **deadline)
   end
@@ -1413,6 +1425,33 @@ def desk_session_dropped_header(method, path)
   slug ? { DeskSession::DROPPED_HEADER => slug } : nil
 end
 
+# This machine's harness key (bin/lib/harness_key.rb), or nil. Memoized: one
+# read of the key file per run.
+def machine_harness_key
+  return @machine_harness_key if defined?(@machine_harness_key)
+
+  @machine_harness_key = HarnessKey.token(HarnessKey.projects_dir)
+end
+
+# One GET outside `api` (a read whose caller keeps its own posture on the answer):
+# the harness key where the board takes it, else the shared token. The options
+# are TaskBoard.request's.
+def keyed_get(path, **options)
+  TaskBoard.keyed_request(:get, path, key: machine_harness_key, fallback: -> { token },
+                                      refused: ->(r) { harness_key_refused(r) }, base_url: BASE_URL, **options)
+end
+
+# Said once per run: the board refused the key on a call it should take, so this
+# run presents the shared token there (a revoked key, or a board that predates
+# the door).
+def harness_key_refused(res)
+  return if @harness_key_refused_said
+
+  @harness_key_refused_said = true
+  warn!("note: this machine's harness key was refused (#{TaskBoard.parse_body(res)["error"] || "HTTP #{res&.code}"}); " \
+        "using the shared token. `bin/harness-key status` says whether the key is live")
+end
+
 # POST a login mint with the machine credential: this machine's harness key
 # (bin/lib/harness_key.rb) when it holds one. A machine with no key, or whose key
 # the board answers 401 (revoked), mints with the shared token.
@@ -1421,7 +1460,7 @@ def mint_request(path, body)
     warn!("note: this machine's harness key was refused (#{TaskBoard.parse_body(res)["error"] || "HTTP 401"}); " \
           "minting with the shared token")
   end
-  HarnessKey.mint(HarnessKey.token(HarnessKey.projects_dir), fallback: -> { token }, refused: said) do |bearer|
+  HarnessKey.mint(machine_harness_key, fallback: -> { token }, refused: said) do |bearer|
     TaskBoard.request(:post, path, base_url: BASE_URL, token: bearer, body: body)
   end
 end
@@ -1765,7 +1804,7 @@ end
 # unreadable board prints "no handoff note on record" rather than failing the command.
 def latest_handoff_note(slug)
   query = URI.encode_www_form(task_slug: slug, activity_type: "handoff", per_page: 1)
-  res = TaskBoard.request(:get, "/api/v1/activities?#{query}", base_url: BASE_URL, token: token)
+  res = keyed_get("/api/v1/activities?#{query}")
   return nil unless res.code.to_i.between?(200, 299)
 
   row = Array(TaskBoard.parse_body(res)["data"]).first
@@ -2111,7 +2150,7 @@ def bounce_verdict(slug, verify_task: true)
   loop do
     query = URI.encode_www_form(task_slug: slug, activity_type: "qa_feedback",
                                 per_page: BOUNCE_PAGE_SIZE, page: page)
-    res = TaskBoard.request(:get, "/api/v1/activities?#{query}", base_url: BASE_URL, token: token)
+    res = keyed_get("/api/v1/activities?#{query}")
     payload = BounceLedger.payload_from(res)
     page_rows = BounceLedger.from_payload(payload).rows
     rows.concat(page_rows)
@@ -2268,7 +2307,7 @@ end
 # landed (see board_mascot) holds. Returns the persisted stage String, or nil
 # when the board could not be read back.
 def read_back_stage(slug)
-  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
+  res = keyed_get("/api/v1/tasks/#{slug}")
   return nil unless res.code.to_i.between?(200, 299)
 
   data = TaskBoard.parse_body(res)["data"]
@@ -2408,8 +2447,7 @@ end
 # `begin`'s lane-cap pre-check: dies with the board's refusal when the task's app
 # has no free building lane; returns quietly on anything else.
 def refuse_past_lane_cap!(slug)
-  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}/building_lane", base_url: BASE_URL, token: token,
-                                read_timeout: 10, open_timeout: 10)
+  res = keyed_get("/api/v1/tasks/#{slug}/building_lane", read_timeout: 10, open_timeout: 10)
   return unless res.code.to_i.between?(200, 299)
 
   refusal = (TaskBoard.parse_body(res)["data"] || {})["refusal"].to_s.strip
@@ -2426,7 +2464,7 @@ end
 # failed read must never be read as "no such task" (that is the same contract
 # task_not_found_response? guards for the worktree reclaim path).
 def fetch_task_for_begin(slug)
-  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
+  res = keyed_get("/api/v1/tasks/#{slug}")
   parsed = TaskBoard.parse_body(res)
   return parsed["data"] if res.code.to_i.between?(200, 299)
   return nil if task_not_found_response?(res, parsed)
@@ -2454,7 +2492,7 @@ end
 # none or could not be read.
 def reconcile_desk_identity(slug, app, worktree_slug, worktree_bin, stamped:)
   remedy = "#{worktree_bin} identity #{app} #{worktree_slug} <soul>"
-  res = TaskBoard.request(:get, "/api/v1/tasks/#{slug}", base_url: BASE_URL, token: token)
+  res = keyed_get("/api/v1/tasks/#{slug}")
   unless res.code.to_i.between?(200, 299)
     warn!("begin 5/5 identity — could not read #{slug}'s builder back (HTTP #{res.code}), so the desk keeps " \
           "whatever identity `new` printed above. Once the board answers: #{remedy}")
@@ -2563,7 +2601,10 @@ end
 def record_scout_owed(slug, worktree_dir, launch = nil)
   body = { "task_slug" => slug, "activity_type" => IntentScout::NOTE_TYPE,
            "description" => IntentScout.owed_note(slug, worktree_dir, launch) }
-  api(:post, "/api/v1/activities", body, timeout: IntentScout.board_timeout)
+  # The note is a write on the task, which the harness key does not make: it
+  # presents the login begin just kept in the desk, else the shared token.
+  login = DeskSession.token_for(slug, root: worktree_dir, harness_session_id: session_identity.first)
+  api(:post, "/api/v1/activities", body, timeout: IntentScout.board_timeout, login: login)
 rescue StandardError, SystemExit => e
   # api() dies (SystemExit) on a refused write after printing why; the claim is
   # already recorded, so that refusal is a warning here and begin finishes.
@@ -3675,7 +3716,7 @@ when "wait-window"
   # A read that fails is NOT an empty window list: nil here is counted by the
   # loop, and only the board's own "task not found" ends the wait at once.
   window_reader = lambda do
-    res = TaskBoard.request(:get, "/api/v1/tasks/#{window_opts.slug}", base_url: BASE_URL, token: token)
+    res = keyed_get("/api/v1/tasks/#{window_opts.slug}")
     parsed = TaskBoard.parse_body(res)
     next :not_found if task_not_found_response?(res, parsed)
     next nil unless res.code.to_i.between?(200, 299)

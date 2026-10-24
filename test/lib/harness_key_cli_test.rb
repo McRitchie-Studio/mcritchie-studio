@@ -80,6 +80,41 @@ class HarnessKeyCliTest < Minitest::Test
     end
   end
 
+  def test_unit_the_key_is_presented_on_reads_narration_create_and_the_claim_only
+    accepted = [
+      [:get, "/api/v1/tasks?stage=building"], [:get, "/api/v1/tasks/some-task"], [:get, "/api/v1/tasks/some-task/building_lane"],
+      [:get, "/api/v1/activities?task_slug=t"], [:get, "/api/v1/gates/task/t"], [:post, "/api/v1/agent_activities"],
+      [:post, "/api/v1/agent_activities/close_all"], [:post, "/api/v1/agent_actions"], [:post, "/api/v1/agent_sessions"],
+      [:post, "/api/v1/tasks/t/review_claim"], [:post, "/api/v1/agent_login_requests/login-1/collect"]
+    ]
+    accepted.each { |verb, path| assert HarnessKey.accepts?(verb, path, {}), "#{verb} #{path}" }
+    assert HarnessKey.accepts?(:post, "/api/v1/tasks", { "title" => "T" }), "a create"
+    assert HarnessKey.accepts?("PATCH", "/api/v1/tasks/t", { "stage" => "building", "event" => {}, "devops" => {} }), "the claim"
+
+    refused = [
+      [:patch, "/api/v1/tasks/t", { "stage" => "submitted" }], [:patch, "/api/v1/tasks/t", { "title" => "T" }],
+      [:patch, "/api/v1/tasks/t", { "stage" => "building", "title" => "T" }], [:post, "/api/v1/tasks", { "stage" => "shipped" }],
+      [:post, "/api/v1/activities", {}], [:post, "/api/v1/tasks/t/review_claim/renew", {}], [:patch, "/api/v1/tasks/t/block", {}],
+      [:delete, "/api/v1/agent_sessions/current", nil], [:get, "/api/v1/facts", nil], [:post, "/api/v1/agent_activities/7/grade", {}]
+    ]
+    refused.each { |verb, path, body| refute HarnessKey.accepts?(verb, path, body), "#{verb} #{path} #{body}" }
+  end
+
+  def test_unit_a_keyed_call_falls_back_on_silence_401_or_a_forbidden_door_only
+    forbidden = Resp.new("403", JSON.generate("error_code" => "SESSION_FORBIDDEN"))
+    [nil, Resp.new("401", ""), forbidden].each { |res| assert HarnessKey.fall_back?(res), res.inspect }
+    [Resp.new("200", ""), Resp.new("403", JSON.generate("error_code" => "OTHER")), Resp.new("404", ""), Resp.new("500", "")]
+      .each { |res| refute HarnessKey.fall_back?(res), res.inspect }
+
+    seen = []
+    res = HarnessKey.call("KEY", fallback: -> { "SHARED" }) { |bearer| seen << bearer; bearer == "KEY" ? forbidden : Resp.new("200", "") }
+    assert_equal ["200", %w[KEY SHARED]], [res.code, seen]
+
+    seen.clear
+    HarnessKey.call("KEY", fallback: -> { flunk("no fallback when the key is answered") }) { |bearer| seen << bearer; Resp.new("200", "") }
+    assert_equal %w[KEY], seen
+  end
+
   def test_unit_a_mint_presents_the_key_and_falls_back_only_on_401_or_silence
     seen = []
     ask = ->(answers) { ->(bearer) { seen << bearer; answers.shift } }

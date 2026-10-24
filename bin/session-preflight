@@ -161,13 +161,36 @@ def api_token(base_url, secret)
   api_request(base_url, :post, "/api/v1/auth", body: { secret: secret }).fetch("token")
 end
 
-def fetch_latest_task_activity(slug)
-  secret = agent_secret
-  return [nil, "AGENT_API_SECRET not found for activities fallback"] if secret.empty?
+# This machine's harness key, or nil. Loaded here and not at the top: the key
+# store needs lib/, and this script also runs from a bin-only tree, where there
+# is no key to read and the shared token serves.
+def machine_harness_key
+  require_relative "lib/harness_key"
+  HarnessKey.token(HarnessKey.projects_dir)
+rescue LoadError
+  nil
+end
 
-  token = api_token(TASK_API_BASE, secret)
+# The read presents this machine's harness key when it holds one (a read the
+# board takes it on), and exchanges the secret only when it holds none or the
+# board refuses the key.
+def fetch_latest_task_activity(slug)
+  key = machine_harness_key
+  secret = key ? nil : agent_secret
+  return [nil, "AGENT_API_SECRET not found for activities fallback"] if !key && secret.empty?
+
   query = URI.encode_www_form(task_slug: slug, per_page: 20)
-  response = api_request(TASK_API_BASE, :get, "/api/v1/activities?#{query}", token: token)
+  shared = lambda do
+    value = secret || agent_secret
+    raise "AGENT_API_SECRET not found for activities fallback" if value.empty?
+
+    api_token(TASK_API_BASE, value)
+  end
+  raw = TaskBoard.keyed_request(:get, "/api/v1/activities?#{query}", key: key, fallback: shared, base_url: TASK_API_BASE)
+  parsed = raw.body.to_s.empty? ? {} : JSON.parse(raw.body)
+  raise "HTTP #{raw.code}: #{parsed["error"] || raw.body}" unless raw.code.to_i.between?(200, 299)
+
+  response = parsed
   activity = Array(response["data"]).find do |item|
     TASK_CONVERSATION_TYPES.include?(item["activity_type"].to_s)
   end

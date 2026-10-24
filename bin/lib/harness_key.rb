@@ -9,12 +9,12 @@ require_relative "../../lib/task_usage_sandbox"
 
 # HarnessKey: this machine's harness key (docs/agents/system/agent-sessions-design.md,
 # section 3). The operator grants one per machine (`bin/harness-key request`, then
-# the Approve tap or the one-time code); it mints studio logins at a task claim and
-# a review claim, and reaches no other endpoint. One file under the projects
-# root's `.agents/`, owner-only. The key is a bearer credential: it lives in the
-# file, never on stdout.
+# the Approve tap or the one-time code). It mints studio logins at a task claim and
+# a review claim, reads the board, narrates, creates a task and makes its claim
+# (DOORS); it writes no other task. One file under the projects root's `.agents/`,
+# owner-only. The key is a bearer credential: it lives in the file, never on stdout.
 #
-# A machine with no key mints with the shared secret's token, as before.
+# A machine with no key presents the shared secret's token, as before.
 module HarnessKey
   FILE = "harness-key.json"
   MODE = 0o600
@@ -93,6 +93,83 @@ module HarnessKey
     if key
       res = yield(key)
       return res unless res.nil? || res.code.to_i == 401
+
+      refused&.call(res)
+    end
+    token = fallback.call
+    token && yield(token)
+  end
+
+  # The requests the board accepts a harness key on, as [method, path pattern,
+  # body rule]: the mint doors, the board's reads, narration, a task's create and
+  # its claim. The board's own list is Api::V1::BaseController.accepts_harness_key;
+  # test/integration/harness_key_client_doors_test.rb pins this one to it.
+  DOORS = [
+    [:get, %r{\A/api/v1/tasks\z}],
+    [:get, %r{\A/api/v1/tasks/[^/]+\z}],
+    [:get, %r{\A/api/v1/tasks/[^/]+/(?:building_lane|review_claim)\z}],
+    [:get, %r{\A/api/v1/(?:activities|review_pending_actions|devops_shifts|desk_records|agents|insights)\z}],
+    [:get, %r{\A/api/v1/agents/[^/]+\z}],
+    [:get, %r{\A/api/v1/gates/[^/]+/[^/]+\z}],
+    [:get, %r{\A/api/v1/release_conductor_claims/live\z}],
+    [:get, %r{\A/api/v1/releases/[^/]+/conductor_claim\z}],
+    [:get, %r{\A/api/v1/agent_activities/(?:windows|awaiting_grade)\z}],
+    [:get, %r{\A/api/v1/agent_sessions/current\z}],
+    [:post, %r{\A/api/v1/agent_activities(?:/(?:close|close_all|turn_open|reconcile))?\z}],
+    [:post, %r{\A/api/v1/agent_actions\z}],
+    [:post, %r{\A/api/v1/tasks\z}, :create],
+    [:post, %r{\A/api/v1/agent_sessions\z}],
+    [:post, %r{\A/api/v1/tasks/[^/]+/review_claim\z}],
+    [:post, %r{\A/api/v1/tasks/claim_next_review\z}],
+    [:post, %r{\A/api/v1/agent_login_requests(?:/[^/]+/(?:code|collect))?\z}],
+    [:patch, %r{\A/api/v1/tasks/[^/]+\z}, :claim]
+  ].freeze
+  # The fields a claim carries (Api::V1::TasksController::HARNESS_CLAIM_FIELDS).
+  CLAIM_FIELDS = %w[stage event devops dev_size].freeze
+
+  # Does the board take a harness key on this request? `body` is the JSON body the
+  # caller will send, for the two doors that are one case of a wider action: a
+  # task's create (in designed) and its claim (a move to building that carries
+  # only CLAIM_FIELDS).
+  def accepts?(method, request_path, body = nil)
+    route = request_path.to_s.split("?", 2).first.to_s
+    DOORS.any? do |verb, pattern, rule|
+      verb == method.to_s.downcase.to_sym && pattern.match?(route) && body_passes?(rule, body)
+    end
+  end
+
+  def body_passes?(rule, body)
+    fields = body.is_a?(Hash) ? body.transform_keys(&:to_s) : {}
+    case rule
+    when :create then [ "", "designed" ].include?(fields["stage"].to_s)
+    when :claim then fields["stage"].to_s == "building" && (fields.keys - CLAIM_FIELDS).empty?
+    else true
+    end
+  end
+  private_class_method :body_passes?
+
+  # Should a call made with the key be made again with the shared token? When
+  # the board did not answer, answered the key 401 (revoked or unknown), or
+  # answered it 403 SESSION_FORBIDDEN: a board that predates a door refuses the
+  # key there, and the shared token is still accepted wherever it was.
+  def fall_back?(res)
+    return true if res.nil?
+
+    code = res.code.to_i
+    return true if code == 401
+    return false unless code == 403
+
+    (JSON.parse(res.body.to_s)["error_code"] rescue nil) == "SESSION_FORBIDDEN"
+  end
+
+  # Run one call at a door the key opens (DOORS). The block makes the request with
+  # the bearer it is handed: the key when the machine holds one, and the shared
+  # token (`fallback`, called only when needed) when it holds none or fall_back?
+  # says so. `refused` is told about a key that was not accepted.
+  def call(key, fallback:, refused: nil)
+    if key
+      res = yield(key)
+      return res unless fall_back?(res)
 
       refused&.call(res)
     end

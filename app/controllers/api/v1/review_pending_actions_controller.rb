@@ -11,6 +11,8 @@ module Api
     # authorised. Authed like the rest of the API (Bearer).
     class ReviewPendingActionsController < BaseController
       require_task_scope only: [:create, :execute, :destroy]
+      # A harness key reads the board here (agent-sessions-design.md, section 2).
+      accepts_harness_key :index
 
       # GET /api/v1/review_pending_actions[?state=pending&task_slug=…]
       #

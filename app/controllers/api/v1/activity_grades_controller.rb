@@ -1,6 +1,9 @@
 module Api
   module V1
     class ActivityGradesController < BaseController
+      # A harness key reads the grading queue; a grade is not narration, so it takes none.
+      accepts_harness_key :awaiting
+
       # The bearer AGENT path for the Ray heartbeat grade-events loop — the
       # first-class alternative to the admin browser drawer. `awaiting` returns the
       # resolved activities still ungraded by Ritch; `create` records Ritch's grade.

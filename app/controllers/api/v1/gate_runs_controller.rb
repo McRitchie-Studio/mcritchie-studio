@@ -13,6 +13,8 @@ module Api
     # bin/pr-review, bin/release) post fire-and-forget.
     class GateRunsController < BaseController
       before_action :set_subject
+      # A harness key reads the board here (agent-sessions-design.md, section 2).
+      accepts_harness_key :index
       before_action :validate_key!, except: :index
       # A task's gate is a task write; a release's gate is a release write.
       require_task_scope except: :index, if: -> { subject_type == "task" }

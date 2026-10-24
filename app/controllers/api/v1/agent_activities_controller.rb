@@ -1,6 +1,10 @@
 module Api
   module V1
     class AgentActivitiesController < BaseController
+      # A harness key narrates here (agent-sessions-design.md, section 2): the lane is
+      # the one the call declares, because the key names no soul.
+      accepts_harness_key :create, :close, :close_all, :turn_open, :windows, :reconcile
+
       # turn_open preambles stay out of the request log.
       include TelemetryLogFilter
 

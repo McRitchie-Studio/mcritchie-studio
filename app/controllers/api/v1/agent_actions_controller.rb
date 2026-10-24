@@ -1,6 +1,10 @@
 module Api
   module V1
     class AgentActionsController < BaseController
+      # A harness key narrates here (agent-sessions-design.md, section 2): the lane is
+      # the one the call declares, because the key names no soul.
+      accepts_harness_key :create
+
       # Prompt, command and output bodies stay out of the request log.
       include TelemetryLogFilter
 
@@ -49,10 +53,11 @@ module Api
         %i[tokens_in tokens_out cache_read_tokens].each do |key|
           attrs[key] = attrs[key].to_i if attrs.key?(key)
         end
-        # `actor` is a lane, not a soul. An agent session is an agent, so it records
-        # the agent lane and cannot claim the harness, board or operator lane; the
-        # param counts only on the shared secret's token.
-        attrs[:actor] = AgentAction::AGENT if current_agent_session
+        # `actor` is a lane, not a soul. An agent session is an agent, and a harness
+        # key is an agent machine's, so each records the agent lane and cannot claim
+        # the harness, board or operator lane; the param counts only on the shared
+        # secret's token.
+        attrs[:actor] = AgentAction::AGENT if current_agent_session || Current.harness_key
         attrs
       end
 

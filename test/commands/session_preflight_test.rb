@@ -751,6 +751,25 @@ end
     end
   end
 
+  def test_the_activities_fallback_presents_the_harness_key_and_never_exchanges_the_secret
+    write_fake_task_cli
+    activity = { "activity_type" => "qa_feedback", "created_at" => "2026-10-24T09:00:00Z", "description" => "Read with the key." }
+    projects = File.join(@sandbox, "projects")
+    FileUtils.mkdir_p(File.join(projects, ".agents"))
+    File.write(File.join(projects, ".agents", "harness-key.json"), JSON.generate("slug" => "sess-key", "token" => "THE-KEY"))
+    seen = []
+
+    with_activity_api(activity, seen: seen) do |base_url|
+      out, err, status = run_preflight(
+        "add-session-preflight", "--no-gh", "--no-fetch", "--json",
+        env: { "TASK_API_BASE" => base_url, "CLAUDE_PROJECTS_DIR" => projects, "AGENT_API_SECRET" => "" }
+      )
+      assert status.success?, "#{out}\n#{err}"
+      assert_equal "Read with the key.", JSON.parse(out).dig("latest_feedback", "description")
+    end
+    assert_equal [["GET /api/v1/activities", "Bearer THE-KEY"]], seen.map { |line, auth| [line[%r{\A\S+ [^?]+}], auth] }
+  end
+
   def test_live_task_show_falls_back_to_clarification_activity
     write_fake_task_cli
     activity = {
@@ -849,7 +868,7 @@ end
     File.chmod(0o755, File.join(@repo, "bin", "task"))
   end
 
-  def with_activity_api(activity)
+  def with_activity_api(activity, seen: nil)
     server = TCPServer.new("127.0.0.1", 0)
     thread = Thread.new do
       loop do
@@ -863,6 +882,7 @@ end
           headers[key.to_s.downcase] = value.to_s.strip
         end
         client.read(headers.fetch("content-length", "0").to_i)
+        seen&.push([request_line.strip, headers["authorization"]])
 
         body = if request_line.start_with?("POST /api/v1/auth ")
           JSON.generate("token" => "test-token")

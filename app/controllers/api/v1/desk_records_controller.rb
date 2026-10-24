@@ -23,6 +23,9 @@ module Api
     # semantics — a resolved row is history, a recycled desk path opens a NEW episode —
     # live in the model, exactly as GateRun keeps attempt semantics there.
     class DeskRecordsController < BaseController
+      # A harness key reads the board here (agent-sessions-design.md, section 2).
+      accepts_harness_key :index
+
       def index
         records = DeskRecord.all
         records = records.for_app(params[:app]) if params[:app].present?

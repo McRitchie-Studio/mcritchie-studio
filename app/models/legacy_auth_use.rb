@@ -29,6 +29,26 @@ class LegacyAuthUse < ApplicationRecord
 
   validates :day, :endpoint, :caller, :last_used_at, presence: true
 
+  # Every request a harness key is accepted on, outside the mint doors: the
+  # board's reads, narration, a task's create and its claim
+  # (Api::V1::BaseController.accepts_harness_key), as the census names them. A
+  # machine that holds a key presents it there, so these lines fall as each
+  # machine is granted one. Read from the routes, so it names what the controllers
+  # open and nothing else.
+  def self.harness_key_doors
+    Rails.application.routes.routes.filter_map do |route|
+      controller, action = route.defaults.values_at(:controller, :action)
+      next unless controller.to_s.start_with?("api/v1/") && route.verb.present?
+
+      klass = "#{controller.camelize}Controller".safe_constantize
+      door = klass.respond_to?(:harness_key_doors) && klass.harness_key_doors[action.to_s]
+      next unless door
+
+      endpoint = "#{route.verb} #{controller}##{action}"
+      door[:census] ? "#{endpoint} (#{door[:census]})" : endpoint
+    end.uniq.sort - MINT_DOORS
+  end
+
   scope :since, ->(time) { where(day: time.to_date..) }
 
   # Count one use. Never raises: the census must not fail the request it counts.
@@ -63,6 +83,12 @@ class LegacyAuthUse < ApplicationRecord
   # read zero before the shared token stops writing.
   def self.outside_mint_doors(days: 7, now: Time.current)
     since(now.utc - (days - 1).days).where.not(endpoint: MINT_DOORS).sum(:uses)
+  end
+
+  # Shared-token uses on the harness key's doors outside the mint doors over the
+  # last `days` days: what a key on every machine would remove.
+  def self.on_harness_key_doors(days: 7, now: Time.current)
+    since(now.utc - (days - 1).days).where(endpoint: harness_key_doors).sum(:uses)
   end
 
   # Uses per day over the last `days` days, a zero for a day with none, oldest first.

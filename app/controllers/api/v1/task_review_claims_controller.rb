@@ -8,8 +8,9 @@ module Api
     # review lands. The role-lease (DevopsShiftsController) one level down: lane →
     # task. Authed like the rest of the API (Bearer).
     class TaskReviewClaimsController < BaseController
-      # A review claim mints the reviewer's login, so a harness key may take one.
-      accepts_harness_key :acquire, :claim_next
+      # A review claim mints the reviewer's login, so a harness key may take one,
+      # and it reads who holds the review.
+      accepts_harness_key :acquire, :claim_next, :show
       require_task_scope only: [:acquire, :renew, :release]
 
       # GET /api/v1/tasks/:slug/review_claim — the "who (if anyone) is reviewing

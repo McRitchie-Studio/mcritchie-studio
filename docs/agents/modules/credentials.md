@@ -162,9 +162,13 @@ The board API takes two bearers (design:
 
 ### The harness key
 
-A harness key is one machine's credential for minting logins. It mints the studio
-login at a task claim and at a review claim, and posts login requests; every other
-endpoint answers it 403. The operator grants it once per machine:
+A harness key is one machine's credential for what a logged-out agent does. It
+mints the studio login at a task claim and at a review claim, posts login
+requests, reads the board, narrates, creates a task and makes its claim; every
+other endpoint answers it 403, so it writes no task but the claim. `bin/task`,
+`bin/agent-activity` and the hooks present it before the shared token wherever
+the board takes it ([`task-board-api.md`](task-board-api.md#authentication)).
+The operator grants it once per machine:
 
 ```bash
 bin/harness-key request                 # prints a login-… slug; the board row reads "Harness key · <machine>"
@@ -175,7 +179,7 @@ bin/harness-key status                  # the slug, the machine and the key's le
 The key is kept in `<projects>/.agents/harness-key.json`, owner-only, and no
 command prints it. It has no expiry: `bin/rails agent_sessions:keys` lists every
 key without a value, and `bin/rails agent_sessions:revoke SLUG=<sess-…>` ends one
-at once. A machine with no key, or whose key was revoked, mints with the shared
+at once. A machine with no key, or whose key was revoked, presents the shared
 token and says so.
 
 ### Turf Monster's runtime key
@@ -219,8 +223,11 @@ bin/rails agent_auth:legacy_census DAYS=7
 
 The first line gives the total and the count outside the mint doors (the exchange
 of the secret and the requests that mint a login, which the secret keeps). A line
-marked `*` is a use outside them. The shared token stops writing only after that
-count reads zero on production for the period Alex chooses.
+marked `*` is a use outside them, and a line marked `k` a door the harness key
+also opens (the reads, narration, a task's create and its claim, counted as
+`PATCH api/v1/tasks#update (claim)`): those fall as each machine holds a key. The
+shared token stops writing only after the count outside the mint doors reads zero
+on production for the period Alex chooses.
 
 ### Hooks and narration
 

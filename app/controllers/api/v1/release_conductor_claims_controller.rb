@@ -12,6 +12,8 @@ module Api
     # Authed like the rest of the API (Bearer).
     class ReleaseConductorClaimsController < BaseController
       require_admin_session except: [:show, :live]
+      # A harness key reads the board here (agent-sessions-design.md, section 2).
+      accepts_harness_key :show, :live
 
       # GET /api/v1/releases/:slug/conductor_claim?role=assembler — the "who (if
       # anyone) is assembling/deploying this release" read (CLI `status`, dashboard).

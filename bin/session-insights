@@ -151,14 +151,20 @@ class SessionInsights
     nil
   end
 
-  # The read presents a login this harness session holds when there is one, else
-  # the shared token; with neither there is no read and the start is silent.
+  # The read presents a login this harness session holds when there is one, then
+  # the machine's harness key, else the shared token; with none there is no read
+  # and the start is silent. A refused shared token never drops its cache here.
   def insights_response
     path = "/api/v1/insights?limit=#{limit}"
     session = @api.held_session
     if session
       res = @api.http_get(path, bearer: session["token"])
       return res unless res.nil? || res.code.to_i == 401
+    end
+    key = @api.respond_to?(:harness_key) ? @api.harness_key : nil
+    if key
+      res = @api.http_get(path, bearer: key)
+      return res unless HarnessKey.fall_back?(res)
     end
     tok = @api.token
     tok && @api.http_get(path, bearer: tok)

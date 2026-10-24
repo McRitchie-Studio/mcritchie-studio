@@ -410,6 +410,37 @@ class TaskBoardTest < Minitest::Test
     end
   end
 
+  # ── [integration] keyed_request: the harness key where the board takes it ───
+
+  def test_integration_keyed_request_presents_the_key_and_never_asks_for_the_shared_bearer
+    with_stub_server do |port, requests|
+      base = "http://127.0.0.1:#{port}"
+      TaskBoard.keyed_request(:get, "/api/v1/tasks?stage=building", key: "KEY", fallback: -> { flunk("no shared bearer") }, base_url: base)
+      TaskBoard.keyed_request(:patch, "/api/v1/tasks/t", key: "KEY", fallback: -> { flunk("no shared bearer") }, base_url: base,
+                                                         body: { "stage" => "building" })
+      assert_equal ["Bearer KEY"] * 2, requests.map { |r| r[:headers]["authorization"] }
+    end
+  end
+
+  def test_integration_keyed_request_presents_the_shared_bearer_off_the_doors_or_with_no_key
+    with_stub_server do |port, requests|
+      base = "http://127.0.0.1:#{port}"
+      TaskBoard.keyed_request(:patch, "/api/v1/tasks/t", key: "KEY", fallback: -> { "SHARED" }, base_url: base, body: { "title" => "T" })
+      TaskBoard.keyed_request(:get, "/api/v1/tasks", key: nil, fallback: -> { "SHARED" }, base_url: base)
+      assert_equal ["Bearer SHARED"] * 2, requests.map { |r| r[:headers]["authorization"] }
+    end
+  end
+
+  def test_integration_keyed_request_retries_a_refused_key_with_the_shared_bearer
+    refused = []
+    with_stub_server(status: "401 Unauthorized", payload: '{"error":"revoked","error_code":"SESSION_ENDED"}') do |port, requests|
+      TaskBoard.keyed_request(:get, "/api/v1/tasks", key: "KEY", fallback: -> { "SHARED" }, refused: ->(r) { refused << r.code },
+                                                     base_url: "http://127.0.0.1:#{port}")
+      assert_equal ["Bearer KEY", "Bearer SHARED"], requests.map { |r| r[:headers]["authorization"] }
+    end
+    assert_equal ["401"], refused
+  end
+
   # ── [integration] request shape against a localhost stub ────────────────────
 
   def test_integration_request_sends_bearer_and_json_body

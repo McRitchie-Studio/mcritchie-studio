@@ -6,12 +6,25 @@ module Api
 
       before_action :authenticate_api!
 
-      # The actions of a controller a harness key may call: the doors that mint a
-      # login. Every other action answers a harness key 403.
-      class_attribute :harness_key_actions, default: [].freeze
+      # The actions of a controller a harness key may call, as { action => door }
+      # (docs/agents/system/agent-sessions-design.md, section 2): the doors that mint
+      # a login, the board's reads, narration, a task's create and its claim. Every
+      # other action answers a harness key 403.
+      #
+      # A door may be conditional. `refusal:` names a method that returns nil when
+      # this request may pass under the key, or the sentence a 403 carries; `census:`
+      # labels the request in the legacy-use census when the condition holds, so a
+      # door that is one case of a wider action (the claim, one case of a task
+      # update) is counted apart from the rest of it.
+      class_attribute :harness_key_doors, default: {}.freeze
 
-      def self.accepts_harness_key(*actions)
-        self.harness_key_actions = actions.map(&:to_s).freeze
+      def self.accepts_harness_key(*actions, refusal: nil, census: nil)
+        door = { refusal: refusal, census: census }.freeze
+        self.harness_key_doors = harness_key_doors.merge(actions.to_h { |action| [ action.to_s, door ] }).freeze
+      end
+
+      def self.harness_key_actions
+        harness_key_doors.keys
       end
 
       # rescue_from matches handlers in REVERSE registration order (the
@@ -39,6 +52,8 @@ module Api
       #   (Api::AgentSessionGate). A harness key (tier harness) is the exception: it
       #   is a machine's credential, so it sets Current.harness_key and no session,
       #   and only the actions a controller names with accepts_harness_key take it.
+      #   It names no soul, so a call under it declares its lane as a call under
+      #   the shared token does, and it is never counted as a legacy use.
       # - The shared secret's token (POST /api/v1/auth), kept for one release so Turf
       #   Monster's two endpoints and installed hooks keep working. It must verify
       #   AND carry an expiry: MessageVerifier enforces an expiry when one is
@@ -60,7 +75,17 @@ module Api
 
         Rails.logger.info("[agent-auth] legacy shared-secret token: #{request.request_method} #{request.path}" \
                           "#{dropped_session_note}")
-        LegacyAuthUse.record!(endpoint: endpoint_signature, caller: LegacyAuthUse.caller_for(request))
+        LegacyAuthUse.record!(endpoint: census_endpoint, caller: LegacyAuthUse.caller_for(request))
+      end
+
+      # This request as the census counts it: the action, labelled when it is the
+      # case of a conditional harness-key door (the claim), so the census shows that
+      # case apart and the operator watches it move to the key.
+      def census_endpoint
+        door = harness_key_doors[action_name]
+        return endpoint_signature unless door && door[:census] && door[:refusal]
+
+        send(door[:refusal]).nil? ? "#{endpoint_signature} (#{door[:census]})" : endpoint_signature
       end
 
       # A desk whose agent session was dropped (or expired) falls back to the shared
@@ -78,11 +103,13 @@ module Api
       def authenticate_agent_session!(token)
         session = AgentSession.from_token(token)
         unless session
-          return render_error("Invalid or expired token", status: :unauthorized, error_code: "UNAUTHORIZED")
+          return render_error("Invalid or expired token#{harness_key_hint}", status: :unauthorized, error_code: "UNAUTHORIZED")
         end
 
         reason = session.refusal_reason
-        return render_error(reason, status: :unauthorized, error_code: "SESSION_ENDED") if reason
+        if reason
+          return render_error("#{reason}#{harness_key_hint if session.harness?}", status: :unauthorized, error_code: "SESSION_ENDED")
+        end
         return authenticate_harness_key!(session) if session.harness?
         return render_client_refusal(session) if session.client? && !session.reaches_endpoint?(endpoint_signature)
 
@@ -105,12 +132,26 @@ module Api
         render_error(reason, status: :forbidden, error_code: "SESSION_FORBIDDEN")
       end
 
+      # What a harness key reaches, for its 403.
+      HARNESS_KEY_REACH = "a harness key reads the board, narrates, creates a task, makes its claim, mints studio " \
+                          "logins (POST /api/v1/agent_sessions, a review claim) and posts login requests; it writes " \
+                          "no task. Write a task with the login its claim minted".freeze
+
+      # On a refused or unknown key at a door the key opens: how a machine gets one.
+      def harness_key_hint
+        return "" unless harness_key_doors.key?(action_name)
+
+        "; a machine with no live harness key asks for one with `bin/harness-key request`"
+      end
+
       def authenticate_harness_key!(key)
-        unless harness_key_actions.include?(action_name)
-          return render_error("a harness key mints studio logins (POST /api/v1/agent_sessions, a review claim) and posts " \
-                              "login requests; it reaches no other endpoint. Write a task with the login its claim minted",
+        door = harness_key_doors[action_name]
+        unless door
+          return render_error("#{HARNESS_KEY_REACH}; it reaches no other endpoint",
                               status: :forbidden, error_code: "SESSION_FORBIDDEN")
         end
+        refused = door[:refusal] && send(door[:refusal])
+        return render_error("#{refused}. #{HARNESS_KEY_REACH}", status: :forbidden, error_code: "SESSION_FORBIDDEN") if refused
 
         Rails.logger.info("[agent-auth] harness key #{key.slug} (#{key.label}): #{request.request_method} #{request.path}")
         Current.harness_key = key

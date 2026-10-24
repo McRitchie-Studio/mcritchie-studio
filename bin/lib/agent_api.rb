@@ -9,6 +9,7 @@ require_relative "op_vaults"
 require_relative "op_meter"
 require_relative "projects_root"
 require_relative "held_session"
+require_relative "harness_key"
 require_relative "../../lib/task_usage_sandbox"
 
 # AgentApi — the ONE agent-API client behind the narration/insights bin stack
@@ -19,7 +20,9 @@ require_relative "../../lib/task_usage_sandbox"
 # whole stack, so `op read` runs at most ~once/day, never per call), source the
 # secret (AGENT_API_SECRET env → the repo .env → 1Password `op read` LAST), and speak
 # bearer-authed JSON to ATOMIC_CAPTURE_URL (default https://mcritchie.studio).
-# This class is that boilerplate, extracted verbatim.
+# This class is that boilerplate, extracted verbatim. A machine that holds a
+# harness key presents it before the shared token wherever the board takes it
+# (#call, HarnessKey::DOORS), so a logged-out agent narrates and reads with it.
 #
 # PARAMETERIZED only where the scripts genuinely diverge: the HTTP timeouts (the
 # PostToolUse hook fires on EVERY tool call so it must fail in ~1-2s; the
@@ -77,17 +80,26 @@ class AgentApi
   # census (LegacyAuthUse). Client-asserted; the board uses it for counting only.
   CALLER_HEADER = "X-Agent-Caller"
 
-  # One call that presents a login first. `session` is a HeldSession login, or nil.
-  # The shared token is used when there is no login, or when the board answers the
-  # login 401 (it ended); any other answer under the login is returned as it is.
-  # With the shared token off (LEGACY_ENV) and no usable login the call is not
-  # made, or the login's 401 is returned. `api` is an AgentApi, or a stand-in with
-  # #token, #http_json and #invalidate_token!.
+  # One call that presents a login first, then this machine's harness key, then
+  # the shared token. `session` is a HeldSession login, or nil.
+  # - The login, when one is given; any answer but 401 (it ended) is returned.
+  # - The harness key, when the machine holds one and the board takes it on this
+  #   call (HarnessKey.accepts?: reads, narration, the mint doors). Any answer
+  #   HarnessKey.fall_back? does not name is returned.
+  # - The shared token otherwise. With it off (LEGACY_ENV) the call is not made,
+  #   and the last answer (a login's or the key's refusal) is returned.
+  # `api` is an AgentApi, or a stand-in with #token, #http_json and
+  # #invalidate_token! (and #harness_key, when it stands in for a keyed machine).
   def self.call(api, method, path, body = nil, session: nil)
     res = nil
     if session && !session["token"].to_s.empty?
       res = api.http_json(method, path, body, bearer: session["token"])
       return res unless res && res.code.to_i == 401
+    end
+    key = api.respond_to?(:harness_key) && HarnessKey.accepts?(method, path, body) ? api.harness_key : nil
+    if key
+      res = api.http_json(method, path, body, bearer: key)
+      return res unless HarnessKey.fall_back?(res)
     end
     token = api.token
     return res unless token
@@ -134,6 +146,12 @@ class AgentApi
   # The logins this harness session holds (HeldSession), for #call's `session:`.
   def held_session(soul: nil, tier: nil, session_id: nil)
     HeldSession.find(env: @env, projects_dir: projects_dir, soul: soul, tier: tier, session_id: session_id)
+  end
+
+  # This machine's harness key (HarnessKey), or nil when it holds none. It is not
+  # the shared token: AGENT_LEGACY_TOKEN=off leaves it in use.
+  def harness_key
+    HarnessKey.token(projects_dir, env: @env)
   end
 
   # The bearer token — the unexpired disk cache when present, else minted via
