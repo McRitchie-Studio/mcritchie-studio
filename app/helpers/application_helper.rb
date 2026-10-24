@@ -39,8 +39,8 @@ module ApplicationHelper
   # link_to for a STORED or agent-written url: links only what http_href admits.
   # A refused value renders the grey "—" carrying a title that says the link was
   # withheld (a blank value renders the bare "—"), so every view refuses the same
-  # way. The block form keeps its content and its class (the layout) and drops
-  # only the link.
+  # way. Both forms keep the caller's class (the button's or row's styling and
+  # size); the block form also keeps its content. Only the link is dropped.
   #
   #   safe_link_to "View Post", @news.x_post_url, target: "_blank"
   #   safe_link_to(sheet.image_url, target: "_blank") { image_tag ... }
@@ -56,7 +56,7 @@ module ApplicationHelper
     withheld[:title] = HTTP_HREF_WITHHELD_TITLE if url.present?
     return content_tag(:span, capture(&block), withheld.merge(class: html_options[:class])) if block
 
-    content_tag(:span, "—", withheld.merge(class: "opacity-40"))
+    content_tag(:span, "—", withheld.merge(class: class_names(html_options[:class], "opacity-40")))
   end
 
   def stage_scheme(stage)

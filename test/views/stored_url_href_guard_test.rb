@@ -28,7 +28,7 @@ class StoredUrlHrefGuardTest < ActiveSupport::TestCase
     "night_url" => "broadcasts: Broadcast::TEMPLATE_LINKS constant, via broadcast_link",
     "play_url" => "broadcasts: Broadcast::TEMPLATE_LINKS constant, via broadcast_link",
     "survey_url" => "broadcasts: Broadcast::TEMPLATE_LINKS constant, via broadcast_link",
-    "survivor_url" => "broadcasts: Broadcast::TEMPLATE_LINKS constant, via broadcast_link",
+    "survivor_url" => "broadcasts: the admin-typed column read through ApplicationHelper.http_href (else the merge tag), via broadcast_link",
     "toggle_url" => "agents activity filter: built by url_for over the current params",
     "remove_url" => "agents activity filter: built by url_for over the current params",
     "page_url" => "tasks stage pager: a lambda over url_for (photo.page_url is a different token)",
@@ -56,7 +56,9 @@ class StoredUrlHrefGuardTest < ActiveSupport::TestCase
       "pr_url" => "the CI meter's label, not an href"
     },
     "app/views/admin/dashboard/_quick_link.html.erb" => { "url" => "callers pass route helpers" },
-    "app/views/broadcasts/_button.html.erb" => { "url" => "callers pass broadcast_link URLs from constants" },
+    "app/views/broadcasts/_button.html.erb" => {
+      "url" => "callers pass broadcast_link URLs: TEMPLATE_LINKS constants, or the admin-typed survivor/turf_totals columns already read through ApplicationHelper.http_href"
+    },
     "app/views/contact_submissions/new.html.erb" => { "url" => "the link TEXT; the href is privacy_path" },
     "app/views/integrations/discord.html.erb" => { "[:url]" => "a constant setup-step table in the template" },
     "app/views/tasks/_release_phase_meter.html.erb" => { "[:url]" => "release_ci_run_url: GitHub's run URL" },

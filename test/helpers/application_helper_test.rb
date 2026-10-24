@@ -46,6 +46,8 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "—", span.text
     assert_equal ApplicationHelper::HTTP_HREF_WITHHELD_TITLE, span["title"]
     assert_includes span["class"], "opacity-40"
+    styled = Nokogiri::HTML5.fragment(safe_link_to("Post", "javascript:alert(1)", class: "btn btn-sm text-3xs")).at_css("span")
+    assert_equal %w[btn btn-sm text-3xs opacity-40], styled["class"].split, "the caller's styling and size stay on the dash"
 
     blank = Nokogiri::HTML5.fragment(safe_link_to("Post", nil))
     assert_nil blank.at_css("a")
