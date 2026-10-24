@@ -1050,7 +1050,11 @@ phase_servers() {
     sleep 1
 
     log_act "starting $app on :$port"
-    (cd "$path" && bundle exec rails server -p "$port" -d >/dev/null 2>&1)
+    # Under the desk-server allow-list (bin/lib/child_env.rb): this script has
+    # sourced ~/.zprofile, so its own environment holds OP_SERVICE_ACCOUNT_TOKEN
+    # and the rest, and a daemonized Puma renames its title, after which macOS
+    # `ps` prints its environment. The app reads its secrets from its .env.
+    (cd "$path" && ruby "$BIN_DIR/lib/child_env.rb" desk-server -- bundle exec rails server -p "$port" -d >/dev/null 2>&1)
     sleep 3
 
     local code
