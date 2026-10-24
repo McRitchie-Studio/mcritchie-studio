@@ -123,7 +123,8 @@ Rehearsed on `turf-monster-qa` 2026-10-24 with heroku/11.12.0 and fake values: s
 byte-exact, but the earlier form, which read into a scratch variable `K_NEW` and exported the key
 by expanding it, exported an EMPTY key: the expansion ran at launch, before `read`. The form above, with
 `read` naming the variable and a bare `export NAME`, passed: a stand-in
-(`ROTATION_REHEARSAL=1` plus two fake keys) printed `["1", true, true]` from `bin/rails runner`,
+(`ROTATION_REHEARSAL=1` plus two fake keys) printed `["1", true, true]` from `bin/rails runner`
+and `heroku run --exit-code` exited 0,
 the command `heroku run` printed carried no value, and the app's config never held
 `ROTATION_REHEARSAL` (checked before and after; a one-off dyno's env dies with it).
 `test/docs/heroku_run_quoting_guard_test.rb` refuses a `$` in a `heroku run … bash -c` script.
