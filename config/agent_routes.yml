@@ -34,8 +34,9 @@ discord:
   # guild and posts every reply.
   bot_user_id: "1481150857809760399"   # Ritch (bot user)
   # Where the floor alert (AgentDispatcherAlertJob) posts, as the same bot: a
-  # silent bin/dispatcher, or a routed message waiting too long. One alert per
-  # incident and one recovery line. lobster-tank until an ops channel exists.
+  # silent bin/dispatcher, a routed message waiting too long, a submitted card
+  # nobody started reviewing, a change card the build launcher could not start.
+  # One alert per incident and one recovery line. lobster-tank until an ops channel exists.
   ops_channel_id: "1479973077021495478"
   guilds:
     "1332466565203103744":             # McRitchie Studio: every channel and thread

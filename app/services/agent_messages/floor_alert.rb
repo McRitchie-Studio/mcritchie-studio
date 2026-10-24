@@ -1,7 +1,8 @@
 module AgentMessages
   # The floor under bin/dispatcher (docs/agents/agents/steffon/sops/agent-dispatcher.md):
-  # two deterministic checks, run every minute by AgentDispatcherAlertJob, each
-  # announced in Discord ONCE per incident and once more when it clears.
+  # deterministic checks, run every minute by AgentDispatcherAlertJob, each
+  # announced in Discord ONCE per incident and once more when it clears. Two are
+  # floor-wide:
   #
   #   dispatcher_silent  a dispatcher has pinged before, and none has for
   #                      AgentDispatcher::SILENT_AFTER (5 min). Never-installed is

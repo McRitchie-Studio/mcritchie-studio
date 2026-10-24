@@ -342,6 +342,12 @@ Ritch for a prose-only PR on the focus-session path (tier A in
 [`focus-session.md`](focus-session.md)). The author set keeps a builder off its own PR. The builder's part is to start the review, not to
 do it. Review's gate-zero still owns the CI verdict and the merge.
 
+The floor is the backstop, not the plan: a card that sits `submitted` with a
+green DoR and no review claim for 30 minutes posts a `submitted_unclaimed` alert
+to the ops channel naming the review launch line
+([`pr-review`](../agents/carl/sops/pr-review.md#single-task-entry-on-submit)).
+Telling Alex the task "now waits for review" is not launching it.
+
 ## Done when
 
 - A production task exists, shaped, with tier-tagged `checks_run` recorded.
