@@ -553,6 +553,32 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
     assert_select "span[data-test='link-withheld'][title] img", { minimum: 3 }, "reference, uniform and generated keep their image"
   end
 
+  # [integration] image-tag-stored-url-500: a javascript: value in the generated
+  # artifact's image_url (or the uniform photo's displayed url) used to make image_tag
+  # raise and the page answer 500. It now renders the withheld placeholder instead.
+  test "[integration] a javascript: generated or uniform image renders the placeholder, not a 500" do
+    cache_headshot
+    uni = AppearanceUniformPhoto.create!(appearance_slug: @look.slug, slug: "uni-1", image_url: "https://cdn.example.com/u.jpg")
+    shot = Artifact.create!(kind: "character_sheet", image_url: "https://assets.example.test/gen.png", source: "higgsfield")
+    shot.subjects.create!(person_slug: @person.slug, appearance_slug: @look.slug, ordinal: 1)
+
+    get page_path
+    assert_response :success
+    assert_select "[data-test='model-output-panel'] img[src='https://assets.example.test/gen.png']", 1
+    assert_select "[data-test='uniform-photo'] img[src='https://cdn.example.com/u.jpg']", 1
+    assert_select "[data-test='image-withheld']", 0
+
+    shot.update_columns(image_url: "javascript:alert(1)")
+    uni.update_columns(image_url: "javascript:alert(2)")
+    get page_path
+    assert_response :success
+    assert_select "[data-test='model-output-panel'] img", 0
+    assert_select "[data-test='model-output-panel'] [data-test='image-withheld'][title]", 1
+    assert_select "[data-test='uniform-photo'] img", 0
+    assert_select "[data-test='uniform-photo'] [data-test='image-withheld'][title]", 1
+    assert_select "a[href^='javascript']", 0
+  end
+
   # A SEARCH THAT COULD NOT RUN CHANGES NOTHING AND SAYS WHY. Without this the
   # unconfigured click looks like a search that found nothing.
   test "[integration] searching with no provider files nothing and names the env var" do
