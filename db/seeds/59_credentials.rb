@@ -59,8 +59,10 @@ records = [
     scope_summary: "Legacy Ray wallet; off both live signer sets since the 2026-06-02 key rotation." },
   { vault: "studio-agents", title: "agent.mason.solana", service: "solana", category: "Crypto Wallet",
     scope_summary: "Mason's vault signer; no longer a Squads member." },
-  { vault: "studio-agents", title: "agent.mack.solana", service: "solana", category: "Crypto Wallet",
-    scope_summary: "Mack's agent wallet; not a Squads member or vault signer." },
+  { vault: "studio-agents", title: "solana.mack.agent", service: "solana", category: "API Credential",
+    scope_summary: "Mack's devnet co-signer: slot 2 of 5 (signers[1]) of the devnet vault signer set; plays mack-4 in the QA contest rehearsal." },
+  { vault: "studio-agents", title: "solana.turf.alex", service: "solana", entity: "turf-monster", category: "API Credential",
+    scope_summary: "The QA contest rehearsal's test player (39QT…, regal-parsley). Devnet test USDC only." },
   { vault: "studio-agents", title: "solana.turf.admin", service: "solana", entity: "turf-monster", category: "Crypto Wallet",
     scope_summary: "The agent governance identity." },
   { vault: "studio-agents", title: "solana.turf.system", service: "solana", entity: "turf-monster", category: "Crypto Wallet",
@@ -163,6 +165,18 @@ records = [
     scope_summary: "Service-account key with domain-wide delegation, used for every registered workspace. " \
                    "Filed empty on 2026-09-18; the value is pasted by Mr. McRitchie." }
 ]
+
+# Retitled items. The upsert below keys on title, so rename the existing row
+# first, or the old title would linger as an orphan record beside the new one.
+retitled = {
+  ["studio-agents", "agent.mack.solana"] => "solana.mack.agent", # 2026-10-16, rename-rehearsal-wallet-items
+  ["studio-agents", "phantom.turf"] => "solana.turf.alex"       # 2026-10-16, rename-rehearsal-wallet-items
+}
+retitled.each do |(vault_slug, old_title), new_title|
+  next if CredentialRecord.exists?(credential_vault_slug: vault_slug, title: new_title)
+
+  CredentialRecord.where(credential_vault_slug: vault_slug, title: old_title).update_all(title: new_title)
+end
 
 records.each do |attrs|
   attrs = attrs.dup
