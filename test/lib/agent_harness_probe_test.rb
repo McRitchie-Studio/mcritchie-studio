@@ -8,6 +8,7 @@
 #   bin/rails test test/lib/agent_harness_probe_test.rb
 require "minitest/autorun"
 require "stringio"
+require "tmpdir"
 require_relative "../../bin/lib/agent_dispatcher"
 
 class AgentHarnessProbeTest < Minitest::Test
@@ -42,6 +43,21 @@ class AgentHarnessProbeTest < Minitest::Test
     assert_equal "ac", Probe.parse_power("Now drawing from 'AC Power'\n -InternalBattery-0 (id=1)\t100%; charged;")
     assert_equal "battery", Probe.parse_power("Now drawing from 'Battery Power'\n -InternalBattery-0\t80%; discharging;")
     assert_nil Probe.parse_power("")
+  end
+
+  def test_unit_op_ok_asks_the_launchd_daemon_and_the_per_user_one
+    user_tmp = `getconf DARWIN_USER_TEMP_DIR 2>/dev/null`.strip
+    skip "no per-user temp dir off macOS" if user_tmp.empty?
+    Dir.mktmpdir do |dir|
+      File.write("#{dir}/op", "#!/bin/sh\necho \"${TMPDIR:-unset}\" >> #{dir}/calls\n")
+      File.chmod(0o755, "#{dir}/op")
+      env = { "PATH" => "#{dir}:/usr/bin:/bin" }
+      assert system(env, "/bin/sh", "-c", Probe::OP_SCRIPT, unsetenv_others: true)
+      assert_equal ["unset", user_tmp], File.readlines("#{dir}/calls", chomp: true), "both daemons asked"
+      File.delete("#{dir}/calls")
+      assert system(env.merge("TMPDIR" => user_tmp), "/bin/sh", "-c", Probe::OP_SCRIPT, unsetenv_others: true)
+      assert_equal [user_tmp], File.readlines("#{dir}/calls", chomp: true), "control: one daemon, asked once"
+    end
   end
 
   def test_unit_each_check_runs_under_the_twenty_second_bound_and_reports_its_own_answer

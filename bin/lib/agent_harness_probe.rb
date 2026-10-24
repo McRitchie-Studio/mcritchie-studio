@@ -32,7 +32,11 @@ module AgentMailbox
   # No secret enters this process: the token lives only inside the child shell.
   class HarnessProbe
     DEADLINE = BoundedCommand::DEFAULT_DEADLINE
-    OP_SCRIPT = "op whoami >/dev/null 2>&1"
+    # op runs one cache daemon per TMPDIR. launchd sets none (the /private/tmp
+    # daemon, which the dispatcher's own agents share) while a Terminal agent
+    # shell has the per-user one, so both are asked; either wedged is op_ok false.
+    OP_SCRIPT = 'op whoami >/dev/null 2>&1 && u="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || true)" && ' \
+                '{ [ -z "$u" ] || [ "$u" = "${TMPDIR:-}" ] || TMPDIR="$u" op whoami >/dev/null 2>&1; }'
     GH_SCRIPT = 'GH_TOKEN="$(bin/gh-token 2>/dev/null)" && [ -n "$GH_TOKEN" ] && ' \
                 'GH_TOKEN="$GH_TOKEN" gh api /rate_limit --silent >/dev/null 2>&1'
     PMSET = "/usr/bin/pmset"
