@@ -29,6 +29,7 @@ module LocalServices
   # The command that re-runs only this phase; every checklist item that ends in
   # "then re-run" names it.
   RERUN = "bin/ecosystem-build --phase services"
+  HANDOFF_FILE = "conductor-elsewhere"
 
   class Error < StandardError; end
 
@@ -133,8 +134,9 @@ module LocalServices
     attr_reader :items
 
     def initialize(services:, hub:, runner: Restorer.default_runner, which: Restorer.default_which,
-                   dotenv: Restorer.default_dotenv, out: $stdout)
+                   dotenv: Restorer.default_dotenv, handoff: LocalServices.method(:handed_off_to), out: $stdout)
       @services = services
+      @handoff = handoff
       @hub = hub
       @runner = runner
       @which = which
@@ -169,6 +171,15 @@ module LocalServices
     end
 
     def run
+      # A Mac that handed the conductor role to another host installs none of
+      # the services again: two dispatchers split the mailbox, and two launchers
+      # release each other's runs (docs/agents/agents/steffon/sops/conductor-host.md).
+      if (host = @handoff.call(@hub))
+        fail_line "services skipped", "this Mac handed the conductor role to #{host} " \
+                                      "(#{HANDOFF_FILE} in the projects root's .agents); " \
+                                      "`bin/conductor-host-setup --take-over` takes it back"
+        return @items
+      end
       sign_in = claude_sign_in
       @services.each { |service| restore(service, sign_in) }
       @items
@@ -327,6 +338,22 @@ module LocalServices
   end
 
   module_function
+
+  # The marker a Mac keeps once it has handed the conductor role (the two
+  # launchd services) to another host, written by `bin/conductor-host-setup
+  # --hand-off-to <host>` in <projects>/.agents and removed by `--take-over`.
+  # Its content is the new host's name. Returns that name, or nil.
+  def handed_off_to(hub)
+    path = handoff_path(hub)
+    return nil unless File.file?(path)
+
+    name = File.read(path, encoding: "UTF-8").strip
+    name.empty? ? "another host" : name
+  rescue SystemCallError
+    nil
+  end
+
+  def handoff_path(hub) = File.join(File.dirname(File.expand_path(hub)), ".agents", HANDOFF_FILE)
 
   # The hub's primary checkout the services install from: PROJECTS_DIR's
   # mcritchie-studio when set (bin/ecosystem-build's own seam), else the one

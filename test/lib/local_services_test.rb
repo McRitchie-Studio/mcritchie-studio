@@ -187,6 +187,29 @@ class LocalServicesTest < Minitest::Test
     assert_includes @out.string, "installed and running"
   end
 
+  # A laptop that handed the conductor role away must not take it back on its
+  # next bin/ecosystem-build: the marker skips every service, before any command.
+  def test_a_mac_that_handed_off_the_conductor_role_installs_nothing
+    runner = fake_runner(status: -> { false }, install: -> { flunk "installed on a handed-off Mac" })
+    items = LocalServices::Restorer.new(services: LocalServices::Registry.load, hub: "/hub", runner: runner,
+                                        which: ->(_) { true }, dotenv: ->(_, _) { true },
+                                        handoff: ->(_) { "conductor-mini" }, out: @out).run
+
+    assert_empty @calls, "a handed-off Mac runs no command at all"
+    assert_empty items
+    assert_includes @out.string, "handed the conductor role to conductor-mini"
+  end
+
+  def test_handed_off_to_reads_the_marker_beside_the_hub
+    hub = File.join(@dir, "projects", "mcritchie-studio")
+    FileUtils.mkdir_p([ hub, File.join(@dir, "projects", ".agents") ])
+    assert_nil LocalServices.handed_off_to(hub)
+
+    File.write(LocalServices.handoff_path(hub), "conductor-mini\n")
+    assert_equal File.join(@dir, "projects", ".agents", "conductor-elsewhere"), LocalServices.handoff_path(hub)
+    assert_equal "conductor-mini", LocalServices.handed_off_to(hub)
+  end
+
   def test_re_running_with_the_service_up_installs_nothing
     running = false
     runner = fake_runner(status: -> { running }, install: -> { running = true })
