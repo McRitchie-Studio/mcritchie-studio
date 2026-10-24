@@ -35,6 +35,25 @@ class CommunicationsIndexTest < ActionDispatch::IntegrationTest
     )
   end
 
+  # [component] hub-security-gates-pass: deliverable_url is written by agents, so
+  # only an http(s) url becomes the "open draft" link.
+  test "a deliverable url that is not http or https renders no link" do
+    @delivered_ask.update_columns(deliverable_url: "javascript:alert(document.cookie)")
+    log_in_as @admin
+    get communications_path
+
+    assert_response :success
+    assert_select "a[href^='javascript']", 0
+    assert_select "a", text: "open draft", count: 0
+  end
+
+  test "an https deliverable url renders the open draft link" do
+    log_in_as @admin
+    get communications_path
+
+    assert_select "a[href='https://mail.google.com/mail/u/0/#drafts?compose=d1']", text: "open draft"
+  end
+
   test "an anonymous visitor cannot reach it" do
     get communications_path
 
