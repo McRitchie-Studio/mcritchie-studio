@@ -1,5 +1,5 @@
-<% survivor_url    = @broadcast&.survivor_url.presence    || "{{SURVIVOR_URL}}" %>
-<% turf_totals_url = @broadcast&.turf_totals_url.presence || "{{TURF_TOTALS_URL}}" %>
+<% survivor_url    = ApplicationHelper.http_href(@broadcast&.survivor_url)    || "{{SURVIVOR_URL}}" %>
+<% turf_totals_url = ApplicationHelper.http_href(@broadcast&.turf_totals_url) || "{{TURF_TOTALS_URL}}" %>
 <%= render "broadcasts/email_head",
       hero_file: "world_cup_header.png",
       preheader: "The first-ever 48-team World Cup starts Thursday — two ways to play all summer.",

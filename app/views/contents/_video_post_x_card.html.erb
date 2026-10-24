@@ -39,7 +39,7 @@
   <% if content.post_url.present? %>
     <div class="mt-4">
       <p class="label-upper">Live on X</p>
-      <%= link_to content.post_url, content.post_url, target: "_blank", rel: "noopener",
+      <%= safe_link_to content.post_url, content.post_url, target: "_blank", rel: "noopener",
             class: "text-primary text-sm hover:text-primary-300 break-all", "data-test": "video-post-x-link" %>
       <% verified = post["verified"] || {} %>
       <% if verified["video"] == true %>

@@ -194,7 +194,7 @@
             <% sheet = entry.appearance_slug && sheets[entry.appearance_slug] %>
             <% sheet_label = "Sheet #{row.sheet} · Person #{row.letter} · #{row.player}" %>
             <% if sheet %>
-              <%= link_to sheet.image_url, target: "_blank", rel: "noopener", download: "#{entry.appearance_slug}_character_sheet",
+              <%= safe_link_to sheet.image_url, target: "_blank", rel: "noopener", download: "#{entry.appearance_slug}_character_sheet",
                           title: entry.label, class: "btn btn-outline btn-sm min-w-0",
                           data: { test: "clip-sheet", look: entry.appearance_slug, ordinal: entry.performer_ordinal, sheet: row.sheet } do %>
                 <span class="whitespace-normal break-words"><%= sheet_label %></span>

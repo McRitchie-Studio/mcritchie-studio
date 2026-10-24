@@ -17,6 +17,20 @@ class NewsControllerTest < ActionDispatch::IntegrationTest
 
   # === HTML page tests ===
 
+  # [component] admin-url-columns-use-http-href: the source and X post links read
+  # stored urls, so they reach an href only as http(s).
+  test "show links an https source and X post and withholds javascript: ones" do
+    @new_article.update_columns(url: "https://espn.com/story/1", x_post_url: "https://x.com/a/status/1")
+    get news_path(@new_article.slug)
+    assert_select "a[href='https://espn.com/story/1']"
+    assert_select "a[href='https://x.com/a/status/1']", "View Post"
+
+    @new_article.update_columns(url: "javascript:alert(1)", x_post_url: "javascript:alert(2)")
+    get news_path(@new_article.slug)
+    assert_select "a[href^='javascript']", 0
+    assert_select "span[data-test='link-withheld'][title]", 2
+  end
+
   test "index renders news page" do
     get news_index_path
     assert_response :success

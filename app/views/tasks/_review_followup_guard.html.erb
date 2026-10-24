@@ -37,7 +37,7 @@
 
     <div class="flex shrink-0 flex-wrap items-center gap-2">
       <% if (pr_url = task.devops_url("pr")) %>
-        <%= link_to "View PR", pr_url, class: "btn btn-outline btn-sm", target: "_blank", rel: "noopener" %>
+        <%= safe_link_to "View PR", pr_url, class: "btn btn-outline btn-sm", target: "_blank", rel: "noopener" %>
       <% end %>
       <% if logged_in? %>
         <%= link_to "Create follow-up task",

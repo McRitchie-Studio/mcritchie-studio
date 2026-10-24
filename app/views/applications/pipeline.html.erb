@@ -75,7 +75,7 @@
                 <% if @admin %>
                   <p class="text-xs flex flex-wrap gap-x-3" data-test="pipeline-card-admin">
                     <%= link_to card.slug, task_path(card.slug), class: "underline text-secondary hover:text-heading break-all" %>
-                    <% if card.pr_url %><%= link_to "PR", card.pr_url, class: "underline text-secondary hover:text-heading", target: "_blank", rel: "noopener", data: { test: "pipeline-card-pr" } %><% end %>
+                    <% if card.pr_url %><%= safe_link_to "PR", card.pr_url, class: "underline text-secondary hover:text-heading", target: "_blank", rel: "noopener", data: { test: "pipeline-card-pr" } %><% end %>
                   </p>
                 <% end %>
               </li>

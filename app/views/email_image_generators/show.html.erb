@@ -36,9 +36,9 @@
         </div>
         <% if (image = @page.model_image) %>
           <figure class="space-y-1" data-test="model-image" data-source="<%= image.source %>">
-            <a href="<%= image.url %>" target="_blank" rel="noopener" class="block rounded-lg border border-subtle bg-surface-alt overflow-hidden">
+            <%= safe_link_to image.url, target: "_blank", rel: "noopener", class: "block rounded-lg border border-subtle bg-surface-alt overflow-hidden" do %>
               <img src="<%= image.url %>" alt="<%= character.name %>: <%= image.label %>" class="w-full max-h-[32rem] object-contain">
-            </a>
+            <% end %>
             <figcaption class="text-3xs text-muted break-words" data-test="model-caption"><%= image.label %></figcaption>
           </figure>
         <% else %>

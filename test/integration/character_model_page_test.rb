@@ -525,6 +525,34 @@ class CharacterModelPageTest < ActionDispatch::IntegrationTest
                     "a refused scheme has no business in the page at all"
   end
 
+  # [component] admin-url-columns-use-http-href: the reference photo's full-size link
+  # and its page link, the uniform photo's open and source links, and the output
+  # panel's generated image all read stored urls; each links only as http(s).
+  test "[component] reference, uniform and generated image links admit https and withhold javascript:" do
+    cache_headshot
+    ref = file_photo("https://cdn.example.com/full.jpg", chosen: true, position: 1, page_url: "https://espn.com/p")
+    uni = AppearanceUniformPhoto.create!(appearance_slug: @look.slug, slug: "uni-1", image_url: "https://cdn.example.com/u.jpg", thumb_url: "https://cdn.example.com/t.jpg",
+                                         page_url: "https://nfl.com/u")
+    shot = Artifact.create!(kind: "character_sheet", image_url: "https://assets.example.test/gen.png", source: "higgsfield")
+    shot.subjects.create!(person_slug: @person.slug, appearance_slug: @look.slug, ordinal: 1)
+
+    get page_path
+    %w[https://cdn.example.com/full.jpg https://espn.com/p https://cdn.example.com/u.jpg https://nfl.com/u
+       https://assets.example.test/gen.png].each { |url| assert_select "a[href=?]", url }
+
+    ref.update_columns(image_url: "javascript:alert(1)")
+    uni.update_columns(image_url: "javascript:alert(2)", page_url: "javascript:alert(3)")
+    # image_tag raises on a javascript: src (the asset pipeline reads it as a file name),
+    # which is a separate, pre-existing 500; a data: image is the refused value here.
+    shot.update_columns(image_url: "data:image/svg+xml;base64,PHN2Zy8+")
+    get page_path
+    assert_select "a[href^='javascript']", 0
+    assert_select "a[href='https://espn.com/p']", 1, "the page link still stands on its own value"
+    assert_select "[data-test='uniform-photo'] span[data-test='link-withheld'][title]", 2
+    assert_select "[data-test='model-output-panel'] span[data-test='link-withheld'][title] img", 1
+    assert_select "span[data-test='link-withheld'][title] img", { minimum: 3 }, "reference, uniform and generated keep their image"
+  end
+
   # A SEARCH THAT COULD NOT RUN CHANGES NOTHING AND SAYS WHY. Without this the
   # unconfigured click looks like a search that found nothing.
   test "[integration] searching with no provider files nothing and names the env var" do

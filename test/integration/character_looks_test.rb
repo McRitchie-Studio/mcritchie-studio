@@ -83,6 +83,24 @@ class CharacterLooksTest < ActionDispatch::IntegrationTest
     assert_not Appearance.recastable.exists?(slug: @look.slug)
   end
 
+  # [component] admin-url-columns-use-http-href: characters/show's artifact grid and
+  # characters/_look's sheet both link a stored image_url only as http(s).
+  test "the character page links an https sheet and withholds a javascript: one, image kept" do
+    artifact = Artifact.create!(kind: "character_sheet", image_url: "https://assets.example.test/sheet.png")
+    ArtifactSubject.create!(artifact_slug: artifact.slug, character_slug: @character.slug, appearance_slug: @look.slug)
+    log_in_as(users(:alex))
+
+    get character_path(@character)
+    assert_select "a[data-test='look-sheet'][href='https://assets.example.test/sheet.png']"
+    assert_select "[data-test='character-artifact'] a[href='https://assets.example.test/sheet.png']"
+
+    artifact.update_columns(image_url: "javascript:alert(1)")
+    get character_path(@character)
+    assert_select "a[href^='javascript']", 0
+    assert_select "a[data-test='look-sheet']", 0
+    assert_select "span[data-test='link-withheld'][title] img", 2
+  end
+
   test "the people index's model thumbnails skip a character's sheet" do
     artifact = Artifact.create!(kind: "character_sheet", image_url: "https://assets.example.test/x.png")
     ArtifactSubject.create!(artifact_slug: artifact.slug, character_slug: @character.slug, appearance_slug: @look.slug)

@@ -404,6 +404,49 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
     prior.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
   end
 
+  # [component] admin-url-columns-use-http-href: each stored content url reaches an
+  # href only as http(s). One javascript: value per field renders no link and the
+  # titled grey dash; an https value renders the link.
+  test "content show links https stored urls and withholds javascript: ones" do
+    content = contents(:idea_content)
+    good = { reference_video_url: "https://youtu.be/ref", final_video_url: "https://cdn.test/final.mp4",
+             post_url: "https://x.com/turfmonstershow/status/9" }
+    content.update_columns(good)
+    get content_path(content.slug)
+    good.each_value { |url| assert_select "a[href=?]", url }
+
+    content.update_columns(good.transform_values { "javascript:alert(1)" })
+    get content_path(content.slug)
+    assert_select "a[href^='javascript']", 0
+    assert_select "span[data-test='link-withheld'][title]", 3
+  end
+
+  test "the starter X and TikTok asset cards withhold a javascript: final video" do
+    %w[starter_post_x starter_post_tiktok_offense].each do |workflow|
+      content = contents(:idea_content)
+      content.update_columns(workflow: workflow, stage: "assets", final_video_url: "https://cdn.test/final.mp4")
+      get content_path(content.slug)
+      assert_select "a[href='https://cdn.test/final.mp4']", { minimum: 1 }, workflow
+
+      content.update_columns(final_video_url: "javascript:alert(1)")
+      get content_path(content.slug)
+      assert_select "a[href^='javascript']", 0, workflow
+      assert_select "span[data-test='link-withheld']", { minimum: 2 }, "#{workflow}: the card's Download and the detail row"
+    end
+  end
+
+  test "the video post X card withholds a javascript: post url" do
+    content = ready_video_post(stage: "posted", post_url: "https://x.com/turfmonstershow/status/123")
+    get content_path(content.slug)
+    assert_select "a[data-test='video-post-x-link'][href='https://x.com/turfmonstershow/status/123']"
+
+    content.update_columns(post_url: "javascript:alert(1)")
+    get content_path(content.slug)
+    assert_select "a[data-test='video-post-x-link']", 0
+    assert_select "a[href^='javascript']", 0
+    assert_select "span[data-test='link-withheld'][title]", { minimum: 1 }
+  end
+
   def ready_video_post(**attrs)
     Content.create!({ title: "Bills win", workflow: "video_post_x", stage: "script", team_slug: "buffalo-bills",
                       captions: "Bills 3-1 #nfl #nflfootball #billsmafia #buffalo #bills <b>",

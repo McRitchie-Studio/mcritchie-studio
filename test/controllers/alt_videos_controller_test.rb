@@ -131,6 +131,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
   # Download above the hand-off, and each sheet labelled as the prompt numbers it.
   test "a clip card letters its people: frames, numbered sheets and the full v2 prompt" do
     video = LetteredVideo.seed!
+    host_sheets!
     alt = video.alt_videos.first
     log_in_as users(:alex)
     get video_alt_video_path(video, alt)
@@ -210,6 +211,7 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
 
   test "a swapped person with no sheet keeps the number in the card's label" do
     video = LetteredVideo.seed!
+    host_sheets!
     alt = video.alt_videos.first
     ArtifactSubject.where(appearance_slug: alt.swap_set[3].appearance_slug).destroy_all
     log_in_as users(:alex)
@@ -524,5 +526,31 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
     get admin_links_path
     assert_select "a[href='#{alt_videos_path}']", /Alt videos/
+  end
+
+  # [component] admin-url-columns-use-http-href: a sheet's stored image_url reaches
+  # the download button's href only as http(s); anything else keeps the label, unlinked.
+  test "a clip card links an https sheet and withholds a javascript: one" do
+    video = LetteredVideo.seed!
+    alt = video.alt_videos.first
+    sheets = Artifact.where(kind: "character_sheet")
+    sheets.update_all(image_url: "https://assets.example.test/sheet.png")
+    log_in_as users(:alex)
+    get video_alt_video_path(video, alt)
+    assert_select "a[data-test='clip-sheet'][href='https://assets.example.test/sheet.png']"
+
+    sheets.update_all(image_url: "javascript:alert(1)")
+    get video_alt_video_path(video, alt)
+    assert_select "a[data-test='clip-sheet']", 0
+    assert_select "a[href^='javascript']", 0
+    assert_select "span[data-test='link-withheld'][title]", /Sheet 1 · Person B/
+  end
+
+  private
+
+  # The seed's sheets are inline SVG data: URIs, which never reach an href
+  # (http_href); production sheets are stored https URLs, so host them here.
+  def host_sheets!
+    Artifact.where(kind: "character_sheet").update_all(image_url: "https://assets.example.test/sheet.png")
   end
 end
