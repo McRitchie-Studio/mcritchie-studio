@@ -45,6 +45,8 @@ class CommunicationsIndexTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "a[href^='javascript']", 0
     assert_select "a", text: "open draft", count: 0
+    # admin-url-columns-use-http-href: the refusal renders like every other view's.
+    assert_select "span[data-test='link-withheld'][title='#{ApplicationHelper::HTTP_HREF_WITHHELD_TITLE}']", "—"
   end
 
   test "an https deliverable url renders the open draft link" do
