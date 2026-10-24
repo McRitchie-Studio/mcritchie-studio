@@ -83,6 +83,16 @@ class ContentSecurityPolicyTest < ActionDispatch::IntegrationTest
     assert_every_inline_script_nonced("/tasks")
   end
 
+  # Chartkick renders one inline script per chart and nonces it by default (its
+  # helper's `nonce` option defaults to true); this pins that it still does.
+  test "/intelligence's chart scripts carry the nonce" do
+    log_in_as(users(:alex))
+    get intelligence_path
+    assert_response :success
+    assert inline_scripts.any? { |s| s.text.include?("Chartkick") }, "the page rendered no chart; the scan would prove nothing"
+    assert_every_inline_script_nonced("/intelligence")
+  end
+
   test "every inline script on the landing page carries the nonce, the meta tag included" do
     get root_path
     assert_every_inline_script_nonced("/")
