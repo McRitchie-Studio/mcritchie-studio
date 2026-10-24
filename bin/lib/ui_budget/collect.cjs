@@ -89,7 +89,7 @@ async function measure(browser, url, width, userAgent) {
   const images = await page.evaluate(() => Array.from(document.images).map((img) => {
     const box = img.getBoundingClientRect();
     return { src: img.currentSrc || img.src, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight,
-      renderedWidth: Math.round(box.width), renderedHeight: Math.round(box.height) };
+      renderedWidth: Math.round(box.width), renderedHeight: Math.round(box.height), fit: getComputedStyle(img).objectFit };
   })).catch(() => []);
 
   let axe = null;
@@ -114,13 +114,15 @@ async function measure(browser, url, width, userAgent) {
   const cachedYear = assets.filter((r) => r.maxAge !== null && r.maxAge >= ONE_YEAR);
 
   // The largest image is the heaviest <img> on the wire that rendered with a
-  // box; its ratio is the larger of natural/rendered on each axis (device scale 1).
+  // box. Its ratio is natural over rendered pixels at device scale 1: the larger
+  // axis ratio for fill and contain, the smaller for cover, which crops the
+  // other axis (hub's hero is 4700x1800 in a 507x720 box at 390px: 2.5x, not 9.3x).
   const imgBytes = {};
   for (const r of reqs) if (r.type === "img") imgBytes[r.url] = Math.max(imgBytes[r.url] || 0, r.bytes);
   const sized = images
     .filter((i) => i.naturalWidth > 0 && i.renderedWidth > 0 && i.renderedHeight > 0)
     .map((i) => ({ ...i, bytes: imgBytes[i.src] || 0,
-      ratio: Math.max(i.naturalWidth / i.renderedWidth, i.naturalHeight / i.renderedHeight) }))
+      ratio: (i.fit === "cover" ? Math.min : Math.max)(i.naturalWidth / i.renderedWidth, i.naturalHeight / i.renderedHeight) }))
     .sort((a, b) => b.bytes - a.bytes);
   const largest = sized[0] || null;
 
@@ -141,7 +143,7 @@ async function measure(browser, url, width, userAgent) {
     assets_cached_one_year: cachedYear.length,
     third_party_js_hosts: [...new Set(thirdPartyJs.map((r) => r.host))].sort(),
     largest_image: largest && { src: largest.src.slice(0, 200), bytes: largest.bytes,
-      natural: `${largest.naturalWidth}x${largest.naturalHeight}`, rendered: `${largest.renderedWidth}x${largest.renderedHeight}` },
+      natural: `${largest.naturalWidth}x${largest.naturalHeight}`, rendered: `${largest.renderedWidth}x${largest.renderedHeight}`, object_fit: largest.fit },
     axe_violations: axe,
   };
   return result;
