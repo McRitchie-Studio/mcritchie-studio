@@ -274,6 +274,10 @@ reserve two browser signers: Alex's Phantom (`7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAX
 the `MULTISIG_COSIGNER` default) and one more of his wallets: tell him "switch to
 3Qj4", or `9gAC` when `3Qj4` is unavailable. The `4S39` pinch of First Rule 10
 does not apply here: `4S39` is the server key, already signing this row.
+With the platform cosigner configured (`SOLANA_PLATFORM_COSIGNER_KEY`, `3LTL`,
+by his 2026-10-24 ruling), he may instead tick "Platform signs too" on the row:
+the server signs for `3LTL` as well and Phantom asks him once, from the wallet
+he picks (`3Qj4` or `9gAC`).
 The extra signer slots are part of the transaction message, so they cannot be
 added afterwards without invalidating a signature already on it; a row built for
 two and then handed a third wallet is short before Phantom even opens. The remedy
