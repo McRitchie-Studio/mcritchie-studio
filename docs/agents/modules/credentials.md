@@ -45,6 +45,11 @@ put a live secret in a transcript:
   print one bare newline. Test presence with a control:
   `heroku config --json -a <app> | jq 'length'` (0 means the read failed), then
   `jq '(.NAME // "") != ""'`.
+- **`heroku authorizations --json` prints every OAuth authorization on the account
+  with its token**, the admin and CI lanes included; one bare run in an agent session
+  burns them all. Pipe it to `jq` for `.id` and `.description`, or use the plain
+  `heroku authorizations`, which prints no token. `heroku authorizations:create --json`
+  returns the new id and token in one object to read inside the shell.
 - **Any "only stderr" redirect** uses the brace-group form in
   [`../system/coding-standards.md`](../system/coding-standards.md#shell-zsh-on-macos).
 
