@@ -8,6 +8,7 @@ require "rbconfig"
 require "yaml"
 require_relative "agent_mailbox"
 require_relative "agent_domain_registry"
+require_relative "agent_harness_probe"
 
 # bin/dispatcher: the agent mailbox served as a set-and-forget service on Alex's
 # Mac (docs/agents/agents/steffon/sops/agent-dispatcher.md). Every mechanic here
@@ -166,7 +167,8 @@ module AgentMailbox
     def initialize(client:, souls:, channel: "discord", worker: nil, cap: CAP, claude_cmd: Responder::DEFAULT_CLAUDE_CMD,
                    runner: nil, out: $stdout, clock: -> { Time.now }, sleeper: ->(s) { sleep(s) },
                    repo_root: REPO_ROOT, idle_wait: IDLE_WAIT, busy_wait: BUSY_WAIT, version: nil, fingerprint: nil,
-                   registry: nil, mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"), host: nil, media: nil)
+                   registry: nil, mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"), host: nil, media: nil,
+                   harness_probe: nil, threader: ->(&work) { Thread.new(&work) })
       raise ArgumentError, "no souls to serve" if souls.empty?
 
       # The files a message carries are fetched and converted on the run's
@@ -215,6 +217,13 @@ module AgentMailbox
       # primary is live. A standby claims nothing while one is.
       @role = "primary"
       @primary_live = true
+      # Harness health (HarnessProbe): one probe started per beat on its own
+      # thread, so a hung `op` (20-second bounds) never holds up the loop; each
+      # ping carries the newest finished measurement. nil: none (the loop tests).
+      @harness_probe = harness_probe
+      @threader = threader
+      @probe_thread = nil
+      @harness = nil
     end
 
     def self.git_version(root)
@@ -265,7 +274,10 @@ module AgentMailbox
       reap
       renew_due(now)
       type_due(now)
-      ping(now) if @last_ping.nil? || now - @last_ping >= PING_EVERY
+      if @last_ping.nil? || now - @last_ping >= PING_EVERY
+        probe_harness
+        ping(now)
+      end
       check_code(now) if @fingerprint && !@stopping && now - @last_code_check >= CODE_CHECK_EVERY
       return if @stopping
 
@@ -847,13 +859,48 @@ module AgentMailbox
 
     def phase_moved?(run) = run.phase ? run.phase.current != run.pulsed_phase : false
 
+    # Collect a finished probe, then start the next one unless one still runs.
+    def probe_harness
+      return unless @harness_probe
+
+      if @probe_thread && !@probe_thread.alive?
+        record_harness(@probe_thread.value)
+        @probe_thread = nil
+      end
+      @probe_thread ||= @threader.call { @harness_probe.call }
+      # A probe that finished at once (or a synchronous threader) rides this beat.
+      return if @probe_thread.alive?
+
+      record_harness(@probe_thread.value)
+      @probe_thread = nil
+    rescue StandardError => e
+      @probe_thread = nil
+      log "harness probe failed (#{e.class})"
+    end
+
+    # The log line names a change only, never every beat.
+    def record_harness(measurement)
+      return unless measurement
+
+      before = @harness
+      @harness = measurement
+      changed = before.nil? || before.op_ok != measurement.op_ok || before.gh_ok != measurement.gh_ok ||
+                before.power != measurement.power
+      return unless changed
+
+      word = ->(ok) { ok ? "ok" : "FAILING" }
+      log "harness: op #{word.call(measurement.op_ok)}, gh #{word.call(measurement.gh_ok)}, power #{measurement.power || 'unknown'}"
+    end
+
     def ping(now, state: nil)
       @last_ping = now
-      answer = @client.ping({ "worker" => @worker, "host" => @host, "souls" => @souls, "running" => @runs.size,
-                              "capacity" => @cap, "paused_until" => paused?(now) ? @paused_until.utc.iso8601 : nil,
-                              "pause_reason" => paused?(now) ? @pause_reason : nil,
-                              "state" => state || (paused?(now) ? "paused" : "running"),
-                              "version" => @version, "started_at" => @started_at.utc.iso8601 })
+      payload = { "worker" => @worker, "host" => @host, "souls" => @souls, "running" => @runs.size,
+                  "capacity" => @cap, "paused_until" => paused?(now) ? @paused_until.utc.iso8601 : nil,
+                  "pause_reason" => paused?(now) ? @pause_reason : nil,
+                  "state" => state || (paused?(now) ? "paused" : "running"),
+                  "version" => @version, "started_at" => @started_at.utc.iso8601 }
+      payload.merge!(@harness.to_ping) if @harness
+      answer = @client.ping(payload)
       read_role(answer)
       renew_leases unless @leases.empty?
     rescue ApiError => e

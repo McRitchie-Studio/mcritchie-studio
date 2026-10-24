@@ -68,9 +68,9 @@ the mechanics, the schedule sets the floor, and you judge only the anomalies.
 | Handing a message back without spending an attempt on a usage limit (at most 3 times per message, the board's cap), and pausing until the reset | Deciding whether a dead letter is re-queued or left dead |
 | Pausing 5 minutes after a failed Claude run, 30 after a signed-out one | Escalating to Alex when the fix is his (his login, his Mac) |
 | Stopping a run past its deadline (TERM, then KILL after 10 seconds; no renewal past 8 minutes; the message given back) | |
-| Pinging the board every minute | |
+| Pinging the board every minute, with the Mac's harness health: a bounded `op whoami`, a bounded GitHub check, and AC or battery | |
 | Restarting itself on new code, and the ship reinstalling it when its plist template changes ([Updates](#updates-nobody-reinstalls-it)) | |
-| One Discord alert per incident, one recovery line (`AgentDispatcherAlertJob`) | |
+| One Discord alert per incident, one recovery line, one "flapping" line for a flapping incident; one email to a person when an incident stays open 15 minutes or flaps, one when it is steady (`AgentDispatcherAlertJob`) | |
 
 If you find yourself claiming or completing a message by hand to "help", stop.
 The dispatcher will take it on its next poll; a hand claim only competes with it.
@@ -86,6 +86,8 @@ The dispatcher will take it on its next poll; a hand claim only competes with it
 | "typing…" while it answers | Each live run asks `POST /api/v1/agent_messages/:id/typing` at its start and every 7 seconds, up to 3 minutes; the hub's `AgentMessageTypingJob` shows typing as the bot that will reply ([loop doc](../../../system/agent-message-loop.md), "Typing"). A web-chat run streams (`stream-json`, partial messages) so its pulse says `thinking` until the answer's text starts, then `typing`, sent at once on the change ([loop doc](../../../system/agent-message-loop.md), "Web chat") |
 | Its ping and the alerts | `POST /api/v1/agent_dispatchers/ping`; `AgentDispatcherAlertJob` every minute on the worker dyno (`config/recurring.yml`) |
 | Where alerts post | `discord.ops_channel_id` in `config/agent_routes.yml` (`lobster-tank` today), as the shared bot |
+| Where it escalates | `floor.escalation_email` in `config/agent_routes.yml` (alex@mcritchie.studio; that address when unset), by email through the hub's outbox (`Studio::Email.deliver`, `AgentFloorMailer`) |
+| The harness probe | `AgentMailbox::HarnessProbe` (`bin/lib/agent_harness_probe.rb`), on its own thread each beat; its answer rides the next ping and lands on the dispatcher row (`op_ok`, `gh_ok`, `power_source`, `harness_failing_beats`) |
 | What you watch | `/admin/agent_messages`: the dispatcher row (live, paused, silent) above the message list |
 
 **Billing.** Claude runs as `claude -p --safe-mode --tools "" --output-format json`
@@ -218,13 +220,36 @@ The incident history is the `agent_mailbox_incidents` table: one open row per ki
 for the floor-wide checks, and one open row per card (its slug in `subject`) for
 `submitted_unclaimed` and `change_build_refused`.
 
+**What the floor watches.** A silent dispatcher, a routed message waiting, a
+degraded harness on the Mac (`harness_degraded`), a submitted card nobody is
+reviewing, a change card the launcher could not start, and the nightly
+database-backup sweep's two kinds.
+
+**Flapping.** An incident that reopens within an hour of its last recovery joins
+the same episode (`episode_id`). When an episode has opened three times within an
+hour, Discord gets one line, `<incident>: flapping, N since HH:MM`, in place of a
+line per flap and per recovery, and one more, `<incident>: steady again …`, once
+nothing has been open for 15 minutes.
+
+**Escalation to a person.** The floor emails `floor.escalation_email` once when a
+floor-wide incident has stayed open 15 minutes or its episode is flapping, and once
+when the episode has had nothing open for 15 minutes. Never more than one email per
+episode per state. The per-card kinds (`submitted_unclaimed`,
+`change_build_refused`) stay on Discord and never email. The subject reads `Floor alert: <incident> (open N min)` or
+`(flapping, N since HH:MM)`, then `Floor clear: <incident>`; each names this SOP.
+The email goes out whether or not Discord is configured, and a failed send is
+retried on the next run. Read an email as "a person is needed now": open the
+Discord line it quotes and take the matching row below.
+
 | Alert | Means | Do |
 |-------|-------|----|
 | `Agent dispatcher silent: no ping from bin/dispatcher on <host> for N min` | No dispatcher has pinged for 5 minutes. Before the first install this never fires | Playbook: **Mac asleep** or **service down** |
+| `Agent harness degraded on <host>: 1Password (`op whoami`) and/or GitHub failing on N beats in a row (each bounded at 20 s) …` | `harness_degraded`: the live dispatcher's probe failed on 5 consecutive beats. Agents on the Mac cannot read secrets or reach GitHub: `gh` says Bad credentials and `git fetch` hangs or fails | Playbook: **Harness degraded** |
+| `<incident>: flapping, N since HH:MM` / `<incident>: steady again …` | An episode opened three times within an hour; the per-flap lines are held until it is steady | Read the incident's own row. A flapping `dispatcher_silent` is almost always the Mac sleeping and waking: the ping says whether it was on battery |
 | `Agent mailbox: N routed message(s) waiting over 10 minutes; oldest is #id …` | A routed message has sat `received` for 10 minutes. If the text adds `paused until … (usage_limit)`, the dispatcher is waiting out a usage limit on purpose | Read the pause reason, then the matching row |
 | `Review not started: <slug> has sat submitted with a green DoR and no review claim for N min. … Start it: cd /Users/alex/projects/mcritchie-studio && bin/task review-claim acquire <slug> --agent carl, then one Carl subagent (SOP pr-review, single-task entry).` | `submitted_unclaimed`, one per card: the card is `submitted`, not blocked, its builder DoR (`GateRun` `dor`) passed, and no review claim has been live for 30 minutes. Its builder reported `submitted` and nobody launched the review | Run the line it names from a session: claim the card as Carl, then spawn one Carl subagent by [`pr-review`](../../carl/sops/pr-review.md#single-task-entry-on-submit). Exit 10 means a review is already running; nothing more to do |
 | `Change build not started: the launcher could not run bin/task begin for <slug> (<reason>). The card stays designed; attempt N of M. By hand: …` | `change_build_refused`, one per card: the build launcher could not start a chat-sourced change card ([client-build-launcher](../../../system/client-build-launcher.md#change-cards)). The launcher retries it every 10 minutes up to `max_attempts` | Read the reason (no free desk port, a preflight that could not describe the desk, a lane cap). Fix it, or run the `task begin` line it names by hand, then start the builder with the launch line that `bin/task show <slug> -v` carries in `devops.change_build` |
-| `Agent dispatcher back` / `Agent mailbox clear` / `<slug> no longer waits for review` / `<slug> no longer waits for its build` | The incident is over: for a card, a review claim appeared or it left `submitted`, or its build started or it left `designed` | Nothing |
+| `Agent dispatcher back` / `Agent harness healthy` / `Agent mailbox clear` / `<slug> no longer waits for review` / `<slug> no longer waits for its build` | The incident is over: for a card, a review claim appeared or it left `submitted`, or its build started or it left `designed` | Nothing |
 
 With no bot token or no `ops_channel_id`, nothing is posted and the worker logs
 `[agent-dispatcher] floor alert not posted (...)`.
@@ -244,7 +269,8 @@ gateway is failing before READY, so read the worker log's
 |---------|-------|-----|
 | **Service down**: silent alert, Mac awake | `bin/dispatcher status`; the log's last lines | `bin/dispatcher install` restarts it. A crash loop shows in the log; launchd retries every 30 seconds |
 | **Board auth**: silent alert, the log repeats `claim failed: … HTTP 401` or `no answer from https://mcritchie.studio (unreachable, or no agent token)` | The dispatcher authenticates as the rest of the agent CLI does (`bin/lib/agent_api.rb`): the shared token cache, minted from `AGENT_API_SECRET` (env, then the hub's `.env`, then 1Password) | Make the secret reachable without a prompt (the hub checkout's `.env`), then `bin/dispatcher install`. A single 401 heals itself: the client drops the cached token and mints a new one |
-| **Mac asleep**: silent alert, nothing in the log since | The log's last timestamp | Wake the Mac or ask Alex to; the dispatcher resumes by itself and the recovery line posts |
+| **Mac asleep**: silent alert, nothing in the log since | The log's last timestamp; the alert adds `Its last ping said the Mac was on battery` when it was | Wake the Mac or ask Alex to; the dispatcher resumes by itself and the recovery line posts. `caffeinate -is` holds off sleep on AC power only, so a lid closed on battery still sleeps |
+| **Harness degraded**: `harness_degraded`, the log's `harness: op FAILING` or `gh FAILING` | `OP_CACHE=false op whoami` against `op whoami`: when only the uncached one answers, the 1Password cache daemon is stuck (2026-10-21: it never became ready after a reboot). Then `bin/gh-token --status` and `bin/op-reads --tail 20` (rows reading `timeout`) | Stuck daemon: quit and reopen the 1Password app, or `pkill -f "op daemon"`; the next `op` call starts a fresh daemon. Meanwhile every `op` read is bounded at 20 seconds and retried once uncached, so agents work, slowly. A signed-out service account (`op whoami` fails both ways): [`token-session`](../../../modules/token-session.md). GitHub alone: [`token-session`](../../../modules/token-session.md) |
 | **Signed out**: messages waiting, the row reads `paused … (claude_signed_out)` | `claude auth status` must show `authMethod` `claude.ai` | Ask Alex to run `claude auth login` (his login). The pause lifts within 30 minutes; `bin/dispatcher install` restarts it at once |
 | **Usage pause**: the row reads `paused until T (usage_limit)` | The log's `paused until` line | Nothing: the messages were handed back without spending an attempt and are answered after T. After 3 such refunds a message spends attempts like any other, so a long outage can dead-letter it (re-queue below). If waiting until T is wrong, tell Alex; only he can raise the plan |
 | **Bootstrap failed: 5**: `bin/dispatcher install` (or the ship's refresh) printed `launchctl bootstrap failed: Bootstrap failed: 5: Input/output error`, and `bin/dispatcher status` reads `installed but not loaded` | Install already waited up to 100s for the old job to leave (`launchctl print gui/$(id -u)/studio.mcritchie.agent-dispatcher` fails once it has) and tried the bootstrap 3 times. The plist ends in a `<!-- bootstrap failed … -->` mark | The service is down and KeepAlive cannot revive a booted-out job. Run `bin/dispatcher install` from the hub checkout. The mark makes the next production ship's `install --if-changed` retry by itself, so nothing is stranded if nobody does |

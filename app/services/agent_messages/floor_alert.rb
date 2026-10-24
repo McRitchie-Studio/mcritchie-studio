@@ -23,6 +23,13 @@ module AgentMessages
   #                         card stays designed; it recovers when the build starts
   #                         or the card leaves designed.
   #
+  # One more floor-wide check reads the dispatcher's harness health, which
+  # bin/dispatcher measures on the Mac each beat and carries on its ping:
+  #
+  #   harness_degraded   the newest live primary's bounded `op whoami` or GitHub
+  #                      check has failed on AgentDispatcher::HARNESS_BEATS (5)
+  #                      consecutive measured beats
+  #
   # The nightly database-backup sweep (DbBackupSweep) opens and resolves its own
   # two kinds on the same table; this announce posts them too, with the sweep's
   # text, so a backup alert reaches the ops channel once, like these.
@@ -33,6 +40,16 @@ module AgentMessages
   # failed post is retried on the next run; with no bot token or no
   # ops_channel_id nothing is posted and one log line says so. A recovery is
   # posted only for an incident whose alert was posted.
+  #
+  # FLAPPING AND ESCALATION. Incidents of one kind (and subject) that reopen
+  # within an hour form an episode (AgentMailboxIncident, "EPISODES"). Once an
+  # episode has opened FLAP_COUNT (3) times within FLAP_WINDOW (1 hour), Discord
+  # gets ONE line, "flapping, N since HH:MM", instead of a line per flap, and one
+  # more when it has been quiet for QUIET. A person is told by email (#escalate,
+  # AgentFloorMailer, through the outbox to `floor.escalation_email`): ONE email
+  # when an incident has stayed open ESCALATE_AFTER (15 min) or its episode is
+  # flapping, and ONE when the episode has had nothing open for QUIET (15 min).
+  # The email does not depend on Discord being configured.
   class FloorAlert
     WAIT_LIMIT = 10.minutes
     UNCLAIMED_AFTER = 30.minutes
@@ -40,10 +57,24 @@ module AgentMessages
     # entry (on submit)"): claim it as Carl, then spawn one Carl subagent.
     HUB = "/Users/alex/projects/mcritchie-studio".freeze
     LOG = "[agent-dispatcher]".freeze
+    ESCALATE_AFTER = 15.minutes
+    QUIET = 15.minutes
+    ZONE = "America/Denver".freeze
+    # The name an incident goes by in a flapping line and an email subject.
+    LABELS = {
+      "dispatcher_silent" => "Agent dispatcher silent",
+      "message_waiting" => "Agent mailbox messages waiting",
+      "harness_degraded" => "Agent harness degraded (1Password or GitHub)",
+      "db_backup_missing" => "Database backup missing",
+      "db_backup_sweep_failed" => "Database backup sweep failed",
+      "submitted_unclaimed" => "Review not started",
+      "change_build_refused" => "Change build not started"
+    }.freeze
 
     Check = Struct.new(:kind, :failing, :detail, :subject, keyword_init: true)
 
-    def initialize(routes: Routes.load, bot: nil, logger: Rails.logger)
+    def initialize(routes: Routes.load, bot: nil, logger: Rails.logger, mailer: AgentFloorMailer)
+      @mailer = mailer
       @routes = routes
       @bot = bot
       @logger = logger
@@ -52,11 +83,12 @@ module AgentMessages
     # Returns the checks it ran, for the job's log and the tests.
     def call(now: Time.current)
       AgentDispatcher.prune!(now: now)
-      checks = [ dispatcher_check(now), waiting_check(now) ]
+      checks = [ dispatcher_check(now), waiting_check(now), harness_check(now) ]
       checks.each { |check| reconcile(check, now) }
       per_card = { "submitted_unclaimed" => unclaimed_checks(now), "change_build_refused" => refused_checks(now) }
       per_card.each { |kind, failing| reconcile_subjects(kind, failing, now) }
       announce(now)
+      escalate(now)
       checks + per_card.values.flatten
     end
 
@@ -102,7 +134,21 @@ module AgentMessages
       standby = failing ? AgentDispatcher.live_standbys(now: now).newest_first.first : nil
       Check.new(kind: "dispatcher_silent", failing: failing,
                 detail: { "last_ping_at" => last&.iso8601, "host" => newest&.host, "worker" => newest&.worker_id,
-                          "standby_host" => standby&.host }.compact)
+                          "standby_host" => standby&.host, "power" => newest&.power_source }.compact)
+    end
+
+    # The newest primary, while it is live, says op or gh has failed on
+    # HARNESS_BEATS consecutive measured beats. A silent dispatcher's harness is
+    # unknown, not degraded: dispatcher_silent covers it.
+    def harness_check(now)
+      row = AgentDispatcher.primaries.newest_first.first
+      failing = !row.nil? && row.live?(now: now) && row.harness_degraded?
+      return Check.new(kind: "harness_degraded", failing: false, detail: {}) unless failing
+
+      Check.new(kind: "harness_degraded", failing: true,
+                detail: { "host" => row.host, "op_ok" => row.op_ok, "gh_ok" => row.gh_ok,
+                          "beats" => row.harness_failing_beats, "power" => row.power_source,
+                          "checked_at" => row.harness_checked_at&.iso8601 }.compact)
     end
 
     def waiting_check(now)
@@ -129,7 +175,13 @@ module AgentMessages
         "Agent dispatcher silent: no ping from bin/dispatcher#{d['host'] ? " on #{d['host']}" : ''} for " \
           "#{minutes_since(d['last_ping_at'], now)} min. " \
           "#{d['standby_host'] ? "The standby on #{d['standby_host']} is answering its domains; the rest wait" : 'Routed Discord messages wait'} " \
-          "until it is back. Steffon: SOP agent-dispatcher."
+          "until it is back.#{d['power'] == 'battery' ? ' Its last ping said the Mac was on battery.' : ''} " \
+          "Steffon: SOP agent-dispatcher."
+      when "harness_degraded"
+        failing = [ ("1Password (`op whoami`)" if d["op_ok"] == false), ("GitHub" if d["gh_ok"] == false) ].compact
+        "Agent harness degraded on #{d['host'] || 'the Mac'}: #{failing.join(' and ').presence || 'a check'} failing " \
+          "on #{d['beats']} beats in a row (each bounded at 20 s). Agents cannot read secrets or reach GitHub " \
+          "until it is fixed; try `OP_CACHE=false op whoami`, then restart 1Password. Steffon: SOP agent-dispatcher."
       when "message_waiting"
         pause = d["paused_until"] ? " The dispatcher is paused until #{d['paused_until']} (#{d['pause_reason'] || 'paused'})." : ""
         "Agent mailbox: #{d['count']} routed message(s) waiting over #{WAIT_LIMIT.inspect}; oldest is ##{d['oldest_id']} " \
@@ -151,6 +203,7 @@ module AgentMessages
       lasted = ((incident.resolved_at || now) - incident.opened_at).div(60).to_i
       case incident.kind
       when "dispatcher_silent" then "Agent dispatcher back: pinging again (incident lasted #{lasted} min)."
+      when "harness_degraded" then "Agent harness healthy: 1Password and GitHub checks pass again (incident lasted #{lasted} min)."
       when "message_waiting" then "Agent mailbox clear: no routed message has waited over #{WAIT_LIMIT.inspect} (incident lasted #{lasted} min)."
       when "submitted_unclaimed"
         "`#{incident.subject}` no longer waits for review: a review claim appeared or it left submitted (incident lasted #{lasted} min)."
@@ -159,6 +212,27 @@ module AgentMessages
       else DbBackupSweep.recovery_text(incident, lasted)
       end
     end
+
+    # The flapping line: one per episode, in place of a line per flap.
+    def self.flap_text(root, now: Time.current)
+      opens = root.flaps(now: now)
+      first = root.episode.where(opened_at: (now - AgentMailboxIncident::FLAP_WINDOW)..).minimum(:opened_at)
+      "#{label(root)}: flapping, #{opens} since #{clock(first || root.opened_at)}. One line per flap is held " \
+        "until it is quiet for #{QUIET.inspect}; Alex is emailed once. Steffon: SOP agent-dispatcher."
+    end
+
+    def self.final_text(root, now: Time.current)
+      lasted = ((now - root.opened_at) / 60).floor
+      "#{label(root)}: steady again, nothing open for #{QUIET.inspect} after #{root.episode.count} openings " \
+        "since #{clock(root.opened_at)} (#{lasted} min in all)."
+    end
+
+    def self.label(incident)
+      base = LABELS.fetch(incident.kind, incident.kind)
+      incident.subject.present? ? "#{base} `#{incident.subject}`" : base
+    end
+
+    def self.clock(time) = time.in_time_zone(ZONE).strftime("%H:%M %Z")
 
     def self.minutes_since(iso, now)
       iso.present? ? ((now - Time.zone.parse(iso)) / 60).floor : "?"
@@ -206,20 +280,104 @@ module AgentMessages
       pending_alerts = AgentMailboxIncident.unresolved.where(alert_posted_at: nil).order(:id).to_a
       pending_recoveries = AgentMailboxIncident.where.not(resolved_at: nil).where.not(alert_posted_at: nil)
                                                .where(recovery_posted_at: nil).order(:id).to_a
-      return if pending_alerts.empty? && pending_recoveries.empty?
+      finals = pending_finals
+      return if pending_alerts.empty? && pending_recoveries.empty? && finals.empty?
 
       reason = idle_reason
       if reason
-        @logger.info("#{LOG} floor alert not posted (#{reason}): #{(pending_alerts + pending_recoveries).map(&:kind).join(', ')}")
+        @logger.info("#{LOG} floor alert not posted (#{reason}): #{(pending_alerts + pending_recoveries + finals).map(&:kind).join(', ')}")
         return
       end
 
       pending_alerts.each do |incident|
-        post(incident, self.class.alert_text(incident, now: now), "a") && incident.update!(alert_posted_at: now)
+        root = incident.root
+        if root.flap_posted_at || incident.flapping?(now: now)
+          announce_flap(incident, root, now)
+        else
+          post(incident, self.class.alert_text(incident, now: now), "a") && incident.update!(alert_posted_at: now)
+        end
       end
       pending_recoveries.each do |incident|
+        # A flap inside a flapping episode: the flapping line covered it.
+        next incident.update!(recovery_posted_at: now) if incident.root.flap_posted_at
+
         post(incident, self.class.recovery_text(incident, now: now), "r") && incident.update!(recovery_posted_at: now)
       end
+      finals.each do |root|
+        post(root, self.class.final_text(root, now: now), "fr") && root.update!(final_posted_at: now)
+      end
+    end
+
+    # The first flap past FLAP_COUNT posts the flapping line on the root; every
+    # later flap of the episode is covered by it and posts nothing.
+    def announce_flap(incident, root, now)
+      if root.flap_posted_at.nil?
+        return unless post(root, self.class.flap_text(root, now: now), "f")
+
+        root.update!(flap_posted_at: now)
+      end
+      incident.reload.update!(alert_posted_at: now)
+    end
+
+    def pending_finals
+      AgentMailboxIncident.roots.where.not(flap_posted_at: nil).where.not(final_recovery_at: nil)
+                          .where(final_posted_at: nil).order(:id).to_a
+    end
+
+    # ESCALATION TO A PERSON: ONE email per episode when it escalates, ONE when
+    # it is finally quiet, each stamped on the root under its row lock so two
+    # overlapping runs cannot both send. A failed send stamps nothing and is
+    # tried again next run. Runs whether or not Discord is configured. Floor-wide
+    # kinds only: a per-card kind (SUBJECT_KINDS) is one card's wait, which its
+    # Discord line covers, not a person's page.
+    def escalate(now)
+      window = now - AgentMailboxIncident::FLAP_WINDOW
+      recent = AgentMailboxIncident.where(subject: nil).where("resolved_at IS NULL OR opened_at >= ?", window)
+                                   .map(&:root_id).uniq
+      AgentMailboxIncident.where(id: recent, escalated_at: nil, final_recovery_at: nil).order(:id).each do |root|
+        reason = escalation_reason(root, now)
+        next unless reason
+
+        send_once(root, :escalated_at, now) { deliver(:escalated, root.id, reason) }
+      end
+      AgentMailboxIncident.roots.where(final_recovery_at: nil)
+                          .where("escalated_at IS NOT NULL OR flap_posted_at IS NOT NULL").order(:id).each do |root|
+        next unless quiet?(root, now)
+
+        send_once(root, :final_recovery_at, now) { root.escalated_at ? deliver(:recovered, root.id) : true }
+      end
+    end
+
+    def escalation_reason(root, now)
+      return "flapping" if root.flapping?(now: now)
+
+      open = root.episode.unresolved.first
+      "open" if open && open.opened_at <= now - ESCALATE_AFTER
+    end
+
+    def quiet?(root, now)
+      episode = root.episode
+      return false if episode.unresolved.exists?
+
+      last = episode.maximum(:resolved_at)
+      !last.nil? && last <= now - QUIET
+    end
+
+    def send_once(root, stamp, now)
+      root.with_lock do
+        next if root.public_send(stamp)
+
+        root.update!(stamp => now) if yield
+      end
+    rescue StandardError => e
+      @logger.warn("#{LOG} floor email for incident #{root.id} not sent (#{e.class}); tried again next run")
+      ErrorLog.capture!(e)
+    end
+
+    def deliver(action, *args)
+      Studio::Email.deliver(@mailer, action, *args, @routes.ops_email, to: @routes.ops_email)
+      @logger.info("#{LOG} floor email #{action}: #{args.first} to the ops address")
+      true
     end
 
     def idle_reason

@@ -120,6 +120,21 @@ class Admin::AgentMessagesControllerTest < ActionDispatch::IntegrationTest
     assert_select ".am-dispatcher[data-live=true] [data-test='dispatcher-role']", "standby · mcritchie_studio"
   end
 
+  test "the dispatcher row shows the Mac's harness health and power, only once measured" do
+    log_in_as(admin)
+    AgentDispatcher.ping!({ "worker" => "dispatcher-alex-mac-1-abc", "souls" => %w[ray] })
+    get admin_agent_messages_path
+    assert_select "[data-test='dispatcher-harness']", 0, "no measurement, no chip"
+
+    2.times do |i|
+      AgentDispatcher.ping!({ "worker" => "dispatcher-alex-mac-1-abc", "op_ok" => false, "gh_ok" => true,
+                              "power" => "battery", "harness_measured_at" => (Time.current - (2 - i).minutes).iso8601 })
+    end
+    get admin_agent_messages_path
+    assert_select "[data-test='dispatcher-harness'].am-status-dead", /op failing · gh ok · 2 bad beat\(s\)/
+    assert_select "[data-test='dispatcher-power']", "on battery"
+  end
+
   test "an email row shows its sender and whether the sender was verified" do
     AgentPerson.seed_owner!
     verified = AgentMessages::EmailIngest.new.call(agent_email)

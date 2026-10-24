@@ -111,7 +111,9 @@ when "run"
     client: AgentMailbox::Client.new(api: AgentApi.new(open_timeout: 5, read_timeout: 40)),
     souls: souls, channel: channel, cap: cap, worker: parsed.values["--worker"].last, claude_cmd: claude_cmd,
     # Taken here, after every require, so the digest covers all the code it runs.
-    fingerprint: AgentMailbox::CodeFingerprint.for_process(entry: __FILE__)
+    fingerprint: AgentMailbox::CodeFingerprint.for_process(entry: __FILE__),
+    # op, gh and power on each beat, carried on the ping (AgentMailbox::HarnessProbe).
+    harness_probe: AgentMailbox::HarnessProbe.new(repo_root: AgentMailbox::REPO_ROOT)
   )
   %w[TERM INT].each { |sig| Signal.trap(sig) { dispatcher.stop! } }
   dispatcher.run

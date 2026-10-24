@@ -4,6 +4,7 @@ require "English"
 require "time"
 require "fileutils"
 require_relative "projects_root"
+require_relative "bounded_command"
 
 # THE SANDBOX GUARD IS OPTIONAL AT LOAD TIME, and that is a hard requirement
 # rather than defensiveness. This file lives in bin/lib but the guard lives in
@@ -106,6 +107,12 @@ module OpMeter
 
   STORE = "op-reads"
 
+  # The bound on one `op` attempt, and the bypass its single retry uses. See #popen.
+  DEFAULT_DEADLINE = 20
+  DEADLINE_ENV = "MCR_OP_DEADLINE"
+  CACHE_BYPASS = { "OP_CACHE" => "false" }.freeze
+  TIMEOUT = "timeout"
+
   # The env vars that can LOCATE this log — mirrored in TaskUsageSandbox::STORES.
   # Either one is enough to steer the path off the operator's real root, which is
   # all rule 1 defends.
@@ -129,7 +136,8 @@ module OpMeter
   # +action+  the op subcommand as invoked — "read", "item get", "vault list",
   #           "whoami", "signin". Recorded as given so the log answers "which KIND
   #           of call", which is the axis that maps onto the quota.
-  # +outcome+ "ok" or "fail:<status>".
+  # +outcome+ "ok", "fail:<status>", or "timeout" (the attempt ran out of its
+  #           deadline and was killed; see #popen).
   # +via+     the library seam that made the call (agent_api, task_board,
   #           gh-token). The CALLER is taken from $PROGRAM_NAME, so a read made by
   #           bin/lib/agent_api.rb on behalf of bin/task is attributed to `task` —
@@ -149,10 +157,28 @@ module OpMeter
   #
   # Mirrors IO.popen(env, argv, **opts, &:read) — the exact shape all three Ruby
   # call sites already used — and returns the child's stdout unchanged.
+  #
+  # BOUNDED (2026-10-24). Each attempt gets DEADLINE seconds (BoundedCommand:
+  # spawn, waitpid with WNOHANG, then SIGKILL). An attempt that runs out is
+  # recorded as `timeout` and retried ONCE with OP_CACHE=false, which skips the
+  # 1Password cache daemon: on 2026-10-21 that daemon never became ready after a
+  # reboot, every read waited about fifteen minutes, and `op --cache=false`
+  # answered at once. The retry is recorded too (`ok` or `fail:<n>`, or a second
+  # `timeout`), so bin/op-reads shows the pair. A timed-out attempt costs no
+  # quota: the read never reached the server. Every caller (bin/gh-token,
+  # task_board, agent_api, chrome_profiles, x-post) picks this up unchanged:
+  # `$?` after the call is the last attempt's status, a killed one on a double
+  # timeout, which no caller reads as success.
   def popen(op_env, argv, via:, env: ENV, **opts)
-    out = IO.popen(op_env, argv, **opts, &:read).to_s
-    record(action: action_for(argv), outcome: outcome_for($CHILD_STATUS), via: via, env: env)
-    out
+    action = action_for(argv)
+    limit = deadline(env)
+    result = BoundedCommand.run(op_env, argv, deadline: limit, **opts)
+    if result.timed_out?
+      record(action: action, outcome: TIMEOUT, via: via, env: env)
+      result = BoundedCommand.run((op_env || {}).merge(CACHE_BYPASS), argv, deadline: limit, **opts)
+    end
+    record(action: action, outcome: result.timed_out? ? TIMEOUT : outcome_for(result.status), via: via, env: env)
+    result.out.to_s
   rescue SystemCallError => e
     # `op` is ABSENT or unexecutable, so NO quota was spent — but the ATTEMPT is
     # still the thing attribution is about, and a run that shows nothing at all
@@ -162,6 +188,13 @@ module OpMeter
     # log with two vocabularies is a log nobody can total.
     record(action: action_for(argv), outcome: spawn_failure(e), via: via, env: env)
     raise
+  end
+
+  # Seconds per attempt: MCR_OP_DEADLINE when it is a positive number (the tests
+  # shorten it), else DEFAULT_DEADLINE. The bash half reads the same variable.
+  def deadline(env = ENV)
+    value = Float(env[DEADLINE_ENV].to_s, exception: false)
+    value&.positive? ? value : DEFAULT_DEADLINE
   end
 
   # Re-raising above is load-bearing: every caller already has a rescue and a

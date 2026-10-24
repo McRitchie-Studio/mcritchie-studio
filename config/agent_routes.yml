@@ -97,6 +97,12 @@ discord:
 # mailbox on another domain), so it is reached by name and replies from team@.
 # `agent_addresses` are the fleet's own: mail FROM any of them, the aliases or
 # team@ is never answered (no CTO answers a CTO, and no reply answers itself).
+# The floor alert's escalation to a person (AgentMessages::FloorAlert#escalate):
+# ONE email when an incident has stayed open 15 minutes or flapped three times in
+# an hour, and one on its final recovery, through the hub's outbox
+# (Studio::Email.deliver). Absent, it goes to alex@mcritchie.studio.
+floor:
+  escalation_email: alex@mcritchie.studio
 email:
   team_address: team@mcritchie.studio
   # Mail From these domains (or their subdomains) is verified only when every
