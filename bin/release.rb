@@ -101,6 +101,8 @@
 #     ff main → release branch per repo, push origin (stamping each repo's members
 #     `merged: "main"` — assembled+main = prod-in-flight), deploy to Heroku, smoke
 #     /up, run any member's post_deploy_cmd on the PROD app (aborts on non-zero),
+#     re-lock every live engine app the release did not carry to the final on its
+#     `accepted` (in parallel, best-effort),
 #     stamp deployed_sha + flip to shipped (shipped+main = done).
 #
 #   bin/release rollback [<release>] [--mode ask|auto] [--by NAME] [--dry-run] [--yes]
@@ -175,6 +177,8 @@ require_relative "../app/models/release/lock_drift"
 require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/devnet_gauntlet"
 require_relative "../app/models/release/engine_migration_install"
+require_relative "../app/models/release/engine_consumers"
+require_relative "../lib/app_catalog"
 require_relative "../app/models/release/post_deploy"
 require_relative "../app/models/release/merge_plan"
 # SweepPlan is the pure per-task sweep partition (record onto the RC / held anomaly)
@@ -7295,6 +7299,135 @@ rescue SystemExit, StandardError => e
       "#{published_gems.keys.join(' ')}` on the named gem repo's `#{ACCEPTED_BRANCH}`.")
 end
 
+# RE-LOCK EVERY ENGINE APP THIS RELEASE DID NOT CARRY, to the FINAL, on its
+# `accepted`. The swept apps were locked to the candidate at prepare and re-locked
+# to the final above (repin_consumers); an engine app with no card in the release
+# was in neither loop, so before this step it drifted one release further behind
+# on every publish (moms-app 14 behind and rantly 34 on 2026-10-24).
+#
+# THE TWO-STEP STAYS WHERE IT WAS. A cardless app never sees a candidate: nothing
+# QA's it in this release and nothing would finalize a candidate on its branch
+# (refuse_stray_candidates! would refuse the next sweep that carried it). It gets
+# the final only, after production is deployed, exactly like a producer's lock
+# (settle_producer_locks). It does not deploy: the commit waits on `accepted` for
+# the next release that carries the app.
+#
+# EACH THROUGH ITS OWN CI: the push to `accepted` triggers the app's CI on the lock
+# commit, as any merge there does. The ship does not wait on those runs; production
+# is already deployed and none of these apps deploys now.
+#
+# IN PARALLEL: each app has its own ship workspace, lock file and throwaway
+# database, and every command runs as a child process with its own chdir, so the
+# apps do not share state. A failure in one is reported and the others carry on.
+#
+# Best-effort, like settle_producer_locks: nothing here may stop a ship that has
+# deployed. The set is Release::EngineConsumers.cardless.
+def relock_cardless_consumers(app_groups, published_gems)
+  return if published_gems.empty?
+
+  swept = app_groups.map { |group| group["repo"] }
+  repos = Release::EngineConsumers.cardless(RELEASE_REPOS, AppCatalog.apps, swept)
+  if repos.empty?
+    say("  cardless engine apps: none — every live engine app rode this release")
+    return
+  end
+
+  step("re-lock the engine apps this release did not carry (#{repos.join(', ')}) to " \
+       "#{published_gems.map { |g, v| "#{g} #{v}" }.join(', ')} on origin/#{ACCEPTED_BRANCH}, in parallel — " \
+       "the final only, never a candidate; each push runs that app's CI")
+
+  if DRY
+    repos.each do |repo|
+      step("  #{repo}: bundle lock --update <gem> --conservative in the ship workspace @ origin/#{ACCEPTED_BRANCH} " \
+           "→ install any new engine migrations → commit + push origin #{ACCEPTED_BRANCH} " \
+           "(idempotent; no-op when current)")
+    end
+    return
+  end
+
+  results = repos.map do |repo|
+    Thread.new do
+      relock_cardless_consumer(repo, published_gems)
+    rescue SystemExit, StandardError => e
+      [:failed, "#{repo}: #{e.message.to_s[0, 300]}"]
+    end
+  end.map(&:value)
+
+  results.each do |outcome, line|
+    case outcome
+    when :pushed then (@ship_live ||= []) << line
+    when :failed
+      say("  ⚠ cardless re-lock not settled — #{line}. The ship continues; run `bundle lock --update " \
+          "#{published_gems.keys.join(' ')} --conservative` on that app's `#{ACCEPTED_BRANCH}`.")
+    end
+  end
+end
+
+# One cardless app's re-lock. Returns [outcome, line]: :pushed, :current, :skipped
+# or :failed. Never aborts the ship: an abort! inside raises SystemExit, which the
+# caller's thread turns into :failed.
+def relock_cardless_consumer(repo, published_gems)
+  path = repo_path(repo)
+  unless Dir.exist?(path)
+    return [:failed, "no checkout at #{path} — clone it as a sibling at the projects root"]
+  end
+
+  _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet", capture: true)
+  return [:failed, "git fetch failed — not bumping against a possibly-stale origin/#{ACCEPTED_BRANCH}"] unless fetched
+
+  out, ok = git_capture("-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}")
+  return [:failed, "could not resolve origin/#{ACCEPTED_BRANCH}"] unless ok
+  tip = out.strip
+
+  with_ship_workspace(repo) do
+    workspace = ship_workspace!(repo, tip)
+    ws_gemfile = File.join(workspace, "Gemfile")
+    return [:skipped, "#{repo}: no Gemfile"] unless File.exist?(ws_gemfile)
+
+    text = File.read(ws_gemfile)
+    touched = published_gems.keys.select do |gem_name|
+      Release::ShipSequence.consumer_bump_action(text, gem_name, published_gems[gem_name]) != :absent
+    end
+    if touched.empty?
+      say("  #{repo}: Gemfile does not declare #{published_gems.keys.join(', ')} — no lock bump")
+      return [:skipped, "#{repo}: declares none of #{published_gems.keys.join(', ')}"]
+    end
+
+    expected = text.dup
+    touched.each { |gem_name| expected = Release::ShipSequence.locked_gemfile(expected, gem_name, published_gems[gem_name]) }
+    File.write(ws_gemfile, expected) if expected != text
+
+    # Asserted, not inferred: the same read-back every other lock bump does.
+    touched.each do |gem_name|
+      bundle_lock(workspace, gem_name, conservative: true, expect: published_gems[gem_name])
+    end
+    # A consumer's engine migrations ride the commit that bumps its lock.
+    install_engine_migrations!(workspace, repo, touched)
+
+    status, = git_capture("-C", workspace, "status", "--porcelain", "--",
+                          "Gemfile", "Gemfile.lock", "db/migrate", "db/schema.rb")
+    bumps = touched.map { |g| "#{g} #{published_gems[g]}" }
+    if status.to_s.strip.empty?
+      say("  #{repo}: lock verified at #{bumps.join(', ')} — nothing to commit")
+      return [:current, "#{repo}: already at #{bumps.join(', ')}"]
+    end
+
+    sh("git", "-C", workspace, "add", "Gemfile", "Gemfile.lock")
+    %w[db/migrate db/schema.rb].each do |path_spec|
+      sh("git", "-C", workspace, "add", "--", path_spec) if File.exist?(File.join(workspace, path_spec))
+    end
+    _, committed = sh("git", "-C", workspace, "commit", "-m", "bump #{bumps.join(', ')}", capture: true)
+    return [:failed, "#{repo}: could not commit the lock bump in its ship workspace"] unless committed
+
+    # Fast-forward-checked, no --force: an `accepted` that moved mid-ship refuses.
+    _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
+    return [:failed, "#{repo}: could not push the lock bump to origin/#{ACCEPTED_BRANCH} (did it move?)"] unless pushed
+
+    step("  #{repo}: committed #{bumps.join(', ')} onto origin/#{ACCEPTED_BRANCH} — its CI runs on the push")
+    [:pushed, "#{repo}: cardless lock bump #{bumps.join(', ')} committed + pushed to origin/#{ACCEPTED_BRANCH}"]
+  end
+end
+
 # The last read before the deploy loop, on the exact SHAs it is about to deploy.
 # By here every candidate has been re-locked to its final, so a prerelease in a
 # lock means a step above did not do what it reported, or the tree came from
@@ -9087,6 +9220,10 @@ def ship
   #     lock moves to the FINAL here, on its `accepted`; never to a candidate.
   #     Best-effort: production is already deployed.
   settle_producer_locks(published_gems)
+
+  # 5e. Every live engine app this release did NOT carry moves to the final on its
+  #     own `accepted`, in parallel; each push runs that app's CI. Best-effort.
+  relock_cardless_consumers(app_groups, published_gems)
 
   # G4 verdict: every repo deployed, /up green, post-deploy hooks green — the
   # gate PASSED. The seal is G4's non-blocking closing beat: its result already

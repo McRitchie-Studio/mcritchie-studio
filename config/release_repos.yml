@@ -8,6 +8,9 @@
 # pre-QA gate and any QA deploy, then commits each consumer app's lock bump onto
 # origin/release. `bin/release ship` re-verifies each gem (already live: skip)
 # before the apps deploy, so an app always builds against the published version.
+# After the deploy, the ship re-locks every live engine app the release did NOT
+# carry (config/apps.yml engine: true) to the final on its `accepted`
+# (Release::EngineConsumers, bin/release.rb#relock_cardless_consumers).
 #
 # A GEM IS A CONSUMER TOO: studio-engine depends on solana-studio. The consumer
 # bump walks `apps` only, so bump_producer_locks_for_accepted bumps the gems'
@@ -382,8 +385,10 @@ apps:
     # QA decision and how to leave the profile: config/app_profiles.yml and the
     # app-deploy-standard SOP. To change it, edit it by hand; repos_test.rb
     # fails if this entry drifts from the profile.
-    # Consumes studio-engine: a release that publishes the engine bumps this app's
-    # lock to the published version (bin/release.rb#bump_consumer_locks_for_qa).
+    # Consumes studio-engine (config/apps.yml engine: true): a release that publishes
+    # the engine bumps this app's lock to the published version, through
+    # bin/release.rb#bump_consumer_locks_for_qa when the release carries the app and
+    # bin/release.rb#relock_cardless_consumers (the final, on accepted) when it does not.
     profile: standalone-heroku
     ladder: three-rung
     prod_deploy:
