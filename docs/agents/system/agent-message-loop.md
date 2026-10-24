@@ -281,7 +281,10 @@ playbook: [`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md).
 posts to `discord.ops_channel_id` (`lobster-tank` today), pinging nobody, ONCE per
 incident when no dispatcher has pinged for 5 minutes (never before the first
 ping) or a routed message has waited `received` for 10, and once more when it
-clears. Without the bot token it logs a line and posts nothing.
+clears. Two more checks are per card: a `submitted` card with a green DoR and no
+review claim for 30 minutes (`submitted_unclaimed`, naming the review launch
+line), and a chat-sourced change card the build launcher could not start
+(`change_build_refused`). Without the bot token it logs a line and posts nothing.
 
 **Reports.** The same bot also posts scheduled reports (the CTO daily
 application report first) into a channel Alex picks per report at
@@ -601,7 +604,7 @@ board and the worker read one file the same way). Each domain names its `soul`
 |------|---------|-------------------|
 | `ask` | Avi: `board_status` (stage counts), `recently_shipped` (`days` 1-30), `release_status` (the active release, its stage and member count, the submitted/reviewed/assembled counts, the last ship; read in process, no Heroku). Turf: `signups_and_errors` (`days` 1-7) | A named method in `AgentProposals::Queries`: code with bounded params, never model-written SQL. Turf's reads Turf Monster's engine health endpoint once per daily window (`DailyAppReport.health_for`, the daily app report's own path), never its database |
 | `operate` | empty | Phase 2 (a confirmed SOP, headless in a desk) |
-| `change` | both domains (`repo`, `default_shape`) | A `designed` board task (title, kind, shape, accept, test, risk) with the Discord link in `devops.source_thread`. A session still starts the builder |
+| `change` | both domains (`repo`, `default_shape`) | A `designed` board task (title, kind, shape, accept, test, risk) with the thread's link in `devops.source_thread`. A web-chat card on a studio or product app is started by the build launcher on Alex's Mac: it runs `bin/task begin` (desk, claim, Avi's scout), posts "Building started, task `<slug>`" in the thread, and posts the builder launch line to the ops channel ([client-build-launcher.md](client-build-launcher.md#change-cards)). A Discord or email card waits for a session |
 
 Only the front door has a catalog. Ritch (and every other studio soul) maps to the
 studio domain for its DOMAIN layer and proposes nothing. An `internal: true` domain (Commercial Welding) has no

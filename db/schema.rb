@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -239,9 +239,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_180000) do
     t.datetime "opened_at", null: false
     t.datetime "recovery_posted_at"
     t.datetime "resolved_at"
+    t.string "subject"
     t.datetime "updated_at", null: false
-    t.index ["kind"], name: "index_agent_mailbox_incidents_one_open_per_kind", unique: true, where: "(resolved_at IS NULL)"
-    t.check_constraint "kind::text = ANY (ARRAY['dispatcher_silent'::character varying::text, 'message_waiting'::character varying::text, 'db_backup_missing'::character varying::text, 'db_backup_sweep_failed'::character varying::text])", name: "agent_mailbox_incidents_kind_known"
+    t.index ["kind", "subject"], name: "index_agent_mailbox_incidents_one_open_per_subject", unique: true, where: "((resolved_at IS NULL) AND (subject IS NOT NULL))"
+    t.index ["kind"], name: "index_agent_mailbox_incidents_one_open_per_kind", unique: true, where: "((resolved_at IS NULL) AND (subject IS NULL))"
+    t.check_constraint "kind::text = ANY (ARRAY['dispatcher_silent'::character varying::text, 'message_waiting'::character varying::text, 'db_backup_missing'::character varying::text, 'db_backup_sweep_failed'::character varying::text, 'submitted_unclaimed'::character varying::text, 'change_build_refused'::character varying::text])", name: "agent_mailbox_incidents_kind_known"
   end
 
   create_table "agent_message_cursors", force: :cascade do |t|

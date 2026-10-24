@@ -1,12 +1,27 @@
 module AgentMessages
   # The floor under bin/dispatcher (docs/agents/agents/steffon/sops/agent-dispatcher.md):
-  # two deterministic checks, run every minute by AgentDispatcherAlertJob, each
-  # announced in Discord ONCE per incident and once more when it clears.
+  # deterministic checks, run every minute by AgentDispatcherAlertJob, each
+  # announced in Discord ONCE per incident and once more when it clears. Two are
+  # floor-wide:
   #
   #   dispatcher_silent  a dispatcher has pinged before, and none has for
   #                      AgentDispatcher::SILENT_AFTER (5 min). Never-installed is
   #                      not an outage: before the first ping this check is quiet.
   #   message_waiting    a routed message has sat `received` for WAIT_LIMIT (10 min)
+  #
+  # Two more checks are PER CARD: each failing task opens its own incident, named
+  # by its slug (AgentMailboxIncident#subject), and resolves on its own.
+  #
+  #   submitted_unclaimed   a `submitted` card, not blocked, whose builder DoR
+  #                         (GateRun "dor") is green, and that has had no review
+  #                         claim (TaskReviewClaim) for UNCLAIMED_AFTER (30 min).
+  #                         The alert names the review launch line (SOP pr-review,
+  #                         single-task entry); it recovers when a claim appears or
+  #                         the card leaves submitted.
+  #   change_build_refused  the build launcher could not start a chat-sourced
+  #                         change card (ChangeBuilds: bin/task begin refused). The
+  #                         card stays designed; it recovers when the build starts
+  #                         or the card leaves designed.
   #
   # The nightly database-backup sweep (DbBackupSweep) opens and resolves its own
   # two kinds on the same table; this announce posts them too, with the sweep's
@@ -20,9 +35,13 @@ module AgentMessages
   # posted only for an incident whose alert was posted.
   class FloorAlert
     WAIT_LIMIT = 10.minutes
+    UNCLAIMED_AFTER = 30.minutes
+    # What a reader runs to start the review of one card (pr-review.md, "Single-task
+    # entry (on submit)"): claim it as Carl, then spawn one Carl subagent.
+    HUB = "/Users/alex/projects/mcritchie-studio".freeze
     LOG = "[agent-dispatcher]".freeze
 
-    Check = Struct.new(:kind, :failing, :detail, keyword_init: true)
+    Check = Struct.new(:kind, :failing, :detail, :subject, keyword_init: true)
 
     def initialize(routes: Routes.load, bot: nil, logger: Rails.logger)
       @routes = routes
@@ -35,8 +54,43 @@ module AgentMessages
       AgentDispatcher.prune!(now: now)
       checks = [ dispatcher_check(now), waiting_check(now) ]
       checks.each { |check| reconcile(check, now) }
+      per_card = { "submitted_unclaimed" => unclaimed_checks(now), "change_build_refused" => refused_checks(now) }
+      per_card.each { |kind, failing| reconcile_subjects(kind, failing, now) }
       announce(now)
-      checks
+      checks + per_card.values.flatten
+    end
+
+    # One failing Check per submitted card nobody has started reviewing.
+    def unclaimed_checks(now)
+      cutoff = now - UNCLAIMED_AFTER
+      tasks = Task.where(stage: "submitted", blocked_at: nil)
+                  .where("COALESCE(tasks.submitted_at, tasks.updated_at) <= ?", cutoff)
+                  .where("NOT EXISTS (SELECT 1 FROM task_review_claims trc WHERE trc.task_slug = tasks.slug " \
+                         "AND (trc.claim_expires_at > ? OR trc.acquired_at > ? OR trc.updated_at > ?))", now, cutoff, cutoff)
+                  .order(:submitted_at, :id).to_a
+      return [] if tasks.empty?
+
+      dor = GateRun.latest_by_key_for_subjects(subject_type: "task", subject_slugs: tasks.map(&:slug))
+      tasks.filter_map do |task|
+        run = dor.dig(task.slug, "dor")
+        next unless run && !run.in_flight? && run.success
+
+        Check.new(kind: "submitted_unclaimed", failing: true, subject: task.slug,
+                  detail: { "slug" => task.slug, "submitted_at" => (task.submitted_at || task.updated_at).iso8601,
+                            "pr_url" => task.pr_url.presence }.compact)
+      end
+    end
+
+    # One failing Check per chat-sourced change card the launcher could not start.
+    def refused_checks(now)
+      Task.where(stage: "designed")
+          .where("tasks.metadata->'devops'->'#{ChangeBuilds::KEY}'->>'refused_reason' IS NOT NULL").order(:id)
+          .map do |task|
+            run = ChangeBuilds.run_of(task)
+            Check.new(kind: "change_build_refused", failing: true, subject: task.slug,
+                      detail: { "slug" => task.slug, "reason" => run["refused_reason"].to_s[0, 300],
+                                "attempts" => run["attempts"].to_i, "max_attempts" => ChangeBuilds.max_attempts })
+          end
     end
 
     def dispatcher_check(now)
@@ -80,6 +134,15 @@ module AgentMessages
         pause = d["paused_until"] ? " The dispatcher is paused until #{d['paused_until']} (#{d['pause_reason'] || 'paused'})." : ""
         "Agent mailbox: #{d['count']} routed message(s) waiting over #{WAIT_LIMIT.inspect}; oldest is ##{d['oldest_id']} " \
           "for #{d['oldest_soul']}, #{minutes_since(d['oldest_at'], now)} min old.#{pause} Steffon: SOP agent-dispatcher."
+      when "submitted_unclaimed"
+        "Review not started: `#{d['slug']}` has sat submitted with a green DoR and no review claim for " \
+          "#{minutes_since(d['submitted_at'], now)} min.#{d['pr_url'] ? " #{d['pr_url']}" : ''} Start it: " \
+          "`cd #{HUB} && bin/task review-claim acquire #{d['slug']} --agent carl`, then one Carl subagent " \
+          "(SOP pr-review, single-task entry)."
+      when "change_build_refused"
+        "Change build not started: the launcher could not run bin/task begin for `#{d['slug']}` (#{d['reason']}). " \
+          "The card stays designed; attempt #{d['attempts']} of #{d['max_attempts']}. By hand: " \
+          "`cd #{HUB} && /Users/alex/projects/.agents/bin/task begin #{d['slug']} --agent pokemon`."
       else DbBackupSweep.alert_text(incident)
       end
     end
@@ -89,6 +152,10 @@ module AgentMessages
       case incident.kind
       when "dispatcher_silent" then "Agent dispatcher back: pinging again (incident lasted #{lasted} min)."
       when "message_waiting" then "Agent mailbox clear: no routed message has waited over #{WAIT_LIMIT.inspect} (incident lasted #{lasted} min)."
+      when "submitted_unclaimed"
+        "`#{incident.subject}` no longer waits for review: a review claim appeared or it left submitted (incident lasted #{lasted} min)."
+      when "change_build_refused"
+        "`#{incident.subject}` no longer waits for its build: it started or left designed (incident lasted #{lasted} min)."
       else DbBackupSweep.recovery_text(incident, lasted)
       end
     end
@@ -111,6 +178,28 @@ module AgentMessages
       end
     rescue ActiveRecord::RecordNotUnique
       nil # a concurrent run opened it first; that run announces it
+    end
+
+    # A per-card kind: open one incident per failing slug that has none, keep an
+    # open one's detail current, and resolve every open one whose card no longer fails.
+    def reconcile_subjects(kind, failing, now)
+      open = AgentMailboxIncident.unresolved.where(kind: kind).index_by(&:subject)
+      failing.each do |check|
+        if (incident = open.delete(check.subject))
+          incident.update!(detail: check.detail) if incident.detail != check.detail
+          next
+        end
+        begin
+          AgentMailboxIncident.create!(kind: kind, subject: check.subject, detail: check.detail, opened_at: now)
+          @logger.info("#{LOG} incident opened: #{kind} #{check.subject}")
+        rescue ActiveRecord::RecordNotUnique
+          nil # a concurrent run opened it first; that run announces it
+        end
+      end
+      open.each_value do |incident|
+        incident.update!(resolved_at: now)
+        @logger.info("#{LOG} incident resolved: #{kind} #{incident.subject}")
+      end
     end
 
     def announce(now)
@@ -141,7 +230,7 @@ module AgentMessages
     end
 
     def post(incident, text, suffix)
-      bot.post_message(@routes.ops_channel_id, content: text, nonce: "ami-#{incident.id}-#{suffix}")
+      bot.post_message(@routes.ops_channel_id, content: text[0, 1900], nonce: "ami-#{incident.id}-#{suffix}")
       true
     rescue DiscordBot::Error => e
       @logger.warn("#{LOG} floor alert post failed (#{e.class}); retried next run")

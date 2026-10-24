@@ -214,13 +214,17 @@ code; leave the primary on `main`.
 
 `AgentDispatcherAlertJob` runs every minute on the hub. Each check posts one
 alert when it starts failing and one line when it clears, never one a minute.
-The incident history is the `agent_mailbox_incidents` table.
+The incident history is the `agent_mailbox_incidents` table: one open row per kind
+for the floor-wide checks, and one open row per card (its slug in `subject`) for
+`submitted_unclaimed` and `change_build_refused`.
 
 | Alert | Means | Do |
 |-------|-------|----|
 | `Agent dispatcher silent: no ping from bin/dispatcher on <host> for N min` | No dispatcher has pinged for 5 minutes. Before the first install this never fires | Playbook: **Mac asleep** or **service down** |
 | `Agent mailbox: N routed message(s) waiting over 10 minutes; oldest is #id …` | A routed message has sat `received` for 10 minutes. If the text adds `paused until … (usage_limit)`, the dispatcher is waiting out a usage limit on purpose | Read the pause reason, then the matching row |
-| `Agent dispatcher back` / `Agent mailbox clear` | The incident is over | Nothing |
+| `Review not started: <slug> has sat submitted with a green DoR and no review claim for N min. … Start it: cd /Users/alex/projects/mcritchie-studio && bin/task review-claim acquire <slug> --agent carl, then one Carl subagent (SOP pr-review, single-task entry).` | `submitted_unclaimed`, one per card: the card is `submitted`, not blocked, its builder DoR (`GateRun` `dor`) passed, and no review claim has been live for 30 minutes. Its builder reported `submitted` and nobody launched the review | Run the line it names from a session: claim the card as Carl, then spawn one Carl subagent by [`pr-review`](../../carl/sops/pr-review.md#single-task-entry-on-submit). Exit 10 means a review is already running; nothing more to do |
+| `Change build not started: the launcher could not run bin/task begin for <slug> (<reason>). The card stays designed; attempt N of M. By hand: …` | `change_build_refused`, one per card: the build launcher could not start a chat-sourced change card ([client-build-launcher](../../../system/client-build-launcher.md#change-cards)). The launcher retries it every 10 minutes up to `max_attempts` | Read the reason (no free desk port, a preflight that could not describe the desk, a lane cap). Fix it, or run the `task begin` line it names by hand, then start the builder with the launch line that `bin/task show <slug> -v` carries in `devops.change_build` |
+| `Agent dispatcher back` / `Agent mailbox clear` / `<slug> no longer waits for review` / `<slug> no longer waits for its build` | The incident is over: for a card, a review claim appeared or it left `submitted`, or its build started or it left `designed` | Nothing |
 
 With no bot token or no `ops_channel_id`, nothing is posted and the worker logs
 `[agent-dispatcher] floor alert not posted (...)`.

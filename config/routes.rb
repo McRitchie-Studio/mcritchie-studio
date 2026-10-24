@@ -828,6 +828,13 @@ Rails.application.routes.draw do
           post :finish
         end
       end
+      # The same launcher starting chat-sourced change cards (ChangeBuilds).
+      resources :change_builds, only: [:index], param: :slug do
+        member do
+          post :claim
+          post :finish
+        end
+      end
       # bin/dispatcher's minute ping, read by the floor alert (AgentDispatcherAlertJob).
       resources :agent_dispatchers, only: [:index] do
         collection do

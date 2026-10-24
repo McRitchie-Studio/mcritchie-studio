@@ -8,8 +8,11 @@ module AgentProposals
   #           the thread recorded on it (devops.source_thread: the Discord thread,
   #           the email's admin page, or the app's web chat), and the files the
   #           proposal's message carried attached to the task as references to
-  #           the same blobs (Task#attachments). A session still starts the
-  #           builder (Phase 1).
+  #           the same blobs (Task#attachments). A web-chat card on a studio
+  #           or product app is then started by the build launcher on Alex's
+  #           Mac (ChangeBuilds: bin/task begin, the thread's "Building started"
+  #           line, the builder launch line to ops); any other card waits for a
+  #           session.
   #   operate not enabled in Phase 1: refused.
   #
   # Raises on any failure; AgentProposalJob logs it and leaves the proposal open.
