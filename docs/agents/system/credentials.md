@@ -88,7 +88,8 @@ Each agent has a dedicated Solana wallet. Credentials stored in 1Password. **202
 | Mack (retired 2026-10-24) | `foUuRyeibadQoGdKXZ9pBGDqmkb1jY1jYsu8dZ29nds` | Former agent wallet; its secret was committed to the public turf-monster repo. Off the devnet `VaultState`, swept, item archived |
 | Turf Monster admin (retired 2026-10-09) | `BLSBw8fXHzZc5pbaYCKMpMSsrtXBTbWXpUPVzMrXx9oo` | Former agent governance identity (`solana.turf.admin`, archived) |
 | Turf Monster system | `7auwTLSvNniSUeAgL6v9RStMXJhWrrUhSJgwFWLpcqC` | Server operational key, MAINNET (`solana.turf.system`) — **read the balance, do not quote one.** 0 SOL at 09:12 on 2026-09-15, funded at 09:20 that morning; `1000000000` lamports (1.0000 SOL) at `finalized` later the same day. The cutover judges whether that is sufficient for **sustained fee payment**, not merely non-zero |
-| Turf Monster system (devnet) | `2eGs8G3wzhEeNQQU2Q86BmmA2xTpDbMMae3Y1bvpZfx9` | Server operational key, devnet/QA (`solana.turf.system.devnet`) |
+| Turf Monster system (devnet) | `2eGs8G3wzhEeNQQU2Q86BmmA2xTpDbMMae3Y1bvpZfx9` | Server operational key, devnet/QA (`solana.turf.system.devnet`): turf-monster-qa's `SOLANA_ADMIN_KEY` and devnet `VaultState` slot 1 (read 2026-10-24) |
+| Alex's personal Turf wallet | `DKbvUsinni745s326a7xesEYCTcxSXv47xW79M1Z7E7r` | His own money, in no signer set. Misfiled in `studio-agents` as `solana.turf.alex`; his move to a private vault is owed. turf-monster's rehearsal fences it |
 
 ### 1Password CLI Access
 
