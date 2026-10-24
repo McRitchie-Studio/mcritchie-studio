@@ -1,4 +1,5 @@
 require "test_helper"
+require Rails.root.join("lib/middleware/edge_guard")
 
 # [unit] [integration] WHOSE ADDRESS A REQUEST IS COUNTED AGAINST
 # (config/initializers/forwarded_headers.rb).
@@ -104,6 +105,84 @@ class ClientIpSpoofTest < ActionDispatch::IntegrationTest
     assert_equal "mcritchie.studio", ActionDispatch::Request.new(env).host
     assert_equal "https", ActionDispatch::Request.new(env).scheme
     assert_equal "mcritchie.studio", Rack::Request.new(env).host
+  end
+
+  # --- behind an armed EdgeGuard (Cloudflare in front) ----------------------------------
+  # Production shape once the hub is proxied: router's private REMOTE_ADDR, Cloudflare's
+  # edge address appended rightmost by the router, the visitor in CF-Connecting-IP.
+  EDGE_SECRET = "edge-secret-for-tests".freeze
+  CF_EDGE = "162.158.4.4".freeze # inside 162.158.0.0/15
+  STRANGER = "192.0.2.77".freeze
+
+  def behind_guard(env)
+    seen = {}
+    inner = lambda do |e|
+      seen[:remote_ip] = ActionDispatch::Request.new(e).remote_ip
+      seen[:rack_ip] = Rack::Attack::Request.new(e).ip
+      seen[:env] = e
+      [200, {}, []]
+    end
+    app = EdgeGuard.new(ActionDispatch::RemoteIp.new(inner), secret: EDGE_SECRET)
+    status, = app.call(env)
+    [status, seen]
+  end
+
+  # A spoof's own X-Forwarded-For is what the client SENT: Cloudflare keeps it and the
+  # router appends the edge address to its right, so it never replaces the chain.
+  def cloudflare_env(path, method: "POST", edge: CF_EDGE, client: CLIENT, left: nil, **headers)
+    sent = headers.delete("HTTP_X_FORWARDED_FOR")
+    chain = [sent || [left, client].compact.join(", "), edge].join(", ")
+    Rack::MockRequest.env_for(path, method: method, "REMOTE_ADDR" => ROUTER, "HTTP_X_FORWARDED_FOR" => chain,
+                                    "HTTP_CF_CONNECTING_IP" => client, "HTTP_X_EDGE_SECRET" => EDGE_SECRET).merge(headers)
+  end
+
+  test "[integration] behind Cloudflare, Rails and Rack::Attack both see the visitor, not the edge" do
+    status, seen = behind_guard(cloudflare_env("/magic_link"))
+
+    assert_equal 200, status
+    assert_equal CLIENT, seen[:remote_ip]
+    assert_equal CLIENT, seen[:rack_ip]
+  end
+
+  SPOOFS.each do |name, headers|
+    test "[integration] behind Cloudflare, #{name} does not move the visitor out of any per-IP bucket" do
+      IP_TIERS.each do |throttle, (path, method)|
+        status, seen = behind_guard(cloudflare_env(path, method: method, left: CLAIMED, **headers))
+
+        assert_equal 200, status, throttle
+        assert_equal CLIENT, seen[:remote_ip], throttle
+        assert_equal CLIENT, discriminator(throttle, seen[:env]), throttle
+      end
+    end
+
+    test "[integration] armed, #{name} from a non-Cloudflare peer is refused before any reader sees it" do
+      status, seen = behind_guard(cloudflare_env("/magic_link", edge: STRANGER, client: CLAIMED, **headers))
+
+      assert_equal 403, status
+      assert_empty seen, "a refused request must never reach RemoteIp, Rack::Attack or a controller"
+    end
+  end
+
+  test "[integration] armed, a CF-Connecting-IP without the secret is refused even from Cloudflare" do
+    env = cloudflare_env("/magic_link").except("HTTP_X_EDGE_SECRET")
+
+    assert_equal 403, behind_guard(env).first
+  end
+
+  test "[integration] armed, the health check still answers direct to origin" do
+    env = Rack::MockRequest.env_for("/up", "REMOTE_ADDR" => ROUTER, "HTTP_X_FORWARDED_FOR" => STRANGER)
+
+    assert_equal 200, behind_guard(env).first
+  end
+
+  test "[integration] behind Cloudflare, rotating CF-Connecting-IP is still one bucket per visitor the edge names" do
+    # The edge names the visitor; two visitors behind the same Cloudflare address are
+    # two buckets, never one shared edge bucket that a single noisy client could fill.
+    _, a = behind_guard(cloudflare_env("/chat", client: "198.51.100.7"))
+    _, b = behind_guard(cloudflare_env("/chat", client: "198.51.100.8"))
+
+    assert_equal "198.51.100.7", discriminator("chat/ip", a[:env])
+    assert_equal "198.51.100.8", discriminator("chat/ip", b[:env])
   end
 
   # --- through the real middleware ------------------------------------------------------

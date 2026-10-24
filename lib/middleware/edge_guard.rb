@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "ipaddr"
+
 # EdgeGuard — make the CDN the ONLY way in, and let the app see the real visitor.
 #
 # Putting Cloudflare in front of mcritchie.studio does nothing on its own: the dyno
@@ -21,6 +23,15 @@
 # it is simultaneously (a) allowed through and (b) trusted about who sent it. No secret,
 # no entry AND no believed client IP. One switch, one invariant, no way to get half of it.
 #
+# The proof has two parts, and both must hold. The secret alone would let anyone who
+# ever saw it (a leaked config, a logged header) walk in from any address and name any
+# client they like. So the request must ALSO have reached the Heroku router from one of
+# Cloudflare's published address ranges (CLOUDFLARE_RANGES). On Heroku REMOTE_ADDR is
+# the router's private address, and the router appends the address it received the
+# connection from to the RIGHT of X-Forwarded-For; that rightmost entry is the edge's
+# own address, and nothing a client writes can land to its right. A client's own
+# X-Forwarded-For or Forwarded values sit to the left and are never read here.
+#
 # Dark by default. With EDGE_SECRET unset the middleware is a pass-through, so this ships
 # safely BEFORE the DNS cutover and is armed afterwards by setting the variable — the
 # order that avoids locking ourselves out of our own origin. (One variable rather than a
@@ -35,8 +46,49 @@ class EdgeGuard
   # Set by a Cloudflare Transform Rule on the way to the origin.
   SECRET_HEADER = "HTTP_X_EDGE_SECRET"
 
-  # Cloudflare's own header naming the true client. Believed ONLY alongside the secret.
+  # Cloudflare's own header naming the true client. Believed ONLY alongside the full proof.
   CLIENT_IP_HEADER = "HTTP_CF_CONNECTING_IP"
+
+  # Cloudflare's published edge ranges: https://www.cloudflare.com/ips-v4 and
+  # https://www.cloudflare.com/ips-v6, read 2026-10-24 (API etag
+  # 38f79d050aa027e3be3865e495dcc9bc at https://api.cloudflare.com/client/v4/ips).
+  # Cloudflare changes these rarely and announces it. A range added there and missing
+  # here makes the armed guard refuse that range's traffic (a 403, never a wrongly
+  # believed address), so re-check the two lists when arming and after any notice:
+  # docs/agents/system/cdn-rollout.md, step 5.
+  CLOUDFLARE_RANGES = %w[
+    173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18
+    108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17
+    162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22
+    2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32
+    2a06:98c0::/29 2c0f:f248::/32
+  ].map { |cidr| IPAddr.new(cidr) }.freeze
+
+  # Is this address one of Cloudflare's? False for anything unparseable.
+  def self.cloudflare?(address)
+    ip = IPAddr.new(address.to_s.strip)
+    CLOUDFLARE_RANGES.any? { |range| range.family == ip.family && range.include?(ip) }
+  rescue IPAddr::Error
+    false
+  end
+
+  # The address that opened the connection to the platform. Behind the Heroku router
+  # (a private or loopback REMOTE_ADDR) that is the rightmost X-Forwarded-For entry,
+  # the one the router wrote; with no router in front it is REMOTE_ADDR itself.
+  def self.peer_address(env)
+    remote = env["REMOTE_ADDR"].to_s.strip
+    forwarded = env["HTTP_X_FORWARDED_FOR"].to_s.split(",").map(&:strip).reject(&:empty?)
+    return remote if forwarded.empty? || !internal?(remote)
+
+    forwarded.last
+  end
+
+  def self.internal?(address)
+    ip = IPAddr.new(address)
+    ip.private? || ip.loopback?
+  rescue IPAddr::Error
+    false
+  end
 
   def initialize(app, secret: ENV["EDGE_SECRET"])
     @app = app
@@ -61,12 +113,14 @@ class EdgeGuard
 
   private
 
-  # Constant-time so the comparison cannot be turned into an oracle for guessing the
-  # secret a byte at a time. secure_compare digests both sides first, so it is safe to
-  # hand it operands of differing length.
+  # Both halves of the proof: the connection came from a Cloudflare address, and it
+  # carries our secret. The secret comparison is constant-time so it cannot be turned
+  # into an oracle for guessing the secret a byte at a time; secure_compare digests both
+  # sides first, so it is safe to hand it operands of differing length.
   def from_our_edge?(env)
     presented = env[SECRET_HEADER].to_s
     return false if presented.empty?
+    return false unless self.class.cloudflare?(self.class.peer_address(env))
 
     ActiveSupport::SecurityUtils.secure_compare(presented, @secret)
   end
