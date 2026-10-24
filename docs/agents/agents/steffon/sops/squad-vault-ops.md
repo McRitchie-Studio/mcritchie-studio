@@ -148,7 +148,9 @@ two from an admin's click, written to the row and the hub activity feed. The
 pinch rule above is for actions signed outside the app and does not apply to
 those rows. Because the running app now holds both agent keys, anyone who
 controls a mainnet dyno reaches every 2-of-5 action without him; the app
-exposes only `close_contest`, on a click. Turf-monster `docs/SOLANA.md`, "The
+exposes only `close_contest`, on a click. `3LTL` is also a mask-7 seat on the
+mainnet Squad `4H3fP3ot…`, so the dyno holds one Squad vote too; `7auwTL` must
+stay out of `turf-monster-mainnet`'s config, or one dyno holds both agent votes. Turf-monster `docs/SOLANA.md`, "The
 platform's second signature", carries the flow and the config step.
 
 ## Preconditions
