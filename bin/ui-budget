@@ -1,0 +1,85 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/ui-budget — measure the public pages in config/ui_budget.yml and judge
+# them against its ceilings. The nightly workflow (.github/workflows/ui-budget.yml)
+# runs `--collect`; the unit tests run `--evaluate` on fixture JSON. Collector:
+# bin/lib/ui_budget/collect.cjs (Playwright + axe-core from node_modules, so
+# `npm install` first). Evaluator: bin/lib/ui_budget.rb.
+
+require "fileutils"
+require "time"
+require_relative "lib/cli_arg_guard"
+require_relative "lib/ui_budget"
+
+USAGE = <<~TXT
+  usage: bin/ui-budget --collect [--only <url>] [--out <file>] [--summary <file>] [--config <file>]
+         bin/ui-budget --evaluate <file> [--only <url>] [--summary <file>] [--config <file>]
+
+  --collect     open each page signed out at every width in the config (390 and
+                1280), write the raw numbers to --out (default
+                tmp/ui-budget/results-<utc stamp>.json), then evaluate them.
+  --evaluate    judge a results file the collector wrote earlier; reads nothing
+                from the network.
+  --only <url>  measure or judge one page; it must be named in the config.
+  --summary     also write the table as Markdown (the workflow's job summary).
+  --config      a budget file other than config/ui_budget.yml.
+
+  Prints one row per page, width and ceiling (page, width, metric, value,
+  ceiling, verdict). Exits 0 when every row is within budget, 1 when any row is
+  OVER or a page went unmeasured (MISSING), 2 on a usage error or a collector
+  crash. Measures production as an anonymous visitor; signs in to nothing.
+TXT
+
+args = CliArgGuard.guard!(
+  ARGV,
+  program: "ui-budget",
+  usage: USAGE,
+  bool: %w[--collect],
+  value: %w[--evaluate --only --out --summary --config],
+  consequence: "NOTHING ran — no page was opened and nothing was judged."
+)
+
+collect = args.bool?("--collect")
+evaluate_path = args.first("--evaluate")
+unless collect ^ !evaluate_path.nil?
+  warn(USAGE)
+  exit 2
+end
+if evaluate_path && args.first("--out")
+  warn("ui-budget: --out belongs to --collect — NOTHING ran.")
+  exit 2
+end
+
+begin
+  config = UiBudget.load_config(args.first("--config") || UiBudget::CONFIG)
+  only = args.first("--only")
+  pages = UiBudget.select_pages(config, only: only)
+rescue UiBudget::Error, KeyError, Errno::ENOENT => e
+  warn("ui-budget: #{e.message} — NOTHING ran.")
+  exit 2
+end
+
+if collect
+  out = args.first("--out") || File.join(UiBudget::ROOT, "tmp/ui-budget/results-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}.json")
+  FileUtils.mkdir_p(File.dirname(out))
+  ok = system("node", UiBudget::COLLECTOR, "--out", out, "--widths", config.widths.join(","), *pages.map(&:url))
+  unless ok && File.exist?(out)
+    warn("ui-budget: the collector failed (#{$?&.exitstatus.inspect}); no results were judged.")
+    exit 2
+  end
+  warn("ui-budget: results written to #{out}")
+  evaluate_path = out
+end
+
+begin
+  doc = JSON.parse(File.read(evaluate_path))
+rescue Errno::ENOENT, JSON::ParserError => e
+  warn("ui-budget: cannot read #{evaluate_path}: #{e.message}")
+  exit 2
+end
+
+rows = UiBudget.evaluate(config, doc, only: only)
+puts(UiBudget.table(rows))
+File.write(args.first("--summary"), UiBudget.markdown(rows)) if args.first("--summary")
+exit(UiBudget.over?(rows) ? 1 : 0)

@@ -29,6 +29,7 @@ checks to `checks_run` as each stage completes.
 | Local proof | Worktree URL | Local DB only | Usually yes | DoR (builder evidence) | UI, auth, task, contest, navigation, email capture, Redis, or worker changes |
 | QA acceptance | Stable QA URL | QA/devnet only when named | No; blocks production promotion | G3 Candidate | After every QA deploy; runs task acceptance criteria against the merged result |
 | Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
+| UI budget | Production public pages, signed out | No (GET only) | No | — | Nightly, `.github/workflows/ui-budget.yml`. `bin/ui-budget --collect` measures every page in `config/ui_budget.yml` at 390 and 1280 (axe, JS, third-party JS, phone weight, image size, HTML, CSS, asset cache) and fails over budget; the failure opens a "UI budget over: <date>" issue and the next green run closes it. One page by hand: `bin/ui-budget --collect --only <url>` |
 | Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | devnet/on-chain and longer seeded workflows. **No browser matrix exists** — Playwright is Chromium-only in every repo — and the ecosystem's only scheduled workflow (turf-monster's `devnet-nightly.yml`) is disabled and has never run. Treat this row as a *target shape*, not as coverage you have |
 | Quarantine | Any | Varies | No until fixed | — | Known flaky or unrelated checks that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
 

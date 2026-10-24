@@ -1,0 +1,78 @@
+# UI budget: the public pages every app keeps under a ceiling, and the ceilings.
+# Read by bin/ui-budget (evaluator: bin/lib/ui_budget.rb; collector:
+# bin/lib/ui_budget/collect.cjs) and run nightly by .github/workflows/ui-budget.yml,
+# which opens an issue titled "UI budget over: <date>" when any page is over.
+#
+# Epic: .agents/epics/ui-consistency-program.md (piece 4). Method and first
+# numbers: .agents/epics/audits/platform-audit-2026-10-24/lane-ui-infrastructure.md,
+# "Browser evidence". Alex, 2026-10-24: "a big fan" of budgets; the numbers are
+# proposed, not yet ratified, so a change to one is a one-line edit here.
+#
+# Sizes are bytes as the wire carries them (encoded, from Playwright's
+# request.sizes()), except html_raw_bytes, which is the decoded document. KB is
+# 1,024 bytes. Every page is measured signed out, at each width below.
+#
+# Page flags:
+#   landing: true   the 1 MB phone-weight ceiling applies (390px only)
+#   sign_in: true   third-party JS is allowed (a wallet or OAuth flow may need it)
+
+widths: [390, 1280]
+
+# Each ceiling is a `max` (over when the value is above it) or a `min` (over when
+# below). `applies_to` narrows one to landing pages, phone width, or pages that
+# are not sign-in flows.
+ceilings:
+  axe_serious_critical:
+    label: axe serious + critical nodes (WCAG 2.0/2.1 A, AA)
+    max: 0
+  js_bytes:
+    label: JavaScript, encoded
+    max: 256000 # 250 KB
+  third_party_js_bytes:
+    label: third-party JavaScript, encoded
+    max: 0
+    applies_to: not_sign_in
+  total_bytes:
+    label: total page weight, encoded
+    max: 1048576 # 1 MB
+    applies_to: landing_phone
+  largest_image_ratio:
+    label: largest image vs its rendered box
+    max: 2.0
+  html_raw_bytes:
+    label: HTML document, raw
+    max: 204800 # 200 KB
+  css_bytes:
+    label: CSS, encoded
+    max: 153600 # 150 KB
+  assets_cached_one_year_pct:
+    label: /assets/ served with max-age of one year
+    min: 100
+
+apps:
+  mcritchie-studio:
+    host: https://mcritchie.studio
+    pages:
+      - { path: /, landing: true }
+      - { path: /build }
+      - { path: /packages }
+      - { path: /about }
+      - { path: /nfl }
+      - { path: /signin, sign_in: true }
+  turf-monster:
+    host: https://turfmonster.media
+    pages:
+      - { path: /, landing: true }
+      - { path: /contests }
+      - { path: /getting-started }
+      - { path: /help }
+      - { path: /proof-of-reserves }
+      - { path: /signin, sign_in: true }
+  cyvasse:
+    host: https://cyvasse.xyz
+    pages:
+      - { path: /, landing: true }
+      - { path: /rules }
+      - { path: /pieces }
+      - { path: /leaderboard }
+      - { path: /about }
