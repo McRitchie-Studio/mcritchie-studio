@@ -69,7 +69,7 @@
           </p>
           <div class="flex flex-wrap items-center gap-2 mb-3">
             <% if @content.final_video_url.present? %>
-              <%= link_to "⬇ Download Video", @content.final_video_url,
+              <%= safe_link_to "⬇ Download Video", @content.final_video_url,
                     class: "btn btn-outline btn-sm", target: "_blank", download: "" %>
             <% end %>
             <%= link_to "📤 Open X Compose", intent_url,
@@ -126,7 +126,7 @@
         <% if @content.reference_video_url.present? %>
           <div class="mb-4">
             <p class="label-upper">Reference Video</p>
-            <a href="<%= @content.reference_video_url %>" target="_blank" class="text-primary text-sm hover:text-primary-300"><%= @content.reference_video_url.truncate(60) %></a>
+            <%= safe_link_to @content.reference_video_url.truncate(60), @content.reference_video_url, target: "_blank", class: "text-primary text-sm hover:text-primary-300" %>
             <% if @content.reference_video_start.present? %>
               <span class="text-muted text-xs ml-2">
                 <%= @content.reference_video_start %>s - <%= @content.reference_video_end || "end" %>s
@@ -214,7 +214,7 @@
         <% if @content.final_video_url.present? %>
           <div class="mb-4">
             <p class="label-upper">Final Video</p>
-            <a href="<%= @content.final_video_url %>" target="_blank" class="text-primary text-sm hover:text-primary-300"><%= @content.final_video_url.truncate(60) %></a>
+            <%= safe_link_to @content.final_video_url.truncate(60), @content.final_video_url, target: "_blank", class: "text-primary text-sm hover:text-primary-300" %>
           </div>
         <% end %>
 
@@ -251,7 +251,7 @@
         <% if @content.post_url.present? %>
           <div class="mb-4">
             <p class="label-upper">Post</p>
-            <a href="<%= @content.post_url %>" target="_blank" class="text-primary text-sm hover:text-primary-300 break-all"><%= @content.post_url.truncate(60) %></a>
+            <%= safe_link_to @content.post_url.truncate(60), @content.post_url, target: "_blank", class: "text-primary text-sm hover:text-primary-300 break-all" %>
           </div>
         <% end %>
 

@@ -126,14 +126,14 @@
           <% if @news.url.present? %>
             <div>
               <p class="text-3xs text-muted uppercase tracking-wider">Source</p>
-              <a href="<%= @news.url %>" target="_blank" class="text-primary text-sm hover:text-primary-300 truncate block"><%= @news.url.gsub(%r{https?://}, '').truncate(40) %></a>
+              <%= safe_link_to @news.url.gsub(%r{https?://}, '').truncate(40), @news.url, target: "_blank", class: "text-primary text-sm hover:text-primary-300 truncate block" %>
             </div>
           <% end %>
 
           <% if @news.x_post_url.present? %>
             <div>
               <p class="text-3xs text-muted uppercase tracking-wider">X Post</p>
-              <a href="<%= @news.x_post_url %>" target="_blank" class="text-primary text-sm hover:text-primary-300">View Post</a>
+              <%= safe_link_to "View Post", @news.x_post_url, target: "_blank", class: "text-primary text-sm hover:text-primary-300" %>
             </div>
           <% end %>
         </div>

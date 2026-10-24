@@ -55,7 +55,7 @@
   </p>
   <div class="flex flex-wrap items-center gap-2 mb-3">
     <% if @content.final_video_url.present? %>
-      <%= link_to "⬇ Download Video", @content.final_video_url,
+      <%= safe_link_to "⬇ Download Video", @content.final_video_url,
             class: "btn btn-outline btn-sm", target: "_blank", download: "" %>
     <% end %>
   </div>

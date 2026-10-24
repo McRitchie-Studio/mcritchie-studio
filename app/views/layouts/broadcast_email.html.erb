@@ -40,7 +40,7 @@
 
           <!-- OPTIONAL HERO IMAGE (per-campaign split graphic; clickable when hero_url set) -->
           <% if content_for?(:email_hero_image) %>
-          <% hero_link = broadcast_link(:hero, @broadcast&.hero_url.presence) %>
+          <% hero_link = broadcast_link(:hero, ApplicationHelper.http_href(@broadcast&.hero_url)) %>
           <tr>
             <td style="padding:0;font-size:0;line-height:0;">
               <% if hero_link.present? %><a href="<%= hero_link %>" target="_blank" style="text-decoration:none;"><% end %>

@@ -37,6 +37,22 @@ class TaskCardComponentTest < ActionView::TestCase
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
 
+  # [component] admin-url-columns-use-http-href: the QA and Prod links read urls an
+  # agent writes into the task's devops metadata; each links only as http(s).
+  test "the QA and Prod links render for https urls and are withheld for javascript: ones" do
+    good = Task.create!(title: "Component shipped links card", stage: "shipped",
+                        metadata: { "devops" => { "qa_url" => "https://qa.example.test", "production_url" => "https://example.test" } })
+    render_task_card(good)
+    assert_equal "QA", card_for(good).at_css("a[href='https://qa.example.test']")&.text
+    assert_equal "Prod", card_for(good).at_css("a[href='https://example.test']")&.text
+
+    bad = Task.create!(title: "Component shipped bad links card", stage: "shipped",
+                       metadata: { "devops" => { "qa_url" => "javascript:alert(1)", "production_url" => "javascript:alert(2)" } })
+    render_task_card(bad)
+    assert_empty card_for(bad).css("a[href^='javascript']")
+    assert_equal 2, card_for(bad).css("span[data-test='link-withheld'][title]").size
+  end
+
   # One gallery preview's rendered DOM.
   def preview(name)
     Nokogiri::HTML5.fragment(render_preview(name, from: TaskCardComponentPreview).to_s)

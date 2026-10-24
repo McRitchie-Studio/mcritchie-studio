@@ -28,6 +28,19 @@ class BroadcastMailerTest < ActiveSupport::TestCase
     refute_match %r{/e/o/}, body
   end
 
+  # [component] admin-url-columns-use-http-href: the hero image links the stored
+  # hero_url only as http(s); otherwise the image renders unlinked.
+  test "campaign links an https hero and leaves a javascript: hero unlinked" do
+    @broadcast.update_columns(hero_url: "https://example.com/hero")
+    body = BroadcastMailer.campaign(@broadcast, @contact).then { |m| (m.html_part&.body || m.body).to_s }
+    assert_includes body, 'href="https://example.com/hero"'
+
+    @broadcast.update_columns(hero_url: "javascript:alert(1)")
+    body = BroadcastMailer.campaign(@broadcast, @contact).then { |m| (m.html_part&.body || m.body).to_s }
+    refute_includes body, "javascript:alert"
+    assert_includes body, "/email/", "the hero image itself still renders"
+  end
+
   test "campaign with a delivery injects the open pixel and click-tracking links" do
     delivery = @broadcast.deliveries.create!(contact: @contact)
     mail = BroadcastMailer.campaign(@broadcast, @contact, delivery)

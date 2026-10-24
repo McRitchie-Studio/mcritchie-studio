@@ -107,4 +107,26 @@ class BroadcastsControllerTest < ActionDispatch::IntegrationTest
     get preview_broadcast_path(@broadcast)
     assert_includes response.body, "joined the McRitchie Studio mailing list"
   end
+
+  # [component] admin-url-columns-use-http-href (Carl, activity-20119): survivor_url
+  # and turf_totals_url are typed by an admin and validated nowhere; the preview (and
+  # so the Copy-HTML export) links them only as http(s). A refused value falls back
+  # to the merge tag, as a blank one does.
+  test "the preview links https survivor and turf totals urls and refuses javascript: ones" do
+    log_in_as(@admin)
+    %w[new_game_announcement world_cup_kickoff].each do |key|
+      @broadcast.update_columns(template_key: key, survivor_url: "https://x/sv", turf_totals_url: "https://x/tt")
+      get preview_broadcast_path(@broadcast)
+      assert_response :success
+      assert_includes response.body, "https://x/sv", key
+      assert_includes response.body, "https://x/tt", key
+
+      @broadcast.update_columns(survivor_url: "javascript:alert(1)", turf_totals_url: "javascript:alert(2)")
+      get preview_broadcast_path(@broadcast)
+      assert_response :success
+      refute_includes response.body, "javascript:alert", "#{key}: a javascript: column must not reach the page"
+      assert_includes response.body, "{{SURVIVOR_URL}}", "#{key}: a refused survivor_url falls back to its merge tag"
+      assert_includes response.body, "{{TURF_TOTALS_URL}}", "#{key}: a refused turf_totals_url falls back to its merge tag"
+    end
+  end
 end

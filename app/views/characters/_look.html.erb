@@ -20,9 +20,9 @@
 
   <div class="grid gap-2 grid-cols-2 sm:grid-cols-3">
     <% if sheet %>
-      <a href="<%= sheet.image_url %>" target="_blank" rel="noopener" class="col-span-2 sm:col-span-3 block rounded border border-subtle bg-surface-alt overflow-hidden" data-test="look-sheet">
+      <%= safe_link_to sheet.image_url, target: "_blank", rel: "noopener", class: "col-span-2 sm:col-span-3 block rounded border border-subtle bg-surface-alt overflow-hidden", data: { test: "look-sheet" } do %>
         <img src="<%= sheet.image_url %>" alt="<%= character.name %> · <%= look.descriptor %> sheet" class="w-full max-h-80 object-contain" loading="lazy">
-      </a>
+      <% end %>
     <% end %>
     <% art.each do |photo| %>
       <figure class="space-y-1 min-w-0" data-test="look-art">

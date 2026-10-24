@@ -165,16 +165,16 @@
                         <span class="font-semibold text-heading truncate group-hover:text-primary transition"><%= builder.display_name %></span>
                       </button>
                       <div class="flex flex-wrap items-center gap-2 mt-0.5">
-                        <%= link_to "@#{builder.github_login}",
+                        <%= safe_link_to "@#{builder.github_login}",
                               builder.github_url,
                               target: "_blank",
                               rel: "noopener",
                               class: "text-xs text-primary hover:text-heading transition" %>
                         <% if person.website_url.present? %>
-                          <%= link_to "Website", person.website_url, target: "_blank", rel: "noopener", class: "text-xs text-secondary hover:text-heading transition" %>
+                          <%= safe_link_to "Website", person.website_url, target: "_blank", rel: "noopener", class: "text-xs text-secondary hover:text-heading transition" %>
                         <% end %>
                         <% if person.x_url.present? %>
-                          <%= link_to "X", person.x_url, target: "_blank", rel: "noopener", class: "text-xs text-secondary hover:text-heading transition" %>
+                          <%= safe_link_to "X", person.x_url, target: "_blank", rel: "noopener", class: "text-xs text-secondary hover:text-heading transition" %>
                         <% end %>
                         <span class="text-xs text-muted"><%= builder_count(row[:cached_range_count]) %>/<%= builder_count(@report.ranges.size) %> weeks</span>
                       </div>

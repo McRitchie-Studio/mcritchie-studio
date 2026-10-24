@@ -10,17 +10,53 @@ module ApplicationHelper
   # The url when it is an absolute http or https link, else nil. A column an
   # agent or an outside answer writes can hold a `javascript:` or `data:` url,
   # and an href runs it on click; read such a column through this before it
-  # reaches an href, and render no link on nil.
+  # reaches an href, and render no link on nil. safe_link_to below is the
+  # rendering half; the model-side readers (AppearanceReferencePhoto#origin_url)
+  # call ApplicationHelper.http_href so there is ONE rule, not two.
+  #
+  # NON-ASCII IS ADMITTED, not refused: an international domain (https://bücher.de)
+  # is a legitimate link, and the RFC 3986 parser rejects any raw non-ASCII byte.
+  # Those characters are percent-encoded for the PARSE only, so the scheme is still
+  # read by URI and the browser still gets the text as stored. Whitespace and
+  # format characters (zero-width, bidi overrides) stay refused in any script.
   HTTP_HREF_SCHEMES = %w[http https].freeze
+  HTTP_HREF_REFUSED_CHARS = /[\x00-\x20\x7F\p{Space}\p{Cf}]/
+  HTTP_HREF_WITHHELD_TITLE = "Link withheld: the stored value is not an http(s) URL"
 
-  def http_href(url)
+  def self.http_href(url)
     text = url.to_s.strip
-    return nil if text.empty? || text.match?(/[\x00-\x20\x7F]/)
+    return nil if text.empty? || text.match?(HTTP_HREF_REFUSED_CHARS)
 
-    scheme = URI.parse(text).scheme
+    parseable = text.gsub(/[^\x00-\x7F]/) { |char| char.bytes.map { |b| format("%%%02X", b) }.join }
+    scheme = URI.parse(parseable).scheme
     HTTP_HREF_SCHEMES.include?(scheme&.downcase) ? text : nil
   rescue URI::InvalidURIError
     nil
+  end
+
+  def http_href(url) = ApplicationHelper.http_href(url)
+
+  # link_to for a STORED or agent-written url: links only what http_href admits.
+  # A refused value renders the grey "—" carrying a title that says the link was
+  # withheld (a blank value renders the bare "—"), so every view refuses the same
+  # way. Both forms keep the caller's class (the button's or row's styling and
+  # size); the block form also keeps its content. Only the link is dropped.
+  #
+  #   safe_link_to "View Post", @news.x_post_url, target: "_blank"
+  #   safe_link_to(sheet.image_url, target: "_blank") { image_tag ... }
+  def safe_link_to(name = nil, url = nil, html_options = {}, &block)
+    if block
+      html_options = url || {}
+      url = name
+    end
+    href = http_href(url)
+    return (block ? link_to(href, html_options, &block) : link_to(name, href, html_options)) if href
+
+    withheld = { data: { test: "link-withheld" } }
+    withheld[:title] = HTTP_HREF_WITHHELD_TITLE if url.present?
+    return content_tag(:span, capture(&block), withheld.merge(class: html_options[:class])) if block
+
+    content_tag(:span, "—", withheld.merge(class: class_names(html_options[:class], "opacity-40")))
   end
 
   def stage_scheme(stage)

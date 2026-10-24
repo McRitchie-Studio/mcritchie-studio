@@ -48,7 +48,7 @@
       <p class="label-upper mb-1.5">Character sheet</p>
       <% if sheet %>
         <figure class="rounded-lg overflow-hidden border border-subtle bg-inset">
-          <%= link_to sheet.image_url, target: "_blank", rel: "noopener" do %>
+          <%= safe_link_to sheet.image_url, target: "_blank", rel: "noopener" do %>
             <img src="<%= sheet.image_url %>" alt="Character sheet of <%= performer&.artist&.name %>" loading="lazy"
                  class="block w-full h-auto" data-test="look-sheet-image">
           <% end %>

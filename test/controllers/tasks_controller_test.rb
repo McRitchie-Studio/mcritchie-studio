@@ -1637,6 +1637,32 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[data-test='review-followup-create-link'][href=?]", new_task_path(followup_from: task.slug)
   end
 
+  # [component] admin-url-columns-use-http-href: the PR link, the Local/QA/Production
+  # url cells and the review guard's View PR read urls agents write; each links only
+  # as http(s).
+  test "[component] show links https task urls and withholds javascript: ones" do
+    log_in_as(@admin)
+    Agent.create!(name: "Href Carl", slug: "href-carl")
+    urls = { "pr_url" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/998",
+             "local_url" => "http://localhost:3011/tasks", "qa_url" => "https://qa.mcritchie.studio",
+             "production_url" => "https://mcritchie.studio" }
+    task = Task.create!(title: "href task urls", stage: "submitted",
+                        metadata: { "devops" => { "repositories" => [ "mcritchie-studio" ] }.merge(urls) })
+    task.record_intent_event(to_stage: "reviewed", reviewers: [ { "slug" => "href-carl", "weight" => "primary" } ])
+
+    get task_path(task.slug)
+    assert_select "[data-test='review-followup-guard'] a[href=?]", urls["pr_url"], text: /View PR/
+    urls.each_value { |url| assert_select "a[href=?]", url }
+
+    bad = urls.transform_values { "javascript:alert(1)" }
+    task.update_columns(pr_url: bad["pr_url"], metadata: task.metadata.merge("devops" => task.metadata["devops"].merge(bad)))
+    get task_path(task.slug)
+    assert_response :success
+    assert_select "a[href^='javascript']", 0
+    assert_select "[data-test='review-followup-guard'] span[data-test='link-withheld'][title]", 1
+    assert_select "span[data-test='link-withheld'][title]", { minimum: 5 }, "PR, Local, QA, Production and View PR"
+  end
+
   test "[component] show omits review followup guard after review lands" do
     log_in_as(@admin)
     task = Task.create!(title: "review guard landed task", stage: "submitted")

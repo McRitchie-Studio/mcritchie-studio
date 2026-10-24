@@ -12,10 +12,10 @@ class ClientPipelineViewTest < ActionView::TestCase
 
   def lane(key) = ClientPipeline::LANES.find { |l| l.key == key }
 
-  def pipeline(tier: "pro", in_use: 2, release: nil, admin: false)
+  def pipeline(tier: "pro", in_use: 2, release: nil, admin: false, pr_url: "https://github.com/x/y/pull/1")
     app = apps(:turf_monster)
     building = ClientPipeline::Card.new(title: "Wire the scores", lane: "Building", entered_at: 2.hours.ago, role: "Builder",
-                                        on_hold: true, slug: ("wire-the-scores" if admin), pr_url: ("https://github.com/x/y/pull/1" if admin))
+                                        on_hold: true, slug: ("wire-the-scores" if admin), pr_url: (pr_url if admin))
     queued = [ 1, 2 ].map { |n| ClientPipeline::Card.new(title: "Queued #{n}", lane: "Prepping", entered_at: n.days.ago, queue_position: n, on_hold: false, slug: ("queued-#{n}" if admin)) }
     lanes = ClientPipeline::LANES.map do |l|
       cards = { "building" => [ building ], "queued" => queued }.fetch(l.key, [])
@@ -53,6 +53,15 @@ class ClientPipelineViewTest < ActionView::TestCase
     assert_select "[data-test='pipeline-tonight']", text: /on QA, green and ready to ship, carrying 2 of your tasks/
     assert_select "[data-test='pipeline-card-pr'][href='https://github.com/x/y/pull/1']"
     assert_select "a[href='/tasks/wire-the-scores']"
+  end
+
+  # [component] admin-url-columns-use-http-href: the card's PR link reads a stored
+  # url; a javascript: one renders the titled grey dash, no link.
+  test "[component] an admin's PR link is withheld for a javascript: url" do
+    draw(admin: true, pr_url: "javascript:alert(1)")
+    assert_select "a[href^='javascript']", 0
+    assert_select "[data-test='pipeline-card-pr']", 0
+    assert_select "span[data-test='link-withheld'][title]", 1
   end
 
   test "[component] an uncapped internal app says so to an admin" do
