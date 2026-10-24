@@ -24,7 +24,8 @@
 # log is never a failure to run. Proven with a booby-trapped `op` that exits 127.
 #
 # NOT SPAWN MORE THAN IT MUST. bin/gh-app-git-credential runs on every push and
-# fetch, so the hot path is deliberately builtin-only apart from one `date`. The
+# fetch, so the hot path is deliberately builtin-only apart from one `date` and
+# the perl watchdog that bounds each attempt (THE BOUND, below). The
 # sandbox check short-circuits on an empty TASK_USAGE_SANDBOX before it reaches
 # `tr`, so a real agent session pays nothing for the test-only branch.
 #

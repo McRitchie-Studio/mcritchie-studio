@@ -347,6 +347,96 @@ class OpMeterTest < Minitest::Test
     end
   end
 
+  # ── the bound (2026-10-24): a hung op is killed at the deadline, retried once ──
+  #
+  # The stub is the 2026-10-21 failure in miniature: with the cache daemon in
+  # play it never answers (it execs `sleep`, so the KILL lands on the process
+  # holding stdout), and with OP_CACHE=false it answers at once, as
+  # `op --cache=false` did that day.
+
+  def hung_op(dir, retry_answers: true)
+    path = File.join(dir, "op")
+    calls = File.join(dir, "op-calls.log")
+    answer = retry_answers ? "printf 'FRESH'; exit 0" : "exec sleep 600"
+    File.write(path, <<~SH)
+      #!/bin/sh
+      printf '%s %s\n' "cache=${OP_CACHE:-unset}" "$*" >> #{calls}
+      if [ "${OP_CACHE:-}" = "false" ]; then #{answer}; fi
+      exec sleep 600
+    SH
+    File.chmod(0o755, path)
+    [path, calls]
+  end
+
+  def test_unit_a_hung_op_times_out_and_the_uncached_retry_answers
+    with_log do |log, env, dir|
+      op, calls = hung_op(dir)
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      out = OpMeter.popen({}, [op, "read", "op://v/i/f"], via: "task_board", env: env.merge("MCR_OP_DEADLINE" => "1"))
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+      assert_equal "FRESH", out, "the retry's answer is the caller's answer"
+      assert $?.success?, "callers read $? after the call: it must be the retry's status"
+      assert_operator elapsed, :<, 5, "one deadline (1 s) and a fast retry, never the hung child's 600 s"
+      assert_equal %w[timeout ok], rows(log).map { |r| r[3] }, "the log shows the timeout, then the retry"
+      assert_equal ["cache=unset read op://v/i/f", "cache=false read op://v/i/f"], calls_in(calls),
+                   "exactly one retry, and it bypasses the cache daemon"
+    end
+  end
+
+  def test_unit_a_retry_that_also_hangs_fails_closed_after_two_deadlines
+    with_log do |log, env, dir|
+      op, calls = hung_op(dir, retry_answers: false)
+      out = OpMeter.popen({}, [op, "read", "op://v/i/f"], via: "gh-token", env: env.merge("MCR_OP_DEADLINE" => "0.5"))
+
+      assert_equal "", out
+      refute $?.success?, "a killed op must never read as a success to a `$?.success?` caller"
+      assert_equal %w[timeout timeout], rows(log).map { |r| r[3] }
+      assert_equal 2, calls_in(calls).length, "one retry, not a loop"
+    end
+  end
+
+  # CONTROL: a healthy op is untouched by the bound: one call, no retry, no
+  # OP_CACHE in its environment, its stdout and status as before.
+  def test_unit_control_a_fast_op_is_called_once_with_the_cache_untouched
+    with_log do |log, env, dir|
+      op, calls = hung_op(dir)
+      File.write(op, <<~SH)
+        #!/bin/sh
+        printf '%s %s\n' "cache=${OP_CACHE:-unset}" "$*" >> #{calls}
+        printf 'SECRET'
+      SH
+      out = OpMeter.popen({}, [op, "read", "op://v/i/f"], via: "agent_api", env: env.merge("MCR_OP_DEADLINE" => "1"))
+
+      assert_equal "SECRET", out
+      assert_equal ["cache=unset read op://v/i/f"], calls_in(calls)
+      assert_equal %w[ok], rows(log).map { |r| r[3] }
+    end
+  end
+
+  def test_unit_the_deadline_defaults_to_twenty_seconds
+    assert_equal 20, OpMeter.deadline({})
+    assert_equal 20, OpMeter.deadline("MCR_OP_DEADLINE" => "nonsense")
+    assert_equal 20, OpMeter.deadline("MCR_OP_DEADLINE" => "0")
+    assert_in_delta 1.5, OpMeter.deadline("MCR_OP_DEADLINE" => "1.5")
+  end
+
+  # bin/op-reads counts timeouts in their own column, so a stuck daemon is one
+  # glance away.
+  def test_integration_op_reads_shows_the_timeouts
+    with_log do |log, env, dir|
+      op, = hung_op(dir)
+      OpMeter.popen({}, [op, "read", "op://v/i/f"], via: "task_board", env: env.merge("MCR_OP_DEADLINE" => "0.5"))
+      out, status = Open3.capture2(SessionEnv.neutralized(env), RbConfig.ruby, File.join(ROOT, "bin", "op-reads"))
+
+      assert status.success?, out
+      assert_match(/TIMEOUT/, out)
+      json, = Open3.capture2(SessionEnv.neutralized(env), RbConfig.ruby, File.join(ROOT, "bin", "op-reads"), "--json")
+      assert_equal 1, JSON.parse(json)["groups"].sum { |g| g["timeouts"] }
+    end
+  end
+
+
   private
 
   # ESTABLISH THE PREMISE, DO NOT ASSUME IT. TaskBoard#agent_secret reads the REAL
@@ -373,4 +463,5 @@ class OpMeterTest < Minitest::Test
   ensure
     original&.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
   end
+
 end
