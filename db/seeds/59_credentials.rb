@@ -60,7 +60,7 @@ records = [
   { vault: "studio-agents", title: "agent.mason.solana", service: "solana", category: "Crypto Wallet",
     scope_summary: "Mason's vault signer; no longer a Squads member." },
   { vault: "studio-agents", title: "solana.mack.agent", service: "solana", category: "API Credential",
-    scope_summary: "Mack's devnet co-signer: slot 1 of the devnet vault signer set; plays mack-4 in the QA contest rehearsal." },
+    scope_summary: "Mack's devnet co-signer: slot 2 of 5 (signers[1]) of the devnet vault signer set; plays mack-4 in the QA contest rehearsal." },
   { vault: "studio-agents", title: "solana.turf.alex", service: "solana", entity: "turf-monster", category: "API Credential",
     scope_summary: "The QA contest rehearsal's test player (39QT…, regal-parsley). Devnet test USDC only." },
   { vault: "studio-agents", title: "solana.turf.admin", service: "solana", entity: "turf-monster", category: "Crypto Wallet",
