@@ -63,8 +63,12 @@ async function measure(browser, url, width, userAgent) {
       if (!resp) return;
       const sizes = await req.sizes().catch(() => null);
       const u = new URL(resp.url());
+      // An <img> reports the URL it asked for, not where a redirect landed
+      // (Active Storage 302s to R2), so keep every hop to match it by.
+      const aliases = [];
+      for (let r = req.redirectedFrom(); r; r = r.redirectedFrom()) aliases.push(r.url());
       reqs.push({
-        url: resp.url(), host: u.host, pathname: u.pathname, type: typeOf(resp),
+        url: resp.url(), aliases, host: u.host, pathname: u.pathname, type: typeOf(resp),
         bytes: sizes ? sizes.responseBodySize : 0, maxAge: maxAge(resp.headers()["cache-control"]),
       });
     })().catch(() => {}));
@@ -118,7 +122,7 @@ async function measure(browser, url, width, userAgent) {
   // axis ratio for fill and contain, the smaller for cover, which crops the
   // other axis (hub's hero is 4700x1800 in a 507x720 box at 390px: 2.5x, not 9.3x).
   const imgBytes = {};
-  for (const r of reqs) if (r.type === "img") imgBytes[r.url] = Math.max(imgBytes[r.url] || 0, r.bytes);
+  for (const r of reqs) if (r.type === "img") for (const u of [r.url, ...r.aliases]) imgBytes[u] = Math.max(imgBytes[u] || 0, r.bytes);
   const sized = images
     .filter((i) => i.naturalWidth > 0 && i.renderedWidth > 0 && i.renderedHeight > 0)
     .map((i) => ({ ...i, bytes: imgBytes[i.src] || 0,
