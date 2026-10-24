@@ -50,10 +50,22 @@ class EdgeGuardWiringTest < ActionDispatch::IntegrationTest
     assert_match(/only through its edge/, body.each.to_a.join)
   end
 
+  # Production's shape behind Cloudflare: the router's private REMOTE_ADDR, the edge's
+  # address appended rightmost to X-Forwarded-For, the visitor in CF-Connecting-IP.
+  EDGE = { "REMOTE_ADDR" => "10.1.2.3", "HTTP_X_FORWARDED_FOR" => "203.0.113.9, 172.68.1.1",
+           "HTTP_CF_CONNECTING_IP" => "203.0.113.9" }.freeze
+
   test "an armed guard admits a request from the edge and the app still renders" do
-    status, = armed.call(rack_env_for("/", "HTTP_X_EDGE_SECRET" => SECRET))
+    status, = armed.call(rack_env_for("/", EDGE.merge("HTTP_X_EDGE_SECRET" => SECRET)))
 
     assert_equal 200, status, "edge traffic must reach the app normally"
+  end
+
+  test "an armed guard refuses the secret from outside Cloudflare against the real app" do
+    stranger = EDGE.merge("HTTP_X_FORWARDED_FOR" => "203.0.113.9, 198.51.100.50", "HTTP_X_EDGE_SECRET" => SECRET)
+    status, = armed.call(rack_env_for("/", stranger))
+
+    assert_equal 403, status, "a leaked secret alone must not open the origin"
   end
 
   test "an armed guard still lets the platform health check through" do

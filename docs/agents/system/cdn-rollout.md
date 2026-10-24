@@ -35,9 +35,13 @@ brute-force throttles keep reporting healthy while protecting nothing. Cloudflar
 the truth in `CF-Connecting-IP`, but that header is forgeable by anyone reaching the
 origin directly, so it may only be believed on a request proven to come from our edge.
 
-`lib/middleware/edge_guard.rb` handles both, hung off one shared secret — a request
-bearing it is admitted *and* believed about who sent it. It is **dark until
-`EDGE_SECRET` is set**, which is what makes the ordering below safe.
+`lib/middleware/edge_guard.rb` handles both, hung off one proof with two parts: the
+connection reached the Heroku router from one of **Cloudflare's published ranges**
+(`EdgeGuard::CLOUDFLARE_RANGES`; the router writes that address rightmost in
+`X-Forwarded-For`, where no client can put one), **and** it carries the shared
+secret. A request passing both is admitted *and* believed about who sent it; a
+request failing either is refused, so a leaked secret alone opens nothing. It is
+**dark until `EDGE_SECRET` is set**, which is what makes the ordering below safe.
 
 ---
 
@@ -46,7 +50,7 @@ bearing it is admitted *and* believed about who sent it. It is **dark until
 Ship the code first, cut DNS second, arm the guard last. Any other order either locks
 us out of our own origin or leaves a window where the edge is bypassable.
 
-### Step 1 — Ship EdgeGuard unarmed (done for the hub)
+### Step 1 — Ship EdgeGuard unarmed (done for the hub; the range check rides `edge-guard-cloudflare-ranges`)
 
 `EDGE_SECRET` unset means complete pass-through, so the deploy itself cannot break
 anything. Verify after deploy:
@@ -74,16 +78,20 @@ Cloudflare flattens the apex automatically, so the existing Heroku `ALIAS/ANAME`
 a proxied apex record — no change of approach needed.
 
 Set the records that serve the app to **Proxied** (orange cloud). Leave anything used
-for domain-ownership or mail delivery **DNS-only** (grey).
+for domain-ownership or mail delivery **DNS-only** (grey). For the hub, hold this flip
+until Step 5: the transform rules go in first, so the shared-address window stays minutes.
 
 ### Step 3 — Solve certificates BEFORE cutting over
 
 This is the step that bites weeks later, silently.
 
-All four apps use **Heroku ACM** (Let's Encrypt). ACM revalidates by resolving the
-domain to Heroku. Once Cloudflare proxies, it resolves to Cloudflare, **ACM renewal
-fails, and the certificate expires ~30-60 days later** — an outage with nothing in the
-logs tying it back to the CDN change.
+The satellites use **Heroku ACM** (Let's Encrypt). The hub no longer does: adding the
+`*.mcritchie.app` origin certificate turned ACM off on `mcritchie-studio`, because Heroku
+allows a manual certificate or ACM on an app, never both
+([`deployment.md`](../modules/deployment.md#certificates-and-the-edge)). Where ACM is on,
+it revalidates by resolving the domain to Heroku. Once Cloudflare proxies, it resolves
+to Cloudflare, **ACM renewal fails, and the certificate expires ~30-60 days later**: an
+outage with nothing in the logs tying it back to the CDN change.
 
 Do this instead:
 
@@ -93,15 +101,20 @@ Do this instead:
    heroku certs:add origin.pem origin.key --type sni --app mcritchie-studio
    ```
 3. Set the zone's SSL/TLS mode to **Full (strict)**.
-4. Only then disable ACM, so the app is never without a certificate:
+4. Attach it per hostname as each record goes Proxied, never before:
    ```bash
-   heroku certs:auto:disable --app mcritchie-studio
+   heroku domains:update app.mcritchie.studio --cert <new endpoint> --app mcritchie-studio
    ```
+   On an app still on ACM, adding the certificate in item 2 already turns ACM off, so
+   do items 2-4 in one sitting; the ACM certificates keep serving until their dates.
 
 An Origin Certificate is trusted by Cloudflare, not by browsers — which is correct here,
 because browsers terminate at Cloudflare. It also removes the renewal treadmill.
 
 ### Step 4 — Cut the nameservers
+
+Done for the hub: `mcritchie.studio` has been on Cloudflare nameservers since
+2026-09-30, and its DS record is absent (DoH, 2026-10-24).
 
 **DNSSEC first.** Run `dig DS <domain>` at the TLD server. If it answers, follow
 the DNSSEC rule in [`asset-library-plan.md`](asset-library-plan.md) (under
@@ -120,10 +133,28 @@ curl -sI https://mcritchie.studio/ | grep -i '^server\|^cf-ray'   # expect cloud
 
 ### Step 5 — Arm the guard
 
-Only once traffic demonstrably flows through Cloudflare.
+Only once traffic demonstrably flows through Cloudflare, and only once **every**
+hostname that reaches this app is proxied and sends the header. An armed guard refuses
+every request without the secret, so arming while `www` or the apex is still DNS only
+refuses those visitors outright. For the hub that means the transform rule on **both**
+zones that reach the dyno, `mcritchie.studio` and `mcritchie.app` (the previews sit
+behind the guard too), and all three of `app.`, `www.` and the apex proxied.
 
-1. Add a **Transform Rule → Modify Request Header** on the zone: set `X-Edge-Secret` to
-   a long random value on every request to the origin.
+Between the first proxy flip and arming, the hub sees Cloudflare's address as the
+client, so the per-IP throttles count an edge address shared by many visitors. Keep that
+window to minutes: add both transform rules first (they change nothing while the guard
+is dark), flip the three records back to back, then arm. Writing a transform rule by API
+needs the Cloudflare token grant **Zone > Transform Rules > Edit**, which
+`cloudflare.studio.provision` did not hold on 2026-10-24.
+
+Before arming, diff `EdgeGuard::CLOUDFLARE_RANGES` against
+`https://www.cloudflare.com/ips-v4` and `/ips-v6`. A range missing from the constant is
+refused, never wrongly believed, but it is still an outage for the visitors it serves.
+
+1. Add a **Transform Rule → Modify Request Header** on **each** zone that reaches the app
+   (for the hub, `mcritchie.studio` and `mcritchie.app`), setting `X-Edge-Secret` to the
+   **same** long random value on every request; there is one `EDGE_SECRET`. Do this
+   BEFORE the proxy flip, then flip the records back to back.
 2. Set the same value on the app and let it restart:
    ```bash
    heroku config:set EDGE_SECRET="<the same value>" --app mcritchie-studio
@@ -134,8 +165,12 @@ Only once traffic demonstrably flows through Cloudflare.
    curl -s -o /dev/null -w '%{http_code}\n' https://mcritchie.studio/tasks
    # direct to origin — expect 403
    curl -s -o /dev/null -w '%{http_code}\n' https://mcritchie-studio-039470649719.herokuapp.com/tasks
+   # direct to origin WITH the secret, from this Mac (not a Cloudflare address) — expect 403
+   curl -s -o /dev/null -w '%{http_code}\n' -H "X-Edge-Secret: $EDGE_SECRET" https://mcritchie-studio-039470649719.herokuapp.com/tasks
    # health check still direct — expect 200
    curl -s -o /dev/null -w '%{http_code}\n' https://mcritchie-studio-039470649719.herokuapp.com/up
+   # a live client-app preview (second zone's rule) — expect 200; 403 = mcritchie.app rule missing or mismatched
+   curl -s -o /dev/null -w '%{http_code}\n' https://<a-live-preview>.mcritchie.app/
    ```
 
 Rollback at any point is `heroku config:unset EDGE_SECRET`, which returns the guard to
@@ -187,7 +222,7 @@ Registrar access is Alex's; the nameserver change cannot be done by an agent.
 
 | Domain | DNS host today | Heroku app | Records | Status |
 |---|---|---|---|---|
-| `mcritchie.studio` | Cloudflare since 2026-09-30, app records DNS only; only R2's `assets.` CNAME is proxied (was Google Cloud DNS) | `mcritchie-studio` | apex + `www` + `app` + eight app subdomains | **pilot**: DNS moved, not yet proxied; owed: step 2's proxy flip, step 3, step 4's `cf-ray` check, steps 5-6 |
+| `mcritchie.studio` | Cloudflare since 2026-09-30, app records DNS only; only R2's `assets.` CNAME is proxied (was Google Cloud DNS); DNSSEC off, no DS | `mcritchie-studio` | apex + `www` + `app` + eight app subdomains (the eight are other apps and stay DNS only) | **pilot, option A (2026-10-24)**: DNS moved, not yet proxied; owed: step 3 (origin cert, Full strict), step 2's proxy flip with step 4's `cf-ray` check, steps 5-6. Deadline 2026-12-07 ([`deployment.md`](../modules/deployment.md#certificates-and-the-edge)) |
 | `turfmonster.media` | Cloudflare since 2026-09-30, app records DNS only; only R2's `assets.` CNAME is proxied (was Squarespace DNS; registrar Squarespace) | `turf-monster-mainnet` | apex + `app` + `qa` | DNS moved, not yet proxied; DNSSEC off (see [the DNSSEC rule](asset-library-plan.md), under "Blocker for step 6") |
 | `mcritchie.industries` | Squarespace DNS | `mcritchie-industries` | `www` only | after pilot |
 | `karenmcritchie.com` | name.com | `obscure-plains-6405` | apex + `www` | after pilot |

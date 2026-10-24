@@ -193,8 +193,11 @@ How it was wired, in order (the runbook for a second preview domain):
 2. Add `*.mcritchie.app` as a Heroku custom domain. Heroku's ACM does not issue wildcard
    certificates, so use a **Cloudflare origin certificate**. Minting one through the Origin
    CA API needs the token grant **Zone > SSL and Certificates > Edit**; the Account-level
-   SSL and Certificates group is the wrong one and answers error 1016. Heroku accepts a
-   manual SNI certificate alongside ACM on the same app. Without a TTY, `heroku certs:add`
+   SSL and Certificates group is the wrong one and answers error 1016. **Adding a manual
+   SNI certificate turns Heroku ACM off for the whole app** ("you cannot do both on a
+   single app"), so on `mcritchie-studio` this step stopped the hub's own certificates
+   renewing; see [`deployment.md`](../modules/deployment.md#certificates-and-the-edge)
+   before doing it on any app that relies on ACM. Without a TTY, `heroku certs:add`
    cannot ask which domain the endpoint serves, so attach it afterwards with
    `heroku domains:update "*.mcritchie.app" --cert <endpoint>`.
 3. **Edge secret before the rate rule.** If `EDGE_SECRET` is armed (or is armed later), add

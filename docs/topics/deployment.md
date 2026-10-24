@@ -27,7 +27,7 @@
   [How Production Deploys](../agents/modules/deployment.md#how-production-deploys).
 - **Workers**: keep `worker=1` scaled for Solid Queue mail/auth job durability.
 - **Env vars**: `RAILS_MASTER_KEY`, `RAILS_SERVE_STATIC_FILES`, `DATABASE_URL` (auto), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `ANTHROPIC_API_KEY` (for AI chat + content script/metadata agents), `X_BEARER_TOKEN` (read-only, News intake), `X_API_KEY`/`X_API_SECRET`/`X_ACCESS_TOKEN`/`X_ACCESS_TOKEN_SECRET` (OAuth 1.0a write creds for `X::PostMedia` — must be from an X app with "Read and Write" permissions), `HIGGSFIELD_API_KEY`, `HIGGSFIELD_API_SECRET` (for content image/video generation via Nano Banana + Kling 3 — 1Password item `higgsfield.studio.agents` in the `studio-agents` vault)
-- **ACM**: Enabled (auto SSL via Let's Encrypt)
+- **TLS**: Heroku ACM is **disabled** on `mcritchie-studio` (the `*.mcritchie.app` origin certificate turned it off; Heroku allows one or the other per app). The hub's names are moving to Cloudflare origin certificates behind a proxied record, Full (strict): state, expiry dates and rollback in [Certificates and the Edge](../agents/modules/deployment.md#certificates-and-the-edge)
 
 ## Root-Domain Launch Status
 
@@ -35,7 +35,7 @@ As of 2026-06-15, `mcritchie.studio` is the canonical production host.
 Production config should keep `APP_HOST=mcritchie.studio` and
 `MAILER_HOST=mcritchie.studio`; `APP_HOST_ALIASES` should include
 `app.mcritchie.studio`, `www.mcritchie.studio`, and the Heroku fallback host.
-Heroku ACM has issued certs for root, `www`, and legacy `app`. Those two aliases
+Their certificates were ACM-issued and no longer renew (see [Certificates and the Edge](../agents/modules/deployment.md#certificates-and-the-edge)). The two aliases
 answer only to hand visitors on: `CanonicalHost`
 (`lib/middleware/canonical_host.rb`) 301s every GET and HEAD on them to
 `APP_HOST`, and the Google OAuth callback is pinned to the same host, so a

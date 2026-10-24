@@ -128,7 +128,8 @@ Launch status as of 2026-06-15:
 
 - Production deploy: Heroku release `v63`, commit `4831ebcd`.
 - Heroku ACM: certs issued for `mcritchie.studio`, `www.mcritchie.studio`, and
-  `app.mcritchie.studio`.
+  `app.mcritchie.studio`. Superseded: ACM is now off and those certificates do not
+  renew; see [Certificates and the Edge](#certificates-and-the-edge).
 - Rails host config: `APP_HOST=mcritchie.studio`,
   `MAILER_HOST=mcritchie.studio`, and `APP_HOST_ALIASES` includes
   `app.mcritchie.studio`, `www.mcritchie.studio`, and the Heroku fallback host.
@@ -210,6 +211,52 @@ DNS cutover in Squarespace:
 
    Then request one production magic link from the browser and confirm the email
    link uses `https://mcritchie.studio`.
+
+### Certificates and the Edge
+
+**Heroku ACM is off on `mcritchie-studio`, and it cannot come back on.** Heroku's
+rule is either/or per app: "Providing your own certificate disables ACM for your
+application", and "you cannot do both on a single app". The hub carries its own
+certificate for the client-app preview domain (`*.mcritchie.app`, SNI endpoint
+`gigantoraptor-93447`, a Cloudflare origin certificate expiring 2041-10-16), so
+ACM stopped renewing on the day that certificate was added. Do not run
+`heroku certs:auto:enable` here: it would remove or fight the preview
+certificate, and every `*.mcritchie.app` preview runs Full (strict).
+
+The hub's own names therefore move to **Cloudflare origin certificates behind a
+proxied Cloudflare record**, the same arrangement the preview domain uses
+(Alex's option A, 2026-10-24, task `edge-guard-cloudflare-ranges` plus
+Steffon's infra lane). Browsers terminate TLS at Cloudflare; Cloudflare checks
+the origin certificate under **Full (strict)**. An origin certificate never
+renews and never needs to.
+
+| Hostname | Certificate on Heroku | Expires | Cloudflare record |
+|----------|----------------------|---------|-------------------|
+| `app.mcritchie.studio` | `gryposaurus-19295`, ACM-issued, not renewing | 2026-12-21 | DNS only |
+| `www.mcritchie.studio` | `andesaurus-91572`, ACM-issued, not renewing | 2027-01-12 | DNS only |
+| `mcritchie.studio` | `giganotosaurus-60887`, ACM-issued, not renewing | 2027-01-12 | DNS only |
+| `*.mcritchie.app` | `gigantoraptor-93447`, Cloudflare origin | 2041-10-16 | Proxied |
+
+That table is the state on 2026-10-24. Each hub row flips to "Cloudflare
+origin, Proxied" as the cutover steps in
+[`cdn-rollout.md`](../system/cdn-rollout.md) land; update the row in the same
+pass as the flip. The last day to finish `app.` with a week of slack is
+2026-12-14.
+
+Read the live state rather than trusting the table:
+
+```bash
+heroku certs -a mcritchie-studio        # endpoints, expiry, which domain each serves
+heroku domains -a mcritchie-studio      # which SNI endpoint each hostname uses
+curl -sI https://mcritchie.studio/up | grep -i '^cf-ray'   # present = proxied
+```
+
+**Rollback for any one hostname:** set its Cloudflare record back to DNS only.
+Once `EDGE_SECRET` is set, first run `heroku config:unset EDGE_SECRET -a
+mcritchie-studio`: the armed guard refuses every request that did not come
+through Cloudflare, so a DNS-only hostname would answer 403 to all its visitors.
+Its ACM-issued certificate still serves until the date above; after that date
+the rollback is gone, so the cutover has to hold.
 
 ## Turf Monster
 
