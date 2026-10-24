@@ -143,6 +143,17 @@ class ConductorHostSetupTest < Minitest::Test
     assert_no_secret(out + err)
   end
 
+  # Runbook decision 2, option B: FileVault off with automatic login is a finished host.
+  def test_filevault_off_with_automatic_login_is_decision_b_and_checks_clean
+    build_done_host
+    stub("fdesetup", 'echo "FileVault is Off."')
+    stub("defaults", "echo alex")
+    out, = run_cli("--check", "--no-board")
+
+    assert_match(/done\s+FileVault\s+off \(decision B: automatic login\)/, out)
+    assert_match(/all 16 items done/, out)
+  end
+
   def test_a_pending_harness_key_waits_on_alex
     build_done_host(pending_key: true)
     out, = run_cli("--check", "--no-board")

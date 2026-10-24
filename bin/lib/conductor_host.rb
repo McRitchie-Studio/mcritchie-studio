@@ -161,10 +161,14 @@ module ConductorHost
            PMSET_COMMAND.join(" "))
     end
 
+    # Decision 2 in the runbook: A is FileVault on, B is FileVault off with
+    # automatic login. Either is a finished host; only off-without-auto-login misses.
     def filevault
       out, = run("fdesetup", "status")
       on = out.to_s.include?("FileVault is On")
-      item(:filevault, "FileVault", on, on ? "on" : "off or unreadable",
+      login, auto = run("defaults", "read", "/Library/Preferences/com.apple.loginwindow", "autoLoginUser")
+      auto &&= !login.to_s.strip.empty?
+      item(:filevault, "FileVault", on || auto, on ? "on" : (auto ? "off (decision B: automatic login)" : "off or unreadable"),
            "System Settings > Privacy & Security > FileVault > Turn On (keep the recovery key in 1Password)")
     end
 
