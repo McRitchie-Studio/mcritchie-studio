@@ -1,0 +1,9 @@
+<script nonce="<%= content_security_policy_nonce %>">console.log("nonced by the ERB helper")</script>
+<%= javascript_tag 'import "board/ticker_dom"', type: "module", nonce: true %>
+<script type="application/json" id="seed">{"a": 1}</script>
+<%# <script>alert(1)</script> in an ERB comment %>
+<script
+  nonce="<%= content_security_policy_nonce %>"
+  type="module">
+  // a <script> named in a JS comment is prose
+</script>

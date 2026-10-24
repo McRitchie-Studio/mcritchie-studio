@@ -1,0 +1,4 @@
+<%# <div style="margin: 0"> a style in an ERB comment is not an offense %>
+<!-- <div style="color: red"> nor is one in an HTML comment -->
+<div class="mt-1" data-style="compact">utility classes, and an attribute that only ends in "style"</div>
+<script nonce="<%= content_security_policy_nonce %>">el.style = "display: none";</script>
