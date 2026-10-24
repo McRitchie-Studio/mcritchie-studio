@@ -86,7 +86,7 @@ class LauncherChildEnvTest < Minitest::Test
     "bin/lib/release_claim_cli.rb" => ["ReleaseClaimCli", "RELEASE_CONDUCTOR_CLAIM"]
   }.freeze
 
-  def launch_renewer(file, klass, prefix, prelude: "")
+  def launch_renewer(file, klass, prefix, prelude: "", extra: {})
     Dir.mktmpdir("renewer-env") do |dir|
       dump = File.join(dir, "env.out")
       script = <<~RUBY
@@ -97,7 +97,7 @@ class LauncherChildEnvTest < Minitest::Test
                  ["/bin/sh", "-c", "env > #{dump}"])
       RUBY
       run_ruby(script, "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:9", "CLAUDE_PROJECTS_DIR" => dir,
-                       "#{prefix}_RENEW_INTERVAL" => "7")
+                       "#{prefix}_RENEW_INTERVAL" => "7", **extra)
       read_env(dump)
     end
   end
@@ -121,6 +121,37 @@ class LauncherChildEnvTest < Minitest::Test
         def ChildEnv.renewer(values, env = ENV, allow: []) = env.to_h.merge(values)
       RUBY
       assert_control_leaks(seen, file)
+    end
+  end
+
+  # AGENT_LEGACY_TOKEN=off is a setting, not a credential (secrets-scrub-review-notes):
+  # a renewer that lost it would re-mint with the shared token the session turned
+  # off. An OFF value reaches each renewer; any other value is still dropped.
+  def test_each_renewer_keeps_the_legacy_token_off_switch
+    RENEWERS.each do |file, (klass, prefix)|
+      seen = launch_renewer(file, klass, prefix, extra: { "AGENT_LEGACY_TOKEN" => "off" })
+
+      assert_equal "off", seen["AGENT_LEGACY_TOKEN"], "#{file}: the renewer lost AGENT_LEGACY_TOKEN=off"
+      assert_scrubbed(seen, file)
+    end
+  end
+
+  def test_each_renewer_drops_a_legacy_token_value_that_is_not_off
+    RENEWERS.each do |file, (klass, prefix)|
+      seen = launch_renewer(file, klass, prefix, extra: { "AGENT_LEGACY_TOKEN" => "fake-pasted-token" })
+
+      refute seen.key?("AGENT_LEGACY_TOKEN"), "#{file}: a non-off AGENT_LEGACY_TOKEN reached the renewer"
+    end
+  end
+
+  # The control: under the pre-fix renewer (the allow-list alone) the off-switch
+  # is dropped, so the keep test above observes the fix and not the fixture.
+  def test_control_the_allow_list_alone_drops_the_off_switch
+    RENEWERS.each do |file, (klass, prefix)|
+      seen = launch_renewer(file, klass, prefix, extra: { "AGENT_LEGACY_TOKEN" => "off" }, prelude: <<~RUBY)
+        def ChildEnv.renewer(values, env = ENV, allow: []) = ChildEnv.build(values, env, allow: ChildEnv::RENEWER_ALLOW + allow)
+      RUBY
+      refute seen.key?("AGENT_LEGACY_TOKEN"), "#{file}: the control kept the switch, so the keep test proves nothing"
     end
   end
 
