@@ -40,6 +40,11 @@ operation or to recover from a failure. The automation landed in task
 single-bucket store is enabled by §2a instead of §2; every other act is the
 same, with the store's name in place of `<app>`.
 
+**Databases are a separate act.** This SOP backs up R2 files. Heroku Postgres
+databases are backed up nightly by Heroku's schedule, watched by the hub's
+`DbBackupSweepJob`, and drilled monthly:
+[`db-restore-drill`](db-restore-drill.md).
+
 ## What this act is NOT
 
 - **It never writes production except in Restore**, and Restore uses the admin
