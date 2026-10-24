@@ -280,8 +280,13 @@ Back to the laptop, in the same order (give up first, take over second):
 # on the mini
 bin/conductor-host-setup --hand-off-to mac
 # on the laptop (Alex)
-rm ~/.config/mcritchie/conductor-elsewhere && bin/dispatcher install && bin/client-build-launcher install
+rm -f ~/.config/mcritchie/conductor-elsewhere && bin/dispatcher install && bin/client-build-launcher install
 ```
+
+**If the mini never took over, or is dead,** skip the mini line: the laptop line
+alone resumes the laptop as conductor (Alex, with the `!` prefix in a Claude
+session). A dead mini that comes back starts both services at login
+(`RunAtLoad`), so run `bin/conductor-host-setup --hand-off-to mac` on it at once.
 
 ## After a power cut
 
