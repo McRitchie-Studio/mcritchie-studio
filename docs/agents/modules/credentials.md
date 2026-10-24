@@ -513,9 +513,31 @@ closes. Metering is best-effort in both halves: it never raises, never changes
 the child's exit status, and never costs a read of its own, so a consumer's
 fallback for an absent or rate-limited `op` is untouched.
 
-⚠️ `op service-account ratelimit` **itself costs a read** — do not poll it.
-There is deliberately **no alarm or budget threshold**; once spend is
-attributable it is findable.
+**Every `op` read is bounded.** Each attempt through either half of the wrapper
+gets 20 seconds (`MCR_OP_DEADLINE` overrides it), then the child is killed. A
+timed-out attempt is logged `timeout` and retried ONCE with `OP_CACHE=false`, which
+skips the 1Password cache daemon; the retry logs its own row (`ok`, `fail:<n>`, or
+a second `timeout`). `bin/op-reads` counts timeouts in their own column. Callers
+change nothing: `bin/gh-token`, `bin/gh-app-git-credential`, the board CLI and the
+agent API all get the bound from the wrapper. The shell half's watchdog is perl
+(`timeout` is not installed on the Mac), and it forks and kills from the parent,
+because `op` is a Go binary and ignores an inherited SIGALRM. Why: from 2026-10-21
+to 2026-10-24 the daemon never became ready after a reboot, every read waited about
+fifteen minutes, and GitHub work stopped for three days.
+
+**`OP_CACHE=false` is the bypass.** Prefix any `op` call with it when reads hang:
+`OP_CACHE=false op whoami`. It costs a few hundred milliseconds per call and no
+quota, which counts reads, not cache misses. When only the uncached call answers,
+the daemon is stuck: quit and reopen the 1Password app. The dispatcher's
+`harness_degraded` alert names the same check
+([`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md)).
+
+⚠️ Do not poll `op service-account ratelimit`. An earlier note here said it costs a
+read; measured 2026-10-24, two calls of it and three of `op whoami` moved neither
+the token's read counter nor the account's read_write counter, while one `op read`
+moved each by one. The dispatcher's minute probe uses `op whoami` for that reason.
+There is deliberately **no budget threshold**; once spend is attributable it is
+findable.
 
 Verify:
 
