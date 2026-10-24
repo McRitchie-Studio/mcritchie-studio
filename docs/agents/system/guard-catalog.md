@@ -43,7 +43,7 @@ A KEEP row needs nothing; its cell reads `kept`.
 
 | Group | Guards | Delete | By construction | Keep |
 |---|---|---|---|---|
-| 1. Certs, evidence and the CI gate | 64 | 1 | 10 | 53 |
+| 1. Certs, evidence and the CI gate | 67 | 1 | 10 | 56 |
 | 2. Definition of Ready | 40 | 2 | 7 | 31 |
 | 3. Ship, task begin and claims | 62 | 5 | 6 | 51 |
 | 4. Session preflight and installed docs | 21 | 4 | 5 | 12 |
@@ -52,8 +52,8 @@ A KEEP row needs nothing; its cell reads `kept`.
 | 7. Release | 102 | 0 | 13 | 89 |
 | 8. Docs and citation guards | 42 | 9 | 24 | 9 |
 | 9. Registry guards and ratchets | 34 | 1 | 15 | 18 |
-| 10. App validations and API refusals | 49 | 2 | 8 | 39 |
-| **Total** | **494** | **29** | **93** | **372** |
+| 10. App validations and API refusals | 50 | 2 | 9 | 39 |
+| **Total** | **498** | **29** | **94** | **375** |
 
 Fires: no store counts refusals. Every `bin/dor-check` verdict writes a
 `GateRun` row, and `/Users/alex/projects/.agents/worktree-registry.json` records
@@ -106,7 +106,7 @@ entry, and the payout table snapshots onto the contest at creation. A contest
 created since cannot reach grading with a settlement that does not fit; one
 created before the snapshot is the kept part of decision 8.
 
-## 1. Certs, evidence and the CI gate (64)
+## 1. Certs, evidence and the CI gate (67)
 
 | Guard | Refuses → prevents | Trigger · fires | n | Disposition | Mark |
 |---|---|---|---|---|---|
@@ -123,6 +123,7 @@ created before the snapshot is the kept part of decision 8.
 | `CiStatus.validate_cert_route!` | A misspelled route that prints retired cert text | PR 1235 · 0 | 1 | DELETE with `cert_route` | applied: `guards-certs-dor-and-ship` (`release_grain:`, a boolean keyword) |
 | `bin/lib/stacked_pr.rb#StackedPr` blank `repo_scope` | A false `:not_stacked` read from the cwd's repo | /tasks/review-refuses-unread-base | 1 | BY CONSTRUCTION: `repo_scope:` becomes a required keyword | applied in part: `guards-certs-dor-and-ship` (`repo_scope:` is required); kept: the blank-value refusal, because `bin/pr-review` derives the scope from a URL regex that can still miss |
 | `CiGate` red, conflicted, ci-less, review-side pending, closed, unverified, unreadable, no PR, unclassified; `bin/dor-check` behind-base and `#stale_green_refusal`; `StackedPr` unread base, empty branch, unreadable probe, stacked | Merging on red, unknown or untested CI; dragging a parent PR | PR 509 stall; PR 1258; turf 701 on 624 | 15 | KEEP: the single CI verdict. `ci_status.rb`'s header still describes the retired cert remedy | kept: `guards-certs-dor-and-ship`. A check-run with a conclusion settles at any status (`ship-remints-expiring-tokens`) |
+| `bin/brakeman`, the command CI's static lane runs (`.github/workflows/reusable-ci.yml`), with `--ensure-ignore-notes` and `--ensure-no-obsolete-ignore-entries`; `config/brakeman.ignore` | A Brakeman warning nobody excused, an excuse with no reason, or an excuse for code that is gone → a new SQL injection, XSS or command injection merging on a green lane | Platform audit 2026-10-24 D4: the wrapper passed `--no-exit-on-warn`, and 34 warnings sat behind a green lane | 3 | KEEP: a cheap check on the merged tree. `test/lib/brakeman_gate_test.rb` scans a throwaway app with one deliberate warning and holds the exit code, and holds that every hub ignore entry carries its reason | kept |
 
 ## 2. Definition of Ready (40)
 
@@ -230,7 +231,7 @@ created before the snapshot is the kept part of decision 8.
 | e2e contract arithmetic | See decision 7 | · | 1 | BY CONSTRUCTION | applied: `guards-registries-and-ratchets` (`bin/lib/e2e_spec_census.rb`) |
 | Release registry answers; shape tiers; web2 boundary; engine pin; image registry; assertion-free ban; ratchet schema; e2e quarantine ceiling; e2e modifiers; Rails skip ceiling; ratchet baseline; job and apt timeouts; fence cap; scan floors (2); payload budget; Puma connection budget | Real preconditions and one-way ratchets | 2026-08-09 H12 outage; 2026-08-18 runner incident | 18 | KEEP | kept: `guards-registries-and-ratchets` |
 
-## 10. App validations and API refusals (49)
+## 10. App validations and API refusals (50)
 
 | Guard | Refuses → prevents | Trigger · fires | n | Disposition | Mark |
 |---|---|---|---|---|---|
@@ -244,6 +245,7 @@ created before the snapshot is the kept part of decision 8.
 | Task enums, dependencies and epic (normalize, then refuse), approval status, review check-in, intent event, builder stamp, clamps, race-tolerant create, `Ci::ReviewGate`, `ReviewPendingAction` (3), `DeskRecord` (2), `GateRun`, `Devops::Windows`, `Release#add` and states, `Release::Conductor`, `CredentialRecord`, learning and claim integrity, content claims, domain validations (one row for about 300 sites) | Invalid records; history rewrites; an auto-merge on one repo's CI | 2026-08-29 PR 1073; 2026-09-17 int4 clamp | 26 | KEEP. No stage-transition guard exists for tasks | kept: a KEEP needs nothing |
 | API: bearer and rescue folds, unsupported index params, intent, devops 422 fold, pending-action arm, conductor reassign, desk records, contents, music videos, webhook signature, game recaps, sessions, heartbeat grader, admin wall and local-only, web task forms | Bad tokens and inputs | `?status=submitted` returned every task | 13 | KEEP | kept: a KEEP needs nothing |
 | Agent login doors: a harness key outside its doors (the mint doors, the board reads, narration, a task's create and its claim), a client runtime key outside its soul's endpoints, a session asking for a harness key, a harness key asked to mint a tier above studio, `TASK_AS_ADMIN` with no admin login or an ended one, a sandboxed read of the operator's harness key or desk login | A machine or sibling-app credential used as an actor; a test run presenting a real login | · | 6 | KEEP | kept: `retire-shared-secret-fallback` |
+| CSRF on JSON writes: `verify_authenticity_token` on every browser write, a `.json` one included; `test/integration/csrf_skip_allowlist_test.rb` | A session-cookie write without the page's token → a same-site page (a client app or a preview under `*.mcritchie.studio`) form-POSTing to a `.json` route as Alex | Platform audit 2026-10-24 D5: four controllers skipped the check on `.json` | 1 | BY CONSTRUCTION: no controller skips the check by format. A write that carries no session token belongs to the bearer-gated `/api/v1` (`ActionController::API`), where CSRF does not apply. The allow-list test reads every controller's callback chain and admits only the one-click unsubscribe and the two svix-signed Resend webhooks, each with its reason | applied: `hub-security-gates-pass` (the four `.json` skips are gone; `test/integration/json_writes_keep_csrf_test.rb` refuses a forged form write to each controller and lands the board's own fetch with the page token) |
 
 ## Deviations
 
