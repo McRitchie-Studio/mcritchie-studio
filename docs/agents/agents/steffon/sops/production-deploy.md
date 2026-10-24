@@ -255,7 +255,9 @@ be undone. In order, after production authority:
    is about to deploy and refuses (`REFUSING TO DEPLOY a prerelease gem`) if one
    names a prerelease of a registered gem, whatever prepared the release.
 9. Deploy. After the seal, each gem repo's own lock is bumped to the finals on its
-   `accepted` (best-effort).
+   `accepted` (best-effort), and so is every live engine app the release did not
+   carry (`config/apps.yml` `engine: true`), in parallel; each push runs that app's
+   CI, and none of those apps deploys.
 
 **Where it can stop, and what a re-run does:**
 

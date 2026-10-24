@@ -629,6 +629,19 @@ How a gem rides a release:
    version commit (`commit_gem_version!`) — a version and its lockfile, never a
    consumer lock. At prepare, `assert_no_lock_drift!` refuses to leave a swept
    consumer resolving a gem older than the candidate it was locked to.
+7. **Every engine app the release did not carry is re-locked too, onto its
+   `accepted`, by the ship.** Steps 3 to 5 reach only the swept apps, the ones
+   with a card; an engine app with none drifted a release further behind on
+   every publish (moms-app 14 behind and rantly 34 on 2026-10-24). After the
+   producer locks, `relock_cardless_consumers` takes every app that
+   `config/apps.yml` flags `engine: true` and live and `config/release_repos.yml`
+   lists as a three-rung app (`Release::EngineConsumers.cardless`), minus the
+   swept ones, and commits each one's lock, with any new engine migrations, onto
+   **`origin/accepted`** at the FINAL version. The apps run in parallel, and each
+   push runs that app's CI; the ship does not wait on those runs. A cardless app
+   never gets a candidate, because nothing QA's it in this release, and it does
+   not deploy: the commit rides the next release that carries the app. It is
+   best-effort, like step 6. An `engine: false` app is never touched.
 
 Operational notes:
 

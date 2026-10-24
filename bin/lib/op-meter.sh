@@ -24,7 +24,8 @@
 # log is never a failure to run. Proven with a booby-trapped `op` that exits 127.
 #
 # NOT SPAWN MORE THAN IT MUST. bin/gh-app-git-credential runs on every push and
-# fetch, so the hot path is deliberately builtin-only apart from one `date`. The
+# fetch, so the hot path is deliberately builtin-only apart from one `date` and
+# the perl watchdog that bounds each attempt (THE BOUND, below). The
 # sandbox check short-circuits on an empty TASK_USAGE_SANDBOX before it reaches
 # `tr`, so a real agent session pays nothing for the test-only branch.
 #
@@ -94,7 +95,7 @@ op_meter_refused() {
   return 0
 }
 
-# op_meter_record <action> <exit-status> [via]
+# op_meter_record <action> <exit-status|timeout> [via]
 # Best-effort by contract: always returns 0, whatever happens.
 op_meter_record() {
   local action="${1:--}" rc="${2:-}" via="${3:--}"
@@ -106,7 +107,11 @@ op_meter_record() {
   [ -d "$dir" ] || mkdir -p "$dir" 2>/dev/null || return 0
 
   local outcome="ok"
-  [ "$rc" = "0" ] || outcome="fail:${rc:-?}"
+  case "$rc" in
+    0) ;;
+    timeout) outcome="timeout" ;;
+    *) outcome="fail:${rc:-?}" ;;
+  esac
 
   # op_meter_caller is the SCRIPT that sourced this file (captured at source
   # time — see the zsh note above), which is the attribution being asked for:
@@ -121,6 +126,46 @@ op_meter_record() {
     "${MCR_OP_METER_CONTEXT:-${CLAUDE_CODE_SESSION_ID:--}}" \
     >>"$op_meter_log" 2>/dev/null || true
   return 0
+}
+
+# THE BOUND (2026-10-24). On 2026-10-21 the Mac rebooted, the 1Password cache
+# daemon never became ready, and every `op read` waited about fifteen minutes:
+# bin/gh-app-git-credential runs on every fetch and push, so git hung with it.
+# Each attempt now gets MCR_OP_DEADLINE seconds (default 20, the Ruby half's
+# OpMeter::DEFAULT_DEADLINE), then SIGKILL; a timed-out attempt is recorded as
+# `timeout` and retried ONCE with OP_CACHE=false, which skips the daemon.
+#
+# The watchdog is perl because `timeout` is not installed on this Mac and perl
+# is on every macOS and Linux box. It FORKS and kills the child from the parent
+# rather than `alarm N; exec op`: op is a Go binary, and the Go runtime catches
+# SIGALRM and ignores it, so an alarm inherited across exec would never fire.
+# perl's alarm takes whole seconds and alarm 0 means NONE, so the deadline is
+# rounded up, and anything not a positive number falls back to 20.
+# Exit 124 is the watchdog's timeout (GNU timeout's code); 127 and 126 are the
+# shell's not-found and not-executable, so the log keeps one vocabulary.
+OP_METER_TIMEOUT_RC=124
+# shellcheck disable=SC2016
+OP_METER_WATCHDOG='use POSIX ();
+my $t = shift @ARGV;
+$t = ($t =~ /^[0-9]*[.]?[0-9]+$/ && $t > 0) ? POSIX::ceil($t) : 20;
+my $pid = fork;
+exit 126 unless defined $pid;
+if ($pid == 0) { exec { $ARGV[0] } @ARGV; POSIX::_exit($!{ENOENT} ? 127 : 126); }
+$SIG{ALRM} = sub { kill "KILL", $pid; waitpid $pid, 0; exit 124 };
+alarm $t;
+waitpid $pid, 0;
+alarm 0;
+my $s = $?;
+exit(($s & 127) ? 128 + ($s & 127) : $s >> 8);'
+
+# op_meter_bounded <op-binary> <args...> — one attempt under the deadline. With
+# no perl the attempt runs unbounded, as every caller did before the bound.
+op_meter_bounded() {
+  if command -v perl >/dev/null 2>&1; then
+    perl -e "$OP_METER_WATCHDOG" "${MCR_OP_DEADLINE:-20}" "$@"
+  else
+    "$@"
+  fi
 }
 
 # op_metered <op-binary> <args...> — run `op` and record it.
@@ -148,8 +193,18 @@ op_metered() {
   # `|| rc=$?` keeps this safe under `set -e`: a non-zero `op` must reach the
   # recorder and the caller, not abort the shell from inside the wrapper.
   local op_meter_rc=0
-  "$op_meter_bin" "$@" || op_meter_rc=$?
+  op_meter_bounded "$op_meter_bin" "$@" || op_meter_rc=$?
 
-  op_meter_record "$op_meter_action" "$op_meter_rc" "${OP_METER_VIA:--}"
+  if [ "$op_meter_rc" = "$OP_METER_TIMEOUT_RC" ]; then
+    op_meter_record "$op_meter_action" timeout "${OP_METER_VIA:--}"
+    op_meter_rc=0
+    OP_CACHE=false op_meter_bounded "$op_meter_bin" "$@" || op_meter_rc=$?
+  fi
+
+  if [ "$op_meter_rc" = "$OP_METER_TIMEOUT_RC" ]; then
+    op_meter_record "$op_meter_action" timeout "${OP_METER_VIA:--}"
+  else
+    op_meter_record "$op_meter_action" "$op_meter_rc" "${OP_METER_VIA:--}"
+  fi
   return $op_meter_rc
 }

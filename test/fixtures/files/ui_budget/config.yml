@@ -1,0 +1,17 @@
+# A two-page budget for test/lib/ui_budget_test.rb: one landing page, one sign-in page.
+widths: [390, 1280]
+ceilings:
+  axe_serious_critical: { label: axe, max: 0 }
+  js_bytes: { label: JS, max: 256000 }
+  third_party_js_bytes: { label: 3p JS, max: 0, applies_to: not_sign_in }
+  total_bytes: { label: total, max: 1048576, applies_to: landing_phone }
+  largest_image_ratio: { label: image, max: 2.0 }
+  html_raw_bytes: { label: HTML, max: 204800 }
+  css_bytes: { label: CSS, max: 153600 }
+  assets_cached_one_year_pct: { label: cache, min: 100 }
+apps:
+  example:
+    host: https://example.test
+    pages:
+      - { path: /, landing: true }
+      - { path: /login, sign_in: true }

@@ -16,7 +16,10 @@ module AgentMessages
       def ignore? = ignore == true
     end
 
-    attr_reader :bot_user_id, :ops_channel_id
+    # Where the floor escalates to a person when no `floor.escalation_email` is set.
+    DEFAULT_OPS_EMAIL = "alex@mcritchie.studio".freeze
+
+    attr_reader :bot_user_id, :ops_channel_id, :ops_email
 
     def self.load(path = PATH)
       new(YAML.safe_load_file(path, aliases: false) || {})
@@ -28,6 +31,9 @@ module AgentMessages
       # Where the floor alert (AgentDispatcherAlertJob) posts. It is read for
       # inbound like any channel of its guild; it is not special here.
       @ops_channel_id = discord["ops_channel_id"].to_s.presence
+      # Where the floor alert escalates by email (FloorAlert#escalate): an
+      # incident open 15 minutes, or flapping.
+      @ops_email = (config["floor"] || {})["escalation_email"].to_s.strip.presence || DEFAULT_OPS_EMAIL
       @guilds = (discord["guilds"] || {}).to_h { |id, guild| [ id.to_s, guild || {} ] }
       @overrides = build_overrides
       # The CTOs the web chat may route to (the `web:` block). A soul not

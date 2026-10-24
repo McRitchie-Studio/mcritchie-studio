@@ -1,0 +1,15 @@
+<% if @reason == "flapping" -%>
+The agent floor has a flapping incident: <%= @label %>, <%= @opens %> time(s) since <%= @since %>.
+<% else -%>
+The agent floor has an incident that has stayed open <%= @open_minutes %> minutes: <%= @label %>.
+<% end -%>
+
+What the floor sees now:
+<%= @alert %>
+
+Opened <%= @since %><%= @opens > 1 ? ", #{@opens} openings in this run" : "" %>. Discord (lobster-tank) has the
+detail; this is the one email for it until it recovers.
+
+What to do: Steffon's SOP agent-dispatcher (say "agent-dispatcher" to a session),
+<%= @sop_path %>
+<%= @sop_url %>

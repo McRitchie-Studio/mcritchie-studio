@@ -46,7 +46,7 @@ bin/dispatcher ──ping every minute──▶ agent_dispatchers ◀── Agen
 | Typing | `bin/dispatcher` → `POST /api/v1/agent_messages/:id/typing` → `AgentMessageTypingJob` → `AgentMessages::DiscordBot#trigger_typing`, as the bot that will reply (below, "Typing") |
 | Worker API | `Api::V1::AgentMessagesController` (`/api/v1/agent_messages`) |
 | Worker | `bin/dispatcher` (`bin/lib/agent_dispatcher.rb`), under launchd on Alex's Mac; `bin/heartbeat` by hand. Both answer through `AgentMailbox::Responder` (`bin/lib/agent_mailbox.rb`) |
-| Dispatcher health | `POST /api/v1/agent_dispatchers/ping` → `agent_dispatchers`; `AgentDispatcherAlertJob` → `agent_mailbox_incidents` |
+| Dispatcher health | `POST /api/v1/agent_dispatchers/ping` (with the Mac's op, gh and power health) → `agent_dispatchers`; `AgentDispatcherAlertJob` → `agent_mailbox_incidents`, Discord, and one email per episode state to `floor.escalation_email` |
 | Operating it | Steffon's [`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md) SOP |
 | Observing | `/admin/agent_messages` (Ops → Agent inbox), `bin/agent-inbox` |
 
@@ -254,7 +254,20 @@ session for any). A client session or a harness key reaches none of it.
 routes (or `--souls`). It long-polls one claim at a time, answers each message on
 its own thread through the same Responder the heartbeat uses, renews the lease
 every 3 minutes while the answer runs, keeps at most 5 answers at once, and pings
-the board every minute. Every board call is made from its main loop. Claude runs
+the board every minute. Every board call is made from its main loop.
+
+**The ping.** `POST /api/v1/agent_dispatchers/ping` carries `worker`, `host`,
+`souls`, `running`, `capacity`, `paused_until`, `pause_reason`, `state`, `version`
+and `started_at`, and the Mac's harness health: `op_ok` (a login-shell `op whoami`,
+which costs no quota), `gh_ok` (`gh api /rate_limit` with the token `bin/gh-token`
+hands agents), `power` (`ac` or `battery`, from `pmset -g batt`) and
+`harness_measured_at`. Each check is bounded at 20 seconds and runs on its own
+thread (`AgentMailbox::HarnessProbe`), so a hung `op` never holds up the loop; a
+ping carries the newest finished measurement, and none before the first. The board
+stores them on the dispatcher row (`op_ok`, `gh_ok`, `power_source`,
+`harness_checked_at`) and counts consecutive measurements with op or gh false in
+`harness_failing_beats`; a ping repeating a measurement it already carried does not
+count again. Claude runs
 with `--output-format json`, and the dispatcher reads only what the model cannot
 write (`AgentMailbox::ClaudeRun`): the exit status, stderr, and the envelope's
 `is_error` and `api_error_status`. A usage-limit notice in a FAILED run's error
@@ -284,7 +297,14 @@ ping) or a routed message has waited `received` for 10, and once more when it
 clears. Two more checks are per card: a `submitted` card with a green DoR and no
 review claim for 30 minutes (`submitted_unclaimed`, naming the review launch
 line), and a chat-sourced change card the build launcher could not start
-(`change_build_refused`). Without the bot token it logs a line and posts nothing.
+(`change_build_refused`). A third floor-wide check, `harness_degraded`, opens when
+the live primary's `harness_failing_beats` reaches 5. An episode that reopens three
+times within an hour posts one `flapping, N since HH:MM` line instead of a line per
+flap. Without the bot token it logs a line and posts nothing. Escalation to a
+person does not depend on Discord: ONE email to `floor.escalation_email`
+(`config/agent_routes.yml`, through the outbox) when a floor-wide incident stays
+open 15 minutes or flaps, and ONE when the episode has been quiet 15 minutes; the
+per-card kinds stay on Discord.
 
 **Reports.** The same bot also posts scheduled reports (the CTO daily
 application report first) into a channel Alex picks per report at

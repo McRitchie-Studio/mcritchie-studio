@@ -96,7 +96,7 @@ module CiPollBudget
   end
 
   # The events whose runs produce the verdict a release gate reads. A schedule-,
-  # workflow_dispatch- or workflow_run-only workflow (r2-backup,
+  # workflow_dispatch- or workflow_run-only workflow (r2-backup, ui-budget,
   # engine-lock-automerge) never runs on the SHA under test, so its chain must not size
   # the wait (task ci-poll-refreshes-its-token). Measured 2026-10-06, none of them yet
   # outlasts its repo's ci.yml, so this is the guard against the day one does: a slow

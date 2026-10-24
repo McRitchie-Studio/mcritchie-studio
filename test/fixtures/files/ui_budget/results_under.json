@@ -1,0 +1,79 @@
+{
+ "collected_at": "2026-10-24T21:00:00Z",
+ "user_agent": "x ui-budget",
+ "tools": {},
+ "results": [
+  {
+   "url": "https://example.test/",
+   "width": 390,
+   "status": 200,
+   "error": null,
+   "warnings": [],
+   "metrics": {
+    "axe_serious_critical": 0,
+    "js_bytes": 200000,
+    "third_party_js_bytes": 0,
+    "total_bytes": 900000,
+    "largest_image_ratio": 1.5,
+    "html_raw_bytes": 100000,
+    "css_bytes": 40000,
+    "assets_cached_one_year_pct": 100.0
+   },
+   "detail": {}
+  },
+  {
+   "url": "https://example.test/",
+   "width": 1280,
+   "status": 200,
+   "error": null,
+   "warnings": [],
+   "metrics": {
+    "axe_serious_critical": 0,
+    "js_bytes": 200000,
+    "third_party_js_bytes": 0,
+    "total_bytes": 2000000,
+    "largest_image_ratio": 1.5,
+    "html_raw_bytes": 100000,
+    "css_bytes": 40000,
+    "assets_cached_one_year_pct": 100.0
+   },
+   "detail": {}
+  },
+  {
+   "url": "https://example.test/login",
+   "width": 390,
+   "status": 200,
+   "error": null,
+   "warnings": [],
+   "metrics": {
+    "axe_serious_critical": 0,
+    "js_bytes": 200000,
+    "third_party_js_bytes": 150000,
+    "total_bytes": 900000,
+    "largest_image_ratio": 1.5,
+    "html_raw_bytes": 100000,
+    "css_bytes": 40000,
+    "assets_cached_one_year_pct": 100.0
+   },
+   "detail": {}
+  },
+  {
+   "url": "https://example.test/login",
+   "width": 1280,
+   "status": 200,
+   "error": null,
+   "warnings": [],
+   "metrics": {
+    "axe_serious_critical": 0,
+    "js_bytes": 200000,
+    "third_party_js_bytes": 0,
+    "total_bytes": 900000,
+    "largest_image_ratio": null,
+    "html_raw_bytes": 100000,
+    "css_bytes": 40000,
+    "assets_cached_one_year_pct": null
+   },
+   "detail": {}
+  }
+ ]
+}

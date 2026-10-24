@@ -117,6 +117,9 @@ summary = groups.map do |key, group|
     opts[:by] => key,
     "reads" => group.length,
     "failed" => group.count { |r| r["outcome"].to_s.start_with?("fail") },
+    # An attempt killed at its 20-second deadline (OpMeter.popen); each is
+    # followed by its one uncached retry's own row.
+    "timeouts" => group.count { |r| r["outcome"] == "timeout" },
     "actions" => group.map { |r| r["action"] }.tally.sort_by { |_, n| -n }.map { |a, n| "#{a}×#{n}" }.join(" "),
     "first" => group.map { |r| r["ts"] }.min,
     "last" => group.map { |r| r["ts"] }.max
@@ -132,9 +135,9 @@ label = opts[:by].upcase
 width = [summary.map { |r| r[opts[:by]].to_s.length }.max, label.length].max
 puts "#{rows.length} 1Password read(s) in the last #{opts[:since]}, by #{opts[:by]}:"
 puts
-puts format("  %-#{width}s  %6s  %6s  %s", label, "READS", "FAILED", "ACTIONS")
+puts format("  %-#{width}s  %6s  %6s  %7s  %s", label, "READS", "FAILED", "TIMEOUT", "ACTIONS")
 summary.each do |r|
-  puts format("  %-#{width}s  %6d  %6d  %s", r[opts[:by]], r["reads"], r["failed"], r["actions"])
+  puts format("  %-#{width}s  %6d  %6d  %7d  %s", r[opts[:by]], r["reads"], r["failed"], r["timeouts"], r["actions"])
 end
 puts
 puts "  window: #{summary.map { |r| r['first'] }.min} .. #{summary.map { |r| r['last'] }.max}"

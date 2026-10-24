@@ -3,7 +3,11 @@ module Api
     # bin/dispatcher's minute ping (docs/agents/agents/steffon/sops/agent-dispatcher.md).
     #
     #   POST /api/v1/agent_dispatchers/ping { worker, host, souls[], running, capacity,
-    #                                         paused_until?, pause_reason?, state, version, started_at }
+    #                                         paused_until?, pause_reason?, state, version, started_at,
+    #                                         op_ok?, gh_ok?, power?, harness_measured_at? }
+    #
+    # op_ok / gh_ok / power are the Mac's harness health, measured on each beat
+    # (AgentMailbox::HarnessProbe) and stored on the row (AgentDispatcher.record_harness).
     #   GET  /api/v1/agent_dispatchers      the rows, newest ping first
     #
     # AUTH is the board's (BaseController): any agent session or the shared token.
@@ -23,7 +27,8 @@ module Api
         error = nil
         rescue_and_log do
           row = AgentDispatcher.ping!(params.to_unsafe_h.slice(*%w[worker host souls running capacity paused_until
-                                                                    pause_reason state version started_at]))
+                                                                    pause_reason state version started_at
+                                                                    op_ok gh_ok power harness_measured_at]))
         rescue ArgumentError => e
           error = e
         end

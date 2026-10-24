@@ -87,6 +87,9 @@ class BinHelpFlagClassTest < Minitest::Test
     "clean-artifacts"        => :cli_arg_guard,
     "register-app"           => :cli_arg_guard,
     "r2-backup"              => :cli_arg_guard,
+    # The nightly UI budget (.github/workflows/ui-budget.yml): --collect opens
+    # production pages in a browser and writes a results file.
+    "ui-budget"              => :cli_arg_guard,
     # The Cloudflare DNS move: creates zones, rewrites records, sets SSL, writes
     # redirect rules, adds Heroku domains and moves APP_HOST. One guard with a
     # per-subcommand flag dictionary, ahead of the first credential read.

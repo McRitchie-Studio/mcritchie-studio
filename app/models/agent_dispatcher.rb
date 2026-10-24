@@ -20,6 +20,10 @@ class AgentDispatcher < ApplicationRecord
   # The role vocabulary; the CHECK agent_dispatchers_role_known holds the same
   # list (20261016230000).
   ROLES = %w[primary standby].freeze
+  # Consecutive measured beats with op or gh failing before the floor opens
+  # harness_degraded (AgentMessages::FloorAlert#harness_check).
+  HARNESS_BEATS = 5
+  POWER_SOURCES = %w[ac battery].freeze
   # Strings a ping may carry are clipped to this, so a broken client cannot
   # write an essay into the table.
   FIELD_LIMIT = 200
@@ -66,9 +70,43 @@ class AgentDispatcher < ApplicationRecord
       started_at: parse_time(params["started_at"]) || row.started_at || now,
       last_seen_at: now
     )
+    record_harness(row, params)
     row.save!
     row
   end
+
+  # HARNESS HEALTH, measured on the Mac by bin/dispatcher on each beat with
+  # 20-second bounds (AgentMailbox::HarnessProbe) and carried on the ping:
+  # op_ok (a bounded `op whoami`), gh_ok (a bounded GitHub check), power
+  # ("ac"/"battery"), and harness_measured_at. A ping that carries no
+  # measurement, or the same one again (the probe had not finished a new one),
+  # leaves the counter alone: harness_failing_beats counts MEASUREMENTS, so five
+  # failing beats are five separate checks that failed.
+  def self.record_harness(row, params)
+    row.power_source = params["power"].to_s if POWER_SOURCES.include?(params["power"].to_s)
+    measured = parse_time(params["harness_measured_at"])
+    return if measured.nil? || (row.harness_checked_at && measured <= row.harness_checked_at)
+
+    op = boolean(params["op_ok"])
+    gh = boolean(params["gh_ok"])
+    return if op.nil? && gh.nil?
+
+    row.op_ok = op
+    row.gh_ok = gh
+    row.harness_checked_at = measured
+    row.harness_failing_beats = op == false || gh == false ? row.harness_failing_beats.to_i + 1 : 0
+  end
+  private_class_method :record_harness
+
+  def self.boolean(value)
+    case value
+    when true, "true", "1", 1 then true
+    when false, "false", "0", 0 then false
+    end
+  end
+  private_class_method :boolean
+
+  def harness_degraded? = harness_failing_beats.to_i >= HARNESS_BEATS
 
   # The newest PRIMARY ping: a standby's pings never stand in for the primary's,
   # so the floor alert still says the primary is silent while a standby covers.
@@ -146,7 +184,8 @@ class AgentDispatcher < ApplicationRecord
 
   def as_api_json
     slice(:id, :worker_id, :host, :souls, :running, :capacity, :paused_until, :pause_reason, :state, :version,
-          :started_at, :last_seen_at, :role, :standby_domains).as_json
+          :started_at, :last_seen_at, :role, :standby_domains, :op_ok, :gh_ok, :power_source, :harness_checked_at,
+          :harness_failing_beats).as_json
   end
 
   def self.clip(value)
