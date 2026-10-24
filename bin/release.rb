@@ -101,6 +101,8 @@
 #     ff main → release branch per repo, push origin (stamping each repo's members
 #     `merged: "main"` — assembled+main = prod-in-flight), deploy to Heroku, smoke
 #     /up, run any member's post_deploy_cmd on the PROD app (aborts on non-zero),
+#     re-lock every live engine app the release did not carry to the final on its
+#     `accepted` (in parallel, best-effort),
 #     stamp deployed_sha + flip to shipped (shipped+main = done).
 #
 #   bin/release rollback [<release>] [--mode ask|auto] [--by NAME] [--dry-run] [--yes]
