@@ -61,6 +61,17 @@ chat.
 | With errors | Errors in the window, or a section the app could not read | An amber embed: the counts, then the top three error groups (class, count, a clipped message) and "+N more" |
 | With activity · quiet | Signups or contact messages, no errors · nothing at all | A green embed with the counts |
 
+**Backup line.** Each backed-up app's embed (`backups: true` in
+`config/apps.yml`) carries one more line under its counts, from what Steffon's
+03:30 `DbBackupSweepJob` recorded: `Backup 02:04, 48 MB` (the latest completed
+backup's Denver time and size), `Backup MISSING` (none since the 02:00 slot; `(capture
+started)` when the sweep started one), `Backup unread (<reason>)`, or `Backup
+not checked` (no sweep in 26 hours, as before `HEROKU_BACKUP_API_KEY` is set).
+The headline adds one count line, `Backups: 5 fresh, 1 missing`, over every
+backed-up app, unannounced ones included, without naming any. Missing and unread
+backups also alert in the ops channel once per incident
+([`db-restore-drill`](../agents/steffon/sops/db-restore-drill.md)).
+
 Embeds are worst first. Counts only: no names or emails, and email addresses in
 error messages are redacted. More than ten fetched apps fold the rest into the
 content's "Also:" list. The message is fitted to Discord's limits as it is built
@@ -154,5 +165,6 @@ Tomorrow's report reads it; until step 3 it shows as not wired.
 | Run, app list, normalizing | `app/services/daily_app_report.rb` |
 | HTTP read | `app/services/daily_app_report/fetcher.rb` |
 | The message | `app/services/daily_app_report/message.rb` |
+| Backup lines | `app/services/db_backup_sweep.rb` (`report_lines`, `report_summary`) |
 | Per-app CTO reports | `app/services/cto_report.rb`, `app/services/cto_report/` (`voice.rb`, `message.rb`), `config/cto_reports.yml` |
 | Tests | `test/services/daily_app_report_test.rb`, `test/services/daily_app_report/`, `test/services/cto_report_test.rb`, `test/services/cto_report/`, `test/jobs/daily_app_report_job_test.rb` |

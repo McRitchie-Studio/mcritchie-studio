@@ -22,7 +22,10 @@ module AppCatalog
   PORT_BLOCK = 100
 
   APP_FIELDS = %i[slug name emoji color tier status port repo heroku_app production_url qa_url
-                  engine hosted workspace description].freeze
+                  engine hosted workspace database backups restore_drilled description].freeze
+  # Tiers whose database is backed up nightly by right: the paid plans.
+  BACKUP_TIERS = %w[studio product].freeze
+  DRILL_DATE = /\A\d{4}-\d{2}-\d{2}\z/
   LIBRARY_FIELDS = %i[slug name emoji color aliases description].freeze
 
   class Invalid < StandardError; end
@@ -33,6 +36,10 @@ module AppCatalog
     def port_range = port && (port...(port + PORT_BLOCK))
     def tier_label = tier&.capitalize
     def status_label = status.capitalize
+    # The tier owes nightly database backups (a paid-plan benefit).
+    def backups_owed? = live? && database == true && BACKUP_TIERS.include?(tier)
+    # The hub's nightly sweep watches this app's Heroku backups.
+    def backups_watched? = live? && backups == true && !heroku_app.nil?
   end
 
   Library = Data.define(*LIBRARY_FIELDS)
@@ -55,6 +62,9 @@ module AppCatalog
   def libraries = catalog.libraries
 
   def app(slug) = apps.find { |entry| entry.slug == slug.to_s }
+
+  # Apps whose production database DbBackupSweepJob checks every night.
+  def backed_up_apps = apps.select(&:backups_watched?)
 
   # The app a /stack client stands for, by its workspace slug.
   def for_workspace(workspace) = apps.find { |entry| entry.workspace && entry.workspace == workspace.to_s }
@@ -167,8 +177,12 @@ module AppCatalog
     unless entry.port.nil? || (entry.port.is_a?(Integer) && (entry.port % PORT_BLOCK).zero?)
       errors << "#{tag}: port must be null or a multiple of #{PORT_BLOCK}"
     end
-    %i[engine hosted].each do |flag|
+    %i[engine hosted database backups].each do |flag|
       errors << "#{tag}: #{flag} must be true or false" unless [true, false].include?(entry.public_send(flag))
+    end
+    errors << "#{tag}: backups needs database: true" if entry.backups == true && entry.database != true
+    unless entry.restore_drilled.nil? || entry.restore_drilled.to_s.match?(DRILL_DATE)
+      errors << "#{tag}: restore_drilled must be null or a quoted \"YYYY-MM-DD\""
     end
     %i[production_url qa_url].each do |field|
       value = entry.public_send(field)

@@ -3,7 +3,8 @@
 `mcritchie-studio/config/apps.yml` is the app catalog: one record per app with
 its slug, name, glyph, status-line color, tier, status, port block, Heroku app,
 production and QA URLs, whether it runs on studio-engine, whether McRitchie
-Studio hosts it, and its `/stack` workspace. `AppCatalog` (`lib/app_catalog.rb`)
+Studio hosts it, its `/stack` workspace, and its database backups (`database`,
+`backups`, `restore_drilled`). `AppCatalog` (`lib/app_catalog.rb`)
 loads and validates it once and hands out frozen values. Gems and the on-chain
 program sit in its `libraries:` list: they carry a glyph and a color but no tier,
 status or port.
@@ -53,6 +54,23 @@ record but no `config/satellites.yml` row.
 | Delinquent | Live, but not in good standing |
 | Showcase | Live as a demonstration of the work |
 | Archived | Not running as a product; the record stays so its port block stays reserved. Tier is blank |
+
+## Database backups
+
+Nightly database backups and a monthly restore drill are a paid-plan benefit.
+
+- **Rule.** Every live `studio` or `product` app with `database: true` has
+  `backups: true`. A `basic` app has `backups: false` unless `BACKUP_EXCEPTIONS`
+  in `test/lib/app_registry_test.rb` names it with Alex's reason (today
+  `moms-app`, his family app). An archived app has `backups: false`. The
+  registry test enforces all three.
+- **What `backups: true` does.** Heroku runs the app's 02:00 America/Denver
+  backup schedule (provisioned at deploy), and the hub's `DbBackupSweepJob`
+  checks it nightly at 03:30 (`AppCatalog.backed_up_apps`).
+- **`restore_drilled`** is the date of the last restore drill, quoted
+  (`"2026-11-01"`), or null.
+
+The procedure: [`db-restore-drill`](../agents/steffon/sops/db-restore-drill.md).
 
 ## Status-line identity (App model)
 

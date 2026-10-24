@@ -361,15 +361,20 @@ features:
     team: true
     enterprise: true
     status: builtin
+  # A paid-plan benefit (Mr. McRitchie, 2026-10-24: "Lets still move the db
+  # backups to paid plans so its another benefit of a paid plan"): Vibe, the free
+  # tier, has no database to back up; every paid tier gets the nightly database
+  # backup (Heroku, watched by the hub's DbBackupSweepJob), the nightly file
+  # mirror (r2-backup) and a monthly restore drill (db-restore-drill).
   - name: Nightly backups
     category: application
     icon: "💾"
-    blurb: Your database and files copied every night, so a bad day is an hour, not a loss.
-    builder: Nightly
-    pro: Nightly
-    team: Nightly
-    enterprise: Nightly + restore drill
-    sop: r2-backup
+    blurb: Your database and files backed up every night and a restore rehearsed every month, so a bad day is an hour, not a loss.
+    builder: Nightly · restore drilled monthly
+    pro: Nightly · restore drilled monthly
+    team: Nightly · restore drilled monthly
+    enterprise: Nightly · restore drilled monthly
+    sop: [db-restore-drill, r2-backup]
     status: live
   - name: Hosting mode
     category: application

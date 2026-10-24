@@ -127,6 +127,7 @@ its invocation exactly.
 | Steffon `conductor-host` SOP (turn a new Mac mini into the always-on conductor: dispatcher, build launcher, harness key, power) | `mcritchie-studio/docs/agents/agents/steffon/sops/conductor-host.md` |
 | Steffon `credential-filing` SOP (naming, logos, vault lanes) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-filing.md` |
 | Steffon `credential-rotation` SOP (rotate one secret everywhere) | `mcritchie-studio/docs/agents/agents/steffon/sops/credential-rotation.md` |
+| Steffon `db-restore-drill` SOP (nightly Postgres backups, the backup sweep, monthly restore drill) | `mcritchie-studio/docs/agents/agents/steffon/sops/db-restore-drill.md` |
 | Steffon `discord-bot-setup` SOP (the agents' Discord bot, once, then each client's invite) | `mcritchie-studio/docs/agents/agents/steffon/sops/discord-bot-setup.md` |
 | Steffon `domain-dns` SOP (verify, MX, SPF, DKIM, DMARC) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-dns.md` |
 | Steffon `domain-purchase` SOP (buy on Cloudflare by API or on Squarespace, prove ownership) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-purchase.md` |

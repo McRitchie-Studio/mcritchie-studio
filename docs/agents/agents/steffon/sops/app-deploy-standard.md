@@ -147,6 +147,25 @@ Steffon's `production-deploy` ships it by `git push` and smokes `<smoke_url>/up`
 Anything already on the app's `accepted` rides the first release, so read
 `git log origin/main..origin/accepted` in the app before it does.
 
+## 4a. Database backups — a paid-plan benefit
+
+Nightly database backups and a monthly restore drill are a paid-plan benefit.
+An app on a paid plan (tier `studio` or `product` in `config/apps.yml`) with a
+database gets them at deploy; a `basic` app does not, unless Alex names it as an
+exception. Provision the schedule in the deploy and take the first backup:
+
+```bash
+heroku pg:backups:schedule DATABASE_URL --at '02:00 America/Denver' -a <heroku-app>
+heroku pg:backups:capture -a <heroku-app>
+```
+
+Then set the app's row to `database: true` and `backups: true`; the registry
+test fails a paid app with a database that has `backups: false`. From the next
+night the hub's `DbBackupSweepJob` (03:30 Denver) watches the backup, captures
+one when none completed since that night's 02:00 slot, and puts a backup line in the 07:00 daily
+app report; Steffon drills a restore monthly. The whole act:
+[`db-restore-drill`](db-restore-drill.md).
+
 ## 5. Record
 
 - Keep the app's `config/satellites.yml` row at `status: reserved` (contract

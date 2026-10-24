@@ -102,4 +102,22 @@ class DailyAppReport::MessageTest < ActiveSupport::TestCase
     assert_operator ReleaseNotes::DiscordClient.discord_length(clipped), :<=, 7
     assert_equal "short", DailyAppReport::Message.clip("short", 7)
   end
+
+  test "[unit] the backup line rides under the counts, even on an unreachable app, and the worst case still fits" do
+    backups = { "turf-monster" => "Backup 02:04, 48 MB", "cyvasse" => "Backup MISSING", "hidden-app" => "Backup 02:01, 1 MB" }
+    built = DailyAppReport::Message.new(ending: ENDING, backups: backups,
+                                        results: [ health("turf-monster"), health("cyvasse", state: :unreachable, reason: "timeout") ]).to_h
+
+    by_title = built[:embeds].to_h { |e| [ e[:title], e[:description] ] }
+    assert_equal "Signups 0 · Errors 0\nBackup 02:04, 48 MB", by_title.fetch("Turf Monster")
+    assert_equal "Unreachable (timeout)\nBackup MISSING", by_title.fetch("Cyvasse")
+    assert_includes built[:content].lines.map(&:chomp), "Backups: 2 fresh, 1 missing"
+    refute_includes built[:content], "hidden-app"
+
+    long = "App With An Extremely Long Display Name 🐊 " * 10
+    worst = 25.times.map { |i| health("app-#{i}", name: "#{long}#{i}", errors: 99_999, groups: worst_groups) }
+    lines = 25.times.to_h { |i| [ "app-#{i}", "Backup MISSING (capture started)" ] }
+    fat = DailyAppReport::Message.new(ending: ENDING, results: worst, backups: lines).to_h
+    assert_nothing_raised { ReportDestinations.check_limits!(fat[:content], fat[:embeds]) }
+  end
 end

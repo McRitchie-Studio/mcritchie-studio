@@ -30,6 +30,17 @@
 #   engine          true when the app runs on studio-engine
 #   hosted          true when McRitchie Studio hosts it
 #   workspace       its /stack client slug (config/workspace_icons.yml), or null
+#   database        true when production runs a Heroku Postgres database
+#   backups         true when that database is backed up nightly (Heroku
+#                   pg:backups:schedule, 02:00 America/Denver) and watched by the
+#                   hub's DbBackupSweepJob. Nightly backups and a monthly restore
+#                   drill are a paid-plan benefit: every live studio or product
+#                   app with a database has true; a basic app has false unless
+#                   test/lib/app_registry_test.rb's BACKUP_EXCEPTIONS names it
+#                   with Alex's reason; an archived app has false
+#   restore_drilled the date of the last restore drill of this app's backup
+#                   ("YYYY-MM-DD", quoted), or null; Steffon's db-restore-drill
+#                   writes it
 #   description     one line
 #
 # Libraries are gems and on-chain programs. They are not apps (no tier, no
@@ -51,6 +62,9 @@ apps:
     engine: true
     hosted: true
     workspace: studio
+    database: true
+    backups: true
+    restore_drilled: null
     description: Flagship hub, SSO source, recovery scripts, agent control plane
 
   - slug: turf-monster
@@ -67,6 +81,9 @@ apps:
     engine: true
     hosted: true
     workspace: turf-monster
+    database: true
+    backups: true
+    restore_drilled: null
     description: Sports pick'em, Solana on-chain through turf-vault
 
   - slug: cyvasse
@@ -83,6 +100,9 @@ apps:
     engine: true
     hosted: true
     workspace: cyvasse
+    database: true
+    backups: true
+    restore_drilled: null
     description: Hex strategy board game, revived from Alex's first app
 
   - slug: mcritchie-industries
@@ -99,6 +119,9 @@ apps:
     engine: true
     hosted: true
     workspace: industries
+    database: true
+    backups: true
+    restore_drilled: null
     description: Central business knowledge base for acquisitions, companies, financials and clients
 
   - slug: commercial-welding
@@ -115,6 +138,9 @@ apps:
     engine: true
     hosted: true
     workspace: commercial-welding
+    database: true
+    backups: true
+    restore_drilled: null
     description: Commercial Welding LLC's company site on studio-engine; a Google Workspace client, on Heroku with a QA copy
 
   - slug: moms-app
@@ -131,6 +157,9 @@ apps:
     engine: true
     hosted: true
     workspace: null
+    database: true
+    backups: true # basic, but kept by Alex's exception (family app); see BACKUP_EXCEPTIONS
+    restore_drilled: null
     description: Karen McRitchie's family audiobook and slideshow site
 
   - slug: dads-app
@@ -147,6 +176,9 @@ apps:
     engine: false
     hosted: true
     workspace: null
+    database: false
+    backups: false
+    restore_drilled: null
     description: Photo slideshow of Greig McRitchie
 
   - slug: rantly
@@ -163,6 +195,9 @@ apps:
     engine: true
     hosted: true
     workspace: null
+    database: false
+    backups: false
+    restore_drilled: null
     description: Showcase rebuild of Rantly, the social network with a 140-character minimum
 
   - slug: 10and5
@@ -179,6 +214,9 @@ apps:
     engine: false
     hosted: true
     workspace: 10and5
+    database: false
+    backups: false
+    restore_drilled: null
     description: Showcase rebuild of 10&5 Hospitality, a restaurant mystery-shopper platform
 
   - slug: portfolio
@@ -195,6 +233,9 @@ apps:
     engine: false
     hosted: true
     workspace: null
+    database: false
+    backups: false
+    restore_drilled: null
     description: Showcase rebuild of Alex's portfolio of web apps since 2014
 
   - slug: prisoners-dilemma
@@ -211,6 +252,9 @@ apps:
     engine: false
     hosted: true
     workspace: null
+    database: false
+    backups: false
+    restore_drilled: null
     description: Showcase rebuild of the in-browser iterated prisoner's dilemma tournament
 
   - slug: search-position
@@ -227,6 +271,9 @@ apps:
     engine: false
     hosted: true
     workspace: null
+    database: false
+    backups: false
+    restore_drilled: null
     description: Showcase rebuild of the Google search position checker
 
   - slug: weekly-lock
@@ -243,6 +290,9 @@ apps:
     engine: false
     hosted: true
     workspace: null
+    database: false
+    backups: false
+    restore_drilled: null
     description: Showcase rebuild of the Weekly Lock, one confident NFL pick a week
 
   - slug: rolio
@@ -259,6 +309,9 @@ apps:
     engine: false
     hosted: true
     workspace: null
+    database: false
+    backups: false
+    restore_drilled: null
     description: Relationship operating workspace; dormant
 
   - slug: chain-ops
@@ -275,6 +328,9 @@ apps:
     engine: false
     hosted: false
     workspace: null
+    database: false
+    backups: false
+    restore_drilled: null
     description: Solana localnet and QA control plane; never reached production
 
   - slug: tax-studio
@@ -291,6 +347,9 @@ apps:
     engine: false
     hosted: true
     workspace: null
+    database: true
+    backups: false
+    restore_drilled: null
     description: Tax planning workspace; a Heroku app with no repo
 
   - slug: acquisition-studio
@@ -307,6 +366,9 @@ apps:
     engine: true
     hosted: false
     workspace: null
+    database: false
+    backups: false
+    restore_drilled: null
     description: Retired prototype; McRitchie Industries replaced it and holds its port block
 
 libraries:
