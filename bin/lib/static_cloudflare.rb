@@ -106,6 +106,23 @@ module StaticCloudflare
     end
   end
 
+  # The Cloudflare target a Downgrade moves an app TO, from its CURRENT adapter:
+  # an app already on static_cloudflare keeps its own; a git_push_heroku app gets
+  # the convention (bucket `<heroku app>-static`, the same smoke_url, the Heroku
+  # app read from its remote). The daily job calls this for any app.
+  HEROKU_REMOTE = %r{\Ahttps://git\.heroku\.com/([a-z0-9][a-z0-9-]*)\.git\z}i
+
+  def self.downgrade_target(repo, adapter)
+    adapter ||= {}
+    return Target.from(repo, adapter) if adapter["strategy"].to_s == "static_cloudflare"
+
+    heroku_app = adapter["heroku_app"].to_s.strip
+    heroku_app = adapter["remote"].to_s.strip[HEROKU_REMOTE, 1].to_s if heroku_app.empty?
+    raise Abort, "#{repo}: no Heroku app named by its prod_deploy (heroku_app: or a git.heroku.com remote)" if heroku_app.empty?
+
+    Target.from(repo, "bucket" => "#{heroku_app}-static", "smoke_url" => adapter["smoke_url"], "heroku_app" => heroku_app)
+  end
+
   # One object to write: its key, the local file, and the two headers R2 stores.
   Item = Struct.new(:key, :path, :content_type, :cache_control, keyword_init: true)
 

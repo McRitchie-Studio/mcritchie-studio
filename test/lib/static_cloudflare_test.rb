@@ -99,6 +99,16 @@ class StaticCloudflareTest < Minitest::Test
     assert_match(/smoke_url/, error.message)
   end
 
+  def test_downgrade_target_derives_the_bucket_from_a_heroku_adapter
+    t = SC.downgrade_target("dads-app", "strategy" => "git_push_heroku", "remote" => "https://git.heroku.com/dads-app.git",
+                                        "smoke_url" => "https://greigmcritchie.com")
+    assert_equal "dads-app-static", t.bucket
+    assert_equal "dads-app", t.heroku_app
+    assert_equal "greigmcritchie.com", t.host
+    assert_equal "mcr-rantly-static", SC.downgrade_target("rantly", ADAPTER).bucket, "a static adapter keeps its own"
+    assert_raises(SC::Abort) { SC.downgrade_target("x", "strategy" => "github_actions", "smoke_url" => "https://x.test") }
+  end
+
   # ── Bundle ────────────────────────────────────────────────────────────────
   def test_bundle_writes_assets_before_pages_and_one_key_per_file
     Dir.mktmpdir do |dir|
