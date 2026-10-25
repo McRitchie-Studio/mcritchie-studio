@@ -20,6 +20,9 @@ class Release
   #                    its IDL allow-list dance runs only forward. Heroku's rollback
   #                    restores that release's slug AND its config vars. It is the same
   #                    mechanism turf's bin/deploy uses when its own smoke fails.
+  #   static_cloudflare  rebuild the previous SHA's static site in the ship workspace
+  #                    and upload it over the current one, exactly as a ship does; it
+  #                    smokes itself (/up and the release marker at that SHA).
   #
   # THE CONFIG REVERT, and why heroku rollback is still the strategy. Rolling back to
   # vN reverts every config var set since vN, add-on vars included. The alternative,
@@ -48,7 +51,7 @@ class Release
   class RollbackPlan
     HUB = "mcritchie-studio".freeze
     MIGRATE_DIR = "db/migrate".freeze
-    STRATEGIES = %w[github_actions git_push_heroku repo_script].freeze
+    STRATEGIES = %w[github_actions git_push_heroku repo_script static_cloudflare].freeze
     MODES = %w[ask auto].freeze
     # Heroku names a release created by a git push `Deploy <sha8>`; ShipSequence
     # reads the same shape to confirm an inline deploy landed.
@@ -234,6 +237,8 @@ class Release
       when "repo_script"
         version = app.heroku_version ? "v#{app.heroku_version}" : "<the release that deployed #{short(app.to_sha)}>"
         "heroku rollback #{version} --app #{app.adapter['heroku_app']}"
+      when "static_cloudflare"
+        "static build of #{short(app.to_sha)} → r2://#{app.adapter['bucket']} (ship workspace; smokes its own marker)"
       end
     end
 
@@ -243,7 +248,7 @@ class Release
     # Where to smoke /up after the redeploy, or "" when the strategy smokes itself
     # (the hub's workflow hard-gates on /up) or the registry names no URL.
     def smoke_url_for(app)
-      return "" if app.strategy == "github_actions"
+      return "" if %w[github_actions static_cloudflare].include?(app.strategy)
 
       app.adapter["smoke_url"].to_s.strip
     end
