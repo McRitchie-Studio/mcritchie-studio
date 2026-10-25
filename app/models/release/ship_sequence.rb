@@ -39,10 +39,15 @@ class Release
     #     side (the hub — DevOps v2 Phase 2). The production Environment's
     #     required-reviewer approval was removed 2026-07-20, so the dispatched run
     #     deploys straight through — the ship-confirm is launching bin/release ship.
+    #   * static_cloudflare — the conductor builds the app's static site in a ship
+    #     workspace at the frozen SHA, uploads it to the app's R2 bucket, writes a
+    #     release marker naming the SHA, and smokes /up and the marker from the
+    #     Cloudflare host (bin/lib/static_cloudflare.rb; rantly first).
     STRATEGY_HANDLERS = {
       "git_push_heroku" => :git_push_heroku,
       "repo_script" => :repo_script,
-      "github_actions" => :github_actions
+      "github_actions" => :github_actions,
+      "static_cloudflare" => :static_cloudflare
     }.freeze
 
     # Is there a production deployment target at all? An app may legitimately
@@ -916,7 +921,7 @@ class Release
 
       case strategy.to_s
       when "github_actions" then main_at_sha == true && run_success == true
-      when "git_push_heroku", "repo_script" then deployed_at_sha == true
+      when "git_push_heroku", "repo_script", "static_cloudflare" then deployed_at_sha == true
       else false
       end
     end
@@ -944,6 +949,9 @@ class Release
       case strategy.to_s
       when "github_actions"
         next_reason_for_workflow(main_at_sha, workflow)
+      when "static_cloudflare"
+        "the host's static-release.json does not name the frozen SHA (the upload did not finish, " \
+          "or the host still points at the old origin)"
       when "git_push_heroku", "repo_script"
         if heroku_app.to_s.strip.empty?
           "its #{strategy} adapter names no Heroku app — add `prod_deploy.heroku_app:` to " \

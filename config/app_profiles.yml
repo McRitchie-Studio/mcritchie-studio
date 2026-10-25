@@ -64,3 +64,37 @@ profiles:
     # What leaving the profile means: an app that needs a QA copy registers its
     # qa_environments.yml entry and a qa_test_cmd, and drops `profile:` (it is no
     # longer this shape). The exemption guard then requires QA evidence again.
+  standalone-static:
+    description: >-
+      A database-free app with only GET routes, served as plain files from
+      Cloudflare R2 with no Heroku dyno (docs/agents/modules/static-cloudflare.md).
+      Released through the three-rung ladder; the ship builds its static site at
+      the frozen SHA and uploads it. Its Heroku app stays at 0 dynos for 30 days
+      after the cutover, then is deleted (the runbook records who and when). An
+      app arrives here by bin/static-downgrade, not bin/register-app.
+    entry:
+      ladder: three-rung
+      prod_deploy:
+        strategy: static_cloudflare
+        bucket: "%{heroku_app}-static"
+        heroku_app: "%{heroku_app}"
+        smoke_url: "%{smoke_url}"
+      test_cmd: "%{test_cmd}"
+      qa_evidence: exempt
+    contract:
+      - Everything standalone-heroku asks of the repo (origin, the ladder branches, CI, .worktrees/ ignored)
+      - No database, no add-ons, and every route a GET whose page is a pure function of the checked-in code
+      - bin/static-build writes the whole site into $OUT, with index.html and up/index.html, for host $HOST
+      - No link carries a query string (a static host ignores it)
+      - bin/static-downgrade <slug> --execute has run, so <smoke_url>/static-release.json answers
+    # The same fleet decision as standalone-heroku: these are the same standalone
+    # apps, with the same QA answer; only where production runs has changed.
+    qa_decision:
+      rule: "standalone apps ship without a QA copy unless there is a free tier."
+      asked: 'Confirm the fleet-wide QA rule: "standalone apps ship without a QA copy unless there is a free tier."'
+      answer: "Yes to both"
+      by: Alex
+      on: "2026-09-28"
+      history:
+        - "showcase apps, 2026-09-26: No QA copies (Recommended)"
+        - "hosting, 2026-10-25: the unpaid showcase apps serve from Cloudflare (Alex's ruling)"

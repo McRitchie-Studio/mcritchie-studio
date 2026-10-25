@@ -12,6 +12,21 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_equal :git_push_heroku, S.strategy_handler("git_push_heroku")
   end
 
+  test "strategy_handler maps static_cloudflare" do
+    assert_equal :static_cloudflare, S.strategy_handler("static_cloudflare")
+  end
+
+  # The static marker (static-release.json naming the SHA) is the ONLY proof: /up
+  # answers on the old Heroku dyno too, and main advances before any deploy.
+  test "a static_cloudflare deploy is confirmed only by its marker at the SHA" do
+    assert S.deploy_already_succeeded?(strategy: "static_cloudflare", up_ok: true, deployed_at_sha: true)
+    assert_not S.deploy_already_succeeded?(strategy: "static_cloudflare", up_ok: true, main_at_sha: true, deployed_at_sha: false)
+    assert_not S.deploy_already_succeeded?(strategy: "static_cloudflare", up_ok: false, deployed_at_sha: true)
+    assert_match(/static-release\.json does not name the frozen SHA/,
+                 S.deploy_gap_reason(strategy: "static_cloudflare", up_ok: true, deployed_at_sha: false,
+                                     smoke_url: "https://rantly.mcritchie.studio"))
+  end
+
   test "strategy_handler maps repo_script" do
     assert_equal :repo_script, S.strategy_handler("repo_script")
   end

@@ -153,6 +153,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # PUBLISHES a client app's bundle (flips its live preview); the guard runs
     # before the bundle is read or anything is sent.
     "client-bundle"          => :cli_arg_guard,
+    # MOVES an app off Heroku (bucket, DNS, custom domain, URL rewrite, scale to 0)
+    # under --execute, and reads the admin Cloudflare token even to plan; the guard
+    # runs before the registry or any credential is read.
+    "static-downgrade"       => :cli_arg_guard,
     # COPIES the credential helper's whole closure to disk and repoints a symlink,
     # so it is guarded like the rest of the mutating flat scripts. Its --check and
     # --print-config arms install nothing, but the DEFAULT arm (no flags at all)
@@ -618,6 +622,7 @@ class BinHelpFlagClassTest < Minitest::Test
   # position, because "it is in the file somewhere" is not the property that matters.
   FIRST_MUTATION = {
     "client-bundle"       => "ClientAppBundle",
+    "static-downgrade"    => "StaticCloudflare.downgrade_target",
     "program-drift"       => "ProgramDrift.readings",
     "archive-docs"        => "DocsArchive.roll_ledger!",
     "clean-artifacts"     => "ArtifactSweep",

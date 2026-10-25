@@ -182,6 +182,10 @@ app report; Steffon drills a restore monthly. The whole act:
 - **To give one app a QA copy**, or any bespoke key: remove its `profile:` line
   and edit its entry by hand. It is then a bespoke entry again, and the
   QA-exemption guard requires either QA evidence or a cited decision.
+- **To move an app off Heroku to Cloudflare R2** (a database-free app with only GET
+  routes, past its hosting trial): run the cutover procedure, which runs
+  `bin/static-downgrade <slug>` and then `--execute`, and flips its entry to the
+  `standalone-static` profile in a follow-up PR. The runbook is [`static-cloudflare.md`](../../../modules/static-cloudflare.md).
 
 ## Background — not needed to execute
 

@@ -197,6 +197,7 @@ require_relative "../app/models/devops/windows"
 require_relative "lib/ship_authority"
 require_relative "lib/projects_root"
 require_relative "lib/local_services"
+require_relative "lib/static_cloudflare" # the static_cloudflare prod_deploy strategy
 # `status` prints PROGRAM DRIFT: on-chain programs behind their source (program_drift_report).
 require_relative "lib/program_drift"
 # Every command a refusal here hands the operator comes through the one remedy helper.
@@ -8421,10 +8422,14 @@ def deploy_live_verdict(group, frozen)
   # `heroku releases` showed the frozen SHA as the CURRENT release, forcing a full
   # re-deploy of the app whose deploy is the LONG one. Resolved per-adapter, and ""
   # (no Heroku app named) keeps today's fail-closed behaviour exactly.
-  heroku_app = strategy == "github_actions" ? "" : Release::ShipSequence.heroku_app_for(adapter)
+  # A static_cloudflare app has no Heroku release to read: its marker is the
+  # static-release.json the deploy uploads last, naming the SHA it built.
+  heroku_app = %w[github_actions static_cloudflare].include?(strategy) ? "" : Release::ShipSequence.heroku_app_for(adapter)
   deployed_at_sha =
-    unless strategy == "github_actions"
-      Release::ShipSequence.heroku_release_at_sha?(heroku_releases(heroku_app), frozen)
+    case strategy
+    when "github_actions" then nil
+    when "static_cloudflare" then static_release_sha(group_smoke_url(group)) == frozen
+    else Release::ShipSequence.heroku_release_at_sha?(heroku_releases(heroku_app), frozen)
     end
 
   # RESOLVED ONCE AND CARRIED, because `up_ok == false` has two causes and only the
@@ -8467,6 +8472,66 @@ rescue JSON::ParserError, StandardError
   []
 end
 
+# --- static_cloudflare: an app served as plain files from R2 -------------------
+# The SHA a static_cloudflare host says it serves (its static-release.json), or ""
+# when it cannot be read. A READ, so it runs under --dry-run like prod_up_ok?.
+def static_release_sha(base_url)
+  url = base_url.to_s.strip
+  return "" if url.empty?
+
+  res = DomainCutover::Transport.new.call(:get, "#{url}/#{StaticCloudflare::MARKER}")
+  res.status == 200 ? res.json["sha"].to_s : ""
+rescue DomainCutover::Abort, StandardError
+  ""
+end
+
+# The three seams the strategy's Deploy runs through, one method each so the CLI
+# suite can replace them (test/lib/release_cli_deploy_app_test.rb): the upload
+# keys (1Password, never printed), the build subprocess, and HTTP.
+def static_cloudflare_uploader(target)
+  StaticCloudflare::S3Uploader.new(StaticCloudflare::Credentials.r2(target.credential))
+end
+
+# The suite ruby's PATH (the one ensure_suite_bundle! checked the bundle under) and
+# the agent-session keys unset, from Release::GateRuby via gate_env; but NOT its
+# RAILS_ENV=test or test DATABASE_URL, and NOT ship_deploy_env: the static build is
+# a PRODUCTION render (bin/static-build sets RAILS_ENV itself) of an app with no
+# database at all.
+def static_cloudflare_runner(repo)
+  # nil UNSETS a key in the child, so neither the gate's overlay nor an operator
+  # shell that exported RAILS_ENV=test reaches the production render.
+  base = gate_env(repo, role: "ship").merge("RAILS_ENV" => nil, "DATABASE_URL" => nil, "TEST_DATABASE_URL" => nil)
+  lambda do |argv, env, chdir|
+    out, ok = sh(*argv, chdir: chdir, env: base.merge(env), capture: true)
+    [out, ok]
+  end
+end
+
+def static_cloudflare_http = DomainCutover::Transport.new
+
+# Build `sha` in the repo's ship workspace, upload it, mark it, smoke it. Returns
+# nil on success, else the failure (the caller records the gate SOP, then aborts).
+def static_cloudflare_deploy!(repo, adapter, sha)
+  target = StaticCloudflare::Target.from(repo, adapter)
+  failure = nil
+  with_ship_workspace(repo) do
+    workspace = ship_workspace!(repo, sha)
+    # The bundle only. prepare_ship_workspace! also runs db:test:prepare, which a
+    # database-free app (every showcase app) does not even define.
+    ensure_suite_bundle!(repo, workspace, role: "ship")
+    ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING, weight: ReleasePresence::WEIGHT_SUITE) do
+      result = StaticCloudflare::Deploy.new(
+        target: target, workspace: workspace, sha: sha, uploader: static_cloudflare_uploader(target),
+        runner: static_cloudflare_runner(repo), http: static_cloudflare_http, say: ->(line) { step(line) }
+      ).call
+      say("  ✓ #{result.files} file(s), #{result.keys} object(s) live at #{target.smoke_url}")
+    end
+  end
+  nil
+rescue StaticCloudflare::Abort => e
+  e.message
+end
+
 def deploy_app(group, frozen)
   @ship_live ||= [] # ship() seeds this; never let a nil deref be the way a deploy fails
   repo    = group["repo"]
@@ -8478,6 +8543,16 @@ def deploy_app(group, frozen)
       begin
         Release::ShipSequence.strategy_handler(adapter["strategy"])
       rescue ArgumentError => e
+        abort!(e.message)
+      end
+    end
+  # A static_cloudflare adapter missing its bucket or smoke_url is refused HERE,
+  # before push_frozen_main moves anything, as an unknown strategy is above.
+  static_target =
+    if handler == :static_cloudflare
+      begin
+        StaticCloudflare::Target.from(repo, adapter)
+      rescue StaticCloudflare::Abort => e
         abort!(e.message)
       end
     end
@@ -8603,6 +8678,28 @@ def deploy_app(group, frozen)
     gate_sop("deploy:#{repo}", "#{command} #{args.join(' ')}".strip, ok,
              ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - deploy_started) * 1000).round)
     abort!("#{repo} deploy script failed (#{command}) — its own rollback applies; fix + re-run `bin/release ship`") unless ok
+  when :static_cloudflare
+    # Like repo_script, it needs a WORKING TREE: the static build renders the app at
+    # the frozen SHA, so it runs in the SHIP WORKSPACE under its lock, never the
+    # primary. Then the upload and the smoke, which reads /up AND the release
+    # marker: the old Heroku dyno answers /up too, so /up alone proves nothing.
+    target = static_target
+    plan = "#{target.build_command} @ #{short(frozen)} → r2://#{target.bucket} → smoke #{target.smoke_url}/up + " \
+           "#{StaticCloudflare::MARKER}"
+    step("deploy: (cd #{repo} ship workspace @ frozen #{short(frozen)}) #{plan}")
+    if DRY
+      say("  [dry-run] build in the ship workspace, upload every object, write the marker, smoke — nothing uploaded")
+      gate_sop("deploy:#{repo}", "static_cloudflare #{plan}", true, 0)
+      @ship_live << "app #{repo} deployed to production"
+      return
+    end
+
+    deploy_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    failure = static_cloudflare_deploy!(repo, adapter, frozen)
+    # The G4 gate's per-app deploy SOP (see the git_push_heroku twin above).
+    gate_sop("deploy:#{repo}", "static_cloudflare #{plan}", failure.nil?,
+             ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - deploy_started) * 1000).round)
+    abort!("static deploy failed for #{repo}: #{failure} — fix + re-run `bin/release ship`") if failure
   when :github_actions
     # DevOps v2 Phase 2 (the hub): the Heroku push AND the hard /up smoke run
     # INSIDE the dispatched workflow, so there is NO separate conductor curl-smoke
@@ -10603,6 +10700,10 @@ def rollback_app(plan, app)
       dispatch_and_watch(app.adapter["workflow"].to_s, { "sha" => app.to_sha }, chdir: path)
     when "git_push_heroku"
       sh("git", "-C", path, "push", "--force", plan.remote_for(app), "#{app.to_sha}:refs/heads/#{plan.branch_for(app)}").last
+    when "static_cloudflare"
+      failure = DRY ? nil : static_cloudflare_deploy!(app.repo, app.adapter, app.to_sha)
+      say("  #{failure}") if failure
+      failure.nil?
     when "repo_script"
       abort!("#{app.repo}: no Heroku release resolved for #{short(app.to_sha)}") unless app.heroku_version || DRY
       if app.already_live
