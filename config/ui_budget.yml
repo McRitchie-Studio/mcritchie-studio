@@ -1,7 +1,9 @@
 # UI budget: the public pages every app keeps under a ceiling, and the ceilings.
 # Read by bin/ui-budget (evaluator: bin/lib/ui_budget.rb; collector:
 # bin/lib/ui_budget/collect.cjs) and run nightly by .github/workflows/ui-budget.yml,
-# which opens an issue titled "UI budget over: <date>" when any page is over.
+# which opens an issue titled "UI budget over: <date>" when any page is over. Over
+# budget REPORTS (the run stays green) until these ceilings are ratified; only a
+# page that could not be measured fails the run.
 #
 # Epic: .agents/epics/ui-consistency-program.md (piece 4). Method and first
 # numbers: .agents/epics/audits/platform-audit-2026-10-24/lane-ui-infrastructure.md,

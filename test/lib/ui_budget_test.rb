@@ -62,6 +62,8 @@ class UiBudgetTest < Minitest::Test
   def test_every_metric_over_on_one_page_is_flagged
     over = rows("over")
     assert UiBudget.over?(over)
+    refute UiBudget.missing?(over)
+    assert_equal 0, UiBudget.exit_code(over), "OVER reports; it does not fail the run"
     flagged = over.select { |r| r.verdict == "OVER" }
     assert_equal UiBudget::METRICS.sort, flagged.map(&:metric).sort
     assert(flagged.all? { |r| r.page == "https://example.test/" && r.width == 390 })
@@ -94,7 +96,9 @@ class UiBudgetTest < Minitest::Test
 
   def test_a_page_never_measured_is_missing_and_fails
     missing = rows("missing")
-    assert UiBudget.over?(missing)
+    assert UiBudget.missing?(missing)
+    refute UiBudget.over?(missing), "an unmeasured page is MISSING, not OVER"
+    assert_equal 1, UiBudget.exit_code(missing)
     row = find(missing, "https://example.test/login", 1280, "page")
     assert_equal "MISSING", row.verdict
     assert_equal "no result", row.value
@@ -180,11 +184,37 @@ class UiBudgetTest < Minitest::Test
     assert_match(/ui-budget: 0 over, 0 missing/, out)
   end
 
-  def test_cli_evaluate_exits_one_when_over_or_missing
-    %w[over missing].each do |name|
-      _out, _err, status = run_bin("--evaluate", File.join(FIXTURES, "results_#{name}.json"), "--config", File.join(FIXTURES, "config.yml"))
-      assert_equal 1, status.exitstatus, name
+  # REPORT-ONLY (task ui-budget-report-never-gates): the ceilings are not ratified,
+  # so a page over budget is printed, not failed. The nightly's red run on main's
+  # head blocked a cleared production ship; this pins that it cannot recur.
+  def test_cli_evaluate_exits_zero_when_over_and_still_prints_the_over_rows
+    out, _err, status = run_bin("--evaluate", File.join(FIXTURES, "results_over.json"), "--config", File.join(FIXTURES, "config.yml"))
+    assert_equal 0, status.exitstatus, out
+    assert_match(/ui-budget: 8 over, 0 missing/, out)
+    assert_match(/\bOVER\z/, out.lines.grep(/OVER/).first.to_s.strip, "the OVER rows stay in the log")
+  end
+
+  def test_cli_evaluate_exits_one_when_a_page_went_unmeasured
+    out, _err, status = run_bin("--evaluate", File.join(FIXTURES, "results_missing.json"), "--config", File.join(FIXTURES, "config.yml"))
+    assert_equal 1, status.exitstatus, out
+    assert_match(/ui-budget: 0 over, 4 missing/, out)
+  end
+
+  def test_cli_evaluate_exits_one_when_over_and_missing_together
+    over = JSON.parse(File.read(File.join(FIXTURES, "results_over.json")))
+    Dir.mktmpdir do |dir|
+      path = File.join(dir, "both.json")
+      # Keep only the over page at 390: it stays OVER, every other page goes MISSING.
+      File.write(path, JSON.generate(over.merge("results" => over["results"].first(1))))
+      out, _err, status = run_bin("--evaluate", path, "--config", File.join(FIXTURES, "config.yml"))
+      assert_match(/ui-budget: 8 over, [1-9]\d* missing/, out)
+      assert_equal 1, status.exitstatus, out
     end
+  end
+
+  def test_cli_exits_two_when_the_results_file_is_unreadable
+    _out, _err, status = run_bin("--evaluate", "/nonexistent/results.json", "--config", File.join(FIXTURES, "config.yml"))
+    assert_equal 2, status.exitstatus
   end
 
   def test_cli_writes_the_markdown_summary

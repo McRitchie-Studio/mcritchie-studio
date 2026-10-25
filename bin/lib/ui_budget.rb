@@ -13,9 +13,12 @@ require "yaml"
 #   n/a      nothing to judge (no rendered image, no /assets/ request)
 #   MISSING  the page, or a metric the ceiling needs, was never measured
 #
-# MISSING fails the run like OVER does. A host that is down, a page that 404s, or
-# an axe pass that never ran would otherwise read as a clean night, and the point
-# of the nightly is that silence means under budget.
+# OVER REPORTS; MISSING FAILS. Alex has not ratified the ceilings yet, so a page
+# past one is a finding in the table, not a red run: exit_code is 0 when the only
+# bad rows are OVER (task ui-budget-report-never-gates). MISSING is a different
+# fact. A host that is down, a page that 404s, or an axe pass that never ran means
+# the MEASUREMENT failed, and a report that could not measure must not read as a
+# clean night, so it still exits 1. Turning OVER into a gate is a later card.
 #
 # A ceiling may be scoped (`applies_to`): `landing_phone` judges only landing
 # pages at a phone width, `not_sign_in` skips sign-in flows. An out-of-scope
@@ -138,7 +141,12 @@ module UiBudget
     end
   end
 
-  def over?(rows) = rows.any? { |r| %w[OVER MISSING].include?(r.verdict) }
+  def over?(rows) = rows.any? { |r| r.verdict == "OVER" }
+  def missing?(rows) = rows.any? { |r| r.verdict == "MISSING" }
+
+  # The CLI's exit status for a judged run: 1 when anything went unmeasured, else 0.
+  # OVER is reported, never failed (see the header).
+  def exit_code(rows) = missing?(rows) ? 1 : 0
 
   COLUMNS = %i[page width metric value ceiling verdict].freeze
 

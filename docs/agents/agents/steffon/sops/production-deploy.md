@@ -377,6 +377,11 @@ the re-lock commit after the final is published and before any deploy. Both read
 the rows below; the second adds the re-lock recovery text. An app with no `test_cmd`
 (turf-monster) is read by neither: its `bin/deploy` runs its suite at its own turn.
 
+Every check-run on the SHA counts except a run proven **schedule-triggered** (a nightly
+such as UI Budget or r2-backup attaches to `main`'s head but tests production, not the
+commit); an unprovable one still counts. Detail:
+[`g4-ship.md`](../../../modules/gates/g4-ship.md#where-the-verdict-comes-from).
+
 | You see | It means | You do |
 |---|---|---|
 | `GitHub CI GREEN @ <sha> — credited — …` or `… — the SHA's own run …` | The tree earned its green. | Nothing — the gate passed. |
@@ -455,6 +460,13 @@ tree. The step is non-fatal — it never aborts a completed ship — and **Steff
 step**.
 If it warns, run the installer path the warn line prints
 ([`docs-maintenance.md`](../../../modules/docs-maintenance.md) § Editing The Entry Docs), never the primary's copy.
+
+**Re-enable a report workflow paused for this ship.** If a scheduled report was disabled
+(`gh workflow disable`) to unblock a ship and the release carries its fix, turn it back on
+once the deploy lands: `gh workflow list --all --repo McRitchie-Studio/<repo>` shows it
+`disabled_manually`; run `gh workflow enable <file>.yml --repo McRitchie-Studio/<repo>`,
+then `gh workflow run <file>.yml` once and read the run. Open case (2026-10-25):
+`ui-budget.yml` in mcritchie-studio, paused until task `ui-budget-report-never-gates` ships.
 
 ## Close out the cycle — run `archive-shipped`
 

@@ -3,11 +3,20 @@
 # bin/lib/ui_budget/collect.cjs; evaluator: bin/lib/ui_budget.rb). Epic:
 # .agents/epics/ui-consistency-program.md, piece 4.
 #
-# SILENCE MEANS UNDER BUDGET, so anything else is loud. A run that finds a page
-# over, a page it could not measure, or a collector that crashed fails, and the
-# failure opens an issue titled "UI budget over: <date>" (the UTC date it first
-# went over). Later failing nights comment on that open issue rather than open
-# another; the next green run closes it. Same alert shape as r2-backup.yml.
+# REPORT, NOT GATE (task ui-budget-report-never-gates). The ceilings are not
+# ratified yet, so a page OVER budget is a finding, not a failure: the run stays
+# green and the OVER rows reach the log, the job summary and the alert issue. Only
+# a broken MEASUREMENT fails the run: a page it could not measure (MISSING) or a
+# collector that crashed. That matters beyond this file: this run attaches a check
+# to main's head, and a red one there once blocked a cleared production ship
+# (bin/lib/ci_status.rb now ignores schedule-triggered runs when it judges a SHA,
+# but the report should not be red for a finding in the first place).
+#
+# SILENCE MEANS UNDER BUDGET, so anything else is loud. A night with an OVER or
+# MISSING row, or a failed run, opens an issue titled "UI budget over: <date>"
+# (the UTC date it first went over). Later such nights comment on that open issue
+# rather than open another; the next clean night (every row ok) closes it. Same
+# alert shape as r2-backup.yml.
 #
 # The run reads production as an anonymous visitor: GET requests only, no
 # cookies, no secrets, a user agent marked `ui-budget` so the apps' logs can tell
@@ -85,12 +94,19 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-      - name: Alert on failure
-        if: failure()
+      # Runs on a red night AND on a green night with OVER rows (OVER no longer
+      # fails the run); a clean green night exits here without touching issues.
+      - name: Alert when over or failed
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
+          JOB_STATUS: ${{ job.status }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          if [ "$JOB_STATUS" = "success" ] && ! grep -qE '\| (OVER|MISSING) \|$' ui-budget-summary.md 2>/dev/null; then
+            echo "Every row is within budget; no alert."
+            exit 0
+          fi
           prefix="UI budget over:"
           if [ -f ui-budget-summary.md ]; then
             verdict=$(grep -m1 '^ui-budget:' ui-budget-summary.md || true)
@@ -118,6 +134,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # A green run can still carry OVER rows (report-only); only a clean night closes.
+          if grep -qE '\| (OVER|MISSING) \|$' ui-budget-summary.md 2>/dev/null; then
+            echo "Rows are still over budget; the alert stays open."
+            exit 0
+          fi
           prefix="UI budget over:"
           for n in $(gh issue list --state open --search "\"$prefix\" in:title" --json number,title \
             --jq ".[] | select(.title | startswith(\"$prefix\")) | .number"); do

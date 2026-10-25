@@ -26,9 +26,11 @@ USAGE = <<~TXT
   --config      a budget file other than config/ui_budget.yml.
 
   Prints one row per page, width and ceiling (page, width, metric, value,
-  ceiling, verdict). Exits 0 when every row is within budget, 1 when any row is
-  OVER or a page went unmeasured (MISSING), 2 on a usage error or a collector
-  crash. Measures production as an anonymous visitor; signs in to nothing.
+  ceiling, verdict). REPORT-ONLY: exits 0 when every page was measured, even
+  when rows are OVER (the ceilings are not ratified yet; the table and verdict
+  line say what is over). Exits 1 when a page or metric went unmeasured
+  (MISSING), 2 on a usage error or a collector crash. Measures production as an
+  anonymous visitor; signs in to nothing.
 TXT
 
 args = CliArgGuard.guard!(
@@ -82,4 +84,4 @@ end
 rows = UiBudget.evaluate(config, doc, only: only)
 puts(UiBudget.table(rows))
 File.write(args.first("--summary"), UiBudget.markdown(rows)) if args.first("--summary")
-exit(UiBudget.over?(rows) ? 1 : 0)
+exit(UiBudget.exit_code(rows))
