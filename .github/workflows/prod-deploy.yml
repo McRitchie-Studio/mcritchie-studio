@@ -37,7 +37,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned, not the floating latest label: that moves to images Playwright cannot install chromium on (guard: test/lib/ci_runner_image_pin_test.rb)
     timeout-minutes: 45
     environment: production    # scopes HEROKU_API_KEY + deploy history (no required reviewer — see header)
     steps:
