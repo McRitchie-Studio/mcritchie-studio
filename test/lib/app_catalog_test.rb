@@ -39,7 +39,7 @@ class AppCatalogTest < Minitest::Test
     tiers = AppCatalog.apps.to_h { |app| [app.slug, [app.tier, app.status]] }
     assert_equal ["studio", "active"], tiers.fetch("mcritchie-studio")
     %w[turf-monster cyvasse].each { |slug| assert_equal ["product", "showcase"], tiers.fetch(slug) }
-    %w[mcritchie-industries commercial-welding].each { |slug| assert_equal ["product", "active"], tiers.fetch(slug) }
+    %w[mcritchie-industries commercial-welding alex-build].each { |slug| assert_equal ["product", "active"], tiers.fetch(slug) }
     assert_equal ["basic", "active"], tiers.fetch("moms-app")
     %w[dads-app rantly 10and5 portfolio prisoners-dilemma search-position weekly-lock].each do |slug|
       assert_equal ["basic", "showcase"], tiers.fetch(slug), slug

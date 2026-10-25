@@ -227,7 +227,7 @@ deployment shape.
 | 📊 Tax Studio | Archived | 3200-3299 | Heroku app `tax-studio` with no repo; ladder `planned` |
 | 🤝 Acquisition Studio | Archived | none | Retired prototype; McRitchie Industries holds its old block |
 
-Do not reuse `3200-4599`. To wake Rolio: scale its web dynos back to 1, restore
+Do not reuse `3200-4699`. To wake Rolio: scale its web dynos back to 1, restore
 `.github/dependabot.yml` (revert rolio commit `a79e818`; the file content is blob
 `f0527e6`), delete `test/dormancy_test.rb` (revert `d10b9ec`), and set its
 catalog status.
