@@ -55,6 +55,17 @@
 #     and the only env added is DATABASE_URL for the workspace's private test DB
 #     (<app>_ship_test). RAILS_ENV stays unset, so a precompile builds the
 #     production artifact.
+#   static_cloudflare: build the app's static site and upload it to Cloudflare R2
+#     (docs/agents/modules/static-cloudflare.md; rantly). The build runs in the
+#     SHIP WORKSPACE at the frozen SHA, with no test DB; the upload's last object
+#     is static-release.json naming the SHA, and the smoke needs /up 200 AND that
+#     marker, which is also what finalize reads.
+#       bucket        — the app's R2 bucket (<heroku app>-static).
+#       heroku_app    — the app's Heroku app, kept at 0 dynos; never pushed to.
+#       smoke_url     — the production HOST (an R2 custom domain), no /up.
+#       build_command — optional, default bin/static-build (writes $OUT for $HOST).
+#       build_dir     — optional, default tmp/static/site.
+#       credential    — optional, the 1Password upload keys, default r2.static-sites.
 #
 # Optional `qa_deploy: { app: <qa-server-key> }` overrides the qa-server target;
 # absent, `Release::Repos.qa_app` uses the repo slug.
@@ -295,7 +306,8 @@ apps:
     qa_evidence: exempt
   # --- SHOWCASE APPS: prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5,
   # search-position. Release-managed standalones registered as dads-app is: a
-  # Heroku app `mcr-<repo>` on git_push_heroku, test_cmd = CI's `test` job
+  # Heroku app `mcr-<repo>` on git_push_heroku (rantly, since 2026-10-25, on
+  # static_cloudflare instead; the rest follow it), test_cmd = CI's `test` job
   # verbatim with the system tier in its own job (repos_test holds both), and
   # QA-evidence exempt under the standalone-heroku profile's qa_decision.
   # smoke_url is https://<repo>.mcritchie.studio once that host serves /up with a
