@@ -1,6 +1,7 @@
 module Admin
-  # The hub's Google connection (the `sign_in` method of config/integrations.yml,
-  # dogfooded here before clients get it): one Google sign-in, three abilities
+  # The household's Google connections (the `sign_in` method of
+  # config/integrations.yml): the ones an admin owns, and the only ones agents
+  # read (GoogleConnection.household). One Google sign-in, three abilities
   # (GoogleConnection::ABILITIES), each connected and disconnected on its own.
   # /admin/google (show) is the standing page: per ability, is it connected and
   # as whom, and a live read proving it (the next week's events, the newest
@@ -8,121 +9,39 @@ module Admin
   # button, Connect or Disconnect. The OAuth client and encryption keys show
   # (by NAME, never a value) only while one is missing.
   #
-  # /connect?ability= sends the admin to Google for that ability's one read
-  # scope; /callback exchanges the code, refuses a grant without that scope,
-  # stores the connection (the refresh token encrypted) and comes back to
-  # where Connect was pressed. No token, and no part of one, is rendered,
-  # flashed or logged here.
-  #
-  # CONNECT GOOGLE (?ability=all, GoogleConnection::ALL) asks for all three in
-  # one consent, from the top of this page and of the /integrations Google
-  # section. Google shows a checkbox per scope, so a partial grant is not a
-  # refusal: the callback stores what was granted and says what was left
-  # unticked. Only a grant of none of them stores nothing. Either way the row
-  # keeps only scopes this sign-in asked for (GoogleConnection.store!).
-  #
-  # WHERE IT COMES BACK. Connect and Disconnect sit on this page and on the
-  # /integrations Calendar, Gmail and Drive cards. Each takes ?return_to=,
-  # honoured only when it is exactly one of RETURN_PATHS (never an open
-  # redirect); Connect keeps it in the session beside the OAuth state.
+  # The flow itself (connect, callback, disconnect, return paths) is
+  # GoogleSignIn, shared with Integrations::GoogleController, the door any
+  # signed-in user connects their own account through. The callback here is
+  # that shared door's too: it keeps the redirect URI Google's console has
+  # registered, so it admits any signed-in user (AdminWall::SIGNED_IN) and
+  # stores the connection as theirs. Every other action is admin only.
   class GoogleController < ApplicationController
-    before_action :require_admin
+    include GoogleSignIn
+
+    before_action :require_admin, except: :callback
     # The callback's URL carries a single-use code: no cache keeps the page.
     before_action(only: :callback) { response.headers["Cache-Control"] = "no-store" }
 
-    KEYS_NOT_SET = "Google connections are not set up on this server: " \
-                   "#{GoogleConnect::OAuthClient::ENV_NAMES.join(' and ')} are not set.".freeze
-    ENCRYPTION_NOT_SET = "This server cannot store a connection: its encryption keys are not set " \
-                         "(#{GoogleConnection::ENCRYPTION_ENV.join(', ')}). Nothing was asked of Google.".freeze
-    UNKNOWN_ABILITY = "Choose Google Calendar, Gmail or Google Drive to connect.".freeze
-    # The only places Connect and Disconnect come back to. Exact paths, no prefix match.
-    RETURN_PATHS = %w[/integrations /admin/google].freeze
+    KEYS_NOT_SET = GoogleSignIn::KEYS_NOT_SET
+    ENCRYPTION_NOT_SET = GoogleSignIn::ENCRYPTION_NOT_SET
+    UNKNOWN_ABILITY = GoogleSignIn::UNKNOWN_ABILITY
 
     def show
       @configured = GoogleConnect::OAuthClient.configured? || !GoogleConnect::OAuthClient.sign_in_stand_in.nil?
       @encryption_ready = GoogleConnection.encryption_ready?
-      @callback_url = callback_url
-      @unreadable = GoogleConnection.all.reject(&:readable?).map(&:email)
+      @callback_url = google_callback_url
+      @unreadable = GoogleConnection.household.reject(&:readable?).map(&:email)
       @sections = GoogleConnection::ABILITIES.keys.map { |ability| section(ability) }
     end
 
-    def connect
-      back = safe_return_to(params[:return_to])
-      abilities = GoogleConnection.abilities_for(params[:ability])
-      return redirect_to(back, alert: UNKNOWN_ABILITY) if abilities.nil?
-      return redirect_to(back, alert: ENCRYPTION_NOT_SET) unless GoogleConnection.encryption_ready?
+    def connect = start_google_sign_in
 
-      session[:google_connect_return_to] = back
-      session[:google_connect_ability] = params[:ability].to_s
-      redirect_to GoogleConnect::OAuthClient.authorize_url(redirect_uri: callback_url, state: new_state, abilities:), allow_other_host: true
-    rescue GoogleConnect::OAuthClient::NotConfigured
-      redirect_to back, alert: KEYS_NOT_SET
-    end
+    def callback = finish_google_sign_in
 
-    def callback
-      expected = session.delete(:google_connect_oauth_state).to_s
-      back = safe_return_to(session.delete(:google_connect_return_to))
-      requested = GoogleConnection.abilities_for(session.delete(:google_connect_ability))
-      return render(plain: "OAuth state mismatch: start the connection again.", status: :bad_request) unless state_matches?(expected) && requested
-
-      return redirect_to(back, alert: refusal(params[:error].to_s)) if params[:error].present?
-      return redirect_to(back, alert: ENCRYPTION_NOT_SET) unless GoogleConnection.encryption_ready?
-
-      grant = GoogleConnect::OAuthClient.exchange_code(code: params[:code], redirect_uri: callback_url)
-      email = GoogleConnect::OAuthClient.email_from(grant)
-      return redirect_to(back, alert: "Google did not say which account signed in, so nothing was saved. Start again.") if email.nil?
-      granted = GoogleConnection.granted_abilities(grant, requested)
-      return redirect_to(back, alert: nothing_granted(email, requested)) if granted.empty?
-
-      connection = GoogleConnection.store!(grant, email:, by: current_user.slug, abilities: requested)
-      redirect_to back, notice: connected_notice(connection.email, requested, granted)
-    rescue ActiveRecord::RecordInvalid => e
-      redirect_to back, alert: "Google answered, but the connection was not saved: #{e.record.errors.full_messages.to_sentence}."
-    rescue GoogleConnect::OAuthClient::NotConfigured
-      redirect_to back, alert: KEYS_NOT_SET
-    rescue GoogleConnect::OAuthClient::Error => e
-      redirect_to back, alert: "Google refused to exchange the sign-in code (#{e.message}). Start again: a code works once."
-    end
-
-    # Disconnects one ability from every account that grants it. Google
-    # cannot revoke a single scope, so an account keeping other abilities only
-    # forgets this one here; an account losing its last is revoked and deleted.
-    def disconnect
-      back = safe_return_to(params[:return_to])
-      ability = GoogleConnection.ability(params[:ability])
-      return redirect_to(back, alert: UNKNOWN_ABILITY, status: :see_other) if ability.nil?
-
-      name = GoogleConnection::ABILITY_NAMES.fetch(ability)
-      dropped, revoked, deleted = disconnect_all(ability)
-      Rails.logger.info("[google_connect] disconnect ability=#{ability} by=#{current_user.slug} at=#{Time.current.utc.iso8601} " \
-                        "dropped=#{dropped} deleted=#{deleted} revoked=#{revoked}")
-      redirect_to back, notice: disconnect_notice(name, dropped, revoked, deleted), status: :see_other
-    end
+    # Disconnects one ability from every household connection that grants it.
+    def disconnect = disconnect_google(GoogleConnection.household)
 
     private
-
-    # Returns [scopes dropped, tokens revoked, rows deleted].
-    def disconnect_all(ability)
-      dropped = revoked = deleted = 0
-      GoogleConnection.all.select { |connection| connection.can?(ability) }.each do |connection|
-        if (connection.abilities - [ ability ]).any?
-          connection.drop!(ability)
-          dropped += 1
-        else
-          revoked += 1 if GoogleConnect::OAuthClient.revoke(connection)
-          deleted += GoogleConnection.where(id: connection.id).delete_all
-        end
-      end
-      [ dropped, revoked, deleted ]
-    end
-
-    def disconnect_notice(name, dropped, revoked, deleted)
-      if dropped.zero? && deleted.zero? then "#{name} was not connected, so nothing changed."
-      elsif deleted.zero? then "#{name} disconnected here. The account's other Google connections stay."
-      elsif revoked == deleted then "#{name} disconnected: deleted here and revoked at Google."
-      else "#{name} disconnected here. Google did not confirm the revoke; remove access at myaccount.google.com to be sure."
-      end
-    end
 
     Section = Struct.new(:ability, :name, :connection, :read, :error, keyword_init: true)
 
@@ -145,50 +64,5 @@ module Admin
     rescue GoogleConnect::OAuthClient::Error => e
       [ nil, e.message ]
     end
-
-    def names(abilities) = abilities.map { GoogleConnection::ABILITY_NAMES.fetch(_1) }
-
-    def nothing_granted(email, requested)
-      if requested.one?
-        "Google signed in #{email} but did not grant #{names(requested).first}: its permission was unticked. " \
-          "Nothing was saved. Connect again and leave it ticked."
-      else
-        "Google signed in #{email} but granted none of #{names(requested).to_sentence(two_words_connector: ' or ', last_word_connector: ' or ')}: " \
-          "every permission was unticked. Nothing was saved. Connect again and leave them ticked."
-      end
-    end
-
-    # What connected, and for Connect Google what was left unticked.
-    def connected_notice(email, requested, granted)
-      notice = "#{names(granted).to_sentence} connected for #{email}."
-      unticked = requested - granted
-      return notice if unticked.empty?
-
-      "#{notice} #{names(unticked).to_sentence} #{unticked.one? ? 'was' : 'were'} left unticked, so #{unticked.one? ? 'it stays' : 'they stay'} off."
-    end
-
-    def refusal(code)
-      return "The sign-in was declined on Google. Nothing was connected." if code == "access_denied"
-
-      "Google refused the sign-in (#{code[0, 100]}). Check the OAuth client's redirect URI, then start again."
-    end
-
-    # A return path only when it is exactly an allowed one; otherwise this page.
-    def safe_return_to(value)
-      RETURN_PATHS.include?(value) ? value : admin_google_path
-    end
-
-    def state_matches?(expected)
-      params[:state].present? && expected.present? &&
-        ActiveSupport::SecurityUtils.secure_compare(params[:state].to_s, expected)
-    end
-
-    def new_state
-      SecureRandom.hex(16).tap { |state| session[:google_connect_oauth_state] = state }
-    end
-
-    # The path the OAuth client registered first (/admin/google_calendar/callback):
-    # kept, so the Google Cloud console owes no change.
-    def callback_url = admin_google_callback_url
   end
 end

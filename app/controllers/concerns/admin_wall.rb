@@ -82,7 +82,14 @@ module AdminWall
     # The app's CTO web chat: 404 unless the viewer owns the app or is an admin (CtoChatsController).
     "cto_chats" => %w[show status create avatars avatar],
     # Its files: upload, and show a sent one, under the same 404 (CtoChatAttachmentsController).
-    "cto_chat_attachments" => %w[create show]
+    "cto_chat_attachments" => %w[create show],
+    # Their own Google connection (/tasks/every-user-connects-google): Connect and
+    # Disconnect from the /integrations cards, scoped to the rows they own, and
+    # Google's callback, which keeps the one redirect URI the console registered
+    # and stores the connection as the signed-in user's (GoogleSignIn). The
+    # callback answers only with the OAuth state a Connect put in that session.
+    "integrations/google" => %w[connect disconnect],
+    "admin/google" => %w[callback]
   }.transform_values(&:freeze).freeze
 
   def self.public?(controller_path, action)

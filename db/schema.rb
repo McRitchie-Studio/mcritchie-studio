@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_230000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1674,8 +1674,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_220000) do
     t.text "refresh_token", null: false
     t.string "scope"
     t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
     t.index ["connected_at"], name: "index_google_connections_on_connected_at"
     t.index ["email"], name: "index_google_connections_on_email", unique: true
+    t.index ["user_id"], name: "index_google_connections_on_user_id"
   end
 
   create_table "image_caches", force: :cascade do |t|
@@ -3032,6 +3034,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_220000) do
   add_foreign_key "games", "teams", column: "home_team_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "github_builder_commit_range_caches", "github_commit_ranges"
   add_foreign_key "github_builder_commit_range_caches", "tracked_github_builders"
+  add_foreign_key "google_connections", "users", on_delete: :cascade
   add_foreign_key "knowledge_sources", "workspace_accounts"
   add_foreign_key "mailbox_drafts", "workspace_mailboxes"
   add_foreign_key "news", "people", column: "primary_person_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify

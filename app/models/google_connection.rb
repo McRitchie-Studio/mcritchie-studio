@@ -12,6 +12,15 @@
 # token is encrypted at rest (Active Record Encryption, as TiktokConnection's
 # is) and masked in every inspect.
 #
+# OWNERSHIP (/tasks/every-user-connects-google). Every row belongs to the user
+# who signed it in (user_id). Any signed-in user may connect their own account
+# from /integrations; an admin's connections are the HOUSEHOLD's, the ones
+# /admin/google shows. AGENTS READ ONLY THE HOUSEHOLD: .for, .current and every
+# agent-side lookup start from .household, so a viewer's connection is never
+# agent input. A promoted user's rows join the household; a demoted admin's
+# leave it. An account another user already connected is refused
+# (TakenByAnotherUser), never taken over.
+#
 # Until 2026-10-14 this was GoogleCalendarConnection (google_calendar_connections);
 # the rename kept every row and token.
 #
@@ -33,6 +42,13 @@ class GoogleConnection < ApplicationRecord
   ABILITY_NAMES = { calendar: "Google Calendar", gmail: "Gmail", drive: "Google Drive" }.freeze
   # The `ability` param of Connect Google: every ability in one consent.
   ALL = "all".freeze
+
+  # A sign-in of an account another user already connected.
+  class TakenByAnotherUser < StandardError
+    def initialize(msg = "That Google account is already connected by another user.") = super
+  end
+
+  belongs_to :user
 
   encrypts :refresh_token
   self.filter_attributes += %i[refresh_token]
@@ -56,32 +72,43 @@ class GoogleConnection < ApplicationRecord
 
     def scope_for(ability) = ABILITIES.fetch(ability.to_sym)
 
-    # The most recently connected account.
-    def current = order(connected_at: :desc, id: :desc).first
+    # The household's connections: those an admin owns. The only rows agents
+    # and the /admin/google page read.
+    def household = joins(:user).merge(User.where(role: "admin"))
 
-    # The readable connection that grants `ability`, most recent first; nil when none does.
+    # Newest first, the order every "which connection" answer reads in.
+    def newest_first = order(connected_at: :desc, id: :desc)
+
+    # The household's most recently connected account.
+    def current = household.newest_first.first
+
+    # The household's readable connection that grants `ability`, most recent
+    # first; nil when none does. Never a non-admin's row.
     def for(ability)
-      order(connected_at: :desc, id: :desc).find { |connection| connection.readable? && connection.can?(ability) }
+      household.newest_first.find { |connection| connection.readable? && connection.can?(ability) }
     end
 
-    # Stores the account a sign-in connected. `grant` is the token endpoint's
-    # JSON; `email` is the account it names; `abilities` are the ones THIS
+    # Stores the account a sign-in connected, owned by `user`. `grant` is the
+    # token endpoint's JSON; `email` is the account it names; `abilities` are the ones THIS
     # sign-in asked for. The row keeps the scopes it already had and adds the
     # granted scopes of the asked-for abilities, and no other ability's:
     # include_granted_scopes makes Google echo every scope the account ever
     # granted, so an ability disconnected here (#drop!) would otherwise come
     # back when another one connects. Raises RecordInvalid when the answer
     # lacks the refresh token; the message names the field, never a value.
-    def store!(grant, email:, by:, abilities:, now: Time.current)
+    # Raises TakenByAnotherUser, storing nothing, when another user owns the
+    # account's row (readable or not): no silent takeover.
+    def store!(grant, email:, user:, abilities:, now: Time.current)
       transaction(requires_new: true) do
-        connection = find_or_initialize_by(email: email.to_s.downcase)
+        connection = lock.find_or_initialize_by(email: email.to_s.downcase)
+        raise TakenByAnotherUser if connection.persisted? && connection.user_id != user.id
         # A row whose token can no longer be read is replaced, not updated.
         unless connection.new_record? || connection.readable?
           where(id: connection.id).delete_all
           connection = new(email: connection.email)
         end
         granted = (connection.scopes | granted_scopes(grant, abilities)).join(" ").presence
-        connection.assign_attributes(refresh_token: grant["refresh_token"].to_s, scope: granted, connected_by: by, connected_at: now)
+        connection.assign_attributes(refresh_token: grant["refresh_token"].to_s, scope: granted, user:, connected_by: user.slug, connected_at: now)
         connection.save!
         connection
       end
