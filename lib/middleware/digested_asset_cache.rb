@@ -5,11 +5,12 @@
 # config.public_file_server.headers is one header for everything ActionDispatch::Static
 # serves out of public/, and public/ holds two kinds of file. Fingerprinted
 # /assets/* (the Sprockets digest is in the name, so an edit is a new URL) can be
-# cached for a year and marked immutable. The unfingerprinted files beside them
-# (the agent portraits under /agents/, the brand kit, the home hero) keep their
+# cached for a year and marked immutable; the home hero is one of them, moved into
+# app/assets/images/hero. The unfingerprinted files beside them (the portraits
+# under /agents/, the brand kit, og.png, the email images, robots.txt) keep their
 # names when they are replaced, so a year there would pin a stale file in browsers
-# for a year. production.rb keeps the week for those; this raises the fingerprinted
-# ones to a year (lane-ui-infrastructure P3; config/ui_budget.yml
+# for a year. production.rb keeps the week for those; this raises the
+# fingerprinted ones to a year (lane-ui-infrastructure P3; config/ui_budget.yml
 # assets_cached_one_year_pct).
 #
 # It sits just outside ActionDispatch::Static and rewrites only a 200 whose path is

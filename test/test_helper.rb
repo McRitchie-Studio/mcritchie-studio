@@ -247,6 +247,7 @@ require_relative "support/session_env"
 # and the standing invariant in test/integration/test_database_hermeticity_test.rb.
 require_relative "support/test_database_purge"
 require_relative "support/test_storage_roots"
+require_relative "support/test_cache_isolation"
 TestDatabasePurge.purge!
 
 # TestDatabaseLeakGuard — keep it empty DURING the run, and NAME the test that
@@ -361,6 +362,10 @@ module ActiveSupport
 
     # Setup all fixtures in test/fixtures/*.yml for all tests in alphabetical order.
     fixtures :all
+
+    # No test inherits a request-local cache an earlier test left open, so the
+    # null store stays a null store. See test/support/test_cache_isolation.rb.
+    setup { TestCacheIsolation.reset! }
 
     # Add more helper methods to be used by all tests here...
 

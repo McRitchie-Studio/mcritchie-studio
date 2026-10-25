@@ -48,28 +48,42 @@ class CanonicalHostWiringTest < ActionDispatch::IntegrationTest
   # Drive full requests through a CONFIGURED middleware wrapped around the real
   # application, so the redirect is proven against the actual stack rather than a stub.
   test "a configured middleware redirects an alias host to the canonical host" do
-    status, headers, = configured.call(rack_env_for(ALIAS_HOST, "/tasks"))
+    status, headers = through_configured(ALIAS_HOST, "/tasks")
 
     assert_equal 301, status
     assert_equal "https://#{CANONICAL}/tasks", headers["location"]
   end
 
   test "a configured middleware leaves the canonical host on the app" do
-    status, = configured.call(rack_env_for(CANONICAL, "/up"))
+    status, = through_configured(CANONICAL, "/up")
 
     assert_equal 200, status
   end
 
   test "a configured middleware still lets the platform health check through on an alias" do
-    status, = configured.call(rack_env_for(ALIAS_HOST, "/up"))
+    status, = through_configured(ALIAS_HOST, "/up")
 
     assert_equal 200, status
   end
 
   test "a configured middleware leaves the direct dyno host reachable" do
-    status, = configured.call(rack_env_for(DYNO, "/up"))
+    status, = through_configured(DYNO, "/up")
 
     assert_equal 200, status
+  end
+
+  # A request through the configured stack closes its body, so the app's cache
+  # middleware ends the request's local cache. The control shows a dropped body
+  # leaves it open, which is what let this file answer a later test's
+  # Rails.cache.fetch from memory (test/support/test_cache_isolation.rb).
+  test "a request through the configured stack leaves no local cache open" do
+    through_configured(CANONICAL, "/up")
+    assert_nil Rails.cache.local_cache
+
+    configured.call(rack_env_for(CANONICAL, "/up")) # the control: the body is dropped
+    assert Rails.cache.local_cache, "a dropped body leaves the request's local cache open"
+  ensure
+    Rails.cache.unset_local_cache
   end
 
   # --- The reported bug ------------------------------------------------------------
@@ -136,6 +150,17 @@ class CanonicalHostWiringTest < ActionDispatch::IntegrationTest
 
   def rack_env_for(host, path)
     Rack::MockRequest.env_for("https://#{host}#{path}", "HTTPS" => "on")
+  end
+
+  # One request through the configured stack, its body closed as a server would.
+  # The app's cache middleware ends the request's local cache only on that close;
+  # a dropped body left it live and answered later tests' Rails.cache.fetch from
+  # memory (test/support/test_cache_isolation.rb).
+  def through_configured(host, path)
+    status, headers, body = configured.call(rack_env_for(host, path))
+    [status, headers]
+  ensure
+    body.close if body.respond_to?(:close)
   end
 
   # Runs the genuine omniauth request phase (test_mode short-circuits it to the mock
