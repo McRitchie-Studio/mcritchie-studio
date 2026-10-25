@@ -461,6 +461,13 @@ step**.
 If it warns, run the installer path the warn line prints
 ([`docs-maintenance.md`](../../../modules/docs-maintenance.md) § Editing The Entry Docs), never the primary's copy.
 
+**Re-enable a report workflow paused for this ship.** If a scheduled report was disabled
+(`gh workflow disable`) to unblock a ship and the release carries its fix, turn it back on
+once the deploy lands: `gh workflow list --all --repo McRitchie-Studio/<repo>` shows it
+`disabled_manually`; run `gh workflow enable <file>.yml --repo McRitchie-Studio/<repo>`,
+then `gh workflow run <file>.yml` once and read the run. Open case (2026-10-25):
+`ui-budget.yml` in mcritchie-studio, paused until task `ui-budget-report-never-gates` ships.
+
 ## Close out the cycle — run `archive-shipped`
 
 **A completed ship ends by running [`archive-shipped`](archive-shipped.md):**
