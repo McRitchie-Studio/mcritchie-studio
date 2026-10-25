@@ -19,7 +19,7 @@ class GoogleConnect::OAuthClientTest < ActiveSupport::TestCase
     Rails.logger = original
   end
 
-  def connection = GoogleConnection.store!(token_grant.transform_keys(&:to_s), email: "alex@mcritchie.studio", by: "alex", abilities: [ :calendar ])
+  def connection = GoogleConnection.store!(token_grant.transform_keys(&:to_s), email: "alex@mcritchie.studio", user: users(:alex), abilities: [ :calendar ])
 
   test "[unit] each ability's sign-in asks for identity and its one read scope, offline, adding to past grants" do
     with_connect_env do
