@@ -24,9 +24,11 @@ module GoogleConnectFakes
   end
 
   # A stored connection granting `scope` (the calendar sign-in's by default), as a
-  # sign-in that asked for `abilities` (all of them by default) stores it.
-  def store_google(email: "alex@mcritchie.studio", scope: SCOPE, refresh_token: "1//synthetic-refresh", abilities: GoogleConnection::ABILITIES.keys)
-    GoogleConnection.store!(token_grant(email:, scope:, refresh_token:).transform_keys(&:to_s), email:, by: "alex", abilities:)
+  # sign-in that asked for `abilities` (all of them by default) stores it, owned
+  # by `user` (the admin, so the household's, by default).
+  def store_google(email: "alex@mcritchie.studio", scope: SCOPE, refresh_token: "1//synthetic-refresh", abilities: GoogleConnection::ABILITIES.keys,
+                   user: users(:alex), now: Time.current)
+    GoogleConnection.store!(token_grant(email:, scope:, refresh_token:).transform_keys(&:to_s), email:, user:, abilities:, now:)
   end
 
   # Answers every POST with `answer` ([status, body Hash]) and records it.

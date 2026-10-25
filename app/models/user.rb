@@ -12,6 +12,11 @@ class User < ApplicationRecord
   # The apps this user owns (AppMembership, docs/agents/system/app-owners.md).
   has_many :app_memberships, foreign_key: :user_slug, primary_key: :slug, inverse_of: :user, dependent: :delete_all
 
+  # The Google accounts this user signed in (GoogleConnection). An admin's are
+  # the household's; anyone else's are their own and never reach an agent.
+  # The foreign key deletes them with the user.
+  has_many :google_connections, inverse_of: :user
+
   # Stable operator identities whose roles and email links should survive fresh
   # DBs, first-login races, QA resets, and new-app clones of this pattern.
   #

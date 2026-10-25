@@ -1,11 +1,13 @@
 # /integrations — public: the free integrations every plan can connect and the
 # add-on services we run on top, rendered from config/integrations.yml.
 class IntegrationsController < ApplicationController
-  # The Google Calendar, Gmail and Drive cards carry the hub's own Google
-  # connection for an admin (Admin::GoogleController's require_admin check),
-  # each on its "Sign in" row: Connect, or the account and Disconnect, under one
-  # Connect Google for all three (GOOGLE_GROUP). Nothing is read, and nothing
-  # renders, for anyone else.
+  # The Google Calendar, Gmail and Drive cards carry a Google connection for
+  # any signed-in user, each on its "Sign in" row: Connect, or the account and
+  # Disconnect, under one Connect Google for all three (GOOGLE_GROUP). An admin
+  # sees the household's (admin-owned) connections through /admin/google;
+  # anyone else sees and manages only their own, through /integrations/google
+  # (/tasks/every-user-connects-google). A signed-out visitor sees the
+  # marketing cards and their contact-form Connect; nothing is read for them.
   GOOGLE_CARDS = { "google_calendar" => :calendar, "gmail" => :gmail, "google_drive" => :drive }.freeze
   GOOGLE_METHOD = "sign_in".freeze
   # The section whose top carries Connect Google (all three at once) for an
@@ -20,10 +22,10 @@ class IntegrationsController < ApplicationController
 
   def index
     @groups = Integration.groups
-    return unless admin?
+    return unless logged_in?
 
     load_google_connections
-    load_fathom_connection
+    load_fathom_connection if admin?
   end
 
   # /integrations/discord — the guide the Discord card's Connect opens: what a
@@ -35,19 +37,23 @@ class IntegrationsController < ApplicationController
 
   private
 
-  # Does an admin's card carry the real Connect or Disconnect, so its
+  # Does a signed-in user's card carry the real Connect or Disconnect, so its
   # contact-form Connect drops?
   def connection_card?(key)
     (@google && GOOGLE_CARDS.key?(key)) || (@fathom && key == FATHOM_CARD)
   end
 
-  # { connectable:, calendar: connection|nil, gmail: ..., drive: ... }: one
-  # query, then each ability's most recent readable connection.
+  # { connectable:, own:, calendar: connection|nil, gmail: ..., drive: ... }:
+  # one query, then each ability's most recent readable connection. An
+  # admin's are the household's; anyone else's are their own (own: true,
+  # which points the cards at /integrations/google).
   def load_google_connections
-    connections = GoogleConnection.order(connected_at: :desc, id: :desc).to_a.select(&:readable?)
+    own = !admin?
+    scope = own ? current_user.google_connections : GoogleConnection.household
+    connections = scope.newest_first.to_a.select(&:readable?)
     @google = GOOGLE_CARDS.values.to_h { |ability| [ ability, connections.find { _1.can?(ability) } ] }
-    @google[:connectable] = (GoogleConnect::OAuthClient.configured? || !GoogleConnect::OAuthClient.sign_in_stand_in.nil?) &&
-                            GoogleConnection.encryption_ready?
+    @google[:connectable] = GoogleSignIn.connectable?
+    @google[:own] = own
   end
 
   # { connection: the most recent readable FathomConnection or nil, connectable: }.

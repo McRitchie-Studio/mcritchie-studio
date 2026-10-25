@@ -16,6 +16,11 @@ Rails.application.routes.draw do
   get "integrations", to: "integrations#index", as: :integrations
   # How a client gives its agents a home in Discord (the Discord card's Connect).
   get "integrations/discord", to: "integrations#discord", as: :integrations_discord
+  # Any signed-in user's own Google connection, from the /integrations Google
+  # cards (Integrations::GoogleController). Google comes back to the one
+  # registered callback, /admin/google_calendar/callback (GoogleSignIn).
+  get "integrations/google/connect", to: "integrations/google#connect", as: :integrations_google_connect
+  delete "integrations/google/connection", to: "integrations/google#disconnect", as: :integrations_google_disconnect
   # The app funnel: prompt → sign in → claim <name>.mcritchie.app → queued
   # for an agent. `check` is the live subdomain availability probe.
   get   "build",        to: "build#new",    as: :build
@@ -423,7 +428,8 @@ Rails.application.routes.draw do
     # The Google connection (sign_in method, config/integrations.yml): the
     # standing page, Connect and Disconnect per ability (?ability=calendar|
     # gmail|drive), and Google's callback. The callback keeps the path the
-    # OAuth client registered first; the old standing page redirects here.
+    # OAuth client registered first, and serves /integrations/google's
+    # sign-ins too (GoogleSignIn); the old standing page redirects here.
     get "google", to: "google#show", as: :google
     get "google/connect", to: "google#connect", as: :google_connect
     delete "google/connection", to: "google#disconnect", as: :google_disconnect

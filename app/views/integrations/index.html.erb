@@ -19,11 +19,11 @@
         <p class="max-w-xl text-sm text-muted sm:text-right"><%= group.summary %></p>
       </div>
 
-      <%# Connect Google, for an admin: one full-width row above the Google
+      <%# Connect Google, for a signed-in user: one full-width row above the Google
           cards, outside their grid, so the card rows stay as they are. %>
       <% if @google && group.key == IntegrationsController::GOOGLE_GROUP %>
         <div class="mb-5">
-          <%= render "integrations/google_connect_all", connections: @google.slice(*GoogleConnection::ABILITIES.keys), connectable: @google[:connectable], return_to: integrations_path %>
+          <%= render "integrations/google_connect_all", connections: @google.slice(*GoogleConnection::ABILITIES.keys), connectable: @google[:connectable], own: @google[:own], return_to: integrations_path %>
         </div>
       <% end %>
 
@@ -86,7 +86,7 @@
                         <span class="block text-muted" data-test="method-terms"><%= method.covers %> · <%= method.setup %> · <%= method.upkeep %></span>
                         <% google_ability = @google && method.key == IntegrationsController::GOOGLE_METHOD && IntegrationsController::GOOGLE_CARDS[entry.key] %>
                         <% if google_ability %>
-                          <%= render "integrations/google_connection", ability: google_ability, connection: @google[google_ability], connectable: @google[:connectable] %>
+                          <%= render "integrations/google_connection", ability: google_ability, connection: @google[google_ability], connectable: @google[:connectable], own: @google[:own] %>
                         <% end %>
                         <% if @fathom && method.key == IntegrationsController::GOOGLE_METHOD && entry.key == IntegrationsController::FATHOM_CARD %>
                           <%= render "integrations/fathom_connection", connection: @fathom[:connection], connectable: @fathom[:connectable] %>
@@ -137,7 +137,7 @@
               <% end %>
               <%# Every button opens the contact form prefilled, carrying where it
                   came from, or, for an entry with a guide, the guide page first.
-                  An admin on a Google or Fathom card has the real Connect and
+                  A signed-in user on a Google card, and an admin on the Fathom card, has the real Connect and
                   Disconnect above instead, so no contact-form Connect shows there. %>
               <% unless connection_card?(entry.key) %>
               <%= link_to entry.cta_label, (entry.guide ? public_send("integrations_#{entry.guide}_path") : contact_form_path(source: entry.contact_source)),

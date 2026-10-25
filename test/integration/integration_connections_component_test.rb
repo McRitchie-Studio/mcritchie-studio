@@ -5,8 +5,9 @@ require "support/fathom_connect_fakes"
 # [component] /integrations: each card with connections says how it connects
 # (who each way covers, its setup and its upkeep) and what it can do, and
 # names the ways behind an ability only when there is more than one. The
-# Google Calendar, Gmail and Drive cards carry the hub's own connection for an
-# admin: Connect, or the account and Disconnect; a visitor sees neither. The
+# Google Calendar, Gmail and Drive cards carry a connection for any signed-in
+# user: Connect, or the account and Disconnect (an admin's the household's, a
+# non-admin's their own); a visitor sees neither. The
 # Fathom card, in its own Meeting notes section, does the same.
 class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
   include GoogleConnectFakes
@@ -79,7 +80,7 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
     assert_not_includes slack.at_css("[data-test='entry-connections']").text, "Coming soon"
   end
 
-  test "[component] three cards render connect or disconnect for admin only: Connect on each when nothing is connected" do
+  test "[component] three cards render an admin the household's connect or disconnect: Connect on each when nothing is connected" do
     log_in_as users(:alex)
     with_connect_env do
       get integrations_path
@@ -179,7 +180,7 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[component] a visitor and a non-admin see the cards with no button and no email" do
+  test "[component] a visitor sees the cards with no button and no email" do
     store_google(scope: "openid #{CALENDAR} #{GMAIL} #{DRIVE}")
     with_connect_env do
       get integrations_path
@@ -188,13 +189,45 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
       assert_empty css_select("[data-test='google-connect-all']"), "visitor"
       CARDS.each_key { |key| assert_equal "Connect", card(key).at_css("[data-test='entry-cta']").text.strip, "visitor keeps #{key}'s CTA" }
       assert_no_match(/alex@mcritchie\.studio|Connect Google|Disconnect/, response.body)
+    end
+  end
 
-      log_in_as users(:viewer)
+  test "[component] a non-admin sees their own Connect on each Google card, never the household's account" do
+    store_google(scope: "openid #{CALENDAR} #{GMAIL} #{DRIVE}") # the household's, owned by the admin
+    log_in_as users(:viewer)
+    with_connect_env do
       get integrations_path
-      assert_empty css_select("[data-test='google-connection']"), "non-admin"
-      assert_empty css_select("[data-test='google-connect-all']"), "non-admin"
-      CARDS.each_key { |key| assert card(key).at_css("[data-test='entry-cta']"), "non-admin keeps #{key}'s CTA" }
-      assert_no_match(/alex@mcritchie\.studio|Connect Google|Disconnect/, response.body)
+
+      CARDS.each do |key, ability|
+        assert_equal "none", slot(key)["data-state"], key
+        link = slot(key).at_css("a[data-test='google-connect']")
+        assert_equal integrations_google_connect_path(ability:, return_to: "/integrations"), link["href"], key
+        assert_nil card(key).at_css("[data-test='entry-cta']"), "#{key}: their real Connect replaces the contact-form one"
+      end
+      all = css_select("[data-test='google-connect-all']").first
+      assert_equal "none", all["data-state"]
+      assert_equal integrations_google_connect_path(ability: GoogleConnection::ALL, return_to: "/integrations"),
+                   all.at_css("[data-test='google-connect-all-button']")["href"]
+      assert_no_match(/alex@mcritchie\.studio/, response.body, "the household's account never shows to a non-admin")
+      assert_no_match(%r{/admin/google}, response.body)
+      assert card("github_org").at_css("[data-test='entry-cta']"), "a non-Google card keeps its CTA"
+      assert_empty css_select("[data-test='fathom-connection']"), "Fathom stays admin only"
+    end
+  end
+
+  test "[component] a non-admin sees their own connected account and a Disconnect scoped to them" do
+    store_google(email: "viewer@gmail.test", scope: "openid #{CALENDAR}", user: users(:viewer), refresh_token: "1//viewer-synthetic")
+    log_in_as users(:viewer)
+    with_connect_env do
+      get integrations_path
+
+      assert_equal "connected", slot("google_calendar")["data-state"]
+      assert_equal "Connected as viewer@gmail.test", slot("google_calendar").at_css("[data-test='google-account']").text.squish
+      form = slot("google_calendar").at_css("form[data-test='google-disconnect']")
+      assert_equal integrations_google_disconnect_path(ability: :calendar, return_to: "/integrations"), form["action"]
+      assert_equal "none", slot("gmail")["data-state"]
+      assert_equal "some", css_select("[data-test='google-connect-all']").first["data-state"]
+      assert_no_match(/viewer-synthetic/, response.body)
     end
   end
 
