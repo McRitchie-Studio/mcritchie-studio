@@ -18,30 +18,27 @@
 #               review_weight  NUMERIC weight (2.0 heavy, 1.0 light), never a label
 #
 # Carl is the standing primary and owner on every PR; he summons one domain light
-# from Shannon (UI), Jasper (Web3), Steffon (DevOps) and Ritch (Documentation). Avi
+# from Shannon (UI), Jasper (Web3), Steffon (DevOps) and Mason (Documentation). Avi
 # is the qa_owner and stays out of the light pool, so no soul both reviews and QAs
 # one change. See docs/agents/agents/carl/sops/pr-review.md.
 souls:
 - slug: ray
   name: Ritch
   status: active
-  agent_type: orchestrator
-  title: Lead Orchestrator
-  description: 'Coordinates all agents, manages task assignment, and oversees system operations — the central brain of McRitchie Studio. Also holds the senior review pool''s Documentation seat: reviews docs, runbooks, the agent operating model, and READMEs on PRs that touch them.'
+  agent_type: specialist
+  title: Client Partner
+  description: 'The client-facing seat: outwardly focused, nice, funny, and happiest helping people get great software. Faces clients on /build, draws out what they mean and explains what matters to Avi, and owns brand voice, launch comms, social and copy (Rex keeps marketing strategy). Holds no admin credentials, reviews nothing, merges nothing.'
   avatar: "/agents/ray.webp"
-  position: 0
+  position: 2
   emoji: "🧭"
   color: "#818CF8"
   metadata:
-    review_role: reviewer
-    reviewer: true
-    domains:
-    - documentation
-    - docs
-    - runbooks
-    - agent-operating-model
-    - readme
-    review_weight: 2.0
+    review_role:
+    reviewer: false
+    # Explicit empties, because db/seeds/02_agents.rb MERGES metadata: without
+    # them a deployed row keeps the review domains this soul held until 2026-10-25.
+    domains: []
+    review_weight:
 - slug: avi
   name: Avi
   status: active
@@ -177,16 +174,23 @@ souls:
 - slug: mason
   name: Mason
   status: active
-  agent_type: specialist
-  title: Marketing
-  description: Runs marketing — brand voice, launch comms, social, funnels, copy. (Previously held Infrastructure; that surface now belongs to Steffon.)
+  agent_type: orchestrator
+  title: CEO
+  description: 'The CEO: coordinates all agents, runs focus sessions, owns the learning loop and the full-cycle release launcher, and holds the senior review pool''s Documentation seat: reviews docs, runbooks, the agent operating model, and READMEs, and merges the docs-shape ones into accepted.'
   avatar: "/agents/mason.webp"
-  position: 2
+  position: 0
   emoji: "📣"
   color: "#EF4444"
   metadata:
-    review_role:
-    reviewer: false
+    review_role: reviewer
+    reviewer: true
+    domains:
+    - documentation
+    - docs
+    - runbooks
+    - agent-operating-model
+    - readme
+    review_weight: 2.0
 # The general builder. It is legion (each task wears its own mascot, recorded in
 # devops.mascot) but one soul, so the slug is stable and the costume is not. It
 # builds and never reviews: absent from ReviewerSelector::POOL, so naming it as

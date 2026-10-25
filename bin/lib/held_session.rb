@@ -17,7 +17,7 @@ require_relative "../../lib/task_usage_sandbox"
 # - the desk the command runs in (`bin/task begin` wrote DeskSession's file): a
 #   studio login to that desk's task;
 # - the admin login: `AGENT_ADMIN_SESSION_TOKEN` (the hub-shell grant, whose soul
-#   is not known here), else the AdminLogin file `heartbeat steffon|ray` collected.
+#   is not known here), else the AdminLogin file `heartbeat steffon|mason` collected.
 #
 # Each login is `{ "token", "tier", "soul", "slug" }`. The token is a bearer
 # credential: callers present it and never print it.

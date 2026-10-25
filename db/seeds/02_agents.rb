@@ -5,9 +5,10 @@
 # meanings, including the metadata ReviewerSelector reads, are in that file's
 # header.
 #
-# THE ORCHESTRATOR SEAT IS `ray` (it was `alex` until 2026-09-24, when the human
-# owner took that name, then `xan` until 2026-10-18; Ray is Alex's middle name).
-# The rename-in-place block below keeps the row's id and history;
+# THE `ray` SOUL (it was `alex` until 2026-09-24, when the human owner took that
+# name, then `xan` until 2026-10-18; Ray is Alex's middle name). It held the
+# orchestrator seat until 2026-10-25, when Mason took it; `ray` is client-facing
+# now. The rename-in-place block below keeps the row's id and history;
 # Task::SOUL_ALIASES reads `alex` and `xan` as `ray`.
 agents_data = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls")
 

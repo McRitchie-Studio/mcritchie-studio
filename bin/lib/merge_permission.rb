@@ -24,7 +24,7 @@ require_relative "test_only_diff"
 # Pure: no gh, no board. bin/lib/merge_permit_cli.rb does the reads.
 module MergePermission
   # The shape-limited seats: soul => the one diff shape that seat may merge.
-  SHAPE_LIMITED = { "ray" => "docs" }.freeze
+  SHAPE_LIMITED = { "mason" => "docs" }.freeze
 
   # Who merges what a shape-limited seat may not.
   STANDING_PRIMARY = "carl"
@@ -34,7 +34,7 @@ module MergePermission
 
   # The souls whose merge-ready verdict can authorise a merge: the review pool
   # (ReviewerSelector::POOL, pinned by test/lib/merge_permission_test.rb).
-  REVIEWERS = %w[shannon carl jasper steffon ray].freeze
+  REVIEWERS = %w[shannon carl jasper steffon mason].freeze
 
   AUTHORISING_VERDICT = "merge-ready"
 

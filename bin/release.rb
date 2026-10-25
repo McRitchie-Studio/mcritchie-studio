@@ -3822,7 +3822,7 @@ def prepare
     unless guard["clean"] || DRY
       abort!("--expedite refused: the ladder no longer carries only `#{task_slugs.first}` — " \
              "promoting now would ship the work listed above. NOTHING was promoted, recorded, or " \
-             "deployed. Ship the whole release instead: run the `Ray Heartbeat` `full-cycle` launcher.")
+             "deployed. Ship the whole release instead: run the `Mason Heartbeat` `full-cycle` launcher.")
     end
   end
 

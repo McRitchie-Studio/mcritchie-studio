@@ -137,7 +137,7 @@ class ReviewPendingAction < ApplicationRecord
   # test/models/review_pending_action_test.rb). An armed merge fires with nobody
   # present and measures no diff, so such a seat cannot arm one: it merges in
   # person, where bin/merge-permit measures the diff at the head being merged.
-  SHAPE_LIMITED_SEATS = %w[ray].freeze
+  SHAPE_LIMITED_SEATS = %w[mason].freeze
 
   # Why none of these souls may arm a merge, or nil when they all may. Asked of
   # the soul NAMED on the arm (the session's, the caller's), never of whoever

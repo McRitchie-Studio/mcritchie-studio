@@ -45,7 +45,7 @@ class AgentActivity < ApplicationRecord
   # override); the heartbeat can later STACK the acting soul over the stable base
   # mascot. An unknown slug is coerced to nil by #normalize_agent — non-fatal, so
   # a typo'd soul never fails a narration.
-  SOULS = %w[avi carl shannon jasper steffon ray].freeze
+  SOULS = %w[avi carl shannon jasper steffon ray mason].freeze
 
   # The playful genesis reason for a session's very FIRST span — a self-contained
   # opener that needs no derived preamble (sidestepping the first-turn "assistant

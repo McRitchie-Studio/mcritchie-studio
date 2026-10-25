@@ -36,7 +36,7 @@
 # standing-primary policy.
 #
 # The specialist pool is {shannon=UI · jasper=Web3 · steffon=DevOps/Platform ·
-# ray=Documentation}. The QA owner (Avi by default — after the 2026-07-22 reslot he
+# mason=Documentation}. The QA owner (Avi by default — after the 2026-07-22 reslot he
 # owns qa-release: the accepted→release sweep + the QA deploy that flips members
 # `assembled`) is EXCLUDED as a LIGHT so one soul never both reviews AND QAs the same
 # change — "no self-gating". Avi isn't in the specialist pool, so his default
@@ -144,10 +144,10 @@ require "zlib"
 class ReviewerSelector
   # The full senior soul pool (slugs). Carl is the standing primary (removed from
   # the specialist draw below); the other four are the LIGHT specialists.
-  # `ray` holds the Documentation seat (the orchestrator, slugged `alex` until
-  # 2026-09-24 and `xan` until 2026-10-18 — Task::SOUL_ALIASES still reads the old
-  # slugs as this one).
-  POOL = %w[shannon carl jasper steffon ray].freeze
+  # `mason` holds the Documentation seat: the CEO, who took it from the `ray` soul
+  # on 2026-10-25 (Alex's ruling, .agents/epics/alex-build.md). The `ray` soul is
+  # client-facing now and reviews nothing, so it is out of the pool.
+  POOL = %w[shannon carl jasper steffon mason].freeze
 
   # Carl — the Lead Architect. He owns EVERY PR review as the STANDING PRIMARY
   # (deep review + owner), so he is never a light-pool pick.
@@ -158,7 +158,7 @@ class ReviewerSelector
   # that from the PR's files (bin/lib/merge_permission.rb), never from the task's
   # declared shape, which is all this class reads. Every other diff is merged by
   # the standing primary. #merge_rule is the sentence the decision carries.
-  DOCS_SEAT = "ray"
+  DOCS_SEAT = "mason"
 
   # The soul who runs qa-release — the accepted→release sweep + the QA deploy at the
   # `assembled` step — excluded from the light pool by default so a reviewer never
@@ -237,7 +237,7 @@ class ReviewerSelector
     "carl"    => %w[backend],
     "jasper"  => %w[web3 onchain],
     "steffon" => %w[devops platform],
-    "ray"     => %w[docs documentation]
+    "mason"   => %w[docs documentation]
   }.freeze
 
   # WHY A SOUL HOLDS A SEAT — the mechanism that actually put them there, carried
