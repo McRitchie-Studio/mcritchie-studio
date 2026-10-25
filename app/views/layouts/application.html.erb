@@ -4,7 +4,8 @@
     a classic script in the head after the engine's pre-paint script, stores the theme and settles the class before
     anything paints. Every other page leaves the theme to the engine. %>
 <% page_theme = content_for(:html_theme).presence %>
-<html<%= safe_join([" ", tag.attributes(class: ("dark" if page_theme == "dark"), data: { theme_context: page_theme })]) if page_theme %>>
+<%# lang="en" on every page: a screen reader picks its voice from it (axe html-has-lang). %>
+<html lang="en"<%= safe_join([" ", tag.attributes(class: ("dark" if page_theme == "dark"), data: { theme_context: page_theme })]) if page_theme %>>
   <head>
     <title><%= content_for(:title) || "McRitchie Studio" %></title>
     <%= csrf_meta_tags %>
@@ -35,13 +36,11 @@
         heading rule: the brand is the h1 only on a page with none of its own. %>
     <%= hub_navbar(page_html: yield) %>
 
-    <% if content_for?(:full_width) %>
-      <%= yield %>
-    <% else %>
-      <div class="max-w-7xl mx-auto px-4 py-6">
-        <%= yield %>
-      </div>
-    <% end %>
+    <%# The page's one main landmark: everything between the header and the
+        footer (axe landmark-one-main and region). A page that draws its own
+        <main> keeps it as the only one (ShellHelper#page_main?). %>
+    <% page_body = content_for?(:full_width) ? yield : tag.div(yield, class: "max-w-7xl mx-auto px-4 py-6") %>
+    <%= page_main?(yield) ? page_body : tag.main(page_body) %>
 
     <%# The site footer and its booking popup (studio-engine; the facts and the
         pages it shows on are in config/initializers/studio.rb). %>

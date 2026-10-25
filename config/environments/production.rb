@@ -34,6 +34,12 @@ Rails.application.configure do
   # the longest window worth the staleness on the second kind; fingerprinted assets
   # give up nothing that matters at this traffic. Fingerprint the portraits and this
   # can go immutable.
+  #
+  # The fingerprinted half now gets its year: DigestedAssetCache
+  # (lib/middleware/digested_asset_cache.rb, mounted in
+  # config/initializers/digested_asset_cache.rb) replaces this header with
+  # "public, max-age=31536000, immutable" on a 200 for a digested /assets/ path.
+  # This week is what every unfingerprinted file under public/ still gets.
   config.public_file_server.headers = { "cache-control" => "public, max-age=604800" }
 
   # Compress CSS using a preprocessor.

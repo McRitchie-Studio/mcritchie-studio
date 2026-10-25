@@ -3,6 +3,9 @@ module ShellHelper
   # Any h1 opening tag.
   PAGE_HEADING = /<h1[\s>]/
 
+  # Any main opening tag.
+  PAGE_MAIN = /<main[\s>]/
+
   # The engine's navbar (layouts/_navbar), with its link sidebar.
   #
   # A page has one h1. The engine draws the brand as an h1, which is right on a
@@ -30,5 +33,12 @@ module ShellHelper
 
   def page_heading?(page_html)
     page_html.to_s.match?(PAGE_HEADING)
+  end
+
+  # The layout wraps the page in the document's one <main> (axe
+  # landmark-one-main). A page that renders its own <main> already has it, and
+  # a second would be a duplicate landmark, so the layout leaves it unwrapped.
+  def page_main?(page_html)
+    page_html.to_s.match?(PAGE_MAIN)
   end
 end
