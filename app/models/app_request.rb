@@ -71,7 +71,7 @@ class AppRequest < ApplicationRecord
   # customer's words: it never mentions the house rules every new app ships
   # with. So the card names the SOP that carries them, and its acceptance asks
   # for the one a launch has shipped without (`footer_criterion`).
-  BUILDER_POINTER = "Work this request by docs/agents/modules/launch-build-queue.md. " \
+  BUILDER_POINTER = "Work this request by docs/agents/agents/ray/sops/launch-build-queue.md. " \
                     "Every new app ships the site footer, and legal pages when it holds personal data: " \
                     "docs/agents/system/new-app-onboarding-sop.md § 7.".freeze
 

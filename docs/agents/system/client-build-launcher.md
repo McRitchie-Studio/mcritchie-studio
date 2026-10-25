@@ -195,7 +195,7 @@ outside, and the run wrote `done.txt`.
 - **Retry.** Once the cause is fixed, put it back in line:
   `bin/task move <slug> designed`. Each claim spends an attempt; past
   `max_attempts` the launcher leaves the task for a person (build it by hand with
-  [`launch-build-queue.md`](../modules/launch-build-queue.md)).
+  [`launch-build-queue.md`](../agents/ray/sops/launch-build-queue.md)).
 - **The launcher stops.** SIGTERM ends the builders and releases their tasks
   back to `designed` (the attempt stays spent). A run that had already published
   when the stop came keeps `preview_ready`, and its task ships: its bundle is live,

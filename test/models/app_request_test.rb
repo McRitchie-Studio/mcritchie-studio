@@ -179,7 +179,7 @@ class AppRequestTest < ActiveSupport::TestCase
     ], devops.fetch("acceptance")
     context = devops.fetch("agent_context")
     assert context.end_with?(
-      "\n\nWork this request by docs/agents/modules/launch-build-queue.md. " \
+      "\n\nWork this request by docs/agents/agents/ray/sops/launch-build-queue.md. " \
       "Every new app ships the site footer, and legal pages when it holds personal data: " \
       "docs/agents/system/new-app-onboarding-sop.md § 7."
     ), context

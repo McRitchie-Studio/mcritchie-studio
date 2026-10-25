@@ -9,7 +9,7 @@ size exemption**: a one-line diff is still a Build-lane task.
 
 **Who.** A **feature agent**: the per-task Pokémon, whose soul and build checklist
 live in [`../agents/pokemon/role.md`](../agents/pokemon/role.md). A session holding
-an epic runs [`focus-session.md`](focus-session.md), spawns you per task, and
+an epic runs [`focus-session.md`](../agents/ray/sops/focus-session.md), spawns you per task, and
 spawns your reviewer when you report `submitted`.
 
 **Exit.** The task is on `submitted`, with a PR into `accepted` led by the task URL,
@@ -338,8 +338,8 @@ A task idling on `submitted` until a sweep finds it is dead time. So the moment
   the single-task entry in [`pr-review`](../agents/carl/sops/pr-review.md#single-task-entry-on-submit).
 
 Either way the reviewer is a **separate reviewer** subagent, never you: Carl, or
-Ritch for a prose-only PR on the focus-session path (tier A in
-[`focus-session.md`](focus-session.md)). The author set keeps a builder off its own PR. The builder's part is to start the review, not to
+Mason for a prose-only PR on the focus-session path (tier A in
+[`focus-session.md`](../agents/ray/sops/focus-session.md)). The author set keeps a builder off its own PR. The builder's part is to start the review, not to
 do it. Review's gate-zero still owns the CI verdict and the merge.
 
 The floor is the backstop, not the plan: a card that sits `submitted` with a

@@ -8,8 +8,9 @@
 > land; until then v2 describes the mechanics still in force.
 >
 > **Names.** From this document on, **Alex** is the human owner and operator,
-> and **Ritch** is the orchestrator agent that used to be called Alex. Active docs
-> adopt these names as they are rewritten; archived snapshots stay as written.
+> and **Ritch** is the agent that used to be called Alex. Ritch was the orchestrator
+> until 2026-10-25; **Mason** holds that seat since. Active docs adopt these names
+> as they are rewritten; archived snapshots stay as written.
 
 A focus session holds the epic, files tasks only when they are startable, builds
 them in parallel, and reviews its own PRs. The pipeline runs one suite per tree.
@@ -41,7 +42,7 @@ The agent seat formerly named Alex became **Xan** on 2026-09-24 (slug `xan`), an
 **Ray** on 2026-10-18 (Alex's middle name; display in `ray-display-rename`, slug
 `ray` in `ray-slug-rename`), and **Ritch** on
 2026-10-20 (display in `ritch-display-rename`; the slug stays `ray` until a
-later step): Lead Orchestrator, holder of the Documentation review seat, owner of `full-cycle` and the learning loop. The Solana signing identity
+later step): Lead Orchestrator, holder of the Documentation review seat, owner of `full-cycle` and the learning loop. On 2026-10-25 **Mason** (slug `mason`) took those seats as CEO, and Ritch became the client-facing fractional CTO and builder (`.agents/epics/alex-build.md`). The Solana signing identity
 `agent.xan.solana` (renamed from "Alex bot" on 2026-09-15, retired 2026-10-14) is
 unrelated and keeps its name. The human is **Alex** everywhere; "Mr. McRitchie"
 retires from active docs as they are rewritten.
@@ -76,7 +77,7 @@ Three rules:
 
 1. **The focus session owns build and review.** It files tasks just-in-time,
    spawns builders in parallel, and spawns each PR's reviewer the moment it is
-   green: Carl for code, Ritch alone for prose (§4 tiers). Rework happens in the same desk with the same context.
+   green: Carl for code, Mason alone for prose (§4 tiers). Rework happens in the same desk with the same context.
 2. **One suite per tree.** A tree hash earns one verdict, from CI. Every gate
    reads it; nothing re-runs an identical tree. Local certs become optional
    pre-flights that write no evidence.
@@ -123,7 +124,7 @@ shows its age. No refusal, no cap.
 
 **The flow.** When a builder's `bin/submit` reaches `submitted` with a green PR,
 the focus session spawns that PR's reviewer with the epic plan, the task, and the
-recorded head: Carl for code, Ritch alone for prose (tiers below). Carl runs the
+recorded head: Carl for code, Mason alone for prose (tiers below). Carl runs the
 primary review he runs today: gate-zero on the CI
 verdict, the deep read, an optional light, a verdict, and the merge into
 `accepted`. A blocker comes straight back to the session, which still has the
@@ -137,7 +138,7 @@ path for PRs whose session died.
   `--agent` disappears from the build lane. The mascot is the crew member on the
   card. Its soul document is written and polished as its own piece of work.
 - **The specialists live at review.** Carl for backend, Shannon for UI, Jasper
-  for on-chain, Steffon for infrastructure, Ritch for docs. Their `role.md`
+  for on-chain, Steffon for infrastructure, Mason for docs. Their `role.md`
   checklists are the written standards. A block is structured so it can be
   learned from: the regression, the trigger that reaches it, and what right
   looks like.
@@ -163,7 +164,7 @@ of SOP before reading a diff.
 
 | Tier | The change | Who reads | Model |
 |---|---|---|---|
-| A · prose | Markdown, inert media, docs-guard tests only (`CodeDiff` decides) | One read by the documentation seat (Ritch). No light. | fast |
+| A · prose | Markdown, inert media, docs-guard tests only (`CodeDiff` decides) | One read by the documentation seat (Mason). No light. | fast |
 | B · code, no risk tag | App or tooling code, under 400 insertions, one repo, no `payment` `solana` `auth` `migration` tag | Carl. Light at his discretion. | capable |
 | C · risk or size | Any risk tag, or over 400 insertions, or more than one repo, or a schema change | Carl plus the domain light, mandatory. | strongest |
 
@@ -350,7 +351,7 @@ resolves, every link resolves.
 Manual grading banked 13 insights against 416 discards; 132 triage findings are
 open with none closed.
 
-1. At `shipped`, Ritch grades the task once from facts: forecast size against
+1. At `shipped`, Mason's learning loop grades the task once from facts: forecast size against
    measured cost, bounces, gate failures, cycle time against the median, lines
    changed, tokens.
 2. A learning is written only when a threshold trips: two or more bounces, cost

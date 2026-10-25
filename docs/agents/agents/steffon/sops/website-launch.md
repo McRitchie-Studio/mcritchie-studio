@@ -7,6 +7,9 @@ This is Steffon's `website-launch` SOP: put a hosted website on a new domain.
 It delivers the **Hosting mode** row on `/packages/stack`, and it is a step of
 [`workspace-launch`](./workspace-launch.md); runnable on its own.
 
+**Who leads.** On a client launch Ritch (`ray`) leads with the client and Steffon
+runs the infra steps below (Alex's approved sort, 2026-10-25).
+
 **To the customer it is always "an app we host."** What runs behind it depends
 on the package, and the customer never needs to know which:
 

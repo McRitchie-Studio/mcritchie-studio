@@ -2,15 +2,21 @@
 
 ## Status: Active
 
-This is Mason's heartbeat launcher. It sets Mason's session attribution and routes
-to three independent act SOPs:
+This is Mason's heartbeat launcher: the CEO acts. It sets Mason's session
+attribution and routes to independent act SOPs:
 
 - [`share-insights`](sops/share-insights.md) - publish the banked insight bank to
   agent docs.
 - [`full-cycle`](sops/full-cycle.md) - run review, QA deploy, and production
   deploy with explicit ship authority.
-- [`ship-clock`](sops/ship-clock.md) - benchmark one task from Alex's first
-  message to production, split into hands-on, wait and rework.
+
+Two more of Mason's SOPs run only when Alex names them:
+[`clean-up`](sops/clean-up.md) (drive the whole pipeline to zero open tasks) and
+[`dream-swap`](sops/dream-swap.md) (print the dream cards and record Alex's
+sign-offs for every soul).
+
+The client-facing acts (client threads, the `/build` queue, `focus-session`,
+`ship-clock`) are Ritch's: [`../ray/HEARTBEAT.md`](../ray/HEARTBEAT.md).
 
 Grading is no longer a heartbeat act. Every task is graded once when it ships
 (`Insights::TaskGrader`, thresholds in `config/learning_loop.yml`), and a

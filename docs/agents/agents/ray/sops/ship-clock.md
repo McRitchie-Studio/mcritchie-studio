@@ -5,7 +5,7 @@
 
 ## Status: Active
 
-This is Mason's `ship-clock` SOP. Alex hands an agent one easy task. The agent takes
+This is Ritch's `ship-clock` SOP. Alex hands an agent one easy task. The agent takes
 it from his prompt to production and measures the speed with real numbers. The
 clock starts at his prompt and stops when the production ship goes green. The
 report splits that time into three parts:
@@ -128,7 +128,7 @@ Report to Alex in this order:
 
 ## Related
 
-- [`full-cycle`](full-cycle.md): review, QA and ship for whatever is queued.
+- [`full-cycle`](../../mason/sops/full-cycle.md): review, QA and ship for whatever is queued.
 - [`deploy-with-task`](../../avi/sops/deploy-with-task.md): a one-task expedite.
 - `docs/agents/ledgers/ship-clock.csv`: one row per benchmark run. The first row is
   team-tier-nine-hundred (2026-10-13), with T0 estimated.

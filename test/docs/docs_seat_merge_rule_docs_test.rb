@@ -18,14 +18,14 @@ class DocsSeatMergeRuleDocsTest < ActiveSupport::TestCase
 
   # page => the sentence it must carry
   RULE_PAGES = {
-    "agents/carl/sops/pr-review-primary.md" => /Ritch, the documentation seat, merges a docs-shape PR only/,
+    "agents/carl/sops/pr-review-primary.md" => /Mason, the documentation seat, merges a docs-shape PR only/,
     "agents/carl/sops/pr-review.md" => /documentation seat merges docs-shape PRs only/,
     "agents/carl/sops/pr-review-light.md" => /documentation seat merges a docs-shape PR only as its PRIMARY/,
-    "modules/focus-session.md" => /documentation seat merges docs-shape PRs only/,
+    "agents/ray/sops/focus-session.md" => /documentation seat merges docs-shape PRs only/,
     "modules/pr-review-sop.md" => /documentation seat merges no other shape/,
-    "agents/ray/role.md" => /Docs-shape only/,
-    "agents/ray/HEARTBEAT.md" => /every other diff is Carl's to merge/,
-    "agents/ray/claude-agent.md" => /never merges a code PR/
+    "agents/mason/role.md" => /Docs-shape only/,
+    "agents/mason/HEARTBEAT.md" => /every other diff is Carl's to merge/,
+    "agents/mason/claude-agent.md" => /never merges a code PR/
   }.freeze
 
   test "[docs] every page that seats the documentation seat names the merge rule and its command" do
@@ -53,10 +53,10 @@ class DocsSeatMergeRuleDocsTest < ActiveSupport::TestCase
   end
 
   test "[docs] the tier A row sends a refused diff to carl" do
-    body = norm("modules/focus-session.md")
+    body = norm("agents/ray/sops/focus-session.md")
 
     assert_includes body, "records its verdict with --head, and merges on bin/merge-permit's permit"
-    assert_match(/If Ritch reports a refusal .* the PR is tier B: spawn carl/, body)
+    assert_match(/If Mason reports a refusal .* the PR is tier B: spawn carl/, body)
   end
 
   test "[docs] the commands the pages print are the script's own flags" do
@@ -71,11 +71,11 @@ class DocsSeatMergeRuleDocsTest < ActiveSupport::TestCase
   end
 
   test "[docs] the subagent definition no longer forbids the merge and is installable from the role page" do
-    agent = norm("agents/ray/claude-agent.md")
+    agent = norm("agents/mason/claude-agent.md")
 
     refute_match(/you do not merge, deploy, or move tasks/i, agent)
     assert_match(/Merge only on its exit 0/, agent)
     assert_match(/When the permit refuses: do not merge/, agent)
-    assert_includes norm("agents/ray/role.md"), "docs/agents/agents/ray/claude-agent.md /Users/alex/.claude/agents/ray.md"
+    assert_includes norm("agents/mason/role.md"), "docs/agents/agents/mason/claude-agent.md /Users/alex/.claude/agents/mason.md"
   end
 end

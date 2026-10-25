@@ -7,12 +7,12 @@ to its detail. The long form it replaced is frozen verbatim in
 
 ## Who is who
 
-Alex is the human owner. Mason (slug `mason`) is the CEO and orchestrator agent. Ritch (slug `ray`) is the client-facing agent.
+Alex is the human owner. Mason (slug `mason`) is the CEO and orchestrator agent. Ritch (slug `ray`) is the client-facing fractional CTO and builder.
 
 | Soul | Seat | Soul docs |
 |------|------|-----------|
 | Pokémon | The general builder. Every task gets its own mascot; it builds the whole task to `submitted` | `docs/agents/agents/pokemon/` |
-| Mason | CEO: orchestrator; runs focus sessions; the documentation reviewer | `docs/agents/agents/mason/` |
+| Mason | CEO: orchestrator; admin with Steffon; the documentation reviewer; runs `full-cycle`, `clean-up` and the learning loop | `docs/agents/agents/mason/` |
 | Carl | Lead Architect; primary reviewer of code PRs; merges into `accepted` | `docs/agents/agents/carl/` |
 | Shannon · Jasper | Review lights for UI · on-chain | `docs/agents/agents/<soul>/` |
 | Avi | Product owner; runs `qa-release`; arbitrates contested blocks | `docs/agents/agents/avi/` |
@@ -21,7 +21,7 @@ Alex is the human owner. Mason (slug `mason`) is the CEO and orchestrator agent.
 | Tyrion | Cyvasse's house player: plays and chats with visitors; client-facing, holds no credentials | `docs/agents/agents/tyrion/` |
 | Tywin | The Cyvasse app's operator and admin: internal, holds the keys | `docs/agents/agents/tywin/` |
 | Hank | The Commercial Welding business agent (books, suppliers); not yet launched | `docs/agents/agents/hank/` |
-| Ritch | Client-facing partner: meets clients, explains what matters to Avi; brand voice and launches; holds no credentials, reviews and merges nothing | `docs/agents/agents/ray/` |
+| Ritch | Fractional CTO and forward-deployed engineer: faces clients, runs focus sessions and the `/build` queue, builds web apps; brand voice and launches; Worker class | `docs/agents/agents/ray/` |
 | Rex · Mack | Marketing strategy (CMO) · general worker | `docs/agents/agents/<soul>/` |
 
 ## SOP Invocation Standard
@@ -135,7 +135,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | Every doc, by topic (the full index) | `docs/agents/start-here.md` |
 | The ecosystem | `docs/ECOSYSTEM.md` |
 | **Build**: a task, from claim to `submitted` | `docs/agents/modules/building-sop.md`; command rules in `docs/agents/modules/fast-lane.md` |
-| Holding an epic | `docs/agents/modules/focus-session.md` |
+| Holding an epic | `docs/agents/agents/ray/sops/focus-session.md` |
 | The board | `docs/agents/modules/devops-task-board.md` |
 | **Review**: a PR, from claim to merge | `docs/agents/agents/carl/sops/pr-review.md`; the reviewer's own steps in `docs/agents/agents/carl/sops/pr-review-primary.md` |
 | **Release**: `accepted` → QA → production | `docs/agents/agents/avi/sops/qa-release.md`, `docs/agents/agents/steffon/sops/production-deploy.md`, `docs/agents/modules/gates/` |
@@ -172,16 +172,20 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `pr-review` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
 | `Mason Heartbeat` | Mason | `mcritchie-studio/docs/agents/agents/mason/HEARTBEAT.md` |
 | `clean-up` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |
+| `dream-swap` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/dream-swap.md` |
 | `full-cycle` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/full-cycle.md` |
 | `grade-events` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/grade-events.md` |
 | `share-insights` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/share-insights.md` |
-| `ship-clock` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/ship-clock.md` |
 | `digest-video` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/digest-video.md` |
 | `download-instagram` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-instagram.md` |
 | `download-tiktok` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
 | `download-youtube` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
 | `email-image` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | `wrap-it-up` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
+| `Ray Heartbeat` | Ray | `mcritchie-studio/docs/agents/agents/ray/HEARTBEAT.md` |
+| `focus-session` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/focus-session.md` |
+| `launch-build-queue` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/launch-build-queue.md` |
+| `ship-clock` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/ship-clock.md` |
 | `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | `constraint-diagnosis` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
 | `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
@@ -226,13 +230,10 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `contact-capture` | Shared | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
-| `dream-swap` | Shared | `mcritchie-studio/docs/agents/modules/dream-swap.md` |
 | `dream` | Shared | `mcritchie-studio/docs/agents/modules/dream.md` |
-| `focus-session` | Shared | `mcritchie-studio/docs/agents/modules/focus-session.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `knowledge-capture` | Shared | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
-| `launch-build-queue` | Shared | `mcritchie-studio/docs/agents/modules/launch-build-queue.md` |
 | `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
 | `slack-capture` | Shared | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
 | `token-session` | Shared | `mcritchie-studio/docs/agents/modules/token-session.md` |

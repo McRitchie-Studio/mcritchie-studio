@@ -96,11 +96,11 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
   repriced is Alex's, and the SOP says what to bring him
 - [`sops/content-build.md`](sops/content-build.md) — drain the content idea
   queue: claim a finished game's card, judge whether it is worth posting, write
-  the take and the scene list, take Mason's pass on the line, write it back.
+  the take and the scene list, take Ritch's pass on the line, write it back.
   Direct-invocation only and off the launcher card: it is QUEUE-shaped, and
   nothing here can know when games finalise. Judging which games are worth a
   video is mine — a slate where every game earned one is a slate I did not
-  judge; whether the SENTENCE is ours is Mason's, and he can veto a line
+  judge; whether the SENTENCE is ours is Ritch's, and he can veto a line
 - [`sops/collect-vault-revenue.md`](sops/collect-vault-revenue.md) — collect
   operator revenue (entry fees) out of the vault: sweep the `op_rev` ATA to the
   treasury on 3 of the 5 VaultState signers, then withdraw from the Squads vault to Alex's wallet on a

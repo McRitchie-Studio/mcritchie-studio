@@ -10,7 +10,7 @@ Two domain front doors are routed,
 Avi (`avi`, McRitchie Studio's CTO, Alex 2026-10-15) and Turf (`turf_monster`,
 Turf Monster), and each may PROPOSE what its domain's catalog allows, for the
 owner to confirm by reply (below, "Proposals and confirm"). Ritch stays routed as a
-helper (orchestration, docs review) with no catalog. Avi and Ritch keep one
+helper (client-facing) with no catalog. Avi and Ritch keep one
 read-only action each, the same board read (`bin/task list`). Later phases add channels, agents and clients without
 changing the tables: `channel` plus a provider-neutral `external_id` name every
 row.

@@ -38,7 +38,8 @@ note under the table):
 
 | Agent | Email | Purpose |
 |-------|-------|---------|
-| Ritch | `admin@mcritchie.studio` | Orchestrator, admin notifications |
+| Mason | `mason@mcritchie.studio`, and the super-admin seat `admin@mcritchie.studio` | CEO and orchestrator, admin notifications (marketing until 2026-10-25; Infrastructure before 2026-05-23, see `mission.md`) |
+| Ritch | `ray@mcritchie.studio` | Fractional CTO and client builder, brand voice and launches; Worker class (no admin seat) since 2026-10-25 |
 | Avi | `avi@mcritchie.studio` | Product Owner — PR review, release sign-off, ticket grooming |
 | Carl | `carl@mcritchie.studio` | Dev Backend Expert — Rails, ActiveRecord, jobs |
 | Shannon | `shannon@mcritchie.studio` | Dev UI Expert — frontend, Tailwind, Alpine, theme |
@@ -46,7 +47,6 @@ note under the table):
 | Steffon | `steffon@mcritchie.studio` | Infrastructure Expert — Heroku, deploys, CI, OPSEC |
 | Turf Monster | `team@turfmonster.media` | Sports data, Turf Monster app notifications — **own domain, not a forwarder** |
 | Mack | `mack@mcritchie.studio` | Worker agent comms — scraping, processing, bulk ops |
-| Mason | `mason@mcritchie.studio` | Marketing — brand voice, launch comms, social, funnels (was Infrastructure pre 2026-05-23 — see `mission.md`) |
 
 > The 5 new agents (Avi/Carl/Shannon/Jasper/Steffon) were added 2026-05-23 alongside Mason's
 > pivot from Infrastructure to Marketing; persona definitions live at `docs/agents/agents/<slug>/`.
@@ -61,7 +61,7 @@ note under the table):
 >
 > These addresses are also seeded as app accounts — `User::PARKED_IDENTITIES` in
 > mcritchie-studio and turf-monster is the source of truth for which of them hold `admin`.
-> `admin@mcritchie.studio` is the super-admin seat shared by Ritch and Steffon, and carries no
+> `admin@mcritchie.studio` is the super-admin seat shared by Mason and Steffon (Ritch until 2026-10-25), and carries no
 > Solana wallet on purpose.
 >
 > **Editing that list does not change an account that already exists.** The roster is read

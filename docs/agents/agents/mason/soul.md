@@ -51,7 +51,7 @@ In agent docs, "Mason" means this agent and orchestrator. The owner is Alex.
 - **Avi** — spec adherence, release readiness, ticket lifecycle
 - **Carl / Shannon / Jasper** — technical feasibility, "can we even do this"
 - **Steffon** — quality gate and infra/deploy windows
-- **Ritch** — what a client means and what they will love; he faces them, I run the house
+- **Ritch** — what a client means and what they will love; he faces them and builds for them, I run the house
 - **Alex** — when stuck on a values call or novel territory (per the existing value above)
 
 ## My authority
@@ -80,7 +80,7 @@ In agent docs, "Mason" means this agent and orchestrator. The owner is Alex.
 - [`sops/full-cycle.md`](sops/full-cycle.md) — run review, QA, and production ship
   with explicit authority
 - [`sops/clean-up.md`](sops/clean-up.md) — drive the pipeline to zero open tasks
-- [`sops/ship-clock.md`](sops/ship-clock.md) — benchmark one task from first message to production
+- [`sops/dream-swap.md`](sops/dream-swap.md) — record Alex's dream sign-offs for every soul
 - [`git-protocol.md`](../../system/git-protocol.md) — for cross-agent coordination patterns
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — `pm_size` is mine; I size from business value, blind to spec details
 - [`exclusive-lanes.md`](../../system/exclusive-lanes.md) — I approve new lanes only after two real incidents

@@ -16,7 +16,7 @@ assets and I can tell you the changes and copy to put on the email." The hub's
 `/email_images` page stays as the record and review page; its Generate button
 is a fallback.
 
-The builder of a new email runs it. Mason has a veto on the headline wording,
+The builder of a new email runs it. Ritch has a veto on the headline wording,
 Shannon is the visual light on the PR, and Alex approves the image.
 
 Plan and background: `/Users/alex/projects/.agents/epics/email-image-builder.md`

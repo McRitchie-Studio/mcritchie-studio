@@ -163,7 +163,7 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     # footer and names the SOP, after the requester's own words.
     devops = Task.find_by!(slug: draft.task_slug).metadata.fetch("devops")
     assert_includes devops.fetch("acceptance"), "league-hub.mcritchie.app's home page renders the site footer (footer[data-site-footer])"
-    assert_includes devops.fetch("agent_context"), "docs/agents/modules/launch-build-queue.md"
+    assert_includes devops.fetch("agent_context"), "docs/agents/agents/ray/sops/launch-build-queue.md"
     assert_includes devops.fetch("agent_context"), "CTO: Coach (portrait harbor)"
     assert_equal [ "league-hub" ], devops.fetch("repositories")
   end

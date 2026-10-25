@@ -5,7 +5,7 @@
 
 This is Turf Monster's `content-build` SOP. It drains the content board's `idea`
 column: for each finished game waiting there, it writes the take, the script and
-the scene list, hands the wording to Mason, and leaves the card ready for
+the scene list, hands the wording to Ritch, and leaves the card ready for
 rendering.
 
 It is Turf Monster's because the substance of a game recap is a **sports read**.
@@ -29,7 +29,7 @@ avoid writing the same sentence four times.
 | Which games exist, and their scores | Whether a game is worth posting about |
 | Creating the idea card | The take — what actually mattered |
 | Claiming, leasing, releasing | The script and the scene list |
-| Rendering images and video | The caption, before Mason sees it |
+| Rendering images and video | The caption, before Ritch sees it |
 | Assembly, music, posting | Whether a card should be skipped |
 
 If you find yourself reasoning about **what the score was**, stop. The score is
@@ -139,7 +139,7 @@ take silently overwrites the other, and the agent that then reads it writes the
 wrong game's script to the right card. Appending is not the fix; it interleaves.
 
 **WRITE THE WHOLE PATH AT EVERY SITE. Carry nothing between steps.** Step 3 and
-step 5 are separate turns with Mason's pass in between, and **no shell state
+step 5 are separate turns with Ritch's pass in between, and **no shell state
 survives a turn boundary** — measured 2026-09-21, both kinds:
 
 | What you might carry | What happens by step 5 |
@@ -168,16 +168,16 @@ EOF
 Yes, that path is repeated. That is the point — the short version is the one
 that breaks.
 
-### 4. Mason's voice pass — the seam, so it does not get relitigated
+### 4. Ritch's voice pass — the seam, so it does not get relitigated
 
-**You set whether the take is RIGHT. Mason sets whether the sentence is OURS.**
+**You set whether the take is RIGHT. Ritch sets whether the sentence is OURS.**
 It is not negotiable in either direction: he does not overrule your read of the
 game, and you do not overrule his read of the voice. He can veto a line; if he
 does, rewrite it rather than argue it.
 
-**Mason's half is borrowed from [`content-sprint`](../../rex/sops/content-sprint.md);
+**Ritch's half is borrowed from [`content-sprint`](../../rex/sops/content-sprint.md);
 the other half is NOT.** That SOP's seam is a two-party sentence — *"Rex sets
-what the batch is testing and how many; Mason sets whether a given sentence is
+what the batch is testing and how many; Ritch sets whether a given sentence is
 ours."* Here Rex's half is replaced by yours: nobody is setting a target count,
 and what stands in for it is your read of which games are worth a video.
 
@@ -198,7 +198,7 @@ claiming what the product DOES gets a check from Avi before it leaves.
 bin/content write <slug> \
   --script-file "${CLAUDE_SCRATCHPAD:-/tmp}/content/<slug>/take.txt" \
   --scenes-file "${CLAUDE_SCRATCHPAD:-/tmp}/content/<slug>/scenes.json" \
-  --caption "<Mason's line>" \
+  --caption "<Ritch's line>" \
   --stage script
 ```
 
@@ -242,7 +242,7 @@ invisible for 30 minutes.
   deterministic half is wrong.
 - **The queue is full of games from a slate you do not recognise** — check you
   are pointed at production before writing sixteen takes into a dev database.
-- **Mason vetoes the same line shape repeatedly** — stop writing that shape and
+- **Ritch vetoes the same line shape repeatedly** — stop writing that shape and
   ask him for the pattern, rather than producing sixteen he will veto.
 
 ## Handoff

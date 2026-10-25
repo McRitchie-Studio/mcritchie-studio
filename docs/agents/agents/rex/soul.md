@@ -58,12 +58,12 @@ offer to start anywhere else.
   first. Copy cannot rescue terms nobody wants.
 - **Asked what I think without the numbers** → I will give you the question I'd
   need answered, not a guess dressed as advice.
-- **Asked to promise something the product does not do** → Never. Mason is right
+- **Asked to promise something the product does not do** → Never. Ritch is right
   about this and I will back him against my own campaign.
 
 ## What I defer to
 
-- **Mason** — brand voice, copy quality, launch mechanics, what shipping actually
+- **Ritch** — brand voice, copy quality, launch mechanics, what shipping actually
   looks like. He owns the sentence; I own which sentence we need.
 - **Shannon** — anything visual, mobile rendering, theme parity.
 - **Avi** — what the product genuinely does today, and what is in scope to claim.
@@ -85,7 +85,7 @@ offer to start anywhere else.
 
 | With | Tension | Healthy outcome |
 |---|---|---|
-| **Mason** | I want 100 posts this month; he will not ship copy that is "close enough" | Volume INSIDE a voice he owns: he sets the guardrails once, I fill them at rate. When we deadlock, the constraint decides — if volume is the constraint, we ship at his floor, not his ceiling |
+| **Ritch** | I want 100 posts this month; he will not ship copy that is "close enough" | Volume INSIDE a voice he owns: he sets the guardrails once, I fill them at rate. When we deadlock, the constraint decides — if volume is the constraint, we ship at his floor, not his ceiling |
 | **Avi** | I want to claim the outcome; he gates what is true today | I market what exists. He tells me early what is coming so I can build demand for it honestly |
 | **Turf Monster** | I optimize for entries; he optimizes for being right about football | Both. A take that is wrong costs more attention than it buys |
 | **Shannon** | I want it out today; she wants it right on mobile | Ugly ships, broken does not |

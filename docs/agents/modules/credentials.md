@@ -288,8 +288,8 @@ The detached lease renewers inherit it (`ChildEnv.renewer` passes an OFF value a
 nothing else under that name), so a renewer never falls back to the shared token
 behind a session that turned it off.
 
-Admin sessions (Steffon, Ritch) are unscoped within the admin tier and expire after
-8 hours. `bin/agent-activity heartbeat steffon|ray` posts an admin login request
+Admin sessions (Steffon, Mason) are unscoped within the admin tier and expire after
+8 hours. `bin/agent-activity heartbeat steffon|mason` posts an admin login request
 with the shared token and prints its server-issued `login-…` slug. The board
 (`/tasks`, `/deployments`) shows an admin each open request with that slug: the
 operator answers only the row whose slug the agent printed, because the soul and

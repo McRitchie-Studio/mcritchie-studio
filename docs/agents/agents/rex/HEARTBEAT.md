@@ -23,9 +23,9 @@ targets, the measurement loop, and kill-or-continue on campaigns.
 
 Rex does **not** own:
 
-- **Brand voice, copy quality, launch mechanics** — [Mason](../mason/role.md).
-  Rex says what the batch tests and how many; Mason says whether a sentence is
-  ours. Rex backs Mason's veto on any claim the product cannot support, even
+- **Brand voice, copy quality, launch mechanics** — [Ritch](../ray/role.md).
+  Rex says what the batch tests and how many; Ritch says whether a sentence is
+  ours. Rex backs Ritch's veto on any claim the product cannot support, even
   against his own campaign.
 - **Visuals** — Shannon. **Product truth** — Avi. **Sports judgment** — Turf Monster.
 - **Anything that writes code.** If a prescription needs a tracking link, a

@@ -10,6 +10,9 @@ several files, each re-explaining the same decisions, and one of them
 (`moms-app`) never got registered at all and was deployed by hand for months.
 Alex asked on 2026-09-28 for one standard every single-use app follows.
 
+**Who leads.** On a client launch Ritch (`ray`) leads with the client and Steffon
+runs the infra steps below (Alex's approved sort, 2026-10-25).
+
 The standard is a **profile**: a named deploy shape defined once in
 `config/app_profiles.yml`, applied to an app by `bin/register-app`, which checks
 the app against the profile's contract and generates its registry entry.

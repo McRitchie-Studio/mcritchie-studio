@@ -180,7 +180,7 @@ truth.
 
 Every decision Alex owes on a dream (approve, swap, retire) goes to him as cards,
 printed by `bin/dream cards`; at wrap that is at most one swap, and on his word
-`dream-swap` it is everything pending ([`dream-swap.md`](dream-swap.md)).
+`dream-swap` it is everything pending ([`dream-swap.md`](../agents/mason/sops/dream-swap.md)).
 
 - **One idea line**, then **numbered cards**: a header
   `N · ADD|SWAP|RETIRE · <layer> · <used> of <cap> used`; Q, A and Why quoted
