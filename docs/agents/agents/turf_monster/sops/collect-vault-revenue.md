@@ -84,7 +84,7 @@ turf-vault). Production's `SOLANA_MULTISIG_SIGNERS` lists the same five:
 | Slot | Address | Who |
 |---|---|---|
 | 0 | `3LTLPG1s952sdNatZWtnfM7r9F3ivWSnPSqfhQLBepJ9` | agent governance key (`solana.turf.governance.v2`); no agent signs mainnet with it outside First Rule 10 |
-| 1 | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Alex's Phantom, the default `MULTISIG_COSIGNER` |
+| 1 | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Alex's Phantom, the mainnet default `MULTISIG_COSIGNER` |
 | 2 | `4S39sKHHPV8GPjUif9noN9gdsAFGs9WASuGxs7B9s5CY` | the server key (`solana.turf.server`, production `SOLANA_ADMIN_KEY`); the app signs with it automatically |
 | 3 | `9gACbzsCLmkYF9Yx1EBGmwMvvyfuTquJ6qs8QsoQvHXf` | Alex's second Phantom account |
 | 4 | `3Qj4v9qjhXgkru6zCRCErRVhy8Q6qU3NrNpvpXLTZboA` | Alex's second wallet |
@@ -271,7 +271,7 @@ https://turfmonster.media/admin/pending_transactions
 **Pick the second wallet on the page BEFORE anyone clicks sign.** The server
 already holds its slot, and the action needs three signatures, so the row must
 reserve two browser signers: Alex's Phantom (`7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr`,
-the `MULTISIG_COSIGNER` default) and one more of his wallets: tell him "switch to
+the mainnet `MULTISIG_COSIGNER` default) and one more of his wallets: tell him "switch to
 3Qj4", or `9gAC` when `3Qj4` is unavailable. The `4S39` pinch of First Rule 10
 does not apply here: `4S39` is the server key, already signing this row.
 With the platform cosigner configured (`SOLANA_PLATFORM_COSIGNER_KEY`, `3LTL`,

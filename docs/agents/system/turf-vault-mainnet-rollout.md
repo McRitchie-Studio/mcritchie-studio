@@ -53,10 +53,12 @@
   `BYPASS_IDL_CHECK` nor `SKIP_IDL_VERIFICATION` is set, and
   `Solana::Config.verify_idl!` raises at boot in production on a mismatch. The
   app's `SOLANA_PROGRAM_ID` is `DaFv83yo…`.
-- [ ] Devnet integration suite green for at least 7 consecutive nights (ecosystem audit Tier 3 #21 — nightly Playwright @devnet job) — **NOT MET (2026-09-16).**
-  `turf-monster`'s Devnet Nightly workflow has never passed. Of its 124 runs from
-  2026-05-18 to 2026-09-16, 123 were skipped — the job is gated on the
-  `DEVNET_NIGHTLY_ENABLED` repository variable — and one failed (2026-08-20).
+- [ ] Devnet integration suite green for at least 7 consecutive nights (ecosystem audit Tier 3 #21 — nightly Playwright @devnet job) — **NOT MET, and no longer measurable (2026-10-24).**
+  No workflow runs the `@devnet` specs: turf-monster's scheduled devnet workflow
+  never passed (of 124 runs to 2026-09-16, 123 skipped and one failed) and was
+  deleted on 2026-10-24 (task `turf-devnet-config-truth`). The devnet signal is now
+  the per-release `contest-rehearsal` gauntlet that `qa-release` records on each
+  release; restate this gate against it before mainnet sign-off.
 - [ ] Sentry wired up + receiving events (ecosystem audit Tier 2 #15) — **UNSETTLED (2026-09-16).**
   Wired, yes: `sentry-ruby` and `sentry-rails` are in `turf-monster`'s Gemfile,
   and `SENTRY_DSN` is set on `turf-monster-mainnet`. Whether events arrive needs a

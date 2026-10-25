@@ -125,6 +125,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     solana.turf.admin
     solana.turf.deploy.mainnet-v026
     solana.turf.governance
+    solana.turf.governance.devnet
     solana.turf.governance.v2
     solana.turf.server
     solana.turf.system

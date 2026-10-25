@@ -438,8 +438,9 @@ class CiWorkflowTriggersTest < Minitest::Test
   # unconditionally. Mutation-confirmed FALSE-GREEN: a job-level `if: vars.E2E_ENABLED ==
   # 'true'` made the lane execute zero specs while every guard in this file — and in
   # feature_shape_tiers_test.rb — stayed green. That is the IDENTICAL spelling this same
-  # PR indicts in turf-monster's devnet-nightly.yml (see config/feature_shapes.yml) as
-  # the reason `e2e_onchain` was a lie: a repo-variable gate, `skipped` on every run.
+  # PR indicted in turf-monster's scheduled devnet workflow (see config/feature_shapes.yml;
+  # deleted 2026-10-24) as the reason `e2e_onchain` was a lie: a repo-variable gate,
+  # `skipped` on every run.
   #
   # The lesson generalized: a lane that CONSTITUTES a verdict must be enrolled here on
   # the day it is wired, or the next lane repeats the bug one file over. Proving a
@@ -1462,7 +1463,7 @@ class CiWorkflowTriggersTest < Minitest::Test
     # spelling in SKIP_CONTEXT_KEYS — it is not `github.*` at all — so the blacklist waves
     # it straight through, and the lane runs ZERO specs behind a green check. Only the
     # POSITIVE invariant (the lane that is the verdict carries NO `if:` whatsoever) catches
-    # it. This is turf-monster's devnet-nightly.yml exactly, the workflow this PR indicts.
+    # it. This is the gate turf-monster's scheduled devnet workflow carried (deleted 2026-10-24).
     yaml = <<~YML
       on:
         push:
@@ -1560,9 +1561,9 @@ class CiWorkflowTriggersTest < Minitest::Test
                "`if: #{job_if}`. The lane that IS the verdict must be UNCONDITIONAL " \
                "on a release push. Any condition — event context, ENV VAR, REPO " \
                "VARIABLE, workflow input, matrix flag — can silently exclude the RC " \
-               "tip. This is not hypothetical: turf-monster's devnet-nightly.yml is " \
-               "gated `if: vars.DEVNET_NIGHTLY_ENABLED == 'true'`, has completed " \
-               "`skipped` on every scheduled run, and has NEVER ONCE EXECUTED — which " \
+               "tip. This is not hypothetical: turf-monster's scheduled devnet workflow " \
+               "was gated on a repo variable, completed `skipped` on every scheduled " \
+               "run, and NEVER ONCE EXECUTED before its deletion — which " \
                "is precisely why the `e2e_onchain` tier it was supposed to collect was " \
                "deleted as a lie. The ONLY permitted conditions are #{UNCONDITIONAL_JOB_IF.inspect}, " \
                "which forces the lane to run rather than excluding it (the executed-set gate " \

@@ -671,7 +671,7 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
   end
 
   # THE CONTROL, and the reason this stays an ALLOW-LIST. Declaring a lane must admit
-  # exactly that lane. A deny-list once let turf-monster's "Devnet Nightly" redden a CI
+  # exactly that lane. A deny-list once let a scheduled turf-monster workflow redden a CI
   # rung for 36 hours (2026-08-20); if this assertion ever fails, the filter was
   # widened rather than the lane declared.
   test "[unit] an undeclared turf-vault workflow still never lands a mark" do
@@ -680,7 +680,7 @@ class Ci::ProgressReaderTest < ActiveSupport::TestCase
     seed_check_job(repo: TURF_VAULT_NWO, sha: "sha-vnoise", workflow: "CI",
                    conclusion: "success", branch: "feat/vault-noise")
     seed_run(branch: "feat/vault-noise", sha: "sha-vnoise", repo: TURF_VAULT_NWO,
-             workflow: "Devnet Nightly", status: "completed", conclusion: "failure")
+             workflow: "Nightly Sweep", status: "completed", conclusion: "failure")
 
     progress = build_reader.for_task(task)
 

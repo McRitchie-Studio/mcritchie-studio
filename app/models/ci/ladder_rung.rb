@@ -81,10 +81,10 @@ module Ci
     # WHAT COUNTS AS A SUITE RUN — an ALLOW-LIST, and the polarity is the point.
     #
     # This was a deny-list of deploy names plus a generated-name regex, and it leaked:
-    # turf-monster's "Devnet Nightly" (a daily schedule) is neither, so it VOTED in the
-    # fold and ANCHORED the rung's sha — 23 rows on `main`, every one completed/skipped,
-    # drawing a false RED for measured windows of 1.5h, 7.5h and 36h. `main` only moves
-    # on a ship, so the nightly is usually the newest run there. And because
+    # a daily scheduled turf-monster workflow (deleted 2026-10-24) was neither, so it
+    # VOTED in the fold and ANCHORED the rung's sha — 23 rows on `main`, every one
+    # completed/skipped, drawing a false RED for measured windows of 1.5h, 7.5h and 36h.
+    # `main` only moves on a ship, so a schedule is usually the newest run there. And because
     # STATE_RANK[:red] is 0, that false red sorted the card to the TOP of the row.
     #
     # A deny-list is only ever as current as its last editor, and nothing pinned it:
