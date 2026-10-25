@@ -11,10 +11,14 @@
 #   bin/static-downgrade <repo> --execute --keep-dyno   the same, but leave the Heroku dyno running
 #   bin/static-downgrade <repo> --sha <sha>     build that commit instead of origin/main
 #
-# The app keeps its Heroku app (scaled to 0, never deleted) until Alex rules on
-# removing it. After an --execute, the app's config/release_repos.yml entry must
-# move to `profile: standalone-static` in the same pass, or the next ship would
-# git-push a dyno nobody serves.
+# Only an unpaid showcase app moves (StaticCloudflare::DOWNGRADABLE_APPS); any
+# other app is refused before a credential is read. A failure in the host swap or
+# its smoke rolls the swap back and prints the full manual undo; the dyno is
+# scaled to 0 only after a green smoke. Alex's ruling: the Heroku app then stays
+# at 0 dynos for 30 days after the cutover and is deleted on day 30. The
+# runbook's cutover procedure (docs/agents/modules/static-cloudflare.md) records
+# the date and who deletes it, and flips the app's config/release_repos.yml
+# entry to `profile: standalone-static` in a follow-up PR.
 #
 # Credentials, read from 1Password and never printed: cloudflare.studio.provision
 # (admin lane: zone, DNS, R2 bucket and custom domain, URL rewrite), the upload
@@ -43,6 +47,11 @@ abort USAGE if repo.empty? || ARGS.positionals.size > 1
 registry = YAML.safe_load_file(File.expand_path("../config/release_repos.yml", __dir__)) || {}
 adapter = registry.dig("apps", repo, "prod_deploy")
 abort "static-downgrade: #{repo} is not an app in config/release_repos.yml" unless adapter
+begin
+  StaticCloudflare.refuse_unless_downgradable!(repo, registry.dig("apps", repo))
+rescue StaticCloudflare::Abort => e
+  abort "static-downgrade: #{e.message}"
+end
 
 execute = ARGS.bool?("--execute")
 checkout = File.join(ProjectsRoot.default_projects_dir, repo)
@@ -75,9 +84,14 @@ begin
   system("git", "-C", checkout, "worktree", "add", "-q", "--detach", workspace, sha) ||
     abort("static-downgrade: could not cut a worktree at #{sha}")
   begin
+    # The build sees the toolchain's variables only (StaticCloudflare.build_env):
+    # this process holds operator credentials the app's code must never read.
+    build_env = StaticCloudflare.build_env
     runner = lambda do |argv, env, chdir|
-      out, status = Open3.capture2e(env, *argv, chdir: chdir)
+      out, status = Open3.capture2e(build_env.merge(env), *argv, chdir: chdir, unsetenv_others: true)
       [out, status.success?]
+    rescue Errno::ENOENT => e
+      ["#{argv.first}: not found in the worktree at #{sha[0, 8]} (#{e.message})", false]
     end
     deploy = StaticCloudflare::Deploy.new(
       target: target, workspace: workspace, sha: sha, runner: runner, http: transport,
@@ -86,7 +100,9 @@ begin
     )
     run.call(deploy)
     puts "\n✓ #{repo} serves from r2://#{target.bucket} at #{target.smoke_url} (sha #{sha[0, 8]})."
-    puts "  Now move its config/release_repos.yml entry to `profile: standalone-static`."
+    puts "  Next, the runbook's cutover procedure: record today as the cutover date and who deletes " \
+         "#{target.heroku_app} on day 30, then flip its config/release_repos.yml entry to " \
+         "`profile: standalone-static` in a follow-up PR."
   ensure
     system("git", "-C", checkout, "worktree", "remove", "--force", workspace, out: File::NULL, err: File::NULL)
   end

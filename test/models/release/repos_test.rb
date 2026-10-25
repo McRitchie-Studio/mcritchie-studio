@@ -206,9 +206,12 @@ class Release::ReposTest < ActiveSupport::TestCase
     "search-position" => "https://mcr-search-position-3c91e0b95f46.herokuapp.com"
   }.freeze
 
-  # The showcase apps moved off Heroku (static_cloudflare; Alex, 2026-10-25). Each
-  # leaves this list in the PR that moves it, and gains a row in the test below.
-  STATIC_SHOWCASE_APPS = %w[rantly].freeze
+  # The showcase apps already served from Cloudflare (static_cloudflare). An app
+  # joins this list in the follow-up PR that flips its registry entry, which runs
+  # only after `bin/static-downgrade <repo> --execute` (the runbook's cutover
+  # procedure). None has yet: flipped before the bucket exists, a ship would push
+  # main and then abort.
+  STATIC_SHOWCASE_APPS = %w[].freeze
 
   test "[unit] each showcase app deploys to its mcr- Heroku app by git_push_heroku" do
     SHOWCASE_APPS.except(*STATIC_SHOWCASE_APPS).each do |repo, smoke_host|
@@ -230,12 +233,15 @@ class Release::ReposTest < ActiveSupport::TestCase
   end
 
   test "[unit] a showcase app moved to Cloudflare serves from its own R2 bucket, its Heroku app parked" do
+    on_static = SHOWCASE_APPS.keys.select { |repo| Release::Repos.prod_deploy(repo)["strategy"] == "static_cloudflare" }
+    assert_equal STATIC_SHOWCASE_APPS.sort, on_static.sort,
+                 "a showcase app flips to static_cloudflare only with its row here, after its downgrade has run"
     STATIC_SHOWCASE_APPS.each do |repo|
       assert_equal Release::Ladder::THREE_RUNG, Release::Repos.ladder(repo), "#{repo} keeps the three-rung ladder"
       adapter = Release::Repos.prod_deploy(repo)
       assert_equal "static_cloudflare", adapter["strategy"]
       assert_equal "mcr-#{repo}-static", adapter["bucket"], "#{repo}'s bucket"
-      assert_equal "mcr-#{repo}", adapter["heroku_app"], "#{repo}'s Heroku app is named: kept at 0, not deleted"
+      assert_equal "mcr-#{repo}", adapter["heroku_app"], "#{repo}'s Heroku app is named: 0 dynos for 30 days after the cutover, then deleted"
       assert_equal SHOWCASE_APPS.fetch(repo), adapter["smoke_url"], "#{repo} keeps its host"
       assert_nil adapter["remote"], "no git remote: a ship must never push a dyno nobody serves"
       assert_equal "standalone-static", Release::Repos.config.dig("apps", repo, "profile")
@@ -833,7 +839,7 @@ class Release::ReposTest < ActiveSupport::TestCase
     "dads-app" => "git_push_heroku",
     "prisoners-dilemma" => "git_push_heroku",
     "weekly-lock" => "git_push_heroku",
-    "rantly" => "static_cloudflare",
+    "rantly" => "git_push_heroku",
     "portfolio" => "git_push_heroku",
     "10and5" => "git_push_heroku",
     "search-position" => "git_push_heroku",

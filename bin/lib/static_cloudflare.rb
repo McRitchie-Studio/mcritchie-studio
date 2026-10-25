@@ -123,6 +123,40 @@ module StaticCloudflare
     Target.from(repo, "bucket" => "#{heroku_app}-static", "smoke_url" => adapter["smoke_url"], "heroku_app" => heroku_app)
   end
 
+  # The apps a downgrade may move: the unpaid showcase apps Alex ruled serve from
+  # Cloudflare. Every other app (turf-monster, cyvasse, moms-app, a client app) is
+  # refused before anything is read or written, whatever its profile says:
+  # cyvasse and moms-app share standalone-heroku but hold a database. The
+  # hosting-trial daily job adds an app here only from its own record of a lapsed,
+  # unpaid trial.
+  DOWNGRADABLE_APPS = %w[rantly dads-app 10and5 portfolio prisoners-dilemma search-position weekly-lock].freeze
+  DOWNGRADE_PROFILES = %w[standalone-heroku standalone-static].freeze
+
+  def self.refuse_unless_downgradable!(repo, entry)
+    unless DOWNGRADABLE_APPS.include?(repo)
+      raise Abort, "#{repo} is not an unpaid showcase app (#{DOWNGRADABLE_APPS.join(', ')}): " \
+                   "a downgrade would take a paid app off its dyno. Nothing was read or written."
+    end
+    profile = entry.to_h["profile"].to_s
+    return if DOWNGRADE_PROFILES.include?(profile)
+
+    raise Abort, "#{repo} is on profile #{profile.empty? ? '(none)' : profile}, not #{DOWNGRADE_PROFILES.join(' or ')}: " \
+                 "only a database-free standalone moves to R2. Nothing was read or written."
+  end
+
+  # The environment the static build runs under, by ALLOW-list: the toolchain's
+  # own variables and nothing else, so no operator credential (1Password service
+  # tokens, HEROKU_API_KEY, the Cloudflare token, a Bundler auth key) reaches
+  # the app's code. Spawn it with unsetenv_others: true.
+  BUILD_ENV_KEYS = %w[PATH HOME USER LOGNAME SHELL TMPDIR TERM LANG LC_ALL LC_CTYPE GEM_HOME GEM_PATH].freeze
+  BUILD_ENV_PREFIXES = %w[MISE_ RBENV_].freeze
+
+  def self.build_env(parent = ENV)
+    parent.to_h.select do |key, _|
+      BUILD_ENV_KEYS.include?(key) || BUILD_ENV_PREFIXES.any? { |prefix| key.start_with?(prefix) && !key.match?(/TOKEN|KEY|SECRET/) }
+    end
+  end
+
   # One object to write: its key, the local file, and the two headers R2 stores.
   Item = Struct.new(:key, :path, :content_type, :cache_control, keyword_init: true)
 

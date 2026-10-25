@@ -83,6 +83,25 @@ class StaticCloudflareTest < Minitest::Test
                    smoke_tries: tries, sleeper: ->(_s) { }, clock: -> { Time.utc(2026, 10, 25) })
   end
 
+  # ── Who may be downgraded, and what the build may see ─────────────────────
+  def test_only_an_unpaid_showcase_app_on_a_standalone_profile_may_downgrade
+    SC.refuse_unless_downgradable!("rantly", { "profile" => "standalone-heroku" })
+    SC.refuse_unless_downgradable!("rantly", { "profile" => "standalone-static" })
+    paid = assert_raises(SC::Abort) { SC.refuse_unless_downgradable!("cyvasse", { "profile" => "standalone-heroku" }) }
+    assert_match(/not an unpaid showcase app/, paid.message, "the profile alone is not enough: cyvasse holds a database")
+    drifted = assert_raises(SC::Abort) { SC.refuse_unless_downgradable!("rantly", { "profile" => "managed-satellite" }) }
+    assert_match(/not standalone-heroku or standalone-static/, drifted.message)
+    assert_raises(SC::Abort) { SC.refuse_unless_downgradable!("rantly", {}) }
+  end
+
+  def test_build_env_is_an_allow_list_that_drops_every_operator_credential
+    parent = { "PATH" => "/bin", "HOME" => "/h", "LANG" => "en_US.UTF-8", "MISE_DATA_DIR" => "/m",
+               "OP_SERVICE_ACCOUNT_TOKEN" => "ops_x", "OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => "ops_y",
+               "HEROKU_API_KEY" => "hk", "CLOUDFLARE_API_TOKEN" => "cf", "BUNDLE_GITHUB__COM" => "ghp",
+               "MISE_GITHUB_TOKEN" => "ghp2", "CLAUDE_CODE_SESSION_ID" => "s1", "DATABASE_URL" => "postgres://x" }
+    assert_equal({ "PATH" => "/bin", "HOME" => "/h", "LANG" => "en_US.UTF-8", "MISE_DATA_DIR" => "/m" }, SC.build_env(parent))
+  end
+
   # ── Target ────────────────────────────────────────────────────────────────
   def test_target_reads_the_adapter_and_defaults_the_build
     t = target

@@ -34,4 +34,14 @@ class StaticDowngradeCliTest < Minitest::Test
     refute status.success?
     assert_includes err, "not-an-app is not an app in"
   end
+  # A paid app is refused before any credential read or Cloudflare call: the
+  # PATH holds no `op`, so a read past the guard would fail with a different error.
+  def test_a_paid_app_refuses_before_anything_is_read
+    %w[turf-monster cyvasse moms-app mcritchie-industries commercial-welding].each do |repo|
+      _out, err, status = run_bin(repo)
+      refute status.success?, "#{repo} must refuse"
+      assert_includes err, "#{repo} is not an unpaid showcase app", repo
+      assert_includes err, "Nothing was read or written", repo
+    end
+  end
 end

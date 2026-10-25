@@ -69,8 +69,9 @@ profiles:
       A database-free app with only GET routes, served as plain files from
       Cloudflare R2 with no Heroku dyno (docs/agents/modules/static-cloudflare.md).
       Released through the three-rung ladder; the ship builds its static site at
-      the frozen SHA and uploads it. Its Heroku app is kept, scaled to 0. An app
-      arrives here by bin/static-downgrade, not bin/register-app.
+      the frozen SHA and uploads it. Its Heroku app stays at 0 dynos for 30 days
+      after the cutover, then is deleted (the runbook records who and when). An
+      app arrives here by bin/static-downgrade, not bin/register-app.
     entry:
       ladder: three-rung
       prod_deploy:

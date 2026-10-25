@@ -56,12 +56,16 @@
 #     (<app>_ship_test). RAILS_ENV stays unset, so a precompile builds the
 #     production artifact.
 #   static_cloudflare: build the app's static site and upload it to Cloudflare R2
-#     (docs/agents/modules/static-cloudflare.md; rantly). The build runs in the
-#     SHIP WORKSPACE at the frozen SHA, with no test DB; the upload's last object
-#     is static-release.json naming the SHA, and the smoke needs /up 200 AND that
-#     marker, which is also what finalize reads.
+#     (docs/agents/modules/static-cloudflare.md). An app moves onto it only after
+#     bin/static-downgrade <repo> --execute has run, in its own follow-up PR (the
+#     runbook's cutover procedure); flipped earlier, the ship pushes main and then
+#     aborts on the missing bucket. The build runs in the SHIP WORKSPACE at the
+#     frozen SHA, with no test DB; the upload's last object is static-release.json
+#     naming the SHA, and the smoke needs /up 200 AND that marker, which is also
+#     what finalize reads.
 #       bucket        — the app's R2 bucket (<heroku app>-static).
-#       heroku_app    — the app's Heroku app, kept at 0 dynos; never pushed to.
+#       heroku_app    — the app's Heroku app, never pushed to: 0 dynos for 30 days
+#                       after the cutover, then deleted (runbook).
 #       smoke_url     — the production HOST (an R2 custom domain), no /up.
 #       build_command — optional, default bin/static-build (writes $OUT for $HOST).
 #       build_dir     — optional, default tmp/static/site.
@@ -306,8 +310,7 @@ apps:
     qa_evidence: exempt
   # --- SHOWCASE APPS: prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5,
   # search-position. Release-managed standalones registered as dads-app is: a
-  # Heroku app `mcr-<repo>` on git_push_heroku (rantly is on
-  # static_cloudflare instead; the rest follow it), test_cmd = CI's `test` job
+  # Heroku app `mcr-<repo>` on git_push_heroku, test_cmd = CI's `test` job
   # verbatim with the system tier in its own job (repos_test holds both), and
   # QA-evidence exempt under the standalone-heroku profile's qa_decision.
   # smoke_url is https://<repo>.mcritchie.studio once that host serves /up with a
@@ -333,19 +336,13 @@ apps:
       smoke_url: https://weekly-lock.mcritchie.studio
     test_cmd: bin/rails test
     qa_evidence: exempt
-  # rantly is the first app OFF Heroku (Alex ruled that the unpaid showcase apps
-  # serve from Cloudflare). The ship builds its static site at the frozen SHA and
-  # uploads it to R2 (docs/agents/modules/static-cloudflare.md); mcr-rantly is
-  # kept, scaled to 0. This entry takes effect from the PRIMARY checkout, so only
-  # once the hub change carrying it has shipped, and bin/static-downgrade rantly
-  # --execute must have run first, or the smoke reads no static-release.json.
   rantly:
-    profile: standalone-static # config/app_profiles.yml; repos_test.rb holds this entry to it
+    profile: standalone-heroku # config/app_profiles.yml; repos_test.rb holds this entry to it
     ladder: three-rung
     prod_deploy:
-      strategy: static_cloudflare
-      bucket: mcr-rantly-static
-      heroku_app: mcr-rantly
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/mcr-rantly.git
+      branch: main
       smoke_url: https://rantly.mcritchie.studio
     test_cmd: bin/rails test
     qa_evidence: exempt

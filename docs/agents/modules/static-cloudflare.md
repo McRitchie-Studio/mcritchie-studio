@@ -52,8 +52,11 @@ own 404, not the app's `404.html`.
 
 ## The ship: `static_cloudflare`
 
-`config/release_repos.yml`, on the `standalone-static` profile
-(`config/app_profiles.yml`):
+An app's `config/release_repos.yml` entry, on the `standalone-static` profile
+(`config/app_profiles.yml`), **once its cutover has run** (below). No app is on it yet:
+rantly stays on `git_push_heroku` until its `--execute` succeeds, because a ship
+through this strategy before the bucket and `r2.static-sites` exist would push `main`
+and then abort, stopping every app after it.
 
 ```yaml
 rantly:
@@ -62,7 +65,7 @@ rantly:
   prod_deploy:
     strategy: static_cloudflare
     bucket: mcr-rantly-static
-    heroku_app: mcr-rantly        # parked at 0; no remote, so no ship pushes to it
+    heroku_app: mcr-rantly        # 0 dynos; no remote, so no ship pushes to it
     smoke_url: https://rantly.mcritchie.studio
   test_cmd: bin/rails test
   qa_evidence: exempt
@@ -82,7 +85,7 @@ Optional keys: `build_command` (default `bin/static-build`), `build_dir` (defaul
 4. Writes `static-release.json` last.
 5. Smokes `<smoke_url>/up` **and** the marker: both must answer, and the marker must
    name the frozen SHA. `/up` alone proves nothing, because the old Heroku dyno answers
-   it too. It retries for a minute.
+   it too. It retries for a minute (a downgrade's own smoke waits ten: see below).
 6. Records the G4 `deploy:<repo>` SOP and aborts on any failure, naming the key.
 
 A failed upload leaves the previous release serving every key not yet written, and no
@@ -102,22 +105,65 @@ only with `--execute`.** The order is the safety:
 
 | # | Step | Write |
 |---|---|---|
+| 0 | Refuse any app not in `StaticCloudflare::DOWNGRADABLE_APPS` (the seven unpaid showcase apps) or not on `standalone-heroku`/`standalone-static`, before any credential read | none |
 | 1 | Create the bucket, if absent | `POST /accounts/<id>/r2/buckets` |
 | 2 | Build `origin/main` in a private worktree, upload it, write the marker | `aws s3api put-object` per file |
 | 3 | Delete the host's old record (the CNAME to Heroku), unless the custom domain is already attached | `DELETE /zones/<z>/dns_records/<id>` |
 | 4 | Attach the R2 custom domain | `POST /accounts/<id>/r2/buckets/<b>/domains/custom` |
 | 5 | Put the URL rewrite, carrying the zone's other rewrite rules | `PUT /zones/<z>/rulesets/phases/http_request_transform/entrypoint` |
-| 6 | Smoke `/up` and the marker at the SHA | reads |
+| 6 | Smoke `/up` and the marker at the SHA, for up to ten minutes (a new custom domain takes minutes to activate) | reads |
 | 7 | Only after a green smoke: scale the web dyno to 0 (`--keep-dyno` skips it) | `PATCH /apps/<app>/formation/web {quantity: 0}` |
 
-The Heroku app is **kept, never deleted**, until Alex rules on removing it. The plan
-prints the old record so step 3 can be undone. A failed upload stops before any DNS
-write; a failed smoke stops before the scale, with the dyno still up. Steps 3 to 5
-are the only window in which the host may not answer.
+**Rollback.** Steps 3 to 6 are one unit. If the attach, the rewrite or the smoke
+fails, the downgrade undoes what it wrote, newest first, before it raises:
 
-After an `--execute`, move the app's `release_repos.yml` entry to
-`profile: standalone-static` in the same pass, or the next ship would push to a dyno
-nobody serves. Update the app's README `## Deploy` section too.
+1. put the zone's rewrite list back exactly as it was read (the other hosts' rules
+   kept, this host's gone);
+2. detach the R2 custom domain (`DELETE /accounts/<id>/r2/buckets/<b>/domains/custom/<host>`),
+   which frees the name;
+3. re-create each deleted record exactly as it was read (type, name, content,
+   proxied, ttl).
+
+Re-creating the CNAME alone cannot work: while the custom domain owns the name and the
+rewrite still maps every extension-free path, the record is refused or bypassed. Each
+undo is attempted even when an earlier one fails. The error then states what the
+rollback did, marks it `INCOMPLETELY` if any undo failed, and prints the **full manual
+undo** (each undo write, newest first) for the daily job's log or an operator. The web
+dyno is never scaled in any of this, so the host returns to a running Heroku app. A
+failed upload stops before any DNS write; the bucket is left, serving nothing.
+
+The build runs in a private detached worktree with an **allow-listed environment**
+(`StaticCloudflare.build_env`: `PATH`, `HOME`, locale, `TMPDIR`, `GEM_*`, `MISE_*`,
+`RBENV_*`), so no 1Password token, Heroku key or Cloudflare token reaches the app's
+code.
+
+### The cutover procedure
+
+Alex's ruling: after the cutover the Heroku app stays at **0 dynos for 30 days**, then
+is **deleted**. For each app, in order:
+
+1. `bin/static-downgrade <repo>`; read the plan.
+2. `bin/static-downgrade <repo> --execute`. On a rollback, read the printed undo,
+   confirm the host answers from Heroku, fix the cause, and run it again.
+3. Check the host in a browser: the home page, a content page, `/up`.
+4. Add the app's row to the **cutover log** below: the cutover date (today, Denver
+   time), the delete date (day 30), and who deletes. Steffon deletes, by his
+   `heroku.studio.agents` lane, on Alex's standing ruling.
+5. In a follow-up PR, flip the app's `config/release_repos.yml` entry to the
+   `standalone-static` shape above (`strategy: static_cloudflare`, `bucket`,
+   `heroku_app`, no `remote`), add the app to `STATIC_SHOWCASE_APPS` in
+   `test/models/release/repos_test.rb`, and update the app's README `## Deploy`
+   section, the same day. Until it ships, a ship of the app still pushes to the
+   0-dyno Heroku app, which the host no longer routes to, so the site stays at the
+   cutover SHA. The registry carries no dates; the log does.
+6. On day 30: `heroku apps:destroy <heroku app> --confirm <heroku app>`, then mark
+   the row deleted and drop `heroku_app` from the registry entry in the same pass.
+
+**Cutover log**
+
+| App | Heroku app | Cutover | Delete on (day 30) | Who deletes | Deleted |
+|---|---|---|---|---|---|
+| rantly | `mcr-rantly` | not yet | - | Steffon | - |
 
 **Credentials,** read from 1Password and never printed:
 
@@ -131,17 +177,17 @@ nobody serves. Update the app's README `## Deploy` section too.
 
 Built and tested; **nothing live has changed.** In order, after the hub change ships:
 
-1. Mint `r2.static-sites` (`bucket-provision`).
-2. `bin/static-downgrade rantly` and read the plan.
-3. `bin/static-downgrade rantly --execute`. It builds rantly's `origin/main`, so the
-   rantly change carrying `bin/static-build` must have shipped first.
-4. Check `https://rantly.mcritchie.studio/`, a rant, a profile and `/discussed` in a
-   browser; then the next rantly ship runs through `static_cloudflare`.
+1. Ship the rantly change carrying `bin/static-build` (rantly is still on
+   `git_push_heroku`, so it ships like any release): `--execute` builds rantly's
+   `origin/main`.
+2. Mint `r2.static-sites` (`bucket-provision`).
+3. Run the cutover procedure above for rantly, checking `/`, a rant, a profile and
+   `/discussed` in step 3.
 
 ## How the other six move
 
 **One fold, run by the daily job's first run** (the epic's third piece), not six cards:
-each app is one `bin/static-downgrade <repo> --execute` plus its registry line. Each
+each app is one run of the cutover procedure above. Each
 repo first needs its own `bin/static-build` (Rantly's `lib/static_site.rb` and
 `lib/tasks/static.rake` copy across almost verbatim; only the seed list of routes is
 the app's own) and a link audit for query strings.
@@ -167,5 +213,6 @@ test to `STATIC_SHOWCASE_APPS` in the PR that flips its registry line.
 | `bin/lib/static_cloudflare.rb` | `Target`, `Rewrite`, `Bundle`, `S3Uploader`, `Deploy`, `Downgrade` |
 | `bin/release.rb` | `deploy_app` `when :static_cloudflare`, `static_release_sha` (finalize), `rollback_app` |
 | `bin/static-downgrade` | the downgrade's command line |
-| `test/lib/static_cloudflare_test.rb` | [unit] keys, headers, rewrite, upload argv, build, upload, smoke, abort on a failed upload, downgrade order |
-| `test/lib/release_cli_deploy_app_test.rb` | [integration] a ship of a fixture app through the strategy against a stub bucket; a failed upload; the dry run |
+| `test/lib/static_cloudflare_test.rb` | [unit] keys, headers, rewrite, upload argv, build, upload, smoke, abort on a failed upload, downgrade order, the rollback at each failure point, the downgrade's smoke budget, the paid-app refusal, the build env allow-list |
+| `test/lib/static_downgrade_cli_test.rb` | [unit] the command line refuses an unknown flag, an unregistered app and every paid app before any read |
+| `test/lib/release_cli_static_cloudflare_test.rb` | [integration] a ship of a fixture app through the strategy against a stub bucket; a failed upload; the dry run |
