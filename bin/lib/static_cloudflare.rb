@@ -256,7 +256,7 @@ module StaticCloudflare
   class Deploy
     Result = Struct.new(:files, :bytes, :keys, keyword_init: true)
 
-    def initialize(target:, workspace:, sha:, uploader:, runner:, http:, say: ->(_line) {},
+    def initialize(target:, workspace:, sha:, uploader:, runner:, http:, say: ->(_line) { },
                    smoke_tries: 12, smoke_delay: 5, sleeper: ->(s) { sleep s }, clock: -> { Time.now.utc })
       @target = target
       @workspace = workspace
@@ -355,7 +355,7 @@ module StaticCloudflare
   #      deleting it). A failed smoke stops before this, with the dyno still up
   #      and the old record printed so it can be put back.
   class Downgrade
-    def initialize(target:, cloudflare:, heroku:, deploy:, say: ->(_line) {}, execute: false, scale_heroku: true)
+    def initialize(target:, cloudflare:, heroku:, deploy:, say: ->(_line) { }, execute: false, scale_heroku: true)
       @target = target
       @cf = cloudflare
       @heroku = heroku

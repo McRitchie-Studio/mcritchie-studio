@@ -80,7 +80,7 @@ class StaticCloudflareTest < Minitest::Test
 
   def deploy(ws, runner, bucket, http: Edge.new(bucket), tries: 2)
     SC::Deploy.new(target: target, workspace: ws, sha: SHA, uploader: bucket, runner: runner, http: http,
-                   smoke_tries: tries, sleeper: ->(_s) {}, clock: -> { Time.utc(2026, 10, 25) })
+                   smoke_tries: tries, sleeper: ->(_s) { }, clock: -> { Time.utc(2026, 10, 25) })
   end
 
   # ── Target ────────────────────────────────────────────────────────────────
