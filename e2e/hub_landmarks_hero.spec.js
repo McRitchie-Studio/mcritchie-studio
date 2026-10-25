@@ -58,3 +58,24 @@ test("the home page at 390px requests no image over 300 KB, and the hero is the 
   // The pan still runs on the sized image.
   expect(await hero.evaluate((img) => getComputedStyle(img).animationName)).toBe("hero-pan");
 });
+
+// A real 390px phone has a device scale of 2 or 3, so it asks for the 768 or
+// 1260 candidate, not the 390 one Playwright's default (1) fetches. Every
+// candidate a phone can choose must stay under 300 KB too.
+test("a 390px phone at device scale 3 still fetches no image over 300 KB", async ({ browser }) => {
+  test.setTimeout(45_000);
+  const context = await browser.newContext({ storageState: VISITOR, viewport: { width: 390, height: 844 }, deviceScaleFactor: 3 });
+  const page = await context.newPage();
+  try {
+    await blockThirdPartyRequests(page);
+    await page.goto("/", { waitUntil: "load" });
+    const images = await page.evaluate(() => performance.getEntriesByType("resource")
+      .filter((e) => e.initiatorType === "img" || /\.(avif|webp|png|jpe?g|gif)(\?|$)/i.test(e.name))
+      .map((e) => ({ url: e.name, bytes: e.encodedBodySize })));
+    const heroSrc = await page.locator("img[data-hero-image]").evaluate((img) => img.currentSrc);
+    expect(heroSrc, "scale 3 takes the largest portrait crop").toMatch(/denver-hero-portrait-1260-[0-9a-f]+\.avif$/);
+    expect(images.filter((i) => i.bytes > 300 * 1024), "images over 300 KB at 390px, scale 3").toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
