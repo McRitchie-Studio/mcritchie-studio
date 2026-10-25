@@ -102,18 +102,18 @@ its invocation exactly.
 | Carl `pr-review-primary` SOP (the primary reviewer's own steps) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-primary.md` |
 | Carl `pr-review-slow` SOP (the slow variant of pr-review) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
 | Carl `pr-review` SOP (the orchestrator) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
+| `Mason Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/mason/HEARTBEAT.md` |
+| Mason `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |
+| Mason `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/mason/sops/full-cycle.md` |
+| Mason `grade-events` SOP | `mcritchie-studio/docs/agents/agents/mason/sops/grade-events.md` |
+| Mason `share-insights` SOP | `mcritchie-studio/docs/agents/agents/mason/sops/share-insights.md` |
+| Mason `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/mason/sops/ship-clock.md` |
 | Pokemon `digest-video` SOP (download, store and record a music video; stage 1 of pipeline 3) | `mcritchie-studio/docs/agents/agents/pokemon/sops/digest-video.md` |
 | Pokemon `download-instagram` SOP (yt-dlp download of an Instagram reel or post; cookie path unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-instagram.md` |
 | Pokemon `download-tiktok` SOP (yt-dlp download of a TikTok video; unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
 | Pokemon `download-youtube` SOP (yt-dlp H.264 download of a YouTube video or section) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
 | Pokemon `email-image` SOP (make an email header with Alex in a Claude Code session: show base assets, generate, iterate, approve on his word, export) | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | Pokemon `wrap-it-up` SOP (hand a stuck session to a fresh one, then clear its board) | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
-| `Ray Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/ray/HEARTBEAT.md` |
-| Ray `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/ray/sops/clean-up.md` |
-| Ray `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/full-cycle.md` |
-| Ray `grade-events` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/grade-events.md` |
-| Ray `share-insights` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/share-insights.md` |
-| Ray `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/ray/sops/ship-clock.md` |
 | `Rex Heartbeat` launcher (CMO) | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | Rex `constraint-diagnosis` SOP (find the one thing limiting demand) | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
 | Rex `content-sprint` SOP (the weekly test-at-volume loop) | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
