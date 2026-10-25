@@ -115,10 +115,12 @@ so neither is an argument of the local `heroku` process or of the dyno's command
 : "${NEW:?NEW is not set}" && : "${OLD:?OLD is not set}" && [ "$NEW" != "$OLD" ] &&
 printf '%s\n%s\n' "$NEW" "$OLD" |
 heroku run --no-tty --exit-code --app turf-monster-mainnet -- bash -c \
-  'set -e; read -r MANAGED_WALLET_ENCRYPTION_KEY && read -r MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS && export DRY_RUN=1 MANAGED_WALLET_ENCRYPTION_KEY MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS && exec bin/rails solana:reencrypt_managed_wallets'
+  'set -e; IFS= read -r MANAGED_WALLET_ENCRYPTION_KEY && IFS= read -r MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS && export DRY_RUN=1 MANAGED_WALLET_ENCRYPTION_KEY MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS && exec bin/rails solana:reencrypt_managed_wallets'
 ```
-**No `$` in the dyno's command.** `heroku run` joins its arguments into one string, wraps it in
-double quotes and hands it to the dyno's shell, which expands every `$` BEFORE your script runs.
+**No `$` and no backtick in the dyno's command.** `heroku run` joins its arguments into one string, wraps it in
+double quotes and hands it to the dyno's shell, which expands every `$` BEFORE your script runs,
+and runs every backtick command substitution then too. `IFS= read -r` keeps the line byte-exact
+(no backslash escapes, no leading or trailing whitespace trimmed) without a `$`.
 Rehearsed on `turf-monster-qa` 2026-10-24 with heroku/11.12.0 and fake values: stdin arrives
 byte-exact, but the earlier form, which read into a scratch variable `K_NEW` and exported the key
 by expanding it, exported an EMPTY key: the expansion ran at launch, before `read`. The form above, with
@@ -127,7 +129,9 @@ by expanding it, exported an EMPTY key: the expansion ran at launch, before `rea
 and `heroku run --exit-code` exited 0,
 the command `heroku run` printed carried no value, and the app's config never held
 `ROTATION_REHEARSAL` (checked before and after; a one-off dyno's env dies with it).
-`test/docs/heroku_run_quoting_guard_test.rb` refuses a `$` in a `heroku run … bash -c` script.
+`test/docs/heroku_run_quoting_guard_test.rb` refuses a `$` in a `heroku run … -- bash -c` script;
+its header lists the forms it cannot see (no `--`, `/bin/bash`, backticks, a `$` handed to
+`rails runner`), which review still owns.
 File both (replaces 4.2): add field `previous encryption key` = `$OLD` to `agent.managed_wallet`
 first, then replace `encryption key`; read both back. Write the app in ONE PATCH, so one release
 carries both keys (replaces 4.4); from here `$NEW` never leaves the app:

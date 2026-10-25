@@ -44,6 +44,19 @@ module ConductorHost
 
   def self.op_agent_secret = "item `Agent API Secret` (field AGENT_API_SECRET), vault #{OpVaults.vault}"
 
+  # The printed fix for a hub .env without AGENT_API_SECRET: the vault read piped
+  # straight into a Ruby writer, so the value is never in a shell variable, an
+  # argument or the screen. The writer refuses an EMPTY read, which is what a
+  # failed `op read` produces, so a broken session cannot append a blank
+  # `AGENT_API_SECRET=` line that then reads as "set"; and it creates or tightens
+  # the .env to 600 (secrets-scrub-review-notes; news-pipeline.md's X token recipe).
+  # One line, single-quoted Ruby, so the code inside uses double quotes only.
+  def self.agent_secret_fix(hub)
+    writer = 'v = $stdin.read.chomp; abort "refusing: empty read, nothing written" if v.empty?; ' \
+             'File.open(ARGV[0], "a", 0o600) { |f| f.puts "AGENT_API_SECRET=" + v }; File.chmod(0o600, ARGV[0])'
+    "op read '#{OpVaults.ref('Agent API Secret', 'AGENT_API_SECRET')}' | ruby -e '#{writer}' #{hub}/.env"
+  end
+
   Item = Struct.new(:key, :label, :state, :detail, :fix, :secret, keyword_init: true) do
     def done? = state == :done
   end
@@ -250,10 +263,7 @@ module ConductorHost
       ok = LocalServices::Restorer.default_dotenv.call(@layout.hub, "AGENT_API_SECRET")
       item(:agent_secret, "Board secret in the hub .env", ok,
            ok ? "AGENT_API_SECRET set (value not read)" : "AGENT_API_SECRET missing from #{@layout.hub}/.env",
-           # In a umask 077 subshell, so a .env this creates is owner-only from its
-           # first byte (secrets-scrub-follow-ups).
-           %{( umask 077; printf 'AGENT_API_SECRET=%s\\n' "$(op read '#{OpVaults.ref('Agent API Secret', 'AGENT_API_SECRET')}')" } +
-             ">> #{@layout.hub}/.env )",
+           ConductorHost.agent_secret_fix(@layout.hub),
            ConductorHost.op_agent_secret)
     end
 

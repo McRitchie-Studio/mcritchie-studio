@@ -165,8 +165,10 @@ build and boot, and Phase 10 skips both services: Claude Code is not signed in
 yet, and the hand-off marker holds them back in any case. The closing checklist
 names what is owed. One line from it, which puts `AGENT_API_SECRET` (1Password
 item `Agent API Secret`) in the hub's `.env` without showing it, is the
-operator's; `bin/conductor-host-setup --check` prints the same line. Run it as
-printed and never `cat` the file afterwards.
+operator's; `bin/conductor-host-setup --check` prints the same line. It pipes
+`op read` into a Ruby writer that refuses an empty read (a failed `op read`
+writes nothing, rather than a blank `AGENT_API_SECRET=` line) and leaves the
+`.env` at `600`. Run it as printed and never `cat` the file afterwards.
 
 ## 7. Claude Code sign-in (Alex)
 

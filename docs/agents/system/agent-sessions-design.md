@@ -146,7 +146,8 @@ takes it, and the shared token otherwise (`bin/lib/held_session.rb`,
 `AgentApi.call`).
 
 **The degraded mode.** `AGENT_LEGACY_TOKEN=off` stops the narration stack, the
-hooks and the claim CLIs reading or minting the shared token. A call with a login
+hooks and the claim CLIs reading or minting the shared token, and the detached
+lease renewers they start, which keep an OFF value through `ChildEnv.renewer`. A call with a login
 is made under it, and a call at a harness-key door on a machine with a key under
 the key; any other call is not made. Nothing is recorded, and no actor
 is declared under a credential that names nobody. It is off by default while the
