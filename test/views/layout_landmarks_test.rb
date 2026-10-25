@@ -28,6 +28,20 @@ class LayoutLandmarksTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # The bar stack (the environment bar off production, impersonation) is outside
+  # the header and main, so it rides in a labelled region; with no bar there is
+  # no empty landmark.
+  test "every status bar sits in the Site status region, and no bar means no region" do
+    get "/about"
+    bars = css_select("[data-studio-bar-stack]").size
+    assert_equal bars, css_select("[role=region][aria-label='Site status'] [data-studio-bar-stack]").size
+    assert_equal [ bars, 1 ].min, css_select("[role=region][aria-label='Site status']").size
+
+    Studio.stub(:show_environment_banner?, false) { get "/about" }
+    assert_select "[data-studio-bar-stack]", 0
+    assert_select "[role=region][aria-label='Site status']", 0
+  end
+
   test "the home hero's main holds the hero" do
     get "/"
     assert_select "main section picture img[data-hero-image]", 1

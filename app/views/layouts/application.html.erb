@@ -25,7 +25,11 @@
         top-0 and a taller bar — or a second one, like impersonation — pushes the
         header down with no change here. Nothing measures, so there is no
         published height to offset by. %>
-    <%= render "studio/banners/stack" %>
+    <%# The bars (the environment bar off production, impersonation) sit outside
+        the header, so they get a labelled region of their own: content outside
+        every landmark fails axe's region rule. No bar, no empty landmark. %>
+    <% status_bars = render "studio/banners/stack" %>
+    <%= tag.div(status_bars, role: "region", aria: { label: "Site status" }) if status_bars.present? %>
     <%# The header is the engine's navbar (layouts/_navbar): from 768px it
         collapses on the page's scroll timeline (config.navbar_scroll_timeline),
         and below it the nav-collapse Stimulus controller writes --nav-p on the
