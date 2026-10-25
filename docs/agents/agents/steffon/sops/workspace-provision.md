@@ -345,19 +345,36 @@ connects. Connect Google's consent screen lists each scope with a checkbox: a
 partial grant stores the ticked ones and says which were left unticked; only a
 grant of none stores nothing.
 
-The hub dogfoods it first, at **`/admin/google`** (admin only;
-`/admin/google_calendar` redirects there): a section per ability with its
-account, its live read or Google's error said plainly (a disabled API reads
-"Gmail answered 403: Gmail API has not been used in project … or it is
-disabled"), and one button, with Connect Google at the top (Connect the rest
-while some are connected; the account once all three are). The same buttons sit
-on `/integrations` for an admin: Connect Google above the Google section's cards,
-and Connect or Disconnect on the Google Calendar, Gmail and Drive cards, which
-then drop their contact-form Connect (a visitor sees the cards and their normal
-CTA only). Each comes back to `/integrations`:
-`?return_to=` is honoured only for `/integrations` and `/admin/google`. A
-single-ability callback whose grant lacks its scope (unticked on Google's
-screen) stores nothing.
+**Every connection has an owner** (`google_connections.user_id`, the user who
+signed it in; /tasks/every-user-connects-google). An admin's connections are the
+**household's**, and **agents read only the household's**:
+`GoogleConnection.for`, `.current` and every agent-side lookup start from
+`GoogleConnection.household` (admin-owned rows), so a viewer's connection is
+never agent input. A promoted user's rows join the household; a demoted admin's
+leave it. An account another user already connected is refused ("That Google
+account is already connected by another user"), never taken over; the same
+user signing in again keeps incremental consent.
+
+The household page is **`/admin/google`** (admin only; `/admin/google_calendar`
+redirects there): a section per ability with its account, its live read or
+Google's error said plainly (a disabled API reads "Gmail answered 403: Gmail API
+has not been used in project … or it is disabled"), and one button, with Connect
+Google at the top (Connect the rest while some are connected; the account once
+all three are). Its Disconnect reaches household rows only.
+
+The same buttons sit on `/integrations` for **any signed-in user**: Connect
+Google above the Google section's cards, and Connect or Disconnect on the Google
+Calendar, Gmail and Drive cards, which then drop their contact-form Connect. An
+admin's buttons go through `/admin/google` and show the household's accounts; a
+non-admin's go through `/integrations/google/connect` and
+`/integrations/google/connection` (`Integrations::GoogleController`) and show
+and disconnect only their own. A signed-out visitor sees the cards and their
+normal contact-form CTA only. Both doors share one flow (`GoogleSignIn`) and
+**one callback**, `/admin/google_calendar/callback`, which admits any signed-in
+user carrying the OAuth state their Connect set, so the console owes no new
+redirect URI. `?return_to=` is honoured only for `/integrations` and (for an
+admin) `/admin/google`. A single-ability callback whose grant lacks its scope
+(unticked on Google's screen) stores nothing.
 
 **Disconnect is per ability.** Google cannot revoke a single scope, so an
 account keeping other abilities only forgets this one here; disconnecting its
@@ -376,7 +393,9 @@ callback keeps the path first registered), and sets the consent screen's
 publishing status to **In production**: a Testing app's refresh tokens die after
 7 days. Gmail and Drive read scopes are restricted: until Google verifies the
 app, the sign-in shows an "unverified app" warning that the person clicks
-through. File the pair under the admin writing lane
+through, and Google may refuse an outside (non-workspace) account outright or
+cap the unverified app's user count. Now that any signed-in user can connect,
+expect that warning or refusal for viewers until the app is verified. File the pair under the admin writing lane
 ([`credential-filing`](credential-filing.md)) and set it on the app:
 
 ```bash

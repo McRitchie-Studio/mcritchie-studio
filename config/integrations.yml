@@ -91,8 +91,9 @@ groups:
     summary: One click each. Sign in with Google and choose what your agents may read; nothing they can change, and you can disconnect any time.
     entries:
       # One person's own Google sign-in, one read each (GoogleConnection::ABILITIES).
-      # Live on our own hub (/admin/google); an admin sees each card's Connect
-      # or Disconnect (IntegrationsController::GOOGLE_CARDS).
+      # Any signed-in user sees each card's Connect or Disconnect for their own
+      # account; an admin's are the household's, on /admin/google too
+      # (IntegrationsController::GOOGLE_CARDS).
       - key: google_calendar
         name: Google Calendar
         icon: "📅"
