@@ -370,8 +370,8 @@ class ReleaseCliDeployAppTest < ReleaseCliHarness
   # --- static_cloudflare: an app served as plain files from R2 -----------------
 
   # A stub R2 bucket for the CLI subprocess: each object is a file named by its
-  # escaped key (`up` and `up/index.html` are both keys, so no directory tree),
-  # and the HTTP stub serves those files the way an R2 custom domain does.
+  # escaped key, and the HTTP stub serves them the way the zone's URL rewrite and
+  # an R2 custom domain do (StaticCloudflare::Rewrite.key_for).
   STATIC_STUB = <<~'RUBY'
     STUB_DIR = ENV.fetch("STATIC_STUB_DIR")
     STUB_FAIL_AT = ENV["STATIC_STUB_FAIL_AT"].to_s
@@ -387,7 +387,7 @@ class ReleaseCliDeployAppTest < ReleaseCliHarness
     def static_cloudflare_uploader(_target) = StubBucket.new
     def static_cloudflare_http
       lambda do |_verb, url, headers: {}, body: nil|
-        file = File.join(STUB_DIR, URI(url).path.delete_prefix("/").gsub("/", "%2F"))
+        file = File.join(STUB_DIR, StaticCloudflare::Rewrite.key_for(URI(url).path).gsub("/", "%2F"))
         DomainCutover::Response.new(status: File.file?(file) ? 200 : 404, body: File.file?(file) ? File.read(file) : "")
       end
     end
@@ -457,7 +457,7 @@ class ReleaseCliDeployAppTest < ReleaseCliHarness
       assert_includes home, "head=#{frozen}", "…at the frozen SHA"
       assert_includes home, "host=rantly.mcritchie.studio"
       assert_includes home, "rails_env=unset", "a production render: never the gate's RAILS_ENV=test"
-      assert_equal "<h1>x</h1>", stub_object(stub, "rants/x"), "the pretty URL is a bare key"
+      assert_equal "<h1>x</h1>", stub_object(stub, "rants/x/index.html")
       assert_equal frozen, JSON.parse(stub_object(stub, StaticCloudflare::MARKER))["sha"]
       log = File.readlines(File.join(stub, "puts.log"), chomp: true)
       assert(log.all? { |l| l.start_with?("mcr-rantly-static ") }, "every object goes to the adapter's bucket")

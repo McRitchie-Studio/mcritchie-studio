@@ -20,7 +20,7 @@ require_relative "domain_cutover"
 #
 #   Downgrade  the one-time move of a Heroku app to Cloudflare, for ANY app: a
 #              Deploy, then point the host at the bucket (drop the old DNS record,
-#              attach the R2 custom domain, add the root redirect), smoke, and only
+#              attach the R2 custom domain, add the index-document URL rewrite), smoke, and only
 #              then scale the Heroku web dyno to 0 (never delete the app). It is
 #              the unit the hosting-trial daily job will call
 #              (.agents/epics/hosting-trial-lifecycle.md); bin/static-downgrade is
@@ -33,15 +33,18 @@ require_relative "domain_cutover"
 # run no aws.
 #
 # WHY R2 AND NOT PAGES OR WORKERS. The one Cloudflare credential an agent holds,
-# cloudflare.studio.provision, grants R2 read/write and zone DNS, Zone and
-# Dynamic URL Redirects, but no Pages or Workers scope. An R2 custom domain
-# serves an object at the key the path names and has no index document, so:
-#   - every page is uploaded twice: at `rants/x/index.html` and at the bare key
-#     `rants/x` (Content-Type text/html), so /rants/x is served as it is;
-#   - `/` has no key at all (an object key cannot be empty), so a Single Redirect
-#     sends `/` to `/index.html` (302). A URL rewrite would keep the address bar
-#     clean but needs Zone > Transform Rules > Edit, which the token lacks.
-#     That trade-off is the open question in the runbook.
+# cloudflare.studio.provision, grants R2 read/write, Transform Rules, DNS, Zone
+# and the redirect rules, but no Workers Scripts or Pages scope (read from its
+# policies 2026-10-25). An R2 custom domain serves the object at the key the path
+# names and has no index document, so a zone URL REWRITE (a Transform Rule, phase
+# http_request_transform) maps each page path to its index.html before R2 sees
+# it; the address bar keeps the clean URL. Rewrite.key_for is the same mapping in
+# Ruby, so the tests' stub host and the rule cannot disagree silently:
+#   /, /x/          -> index.html, x/index.html     (the path ends in "/")
+#   /x, /rants/x    -> x/index.html                  (no "." in the path)
+#   /assets/a-1.css -> assets/a-1.css                (anything else: as it is)
+# The one limit: a PAGE path containing a dot is not rewritten. The static build
+# writes pages only at extension-free paths, so none exists today.
 module StaticCloudflare
   class Abort < StandardError; end
 
@@ -49,7 +52,8 @@ module StaticCloudflare
   DEFAULT_BUILD_COMMAND = "bin/static-build"
   DEFAULT_BUILD_DIR = "tmp/static/site"
   DEFAULT_CREDENTIAL = "r2.static-sites"
-  R2_ROOT_REDIRECT_REF_PREFIX = "static_cloudflare_root_"
+  REWRITE_PHASE = "http_request_transform"
+  REWRITE_REF_PREFIX = "static_cloudflare_"
 
   # What each extension is served as. An extension outside this list stops the
   # upload: R2 serves the stored Content-Type, so a guess would ship a wrong one.
@@ -105,6 +109,42 @@ module StaticCloudflare
   # One object to write: its key, the local file, and the two headers R2 stores.
   Item = Struct.new(:key, :path, :content_type, :cache_control, keyword_init: true)
 
+  # The zone URL rewrite that gives an R2 bucket its index documents, and the
+  # same mapping in Ruby (key_for). Two rules, both using only functions every
+  # Cloudflare plan has (ends_with, contains, concat; no regex).
+  module Rewrite
+    module_function
+
+    def key_for(path)
+      path = "/" if path.to_s.empty?
+      key = if path.end_with?("/") then "#{path}index.html"
+            elsif !path.include?(".") then "#{path}/index.html"
+            else path
+            end
+      key.delete_prefix("/")
+    end
+
+    def rules(host)
+      on_host = %(http.host eq "#{host}")
+      ref = "#{REWRITE_REF_PREFIX}#{host.tr('.-', '__')}"
+      [
+        rule("#{ref}_dir", "#{host}: a path ending in / serves its index.html",
+             %((#{on_host} and ends_with(http.request.uri.path, "/"))),
+             %(concat(http.request.uri.path, "index.html"))),
+        rule("#{ref}_page", "#{host}: an extension-free path serves its index.html",
+             %((#{on_host} and not ends_with(http.request.uri.path, "/") and not http.request.uri.path contains ".")),
+             %(concat(http.request.uri.path, "/index.html")))
+      ]
+    end
+
+    def rule(ref, description, expression, path_expression)
+      { "ref" => ref, "description" => "#{description} (static_cloudflare)", "expression" => expression,
+        "action" => "rewrite",
+        "action_parameters" => { "uri" => { "path" => { "expression" => path_expression } } },
+        "enabled" => true }
+    end
+  end
+
   # The built directory as the objects to upload, in a safe order: every asset
   # first, then the pages, so a page never goes live naming a file not yet there.
   # (The release marker is written after all of them, by Deploy.)
@@ -137,12 +177,7 @@ module StaticCloudflare
       type = CONTENT_TYPES[ext] or raise Abort, "#{file}: no Content-Type for .#{ext} (add it to StaticCloudflare::CONTENT_TYPES)"
       path = File.join(dir, file)
       cache = cache_for(file, type)
-      items = [Item.new(key: file, path: path, content_type: type, cache_control: cache)]
-      # The pretty URL: an R2 custom domain has no index document, so the page at
-      # rants/x/index.html is also written at the bare key rants/x.
-      bare = file.delete_suffix("/index.html")
-      items << Item.new(key: bare, path: path, content_type: type, cache_control: cache) if bare != file
-      items
+      [Item.new(key: file, path: path, content_type: type, cache_control: cache)]
     end
 
     def cache_for(file, type)
@@ -296,15 +331,13 @@ module StaticCloudflare
   # The one-time move off Heroku. Plans the Cloudflare and Heroku writes, prints
   # them, and performs them only with execute: true. Order is the safety:
   #   1. the bucket exists and holds the site (a Deploy, minus its smoke)
-  #   2. the old DNS record goes, the R2 custom domain is attached, the root
-  #      redirect is added (the only window where the host may not answer)
+  #   2. the old DNS record goes, the R2 custom domain is attached, the URL
+  #      rewrite is added (the only window where the host may not answer)
   #   3. smoke: /up and the marker at the frozen SHA, from Cloudflare
   #   4. only then: the Heroku web dyno to 0 (the app is kept; Alex rules on
   #      deleting it). A failed smoke stops before this, with the dyno still up
   #      and the old record printed so it can be put back.
   class Downgrade
-    REDIRECT_PHASE = DomainCutover::Cloudflare::REDIRECT_PHASE
-
     def initialize(target:, cloudflare:, heroku:, deploy:, say: ->(_line) {}, execute: false, scale_heroku: true)
       @target = target
       @cf = cloudflare
@@ -326,7 +359,7 @@ module StaticCloudflare
       existing = attached ? [] : host_records(zone["id"])
       existing.each { |rec| writes << delete_record(zone["id"], rec) }
       writes << attach_domain(zone["id"]) unless attached
-      writes << root_redirect(zone["id"])
+      writes << url_rewrite(zone["id"])
       writes << scale_to_zero if @scale_heroku && !@target.heroku_app.empty?
       [writes, existing]
     end
@@ -366,26 +399,19 @@ module StaticCloudflare
                                why: "serve #{@target.host} from the bucket (a proxied record Cloudflare manages)")
     end
 
-    # `/` → `/index.html`: an object key cannot be empty, so the root needs a rule.
-    # A PUT on the phase entrypoint replaces the whole list, so the zone's other
-    # rules (the www redirect, other apps' roots) are carried as they are.
-    def root_redirect(zone_id)
-      ref = "#{R2_ROOT_REDIRECT_REF_PREFIX}#{@target.host.tr('.-', '__')}"
-      ours = {
-        "ref" => ref,
-        "description" => "#{@target.host} root to /index.html (static_cloudflare)",
-        "expression" => %((http.host eq "#{@target.host}" and http.request.uri.path eq "/")),
-        "action" => "redirect",
-        "action_parameters" => { "from_value" => { "status_code" => 302, "preserve_query_string" => false,
-                                                   "target_url" => { "value" => "https://#{@target.host}/index.html" } } },
-        "enabled" => true
-      }
-      carried = @cf.redirect_rules(zone_id).reject { |r| r["ref"] == ref }.map do |r|
+    # The index-document rewrite (Rewrite.rules). A PUT on the phase entrypoint
+    # replaces the whole list, so the zone's other rewrites (other apps' hosts)
+    # are carried as they are, and a re-run replaces ours by ref.
+    def url_rewrite(zone_id)
+      ours = Rewrite.rules(@target.host)
+      refs = ours.map { |r| r["ref"] }
+      carried = @cf.transform_rules(zone_id).reject { |r| refs.include?(r["ref"]) }.map do |r|
         r.slice("id", "ref", "description", "expression", "action", "action_parameters", "enabled")
       end
       DomainCutover::Write.new(api: :cloudflare, verb: :put,
-                               path: "/zones/#{zone_id}/rulesets/phases/#{REDIRECT_PHASE}/entrypoint",
-                               body: { "rules" => carried + [ours] }, why: "#{@target.host}/ → /index.html (302)")
+                               path: "/zones/#{zone_id}/rulesets/phases/#{REWRITE_PHASE}/entrypoint",
+                               body: { "rules" => carried + ours },
+                               why: "#{@target.host}: /x and /x/ serve x/index.html (URL rewrite, address bar unchanged)")
     end
 
     def scale_to_zero
@@ -424,5 +450,11 @@ module StaticCloudflare
   # DomainCutover's Cloudflare client plus the one raw read Downgrade needs.
   class CloudflareApi < DomainCutover::Cloudflare
     def raw(verb, path, allow: []) = request(verb, path, nil, allow: allow)
+
+    # The URL-rewrite phase's rules, or [] when the zone has none yet (404).
+    def transform_rules(zone_id)
+      body = request(:get, "/zones/#{zone_id}/rulesets/phases/#{REWRITE_PHASE}/entrypoint", nil, allow: [404])
+      Array(body.dig("result", "rules"))
+    end
   end
 end

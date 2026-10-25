@@ -36,8 +36,8 @@ class StaticCloudflareTest < Minitest::Test
     end
   end
 
-  # Serves the fake bucket over "HTTP" the way an R2 custom domain does: the key
-  # the path names, else 404.
+  # Serves the fake bucket over "HTTP" the way the zone's URL rewrite plus an R2
+  # custom domain do: the key Rewrite.key_for names, else 404.
   class Edge
     def initialize(bucket, up_status: nil)
       @bucket = bucket
@@ -45,8 +45,8 @@ class StaticCloudflareTest < Minitest::Test
     end
 
     def call(_verb, url, headers: {}, body: nil)
-      key = URI(url).path.delete_prefix("/")
-      return DomainCutover::Response.new(status: @up_status, body: "") if @up_status && key == "up"
+      key = SC::Rewrite.key_for(URI(url).path)
+      return DomainCutover::Response.new(status: @up_status, body: "") if @up_status && key == "up/index.html"
 
       object = @bucket.objects[key]
       object ? DomainCutover::Response.new(status: 200, body: object[:body]) : DomainCutover::Response.new(status: 404, body: "")
@@ -100,27 +100,46 @@ class StaticCloudflareTest < Minitest::Test
   end
 
   # ── Bundle ────────────────────────────────────────────────────────────────
-  def test_bundle_writes_each_page_at_its_bare_key_too_and_assets_go_first
+  def test_bundle_writes_assets_before_pages_and_one_key_per_file
     Dir.mktmpdir do |dir|
       default_site.each { |p, b| FileUtils.mkdir_p(File.dirname(File.join(dir, p))); File.write(File.join(dir, p), b) }
       items = SC::Bundle.items(dir)
-      keys = items.map(&:key)
-
-      assert_includes keys, "rants/x/index.html"
-      assert_includes keys, "rants/x", "the pretty URL is served from the bare key"
-      assert_includes keys, "up", "the smoke's /up is a bare key too"
-      refute_includes keys, "", "the root has no bare key: an object key cannot be empty"
+      assert_equal default_site.keys.sort, items.map(&:key).sort, "one object per file: the rewrite, not a copy, serves /x"
       pages = items.each_index.select { |i| items[i].content_type.start_with?("text/html") }
       assets = items.each_index.reject { |i| items[i].content_type.start_with?("text/html") }
       assert_operator assets.max, :<, pages.min, "every asset is written before any page"
     end
   end
 
+  # ── Rewrite ───────────────────────────────────────────────────────────────
+  def test_rewrite_maps_each_path_shape_to_its_key
+    {
+      "/" => "index.html", "" => "index.html", "/up" => "up/index.html", "/rants/x" => "rants/x/index.html",
+      "/rants/x/" => "rants/x/index.html", "/@rantly" => "@rantly/index.html",
+      "/assets/app-1a2b3c4d.css" => "assets/app-1a2b3c4d.css", "/404.html" => "404.html",
+      "/static-release.json" => "static-release.json"
+    }.each { |path, key| assert_equal key, SC::Rewrite.key_for(path), path }
+  end
+
+  # The two rules ARE key_for, written in Cloudflare's rule language. Each branch
+  # of key_for has its rule, with only all-plan functions (no regex, no matches).
+  def test_rewrite_rules_encode_key_for_on_the_one_host
+    dir, page = SC::Rewrite.rules("rantly.mcritchie.studio")
+    assert_equal %((http.host eq "rantly.mcritchie.studio" and ends_with(http.request.uri.path, "/"))), dir["expression"]
+    assert_equal %(concat(http.request.uri.path, "index.html")), dir.dig("action_parameters", "uri", "path", "expression")
+    assert_includes page["expression"], %(not http.request.uri.path contains ".")
+    assert_includes page["expression"], %(not ends_with(http.request.uri.path, "/"))
+    assert_equal %(concat(http.request.uri.path, "/index.html")), page.dig("action_parameters", "uri", "path", "expression")
+    assert_equal %w[rewrite rewrite], [dir["action"], page["action"]]
+    refute_match(/matches|regex/, dir["expression"] + page["expression"])
+    refute_equal dir["ref"], page["ref"]
+  end
+
   def test_bundle_sets_the_cache_policy_by_kind
     Dir.mktmpdir do |dir|
       default_site.each { |p, b| FileUtils.mkdir_p(File.dirname(File.join(dir, p))); File.write(File.join(dir, p), b) }
       by_key = SC::Bundle.items(dir).to_h { |i| [i.key, i] }
-      assert_equal SC::CACHE_PAGE, by_key["rants/x"].cache_control
+      assert_equal SC::CACHE_PAGE, by_key["rants/x/index.html"].cache_control
       assert_equal SC::CACHE_DIGESTED, by_key["assets/app-1a2b3c4d.css"].cache_control
       assert_equal SC::CACHE_OTHER, by_key["icon.svg"].cache_control
       assert_equal "text/css; charset=utf-8", by_key["assets/app-1a2b3c4d.css"].content_type
@@ -178,7 +197,7 @@ class StaticCloudflareTest < Minitest::Test
       assert_equal SHA, marker["sha"]
       assert_equal SC::CACHE_MARKER, bucket.objects[SC::MARKER][:cache]
       assert_equal 5, result.files
-      assert_equal "<h1>x</h1>", bucket.objects["rants/x"][:body]
+      assert_equal "<h1>x</h1>", bucket.objects["rants/x/index.html"][:body]
     end
   end
 
@@ -198,7 +217,7 @@ class StaticCloudflareTest < Minitest::Test
       assert_match(%r{upload failed at rants/x/index\.html}, error.message)
       assert_match(/AccessDenied/, error.message)
       refute bucket.objects.key?(SC::MARKER), "no marker: the ship must not read this release as live"
-      refute(bucket.puts.any? { |_b, key| key == "rants/x" }, "nothing after the failed key is written")
+      refute(bucket.puts.any? { |_b, key| key == "up/index.html" }, "nothing after the failed key is written")
     end
   end
 
@@ -262,7 +281,7 @@ class StaticCloudflareTest < Minitest::Test
     end
 
     def find_zone(name) = name == "mcritchie.studio" ? { "id" => "zone1", "name" => name } : nil
-    def redirect_rules(_zone) = @rules
+    def transform_rules(_zone) = @rules
     def perform(write) = (@performed << write) && {}
 
     def raw(_verb, path, allow: [])
@@ -295,22 +314,24 @@ class StaticCloudflareTest < Minitest::Test
       [:post, "/accounts/acct123/r2/buckets"],
       [:delete, "/zones/zone1/dns_records/rec9"],
       [:post, "/accounts/acct123/r2/buckets/mcr-rantly-static/domains/custom"],
-      [:put, "/zones/zone1/rulesets/phases/http_request_dynamic_redirect/entrypoint"],
+      [:put, "/zones/zone1/rulesets/phases/http_request_transform/entrypoint"],
       [:patch, "/apps/mcr-rantly/formation/web"]
     ], writes.map { |w| [w.verb, w.path] }
     assert_equal({ "quantity" => 0 }, writes.last.body)
     assert_equal "elementary-falls.herokudns.com", existing.first["content"]
   end
 
-  def test_downgrade_root_redirect_carries_the_zones_other_rules
-    www = { "id" => "r1", "ref" => "domain_cutover_www_to_bare", "expression" => "x", "action" => "redirect", "enabled" => true, "version" => "3" }
-    writes, = downgrade(FakeCloudflare.new(rules: [www]), FakeHeroku.new, nil, execute: false).plan
+  def test_downgrade_url_rewrite_carries_the_zones_other_rules_and_replaces_its_own
+    other = { "id" => "r1", "ref" => "static_cloudflare_dads_app_com_page", "expression" => "x", "action" => "rewrite",
+              "enabled" => true, "version" => "3" }
+    stale = { "id" => "r2", "ref" => "static_cloudflare_rantly_mcritchie_studio_page", "expression" => "old",
+              "action" => "rewrite", "enabled" => true }
+    writes, = downgrade(FakeCloudflare.new(rules: [other, stale]), FakeHeroku.new, nil, execute: false).plan
     rules = writes.find { |w| w.verb == :put }.body["rules"]
-    assert_equal "domain_cutover_www_to_bare", rules.first["ref"]
+    assert_equal "static_cloudflare_dads_app_com_page", rules.first["ref"]
     refute rules.first.key?("version"), "only the writable fields are carried"
-    ours = rules.last
-    assert_equal %((http.host eq "rantly.mcritchie.studio" and http.request.uri.path eq "/")), ours["expression"]
-    assert_equal "https://rantly.mcritchie.studio/index.html", ours.dig("action_parameters", "from_value", "target_url", "value")
+    refute(rules.any? { |r| r["expression"] == "old" }, "a re-run replaces this host's rules by ref")
+    assert_equal SC::Rewrite.rules("rantly.mcritchie.studio"), rules.last(2)
   end
 
   def test_downgrade_rerun_after_attach_never_deletes_the_managed_record
@@ -356,7 +377,7 @@ class StaticCloudflareTest < Minitest::Test
   def test_downgrade_execute_with_a_failed_upload_touches_no_dns
     with_workspace do |ws, runner|
       cf = FakeCloudflare.new
-      dep = deploy(ws, runner, Bucket.new(fail_at: "up"))
+      dep = deploy(ws, runner, Bucket.new(fail_at: "up/index.html"))
       assert_raises(SC::Abort) { downgrade(cf, FakeHeroku.new, dep, execute: true).call }
       assert_equal ["/accounts/acct123/r2/buckets"], cf.performed.map(&:path), "only the bucket was created"
     end
