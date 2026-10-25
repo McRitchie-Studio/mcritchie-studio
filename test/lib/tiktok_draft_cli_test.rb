@@ -279,8 +279,8 @@ class TiktokDraftCliTest < Minitest::Test
 
     refute $?.success?
     assert_match(/AGENT_ADMIN_SESSION_TOKEN is not set/, out)
-    assert_match(/bin\/agent-activity heartbeat ray/, out, "the board's grant is named first")
+    assert_match(/bin\/agent-activity heartbeat mason/, out, "the board's grant is named first")
     assert_match(/agent_sessions:grant_admin/, out)
-    assert_operator out.index("heartbeat ray"), :<, out.index("agent_sessions:grant_admin")
+    assert_operator out.index("heartbeat mason"), :<, out.index("agent_sessions:grant_admin")
   end
 end

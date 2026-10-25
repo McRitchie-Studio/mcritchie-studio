@@ -5,7 +5,7 @@ require "test_helper"
 class AgentLoginRequestTest < ActiveSupport::TestCase
   HARNESS = "harness-one".freeze
 
-  def request(soul: "ray", harness: HARNESS, key: nil)
+  def request(soul: "mason", harness: HARNESS, key: nil)
     AgentLoginRequest.request!(soul: soul, harness_session_id: harness, collect_key: key)
   end
 
@@ -22,7 +22,7 @@ class AgentLoginRequestTest < ActiveSupport::TestCase
 
       assert session.admin?
       assert_nil session.task_slug
-      assert_equal "ray", session.soul
+      assert_equal "mason", session.soul
       assert_equal "operator_grant", session.issued_by
       assert_equal HARNESS, session.harness_session_id
       assert_equal 8.hours.from_now, session.expires_at
@@ -144,11 +144,15 @@ class AgentLoginRequestTest < ActiveSupport::TestCase
     %w[code collect_key token phrase_digest collect_digest].each { |key| assert_not_includes login.summary.keys, key }
   end
 
-  test "only an admin soul may ask, and alex is ray" do
+  test "only an admin soul may ask; ray and its retired slug alex are in the Worker class" do
     error = assert_raises(ActiveRecord::RecordInvalid) { request(soul: "carl") }
     assert_match(/holds no admin tier/, error.message)
     assert_raises(ActiveRecord::RecordInvalid) { request(soul: "nobody") }
-    assert_equal "ray", request(soul: "alex").soul
+    %w[ray alex].each do |soul|
+      error = assert_raises(ActiveRecord::RecordInvalid) { request(soul: soul) }
+      assert_match(/holds no admin tier; an admin login is for steffon and mason/, error.message)
+    end
+    assert_equal "mason", request(soul: "mason").soul
   end
 
   test "a second post under the same harness id cannot refuse or replace the open request" do

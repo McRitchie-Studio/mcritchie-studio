@@ -85,7 +85,7 @@ class AgentActivityTest < ActiveSupport::TestCase
   # ---- [unit] agent attribution ---------------------------------------------
 
   test "[unit] SOULS is the McRitchie roster" do
-    assert_equal %w[avi carl shannon jasper steffon ray], AgentActivity::SOULS
+    assert_equal %w[avi carl shannon jasper steffon ray mason], AgentActivity::SOULS
   end
 
   test "[unit] a known acting soul is stored, down-cased" do

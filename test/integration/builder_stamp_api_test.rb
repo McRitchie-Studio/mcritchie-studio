@@ -197,16 +197,16 @@ class BuilderStampApiTest < ActionDispatch::IntegrationTest
     task = Task.create!(title: "Handoff Selection Probe", stage: "designed",
                         metadata: { "devops" => { "shape" => "backend" } })
     handoff!(task, actor: "steffon", session: STEFFON_SESSION, nonce: "inst-A")
-    handoff!(task, actor: "ray", session: ALEX_SESSION, at: 1.minute.from_now)
+    handoff!(task, actor: "mason", session: ALEX_SESSION, at: 1.minute.from_now)
 
     decision = ReviewerSelector.explain(task.reload)
 
     assert_equal true, decision["builder_known"], "both claims named a soul"
     # Order is the drop order (worst-fit first), not the claim order — the set is
     # what matters here.
-    assert_equal %w[ray steffon], decision["excluded_builders"].sort
+    assert_equal %w[mason steffon], decision["excluded_builders"].sort
     seated = decision["reviewers"].map { |r| r["slug"] }
-    refute_includes seated, "ray", "the co-author must not review their own diff"
+    refute_includes seated, "mason", "the co-author must not review their own diff"
     refute_includes seated, "steffon"
   end
 

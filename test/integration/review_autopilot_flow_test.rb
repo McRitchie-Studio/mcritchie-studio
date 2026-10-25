@@ -229,7 +229,7 @@ class ReviewAutopilotFlowTest < ActionDispatch::IntegrationTest
   test "the API refuses to arm for the documentation seat" do
     record_verdict
 
-    %w[ray alex].each do |seat|
+    %w[mason].each do |seat|
       post "/api/v1/tasks/#{SLUG}/review_pending_action",
            params: { head_sha: PINNED, agent: seat }, headers: auth_headers
 
@@ -244,13 +244,13 @@ class ReviewAutopilotFlowTest < ActionDispatch::IntegrationTest
   # A documentation-seat SESSION cannot arm by naming another soul.
   test "the API refuses a documentation-seat session that names another soul" do
     record_verdict
-    session = review_login("ray")
+    session = review_login("mason")
 
     post "/api/v1/tasks/#{SLUG}/review_pending_action",
          params: { head_sha: PINNED, agent: "carl" }, headers: { "Authorization" => "Bearer #{session.token}" }
 
     assert_response :unprocessable_entity
-    assert_match(/ray holds the documentation seat/, JSON.parse(response.body)["error"])
+    assert_match(/mason holds the documentation seat/, JSON.parse(response.body)["error"])
     assert_equal 0, ReviewPendingAction.count
 
     # CONTROL: the same request from a session that is not the seat arms.

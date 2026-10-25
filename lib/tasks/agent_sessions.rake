@@ -19,9 +19,9 @@
 # or is revoked (DELETE /api/v1/agent_sessions/current): do not paste it into a
 # chat, a log or a file in a repo.
 namespace :agent_sessions do
-  desc "Grant an admin agent session (SOUL=ray|steffon, HOURS=1..8) and print its token on stdout"
+  desc "Grant an admin agent session (SOUL=mason|steffon, HOURS=1..8) and print its token on stdout"
   task grant_admin: :environment do
-    session = AgentSession.grant_admin!(soul: ENV["SOUL"].presence || "ray", hours: ENV["HOURS"].presence)
+    session = AgentSession.grant_admin!(soul: ENV["SOUL"].presence || "mason", hours: ENV["HOURS"].presence)
     warn "admin session #{session.slug} granted to #{session.soul} (#{session.tier}), ends #{session.expires_at.utc.iso8601}. " \
          "Its token is on stdout; revoke it with DELETE /api/v1/agent_sessions/current."
     puts session.token
