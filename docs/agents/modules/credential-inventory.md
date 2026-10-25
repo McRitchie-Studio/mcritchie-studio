@@ -105,6 +105,25 @@ service-account token install recipe), `agent.rails_master_key`,
 `dont.use.agent.aws` (decoy — ignore). Describe an item
 in the table above the first time a doc or script depends on it.
 
+## turf-monster GitHub Actions secrets
+
+**No signing key lives in turf-monster's CI.** One repository secret remains:
+
+| Secret | What it is for | Read by |
+|--------|----------------|---------|
+| `RAILS_MASTER_KEY` | Decrypts `config/credentials.yml.enc` in the test environment, so `credentials.secret_key_base` is real and the legacy managed-wallet keypair encryptor runs against it. It is not required: with it absent (Dependabot PRs, which cannot read repository secrets) the suite falls back to `TEST_SECRET_KEY_BASE` | `.github/workflows/ci.yml`, the `test` and `playwright` jobs |
+
+`SOLANA_ADMIN_KEY` was a second secret: a throwaway CI keypair, never a funded
+or production signer, added 2026-06-04 by turf-monster PR #88. It was deleted on
+2026-10-24 and the workflow no longer reads it (task
+`turf-ci-drops-admin-key-secret`). `Solana::Keypair.admin` now takes its
+`Rails.env.test?` fallback (`TEST_ADMIN_SEED`) on every CI run. turf-monster's
+`test/lib/ci_no_signing_key_secrets_test.rb` fails if any workflow reads a
+secret named `SOLANA_*KEY*` or `*PRIVATE*KEY*`, `toJSON(secrets)`, or a computed
+`secrets[...]`. The automatic `GITHUB_TOKEN` is not a stored secret. The agent
+App cannot list repository secrets (HTTP 403), so this list comes from the
+workflow reads and the 2026-10-24 deletion, not a `gh secret list`.
+
 ## GitHub App IDs — identifiers, not secrets
 
 Both app ids, with their 1Password item and vault, live in one file:
