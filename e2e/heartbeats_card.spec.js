@@ -20,7 +20,7 @@ test("the Workflows sidebar lists six soul launchers with their acts", async ({ 
   const card = page.locator("#deploy-sidebar-agents [data-test='heartbeats-card']");
   await expect(card).toBeVisible();
 
-  await expect(card.locator("[data-test='heartbeat-launcher']")).toHaveCount(6);
+  await expect(card.locator("[data-test='heartbeat-launcher']")).toHaveCount(7);
 
   // Carl owns review: his row carries the pr-review + pr-review-slow chips.
   const carl = card.locator("[data-test='heartbeat-launcher'][data-agent='carl']");
@@ -43,10 +43,12 @@ test("the Workflows sidebar lists six soul launchers with their acts", async ({ 
   await expect(steffon.locator("button[data-clip='clean-infra']")).toBeVisible();
   await expect(page.locator("button[data-clip='archive-shipped']")).toHaveCount(0);
 
-  // Ritch's third act is visible here — nothing in the sidebar hides behind a toggle.
+  // Mason's third act is visible here — nothing in the sidebar hides behind a toggle.
+  const mason = card.locator("[data-test='heartbeat-launcher'][data-agent='mason']");
+  await expect(mason.locator("button[data-clip='full-cycle']")).toBeVisible();
+  // Ritch's client acts: the /build queue, and ship-clock, the typing-to-shipping benchmark.
   const ray = card.locator("[data-test='heartbeat-launcher'][data-agent='ray']");
-  await expect(ray.locator("button[data-clip='full-cycle']")).toBeVisible();
-  // ship-clock: the typing-to-shipping benchmark.
+  await expect(ray.locator("button[data-clip='launch-build-queue']")).toBeVisible();
   await expect(ray.locator("button[data-clip='ship-clock']")).toBeVisible();
 
   // Turf Monster owns the live score watch.
