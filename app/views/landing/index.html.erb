@@ -22,8 +22,9 @@
       master was 1.6MB on every phone). The box is about 390x554 on a phone and
       about 525 tall from 540px up, and object-fit: cover crops the panorama to
       it, so a phone only ever saw the middle quarter. Below 540px it gets that
-      middle as its own portrait crop; wider screens get the panorama, which
-      covers a box about 1,230 to 1,370px wide until the viewport passes that.
+      middle as its own portrait crop. Wider screens get the panorama, drawn
+      about 1,230 to 1,370px wide below 1440px; from 1440px the box is wider
+      than the panorama's shape, so it is drawn at the viewport's width.
       The variants are generated once from the 4700px master with the ImageMagick
       commands in docs/topics/deployment.md (Public Assets), and are fingerprinted
       assets, so they cache for a year. %>
@@ -32,7 +33,7 @@
   <div class="absolute inset-0">
     <picture class="block w-full h-full">
       <source media="(max-width: 539px)" type="image/avif" srcset="<%= portrait_srcset %>" sizes="100vw">
-      <source type="image/avif" srcset="<%= panorama_srcset %>" sizes="(max-width: 1279px) 1380px, 100vw">
+      <source type="image/avif" srcset="<%= panorama_srcset %>" sizes="(max-width: 1439px) 1380px, 100vw">
       <img src="<%= image_path("hero/denver-hero-1280.avif") %>" alt="" width="1280" height="490" fetchpriority="high"
            class="w-full h-full object-cover" data-hero-image style="animation: hero-pan 15s linear infinite alternate;">
     </picture>
