@@ -156,6 +156,14 @@ the last gate before production; the supported override is
 above, the same one G3 ran on the release tip minutes or hours earlier. Nothing
 runs on this machine; the verdict comes off the laptop.
 
+**Which checks count.** Every check-run on the SHA, except one `CiStatus.for_sha`
+can PROVE was triggered by a `schedule` event: its `check_suite.id` matches a
+workflow run for that exact SHA whose `event` is `schedule`. A nightly report on
+`main`'s head (UI Budget, r2-backup) tests production, not the commit, so it never
+holds a ship. An unprovable run (the workflow-runs read failed, no suite id, no
+match, mixed events) still counts, and the verdict names what it left out under
+`ignored:` (task `ui-budget-report-never-gates`).
+
 > **Deleted, in order:** the suite in the repo's isolated gate workspace
 > (`Release::GateWorkspace`, role `gate`) — demoted at DevOps v2 Phase 3, deleted
 > in Phase 4; then the single un-polled `ci_verdict` read and the self-skip against
