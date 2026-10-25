@@ -105,7 +105,7 @@ class Release::ReposTest < ActiveSupport::TestCase
   # needs no edit to this file (app-deploy-standard).
   test "app_repos lists the registry's app hash keys" do
     assert_equal (%w[mcritchie-studio turf-monster turf-vault mcritchie-industries rolio
-                     tax-studio chain-ops commercial-welding] + profile_repos).sort,
+                     tax-studio chain-ops commercial-welding alex-build] + profile_repos).sort,
                  Release::Repos.app_repos.sort
   end
 
@@ -846,7 +846,8 @@ class Release::ReposTest < ActiveSupport::TestCase
     "tax-studio" => "repo_script",
     "chain-ops" => nil,
     "moms-app" => "git_push_heroku",
-    "commercial-welding" => "git_push_heroku"
+    "commercial-welding" => "git_push_heroku",
+    "alex-build" => "git_push_heroku"
   }.freeze
 
   test "every app keeps its production deploy strategy" do

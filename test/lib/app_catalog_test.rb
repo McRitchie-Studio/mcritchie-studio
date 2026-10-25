@@ -165,7 +165,7 @@ class AppCatalogTest < Minitest::Test
   end
 
   def test_the_real_catalog_watches_the_paid_apps_and_moms_app
-    assert_equal %w[mcritchie-studio turf-monster cyvasse mcritchie-industries commercial-welding moms-app],
+    assert_equal %w[mcritchie-studio turf-monster cyvasse mcritchie-industries commercial-welding moms-app alex-build],
                  AppCatalog.backed_up_apps.map(&:slug)
   end
 

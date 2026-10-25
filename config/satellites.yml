@@ -217,3 +217,19 @@ satellites:
     description: "Commercial Welding LLC company site; studio-engine satellite on Heroku"
     deploy_provider: "heroku"
     status: "reserved"
+
+  - slug: alex-build
+    display_name: "alex.build"
+    emoji: "🛠️"
+    port: 4600
+    # alex.build (epic .agents/epics/alex-build.md): Alex McRitchie authorized the repo,
+    # the Heroku app and the DNS on 2026-10-25 ("2. Yes new app."). Heroku app
+    # `alex-build` (essential-0 Postgres) exists with nothing deployed, and going live
+    # waits on his clearance in chat, so the row is `reserved`, not `active`: a
+    # reserved row draws no navbar or link-tree entry, and it still holds the desk ports.
+    heroku_app: "alex-build"
+    production_url: "https://alex.build"
+    role: "viewer"
+    description: "alex.build, the site for Alex the AI hire; studio-engine satellite on Heroku"
+    deploy_provider: "heroku"
+    status: "reserved"

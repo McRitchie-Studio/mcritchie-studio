@@ -25,6 +25,7 @@ disagree.
 | Search Position | 4300 | 4300-4399 | Showcase |
 | Moms App | 4400 | 4400-4499 | Active |
 | Commercial Welding | 4500 | 4500-4599 | Active (reserved satellite; Heroku apps provisioned 2026-10-12) |
+| alex.build | 4600 | 4600-4699 | Active (reserved satellite; Heroku app created 2026-10-25, not deployed) |
 
 Archived apps keep their blocks; do not reuse `3200-4599`. Which apps are
 managed satellites, release-managed standalones or neither is in
