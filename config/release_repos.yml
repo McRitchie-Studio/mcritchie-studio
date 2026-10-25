@@ -306,7 +306,7 @@ apps:
     qa_evidence: exempt
   # --- SHOWCASE APPS: prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5,
   # search-position. Release-managed standalones registered as dads-app is: a
-  # Heroku app `mcr-<repo>` on git_push_heroku (rantly, since 2026-10-25, on
+  # Heroku app `mcr-<repo>` on git_push_heroku (rantly is on
   # static_cloudflare instead; the rest follow it), test_cmd = CI's `test` job
   # verbatim with the system tier in its own job (repos_test holds both), and
   # QA-evidence exempt under the standalone-heroku profile's qa_decision.
@@ -333,7 +333,7 @@ apps:
       smoke_url: https://weekly-lock.mcritchie.studio
     test_cmd: bin/rails test
     qa_evidence: exempt
-  # rantly is the first app OFF Heroku (Alex, 2026-10-25: the unpaid showcase apps
+  # rantly is the first app OFF Heroku (Alex ruled that the unpaid showcase apps
   # serve from Cloudflare). The ship builds its static site at the frozen SHA and
   # uploads it to R2 (docs/agents/modules/static-cloudflare.md); mcr-rantly is
   # kept, scaled to 0. This entry takes effect from the PRIMARY checkout, so only
