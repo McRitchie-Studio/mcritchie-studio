@@ -21,7 +21,7 @@ require_relative "domain_cutover"
 #   Downgrade  the one-time move of a Heroku app to Cloudflare, for ANY app: a
 #              Deploy, then point the host at the bucket (drop the old DNS record,
 #              attach the R2 custom domain, add the index-document URL rewrite), smoke, and only
-#              then scale the Heroku web dyno to 0 (never delete the app). It is
+#              then scale the Heroku web dyno to 0 (rolling the host swap back on any failure). It is
 #              the unit the hosting-trial daily job will call
 #              (.agents/epics/hosting-trial-lifecycle.md); bin/static-downgrade is
 #              its command line. It PLANS by default and writes only with
@@ -323,17 +323,17 @@ module StaticCloudflare
 
     # /up must answer 200 AND the marker must name the frozen SHA: a host still
     # pointing at the old Heroku dyno answers /up too, so /up alone proves nothing.
-    def smoke!
+    def smoke!(tries: @smoke_tries, delay: @smoke_delay)
       @say.call("smoke: GET #{@target.smoke_url}/up and #{@target.smoke_url}/#{MARKER} (sha #{@sha[0, 8]})")
       last = ""
-      @smoke_tries.times do |attempt|
+      tries.times do |attempt|
         up = @http.call(:get, "#{@target.smoke_url}/up")
         marker = @http.call(:get, "#{@target.smoke_url}/#{MARKER}")
         sha = marker.status == 200 ? marker.json["sha"].to_s : ""
         return if up.status == 200 && sha == @sha
 
         last = "/up → #{up.status}, #{MARKER} → #{marker.status}#{sha.empty? ? '' : " sha #{sha[0, 8]}"}"
-        @sleeper.call(@smoke_delay) if attempt < @smoke_tries - 1
+        @sleeper.call(delay) if attempt < tries - 1
       end
       raise Abort, "smoke failed for #{@target.repo}: #{last} (wanted 200 and sha #{@sha[0, 8]})"
     rescue DomainCutover::Abort => e
@@ -348,14 +348,20 @@ module StaticCloudflare
   # The one-time move off Heroku. Plans the Cloudflare and Heroku writes, prints
   # them, and performs them only with execute: true. Order is the safety:
   #   1. the bucket exists and holds the site (a Deploy, minus its smoke)
-  #   2. the old DNS record goes, the R2 custom domain is attached, the URL
-  #      rewrite is added (the only window where the host may not answer)
-  #   3. smoke: /up and the marker at the frozen SHA, from Cloudflare
-  #   4. only then: the Heroku web dyno to 0 (the app is kept; Alex rules on
-  #      deleting it). A failed smoke stops before this, with the dyno still up
-  #      and the old record printed so it can be put back.
+  #   2. the host swap: the old DNS record goes, the R2 custom domain is attached,
+  #      the URL rewrite is put (the only window where the host may not answer)
+  #   3. smoke: /up and the marker at the frozen SHA, from Cloudflare, with a
+  #      budget long enough for a new custom domain to activate
+  #   4. only after a green smoke: the Heroku web dyno to 0. The app is kept at
+  #      0 dynos for 30 days after the cutover, then deleted (Alex's ruling; the
+  #      runbook records the date and who deletes it)
+  # A failure anywhere in 2 or 3 rolls the host swap back in reverse (put the
+  # zone's prior rewrite rules back, detach the custom domain, re-create each
+  # deleted record), then raises with what the rollback did and the full manual
+  # undo, so the host returns to Heroku and the dyno, never scaled, still serves.
   class Downgrade
-    def initialize(target:, cloudflare:, heroku:, deploy:, say: ->(_line) { }, execute: false, scale_heroku: true)
+    def initialize(target:, cloudflare:, heroku:, deploy:, say: ->(_line) { }, execute: false, scale_heroku: true,
+                   smoke_tries: 60, smoke_delay: 10)
       @target = target
       @cf = cloudflare
       @heroku = heroku
@@ -363,6 +369,9 @@ module StaticCloudflare
       @say = say
       @execute = execute
       @scale_heroku = scale_heroku
+      @smoke_tries = smoke_tries
+      @smoke_delay = smoke_delay
+      @undo = {}.compare_by_identity
     end
 
     # The writes, in order, as printable DomainCutover::Write values. Reads only.
@@ -389,14 +398,18 @@ module StaticCloudflare
       return writes unless @execute
 
       scale, before = writes.partition { |w| w.api == :heroku }
-      bucket, rest = before.partition { |w| w.path.end_with?("/r2/buckets") }
+      bucket, swap = before.partition { |w| w.path.end_with?("/r2/buckets") }
       bucket.each { |w| @cf.perform(w) }
       @deploy.publish!
-      rest.each { |w| @cf.perform(w) }
-      @deploy.smoke!
+      swap_and_smoke!(swap)
       scale.each { |w| @heroku.perform(w) }
       writes
     end
+
+    # The undo of one host-swap write, or nil for a write with none (the bucket
+    # and the scale are never undone: an idle bucket costs nothing, and the scale
+    # runs only after a green smoke).
+    def undo_for(write) = @undo[write]
 
     def create_bucket
       DomainCutover::Write.new(api: :cloudflare, verb: :post, path: "/accounts/#{@cf.account_id}/r2/buckets",
@@ -404,40 +417,88 @@ module StaticCloudflare
     end
 
     def delete_record(zone_id, rec)
-      DomainCutover::Write.new(api: :cloudflare, verb: :delete, path: "/zones/#{zone_id}/dns_records/#{rec['id']}",
-                               why: "#{rec['type']} #{rec['name']} → #{rec['content']} is the Heroku route; " \
-                                    "the R2 custom domain needs the name free")
+      write = DomainCutover::Write.new(api: :cloudflare, verb: :delete, path: "/zones/#{zone_id}/dns_records/#{rec['id']}",
+                                       why: "#{rec['type']} #{rec['name']} → #{rec['content']} is the Heroku route; " \
+                                            "the R2 custom domain needs the name free")
+      body = rec.slice("type", "name", "content", "proxied", "ttl").compact
+      @undo[write] = DomainCutover::Write.new(api: :cloudflare, verb: :post, path: "/zones/#{zone_id}/dns_records",
+                                              body: body, why: "re-create #{rec['type']} #{rec['name']} → #{rec['content']}")
+      write
     end
 
     def attach_domain(zone_id)
-      DomainCutover::Write.new(api: :cloudflare, verb: :post,
-                               path: "/accounts/#{@cf.account_id}/r2/buckets/#{@target.bucket}/domains/custom",
-                               body: { "domain" => @target.host, "zoneId" => zone_id, "enabled" => true, "minTLS" => "1.2" },
-                               why: "serve #{@target.host} from the bucket (a proxied record Cloudflare manages)")
+      path = "/accounts/#{@cf.account_id}/r2/buckets/#{@target.bucket}/domains/custom"
+      write = DomainCutover::Write.new(api: :cloudflare, verb: :post, path: path,
+                                       body: { "domain" => @target.host, "zoneId" => zone_id, "enabled" => true, "minTLS" => "1.2" },
+                                       why: "serve #{@target.host} from the bucket (a proxied record Cloudflare manages)")
+      @undo[write] = DomainCutover::Write.new(api: :cloudflare, verb: :delete, path: "#{path}/#{@target.host}",
+                                              why: "detach #{@target.host} from r2://#{@target.bucket}, freeing the name")
+      write
     end
 
     # The index-document rewrite (Rewrite.rules). A PUT on the phase entrypoint
     # replaces the whole list, so the zone's other rewrites (other apps' hosts)
-    # are carried as they are, and a re-run replaces ours by ref.
+    # are carried as they are, and a re-run replaces ours by ref. Its undo puts
+    # back the list exactly as it was read.
     def url_rewrite(zone_id)
       ours = Rewrite.rules(@target.host)
       refs = ours.map { |r| r["ref"] }
-      carried = @cf.transform_rules(zone_id).reject { |r| refs.include?(r["ref"]) }.map do |r|
-        r.slice("id", "ref", "description", "expression", "action", "action_parameters", "enabled")
-      end
-      DomainCutover::Write.new(api: :cloudflare, verb: :put,
-                               path: "/zones/#{zone_id}/rulesets/phases/#{REWRITE_PHASE}/entrypoint",
-                               body: { "rules" => carried + ours },
-                               why: "#{@target.host}: /x and /x/ serve x/index.html (URL rewrite, address bar unchanged)")
+      prior = @cf.transform_rules(zone_id).map { |r| r.slice("id", "ref", "description", "expression", "action", "action_parameters", "enabled") }
+      carried = prior.reject { |r| refs.include?(r["ref"]) }
+      path = "/zones/#{zone_id}/rulesets/phases/#{REWRITE_PHASE}/entrypoint"
+      write = DomainCutover::Write.new(api: :cloudflare, verb: :put, path: path, body: { "rules" => carried + ours },
+                                       why: "#{@target.host}: /x and /x/ serve x/index.html (URL rewrite, address bar unchanged)")
+      @undo[write] = DomainCutover::Write.new(api: :cloudflare, verb: :put, path: path, body: { "rules" => prior },
+                                              why: "put the zone's #{prior.size} prior rewrite rule(s) back, without #{@target.host}'s")
+      write
     end
 
     def scale_to_zero
       DomainCutover::Write.new(api: :heroku, verb: :patch, path: "/apps/#{@target.heroku_app}/formation/web",
                                body: { "quantity" => 0 },
-                               why: "#{@target.heroku_app} web to 0: the app is kept, not deleted, until Alex rules")
+                               why: "#{@target.heroku_app} web to 0: kept at 0 dynos for 30 days after the cutover, then deleted")
     end
 
     private
+
+    # Steps 2 and 3, with the rollback. Every write is attempted in order; the
+    # first failure (or a red smoke) undoes the writes that landed, newest first.
+    def swap_and_smoke!(swap)
+      done = []
+      begin
+        swap.each do |w|
+          @cf.perform(w)
+          done << w
+        end
+        @deploy.smoke!(tries: @smoke_tries, delay: @smoke_delay)
+      rescue StandardError => e
+        raise Abort, rollback_message(e, done, swap)
+      end
+    end
+
+    def rollback_message(error, done, swap)
+      @say.call("rollback: #{error.message.lines.first.to_s.strip}; undoing #{done.size} host write(s), newest first")
+      results = done.reverse.map do |w|
+        undo = @undo.fetch(w)
+        begin
+          @cf.perform(undo)
+          "  undone: #{undo}"
+        rescue StandardError => e
+          "  UNDO FAILED: #{undo}\n    #{e.message}"
+        end
+      end
+      results.each { |line| @say.call(line) }
+      clean = results.none? { |line| line.include?("UNDO FAILED") }
+      <<~TEXT.strip
+        #{@target.repo}: the host swap failed and was rolled back#{clean ? '' : ' INCOMPLETELY'}: #{error.message}
+        The Heroku dyno was not scaled; r2://#{@target.bucket} is left in place (it serves nothing once detached).
+        Rollback, newest first:
+        #{results.empty? ? '  (nothing had been written)' : results.join("\n")}
+        Full manual undo, newest first, if any line above failed (each is idempotent to check by eye in the dashboard):
+        #{swap.reverse.map { |w| "  #{@undo.fetch(w)}" }.join("\n")}
+        Then confirm #{@target.smoke_url}/up answers from Heroku again.
+      TEXT
+    end
 
     # The zone that holds the host: the longest zone name the host ends with.
     def zone!

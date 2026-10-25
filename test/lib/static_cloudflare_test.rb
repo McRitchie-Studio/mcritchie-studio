@@ -282,8 +282,10 @@ class StaticCloudflareTest < Minitest::Test
   class FakeCloudflare
     attr_reader :account_id, :performed
 
-    def initialize(attached: false, bucket: false, rules: [])
+    # fail_on: [verb, path regex] pairs whose perform raises, as Cloudflare does.
+    def initialize(attached: false, bucket: false, rules: [], fail_on: [])
       @account_id = "acct123"
+      @fail_on = fail_on
       @attached = attached
       @bucket = bucket
       @rules = rules
@@ -292,7 +294,14 @@ class StaticCloudflareTest < Minitest::Test
 
     def find_zone(name) = name == "mcritchie.studio" ? { "id" => "zone1", "name" => name } : nil
     def transform_rules(_zone) = @rules
-    def perform(write) = (@performed << write) && {}
+    def perform(write)
+      if @fail_on.any? { |verb, path| write.verb == verb && write.path.match?(path) }
+        raise DomainCutover::Abort, "Cloudflare #{write.verb.upcase} #{write.path}: HTTP 409 already exists"
+      end
+
+      @performed << write
+      {}
+    end
 
     def raw(_verb, path, allow: [])
       case path
@@ -300,7 +309,7 @@ class StaticCloudflareTest < Minitest::Test
       when %r{/r2/buckets/[^/]+\z} then @bucket ? { "result" => { "name" => "mcr-rantly-static" } } : {}
       when /dns_records/
         { "result" => [{ "id" => "rec9", "type" => "CNAME", "name" => "rantly.mcritchie.studio",
-                         "content" => "elementary-falls.herokudns.com", "proxied" => false }] }
+                         "content" => "elementary-falls.herokudns.com", "proxied" => false, "ttl" => 1 }] }
       else raise "unexpected read #{path}"
       end
     end
@@ -313,10 +322,21 @@ class StaticCloudflareTest < Minitest::Test
     def perform(write) = @performed << write
   end
 
-  def downgrade(cf, heroku, deploy, execute:, lines: [])
+  def downgrade(cf, heroku, deploy, execute:, lines: [], smoke_tries: 2)
     SC::Downgrade.new(target: target, cloudflare: cf, heroku: heroku, deploy: deploy,
-                      say: ->(l) { lines << l }, execute: execute)
+                      say: ->(l) { lines << l }, execute: execute, smoke_tries: smoke_tries, smoke_delay: 0)
   end
+
+  BUCKET_POST = [:post, "/accounts/acct123/r2/buckets"].freeze
+  DNS_DELETE = [:delete, "/zones/zone1/dns_records/rec9"].freeze
+  ATTACH = [:post, "/accounts/acct123/r2/buckets/mcr-rantly-static/domains/custom"].freeze
+  REWRITE = [:put, "/zones/zone1/rulesets/phases/http_request_transform/entrypoint"].freeze
+  DETACH = [:delete, "/accounts/acct123/r2/buckets/mcr-rantly-static/domains/custom/rantly.mcritchie.studio"].freeze
+  RECREATE = [:post, "/zones/zone1/dns_records"].freeze
+  OLD_RECORD = { "type" => "CNAME", "name" => "rantly.mcritchie.studio", "content" => "elementary-falls.herokudns.com",
+                 "proxied" => false, "ttl" => 1 }.freeze
+
+  def calls(fake) = fake.performed.map { |w| [w.verb, w.path] }
 
   def test_downgrade_plans_bucket_dns_domain_root_and_scale_in_order
     writes, existing = downgrade(FakeCloudflare.new, FakeHeroku.new, nil, execute: false).plan
@@ -382,6 +402,77 @@ class StaticCloudflareTest < Minitest::Test
       assert_raises(SC::Abort) { downgrade(FakeCloudflare.new, heroku, dep, execute: true).call }
       assert_empty heroku.performed, "a host that does not answer from Cloudflare keeps its Heroku dyno"
     end
+  end
+
+  # ── Downgrade rollback: each failure point puts the host back on Heroku ─────
+  def test_downgrade_rollback_when_the_attach_fails_re_creates_the_deleted_record
+    with_workspace do |ws, runner|
+      cf = FakeCloudflare.new(fail_on: [[:post, %r{/domains/custom\z}]])
+      heroku = FakeHeroku.new
+      error = assert_raises(SC::Abort) { downgrade(cf, heroku, deploy(ws, runner, Bucket.new), execute: true).call }
+      assert_equal [BUCKET_POST, DNS_DELETE, RECREATE], calls(cf), "the record the swap deleted comes back, nothing more"
+      assert_equal OLD_RECORD, cf.performed.last.body, "re-created exactly as it was read"
+      assert_empty heroku.performed
+      assert_match(/rolled back: Cloudflare POST .*domains\/custom: HTTP 409/, error.message)
+      refute_match(/INCOMPLETELY/, error.message)
+    end
+  end
+
+  def test_downgrade_rollback_when_the_rewrite_fails_detaches_then_re_creates
+    with_workspace do |ws, runner|
+      cf = FakeCloudflare.new(fail_on: [[:put, /http_request_transform/]])
+      heroku = FakeHeroku.new
+      assert_raises(SC::Abort) { downgrade(cf, heroku, deploy(ws, runner, Bucket.new), execute: true).call }
+      assert_equal [BUCKET_POST, DNS_DELETE, ATTACH, DETACH, RECREATE], calls(cf),
+                   "newest first: the custom domain lets go of the name before the record takes it back"
+      assert_empty heroku.performed
+    end
+  end
+
+  def test_downgrade_rollback_when_the_smoke_is_red_undoes_all_three_and_keeps_the_dyno
+    other = { "id" => "r1", "ref" => "static_cloudflare_dads_app_com_page", "expression" => "x", "action" => "rewrite",
+              "enabled" => true }
+    with_workspace do |ws, runner|
+      bucket = Bucket.new
+      cf = FakeCloudflare.new(rules: [other])
+      heroku = FakeHeroku.new
+      lines = []
+      dep = deploy(ws, runner, bucket, http: Edge.new(bucket, up_status: 522))
+      error = assert_raises(SC::Abort) { downgrade(cf, heroku, dep, execute: true, lines: lines).call }
+      assert_equal [BUCKET_POST, DNS_DELETE, ATTACH, REWRITE, REWRITE, DETACH, RECREATE], calls(cf)
+      assert_equal({ "rules" => [other] }, cf.performed[4].body, "the zone's prior rewrite list goes back exactly")
+      assert_empty heroku.performed, "never scaled: the dyno is what the host returns to"
+      assert_match(/smoke failed for rantly/, error.message)
+      assert_match(/The Heroku dyno was not scaled/, error.message)
+      assert(lines.any? { |l| l.start_with?("rollback:") }, "the rollback narrates as it runs")
+    end
+  end
+
+  def test_downgrade_rollback_that_itself_fails_says_so_and_prints_the_full_manual_undo
+    with_workspace do |ws, runner|
+      cf = FakeCloudflare.new(fail_on: [[:put, /http_request_transform/], [:delete, %r{/domains/custom/}]])
+      error = assert_raises(SC::Abort) { downgrade(cf, FakeHeroku.new, deploy(ws, runner, Bucket.new), execute: true).call }
+      assert_equal [BUCKET_POST, DNS_DELETE, ATTACH, RECREATE], calls(cf), "one failed undo does not stop the rest"
+      assert_match(/rolled back INCOMPLETELY/, error.message)
+      assert_match(/UNDO FAILED: CLOUDFLARE DELETE .*domains\/custom\/rantly\.mcritchie\.studio/, error.message)
+      manual = error.message.split("Full manual undo").last
+      assert_match(/PUT .*http_request_transform/, manual, "the manual undo names every swap write's undo")
+      assert_match(%r{DELETE .*domains/custom/rantly\.mcritchie\.studio}, manual)
+      assert_match(/POST \/zones\/zone1\/dns_records .*elementary-falls\.herokudns\.com/, manual)
+    end
+  end
+
+  # A new R2 custom domain takes minutes to activate, so the downgrade's smoke
+  # budget is its own and longer than a ship's minute.
+  def test_downgrade_smokes_with_its_own_longer_budget
+    dep = Struct.new(:smoked) do
+      def publish! = nil
+      def smoke!(tries:, delay:) = (self.smoked = [tries, delay])
+    end.new
+    SC::Downgrade.new(target: target, cloudflare: FakeCloudflare.new, heroku: FakeHeroku.new, deploy: dep,
+                      execute: true).call
+    tries, delay = dep.smoked
+    assert_operator tries * delay, :>=, 600, "at least ten minutes for the custom domain to go live"
   end
 
   def test_downgrade_execute_with_a_failed_upload_touches_no_dns
