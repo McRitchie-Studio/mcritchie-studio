@@ -216,7 +216,9 @@ class AgentSession < ApplicationRecord
     self.class.verifier.generate({ "sid" => slug }, purpose: TOKEN_PURPOSE, expires_at: expires_at + TOKEN_GRACE)
   end
 
-  def admin? = tier == "admin"
+  # The tier alone is not enough: a soul that leaves ADMIN_SOULS (the `ray` soul did
+  # on 2026-10-25) must lose its live admin rows at once, not when they expire.
+  def admin? = tier == "admin" && ADMIN_SOULS.include?(Task.canonical_soul(soul))
   def studio? = tier == "studio"
   def client? = tier == "client"
   def harness? = tier == "harness"

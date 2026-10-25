@@ -47,7 +47,7 @@ class AgentSessionTest < ActiveSupport::TestCase
   end
 
   test "an admin session refuses a task scope: the tier is the scope" do
-    session = AgentSession.new(soul: "ray", tier: "admin", task_slug: @task.slug, issued_by: "operator_grant")
+    session = AgentSession.new(soul: "mason", tier: "admin", task_slug: @task.slug, issued_by: "operator_grant")
 
     refute session.valid?
     assert_includes session.errors[:task_slug].join, "unscoped within the admin tier"
@@ -57,7 +57,7 @@ class AgentSessionTest < ActiveSupport::TestCase
     session = AgentSession.new(soul: "carl", tier: "admin", issued_by: "operator_grant")
 
     refute session.valid?
-    assert_includes session.errors[:tier].join, "steffon and ray"
+    assert_includes session.errors[:tier].join, "steffon and mason"
   end
 
   test "an admin soul may hold a narrower studio session" do
@@ -72,7 +72,26 @@ class AgentSessionTest < ActiveSupport::TestCase
 
   test "a slug that is no soul is refused, and an alias resolves to its successor" do
     refute AgentSession.new(soul: "nobody", tier: "studio", task_slug: @task.slug, issued_by: "task_claim").valid?
-    assert_equal "ray", AgentSession.create!(soul: "alex", tier: "admin", issued_by: "operator_grant").soul
+    assert_equal "ray", AgentSession.create!(soul: "alex", tier: "studio", task_slug: @task.slug, issued_by: "task_claim").soul
+  end
+
+  test "the admin tier is Steffon and Mason; the ray soul is in the Worker class" do
+    assert_equal "admin", AgentSession.tier_for_soul("mason")
+    assert_equal "admin", AgentSession.tier_for_soul("steffon")
+    assert_equal "studio", AgentSession.tier_for_soul("ray")
+    assert_equal "studio", AgentSession.tier_for_soul("alex"), "the retired slug resolves to ray, not to an admin"
+    refute AgentSession.new(soul: "ray", tier: "admin", issued_by: "operator_grant").valid?
+  end
+
+  test "an admin row left over for a soul outside the admin tier is not admin" do
+    # The row an admin login wrote for `ray` before 2026-10-25 is still on file, unexpired.
+    stale = AgentSession.new(soul: "ray", tier: "admin", issued_by: "operator_grant", slug: "session-stale-ray",
+                             issued_at: Time.current, expires_at: 8.hours.from_now)
+    stale.save!(validate: false)
+
+    refute stale.reload.admin?, "a ray admin row must not keep admin authority until it expires"
+    refute stale.covers_task?(@task.slug)
+    assert AgentSession.create!(soul: "mason", tier: "admin", issued_by: "operator_grant").admin?
   end
 
   test "a harness key is held as the logged-out builder, scoped to no task, and granted by the operator" do
@@ -92,7 +111,7 @@ class AgentSessionTest < ActiveSupport::TestCase
 
     assert studio.covers_task?(@task.slug)
     refute studio.covers_task?(other.slug)
-    admin = AgentSession.create!(soul: "ray", tier: "admin", issued_by: "launch_phrase")
+    admin = AgentSession.create!(soul: "mason", tier: "admin", issued_by: "launch_phrase")
     assert admin.covers_task?(other.slug)
     refute AgentSession.create!(soul: "tyrion", tier: "client", issued_by: "runtime_key").covers_task?(@task.slug)
   end
@@ -358,7 +377,7 @@ class AgentSessionTest < ActiveSupport::TestCase
 
   test "transition_refusal: archived is an admin transition from any stage" do
     builder = studio
-    admin = AgentSession.create!(soul: "ray", tier: "admin", issued_by: "operator_grant")
+    admin = AgentSession.create!(soul: "mason", tier: "admin", issued_by: "operator_grant")
 
     assert_match(/building to archived is an admin transition; pokemon holds a studio session/,
                  builder.transition_refusal(@task, "archived"))
