@@ -105,6 +105,10 @@ class CredentialsSeedTest < ActiveSupport::TestCase
     assert_match(/mainnet \(7auwTL…\)/, record("studio-agents", "solana.turf.system").scope_summary)
     assert_match(/devnet and QA \(2eGs…\)/, record("studio-agents", "solana.turf.system.devnet").scope_summary)
 
+    governance = record("studio-agents-admin", "solana.turf.governance.devnet")
+    assert_match(/devnet governance key \(BVQH…\)/, governance.scope_summary)
+    refute_match(/mainnet \(/, governance.scope_summary, "the devnet governance key has no mainnet role")
+
     admin = record("studio-agents", "solana.turf.admin")
     assert_equal "retired", admin.status, "solana.turf.admin was archived 2026-10-09"
     assert_nil admin.scope_summary

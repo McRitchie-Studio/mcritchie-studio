@@ -150,6 +150,9 @@ records = [
            "since 2026-09-26; the 1Password item is deleted once that change merges." },
   { vault: "studio-agents-admin", title: "agent.xan.solana", service: "solana", category: "Crypto Wallet",
     scope_summary: "The Ray signer; the rotated replacement for agent.solana." },
+  { vault: "studio-agents-admin", title: "solana.turf.governance.devnet", service: "solana", entity: "turf-monster",
+    category: "API Credential", used_by: "turf-monster-qa SOLANA_PLATFORM_COSIGNER_KEY",
+    scope_summary: "The devnet governance key (BVQH…): slot 3 of the devnet VaultState set and QA's platform cosigner. No mainnet role." },
   # The one AWS credential still live, kept on purpose after the 2026-10-10 retirement.
   { vault: "studio-agents-admin", title: "AWS", service: "aws", category: "API Credential", url: "https://console.aws.amazon.com",
     used_by: "Mr. McRitchie's read-only foothold in the AWS account",
