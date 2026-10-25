@@ -436,9 +436,8 @@ apps:
   alex-build:
     ladder: three-rung
     # Managed studio-engine satellite (epic .agents/epics/alex-build.md): Heroku app
-    # `alex-build` (essential-0 Postgres), created 2026-10-25 on Alex McRitchie's
-    # word ("2. Yes new app."), nothing deployed yet; going live needs his
-    # clearance in chat. Migrations ride the Procfile's
+    # `alex-build` (essential-0 Postgres), created on Alex McRitchie's word,
+    # nothing deployed yet; going live needs his clearance in chat. Migrations ride the Procfile's
     # `release: bin/rails db:migrate`. git_push_heroku runs no tests, so the gate
     # names CI's full suite, verbatim. No QA copy and no QA exemption: either is
     # his call on cost, so QA evidence is owed until he makes it.
