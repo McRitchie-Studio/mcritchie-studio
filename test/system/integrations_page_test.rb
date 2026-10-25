@@ -153,4 +153,63 @@ class IntegrationsPageTest < ApplicationSystemTestCase
       end
     end
   end
+
+  # --- A viewer connects their own Google (/tasks/every-user-connects-google) ---
+
+  def sign_in_as_viewer
+    visit logout_path
+    sign_in_through_magic_link(users(:viewer))
+  end
+
+  def google_slot(card) = "[data-test='integration-entry'][data-entry='#{card}'] [data-test='entry-method'][data-method='sign_in'] [data-test='google-connection']"
+
+  test "[e2e] a viewer sees Connect on each Google card, connects Calendar, sees the account, then disconnects it" do
+    sign_in_as_viewer
+    GoogleConnect::OAuthClient.sign_in_stand_in = GoogleConnectStandIn::SignIn.new
+    store_google(email: "household@example.com", scope: "openid #{CALENDAR}") # the admin's, which a viewer never sees
+    visit integrations_path
+
+    GOOGLE_CARDS.each do |card|
+      assert_selector "#{google_slot(card)}[data-state='none'] [data-test='google-connect']"
+      assert_no_selector "[data-test='integration-entry'][data-entry='#{card}'] [data-test='entry-cta']"
+    end
+    assert_no_text "household@example.com"
+
+    within(google_slot("google_calendar")) { click_on "Connect Google Calendar" }
+
+    assert_current_path integrations_path
+    assert_text "Google Calendar connected for #{GoogleConnectStandIn::EMAIL}."
+    assert_selector "#{google_slot('google_calendar')}[data-state='connected']", text: "Connected as #{GoogleConnectStandIn::EMAIL}"
+    assert_selector "#{google_slot('gmail')}[data-state='none']"
+    assert_equal users(:viewer), GoogleConnection.find_by!(email: GoogleConnectStandIn::EMAIL).user
+    assert_equal "household@example.com", GoogleConnection.for(:calendar).email, "the agent reader still answers the household's"
+
+    accept_confirm { within(google_slot("google_calendar")) { click_on "Disconnect" } }
+
+    assert_text "Google Calendar disconnected"
+    assert_selector "#{google_slot('google_calendar')}[data-state='none']"
+    assert_nil GoogleConnection.find_by(email: GoogleConnectStandIn::EMAIL)
+  ensure
+    reset_google_connect
+  end
+
+  test "[e2e] a viewer's /integrations has no sideways scroll at 375 and 1280, light and dark" do
+    sign_in_as_viewer
+    GoogleConnect::OAuthClient.sign_in_stand_in = GoogleConnectStandIn::SignIn.new
+    %w[light dark].each do |theme|
+      [ 375, 1280 ].each do |width|
+        page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: width, height: 1000, deviceScaleFactor: 1, mobile: width < 768)
+        visit integrations_path
+        page.execute_script("localStorage.setItem('theme', '#{theme}')")
+        visit integrations_path
+
+        assert_selector "[data-test='google-connect-all'][data-state='none']"
+        overflow = page.evaluate_script("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        assert_operator overflow, :<=, 0, "#{theme} at #{width}px scrolls sideways by #{overflow}px"
+      end
+    end
+  ensure
+    reset_google_connect
+  end
+
 end
