@@ -64,9 +64,11 @@ class DigestedAssetCacheTest < ActiveSupport::TestCase
     end
 
     test "an unfingerprinted public file does not" do
-      get "/robots.txt"
-      assert_response :success
-      refute_match(/max-age=31536000/, response.headers["cache-control"].to_s)
+      %w[/agents/avi.webp /robots.txt].each do |path|
+        get path
+        assert_response :success
+        refute_match(/max-age=31536000/, response.headers["cache-control"].to_s, path)
+      end
     end
   end
 end

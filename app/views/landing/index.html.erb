@@ -24,8 +24,8 @@
       it, so a phone only ever saw the middle quarter. Below 540px it gets that
       middle as its own portrait crop; wider screens get the panorama, which
       covers a box about 1,230 to 1,370px wide until the viewport passes that.
-      Variants are generated once from public/denver-hero.avif (the master), with
-      the ImageMagick commands in docs/topics/deployment.md, and are fingerprinted
+      The variants are generated once from the 4700px master with the ImageMagick
+      commands in docs/topics/deployment.md (Public Assets), and are fingerprinted
       assets, so they cache for a year. %>
   <% portrait_srcset = [ 390, 768, 1260 ].map { |w| "#{image_path("hero/denver-hero-portrait-#{w}.avif")} #{w}w" }.join(", ") %>
   <% panorama_srcset = [ 1280, 1920, 2560 ].map { |w| "#{image_path("hero/denver-hero-#{w}.avif")} #{w}w" }.join(", ") %>
