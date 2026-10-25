@@ -89,7 +89,7 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
   end
 
   test "being on the register does not grant a review seat" do
-    %w[pokemon rex turf-monster mack mason tyrion].each do |soul|
+    %w[pokemon rex turf-monster mack ray tyrion].each do |soul|
       assert Task.soul?(soul), "#{soul} is attributable"
       refute_includes ReviewerSelector::POOL, soul,
         "#{soul} builds or works; the roster answers identity, POOL answers review"
