@@ -74,7 +74,7 @@ records = [
     notes: "Rotated out and archived 2026-10-09 (BLSB…); replaced by solana.turf.governance, itself since replaced by " \
            "solana.turf.governance.v2." },
   { vault: "studio-agents", title: "solana.turf.system", service: "solana", entity: "turf-monster", category: "Crypto Wallet",
-    scope_summary: "Server operational key, mainnet (7auwTL…). Not production's SOLANA_ADMIN_KEY since 2026-10-14." },
+    scope_summary: "Server operational key, mainnet (7auwTL…). Never production's SOLANA_ADMIN_KEY (4S39… since 2026-10-14)." },
   { vault: "studio-agents", title: "solana.turf.system.devnet", service: "solana", entity: "turf-monster", category: "Crypto Wallet",
     scope_summary: "Server operational key, devnet and QA (2eGs…): turf-monster-qa's SOLANA_ADMIN_KEY." },
   { vault: "studio-agents", title: "agent.turf.solana", service: "solana", entity: "turf-monster", status: "retired",
