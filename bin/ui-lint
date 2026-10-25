@@ -1,0 +1,97 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/ui-lint — count the front-end house-rule offenses in one repo tree's
+# templates, and print a report. A REPORT, NEVER A GATE: it exits 0 whatever it
+# finds, unless --strict.
+#
+#   bin/ui-lint                          the cwd's git checkout
+#   bin/ui-lint ../turf-monster          any repo tree: engine, hub, Turf, Cyvasse
+#   bin/ui-lint <tree> --changed a,b     report these root-relative paths as the diff
+#   bin/ui-lint <tree> --diff-base REF   the diff is REF...HEAD plus the working tree
+#   bin/ui-lint <tree> --verbose         also list every offense as file:line
+#   bin/ui-lint <tree> --strict          exit 1 when any offense is found
+#
+# The five rules, and why a plain scanner rather than erb_lint: bin/lib/ui_lint.rb.
+# What is scanned and the path exemptions: config/ui_lint.yml (--config overrides).
+#
+# The diff section: --changed wins, then UI_LINT_CHANGED_FILES (newline or comma
+# separated; bin/fast-check's advisory lane passes its diff this way), then a git
+# diff of the tree against --diff-base (default: origin/accepted, origin/release,
+# else origin/main). Outside a git checkout, the report says no diff is known.
+#
+# Exit: 0 = report printed (any count); 1 = --strict and an offense was found;
+# 2 = usage error (an unknown flag, or a tree that does not exist).
+
+require "optparse"
+require_relative "lib/ui_lint"
+require_relative "lib/fast_cert"
+
+options = { strict: false, verbose: false, config: UiLint::DEFAULT_CONFIG, changed: nil, diff_base: nil }
+parser = OptionParser.new do |o|
+  o.banner = "Usage: bin/ui-lint [<tree>] [--changed a,b] [--diff-base REF] [--verbose] [--strict]"
+  o.on("--changed LIST", "Comma-separated root-relative paths to report as the diff") { |v| options[:changed] = v }
+  o.on("--diff-base REF", "Diff the tree against REF...HEAD (plus uncommitted work)") { |v| options[:diff_base] = v }
+  o.on("--config PATH", "Rules config (default: config/ui_lint.yml beside this script)") { |v| options[:config] = v }
+  o.on("--verbose", "List every offense as file:line") { options[:verbose] = true }
+  o.on("--strict", "Exit 1 when any offense is found") { options[:strict] = true }
+  o.on("-h", "--help", "Show this help") do
+    puts o
+    exit 0
+  end
+end
+
+begin
+  parser.parse!
+rescue OptionParser::ParseError => e
+  warn "ui-lint: #{e.message}"
+  warn parser.banner
+  exit 2
+end
+
+if ARGV.size > 1
+  warn "ui-lint: one tree at a time (got #{ARGV.join(' ')})"
+  exit 2
+end
+
+tree = ARGV.first
+root =
+  if tree
+    File.expand_path(tree)
+  else
+    top = IO.popen(["git", "rev-parse", "--show-toplevel"], err: File::NULL, &:read).to_s.strip
+    top.empty? ? Dir.pwd : top
+  end
+
+unless File.directory?(root)
+  warn "ui-lint: no such tree: #{root}"
+  exit 2
+end
+
+config = UiLint.load_config(options[:config])
+
+def split_paths(raw) = raw.to_s.split(/[\n,]/).map(&:strip).reject(&:empty?)
+
+changed =
+  if options[:changed]
+    split_paths(options[:changed])
+  elsif ENV.key?("UI_LINT_CHANGED_FILES")
+    split_paths(ENV["UI_LINT_CHANGED_FILES"])
+  elsif system("git", "-C", root, "rev-parse", "--is-inside-work-tree", out: File::NULL, err: File::NULL)
+    FastCert.changed_files(root, options[:diff_base] || FastCert.default_diff_base(root))
+  end
+
+report = UiLint.scan(root, config)
+UiLint.render(report, changed: changed, top: Integer(config["top_files"] || 20), verbose: options[:verbose])
+      .each { |line| puts line }
+
+if report.scanned.empty?
+  puts "ui-lint: no templates matched #{Array(config['include']).join(', ')} under this tree."
+end
+
+if options[:strict] && report.total.positive?
+  puts "ui-lint: --strict and #{report.total} offense(s) found: exit 1."
+  exit 1
+end
+puts "ui-lint: report only, nothing is enforced (exit 0; --strict exits 1 on any offense)."
+exit 0

@@ -143,6 +143,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # from the 1 that means "vulnerabilities found", so CI cannot read a typo as
     # a security finding.
     "importmap-audit-ci"     => :optparse,
+    # Read-only: counts front-end house-rule offenses in a tree and prints a report.
+    # An unknown flag or a second tree refuses with exit 2 before any file is read,
+    # distinct from the 1 that --strict means "offenses found".
+    "ui-lint"                => :optparse,
     # Generate enqueues a PAID image round; the guard runs before the Rails boot.
     "email-image"            => :cli_arg_guard,
     "game-model"             => :cli_arg_guard, # PAID image calls; the guard runs before bundler

@@ -52,6 +52,12 @@
 #                     each, only when the diff touches what it reads
 #                     (bin/lib/ci_guard_lanes.rb): template-ratchets (views,
 #                     components, helpers) and e2e-census (e2e/, Playwright config)
+#   ui-lint (advisory): bin/ui-lint <root> (bin/lib/ui_lint.rb), the front-end
+#                     house-rule report, printed when the tree has app/views or
+#                     app/components. ADVISORY: whatever it prints or exits, it is
+#                     never part of the verdict, and a hung or missing ui-lint is
+#                     said and stepped over. The diff reaches it in
+#                     UI_LINT_CHANGED_FILES, so the report names this diff's counts.
 # A REGISTRY-GATED repo (a gem, or an `apps` row declaring `release_check:` in
 # config/release_repos.yml — turf-vault) runs that declared command as its whole
 # lane instead: there is no diff-mapped subset of a gem's suite.
@@ -79,8 +85,10 @@
 #   FAST_CHECK_LANE_TIMEOUT        per-lane ceiling in seconds (default: 900). Past it the
 #                                  lane is reported as a HUNG RUNNER, never as a red suite.
 #   FAST_CHECK_TASK_BIN            board CLI, read only for the tree check (default: bin/task)
+#   FAST_CHECK_UI_LINT_CMD         the advisory ui-lint command, run with the root as its
+#                                  last argument (default: this hub's bin/ui-lint)
 #
-# Exit code: 0 = every lane that ran is green (a diff that maps to nothing and a
+# Exit code (the advisory ui-lint lane never moves it): 0 = every lane that ran is green (a diff that maps to nothing and a
 # checkout with no spine run no test lane, say so, and still exit 0 — CI is the
 # net); 1 = a lane failed, hung, or could not launch, or the run was refused
 # (wrong tree, a desk with no isolated test DB, a failed test-prepare).
@@ -95,6 +103,7 @@ require_relative "lib/desk_guard"
 require_relative "lib/release_registry"
 require_relative "lib/lane_runner"
 require_relative "lib/ci_guard_lanes"
+require_relative "lib/ui_lint"
 
 # ROOT = this script's OWN repo (the hub): CONFIG (the spine) anchors here. The
 # CODE we run roots at the agent's worktree.
@@ -139,6 +148,12 @@ lintable = FastCert.lintable_files(root, changed)
 # THE CI-ONLY GUARDS the mapping never picks (bin/lib/ci_guard_lanes.rb): whole-tree
 # checks CI runs, chosen here by what the diff touches.
 guards = CiGuardLanes.select(changed, root: root)
+# THE ADVISORY REPORT (bin/lib/ui_lint.rb): printed, never counted in the verdict.
+ui_lint_cmd =
+  if UiLint.applies_to?(root)
+    prefix = ENV["FAST_CHECK_UI_LINT_CMD"].to_s.strip
+    prefix.empty? ? UiLint.advisory_command(root) : "#{prefix} #{root.to_s.shellescape}"
+  end
 
 # THE CAP'S FALLBACK, spine-deduped for the same reason the mapped set is. Both sides
 # of the dedupe are kept so the narration can tell "no changed file HAS a twin" (a
@@ -206,6 +221,7 @@ if options[:list]
   spine.each { |t| puts "spine   #{t}" }
   lintable.each { |f| puts "lint    #{f}" }
   guards.each { |g| puts "guard   #{g.label}: #{(g.scripts + g.tests).join(' ')}" }
+  puts "advisory ui-lint: #{ui_lint_cmd}" if ui_lint_cmd
   exit 0
 end
 
@@ -416,6 +432,19 @@ else
   guard_results = guards.to_h do |guard|
     [guard.label, run_lane(guard.label, CiGuardLanes.command(guard, test_cmd: test_cmd), root)]
   end
+end
+
+# --- the advisory lane -----------------------------------------------------------
+# THE REPORT, NOT A GATE. Its result is read for narration only and never joins
+# `lanes` below, so no count, exit status, hang or missing script can redden the
+# verdict. Run after the test lanes so the verdict line stays the last thing printed.
+if ui_lint_cmd
+  ui_res = run_lane("ui-lint (advisory)", ui_lint_cmd, root,
+                    env: { "UI_LINT_CHANGED_FILES" => changed.join("\n") }, timeout: [LANE_TIMEOUT, 120].min)
+  warn "   ui-lint (advisory): a report only; it is not part of the verdict below" \
+       "#{ui_res.ok ? '' : ', so its failure above is stepped over'}."
+else
+  skip_lane("ui-lint (advisory)", "no app/views or app/components in this tree")
 end
 
 total = Process.clock_gettime(Process::CLOCK_MONOTONIC) - overall_started

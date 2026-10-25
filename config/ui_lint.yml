@@ -1,0 +1,46 @@
+# bin/ui-lint — the house rules from studio-engine/docs/FRONT_END_STANDARD.md's
+# forbidden lists, scanned over one repo tree's templates. bin/lib/ui_lint.rb says
+# what each rule matches; this file says WHERE it looks, which paths it skips, and
+# the one tunable number. It is a REPORT: bin/ui-lint exits 0 unless --strict.
+#
+# Paths are relative to the tree being scanned, matched with File.fnmatch
+# (FNM_PATHNAME | FNM_EXTGLOB), so `**/` spans zero or more directories.
+---
+# The templates scanned. A tree that has neither directory scans nothing and says so.
+include:
+  - app/views/**/*.erb
+  - app/components/**/*.erb
+
+# EXEMPTIONS ARE BY PATH ONLY, and these are all of them. Email markup needs inline
+# styles and literal colours because mail clients drop stylesheets; an SVG's fills
+# are its drawing, not a theme colour. Nothing else is exempt: a rule that is wrong
+# about a file is fixed in the rule, never waved through here.
+exempt:
+  - app/views/**/*_mailer/**/*          # mailer views (user_mailer/, studio/newsletter_mailer/, ...)
+  - app/views/**/mailers/**/*           # the engine's shared mailer partials
+  - app/views/layouts/*mailer*          # layouts/mailer.html.erb, layouts/branded_mailer.html.erb
+  # The hub's BroadcastMailer renders broadcasts/<template_key> in
+  # layouts/broadcast_email: mailer views outside a *_mailer directory. Only the
+  # email copy and its partials are listed; broadcasts/index and edit are app pages
+  # and are scanned. A new broadcast template joins this brace list.
+  - app/views/layouts/broadcast_email.html.erb
+  - app/views/broadcasts/{_button,_email_head,cyvasse_*,new_game_announcement,world_cup_kickoff}.html.erb
+  - "**/*.svg"
+  - "**/*.svg.erb"
+
+rules:
+  long_x_data:
+    # An x-data value longer than this many characters is logic that wants a name:
+    # an Alpine.data() component or a Stimulus controller (the standard's "a
+    # multi-line x-data object literal in a template").
+    max_length: 80
+  unnonced_script:
+    # A <script> of these types is a DATA BLOCK: the browser never executes it, so
+    # CSP's script-src (and its nonce) does not govern it. This scopes what counts
+    # as a script; it exempts no file.
+    data_block_types:
+      - application/json
+      - application/ld+json
+
+# How many files the report's "top files" table lists.
+top_files: 20
