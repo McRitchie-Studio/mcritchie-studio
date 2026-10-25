@@ -137,7 +137,7 @@
               <% end %>
               <%# Every button opens the contact form prefilled, carrying where it
                   came from, or, for an entry with a guide, the guide page first.
-                  An admin on a Google or Fathom card has the real Connect and
+                  A signed-in user on a Google card, and an admin on the Fathom card, has the real Connect and
                   Disconnect above instead, so no contact-form Connect shows there. %>
               <% unless connection_card?(entry.key) %>
               <%= link_to entry.cta_label, (entry.guide ? public_send("integrations_#{entry.guide}_path") : contact_form_path(source: entry.contact_source)),

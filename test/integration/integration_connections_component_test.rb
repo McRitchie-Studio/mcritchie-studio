@@ -80,7 +80,7 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
     assert_not_includes slack.at_css("[data-test='entry-connections']").text, "Coming soon"
   end
 
-  test "[component] three cards render connect or disconnect for admin only: Connect on each when nothing is connected" do
+  test "[component] three cards render an admin the household's connect or disconnect: Connect on each when nothing is connected" do
     log_in_as users(:alex)
     with_connect_env do
       get integrations_path
