@@ -304,6 +304,7 @@ It **proves the frozen SHA is live first**, then records; it never deploys:
 | `github_actions` | mcritchie-studio | `origin/main` at the frozen SHA, prod `/up` 200, and a `prod-deploy.yml` run whose `headSha` is that SHA concluded success |
 | `git_push_heroku` | mcritchie-industries, rolio | prod `/up` 200, and the app's **current** Heroku release is a succeeded `Deploy <frozen sha>` (app from the adapter's `remote:`) |
 | `repo_script` | turf-monster | the same Heroku proof, against `prod_deploy.heroku_app:`; it also needs `prod_deploy.smoke_url:` (a bare origin: the ship appends `/up`) or the repo can never be confirmed |
+| `static_cloudflare` | rantly | prod `/up` 200, and `<smoke_url>/static-release.json` names the frozen SHA ([`static-cloudflare.md`](../../../modules/static-cloudflare.md)) |
 
 Per-repo refusals: `prod /up did not answer 200` wants a deploy (`bin/release ship`);
 `<app>'s CURRENT Heroku release is not a succeeded Deploy …` means a config change or
@@ -407,7 +408,8 @@ production authority, exactly as `ship` is: Alex in the session.** Then run it w
   through `prod-deploy.yml -f sha=<previous>`; a `git_push_heroku` app force-pushes the
   previous SHA to its Heroku remote; turf-monster (`repo_script`) runs `heroku rollback
   v<N>` to the release that deployed it, then waits for that new Heroku release to
-  succeed before it smokes `/up`. Satellites go first, the hub last, and each non-hub app
+  succeed before it smokes `/up`. A `static_cloudflare` app (rantly) rebuilds the
+  previous SHA in its ship workspace and uploads it over the current files. Satellites go first, the hub last, and each non-hub app
   is smoked on `/up`.
 - **`heroku rollback` reverts every config var set since v<N>, add-on vars included.**
   The plan lists each change by its release description (key names, never values).

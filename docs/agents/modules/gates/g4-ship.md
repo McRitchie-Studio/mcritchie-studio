@@ -178,8 +178,9 @@ actually need a checkout FOR?" has a two-line answer:
 |------|----------------------|-------------------|
 | advance `main` → frozen SHA | **no** | `git push origin <frozen>:refs/heads/main` — a ref push out of the shared object store |
 | `github_actions` deploy (the hub) | **no** | `gh workflow run <prod-deploy workflow> -f sha=<frozen>` — Actions does the Heroku push and the `/up` smoke |
-| `git_push_heroku` deploy (mcritchie-industries, cyvasse, dads-app, prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5, search-position; rolio, parked) | **no** | `git push <remote> <frozen>:refs/heads/main` — ships the frozen SHA *by value* |
+| `git_push_heroku` deploy (mcritchie-industries, cyvasse, dads-app, prisoners-dilemma, weekly-lock, portfolio, 10and5, search-position; rolio, parked) | **no** | `git push <remote> <frozen>:refs/heads/main` — ships the frozen SHA *by value* |
 | `repo_script` deploy (turf-monster) | **yes** (its `bin/deploy` runs the repo's suite, hashes the IDL, pushes) | the **ship workspace**: `<repo>/.worktrees/_ship`, detached at the frozen SHA, own lock, own test DB (`<app>_ship_test`) |
+| `static_cloudflare` deploy (rantly) | **yes** (`bin/static-build` renders the app at the frozen SHA) | the **ship workspace**, bundle checked, no test DB; then the R2 upload and the `/up` + `static-release.json` smoke ([`../static-cloudflare.md`](../static-cloudflare.md)) |
 | consumer re-lock commit (candidate → final, normally `Gemfile.lock` alone; a candidate floor or a branch ref on the line → `~> x.y`) | **yes** (`bundle lock` writes `Gemfile.lock`) | the ship workspace, pushed as `HEAD:refs/heads/release` |
 | final gem artifact build | **yes** (`gem build` packages what is on disk) | still the gem's **primary** — the one residual (see below). The candidate, at prepare, builds in the gem's ship workspace |
 
