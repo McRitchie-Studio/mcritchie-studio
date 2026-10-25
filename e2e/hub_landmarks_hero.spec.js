@@ -15,24 +15,39 @@ test.use({ storageState: VISITOR });
 const AXE_PATH = require.resolve("axe-core/axe.min.js");
 const SHELL_RULES = ["html-has-lang", "landmark-one-main", "region"];
 
-for (const path of ["/", "/packages", "/about"]) {
-  test(`${path} passes axe's lang and landmark rules at 1280 and 390`, async ({ page }) => {
-    test.setTimeout(45_000);
-    await blockThirdPartyRequests(page);
-    for (const width of [1280, 390]) {
-      await page.setViewportSize({ width, height: 900 });
-      await page.goto(path);
-      await expect(page.locator("html")).toHaveAttribute("lang", "en");
-      await expect(page.locator("main")).toHaveCount(1);
-      await page.addScriptTag({ path: AXE_PATH });
-      const violations = await page.evaluate(async (rules) => {
-        const result = await window.axe.run(document, { resultTypes: ["violations"], runOnly: { type: "rule", values: rules } });
-        return result.violations.map((v) => ({ id: v.id, impact: v.impact, targets: v.nodes.slice(0, 5).map((n) => n.target.join(" ")) }));
-      }, SHELL_RULES);
-      expect(violations, `${path} at ${width}px`).toEqual([]);
-    }
-  });
+// Loads `path` at 1280 and then 390 and asserts lang, one main, and no axe
+// violation of the shell rules. A plain helper, so each page below is its own
+// bare test declaration (the e2e census counts declarations).
+async function expectShellPasses(page, path) {
+  await blockThirdPartyRequests(page);
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(path);
+    await expect(page.locator("html")).toHaveAttribute("lang", "en");
+    await expect(page.locator("main")).toHaveCount(1);
+    await page.addScriptTag({ path: AXE_PATH });
+    const violations = await page.evaluate(async (rules) => {
+      const result = await window.axe.run(document, { resultTypes: ["violations"], runOnly: { type: "rule", values: rules } });
+      return result.violations.map((v) => ({ id: v.id, impact: v.impact, targets: v.nodes.slice(0, 5).map((n) => n.target.join(" ")) }));
+    }, SHELL_RULES);
+    expect(violations, `${path} at ${width}px`).toEqual([]);
+  }
 }
+
+test("/ passes axe's lang and landmark rules at 1280 and 390", async ({ page }) => {
+  test.setTimeout(45_000);
+  await expectShellPasses(page, "/");
+});
+
+test("/packages passes axe's lang and landmark rules at 1280 and 390", async ({ page }) => {
+  test.setTimeout(45_000);
+  await expectShellPasses(page, "/packages");
+});
+
+test("/about passes axe's lang and landmark rules at 1280 and 390", async ({ page }) => {
+  test.setTimeout(45_000);
+  await expectShellPasses(page, "/about");
+});
 
 test("the home page at 390px requests no image over 300 KB, and the hero is the phone crop", async ({ page }) => {
   test.setTimeout(45_000);
