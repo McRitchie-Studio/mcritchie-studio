@@ -13,6 +13,14 @@ class ShellHelperTest < ActionView::TestCase
     refute page_heading?(nil)
   end
 
+  test "a page with its own main is seen, and one without is not" do
+    assert page_main?('<main class="studio-survey">Q1</main>')
+    assert page_main?("<main>Q1</main>")
+
+    refute page_main?('<div class="main-column">main</div><mainframe>'), "control: a class, text or longer tag is no main"
+    refute page_main?(nil)
+  end
+
   # The engine reads brand_heading with fetch(…, true) and a truthiness test, so
   # nil would draw a div: the local must be a real boolean.
   test "the navbar gets brand_heading false on a page with its own h1 and true otherwise" do

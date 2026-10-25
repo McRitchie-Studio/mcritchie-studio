@@ -10,3 +10,8 @@ Rails.application.config.assets.version = "1.0"
 # application.js, application.css, and all non-JS/CSS in the app/assets
 # folder are already added.
 # Rails.application.config.assets.precompile += %w[ admin.js admin.css ]
+
+# Sprockets 4.2 knows no AVIF type, so it served the hero variants
+# (app/assets/images/hero/*.avif) with no content-type at all. Registered here, an
+# .avif asset goes out as image/avif from the dev server and the manifest alike.
+Sprockets.register_mime_type "image/avif", extensions: [ ".avif" ]

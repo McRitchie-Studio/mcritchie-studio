@@ -23,17 +23,20 @@ Rails.application.configure do
   # Disable serving static files from `public/`, relying on NGINX/Apache to do so instead.
   # config.public_file_server.enabled = false
 
-  # CACHE WHAT WE SERVE OURSELVES. Files under public/ went out with no
-  # Cache-Control at all — only Last-Modified — so every visit re-fetched or
+  # CACHE WHAT WE SERVE OURSELVES, BY KIND. Files under public/ went out with no
+  # Cache-Control at all (only Last-Modified), so every visit re-fetched or
   # re-validated the agent portraits, and a cold load pulled 7.4MB of them.
   #
-  # A WEEK, not a year, because this header covers BOTH kinds of file here:
-  # fingerprinted /assets/* (whose name changes on every edit, so they could safely
-  # be immutable) and the unfingerprinted portraits under /agents/ (whose name does NOT change, so
-  # a year-long TTL would pin a replaced portrait in browsers for a year). A week is
-  # the longest window worth the staleness on the second kind; fingerprinted assets
-  # give up nothing that matters at this traffic. Fingerprint the portraits and this
-  # can go immutable.
+  # This header is the WEEK, for the unfingerprinted files: the portraits under
+  # /agents/, the brand kit, og.png, the email images, robots.txt. Their names do
+  # not change when they are replaced, so a year would pin a stale file in
+  # browsers for a year.
+  #
+  # Fingerprinted /assets/* get a YEAR, immutable: DigestedAssetCache
+  # (lib/middleware/digested_asset_cache.rb, mounted in
+  # config/initializers/digested_asset_cache.rb) replaces this header on a 200 for
+  # a digested path, whose name changes on every edit. Fingerprint a file (move it
+  # into app/assets/images, as the home hero is) and it rides the year.
   config.public_file_server.headers = { "cache-control" => "public, max-age=604800" }
 
   # Compress CSS using a preprocessor.

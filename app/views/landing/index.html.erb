@@ -18,8 +18,25 @@
 
 <!-- Hero -->
 <section class="relative overflow-hidden">
+  <%# The skyline, sized to its box (lane-ui-infrastructure P2: the one 4700px
+      master was 1.6MB on every phone). The box is about 390x554 on a phone and
+      about 525 tall from 540px up, and object-fit: cover crops the panorama to
+      it, so a phone only ever saw the middle quarter. Below 540px it gets that
+      middle as its own portrait crop. Wider screens get the panorama, drawn
+      about 1,230 to 1,370px wide below 1440px; from 1440px the box is wider
+      than the panorama's shape, so it is drawn at the viewport's width.
+      The variants are generated once from the 4700px master with the ImageMagick
+      commands in docs/topics/deployment.md (Public Assets), and are fingerprinted
+      assets, so they cache for a year. %>
+  <% portrait_srcset = [ 390, 768, 1260 ].map { |w| "#{image_path("hero/denver-hero-portrait-#{w}.avif")} #{w}w" }.join(", ") %>
+  <% panorama_srcset = [ 1280, 1920, 2560 ].map { |w| "#{image_path("hero/denver-hero-#{w}.avif")} #{w}w" }.join(", ") %>
   <div class="absolute inset-0">
-    <img src="/denver-hero.avif" alt="" class="w-full h-full object-cover" style="animation: hero-pan 15s linear infinite alternate;">
+    <picture class="block w-full h-full">
+      <source media="(max-width: 539px)" type="image/avif" srcset="<%= portrait_srcset %>" sizes="100vw">
+      <source type="image/avif" srcset="<%= panorama_srcset %>" sizes="(max-width: 1439px) 1380px, 100vw">
+      <img src="<%= image_path("hero/denver-hero-1280.avif") %>" alt="" width="1280" height="490" fetchpriority="high"
+           class="w-full h-full object-cover" data-hero-image style="animation: hero-pan 15s linear infinite alternate;">
+    </picture>
   </div>
   <%# The scrim takes the page colour, so it shades the photo in dark mode
       (--color-page is the dark base, #1A1535) and tints it pale in light mode,
