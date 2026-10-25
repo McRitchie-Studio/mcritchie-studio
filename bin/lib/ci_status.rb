@@ -1019,10 +1019,37 @@ module CiStatus
     "stale" => "fail"
   }.freeze
 
+  # --- SCHEDULE-TRIGGERED RUNS DO NOT JUDGE A COMMIT ------------------------
+  #
+  # Task ui-budget-report-never-gates (2026-10-25). A nightly `schedule` workflow
+  # runs on the default branch's head and attaches its check-run to THAT SHA, but
+  # it was not triggered BY the commit and does not test it: the UI Budget nightly
+  # measured the live production pages, went red, and blocked a cleared production
+  # ship of a deployable commit, because this fold counted every check-run on the
+  # frozen SHA. So the SHA verdict leaves out a run it can PROVE was
+  # schedule-triggered.
+  #
+  # THE EXEMPTION MEASURES ITS CONDITION; it never trusts a name. A check-run does
+  # not carry its triggering event, so the proof is a join: the check-run's
+  # `check_suite.id` matches a workflow run (`GET /repos/{o}/{r}/actions/runs
+  # ?head_sha=<sha>`) whose `check_suite_id` is the same, and EVERY workflow run on
+  # that suite says `event: "schedule"`, and both the check-run and the workflow
+  # run name this exact SHA. Anything short of that keeps the run in the fold:
+  # no workflow-runs read (failed, refused, unparseable), no suite id, no matching
+  # workflow run, a suite whose runs disagree on the event, an event spelled any
+  # other way, or a SHA mismatch. Failing closed means the worst case is today's
+  # behaviour (a red schedule run blocks), never a red push run read as exempt.
+  # Ignored runs are named in the verdict (`ignored:`), so the gate says what it
+  # did not count.
+  SCHEDULE_EVENT = "schedule"
+
   # GitHub CI's verdict for ONE COMMIT. `nwo` is the "owner/repo" name-with-owner
   # (see name_with_owner); `injected` is the RELEASE_CI_STATUS seam — a bare token
   # (green/red/pending/none/unverified) or a raw check-runs payload — so the tests
-  # never shell out to gh (mirrors DOR_CHECK_CI_STATUS / PR_REVIEW_CI_STATUS).
+  # never shell out to gh (mirrors DOR_CHECK_CI_STATUS / PR_REVIEW_CI_STATUS). A
+  # raw payload may carry a `workflow_runs` array beside `check_runs` (the shape
+  # sha_record_raw builds from the live reads), which is what the schedule
+  # exemption above joins against.
   def self.for_sha(nwo, sha, injected = nil)
     raw = injected.to_s.strip
     if TOKENS.include?(raw)
@@ -1038,9 +1065,83 @@ module CiStatus
       return { state: :unverified, reason: "no GitHub owner/repo resolved" } if repo.empty?
       return { state: :unverified, reason: "no SHA to query" } if commit.empty?
 
-      raw = check_runs_raw(repo, commit)
+      raw = sha_record_raw(repo, commit)
     end
-    parse_check_runs(raw)
+    parse_check_runs(raw, sha: sha)
+  end
+
+  # The check-runs record for a SHA, with the SHA's workflow runs folded into the
+  # same envelope under `workflow_runs` so the schedule exemption can join them.
+  # The workflow-runs read is best-effort and fails CLOSED: if it errors, is
+  # refused, or does not parse, the envelope goes back WITHOUT `workflow_runs` and
+  # nothing is exempt. A check-runs body that does not parse is returned untouched,
+  # so parse_check_runs still classifies a 401/403/404 exactly as before.
+  def self.sha_record_raw(repo, commit)
+    raw = check_runs_raw(repo, commit)
+    data = begin
+      JSON.parse(raw)
+    rescue StandardError
+      nil
+    end
+    return raw unless data.is_a?(Hash) && data["check_runs"].is_a?(Array) && data["check_runs"].any?
+
+    workflow = workflow_runs_for(repo, commit)
+    return raw unless workflow
+
+    JSON.generate(data.merge("workflow_runs" => workflow))
+  end
+
+  # The SHA's workflow runs (Actions API), or nil when they cannot be read. One page
+  # of 100, like check_runs_raw; a run missing from a truncated page simply cannot
+  # be proven schedule-triggered, so truncation only ever keeps a run in the fold.
+  def self.workflow_runs_for(repo, commit)
+    body, ok = gh_read_status("api", "repos/#{repo}/actions/runs?head_sha=#{commit}&per_page=100")
+    return nil unless ok
+
+    data = JSON.parse(body)
+    runs = data.is_a?(Hash) ? data["workflow_runs"] : nil
+    runs.is_a?(Array) ? runs : nil
+  rescue StandardError
+    nil
+  end
+
+  # PURE. Splits a check-runs envelope into [runs that judge the SHA, names of the
+  # runs proven schedule-triggered]. See the SCHEDULE section above for what counts
+  # as proof; every other run judges. Without a SHA, or without a `workflow_runs`
+  # array, nothing is exempt.
+  def self.split_schedule_runs(data, runs, sha)
+    commit = sha.to_s.strip.downcase
+    workflow = data.is_a?(Hash) ? data["workflow_runs"] : nil
+    return [runs, []] if commit.empty? || !workflow.is_a?(Array)
+
+    by_suite = workflow.select { |w| w.is_a?(Hash) }.group_by { |w| w["check_suite_id"] }
+    gating = []
+    ignored = []
+    runs.each do |run|
+      if schedule_proven?(run, by_suite, commit)
+        ignored << (run["name"].to_s.empty? ? check_run_state(run) : run["name"].to_s)
+      else
+        gating << run
+      end
+    end
+    [gating, ignored]
+  end
+
+  # PURE. True only when every fact the exemption needs is present and agrees.
+  def self.schedule_proven?(run, by_suite, commit)
+    return false unless run.is_a?(Hash)
+    return false unless run["head_sha"].to_s.strip.downcase == commit
+
+    suite = run["check_suite"]
+    suite_id = suite.is_a?(Hash) ? suite["id"] : nil
+    return false unless suite_id.is_a?(Integer)
+
+    matches = by_suite[suite_id]
+    return false if matches.nil? || matches.empty?
+
+    matches.all? do |w|
+      w["event"] == SCHEDULE_EVENT && w["head_sha"].to_s.strip.downcase == commit
+    end
   end
 
   # The ONE check-runs read, shared by the verdict fold (for_sha) and the G3 credit
@@ -1062,8 +1163,10 @@ module CiStatus
   # PURE. A check-runs API payload → verdict. Accepts the API's envelope
   # (`{"total_count":…, "check_runs":[…]}`) or a bare array of runs, and degrades
   # a 404 / gh error / non-JSON body to :unverified — an auditor that cannot read
-  # the record reports that it cannot read it, and never invents a red.
-  def self.parse_check_runs(raw)
+  # the record reports that it cannot read it, and never invents a red. With a
+  # `sha:`, runs proven schedule-triggered (split_schedule_runs) are left out of
+  # the fold and named under `ignored:`.
+  def self.parse_check_runs(raw, sha: nil)
     data = begin
       JSON.parse(raw)
     rescue StandardError
@@ -1080,9 +1183,11 @@ module CiStatus
       return { state: :unverified, reason: reason.strip[0, 140] }
     end
 
-    verdict = fold(runs.map do |run|
+    gating, ignored = split_schedule_runs(data, runs, sha)
+    verdict = fold(gating.map do |run|
       { "name" => run["name"].to_s, "state" => check_run_state(run), "bucket" => check_run_bucket(run) }
     end)
+    verdict = verdict.merge(ignored: ignored) if ignored.any?
 
     # A PARTIAL read can only be trusted when it found a FAILURE (a fail outranks
     # everything, so more runs cannot un-fail it). Any other fold over a truncated
@@ -1135,9 +1240,9 @@ module CiStatus
       commit = sha.to_s.strip
       return nil if repo.empty? || commit.empty?
 
-      raw = check_runs_raw(repo, commit)
+      raw = sha_record_raw(repo, commit)
     end
-    credited_verdict(raw)
+    credited_verdict(raw, sha: sha)
   end
 
   # PURE. A check-runs payload → a credited GREEN verdict, or nil. Credits ONLY
@@ -1152,7 +1257,9 @@ module CiStatus
   #     pass/skip conclusion for this SHA. A pending check with NO completed
   #     counterpart (or no name to match on) is the ORIGINAL suite still running —
   #     a genuine wait, not a duplicate — so NO credit.
-  def self.credited_verdict(raw)
+  #   * a run proven schedule-triggered is left out first, exactly as in
+  #     parse_check_runs, so the credit and the plain fold judge the same set.
+  def self.credited_verdict(raw, sha: nil)
     data = begin
       JSON.parse(raw)
     rescue StandardError
@@ -1164,6 +1271,7 @@ module CiStatus
     total = data.is_a?(Hash) && data["total_count"] ? data["total_count"].to_i : runs.size
     return nil if runs.size < total
 
+    runs, = split_schedule_runs(data, runs, sha)
     folded = runs.map { |run| { name: run["name"].to_s, bucket: check_run_bucket(run) } }
     return nil if folded.any? { |run| %w[fail cancel].include?(run[:bucket]) }
 
