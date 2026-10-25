@@ -8544,6 +8544,16 @@ def deploy_app(group, frozen)
         abort!(e.message)
       end
     end
+  # A static_cloudflare adapter missing its bucket or smoke_url is refused HERE,
+  # before push_frozen_main moves anything, as an unknown strategy is above.
+  static_target =
+    if handler == :static_cloudflare
+      begin
+        StaticCloudflare::Target.from(repo, adapter)
+      rescue StaticCloudflare::Abort => e
+        abort!(e.message)
+      end
+    end
 
   say("")
   step(if target
@@ -8671,11 +8681,7 @@ def deploy_app(group, frozen)
     # the frozen SHA, so it runs in the SHIP WORKSPACE under its lock, never the
     # primary. Then the upload and the smoke, which reads /up AND the release
     # marker: the old Heroku dyno answers /up too, so /up alone proves nothing.
-    target = begin
-      StaticCloudflare::Target.from(repo, adapter)
-    rescue StaticCloudflare::Abort => e
-      abort!(e.message)
-    end
+    target = static_target
     plan = "#{target.build_command} @ #{short(frozen)} → r2://#{target.bucket} → smoke #{target.smoke_url}/up + " \
            "#{StaticCloudflare::MARKER}"
     step("deploy: (cd #{repo} ship workspace @ frozen #{short(frozen)}) #{plan}")
