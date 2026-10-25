@@ -23,12 +23,12 @@ This page owns the learning capability. It runs in three parts:
 3. **Share the bank out.** [`share-insights.md`](share-insights.md) regenerates
    the lessons doc from the banked insights.
 
-This is Ritch's `grade-events` SOP. It grades recent resolved trajectory activities so
+This is Mason's `grade-events` SOP. It grades recent resolved trajectory activities so
 useful agent behavior can become reusable memory.
 
 ## Scope
 
-This SOP is part of Ritch's learning loop. It does not review PRs, merge release
+This SOP is part of Mason's learning loop. It does not review PRs, merge release
 work, deploy QA, ship production, or archive work.
 
 ## Entry
@@ -43,7 +43,7 @@ Use the production board by default. Do not add `--local`.
 
 ## Preconditions
 
-Resolved agent activities are awaiting Ritch's grade. If none are waiting,
+Resolved agent activities are awaiting Mason's grade. If none are waiting,
 report "nothing to grade" and stop.
 
 ## Procedure
@@ -65,7 +65,7 @@ Bank only insights that make the next agent smarter. Discard generic narration,
 routine success, and anything that should not become instruction.
 
 The browser path at `/ray/heartbeat` is the operator/admin equivalent. The CLI
-grades as Ritch; Alex's confirmation lane remains in the browser
+grades as Mason, stored under the `ray` grader key the seat inherited; Alex's confirmation lane remains in the browser
 pipeline.
 
 ## Exit Seam
