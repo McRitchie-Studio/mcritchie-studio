@@ -69,7 +69,9 @@ site connection, primary-domain setting, disabled `www` prefix, and
   checks that every one is on disk. They serve as both the circular avatar and the
   full-bleed 5:3 card hero on the public `/agents` index;
   `test/lib/response_payload_budget_test.rb` holds their byte budget and size limits.
-- `public/denver-hero.avif` — Landing page hero background (Denver skyline)
+- `public/denver-hero.avif` — the master of the landing page hero (Denver skyline, 4700 × 1800, 1.6MB). The page serves the sized variants in `app/assets/images/hero/` through a `<picture>` (`app/views/landing/index.html.erb`): the panorama at 1280, 1920 and 2560 wide, and a centre 1260 × 1800 portrait crop at 390, 768 and 1260 for phones. After replacing the master, regenerate them with ImageMagick (AVIF quality 45):
+  `magick public/denver-hero.avif -resize 1920x -strip -quality 45 app/assets/images/hero/denver-hero-1920.avif` (and 1280, 2560), and
+  `magick public/denver-hero.avif -gravity center -crop 1260x1800+0+0 +repage -resize 390x -strip -quality 45 app/assets/images/hero/denver-hero-portrait-390.avif` (and 768, 1260).
 - `public/brand/` — the saved Studio kit's files (`icon-*`, `navbar-*`, `stacked-*` in light, dark and watermark, plus `kit.json`), written by `bin/rails logos:install BRAND=studio`; the navbar, footer, sign-in card and SSO logo draw from it ([`logos.md`](logos.md#installing-a-kit-into-an-app))
 - `public/favicon.png`, `public/icon.png` — favicon and PWA icon, rasterized from `public/brand/icon-dark.svg` by `script/brand_png.cjs`: the favicon edge to edge (the icon's box is its ink), the PWA icon with a 0.16 safe zone on every edge, because the manifest serves it as `"purpose": "maskable"` (`node script/brand_png.cjs public/brand/icon-dark.svg public/icon.png 512 '#1A1535' 0.16`)
 - `public/og.png` — the last-resort link preview image (1200 × 630): `public/brand/stacked-dark.svg` centred on `#1A1535`, regenerated with the ImageMagick command in [`logos.md`](logos.md) after a kit change; an image uploaded at `/admin/link_preview` outranks it
