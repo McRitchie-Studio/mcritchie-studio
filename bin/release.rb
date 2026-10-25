@@ -8498,7 +8498,9 @@ end
 # a PRODUCTION render (bin/static-build sets RAILS_ENV itself) of an app with no
 # database at all.
 def static_cloudflare_runner(repo)
-  base = gate_env(repo, role: "ship").reject { |key, _| %w[RAILS_ENV DATABASE_URL TEST_DATABASE_URL].include?(key) }
+  # nil UNSETS a key in the child, so neither the gate's overlay nor an operator
+  # shell that exported RAILS_ENV=test reaches the production render.
+  base = gate_env(repo, role: "ship").merge("RAILS_ENV" => nil, "DATABASE_URL" => nil, "TEST_DATABASE_URL" => nil)
   lambda do |argv, env, chdir|
     out, ok = sh(*argv, chdir: chdir, env: base.merge(env), capture: true)
     [out, ok]

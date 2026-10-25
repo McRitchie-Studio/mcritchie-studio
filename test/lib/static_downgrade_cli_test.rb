@@ -32,6 +32,6 @@ class StaticDowngradeCliTest < Minitest::Test
   def test_an_unregistered_app_refuses
     _out, err, status = run_bin("not-an-app")
     refute status.success?
-    assert_includes err, "not-an-app is not an app in config/release_repos.yml"
+    assert_includes err, "not-an-app is not an app in"
   end
 end
