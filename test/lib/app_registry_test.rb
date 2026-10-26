@@ -238,8 +238,8 @@ class AppRegistryTest < Minitest::Test
                     "cyvasse: planned in satellites.yml but showcase on Heroku cyvasse (use active or reserved)"
     assert_includes satellite_disagreements(CATALOG, with_satellite("chain-ops", status: "planned")),
                     "chain-ops: planned in satellites.yml but archived in apps.yml (use reserved)"
-    assert_includes satellite_disagreements(CATALOG, with_satellite("rolio", status: "active")),
-                    "rolio: active in satellites.yml but archived in apps.yml"
+    assert_includes satellite_disagreements(CATALOG, with_satellite("chain-ops", status: "active")),
+                    "chain-ops: active in satellites.yml but archived in apps.yml"
   end
 
   def test_a_no_engine_description_on_an_engine_app_is_named
@@ -264,9 +264,9 @@ class AppRegistryTest < Minitest::Test
     parked_live = with_release_app("cyvasse", apps.fetch("cyvasse").merge("ladder" => "dormant"))
     assert_includes release_repo_disagreements(CATALOG, parked_live),
                     "cyvasse: showcase in apps.yml but ladder dormant in release_repos.yml"
-    shipping_archived = with_release_app("rolio", apps.fetch("rolio").merge("ladder" => "three-rung"))
+    shipping_archived = with_release_app("chain-ops", apps.fetch("chain-ops").merge("ladder" => "three-rung"))
     assert_includes release_repo_disagreements(CATALOG, shipping_archived),
-                    "rolio: archived in apps.yml but ladder three-rung in release_repos.yml (park it: dormant, planned, blocked)"
+                    "chain-ops: archived in apps.yml but ladder three-rung in release_repos.yml (park it: dormant, planned, blocked)"
     live_blocked = with_release_app("commercial-welding",
                                     apps.fetch("commercial-welding").merge("ladder" => "blocked"))
     assert_includes release_repo_disagreements(CATALOG, live_blocked),

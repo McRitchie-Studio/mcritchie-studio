@@ -3514,7 +3514,7 @@ def ci_rerun_once!(repo, sha)
       "Re-running every job of run#{plan[:run_ids].size == 1 ? '' : 's'} #{plan[:run_ids].join(', ')} " \
       "(`gh run rerun`, all jobs, so the executed-set guards re-read fresh receipts); a second red is real.")
   plan[:run_ids].each do |id|
-    out, ok = sh("gh", "run", "rerun", id.to_s, "-R", nwo, capture: true)
+    out, ok = gh_sh("gh", "run", "rerun", id.to_s, "-R", nwo, capture: true)
     next if ok
 
     say("  ✗ #{repo}: `gh run rerun #{id}` was refused (#{out.to_s.strip.lines.last.to_s.strip}) — " \
@@ -3557,7 +3557,7 @@ end
 
 # A run's failed-step log, "" on any failed read (so the resolution check says no).
 def ci_failed_log(nwo, run_id)
-  out, ok = sh("gh", "run", "view", run_id.to_s, "--log-failed", "-R", nwo, capture: true)
+  out, ok = gh_sh("gh", "run", "view", run_id.to_s, "--log-failed", "-R", nwo, capture: true)
   ok ? out.to_s : ""
 end
 

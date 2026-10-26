@@ -75,7 +75,7 @@ satellites:
     heroku_app: "rolio-prod"
     production_url: "https://rolio-prod-82e96784b462.herokuapp.com"
     role: "viewer"
-    description: "Relationship operating workspace; archived, port block kept"
+    description: "Relationship operating workspace"
     deploy_provider: "other"
     status: "reserved"
 

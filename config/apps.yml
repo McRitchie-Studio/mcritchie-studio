@@ -299,8 +299,8 @@ apps:
     name: Rolio
     emoji: "📇"
     color: "#A8A29E"
-    tier: null
-    status: archived
+    tier: product
+    status: active
     port: 3300
     repo: McRitchie-Studio/rolio
     heroku_app: rolio-prod
@@ -312,7 +312,7 @@ apps:
     database: false
     backups: false
     restore_drilled: null
-    description: Relationship operating workspace; dormant
+    description: Relationship operating workspace
 
   - slug: chain-ops
     name: Chain Ops
