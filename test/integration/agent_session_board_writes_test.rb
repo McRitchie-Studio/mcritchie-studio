@@ -62,7 +62,7 @@ class AgentSessionBoardWritesTest < ActionDispatch::IntegrationTest
   end
 
   test "a studio session cannot update an agent; an admin session and the shared token can" do
-    agent = agents(:ray_agent)
+    agent = agents(:alex_agent)
 
     patch api_v1_agent_path(agent.slug), params: { config: { "model" => "forged" } },
                                          headers: bearer(@studio), as: :json
@@ -82,7 +82,7 @@ class AgentSessionBoardWritesTest < ActionDispatch::IntegrationTest
   end
 
   test "a studio session still reads an agent" do
-    get api_v1_agent_path(agents(:ray_agent).slug), headers: bearer(@studio)
+    get api_v1_agent_path(agents(:alex_agent).slug), headers: bearer(@studio)
 
     assert_response :ok
   end

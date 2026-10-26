@@ -198,7 +198,7 @@ class ApplicationHelperTest < ActionView::TestCase
   end
 
   test "[unit] gate_run_reviewer resolves a lane's soul from the run actor" do
-    agent = agents(:ray_agent)
+    agent = agents(:alex_agent)
 
     # Preloaded-map path (the /tasks/recent batch that avoids an N+1).
     assert_same agent, gate_run_reviewer(GateRun.new(actor: "alex"), lookup: { "alex" => agent })

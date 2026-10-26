@@ -10,7 +10,7 @@ class RenameXanDisplayNameToRayTest < ActiveSupport::TestCase
     ActiveRecord::Migration.suppress_messages { RenameXanDisplayNameToRay.new.migrate(direction) }
   end
 
-  setup { @seat = agents(:ray_agent) }
+  setup { @seat = agents(:alex_agent) }
 
   test "renames the xan row from Xan to Ray and back, keeping the slug" do
     @seat.update_columns(slug: "xan", name: "Xan")
