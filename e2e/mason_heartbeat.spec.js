@@ -146,8 +146,8 @@ test("the session launcher Mason avenue links to the heartbeat trajectory", asyn
   await page.goto("/launcher");
 
   const mason = page.locator("a[data-avenue='mason']");
-  await expect(alex).toHaveAttribute("href", "/mason/heartbeat");
+  await expect(mason).toHaveAttribute("href", "/mason/heartbeat");
 
-  await alex.click();
+  await mason.click();
   await expect(page.locator("[data-test='heartbeat-event-table']")).toBeVisible();
 });

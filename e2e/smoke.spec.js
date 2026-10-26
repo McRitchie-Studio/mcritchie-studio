@@ -27,7 +27,7 @@ test("agents page loads", async ({ page }) => {
 test("agent detail loads", async ({ page }) => {
   await page.goto("/agents/alex");
   await expect(page.locator("body")).toContainText("Alex");
-  await expect(page.locator("body")).toContainText("orchestrator");
+  await expect(page.locator("body")).toContainText("Fractional CTO");
 });
 
 test("tasks page loads with stage badges", async ({ page }) => {
