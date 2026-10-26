@@ -14,10 +14,12 @@ a **prompt-like row 1** plus **copyable action rows**:
   - **Avi** → `2️⃣ qa-release` · `⚡ deploy-with-task` · `🔭 intent-scout`
   - **Steffon** → `3️⃣ production-deploy` · `🧹 clean-infra`
   - **Mason** → `🧑🏻‍🏫 grade-events` (optional: every task is graded at ship) · `📡 share-insights` · `🌎 full-cycle`
-  - **Ritch** → `🚀 launch-build-queue` · `⏱️ ship-clock`
+  - **Ritch** → `⏱️ ship-clock`
   - **Turf Monster** → `🏈 live-score-watch` · `🎬 contest-rehearsal` · `📣 post-to-x`
 
-  Six registered acts are deliberately NOT chips; each stays invocable by name:
+  Seven registered acts are deliberately NOT chips; each stays invocable by name:
+  - `launch-build-queue` — Ritch's `/build` queue, run from the `Ray Heartbeat` row;
+    at 18 characters it clips the carousel's act chip on CI, as the auction slug does.
   - `archive-shipped` — `production-deploy` runs it as its final step, so the
     keycap sequence ends at `3️⃣`; `clean-infra` took the slot but is off-sequence.
   - `sleeper-auction-watch` — calendar-bound (one draft evening a year), and at 21
@@ -51,7 +53,7 @@ cross-soul map. History cut from it lives in
 | **Avi** (`avi`) | `Avi Heartbeat` | `qa-release`, `deploy-with-task` (direct-invoke only), `arbitrate-block` (registered, not a chip — a builder contests a review block and the session that spawned it invokes Avi), `intent-scout` (a chip since 2026-10-14; `bin/task begin` launches it in the background, and the chip is the manual launch when begin could not) | `reviewed` work + `assembled` stragglers to sweep | the RC swept, **live on QA, members `assembled` on QA-green** |
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra`, `archive-shipped` (registered, not a chip — production-deploy runs it), `db-restore-drill` (registered, not a chip — monthly, when the heartbeat finds an app due) | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
 | **Mason** (`mason`) | `Mason Heartbeat` | `share-insights`, `full-cycle`; `clean-up` and `dream-swap` (registered, not chips; run when named); `grade-events` is optional (every task is graded at ship) and runs only when named | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
-| **Ritch** (`ray`) | `Ray Heartbeat` | client threads, `launch-build-queue`, his own builds; `ship-clock` (a chip since 2026-10-14: the typing-to-shipping benchmark) and `focus-session` (registered, not a chip) run when named | a client or `/build` thread waiting, a queued `/build` request, a task he is building | threads answered; requests live; builds `submitted` |
+| **Ritch** (`ray`) | `Ray Heartbeat` | client threads, `launch-build-queue` (registered, not a chip — its 18-character slug clips the carousel's act chip), his own builds; `ship-clock` (a chip since 2026-10-14: the typing-to-shipping benchmark) and `focus-session` (registered, not a chip) run when named | a client or `/build` thread waiting, a queued `/build` request, a task he is building | threads answered; requests live; builds `submitted` |
 | **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch`, `contest-rehearsal`, `post-to-x` (a chip since 2026-10-06: Alex copies it and pastes it into a fresh session with an MP4 path), `sleeper-auction-watch` (registered, not a chip — the slug clips the card), `entry-forfeit` (registered, not a chip — on-demand incident SOP), `market-refresh` (registered, not a chip — weekly, but the moment is read off the schedule), `content-build` (registered, not a chip — queue-shaped; it runs when games finalise), `collect-vault-revenue` (registered, not a chip — operator-triggered and it moves money) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
 
 > **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
@@ -298,7 +300,7 @@ release; nothing anywhere → report and stop. **Exit seam:** the release `shipp
 > `production-deploy`. To expedite ONE task on a clean ladder, use Avi's
 > [`deploy-with-task`](../agents/avi/sops/deploy-with-task.md) act instead.
 
-## 5. Ray Heartbeat — `Ray Heartbeat` / `launch-build-queue` / `ship-clock`
+## 5. Ray Heartbeat — `Ray Heartbeat` / `ship-clock`
 
 Launcher: [`../agents/ray/HEARTBEAT.md`](../agents/ray/HEARTBEAT.md): client
 threads first, then the `/build` queue

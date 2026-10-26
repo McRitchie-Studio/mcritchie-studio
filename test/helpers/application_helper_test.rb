@@ -744,9 +744,10 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal ["production-deploy", "clean-infra", "workspace-launch"], launchers[2][:actions]
     # Mason's CEO acts (Alex's approved sort, 2026-10-25).
     assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[3][:actions]
-    # Ritch's client acts: the /build queue, and ship-clock, the typing-to-shipping
-    # benchmark, one copy away.
-    assert_equal ["launch-build-queue", "ship-clock"], launchers[4][:actions]
+    # Ritch's one chip is ship-clock, the typing-to-shipping benchmark. His /build
+    # queue runs from the Ray Heartbeat row: `launch-build-queue` (18 characters)
+    # clips the carousel's act chip on CI, as sleeper-auction-watch does.
+    assert_equal ["ship-clock"], launchers[4][:actions]
     # Turf Monster gained the rehearsal launcher after the first watched QA run —
     # an operator asked to be able to kick the whole contest cycle off from the
     # card rather than remembering a command.
@@ -885,8 +886,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='3'] button[data-clip='clean-infra']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='4'] button[data-clip='intent-scout']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='mason'] [data-copy-row-index='4'] button[data-clip='full-cycle']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] [data-copy-row-index='2'] button[data-clip='launch-build-queue']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] [data-copy-row-index='3'] button[data-clip='ship-clock']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] [data-copy-row-index='2'] button[data-clip='ship-clock']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] [data-copy-row-index='2'] button[data-clip='live-score-watch']"
     # Pokémon has no heartbeat, so wrap-it-up is its FIRST row, described by what it does.
     assert_select "[data-test='heartbeat-launcher'][data-agent='pokemon'] [data-copy-row-index='1'] button[data-clip='wrap-it-up']"

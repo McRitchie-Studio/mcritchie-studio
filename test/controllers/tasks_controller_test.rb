@@ -202,7 +202,6 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='workspace-launch']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='mason'] button[data-row='action'][data-clip='grade-events']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='mason'] button[data-row='action'][data-clip='full-cycle']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] button[data-row='action'][data-clip='launch-build-queue']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] button[data-row='action'][data-clip='ship-clock']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='heartbeat'][data-clip='Turf Monster Heartbeat']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='action'][data-clip='live-score-watch']"

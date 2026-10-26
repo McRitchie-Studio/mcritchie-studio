@@ -75,8 +75,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
 
     assert_select "[data-test='agent-heartbeat-section'][data-agent='ray']", count: 1
     assert_select "[data-test='heartbeat-name'][data-clip='Ray Heartbeat']"
-    assert_select "[data-test='action']", count: 2
-    assert_select "[data-test='action'][data-action='launch-build-queue'][data-clip='launch-build-queue']"
+    assert_select "[data-test='action']", count: 1
     assert_select "[data-test='action'][data-action='ship-clock'][data-clip='ship-clock']"
     assert_select "[data-test='action'][data-action='full-cycle']", count: 0
   end

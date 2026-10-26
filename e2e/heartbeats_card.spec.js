@@ -46,9 +46,8 @@ test("the Workflows sidebar lists six soul launchers with their acts", async ({ 
   // Mason's third act is visible here — nothing in the sidebar hides behind a toggle.
   const mason = card.locator("[data-test='heartbeat-launcher'][data-agent='mason']");
   await expect(mason.locator("button[data-clip='full-cycle']")).toBeVisible();
-  // Ritch's client acts: the /build queue, and ship-clock, the typing-to-shipping benchmark.
+  // Ritch's chip: ship-clock, the typing-to-shipping benchmark.
   const ray = card.locator("[data-test='heartbeat-launcher'][data-agent='ray']");
-  await expect(ray.locator("button[data-clip='launch-build-queue']")).toBeVisible();
   await expect(ray.locator("button[data-clip='ship-clock']")).toBeVisible();
 
   // Turf Monster owns the live score watch.
