@@ -9,7 +9,7 @@ require "minitest/mock"
 # app/assets/builds/ is gitignored (only .keep is tracked), so any virgin checkout —
 # a fresh `bin/agent-worktree new` worktree, the release gate's `.worktrees/_gate`,
 # a CI runner — starts with NO built tailwind.css, and every view-rendering test
-# would error with `The asset "tailwind.css" is not present in the asset pipeline`.
+# would error with `The asset 'tailwind.css' was not found in the load path`.
 #
 # What saves a runner is `test:prepare`, which tailwindcss-rails enhances with
 # `tailwindcss:build`. A run reaches that task by exactly TWO routes: it INVOKES
