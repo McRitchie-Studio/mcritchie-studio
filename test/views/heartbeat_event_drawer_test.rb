@@ -22,7 +22,7 @@ class HeartbeatEventDrawerTest < ActionView::TestCase
     a1 = action(agent_activity_id: ev.id, seq: 0, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
 
     render partial: "heartbeat/activity_drawer",
-           locals: { event: ev, actions: [a1], alex: nil, mcr: nil }
+           locals: { event: ev, actions: [a1], mason: nil, mcr: nil }
 
     # two grade editors, both posting to the span-grade endpoint
     assert_select "form[data-test=span-grade-form]", 2
@@ -45,7 +45,7 @@ class HeartbeatEventDrawerTest < ActionView::TestCase
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
 
     render partial: "heartbeat/activity_drawer",
-           locals: { event: ev, actions: [], alex: nil, mcr: nil }
+           locals: { event: ev, actions: [], mason: nil, mcr: nil }
 
     # Mason banks; the McRitchie audit does not
     assert_select "form[data-grader=mason] button[value=bank]", 1
@@ -58,7 +58,7 @@ class HeartbeatEventDrawerTest < ActionView::TestCase
                                slug: "span drifted off its stated reason")
 
     render partial: "heartbeat/activity_drawer",
-           locals: { event: ev, actions: [], alex: alex, mcr: nil }
+           locals: { event: ev, actions: [], mason: mason, mcr: nil }
 
     assert_select "form[data-grader=mason] input[name=slug][value=?]", "span drifted off its stated reason"
   end

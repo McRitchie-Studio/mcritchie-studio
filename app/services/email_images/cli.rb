@@ -187,7 +187,7 @@ module EmailImages
       artifact = record.candidates.find_by!(slug: positional!("name the candidate's artifact slug"))
       reject_extra_positionals!
       if by.blank?
-        raise ArgumentError, "--by is required: approve only on Alex McRitchie's explicit word, and name him (--by "Alex McRitchie")"
+        raise ArgumentError, "--by is required: approve only on Alex McRitchie's explicit word, and name him (--by \"Alex McRitchie\")"
       end
 
       record.approve!(artifact, by: by.strip)

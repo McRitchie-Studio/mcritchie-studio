@@ -50,7 +50,7 @@ class AgentTypingComponentTest < ActionView::TestCase
     render_typing(phase: "<script>")
     assert_select ".agent-typing[data-phase='typing']", 2
     assert_no_match(/<script>/, rendered)
-    assert_select ".agent-typing-orbit span", text: "R"
+    assert_select ".agent-typing-orbit span", text: "A"
   end
 
   test "[component] a client CTO's thinking look wears its own portrait" do

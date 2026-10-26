@@ -27,7 +27,7 @@ class AgentsActivitiesTableTest < ActionView::TestCase
 
   test "[component] renders the six-column header" do
     render_table []
-    %w[Agent Activity Cost Details Alex McRitchie].each do |h|
+    %w[Agent Activity Cost Details Mason McRitchie].each do |h|
       assert_select "thead th", text: h
     end
   end

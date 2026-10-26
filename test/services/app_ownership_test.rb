@@ -65,7 +65,7 @@ class AppOwnershipTest < ActiveSupport::TestCase
     alex.save! # fixtures skip callbacks, so give the row its slug
     own!(alex, apps(:mcritchie_studio))
 
-    assert_equal [ "McRitchie Studio", "Pipeline", "Avi" ], AppOwnership.sidebar_links(mason).map(&:label)
+    assert_equal [ "McRitchie Studio", "Pipeline", "Avi" ], AppOwnership.sidebar_links(alex).map(&:label)
   end
 
   test "[unit] report channels: the CTO's own bot's postable set when its token is set, else the shared bot's" do

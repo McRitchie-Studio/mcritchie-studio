@@ -74,7 +74,7 @@ class ChromeProfilesTest < Minitest::Test
   def test_menu_row_prepends_the_gaia_name_and_parenthesises_the_label
     profile = Profile.new(dir: "Profile 2", account: "a@b.c", name: "🪎 studio", gaia: "Alex")
 
-    assert_equal "Alex McRitchie (🪎 studio)", profile.menu_row
+    assert_equal "Alex (🪎 studio)", profile.menu_row
   end
 
   # This is how Margot and Mason get a bare row. It is not a special case in the
@@ -121,7 +121,7 @@ class ChromeProfilesTest < Minitest::Test
 
     assert_empty a.refusals
     assert_empty b.refusals
-    assert_equal [ "Alex McRitchie (🪎 studio)", "Team (📐 industries)", "Alex McRitchie (🐊 turf)" ],
+    assert_equal [ "Alex (🪎 studio)", "Team (📐 industries)", "Alex (🐊 turf)" ],
                  a.menu.map(&:last)
     assert_equal a.menu.map(&:last), b.menu.map(&:last),
                  "the same roster produced a different MENU on a machine whose directories differ"
@@ -205,13 +205,13 @@ class ChromeProfilesTest < Minitest::Test
   # ---------------------------------------------------------------------------
 
   def test_a_label_repeating_the_prepended_name_is_refused_with_the_row_it_would_render
-    wanted = roster([ [ "alex@studio.test", "Alex McRitchie studio" ] ])
+    wanted = roster([ [ "alex@studio.test", "Alex studio" ] ])
     state = local_state({ "Default" => [ "alex@studio.test", "old", "Alex" ] })
 
     plan = Plan.new(roster: wanted, state: state)
 
     assert plan.refuse?
-    assert_match(/would render as "Alex McRitchie \(Alex McRitchie studio\)"/, plan.refusals.join("\n"))
+    assert_match(/would render as "Alex \(Alex studio\)"/, plan.refusals.join("\n"))
   end
 
   # The OPPOSITE case, and the one a careless guard breaks: a label EQUAL to the
@@ -239,7 +239,7 @@ class ChromeProfilesTest < Minitest::Test
   # ---------------------------------------------------------------------------
 
   def test_accounts_are_downcased_so_a_capitalised_address_still_matches
-    wanted = roster([ [ "Alex McRitchie@Studio.TEST", "🪎 studio" ] ])
+    wanted = roster([ [ "Alex@Studio.TEST", "🪎 studio" ] ])
     state = local_state({ "Default" => [ "alex@studio.test", "old", "Alex" ] })
 
     assert_empty Plan.new(roster: wanted, state: state).refusals

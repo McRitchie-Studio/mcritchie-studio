@@ -71,7 +71,7 @@ class AgentPersonTest < ActiveSupport::TestCase
            User.create!(email: "alex@mcritchie.studio", name: "Alex McRitchie")
     person = AgentPerson.seed_owner!
 
-    assert_equal "Alex", person.display_name
+    assert_equal "Alex McRitchie", person.display_name, "the owner by his full name: a bare Alex is the agent"
     assert_equal user.id, person.user_id
     assert_equal person, AgentPerson.seed_owner!
     assert_equal person, agent_message!(soul: "alex", author_ref: "536552944271753216").person

@@ -144,7 +144,7 @@ class ActionGradeTest < ActiveSupport::TestCase
     mason = ActionGrade.create!(valid_attrs(agent_action: graded, grader: ActionGrade::MASON))
     mcr  = ActionGrade.create!(valid_attrs(agent_action: graded, grader: ActionGrade::MCR))
 
-    assert_equal [alex.id], ActionGrade.by_grader(ActionGrade::MASON).where(agent_action: graded).pluck(:id)
+    assert_equal [mason.id], ActionGrade.by_grader(ActionGrade::MASON).where(agent_action: graded).pluck(:id)
     assert_equal [mcr.id], ActionGrade.by_grader(ActionGrade::MCR).where(agent_action: graded).pluck(:id)
   end
 
@@ -197,7 +197,7 @@ class ActionGradeTest < ActiveSupport::TestCase
     )
 
     assert_equal 2, graded.action_grades.count
-    assert_equal [alex.id], graded.action_grades.by_grader(ActionGrade::MASON).pluck(:id)
+    assert_equal [mason.id], graded.action_grades.by_grader(ActionGrade::MASON).pluck(:id)
     assert_equal [mcr.id], graded.action_grades.by_grader(ActionGrade::MCR).pluck(:id)
     assert mcr.mcr?, "the McRitchie row audits Mason's grade for that action"
   end
@@ -254,7 +254,7 @@ class ActionGradeTest < ActiveSupport::TestCase
     mcr  = ActionGrade.create!(event_valid_attrs(agent_activity: span, grader: ActionGrade::MCR))
 
     assert_equal 2, span.action_grades.count
-    assert_equal [alex.id], span.action_grades.by_grader(ActionGrade::MASON).pluck(:id)
+    assert_equal [mason.id], span.action_grades.by_grader(ActionGrade::MASON).pluck(:id)
     assert_equal [mcr.id], span.action_grades.by_grader(ActionGrade::MCR).pluck(:id)
   end
 

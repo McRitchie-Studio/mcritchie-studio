@@ -95,7 +95,7 @@ class DreamApprovalTest < ActiveSupport::TestCase
     assert_not_nil flipped.reload.applied_at
     assert_nil waiting.reload.applied_at
     assert_nil same_slug_elsewhere.reload.applied_at, "a dream is keyed by home and slug"
-    assert_equal [ "carl/waiting", "alex/flipped" ], DreamApproval.pending_by_key([]).keys.sort
+    assert_equal [ "alex/flipped", "carl/waiting" ], DreamApproval.pending_by_key([]).keys.sort
   end
 
   test "[unit] the pending read names the deployed file's status, or missing" do

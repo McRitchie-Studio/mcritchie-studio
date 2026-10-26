@@ -1,10 +1,10 @@
 require "test_helper"
 
-# [integration] The orchestrator seat works end to end under `mason`: heartbeat
-# attribution lands on it through the API, reviewer selection seats and excludes
-# it, the legacy `alex` slug rides the alias into both, and the seat's pages
-# answer under /alex.
-class RaySeatTest < ActionDispatch::IntegrationTest
+# [integration] The persona seat works end to end under `alex` (ritch-renamed-alex):
+# heartbeat attribution lands on it, the legacy `ray` slug rides the alias, the
+# learning heartbeat it held answers under /mason (Mason grades now), and every
+# retired /ray and /xan page forwards there.
+class AlexSeatTest < ActionDispatch::IntegrationTest
   # The ops pages sit behind the admin wall (AdminWall); these tests read them as
   # the operator. A test about another viewer signs that session in itself.
   setup { log_in_as(users(:alex)) }
@@ -13,11 +13,11 @@ class RaySeatTest < ActionDispatch::IntegrationTest
 
   # ── Heartbeat attribution ────────────────────────────────────────────────
 
-  test "an activity opened as alex attributes to the seat, and one opened as alex lands on the same seat" do
+  test "an activity opened as alex attributes to the seat, and one opened as ray lands on the same seat" do
     alex = AgentActivity.create!(session_id: "seat-x", category: "Explore", reason_slug: "orient", opened_at: Time.current,
                                 agent: "alex")
     legacy = AgentActivity.create!(session_id: "seat-a", category: "Explore", reason_slug: "orient", opened_at: Time.current,
-                                   agent: "alex")
+                                   agent: "ray")
 
     assert_equal "alex", alex.reload.agent
     assert_equal "alex", legacy.reload.agent, "the sticky marker of a pre-rename session still reaches the seat"
@@ -92,10 +92,15 @@ class RaySeatTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  # The seat's slug until ray-slug-rename: every old GET 301s to the same page
-  # under /alex, query string included, so a bookmarked deep link still lands.
-  test "the retired /xan pages forward to /alex, query string and all" do
+  # The seat's slugs until 2026-10-18 (xan) and 2026-10-25 (ray): every old GET
+  # 301s to the same page under /mason, query string included, so a bookmarked
+  # deep link still lands.
+  test "the retired /xan and /ray pages forward to /mason, query string and all" do
     {
+      "/ray/heartbeat?session_id=abc"          => "/mason/heartbeat?session_id=abc",
+      "/ray/heartbeat/activities/7/feedback"   => "/mason/heartbeat/activities/7/feedback",
+      "/ray/insights"                          => "/mason/insights",
+      "/ray/pipeline"                          => "/mason/pipeline",
       "/xan/heartbeat"                         => "/mason/heartbeat",
       "/xan/heartbeat?session_id=abc"          => "/mason/heartbeat?session_id=abc",
       "/xan/heartbeat/activities?page=2"       => "/mason/heartbeat/activities?page=2",
@@ -109,10 +114,11 @@ class RaySeatTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the launcher enters the seat as alex" do
+  test "the launcher enters the learning heartbeat as mason, and no avenue names a retired slug" do
     get launcher_path
     assert_response :success
     assert_select "a[data-avenue=mason][href=?]", mason_heartbeat_path
-    assert_select "[data-avenue=mason]", 0
+    assert_select "[data-avenue=ray]", 0
+    assert_select "[data-avenue=xan]", 0
   end
 end

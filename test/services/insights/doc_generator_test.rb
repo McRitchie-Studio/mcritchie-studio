@@ -29,9 +29,9 @@ module Insights
       )
 
       assert_includes md, "## ✓ Do — patterns that worked"
-      assert_includes md, "- **write the failing test first** — red before green  _(feat-x · Alex)_"
+      assert_includes md, "- **write the failing test first** — red before green  _(feat-x · Mason)_"
       assert_includes md, "## ✗ Avoid — patterns that hurt"
-      assert_includes md, "- **did not check siblings**  _(Alex)_"
+      assert_includes md, "- **did not check siblings**  _(Mason)_"
       assert_includes md, "from 2 banked insights"
     end
 

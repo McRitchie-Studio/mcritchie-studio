@@ -3,8 +3,8 @@ require "test_helper"
 # [unit] AppRequest.origin_from reads only the known alex.build origin, from a
 # ref, a utm_source or the referrer's host, and the column refuses anything else.
 class AppRequestOriginTest < ActiveSupport::TestCase
-  def origin(params = {}, referer: nil)
-    AppRequest.origin_from(params: ActionController::Parameters.new(params), referer: referer)
+  def origin(params = nil, referer: nil, **query)
+    AppRequest.origin_from(params: ActionController::Parameters.new(params || query), referer: referer)
   end
 
   test "each alex.build spelling names the origin" do

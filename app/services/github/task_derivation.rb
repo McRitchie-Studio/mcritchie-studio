@@ -82,9 +82,13 @@ module Github
       match ? [match[1], match[2].to_i] : nil
     end
 
-    # The soul an email names, or nil. Canonicalised (a retired `alex` lands on
+    # The soul an email names, or nil. Canonicalised (a retired `ray` lands on
     # `alex`) and roster-checked, so a typo'd local part names nobody.
     def self.soul_from_email(email)
+      # The owner's commits (alex@mcritchie.studio) are the human's, not the
+      # `alex` persona's: his authorship excludes no reviewer.
+      return nil if AgentPerson.owner_email?(email)
+
       local = email.to_s.strip[SOUL_EMAIL, 1]
       return nil unless local
 

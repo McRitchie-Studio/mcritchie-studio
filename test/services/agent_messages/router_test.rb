@@ -86,7 +86,7 @@ class AgentMessages::RouterTest < ActiveSupport::TestCase
     refute routes.ignored?(GUILD, LOUNGE)
     assert_equal "avi", routes.default_soul(GUILD, DESK)
     assert_nil agent_routes.default_soul(GUILD, DESK), "an empty default_soul is none"
-    assert_equal %w[avi alex], routes.souls.sort
+    assert_equal %w[alex avi], routes.souls.sort
     assert_equal "avi", routes.mention_map(GUILD)["role"][AVI_ROLE]
   end
 end

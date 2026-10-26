@@ -140,7 +140,7 @@ class AgentAudienceTest < ActiveSupport::TestCase
     outside = outside_fences(text)
     assert_includes outside, "You are speaking with: owner"
     rules["audiences"]["owner"]["may"].each { |r| assert_includes outside, r }
-    assert_includes text, "Mason orchestrates."
+    assert_includes text, "Alex orchestrates."
     assert_includes text, "BOARD: 2 building"
     assert_includes text, "read the task board. Its output is below."
     rules["audiences"]["client"]["never"].each { |r| refute_includes text, r }
@@ -170,7 +170,7 @@ class AgentAudienceTest < ActiveSupport::TestCase
   end
 
   test "a public prompt has the public rules only, and a soul's public.md stands in for its role doc" do
-    File.write(File.join(@root, "docs/agents/agents/alex/public.md"), "<!-- note -->\nRitch helps visitors find their way.")
+    File.write(File.join(@root, "docs/agents/agents/alex/public.md"), "<!-- note -->\nAlex helps visitors find their way.")
     text = prompt(aud("public"))
     assert_includes text, "You are speaking with: public"
     assert_includes text, rules["audiences"]["public"]["never"].first
@@ -195,7 +195,7 @@ class AgentAudienceTest < ActiveSupport::TestCase
   # be named anywhere a client or the public can read: not in the rules, not in a
   # domain label or doc, not in a public.md, not in the code-written prompt text.
   # Built against the REAL repo, for every soul the domains config or the
-  # Responder knows. "acquisition" may appear only inside Alex McRitchie's approved
+  # Responder knows. "acquisition" may appear only inside Alex's approved
   # always-rule ("Never discuss acquisitions, ..."), which names no deal.
   test "a public or client prompt names no deal: no Commercial Welding, no acquisition outside the approved rule" do
     root = Rails.root.to_s

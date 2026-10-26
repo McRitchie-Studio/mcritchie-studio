@@ -28,7 +28,7 @@ class CyvasseFirstGameEmailTest < ActionDispatch::IntegrationTest
     assert_equal "How was your first game on the new Cyvasse?", render_for(@guest).subject
   end
 
-  test "the body thanks them, says it was rebuilt, and that Alex McRitchie reads every answer" do
+  test "the body thanks them, says it was rebuilt, and that Alex reads every answer" do
     body = text(render_for(@vey, @delivery))
     assert_includes body, "Hi veyjin,"
     assert_includes body, "Thank you for playing Cyvasse."
@@ -40,7 +40,7 @@ class CyvasseFirstGameEmailTest < ActionDispatch::IntegrationTest
   end
 
   test "the body is about sixty words" do
-    words = text(render_for(@vey, @delivery))[/Hi veyjin,.*?— Alex McRitchie/].split.size
+    words = text(render_for(@vey, @delivery))[/Hi veyjin,.*?— Alex/].split.size
     assert_operator words, :<=, 70
   end
 

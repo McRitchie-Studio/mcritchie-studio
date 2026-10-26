@@ -33,6 +33,15 @@ class AgentPerson < ApplicationRecord
   # chat is answered as the owner from any of them (LinkOwnerWebIdentities).
   OWNER_HUB_EMAILS = %w[alex@mcritchie.studio alex@turfmonster.media amcritchie@gmail.com].freeze
 
+  # Is this one of Alex McRitchie's own addresses? Since ritch-renamed-alex the
+  # persona soul is slugged `alex`, so the local part of his mailbox
+  # (alex@mcritchie.studio) spells an agent's slug. Every reader that turns an
+  # email into a soul asks this first: the owner's address is the human, never
+  # the agent (the agent keeps ray@mcritchie.studio).
+  def self.owner_email?(email)
+    OWNER_HUB_EMAILS.include?(email.to_s.strip.downcase)
+  end
+
   belongs_to :user, optional: true
   has_many :identities, class_name: "AgentPersonIdentity", inverse_of: :person, dependent: :delete_all
   has_many :notes, -> { order(:noted_at, :id) }, class_name: "AgentPersonNote", inverse_of: :person,

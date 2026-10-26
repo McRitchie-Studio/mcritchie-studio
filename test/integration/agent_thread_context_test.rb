@@ -76,7 +76,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     assert_match(%r{Exchange 1 of 1, .*\n<#{fence}>\nAlex: what is building\?\nYou answered: Two tasks are building\.\n</#{fence}>},
                  prompt, "the first exchange rides in the thread layer, fenced")
     refute_includes prompt, "BEA SECRET", "another person's message in the same channel is not in this ledger"
-    assert_match(%r{== THE MESSAGE TO ANSWER \(\[discord channel #{DESK}\]\) ==\n<#{fence}>\nFrom: Alex McRitchie\nwhich one is first\?\n</#{fence}>},
+    assert_match(%r{== THE MESSAGE TO ANSWER \(\[discord channel #{DESK}\]\) ==\n<#{fence}>\nFrom: Alex\nwhich one is first\?\n</#{fence}>},
                  prompt)
     refute_includes runner.prompts.first, "Exchange 1", "the first answer had no ledger yet"
 
@@ -120,7 +120,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     stated.person.notes.delete_all
     say("and again: my favorite color?", channel_ref: QUIET)
     heartbeat(runner).run
-    assert_includes runner.prompts.last, "Alex McRitchie: my favorite color is purple\nYou answered: Purple, noted."
+    assert_includes runner.prompts.last, "Alex: my favorite color is purple\nYou answered: Purple, noted."
     assert_includes runner.prompts.last, "(no notes about this person yet)"
   end
 
@@ -149,14 +149,14 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
 
   test "the notes about the sender ride in the user layer, fenced, and never about another person" do
     bea = say("I run the welding shop", author: BEA, name: "Bea")
-    runner = EnvelopeRunner.new("Got it.\n===NOTES===\n[\"Runs the welding shop.\", \"Alex McRitchie is the owner.\"]", "Hi.")
+    runner = EnvelopeRunner.new("Got it.\n===NOTES===\n[\"Runs the welding shop.\", \"Alex is the owner.\"]", "Hi.")
     heartbeat(runner).run
-    assert_equal [ "Runs the welding shop.", "Alex McRitchie is the owner." ], bea.reload.person.notes.map(&:body)
+    assert_equal [ "Runs the welding shop.", "Alex is the owner." ], bea.reload.person.notes.map(&:body)
 
     alex = say("hi")
     heartbeat(runner).run
-    assert_nil alex.reload.person.notes.first, "a fact about Alex McRitchie from Bea's run is filed under Bea"
-    refute_includes runner.prompts.last, "welding", "Bea's notes are not in Alex McRitchie's context"
+    assert_nil alex.reload.person.notes.first, "a fact about Alex from Bea's run is filed under Bea"
+    refute_includes runner.prompts.last, "welding", "Bea's notes are not in Alex's context"
   end
 
   test "a reply with a decorated NOTES block posts without it, and the facts are still stored" do
@@ -234,7 +234,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     assert_includes out.string, "session: 00000001-aaaa-bbbb-cccc-dddddddddddd"
     assert_includes out.string, "resume:  cd #{File.join(@mailbox, 'alex')} && claude --resume 00000001-aaaa-bbbb-cccc-dddddddddddd"
     assert_includes out.string, "Read the board first."
-    assert_match(/person:  Alex McRitchie \(#\d+\) discord:#{ALEX}/, out.string)
+    assert_match(/person:  Alex \(#\d+\) discord:#{ALEX}/, out.string)
 
     admin = User.find_by(role: "admin") || User.create!(email: "ctx-admin@example.com", name: "Ctx Admin", role: "admin")
     log_in_as(admin)

@@ -31,7 +31,7 @@ class FathomConnectionTest < ActiveSupport::TestCase
   end
 
   test "[unit] signing the same account in again replaces its token, one row per account" do
-    FathomConnection.store!(grant, account: "Alex McRitchie@McRitchie.studio", by: "alex", now: NOW)
+    FathomConnection.store!(grant, account: "Alex@McRitchie.studio", by: "alex", now: NOW)
     second = FathomConnection.store!(grant(refresh_token: "second"), account: "alex@mcritchie.studio", by: "alex", now: NOW + 1.hour)
 
     assert_equal 1, FathomConnection.count

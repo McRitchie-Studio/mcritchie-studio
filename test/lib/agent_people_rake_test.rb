@@ -37,7 +37,7 @@ class AgentPeopleRakeTest < ActiveSupport::TestCase
 
   test "notes lists each note with its id, date, source and soul" do
     out = run_task("agent_people:notes", { "PERSON" => @person.id.to_s })
-    assert_includes out, "##{@person.id} Alex McRitchie: 2 note(s)"
+    assert_includes out, "##{@person.id} Alex: 2 note(s)"
     assert_match(/note #{@notes.first.id}  \d{4}-\d\d-\d\d  from ##{@message.id}  alex  Favorite color is purple\./, out)
   end
 
@@ -59,7 +59,7 @@ class AgentPeopleRakeTest < ActiveSupport::TestCase
   test "role sets a person's role, a client with its DOMAIN, and refuses a bad one" do
     Rake::Task["agent_people:role"].reenable
     out = run_task("agent_people:role", { "PERSON" => @person.id.to_s, "ROLE" => "team" })
-    assert_includes out, "##{@person.id} Alex McRitchie: role public -> team"
+    assert_includes out, "##{@person.id} Alex: role public -> team"
     assert_equal "team", @person.reload.role
 
     out = run_task("agent_people:role", { "PERSON" => @person.id.to_s, "ROLE" => "client", "DOMAIN" => "turf_monster" })

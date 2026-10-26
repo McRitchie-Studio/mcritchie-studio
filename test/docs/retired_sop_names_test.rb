@@ -52,7 +52,7 @@ class RetiredSopNamesTest < ActiveSupport::TestCase
 
   test "[unit] the retired-name scan bites every retired name and spares the live ones" do
     probes = ["the `g1_cert` gate", "see gates/g1-cert.md", "the G1 Cert chip", "run `qa-deploy`",
-              "`archive-completed` sweeps", "launch `Alex Heartbeat`", "launch `Xan Heartbeat`"]
+              "`archive-completed` sweeps", "launch `Ray Heartbeat`", "launch `Xan Heartbeat`"]
     probes.each do |probe|
       refute_empty retired_hits([["probe", probe]]), "the scan missed #{probe.inspect}"
     end

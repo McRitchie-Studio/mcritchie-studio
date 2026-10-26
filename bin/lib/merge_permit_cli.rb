@@ -32,6 +32,10 @@ class MergePermitCli
   USAGE = "usage: bin/merge-permit <task-slug> --agent <soul> --head <validated-sha> [--json]"
 
   SOUL_EMAIL = /([a-z0-9][a-z0-9-]*)@mcritchie\.studio/i
+  # Alex McRitchie's own mailbox: its local part spells the `alex` persona's slug
+  # since ritch-renamed-alex, but a commit from it is the human's (mirrors
+  # AgentPerson.owner_email?; this file runs without Rails).
+  OWNER_EMAIL = /\balex@mcritchie\.studio\b/i
 
   def initialize(board:, github:, souls:, out: $stdout, err: $stderr)
     @board = board
@@ -109,7 +113,7 @@ class MergePermitCli
   def authors(task, commit_text)
     devops = task.dig("metadata", "devops") || {}
     stamped = [devops["built_by"]] + Array(devops["builders"]) + Array(devops["fix_forward"])
-    derived = commit_text.to_s.scan(SOUL_EMAIL).flatten
+    derived = commit_text.to_s.gsub(OWNER_EMAIL, "").scan(SOUL_EMAIL).flatten
     (stamped + derived).map { |name| MergePermission.canonical(name) }.select { |name| @souls.include?(name) }.uniq
   end
 

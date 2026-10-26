@@ -38,7 +38,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
       "content" => content, "answer" => answer, "status" => status }
   end
 
-  # The owner by default: these tests read the layers as Alex McRitchie's prompt has them.
+  # The owner by default: these tests read the layers as Alex's prompt has them.
   # The audience tests (agent_audience_test.rb) cover the others.
   OWNER = AgentMailbox::Audience.new(role: "owner")
 
@@ -52,7 +52,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
 
   test "the layers come in order, each labeled, with the message last" do
     context = { "place" => "[discord #lobster-tank]",
-                "user" => { "display_name" => "Alex McRitchie M", "facts" => [ { "body" => "Owner." }, { "body" => "Terse." } ] },
+                "user" => { "display_name" => "Alex M", "facts" => [ { "body" => "Owner." }, { "body" => "Terse." } ] },
                 "person" => { "turns" => [ turn(1) ], "summary" => { "turns" => 0, "lines" => [] } },
                 "thread" => { "place" => "[discord #lobster-tank]", "turns" => [ turn(2, place: "[discord #lobster-tank]") ] } }
     prompt = builder(context: context).prompt
@@ -63,14 +63,14 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
     positions = labels.map { |l| prompt.index(l) }
     assert positions.all?, "every label is present: #{labels.zip(positions).inspect}"
     assert_equal positions, positions.sort
-    assert_includes prompt, "Mason orchestrates."
+    assert_includes prompt, "Alex orchestrates."
     assert_includes prompt, "The hub and its agents."
     refute_includes prompt, "authoring note", "a doc's HTML comments stay out"
     assert_match(%r{<#{FENCE}>\nAlex M:\n- Owner\.\n- Terse\.\n</#{FENCE}>}, prompt)
     assert_match(%r{Exchange 1 of 1, \[discord #release-notes\], .*:\n<#{FENCE}>\nAlex: question 1\nYou answered: answer 1\n</#{FENCE}>},
                  prompt)
     assert_match(%r{It is the conversation you are answering\.\n\nTurn 1 of 1, .*:\n<#{FENCE}>\nAlex: question 2\n}, prompt)
-    assert_match(%r{<#{FENCE}>\nFrom: Alex McRitchie\nwhat next\?\n</#{FENCE}>\s*\z}, prompt)
+    assert_match(%r{<#{FENCE}>\nFrom: Alex\nwhat next\?\n</#{FENCE}>\s*\z}, prompt)
   end
 
   test "person-written text appears only inside fences, and a planted fence marker is defused" do
@@ -116,7 +116,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
 
     prompt = builder.prompt
 
-    assert_includes prompt, "Mason orchestrates \u2014 café \u{1F680}."
+    assert_includes prompt, "Alex orchestrates \u2014 café \u{1F680}."
     assert_includes prompt, "The hub \u2014 naïve."
     refute_includes prompt, "note é"
     assert_equal Encoding::UTF_8, prompt.encoding
@@ -221,8 +221,8 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
                 "ledger" => { "turns" => [ turn(1) ], "pin" => turn(2), "summary" => { "turns" => 0, "lines" => [] } } }
     b = builder(context: context)
     assert_equal "<#{FENCE}>\nAlex:\n- Owner.\n- Terse.\n</#{FENCE}>", b.user_layer
-    assert_includes b.person_layer, "Alex McRitchie: question 1"
-    assert_includes b.thread_layer, "Alex McRitchie: question 2"
+    assert_includes b.person_layer, "Alex: question 1"
+    assert_includes b.thread_layer, "Alex: question 2"
   end
 
   test "each turn is marked from the sender or from someone else, outside the fence; an unflagged turn is unmarked" do
@@ -369,7 +369,7 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
   # The prompt names a soul by its roster name (config/souls.yml), and by its slug
   # only when the roster does not name it.
   test "the display name is the roster's name, else the slug's" do
-    assert builder.prompt.start_with?("You are Alex,"), "no roster under the root: the slug's name (slug alex until the slug rename)"
+    assert builder.prompt.start_with?("You are Alex,"), "no roster under the root: the slug's name"
 
     File.write(File.join(@root, "config/souls.yml"), { "souls" => [ { "slug" => "alex", "name" => "Alex" } ] }.to_yaml)
     assert builder.prompt.start_with?("You are Alex,")

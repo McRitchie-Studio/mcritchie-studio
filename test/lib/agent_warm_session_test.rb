@@ -156,7 +156,7 @@ class AgentWarmSessionTest < ActiveSupport::TestCase
     assert_includes warm, full[/^HOW TO ANSWER$.*?(?=^== USER: )/m], "the rules are the cold prompt's, byte for byte"
     assert_includes warm, "== USER:"
     assert_includes warm, "thread turn"
-    assert_match(/== THE MESSAGE TO ANSWER .*\n<#{FENCE}>\nFrom: Alex McRitchie\nwhat next\?\n<\/#{FENCE}>\n\z/m, warm)
+    assert_match(/== THE MESSAGE TO ANSWER .*\n<#{FENCE}>\nFrom: Alex\nwhat next\?\n<\/#{FENCE}>\n\z/m, warm)
     assert_not_includes warm, "== PERSON:"
     assert_not_includes warm, "older question", "PERSON is the session's already"
     assert_not_includes warm, "Avi is the CTO.", "the role doc rode in the session's first turn"

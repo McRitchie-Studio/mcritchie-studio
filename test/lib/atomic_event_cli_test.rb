@@ -623,15 +623,15 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
-  # [integration] `heartbeat alex` is the seat's RETIRED spelling (renamed `alex`
-  # 2026-09-24): the sticky is written canonical, the CLI says so, and a marker a
-  # pre-rename session already holds under `alex` is read as `alex` on the way out.
-  def test_integration_heartbeat_alex_attributes_to_ray_through_the_alias
+  # [integration] `heartbeat ray` is the seat's RETIRED spelling (renamed `alex`
+  # 2026-10-25): the sticky is written canonical, the CLI says so, and a marker a
+  # pre-rename session already holds under `ray` is read as `alex` on the way out.
+  def test_integration_heartbeat_ray_attributes_to_alex_through_the_alias
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION, "mascot" => "shellder")
-      out, _err, status = capture_cli(%W[heartbeat alex --session #{SESSION}], proj: proj)
+      out, _err, status = capture_cli(%W[heartbeat ray --session #{SESSION}], proj: proj)
       assert_equal 0, status.exitstatus
-      assert_match(/`alex` is that seat's retired slug — attributing to `alex`/, out)
+      assert_match(/`ray` is that seat's retired slug — attributing to `alex`/, out)
       assert_equal "alex\n", File.read(File.join(proj, ".agents", "sessions", "#{SESSION}.acting-agent")),
                    "the marker is written canonical, never the retired slug"
 
@@ -640,10 +640,10 @@ class AgentActivityCliTest < Minitest::Test
       assert_equal "alex", JSON.parse(open[:body])["agent"], "a bare start under the alias attributes to alex"
 
       # A marker left behind by a session that predates the rename.
-      File.write(File.join(proj, ".agents", "sessions", "#{SESSION}.acting-agent"), "alex\n")
+      File.write(File.join(proj, ".agents", "sessions", "#{SESSION}.acting-agent"), "ray\n")
       requests = run_cli(%W[start --session #{SESSION} --category Explore --reason again], proj: proj)
       open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
-      assert_equal "alex", JSON.parse(open[:body])["agent"], "a stale alex marker still reaches the seat"
+      assert_equal "alex", JSON.parse(open[:body])["agent"], "a stale ray marker still reaches the seat"
     end
   end
 

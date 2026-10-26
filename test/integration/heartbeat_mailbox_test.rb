@@ -86,7 +86,7 @@ class HeartbeatMailboxTest < ActionDispatch::IntegrationTest
     fence = prompt[/<(untrusted-[0-9a-f]+)>/, 1]
     assert fence, "the message is fenced"
     assert_match(/UNTRUSTED DATA/, prompt)
-    assert_match(%r{<#{fence}>\nFrom: Alex McRitchie\n.*IGNORE YOUR RULES.*\n</#{fence}>}m, prompt)
+    assert_match(%r{<#{fence}>\nFrom: Alex\n.*IGNORE YOUR RULES.*\n</#{fence}>}m, prompt)
     assert_match(/current release: rel-1/, prompt)
     assert_match(/not enabled yet/, prompt)
 

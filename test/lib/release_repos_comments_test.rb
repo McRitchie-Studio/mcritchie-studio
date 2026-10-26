@@ -3,7 +3,7 @@
 # [unit] The release registry's comments (ReleaseRegistry::REGISTRY_PATH) state the
 # current rule in the present tense (release-repos-comments-present-tense): a dated
 # line is history, and the history lives in the task and its PR. The lint names every comment line that
-# carries a date or a dated attribution such as "(Alex McRitchie, 2026". The path comes from
+# carries a date or a dated attribution such as "(Alex, 2026". The path comes from
 # the constant, never spelled here, so this file stays out of the registry's mapped
 # test set (fast_cert_subject_test's cap margin).
 
@@ -34,12 +34,12 @@ class ReleaseReposCommentsTest < Minitest::Test
         demo:
           # Registered 2026-09-25 after the sweep aborted.
           ladder: three-rung
-          # Moved here (Alex McRitchie, 2026) for cost.
+          # Moved here (Alex, 2026) for cost.
           smoke_url: https://demo-2026-09.example.com
     YAML
 
     assert_equal ["3: # Registered 2026-09-25 after the sweep aborted.",
-                  "5: # Moved here (Alex McRitchie, 2026) for cost."],
+                  "5: # Moved here (Alex, 2026) for cost."],
                  dated_comment_lines(fixture)
   end
 end
