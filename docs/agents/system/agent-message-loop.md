@@ -1654,7 +1654,7 @@ Nothing reads Discord until a bot token is set. The code ships inert.
 ## Test protocol
 
 Post in any channel or thread of the McRitchie Studio guild (`lobster-tank` is the
-quiet one), mentioning the Alex bot user (`@Alex`). The gateway stores it within a
+quiet one), mentioning the Alex bot user (`@Ritch` in Discord: the bot keeps that name until Alex McRitchie rules on renaming it). The gateway stores it within a
 second or two; with the dispatcher installed the answer follows and nothing else is needed;
 the rows below run the heartbeat by hand, with the dispatcher stopped
 (`bin/dispatcher uninstall`) so the two do not compete. Avi, Alex and Turf are
@@ -1662,8 +1662,8 @@ routed there; the rows use Alex, and any routed soul works the same way.
 
 | Scenario | Do | Expect |
 |----------|----|--------|
-| Serial | Post `@Alex what is building?`. Run `bin/heartbeat alex --channel discord`, then run it again | The first run answers in the channel; the second prints `nothing for alex` |
-| Parallel | Post `@Alex one` and `@Alex two` as separate messages. Start two `bin/heartbeat alex --channel discord --once` at the same moment | Each message is answered once. Neither is read twice and no reply is doubled |
+| Serial | Post `@Ritch what is building?` (the bot's Discord name). Run `bin/heartbeat alex --channel discord`, then run it again | The first run answers in the channel; the second prints `nothing for alex` |
+| Parallel | Post `@Ritch one` and `@Ritch two` as separate messages. Start two `bin/heartbeat alex --channel discord --once` at the same moment | Each message is answered once. Neither is read twice and no reply is doubled |
 | Two agents | Needs a second soul routed in the guild (a role, or a second bot user such as Mack's). Then post to each and run `bin/heartbeat alex --channel discord` | Alex answers only its own message; the other stays `received` until that soul's heartbeat runs |
 | Unaddressed | Post a message that mentions nobody and replies to nothing | No row is stored; the admin page does not list it |
 

@@ -44,7 +44,7 @@ team: he breaks it down into cards for the builders.
 
 ## Contact
 - **Email**: `ray@mcritchie.studio`, the seat's agent address since before the rename (`config/agent_routes.yml`, `agent_addresses`). Never `alex@mcritchie.studio`: that is Alex McRitchie's own mailbox, and mail from it is his. The alex.build addresses (`hello@`, `hey@`, `help@`, `build@`) come with a later card.
-- **Discord**: the shared bot (`agents.discord.xan`) is Alex's own app; a mention of it routes to him (`config/agent_routes.yml`)
+- **Discord**: the shared bot (`agents.discord.xan`) is Alex's own app; a mention of it routes to him (`config/agent_routes.yml`). Its Discord name is still Ritch: the bot, its role and its 1Password item are renamed only on Alex McRitchie's ruling.
 
 ## Skills
 - Client Conversation

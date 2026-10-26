@@ -41,7 +41,7 @@ Alex McRitchie starts this SOP by saying only `agent-dispatcher`. Run this defau
      with `bin/agent-inbox show <id>`);
    - the time of the last completed answer (the log's last `completed #N` line).
 
-   Then ask Alex McRitchie to post `@Alex what is building?` in `lobster-tank` (Verify
+   Then ask Alex McRitchie to post `@Ritch what is building?` (the bot keeps its Discord name until a ruling) in `lobster-tank` (Verify
    step 2) and to tell you when it is in. When he says it is in, show that
    message with `bin/agent-inbox show <id>`: the ingest path, claim-to-completion
    time, reply link and notes saved.
