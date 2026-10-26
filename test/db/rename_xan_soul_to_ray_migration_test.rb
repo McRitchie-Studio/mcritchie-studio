@@ -10,9 +10,14 @@ require Rails.root.join("db/migrate/20261018180000_rename_xan_soul_to_ray.rb").t
 class RenameXanSoulToRayMigrationTest < ActiveSupport::TestCase
   M = RenameXanSoulToRay
 
+  # The world this migration ran in (2026-10-18): the seat seeded under `ray`.
+  # The fixtures seed it under `alex` since RenameRaySoulToAlex, so the `ray` row
+  # this migration's target side reads is planted here, as the fixtures once did.
   setup do
     Agent.where(slug: "xan").delete_all
     @now = Time.current
+    ins("agents", name: "Ritch", slug: "ray", avatar: "/agents/ray.webp") unless Agent.exists?(slug: "ray")
+    TaskGrade.connection.change_column_default(:task_grades, :grader, "ray")
     plant_xan_rows
   end
 
@@ -217,7 +222,7 @@ class RenameXanSoulToRayMigrationTest < ActiveSupport::TestCase
 
   test "the task_grades default follows the slug both ways" do
     default = -> { TaskGrade.connection.columns(:task_grades).find { |c| c.name == "grader" }.default }
-    assert_equal "ray", default.call, "schema.rb carries the migrated default"
+    assert_equal "ray", default.call, "the default this migration left (RenameRaySoulToAlex later moved it to mason)"
 
     migrate(:down)
     assert_equal "xan", default.call
