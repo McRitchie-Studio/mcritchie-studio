@@ -10,7 +10,7 @@ module EmailImages
 
     # A reference photo titled like this is the character's approved canonical
     # sheet ("Canonical sheet v3 (white jersey, pads, no helmet) - approved by
-    # Alex 2026-10-07"). The newest one wins.
+    # Alex McRitchie 2026-10-07"). The newest one wins.
     CANONICAL_TITLE = /\Acanonical sheet/i
 
     # One picture on the page, whatever table it came from.
@@ -35,7 +35,7 @@ module EmailImages
       end
     end
 
-    # THE MODEL IMAGE, in the order Alex asked for: a reference titled
+    # THE MODEL IMAGE, in the order Alex McRitchie asked for: a reference titled
     # "Canonical sheet…" (newest first), else the newest approved character
     # sheet of the character, else the look's first reference. Nil when the
     # character has nothing drawn yet.

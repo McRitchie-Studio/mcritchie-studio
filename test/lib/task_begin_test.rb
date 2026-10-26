@@ -174,7 +174,7 @@ class TaskBeginTest < Minitest::Test
     when "PATCH"
       if path.end_with?("/unblock")
         # The board refuses an escalation 409 (Task#builder_unblock_refusal).
-        return ["409 Conflict", JSON.generate("error" => "carries an escalation, which only Alex answers")] if @task["escalated"]
+        return ["409 Conflict", JSON.generate("error" => "carries an escalation, which only Alex McRitchie answers")] if @task["escalated"]
 
         @unblocked_by = JSON.parse(body)["by"]
         @task.delete("blocked_at")
@@ -588,7 +588,7 @@ class TaskBeginTest < Minitest::Test
 
     assert status.success?, err
     assert_includes err, "block stands"
-    assert_includes err, "only Alex answers"
+    assert_includes err, "only Alex McRitchie answers"
     assert_equal "2026-10-07T08:00:00Z", @task["blocked_at"]
   end
 

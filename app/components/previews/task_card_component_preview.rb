@@ -11,7 +11,7 @@ class TaskCardComponentPreview < ViewComponent::Preview
     "flying" => TypeColour.new(key: "flying", color: "#A98FF3", rank: 200, emoji: "💨"),
     "water" => TypeColour.new(key: "water", color: "#6390F0", rank: 10, emoji: "💧")
   }.freeze
-  ROSTER = %w[Carl Avi Steffon Ritch].freeze
+  ROSTER = %w[Carl Avi Steffon Alex].freeze
 
   # A new task with its mascot and nobody on it.
   def designed

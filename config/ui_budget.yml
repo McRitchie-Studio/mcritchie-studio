@@ -7,7 +7,7 @@
 #
 # Epic: .agents/epics/ui-consistency-program.md (piece 4). Method and first
 # numbers: .agents/epics/audits/platform-audit-2026-10-24/lane-ui-infrastructure.md,
-# "Browser evidence". Alex, 2026-10-24: "a big fan" of budgets; the numbers are
+# "Browser evidence". Alex McRitchie, 2026-10-24: "a big fan" of budgets; the numbers are
 # proposed, not yet ratified, so a change to one is a one-line edit here.
 #
 # Sizes are bytes as the wire carries them (encoded, from Playwright's

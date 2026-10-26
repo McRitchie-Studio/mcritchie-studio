@@ -1,6 +1,6 @@
 require "test_helper"
 
-# [integration] A signed-out Build My App (tasks build-launch-sign-in, Alex
+# [integration] A signed-out Build My App (tasks build-launch-sign-in, Alex McRitchie
 # 2026-10-18, and build-sign-in-modal, 2026-10-19): /build stays public, the
 # press opens the sign-in MODAL (an open_modal Turbo Stream, nothing added to the
 # thread) and remembers itself in this browser's session
@@ -22,7 +22,7 @@ class BuildLaunchSignInTest < ActionDispatch::IntegrationTest
     OmniAuth.config.mock_auth[:google_oauth2] = nil
   end
 
-  # A signed-out draft with every step set, and Ritch's summary card in its thread.
+  # A signed-out draft with every step set, and Alex's summary card in its thread.
   def ready_draft!(subdomain: "league-hub")
     post build_path, params: { app_request: { prompt: PROMPT } }
     draft = AppRequest.recent.first

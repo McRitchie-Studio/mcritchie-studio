@@ -27,7 +27,7 @@ require_relative "remedy"
 #
 #     ambient .env GITHUB_TOKEN        → `none` IS UNVERIFIED
 #     GH_TOKEN=<working>               → `none` IS UNVERIFIED, byte for byte
-#     GITHUB_TOKEN=<working>           → `none` IS CONTRADICTED ("…name: ray")
+#     GITHUB_TOKEN=<working>           → `none` IS CONTRADICTED ("…name: alex")
 #
 # ── THE RULE: THE CONSUMER PICKS THE VARIABLE ────────────────────────────────
 #

@@ -33,7 +33,7 @@ class LogosIconAtomicUnitTest < Minitest::Test
     end
   end
 
-  # Alex's case: Commercial Welding v2 with Alt words and the Original helmet. The icon is the Original's, the layout
+  # Alex McRitchie's case: Commercial Welding v2 with Alt words and the Original helmet. The icon is the Original's, the layout
   # is the Original's (it follows the icon's width), and the words take Alt's fills.
   def test_alt_words_with_the_original_icon_draw_the_original_helmet
     logo = Navbar.new("welding_v2")

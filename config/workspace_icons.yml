@@ -71,7 +71,7 @@ workspaces:
     name: McRitchie Studio
     domain: mcritchie.studio
     # The treasure chest — the same art public/studio-logo.svg embeds, in the
-    # violet Alex supplied on 2026-09-25.
+    # violet Alex McRitchie supplied on 2026-09-25.
     badge: lib/workspace_icons/badges/studio.png
     accent: "#8E83FC"
     # The client's own logo on /stack and /stack/matrix (ClientLogo): a brand in

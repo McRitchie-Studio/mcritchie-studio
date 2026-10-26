@@ -93,7 +93,7 @@
 #     revert its merge commit on `release` (printed guidance) and re-run
 #     `bin/release prepare`.
 #
-#   bin/release ship [--by NAME] [--mode ask|timed|auto|cleared] [--clearance "<Alex's words>"] [--cleared-by NAME] [--prod] [--dry-run]
+#   bin/release ship [--by NAME] [--mode ask|timed|auto|cleared] [--clearance "<Alex McRitchie's words>"] [--cleared-by NAME] [--prod] [--dry-run]
 #     Steffon's production-deploy: promotes the QA-green (assembled) RC to production:
 #     publish each gem's FINAL version (contents compared with the candidate QA ran,
 #     then the served checksum confirmed), re-lock each consumer to it in a commit
@@ -3358,7 +3358,7 @@ def ci_poll_ceiling  = ENV.fetch("RELEASE_CI_POLL_CEILING", "7200").to_i
 # still collapses a repo with no readable workflows to one read) and ci_poll_ceiling the
 # hard cap. Workflows are read from the repo's own clone AT THE SHA, so the budget is the
 # one for the tree under test; any read fault keeps the floor. G4 (test_gate) does not
-# use this: production-deploy runs inside Alex's 30-minute window.
+# use this: production-deploy runs inside Alex McRitchie's 30-minute window.
 def ci_poll_budget_for(repo, sha)
   path = repo_path(repo)
   return ci_poll_timeout unless Dir.exist?(path)
@@ -9053,14 +9053,14 @@ def ship
   rescue ArgumentError => e
     abort!(e.message)
   end
-  # `cleared`: Alex's clearance in chat is the grant. The words are required and
+  # `cleared`: Alex McRitchie's clearance in chat is the grant. The words are required and
   # travel onto the release with the completion, so a bare `--mode cleared` aborts
   # here, before anything moves, rather than reading as a silent `auto`.
   clearance = opt_value("--clearance").to_s.strip
   cleared_by = opt_value("--cleared-by").to_s.strip
   cleared_by = "alex" if cleared_by.empty?
   if ship_mode == "cleared" && clearance.empty?
-    abort!("--mode cleared needs --clearance \"<Alex's words>\": his clearance in chat is the grant, " \
+    abort!("--mode cleared needs --clearance \"<Alex McRitchie's words>\": his clearance in chat is the grant, " \
            "and the words are recorded on the release")
   end
   # The words are recorded only in cleared mode; any other mode would drop them.
@@ -9245,7 +9245,7 @@ def ship
   #     BEFORE any deploy. `--mode ask|timed|auto|cleared` decides HOW (ship_authority!):
   #     ask is the confirm prompt (honours --yes + --dry-run as before), timed posts
   #     the request and waits on the operator window, auto proceeds on green,
-  #     cleared records Alex's chat clearance and proceeds.
+  #     cleared records Alex McRitchie's chat clearance and proceeds.
   step("ship authority: Steffon's ship gate passed on the frozen SHA — taking production authority (--mode #{ship_mode})")
   ship_authority!(rel_slug, by, ship_mode, clearance: clearance, cleared_by: cleared_by)
 
@@ -9649,7 +9649,7 @@ end
 # bin/install-agent-docs after every prod ship, so adapter/skill/SOP merges stop
 # leaving the installed docs (~/.claude + ~/.codex skills, the projects-root
 # AGENTS.md/CLAUDE.md) drifted until someone happens to run the installer by hand
-# (previously the only owned run was Alex's share-insights act).
+# (previously the only owned run was Alex McRitchie's share-insights act).
 #
 # It installs from the hub's SHIP WORKSPACE — the tree pinned at the exact SHA that
 # just shipped — falling back to the primary if there is no workspace (a ship that

@@ -13,7 +13,7 @@
 # The title crosses only for a task whose repos are exactly this app's repo. A
 # task that names any other repo is platform work shared with other apps, where
 # other clients' names live, so an owner sees "Shared platform work" instead of
-# its title (Alex's default, 2026-10-16; Carl's review of client-devops-view-lanes).
+# its title (Alex McRitchie's default, 2026-10-16; Carl's review of client-devops-view-lanes).
 # A title that does cross is still scrubbed, because it is free text an agent
 # wrote: a URL or a filesystem path becomes "[link]", a credential mention turns
 # the whole title into "Security maintenance", a soul's name becomes "the team",

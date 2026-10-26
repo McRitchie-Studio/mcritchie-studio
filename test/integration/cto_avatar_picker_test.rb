@@ -2,7 +2,7 @@ require "test_helper"
 require_relative "../support/client_cto_fixtures"
 
 # [integration] The CTO avatar bank end to end (task cto-animal-avatar-bank,
-# Alex 2026-10-20): /build's "New set", an animal chosen at /build showing in the
+# Alex McRitchie 2026-10-20): /build's "New set", an animal chosen at /build showing in the
 # app's CTO chat, an older portrait still showing, and the owner re-picking the
 # avatar from the chat, which an avatar ask opens in code (no model).
 class CtoAvatarPickerTest < ActionDispatch::IntegrationTest

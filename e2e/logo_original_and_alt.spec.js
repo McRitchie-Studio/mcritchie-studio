@@ -1,7 +1,7 @@
 // [e2e] Logo colourings and kit defaults (task logo-original-and-alt): the Colouring control
 // switches every logo on a tab, and its download, between the brand's Original and Alt;
 // Studio, which has no original, offers Alt only and says so; and a saved kit choice is the
-// tab's default (Alex, 13:11: "The goal of the logo modification is to set the defaults").
+// tab's default (Alex McRitchie, 13:11: "The goal of the logo modification is to set the defaults").
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
 

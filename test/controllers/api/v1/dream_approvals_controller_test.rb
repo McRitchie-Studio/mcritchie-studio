@@ -5,7 +5,7 @@ module Api
     # [integration] GET /api/v1/dream_approvals — the pending approvals bin/dream
     # apply-approvals writes into the files. Bearer-gated and read-only. The one API
     # route that creates an approval is POST /api/v1/dream_rulings, and only on
-    # Alex's quoted word (dream_rulings_controller_test.rb).
+    # Alex McRitchie's quoted word (dream_rulings_controller_test.rb).
     class DreamApprovalsControllerTest < ActionDispatch::IntegrationTest
       BANK = Rails.root.join("test/fixtures/dreams").to_s
 
@@ -65,7 +65,7 @@ module Api
         end
         assert_equal [ "api/v1/dream_rulings#create" ],
                      writers.map { |route| "#{route.defaults[:controller]}##{route.defaults[:action]}" },
-                     "the only API write that approves or retires is the chat ruling, which needs Alex's words"
+                     "the only API write that approves or retires is the chat ruling, which needs Alex McRitchie's words"
       end
     end
   end

@@ -54,7 +54,7 @@ module WorkspaceIcon
   MAX_SIZE = 4096
 
   # Badge geometry, as fractions of the canvas, taken from the reference image
-  # Alex supplied on 2026-09-25: the badge covers roughly the lower-right third
+  # Alex McRitchie supplied on 2026-09-25: the badge covers roughly the lower-right third
   # and overlaps the ring without hiding the keyhole.
   BADGE_DIAMETER = 0.40
   BADGE_MARGIN = 0.02

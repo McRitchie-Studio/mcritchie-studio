@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-# [component] The SVG routes default to the KIT (task kit-export-and-clear-lens; Alex 2026-10-12 00:55: his Commercial
+# [component] The SVG routes default to the KIT (task kit-export-and-clear-lens; Alex McRitchie 2026-10-12 00:55: his Commercial
 # Welding site drew "COMMERCIAL" white and "WELDING" orange, not his saved kit Navbar). Asked with no choice params,
 # /icon, /navbar and /stacked answer with the brand's saved kit logo in the asked tone; any choice param wins; a brand
 # with nothing saved answers byte for byte as before.
@@ -41,7 +41,7 @@ class LogosKitDefaultTest < ActionDispatch::IntegrationTest
                  "filename*=UTF-8''welding_v2-navbar-rule4-homogeneous-dark-original.svg", response.headers["Content-Disposition"]
   end
 
-  # Alex's own kit: Original, homogeneous: the words are solid white on a dark page, the helmet is the Original's.
+  # Alex McRitchie's own kit: Original, homogeneous: the words are solid white on a dark page, the helmet is the Original's.
   test "the saved Original homogeneous navbar draws solid white words and the Original helmet on dark" do
     save("welding_v2", :navbar, { rule: "4", text: "homogeneous", colouring: "original" })
     get navbar_logo_path("welding_v2", tone: "dark")

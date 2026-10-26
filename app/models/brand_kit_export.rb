@@ -2,7 +2,7 @@
 
 require "zip_kit"
 
-# A BRAND'S KIT AS FILES (task kit-export-and-clear-lens; Alex 2026-10-12 00:55: his Commercial Welding site drew an old
+# A BRAND'S KIT AS FILES (task kit-export-and-clear-lens; Alex McRitchie 2026-10-12 00:55: his Commercial Welding site drew an old
 # copy of the navbar, not the one his kit saves). An app takes its logo from here, never from a hand-made copy:
 #
 #   /logos/:brand/kit.zip                 every file below plus a README, in one download

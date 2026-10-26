@@ -7,7 +7,7 @@
 class AppMembership < ApplicationRecord
   ROLES = %w[owner].freeze
 
-  # The known owners, app slug => email (Alex, 2026-10-16). The table's own
+  # The known owners, app slug => email (Alex McRitchie, 2026-10-16). The table's own
   # migration seeds the same three; this is the re-seed and post-deploy step.
   OWNERS = {
     "mcritchie-studio" => "alex@mcritchie.studio",

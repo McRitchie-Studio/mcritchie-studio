@@ -25,7 +25,7 @@
 }
 
 /* ── The status card (app/views/build/_status_card.html.erb) ──────────────
-   Alex, 2026-10-19: the step in progress shows it, and the card celebrates.
+   Alex McRitchie, 2026-10-19: the step in progress shows it, and the card celebrates.
 
    The current step's tile (data-current, .build-tile-current): its border
    breathes a primary halo and its name shimmers, a light band sliding across
@@ -104,7 +104,7 @@
 }
 
 /* ── The gallery card's app theme (app/views/build/_gallery_card.html.erb) ──
-   Alex, 2026-10-20: each "Built with McRitchie Studio" card wears its app's
+   Alex McRitchie, 2026-10-20: each "Built with McRitchie Studio" card wears its app's
    own colours. A card with a palette (data-palette; config/build_examples.yml
    `palettes`) carries them as --gc-<key> custom properties: the lower panel
    is filled with the app's dark-mode page background in BOTH hub themes (the

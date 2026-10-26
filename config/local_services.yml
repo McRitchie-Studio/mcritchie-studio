@@ -57,7 +57,7 @@ services:
       claude_auth: claude.ai
       commands: [launchctl, claude]
       dotenv: [AGENT_API_SECRET]
-  # The automatic first version of every /build app (Alex 2026-10-19: restored by
+  # The automatic first version of every /build app (Alex McRitchie 2026-10-19: restored by
   # the burn-down like the dispatcher). It builds with the real `claude` on the
   # claude.ai subscription and publishes through the in-repo bin/client-bundle
   # under a per-run session it mints with the agent token, so it needs nothing

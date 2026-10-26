@@ -99,7 +99,7 @@ module AppCatalog
   end
 
   # Apps whose name must not reach a public post yet: nothing pairs Commercial
-  # Welding with the McRitchie names before the acquisition closes (Alex's
+  # Welding with the McRitchie names before the acquisition closes (Alex McRitchie's
   # standing default). Remove a slug here when its name may go public.
   UNANNOUNCED = %w[commercial-welding].freeze
 

@@ -2,7 +2,7 @@ require "test_helper"
 
 # [integration] GET /agents/activities — the reimagined cross-session activity feed.
 # Every narrated AgentActivity across ALL sessions, newest-first, with its raw actions
-# (also newest-first) drilled down underneath and inline Ritch/McRitchie grade cells on
+# (also newest-first) drilled down underneath and inline Mason/McRitchie grade cells on
 # BOTH. An optional ?sessions= (comma list) narrows to a multi-select of sessions. A
 # read-only meta surface BEHIND SIGN-IN, grading through the existing heartbeat endpoints.
 class AgentsActivitiesTest < ActionDispatch::IntegrationTest
@@ -433,12 +433,12 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
     act = action(ev)
     ActionGrade.create!(agent_action: act, grader: "mason", disposition: "not", slug: "needs a rethink here")
 
-    assert_equal 1, ActionGrade.for_action(act).by_grader("ray").count
+    assert_equal 1, ActionGrade.for_action(act).by_grader("mason").count
 
     post heartbeat_grade_path(act), params: { grader: "mason", intent: "clear" }, as: :json
 
     assert_response :success
-    assert_equal 0, ActionGrade.for_action(act).by_grader("ray").count
+    assert_equal 0, ActionGrade.for_action(act).by_grader("mason").count
     assert JSON.parse(response.body)["cleared"]
   end
 

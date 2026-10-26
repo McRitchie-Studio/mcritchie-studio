@@ -50,7 +50,7 @@ domains:
   mcritchie_studio:
     name: McRitchie Studio
     doc: docs/agents/domains/mcritchie-studio.md
-    # Avi, McRitchie Studio's CTO, is the front door (Alex, 2026-10-15). Ritch is a
+    # Avi, McRitchie Studio's CTO, is the front door (Alex McRitchie, 2026-10-15). Alex is a
     # helper (orchestration, docs review): still routed, answering from his role
     # and the domain doc, with no catalog.
     soul: avi
@@ -118,7 +118,7 @@ domains:
 
 souls:
   avi: mcritchie_studio
-  ray: mcritchie_studio
+  alex: mcritchie_studio
   carl: mcritchie_studio
   steffon: mcritchie_studio
   shannon: mcritchie_studio

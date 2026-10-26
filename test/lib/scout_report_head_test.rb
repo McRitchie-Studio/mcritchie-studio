@@ -16,7 +16,7 @@ class ScoutReportHeadTest < Minitest::Test
   HEAD = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
 
   def record(*extra)
-    Open3.capture3(RbConfig.ruby, SCRIPT, "--record-scout-report", "tidy-the-sop", "--scout-agent", "ray",
+    Open3.capture3(RbConfig.ruby, SCRIPT, "--record-scout-report", "tidy-the-sop", "--scout-agent", "alex",
                    "--outcome", "merge-ready", "--summary", "Prose only.", "--dry-run", "--json", *extra)
   end
 

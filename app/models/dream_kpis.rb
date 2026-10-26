@@ -8,9 +8,9 @@
 #                     activity in the window, since every session loads the
 #                     platform layer.
 #   mean grade        the mean of the grades sessions gave in the window (0 to 2).
-#   swaps per week    swaps and adds Alex approved over the last SWAP_WEEKS weeks,
+#   swaps per week    swaps and adds Alex McRitchie approved over the last SWAP_WEEKS weeks,
 #                     per week.
-#   approval latency  the median days from a dream's proposal to Alex's click, over
+#   approval latency  the median days from a dream's proposal to Alex McRitchie's click, over
 #                     the newest LATENCY_ROWS approvals. dream_approvals holds the
 #                     click; the proposal date is the date that opens the dream's
 #                     `source:` line (day resolution). An approval whose dream has no

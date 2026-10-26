@@ -105,7 +105,7 @@ async function checkFooterLogo(page, viewport, theme) {
   await expect(brand.locator("img.ftr-logo, .ftr-wordmark")).toHaveCount(0);
 
   // Sized like the icon-and-name block it replaced, inside its column, and
-  // centred in it with the social row (Alex 2026-10-15 08:21: no tagline,
+  // centred in it with the social row (Alex McRitchie 2026-10-15 08:21: no tagline,
   // centre justified).
   const box = await shown.boundingBox();
   expect(box.height).toBeGreaterThan(96);

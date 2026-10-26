@@ -162,7 +162,7 @@ class DreamBankTest < Minitest::Test
       assert_equal "proposed", DreamBank.parse(text, slug: "x").status, "#{value}: the page reads it as proposed"
 
       flipped = DreamBank.approve_text(text)
-      refute_nil flipped, "#{value}: apply-approvals skipped a dream the page let Alex approve"
+      refute_nil flipped, "#{value}: apply-approvals skipped a dream the page let Alex McRitchie approve"
       assert DreamBank.parse(flipped, slug: "x").approved?, value
     end
   end
@@ -180,10 +180,10 @@ class DreamBankTest < Minitest::Test
   end
 
   def test_unit_parse_reads_tags_as_lists
-    dream = DreamBank.parse(tagged("soul: [carl, ray]\nshape: ui+db\ntopic: review"), slug: "x")
+    dream = DreamBank.parse(tagged("soul: [carl, alex]\nshape: ui+db\ntopic: review"), slug: "x")
 
-    assert_equal %w[carl ray], dream.souls
-    assert_equal({ "soul" => %w[carl ray], "shape" => %w[ui+db], "topic" => %w[review] }, dream.tags)
+    assert_equal %w[carl alex], dream.souls
+    assert_equal({ "soul" => %w[carl alex], "shape" => %w[ui+db], "topic" => %w[review] }, dream.tags)
     refute dream.platform?
     assert DreamBank.parse(DREAM, slug: "y").platform?, "a dream with no soul tag is platform"
   end
@@ -200,7 +200,7 @@ class DreamBankTest < Minitest::Test
   def test_unit_reads_platform_and_soul_banks
     Dir.mktmpdir do |dir|
       write(dir, "platform/universal.md", DREAM)
-      write(dir, "carl/review.md", tagged("soul: [carl, ray]", question: "Carl's question?"))
+      write(dir, "carl/review.md", tagged("soul: [carl, alex]", question: "Carl's question?"))
       write(dir, "carl/later.md", tagged("soul: carl", question: "Proposed?").sub("status: approved", "status: proposed"))
       write(dir, "turf-monster/contest.md", tagged("soul: turf-monster", question: "A contest question?"))
       write(dir, "INDEX.md", DREAM)
@@ -210,7 +210,7 @@ class DreamBankTest < Minitest::Test
       assert_equal %w[carl carl platform turf-monster], DreamBank.all(dir: dir).map(&:home)
       assert_equal %w[universal], DreamBank.platform(dir: dir).map(&:slug)
       assert_equal %w[review], DreamBank.soul("carl", dir: dir).map(&:slug), "a proposed dream reaches no soul"
-      assert_equal %w[review], DreamBank.soul("alex", dir: dir).map(&:slug), "alex is ray"
+      assert_equal %w[review], DreamBank.soul("alex", dir: dir).map(&:slug), "alex is alex"
       assert_equal %w[contest], DreamBank.soul("turf_monster", dir: dir).map(&:slug)
       assert_empty DreamBank.soul("jasper", dir: dir)
     end
@@ -297,13 +297,13 @@ class DreamBankTest < Minitest::Test
     assert_empty DreamBank.budget_errors(approved_dreams(15, "") + approved_dreams(20, "soul: carl") +
                                          approved_dreams(5, STEP))
 
-    over = DreamBank.budget_errors(approved_dreams(16, "") + approved_dreams(21, "soul: [carl, ray]") +
+    over = DreamBank.budget_errors(approved_dreams(16, "") + approved_dreams(21, "soul: [carl, alex]") +
                                    approved_dreams(6, STEP) + approved_dreams(5, "sop: building-sop\nstep: submit"))
     assert_equal 4, over.size, over.inspect
     assert_includes over, "layer platform holds 16 approved dreams; its budget is 15. " \
                           "A full layer means a swap, not an add: retire one before approving another."
     assert(over.any? { |line| line.start_with?("layer soul carl holds 21 approved dreams; its budget is 20.") })
-    assert(over.any? { |line| line.start_with?("layer soul ray holds 21") }, "a dream counts against each soul")
+    assert(over.any? { |line| line.start_with?("layer soul alex holds 21") }, "a dream counts against each soul")
     assert(over.any? { |line| line.start_with?("layer step building-sop · begin holds 6 approved dreams; its budget is 5.") })
     refute(over.any? { |line| line.include?("submit") }, "a step at its cap is not over")
   end
@@ -472,15 +472,15 @@ class DreamBankTest < Minitest::Test
   def test_unit_index_lists_a_dream_under_every_sequence_it_loads_in
     Dir.mktmpdir do |dir|
       write(dir, "platform/universal.md", DREAM)
-      write(dir, "carl/review.md", tagged("soul: [carl, ray]\ntopic: [review, merge]", question: "Carl | Ritch?"))
+      write(dir, "carl/review.md", tagged("soul: [carl, alex]\ntopic: [review, merge]", question: "Carl | Alex?"))
 
       index = DreamBank.index(dir: dir)
 
       assert_includes index, "2 dreams."
       assert_includes index, "## Platform (1)"
       assert_includes index, "## Carl (1)\n\nLoads at: `bin/dream carl`"
-      assert_includes index, "## Ritch (1)", "the roster names the ray soul Ritch"
-      assert_equal 2, index.scan("| [`review`](carl/review.md) | Carl \\| Ritch? | topic: review, merge | approved |").size
+      assert_includes index, "## Alex (1)", "the roster names the alex soul Alex"
+      assert_equal 2, index.scan("| [`review`](carl/review.md) | Carl \\| Alex? | topic: review, merge | approved |").size
       refute_includes index, "## Jasper"
     end
   end

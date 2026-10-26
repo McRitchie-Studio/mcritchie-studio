@@ -20,7 +20,7 @@ class HarnessKeyTest < ActionDispatch::IntegrationTest
   def body = JSON.parse(response.body)
 
   def ask(headers = @legacy, label: "studio-mac", harness: HARNESS)
-    post "/api/v1/agent_login_requests", params: { kind: "harness_key", label: label, harness_session_id: harness, soul: "ray" }.compact,
+    post "/api/v1/agent_login_requests", params: { kind: "harness_key", label: label, harness_session_id: harness, soul: "alex" }.compact,
                                          headers: headers, as: :json
   end
 
@@ -178,7 +178,7 @@ class HarnessKeyTest < ActionDispatch::IntegrationTest
     key = granted_key
     calls = {
       "write a task" => -> { patch api_v1_task_path(@task.slug), params: { title: "Renamed By A Key" }, headers: bearer(key), as: :json },
-      "post a task note" => -> { post "/api/v1/activities", params: { activity: { agent_slug: "ray", activity_type: "note" } }, headers: bearer(key), as: :json },
+      "post a task note" => -> { post "/api/v1/activities", params: { activity: { agent_slug: "alex", activity_type: "note" } }, headers: bearer(key), as: :json },
       "release a review claim" => -> { post review_claim_release_api_v1_task_path(@task.slug), params: { session: "s", nonce: "n" }, headers: bearer(key), as: :json },
       "log out" => -> { delete "/api/v1/agent_sessions/current", headers: bearer(key) }
     }

@@ -232,9 +232,9 @@ class ReviewerNotAnAuthorTest < ActiveSupport::TestCase
     block_for_rework!(task)
     heartbeat_lease!(task, session: REVIEWER_SESSION)
 
-    claim_as!(task, session: STRANGER_SESSION, actor: "ray")
+    claim_as!(task, session: STRANGER_SESSION, actor: "alex")
 
-    assert_equal %w[shannon ray], authors(task).sort_by { |s| %w[shannon ray].index(s) },
+    assert_equal %w[shannon alex], authors(task).sort_by { |s| %w[shannon alex].index(s) },
                  "the soul who finished the rework joins the set"
   end
 end

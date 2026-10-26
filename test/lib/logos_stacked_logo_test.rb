@@ -30,21 +30,21 @@ class LogosStackedLogoTest < Minitest::Test
   # The brands ICON_DIGEST and TAGLINE_DIGEST were taken over; a brand added later is pinned on its own in
   # logos_brand_pins_test.rb.
   PINNED = %w[studio industries turf welding].freeze
-  # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex, item 5); were f066b3ee… (two-line) and cc5f5a64… (tagline). Studio and Industries did not move (logos_brand_pins_test.rb).
+  # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex McRitchie, item 5); were f066b3ee… (two-line) and cc5f5a64… (tagline). Studio and Industries did not move (logos_brand_pins_test.rb).
   # Re-taken again by the same task's review fix: v1's tracked small line keeps its WELDING LLC word gap (two tracking
   # steps plus the kit's); was 56b61a90…. Studio and Industries still did not move.
-  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
   # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was 96644c91….
   TWO_LINE_DIGEST = "d1307be40cd3785fd5518ce410b59b01f7029d4ce047c13fb24c69a6623d22d8"
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green); was b21a2b80….
-  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
   # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was e2af15cd….
   ONE_LINE_DIGEST = "c87bf0cd3deff085bb7b191365ddce3fb5080dc54d014d33e5258a198a982563"
-  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
   # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was 4a47fdc7….
   TAGLINE_DIGEST = "435ae8ae8953c53c1b64c9ab7e0103fa315df4612d35f301066cc9a44bc5dc9f"
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head; was 4196eaad….
-  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex
+  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
   # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was c3b29586….
   ICON_DIGEST = "45621d6abb9fad71a712de856a562052376e6c440a85235b36f34c0b07bd7e29"
   # Width / height of the tagline form, measured (task stacked-tagline-and-ghost-grid). Each equals 3n / (1.8n + 8), n the
@@ -294,7 +294,7 @@ class LogosStackedLogoTest < Minitest::Test
   # The small line as the logo itself draws it: the second word, the tagline, or in the one-line form the whole name.
   def small_line(box) = box.letters.select { |l| { two_line: [1], tagline: [2], one_line: [0, 1] }.fetch(box.form).include?(l[:word]) }
 
-  # Item 4a (task navbar-spacing-and-rotated-guides): Alex's annotated screenshot asked for the line ITSELF, spaced
+  # Item 4a (task navbar-spacing-and-rotated-guides): Alex McRitchie's annotated screenshot asked for the line ITSELF, spaced
   # exactly as in the logo, turned 90 degrees beside the icon, not its letters spelled downwards in a column. Review
   # of PR 2042 (Carl, activity-17641) still holds: it stands beside the icon, on the plate, never on the icon.
   def test_the_small_line_turned_on_end_spans_the_icon_beside_it
@@ -550,7 +550,7 @@ class LogosStackedLogoTest < Minitest::Test
 
   # Task stacked-rule-of-three: the RULE OF THREE proportion. Three copies of the icon side by side span the big line's
   # ink width W, so the icon is W/3 wide, centred, as tall as its own aspect makes it. Every gap stays 2u, as in 3-2-1
-  # (Alex 2026-10-14 12:07: "space of 2 vertically between"), and the lines are set exactly as in 3-2-1.
+  # (Alex McRitchie 2026-10-14 12:07: "space of 2 vertically between"), and the lines are set exactly as in 3-2-1.
   def test_the_rule_of_three_draws_the_icon_a_third_of_the_name_wide_and_keeps_the_2u_gaps
     Navbar.brands.each do |brand|
       stacked(brand).forms.product(Navbar::TONES) do |form, tone|
@@ -589,7 +589,7 @@ class LogosStackedLogoTest < Minitest::Test
     %i[two_line tagline].product(Navbar::TONES) do |form, tone|
       three = stacked("welding_v2").layout(form:, tone:, proportion: :rule_of_three)
       old = stacked("welding_v2").layout(form:, tone:)
-      assert_operator three.icon_width, :<, 0.7 * old.icon_width, "#{form} #{tone}: the hood Alex found too big is visibly smaller"
+      assert_operator three.icon_width, :<, 0.7 * old.icon_width, "#{form} #{tone}: the hood Alex McRitchie found too big is visibly smaller"
       assert_operator three.icon_height, :<, 0.7 * old.icon_height, "#{form} #{tone}"
     end
   end

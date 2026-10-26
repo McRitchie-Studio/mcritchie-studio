@@ -1,7 +1,7 @@
 module AgentMessages
   # The CTO chat asks a nameless owner for their first name IN THE THREAD, where
   # the engine's first-name modal used to open over the launch panel (task
-  # cto-chat-quality-pass, Alex 2026-10-19: "The first name is weird").
+  # cto-chat-quality-pass, Alex McRitchie 2026-10-19: "The first name is weird").
   #
   # THE ASK is code: the CTO's opening greeting (ClientCtoHandover#greeting)
   # ends with QUESTION when the owner has no first name, and that turn carries

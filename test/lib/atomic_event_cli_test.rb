@@ -227,9 +227,9 @@ class AgentActivityCliTest < Minitest::Test
 
   def test_integration_a_lane_whose_soul_holds_a_login_narrates_under_it
     Dir.mktmpdir do |proj|
-      keep_admin_login(proj, "ray")
-      requests = run_cli(%w[start --category Explore --reason read-the-board --agent ray], proj: proj)
-      requests += run_cli(%w[end --outcome done --agent ray], proj: proj)
+      keep_admin_login(proj, "alex")
+      requests = run_cli(%w[start --category Explore --reason read-the-board --agent alex], proj: proj)
+      requests += run_cli(%w[end --outcome done --agent alex], proj: proj)
 
       assert_equal ["Bearer ADMIN-TOKEN"], bearers(requests, "/api/v1/agent_activities")
       assert_equal ["Bearer ADMIN-TOKEN"], bearers(requests, "/api/v1/agent_activities/close")
@@ -240,9 +240,9 @@ class AgentActivityCliTest < Minitest::Test
 
   def test_integration_another_lane_of_the_same_harness_borrows_no_login
     Dir.mktmpdir do |proj|
-      keep_admin_login(proj, "ray")
+      keep_admin_login(proj, "alex")
       # A builder the same harness spawned declares its own lane: the admin login is
-      # Ritch's, so the call keeps the shared token and the lane it declared.
+      # Alex's, so the call keeps the shared token and the lane it declared.
       requests = run_cli(%w[start --category Explore --reason build-the-task --agent pokemon], proj: proj)
       requests += run_cli(%w[start --category Explore --reason no-lane-declared], proj: proj)
 
@@ -260,8 +260,8 @@ class AgentActivityCliTest < Minitest::Test
       assert status.success?, "narration never fails the caller"
 
       # Control: the lane that holds a login still narrates.
-      keep_admin_login(proj, "ray")
-      requests = run_cli(%w[start --category Explore --reason read-the-board --agent ray], proj: proj, env: off)
+      keep_admin_login(proj, "alex")
+      requests = run_cli(%w[start --category Explore --reason read-the-board --agent alex], proj: proj, env: off)
       assert_equal ["Bearer ADMIN-TOKEN"], bearers(requests, "/api/v1/agent_activities")
     end
   end
@@ -584,7 +584,7 @@ class AgentActivityCliTest < Minitest::Test
       assert_equal "not", body["disposition"]
       assert_equal "noisy-activity", body["slug"]
       assert_equal "bank", body["intent"], "--bank becomes intent=bank"
-      refute body.key?("grader"), "the CLI never sends a grader — the server forces alex"
+      refute body.key?("grader"), "the CLI never sends a grader — the server forces mason"
     end
   end
 
@@ -623,27 +623,27 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
-  # [integration] `heartbeat alex` is the seat's RETIRED spelling (renamed `ray`
+  # [integration] `heartbeat alex` is the seat's RETIRED spelling (renamed `alex`
   # 2026-09-24): the sticky is written canonical, the CLI says so, and a marker a
-  # pre-rename session already holds under `alex` is read as `ray` on the way out.
+  # pre-rename session already holds under `alex` is read as `alex` on the way out.
   def test_integration_heartbeat_alex_attributes_to_ray_through_the_alias
     Dir.mktmpdir do |proj|
       write_session_marker(proj, SESSION, "mascot" => "shellder")
       out, _err, status = capture_cli(%W[heartbeat alex --session #{SESSION}], proj: proj)
       assert_equal 0, status.exitstatus
-      assert_match(/`alex` is that seat's retired slug — attributing to `ray`/, out)
-      assert_equal "ray\n", File.read(File.join(proj, ".agents", "sessions", "#{SESSION}.acting-agent")),
+      assert_match(/`alex` is that seat's retired slug — attributing to `alex`/, out)
+      assert_equal "alex\n", File.read(File.join(proj, ".agents", "sessions", "#{SESSION}.acting-agent")),
                    "the marker is written canonical, never the retired slug"
 
       requests = run_cli(%W[start --session #{SESSION} --category Explore --reason orient], proj: proj)
       open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
-      assert_equal "ray", JSON.parse(open[:body])["agent"], "a bare start under the alias attributes to ray"
+      assert_equal "alex", JSON.parse(open[:body])["agent"], "a bare start under the alias attributes to alex"
 
       # A marker left behind by a session that predates the rename.
       File.write(File.join(proj, ".agents", "sessions", "#{SESSION}.acting-agent"), "alex\n")
       requests = run_cli(%W[start --session #{SESSION} --category Explore --reason again], proj: proj)
       open = requests.find { |r| r[:method] == "POST" && r[:path] == "/api/v1/agent_activities" }
-      assert_equal "ray", JSON.parse(open[:body])["agent"], "a stale alex marker still reaches the seat"
+      assert_equal "alex", JSON.parse(open[:body])["agent"], "a stale alex marker still reaches the seat"
     end
   end
 
@@ -950,7 +950,7 @@ class AgentActivityCliTest < Minitest::Test
     return ["200 OK", JSON.generate("data" => { "id" => 1 })] if method == "POST" && path == "/api/v1/agent_activities/close"
     return ["200 OK", JSON.generate("data" => { "closed" => 1 })] if method == "POST" && path == "/api/v1/agent_activities/close_all"
     if method == "POST" && path.match?(%r{\A/api/v1/agent_activities/\d+/grade\z})
-      return ["201 Created", JSON.generate("data" => { "id" => 5, "grader" => "alex", "disposition" => "not",
+      return ["201 Created", JSON.generate("data" => { "id" => 5, "grader" => "mason", "disposition" => "not",
                                                        "slug" => "noisy activity", "banked" => true })]
     end
     if method == "GET" && path.start_with?("/api/v1/agent_activities/awaiting_grade")
@@ -1408,7 +1408,7 @@ class AgentActivityCliTest < Minitest::Test
   end
 
   def test_integration_heartbeat_ray_and_its_alias_alex_ask_for_nothing_since_ray_is_a_worker
-    %w[ray alex].each do |soul|
+    %w[alex alex].each do |soul|
       Dir.mktmpdir do |proj|
         login_replies
         assert_empty login_calls(run_cli(%W[heartbeat #{soul}], proj: proj)), "#{soul} holds no admin tier"

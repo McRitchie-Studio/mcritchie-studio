@@ -63,7 +63,7 @@ class AnswerersAppOwnerTest < ActiveSupport::TestCase
       refute @answerers.allowed?(@person, message: message), "#{label} must be held"
     end
     assert_empty claimable_ids(%w[turf_monster avi]), "the SQL guard holds every one of them"
-    refute @answerers.app_owner_thread?(row(app: "build", soul: "ray", thread_key: "web:build:tok123")),
+    refute @answerers.app_owner_thread?(row(app: "build", soul: "alex", thread_key: "web:build:tok123")),
            "a /build thread is public intake's, never the owner rule's"
   end
 

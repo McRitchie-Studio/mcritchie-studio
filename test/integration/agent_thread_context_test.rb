@@ -52,12 +52,12 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
   teardown { [ @mailbox, @claude_home ].each { |d| FileUtils.rm_rf(d) } }
 
   def heartbeat(runner)
-    AgentMailbox::Heartbeat.new(soul: "ray", client: @client, runner: runner, out: @out, claude_cmd: %w[fake-claude],
+    AgentMailbox::Heartbeat.new(soul: "alex", client: @client, runner: runner, out: @out, claude_cmd: %w[fake-claude],
                                 once: true, worker: "laptop-1", mailbox_home: @mailbox, claude_home: @claude_home)
   end
 
   def say(content, author: ALEX, name: "Alex", **attrs)
-    agent_message!(soul: "ray", content: content, author_ref: author, author_name: name, **attrs)
+    agent_message!(soul: "alex", content: content, author_ref: author, author_name: name, **attrs)
   end
 
   test "the second answer to one person carries their first exchange, and another person's message is absent" do
@@ -76,18 +76,18 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     assert_match(%r{Exchange 1 of 1, .*\n<#{fence}>\nAlex: what is building\?\nYou answered: Two tasks are building\.\n</#{fence}>},
                  prompt, "the first exchange rides in the thread layer, fenced")
     refute_includes prompt, "BEA SECRET", "another person's message in the same channel is not in this ledger"
-    assert_match(%r{== THE MESSAGE TO ANSWER \(\[discord channel #{DESK}\]\) ==\n<#{fence}>\nFrom: Alex\nwhich one is first\?\n</#{fence}>},
+    assert_match(%r{== THE MESSAGE TO ANSWER \(\[discord channel #{DESK}\]\) ==\n<#{fence}>\nFrom: Alex McRitchie\nwhich one is first\?\n</#{fence}>},
                  prompt)
     refute_includes runner.prompts.first, "Exchange 1", "the first answer had no ledger yet"
 
     second.reload
     assert_equal "completed", second.status
     assert_equal "00000002-aaaa-bbbb-cccc-dddddddddddd", second.claude_session_id
-    assert_equal File.join(@mailbox, "ray"), second.claude_cwd
-    assert_equal [ File.join(@mailbox, "ray") ] * 2, runner.chdirs, "each answer ran from the soul's own folder"
+    assert_equal File.join(@mailbox, "alex"), second.claude_cwd
+    assert_equal [ File.join(@mailbox, "alex") ] * 2, runner.chdirs, "each answer ran from the soul's own folder"
     assert_equal 5, second.run_meta["thinking_tokens"]
     assert_equal "no_transcript", second.run_meta["reasoning_source"]
-    assert_equal "cd #{File.join(@mailbox, 'ray')} && claude --resume 00000002-aaaa-bbbb-cccc-dddddddddddd",
+    assert_equal "cd #{File.join(@mailbox, 'alex')} && claude --resume 00000002-aaaa-bbbb-cccc-dddddddddddd",
                  second.resume_command
   end
 
@@ -120,12 +120,12 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     stated.person.notes.delete_all
     say("and again: my favorite color?", channel_ref: QUIET)
     heartbeat(runner).run
-    assert_includes runner.prompts.last, "Alex: my favorite color is purple\nYou answered: Purple, noted."
+    assert_includes runner.prompts.last, "Alex McRitchie: my favorite color is purple\nYou answered: Purple, noted."
     assert_includes runner.prompts.last, "(no notes about this person yet)"
   end
 
   test "a Discord reply answers inside its thread: the thread is the focus, and its turns are not repeated" do
-    ingest = AgentMessages::DiscordIngest.new(routes: agent_routes(default_soul: "ray"))
+    ingest = AgentMessages::DiscordIngest.new(routes: agent_routes(default_soul: "alex"))
     root = ingest.call(discord_raw(8001, content: "ship the footer task next", author: BEA, at: 2.hours.ago), guild_id: GUILD)
     runner = EnvelopeRunner.new("Footer task queued next.", "Earlier answer.", "Next is the footer task.")
     heartbeat(runner).run
@@ -149,14 +149,14 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
 
   test "the notes about the sender ride in the user layer, fenced, and never about another person" do
     bea = say("I run the welding shop", author: BEA, name: "Bea")
-    runner = EnvelopeRunner.new("Got it.\n===NOTES===\n[\"Runs the welding shop.\", \"Alex is the owner.\"]", "Hi.")
+    runner = EnvelopeRunner.new("Got it.\n===NOTES===\n[\"Runs the welding shop.\", \"Alex McRitchie is the owner.\"]", "Hi.")
     heartbeat(runner).run
-    assert_equal [ "Runs the welding shop.", "Alex is the owner." ], bea.reload.person.notes.map(&:body)
+    assert_equal [ "Runs the welding shop.", "Alex McRitchie is the owner." ], bea.reload.person.notes.map(&:body)
 
     alex = say("hi")
     heartbeat(runner).run
-    assert_nil alex.reload.person.notes.first, "a fact about Alex from Bea's run is filed under Bea"
-    refute_includes runner.prompts.last, "welding", "Bea's notes are not in Alex's context"
+    assert_nil alex.reload.person.notes.first, "a fact about Alex McRitchie from Bea's run is filed under Bea"
+    refute_includes runner.prompts.last, "welding", "Bea's notes are not in Alex McRitchie's context"
   end
 
   test "a reply with a decorated NOTES block posts without it, and the facts are still stored" do
@@ -208,7 +208,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     assert_response :conflict
     assert_match(/NOT_HOLDER/, response.body)
 
-    AgentMessage.claim!(soul: "ray", worker: "laptop-1")
+    AgentMessage.claim!(soul: "alex", worker: "laptop-1")
     get context_api_v1_agent_message_url(message, worker: "someone-else"), headers: auth
     assert_response :conflict
     get context_api_v1_agent_message_url(message, worker: "laptop-1"), headers: auth
@@ -232,15 +232,15 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     out = StringIO.new
     AgentMailbox::InboxCli.new([ "show", message.id.to_s ], client: @client, out: out).run
     assert_includes out.string, "session: 00000001-aaaa-bbbb-cccc-dddddddddddd"
-    assert_includes out.string, "resume:  cd #{File.join(@mailbox, 'ray')} && claude --resume 00000001-aaaa-bbbb-cccc-dddddddddddd"
+    assert_includes out.string, "resume:  cd #{File.join(@mailbox, 'alex')} && claude --resume 00000001-aaaa-bbbb-cccc-dddddddddddd"
     assert_includes out.string, "Read the board first."
-    assert_match(/person:  Alex \(#\d+\) discord:#{ALEX}/, out.string)
+    assert_match(/person:  Alex McRitchie \(#\d+\) discord:#{ALEX}/, out.string)
 
     admin = User.find_by(role: "admin") || User.create!(email: "ctx-admin@example.com", name: "Ctx Admin", role: "admin")
     log_in_as(admin)
     get admin_agent_message_path(message)
     assert_response :success
-    assert_select "#am-run code", text: "cd #{File.join(@mailbox, 'ray')} && claude --resume 00000001-aaaa-bbbb-cccc-dddddddddddd"
+    assert_select "#am-run code", text: "cd #{File.join(@mailbox, 'alex')} && claude --resume 00000001-aaaa-bbbb-cccc-dddddddddddd"
     assert_select "#am-run", /thinking_tokens/
     assert_select "#am-reasoning", text: /Read the board first\./
     assert_select "#am-person", /discord:#{ALEX}/
@@ -268,7 +268,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     runner = EnvelopeRunner.new("agent-thread-context.")
     previous = ENV["AGENT_MAILBOX_HOME"]
     ENV["AGENT_MAILBOX_HOME"] = @mailbox
-    disp = AgentMailbox::Dispatcher.new(client: @client, souls: %w[ray], worker: "disp-ctx", runner: runner,
+    disp = AgentMailbox::Dispatcher.new(client: @client, souls: %w[alex], worker: "disp-ctx", runner: runner,
                                         claude_cmd: %w[fake-claude], out: @out, sleeper: ->(_) { }, idle_wait: 0,
                                         busy_wait: 0, version: "test")
     200.times do
@@ -281,7 +281,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
     assert_equal "completed", second.status, @out.string
     assert_includes runner.prompts.last, "#{first.author_name}: what is building?\nYou answered: Two tasks."
     assert_equal "00000001-aaaa-bbbb-cccc-dddddddddddd", second.claude_session_id
-    assert_equal File.join(@mailbox, "ray"), second.claude_cwd
+    assert_equal File.join(@mailbox, "alex"), second.claude_cwd
   ensure
     ENV["AGENT_MAILBOX_HOME"] = previous
   end
@@ -292,7 +292,7 @@ class AgentThreadContextTest < ActionDispatch::IntegrationTest
       def context(*) = raise(AgentMailbox::ApiError, "GET context -> HTTP 503: down")
     end.new(@client)
     runner = EnvelopeRunner.new("never")
-    disp = AgentMailbox::Dispatcher.new(client: client, souls: %w[ray], worker: "disp-ctx", runner: runner,
+    disp = AgentMailbox::Dispatcher.new(client: client, souls: %w[alex], worker: "disp-ctx", runner: runner,
                                         claude_cmd: %w[fake-claude], out: @out, sleeper: ->(_) { }, idle_wait: 0,
                                         busy_wait: 0, version: "test")
     disp.tick

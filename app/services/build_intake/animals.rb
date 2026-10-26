@@ -1,5 +1,5 @@
 module BuildIntake
-  # The CTO avatar bank (task cto-animal-avatar-bank, Alex 2026-10-20): one
+  # The CTO avatar bank (task cto-animal-avatar-bank, Alex McRitchie 2026-10-20): one
   # hundred animal glyphs the /build CTO card offers, each drawn in the client's
   # own theme. The glyphs are Microsoft's Fluent Emoji, High Contrast style (MIT),
   # one single-colour SVG per id under app/assets/images/cto_animals/; that

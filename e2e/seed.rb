@@ -67,9 +67,9 @@ User.create!(email: "newcomer-turbo@test.com", role: "viewer")
 User.create!(email: "newcomer-back@test.com", role: "viewer")
 
 # Agents
-ray = Agent.create!(
-  name: "Ritch",
-  slug: "ray",
+alex = Agent.create!(
+  name: "Alex",
+  slug: "alex",
   status: "active",
   agent_type: "orchestrator",
   title: "Lead Orchestrator",
@@ -97,13 +97,13 @@ Agent.create!(name: "Avi", slug: "avi", status: "active", agent_type: "product",
 scraping = Skill.create!(name: "Web Scraping", slug: "web-scraping", category: "data", description: "Extract data from websites")
 rails_dev = Skill.create!(name: "Rails Development", slug: "rails-development", category: "development", description: "Build Rails applications")
 
-SkillAssignment.create!(agent_slug: "ray", skill_slug: "rails-development")
+SkillAssignment.create!(agent_slug: "alex", skill_slug: "rails-development")
 SkillAssignment.create!(agent_slug: "mack", skill_slug: "web-scraping")
 
 # Tasks in different workflow stages
-Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "designed", priority: 0, agent_slug: "ray")
+Task.create!(title: "Review agent protocol", description: "Audit inter-agent messaging patterns.", stage: "designed", priority: 0, agent_slug: "mason")
 Task.create!(title: "Scrape odds data", description: "Pull latest odds from sportsbooks.", stage: "building", priority: 1, agent_slug: "mack", started_at: 2.hours.ago)
-Task.create!(title: "Deploy v2 release", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "ray", started_at: 2.days.ago)
+Task.create!(title: "Deploy v2 release", description: "Deploy latest version to production.", stage: "submitted", priority: 2, agent_slug: "alex", started_at: 2.days.ago)
 # A block is no longer a STAGE — it is an attribute of a `building` task (blocked_at
 # + blocked_from + blocked_by + block_kind), per the blocked-as-building collapse.
 # Seeding stage: "blocked" now fails validation and takes the whole e2e run down with
@@ -114,7 +114,7 @@ Task.create!(
   description: "Fixture for the production sidebar back-navigation regression.",
   stage: "building",
   priority: 1,
-  agent_slug: "ray",
+  agent_slug: "alex",
   started_at: 1.day.ago,
   blocked_at: 6.hours.ago,
   blocked_from: "submitted",
@@ -135,7 +135,7 @@ Task.create!(
   description: "Fixture for the session-resume board widget (last-4 + resume copy).",
   stage: "building",
   priority: 0,
-  agent_slug: "ray",
+  agent_slug: "alex",
   metadata: { "devops" => {
     "kind" => "feature",
     "repositories" => ["mcritchie-studio"],
@@ -145,7 +145,7 @@ Task.create!(
 )
 
 # Activities
-Activity.create!(agent_slug: "ray", activity_type: "task_assigned", description: "Assigned scrape task to Mack")
+Activity.create!(agent_slug: "alex", activity_type: "task_assigned", description: "Assigned scrape task to Mack")
 Activity.create!(agent_slug: "mack", activity_type: "task_started", description: "Started scraping odds data")
 
 coach_person = Person.create!(
@@ -205,7 +205,7 @@ timeline_task = Task.create!(
   description: "Fixture for the task Stage Timeline — genesis, transitions, durations, and reported model cost.",
   stage: "reviewed",
   priority: 1,
-  agent_slug: "ray",
+  agent_slug: "alex",
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
 )
 timeline_task.task_events.delete_all # replace the auto-genesis with a curated, time-spaced sequence
@@ -234,7 +234,7 @@ intent_task = Task.create!(
   description: "Fixture for the agentic-intent live block — the senior pair reviewing now.",
   stage: "submitted",
   priority: 1,
-  agent_slug: "ray",
+  agent_slug: "alex",
   metadata: { "devops" => { "kind" => "feature", "repositories" => ["mcritchie-studio"] } }
 )
 intent_task.record_intent_event(
@@ -1016,7 +1016,7 @@ evolution_task.assemble!
 
 # ── Distillation pipeline · Test runs band + a gradeable test-run insight ──────
 # A couple of release test-scope VERDICTS (kind:test_scope with a pass|fail
-# result_slug) so the pipeline's "Test runs" band renders, plus a banked Ritch
+# result_slug) so the pipeline's "Test runs" band renders, plus a banked Mason
 # grade on the passing one so it also surfaces as a Column-2 insight carrying an
 # ACTION Confirm button (the confirm-of-action path). The scope keys resolve to
 # phase/tier/host via config/devops_test_suites.yml at render.
@@ -1706,7 +1706,7 @@ end
 AgentMessage.delete_all # its events cascade
 AgentPerson.delete_all # its identities and notes cascade
 AgentMessageCursor.delete_all
-# The authors are Alex (his seeded person, the owner role), so the owner-only guard
+# The authors are Alex McRitchie (his seeded person, the owner role), so the owner-only guard
 # (config/agent_answerers.yml) lets the claim below take the answered message.
 AgentPerson.seed_owner!
 mailbox_guild = "910000000000000001"
@@ -1729,7 +1729,7 @@ answered.record!("completed", actor: "avi", detail: { "worker" => "e2e-laptop-10
 answered.record!("reply_posted", actor: "discord-bot", detail: { "reply_id" => "910000000000000099", "url" => answered.reply_url })
 mailbox.call("e2e-mail-2", soul: "avi", status: "claimed", content: "@Avi what shipped yesterday?",
              claimed_by: "e2e-laptop-202-def456", claimed_at: Time.current, lease_expires_at: 8.minutes.from_now, attempts: 1)
-mailbox.call("e2e-mail-3", soul: "ray", status: "received", content: "@Ritch what is building on the board?")
+mailbox.call("e2e-mail-3", soul: "alex", status: "received", content: "@Alex what is building on the board?")
 mailbox.call("e2e-mail-4", soul: nil, status: "unrouted", content: "just thinking out loud in the e2e channel")
 puts "Seeded: #{AgentMessage.count} agent messages"
 
@@ -1782,7 +1782,7 @@ AgentMessage.create!(channel: "discord", external_id: "e2e-usage-1", channel_ref
 puts "Seeded: one metered Turf answer"
 
 # The CTO web chat (e2e/cto_web_chat.spec.js; docs/agents/system/agent-message-loop.md,
-# "Web chat"): the admin's hub user is linked to an owner-role person, as Alex's
+# "Web chat"): the admin's hub user is linked to an owner-role person, as Alex McRitchie's
 # alex@mcritchie.studio is in production (AgentPerson.seed_owner!), so the agents
 # answer his chat. App owners keep no person until their first message; the
 # app-owner rule then answers them on their own app's chat only.
@@ -1809,7 +1809,7 @@ AgentMessage.create!(channel: "web", external_id: "build:#{refused_draft.token}:
                      intake_card: { "card" => "summary" })
 puts "Seeded: a finished draft whose address was taken meanwhile"
 
-# An app owner's word on a proposal (e2e/cto_web_chat.spec.js; Alex, 2026-10-18;
+# An app owner's word on a proposal (e2e/cto_web_chat.spec.js; Alex McRitchie, 2026-10-18;
 # AgentMessages::ProposalConfirm#owner_verdict): Turf's owner, a plain viewer with
 # no agent role, has an answered question on their own Turf chat and a pending
 # change proposal under it, so the spec can say `go` and see the designed task.

@@ -41,7 +41,7 @@ class MagicLinkThrottleTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] one inbox is cut off at the magic_link/email limit, whatever its spelling" do
-    spellings = ["alex@example.com", " ALEX@example.com", "Alex@Example.com "]
+    spellings = ["alex@example.com", " ALEX@example.com", "Alex McRitchie@Example.com "]
     statuses = Array.new(limit("magic_link/email") + 1) do |i|
       request_link(spellings[i % spellings.size], ip: "203.0.113.#{i + 1}")
     end

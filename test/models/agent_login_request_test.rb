@@ -144,11 +144,11 @@ class AgentLoginRequestTest < ActiveSupport::TestCase
     %w[code collect_key token phrase_digest collect_digest].each { |key| assert_not_includes login.summary.keys, key }
   end
 
-  test "only an admin soul may ask; ray and its retired slug alex are in the Worker class" do
+  test "only an admin soul may ask; alex and its retired slug alex are in the Worker class" do
     error = assert_raises(ActiveRecord::RecordInvalid) { request(soul: "carl") }
     assert_match(/holds no admin tier/, error.message)
     assert_raises(ActiveRecord::RecordInvalid) { request(soul: "nobody") }
-    %w[ray alex].each do |soul|
+    %w[alex alex].each do |soul|
       error = assert_raises(ActiveRecord::RecordInvalid) { request(soul: soul) }
       assert_match(/holds no admin tier; an admin login is for steffon and mason/, error.message)
     end

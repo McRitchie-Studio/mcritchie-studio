@@ -339,7 +339,7 @@ class CtoWebChatAttachmentsTest < ActionDispatch::IntegrationTest
     assert_equal 2, task.reload.attachments.count
   end
 
-  test "[integration] an app owner's go (not Alex) copies the message's files onto the designed task" do
+  test "[integration] an app owner's go (not Alex McRitchie) copies the message's files onto the designed task" do
     log_in_as(@co_owner)
     send_with_files("The slate is broken, see the screenshot.", [ upload["token"] ])
     ask = AgentMessage.where(channel: "web").order(:id).last

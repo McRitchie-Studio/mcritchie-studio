@@ -15,8 +15,8 @@ class DreamLayersTest < Minitest::Test
 
   def test_unit_keys_name_the_platform_and_each_soul
     assert_equal [ "platform" ], DreamLayers.keys(dream("a"))
-    assert_equal %w[soul/carl soul/ray], DreamLayers.keys(dream("b", souls: %w[carl alex]))
-    assert_equal "soul/carl", DreamLayers.key(dream("b", souls: %w[carl ray]))
+    assert_equal %w[soul/carl soul/alex], DreamLayers.keys(dream("b", souls: %w[carl alex]))
+    assert_equal "soul/carl", DreamLayers.key(dream("b", souls: %w[carl alex]))
   end
 
   def test_unit_budgets_are_dream_banks
@@ -41,12 +41,12 @@ class DreamLayersTest < Minitest::Test
   end
 
   def test_unit_members_are_the_approved_dreams_in_the_layer
-    dreams = [ dream("a"), dream("b", souls: %w[carl]), dream("c", souls: %w[carl ray]),
+    dreams = [ dream("a"), dream("b", souls: %w[carl]), dream("c", souls: %w[carl alex]),
                dream("d", souls: %w[carl], status: "proposed") ]
 
     assert_equal %w[b c], DreamLayers.members(dreams, "soul/carl").map(&:slug)
-    assert_equal %w[c], DreamLayers.members(dreams, "soul/ray").map(&:slug)
-    assert_equal %w[platform soul/carl soul/ray], DreamLayers.all(dreams)
+    assert_equal %w[c], DreamLayers.members(dreams, "soul/alex").map(&:slug)
+    assert_equal %w[platform soul/carl soul/alex], DreamLayers.all(dreams)
     assert_equal "soul carl", DreamLayers.label("soul/carl")
     assert_equal "step building-sop · begin", DreamLayers.label("step/building-sop/begin")
   end

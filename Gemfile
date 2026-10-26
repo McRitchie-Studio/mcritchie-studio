@@ -232,7 +232,7 @@ gem "studio-engine", "~> 0.95"
 # engine's router constraint answers everyone else 404). studio-engine never
 # requires lookbook: an app opts in by bundling it, and the hub runs it in
 # production too, with Studio.lookbook_in_production in
-# config/initializers/studio.rb. Alex approved the cost on 2026-10-06: about
+# config/initializers/studio.rb. Alex McRitchie approved the cost on 2026-10-06: about
 # 28 MB per process that boots the app.
 #
 # It MUST stay AFTER studio-engine and OUTSIDE any group. Bundler.require loads

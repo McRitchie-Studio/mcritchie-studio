@@ -1,6 +1,6 @@
 ray_agent:
-  name: Ritch
-  slug: ray
+  name: Alex
+  slug: alex
   status: active
   agent_type: orchestrator
   title: Lead Orchestrator

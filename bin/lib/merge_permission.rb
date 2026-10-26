@@ -8,7 +8,7 @@ require_relative "test_only_diff"
 # THE RULE. The documentation seat (Mason) merges a PR only when its diff measures
 # `docs`: prose, inert media and docs-guard tests, with at least one prose file.
 # Any other diff is merged by the standing primary (Carl). A soul outside the review
-# pool (REVIEWERS) merges nothing, so the `ray` soul, which left the pool on
+# pool (REVIEWERS) merges nothing, so the `alex` soul, which left the pool on
 # 2026-10-25, is refused. The rest of the pool is untouched by this rule.
 #
 # THE SHAPE IS MEASURED, NEVER DECLARED. #diff_shape reads the PR's own file list
@@ -31,7 +31,7 @@ module MergePermission
   STANDING_PRIMARY = "carl"
 
   # Retired slugs that still resolve (Task::SOUL_ALIASES; this file runs without Rails).
-  SOUL_ALIASES = { "alex" => "ray", "xan" => "ray" }.freeze
+  SOUL_ALIASES = { "ray" => "alex", "xan" => "alex" }.freeze
 
   # The souls whose merge-ready verdict can authorise a merge: the review pool
   # (ReviewerSelector::POOL, pinned by test/lib/merge_permission_test.rb).

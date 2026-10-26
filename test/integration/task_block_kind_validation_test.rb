@@ -55,7 +55,7 @@ class TaskBlockKindValidationTest < ActionDispatch::IntegrationTest
 
   # Guard catalog row 4.2, scoped by decision 6: `bin/task begin` on a REWORK-blocked
   # task clears the block at the claim. Every other block waits on something outside
-  # the desk, and an `Escalated:` block waits on Alex, so the endpoint refuses those 409.
+  # the desk, and an `Escalated:` block waits on Alex McRitchie, so the endpoint refuses those 409.
   def block_with(kind:, summary:)
     @task.block!(by: "carl", kind: kind)
     Activity.create!(task_slug: @task.slug, activity_type: "qa_feedback", agent_slug: "carl",
@@ -95,7 +95,7 @@ class TaskBlockKindValidationTest < ActionDispatch::IntegrationTest
 
     assert_response :conflict
     assert_equal "UNBLOCK_REFUSED", response.parsed_body["error_code"]
-    assert @task.reload.blocked?, "an escalation waits on Alex; a builder's begin never clears it"
+    assert @task.reload.blocked?, "an escalation waits on Alex McRitchie; a builder's begin never clears it"
     refute_empty @task.operator_windows, "the escalation window must still be open"
   end
 
@@ -105,7 +105,7 @@ class TaskBlockKindValidationTest < ActionDispatch::IntegrationTest
     unblock
 
     assert_response :conflict
-    assert_match(/only Alex answers/, response.parsed_body["error"].to_s)
+    assert_match(/only Alex McRitchie answers/, response.parsed_body["error"].to_s)
     assert @task.reload.blocked?
   end
 

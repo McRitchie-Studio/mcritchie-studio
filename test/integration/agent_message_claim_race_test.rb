@@ -3,7 +3,7 @@
 require "test_helper"
 require_relative "../support/agent_message_fixtures"
 
-# [integration] Alex's three heartbeat scenarios, with the database arbitrating:
+# [integration] Alex McRitchie's three heartbeat scenarios, with the database arbitrating:
 # two workers claiming AT ONCE on their own Postgres connections, run serially,
 # and two souls side by side.
 #
@@ -87,9 +87,9 @@ class AgentMessageClaimRaceTest < ActiveSupport::TestCase
 
   test "two agents side by side: each picks up only its own message" do
     avi = message!(soul: "avi")
-    ray = message!(soul: "ray")
-    results = claim_in_parallel(%w[ray avi])
+    alex = message!(soul: "alex")
+    results = claim_in_parallel(%w[alex avi])
 
-    assert_equal [ ray.id, avi.id ], results
+    assert_equal [ alex.id, avi.id ], results
   end
 end

@@ -4,7 +4,7 @@
 # bin/dispatcher run [--souls a,b] [--channel all|discord|email|web] [--cap N] [--worker ID]
 # bin/dispatcher install [--if-changed] | uninstall | status
 #
-# The agent mailbox as a service on Alex's Mac
+# The agent mailbox as a service on Alex McRitchie's Mac
 # (docs/agents/agents/steffon/sops/agent-dispatcher.md). `run` long-polls the
 # board for every soul config/agent_routes.yml routes (or --souls), answers each
 # claimed message on the existing heartbeat path (AgentMailbox::Responder: one
@@ -19,7 +19,7 @@
 # config/agent_routes.yml). A new digest seen twice in a row stops claiming, lets
 # the runs in flight finish, and exits 0; launchd's KeepAlive starts the new code.
 #
-# Claude bills Alex's claude.ai subscription: every child runs under an
+# Claude bills Alex McRitchie's claude.ai subscription: every child runs under an
 # allow-listed environment (AgentMailbox::CHILD_ENV_ALLOW), so no API key, auth
 # token, base URL or provider switch reaches it. `install` refuses a task desk
 # under .worktrees/.

@@ -24,7 +24,7 @@ class SopRegistryGeneratedTest < ActiveSupport::TestCase
     assert entries.any? { |e| e.owner == "Shared" }, "no shared module was registered"
   end
 
-  # The reason the registry exists: Alex says `clean-up` and the agent resolves it.
+  # The reason the registry exists: Alex McRitchie says `clean-up` and the agent resolves it.
   test "[unit] clean-up resolves end to end" do
     row = SopRegistry.entries(ROOT).find { |e| e.invocation == "clean-up" }
 
@@ -75,11 +75,11 @@ class SopRegistryGeneratedTest < ActiveSupport::TestCase
   end
 
   test "[unit] a new SOP file makes the committed block stale until --write" do
-    with_tree("agents/ray/sops/clean-up.md" => "# Clean Up\n") do |root|
+    with_tree("agents/alex/sops/clean-up.md" => "# Clean Up\n") do |root|
       SopRegistry.write!(root)
       assert_empty SopRegistry.stale(root)
 
-      File.write(File.join(root, "docs/agents/agents/ray/sops/new-act.md"), "# New Act\n")
+      File.write(File.join(root, "docs/agents/agents/alex/sops/new-act.md"), "# New Act\n")
       assert_equal [SopRegistry::REGISTRY_PATH, SopRegistry::START_HERE_PATH], SopRegistry.stale(root)
 
       SopRegistry.write!(root)

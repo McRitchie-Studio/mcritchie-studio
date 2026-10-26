@@ -25,7 +25,7 @@ class AppOwnershipTest < ActiveSupport::TestCase
     assert_nil ctos.fetch("mcritchie_studio").agent, "no avi Agent row here: the soul still maps"
     assert_equal "avi", ctos.fetch("mcritchie_studio").slug
     assert_equal "turf_monster", AppOwnership.cto_for_agent("turf-monster").domain
-    assert_nil AppOwnership.cto_for_agent("ray"), "a soul that is no app's CTO has no settings page"
+    assert_nil AppOwnership.cto_for_agent("alex"), "a soul that is no app's CTO has no settings page"
   end
 
   test "[unit] an owner manages only their own app; an admin manages every app; nobody else any" do
@@ -65,7 +65,7 @@ class AppOwnershipTest < ActiveSupport::TestCase
     alex.save! # fixtures skip callbacks, so give the row its slug
     own!(alex, apps(:mcritchie_studio))
 
-    assert_equal [ "McRitchie Studio", "Pipeline", "Avi" ], AppOwnership.sidebar_links(alex).map(&:label)
+    assert_equal [ "McRitchie Studio", "Pipeline", "Avi" ], AppOwnership.sidebar_links(mason).map(&:label)
   end
 
   test "[unit] report channels: the CTO's own bot's postable set when its token is set, else the shared bot's" do

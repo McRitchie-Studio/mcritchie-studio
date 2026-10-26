@@ -27,7 +27,7 @@ class AgentWarmSessionTest < ActiveSupport::TestCase
         studio: { name: McRitchie Studio, doc: docs/studio.md, soul: avi, warm_session: true, consolidate_at: 50000 }
         turf: { name: Turf, doc: docs/turf.md, soul: turf_monster }
         odd: { name: Odd, soul: odd, warm_session: "yes", consolidate_at: 5 }
-      souls: { avi: studio, ray: studio, turf_monster: turf }
+      souls: { avi: studio, alex: studio, turf_monster: turf }
     YAML
     @registry = AgentMailbox::DomainRegistry.load(File.join(@root, AgentMailbox::ContextBuilder::DOMAINS_PATH))
     @message = { "id" => 9, "channel" => "discord", "author_name" => "Alex", "content" => "what next?" }
@@ -50,7 +50,7 @@ class AgentWarmSessionTest < ActiveSupport::TestCase
 
   test "only a warm domain's front door is warm; the flag must be literally true" do
     assert_equal "studio", @registry.warm_domain_for("avi")
-    assert_nil @registry.warm_domain_for("ray"), "a helper soul mapped to the domain stays cold"
+    assert_nil @registry.warm_domain_for("alex"), "a helper soul mapped to the domain stays cold"
     assert_nil @registry.warm_domain_for("turf_monster"), "no flag is off"
     assert_nil @registry.warm_domain_for("odd"), "a truthy string is not true"
     assert_equal 50_000, @registry.consolidate_at("studio")
@@ -156,7 +156,7 @@ class AgentWarmSessionTest < ActiveSupport::TestCase
     assert_includes warm, full[/^HOW TO ANSWER$.*?(?=^== USER: )/m], "the rules are the cold prompt's, byte for byte"
     assert_includes warm, "== USER:"
     assert_includes warm, "thread turn"
-    assert_match(/== THE MESSAGE TO ANSWER .*\n<#{FENCE}>\nFrom: Alex\nwhat next\?\n<\/#{FENCE}>\n\z/m, warm)
+    assert_match(/== THE MESSAGE TO ANSWER .*\n<#{FENCE}>\nFrom: Alex McRitchie\nwhat next\?\n<\/#{FENCE}>\n\z/m, warm)
     assert_not_includes warm, "== PERSON:"
     assert_not_includes warm, "older question", "PERSON is the session's already"
     assert_not_includes warm, "Avi is the CTO.", "the role doc rode in the session's first turn"

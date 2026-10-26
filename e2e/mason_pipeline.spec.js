@@ -4,10 +4,10 @@ const { VISITOR } = require("./helpers");
 // [e2e] The pipeline sits behind the admin wall (app/controllers/concerns/admin_wall.rb).
 // @qa-readonly: bin/prod-smoke runs this against QA and PRODUCTION as a visitor, so it
 // asserts the wall — a signed-out visitor is sent to sign-in and never sees the page.
-test.describe("ray pipeline admin wall", () => {
+test.describe("mason pipeline admin wall", () => {
   test.use({ storageState: VISITOR });
 
-  test("ray pipeline sends a visitor to sign-in @qa-readonly", async ({ page, request }) => {
+  test("mason pipeline sends a visitor to sign-in @qa-readonly", async ({ page, request }) => {
     const res = await request.get("/mason/pipeline", { maxRedirects: 0 });
     expect(res.status()).toBe(302);
     expect(new URL(res.headers()["location"], "http://host").pathname).toBe("/login");
@@ -20,7 +20,7 @@ test.describe("ray pipeline admin wall", () => {
 });
 
 // [e2e] The OPSD distillation pipeline (/mason/pipeline) — three columns, left→right:
-// Activities (narrated AgentActivity rows) → Insights (Ritch's banked grades) →
+// Activities (narrated AgentActivity rows) → Insights (Mason's banked grades) →
 // Confirmations (McRitchie's mcr grades). An admin page; the happy path here is the
 // page rendering, as the seeded admin, with all three columns and the nav's link out
 // to the cross-session All Activities view.
@@ -30,7 +30,7 @@ test.describe("ray pipeline admin wall", () => {
 // from the scope registry, and a grade link; and a banked test-run grade surfaces
 // as a Column-2 insight with an ACTION Confirm button (confirm-of-action parity).
 // Seeded and signed in as the admin, so local lane only — NOT @qa-readonly.
-test("ray pipeline renders the distillation columns and the gradeable test-runs band", async ({ page }) => {
+test("mason pipeline renders the distillation columns and the gradeable test-runs band", async ({ page }) => {
   const res = await page.goto("/mason/pipeline");
   expect(res.ok()).toBe(true);
 

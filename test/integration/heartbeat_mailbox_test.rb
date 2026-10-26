@@ -86,7 +86,7 @@ class HeartbeatMailboxTest < ActionDispatch::IntegrationTest
     fence = prompt[/<(untrusted-[0-9a-f]+)>/, 1]
     assert fence, "the message is fenced"
     assert_match(/UNTRUSTED DATA/, prompt)
-    assert_match(%r{<#{fence}>\nFrom: Alex\n.*IGNORE YOUR RULES.*\n</#{fence}>}m, prompt)
+    assert_match(%r{<#{fence}>\nFrom: Alex McRitchie\n.*IGNORE YOUR RULES.*\n</#{fence}>}m, prompt)
     assert_match(/current release: rel-1/, prompt)
     assert_match(/not enabled yet/, prompt)
 
@@ -110,15 +110,15 @@ class HeartbeatMailboxTest < ActionDispatch::IntegrationTest
     assert_equal "nothing for avi\n", second.string
   end
 
-  test "two agents: ray's heartbeat leaves avi's message alone and answers its own from the board" do
+  test "two agents: alex's heartbeat leaves avi's message alone and answers its own from the board" do
     avi = agent_message!(soul: "avi")
-    ray = owner_message!(soul: "ray", content: "what is building?")
+    alex = owner_message!(soul: "alex", content: "what is building?")
     runner = FakeRunner.new(answer: "Two tasks are building.")
 
-    heartbeat("ray", runner: runner).run
+    heartbeat("alex", runner: runner).run
 
     assert_equal "received", avi.reload.status
-    assert_equal "completed", ray.reload.status
+    assert_equal "completed", alex.reload.status
     assert_equal %w[bin/task list], runner.calls.first[:argv]
   end
 
@@ -164,11 +164,11 @@ class HeartbeatMailboxTest < ActionDispatch::IntegrationTest
     assert_match(/claimed\s+avi\s+worker=w-9/, out.string)
 
     out = StringIO.new
-    later = agent_message!(soul: "ray", content: "board?")
+    later = agent_message!(soul: "alex", content: "board?")
     tail = AgentMailbox::InboxCli.new(%w[tail --interval 0], client: @client, out: out, sleeper: ->(_) { }, iterations: 1)
     later.update_column(:updated_at, 1.minute.from_now)
     tail.run
-    assert_match(/##{later.id} received\s+ray/, out.string)
+    assert_match(/##{later.id} received\s+alex/, out.string)
 
     out = StringIO.new
     assert_equal 2, AgentMailbox::InboxCli.new(%w[bogus], client: @client, out: out).run

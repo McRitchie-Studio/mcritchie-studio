@@ -228,7 +228,7 @@ class TiktokDraftCliTest < Minitest::Test
     local.each { |url| assert TiktokDraftCli.local_hub?(url), "#{url.inspect} is this machine" }
 
     remote.first(3).each do |url|
-      assert_match(/lands on Alex's phone/, TiktokDraftCli.yes_refusal(base_url: url, yes: false))
+      assert_match(/lands on Alex McRitchie's phone/, TiktokDraftCli.yes_refusal(base_url: url, yes: false))
       assert_nil TiktokDraftCli.yes_refusal(base_url: url, yes: true)
     end
     assert_nil TiktokDraftCli.yes_refusal(base_url: "http://localhost:3000", yes: false)
@@ -238,16 +238,16 @@ class TiktokDraftCliTest < Minitest::Test
     out = `#{File.expand_path("../../bin/tiktok-draft", __dir__)} #{SLUG} --api https://hub.invalid 2>&1` # .invalid never resolves: no request can leave
 
     refute $?.success?
-    assert_match(/lands on Alex's phone/, out)
+    assert_match(/lands on Alex McRitchie's phone/, out)
   end
 
   def test_the_admin_token_is_picked_out_of_whatever_the_grant_printed_around_it
     token = "eyJfcmFpbHMiOnsiZGF0YSI6eyJzaWQiOiJzZXNzLXN5bnRoZXRpYyJ9fX0=--#{'ab12' * 16}"
-    noisy = "DEPRECATION WARNING: synthetic\nadmin session sess-synthetic granted to ray (admin), ends 2026-10-08T06:00:00Z.\n#{token}\r\n"
+    noisy = "DEPRECATION WARNING: synthetic\nadmin session sess-synthetic granted to alex (admin), ends 2026-10-08T06:00:00Z.\n#{token}\r\n"
 
     assert_equal token, TiktokDraftCli.admin_token(token)
     assert_equal token, TiktokDraftCli.admin_token(noisy)
-    assert_equal token, TiktokDraftCli.admin_token("#{token}\nadmin session sess-synthetic granted to ray")
+    assert_equal token, TiktokDraftCli.admin_token("#{token}\nadmin session sess-synthetic granted to alex")
     [nil, "", "   ", "not a token", "Running bin/rails on mcritchie-studio... up, run.1234"].each do |raw|
       assert_nil TiktokDraftCli.admin_token(raw), "#{raw.inspect} holds no token"
     end
@@ -261,7 +261,7 @@ class TiktokDraftCliTest < Minitest::Test
       env = { "CLAUDE_PROJECTS_DIR" => proj, "CLAUDE_CODE_SESSION_ID" => "harness-tiktok" }
       assert_nil TiktokDraftCli.held_admin_token(base_url: "https://mcritchie.studio", env: env), "no login held"
 
-      AdminLogin.write("harness-tiktok", proj, { "soul" => "ray", "session" => "sess-admin", "token" => "ADMIN-TOKEN",
+      AdminLogin.write("harness-tiktok", proj, { "soul" => "alex", "session" => "sess-admin", "token" => "ADMIN-TOKEN",
                                                  "expires_at" => (Time.now + 3600).utc.iso8601 }, env: env)
       assert_equal "ADMIN-TOKEN", TiktokDraftCli.held_admin_token(base_url: "https://mcritchie.studio", env: env)
       assert_equal "ADMIN-TOKEN", TiktokDraftCli.held_admin_token(base_url: "http://localhost:3000",

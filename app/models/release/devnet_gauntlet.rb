@@ -6,7 +6,7 @@ class Release
   # When a release carries turf-monster or turf-vault work, qa-release's exit seam
   # includes Turf Monster's `contest-rehearsal` on QA (devnet: create, enter, play,
   # settle with a real on-chain payout, close), recorded on the release as a
-  # completed `devnet_gauntlet` ReleaseEvent. Alex, 2026-10-11: "it just feels right
+  # completed `devnet_gauntlet` ReleaseEvent. Alex McRitchie, 2026-10-11: "it just feels right
   # to run a devnet gauntlet on the package before giving production the green light."
   # `bin/release ship` reads the record in its decision snapshot and refuses a Turf
   # release without it (docs/agents/agents/steffon/sops/production-deploy.md).
@@ -16,7 +16,7 @@ class Release
     STEP = "devnet_gauntlet"
     # The repos whose work moves contest money, on devnet as on mainnet.
     REPOS = %w[turf-monster turf-vault].freeze
-    # The override, for Alex's words only (a broken devnet, a release whose Turf
+    # The override, for Alex McRitchie's words only (a broken devnet, a release whose Turf
     # change cannot touch a contest). It records nothing; the ship prints it.
     SKIP_FLAG = "--skip-devnet-gauntlet"
 
@@ -64,7 +64,7 @@ class Release
       "this release carries #{turf.join(' and ')} and has NO devnet gauntlet recorded. Run Turf Monster's " \
         "contest-rehearsal on QA (docs/agents/agents/turf_monster/sops/contest-rehearsal.md) to a green close, " \
         "record it on the release (POST /api/v1/releases/current/events/#{STEP}/complete), then re-run the ship. " \
-        "Only on Alex's words: #{SKIP_FLAG} \"<his words>\"."
+        "Only on Alex McRitchie's words: #{SKIP_FLAG} \"<his words>\"."
     end
   end
 end

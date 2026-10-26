@@ -5,7 +5,7 @@ module ClientApps
   # "The Studio template"). Every app the shared host serves wears the Studio
   # navbar (the app's name and mark, a theme toggle, a menu) and the engine's
   # site footer ("Built with McRitchie Studio"), in the app's own palette, light
-  # and dark. Alex, 2026-10-20: "We want to build all the apps to a standard and
+  # and dark. Alex McRitchie, 2026-10-20: "We want to build all the apps to a standard and
   # that should start with a template and have a continuity."
   #
   # So nothing of the shell is copied into a bundle, where it would freeze and

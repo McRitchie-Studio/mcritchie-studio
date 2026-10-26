@@ -1,12 +1,12 @@
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink, watchPageErrors } = require("./helpers");
 
-// /dreams shows Alex's ruling given in chat (docs/agents/modules/dream.md, Act 3,
+// /dreams shows Alex McRitchie's ruling given in chat (docs/agents/modules/dream.md, Act 3,
 // "In chat"). A session records it with `bin/dream retire <slug> --clearance "<his
 // words>"`, which posts POST /api/v1/dream_rulings; here the spec posts it directly.
-// The fixture bank's `wait-for-the-light` is approved and tagged for carl and ray, so
+// The fixture bank's `wait-for-the-light` is approved and tagged for carl and alex, so
 // its card shows under both souls; the first is enough. No other spec rules on it.
-test("a chat retirement shows Alex's quoted words beside the retirement", async ({ page }) => {
+test("a chat retirement shows Alex McRitchie's quoted words beside the retirement", async ({ page }) => {
   const { pageErrors, report } = watchPageErrors(page);
   const words = "Retire the light one, the merge gate does it now";
 

@@ -43,7 +43,7 @@
    .cta-glow-rainbow is the one preset (task landing-build-ctas: the landing
    hero's Build Your App); it carries its own deeper stops in light mode.
 
-   The ORBIT variant (task build-cards-quality-pass; Alex, 2026-10-19: Choose
+   The ORBIT variant (task build-cards-quality-pass; Alex McRitchie, 2026-10-19: Choose
    Theme wears the MOVING multi-colour glow of the Turf Monster team cards,
    turf-monster .holo-border-glow). `.cta-glow-orbit` on the wrapper and one
    `<span class="cta-glow-ring" aria-hidden="true">` inside it, before the
@@ -157,7 +157,7 @@
   --glow-strength: 1;
 }
 
-/* Light mode (task preview-domain-mcritchie-app; Alex, 2026-10-19: a louder
+/* Light mode (task preview-domain-mcritchie-app; Alex McRitchie, 2026-10-19: a louder
    rainbow in light mode). Over the pale hero the 16px blur spread each colour
    thin and the ring read as a faint smudge in which yellow and cyan vanished.
    The light theme (the html element without .dark) takes a tighter blur (8px)

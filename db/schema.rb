@@ -2530,7 +2530,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_230000) do
     t.datetime "created_at", null: false
     t.jsonb "facts", default: {}, null: false
     t.datetime "graded_at", null: false
-    t.string "grader", default: "ray", null: false
+    t.string "grader", default: "mason", null: false
     t.text "learning"
     t.string "note_activity_slug"
     t.string "task_slug", null: false

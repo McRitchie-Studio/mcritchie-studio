@@ -126,13 +126,13 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
       post heartbeat_grade_path(a), params: BANK, as: :json
     end
     assert_response :success
-    assert ActionGrade.for_action(a).by_grader("ray").first.banked
+    assert ActionGrade.for_action(a).by_grader("mason").first.banked
 
     assert_difference -> { ActionGrade.count }, 1 do
       post heartbeat_activity_grade_path(e), params: BANK.merge(intent: "discard"), as: :json
     end
     assert_response :success
-    assert ActionGrade.for_activity(e).by_grader("ray").first.discarded
+    assert ActionGrade.for_activity(e).by_grader("mason").first.discarded
 
     assert_difference -> { ActionGrade.count }, -1 do
       post heartbeat_activity_grade_path(e), params: { grader: "mason", intent: "clear" }, as: :json

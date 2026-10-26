@@ -168,7 +168,7 @@ module ActivityFeed
 
   # Every visible ACTION's current grades in one query, grouped by action id then
   # keyed by grader — the action-level analogue of #activity_grade_lookup, so the
-  # /agents/activities drill-down rows render their inline Alex/McRitchie grade cells
+  # /agents/activities drill-down rows render their inline Mason/McRitchie grade cells
   # with no per-row query.
   def action_grade_lookup(actions)
     ids = Array(actions).map(&:id)

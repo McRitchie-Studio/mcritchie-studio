@@ -39,7 +39,7 @@ parser = OptionParser.new do |o|
     opts[:hand_off_to] = v
   end
   o.on("--no-board", "skip the board read of the dispatcher pings") { opts[:board] = false }
-  o.on("--allow-admin-token", "accept a deployer token in ~/.zprofile.admin (only when Alex said so)") do
+  o.on("--allow-admin-token", "accept a deployer token in ~/.zprofile.admin (only when Alex McRitchie said so)") do
     opts[:allow_admin_token] = true
   end
   # Help exits 2, not 0: `--check`'s exit 0 is a verdict, so `--check --help`

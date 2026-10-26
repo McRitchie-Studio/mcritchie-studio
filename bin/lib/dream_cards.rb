@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# DreamCards — the one formatter for putting dream decisions to Alex in chat
+# DreamCards — the one formatter for putting dream decisions to Alex McRitchie in chat
 # (docs/agents/modules/dream.md, "The card standard"). `bin/dream cards` prints it,
 # and both entry points use that command: the `dream-swap` SOP on demand and the
 # Dreams step at wrap (wrap-it-up, /wrap).

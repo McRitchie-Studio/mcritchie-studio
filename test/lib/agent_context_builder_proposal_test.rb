@@ -16,7 +16,7 @@ class AgentContextBuilderProposalTest < ActiveSupport::TestCase
     AgentMailbox::DomainRegistry.load.catalog(soul, audience: AgentMailbox::Audience.new(role: role))
   end
 
-  test "Turf's owner prompt lists Turf's catalog and nothing of Ritch's" do
+  test "Turf's owner prompt lists Turf's catalog and nothing of Alex's" do
     text = prompt(soul: "turf_monster", role: "owner", catalog: catalog_for("turf_monster", "owner"))
     assert_includes text, AgentMailbox::ProposalBlock::DELIMITER
     assert_includes text, "capability signups_and_errors"

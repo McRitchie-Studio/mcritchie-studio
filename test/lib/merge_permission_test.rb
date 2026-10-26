@@ -95,10 +95,10 @@ class MergePermissionTest < Minitest::Test
     end
   end
 
-  # The ray soul held the seat until 2026-10-25, when Mason took it; its retired
-  # slugs (alex, xan) still resolve to ray, which no longer holds it.
+  # The alex soul held the seat until 2026-10-25, when Mason took it; its retired
+  # slugs (alex, xan) still resolve to alex, which no longer holds it.
   def test_the_ray_soul_and_its_retired_slugs_no_longer_hold_the_seat
-    %w[ray alex xan].each do |soul|
+    %w[alex alex xan].each do |soul|
       refute MergePermission.shape_limited?(soul), "#{soul} must not hold the documentation seat"
       # Not even the old shape-limited permit: a soul outside the pool merges nothing.
       assert_equal :no_review_seat, decide(soul: soul).code, soul

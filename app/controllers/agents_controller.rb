@@ -17,7 +17,7 @@ class AgentsController < ApplicationController
 
   # The reimagined cross-session activity feed — every narrated AgentActivity across
   # all sessions, newest-first, with its drilled-down raw actions (also newest-first)
-  # and inline Alex/McRitchie grade cells on BOTH. An optional ?sessions= (comma list
+  # and inline Mason/McRitchie grade cells on BOTH. An optional ?sessions= (comma list
   # or array) narrows to a multi-select of Pokémon sessions (blank = every session);
   # @active_session_chips feeds the top active-filter row (selected sessions only), while
   # the full session list the sidebar shows lazy-loads via #activities_filter. Read-only —

@@ -3,7 +3,7 @@
 require "test_helper"
 require Rails.root.join("bin/lib/dream_bank").to_s
 
-# [unit] DreamRetirement: only Alex retires, only an approved dream, and a recorded
+# [unit] DreamRetirement: only Alex McRitchie retires, only an approved dream, and a recorded
 # retirement stops being pending once the deployed bank no longer holds the file.
 class DreamRetirementTest < ActiveSupport::TestCase
   setup { users(:alex).update_column(:slug, "alex-mcritchie-test") }
@@ -13,9 +13,9 @@ class DreamRetirementTest < ActiveSupport::TestCase
                          tags: {}, source: "", story: "")
   end
 
-  test "[unit] only Alex retires, and only an approved dream" do
+  test "[unit] only Alex McRitchie retires, and only an approved dream" do
     error = assert_raises(DreamRetirement::NotRetirable) { DreamRetirement.record!(dream, users(:viewer)) }
-    assert_includes error.message, "only Alex"
+    assert_includes error.message, "only Alex McRitchie"
     seat = User.create!(email: "admin@mcritchie.studio", name: "Admin McRitchie", role: "admin")
     assert_raises(DreamRetirement::NotRetirable) { DreamRetirement.record!(dream, seat) }
     error = assert_raises(DreamRetirement::NotRetirable) { DreamRetirement.record!(dream(status: "proposed"), users(:alex)) }

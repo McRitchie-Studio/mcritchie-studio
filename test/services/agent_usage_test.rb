@@ -39,7 +39,7 @@ class AgentUsageTest < ActiveSupport::TestCase
 
   test "the shipped config caps only the free tier: Vibe at 25,000, every paid package blank" do
     allowances = WorkspacePackage.all.to_h { |p| [ p.key, p.cto_monthly_tokens ] }
-    assert_equal 25_000, allowances.delete("vibe"), "Alex, 2026-10-19: the free budget is very small"
+    assert_equal 25_000, allowances.delete("vibe"), "Alex McRitchie, 2026-10-19: the free budget is very small"
     assert allowances.values.all?(&:nil?), "paid tiers unchanged: #{allowances.inspect}"
     assert_equal 80, AgentUsage.warn_percent
     assert AgentUsage.meter(@app, now: NOW).unlimited?

@@ -1,4 +1,4 @@
-// [e2e] The kit export (task kit-export-and-clear-lens; Alex 2026-10-12 00:55: his Commercial Welding
+// [e2e] The kit export (task kit-export-and-clear-lens; Alex McRitchie 2026-10-12 00:55: his Commercial Welding
 // site drew an old navbar, not the one his kit saves). Save Commercial Welding v2's Navbar in Original,
 // homogeneous; the Kit card's Download kit then gives a zip of the saved logos with a README, the
 // stable kit file and the plain /navbar route both serve that saved navbar (solid white words on dark,
@@ -11,7 +11,7 @@ test("download the kit export and see the saved navbar", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await loginWithMagicLink(page, "alex@test.com");
 
-  // Alex's kit Navbar: Original, homogeneous, rule of 4.
+  // Alex McRitchie's kit Navbar: Original, homogeneous, rule of 4.
   await page.goto("/logos/welding_v2?rule=4&colouring=original&text=homogeneous");
   const choice = page.locator("[data-test='kit-choice']");
   await choice.locator("[data-test='kit-save']").click();

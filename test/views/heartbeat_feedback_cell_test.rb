@@ -21,7 +21,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
     ERB
   end
 
-  test "[component] every row carries inline good/not radios for Ritch and the McRitchie audit" do
+  test "[component] every row carries inline good/not radios for Mason and the McRitchie audit" do
     a = action(stage: "building")
 
     render_table(a, {})
@@ -40,7 +40,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
     grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::MASON,
                                 slug: "good catch flagging the gaps", disposition: ActionGrade::GOOD)
 
-    render_table(a, { a.id => { "ray" => grade } })
+    render_table(a, { a.id => { "mason" => grade } })
 
     assert_select "td#fb-mason-#{a.id} label.hb-rb.on-good"
     assert_select "td#fb-mason-#{a.id} input[type=radio][value=good][checked=checked]"
@@ -52,7 +52,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
     grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::MASON,
                                 slug: "slow diagnosing the column", disposition: ActionGrade::NOT)
 
-    render_table(a, { a.id => { "ray" => grade } })
+    render_table(a, { a.id => { "mason" => grade } })
 
     assert_select "td#fb-mason-#{a.id} label.hb-rb.on-not"
     assert_select "td#fb-mason-#{a.id} input[type=radio][value=not][checked=checked]"
@@ -63,7 +63,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
     grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::MASON,
                                 slug: "promote this to a guardrail", disposition: ActionGrade::GOOD, banked: true)
 
-    render_table(a, { a.id => { "ray" => grade } })
+    render_table(a, { a.id => { "mason" => grade } })
 
     assert_select "td#fb-mason-#{a.id} .hb-bankmark"
     assert_select "td#fb-mason-#{a.id} .hb-discardmark", false
@@ -74,7 +74,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
     grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::MASON,
                                 slug: "noise not worth keeping here", disposition: ActionGrade::NOT, discarded: true)
 
-    render_table(a, { a.id => { "ray" => grade } })
+    render_table(a, { a.id => { "mason" => grade } })
 
     assert_select "td#fb-mason-#{a.id} .hb-discardmark"
     assert_select "td#fb-mason-#{a.id} .hb-bankmark", false
@@ -86,7 +86,7 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
                                 slug: "good catch flagging the gaps", disposition: ActionGrade::GOOD,
                                 long_form: "Anchor: flag the gap before building.")
 
-    render_table(a, { a.id => { "ray" => grade } })
+    render_table(a, { a.id => { "mason" => grade } })
 
     assert_select "td#fb-mason-#{a.id} .hb-longmark"
   end

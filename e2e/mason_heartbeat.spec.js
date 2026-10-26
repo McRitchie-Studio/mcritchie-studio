@@ -1,11 +1,11 @@
 const { test, expect } = require("@playwright/test");
 
-// The Ritch avenue (/mason/heartbeat) renders the agent-narrated EVENT trajectory from
+// The Mason avenue (/mason/heartbeat) renders the agent-narrated EVENT trajectory from
 // the seeded spans — each row an AgentActivity (category · reason -> outcome) that
 // drills down (Alpine) into the raw tool-calls attributed to it. The seed narrates a
 // couple of closed spans, a final OPEN span ("…in progress"), plus one pre-narration
 // action in the read-only "Unlabeled" group.
-test("ray heartbeat renders the narrated event spans as the primary rows", async ({ page }) => {
+test("alex heartbeat renders the narrated event spans as the primary rows", async ({ page }) => {
   await page.goto("/mason/heartbeat?session_id=e2e-heartbeat-0001");
 
   const table = page.locator("[data-test='heartbeat-event-table']");
@@ -141,13 +141,13 @@ test("activity + action timestamps render at second precision", async ({ page })
   await expect(explore.locator("[data-test='action-span']").first()).toContainText("created at");
 });
 
-// The launcher's Ritch avenue links straight to the heartbeat trajectory.
-test("the session launcher Ritch avenue links to the heartbeat trajectory", async ({ page }) => {
+// The launcher's Mason avenue links straight to the heartbeat trajectory.
+test("the session launcher Mason avenue links to the heartbeat trajectory", async ({ page }) => {
   await page.goto("/launcher");
 
-  const ray = page.locator("a[data-avenue='ray']");
-  await expect(ray).toHaveAttribute("href", "/mason/heartbeat");
+  const mason = page.locator("a[data-avenue='mason']");
+  await expect(alex).toHaveAttribute("href", "/mason/heartbeat");
 
-  await ray.click();
+  await alex.click();
   await expect(page.locator("[data-test='heartbeat-event-table']")).toBeVisible();
 });

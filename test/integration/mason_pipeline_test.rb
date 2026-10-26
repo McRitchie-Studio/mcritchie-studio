@@ -36,10 +36,10 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
       assert_select ".hb-catchip", text: "Verify"
       assert_select ".pl-narr", text: "review the diff"
     end
-    assert_select "[data-test=pl-not]", { count: 1 }, "an Ritch 'not' grade flags the span"
+    assert_select "[data-test=pl-not]", { count: 1 }, "an Mason 'not' grade flags the span"
   end
 
-  test "[integration] column 2 shows an Ritch insight with a Confirm button" do
+  test "[integration] column 2 shows an Mason insight with a Confirm button" do
     s = span(session_id: "pl-2", reason: "narrated cleanly")
     g = ActionGrade.create!(agent_activity: s, grader: "mason", disposition: "good",
                             slug: "write the failing test first", long_form: "red before green")
@@ -121,7 +121,7 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=pl-test-run]", { count: 0 }
   end
 
-  test "[integration] an Ritch 'not' grade flags a test-run row" do
+  test "[integration] an Mason 'not' grade flags a test-run row" do
     run = make_test_run(scope: "pre_qa_gate", result: "pass", session_id: "tr-not")
     ActionGrade.create!(agent_action: run, grader: "mason", disposition: "not", slug: "flaky integration gate")
 

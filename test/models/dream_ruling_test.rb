@@ -3,7 +3,7 @@
 require "test_helper"
 require Rails.root.join("bin/lib/dream_bank").to_s
 
-# [unit] DreamRuling: Alex's ruling given in chat, recorded with his quoted words and
+# [unit] DreamRuling: Alex McRitchie's ruling given in chat, recorded with his quoted words and
 # the session that heard them (docs/agents/modules/dream.md, Act 3, "In chat").
 class DreamRulingTest < ActiveSupport::TestCase
   WORDS = "Approve that one, it is right"
@@ -19,7 +19,7 @@ class DreamRulingTest < ActiveSupport::TestCase
     DreamRuling.record!(ruling: ruling, dream: target, clearance: clearance, session_id: session)
   end
 
-  test "[unit] approve records a chat approval naming Alex, with his words and the session" do
+  test "[unit] approve records a chat approval naming Alex McRitchie, with his words and the session" do
     row, created = rule("approve")
 
     assert created

@@ -34,7 +34,7 @@ class GoogleConnectionTest < ActiveSupport::TestCase
   end
 
   test "[unit] signing the same account in again replaces its token, one row per account" do
-    GoogleConnection.store!(grant, email: "Alex@McRitchie.studio", user: alex, abilities: ALL, now: NOW)
+    GoogleConnection.store!(grant, email: "Alex McRitchie@McRitchie.studio", user: alex, abilities: ALL, now: NOW)
     second = GoogleConnection.store!(grant(refresh_token: "1//second"), email: "alex@mcritchie.studio", user: alex, abilities: ALL, now: NOW + 1.hour)
 
     assert_equal 1, GoogleConnection.count

@@ -15,7 +15,7 @@
 #          release and no member carries an open escalation; otherwise it refuses
 #          and names why. The default, from config/release_builder.yml.
 #   auto   proceeds on green with no prompt — `--yes` semantics.
-#   cleared  Alex cleared the release in chat. `--clearance "<his words>"` is
+#   cleared  Alex McRitchie cleared the release in chat. `--clearance "<his words>"` is
 #          required and is recorded on the completion with `granted_via chat`
 #          and `cleared_by`; no window, no button. The grant is an audit trail
 #          the deployer session asserts, not a signature: the /deployments card
@@ -117,7 +117,7 @@ module ShipAuthority
   def cleared!(clearance:, cleared_by:, recorder:, say:, clock:)
     words = clearance.to_s.strip
     if words.empty?
-      raise Refused, "--mode cleared needs --clearance \"<Alex's words>\": his clearance in chat is the grant, " \
+      raise Refused, "--mode cleared needs --clearance \"<Alex McRitchie's words>\": his clearance in chat is the grant, " \
                      "and the words are recorded on the release. Nothing recorded, nothing deployed."
     end
 

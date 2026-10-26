@@ -1,6 +1,6 @@
 module BuildIntake
-  # The intake card one of Ritch's answers offers, checked in CODE before anything
-  # shows it (the ProposalBlock pattern: the model proposes, code decides). Ritch
+  # The intake card one of Alex's answers offers, checked in CODE before anything
+  # shows it (the ProposalBlock pattern: the model proposes, code decides). Alex
   # writes it as a PROPOSAL block of kind "intake":
   #
   #   ===PROPOSAL===
@@ -49,7 +49,7 @@ module BuildIntake
     # The idea card's free text. audience and day_one are the v1 card's fields:
     # no longer offered, still readable on a draft that confirmed one.
     TEXT_LIMITS = { "idea" => 280, "title" => 60, "audience" => 160, "day_one" => 160 }.freeze
-    # The idea's title: Ritch is asked for 4 to 6 words; code holds 2 to 8, so a
+    # The idea's title: Alex is asked for 4 to 6 words; code holds 2 to 8, so a
     # near miss still shows the card instead of leaving the visitor stuck.
     TITLE_WORDS = (2..8)
     FEATURES = (2..3)

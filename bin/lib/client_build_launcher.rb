@@ -17,7 +17,7 @@ require_relative "desk_context"
 require_relative "process_table"
 
 # bin/client-build-launcher: the automatic first version of every /build app, run
-# as a launchd service on Alex's Mac beside bin/dispatcher (design:
+# as a launchd service on Alex McRitchie's Mac beside bin/dispatcher (design:
 # .agents/epics/client-app-zero-to-one.md; runbook:
 # docs/agents/system/client-build-launcher.md). The board side is ClientBuilds
 # (app/services/client_builds.rb) behind /api/v1/client_builds.

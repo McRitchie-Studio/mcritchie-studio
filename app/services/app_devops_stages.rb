@@ -28,13 +28,13 @@
 #
 # THE PILLS. A lane with tasks is live; it carries its count from two tasks up
 # ("Building 2"), and a lane of one reads just its label ("Building", never
-# "Building 1"; task cto-pill-count-and-links, Alex 2026-10-20). A lane with none is
+# "Building 1"; task cto-pill-count-and-links, Alex McRitchie 2026-10-20). A lane with none is
 # muted, except that while the app's own build task is in flight the lanes it has
 # passed keep their check (the launch's progress, as before). With nothing in
 # flight every pill is muted and the card says "Nothing in progress": never three
 # checks that read as finished work.
 #
-# THE SUB-LABELS (task app-card-stage-labels, Alex 2026-10-19). A live pill also
+# THE SUB-LABELS (task app-card-stage-labels, Alex McRitchie 2026-10-19). A live pill also
 # says where its work actually is, read from the lane's MOST ADVANCED task (the
 # newest among equals), and how long that step usually has left (Eta):
 #
@@ -54,7 +54,7 @@
 # is building) is not shown: the pill reads "Building", not "Building" over
 # "Building" (shown_sub_label; the ETA still shows beneath).
 #
-# THE PREPPING LANE (task cto-chat-quality-pass, Alex 2026-10-19). A Building
+# THE PREPPING LANE (task cto-chat-quality-pass, Alex McRitchie 2026-10-19). A Building
 # lane whose tasks are ALL designed has nobody building: its pill reads
 # "Prepping" as its label, with no count and no sub-label, never "Building 2"
 # over "Prepping" over "no builder". It keeps a real wait ("~20 min") when a

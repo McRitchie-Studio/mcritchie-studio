@@ -2,7 +2,7 @@
 
 require Rails.root.join("bin/lib/dream_clearance").to_s
 
-# Alex's ruling on a dream, given in chat and recorded by an agent with his quoted
+# Alex McRitchie's ruling on a dream, given in chat and recorded by an agent with his quoted
 # words (docs/agents/modules/dream.md, Act 3, "In chat"), through
 # POST /api/v1/dream_rulings and `bin/dream approve|drop|retire --clearance`.
 #
@@ -11,11 +11,11 @@ require Rails.root.join("bin/lib/dream_clearance").to_s
 #   retire   an approved dream → a DreamRetirement with ruling "retire"
 #
 # Each row is stamped via "chat", with the verbatim clearance and the recording
-# session, and names Alex as the approver. That is the house precedent for
+# session, and names Alex McRitchie as the approver. That is the house precedent for
 # production (`bin/release ship --mode cleared --clearance`): his clearance in
 # chat is the grant, and the words are the audit trail. It is not a signature,
-# and it is not an agent's own judgment: an agent records only what Alex said in
-# that session. A row Alex already made with a click stands; a second ruling on
+# and it is not an agent's own judgment: an agent records only what Alex McRitchie said in
+# that session. A row Alex McRitchie already made with a click stands; a second ruling on
 # the same dream returns it.
 #
 # `bin/dream apply-approvals` writes all three into the files as it does a click:
@@ -30,7 +30,7 @@ class DreamRuling
     new(ruling.to_s, dream, clearance.to_s.strip, session_id.to_s.strip).record!
   end
 
-  # Alex's User row slug, the approver every chat ruling names; nil when the hub
+  # Alex McRitchie's User row slug, the approver every chat ruling names; nil when the hub
   # holds no such user (the column then stays blank and `via` still says chat).
   def self.approver_slug
     User.where("lower(email) IN (?)", DreamApproval::APPROVER_EMAILS).pick(:slug)

@@ -49,7 +49,7 @@ module DreamBank
     %w[qa-release prepare] => "bin/release prepare"
   }.freeze
   TAG_VALUE = /\A[a-z0-9][a-z0-9+-]*\z/
-  SOUL_ALIASES = { "alex" => "ray", "xan" => "ray" }.freeze
+  SOUL_ALIASES = { "ray" => "alex", "xan" => "alex" }.freeze
   # The most characters one claim's dream block takes.
   CALL_BUDGET = 6_000
 
@@ -141,7 +141,7 @@ module DreamBank
     approved(dir: dir).select { |dream| dream.souls.include?(slug) }
   end
 
-  # `turf_monster`, `alex` and `xan` name the souls.yml slugs `turf-monster` and `ray`.
+  # `turf_monster`, `alex` and `xan` name the souls.yml slugs `turf-monster` and `alex`.
   def canonical_soul(name)
     slug = name.to_s.strip.downcase.tr("_", "-")
     SOUL_ALIASES.fetch(slug, slug)
@@ -250,7 +250,7 @@ module DreamBank
     return "" if mine.empty?
 
     "## Moment: #{sop} · #{step}\n" \
-      "Dreams for this step, signed off by Alex. A dream never overrides a First Rule or an SOP.\n\n" +
+      "Dreams for this step, signed off by Alex McRitchie. A dream never overrides a First Rule or an SOP.\n\n" +
       mine.map { |dream| dream_block(dream, why: false) }.join("\n\n")
   end
 
@@ -280,7 +280,7 @@ module DreamBank
   end
 
   HEADER = "## Dreams: good answers from past sessions\n" \
-           "Each dream is a decision worth repeating, signed off by Alex. Some record what a session got " \
+           "Each dream is a decision worth repeating, signed off by Alex McRitchie. Some record what a session got " \
            "right; some record the answer a wrong call taught. Read them all before your first decision; " \
            "when a situation here matches yours, answer it the same way. A dream never overrides a First " \
            "Rule or an SOP. Full story: `docs/agents/dreams/platform/<slug>.md`. When a dream changes what " \
@@ -340,7 +340,7 @@ module DreamBank
   end
 
   def soul_intro(lead, slug)
-    "#{lead}, signed off by Alex. Your skills are this sequence plus " \
+    "#{lead}, signed off by Alex McRitchie. Your skills are this sequence plus " \
       "`docs/agents/agents/#{slug.tr("-", "_")}/role.md`. When a situation here matches yours, answer it " \
       "the same way. A dream never overrides a First Rule or an SOP. " \
       "Full stories: `docs/agents/dreams/INDEX.md`."

@@ -7,7 +7,7 @@
 # A Discord failure (AgentMessages::DiscordBot::Error, a rate limit included) is
 # retried with a polynomial back-off, five tries in all; every retry carries the
 # same idempotency_key, so the report still posts at most once. A not-configured
-# or disabled destination is recorded and NOT retried: that waits on Alex.
+# or disabled destination is recorded and NOT retried: that waits on Alex McRitchie.
 class ReportDeliveryJob < ApplicationJob
   queue_as :default
   retry_on AgentMessages::DiscordBot::Error, wait: :polynomially_longer, attempts: 5

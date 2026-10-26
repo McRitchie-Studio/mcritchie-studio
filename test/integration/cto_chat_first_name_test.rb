@@ -2,7 +2,7 @@ require "test_helper"
 require_relative "../support/client_cto_fixtures"
 
 # [integration] A nameless owner on their app's CTO chat (task
-# cto-chat-quality-pass, Alex 2026-10-19: "The first name is weird"): the CTO
+# cto-chat-quality-pass, Alex McRitchie 2026-10-19: "The first name is weird"): the CTO
 # asks for a first name in its greeting, the engine's first-name modal is never
 # armed on the chat (nor over the launch panel), and the owner's reply saves the
 # name (or skips) in code, with no model run. Off the chat the modal still asks.

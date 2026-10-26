@@ -2,7 +2,7 @@ require "test_helper"
 
 module Api
   module V1
-    # [integration] POST /api/v1/dream_rulings — Alex's ruling given in chat, recorded
+    # [integration] POST /api/v1/dream_rulings — Alex McRitchie's ruling given in chat, recorded
     # by the session that heard it with his verbatim words (bin/dream approve|drop|
     # retire --clearance). The one API route that approves or retires, and only on
     # his quoted word; apply-approvals then reads the rows like his clicks.

@@ -47,7 +47,7 @@ class WorkspaceDrafterTest < ActiveSupport::TestCase
   setup do
     @account = WorkspaceAccount.create!(domain: "mason.test")
     @account.mark_verified!
-    @mailbox = @account.workspace_mailboxes.create!(address: "alex@mason.test", signature: "— Alex")
+    @mailbox = @account.workspace_mailboxes.create!(address: "alex@mason.test", signature: "— Alex McRitchie")
     @mailbox.mark_verified!
   end
 
@@ -61,7 +61,7 @@ class WorkspaceDrafterTest < ActiveSupport::TestCase
     mail = Mail.new(raw)
     assert_nil thread
     assert_equal [ "alex@mason.test" ], mail.from
-    assert_includes mail.html_part.decoded, "— Alex", "the mailbox signature is appended"
+    assert_includes mail.html_part.decoded, "— Alex McRitchie", "the mailbox signature is appended"
 
     log = result.log
     assert_equal [ "alex@mason.test", "alex", "r-1", "msg-9" ],

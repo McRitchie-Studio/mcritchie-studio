@@ -114,7 +114,7 @@ test("an Escalated dependency block wears the escalation countdown", async ({ pa
     expect(blocked.status, blocked.body).toBe(200);
     const noted = await api(page, "POST", "/api/v1/activities", {
       task_slug: slug, activity_type: "qa_feedback", agent_slug: "avi",
-      description: "POLICY QUESTION for Alex. Reviewer: keep the chip amber. Builder: match the bar. " +
+      description: "POLICY QUESTION for Alex McRitchie. Reviewer: keep the chip amber. Builder: match the bar. " +
         "Avi's recommendation: amber. Window: 20 min; on lapse the recommendation stands.",
       metadata: { summary: "Escalated: chip colour default", kind: "dependency" },
     });

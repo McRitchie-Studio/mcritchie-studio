@@ -1,6 +1,6 @@
 module AgentMessages
   # An app owner asking their CTO for a new avatar, answered IN CODE with one
-  # line and the picker (task cto-animal-avatar-bank, Alex 2026-10-20: "if
+  # line and the picker (task cto-animal-avatar-bank, Alex McRitchie 2026-10-20: "if
   # someone asks for an avatar lets just open the modal again and they can
   # re-pick their avatar. The avatar's physical attributes don't have much
   # material effect on the agent."). Before this the model designed a bat in hex

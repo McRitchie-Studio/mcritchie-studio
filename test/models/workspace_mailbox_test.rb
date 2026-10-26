@@ -31,7 +31,7 @@ class WorkspaceMailboxTest < ActiveSupport::TestCase
     refute WorkspaceMailbox.impersonatable?("alex@mason.test"), "pending mailbox"
 
     mailbox.mark_verified!
-    assert WorkspaceMailbox.impersonatable?(" Alex@Mason.test ")
+    assert WorkspaceMailbox.impersonatable?(" Alex McRitchie@Mason.test ")
     assert WorkspaceAccount.impersonatable?("alex@mason.test", purpose: :mail), "Credentials' one question sees it too, for mail"
 
     account.revoke!("paused")

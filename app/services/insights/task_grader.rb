@@ -359,7 +359,7 @@ module Insights
     end
 
     # The dry-run (default) and live backfill over the most recently shipped tasks —
-    # what `bin/rails learning_loop:backfill` runs, so Alex can read the loop's output
+    # what `bin/rails learning_loop:backfill` runs, so Alex McRitchie can read the loop's output
     # before it grades anything for real. Dry run writes NOTHING; live grades each
     # ungraded task exactly as the ship hook would (idempotent — graded ones are
     # skipped). One Baseline serves the whole run: the current trailing window.

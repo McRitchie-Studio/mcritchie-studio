@@ -1,4 +1,4 @@
-// [e2e] The brand page's Download card (task logo-download-card; Alex 2026-10-14 22:05: "allow for png downloading
+// [e2e] The brand page's Download card (task logo-download-card; Alex McRitchie 2026-10-14 22:05: "allow for png downloading
 // and some preset sizes. There are some integrations that have very specific size requirements and don't accept
 // SVGs"). Each tab draws ONE logo with a Download card; a PNG at a preset size is a file of exactly that many pixels,
 // read from the PNG's own header, on every type; a custom width keeps the aspect; and the Navbar tab is a row (the
@@ -31,7 +31,7 @@ async function preset(page, key) {
 }
 
 // Written as literal tests, not a loop: bin/e2e-executed-set-check counts `test(` calls in the source.
-// Alex, 2026-10-14 22:35: "the default should be to download the true aspect ratio but there should be a button to use
+// Alex McRitchie, 2026-10-14 22:35: "the default should be to download the true aspect ratio but there should be a button to use
 // 1:1 aspect ratio". Studio's chest is about 662 × 538, so its 512 preset is 512 × 416, or 512 × 512 padded.
 test("the Studio icon at 512 downloads in its true aspect, 512 × 416, with transparency, named after the SVG", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });

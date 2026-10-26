@@ -1,4 +1,4 @@
-// [e2e] The icon as an atomic unit (task kit-icon-atomic-unit; Alex 2026-10-11 19:23: "Lets make sure
+// [e2e] The icon as an atomic unit (task kit-icon-atomic-unit; Alex McRitchie 2026-10-11 19:23: "Lets make sure
 // the icon is distributed across the other logos"): the Icon tab saves the kit's icon, and every
 // Navbar and Stacked Logo, on its tab and in the /logos table, then draws that same icon.
 const { test, expect } = require("@playwright/test");

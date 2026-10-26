@@ -269,11 +269,11 @@ module AgentMailbox
       TEXT
     end
 
-    # The /build intake playbook (docs/agents/agents/ray/intake.md, below its
+    # The /build intake playbook (docs/agents/agents/alex/intake.md, below its
     # rule), the request's state from the bundle's "intake" (code-shaped, so
     # outside the fence, except the confirmed idea, which is fenced), and how to
     # write an intake card. Empty on every thread that is not a /build thread.
-    INTAKE_DOC = "docs/agents/agents/ray/intake.md"
+    INTAKE_DOC = "docs/agents/agents/alex/intake.md"
     INTAKE_FALLBACK = "Help the visitor set up their app: the idea, their theme, their CTO and their domain, " \
                       "one question at a time."
 
@@ -316,26 +316,26 @@ module AgentMailbox
       TEXT
     end
 
-    # Alex's interactive resume on /build (Alex, 2026-10-20): the profile below
-    # the rule of docs/agents/agents/ray/about-alex.md (Alex edits it; its
+    # Alex McRitchie's interactive resume on /build (Alex McRitchie, 2026-10-20): the profile below
+    # the rule of docs/agents/agents/alex/about-alex.md (Alex McRitchie edits it; its
     # citations are HTML comments, stripped), capped at ABOUT_ALEX_BUDGET, and the
-    # rules for using it, from code: speak ABOUT Alex, never as him; family stops
+    # rules for using it, from code: speak ABOUT Alex McRitchie, never as him; family stops
     # at what the profile says; a question about him never starts a card. Only
     # on a /build thread (the intake bundle), so no other chat carries it.
-    ABOUT_ALEX_DOC = "docs/agents/agents/ray/about-alex.md"
+    ABOUT_ALEX_DOC = "docs/agents/agents/alex/about-alex.md"
     ABOUT_ALEX_BUDGET = 2500
     ABOUT_ALEX_RULES = <<~TEXT.rstrip
       - ABOUT ALEX. Alex McRitchie founded McRitchie Studio, and you are his agent. Visitors may ask
         about him: who he is, what he builds, and his views on code, philosophy and building. Answer
         from the profile below, briefly, then offer to help with their app.
-        - Speak ABOUT Alex, in the third person ("Alex thinks ..."). You are not Alex: never claim to
+        - Speak ABOUT Alex McRitchie, in the third person ("Alex McRitchie thinks ..."). You are not Alex McRitchie: never claim to
           be him, write as him, or speak for him beyond the profile.
-        - Advice is Alex's view, framed as his ("Alex's take is ..."), and only the views the profile
-          gives. When it has nothing on a topic, say Alex hasn't shared that here; never guess.
+        - Advice is Alex McRitchie's view, framed as his ("Alex McRitchie's take is ..."), and only the views the profile
+          gives. When it has nothing on a topic, say Alex McRitchie hasn't shared that here; never guess.
         - Family: say only what the profile says. Politely decline anything more about his family
           (names it does not give, ages, schools, where they live, photos, anything else).
         - Never share his home address, phone number, money, or any business he is buying.
-        - A question about Alex is not an app request: answer it with NO intake card, and it sets no
+        - A question about Alex McRitchie is not an app request: answer it with NO intake card, and it sets no
           step. When the visitor wants an app, follow the playbook above.
     TEXT
 
@@ -344,8 +344,8 @@ module AgentMailbox
 
       doc = doc_text(File.join(@repo_root, ABOUT_ALEX_DOC)).to_s
       profile = doc.include?("\n---\n") ? doc.split("\n---\n", 2).last.gsub(/^[ \t]+\n/, "").strip : ""
-      profile = "Alex has not written his profile yet: say only that he founded McRitchie Studio." if profile.empty?
-      "#{ABOUT_ALEX_RULES}\n  The profile (Alex's own, written for visitors):\n" \
+      profile = "Alex McRitchie has not written his profile yet: say only that he founded McRitchie Studio." if profile.empty?
+      "#{ABOUT_ALEX_RULES}\n  The profile (Alex McRitchie's own, written for visitors):\n" \
         "#{cap(profile, ABOUT_ALEX_BUDGET).gsub(/^/, '  ')}"
     end
 

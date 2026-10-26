@@ -15,7 +15,7 @@ class MergePermitCliTest < Minitest::Test
   HEAD = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678"
   LATER = "ffffffffffffffffffffffffffffffffffffffff"
   PR = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/4242"
-  SOULS = %w[mason ray carl shannon jasper steffon avi pokemon].freeze
+  SOULS = %w[mason alex carl shannon jasper steffon avi pokemon].freeze
 
   class FakeBoard
     attr_accessor :task_record, :reports, :task_error, :reports_error

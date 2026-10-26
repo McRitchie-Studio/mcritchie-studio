@@ -1,6 +1,6 @@
 # The board side of the automatic first version (.agents/epics/client-app-zero-to-one.md;
 # runbook: docs/agents/system/client-build-launcher.md). bin/client-build-launcher on
-# Alex's Mac drives it through Api::V1::ClientBuildsController:
+# Alex McRitchie's Mac drives it through Api::V1::ClientBuildsController:
 #
 #   candidates            designed launch tasks, oldest first, that a launcher may claim
 #   claim!(slug, ...)     designed -> building, atomically, and the intake to build from

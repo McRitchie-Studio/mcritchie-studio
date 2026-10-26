@@ -3,7 +3,7 @@ require "test_helper"
 # [component] the /agents/activities table partial — the reimagined 7-column x 3-sub-row
 # feed. Each activity is a tbody: Agent (stacked soul-over-mascot), Activity (category +
 # goal / →result-with-fade / key command), Cost (cost / model / tokens), Details
-# (start+status / end-or-live-counter+action-count / issue slug), and the Ritch + McRitchie inline grade
+# (start+status / end-or-live-counter+action-count / issue slug), and the Mason + McRitchie inline grade
 # cells. Expanding drills into the raw actions (2-sub-row: #seq KIND + summary / key
 # method; cost / tokens; #seq KIND + outcome) which carry their OWN inline grade cells.
 # The wide input/output blobs never render here — the feed loads through
@@ -147,7 +147,7 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     assert_select ".aa-detailend .aa-spinner"
   end
 
-  test "[component] each activity carries Ritch + McRitchie inline grade cells posting to the activity endpoint" do
+  test "[component] each activity carries Mason + McRitchie inline grade cells posting to the activity endpoint" do
     ev = activity(closed_at: Time.current, outcome_slug: "done")
 
     render_table [[ev, []]]
@@ -164,7 +164,7 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     grade = ActionGrade.create!(agent_activity: ev, grader: "mason", disposition: "good",
                                 slug: "clean activity with a crisp outcome")
 
-    render_table [[ev, []]], activity_grades: { ev.id => { "ray" => grade } }
+    render_table [[ev, []]], activity_grades: { ev.id => { "mason" => grade } }
 
     assert_select "td[data-test=aa-activity-grade-mason] input[value=good][checked]"
     assert_select "[data-test=aa-activity-note-mason]", text: /clean activity with a crisp outcome/
@@ -227,7 +227,7 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     assert_select "tr.aa-omitted-row", false
   end
 
-  test "[component] action rows carry their own Ritch + McRitchie grade cells posting to the action endpoint" do
+  test "[component] action rows carry their own Mason + McRitchie grade cells posting to the action endpoint" do
     ev = activity(closed_at: Time.current, outcome_slug: "done")
     act = action(agent_activity_id: ev.id, seq: 0)
 

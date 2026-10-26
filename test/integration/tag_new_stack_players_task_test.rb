@@ -4,7 +4,7 @@ require "rake"
 # [integration] contacts:tag_new_stack_players (task first-game-feedback-survey):
 # tags the contacts who played the rebuilt Cyvasse, from the cyvasse CSV and
 # from the hub's played_match email results, stores the first-game date in
-# traits["cyvasse"] without touching the rest, skips Alex, and prints counts only.
+# traits["cyvasse"] without touching the rest, skips Alex McRitchie, and prints counts only.
 class TagNewStackPlayersTaskTest < ActiveSupport::TestCase
   TASK = "contacts:tag_new_stack_players".freeze
   TAG = Contacts::NewStackPlayerTagger::TAG

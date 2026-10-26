@@ -46,7 +46,7 @@
   <!-- Input -->
   <div class="border-t border-subtle px-3 py-2">
     <form @submit.prevent="sendMessage" class="flex gap-2 <%= compact ? '' : 'max-w-3xl mx-auto' %>">
-      <input type="text" x-model="input" placeholder="Ask Alex anything..."
+      <input type="text" x-model="input" placeholder="Ask Alex McRitchie anything..."
              class="input-field flex-1 <%= compact ? 'text-sm' : '' %>" :disabled="loading"
              x-ref="input">
       <button type="submit" class="btn btn-primary <%= compact ? 'btn-sm' : '' %>" :disabled="loading || !input.trim()">

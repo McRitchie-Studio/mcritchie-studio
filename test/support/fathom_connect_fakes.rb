@@ -57,7 +57,7 @@ module FathomConnectFakes
   }.freeze
   TRANSCRIPT = { transcript: [
     { speaker: { display_name: "Alex" }, text: "Morning.", timestamp: "00:00:01" },
-    { speaker: { display_name: "Lender" }, text: "Morning, Alex.", timestamp: "00:00:03" },
+    { speaker: { display_name: "Lender" }, text: "Morning, Alex McRitchie.", timestamp: "00:00:03" },
     { speaker: { display_name: "Alex" }, text: "The term sheet.", timestamp: "00:00:07" }
   ] }.freeze
   SUMMARY = { summary: { markdown_formatted: "## Lender call\n\n- Term sheet agreed." } }.freeze

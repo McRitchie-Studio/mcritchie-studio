@@ -2,7 +2,7 @@
 
 module EmailImages
   # THE COPY-PASTE PROMPT on the generator page (/email_images/generator/:kit):
-  # the `email-image` SOP's name plus a simple brief Alex pastes into a Claude
+  # the `email-image` SOP's name plus a simple brief Alex McRitchie pastes into a Claude
   # Code session. Task email-image-generator-page.
   #
   # THE TEMPLATE LIVES HERE AND NOWHERE ELSE. The page fills it live in the

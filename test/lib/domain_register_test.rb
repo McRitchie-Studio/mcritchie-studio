@@ -15,7 +15,7 @@ require_relative "domain_register_fake_api"
 class DomainRegisterTest < Minitest::Test
   F = DomainRegisterFakeApi
   R = DomainRegister::Runner
-  OK = "Alex in chat: buy acmecorp.dev at 10.46, 2026-10-19"
+  OK = "Alex McRitchie in chat: buy acmecorp.dev at 10.46, 2026-10-19"
 
   def setup
     @dir = Dir.mktmpdir("domain-register")
@@ -114,7 +114,7 @@ class DomainRegisterTest < Minitest::Test
 
   def test_refuses_a_price_mismatch_even_by_one_cent
     reasons = R.refusals(standard, price: "10.45", ok: OK, premium: false)
-    assert_match(/price changed: Cloudflare quotes USD 10.46 now, Alex approved USD 10.45/, reasons.join)
+    assert_match(/price changed: Cloudflare quotes USD 10.46 now, Alex McRitchie approved USD 10.45/, reasons.join)
   end
 
   def test_refuses_a_missing_or_malformed_price
@@ -465,7 +465,7 @@ class DomainRegisterTest < Minitest::Test
       DomainRegister::Credentials.op_read("op://v/i/f", {}, runner: ->(_e, _a) { ["", failed] })
     end
     assert_match "op read op://v/i/f failed (exit 1)", err.message
-    refute_match "Alex pastes", err.message
+    refute_match "Alex McRitchie pastes", err.message
 
     ok = Struct.new(:exitstatus) { def success? = true }.new(0)
     assert_equal "", DomainRegister::Credentials.op_read("op://v/i/f", {}, runner: ->(_e, _a) { ["\n", ok] })

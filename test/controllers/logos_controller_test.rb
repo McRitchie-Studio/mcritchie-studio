@@ -132,7 +132,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='logo-image']", 2 * 3 * Logos::NavbarLogo.brands.size
   end
 
-  # The palettes Alex chose (epic brand-studio, 2026-10-10 22:45), in order, as config/logo_brands.yml lists them.
+  # The palettes Alex McRitchie chose (epic brand-studio, 2026-10-10 22:45), in order, as config/logo_brands.yml lists them.
   PALETTES = {
     "studio" => [["Ink", "#1A1535"], ["Violet", "#8E82FE"], ["Deep Violet", "#635BB2"], ["Violet Mist", "#EEECFF"], ["White", "#FFFFFF"]],
     "industries" => [["Forge Orange", "#C8661F"], ["Ember Orange", "#E07B2E"], ["Charcoal Steel", "#262A30"], ["Gunmetal", "#59606A"],
@@ -181,7 +181,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # The typeface hierarchies Alex asked for (at most three levels, the most prominent first), as [role, name shown].
+  # The typeface hierarchies Alex McRitchie asked for (at most three levels, the most prominent first), as [role, name shown].
   HIERARCHIES = {
     "studio" => [["Display", "Montserrat ExtraBold", 800], ["Text", "Montserrat Light", 300], ["Tagline", "Montserrat Medium", 500]],
     "industries" => [["Display", "Montserrat Bold", 700], ["Text", "Montserrat Light", 300], ["Tagline", "Montserrat Medium", 500]],
@@ -859,7 +859,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_response :success, "a Navbar Logo has no form, so the param is not read"
   end
 
-  # Task welding-llc-and-v2-helmet (Alex's item 5): v1 and v2 side by side, so his tweaks compare with the original.
+  # Task welding-llc-and-v2-helmet (Alex McRitchie's item 5): v1 and v2 side by side, so his tweaks compare with the original.
   test "Commercial Welding v1 and v2 sit side by side in the table, each with its own name and helmet" do
     log_in_as(@admin)
     get logos_path

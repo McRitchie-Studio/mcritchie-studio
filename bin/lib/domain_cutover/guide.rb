@@ -4,7 +4,7 @@ require "erb"
 
 module DomainCutover
   # The registrar guide `plan` prints: the clicks the move needs at the domain's
-  # registrar, and only those. Picked by the RDAP registrar; addressed to Alex
+  # registrar, and only those. Picked by the RDAP registrar; addressed to Alex McRitchie
   # (our own domains) or to the client (a client-owned domain). The DNSSEC-off
   # step appears only when a DS is published, and it is called what it is: a
   # scheduled outage.

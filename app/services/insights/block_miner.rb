@@ -15,7 +15,7 @@ module Insights
   # target, and every existing read (insight_source / to_insight / the pipeline)
   # reaches provenance THROUGH that activity. So a candidate hangs off an AgentActivity,
   # never the task. We attribute the block to the NEWEST BUILDER activity on the blocked
-  # task opened at/before the block was raised that is NOT already Alex-graded:
+  # task opened at/before the block was raised that is NOT already Alex McRitchie-graded:
   #   * before the block   — the trajectory that produced the defect QA caught;
   #   * base-mascot lane   — excludes soul-attributed review activities (the reviewer
   #                          often opens Verify right before posting qa_feedback);

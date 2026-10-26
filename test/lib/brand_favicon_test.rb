@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] The hub's favicon fills its tile (task stacked-rule-of-three; Alex 2026-10-14 12:14: the favicon "looks
+# [unit] The hub's favicon fills its tile (task stacked-rule-of-three; Alex McRitchie 2026-10-14 12:14: the favicon "looks
 # small": 32 px empty at the top and 10 at the sides of 256). script/brand_png.cjs draws public/favicon.png from the
 # kit icon, whose box is its ink (Logos::IconInk), with no margin of its own, so the ink's alpha bounding box must
 # touch two opposite edges of the PNG. The PWA app icon (public/icon.png) is the exception: the manifest serves it as
 # "purpose": "maskable", and Android crops a maskable icon to a circle, so its artwork keeps a 0.16 safe zone on every
 # edge (review of PR 2101). The favicon draws the SMALL-SIZE MARK (Logos::SmallMark, public/favicon-mark.svg; task
 # footer-stacked-logo): the icon without the sparkles, side dashes and loose coins that a 16-32 px tab shows only as
-# specks, and that set the full icon's box, so the chest filled about 70% of the tab. It is fit, never cropped. Alex 2026-10-15 08:10, of the
+# specks, and that set the full icon's box, so the chest filled about 70% of the tab. It is fit, never cropped. Alex McRitchie 2026-10-15 08:10, of the
 # old chest-only favicon: "That is the correct size". Read with Zlib alone: the PNG is 8-bit RGBA, not interlaced, as Chromium writes it.
 
 require "minitest/autorun"
@@ -83,7 +83,7 @@ class BrandFaviconTest < Minitest::Test
     assert_in_delta top, bottom, 2, "centred down"
   end
 
-  # NOTHING IS CUT (Alex 2026-10-15 09:05 rejected a crop that clipped the chest: "cut off"). The favicon is the small-
+  # NOTHING IS CUT (Alex McRitchie 2026-10-15 09:05 rejected a crop that clipped the chest: "cut off"). The favicon is the small-
   # size mark FIT in its square: its ink box has the mark's own proportions (public/favicon-mark.svg's viewBox, whose
   # box is its ink), the long side spanning the tile and the short side centred, so no edge the ink touches is one it
   # was clipped at.

@@ -59,7 +59,7 @@ class Release
     # "skip" => SKIP_QA_EXEMPT and a blank app, and bin/release prints a line
     # naming the exemption instead of aborting. It is a skip, never a silent
     # drop: the entry stays in the plan so the operator sees the command that did
-    # not run and why. The repo has no QA app BY DECLARATION (cyvasse: Alex,
+    # not run and why. The repo has no QA app BY DECLARATION (cyvasse: Alex McRitchie,
     # 2026-09-25, no QA copy on cost), so "register a QA app" — the abort's
     # remedy — is exactly what its operator ruled out. Every OTHER repo with a
     # blank app keeps the hard abort; nothing is inferred from missing config.

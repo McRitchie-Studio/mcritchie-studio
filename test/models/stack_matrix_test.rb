@@ -32,7 +32,7 @@ class StackMatrixTest < ActiveSupport::TestCase
     refute_includes groups.flat_map(&:software), "x", "nobody runs X, so it has no row"
   end
 
-  test "the page leads with Platform & Email, then App, then Data, each in Alex's order" do
+  test "the page leads with Platform & Email, then App, then Data, each in Alex McRitchie's order" do
     client = internal_client(extra_software: %w[cloudflare github redis squarespace heroku resend postgres google])
     groups = StackMatrix.new([ client ]).groups
 

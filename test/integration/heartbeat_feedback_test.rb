@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [integration] the T5 feedback layer over the read-only heartbeat: the inline radios
-# render, #grade upserts a grade (ray|mcr) with a default slug, bank!/discard! route
+# render, #grade upserts a grade (mason|mcr) with a default slug, bank!/discard! route
 # through it, the McRitchie audit is a second row, and banked grades surface on the
 # Insight Bank page. Reads are a public meta surface; grade WRITES are admin-only
 # (see HeartbeatGradeAuthTest), so this suite authenticates as the admin.
@@ -40,7 +40,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
       post heartbeat_grade_path(a), params: { grader: "mason", disposition: "good", surface: "inline" }
     end
 
-    grade = grade_for(a, "ray")
+    grade = grade_for(a, "mason")
     assert_equal "good", grade.disposition
     assert_equal "Implement the view code", grade.slug, "slug defaults to the action's event slug"
   end
@@ -54,7 +54,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
            params: { grader: "mason", disposition: "not", slug: "slow to spot the bug", surface: "drawer" }
     end
 
-    grade = grade_for(a, "ray")
+    grade = grade_for(a, "mason")
     assert_equal "not", grade.disposition
     assert_equal "slow to spot the bug", grade.slug
   end
@@ -65,7 +65,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
     post heartbeat_grade_path(a),
          params: { grader: "mason", disposition: "good", slug: "promote this to a guardrail",
                    intent: "bank", surface: "drawer" }
-    grade = grade_for(a, "ray")
+    grade = grade_for(a, "mason")
     assert grade.banked
     assert_includes ActionGrade.banked, grade
 
@@ -87,7 +87,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
          params: { grader: "mcr", disposition: "good", slug: "agree check siblings first", surface: "drawer" }
 
     assert_equal 2, a.action_grades.count
-    assert grade_for(a, "mcr").mcr?, "the McRitchie row audits Ritch's grade"
+    assert grade_for(a, "mcr").mcr?, "the McRitchie row audits Mason's grade"
   end
 
   test "[integration] a banked grade appears on the Insight Bank page" do
@@ -131,9 +131,9 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "turbo-frame#hb-drawer"
-    assert_select "input[type=hidden][name=grader][value=ray]"
+    assert_select "input[type=hidden][name=grader][value=mason]"
     assert_select "input[type=hidden][name=grader][value=mcr]"
-    assert_select "button[value=bank]" # Ritch editor only
+    assert_select "button[value=bank]" # Alex editor only
   end
 
   test "[integration] the action drawer surfaces the FULL tool-call input and output" do

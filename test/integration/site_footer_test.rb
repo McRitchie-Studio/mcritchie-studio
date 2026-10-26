@@ -78,7 +78,7 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
           assert_equal %w[McRitchie Studio], parts.map(&:text)
         end
       end
-      # Alex 2026-10-15 08:21: no tagline under the stacked logo.
+      # Alex McRitchie 2026-10-15 08:21: no tagline under the stacked logo.
       assert_select ".ftr-tagline", 0
       assert_select ".ftr-socials a", 3
       # The email is a Contact column link, not a line under the tagline.

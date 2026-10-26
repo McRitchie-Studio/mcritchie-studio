@@ -1,6 +1,6 @@
 # One bin/dispatcher process, as its minute ping last described it
 # (docs/agents/agents/steffon/sops/agent-dispatcher.md). The dispatcher serves the
-# agent mailbox from Alex's Mac: it long-polls claims, runs headless Claude, and
+# agent mailbox from Alex McRitchie's Mac: it long-polls claims, runs headless Claude, and
 # pings POST /api/v1/agent_dispatchers/ping every minute. A restart is a new
 # worker id and so a new row; the floor alert (AgentDispatcherAlertJob) reads the
 # newest PRIMARY ping, and prunes rows nobody has heard from in a week.

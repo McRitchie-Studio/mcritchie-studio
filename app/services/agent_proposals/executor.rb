@@ -9,7 +9,7 @@ module AgentProposals
   #           the email's admin page, or the app's web chat), and the files the
   #           proposal's message carried attached to the task as references to
   #           the same blobs (Task#attachments). A web-chat card on a studio
-  #           or product app is then started by the build launcher on Alex's
+  #           or product app is then started by the build launcher on Alex McRitchie's
   #           Mac (ChangeBuilds: bin/task begin, the thread's "Building started"
   #           line, the builder launch line to ops); any other card waits for a
   #           session.

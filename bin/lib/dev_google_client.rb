@@ -27,7 +27,7 @@ module DevGoogleClient
   end
 
   # The client from the vault: {id:, secret:}. Both fields must be filled; an
-  # empty item is the state before Alex pastes the client from the Cloud console,
+  # empty item is the state before Alex McRitchie pastes the client from the Cloud console,
   # and it refuses by name so the next step is plain.
   def read_from_vault(item: ITEM, vault: VAULT, reader: method(:op_read))
     values = FIELDS.to_h { |key, field| [key, reader.call("op://#{vault}/#{item}/#{field}").to_s.strip] }

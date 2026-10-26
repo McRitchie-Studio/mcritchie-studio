@@ -594,7 +594,7 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
 
   # --- cyvasse: the second exemption, and the first taken on COST ---------------
   #
-  # cyvasse is a DEPLOYABLE Rails app with no QA copy, by Alex's decision
+  # cyvasse is a DEPLOYABLE Rails app with no QA copy, by Alex McRitchie's decision
   # (2026-09-25: "No cyvasse-qa unless there is a free teir we can use"). Its
   # registry entry declares `qa_evidence: exempt` and a git_push_heroku
   # prod_deploy. These drive the sweep end to end: the plan names the Heroku
@@ -692,7 +692,7 @@ class Release::MultiRepoMemberTest < ActiveSupport::TestCase
   # --- dads-app: the third exemption, the second on COST ------------------------
   #
   # dads-app is a release-managed STANDALONE (no studio-engine, no database) on
-  # one Eco dyno, with no QA copy by Alex's cost decision (epic dads-app,
+  # one Eco dyno, with no QA copy by Alex McRitchie's cost decision (epic dads-app,
   # 2026-09-26). Same contract as cyvasse, driven end to end: the plan names the
   # Heroku deploy, the QA stamp does not hold the member, and the shipped stamp
   # still waits for dads-app's own release -> main record. Each run lands HUB

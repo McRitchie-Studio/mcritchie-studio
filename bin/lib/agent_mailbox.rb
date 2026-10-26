@@ -174,7 +174,7 @@ module AgentMailbox
 
   # The environment every child command runs under: an ALLOW-LIST, applied with
   # unsetenv_others, so nothing outside it reaches a child. Headless Claude then
-  # bills Alex's claude.ai login (keychain, under HOME and USER) and never an
+  # bills Alex McRitchie's claude.ai login (keychain, under HOME and USER) and never an
   # exported API key, auth token, base URL or Bedrock/Vertex switch, including
   # names Anthropic adds later, which a deny-list would miss. The agent-board
   # names are the read-only actions' own (bin/task reads the board through the
@@ -604,7 +604,7 @@ module AgentMailbox
     # release_status ask (AgentProposals::Queries), read in process on the board.
     ACTIONS = {
       "avi" => { argv: %w[bin/task list], what: "the task board" },
-      "ray" => { argv: %w[bin/task list], what: "the task board" }
+      "alex" => { argv: %w[bin/task list], what: "the task board" }
     }.freeze
     ACTION_TIMEOUT = 90
     ACTION_OUTPUT_LIMIT = 6000

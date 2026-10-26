@@ -1,5 +1,5 @@
 // The chat thread follows its newest line while the reader is at the end
-// (task build-flow-polish; Alex, 2026-10-19: "When the chat is within 20px of
+// (task build-flow-polish; Alex McRitchie, 2026-10-19: "When the chat is within 20px of
 // the bottom, new agent text appearing should bump to the bottom so the user
 // doesn't have to scroll to keep up"). On /build, /build/:token and every agent
 // chat ([data-cto-chat-scroll]).

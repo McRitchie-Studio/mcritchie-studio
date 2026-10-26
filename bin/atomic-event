@@ -78,11 +78,11 @@ class AgentActivityCli
   FINDING_KIND = "finding"
 
   # Retired soul slugs that still resolve — a mirror of Task::SOUL_ALIASES, because
-  # this CLI runs without Rails. `heartbeat alex` and `heartbeat xan` attribute
-  # to `ray` (the orchestrator seat, renamed 2026-09-24 and again 2026-10-18), and
-  # a sticky marker written under an old slug by a session that predates the
-  # rename reads as the new one. Retire both halves together.
-  SOUL_ALIASES = { "alex" => "ray", "xan" => "ray" }.freeze
+  # this CLI runs without Rails. `heartbeat ray` and `heartbeat xan` attribute to
+  # `alex` (the seat was `xan` until 2026-10-18 and `ray` until 2026-10-25), and a
+  # sticky marker written under an old slug by a session that predates the rename
+  # reads as the new one. Retire both halves together.
+  SOUL_ALIASES = { "ray" => "alex", "xan" => "alex" }.freeze
 
   OPEN_TIMEOUT = 2
   READ_TIMEOUT = 5
@@ -286,7 +286,7 @@ class AgentActivityCli
     when "action"        then action(flags) # self-report ONE off-box action to the open activity
     when "heartbeat"     then heartbeat(argv, flags) # sticky acting-agent for a soul run
     when "grade"         then grade_activity(argv, flags) # bearer AGENT grade of a resolved activity
-    when "awaiting"      then awaiting(flags)             # resolved activities still awaiting an Alex grade
+    when "awaiting"      then awaiting(flags)             # resolved activities still awaiting a Mason grade
     else
       warn_note(USAGE)
     end
@@ -541,7 +541,7 @@ class AgentActivityCli
   # `--agent` on an individual `start`/`next` still WINS over the sticky, so a
   # delegated reviewer keeps its own soul. Writes a tiny per-session file beside
   # the session marker; a fresh session never inherits it. No HTTP, except for an
-  # admin soul (steffon, ray), whose heartbeat also runs admin_login below.
+  # admin soul (steffon, alex), whose heartbeat also runs admin_login below.
   def heartbeat(argv, flags)
     sid = resolve_session_id(flags)
     return warn_note("atomic-event: no session id — nothing to set") unless present?(sid)
@@ -686,9 +686,9 @@ class AgentActivityCli
   end
 
   # `grade <activity-id> --disposition good|not [--slug …] [--long-form …] [--bank|--discard]`
-  # — the bearer AGENT grade of a resolved activity (the CLI half of the Ray heartbeat
+  # — the bearer AGENT grade of a resolved activity (the CLI half of the Mason heartbeat
   # grade-events loop; the browser drawer is the other half). The activity id is the
-  # LEADING positional. This endpoint FORCES the grader to ray, so no --grader flag
+  # LEADING positional. This endpoint FORCES the grader to mason, so no --grader flag
   # exists — that is PROVENANCE, not identity: the heartbeat drawer, which writes the
   # `mcr` rows, needs an admin (the hub's admin wall). Reports what landed, but ALWAYS
   # exits 0.
@@ -722,7 +722,7 @@ class AgentActivityCli
     end
   end
 
-  # `awaiting [--limit <n>]` — the resolved activities still awaiting an Alex grade (the
+  # `awaiting [--limit <n>]` — the resolved activities still awaiting a Mason grade (the
   # READ half of grade-events), so the agent knows WHAT to grade and their ids
   # without scraping the HTML page. One line per activity; ALWAYS exits 0.
   def awaiting(flags)
@@ -739,7 +739,7 @@ class AgentActivityCli
     rows = [] unless rows.is_a?(Array)
     return @out.puts("atomic-event: no activities awaiting grade") if rows.empty?
 
-    @out.puts("Activities awaiting an Alex grade (#{rows.size}):")
+    @out.puts("Activities awaiting a Mason grade (#{rows.size}):")
     rows.each do |r|
       outcome = present?(r["outcome"]) ? r["outcome"] : "(no outcome)"
       task = present?(r["task_slug"]) ? "  [#{r['task_slug']}]" : ""

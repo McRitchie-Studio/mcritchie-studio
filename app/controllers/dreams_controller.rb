@@ -6,7 +6,7 @@ require Rails.root.join("bin/lib/dream_bank").to_s
 # soul runs. It reads the tracked files through DreamOrgChart on every request, so a
 # merged dream shows without a deploy step.
 #
-# Several things here are not in the files: Alex's one-click approvals
+# Several things here are not in the files: Alex McRitchie's one-click approvals
 # (DreamApproval) and retirements (DreamRetirement), which wait for a batch task to
 # write them into the files; the heat map (DreamHeat), the decisions each dream
 # shaped; and the loop (Act 4): sessions' grades (DreamGrade), their swap proposals
@@ -31,7 +31,7 @@ class DreamsController < ApplicationController
     @approver = DreamApproval.approver?(current_user)
   end
 
-  # POST /dreams/approvals — records Alex's approval of one proposed dream.
+  # POST /dreams/approvals — records Alex McRitchie's approval of one proposed dream.
   def approve
     dream = DreamBank.all(dir: DreamBank.bank_dir).find do |candidate|
       candidate.home == params[:dream_home].to_s && candidate.slug == params[:dream_slug].to_s
@@ -44,7 +44,7 @@ class DreamsController < ApplicationController
     redirect_to dreams_path(status: filter_param), alert: "Not approved: #{e.message}.", status: :see_other
   end
 
-  # POST /dreams/retirements — records Alex's retirement of one approved dream.
+  # POST /dreams/retirements — records Alex McRitchie's retirement of one approved dream.
   def retire
     dream = find_dream(params[:dream_home], params[:dream_slug])
     DreamRetirement.check!(dream, current_user)
@@ -55,7 +55,7 @@ class DreamsController < ApplicationController
     redirect_to dreams_path(status: filter_param), alert: "Not retired: #{e.message}.", status: :see_other
   end
 
-  # POST /dreams/swaps/:id/approval — Alex's one click on a session's swap: the in
+  # POST /dreams/swaps/:id/approval — Alex McRitchie's one click on a session's swap: the in
   # is approved and the out retired, together.
   def approve_swap
     swap = DreamSwap.find(params[:id])

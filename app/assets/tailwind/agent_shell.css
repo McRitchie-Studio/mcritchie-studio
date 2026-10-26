@@ -199,7 +199,7 @@
   to { opacity: 1; transform: none; }
 }
 
-/* The status card's arrival (Start App) is a celebration (Alex, 2026-10-19:
+/* The status card's arrival (Start App) is a celebration (Alex McRitchie, 2026-10-19:
    the card should "pop"): it grows in past full size with a primary glow and
    settles. 3% of a phone-width card stays inside the page's 16px gutter, and
    the card sits above the thread's scroll box, so nothing scrolls sideways.

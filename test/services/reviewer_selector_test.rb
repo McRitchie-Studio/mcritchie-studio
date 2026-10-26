@@ -353,9 +353,9 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   # --- `--builder none` is CROSS-EXAMINED, not believed (builder-none-fails-open) ---
   #
   # THE DEFECT, measured 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a
-  # docs PR Ritch wrote while the task carried no stamp): `--builder none` seated RAY
-  # as the light on Ritch's own diff and printed the no-self-review property upheld,
-  # while `--builder ray` correctly excluded him. `none` made the builder KNOWN and
+  # docs PR Alex wrote while the task carried no stamp): `--builder none` seated RAY
+  # as the light on Alex's own diff and printed the no-self-review property upheld,
+  # while `--builder alex` correctly excluded him. `none` made the builder KNOWN and
   # returned an empty author set, so every source that could have named an author was
   # skipped unread — the one input to this class that failed OPEN.
   #
@@ -407,7 +407,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   test "NO soul in the pool can be seated via a none assertion on a diff it built" do
     # THE PROPERTY the whole guard exists for, asserted over every pool soul and both
     # witnesses — because the incident was one spelling of a general hole, and a test
-    # pinned to `ray` would pass while the next soul walked through it.
+    # pinned to `alex` would pass while the next soul walked through it.
     ReviewerSelector::POOL.each do |soul|
       by_record = task_for(shape: "backend")
       by_record.update!(metadata: by_record.metadata.deep_merge("devops" => { "built_by" => soul }))
@@ -428,7 +428,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   test "a none assertion whose PR could NOT be read is UNVERIFIED, not cleared" do
     # THE CONFLATION THAT CAUSED THE INCIDENT. Task#derived_authors returns [] both
     # when a PR names nobody and when the read fails, and the original run got a 401:
-    # measured 2026-09-27, the same PR's commits yield ["ray"] with a fresh token. An
+    # measured 2026-09-27, the same PR's commits yield ["alex"] with a fresh token. An
     # empty witness box must never read as an exonerating one.
     task = task_for(shape: "docs")
     task.define_singleton_method(:derived_authors_probe) do |**|
@@ -791,7 +791,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   # --- the seat's BASIS: WHY that soul is sitting there (selector-picks-fit-zero-light) ---
   #
   # These two tests are one experiment with the variable flipped. A `docs` task puts
-  # exactly one soul on the needed domains (ray, fit 2) and leaves every other
+  # exactly one soul on the needed domains (alex, fit 2) and leaves every other
   # candidate at fit 0 — the mixed-fit set the question needs. The variable is
   # whether Carl is eligible for the standing primary seat.
 
@@ -882,8 +882,8 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   # --- THE AUTHOR SET (reviewer-select-seats-authors) --------------------------
   # devops.built_by holds ONE soul, but a task can have SEVERAL: a session limit
   # kills a builder mid-work and another soul finishes it. built_by then names the
-  # LAST claimant, and the pool excluded one author of two — which seated Ritch on a
-  # diff Ritch had written every test on (PR #1081, 2026-08-30).
+  # LAST claimant, and the pool excluded one author of two — which seated Alex on a
+  # diff Alex had written every test on (PR #1081, 2026-08-30).
 
   def multi_author_task(shape: "backend", built_by: "steffon", builders: %w[steffon mason], unattributed: nil)
     devops = { "shape" => shape, "built_by" => built_by, "builders" => builders }
@@ -952,7 +952,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   end
 
   test "an explicit override names SEVERAL authors and excludes them all" do
-    # The hand-pass that saved the live review was `--busy ray`, which says the
+    # The hand-pass that saved the live review was `--busy alex`, which says the
     # wrong thing. Naming co-authors is now a first-class statement of the fact.
     decision = ReviewerSelector.new(task_for(shape: "backend"), builder: "steffon,mason").decision
 

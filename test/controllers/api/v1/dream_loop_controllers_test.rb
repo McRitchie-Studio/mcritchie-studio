@@ -5,7 +5,7 @@ module Api
     # [integration] The dream loop's agent API (docs/agents/modules/dream.md, Act 4):
     # POST dream_grades and dream_swaps, GET dream_swaps/candidates and
     # dream_retirements. Bearer-gated; none of them approves or retires (that is
-    # POST dream_rulings, on Alex's quoted word only).
+    # POST dream_rulings, on Alex McRitchie's quoted word only).
     class DreamLoopControllersTest < ActionDispatch::IntegrationTest
       BANK = Rails.root.join("test/fixtures/dreams").to_s
 

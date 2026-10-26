@@ -9,7 +9,7 @@ module Appearances
   # never reach one: a character is fictional, so the prompt asks the generator to
   # keep a DESIGN consistent, not to carry a face.
   #
-  # The layout is the turnaround Alex asked for (piece B art-directs it): a
+  # The layout is the turnaround Alex McRitchie asked for (piece B art-directs it): a
   # full-body turn on the top row and expressions on the bottom, one image, so the
   # panels are generated together and cannot drift apart.
   class CastSheetPrompt
@@ -73,7 +73,7 @@ module Appearances
     end
 
     # The profile's personality, minus an editor's bracketed marker such as the
-    # seed's "[Draft for Alex]", and without its closing full stop (the line
+    # seed's "[Draft for Alex McRitchie]", and without its closing full stop (the line
     # ends in a colon).
     def personality
       @character&.personality.to_s.squish.sub(/\A\[[^\]]*\]\s*/, "").truncate(240).delete_suffix(".").presence

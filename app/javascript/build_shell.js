@@ -3,7 +3,7 @@
 //
 //   - the FIRST message never leaves the page. The composer posts through Turbo;
 //     BuildController#create answers with Turbo Streams that swap the empty
-//     thread for the new draft's chat (Ritch's thread, polled by build_chat.js) and
+//     thread for the new draft's chat (Alex's thread, polled by build_chat.js) and
 //     end with a `replace_url` stream, which moves the address bar to
 //     /build/<token> through Turbo's own history (so Back and the snapshot cache
 //     agree), with no reload. Then the new chat box takes the focus.

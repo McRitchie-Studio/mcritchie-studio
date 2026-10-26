@@ -1,12 +1,12 @@
 <%# locals: (message:, agent_name:) %>
-<%# One turn of an agent web chat: what the viewer sent (or, first in a client app's CTO chat, Ritch's handover: AgentMessages::ClientCtoHandover), then the agent's answer (a build progress line, ClientBuilds#progress!, is the answer alone), or why there is none yet. Rendered on the page and in WebChat broadcasts (no request: no URL helpers here). The test hooks keep their cto-chat names.
+<%# One turn of an agent web chat: what the viewer sent (or, first in a client app's CTO chat, Alex's handover: AgentMessages::ClientCtoHandover), then the agent's answer (a build progress line, ClientBuilds#progress!, is the answer alone), or why there is none yet. Rendered on the page and in WebChat broadcasts (no request: no URL helpers here). The test hooks keep their cto-chat names.
     THE READING FLOW (task build-chat-reading-flow): the visitor's words sit in their right-hand bubble; the agent's words are plain text on the page (agent-reply: no bubble, no name box, the thread's full width; app/assets/tailwind/agent_reply.css), so the bubble is kept for what asks for a tap (build/_turn's intake cards). The agent's name stays for a screen reader. A NEW answer types itself in (app/javascript/agent_reveal.js, data-agent-reveal); one on the page at load is shown at once. %>
 <% answered = message.status == "completed" && message.response_text.present? %>
 <% replied_ms = answered ? ((message.reply_posted_at || message.completed_at || message.updated_at).to_f * 1000).to_i : nil %>
 <div id="cto-chat-turn-<%= message.id %>" class="flex flex-col gap-2" data-test="cto-chat-turn" data-status="<%= message.status %>"
      <% if replied_ms %>data-replied-at="<%= replied_ms %>"<% end %>>
   <% if AgentMessages::ClientCtoHandover.handover?(message) %>
-    <%# Ritch's handover is another agent's words, so it names him; plain text like any answer. %>
+    <%# Alex's handover is another agent's words, so it names him; plain text like any answer. %>
     <div class="agent-reply self-stretch min-w-0" data-test="cto-chat-handover" data-bubble="false">
       <p class="agent-reply-author text-xs font-semibold text-muted mb-1"><%= AgentMessages::ClientCtoHandover::AUTHOR %></p>
       <p class="agent-reply-body break-words"><%= message.content %></p>

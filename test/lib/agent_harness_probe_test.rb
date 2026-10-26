@@ -90,7 +90,7 @@ class AgentHarnessProbeTest < Minitest::Test
   end
 
   def dispatcher(client, probe:, threader:, out: StringIO.new)
-    AgentMailbox::Dispatcher.new(client: client, souls: %w[ray], worker: "disp-probe", claude_cmd: %w[fake-claude],
+    AgentMailbox::Dispatcher.new(client: client, souls: %w[alex], worker: "disp-probe", claude_cmd: %w[fake-claude],
                                  out: out, clock: -> { @now }, sleeper: ->(_s) { }, idle_wait: 0, busy_wait: 0,
                                  version: "test", registry: AgentMailbox::DomainRegistry.new({}),
                                  harness_probe: probe, threader: threader)

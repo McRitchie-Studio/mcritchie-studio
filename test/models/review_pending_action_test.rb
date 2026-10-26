@@ -82,11 +82,11 @@ class ReviewPendingActionTest < ActiveSupport::TestCase
     assert arm(authorized_by: "carl").pending?
   end
 
-  # The refusal is about who ARMS. Ritch's light merge-ready standing as the latest
+  # The refusal is about who ARMS. Alex's light merge-ready standing as the latest
   # report still lets Carl arm, exactly as before.
   test "the documentation seat's verdict still authorises another soul's arm" do
-    Agent.find_or_create_by!(slug: "ray") { |a| a.name = "Ritch" }
-    record_verdict(agent: "ray")
+    Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
+    record_verdict(agent: "alex")
 
     assert_equal "carl", arm(authorized_by: "carl").authorized_by
     assert_nil ReviewPendingAction.seat_refusal_reason(nil, "", "carl", "steffon")

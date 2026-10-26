@@ -55,7 +55,7 @@ profiles:
       rule: "standalone apps ship without a QA copy unless there is a free tier."
       asked: 'Confirm the fleet-wide QA rule: "standalone apps ship without a QA copy unless there is a free tier."'
       answer: "Yes to both"
-      by: Alex
+      by: Alex McRitchie
       on: "2026-09-28"
       history:
         - "cyvasse, 2026-09-25: No cyvasse-qa unless there is a free teir we can use"
@@ -93,8 +93,8 @@ profiles:
       rule: "standalone apps ship without a QA copy unless there is a free tier."
       asked: 'Confirm the fleet-wide QA rule: "standalone apps ship without a QA copy unless there is a free tier."'
       answer: "Yes to both"
-      by: Alex
+      by: Alex McRitchie
       on: "2026-09-28"
       history:
         - "showcase apps, 2026-09-26: No QA copies (Recommended)"
-        - "hosting, 2026-10-25: the unpaid showcase apps serve from Cloudflare (Alex's ruling)"
+        - "hosting, 2026-10-25: the unpaid showcase apps serve from Cloudflare (Alex McRitchie's ruling)"

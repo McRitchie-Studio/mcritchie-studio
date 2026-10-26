@@ -8,7 +8,7 @@ class Appearances::CastSheetPromptTest < ActiveSupport::TestCase
     Appearance.where.not(character_slug: nil).delete_all
     Character.delete_all
     @character = Character.create!(name: "Turf Monster", kind: "mascot",
-                                   personality: "[Draft for Alex] Loud and kind.")
+                                   personality: "[Draft for Alex McRitchie] Loud and kind.")
     @look = @character.appearances.create!(descriptor: "Classic", colorway: "home green",
                                            generation_notes: "Green furry gator in a polo.")
   end

@@ -218,7 +218,7 @@ module AgentMessages
       opens = root.flaps(now: now)
       first = root.episode.where(opened_at: (now - AgentMailboxIncident::FLAP_WINDOW)..).minimum(:opened_at)
       "#{label(root)}: flapping, #{opens} since #{clock(first || root.opened_at)}. One line per flap is held " \
-        "until it is quiet for #{QUIET.inspect}; Alex is emailed once. Steffon: SOP agent-dispatcher."
+        "until it is quiet for #{QUIET.inspect}; Alex McRitchie is emailed once. Steffon: SOP agent-dispatcher."
     end
 
     def self.final_text(root, now: Time.current)

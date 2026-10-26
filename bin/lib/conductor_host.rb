@@ -39,7 +39,7 @@ module ConductorHost
   # The 1Password names an operator needs. Named, never read here.
   def self.op_agent_token
     "a service account token with read on the #{OpVaults.vault} vault, one per machine " \
-      "(1Password > Developer Tools > Service Accounts; Alex creates it)"
+      "(1Password > Developer Tools > Service Accounts; Alex McRitchie creates it)"
   end
 
   def self.op_agent_secret = "item `Agent API Secret` (field AGENT_API_SECRET), vault #{OpVaults.vault}"
@@ -238,18 +238,18 @@ module ConductorHost
            ConductorHost.op_agent_token)
     end
 
-    # The admin (deployer) token stays on Alex's laptop unless he says otherwise:
+    # The admin (deployer) token stays on Alex McRitchie's laptop unless he says otherwise:
     # production deploys run from there, and this box should not be able to mint a
     # deployer credential.
     def admin_token
       held = exported?(@layout.zprofile_admin, "OP_ADMIN_SERVICE_ACCOUNT_TOKEN")
       ok = !held || @allow_admin_token
-      detail = if !held then "absent (it stays on Alex's laptop)"
+      detail = if !held then "absent (it stays on Alex McRitchie's laptop)"
                else "present#{@allow_admin_token ? ', allowed by --allow-admin-token' : ''}"
                end
       item(:admin_token, "No deployer token here", ok, detail,
            "remove the OP_ADMIN_SERVICE_ACCOUNT_TOKEN line from ~/.zprofile.admin, or pass --allow-admin-token " \
-           "if Alex said it belongs here")
+           "if Alex McRitchie said it belongs here")
     end
 
     def agent_docs
@@ -271,7 +271,7 @@ module ConductorHost
       state, method = LocalServices::ClaudeSignIn.check(runner: ->(argv, _) { run(*argv) }, which: ->(c) { which(c) })
       detail = { ok: "signed in with claude.ai", missing: "not installed",
                  wrong: method ? "signed in with #{method}, not claude.ai" : "signed out" }.fetch(state)
-      fix = state == :missing ? CLAUDE_INSTALL : "claude auth login   # Alex's claude.ai account, in a browser"
+      fix = state == :missing ? CLAUDE_INSTALL : "claude auth login   # Alex McRitchie's claude.ai account, in a browser"
       item(:claude, "Claude Code", state == :ok, detail, fix)
     end
 
@@ -301,13 +301,13 @@ module ConductorHost
       held = HarnessKey.token(dir, env: @env)
       pending = !held && HarnessKey.open_request(dir, now: @now, env: @env)
       detail = if held then "held (value not read)"
-               elsif pending then "requested (#{pending['request']}); waiting on Alex's Approve tap"
+               elsif pending then "requested (#{pending['request']}); waiting on Alex McRitchie's Approve tap"
                else "none"
                end
       fix = if pending
-              "Alex: Approve `Harness key · #{@host}` on #{BOARD_TASKS}; then: bin/harness-key collect --wait 600"
+              "Alex McRitchie: Approve `Harness key · #{@host}` on #{BOARD_TASKS}; then: bin/harness-key collect --wait 600"
             else
-              "bin/harness-key request --label #{@host}   # then Alex approves; then bin/harness-key collect --wait 600"
+              "bin/harness-key request --label #{@host}   # then Alex McRitchie approves; then bin/harness-key collect --wait 600"
             end
       item(:harness_key, "Harness key", !held.nil?, detail, fix)
     end
@@ -351,7 +351,7 @@ module ConductorHost
     misses
   end
 
-  # The other half of a cutover, run on the Mac giving the role up (Alex's
+  # The other half of a cutover, run on the Mac giving the role up (Alex McRitchie's
   # laptop): uninstall both launchd agents, then leave the marker that keeps
   # bin/ecosystem-build's services phase from installing them again. Returns
   # true when both uninstalls answered 0.
@@ -444,7 +444,7 @@ module ConductorHost
 
       say("Claude Code: installing (#{CLAUDE_INSTALL})")
       _, ok = @runner.call([ "/bin/bash", "-c", CLAUDE_INSTALL ], nil)
-      say(ok ? "Claude Code: installed; Alex signs it in: claude auth login" : "Claude Code: install FAILED; run: #{CLAUDE_INSTALL}")
+      say(ok ? "Claude Code: installed; Alex McRitchie signs it in: claude auth login" : "Claude Code: install FAILED; run: #{CLAUDE_INSTALL}")
     end
 
     # The two launchd agents, through the same restorer bin/ecosystem-build's
@@ -486,7 +486,7 @@ module ConductorHost
 
       out, ok = @runner.call([ "bin/harness-key", "request", "--label", ConductorHost.host_name ], @layout.hub)
       say("harness key: #{out.to_s.lines.last.to_s.strip}")
-      say("harness key: Alex approves `Harness key · #{ConductorHost.host_name}` on #{BOARD_TASKS}, then run: " \
+      say("harness key: Alex McRitchie approves `Harness key · #{ConductorHost.host_name}` on #{BOARD_TASKS}, then run: " \
           "bin/harness-key collect --wait 600") if ok
     end
   end

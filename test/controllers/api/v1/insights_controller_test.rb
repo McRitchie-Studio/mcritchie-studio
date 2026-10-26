@@ -46,7 +46,7 @@ module Api
         assert_equal "flag the gap first", insight["slug"]
         assert_equal "not", insight["disposition"]
         assert_equal "Anchor: check siblings.", insight["long_form"]
-        assert_equal "ray", insight["grader"]
+        assert_equal "mason", insight["grader"]
         assert_equal "some-task-slug", insight["task_slug"]
       end
 

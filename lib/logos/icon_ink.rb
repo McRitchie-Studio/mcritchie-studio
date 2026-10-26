@@ -3,7 +3,7 @@
 require "json"
 
 module Logos
-  # AN ICON'S BOX IS ITS INK (task stacked-rule-of-three; Alex 2026-10-14 12:16: "The icons need to have the margins
+  # AN ICON'S BOX IS ITS INK (task stacked-rule-of-three; Alex McRitchie 2026-10-14 12:16: "The icons need to have the margins
   # cleaned up so we don't have extra variables when building out the logos and themes"). Every icon in the icon
   # data is `{"w", "h", "transform"?, "layers"}`, drawn in the box 0 0 w h; this measures where its ink actually lies
   # in that box and trims the box to it. It is the ONE place margins are handled: the Navbar and Stacked Logos, the

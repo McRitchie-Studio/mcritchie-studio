@@ -57,7 +57,7 @@ class ActionGradeTest < ActiveSupport::TestCase
 
   # ---- [unit] grader enum ----------------------------------------------------
 
-  test "[unit] grader accepts ray and mcr" do
+  test "[unit] grader accepts mason and mcr" do
     ActionGrade::GRADERS.each do |grader|
       grade = ActionGrade.new(valid_attrs(grader: grader))
       assert grade.valid?, "#{grader} should be a valid grader"
@@ -141,10 +141,10 @@ class ActionGradeTest < ActiveSupport::TestCase
 
   test "[unit] by_grader filters to one grader" do
     graded = action(session_id: "scope-grader")
-    ray = ActionGrade.create!(valid_attrs(agent_action: graded, grader: ActionGrade::MASON))
+    mason = ActionGrade.create!(valid_attrs(agent_action: graded, grader: ActionGrade::MASON))
     mcr  = ActionGrade.create!(valid_attrs(agent_action: graded, grader: ActionGrade::MCR))
 
-    assert_equal [ray.id], ActionGrade.by_grader(ActionGrade::MASON).where(agent_action: graded).pluck(:id)
+    assert_equal [alex.id], ActionGrade.by_grader(ActionGrade::MASON).where(agent_action: graded).pluck(:id)
     assert_equal [mcr.id], ActionGrade.by_grader(ActionGrade::MCR).where(agent_action: graded).pluck(:id)
   end
 
@@ -180,12 +180,12 @@ class ActionGradeTest < ActiveSupport::TestCase
     assert_includes ActionGrade.discarded, grade
   end
 
-  # ---- [integration] ray grade + mcr audit are two rows on one action -------
+  # ---- [integration] mason grade + mcr audit are two rows on one action -------
 
-  test "[integration] an action carries Ritch's grade and the McRitchie audit as two rows" do
+  test "[integration] an action carries Mason's grade and the McRitchie audit as two rows" do
     graded = action(session_id: "two-row-sess")
 
-    ray = ActionGrade.create!(
+    mason = ActionGrade.create!(
       agent_action: graded, grader: ActionGrade::MASON,
       slug: "slow diagnosing the nullable column", disposition: ActionGrade::NOT,
       long_form: "Three failed migrations before spotting the missing default."
@@ -197,9 +197,9 @@ class ActionGradeTest < ActiveSupport::TestCase
     )
 
     assert_equal 2, graded.action_grades.count
-    assert_equal [ray.id], graded.action_grades.by_grader(ActionGrade::MASON).pluck(:id)
+    assert_equal [alex.id], graded.action_grades.by_grader(ActionGrade::MASON).pluck(:id)
     assert_equal [mcr.id], graded.action_grades.by_grader(ActionGrade::MCR).pluck(:id)
-    assert mcr.mcr?, "the McRitchie row audits Ritch's grade for that action"
+    assert mcr.mcr?, "the McRitchie row audits Mason's grade for that action"
   end
 
   test "[integration] destroying the action destroys its grades" do
@@ -248,13 +248,13 @@ class ActionGradeTest < ActiveSupport::TestCase
     assert_includes dup.errors[:grader], "has already been taken"
   end
 
-  test "[unit] an event carries Ritch's grade and the McRitchie audit as two rows" do
+  test "[unit] an event carries Mason's grade and the McRitchie audit as two rows" do
     span = event(session_id: "ev-two-row")
-    ray = ActionGrade.create!(event_valid_attrs(agent_activity: span, grader: ActionGrade::MASON))
+    mason = ActionGrade.create!(event_valid_attrs(agent_activity: span, grader: ActionGrade::MASON))
     mcr  = ActionGrade.create!(event_valid_attrs(agent_activity: span, grader: ActionGrade::MCR))
 
     assert_equal 2, span.action_grades.count
-    assert_equal [ray.id], span.action_grades.by_grader(ActionGrade::MASON).pluck(:id)
+    assert_equal [alex.id], span.action_grades.by_grader(ActionGrade::MASON).pluck(:id)
     assert_equal [mcr.id], span.action_grades.by_grader(ActionGrade::MCR).pluck(:id)
   end
 
@@ -390,7 +390,7 @@ class ActionGradeTest < ActiveSupport::TestCase
 
     assert_equal "flag the gap first", insight["slug"]
     assert_equal "not", insight["disposition"]
-    assert_equal "ray", insight["grader"]
+    assert_equal "mason", insight["grader"]
     assert_not insight.key?("long_form"), "a nil long_form is dropped"
     assert_not insight.key?("task_slug"), "a nil task_slug is dropped"
   end
@@ -478,7 +478,7 @@ class ActionGradeTest < ActiveSupport::TestCase
   test "[integration] record_event_grade leaves long_form untouched when :unset, writes it when given" do
     span = event(session_id: "rec-4", reason_slug: "anchor test span")
     ActionGrade.record_event_grade(event: span, grader: "mason", slug: "s", long_form: "Anchor: do X.")
-    grade = ActionGrade.for_event(span).by_grader("ray").first
+    grade = ActionGrade.for_event(span).by_grader("mason").first
     assert_equal "Anchor: do X.", grade.long_form
 
     ActionGrade.record_event_grade(event: span, grader: "mason", slug: "s2") # long_form defaults :unset
@@ -492,7 +492,7 @@ class ActionGradeTest < ActiveSupport::TestCase
 
     json = grade.to_grade_json
 
-    assert_equal "ray", json["grader"]
+    assert_equal "mason", json["grader"]
     assert_equal "good", json["disposition"]
     assert_equal "great catch here", json["slug"]
     assert_equal true, json["banked"]

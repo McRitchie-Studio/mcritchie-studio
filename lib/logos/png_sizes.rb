@@ -7,7 +7,7 @@ module Logos
   #
   # The kinds of preset:
   #   - SIDE (the icon): N is the icon's LONG side and the other follows its true ink aspect (an icon's box is its
-  #     ink), so Studio's chest (about 662 × 538) at 512 is 512 × 416 with no padding (Alex, 2026-10-14 22:35: "the
+  #     ink), so Studio's chest (about 662 × 538) at 512 is 512 × 416 with no padding (Alex McRitchie, 2026-10-14 22:35: "the
   #     default should be to download the true aspect ratio"). With `square: true` (the card's "1:1 square") the canvas
   #     is N × N and the icon is fitted inside it, centred (`fit: "contain"`), for a favicon or an app icon that must
   #     be square. An icon within SQUARE_TOLERANCE of 1:1 (Industries, 215 × 217) is square already: N × N either way.

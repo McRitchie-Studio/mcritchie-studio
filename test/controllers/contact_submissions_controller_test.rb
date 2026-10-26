@@ -4,7 +4,7 @@ require "test_helper"
 #
 #   [component]    what the page renders: the fields, three unticked consent
 #                  boxes in the fixed wording, the disclosure under the form.
-#   [integration]  what a POST does: the consent proof stored, Alex emailed,
+#   [integration]  what a POST does: the consent proof stored, Alex McRitchie emailed,
 #                  the consent rules held server-side, bots turned away.
 class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
   VALID = { name: "Jordan Lee", email: "jordan@example.com", message: "I would like a quote." }.freeze
@@ -102,7 +102,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
 
   # --- [integration] the write -----------------------------------------------
 
-  test "[integration] a consenting submission stores the proof and emails Alex" do
+  test "[integration] a consenting submission stores the proof and emails Alex McRitchie" do
     assert_difference -> { ContactSubmission.count }, 1 do
       assert_emails 1 do
         perform_enqueued_jobs do
@@ -217,7 +217,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
   end
 
   # The RobertniB bot posts the HTML back without running the page's script.
-  test "[integration] a post without the browser proof is kept flagged and Alex is not emailed" do
+  test "[integration] a post without the browser proof is kept flagged and Alex McRitchie is not emailed" do
     assert_difference -> { ContactSubmission.count } => 1, -> { Studio::EmailDelivery.count } => 0 do
       submit(PROOF => "")
     end
@@ -253,7 +253,7 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "too_fast", ContactSubmission.recent.first.spam_reason
   end
 
-  test "[integration] a post just past the minimum fill time reaches Alex unflagged" do
+  test "[integration] a post just past the minimum fill time reaches Alex McRitchie unflagged" do
     rendered_at = (ContactSubmissionsController::MIN_FILL_SECONDS + 0.5).seconds.ago
     assert_difference -> { Studio::EmailDelivery.count }, 1 do
       submit(PROOF => browser_proof(rendered_at))

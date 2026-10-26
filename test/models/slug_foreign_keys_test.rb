@@ -120,7 +120,7 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
     assert_equal "live-score-watch", note.metadata["task_handle"]
     assert_nil action.reload.task_slug
     assert_equal apps(:mcritchie_studio).slug, desk.reload.app_slug
-    assert_equal "ray", tasks(:new_task).reload.agent_slug
+    assert_equal "alex", tasks(:new_task).reload.agent_slug
     %w[activities.agent_slug activities.task_slug agent_actions.task_slug desk_records.app_slug tasks.agent_slug].each do |name|
       assert validated?(*name.split(".")), "#{name} is still NOT VALID"
     end

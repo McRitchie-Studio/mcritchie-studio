@@ -1,6 +1,6 @@
 require "test_helper"
 
-# [integration] GET /mason/heartbeat — the Ritch avenue now renders agent-narrated
+# [integration] GET /mason/heartbeat — the Mason avenue now renders agent-narrated
 # EVENT SPANS as the primary rows, read from AgentActivity.for_session(...).chronological
 # (oldest -> newest). The raw AgentActions attributed to each span (agent_activity_id)
 # roll up underneath as a read-only drill-down; actions with a null agent_activity_id

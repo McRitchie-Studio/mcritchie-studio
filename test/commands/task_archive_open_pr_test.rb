@@ -137,7 +137,7 @@ class TaskArchiveOpenPrTest < ActiveSupport::TestCase
 
     assert_equal 0, result[:status].exitstatus,
                  "a gate that refused an idea nobody ever opened a PR for would refuse most of " \
-                 "the board, and Alex's clean-up archives exactly that population"
+                 "the board, and Alex McRitchie's clean-up archives exactly that population"
     refute_empty result[:writes]
   end
 

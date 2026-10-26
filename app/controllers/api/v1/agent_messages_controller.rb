@@ -29,7 +29,7 @@ module Api
     #
     # AUTH is the board's, unchanged (BaseController): an agent session or the
     # shared secret's token. A SESSION acts only for its own soul: an admin session
-    # (Steffon, Ritch) may act for any soul, any other session only for the soul it
+    # (Steffon, Alex) may act for any soul, any other session only for the soul it
     # names. A client session and a harness key reach none of this. The shared
     # token carries no soul, so the `soul` it sends is the actor, exactly as every
     # other board write records it (session_actor).
@@ -207,7 +207,7 @@ module Api
         listed = params[:souls].is_a?(Array) ? params[:souls] : params[:souls].to_s.split(",")
         # A retired slug claims for its successor (Task::SOUL_ALIASES): a
         # dispatcher still running a pre-rename config asks for `xan` and is
-        # handed the `ray` rows, so no message waits on a soul nobody serves.
+        # handed the `alex` rows, so no message waits on a soul nobody serves.
         (listed.map { |s| Task.canonical_soul(s) } + [ Task.canonical_soul(params[:soul]) ]).reject(&:empty?).uniq
       end
 

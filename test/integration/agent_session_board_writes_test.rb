@@ -50,7 +50,7 @@ class AgentSessionBoardWritesTest < ActionDispatch::IntegrationTest
     assert_response :ok
     assert body.dig("data", "acquired")
 
-    acquire(@legacy, lane: "ray")
+    acquire(@legacy, lane: "alex")
     assert_response :ok
     assert body.dig("data", "acquired")
   end
@@ -111,7 +111,7 @@ class AgentSessionBoardWritesTest < ActionDispatch::IntegrationTest
 
   test "an activity stamps the session soul, and the shared token keeps the param" do
     # Activity clears an agent_slug that names no Agent row (ClearsUnknownSlug), so
-    # both souls this case stamps need one; the fixtures hold only ray and mack.
+    # both souls this case stamps need one; the fixtures hold only alex and mack.
     %w[jasper carl].each { |soul| Agent.create!(name: soul.capitalize, slug: soul, status: "active", agent_type: "worker") }
 
     post_activity(bearer(@studio), "from the session")

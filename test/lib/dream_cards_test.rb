@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# [unit] DreamCards — the card standard for putting dream decisions to Alex in chat
+# [unit] DreamCards — the card standard for putting dream decisions to Alex McRitchie in chat
 # (docs/agents/modules/dream.md, "The card standard"), the formatter `bin/dream
 # cards` prints for the dream-swap SOP and the wrap.
 #   ruby -Itest test/lib/dream_cards_test.rb

@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-# The guard catalog is the record of what became of each guard Alex ruled on. A
+# The guard catalog is the record of what became of each guard Alex McRitchie ruled on. A
 # DELETE or BY CONSTRUCTION row with no mark reads as applied when nobody has
 # said so, which is the wrong decision waiting to be made. So every such row
 # opens its Mark cell with one of the page's marks. This is a property of the
@@ -17,7 +17,7 @@ class GuardCatalogMarksTest < ActiveSupport::TestCase
   VERDICT_HEADERS = %w[Disposition Decision].freeze
   RULED = /\A(?:DELETE|BY CONSTRUCTION)\b/
   # Longest first: "applied in part" must not read as "applied".
-  MARKS = ["applied in part", "applied", "kept against the verdict", "awaiting build", "awaiting Alex"].freeze
+  MARKS = ["applied in part", "applied", "kept against the verdict", "awaiting build", "awaiting Alex McRitchie"].freeze
   MARK = /\A(#{MARKS.map { |mark| Regexp.escape(mark) }.join("|")}): \S/
   # These marks name the task that did, or will do, the work.
   NAMES_A_TASK = ["applied in part", "applied", "awaiting build"].freeze
@@ -110,7 +110,7 @@ class GuardCatalogMarksTest < ActiveSupport::TestCase
     assert_match(/names no task slug/, defects(table.call(" Mark |", " applied: yes |")).first)
     assert_match(/has no Mark cell/, defects(table.call("", "")).first)
     assert_empty defects(table.call(" Mark |", " applied in part: `some-task` (half); kept: the rest |"))
-    assert_empty defects(table.call(" Mark |", " awaiting Alex: no task names this row |"))
+    assert_empty defects(table.call(" Mark |", " awaiting Alex McRitchie: no task names this row |"))
     assert_empty defects("| Guard | n | Disposition | Mark |\n|---|---|---|---|\n| `bin/x` | 1 | KEEP |  |\n"),
                  "a KEEP row needs nothing"
   end

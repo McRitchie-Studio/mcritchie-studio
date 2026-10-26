@@ -30,8 +30,8 @@ class Fathom::ReaderTest < ActiveSupport::TestCase
 
     transcript = r.transcript(newest.recording_id)
     assert_equal 3, transcript.lines.size
-    assert_equal %w[Alex Lender], transcript.speakers
-    assert_equal "Morning, Alex.", transcript.lines.second.text
+    assert_equal %w[Alex McRitchie Lender], transcript.speakers
+    assert_equal "Morning, Alex McRitchie.", transcript.lines.second.text
 
     assert_equal "## Lender call\n\n- Term sheet agreed.", r.summary(9)
 

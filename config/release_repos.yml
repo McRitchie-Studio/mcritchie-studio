@@ -417,7 +417,7 @@ apps:
     ladder: three-rung
     # Managed studio-engine satellite, shaped like mcritchie-industries: Heroku apps
     # `commercial-welding` and `commercial-welding-qa` (provisioned on
-    # Alex's word; Basic web + essential-0 Postgres each), QA through
+    # Alex McRitchie's word; Basic web + essential-0 Postgres each), QA through
     # config/qa_environments.yml under the same slug. Migrations ride the
     # Procfile's `release: bin/rails db:migrate`. git_push_heroku runs no tests, so
     # both gates name CI's full suite, verbatim, and the two strings stay equal.
@@ -441,7 +441,7 @@ apps:
     # git_push_heroku runs no tests, so the gate names CI's full suite, verbatim.
     test_cmd: bin/rails db:test:prepare test test:system
     #
-    # QA-evidence exempt on cost, by operator decision ("QA exeption", Alex
+    # QA-evidence exempt on cost, by operator decision ("QA exeption", Alex McRitchie
     # McRitchie in chat): no QA copy. A change reaches production gated by CI and
     # review only, as cyvasse. QA only: `shipped` still needs the release -> main record.
     qa_evidence: exempt

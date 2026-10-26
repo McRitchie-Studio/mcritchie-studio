@@ -8,7 +8,7 @@ module DomainRegister
   # The purchase ledger: one JSON line per event, appended, never rewritten.
   #
   #   authorized  written BEFORE the registration POST: the domain, the exact
-  #               price and renewal, Alex's words (--ok), who ran it, when.
+  #               price and renewal, Alex McRitchie's words (--ok), who ran it, when.
   #   registered  the workflow reached `succeeded`.
   #   failed      `failure: rejected`: Cloudflare answered the POST with a 4xx,
   #               so no registration started; `failure: workflow`: the

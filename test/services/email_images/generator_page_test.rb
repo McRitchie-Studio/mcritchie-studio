@@ -3,7 +3,7 @@
 require "test_helper"
 require_relative "../../support/email_image_fakes"
 
-# [unit] What the generator page picks: the model image in Alex's order
+# [unit] What the generator page picks: the model image in Alex McRitchie's order
 # (canonical sheet reference, else the newest approved character sheet, else
 # the look's first reference), and up to four examples (approved headers
 # first, then the kit's style anchor).
@@ -45,7 +45,7 @@ class EmailImages::GeneratorPageTest < ActiveSupport::TestCase
     turf_character
     photo("Kit mascot", at: 3.days.ago)
     photo("Canonical sheet v2", at: 2.days.ago)
-    photo("Canonical sheet v3 (white jersey, pads, no helmet) - approved by Alex 2026-10-07", at: 1.day.ago)
+    photo("Canonical sheet v3 (white jersey, pads, no helmet) - approved by Alex McRitchie 2026-10-07", at: 1.day.ago)
     photo("Canonical sheet v4 rejected", chosen: false)
     sheet(approved: true)
 

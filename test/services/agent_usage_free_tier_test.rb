@@ -2,7 +2,7 @@ require "test_helper"
 require_relative "../support/agent_message_fixtures"
 require_relative "../support/client_cto_fixtures"
 
-# [unit] The free tier's CTO chat budget (task free-budget-meter; Alex,
+# [unit] The free tier's CTO chat budget (task free-budget-meter; Alex McRitchie,
 # 2026-10-19: "very small and updated after each message returned"), with the
 # SHIPPED config, nothing stubbed: a /build app is on Vibe, and Vibe's
 # cto_monthly_tokens (25,000) is the owner's cap, not the 1,000,000 default;

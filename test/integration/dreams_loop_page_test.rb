@@ -5,7 +5,7 @@ require "test_helper"
 # The dream loop on /dreams (docs/agents/modules/dream.md, Act 4), against the
 # fixture bank (DREAM_BANK_DIR):
 #   [component] the KPI strip, a card's grade and heat marks, the swap panel;
-#   [integration] Alex's one-click Retire and Approve swap, and who is refused.
+#   [integration] Alex McRitchie's one-click Retire and Approve swap, and who is refused.
 class DreamsLoopPageTest < ActionDispatch::IntegrationTest
   BANK = Rails.root.join("test/fixtures/dreams").to_s
   APPROVED = { dream_home: "carl", dream_slug: "money-review-reads-the-ledger" }.freeze
@@ -53,7 +53,7 @@ class DreamsLoopPageTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='dream-kpi-mean-grade'] [data-test='dream-kpi-value']", text: "1.5 / 2"
   end
 
-  test "[integration] Alex retires an approved dream in one click; the card then reads retiring" do
+  test "[integration] Alex McRitchie retires an approved dream in one click; the card then reads retiring" do
     get dreams_path
     assert_select "[data-dream='money-review-reads-the-ledger'] [data-test='dream-retire']", 1
     assert_select "[data-dream='proposed-money-idea'] [data-test='dream-retire']", 0
@@ -95,7 +95,7 @@ class DreamsLoopPageTest < ActionDispatch::IntegrationTest
     get dreams_path
     assert_select "[data-test='dream-retire']", 0
     assert_no_difference(-> { DreamRetirement.count }) { post dream_retirements_path, params: APPROVED }
-    assert_equal "Not retired: only Alex retires dreams.", flash[:alert]
+    assert_equal "Not retired: only Alex McRitchie retires dreams.", flash[:alert]
 
     reset!
     log_in_as(users(:viewer))
@@ -107,7 +107,7 @@ class DreamsLoopPageTest < ActionDispatch::IntegrationTest
     assert_response :redirect
   end
 
-  test "[integration] the swap panel shows an open swap, and Alex's one click approves the in and retires the out" do
+  test "[integration] the swap panel shows an open swap, and Alex McRitchie's one click approves the in and retires the out" do
     swap = DreamSwap.create!(session_id: "wrap-1", reason: "Lowest grade, a sharper habit in", layer: "soul/pokemon",
                              in_home: "pokemon", in_slug: "proposed-money-idea",
                              out_home: "pokemon", out_slug: "untagged-habit")
@@ -147,7 +147,7 @@ class DreamsLoopPageTest < ActionDispatch::IntegrationTest
     shipped = DreamSwap.create!(session_id: "wrap-2", reason: "r", layer: "soul/pokemon",
                                 in_home: "pokemon", in_slug: "proposed-money-idea")
     post dream_swap_approval_path(shipped)
-    assert_equal "Swap not approved: only Alex approves swaps.", flash[:alert]
+    assert_equal "Swap not approved: only Alex McRitchie approves swaps.", flash[:alert]
     assert_nil shipped.reload.approved_at
     assert_equal 0, DreamApproval.count
   end

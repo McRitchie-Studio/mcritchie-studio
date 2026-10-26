@@ -1,6 +1,6 @@
 require "test_helper"
 
-# [unit] The intake card Ritch's answer offers (BuildIntake::Card): names, hex
+# [unit] The intake card Alex's answer offers (BuildIntake::Card): names, hex
 # colours and text contrast are checked in code, unknown fields refuse the card,
 # a failing item is dropped, and the stored copy is the normalized one.
 class BuildIntakeCardTest < ActiveSupport::TestCase
@@ -110,7 +110,7 @@ class BuildIntakeCardTest < ActiveSupport::TestCase
 
   test "record_from! stores a valid card on the message and refuses the rest as events" do
     message = AgentMessage.create!(channel: "web", external_id: "build:t:1", channel_ref: "build",
-                                   thread_key: "web:build:#{'a' * 24}", soul_slug: "ray", content: "hi", status: "received")
+                                   thread_key: "web:build:#{'a' * 24}", soul_slug: "alex", content: "hi", status: "received")
     stored = BuildIntake::Card.record_from!(message, { "kind" => "intake", "card" => "cto", "names" => [ "Nova" ] })
     assert_equal({ "card" => "cto", "names" => [ "Nova" ] }, message.reload.intake_card)
     assert_equal stored, message.intake_card
@@ -124,7 +124,7 @@ class BuildIntakeCardTest < ActiveSupport::TestCase
   test "once every step is set, an answer with no card gets the summary card from code" do
     request_row = AppRequest.create!(prompt: "A league site")
     message = AgentMessage.create!(channel: "web", external_id: "build:t:2", channel_ref: "build",
-                                   thread_key: BuildIntake.thread_key(request_row.token), soul_slug: "ray", content: "hi", status: "received")
+                                   thread_key: BuildIntake.thread_key(request_row.token), soul_slug: "alex", content: "hi", status: "received")
     assert_nil BuildIntake::Card.record_from!(message, nil), "an open step: no summary"
 
     request_row.update!(answers: { "idea" => "League", "title" => "League Standings Hub" }, cto_name: "Coach", cto_avatar: "harbor",
@@ -135,6 +135,6 @@ class BuildIntakeCardTest < ActiveSupport::TestCase
                  "a refused proposal still leaves the visitor the summary")
 
     stored = BuildIntake::Card.record_from!(message, { "kind" => "intake", "card" => "cto", "names" => [ "Nova" ] })
-    assert_equal "cto", stored["card"], "a card Ritch offered wins over the summary"
+    assert_equal "cto", stored["card"], "a card Alex offered wins over the summary"
   end
 end

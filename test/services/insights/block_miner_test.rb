@@ -95,7 +95,7 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
     assert_not ActionGrade.exists?(source_activity_slug: blk.slug)
   end
 
-  test "[unit] never clobbers an already-Alex-graded span — falls back to the earlier ungraded one" do
+  test "[unit] never clobbers an already-Alex McRitchie-graded span — falls back to the earlier ungraded one" do
     now = Time.current
     older  = span(task_slug: "t-graded", opened_at: now - 20.minutes, seq: 0)
     newest = span(task_slug: "t-graded", opened_at: now - 10.minutes, seq: 1)

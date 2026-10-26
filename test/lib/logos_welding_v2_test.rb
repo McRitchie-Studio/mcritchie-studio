@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # [unit] Logos::WeldingV2 (task welding-llc-and-v2-helmet): Commercial Welding v2's helmet, derived from v1's traced
-# helmet. Alex's item 5: move the lens down so it sits on the rule of 3's rows. (Item 5 also centred the helmet on the
+# helmet. Alex McRitchie's item 5: move the lens down so it sits on the rule of 3's rows. (Item 5 also centred the helmet on the
 # line where its two halves meet, in a widened box; task stacked-rule-of-three retired that when every icon's box
 # became its ink, Logos::IconInk.) The lens is shorter than one row, so it is centred on the middle row. Task
 # logo-original-and-alt: the same derivation, run on v1's Original (the traced square logo), gives v2's Original.
@@ -36,7 +36,7 @@ class LogosWeldingV2Test < Minitest::Test
     assert_equal File.read(V2::FILE), V2.json, "run `bin/rails logos:welding_v2` after changing Logos::WeldingV2 or v1's helmet"
   end
 
-  # Task stacked-rule-of-three (Alex 2026-10-14 12:07: "there's some extra space on the right side" of the hood): each
+  # Task stacked-rule-of-three (Alex McRitchie 2026-10-14 12:07: "there's some extra space on the right side" of the hood): each
   # v2 helmet's box is its ink, the outer helmet flush with it on every side, so its ink margins left and right are
   # equal (both zero) and the hood is centred on its ink wherever a logo centres its box.
   def test_each_v2_helmet_is_flush_with_its_box
@@ -138,7 +138,7 @@ class LogosWeldingV2Test < Minitest::Test
     assert_match(/welding: only a translate can be read, got transform "scale\(2\)"/, refusal { V2.new(v1("welding_v2").merge("transform" => "scale(2)"), "welding") })
   end
 
-  # Task kit-export-and-clear-lens (Alex 2026-10-12 00:55: "remove the white of the lens so I can see it clear"): v2's
+  # Task kit-export-and-clear-lens (Alex McRitchie 2026-10-12 00:55: "remove the white of the lens so I can see it clear"): v2's
   # Original window is a hole in the blue silhouette (even-odd), not an opaque white shape, so the page shows through.
   def test_v2s_original_lens_is_see_through
     blue, white = v2("welding_v2_original").fetch("layers").first(2).map { |layer| V2.subpaths(layer.fetch("d")) }
@@ -151,7 +151,7 @@ class LogosWeldingV2Test < Minitest::Test
   end
 
   def test_v1s_original_and_v2s_alt_are_untouched
-    assert_equal 2, V2.subpaths(v1("welding_v2_original").fetch("layers")[1].fetch("d")).size, "v1's Original keeps its white window: Alex asked for the new logo only"
+    assert_equal 2, V2.subpaths(v1("welding_v2_original").fetch("layers")[1].fetch("d")).size, "v1's Original keeps its white window: Alex McRitchie asked for the new logo only"
     ALT.each do |key|
       layers = v2(key).fetch("layers")
       assert_equal 3, V2.subpaths(layers.first.fetch("d")).size, "#{key}: its primary already held the window as a hole"

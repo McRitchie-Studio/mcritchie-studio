@@ -49,7 +49,7 @@ class EmailTrustTest < ActiveSupport::TestCase
     ses_top = "Return-Path: <x@evil.example>\r\nReceived: from mx.evil.example by inbound-smtp.us-east-1.amazonaws.com\r\n" \
               "X-SES-Spam-Verdict: PASS\r\nReceived-SPF: fail\r\n"
     forged = "X-SES-RECEIPT: x\r\nReceived: by mail.evil.example\r\n#{FORGED_FOLDED}\r\n" \
-             "#{dkim_signature(d: 'mcritchie.studio', s: 'google')}\r\nFrom: Alex <alex@mcritchie.studio>\r\n" \
+             "#{dkim_signature(d: 'mcritchie.studio', s: 'google')}\r\nFrom: Alex McRitchie <alex@mcritchie.studio>\r\n" \
              "To: avi@mcritchie.studio\r\nMessage-ID: <a@b>\r\nSubject: hi\r\n\r\nbody\r\n"
     v = verdict(ses_top + forged)
     refute v.verified?
@@ -119,7 +119,7 @@ class EmailTrustTest < ActiveSupport::TestCase
     assert_match(/exactly one address/, v.reason)
   end
 
-  # Owner trust is pinned to Alex's Google selector (config/agent_routes.yml pinned_dkim).
+  # Owner trust is pinned to Alex McRitchie's Google selector (config/agent_routes.yml pinned_dkim).
   test "a DKIM pass under the resend selector is not the owner" do
     raw = agent_email.sub(/^DKIM-Signature: .*\r\n/, "#{dkim_signature(d: 'mcritchie.studio', s: 'resend')}\r\n")
     v = verdict(raw)
@@ -178,7 +178,7 @@ class EmailTrustTest < ActiveSupport::TestCase
   end
 
   test "a spoofed From with the spoofer's own aligned DKIM is someone else, not alex@" do
-    raw = agent_email(from: "Alex <alex@mcritchie.studio>",
+    raw = agent_email(from: "Alex McRitchie <alex@mcritchie.studio>",
                       top_result: ses_result(dkim: "dkim=pass header.d=evil.example", dmarc: "dmarc=fail header.from=mcritchie.studio"))
     refute verdict(raw).verified?
   end

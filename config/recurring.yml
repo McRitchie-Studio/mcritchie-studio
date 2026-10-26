@@ -41,7 +41,7 @@ production:
     args: []
   # The morning CTO summary: every live studio-engine app's health for the day
   # ending 07:00 Denver, in ONE Discord message under the report key
-  # daily_app_report (Alex picks the channel at /admin/report_destinations).
+  # daily_app_report (Alex McRitchie picks the channel at /admin/report_destinations).
   # Satellites are read over HTTP with HEALTH_TOKEN_<SLUG>; the hub in-process.
   # The same run then posts each app's own CTO report (CtoReport,
   # cto_report:<domain>), reusing those reads.
@@ -51,7 +51,7 @@ production:
     schedule: "0 7 * * * America/Denver"
     args: []
   # /contact submissions the bot check flagged in the last day, in one email to
-  # Alex; nothing on a quiet day. See ContactFlaggedDigestJob.
+  # Alex McRitchie; nothing on a quiet day. See ContactFlaggedDigestJob.
   contact_flagged_digest:
     class: ContactFlaggedDigestJob
     schedule: "0 7 * * * America/Denver"
@@ -66,7 +66,7 @@ production:
     class: AgentMessageDiscordPollJob
     schedule: every 10 minutes
     args: []
-  # The floor under bin/dispatcher (Alex's Mac): one Discord alert per incident
+  # The floor under bin/dispatcher (Alex McRitchie's Mac): one Discord alert per incident
   # when no dispatcher has pinged for 5 minutes or a routed message has waited 10,
   # and one recovery line. Inert (a log line) without the bot token or
   # discord.ops_channel_id. See AgentDispatcherAlertJob and Steffon's

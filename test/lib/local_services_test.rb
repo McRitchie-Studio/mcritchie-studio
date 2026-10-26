@@ -46,7 +46,7 @@ class LocalServicesTest < Minitest::Test
   def test_the_real_registry_restores_the_client_build_launcher
     launcher = LocalServices::Registry.load.find { |s| s.name == "client-build-launcher" }
 
-    refute_nil launcher, "a fresh Mac reinstalls the client build launcher (Alex 2026-10-19)"
+    refute_nil launcher, "a fresh Mac reinstalls the client build launcher (Alex McRitchie 2026-10-19)"
     assert_equal "bin/client-build-launcher install", launcher.install
     assert_equal "bin/client-build-launcher status", launcher.status
     assert_equal "bin/client-build-launcher install --if-changed", launcher.refresh
