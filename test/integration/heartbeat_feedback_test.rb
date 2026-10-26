@@ -21,7 +21,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
   test "[integration] the read-only event heartbeat links each action to its drawer + the Insight Bank" do
     a = capture(stage: "building") # no agent_activity_id -> renders in the Unlabeled group
 
-    get ray_heartbeat_path
+    get mason_heartbeat_path
 
     assert_response :success
     # the event heartbeat is read-only: no inline grading radios on the table
@@ -30,14 +30,14 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
     assert_select "tr[data-test=heartbeat-event-action]", 1
     assert_match heartbeat_feedback_path(a), response.body
     assert_select "aside[data-test=heartbeat-drawer]"
-    assert_select "a[href=?]", ray_insights_path, text: /Insight Bank/
+    assert_select "a[href=?]", mason_insights_path, text: /Insight Bank/
   end
 
   test "[integration] grading an action persists the disposition with a default slug" do
     a = capture(stage: "building")
 
     assert_difference -> { ActionGrade.count }, 1 do
-      post heartbeat_grade_path(a), params: { grader: "ray", disposition: "good", surface: "inline" }
+      post heartbeat_grade_path(a), params: { grader: "mason", disposition: "good", surface: "inline" }
     end
 
     grade = grade_for(a, "ray")
@@ -47,11 +47,11 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
 
   test "[integration] re-grading the same grader updates the one row (no duplicate)" do
     a = capture(stage: "building")
-    post heartbeat_grade_path(a), params: { grader: "ray", disposition: "good", surface: "inline" }
+    post heartbeat_grade_path(a), params: { grader: "mason", disposition: "good", surface: "inline" }
 
     assert_no_difference -> { ActionGrade.count } do
       post heartbeat_grade_path(a),
-           params: { grader: "ray", disposition: "not", slug: "slow to spot the bug", surface: "drawer" }
+           params: { grader: "mason", disposition: "not", slug: "slow to spot the bug", surface: "drawer" }
     end
 
     grade = grade_for(a, "ray")
@@ -63,14 +63,14 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
     a = capture(stage: "building")
 
     post heartbeat_grade_path(a),
-         params: { grader: "ray", disposition: "good", slug: "promote this to a guardrail",
+         params: { grader: "mason", disposition: "good", slug: "promote this to a guardrail",
                    intent: "bank", surface: "drawer" }
     grade = grade_for(a, "ray")
     assert grade.banked
     assert_includes ActionGrade.banked, grade
 
     post heartbeat_grade_path(a),
-         params: { grader: "ray", disposition: "good", slug: "promote this to a guardrail",
+         params: { grader: "mason", disposition: "good", slug: "promote this to a guardrail",
                    intent: "discard", surface: "drawer" }
     grade.reload
     assert_not grade.banked
@@ -82,7 +82,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
     a = capture(stage: "building")
 
     post heartbeat_grade_path(a),
-         params: { grader: "ray", disposition: "not", slug: "slow diagnosing the column", surface: "drawer" }
+         params: { grader: "mason", disposition: "not", slug: "slow diagnosing the column", surface: "drawer" }
     post heartbeat_grade_path(a),
          params: { grader: "mcr", disposition: "good", slug: "agree check siblings first", surface: "drawer" }
 
@@ -93,10 +93,10 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
   test "[integration] a banked grade appears on the Insight Bank page" do
     a = capture(stage: "building")
     post heartbeat_grade_path(a),
-         params: { grader: "ray", disposition: "good", slug: "promote this to a guardrail",
+         params: { grader: "mason", disposition: "good", slug: "promote this to a guardrail",
                    intent: "bank", surface: "drawer" }
 
-    get ray_insights_path
+    get mason_insights_path
 
     assert_response :success
     assert_select "[data-test=insight-bank]"
@@ -105,7 +105,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] the Insight Bank shows a friendly empty state with nothing banked" do
-    get ray_insights_path
+    get mason_insights_path
 
     assert_response :success
     assert_select "[data-test=insight-bank-empty]"
@@ -115,12 +115,12 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
     a = capture(stage: "building")
 
     post heartbeat_grade_path(a),
-         params: { grader: "ray", disposition: "good", surface: "inline" },
+         params: { grader: "mason", disposition: "good", surface: "inline" },
          headers: { "Accept" => "text/vnd.turbo-stream.html" }
 
     assert_response :success
     assert_equal "text/vnd.turbo-stream.html", response.media_type
-    assert_match "fb-ray-#{a.id}", response.body
+    assert_match "fb-mason-#{a.id}", response.body
     assert_match "hb-stat-insights", response.body
   end
 
@@ -154,7 +154,7 @@ class HeartbeatFeedbackTest < ActionDispatch::IntegrationTest
     a = capture(stage: "building")
 
     post heartbeat_grade_path(a),
-         params: { grader: "ray", disposition: "not", slug: "slow to spot the bug" },
+         params: { grader: "mason", disposition: "not", slug: "slow to spot the bug" },
          as: :json
 
     assert_response :success

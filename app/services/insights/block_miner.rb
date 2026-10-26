@@ -34,7 +34,7 @@ module Insights
   #   Insights::BlockMiner.mine!                          # scan every resolved block
   #   Insights::BlockMiner.mine!(task_slug: "some-task")  # scan one task's blocks
   class BlockMiner
-    ALEX = ActionGrade::RAY
+    GRADER = ActionGrade::MASON
 
     # A candidate's short label — the first few words of the block feedback (the
     # long_form carries the full text). Kept terse like the other grade slugs.
@@ -91,7 +91,7 @@ module Insights
       return unless activity
 
       ActionGrade.create!(
-        grader:               ALEX,
+        grader:               GRADER,
         disposition:          ActionGrade::NOT,
         agent_activity:       activity,
         slug:                 candidate_slug(block),
@@ -113,7 +113,7 @@ module Insights
     def target_activity_for(block)
       return nil if block.task_slug.blank?
 
-      graded = ActionGrade.by_grader(ALEX).where.not(agent_activity_id: nil).select(:agent_activity_id)
+      graded = ActionGrade.by_grader(GRADER).where.not(agent_activity_id: nil).select(:agent_activity_id)
       AgentActivity.where(task_slug: block.task_slug)
                  .where("opened_at <= ?", block.created_at)
                  .where(agent: [nil, ""])

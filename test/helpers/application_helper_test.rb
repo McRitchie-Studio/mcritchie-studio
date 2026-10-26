@@ -730,7 +730,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal %w[carl avi steffon mason ray turf-monster pokemon], launchers.map { |l| l[:agent_slug] }
     # Row 1 is the prompt-like soul heartbeat phrase; acts are the launcher atoms.
     # The general Pokémon owns no HEARTBEAT, so its row 1 is nil and it renders acts only.
-    assert_equal ["Carl Heartbeat", "Avi Heartbeat", "Steffon Heartbeat", "Mason Heartbeat", "Ray Heartbeat",
+    assert_equal ["Carl Heartbeat", "Avi Heartbeat", "Steffon Heartbeat", "Mason Heartbeat", "Alex Heartbeat",
                   "Turf Monster Heartbeat", nil],
                  launchers.map { |l| l[:heartbeat] }
     # Acts read across the souls in pipeline order: review → assemble → ship.
@@ -745,7 +745,7 @@ class ApplicationHelperTest < ActionView::TestCase
     # Mason's CEO acts (Alex's approved sort, 2026-10-25).
     assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[3][:actions]
     # Ritch's one chip is ship-clock, the typing-to-shipping benchmark. His /build
-    # queue runs from the Ray Heartbeat row: `launch-build-queue` (18 characters)
+    # queue runs from the Alex Heartbeat row: `launch-build-queue` (18 characters)
     # clips the carousel's act chip on CI, as sleeper-auction-watch does.
     assert_equal ["ship-clock"], launchers[4][:actions]
     # Turf Monster gained the rehearsal launcher after the first watched QA run —

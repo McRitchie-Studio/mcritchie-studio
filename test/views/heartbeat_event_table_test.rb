@@ -244,7 +244,7 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
   test "[component] an existing span grade pre-checks its inline disposition radio" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    grade = ActionGrade.create!(agent_activity: ev, grader: "ray", disposition: "good",
+    grade = ActionGrade.create!(agent_activity: ev, grader: "mason", disposition: "good",
                                 slug: "clean span with a crisp outcome")
 
     render partial: "heartbeat/activity_table",
@@ -456,7 +456,7 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
   test "[component] a span's existing grade markers render server-side from activity_grades" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    grade = ActionGrade.create!(agent_activity: ev, grader: "ray", disposition: "good",
+    grade = ActionGrade.create!(agent_activity: ev, grader: "mason", disposition: "good",
                                 slug: "tight span with a clean outcome")
 
     render partial: "heartbeat/activity_table",
@@ -464,10 +464,10 @@ class HeartbeatEventTableTest < ActionView::TestCase
                      activity_grades: { ev.id => { "ray" => grade } } }
 
     # the Ritch marker is server-rendered (Nokogiri-visible), carrying its slug
-    assert_select "[data-test=event-grade-ray]"
+    assert_select "[data-test=event-grade-mason]"
     assert_includes rendered, "tight span with a clean outcome"
     # and the tbody carries the hydration data the Alpine row reads
-    assert_select "tbody[data-test=heartbeat-event][data-ray-graded=true]"
+    assert_select "tbody[data-test=heartbeat-event][data-mason-graded=true]"
   end
 
   test "[component] a span's key method replaces the right status/action line" do

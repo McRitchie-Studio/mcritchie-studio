@@ -1,6 +1,6 @@
 require "test_helper"
 
-# [integration] the activity grade endpoint: POST /ray/heartbeat/activities/:id/grade
+# [integration] the activity grade endpoint: POST /mason/heartbeat/activities/:id/grade
 # upserts ONE ActionGrade for (activity, grader) and returns JSON only. It mirrors the
 # per-action #grade semantics (disposition/slug/long_form/intent=bank|discard) but
 # targets a narrated AgentActivity and renders no view. Reads are a public meta
@@ -23,7 +23,7 @@ class HeartbeatActivityGradeTest < ActionDispatch::IntegrationTest
     e = span
 
     assert_difference -> { ActionGrade.count }, 1 do
-      post heartbeat_activity_grade_path(e), params: { grader: "ray", disposition: "good" }
+      post heartbeat_activity_grade_path(e), params: { grader: "mason", disposition: "good" }
     end
 
     assert_response :success
@@ -38,7 +38,7 @@ class HeartbeatActivityGradeTest < ActionDispatch::IntegrationTest
     e = span
 
     post heartbeat_activity_grade_path(e),
-         params: { grader: "ray", disposition: "not", slug: "narrated the span vaguely" },
+         params: { grader: "mason", disposition: "not", slug: "narrated the span vaguely" },
          as: :json
 
     assert_response :success
@@ -52,11 +52,11 @@ class HeartbeatActivityGradeTest < ActionDispatch::IntegrationTest
 
   test "[integration] re-grading the same grader updates the one row (no duplicate)" do
     e = span
-    post heartbeat_activity_grade_path(e), params: { grader: "ray", disposition: "good" }
+    post heartbeat_activity_grade_path(e), params: { grader: "mason", disposition: "good" }
 
     assert_no_difference -> { ActionGrade.count } do
       post heartbeat_activity_grade_path(e),
-           params: { grader: "ray", disposition: "not", slug: "span was noisy and unfocused" }
+           params: { grader: "mason", disposition: "not", slug: "span was noisy and unfocused" }
     end
 
     grade = grade_for(e, "ray")
@@ -68,13 +68,13 @@ class HeartbeatActivityGradeTest < ActionDispatch::IntegrationTest
     e = span
 
     post heartbeat_activity_grade_path(e),
-         params: { grader: "ray", disposition: "good", slug: "promote this to a guardrail", intent: "bank" }
+         params: { grader: "mason", disposition: "good", slug: "promote this to a guardrail", intent: "bank" }
     grade = grade_for(e, "ray")
     assert grade.banked
     assert_includes ActionGrade.banked, grade
 
     post heartbeat_activity_grade_path(e),
-         params: { grader: "ray", disposition: "good", slug: "promote this to a guardrail", intent: "discard" }
+         params: { grader: "mason", disposition: "good", slug: "promote this to a guardrail", intent: "discard" }
     grade.reload
     assert_not grade.banked
     assert grade.discarded
@@ -83,12 +83,12 @@ class HeartbeatActivityGradeTest < ActionDispatch::IntegrationTest
 
   test "[integration] clearing a span grade removes the existing grader row" do
     e = span
-    ActionGrade.create!(agent_activity: e, grader: "ray", disposition: "good",
+    ActionGrade.create!(agent_activity: e, grader: "mason", disposition: "good",
                         slug: "clean span with a crisp outcome")
 
     assert_difference -> { ActionGrade.count }, -1 do
       post heartbeat_activity_grade_path(e),
-           params: { grader: "ray", intent: "clear" },
+           params: { grader: "mason", intent: "clear" },
            as: :json
     end
 
@@ -119,7 +119,7 @@ class HeartbeatActivityGradeTest < ActionDispatch::IntegrationTest
     e = span
 
     post heartbeat_activity_grade_path(e),
-         params: { grader: "ray", disposition: "not", slug: "narrated the span vaguely" }
+         params: { grader: "mason", disposition: "not", slug: "narrated the span vaguely" }
     post heartbeat_activity_grade_path(e),
          params: { grader: "mcr", disposition: "good", slug: "agree, tighten the reason slug" }
 

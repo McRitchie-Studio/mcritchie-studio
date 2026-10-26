@@ -28,7 +28,7 @@ class RaySeatTest < ActionDispatch::IntegrationTest
                                  opened_at: 1.minute.ago, closed_at: Time.current, outcome_slug: "green")
     assert_includes AgentActivity.awaiting_grade.map(&:id), span.id
 
-    grade = ActionGrade.record_activity_grade(activity: span, grader: ActionGrade::RAY, disposition: "good",
+    grade = ActionGrade.record_activity_grade(activity: span, grader: ActionGrade::MASON, disposition: "good",
                                               slug: "a clean seat under ray")
 
     assert_equal "ray", grade.grader
@@ -79,16 +79,16 @@ class RaySeatTest < ActionDispatch::IntegrationTest
 
   # ── Routes: /ray/* serves, /xan/* forwards ───────────────────────────────
 
-  test "the seat's pages answer under /ray" do
-    assert_equal "/ray/heartbeat", ray_heartbeat_path
-    assert_equal "/ray/insights", ray_insights_path
-    assert_equal "/ray/pipeline", ray_pipeline_path
-    assert_routing "/ray/heartbeat", controller: "heartbeat", action: "show"
-    assert_routing "/ray/insights", controller: "heartbeat", action: "insights"
+  test "the seat's pages answer under /mason" do
+    assert_equal "/mason/heartbeat", mason_heartbeat_path
+    assert_equal "/mason/insights", mason_insights_path
+    assert_equal "/mason/pipeline", mason_pipeline_path
+    assert_routing "/mason/heartbeat", controller: "heartbeat", action: "show"
+    assert_routing "/mason/insights", controller: "heartbeat", action: "insights"
 
-    get ray_heartbeat_path
+    get mason_heartbeat_path
     assert_response :success
-    get ray_insights_path
+    get mason_insights_path
     assert_response :success
   end
 
@@ -96,12 +96,12 @@ class RaySeatTest < ActionDispatch::IntegrationTest
   # under /ray, query string included, so a bookmarked deep link still lands.
   test "the retired /xan pages forward to /ray, query string and all" do
     {
-      "/xan/heartbeat"                         => "/ray/heartbeat",
-      "/xan/heartbeat?session_id=abc"          => "/ray/heartbeat?session_id=abc",
-      "/xan/heartbeat/activities?page=2"       => "/ray/heartbeat/activities?page=2",
-      "/xan/heartbeat/activities/7/feedback"   => "/ray/heartbeat/activities/7/feedback",
-      "/xan/insights"                          => "/ray/insights",
-      "/xan/pipeline"                          => "/ray/pipeline"
+      "/xan/heartbeat"                         => "/mason/heartbeat",
+      "/xan/heartbeat?session_id=abc"          => "/mason/heartbeat?session_id=abc",
+      "/xan/heartbeat/activities?page=2"       => "/mason/heartbeat/activities?page=2",
+      "/xan/heartbeat/activities/7/feedback"   => "/mason/heartbeat/activities/7/feedback",
+      "/xan/insights"                          => "/mason/insights",
+      "/xan/pipeline"                          => "/mason/pipeline"
     }.each do |old, new|
       get old
       assert_response :moved_permanently, old
@@ -112,7 +112,7 @@ class RaySeatTest < ActionDispatch::IntegrationTest
   test "the launcher enters the seat as ray" do
     get launcher_path
     assert_response :success
-    assert_select "a[data-avenue=ray][href=?]", ray_heartbeat_path
+    assert_select "a[data-avenue=ray][href=?]", mason_heartbeat_path
     assert_select "[data-avenue=alex]", 0
   end
 end

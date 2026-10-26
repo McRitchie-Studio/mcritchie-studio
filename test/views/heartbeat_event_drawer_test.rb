@@ -54,7 +54,7 @@ class HeartbeatEventDrawerTest < ActionView::TestCase
 
   test "[component] an existing span grade pre-fills its editor slug" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    ray = ActionGrade.create!(agent_activity: ev, grader: "ray", disposition: "not",
+    ray = ActionGrade.create!(agent_activity: ev, grader: "mason", disposition: "not",
                                slug: "span drifted off its stated reason")
 
     render partial: "heartbeat/activity_drawer",

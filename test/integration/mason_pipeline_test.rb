@@ -15,10 +15,10 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] the pipeline page renders all three columns" do
-    get ray_pipeline_path
+    get mason_pipeline_path
 
     assert_response :success
-    assert_select "[data-test=ray-pipeline]"
+    assert_select "[data-test=mason-pipeline]"
     assert_select "#col-actions"
     assert_select "#col-insights"
     assert_select "#col-confirmations"
@@ -28,9 +28,9 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
 
   test "[integration] column 1 shows an activity with its type, narration, cost slot and NOT flag" do
     s = span(session_id: "pl-1", reason: "review the diff", category: "Verify", outcome_slug: "approved")
-    ActionGrade.create!(agent_activity: s, grader: "ray", disposition: "not", slug: "missed the edge case")
+    ActionGrade.create!(agent_activity: s, grader: "mason", disposition: "not", slug: "missed the edge case")
 
-    get ray_pipeline_path
+    get mason_pipeline_path
 
     assert_select "[data-test=pl-activity]" do
       assert_select ".hb-catchip", text: "Verify"
@@ -41,25 +41,25 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
 
   test "[integration] column 2 shows an Ritch insight with a Confirm button" do
     s = span(session_id: "pl-2", reason: "narrated cleanly")
-    g = ActionGrade.create!(agent_activity: s, grader: "ray", disposition: "good",
+    g = ActionGrade.create!(agent_activity: s, grader: "mason", disposition: "good",
                             slug: "write the failing test first", long_form: "red before green")
     g.bank!
 
-    get ray_pipeline_path
+    get mason_pipeline_path
 
     assert_select "[data-test=pl-insight]" do
       assert_select ".pl-slug", text: "write the failing test first"
       assert_select ".pl-long", text: "red before green"
     end
-    assert_select "form[action=?]", ray_pipeline_confirm_path(s.id) # the Confirm button posts here
+    assert_select "form[action=?]", mason_pipeline_confirm_path(s.id) # the Confirm button posts here
   end
 
   test "[integration] a confirmed insight shows Confirmed instead of a button; column 3 lists it" do
     s = span(session_id: "pl-3", reason: "solid span here")
-    ActionGrade.create!(agent_activity: s, grader: "ray", disposition: "good", slug: "keep this lesson").bank!
+    ActionGrade.create!(agent_activity: s, grader: "mason", disposition: "good", slug: "keep this lesson").bank!
     ActionGrade.create!(agent_activity: s, grader: "mcr", disposition: "good", slug: "keep this lesson")
 
-    get ray_pipeline_path
+    get mason_pipeline_path
 
     assert_select "[data-test=pl-insight-confirmed]"
     assert_select "[data-test=pl-confirmation]" do
@@ -82,7 +82,7 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
                    summary: "test scope ship_test_gate COMPLETED · mcritchie-studio · pass · " \
                             "141 runs, 320 assertions, 0 failures, 0 errors · 12.3s · bin/rails test")
 
-    get ray_pipeline_path
+    get mason_pipeline_path
 
     assert_select "[data-test=pl-test-runs]"
     assert_select "[data-test=pl-test-run]" do
@@ -104,7 +104,7 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
     make_test_run(scope: "qa_post_deploy", result: "fail", session_id: "tr-fail",
              summary: "test scope qa_post_deploy FAILED · turf-monster-qa · fail · 1 failures · 3.1s · heroku run")
 
-    get ray_pipeline_path
+    get mason_pipeline_path
 
     assert_select "[data-test=pl-test-verdict].not", text: "fail"
   end
@@ -115,7 +115,7 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
                         summary: "test scope ship_test_gate START · mcritchie-studio · bin/rails test",
                         occurred_at: Time.current, seq: 0, outcome: "ok", actor: "agent")
 
-    get ray_pipeline_path
+    get mason_pipeline_path
 
     assert_select "[data-test=pl-test-runs]", { count: 0 }, "no verdicts → the band is hidden"
     assert_select "[data-test=pl-test-run]", { count: 0 }
@@ -123,15 +123,15 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
 
   test "[integration] an Ritch 'not' grade flags a test-run row" do
     run = make_test_run(scope: "pre_qa_gate", result: "pass", session_id: "tr-not")
-    ActionGrade.create!(agent_action: run, grader: "ray", disposition: "not", slug: "flaky integration gate")
+    ActionGrade.create!(agent_action: run, grader: "mason", disposition: "not", slug: "flaky integration gate")
 
-    get ray_pipeline_path
+    get mason_pipeline_path
 
     assert_select "[data-test=pl-test-run].is-not", { count: 1 }
   end
 
   test "[integration] the test-runs band is hidden when there are none" do
-    get ray_pipeline_path
+    get mason_pipeline_path
     assert_select "[data-test=pl-test-runs]", { count: 0 }
   end
 
@@ -142,7 +142,7 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
     s = span(session_id: session_id, reason: "did the risky edit", task_slug: task_slug)
     blk = Activity.create!(task_slug: task_slug, activity_type: "qa_feedback",
                            description: "stage transition bypassed the server-side guard here")
-    grade = ActionGrade.create!(agent_activity: s, grader: "ray", disposition: "not",
+    grade = ActionGrade.create!(agent_activity: s, grader: "mason", disposition: "not",
                                 slug: "stage transition bypassed the server-side",
                                 long_form: blk.description, source_activity_slug: blk.slug)
     grade.bank! if banked
@@ -152,7 +152,7 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
   test "[integration] a block-mined candidate is surfaced awaiting grade" do
     s, blk, = block_mined_candidate(task_slug: "task-blocked", session_id: "pl-cand")
 
-    get ray_pipeline_path
+    get mason_pipeline_path
 
     assert_select "[data-test=pl-candidates]"
     assert_select "[data-test=pl-candidate]" do
@@ -166,14 +166,14 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
   test "[integration] a banked candidate leaves the awaiting-grade band (promoted to insights)" do
     block_mined_candidate(task_slug: "task-promoted", session_id: "pl-promoted", banked: true)
 
-    get ray_pipeline_path
+    get mason_pipeline_path
 
     assert_select "[data-test=pl-candidate]", { count: 0 }, "a banked candidate is no longer awaiting grade"
     assert_select "[data-test=pl-insight]" # it now lives in the Insights column
   end
 
   test "[integration] the candidates band is hidden when there are none" do
-    get ray_pipeline_path
+    get mason_pipeline_path
     assert_select "[data-test=pl-candidates]", { count: 0 }
   end
 
@@ -181,14 +181,14 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
 
   test "[integration] Confirm records a McRitchie mcr grade and redirects back" do
     s = span(session_id: "pl-confirm", reason: "confirm me")
-    ActionGrade.create!(agent_activity: s, grader: "ray", disposition: "good", slug: "a good lesson").bank!
+    ActionGrade.create!(agent_activity: s, grader: "mason", disposition: "good", slug: "a good lesson").bank!
     log_in_as(users(:alex)) # admin — the confirm write needs one
 
     assert_difference -> { ActionGrade.by_grader("mcr").count }, 1 do
-      post ray_pipeline_confirm_path(s.id), params: { slug: "a good lesson" }
+      post mason_pipeline_confirm_path(s.id), params: { slug: "a good lesson" }
     end
 
-    assert_redirected_to ray_pipeline_path(anchor: "col-confirmations")
+    assert_redirected_to mason_pipeline_path(anchor: "col-confirmations")
     conf = ActionGrade.for_event(s).by_grader("mcr").first
     assert_equal "good", conf.disposition
     assert_equal "a good lesson", conf.slug
@@ -198,9 +198,9 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
     s = span(session_id: "pl-reconfirm", reason: "reconfirm me")
     log_in_as(users(:alex))
 
-    post ray_pipeline_confirm_path(s.id), params: { slug: "first" }
+    post mason_pipeline_confirm_path(s.id), params: { slug: "first" }
     assert_no_difference -> { ActionGrade.by_grader("mcr").count } do
-      post ray_pipeline_confirm_path(s.id), params: { slug: "second" }
+      post mason_pipeline_confirm_path(s.id), params: { slug: "second" }
     end
     assert_equal "second", ActionGrade.for_event(s).by_grader("mcr").first.slug
   end
@@ -211,36 +211,36 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
 
   test "[integration] a banked test-run grade shows in Column 2 with an action Confirm button" do
     run = make_test_run(scope: "ship_test_gate", result: "pass", session_id: "cfa-1")
-    ActionGrade.create!(agent_action: run, grader: "ray", disposition: "good",
+    ActionGrade.create!(agent_action: run, grader: "mason", disposition: "good",
                         slug: "ship gate stayed green").bank!
 
-    get ray_pipeline_path
+    get mason_pipeline_path
 
     assert_select "[data-test=pl-insight]" do
       assert_select ".pl-slug", text: "ship gate stayed green"
     end
     # the Confirm button posts to the action's confirm URL with the agent_action_id form param
     assert_select "[data-test=pl-confirm-action-btn]"
-    assert_select "form[action=?]", ray_pipeline_confirm_path(run.id)
+    assert_select "form[action=?]", mason_pipeline_confirm_path(run.id)
     assert_select "input[name=agent_action_id][value=?]", run.id.to_s
   end
 
   test "[integration] Confirm on an action records an mcr grade for it and lists it in Column 3" do
     run = make_test_run(scope: "pre_qa_gate", result: "fail", session_id: "cfa-2")
-    ActionGrade.create!(agent_action: run, grader: "ray", disposition: "not",
+    ActionGrade.create!(agent_action: run, grader: "mason", disposition: "not",
                         slug: "pre-qa gate flaked").bank!
     log_in_as(users(:alex)) # admin — the confirm write needs one
 
     assert_difference -> { ActionGrade.for_action(run).by_grader("mcr").count }, 1 do
-      post ray_pipeline_confirm_path(run.id), params: { slug: "pre-qa gate flaked", agent_action_id: run.id }
+      post mason_pipeline_confirm_path(run.id), params: { slug: "pre-qa gate flaked", agent_action_id: run.id }
     end
 
-    assert_redirected_to ray_pipeline_path(anchor: "col-confirmations")
+    assert_redirected_to mason_pipeline_path(anchor: "col-confirmations")
     conf = ActionGrade.for_action(run).by_grader("mcr").first
     assert_equal "good", conf.disposition
     assert_equal "pre-qa gate flaked", conf.slug
 
-    get ray_pipeline_path
+    get mason_pipeline_path
     # the insight now reads Confirmed, not a button
     assert_select "[data-test=pl-insight-confirmed]"
     assert_select "[data-test=pl-confirmation]" do
@@ -250,12 +250,12 @@ class AlexPipelineTest < ActionDispatch::IntegrationTest
 
   test "[integration] re-confirming the same action updates the one mcr row (idempotent)" do
     run = make_test_run(scope: "qa_up_smoke", result: "pass", session_id: "cfa-3")
-    ActionGrade.create!(agent_action: run, grader: "ray", disposition: "good", slug: "qa boot green").bank!
+    ActionGrade.create!(agent_action: run, grader: "mason", disposition: "good", slug: "qa boot green").bank!
     log_in_as(users(:alex))
 
-    post ray_pipeline_confirm_path(run.id), params: { slug: "first", agent_action_id: run.id }
+    post mason_pipeline_confirm_path(run.id), params: { slug: "first", agent_action_id: run.id }
     assert_no_difference -> { ActionGrade.by_grader("mcr").count } do
-      post ray_pipeline_confirm_path(run.id), params: { slug: "second", agent_action_id: run.id }
+      post mason_pipeline_confirm_path(run.id), params: { slug: "second", agent_action_id: run.id }
     end
     assert_equal "second", ActionGrade.for_action(run).by_grader("mcr").first.slug
   end

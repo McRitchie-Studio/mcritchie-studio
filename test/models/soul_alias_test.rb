@@ -72,8 +72,8 @@ class SoulAliasTest < ActiveSupport::TestCase
                                  opened_at: Time.current, closed_at: Time.current, outcome_slug: "done")
     grade = ActionGrade.create!(agent_activity: span, grader: "alex", disposition: "good", slug: "lands on ray")
 
-    assert_equal ActionGrade::RAY, grade.reload.grader
-    assert grade.ray?
+    assert_equal ActionGrade::MASON, grade.reload.grader
+    assert grade.mason?
     assert grade.alex?, "the retired predicate answers the same question for one release"
     assert_equal [grade.id], ActionGrade.by_grader("alex").pluck(:id), "the scope reads through the alias too"
   end

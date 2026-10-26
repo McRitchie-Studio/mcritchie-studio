@@ -8,18 +8,18 @@ test.describe("ray pipeline admin wall", () => {
   test.use({ storageState: VISITOR });
 
   test("ray pipeline sends a visitor to sign-in @qa-readonly", async ({ page, request }) => {
-    const res = await request.get("/ray/pipeline", { maxRedirects: 0 });
+    const res = await request.get("/mason/pipeline", { maxRedirects: 0 });
     expect(res.status()).toBe(302);
     expect(new URL(res.headers()["location"], "http://host").pathname).toBe("/login");
 
-    await page.goto("/ray/pipeline");
+    await page.goto("/mason/pipeline");
     expect(new URL(page.url()).pathname).toMatch(/^\/(login|signin)$/);
     await expect(page.locator('input[name="email"]')).toBeVisible();
-    await expect(page.locator("[data-test='ray-pipeline']")).toHaveCount(0);
+    await expect(page.locator("[data-test='mason-pipeline']")).toHaveCount(0);
   });
 });
 
-// [e2e] The OPSD distillation pipeline (/ray/pipeline) — three columns, left→right:
+// [e2e] The OPSD distillation pipeline (/mason/pipeline) — three columns, left→right:
 // Activities (narrated AgentActivity rows) → Insights (Ritch's banked grades) →
 // Confirmations (McRitchie's mcr grades). An admin page; the happy path here is the
 // page rendering, as the seeded admin, with all three columns and the nav's link out
@@ -31,10 +31,10 @@ test.describe("ray pipeline admin wall", () => {
 // as a Column-2 insight with an ACTION Confirm button (confirm-of-action parity).
 // Seeded and signed in as the admin, so local lane only — NOT @qa-readonly.
 test("ray pipeline renders the distillation columns and the gradeable test-runs band", async ({ page }) => {
-  const res = await page.goto("/ray/pipeline");
+  const res = await page.goto("/mason/pipeline");
   expect(res.ok()).toBe(true);
 
-  const root = page.locator("[data-test='ray-pipeline']");
+  const root = page.locator("[data-test='mason-pipeline']");
   await expect(root).toBeVisible();
 
   // All three pipeline columns are present.
@@ -55,7 +55,7 @@ test("ray pipeline renders the distillation columns and the gradeable test-runs 
   // The nav's required link out to the cross-session All Activities view.
   const allActivities = page.locator("[data-test='hb-nav-all-spans']");
   await expect(allActivities).toBeVisible();
-  await expect(allActivities).toHaveAttribute("href", "/ray/heartbeat/activities");
+  await expect(allActivities).toHaveAttribute("href", "/mason/heartbeat/activities");
 
   // The A2 "Test runs" band.
   const band = page.locator("[data-test='pl-test-runs']");

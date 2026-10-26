@@ -123,7 +123,7 @@ class AgentAction < ApplicationRecord
   # rode the feed as a full-text title tooltip and made the page weigh megabytes
   # (the 2026-08-09 outage page measured 1.8-5.4 MB). The feed's turn rows lead
   # with `summary` + `key_method` instead; only the drill-down DRAWER on
-  # /ray/heartbeat (heartbeat/_drawer, a full-record load) reads input/output.
+  # /mason/heartbeat (heartbeat/_drawer, a full-record load) reads input/output.
   FEED_OMITTED_COLUMNS = %w[input output].freeze
 
   # The narrowed column set the /agents/activities drill-down loads — every column

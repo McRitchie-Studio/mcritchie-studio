@@ -90,7 +90,7 @@ class Insights::TaskGraderTest < ActiveSupport::TestCase
     note = grade.note_activity
     assert_equal "comment", note.activity_type
     assert_equal "learning", note.metadata["kind"]
-    assert_equal ActionGrade::RAY, note.agent_slug
+    assert_equal ActionGrade::MASON, note.agent_slug
 
     banked = grade.action_grade
     assert banked.banked, "the learning is banked into the insight feed"

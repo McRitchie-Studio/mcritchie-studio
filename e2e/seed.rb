@@ -897,7 +897,7 @@ GateRun.open!(subject_type: "task", subject_slug: tp.slug, key: "g2b_light", act
 # so materializing earlier would cache pre-evidence windows.
 Task::TestingPhases.backfill!
 
-# /ray/heartbeat demo: a representative agent-narrated EVENT trajectory so the
+# /mason/heartbeat demo: a representative agent-narrated EVENT trajectory so the
 # learning heartbeat renders spans in the e2e env (capture is forward-only, so it
 # is otherwise empty). Trimmed mirror of lib/tasks/atomic.rake's demo — a couple of
 # closed spans, a final OPEN span (renders "…in progress"), and one pre-narration
@@ -1031,7 +1031,7 @@ AgentAction.create!(
   result_slug: "fail", occurred_at: Time.current, duration_ms: 4_200,
   summary: "test scope qa_up_smoke FAILED · qa · fail · http 503 · 4.2s · /up poll"
 )
-ActionGrade.create!(agent_action: test_run_pass, grader: "ray", disposition: "good",
+ActionGrade.create!(agent_action: test_run_pass, grader: "mason", disposition: "good",
                     slug: "ship gate stayed green").bank!
 
 # Model-pricing demo: two REAL production sessions replayed verbatim (a pokedex

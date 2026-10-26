@@ -6,7 +6,7 @@
     AgentActivity fields; attributed actions are controller-loaded for drill-downs (no
     per-row query). Each activity is a collapsible tbody (Alpine, default collapsed);
     expanding it drills into those raw agent_actions read-only. Each activity carries
-    inline good/not quick-grade radios (Ritch + McRitchie, POSTing to the activity grade
+    inline good/not quick-grade radios (Mason + McRitchie, POSTing to the activity grade
     endpoint); drilled-down raw action rows open the grading drawer. Raw
     actions the agent never narrated (a null agent_activity_id) fall into the single
     trailing "Unlabeled" group. Locals: activity_rows (Array of [AgentActivity,
@@ -39,7 +39,7 @@
         <th>Model / Tokens</th>
         <th>Cost</th>
         <th>Command</th>
-        <th>Ritch</th>
+        <th>Mason</th>
         <th>McRitchie</th>
       </tr>
     </thead>
@@ -51,12 +51,12 @@
       <% mascot_slug = activity.mascot.presence || totals[:mascot] %>
       <% pokemon = pokemon_by_slug[mascot_slug] %>
       <% grades_for = activity_grades[activity.id] || {} %>
-      <% ray_g = grades_for[ActionGrade::RAY] %>
+      <% mason_g = grades_for[ActionGrade::MASON] %>
       <% mcr_g = grades_for[ActionGrade::MCR] %>
       <tbody class="hb-evtgroup" data-test="heartbeat-event"
              data-category="<%= activity.category %>" data-activity-id="<%= activity.id %>"
-             data-ray-disp="<%= ray_g&.disposition %>" data-ray-slug="<%= ray_g&.slug %>"
-             data-ray-graded="<%= ray_g.present? %>" data-ray-banked="<%= !!ray_g&.banked %>"
+             data-mason-disp="<%= mason_g&.disposition %>" data-mason-slug="<%= mason_g&.slug %>"
+             data-mason-graded="<%= mason_g.present? %>" data-mason-banked="<%= !!mason_g&.banked %>"
              data-mcr-disp="<%= mcr_g&.disposition %>" data-mcr-slug="<%= mcr_g&.slug %>"
              data-mcr-graded="<%= mcr_g.present? %>" data-mcr-banked="<%= !!mcr_g&.banked %>"
              x-data="heartbeatActivityRow()" x-init="hydrate($el)"
@@ -121,7 +121,7 @@
               <% end %>
             </div>
           </div></td>
-          <%= render "heartbeat/activity_feedback_cell", activity: activity, ray: ray_g, mcr: mcr_g %>
+          <%= render "heartbeat/activity_feedback_cell", activity: activity, mason: mason_g, mcr: mcr_g %>
         </tr>
 
         <% if actions.any? %>

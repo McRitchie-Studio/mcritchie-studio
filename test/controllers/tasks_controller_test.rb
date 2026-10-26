@@ -421,7 +421,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "[component] deployments board links to the cross-session Activities view" do
     get deployments_path
     assert_response :success
-    # the reimagined /agents/activities feed, not the old /ray/heartbeat/activities page
+    # the reimagined /agents/activities feed, not the old /mason/heartbeat/activities page
     assert_select %(nav[aria-label="Board sections"] a[href="#{activities_agents_path}"]),
       text: "🎭 Activities",
       count: 1
@@ -444,10 +444,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "[component] deployments board links to the Ritch pipeline and insights" do
     get deployments_path
     assert_response :success
-    assert_select %(nav[aria-label="Board sections"] a[href="#{ray_pipeline_path}"]),
+    assert_select %(nav[aria-label="Board sections"] a[href="#{mason_pipeline_path}"]),
       text: "Pipeline",
       count: 1
-    assert_select %(nav[aria-label="Board sections"] a[href="#{ray_insights_path}"]),
+    assert_select %(nav[aria-label="Board sections"] a[href="#{mason_insights_path}"]),
       text: "Insights",
       count: 1
   end
@@ -458,9 +458,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     [tasks_path, stages_path].each do |path|
       get path
       assert_response :success
-      assert_select %(nav[aria-label="Board sections"] a[href="#{ray_pipeline_path}"]), { count: 0 },
+      assert_select %(nav[aria-label="Board sections"] a[href="#{mason_pipeline_path}"]), { count: 0 },
         "expected no Pipeline link on #{path}"
-      assert_select %(nav[aria-label="Board sections"] a[href="#{ray_insights_path}"]), { count: 0 },
+      assert_select %(nav[aria-label="Board sections"] a[href="#{mason_insights_path}"]), { count: 0 },
         "expected no Insights link on #{path}"
     end
   end

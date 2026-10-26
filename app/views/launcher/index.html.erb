@@ -22,7 +22,7 @@
         if (e.target && /^(input|textarea|select)$/i.test(e.target.tagName)) return;
         if (e.key === '1') this.enter('session', null);
         else if (e.key === '2') this.enter('avi', null);
-        else if (e.key === '3') this.enter('ray', '<%= j ray_heartbeat_path %>');
+        else if (e.key === '3') this.enter('ray', '<%= j mason_heartbeat_path %>');
       }
     }"
     @keydown.window="key($event)"
@@ -77,9 +77,9 @@
         </button>
 
         <%# 3 · Ritch — the active avenue. Real link to the learning heartbeat:
-            ray_heartbeat_path now renders the atomic trajectory table
+            mason_heartbeat_path now renders the atomic trajectory table
             (HeartbeatController#show). data-avenue-target marks the wiring seam. %>
-        <%= link_to ray_heartbeat_path,
+        <%= link_to mason_heartbeat_path,
               data: { avenue: "ray", avenue_target: "learning-heartbeat" },
               "aria-label": "Enter as Ritch — learning heartbeat",
               "@click": "enter('ray', null)",

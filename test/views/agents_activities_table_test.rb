@@ -7,7 +7,7 @@ require "test_helper"
 # cells. Expanding drills into the raw actions (2-sub-row: #seq KIND + summary / key
 # method; cost / tokens; #seq KIND + outcome) which carry their OWN inline grade cells.
 # The wide input/output blobs never render here — the feed loads through
-# AgentAction.for_activity_drilldown (capped, blob-free); only /ray/heartbeat's
+# AgentAction.for_activity_drilldown (capped, blob-free); only /mason/heartbeat's
 # drawer shows them.
 class AgentsActivitiesTableTest < ActionView::TestCase
   def activity(**attrs)
@@ -152,23 +152,23 @@ class AgentsActivitiesTableTest < ActionView::TestCase
 
     render_table [[ev, []]]
 
-    assert_select "td[data-test=aa-activity-grade-ray] form[action=?]", heartbeat_activity_grade_path(ev)
+    assert_select "td[data-test=aa-activity-grade-mason] form[action=?]", heartbeat_activity_grade_path(ev)
     assert_select "td[data-test=aa-activity-grade-mcr] form[action=?]", heartbeat_activity_grade_path(ev)
-    assert_select "td[data-test=aa-activity-grade-ray] input[name=disposition][value=good]"
-    assert_select "td[data-test=aa-activity-grade-ray] input[name=disposition][value=not]"
-    assert_select "td[data-test=aa-activity-grade-ray] button.aa-gradeclear"
+    assert_select "td[data-test=aa-activity-grade-mason] input[name=disposition][value=good]"
+    assert_select "td[data-test=aa-activity-grade-mason] input[name=disposition][value=not]"
+    assert_select "td[data-test=aa-activity-grade-mason] button.aa-gradeclear"
   end
 
   test "[component] an existing activity grade pre-checks its radio and shows its note slug" do
     ev = activity(closed_at: Time.current, outcome_slug: "done")
-    grade = ActionGrade.create!(agent_activity: ev, grader: "ray", disposition: "good",
+    grade = ActionGrade.create!(agent_activity: ev, grader: "mason", disposition: "good",
                                 slug: "clean activity with a crisp outcome")
 
     render_table [[ev, []]], activity_grades: { ev.id => { "ray" => grade } }
 
-    assert_select "td[data-test=aa-activity-grade-ray] input[value=good][checked]"
-    assert_select "[data-test=aa-activity-note-ray]", text: /clean activity with a crisp outcome/
-    assert_select "tbody[data-test=aa-activity][data-ray-graded=true]"
+    assert_select "td[data-test=aa-activity-grade-mason] input[value=good][checked]"
+    assert_select "[data-test=aa-activity-note-mason]", text: /clean activity with a crisp outcome/
+    assert_select "tbody[data-test=aa-activity][data-mason-graded=true]"
   end
 
   test "[component] an activity with no actions renders the empty drill-down row" do
@@ -233,7 +233,7 @@ class AgentsActivitiesTableTest < ActionView::TestCase
 
     render_table [[ev, [act]]]
 
-    assert_select "tr[data-test=aa-turn] td[data-test=aa-action-grade-ray] form[action=?]", heartbeat_grade_path(act)
+    assert_select "tr[data-test=aa-turn] td[data-test=aa-action-grade-mason] form[action=?]", heartbeat_grade_path(act)
     assert_select "tr[data-test=aa-turn] td[data-test=aa-action-grade-mcr] form[action=?]", heartbeat_grade_path(act)
   end
 

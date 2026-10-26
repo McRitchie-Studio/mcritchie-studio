@@ -115,7 +115,7 @@ class AgentActivity < ApplicationRecord
   # This is the READ half of the first-class agent grading flow (the WRITE is
   # ActionGrade.record_activity_grade); together they let grade-events run as a bearer
   # CLI SOP instead of scraping the HTML page.
-  def self.awaiting_grade(grader: ActionGrade::RAY, limit: DEFAULT_GRADE_BATCH)
+  def self.awaiting_grade(grader: ActionGrade::MASON, limit: DEFAULT_GRADE_BATCH)
     capped = limit.to_i.clamp(1, MAX_GRADE_BATCH)
     graded = ActionGrade.by_grader(grader).where.not(agent_activity_id: nil).select(:agent_activity_id)
     closed.where.not(id: graded).order(closed_at: :desc, seq: :desc).limit(capped)

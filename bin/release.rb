@@ -1202,7 +1202,7 @@ end
 # (production_smoke_seal degrades it to a red seal) stay untouched.
 #
 # The VERDICT emit (COMPLETED/FAILED only — never START) is TAGGED to make the run
-# a first-class GRADEABLE unit in /ray/pipeline: kind="test_scope", event_slug=the
+# a first-class GRADEABLE unit in /mason/pipeline: kind="test_scope", event_slug=the
 # scope key, result_slug=pass|fail, duration_ms=the wall-clock. These ride the same
 # best-effort self-report path; a bare START stays untagged so the pipeline's
 # `kind:"test_scope" AND result_slug present` filter never surfaces it.

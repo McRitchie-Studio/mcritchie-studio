@@ -48,7 +48,7 @@ class PipelineTestRunsBandTest < ActionView::TestCase
 
   test "an Ritch 'not' grade paints the row rail" do
     run = run_action(scope: "pre_qa_gate", result: "pass")
-    grade = ActionGrade.create!(agent_action: run, grader: "ray", disposition: "not", slug: "flaky gate")
+    grade = ActionGrade.create!(agent_action: run, grader: "mason", disposition: "not", slug: "flaky gate")
     render_band([run], { run.id => { "ray" => grade } })
     assert_select "[data-test=pl-test-run].is-not", { count: 1 }
   end

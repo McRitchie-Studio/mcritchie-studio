@@ -318,32 +318,32 @@ Rails.application.routes.draw do
 
   # Session entry launcher — terminal-styled chooser for the avenue you enter a
   # session as (Session agent · Avi · Ritch). Selecting Ritch routes to the learning
-  # heartbeat at /ray/heartbeat, the per-action atomic trajectory table
-  # (HeartbeatController#show). The named route (ray_heartbeat_path) is stable, so
+  # heartbeat at /mason/heartbeat, the per-action atomic trajectory table
+  # (HeartbeatController#show). The named route (mason_heartbeat_path) is stable, so
   # the launcher anchor follows it; it was repointed off LauncherController's
   # placeholder once the real view (T2) landed.
   get "launcher", to: "launcher#index", as: :launcher
-  get "ray/heartbeat", to: "heartbeat#show", as: :ray_heartbeat
+  get "mason/heartbeat", to: "heartbeat#show", as: :mason_heartbeat
   # Feedback layer over the read-only trajectory (T5): a per-action grading drawer
   # (GET, lazy-loaded into a turbo-frame), the upsert/bank/discard write, and the
   # curated Insight Bank page. Like the view itself, this is an open meta surface.
-  get  "ray/heartbeat/actions/:id/feedback", to: "heartbeat#feedback", as: :heartbeat_feedback
-  post "ray/heartbeat/actions/:id/grade",    to: "heartbeat#grade",    as: :heartbeat_grade
+  get  "mason/heartbeat/actions/:id/feedback", to: "heartbeat#feedback", as: :heartbeat_feedback
+  post "mason/heartbeat/actions/:id/grade",    to: "heartbeat#grade",    as: :heartbeat_grade
   # Activity-level grade: upsert one grade for a narrated AgentActivity. JSON only
   # by design so it stays view-free from the drawer/turbo stream path.
-  post "ray/heartbeat/activities/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_activity_grade
+  post "mason/heartbeat/activities/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_activity_grade
   # The per-activity grading drawer body, lazy-loaded into the shared turbo-frame
   # on an activity's grade click.
-  get  "ray/heartbeat/activities/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_activity_feedback
+  get  "mason/heartbeat/activities/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_activity_feedback
   # Every AgentActivity across ALL sessions, newest-first, paginated 100/page —
   # the cross-session analogue of the per-session heartbeat.
-  get  "ray/heartbeat/activities", to: "heartbeat#all_activities", as: :heartbeat_all_activities
-  get  "ray/insights", to: "heartbeat#insights", as: :ray_insights
+  get  "mason/heartbeat/activities", to: "heartbeat#all_activities", as: :heartbeat_all_activities
+  get  "mason/insights", to: "heartbeat#insights", as: :mason_insights
   # The OPSD distillation pipeline, left→right: Activities → Insights (Ritch's
   # grades) → Confirmations (McRitchie's mcr grades). `confirm` records the McRitchie
   # (mcr) confirmation of an insight and redirects back (a no-JS form action).
-  get  "ray/pipeline", to: "heartbeat#pipeline", as: :ray_pipeline
-  post "ray/pipeline/confirm/:id", to: "heartbeat#confirm", as: :ray_pipeline_confirm
+  get  "mason/pipeline", to: "heartbeat#pipeline", as: :mason_pipeline
+  post "mason/pipeline/confirm/:id", to: "heartbeat#confirm", as: :mason_pipeline_confirm
 
   # LEGACY /xan/* — the seat's slug from 2026-09-24 to 2026-10-18 (ray-slug-rename;
   # Ray is Alex's middle name). Every GET under it 301s to the same path under

@@ -24,7 +24,7 @@ class SessionEntryLauncherTest < ActionDispatch::IntegrationTest
     get launcher_path
 
     assert_response :success
-    assert_select "a[data-avenue=ray][href=?]", ray_heartbeat_path
+    assert_select "a[data-avenue=ray][href=?]", mason_heartbeat_path
     assert_select "a[data-avenue=ray][data-avenue-target=?]", "learning-heartbeat"
   end
 
@@ -40,10 +40,10 @@ class SessionEntryLauncherTest < ActionDispatch::IntegrationTest
   end
 
   test "ray heartbeat route now renders the trajectory view (no longer a placeholder)" do
-    get ray_heartbeat_path
+    get mason_heartbeat_path
 
     assert_response :success
     assert_select "[data-test=heartbeat]", 1
-    assert_select "[data-placeholder=ray-heartbeat]", 0
+    assert_select "[data-placeholder=mason-heartbeat]", 0
   end
 end

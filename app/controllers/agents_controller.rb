@@ -9,7 +9,7 @@ class AgentsController < ApplicationController
   # The wall turns each of those hits into a cheap login redirect.
 
   # The shared activity-feed read layer (session lists, pokemon/soul/grade/transition
-  # bulk lookups) — the same queries the /ray/heartbeat surface uses.
+  # bulk lookups) — the same queries the /mason/heartbeat surface uses.
   include ActivityFeed
 
   # Page size for the cross-session activity feed, matched to the heartbeat's.

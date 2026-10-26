@@ -15,7 +15,7 @@ module Api
       def banked(slug:, **overrides)
         a = AgentAction.capture(session_id: "insight-#{slug.object_id}", kind: "edit", outcome: "ok",
                                  task_slug: overrides.delete(:task_slug))
-        g = ActionGrade.create!({ agent_action: a, grader: "ray", slug: slug,
+        g = ActionGrade.create!({ agent_action: a, grader: "mason", slug: slug,
                                   disposition: "good" }.merge(overrides))
         g.bank!
         g

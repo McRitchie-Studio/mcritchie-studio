@@ -7,20 +7,20 @@
     action-level grade cells. The wide input/output blobs never render here — the feed
     loads via AgentAction.for_activity_feed, which omits them (the full-input title
     tooltip this row once carried is what made the page weigh megabytes); the
-    /ray/heartbeat drawer remains the full-record surface. Locals: turn_row, activity,
+    /mason/heartbeat drawer remains the full-record surface. Locals: turn_row, activity,
     agents_by_slug, pokemon_by_slug, action_grades. %>
 <% primary = turn_row[:primary] %>
 <% outcome = heartbeat_outcome_meta(primary.outcome) %>
 <% turn_pokemon = pokemon_by_slug[primary.mascot] %>
 <% mascot_genders = local_assigns[:mascot_genders] || {} %>
 <% grades_for = action_grades[primary.id] || {} %>
-<% ray_g = grades_for[ActionGrade::RAY] %>
+<% mason_g = grades_for[ActionGrade::MASON] %>
 <% mcr_g  = grades_for[ActionGrade::MCR] %>
 <tr class="aa-subrow" id="aa-turn-<%= turn_row[:key] %>" data-test="aa-turn"
     data-row-id="<%= primary.id %>" data-id-field="agent_action_id"
-    data-ray-disp="<%= ray_g&.disposition %>" data-ray-slug="<%= ray_g&.slug %>"
-    data-ray-long="<%= ray_g&.long_form %>" data-ray-graded="<%= ray_g.present? %>"
-    data-ray-banked="<%= !!ray_g&.banked %>"
+    data-mason-disp="<%= mason_g&.disposition %>" data-mason-slug="<%= mason_g&.slug %>"
+    data-mason-long="<%= mason_g&.long_form %>" data-mason-graded="<%= mason_g.present? %>"
+    data-mason-banked="<%= !!mason_g&.banked %>"
     data-mcr-disp="<%= mcr_g&.disposition %>" data-mcr-slug="<%= mcr_g&.slug %>"
     data-mcr-long="<%= mcr_g&.long_form %>" data-mcr-graded="<%= mcr_g.present? %>"
     data-mcr-banked="<%= !!mcr_g&.banked %>"
@@ -64,6 +64,6 @@
       </div>
     </div>
   </td>
-  <%= render "agents/activities_grade_cell", kind: :action, target: primary, grader: "ray", grade: ray_g %>
+  <%= render "agents/activities_grade_cell", kind: :action, target: primary, grader: "mason", grade: mason_g %>
   <%= render "agents/activities_grade_cell", kind: :action, target: primary, grader: "mcr", grade: mcr_g %>
 </tr>

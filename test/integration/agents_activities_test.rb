@@ -196,21 +196,21 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     # activity-level grade forms post to the activity grade endpoint
-    assert_select "form[data-test=aa-activity-grade-form-ray][action=?]", heartbeat_activity_grade_path(ev)
+    assert_select "form[data-test=aa-activity-grade-form-mason][action=?]", heartbeat_activity_grade_path(ev)
     assert_select "form[data-test=aa-activity-grade-form-mcr][action=?]", heartbeat_activity_grade_path(ev)
     # action-level grade forms post to the action grade endpoint
-    assert_select "form[data-test=aa-action-grade-form-ray][action=?]", heartbeat_grade_path(act)
+    assert_select "form[data-test=aa-action-grade-form-mason][action=?]", heartbeat_grade_path(act)
     assert_select "form[data-test=aa-action-grade-form-mcr][action=?]", heartbeat_grade_path(act)
   end
 
   test "an existing activity grade renders its note slug server-side" do
     ev = activity(reason_slug: "already graded activity")
-    ActionGrade.create!(agent_activity: ev, grader: "ray", disposition: "good", slug: "solid narration here indeed")
+    ActionGrade.create!(agent_activity: ev, grader: "mason", disposition: "good", slug: "solid narration here indeed")
 
     get activities_agents_path
 
     assert_response :success
-    assert_select "[data-test=aa-activity-note-ray]", text: /solid narration here indeed/
+    assert_select "[data-test=aa-activity-note-mason]", text: /solid narration here indeed/
   end
 
   test "filters to a single session with ?sessions=" do
@@ -431,11 +431,11 @@ class AgentsActivitiesTest < ActionDispatch::IntegrationTest
   test "clears an action grade via intent=clear on the action grade endpoint" do
     ev = activity
     act = action(ev)
-    ActionGrade.create!(agent_action: act, grader: "ray", disposition: "not", slug: "needs a rethink here")
+    ActionGrade.create!(agent_action: act, grader: "mason", disposition: "not", slug: "needs a rethink here")
 
     assert_equal 1, ActionGrade.for_action(act).by_grader("ray").count
 
-    post heartbeat_grade_path(act), params: { grader: "ray", intent: "clear" }, as: :json
+    post heartbeat_grade_path(act), params: { grader: "mason", intent: "clear" }, as: :json
 
     assert_response :success
     assert_equal 0, ActionGrade.for_action(act).by_grader("ray").count
