@@ -128,12 +128,14 @@ class ReleaseCliShipTest < ReleaseCliHarness
     assert_includes out, "repo owns its smoke + rollback"
   end
 
-  def test_ship_dry_run_test_cmd_gate_hub_only
+  def test_ship_dry_run_test_cmd_gate_reads_ci_for_the_hub_and_turf
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
-    # hub carries a conductor test_cmd; satellites self-gate (skip it).
-    assert_includes out, HUB_GATE_CMD, "the hub runs its conductor test_cmd before prod"
-    assert_includes out, "self-gates", "a repo_script satellite skips the conductor test_cmd"
+    # Both carry a test_cmd now: turf-monster is gated on CI's verdict like the hub
+    # (task faster-steadier-production-ship), so its bin/deploy need not re-run it.
+    assert_includes out, HUB_GATE_CMD, "the hub's CI verdict is read before prod"
+    assert_includes out, "test gate: turf-monster — GitHub CI verdict for frozen", "turf is read, not skipped"
+    refute_includes out, "turf-monster self-gates"
   end
 
   def test_ship_dry_run_ships_the_frozen_sha
@@ -183,7 +185,7 @@ class ReleaseCliShipTest < ReleaseCliHarness
   def test_ship_dry_run_states_the_partial_ship_policy_and_executes_nothing
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
-    assert_includes out, "abort on first failure", "partial-ship policy is surfaced"
+    assert_includes out, "a satellite failure stops no other", "partial-ship policy is surfaced"
     assert_includes out, "DRY RUN", "a dry-run executes nothing"
   end
   def test_gem_version_for_reads_the_frozen_ref_not_the_stale_local_checkout

@@ -9424,7 +9424,9 @@ def ship
   app_groups = Release::ShipSequence.ordered_app_groups(repos.select { |g| g["kind"] == "app" }) # hub first
   say("  shipping #{rel_slug} (#{state}): #{gem_groups.size} gem(s) → hub → #{[app_groups.size - 1, 0].max} satellite(s)")
   say("  resuming final member flips: #{result['unfinished_members']} unfinished") if resuming_member_ship
-  say("  partial-ship: abort on first failure; re-run resumes (gems skip, ref pushes no-op, re-pins idempotent)")
+  say("  partial-ship: the hub deploys first and alone, then the satellites concurrently; a satellite failure stops " \
+      "no other, then aborts before the seal; re-run resumes (gems skip, ref pushes no-op, re-pins idempotent, " \
+      "live apps skip)")
 
   # The QA-frozen SHA to ship per repo (advanced by a re-pin commit in step 4).
   # Resolved BEFORE the preflight, which pins each app's ship workspace at it.
