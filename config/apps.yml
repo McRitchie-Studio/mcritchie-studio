@@ -371,6 +371,25 @@ apps:
     restore_drilled: null
     description: Retired prototype; McRitchie Industries replaced it and holds its port block
 
+  - slug: alex-build
+    name: alex.build
+    emoji: "🛠️"
+    color: "#5B3A8C"
+    tier: product
+    status: active
+    port: 4600
+    repo: McRitchie-Studio/alex-build
+    heroku_app: alex-build
+    production_url: https://alex.build
+    qa_url: null
+    engine: true
+    hosted: true
+    workspace: null
+    database: true
+    backups: true
+    restore_drilled: null
+    description: alex.build, the site for Alex, the AI hire built by Alex McRitchie; studio-engine satellite, not yet deployed
+
 libraries:
   - slug: studio-engine
     name: Studio Engine

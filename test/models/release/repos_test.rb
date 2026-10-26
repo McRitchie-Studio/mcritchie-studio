@@ -105,7 +105,7 @@ class Release::ReposTest < ActiveSupport::TestCase
   # needs no edit to this file (app-deploy-standard).
   test "app_repos lists the registry's app hash keys" do
     assert_equal (%w[mcritchie-studio turf-monster turf-vault mcritchie-industries rolio
-                     tax-studio chain-ops commercial-welding] + profile_repos).sort,
+                     tax-studio chain-ops commercial-welding alex-build] + profile_repos).sort,
                  Release::Repos.app_repos.sort
   end
 
@@ -502,10 +502,11 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   # Guards the guard: every assertion above would pass vacuously over an empty list.
   test "[unit] the QA-evidence exemption guard actually has a repo to check" do
-    # turf-vault is the one exemption that is not a profile's (QA does not apply
-    # to it); every other exempt repo takes its exemption from its profile's
-    # recorded decision, and is derived rather than pinned.
-    assert_equal (%w[turf-vault] + profile_repos).sort,
+    # turf-vault is the one exemption that is not a decision (QA does not apply
+    # to it). Every other exempt repo takes its exemption from its profile's
+    # recorded decision, or, off a profile, from QA_EXEMPT_BY_OPERATOR_DECISION;
+    # both are derived here, and a repo exempt by neither still fails this pin.
+    assert_equal (%w[turf-vault] + profile_repos + QA_EXEMPT_BY_OPERATOR_DECISION.keys).sort,
                  Release::Repos.qa_evidence_exempt_repos.sort,
                  "exactly these repos are declared exempt — a third one arriving unreviewed " \
                  "is what this pin is here to surface"
@@ -534,7 +535,10 @@ class Release::ReposTest < ActiveSupport::TestCase
   # this list only has to name deployable exempt apps that are NOT on a profile.
   # The per-app quotes stay in release_repos.yml's comments and in the profile's
   # history.
-  QA_EXEMPT_BY_OPERATOR_DECISION = {}.freeze
+  #
+  # alex-build is on no profile, so it cites its own grant: Alex McRitchie's
+  # answer in chat, 2026-10-25, to "a QA copy or a QA exemption?", verbatim.
+  QA_EXEMPT_BY_OPERATOR_DECISION = { "alex-build" => "QA exeption" }.freeze
 
   # The fleet decision a profile carries, verbatim. Change it here and in
   # config/app_profiles.yml together.
@@ -846,7 +850,8 @@ class Release::ReposTest < ActiveSupport::TestCase
     "tax-studio" => "repo_script",
     "chain-ops" => nil,
     "moms-app" => "git_push_heroku",
-    "commercial-welding" => "git_push_heroku"
+    "commercial-welding" => "git_push_heroku",
+    "alex-build" => "git_push_heroku"
   }.freeze
 
   test "every app keeps its production deploy strategy" do

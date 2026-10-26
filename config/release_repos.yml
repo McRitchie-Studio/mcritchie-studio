@@ -433,3 +433,23 @@ apps:
       # its ACM certificate issues). Ship smokes after the push, and an
       # unresolvable host aborts a live deploy.
       smoke_url: https://commercialwelding.llc
+  alex-build:
+    ladder: three-rung
+    # Managed studio-engine satellite (epic .agents/epics/alex-build.md): Heroku app
+    # `alex-build` (essential-0 Postgres), created on Alex McRitchie's word.
+    # Migrations ride the Procfile's `release: bin/rails db:migrate`.
+    # git_push_heroku runs no tests, so the gate names CI's full suite, verbatim.
+    test_cmd: bin/rails db:test:prepare test test:system
+    #
+    # QA-evidence exempt on cost, by operator decision ("QA exeption", Alex
+    # McRitchie in chat): no QA copy. A change reaches production gated by CI and
+    # review only, as cyvasse. QA only: `shipped` still needs the release -> main record.
+    qa_evidence: exempt
+    prod_deploy:
+      strategy: git_push_heroku
+      remote: https://git.heroku.com/alex-build.git
+      branch: main
+      # The bare domain on Cloudflare DNS. Ship smokes after the push, and an
+      # unresolvable host aborts a live deploy, so the DNS records and the ACM
+      # certificate come before the first ship.
+      smoke_url: https://alex.build
