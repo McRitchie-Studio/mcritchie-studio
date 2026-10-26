@@ -48,6 +48,10 @@
 #   repo_script: run a deploy script the app repo owns.
 #       command — the repo-relative script (bin/deploy).
 #       args    — its argv (["--yes"] skips prompts).
+#       ci_verified_arg — optional. The flag appended as `<flag>=<sha>` when the
+#                 ship read GitHub CI GREEN for the exact SHA it deploys (never
+#                 under --skip-test-gate, never for another SHA), so a script
+#                 that runs its own suite can skip it.
 #     The script runs in the repo's SHIP WORKSPACE (<repo>/.worktrees/_ship): a
 #     clean worktree with a DETACHED HEAD at the QA-frozen SHA. So a push uses a
 #     refspec that works detached (`HEAD:main`); gitignored artifacts
@@ -89,13 +93,15 @@
 # loud override is `bin/release ship --skip-test-gate --reason "…"`, which
 # records a red gate SOP.
 #
-# WHAT TO REGISTER turns on whether the repo's DEPLOY runs the suite:
-#   * It does (turf-monster's bin/deploy): qa_test_cmd is the integration subset,
-#     `bin/rails test test/integration`, and test_cmd stays unset.
-#   * It does not (git_push_heroku, github_actions): both commands are CI's FULL
-#     suite, verbatim from the repo's ci.yml, because they are the last gate
-#     before production. A subset here leaves every skipped tier ungated.
-#     repos_test parses each repo's ci.yml and asserts the match.
+# WHAT TO REGISTER: test_cmd is CI's FULL suite, verbatim from the repo's ci.yml,
+# because it names the last gate before production. A subset here leaves every
+# skipped tier ungated; repos_test parses each repo's ci.yml and asserts the match.
+#   * A repo_script deploy that runs its own suite (turf-monster's bin/deploy)
+#     registers test_cmd too, plus `prod_deploy.ci_verified_arg`: the flag the
+#     conductor appends, with the SHA, once it has read green CI for exactly the
+#     SHA it deploys, so the deploy skips re-running a suite CI already passed.
+#     Its qa_test_cmd may stay the integration subset.
+#   * A repo with no test_cmd self-gates: the ship reads no CI verdict for it.
 #
 # THE RAKE-PATH SHAPE IS LOAD-BEARING: `bin/rails db:test:prepare test
 # test:system`. `bin/rails test` alone skips test/system, and
@@ -190,13 +196,21 @@ apps:
   turf-monster:
     ladder: three-rung
     accepted_trigger_lint: true
-    # bin/deploy runs the full suite before production, so test_cmd stays unset;
-    # the integration tier gates the QA deploy.
+    # The ship gates turf on GitHub CI's verdict for the SHA it deploys, like
+    # every other app: test_cmd is CI's `test` job verbatim. Once that read is
+    # green the conductor tells bin/deploy so (ci_verified_arg below) and the
+    # deploy skips its local copy of the same suite. The integration tier gates
+    # the QA deploy.
+    test_cmd: bin/rails db:test:prepare test
     qa_test_cmd: bin/rails test test/integration
     prod_deploy:
       strategy: repo_script
       command: bin/deploy
       args: ["--yes"]
+      # Appended as `--ci-verified=<sha>` ONLY when this ship read GitHub CI GREEN
+      # for that exact SHA (the frozen-SHA or re-lock gate). bin/deploy refuses a
+      # SHA that is not its HEAD, and runs its suite whenever the flag is absent.
+      ci_verified_arg: --ci-verified
       # The app bin/deploy pushes to, so `bin/release ship --finalize-only` can
       # confirm a killed ship's deploy instead of re-running the suite.
       heroku_app: turf-monster-mainnet

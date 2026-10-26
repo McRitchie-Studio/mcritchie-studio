@@ -5983,7 +5983,7 @@ end
 #   :held       — pending/none/unverified past the poll bound (a just-pushed re-pin
 #                 may still be building): let CI conclude, re-run — or take the
 #                 first-class --skip-test-gate override. Never a pass.
-def ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind)
+def ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind, budget: ci_poll_timeout)
   ci   = verdict[:ci]
   read = ci_detail(ci)
   override = "To ship past a verdict you believe is a false negative, use " \
@@ -6002,12 +6002,12 @@ def ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind)
   when :diverged
     "test gate HELD for #{repo}: frozen #{short(frozen_sha)} shares neither SHA nor tree with the " \
       "#{ACCEPTED_BRANCH} head (#{verdict[:diagnostic]}), so no earlier green could vouch for its tree — and its " \
-      "OWN run has NO green verdict for frozen #{short(frozen_sha)} (#{read}) after polling ~#{ci_poll_timeout}s. " \
+      "OWN run has NO green verdict for frozen #{short(frozen_sha)} (#{read}) after polling ~#{budget}s. " \
       "The ship gate FAILS CLOSED on anything but green. Let CI conclude on the frozen SHA (or widen " \
       "RELEASE_CI_POLL_TIMEOUT), then re-run `#{RELEASE_SELF_CMD} ship`. #{override}"
   else
     "test gate HELD for #{repo}: GitHub CI has NO green verdict for frozen #{short(frozen_sha)} (#{read}) after " \
-      "polling ~#{ci_poll_timeout}s#{verdict[:diagnostic] ? " (#{verdict[:diagnostic]})" : ''}. The ship gate is " \
+      "polling ~#{budget}s#{verdict[:diagnostic] ? " (#{verdict[:diagnostic]})" : ''}. The ship gate is " \
       "CI's verdict and FAILS CLOSED on anything but green — a just-pushed re-pin may still be PENDING. Let CI " \
       "conclude on the frozen SHA (or widen RELEASE_CI_POLL_TIMEOUT), then re-run `#{RELEASE_SELF_CMD} ship`. #{override}"
   end
@@ -6064,12 +6064,36 @@ def test_gate(repo, frozen_sha:, relock: nil)
   # resolution G3 ran on the release tip (credit, else poll), now on the frozen
   # ship SHA. Exactly two kinds pass (green, credited); everything else aborts,
   # naming what was read. The SOP carries the verdict's source.
-  verdict = resolve_release_ci_verdict(repo, repo_path(repo), frozen_sha)
+  # A re-lock commit was pushed seconds ago, so its CI is still building: hold it
+  # for the workflow-sized budget (turf's suite outlasts the flat 1200 s window).
+  # The frozen SHA is normally credited from the accepted head and keeps the flat one.
+  budget = relock ? ci_poll_budget_for(repo, frozen_sha) : ci_poll_timeout
+  verdict = resolve_release_ci_verdict(repo, repo_path(repo), frozen_sha, budget: budget)
   kind = Release::ShipSequence.ship_gate_kind(verdict[:ci], credited: verdict[:credited],
                                                             diverged: verdict[:diverged])
   ok = Release::ShipSequence.ship_gate_pass?(kind)
   gate_sop("ship_test_gate", tree_verdict_sop(verdict, frozen_sha, cmd), ok)
-  abort!(ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind) + (relock ? relock_gate_recovery(repo, relock) : "")) unless ok
+  abort!(ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind, budget: budget) + (relock ? relock_gate_recovery(repo, relock) : "")) unless ok
+
+  ci_green_shas[repo] = frozen_sha
+end
+
+# { repo => sha } for every app whose GitHub CI this ship read GREEN (or credited)
+# at exactly that SHA. The ONLY source of a repo_script deploy's `ci_verified_arg`:
+# a skipped gate, a red or held read, or a different SHA never lands here.
+def ci_green_shas
+  @ci_green_shas ||= {}
+end
+
+# The extra argv a repo_script deploy gets when its suite already ran green in CI
+# for the SHA it deploys: [`<ci_verified_arg>=<sha>`], else [] (the script runs its
+# own suite). Declared per repo (prod_deploy.ci_verified_arg), never inferred.
+def ci_verified_args(repo, adapter, frozen)
+  flag = adapter["ci_verified_arg"].to_s.strip
+  return [] if flag.empty? || frozen.to_s.empty?
+  return [] unless ci_green_shas[repo].to_s == frozen.to_s
+
+  ["#{flag}=#{frozen}"]
 end
 
 # `bundle lock --update <gem>` with a bounded retry/backoff for RubyGems
@@ -8764,6 +8788,17 @@ def deploy_app(group, frozen)
     command = adapter["command"].to_s
     args    = Array(adapter["args"])
     abort!("repo_script adapter for #{repo} has no `command`") if command.empty? && !DRY
+    # The suite the script would run already ran green in CI for exactly this SHA
+    # (test_gate read it): say so, and let the script skip its local copy. With no
+    # green read for THIS SHA the script runs its own suite, as before.
+    verified = ci_verified_args(repo, adapter, frozen)
+    if verified.any?
+      say("  #{repo}: GitHub CI read GREEN for #{short(frozen)} by this ship — passing #{verified.first.sub(/=.*/, '')} " \
+          "so bin/deploy skips re-running that suite (its pre-deploy checks, smoke and rollback still run)")
+      args += verified
+    elsif !adapter["ci_verified_arg"].to_s.strip.empty?
+      say("  #{repo}: no green CI read for #{short(frozen)} in this ship — its deploy runs its own suite")
+    end
     step("deploy: (cd #{repo} ship workspace @ frozen #{short(frozen)}) #{command} #{args.join(' ')} " \
          "— repo owns its smoke + rollback")
     if DRY
