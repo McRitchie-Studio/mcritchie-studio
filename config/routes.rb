@@ -253,7 +253,8 @@ Rails.application.routes.draw do
     end
   end
   # /assets — the object store as a folder tree (AssetsController, require_admin).
-  # Query params only: Sprockets owns /assets/*, and cascades /assets itself here.
+  # Query params only: Propshaft owns /assets/*; bare /assets reaches this route
+  # (lib/middleware/prefixed_asset_server.rb keeps the dev/test asset server off it).
   get "assets", to: "assets#index", as: :asset_browser
   # Video pipeline (music videos, cinematic videos, movie scenes): the cast panel
   # (stage 2) and clips (stage 5), admin only.
