@@ -502,9 +502,10 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   # Guards the guard: every assertion above would pass vacuously over an empty list.
   test "[unit] the QA-evidence exemption guard actually has a repo to check" do
-    # turf-vault is the one exemption that is not a profile's (QA does not apply
-    # to it); every other exempt repo takes its exemption from its profile's
-    # recorded decision, and is derived rather than pinned.
+    # turf-vault is the one exemption that is not a decision (QA does not apply
+    # to it). Every other exempt repo takes its exemption from its profile's
+    # recorded decision, or, off a profile, from QA_EXEMPT_BY_OPERATOR_DECISION;
+    # both are derived here, and a repo exempt by neither still fails this pin.
     assert_equal (%w[turf-vault] + profile_repos + QA_EXEMPT_BY_OPERATOR_DECISION.keys).sort,
                  Release::Repos.qa_evidence_exempt_repos.sort,
                  "exactly these repos are declared exempt — a third one arriving unreviewed " \
