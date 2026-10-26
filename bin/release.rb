@@ -175,6 +175,7 @@ require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/gem_candidate"
 require_relative "../app/models/release/lock_drift"
 require_relative "../app/models/release/ship_sequence"
+require_relative "../app/models/release/parallel_deploy"
 require_relative "../app/models/release/devnet_gauntlet"
 require_relative "../app/models/release/engine_migration_install"
 require_relative "../app/models/release/engine_consumers"
@@ -209,6 +210,9 @@ RELEASE_TASK_CMD = Remedy.command("task", __dir__).freeze
 # Sizes how long a gate holds a PENDING CI verdict from the workflows that produce it
 # (task gem-gate-outwaits-consumer-ci). Pure and Rails-free; see ci_poll_budget_for.
 require_relative "lib/ci_poll_budget"
+# The ONE automatic re-run a red release CI verdict may earn (a flaky test lane, or
+# bundler's gem-resolution error from the RubyGems CDN race). Pure; see poll_ci_verdict.
+require_relative "lib/ci_rerun"
 # CleanCheck is the pure verdict behind the `deploy-with-task` clean-LADDER GUARD
 # (`bin/release status --clean-only`): given BOTH rungs the expedite walks — work
 # riding `release` (board + release-ahead-of-main git count) and work parked on
@@ -565,10 +569,28 @@ def sh(*cmd, capture: false, chdir: nil, env: nil)
   if capture
     out, status = Open3.capture2e(*argv, opts)
     [out, status.success?]
+  elsif Release::ParallelDeploy.current_repo
+    # A satellite deploying beside others: its child's output is read line by line
+    # and printed through $stdout, which prefixes each line with the repo and copies
+    # it to the app's log. An inherited stdout would print it unprefixed, mid-line.
+    ["", stream_through_stdout(argv, opts)]
   else
     ok = system(*argv, opts)
     ["", ok]
   end
+end
+
+# Run argv with stdout+stderr merged and echoed through $stdout; true iff it exited 0.
+# A command that cannot start is a failure, as system() would report it.
+def stream_through_stdout(argv, opts)
+  Open3.popen2e(*argv, opts) do |stdin, out, wait|
+    stdin.close
+    out.each_line { |line| $stdout.write(line) }
+    wait.value.success?
+  end
+rescue SystemCallError => e
+  say("  could not run #{Array(argv).reject { |a| a.is_a?(Hash) }.first}: #{e.message}")
+  false
 end
 
 # Dispatch a GitHub Actions workflow (`gh workflow run`) and WATCH it to
@@ -3419,10 +3441,27 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
   last_state = nil
   refreshes = CiStatus.gh_auth_summary[:refreshes]
   ci = nil
+  rerun = nil # the run ids this poll re-ran, once one is spent
   loop do
     ci = ci_verdict(repo, sha)
     refreshes = say_ci_token_refresh(repo, refreshes)
-    return ci unless ci_poll_action(ci) == :wait
+    action = ci_poll_action(ci)
+    if action == :abort && ci.is_a?(Hash) && ci[:state] == :red
+      if rerun
+        # The re-run's FIRST attempt is still on the SHA until GitHub picks the re-run
+        # up, so a red read before it settles is the old verdict, not the second one.
+        if ci_rerun_settled?(repo, sha, rerun)
+          say("  ✗ #{repo}: CI is RED again for #{short(sha)} after the automatic re-run — a second red is real")
+          return ci
+        end
+        action = :wait
+      elsif (rerun = ci_rerun_once!(repo, sha))
+        # A fresh window for the re-run: it is a new run of the lanes, not the tail of the old one.
+        deadline = [deadline, monotonic_s + budget].max
+        action = :wait
+      end
+    end
+    return ci unless action == :wait
 
     remaining = deadline - monotonic_s
     if remaining <= 0
@@ -3436,6 +3475,90 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
     last_state = ci[:state]
     sleep([interval, remaining].min)
   end
+end
+
+# --- THE ONE AUTOMATIC RE-RUN (bin/lib/ci_rerun.rb) ---------------------------
+#
+# A red verdict whose failed runs are all first-attempt test-lane failures, or a
+# non-test job that died on bundler's gem-resolution error (the CDN race), is re-run
+# ONCE, loudly, and polled to its own conclusion. ALL of the run's jobs are re-run
+# (`gh run rerun <id>`, never `--failed`): the hub's `*_executed_set` guards re-read
+# every shard's receipt, and a partial re-run leaves them reading the old attempt's. Never
+# more than once per repo and SHA in a process; a second red is real. Every read
+# fails CLOSED into "no re-run", so the gate's verdict is never softer than before.
+# Disarmed by RELEASE_CI_RERUN=off, and inert under an injected RELEASE_CI_STATUS
+# (the meta-tests' verdict seam reaches no GitHub run to re-run).
+def ci_rerun_disarmed?
+  ENV["RELEASE_CI_RERUN"].to_s.strip.downcase == "off" || !ENV["RELEASE_CI_STATUS"].to_s.empty?
+end
+
+# Spend the one re-run when the rule allows it. Returns the re-run ids, or nil.
+def ci_rerun_once!(repo, sha)
+  @ci_reruns ||= {}
+  key = [repo, sha.to_s]
+  return nil if @ci_reruns.key?(key) || ci_rerun_disarmed? || DRY
+
+  @ci_reruns[key] = nil
+  nwo = repo_name_with_owner(repo)
+  return nil if nwo.empty?
+
+  runs = CiRerun.failed_runs(ci_workflow_runs(nwo, sha), sha)
+  plan = CiRerun.plan(runs: runs, jobs_by_run: runs.to_h { |r| [r["id"], ci_failed_job_names(nwo, r["id"])] },
+                      log_for: ->(id) { ci_failed_log(nwo, id) })
+  if plan[:action] != :rerun
+    say("  #{repo}: CI RED for #{short(sha)} — no automatic re-run (#{plan[:reason]})")
+    return nil
+  end
+
+  say("  ↻↻ #{repo}: CI RED for #{short(sha)} — AUTOMATIC RE-RUN, the one this gate allows: #{plan[:reason]}. " \
+      "Re-running every job of run#{plan[:run_ids].size == 1 ? '' : 's'} #{plan[:run_ids].join(', ')} " \
+      "(`gh run rerun`, all jobs, so the executed-set guards re-read fresh receipts); a second red is real.")
+  plan[:run_ids].each do |id|
+    out, ok = gh_sh("gh", "run", "rerun", id.to_s, "-R", nwo, capture: true)
+    next if ok
+
+    say("  ✗ #{repo}: `gh run rerun #{id}` was refused (#{out.to_s.strip.lines.last.to_s.strip}) — " \
+        "reading the red as it stands")
+    return nil
+  end
+  gate_sop("ci_rerun", "↻ AUTOMATIC RE-RUN of #{repo}@#{short(sha)} run(s) #{plan[:run_ids].join(', ')}: #{plan[:reason]}", true)
+  @ci_reruns[key] = plan[:run_ids]
+end
+
+# Has every re-run been picked up and concluded? A failed read is "not yet".
+def ci_rerun_settled?(repo, sha, run_ids)
+  nwo = repo_name_with_owner(repo)
+  return false if nwo.empty?
+
+  CiRerun.settled?(ci_workflow_runs(nwo, sha), run_ids)
+end
+
+# The SHA's workflow runs (Actions API), [] on any failed read.
+def ci_workflow_runs(nwo, sha)
+  body, ok = CiStatus.gh_read_status("api", "repos/#{nwo}/actions/runs?head_sha=#{sha}&per_page=100")
+  return [] unless ok
+
+  runs = JSON.parse(body)["workflow_runs"]
+  runs.is_a?(Array) ? runs : []
+rescue StandardError
+  []
+end
+
+# The names of a run's failed jobs (latest attempt), [] on any failed read.
+def ci_failed_job_names(nwo, run_id)
+  body, ok = CiStatus.gh_read_status("api", "repos/#{nwo}/actions/runs/#{run_id}/jobs?filter=latest&per_page=100")
+  return [] unless ok
+
+  Array(JSON.parse(body)["jobs"]).select { |j| %w[failure timed_out].include?(j["conclusion"].to_s) }
+                                 .map { |j| j["name"].to_s }
+rescue StandardError
+  []
+end
+
+# A run's failed-step log, "" on any failed read (so the resolution check says no).
+def ci_failed_log(nwo, run_id)
+  out, ok = gh_sh("gh", "run", "view", run_id.to_s, "--log-failed", "-R", nwo, capture: true)
+  ok ? out.to_s : ""
 end
 
 # A wait past one App token's hour re-mints the read token (CiStatus.gh_read_status).
@@ -4121,14 +4244,7 @@ def prepare
       # Recording it here ships the exact commit QA froze. (Gems aren't QA-
       # deployed, but their release branch is still the source ship publishes from;
       # the frozen_sha_for fallback stays as defense for un-prepared repos.)
-      sha = ""
-      path = repo_path(repo)
-      if !DRY && Dir.exist?(path)
-        sh("git", "-C", path, "fetch", "origin", "--quiet")
-        out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
-        sha = out.strip if ok
-      end
-      qa_shas[repo] = sha
+      qa_shas[repo] = release_tip_sha(repo)
       next
     end
 
@@ -4143,6 +4259,15 @@ def prepare
     unless qa_registered?(qa_app)
       say("")
       say("  ⚠ #{repo}: no QA environment registered (qa_environments.yml) — skipping QA deploy")
+      # FREEZE IT ANYWAY. A QA-exempt repo (rantly, moms-app) still ships, and the
+      # ship freezes every repo at its qa_sha. With none recorded, frozen_sha_for
+      # falls back to origin/#{RELEASE_BRANCH} LIVE — and on a RESUMED ship that head is
+      # the ship's own final-gem re-lock, while every QA'd repo freezes at its
+      # candidate lock, so the gem candidate preflight refuses with "some consumers
+      # lock X and others a candidate of it" (rel-20261025-3f919b and
+      # rel-20261026-61874c, both fixed by hand). Its origin/#{RELEASE_BRANCH} here
+      # already carries this sweep's candidate lock bump (step 4d).
+      qa_shas[repo] = release_tip_sha(repo)
       next
     end
 
@@ -5083,6 +5208,40 @@ def gem_version_for(repo, group, frozen_ref = nil)
   gem_version_local(repo)
 end
 
+# Record, on the release, every ship SHA that came from the live fallback rather
+# than from qa_shas. Returns the { repo => sha } it recorded. Best-effort: a failed
+# write warns (this ship is unaffected; only a resume would re-resolve live).
+def backfill_qa_shas!(rel_slug, qa_shas, ship_sha)
+  missing = ship_sha.select do |repo, sha|
+    Release::ShipSequence.frozen_sha(qa_shas, repo).nil? && !sha.to_s.empty?
+  end
+  return {} if missing.empty? || DRY
+
+  step("record: qa_shas backfill #{missing.map { |r, s| "#{r}@#{short(s)}" }.join(', ')} " \
+       "(never frozen by prepare; resolved from origin/#{RELEASE_BRANCH} before anything moved)")
+  conductor("Release::Conductor.record_qa_shas(release: Release.find_by!(slug: #{rel_slug.inspect}), " \
+            "shas: #{missing.inspect}); puts({qa_shas: true}.to_json)")
+  missing
+rescue SystemExit, StandardError => e
+  say("  ⚠ qa_shas backfill not recorded (#{e.message}); this ship is unaffected, but a resumed ship " \
+      "would re-resolve #{missing.keys.join(', ')} from origin/#{RELEASE_BRANCH} — record them by hand: " \
+      "Release::Conductor.record_qa_shas(release:, shas: #{missing.inspect})")
+  {}
+end
+
+# origin/#{RELEASE_BRANCH}'s head in `repo` after a fetch: the SHA prepare freezes
+# into qa_shas for a repo it does not QA-deploy (a gem, a QA-exempt app). "" under
+# DRY, for a repo with no clone, or when the ref does not resolve; record_qa_shas
+# drops a blank, so the ship's live fallback still answers for it.
+def release_tip_sha(repo)
+  path = repo_path(repo)
+  return "" if DRY || !Dir.exist?(path)
+
+  sh("git", "-C", path, "fetch", "origin", "--quiet")
+  out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+  ok ? out.strip : ""
+end
+
 # The QA-frozen SHA to ship for a repo — the value `prepare` recorded under
 # release.metadata["qa_shas"] (apps AND gems both freeze it now). The PURE
 # present?/which-SHA decision lives in Release::ShipSequence.frozen_sha so this
@@ -5846,7 +6005,7 @@ end
 #   :held       — pending/none/unverified past the poll bound (a just-pushed re-pin
 #                 may still be building): let CI conclude, re-run — or take the
 #                 first-class --skip-test-gate override. Never a pass.
-def ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind)
+def ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind, budget: ci_poll_timeout)
   ci   = verdict[:ci]
   read = ci_detail(ci)
   override = "To ship past a verdict you believe is a false negative, use " \
@@ -5865,12 +6024,12 @@ def ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind)
   when :diverged
     "test gate HELD for #{repo}: frozen #{short(frozen_sha)} shares neither SHA nor tree with the " \
       "#{ACCEPTED_BRANCH} head (#{verdict[:diagnostic]}), so no earlier green could vouch for its tree — and its " \
-      "OWN run has NO green verdict for frozen #{short(frozen_sha)} (#{read}) after polling ~#{ci_poll_timeout}s. " \
+      "OWN run has NO green verdict for frozen #{short(frozen_sha)} (#{read}) after polling ~#{budget}s. " \
       "The ship gate FAILS CLOSED on anything but green. Let CI conclude on the frozen SHA (or widen " \
       "RELEASE_CI_POLL_TIMEOUT), then re-run `#{RELEASE_SELF_CMD} ship`. #{override}"
   else
     "test gate HELD for #{repo}: GitHub CI has NO green verdict for frozen #{short(frozen_sha)} (#{read}) after " \
-      "polling ~#{ci_poll_timeout}s#{verdict[:diagnostic] ? " (#{verdict[:diagnostic]})" : ''}. The ship gate is " \
+      "polling ~#{budget}s#{verdict[:diagnostic] ? " (#{verdict[:diagnostic]})" : ''}. The ship gate is " \
       "CI's verdict and FAILS CLOSED on anything but green — a just-pushed re-pin may still be PENDING. Let CI " \
       "conclude on the frozen SHA (or widen RELEASE_CI_POLL_TIMEOUT), then re-run `#{RELEASE_SELF_CMD} ship`. #{override}"
   end
@@ -5927,12 +6086,36 @@ def test_gate(repo, frozen_sha:, relock: nil)
   # resolution G3 ran on the release tip (credit, else poll), now on the frozen
   # ship SHA. Exactly two kinds pass (green, credited); everything else aborts,
   # naming what was read. The SOP carries the verdict's source.
-  verdict = resolve_release_ci_verdict(repo, repo_path(repo), frozen_sha)
+  # A re-lock commit was pushed seconds ago, so its CI is still building: hold it
+  # for the workflow-sized budget (turf's suite outlasts the flat 1200 s window).
+  # The frozen SHA is normally credited from the accepted head and keeps the flat one.
+  budget = relock ? ci_poll_budget_for(repo, frozen_sha) : ci_poll_timeout
+  verdict = resolve_release_ci_verdict(repo, repo_path(repo), frozen_sha, budget: budget)
   kind = Release::ShipSequence.ship_gate_kind(verdict[:ci], credited: verdict[:credited],
                                                             diverged: verdict[:diverged])
   ok = Release::ShipSequence.ship_gate_pass?(kind)
   gate_sop("ship_test_gate", tree_verdict_sop(verdict, frozen_sha, cmd), ok)
-  abort!(ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind) + (relock ? relock_gate_recovery(repo, relock) : "")) unless ok
+  abort!(ship_test_gate_ci_abort(repo, frozen_sha, verdict, kind, budget: budget) + (relock ? relock_gate_recovery(repo, relock) : "")) unless ok
+
+  ci_green_shas[repo] = frozen_sha
+end
+
+# { repo => sha } for every app whose GitHub CI this ship read GREEN (or credited)
+# at exactly that SHA. The ONLY source of a repo_script deploy's `ci_verified_arg`:
+# a skipped gate, a red or held read, or a different SHA never lands here.
+def ci_green_shas
+  @ci_green_shas ||= {}
+end
+
+# The extra argv a repo_script deploy gets when its suite already ran green in CI
+# for the SHA it deploys: [`<ci_verified_arg>=<sha>`], else [] (the script runs its
+# own suite). Declared per repo (prod_deploy.ci_verified_arg), never inferred.
+def ci_verified_args(repo, adapter, frozen)
+  flag = adapter["ci_verified_arg"].to_s.strip
+  return [] if flag.empty? || frozen.to_s.empty?
+  return [] unless ci_green_shas[repo].to_s == frozen.to_s
+
+  ["#{flag}=#{frozen}"]
 end
 
 # `bundle lock --update <gem>` with a bounded retry/backoff for RubyGems
@@ -8519,7 +8702,7 @@ def static_cloudflare_deploy!(repo, adapter, sha)
     # The bundle only. prepare_ship_workspace! also runs db:test:prepare, which a
     # database-free app (every showcase app) does not even define.
     ensure_suite_bundle!(repo, workspace, role: "ship")
-    ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING, weight: ReleasePresence::WEIGHT_SUITE) do
+    deploy_presence_phase do
       result = StaticCloudflare::Deploy.new(
         target: target, workspace: workspace, sha: sha, uploader: static_cloudflare_uploader(target),
         runner: static_cloudflare_runner(repo), http: static_cloudflare_http, say: ->(line) { step(line) }
@@ -8627,6 +8810,17 @@ def deploy_app(group, frozen)
     command = adapter["command"].to_s
     args    = Array(adapter["args"])
     abort!("repo_script adapter for #{repo} has no `command`") if command.empty? && !DRY
+    # The suite the script would run already ran green in CI for exactly this SHA
+    # (test_gate read it): say so, and let the script skip its local copy. With no
+    # green read for THIS SHA the script runs its own suite, as before.
+    verified = ci_verified_args(repo, adapter, frozen)
+    if verified.any?
+      say("  #{repo}: GitHub CI read GREEN for #{short(frozen)} by this ship — passing #{verified.first.sub(/=.*/, '')} " \
+          "so bin/deploy skips re-running that suite (its pre-deploy checks, smoke and rollback still run)")
+      args += verified
+    elsif !adapter["ci_verified_arg"].to_s.strip.empty?
+      say("  #{repo}: no green CI read for #{short(frozen)} in this ship — its deploy runs its own suite")
+    end
     step("deploy: (cd #{repo} ship workspace @ frozen #{short(frozen)}) #{command} #{args.join(' ')} " \
          "— repo owns its smoke + rollback")
     if DRY
@@ -8669,8 +8863,7 @@ def deploy_app(group, frozen)
       sh("git", "-C", workspace, "update-index", "-q", "--refresh", capture: true)
       # ship_deploy_env, NOT gate_env: a production deploy script gets its private
       # test DB and nothing else — no RAILS_ENV=test, no ruby pin. See ship_deploy_env.
-      _, ok = ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
-                                         weight: ReleasePresence::WEIGHT_SUITE) do
+      _, ok = deploy_presence_phase do
         sh(command, *args, chdir: workspace, env: ship_deploy_env(repo))
       end
     end
@@ -8717,6 +8910,84 @@ def deploy_app(group, frozen)
     abort!("GitHub Actions prod deploy failed for #{repo} (#{workflow}) — check the run; fix + re-run `bin/release ship`") unless ok || DRY
   end
   @ship_live << "app #{repo} deployed to production"
+end
+
+# The suite-weight presence phase around one app's heavy deploy work. Inside the
+# parallel satellite batch the batch already holds it (ReleasePresence keeps one
+# phase stack, which concurrent pushes and pops would scramble), so a deploying
+# thread just runs its block.
+def deploy_presence_phase(&block)
+  return yield if Release::ParallelDeploy.current_repo
+
+  ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING, weight: ReleasePresence::WEIGHT_SUITE, &block)
+end
+
+# Deploy every app: the hub first and alone (Release::ShipSequence::HUB — no
+# satellite goes live against a hub that has not caught up; its failure aborts the
+# ship before any satellite moves), then the satellites at once
+# (Release::ParallelDeploy). One satellite, or a dry run, deploys in the old
+# sequence: there is nothing to overlap, and a preview prints in a fixed order.
+def deploy_apps(app_groups, ship_sha, rel_slug)
+  hub, satellites = Release::ParallelDeploy.waves(app_groups)
+  hub.each { |group| deploy_app(group, ship_sha[group["repo"]]) }
+  record_deployed_apps(rel_slug, hub, ship_sha) if hub.any?
+  return if satellites.empty?
+
+  if satellites.size == 1 || DRY
+    satellites.each do |group|
+      deploy_app(group, ship_sha[group["repo"]])
+      record_deployed_apps(rel_slug, [group], ship_sha)
+    end
+    return
+  end
+
+  deploy_satellites_in_parallel(satellites, ship_sha, rel_slug)
+end
+
+def deploy_satellites_in_parallel(satellites, ship_sha, rel_slug)
+  limit = Release::ParallelDeploy.concurrency(ENV["RELEASE_DEPLOY_CONCURRENCY"])
+  log_dir = Dir.mktmpdir("release-deploy-#{rel_slug}-")
+  say("")
+  step("deploy: #{satellites.size} satellites CONCURRENTLY, up to #{limit} at a time " \
+       "(#{satellites.map { |g| g['repo'] }.join(', ')}) — each line is prefixed [<repo>]; per-app logs in #{log_dir}")
+  # Memos the threads write into, made before they start so no two threads race
+  # to create one (a lost `||=` would drop a repo's evidence).
+  ship_evidence
+  ci_green_shas
+  @ship_live ||= []
+  @gate_env ||= {}
+  @gate_database_url ||= {}
+
+  results = ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING, weight: ReleasePresence::WEIGHT_SUITE) do
+    Release::ParallelDeploy.with_prefixed_output do
+      Release::ParallelDeploy.run(satellites, concurrency: limit, log_dir: log_dir) do |group|
+        deploy_app(group, ship_sha[group["repo"]])
+      end
+    end
+  end
+
+  live = Release::ParallelDeploy.live(results).map(&:repo)
+  record_deployed_apps(rel_slug, satellites.select { |g| live.include?(g["repo"]) }, ship_sha)
+  say("")
+  say("  satellite deploys (#{results.count(&:ok)}/#{results.size} live):")
+  Release::ParallelDeploy.summary_lines(results).each { |line| say(line) }
+  failure = Release::ParallelDeploy.failure_message(results, resume_cmd: "#{RELEASE_SELF_CMD} ship")
+  abort!(failure) if failure
+end
+
+# Record on the release which apps are LIVE on production at which SHA
+# (metadata["deployed_apps"]), as each deploy lands: the record a partial ship
+# leaves names exactly the apps that went live. Best-effort: the deploy has
+# happened either way, and a resumed ship proves liveness from production itself.
+def record_deployed_apps(rel_slug, groups, ship_sha)
+  deployed = Array(groups).to_h { |g| [g["repo"], ship_sha[g["repo"]].to_s] }.reject { |_r, sha| sha.empty? }
+  return if DRY || deployed.empty? || rel_slug.to_s.empty?
+
+  conductor("Release::Conductor.record_deployed_apps(release: Release.find_by!(slug: #{rel_slug.inspect}), " \
+            "deployed: #{deployed.inspect}); puts({deployed_apps: #{deployed.keys.inspect}}.to_json)")
+rescue SystemExit, StandardError => e
+  say("  ⚠ deployed apps not recorded for #{deployed&.keys&.join(', ')} (#{e.message}); they are live — " \
+      "a re-run proves it from production")
 end
 
 # --- ship preflight: prove the ship can build its own trees -----------------
@@ -9158,12 +9429,19 @@ def ship
   app_groups = Release::ShipSequence.ordered_app_groups(repos.select { |g| g["kind"] == "app" }) # hub first
   say("  shipping #{rel_slug} (#{state}): #{gem_groups.size} gem(s) → hub → #{[app_groups.size - 1, 0].max} satellite(s)")
   say("  resuming final member flips: #{result['unfinished_members']} unfinished") if resuming_member_ship
-  say("  partial-ship: abort on first failure; re-run resumes (gems skip, ref pushes no-op, re-pins idempotent)")
+  say("  partial-ship: the hub deploys first and alone, then the satellites concurrently; a satellite failure stops " \
+      "no other, then aborts before the seal; re-run resumes (gems skip, ref pushes no-op, re-pins idempotent, " \
+      "live apps skip)")
 
   # The QA-frozen SHA to ship per repo (advanced by a re-pin commit in step 4).
   # Resolved BEFORE the preflight, which pins each app's ship workspace at it.
   ship_sha = {}
   repos.each { |g| ship_sha[g["repo"]] = frozen_sha_for(g["repo"], qa_shas) }
+  # A repo prepare never froze (a release prepared before QA-exempt repos were
+  # frozen) just resolved origin/#{RELEASE_BRANCH} live. Record that SHA now, before
+  # anything moves, so a RESUMED ship freezes it at the same commit instead of at
+  # the re-lock this ship is about to push there.
+  backfill_qa_shas!(rel_slug, qa_shas, ship_sha) unless resuming_member_ship
 
   # PREFLIGHT — before ANYTHING is published, pushed, or deployed: materialize the
   # ship workspaces at the frozen SHA (so an env failure aborts while the release is
@@ -9298,8 +9576,10 @@ def ship
   #     deploys, whatever prepared it and whatever the steps above concluded.
   refuse_prerelease_deploy!(app_groups, ship_sha)
 
-  # 5. Apps hub-first, then satellites: test gate → prod adapter.
-  app_groups.each { |group| deploy_app(group, ship_sha[group["repo"]]) }
+  # 5. Apps: the hub FIRST and alone, then the satellites CONCURRENTLY (deploy_apps).
+  #    A hub failure aborts before any satellite moves; a satellite failure stops
+  #    no other satellite, and the ship then aborts naming which apps are live.
+  deploy_apps(app_groups, ship_sha, rel_slug)
 
   # 5b. Post-deploy hooks on PROD — after every app deployed + smoked, run each
   #     member's declared post_deploy_cmd against its PRODUCTION app, record the

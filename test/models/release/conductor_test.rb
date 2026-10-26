@@ -1104,6 +1104,20 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal "turfsha", shas["turf-monster"], "a brand-new repo key is still added"
   end
 
+  # --- record_deployed_apps: which apps are LIVE (faster-steadier-production-ship) ---
+
+  test "[unit] record_deployed_apps merges each live app's SHA and never clobbers with a blank" do
+    rel = Release::Conductor.prepare!(task_slugs: [reviewed_task.slug])
+    at = Time.zone.parse("2026-10-26T06:00:00Z")
+    Release::Conductor.record_deployed_apps(release: rel, deployed: { "mcritchie-studio" => "hub1" }, at: at)
+    Release::Conductor.record_deployed_apps(release: rel, deployed: { "rantly" => "ran1", "mcritchie-studio" => "" }, at: at)
+
+    apps = rel.reload.metadata["deployed_apps"]
+    assert_equal %w[mcritchie-studio rantly], apps.keys.sort, "the record names exactly the apps that went live"
+    assert_equal "hub1", apps.dig("mcritchie-studio", "sha"), "a blank never wipes a recorded deploy"
+    assert_equal at.iso8601, apps.dig("rantly", "at")
+  end
+
   # --- record_qa_gate: the G3 verdict + its auditor ---
 
   test "record_qa_gate persists what the gate certified AND the CI verdict for the same SHA" do

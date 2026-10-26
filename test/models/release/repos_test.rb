@@ -638,11 +638,24 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_equal "bin/rails db:test:prepare test test:system", Release::Repos.test_cmd("rolio")
   end
 
-  test "test_cmd is nil for a self-gating repo_script satellite" do
-    # Satellites run their own suite in bin/deploy, so they leave test_cmd unset
-    # (the conductor skips the gate) to avoid double-testing.
-    assert_nil Release::Repos.test_cmd("turf-monster")
+  test "test_cmd is nil for a self-gating satellite" do
+    # A repo with no test_cmd self-gates: the ship reads no CI verdict for it.
     assert_nil Release::Repos.test_cmd("tax-studio")
+  end
+
+  # [unit] task faster-steadier-production-ship, part 1. turf-monster is gated on
+  # CI's verdict like every other app, so its bin/deploy no longer re-runs the
+  # suite (~20 min) on a SHA CI already passed. The command is CI's `test` job
+  # verbatim, read from turf's own ci.yml where a clone is present.
+  test "[unit] turf-monster registers CI's test job as test_cmd and declares its ci_verified_arg" do
+    assert_equal "bin/rails db:test:prepare test", Release::Repos.test_cmd("turf-monster")
+    assert_equal "--ci-verified", Release::Repos.prod_deploy("turf-monster")["ci_verified_arg"],
+                 "the conductor tells bin/deploy CI was read green only through a declared flag"
+
+    # Bound to turf's own ci.yml where a sibling checkout exists (not on the hub's runner,
+    # where the literal above is the guard).
+    ci = sibling_ci_test_command("turf-monster", anchor: "db:test:prepare")
+    assert_equal ci, Release::Repos.test_cmd("turf-monster"), "test_cmd must be turf's CI `test` job verbatim" if ci
   end
 
   test "test_cmd is nil for a gem or an unknown repo" do
@@ -668,7 +681,7 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_equal "bin/rails db:test:prepare test test:system", Release::Repos.qa_test_cmd("rolio"),
                  "rolio is git_push_heroku — its gate must certify CI's full suite, base AND system tiers"
     assert_equal "bin/rails test test/integration", Release::Repos.qa_test_cmd("turf-monster"),
-                 "turf-monster self-gates the full suite in bin/deploy, so G3 gates on its integration tier"
+                 "turf-monster's G3 gates on its integration tier; G4 reads CI's full suite (test_cmd)"
   end
 
   # --- rolio's gate must cover what rolio's CI covers (the system-test gap) ---

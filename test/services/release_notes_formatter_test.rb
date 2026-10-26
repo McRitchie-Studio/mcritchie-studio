@@ -41,7 +41,7 @@ module ReleaseNotes
       message = Formatter.new(app: "mcritchie-studio", environment: "production", release: "v72",
                               sha: "abc1234", url: "", tasks: []).message
 
-      %w[rolio chain-ops tax-studio acquisition-studio].each do |slug|
+      %w[chain-ops tax-studio acquisition-studio].each do |slug|
         group = Formatter::APP_GROUPS.find { |candidate| candidate[:key] == slug }
         assert group[:hide_when_empty], "#{slug} is archived or has no repo"
         refute_includes message, "#{group[:emoji]} #{group[:label]}", "#{slug} has no tasks, so no heading"
@@ -50,10 +50,10 @@ module ReleaseNotes
       assert_includes message, "💎 Studio Engine\n• No deployed tasks", "a library's empty group still draws"
 
       task = tasks(:done_task)
-      task.update!(title: "Rolio wind-down notes", metadata: { "devops" => { "repositories" => ["rolio"] } })
+      task.update!(title: "Chain Ops wind-down notes", metadata: { "devops" => { "repositories" => ["chain-ops"] } })
       named = Formatter.new(app: "mcritchie-studio", environment: "production", release: "v72",
                             sha: "abc1234", url: "", tasks: [task]).message
-      assert_includes named, "📇 Rolio\n• [Rolio wind-down notes](https://mcritchie.studio/tasks/task-ddd444)"
+      assert_includes named, "⛓️ Chain Ops\n• [Chain Ops wind-down notes](https://mcritchie.studio/tasks/task-ddd444)"
     end
 
     test "uses selected app group for tasks without repository metadata" do

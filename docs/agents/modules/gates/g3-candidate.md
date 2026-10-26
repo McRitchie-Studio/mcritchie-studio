@@ -59,8 +59,8 @@ run inside it rides the close:
     `repos_test.rb` parses **rolio's own** `.github/workflows/ci.yml` (read from
     `origin/release`, not the working tree) and asserts the command matches it;
   - **turf-monster** registers the integration subset (`bin/rails test
-    test/integration`) — its `bin/deploy` runs the full suite pre-prod, so G3
-    would only double-test. (It has no `test/system/` at all, so there is no
+    test/integration`); its full suite is CI's `test` job, which G4 reads as its
+    `test_cmd` before the deploy. (It has no `test/system/` at all, so there is no
     system tier to cover — pinned by a test, so growing one re-opens the question);
   - an app with **no `qa_test_cmd` self-gates** and is skipped here.
 

@@ -18,7 +18,7 @@ class Release
     # idempotent no-op.
     #
     # PARKED REPOS ARE HELD, NOT SWEPT. A task naming ANY repo the registry parks
-    # (Release::Ladder.parked: rolio `dormant`, tax-studio `planned`, chain-ops
+    # (Release::Ladder.parked: a `dormant` repo, tax-studio `planned`, chain-ops
     # `blocked`) is withheld from both sweepable lists and reported under "parked"
     # instead, so curate! — which sweeps reviewed + stragglers — cannot attach it,
     # and nothing downstream (repo_plan, the promote, the deploy) ever sees its repo.
@@ -725,6 +725,24 @@ class Release
         existing[repo.to_s] = sha unless sha.empty?
       end
       meta["qa_shas"] = existing
+      release.update!(metadata: meta)
+      release
+    end
+
+    # Persist which apps are LIVE on production, and at which SHA — written by
+    # `bin/release ship` as each app's deploy (and its smoke) lands, so a ship whose
+    # satellites deploy concurrently and fail partway leaves a record naming exactly
+    # the apps that went live (task faster-steadier-production-ship). MERGED into
+    # metadata["deployed_apps"] as { repo => { "sha" =>, "at" => } }; a blank SHA is
+    # ignored. shipped_shas says where `main` moved; this says what production runs.
+    def record_deployed_apps(release:, deployed:, at: Time.current)
+      meta = release.metadata.deep_dup
+      existing = meta["deployed_apps"].is_a?(Hash) ? meta["deployed_apps"] : {}
+      deployed.to_h.each do |repo, sha|
+        sha = sha.to_s
+        existing[repo.to_s] = { "sha" => sha, "at" => at.iso8601 } unless sha.empty?
+      end
+      meta["deployed_apps"] = existing
       release.update!(metadata: meta)
       release
     end

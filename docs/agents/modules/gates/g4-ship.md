@@ -39,8 +39,9 @@ The gate window spans the whole irreversible half of the ship:
 - **The re-lock read** (a second `ship_test_gate` SOP per re-locked consumer that
   has a registry `test_cmd`) — GitHub CI's settled verdict for the commit that moves
   a consumer's lock from the candidate to the final, read before the first deploy.
-  A self-gating consumer (turf-monster) has no such read: its own deploy suite is
-  the only verdict on its re-lock commit, and it runs at that app's turn.
+  turf-monster has one too: it registers `test_cmd`, and a green read of its
+  re-lock commit is what lets its `bin/deploy` skip its local suite
+  (`--ci-verified=<sha>`).
 - **The prerelease backstop** — the lock at every SHA about to deploy is read, and
   a prerelease of a registered gem refuses the ship.
 - **The prod deploys** (`deploy:<repo>` SOPs) — per-app `git push` to Heroku
@@ -144,8 +145,12 @@ credit an OLDER accepted head whose tree is identical — and a green for
 identical content is a verdict for this tree, which is the whole rule.
 
 A repo with **no registry `test_cmd` self-gates** at its own deploy and is
-skipped with its own step note: the `repo_script` satellites' `bin/deploy` runs
-their suite in the ship workspace. **Do not blank `test_cmd` to get past a red
+skipped with its own step note. turf-monster no longer does: it registers CI's
+`test` job and is read like the hub, and only a green read for the exact SHA it
+deploys passes its declared `prod_deploy.ci_verified_arg` to `bin/deploy`, which then
+skips re-running that suite. A red read earns one automatic re-run when the rule in
+[`production-deploy`](../../agents/steffon/sops/production-deploy.md#the-frozen-sha-test-gate-is-a-read)
+allows it. **Do not blank `test_cmd` to get past a red
 gate** — a blank reads as "self-gates" and skips the READ, which silently disarms
 the last gate before production; the supported override is
 [`--skip-test-gate`](#overriding-a-ship-gate-you-believe-is-a-false-negative).
@@ -186,8 +191,8 @@ actually need a checkout FOR?" has a two-line answer:
 |------|----------------------|-------------------|
 | advance `main` → frozen SHA | **no** | `git push origin <frozen>:refs/heads/main` — a ref push out of the shared object store |
 | `github_actions` deploy (the hub) | **no** | `gh workflow run <prod-deploy workflow> -f sha=<frozen>` — Actions does the Heroku push and the `/up` smoke |
-| `git_push_heroku` deploy (mcritchie-industries, cyvasse, dads-app, prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5, search-position; rolio, parked) | **no** | `git push <remote> <frozen>:refs/heads/main` — ships the frozen SHA *by value* |
-| `repo_script` deploy (turf-monster) | **yes** (its `bin/deploy` runs the repo's suite, hashes the IDL, pushes) | the **ship workspace**: `<repo>/.worktrees/_ship`, detached at the frozen SHA, own lock, own test DB (`<app>_ship_test`) |
+| `git_push_heroku` deploy (mcritchie-industries, cyvasse, dads-app, prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5, search-position; rolio) | **no** | `git push <remote> <frozen>:refs/heads/main` — ships the frozen SHA *by value* |
+| `repo_script` deploy (turf-monster) | **yes** (its `bin/deploy` hashes the IDL, pushes, and runs the repo's suite unless the ship passed `--ci-verified=<sha>` for a green CI read) | the **ship workspace**: `<repo>/.worktrees/_ship`, detached at the frozen SHA, own lock, own test DB (`<app>_ship_test`) |
 | `static_cloudflare` deploy (none yet; an app after its cutover) | **yes** (`bin/static-build` renders the app at the frozen SHA) | the **ship workspace**, bundle checked, no test DB; then the R2 upload and the `/up` + `static-release.json` smoke ([`../static-cloudflare.md`](../static-cloudflare.md)) |
 | consumer re-lock commit (candidate → final, normally `Gemfile.lock` alone; a candidate floor or a branch ref on the line → `~> x.y`) | **yes** (`bundle lock` writes `Gemfile.lock`) | the ship workspace, pushed as `HEAD:refs/heads/release` |
 | final gem artifact build | **yes** (`gem build` packages what is on disk) | still the gem's **primary** — the one residual (see below). The candidate, at prepare, builds in the gem's ship workspace |
@@ -289,7 +294,7 @@ publishes the final. The acts, in order, after ship authority:
 | 5 | Re-lock each consumer: `bundle lock --update <gem> --conservative`, read the lock back, push one commit onto `release` (`Gemfile.lock`; plus `Gemfile` when the line held a candidate floor or a branch ref) | a commit on `release` | the lock does not resolve `x.y.z`, or `release` moved |
 | 6 | Read CI's settled verdict for each re-lock commit of a consumer with a `test_cmd` | read | anything but green: **no app deploys** |
 | 7 | Read the lock at every SHA about to deploy | read | a prerelease of a registered gem: **no app deploys** |
-| 8 | Deploy the apps, hub first; a self-gating consumer's own deploy suite is the read of its re-lock commit | | that suite red: that app and the ship stop, with earlier apps deployed |
+| 8 | Deploy the hub first and alone, then the satellites concurrently, each with its own smoke and rollback | | the hub fails: no satellite moves. A satellite fails: every other satellite still runs to its end, the live ones are recorded (`metadata.deployed_apps`), and the ship aborts before the seal; a re-run deploys only the unfinished apps |
 | 9 | After the deploy: re-lock every live engine app the release did not carry to `x.y.z` on its `accepted`, in parallel (`relock_cardless_consumers`); each push runs that app's CI | a commit on `accepted` | never: best-effort, a failure warns and the ship continues |
 
 The candidate QA ran is read from each consumer's `Gemfile.lock` at its frozen SHA
@@ -358,8 +363,9 @@ Do not do that: it **silently disarmed** this gate while printing "already green
   `bin/release ship --yes`; it resumes. Run that `pgrep` check before every merge onto
   `accepted` while a release is in flight, too: a running ship is easy to miss.
 - **A local-suite red with green CI on the same frozen SHA** is usually machine
-  load. turf-monster's `bin/deploy` deletes its test log on failure, so compare
-  `check-runs` for that SHA and `uptime`, then re-run at lower load.
+  load (a ship that ran turf's suite locally: `--skip-test-gate`, or no green read
+  for that SHA). turf-monster's `bin/deploy` deletes its test log on failure, so
+  compare `check-runs` for that SHA and `uptime`, then re-run at lower load.
 - **No seal line is not always a dead ship.** When the hub is not a member, the
   seal prints `nothing to seal; skipped`, and a satellite-only release reaches
   production with only its own health check. Read the line above before reporting.
