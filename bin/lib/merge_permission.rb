@@ -5,10 +5,11 @@ require_relative "test_only_diff"
 
 # MergePermission — may this soul merge this PR into `accepted`?
 #
-# THE RULE. The documentation seat (Ritch) merges a PR only when its diff measures
+# THE RULE. The documentation seat (Mason) merges a PR only when its diff measures
 # `docs`: prose, inert media and docs-guard tests, with at least one prose file.
-# Any other diff is merged by the standing primary (Carl). Every other soul is
-# untouched by this rule, so what Carl may merge does not change.
+# Any other diff is merged by the standing primary (Carl). A soul outside the review
+# pool (REVIEWERS) merges nothing, so the `ray` soul, which left the pool on
+# 2026-10-25, is refused. The rest of the pool is untouched by this rule.
 #
 # THE SHAPE IS MEASURED, NEVER DECLARED. #diff_shape reads the PR's own file list
 # through CodeDiff and TestOnlyDiff, the classifiers bin/dor-check gates on. The
@@ -86,6 +87,10 @@ module MergePermission
   def decide(soul:, files:, authors:, verdict:, head:, live_head:)
     seat = canonical(soul)
     return refuse(:no_soul, "no soul was named; pass --agent <soul>") if seat.empty?
+    unless REVIEWERS.include?(seat)
+      return refuse(:no_review_seat, "#{seat} holds no review seat (#{REVIEWERS.join(", ")}), so it merges nothing. " \
+                                     "#{STANDING_PRIMARY.capitalize}, the standing primary, merges it")
+    end
     unless SHAPE_LIMITED.key?(seat)
       return permit(:unrestricted, "#{seat} is not a shape-limited seat; this rule adds nothing to the merge sequence")
     end

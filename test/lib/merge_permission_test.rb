@@ -100,8 +100,11 @@ class MergePermissionTest < Minitest::Test
   def test_the_ray_soul_and_its_retired_slugs_no_longer_hold_the_seat
     %w[ray alex xan].each do |soul|
       refute MergePermission.shape_limited?(soul), "#{soul} must not hold the documentation seat"
-      refute_equal :docs_seat, decide(soul: soul).code, soul
+      # Not even the old shape-limited permit: a soul outside the pool merges nothing.
+      assert_equal :no_review_seat, decide(soul: soul).code, soul
+      assert_equal :no_review_seat, decide(soul: soul, files: %w[app/models/task.rb]).code, soul
     end
+    assert_equal :no_review_seat, decide(soul: "pokemon").code
   end
 
   # ── acceptance 2: every other shape is refused for the seat ───────────────
