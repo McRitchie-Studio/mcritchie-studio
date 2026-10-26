@@ -505,7 +505,7 @@ class Release::ReposTest < ActiveSupport::TestCase
     # turf-vault is the one exemption that is not a profile's (QA does not apply
     # to it); every other exempt repo takes its exemption from its profile's
     # recorded decision, and is derived rather than pinned.
-    assert_equal (%w[turf-vault] + profile_repos).sort,
+    assert_equal (%w[turf-vault] + profile_repos + QA_EXEMPT_BY_OPERATOR_DECISION.keys).sort,
                  Release::Repos.qa_evidence_exempt_repos.sort,
                  "exactly these repos are declared exempt — a third one arriving unreviewed " \
                  "is what this pin is here to surface"
@@ -534,7 +534,10 @@ class Release::ReposTest < ActiveSupport::TestCase
   # this list only has to name deployable exempt apps that are NOT on a profile.
   # The per-app quotes stay in release_repos.yml's comments and in the profile's
   # history.
-  QA_EXEMPT_BY_OPERATOR_DECISION = {}.freeze
+  #
+  # alex-build is on no profile, so it cites its own grant: Alex McRitchie's
+  # answer in chat, 2026-10-25, to "a QA copy or a QA exemption?", verbatim.
+  QA_EXEMPT_BY_OPERATOR_DECISION = { "alex-build" => "QA exeption" }.freeze
 
   # The fleet decision a profile carries, verbatim. Change it here and in
   # config/app_profiles.yml together.

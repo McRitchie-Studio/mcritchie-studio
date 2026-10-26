@@ -436,12 +436,15 @@ apps:
   alex-build:
     ladder: three-rung
     # Managed studio-engine satellite (epic .agents/epics/alex-build.md): Heroku app
-    # `alex-build` (essential-0 Postgres), created on Alex McRitchie's word,
-    # nothing deployed yet; going live needs his clearance in chat. Migrations ride the Procfile's
-    # `release: bin/rails db:migrate`. git_push_heroku runs no tests, so the gate
-    # names CI's full suite, verbatim. No QA copy and no QA exemption: either is
-    # his call on cost, so QA evidence is owed until he makes it.
+    # `alex-build` (essential-0 Postgres), created on Alex McRitchie's word.
+    # Migrations ride the Procfile's `release: bin/rails db:migrate`.
+    # git_push_heroku runs no tests, so the gate names CI's full suite, verbatim.
     test_cmd: bin/rails db:test:prepare test test:system
+    #
+    # QA-evidence exempt on cost, by operator decision ("QA exeption", Alex
+    # McRitchie in chat): no QA copy. A change reaches production gated by CI and
+    # review only, as cyvasse. QA only: `shipped` still needs the release -> main record.
+    qa_evidence: exempt
     prod_deploy:
       strategy: git_push_heroku
       remote: https://git.heroku.com/alex-build.git
