@@ -78,6 +78,41 @@ site connection, primary-domain setting, disabled `www` prefix, and
 - `public/studio-logo.svg` — the old chest artwork, now only the (stub) video watermark in `Content::Finalize`
 - `public/logo-icon.svg` — the old white chest, no longer drawn by the hub; kept so links to it in sent mail still resolve
 
+## Asset pipeline (Propshaft)
+
+The hub serves its assets through **Propshaft** with **importmap-rails**; Sprockets
+was removed on 2026-10-25 (task `hub-moves-to-propshaft`, recipe in rolio's
+`docs/RUNBOOK.md`, "Asset pipeline (Propshaft)"). Every file under `app/assets/*`
+(except `app/assets/tailwind`, which tailwindcss-rails keeps off the load path),
+`app/javascript`, `vendor/javascript` and each engine's asset directories is
+served at `/assets/<name>-<8-hex digest>.<ext>`. There is no `manifest.js` and no
+`*= require` directive; a new stylesheet is linked from the layout.
+
+- `app/assets/stylesheets/application.css` holds no rules but must stay: the
+  engine head (`layouts/studio/_head.html.erb`) links `"tailwind"` and
+  `"application"` by name, and Propshaft raises at render on a missing one.
+- Precompile: `RAILS_ENV=production SECRET_KEY_BASE_DUMMY=1 bin/rails assets:precompile`
+  (a local run also needs the four `R2_*` names set to any value; the storage
+  initializer refuses a production boot without them). It writes
+  `public/assets/.manifest.json`, the digested files, and a `.gz` beside every
+  digested css, js and svg (`lib/precompressed_assets.rb`, hooked in
+  `lib/tasks/precompressed_assets.rake`). Propshaft writes no `.gz` itself, and
+  Rack::Deflater never reaches a static file (`config/application.rb`), so those
+  sidecars are what production sends compressed.
+- Fingerprinted `/assets/*` cache for a year (`lib/middleware/digested_asset_cache.rb`,
+  eight or more hex digits); everything else under `public/` keeps the week.
+- AVIF is registered in `config/initializers/assets.rb`: Rails' Mime registry has
+  no AVIF type, and Propshaft types an asset from it.
+- Nothing under `public/assets` is tracked, so `bin/rails assets:clobber` is safe.
+  It also deletes `app/assets/builds/tailwind.css`; rebuild with
+  `bin/rails tailwindcss:build`. While a `.manifest.json` sits in `public/assets`,
+  dev and test serve the precompiled copies, not your edits.
+- Guards: `test/lib/asset_pipeline_test.rb` (Sprockets, its manifest, directives
+  or Sprockets-only `config.assets.*` coming back; AVIF typing) and
+  `test/integration/asset_urls_test.rb` (every `/assets` URL on the main pages,
+  signed out and in, and every importmap pin, the engine's included, resolves
+  fingerprinted with a 200).
+
 ## Tech Stack
 
 - Ruby 3.3.11 / Node 22.x / Rails 8.1 / PostgreSQL
