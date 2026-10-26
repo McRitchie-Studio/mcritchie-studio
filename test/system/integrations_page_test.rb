@@ -73,6 +73,16 @@ class IntegrationsPageTest < ApplicationSystemTestCase
     assert_selector "[data-test='contact-consent'] input[type='checkbox']:checked", count: 0
   end
 
+  test "[e2e] signed out, a Google card's Connect opens the sign-in modal, not the contact form" do
+    visit logout_path
+    visit integrations_path
+    assert_no_selector "[data-test='user-menu'], [data-test='google-connection']" # the control: signed out, no real Connect
+    within("[data-test='integration-entry'][data-entry='gmail']") { click_on "Connect" }
+
+    assert_selector "[data-test='auth-modal']", text: "Sign in to connect Google"
+    assert_current_path integrations_path
+  end
+
   test "[e2e] at 1280 Integrations is one row of four and every section's cards in a row end level" do
     page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false)
     with_connect_env { visit integrations_path }

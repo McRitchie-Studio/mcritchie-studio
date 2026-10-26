@@ -187,7 +187,11 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
       assert_equal 3, CARDS.keys.count { card(_1) }, "the cards themselves show"
       assert_empty css_select("[data-test='google-connection']"), "visitor"
       assert_empty css_select("[data-test='google-connect-all']"), "visitor"
-      CARDS.each_key { |key| assert_equal "Connect", card(key).at_css("[data-test='entry-cta']").text.strip, "visitor keeps #{key}'s CTA" }
+      CARDS.each_key do |key|
+        cta = card(key).at_css("[data-test='entry-cta']")
+        assert_equal "Connect", cta.text.strip, "visitor keeps #{key}'s CTA"
+        assert_equal "auth", cta["data-opens"], "a visitor's #{key} Connect opens the sign-in modal"
+      end
       assert_no_match(/alex@mcritchie\.studio|Connect Google|Disconnect/, response.body)
     end
   end

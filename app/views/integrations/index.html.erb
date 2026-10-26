@@ -135,11 +135,18 @@
                   <% end %>
                 </div>
               <% end %>
-              <%# Every button opens the contact form prefilled, carrying where it
-                  came from, or, for an entry with a guide, the guide page first.
+              <%# Every other button opens the contact form prefilled, carrying where
+                  it came from, or, for an entry with a guide, the guide page first.
+                  A signed-out visitor on a Google card connects their own Google
+                  once signed in, so its Connect opens the sign-in modal and the
+                  emailed link brings them back here, to the real Connect.
                   A signed-in user on a Google card, and an admin on the Fathom card, has the real Connect and
                   Disconnect above instead, so no contact-form Connect shows there. %>
-              <% unless connection_card?(entry.key) %>
+              <% if !logged_in? && IntegrationsController::GOOGLE_CARDS.key?(entry.key) %>
+              <button type="button" class="btn btn-primary shrink-0 justify-center"
+                      data-test="entry-cta" data-intent="<%= entry.intent %>" data-opens="auth"
+                      @click="$store.modals.open('auth', { returnTo: '<%= integrations_path %>', title: 'Sign in to connect Google', subtitle: 'Connecting needs an account. New here? The same step creates your free one.' })"><%= entry.cta_label %></button>
+              <% elsif !connection_card?(entry.key) %>
               <%= link_to entry.cta_label, (entry.guide ? public_send("integrations_#{entry.guide}_path") : contact_form_path(source: entry.contact_source)),
                     class: "btn #{entry.intent == 'connect' ? 'btn-primary' : 'btn-neutral'} shrink-0 justify-center",
                     data: { test: "entry-cta", intent: entry.intent } %>
