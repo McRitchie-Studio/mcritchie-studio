@@ -43,7 +43,7 @@ brand, email, headline and look from it as the brief's starting values.
 | | Asking Alex McRitchie; recording his word |
 
 **You never approve on your own judgment.** `approve` takes `--by <who>` and
-stores it as the approver. Pass `--by alex` only after Alex McRitchie has said, in this
+stores it as the approver. Pass `--by "Alex McRitchie"` only after Alex McRitchie has said, in this
 conversation, which candidate he wants.
 
 ## Scope
@@ -224,7 +224,7 @@ When Alex McRitchie names a candidate ("the second one", "approve artifact-…")
 the slug back to him and record it:
 
 ```bash
-bin/email-image approve <slug> <artifact-slug> --by alex
+bin/email-image approve <slug> <artifact-slug> --by "Alex McRitchie"
 ```
 
 Approving a second candidate retires the first; one header ships per email.
@@ -299,7 +299,7 @@ The CLI enforces these; know them so you can explain a refusal.
   whether to add references before the first round.
 - Alex McRitchie saw every surviving candidate inline, in the conversation, before he chose.
 - Every round carries his direction in its notes, and `show` tells the story.
-- The approval reads `by alex`, made after his explicit word in the transcript.
+- The approval reads `by Alex McRitchie`, made after his explicit word in the transcript.
 - The app's mailer preview renders the header at 600 px with its alt.
 - Two rounds or fewer for a clear brief; four is the ceiling, not the target.
 

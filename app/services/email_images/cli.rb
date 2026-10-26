@@ -178,7 +178,7 @@ module EmailImages
       0
     end
 
-    # APPROVE ONLY ON ALEX'S WORD. --by names who said so and is stored as the
+    # APPROVE ONLY ON ALEX MCRITCHIE'S WORD. --by names who said so and is stored as the
     # approver, so the record shows a person, not a script.
     def approve
       by = nil
@@ -187,7 +187,7 @@ module EmailImages
       artifact = record.candidates.find_by!(slug: positional!("name the candidate's artifact slug"))
       reject_extra_positionals!
       if by.blank?
-        raise ArgumentError, "--by is required: approve only on Alex McRitchie's explicit word, and name him (--by alex)"
+        raise ArgumentError, "--by is required: approve only on Alex McRitchie's explicit word, and name him (--by "Alex McRitchie")"
       end
 
       record.approve!(artifact, by: by.strip)
