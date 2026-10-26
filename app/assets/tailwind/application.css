@@ -12,12 +12,15 @@
 
 @import '../builds/tailwind/studio_engine';
 
-/* studio-engine's opt-in motion/effect primitives (.spinner, .progress-meter,
-   .studio-border-glow, .sheen, .ping, ...). This layer does NOT auto-bundle via
-   the engines contract, so lib/tasks/tailwindcss_engine_motion.rake generates
-   this gitignored entry (gem-resolved absolute path) on every tailwindcss build.
-   Imported AFTER studio_engine so the theme role vars are in scope. */
-@import '../builds/tailwind/studio_engine_motion';
+/* That one import is the engine's whole Tailwind layer (studio-engine 0.114.2,
+   README "Tailwind"): Studio::TailwindEntry points the generated entry at the
+   gem's host.css, which brings engine.css and theme.css (the design tokens and
+   the class-based dark: variant, as @theme), an @source line for every engine
+   directory that emits a class, and engine-motion.css (.spinner, .sheen,
+   .studio-border-glow, ...) LAST. So the hub carries no @config, no content
+   glob over the gem, and no motion import of its own: importing motion here as
+   well would compile the layer twice
+   (test/lib/tailwind_css_first_test.rb holds all three). */
 
 /* Heartbeat + activities component styles, de-inlined from the ERB partials so
    they compile once instead of re-serializing on every response (epic item 4). */
@@ -41,7 +44,6 @@
 /* The CTO's animal avatar in the client's palette (BuildIntake::Animals). */
 @import './cto_animal.css';
 
-@config '../../../config/tailwind.config.js';
 
 /* The layer scale now comes from the ENGINE — see engine.css `-- Layer scale`,
    imported above. The ADOPTION SHIM that used to sit here (a local :root
