@@ -74,6 +74,9 @@ for budget in $APT_RETRY_BUDGETS; do
   # `-o Key=Value` words with no spaces in any value, and it must split into them.
   if sudo timeout -k 10 "$budget" env APT_OPTS="$APT_OPTS" bash -c \
        'apt-get $APT_OPTS update && apt-get $APT_OPTS install --no-install-recommends -y "$@"' apt-retry "$@"; then
+    # autoclean drops .debs the index no longer lists, so the cache entry the
+    # workflow saves stops growing image week over image week.
+    sudo timeout 60 apt-get $APT_OPTS autoclean || true
     sudo chown -R "$(id -u):$(id -g)" "$ARCHIVES" || true
     [ "$attempt" -eq 1 ] || echo "::notice::apt succeeded on attempt $attempt"
     exit 0
