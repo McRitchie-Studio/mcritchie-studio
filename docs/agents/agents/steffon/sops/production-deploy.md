@@ -245,16 +245,15 @@ be undone. In order, after production authority:
    line held a candidate floor or a branch source, both rewritten to `~> x.y`. The
    lock is read back because Bundler keeps a candidate that still satisfies the pin.
 7. **Read CI for each re-lock commit** (the tree that deploys), for every re-locked
-   consumer with a registry `test_cmd`, before the FIRST app deploys. Anything but
-   green there deploys nothing. **turf-monster is not read here**: it has no
-   conductor `test_cmd`, so the only read of its re-lock commit is the suite its own
-   `bin/deploy` runs in the ship workspace, and that runs at turf's turn, after the
-   hub has deployed. A red there stops turf's deploy and the ship; the hub is already
-   on the new release.
+   consumer with a registry `test_cmd`, turf-monster included, before the FIRST app
+   deploys. Anything but green there deploys nothing. The read holds for the
+   workflow-sized budget (`ci_poll_budget_for`), because a re-lock commit's CI has
+   only just started.
 8. **The backstop.** Before the first deploy the ship reads the lock at every SHA it
    is about to deploy and refuses (`REFUSING TO DEPLOY a prerelease gem`) if one
    names a prerelease of a registered gem, whatever prepared the release.
-9. Deploy. After the seal, each gem repo's own lock is bumped to the finals on its
+9. Deploy: the hub first and alone, then the satellites concurrently (**App
+   deploys** below). After the seal, each gem repo's own lock is bumped to the finals on its
    `accepted` (best-effort), and so is every live engine app the release did not
    carry (`config/apps.yml` `engine: true`), in parallel; each push runs that app's
    CI, and none of those apps deploys.
@@ -264,6 +263,7 @@ be undone. In order, after production authority:
 | The ship stops | The world | A re-run of `bin/release ship` |
 |---|---|---|
 | at the candidate preflight (step 1), including "the release record carries no candidate stamp" or names another candidate | nothing moved | the locks and the record disagree about what QA ran: re-run `prepare` with this tooling (it re-stamps and re-QAs), then ship |
+| at the candidate preflight on a RESUMED ship, "some consumers lock `x.y.z` and others a candidate of it", one consumer being a QA-exempt repo (rantly, moms-app) | nothing moved this run; that repo had no `qa_sha`, so it froze at `origin/release`, which already carries the first attempt's final re-lock | `prepare` now freezes QA-exempt repos, and a ship records any repo it had to resolve live (`record: qa_shas backfill …`) before anything moves, so this needs tooling older than both. Record the candidate-lock SHA by hand (`Release::Conductor.record_qa_shas(release:, shas: { "<repo>" => "<sha>" })` on the board), then re-run |
 | "does NOT match `<candidate>`, the candidate QA ran" (step 2) | nothing published | do not ship this tree: re-run `prepare`, QA the new candidate, then ship |
 | after the push, before the tag | `x.y.z` live; no `v*` tag | skips the push, compares the LIVE gem with the candidate, pushes the missing tag, continues |
 | "the RubyGems CDN is still not serving it" / "`gem install` still fails" (step 4) | `x.y.z` live and tagged; nothing re-locked | skips the push, waits again with a fresh budget |
@@ -271,7 +271,7 @@ be undone. In order, after production authority:
 | after the gem's `main`, before a consumer's re-lock push | `x.y.z` live; consumers still lock the candidate; no app moved | skips the push, re-locks |
 | "did not land … resolves `<candidate>`, wanted `<version>`" (step 6) | the same; nothing was committed | wait for `curl -sS https://index.rubygems.org/info/<gem> \| tail -5` to show `x.y.z`, then re-run |
 | at the re-lock commit's CI read (step 7), red, pending or interrupted | `x.y.z` live; the consumer's `release` is the frozen SHA plus the re-lock; **nothing deployed, no app `main` moved** | reuses the pushed re-lock and reads its CI again |
-| at turf-monster's own deploy suite, on its re-lock commit | `x.y.z` live; the hub deployed; turf's `main` advanced, turf not deployed | fix what the suite names; a re-run skips the hub as already live and runs turf's deploy again |
+| at a satellite's own deploy (turf-monster's `bin/deploy`, a push, a smoke) | `x.y.z` live; the hub deployed; every OTHER satellite ran to its end and is live; the failed one's own rollback applied | fix what its deploy names; a re-run skips every app already live and deploys only the unfinished ones (**App deploys** below) |
 | "REFUSING TO DEPLOY a prerelease gem" (step 8) | finals live; no app deployed, no app `main` moved | re-run `prepare` (consumers lock the live final and QA runs again), then ship |
 
 **A red re-lock commit.** The refusal names the commit (`THIS IS THE RE-LOCK COMMIT …`).
@@ -287,6 +287,45 @@ candidate flow publishes the final and deploys the frozen lock, candidate includ
 primary (working tree and `origin/main`) all carry the flow, and it stamps the
 release; this ship checks that stamp and runs the backstop in step 8. Do not start
 a ship from any other checkout of the hub.
+
+### App deploys: the hub first, then the satellites at once
+
+After the gem phase (every final published, every consumer re-locked and its CI
+read), the ship deploys the **hub first and alone**: it is the SSO and
+source-of-truth app, so no satellite goes live against a hub that has not caught
+up. A hub failure aborts the ship before any satellite moves.
+
+The satellites then deploy **concurrently**, up to `RELEASE_DEPLOY_CONCURRENCY` at a
+time (default 3, at most 4: the conductor is the fifth board writer under the cap
+of 5). Each keeps its own smoke and its own rollback. Every line a satellite prints,
+its children's included, is prefixed `[<repo>]`, and each app also writes a log
+file; the run prints the log directory first and a summary after:
+
+```text
+  satellite deploys (2/3 live):
+    ✗ FAILED turf-monster (412s) — turf-monster deploy script failed (bin/deploy) …  (log: …/turf-monster.log)
+    ✓ live   rantly (95s)  (log: …/rantly.log)
+    ✓ live   moms-app (88s)  (log: …/moms-app.log)
+```
+
+**One satellite failing stops no other and rolls back nothing else.** Every
+satellite runs to its end; the ship then records the live ones on the release
+(`metadata.deployed_apps`, with the hub) and aborts with `N of M satellite deploys
+FAILED (<repos>); LIVE on production: <repos>`, **before** the post-deploy hooks, the
+seal and the shipped record. It is an ABORT: fix what the failed deploy names, then
+re-run `bin/release ship --yes`. The re-run skips every app already live
+(`deploy_already_succeeded?` proves it from production) and deploys only the
+unfinished ones. One satellite, or `--dry-run`, deploys in the old fixed order.
+
+**turf-monster is gated by CI, not by its own suite.** Its registry row carries
+`test_cmd` (CI's `test` job) and `prod_deploy.ci_verified_arg: --ci-verified`. When
+the ship read GitHub CI **green** for the exact SHA it deploys (the frozen-SHA gate,
+or the re-lock gate for its re-lock commit), it runs `bin/deploy --yes
+--ci-verified=<sha>`, and `bin/deploy` skips its local `bin/rails test` (about 20
+minutes) after checking that the SHA is its `HEAD`; any other SHA refuses before
+anything changes. Its IDL hash pin, Stripe live-mode and signing-wallet checks, its
+smoke and its rollback all still run. Under `--skip-test-gate`, or with no green
+read for that SHA, the flag is not passed and `bin/deploy` runs its suite as before.
 
 ### If the ship is KILLED after the deploy landed — finalize, do not re-deploy
 
@@ -375,8 +414,23 @@ same-tree green credited from the accepted head) and records a `ship_test_gate` 
 naming the source. Nothing runs locally, and it does not self-gate on G3's record.
 It reads twice for a consumer of a shipped gem: the frozen SHA before authority, and
 the re-lock commit after the final is published and before any deploy. Both reads use
-the rows below; the second adds the re-lock recovery text. An app with no `test_cmd`
-(turf-monster) is read by neither: its `bin/deploy` runs its suite at its own turn.
+the rows below; the second adds the re-lock recovery text. Every app with a
+`test_cmd` is read, turf-monster included; an app with none self-gates and is read by
+neither. A green read is also what lets turf's `bin/deploy` skip its local suite
+(**App deploys** above).
+
+**One automatic re-run.** A red read earns ONE re-run of the failed workflow runs
+(`gh run rerun <id>`, every job, so the `*_executed_set` guards re-read fresh
+receipts) when each failed run is on its first attempt, failed or timed out (never
+cancelled, never a schedule run), and every failing job is a test lane (a suite, a
+shard, the browser lane, their executed-set) or died on bundler's gem-resolution
+error (`… can no longer be found in that source`: the RubyGems CDN race, where the
+runner's edge lagged the conductor's). It prints `↻↻ <repo>: CI RED … AUTOMATIC
+RE-RUN` with the reason, and the re-run gets a fresh poll window. A second red is
+real and fails the gate (`CI is RED again … a second red is real`); a red lint or
+scan is never re-run. The same rule runs in `prepare`'s gates (G3, the gem CI gate).
+`RELEASE_CI_RERUN=off` disarms it. Code: `bin/lib/ci_rerun.rb`,
+`bin/release.rb#poll_ci_verdict`.
 
 Every check-run on the SHA counts except a run proven **schedule-triggered** (a nightly
 such as UI Budget or r2-backup attaches to `main`'s head but tests production, not the
@@ -386,7 +440,7 @@ commit); an unprovable one still counts. Detail:
 | You see | It means | You do |
 |---|---|---|
 | `GitHub CI GREEN @ <sha> — credited — …` or `… — the SHA's own run …` | The tree earned its green. | Nothing — the gate passed. |
-| `test gate FAILED … called frozen <sha> RED (<checks>)` | A broken frozen commit. | Read the failing check; fix forward on `release`, or `bin/release eject <task> --feedback "…"` and have Avi re-run `prepare`. **Do not ship.** |
+| `test gate FAILED … called frozen <sha> RED (<checks>)` | A broken frozen commit, read red after the one automatic re-run, or red in a lane the re-run rule does not cover (its `no automatic re-run (…)` line says why). | Read the failing check; fix forward on `release`, or `bin/release eject <task> --feedback "…"` and have Avi re-run `prepare`. **Do not ship.** |
 | `test gate FAILED … UNREADABLE` | A token fault; the gate did not poll. | `eval "$(bin/gh-auth-refresh --export)"`, then re-run `bin/release ship`. |
 | `test gate HELD … shares neither SHA nor tree with the accepted head … OWN run has NO green verdict` | Nothing could vouch for this tree yet. | Let CI conclude on the frozen SHA, then re-run `ship`. |
 | `test gate HELD … NO green verdict for frozen <sha> (pending …) after polling ~1200s` | CI is still building. | Wait, or widen `RELEASE_CI_POLL_TIMEOUT`; re-run `ship`. |

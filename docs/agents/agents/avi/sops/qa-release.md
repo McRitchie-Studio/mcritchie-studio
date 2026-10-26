@@ -305,6 +305,15 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    and why you must **not** blank the registry's `qa_test_cmd`:
    [`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md).
 
+   **One automatic re-run.** A red verdict whose failed runs are each on their first
+   attempt, and whose failing jobs are all test lanes or died on bundler's
+   gem-resolution error (`… can no longer be found in that source`, the RubyGems CDN
+   race), is re-run ONCE, every job (`gh run rerun <id>`), with a loud `↻↻ <repo>: CI
+   RED … AUTOMATIC RE-RUN` line, and read to its own conclusion. A second red is real.
+   The gem CI gate in step 4d takes the same rule. A red lint or scan with no
+   resolution error is never re-run. `RELEASE_CI_RERUN=off` disarms it; the rule is
+   [`production-deploy`](../../steffon/sops/production-deploy.md#the-frozen-sha-test-gate-is-a-read).
+
    **How long a sweep can hold.** Each repo's pending wait is sized from its own
    push and pull_request workflows, up to about 105 minutes for studio-engine. Repos
    gate **one after another**, not in parallel, and the gem gate runs before the app
@@ -315,7 +324,12 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    lengthens the wait, and lowering it never shortens a workflow-sized one. A wait past
    one hour re-mints the GitHub App read token (the sweep prints `re-minted the GitHub
    App read token`), so a long hold no longer ends in a credentials abort.
-6. Deploy QA and wait for boot. Gem members are QA'd as their candidate, through the consumer's bumped lock;
+6. Deploy QA and wait for boot, then record each repo's frozen SHA (`qa_shas`), the
+   commit the ship will deploy. A repo with no QA environment (`qa_evidence: exempt`:
+   rantly, moms-app) is not deployed but IS frozen, at its `origin/release` head with
+   this sweep's candidate lock: without it a resumed ship would freeze that repo at the
+   ship's own final re-lock and refuse at the gem candidate preflight ("some consumers
+   lock X and others a candidate of it"). Gem members are QA'd as their candidate, through the consumer's bumped lock;
    a **gem-only release has no app QA deploy** and assembles on its G3 CI verdict
    (/deployments shows a **GEM-ONLY** badge and `💎 <gem> <version>`).
 7. Flip members from `reviewed` to `assembled` only after QA is green.
@@ -396,7 +410,7 @@ An abort leaves the same board state as an interruption. Each abort names its ca
 | **CANDIDATE FLOW NOT ON EVERY SHIP ENTRY POINT** (step 4d — "does not carry the candidate flow", "carries candidate flow N, not M" or "could not be read … a ship started there would publish the final and deploy consumers still locked to the candidate") | **Nothing was published.** The abort names each entry point and its fix. The fixed-path install: run `bin/install-agent-docs` from a hub primary on `main`. The hub primary's working tree: `git checkout main && git pull --ff-only` there (never stash or discard a live session's work to do it: rescue it to a branch). The hub primary's `origin/main`: the release that carries the flow has not shipped yet, so this sweep cannot publish a candidate from this tooling | re-run `prepare` once every entry point carries the flow |
 | **CONSUMER LOCK BUMP did not land** (`bundle lock … did not land in <repo> … resolves <old>, wanted <new>`) | **WAIT — nothing to fix.** Watch the compact index bundler reads: `curl -sS https://index.rubygems.org/info/<gem> \| tail -5`, not the API or HTML page. Do **not** bump the version. If sibling consumers already resolved the candidate, it is not propagation but a dependency cap in that consumer: land a consumer task running `bundle lock --update <gem> <capped-dep> --conservative` | re-run `prepare`; the candidate is reused and the bump lands |
 | **`record op returned no JSON`** (prepare's record step) | The record step runs `Release::Conductor` on PRODUCTION via `heroku run`, against production's deployed `config/release_repos.yml` and guards. A repo registered in this same release is unknown there. Ship the hub registry change first: hold the new repo's tasks (`included_in_release: false`) and sweep the hub tasks with `--task`. A conductor guard fix likewise takes effect only once it is live on `main` | re-run `prepare` for the new repo in the next cycle |
-| **SWEEP LOOKS HUNG, or a QA lane is red** (not an abort) | A sweep at 0% CPU with no sockets is waiting in a `gh` child: check `pgrep -P <pid>`, the child's age and the run it watches. On a red, ask whether a test actually ran and failed: a runner setup step, an API 5xx, or a `Bundler::GemNotFound` naming the version this sweep just published ("the author has removed it") is a re-run, never an eject. Re-run ALL jobs (`gh run rerun <id>`, not `--failed`): the `*_executed_set` guards re-read receipts. A still-open G3 attempt may be a peer's live sweep, and its candidate may absorb your task: read your task's stage once `bin/release status` reads `none active` | let the sweep finish, or re-run `prepare` (it stands down before anything irreversible) |
+| **SWEEP LOOKS HUNG, or a QA lane is red** (not an abort) | A sweep at 0% CPU with no sockets is waiting in a `gh` child: check `pgrep -P <pid>`, the child's age and the run it watches. On a red, ask whether a test actually ran and failed: a runner setup step, an API 5xx, or a `Bundler::GemNotFound` naming the version this sweep just published ("the author has removed it") is a re-run, never an eject. The gate already spent its one automatic re-run on a first-attempt test-lane red or a gem-resolution red (look for `↻↻ … AUTOMATIC RE-RUN`); a red it did not re-run says why on its `no automatic re-run (…)` line. Re-run by hand only for a cause the rule does not cover, ALL jobs (`gh run rerun <id>`, not `--failed`): the `*_executed_set` guards re-read receipts. A still-open G3 attempt may be a peer's live sweep, and its candidate may absorb your task: read your task's stage once `bin/release status` reads `none active` | let the sweep finish, or re-run `prepare` (it stands down before anything irreversible) |
 
 `prepare` never force-ships a red candidate: eject it or fix it forward.
 
