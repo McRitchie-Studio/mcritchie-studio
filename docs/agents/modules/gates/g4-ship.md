@@ -294,7 +294,7 @@ publishes the final. The acts, in order, after ship authority:
 | 5 | Re-lock each consumer: `bundle lock --update <gem> --conservative`, read the lock back, push one commit onto `release` (`Gemfile.lock`; plus `Gemfile` when the line held a candidate floor or a branch ref) | a commit on `release` | the lock does not resolve `x.y.z`, or `release` moved |
 | 6 | Read CI's settled verdict for each re-lock commit of a consumer with a `test_cmd` | read | anything but green: **no app deploys** |
 | 7 | Read the lock at every SHA about to deploy | read | a prerelease of a registered gem: **no app deploys** |
-| 8 | Deploy the apps, hub first; a self-gating consumer's own deploy suite is the read of its re-lock commit | | that suite red: that app and the ship stop, with earlier apps deployed |
+| 8 | Deploy the hub first and alone, then the satellites concurrently, each with its own smoke and rollback | | the hub fails: no satellite moves. A satellite fails: every other satellite still runs to its end, the live ones are recorded (`metadata.deployed_apps`), and the ship aborts before the seal; a re-run deploys only the unfinished apps |
 | 9 | After the deploy: re-lock every live engine app the release did not carry to `x.y.z` on its `accepted`, in parallel (`relock_cardless_consumers`); each push runs that app's CI | a commit on `accepted` | never: best-effort, a failure warns and the ship continues |
 
 The candidate QA ran is read from each consumer's `Gemfile.lock` at its frozen SHA
