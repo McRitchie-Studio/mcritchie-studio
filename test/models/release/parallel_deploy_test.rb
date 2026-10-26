@@ -33,7 +33,8 @@ class Release::ParallelDeployTest < ActiveSupport::TestCase
     ran = Queue.new
     results = PD.run(groups("turf-monster", "rantly", "moms-app"), concurrency: 3) do |group|
       ran << group["repo"]
-      abort("✗ turf-monster deploy script failed (bin/deploy)") if group["repo"] == "turf-monster"
+      # What bin/release's abort! raises (Kernel#abort also prints it to $stderr).
+      raise SystemExit.new(1, "✗ turf-monster deploy script failed (bin/deploy)") if group["repo"] == "turf-monster"
     end
 
     assert_equal %w[moms-app rantly turf-monster], Array.new(ran.size) { ran.pop }.sort, "every app ran"

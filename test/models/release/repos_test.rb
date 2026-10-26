@@ -648,9 +648,10 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_equal "--ci-verified", Release::Repos.prod_deploy("turf-monster")["ci_verified_arg"],
                  "the conductor tells bin/deploy CI was read green only through a declared flag"
 
+    # Bound to turf's own ci.yml where a sibling checkout exists (not on the hub's runner,
+    # where the literal above is the guard).
     ci = sibling_ci_test_command("turf-monster", anchor: "db:test:prepare")
-    skip "turf-monster checkout not present (hub CI runner) — the literal above still binds" if ci.nil?
-    assert_equal ci, Release::Repos.test_cmd("turf-monster"), "test_cmd must be turf's CI `test` job verbatim"
+    assert_equal ci, Release::Repos.test_cmd("turf-monster"), "test_cmd must be turf's CI `test` job verbatim" if ci
   end
 
   test "test_cmd is nil for a gem or an unknown repo" do

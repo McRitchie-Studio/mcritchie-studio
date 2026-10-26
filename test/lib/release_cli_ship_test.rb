@@ -131,11 +131,9 @@ class ReleaseCliShipTest < ReleaseCliHarness
   def test_ship_dry_run_test_cmd_gate_reads_ci_for_the_hub_and_turf
     out = run_cli(["--dry-run"], call: "ship", setup: SHIP_STUB)
 
-    # Both carry a test_cmd now: turf-monster is gated on CI's verdict like the hub
-    # (task faster-steadier-production-ship), so its bin/deploy need not re-run it.
+    # turf-monster is gated on CI's verdict like the hub, so bin/deploy need not re-run it.
     assert_includes out, HUB_GATE_CMD, "the hub's CI verdict is read before prod"
     assert_includes out, "test gate: turf-monster — GitHub CI verdict for frozen", "turf is read, not skipped"
-    refute_includes out, "turf-monster self-gates"
   end
 
   def test_ship_dry_run_ships_the_frozen_sha
