@@ -175,6 +175,7 @@ require_relative "../app/models/release/gemfile_repin"
 require_relative "../app/models/release/gem_candidate"
 require_relative "../app/models/release/lock_drift"
 require_relative "../app/models/release/ship_sequence"
+require_relative "../app/models/release/parallel_deploy"
 require_relative "../app/models/release/devnet_gauntlet"
 require_relative "../app/models/release/engine_migration_install"
 require_relative "../app/models/release/engine_consumers"
@@ -568,10 +569,28 @@ def sh(*cmd, capture: false, chdir: nil, env: nil)
   if capture
     out, status = Open3.capture2e(*argv, opts)
     [out, status.success?]
+  elsif Release::ParallelDeploy.current_repo
+    # A satellite deploying beside others: its child's output is read line by line
+    # and printed through $stdout, which prefixes each line with the repo and copies
+    # it to the app's log. An inherited stdout would print it unprefixed, mid-line.
+    ["", stream_through_stdout(argv, opts)]
   else
     ok = system(*argv, opts)
     ["", ok]
   end
+end
+
+# Run argv with stdout+stderr merged and echoed through $stdout; true iff it exited 0.
+# A command that cannot start is a failure, as system() would report it.
+def stream_through_stdout(argv, opts)
+  Open3.popen2e(*argv, opts) do |stdin, out, wait|
+    stdin.close
+    out.each_line { |line| $stdout.write(line) }
+    wait.value.success?
+  end
+rescue SystemCallError => e
+  say("  could not run #{Array(argv).reject { |a| a.is_a?(Hash) }.first}: #{e.message}")
+  false
 end
 
 # Dispatch a GitHub Actions workflow (`gh workflow run`) and WATCH it to
@@ -8680,7 +8699,7 @@ def static_cloudflare_deploy!(repo, adapter, sha)
     # The bundle only. prepare_ship_workspace! also runs db:test:prepare, which a
     # database-free app (every showcase app) does not even define.
     ensure_suite_bundle!(repo, workspace, role: "ship")
-    ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING, weight: ReleasePresence::WEIGHT_SUITE) do
+    deploy_presence_phase do
       result = StaticCloudflare::Deploy.new(
         target: target, workspace: workspace, sha: sha, uploader: static_cloudflare_uploader(target),
         runner: static_cloudflare_runner(repo), http: static_cloudflare_http, say: ->(line) { step(line) }
@@ -8841,8 +8860,7 @@ def deploy_app(group, frozen)
       sh("git", "-C", workspace, "update-index", "-q", "--refresh", capture: true)
       # ship_deploy_env, NOT gate_env: a production deploy script gets its private
       # test DB and nothing else — no RAILS_ENV=test, no ruby pin. See ship_deploy_env.
-      _, ok = ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
-                                         weight: ReleasePresence::WEIGHT_SUITE) do
+      _, ok = deploy_presence_phase do
         sh(command, *args, chdir: workspace, env: ship_deploy_env(repo))
       end
     end
@@ -8889,6 +8907,84 @@ def deploy_app(group, frozen)
     abort!("GitHub Actions prod deploy failed for #{repo} (#{workflow}) — check the run; fix + re-run `bin/release ship`") unless ok || DRY
   end
   @ship_live << "app #{repo} deployed to production"
+end
+
+# The suite-weight presence phase around one app's heavy deploy work. Inside the
+# parallel satellite batch the batch already holds it (ReleasePresence keeps one
+# phase stack, which concurrent pushes and pops would scramble), so a deploying
+# thread just runs its block.
+def deploy_presence_phase(&block)
+  return yield if Release::ParallelDeploy.current_repo
+
+  ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING, weight: ReleasePresence::WEIGHT_SUITE, &block)
+end
+
+# Deploy every app: the hub first and alone (Release::ShipSequence::HUB — no
+# satellite goes live against a hub that has not caught up; its failure aborts the
+# ship before any satellite moves), then the satellites at once
+# (Release::ParallelDeploy). One satellite, or a dry run, deploys in the old
+# sequence: there is nothing to overlap, and a preview prints in a fixed order.
+def deploy_apps(app_groups, ship_sha, rel_slug)
+  hub, satellites = Release::ParallelDeploy.waves(app_groups)
+  hub.each { |group| deploy_app(group, ship_sha[group["repo"]]) }
+  record_deployed_apps(rel_slug, hub, ship_sha) if hub.any?
+  return if satellites.empty?
+
+  if satellites.size == 1 || DRY
+    satellites.each do |group|
+      deploy_app(group, ship_sha[group["repo"]])
+      record_deployed_apps(rel_slug, [group], ship_sha)
+    end
+    return
+  end
+
+  deploy_satellites_in_parallel(satellites, ship_sha, rel_slug)
+end
+
+def deploy_satellites_in_parallel(satellites, ship_sha, rel_slug)
+  limit = Release::ParallelDeploy.concurrency(ENV["RELEASE_DEPLOY_CONCURRENCY"])
+  log_dir = Dir.mktmpdir("release-deploy-#{rel_slug}-")
+  say("")
+  step("deploy: #{satellites.size} satellites CONCURRENTLY, up to #{limit} at a time " \
+       "(#{satellites.map { |g| g['repo'] }.join(', ')}) — each line is prefixed [<repo>]; per-app logs in #{log_dir}")
+  # Memos the threads write into, made before they start so no two threads race
+  # to create one (a lost `||=` would drop a repo's evidence).
+  ship_evidence
+  ci_green_shas
+  @ship_live ||= []
+  @gate_env ||= {}
+  @gate_database_url ||= {}
+
+  results = ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING, weight: ReleasePresence::WEIGHT_SUITE) do
+    Release::ParallelDeploy.with_prefixed_output do
+      Release::ParallelDeploy.run(satellites, concurrency: limit, log_dir: log_dir) do |group|
+        deploy_app(group, ship_sha[group["repo"]])
+      end
+    end
+  end
+
+  live = Release::ParallelDeploy.live(results).map(&:repo)
+  record_deployed_apps(rel_slug, satellites.select { |g| live.include?(g["repo"]) }, ship_sha)
+  say("")
+  say("  satellite deploys (#{results.count(&:ok)}/#{results.size} live):")
+  Release::ParallelDeploy.summary_lines(results).each { |line| say(line) }
+  failure = Release::ParallelDeploy.failure_message(results, resume_cmd: "#{RELEASE_SELF_CMD} ship")
+  abort!(failure) if failure
+end
+
+# Record on the release which apps are LIVE on production at which SHA
+# (metadata["deployed_apps"]), as each deploy lands: the record a partial ship
+# leaves names exactly the apps that went live. Best-effort: the deploy has
+# happened either way, and a resumed ship proves liveness from production itself.
+def record_deployed_apps(rel_slug, groups, ship_sha)
+  deployed = Array(groups).to_h { |g| [g["repo"], ship_sha[g["repo"]].to_s] }.reject { |_r, sha| sha.empty? }
+  return if DRY || deployed.empty? || rel_slug.to_s.empty?
+
+  conductor("Release::Conductor.record_deployed_apps(release: Release.find_by!(slug: #{rel_slug.inspect}), " \
+            "deployed: #{deployed.inspect}); puts({deployed_apps: #{deployed.keys.inspect}}.to_json)")
+rescue SystemExit, StandardError => e
+  say("  ⚠ deployed apps not recorded for #{deployed&.keys&.join(', ')} (#{e.message}); they are live — " \
+      "a re-run proves it from production")
 end
 
 # --- ship preflight: prove the ship can build its own trees -----------------
@@ -9473,8 +9569,10 @@ def ship
   #     deploys, whatever prepared it and whatever the steps above concluded.
   refuse_prerelease_deploy!(app_groups, ship_sha)
 
-  # 5. Apps hub-first, then satellites: test gate → prod adapter.
-  app_groups.each { |group| deploy_app(group, ship_sha[group["repo"]]) }
+  # 5. Apps: the hub FIRST and alone, then the satellites CONCURRENTLY (deploy_apps).
+  #    A hub failure aborts before any satellite moves; a satellite failure stops
+  #    no other satellite, and the ship then aborts naming which apps are live.
+  deploy_apps(app_groups, ship_sha, rel_slug)
 
   # 5b. Post-deploy hooks on PROD — after every app deployed + smoked, run each
   #     member's declared post_deploy_cmd against its PRODUCTION app, record the

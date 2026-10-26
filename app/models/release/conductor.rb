@@ -729,6 +729,24 @@ class Release
       release
     end
 
+    # Persist which apps are LIVE on production, and at which SHA — written by
+    # `bin/release ship` as each app's deploy (and its smoke) lands, so a ship whose
+    # satellites deploy concurrently and fail partway leaves a record naming exactly
+    # the apps that went live (task faster-steadier-production-ship). MERGED into
+    # metadata["deployed_apps"] as { repo => { "sha" =>, "at" => } }; a blank SHA is
+    # ignored. shipped_shas says where `main` moved; this says what production runs.
+    def record_deployed_apps(release:, deployed:, at: Time.current)
+      meta = release.metadata.deep_dup
+      existing = meta["deployed_apps"].is_a?(Hash) ? meta["deployed_apps"] : {}
+      deployed.to_h.each do |repo, sha|
+        sha = sha.to_s
+        existing[repo.to_s] = { "sha" => sha, "at" => at.iso8601 } unless sha.empty?
+      end
+      meta["deployed_apps"] = existing
+      release.update!(metadata: meta)
+      release
+    end
+
     # Persist the per-repo SHAs fast-forwarded onto `main` — the SHIP half of
     # record_qa_shas, written by `bin/release ship` right after each repo's
     # `release → main` push lands on origin (beside the `merged: "main"` stamp).
