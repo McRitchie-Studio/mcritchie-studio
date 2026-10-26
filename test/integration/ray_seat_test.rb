@@ -45,11 +45,12 @@ class RaySeatTest < ActionDispatch::IntegrationTest
 
   def light_of(decision) = decision["reviewers"].find { |r| r["weight"] == "light" }&.fetch("slug")
 
-  test "a docs-shaped task seats ray as the light" do
+  test "a docs-shaped task seats mason as the light, not ray" do
     decision = ReviewerSelector.new(task_for(shape: "docs")).decision
 
     assert_equal "carl", decision["reviewers"].find { |r| r["weight"] == "primary" }["slug"]
-    assert_equal "ray", light_of(decision), "the Documentation seat is ray's"
+    assert_equal "mason", light_of(decision), "the Documentation seat is Mason's since 2026-10-25"
+    refute_includes decision["candidates"], "ray", "the ray soul left the review pool"
     refute_includes decision["candidates"], "alex", "the retired slug is never a candidate"
   end
 
@@ -68,7 +69,8 @@ class RaySeatTest < ActionDispatch::IntegrationTest
     task = task_for(shape: "docs")
 
     busy = ReviewerSelector.new(task, busy: %w[alex]).decision
-    assert_includes busy["excluded_busy"], "ray"
+    refute_includes busy["excluded_busy"], "alex", "the retired slug never reaches the pool as itself"
+    assert_equal "mason", light_of(busy), "busy ray is outside the pool, so the docs light stays Mason"
 
     override = ReviewerSelector.new(task, builder: "steffon,alex").decision
     assert_equal %w[steffon ray], override["builders"]

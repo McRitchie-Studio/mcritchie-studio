@@ -8,14 +8,14 @@ the card standard, and record his answer. The bank holds the good answers past
 sessions gave; it stays good only if he rules on what comes in and what goes out.
 
 **When.** Alex says `dream-swap`. The same cards end the Dreams step at wrap
-([`wrap-it-up.md`](../agents/pokemon/sops/wrap-it-up.md), `/wrap`), where they
+([`wrap-it-up.md`](../../pokemon/sops/wrap-it-up.md), `/wrap`), where they
 show at most one swap.
 
 **Who.** Any session. Recording a ruling needs a session id (Claude Code and Codex
 set one) and the board.
 
 **Detail.** The card standard, the reply grammar and the chat ruling:
-[`dream.md`](dream.md#the-card-standard), Act 3.
+[`dream.md`](../../../modules/dream.md#the-card-standard), Act 3.
 
 ## Steps
 
@@ -34,7 +34,7 @@ set one) and the board.
 
 2. **Also check the unmaterialized proposals.** A ship-time proposal is a triage
    finding until a desk writes its file (`bin/triage list --status open`, slugs
-   `dream-proposal-*`). Materialize the ones worth a card first ([`dream.md`](dream.md),
+   `dream-proposal-*`). Materialize the ones worth a card first ([`dream.md`](../../../modules/dream.md),
    Act 2); a finding has no card.
 
 3. **Make each call.** For every card, decide approve, change or drop, with a
@@ -65,7 +65,7 @@ set one) and the board.
    A SWAP is two rulings: `approve` the in and `retire` the out. The command
    refuses an empty clearance, the slug alone, and fewer than three words, except
    the grammar tokens (`yes`, `1 ✓`). A dream only in your desk is ruled in its
-   file ([`dream.md`](dream.md), Act 3).
+   file ([`dream.md`](../../../modules/dream.md), Act 3).
 
 6. **Silence changes nothing.** No reply is no ruling. Do not record, and do not
    re-ask in the same session; the cards come back at the next wrap or

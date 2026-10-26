@@ -26,7 +26,7 @@
 #
 # It loads the Rails app and calls `ReviewerSelector` for the task. The PRIMARY is
 # always Carl; the LIGHT is a domain-fit pick from the specialist pool {shannon=UI
-# · jasper=Web3 · steffon=DevOps/Platform · ray=Documentation}, scored by the
+# · jasper=Web3 · steffon=DevOps/Platform · mason=Documentation}, scored by the
 # task's shape + repositories + risk tags vs each soul's Agent.metadata["domains"]
 # with a LOGGED, SEEDED-PER-TASK tiebreak (reproducible — not process-random). The
 # QA owner (avi by default — after the 2026-07-22 reslot he runs qa-release + the QA

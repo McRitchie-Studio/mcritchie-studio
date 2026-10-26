@@ -49,8 +49,8 @@ class MergePermissionTest < Minitest::Test
 
   def decide(**overrides)
     MergePermission.decide(**{
-      soul: "ray", files: DIFFS.fetch("docs").first, authors: %w[pokemon],
-      verdict: { "outcome" => "merge-ready", "reporter" => "ray", "head" => HEAD },
+      soul: "mason", files: DIFFS.fetch("docs").first, authors: %w[pokemon],
+      verdict: { "outcome" => "merge-ready", "reporter" => "mason", "head" => HEAD },
       head: HEAD, live_head: HEAD
     }.merge(overrides))
   end
@@ -90,14 +90,21 @@ class MergePermissionTest < Minitest::Test
     DIFFS.fetch("docs").each do |files|
       result = decide(files: files)
 
-      assert result.permitted?, "ray must merge #{files.inspect}: #{result.reason}"
+      assert result.permitted?, "mason must merge #{files.inspect}: #{result.reason}"
       assert_equal :docs_seat, result.code
     end
   end
 
-  def test_the_retired_slug_is_the_same_seat
-    assert_equal :docs_seat, decide(soul: "alex").code
-    assert_equal :shape_code, decide(soul: "alex", files: %w[app/models/task.rb]).code
+  # The ray soul held the seat until 2026-10-25, when Mason took it; its retired
+  # slugs (alex, xan) still resolve to ray, which no longer holds it.
+  def test_the_ray_soul_and_its_retired_slugs_no_longer_hold_the_seat
+    %w[ray alex xan].each do |soul|
+      refute MergePermission.shape_limited?(soul), "#{soul} must not hold the documentation seat"
+      # Not even the old shape-limited permit: a soul outside the pool merges nothing.
+      assert_equal :no_review_seat, decide(soul: soul).code, soul
+      assert_equal :no_review_seat, decide(soul: soul, files: %w[app/models/task.rb]).code, soul
+    end
+    assert_equal :no_review_seat, decide(soul: "pokemon").code
   end
 
   # ── acceptance 2: every other shape is refused for the seat ───────────────
@@ -107,9 +114,9 @@ class MergePermissionTest < Minitest::Test
       DIFFS.fetch(shape).each do |files|
         result = decide(files: files)
 
-        refute result.permitted?, "ray must not merge a #{shape} diff #{files.inspect}"
+        refute result.permitted?, "mason must not merge a #{shape} diff #{files.inspect}"
         assert_equal :"shape_#{shape.tr("-", "_")}", result.code
-        assert_match(/documentation seat \(ray\) merges docs-shape PRs only/, result.reason)
+        assert_match(/documentation seat \(mason\) merges docs-shape PRs only/, result.reason)
         assert_match(/measures #{shape} at a1b2c3d/, result.reason)
         assert_match(/Carl, the standing primary, merges it/, result.reason)
         # CONTROL: the same diff, the same verdict, a soul the rule does not limit.
@@ -147,7 +154,7 @@ class MergePermissionTest < Minitest::Test
   def test_refuses_a_code_file_added_under_a_verdict_re_recorded_for_the_new_head
     # The author pushes a code file and the verdict is re-pointed at the new head:
     # the head matches again, and the re-measured diff is what refuses.
-    verdict = { "outcome" => "merge-ready", "reporter" => "ray", "head" => LATER }
+    verdict = { "outcome" => "merge-ready", "reporter" => "mason", "head" => LATER }
     result = decide(head: LATER, live_head: LATER, verdict: verdict, files: %w[docs/a.md app/models/task.rb])
 
     assert_equal :shape_mixed, result.code
@@ -155,14 +162,14 @@ class MergePermissionTest < Minitest::Test
   end
 
   def test_refuses_a_verdict_that_judged_another_head
-    result = decide(verdict: { "outcome" => "merge-ready", "reporter" => "ray", "head" => LATER })
+    result = decide(verdict: { "outcome" => "merge-ready", "reporter" => "mason", "head" => LATER })
 
     assert_equal :verdict_other_head, result.code
     assert_match(/judged fffffff, not a1b2c3d/, result.reason)
   end
 
   def test_refuses_a_verdict_that_names_no_head
-    result = decide(verdict: { "outcome" => "merge-ready", "reporter" => "ray" })
+    result = decide(verdict: { "outcome" => "merge-ready", "reporter" => "mason" })
 
     assert_equal :verdict_names_no_head, result.code
     assert_match(/--head a1b2c3d/, result.reason)
@@ -179,7 +186,7 @@ class MergePermissionTest < Minitest::Test
   # ── the verdict must be on the card, from a reviewer allowed to give it ────
 
   def test_refuses_without_a_merge_ready_verdict
-    [nil, {}, { "outcome" => "request-changes", "reporter" => "ray", "head" => HEAD },
+    [nil, {}, { "outcome" => "request-changes", "reporter" => "mason", "head" => HEAD },
      { "outcome" => "wait-for-ci", "reporter" => "carl", "head" => HEAD }].each do |verdict|
       result = decide(verdict: verdict)
 
@@ -227,7 +234,7 @@ class MergePermissionTest < Minitest::Test
   # ── no self-review ────────────────────────────────────────────────────────
 
   def test_refuses_the_seat_on_its_own_pr
-    [%w[ray], %w[pokemon ray], %w[alex], [" Ray "]].each do |authors|
+    [%w[mason], %w[pokemon mason], [" Mason "]].each do |authors|
       result = decide(authors: authors)
 
       refute result.permitted?, "authors #{authors.inspect}"
@@ -254,7 +261,7 @@ class MergePermissionTest < Minitest::Test
   # ── Carl, and every other soul, is unchanged ──────────────────────────────
 
   def test_the_rule_limits_only_the_documentation_seat
-    assert_equal %w[ray], MergePermission::SHAPE_LIMITED.keys
+    assert_equal %w[mason], MergePermission::SHAPE_LIMITED.keys
 
     %w[carl shannon jasper steffon].each do |soul|
       # Nothing the seat is refused for reaches a soul the rule does not limit.

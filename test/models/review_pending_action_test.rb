@@ -67,14 +67,14 @@ class ReviewPendingActionTest < ActiveSupport::TestCase
   #
   # An armed merge measures no diff, and the documentation seat may merge only a
   # diff measured docs-shape (bin/lib/merge_permission.rb). So he merges in person.
-  test "the documentation seat cannot arm a merge, under either slug" do
+  test "the documentation seat cannot arm a merge" do
     record_verdict
 
-    %w[ray alex].each do |seat|
+    %w[mason].each do |seat|
       error = assert_raises(ReviewPendingAction::Unauthorised) { arm(authorized_by: seat) }
 
-      assert_match(/ray holds the documentation seat, which merges docs-shape PRs only and in person/, error.message)
-      assert_match(/bin\/merge-permit <task> --agent ray --head/, error.message)
+      assert_match(/mason holds the documentation seat, which merges docs-shape PRs only and in person/, error.message)
+      assert_match(/bin\/merge-permit <task> --agent mason --head/, error.message)
       assert_match(/Carl, the standing primary, may arm/, error.message)
     end
     assert_equal 0, ReviewPendingAction.count

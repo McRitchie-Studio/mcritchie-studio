@@ -7,7 +7,7 @@ plan, you file a task only when it can start now, you spawn a builder per
 startable task, and when a builder's PR turns green you spawn its reviewer
 yourself. It stands alone: every command is inline.
 
-The design behind it is [`../system/devops-v3-design.md`](../system/devops-v3-design.md)
+The design behind it is [`../system/devops-v3-design.md`](../../../system/devops-v3-design.md)
 §3 and §4. You do not need it to run this.
 
 ## Status: Active
@@ -20,12 +20,13 @@ reviewers. You stop at `reviewed`: work sits on `accepted` and Alex launches
 `qa-release` and `production-deploy` with written authority, as always. You
 never promote `accepted → release`, never touch `main`, never deploy.
 
-**Who runs it.** Any session, under its own Pokémon identity. The builders you
-spawn are Pokémon too ([`../agents/pokemon/role.md`](../agents/pokemon/role.md)):
+**Who runs it.** Ritch's SOP: he holds the epic with Alex as the fractional CTO
+(since 2026-10-25). Any session may run it, under its own Pokémon identity. The builders you
+spawn are Pokémon too ([`../agents/pokemon/role.md`](../../pokemon/role.md)):
 one general builder soul, legion. The reviewers you spawn are the specialists:
-Carl, Shannon, Jasper, Steffon, or Ritch for prose.
+Carl, Shannon, Jasper, Steffon, or Mason for prose.
 
-> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
+> **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](../../../modules/token-session.md)).
 
 ## Step 0 — Orient
 
@@ -176,7 +177,7 @@ Narrate with bin/agent-activity. Report back: the PR URL, the pre-flight result,
 ```
 
 **The intent scout launches itself.** `bin/task begin` starts Avi's
-[`../agents/avi/sops/intent-scout.md`](../agents/avi/sops/intent-scout.md) as a
+[`../agents/avi/sops/intent-scout.md`](../../avi/sops/intent-scout.md) as a
 detached headless run and prints `scout: Avi launched in the background (pid N, log
 PATH)`; do not launch another. Only when it prints `scout: NOT launched (...)` and a
 paste-ready `Agent(...)` block do you launch it yourself, in the background, as you
@@ -226,8 +227,8 @@ Pick the tier from what the diff actually changed, plus the task's risk tags:
 
 | Tier | The change | Spawn |
 |---|---|---|
-| A | only prose: markdown, inert media, docs-guard tests | one `ray` (the documentation seat) on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md) as the PRIMARY: a single read, no light summoned; it claims as `--agent ray`, records its verdict with `--head`, and merges on `bin/merge-permit`'s permit |
-| B | code, under 400 insertions, one repo, no risk tag | one `carl` on [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md); a light at his discretion |
+| A | only prose: markdown, inert media, docs-guard tests | one `mason` (the documentation seat) on [`../agents/carl/sops/pr-review-primary.md`](../../carl/sops/pr-review-primary.md) as the PRIMARY: a single read, no light summoned; it claims as `--agent mason`, records its verdict with `--head`, and merges on `bin/merge-permit`'s permit |
+| B | code, under 400 insertions, one repo, no risk tag | one `carl` on [`../agents/carl/sops/pr-review-primary.md`](../../carl/sops/pr-review-primary.md); a light at his discretion |
 | C | any of `payment` `solana` `auth` `migration`, or over 400 insertions, or two repos, or a schema change | `carl` on the primary SOP with the domain light mandatory, strongest model |
 
 `gh pr view <pr> --json additions,files` gives the size and the paths; the risk
@@ -235,7 +236,7 @@ tags are on the task.
 
 **The documentation seat merges docs-shape PRs only.** Tier A is your read of
 the diff; `bin/merge-permit` measures it again at the merge, from the PR's own
-files at the head being merged. If Ritch reports a refusal (a code file landed, or
+files at the head being merged. If Mason reports a refusal (a code file landed, or
 the diff was never prose), the PR is tier B: spawn `carl`.
 
 Spawn the reviewer with this brief, filled in:
@@ -244,7 +245,7 @@ Spawn the reviewer with this brief, filled in:
 Review PR <url> for task <slug> (https://mcritchie.studio/tasks/<slug>), base accepted.
 Run docs/agents/agents/carl/sops/pr-review-primary.md end to end, as the soul named here.
 Claim by slug, naming that soul; the claim prints the dreams selected for the task, so read them before the diff:
-  bin/task review-claim acquire <slug> --agent <ray for tier A | carl for tiers B and C>
+  bin/task review-claim acquire <slug> --agent <mason for tier A | carl for tiers B and C>
 Recorded head: <sha>. Tier <A|B|C>: <A: single read, summon no light | B: light at your discretion | C: light mandatory>.
 The builder is the task's Pokémon, so no specialist is an author.
 Acceptance is in the task AND in the epic plan at /Users/alex/projects/.agents/epics/<epic-slug>.md, piece <n>; read both.
@@ -268,12 +269,12 @@ Decide, in one sentence, which of two things it is:
 
 - **The block is right.** Resume the builder in the same desk with the block as
   its brief (the `pokemon` subagent, pointed at
-  [`address-blocker.md`](address-blocker.md)). It fixes the one named gap,
+  [`address-blocker.md`](../../../modules/address-blocker.md)). It fixes the one named gap,
   posts `bin/task note <slug> --handoff "…" --resolves-feedback`, and ships
   again. Then Step 4 again, same reviewer if it is still live.
 - **The block is wrong, and you can show it.** Contest it. Post the builder's
   position with its evidence, then spawn Avi on
-  [`../agents/avi/sops/arbitrate-block.md`](../agents/avi/sops/arbitrate-block.md):
+  [`../agents/avi/sops/arbitrate-block.md`](../../avi/sops/arbitrate-block.md):
 
   ```bash
   bin/task note <slug> --clarification "CONTEST: <the reviewer's claim> — <the evidence it is wrong: the test, the measurement, the prior art>" --agent <mascot>
@@ -318,9 +319,9 @@ layers, then the roster:
 
 ## Related
 
-- [`../agents/pokemon/role.md`](../agents/pokemon/role.md) — the builder you spawn.
-- [`building-sop.md`](building-sop.md) — the per-task flow each builder runs.
-- [`../agents/carl/sops/pr-review-primary.md`](../agents/carl/sops/pr-review-primary.md) — the review each reviewer runs.
-- [`../agents/avi/sops/arbitrate-block.md`](../agents/avi/sops/arbitrate-block.md) — a contested block.
-- [`address-blocker.md`](address-blocker.md) — clearing a block that stands.
-- [`process-backlog.md`](process-backlog.md) — the sibling for a board that is not one epic.
+- [`../agents/pokemon/role.md`](../../pokemon/role.md) — the builder you spawn.
+- [`building-sop.md`](../../../modules/building-sop.md) — the per-task flow each builder runs.
+- [`../agents/carl/sops/pr-review-primary.md`](../../carl/sops/pr-review-primary.md) — the review each reviewer runs.
+- [`../agents/avi/sops/arbitrate-block.md`](../../avi/sops/arbitrate-block.md) — a contested block.
+- [`address-blocker.md`](../../../modules/address-blocker.md) — clearing a block that stands.
+- [`process-backlog.md`](../../../modules/process-backlog.md) — the sibling for a board that is not one epic.

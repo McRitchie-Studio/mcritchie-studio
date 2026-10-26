@@ -84,7 +84,7 @@ class AgentsSeedTest < ActiveSupport::TestCase
       "shannon" => "ui",
       "jasper"  => "web3",
       "steffon" => "devops",
-      "ray"    => "documentation"
+      "mason"  => "documentation"
     }.each do |slug, domain|
       agent = Agent.find_by!(slug: slug)
       assert agent.metadata["reviewer"], "#{slug} must be a light-pool specialist"
@@ -97,14 +97,18 @@ class AgentsSeedTest < ActiveSupport::TestCase
     end
   end
 
-  test "Ritch is the single identity holding the documentation review seat" do
+  test "Mason is the single identity holding the documentation review seat" do
     run_seed
     docs = Agent.active.detect do |a|
       a.metadata["reviewer"] && Array(a.metadata["domains"]).include?("documentation")
     end
     assert docs, "a documentation-domain reviewer must resolve from the seed"
-    assert_equal "ray", docs.slug, "Ritch holds the documentation seat (no separate persona)"
-    assert_equal "Lead Orchestrator", docs.title, "still the orchestrator identity"
+    assert_equal "mason", docs.slug, "Mason holds the documentation seat (no separate persona)"
+    assert_equal "CEO", docs.title, "the CEO is the orchestrator identity"
+    ray = Agent.find_by!(slug: "ray")
+    refute ray.metadata["reviewer"], "the ray soul left the review pool on 2026-10-25"
+    assert_empty Array(ray.metadata["domains"]), "and keeps none of its old review domains"
+    assert_equal "worker", ray.agent_type, "the ray soul is in the Worker class"
     refute Agent.exists?(slug: "alex-docs"), "the separate alex-docs persona is retired (folded into ray)"
   end
 

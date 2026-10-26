@@ -7,12 +7,12 @@ to its detail. The long form it replaced is frozen verbatim in
 
 ## Who is who
 
-Alex is the human owner. Ritch (slug `ray`) is the orchestrator agent.
+Alex is the human owner. Mason (slug `mason`) is the CEO and orchestrator agent. Ritch (slug `ray`) is the client-facing fractional CTO and builder.
 
 | Soul | Seat | Soul docs |
 |------|------|-----------|
 | Pokémon | The general builder. Every task gets its own mascot; it builds the whole task to `submitted` | `docs/agents/agents/pokemon/` |
-| Ritch | Orchestrator; runs focus sessions; the documentation reviewer | `docs/agents/agents/ray/` |
+| Mason | CEO: orchestrator; admin with Steffon; the documentation reviewer; runs `full-cycle`, `clean-up` and the learning loop | `docs/agents/agents/mason/` |
 | Carl | Lead Architect; primary reviewer of code PRs; merges into `accepted` | `docs/agents/agents/carl/` |
 | Shannon · Jasper | Review lights for UI · on-chain | `docs/agents/agents/<soul>/` |
 | Avi | Product owner; runs `qa-release`; arbitrates contested blocks | `docs/agents/agents/avi/` |
@@ -21,7 +21,8 @@ Alex is the human owner. Ritch (slug `ray`) is the orchestrator agent.
 | Tyrion | Cyvasse's house player: plays and chats with visitors; client-facing, holds no credentials | `docs/agents/agents/tyrion/` |
 | Tywin | The Cyvasse app's operator and admin: internal, holds the keys | `docs/agents/agents/tywin/` |
 | Hank | The Commercial Welding business agent (books, suppliers); not yet launched | `docs/agents/agents/hank/` |
-| Rex · Mason · Mack | Marketing strategy (CMO) · brand voice and launches · general worker | `docs/agents/agents/<soul>/` |
+| Ritch | Fractional CTO and forward-deployed engineer: faces clients, runs focus sessions and the `/build` queue, builds web apps; brand voice and launches; Worker class | `docs/agents/agents/ray/` |
+| Rex · Mack | Marketing strategy (CMO) · general worker | `docs/agents/agents/<soul>/` |
 
 ## SOP Invocation Standard
 
@@ -44,12 +45,12 @@ Each SOP stands alone; a design doc is background, never an execution path.
 
 ```text
 Alex + focus session ──▶ Pokémon builder ──PR green──▶ reviewer ──merge──▶ (accepted)
-  (holds the epic plan)   desk · build · ship ◀─blocker─┘  Carl for code; Ritch for prose*
+  (holds the epic plan)   desk · build · ship ◀─blocker─┘  Carl for code; Mason for prose*
 (accepted) ──Avi runs qa-release──▶ release, QA green ──Steffon runs production-deploy──▶ (main)
                                                          within Alex's 30-minute window
 ```
 
-- \* Ritch alone reviews prose only on the focus-session path. The `pr-review` sweep
+- \* Mason alone reviews prose only on the focus-session path. The `pr-review` sweep
   still runs Carl plus a light on every PR.
 - Task stages: **Build** `designed → building → submitted` (the builder), then
   **Deploy** `submitted → reviewed → assembled → shipped`. `blocked` needs
@@ -134,7 +135,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | Every doc, by topic (the full index) | `docs/agents/start-here.md` |
 | The ecosystem | `docs/ECOSYSTEM.md` |
 | **Build**: a task, from claim to `submitted` | `docs/agents/modules/building-sop.md`; command rules in `docs/agents/modules/fast-lane.md` |
-| Holding an epic | `docs/agents/modules/focus-session.md` |
+| Holding an epic | `docs/agents/agents/ray/sops/focus-session.md` |
 | The board | `docs/agents/modules/devops-task-board.md` |
 | **Review**: a PR, from claim to merge | `docs/agents/agents/carl/sops/pr-review.md`; the reviewer's own steps in `docs/agents/agents/carl/sops/pr-review-primary.md` |
 | **Release**: `accepted` → QA → production | `docs/agents/agents/avi/sops/qa-release.md`, `docs/agents/agents/steffon/sops/production-deploy.md`, `docs/agents/modules/gates/` |
@@ -143,7 +144,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | **Credentials** and GitHub auth | `docs/agents/modules/token-session.md` (a broken session), `docs/agents/modules/source-control.md` (how auth works), `docs/agents/modules/credentials.md` (1Password) |
 | **Business facts**: an entity's name, EIN, address, code, headcount or advisors; a form to fill | Pull from `business-data/FACTS.md` (private `mcritchie-industries` repo) first, and add any durable fact you learn in the same pass: `docs/agents/modules/knowledge-capture.md` (the quick reference rule). Forms: `docs/agents/modules/form-fill.md` |
 | **Communication**: reporting to Alex | `docs/agents/modules/communication-style.md` |
-| **Learning**: grades and insights | `docs/agents/agents/ray/sops/grade-events.md` |
+| **Learning**: grades and insights | `docs/agents/agents/mason/sops/grade-events.md` |
 | **Dreams**: good answers from past sessions; the platform sequence at every start, a soul's with `bin/dream <soul>` | `docs/agents/modules/dream.md`; the bank in `docs/agents/dreams/` |
 | History cut from a page | `docs/agents/archive/<page>-2026-09-25.md` |
 
@@ -169,6 +170,12 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `pr-review-primary` (role SOP) | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-primary.md` |
 | `pr-review-slow` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
 | `pr-review` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
+| `Mason Heartbeat` | Mason | `mcritchie-studio/docs/agents/agents/mason/HEARTBEAT.md` |
+| `clean-up` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |
+| `dream-swap` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/dream-swap.md` |
+| `full-cycle` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/full-cycle.md` |
+| `grade-events` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/grade-events.md` |
+| `share-insights` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/share-insights.md` |
 | `digest-video` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/digest-video.md` |
 | `download-instagram` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-instagram.md` |
 | `download-tiktok` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
@@ -176,10 +183,8 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `email-image` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | `wrap-it-up` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
 | `Ray Heartbeat` | Ray | `mcritchie-studio/docs/agents/agents/ray/HEARTBEAT.md` |
-| `clean-up` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/clean-up.md` |
-| `full-cycle` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/full-cycle.md` |
-| `grade-events` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/grade-events.md` |
-| `share-insights` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/share-insights.md` |
+| `focus-session` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/focus-session.md` |
+| `launch-build-queue` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/launch-build-queue.md` |
 | `ship-clock` | Ray | `mcritchie-studio/docs/agents/agents/ray/sops/ship-clock.md` |
 | `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | `constraint-diagnosis` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
@@ -225,13 +230,10 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `contact-capture` | Shared | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
-| `dream-swap` | Shared | `mcritchie-studio/docs/agents/modules/dream-swap.md` |
 | `dream` | Shared | `mcritchie-studio/docs/agents/modules/dream.md` |
-| `focus-session` | Shared | `mcritchie-studio/docs/agents/modules/focus-session.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `knowledge-capture` | Shared | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
-| `launch-build-queue` | Shared | `mcritchie-studio/docs/agents/modules/launch-build-queue.md` |
 | `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
 | `slack-capture` | Shared | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
 | `token-session` | Shared | `mcritchie-studio/docs/agents/modules/token-session.md` |

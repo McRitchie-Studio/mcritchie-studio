@@ -545,8 +545,8 @@ by **Avi** (Product Owner) via the self-healing `qa-release` sweep; and
 **`shipped`** is owned by **Steffon** (Platform Engineer, who runs the full e2e
 on the frozen ship SHA) ahead of explicit ship authority. The senior reviewer
 pool is **{Shannon = UI · Carl = backend · Jasper = Web3 · Steffon =
-DevOps/Platform · Ritch = Documentation}** (Carl is the standing primary on every
-PR; Ritch is both the orchestrator and the pool's launchable Documentation review
+DevOps/Platform · Mason = Documentation}** (Carl is the standing primary on every
+PR; Mason is both the orchestrator and the pool's launchable Documentation review
 seat — one identity). Carl previews the domain light with **`bin/reviewer-select
 <task> --no-record`** (wraps `ReviewerSelector`) — a bare run RECORDS the pair and
 takes the task's review claim, so a preview always carries `--no-record`.
@@ -627,11 +627,12 @@ Clarifications:
   who QAs the assembled RC) from the light pool, so one soul never both reviews
   and QAs the same change. (That soul remains a valid reviewer for **other**
   PRs.)
-- **Ritch is the Documentation reviewer.** The `ray` seat is the orchestrator who
+- **Mason is the Documentation reviewer.** The `mason` seat is the orchestrator who
   **also** holds the **Documentation** domain review seat — one identity (seeded in
   `db/seeds/02_agents.rb`, a launchable review agent). `ReviewerSelector` /
-  `bin/reviewer-select` pick `ray` for docs-shaped PRs (the QA-owner and
-  builder exclusions still apply, so Ritch never reviews a change he built).
+  `bin/reviewer-select` pick `mason` for docs-shaped PRs (the QA-owner and
+  builder exclusions still apply, so Mason never reviews a change he built). The
+  `ray` soul held this seat until 2026-10-25.
 - **There is no per-task QA stage.** Avi owns the QA deploy, the QA tier
   (integration + e2e-smoke), and Steffon owns the prod mechanics — but there is no separate
   approval ceremony; the suite is a green/red *signal* and the operator OK at
@@ -667,7 +668,7 @@ deploy**.
 **Production ship authority is the one tunable**: `production_ship.mode` in
 `config/release_builder.yml`, read by `Devops::Windows` (`ask`, `timed` or
 `auto`; an explicit `--mode` wins). QA assembly is never automatic; Avi's
-`qa-release` runs it. Ritch's **`full-cycle`** launcher is the explicit autonomous
+`qa-release` runs it. Mason's **`full-cycle`** launcher is the explicit autonomous
 production authorization; it uses the same frozen-SHA/test/smoke gates, then
 passes `--yes` to the production ship command. Change the mode or the windows in
 `config/release_builder.yml`, then run `bin/rails test test/lib/devops_windows_test.rb`.
@@ -696,7 +697,7 @@ see "The five soul heartbeat launchers" below):
 - **`production-deploy`** (`Steffon Heartbeat` act; ship authority) — ship a
   QA-green release: fast-forward `release → main` and deploy prod; idempotent
   no-op when nothing is ready.
-- **`full-cycle`** (`Ray Heartbeat` act; full ship authority) — the whole
+- **`full-cycle`** (`Mason Heartbeat` act; full ship authority) — the whole
   release, review → assemble → QA → prod ship.
 - **`deploy-with-task`** (`Avi Heartbeat` act; ship authority for ONE task) —
   expedite ONE task to prod. Guarded on a clean LADDER — `accepted == release ==
@@ -732,14 +733,14 @@ or the `review-one` SOP; none is a new command to build):
 
 | Composition | Expands to |
 |---|---|
-| **`full-cycle`** (Ray Heartbeat act; full ship authority) | [`agents/ray/sops/full-cycle.md`](../agents/ray/sops/full-cycle.md): `pr-review` → `qa-release` → `production-deploy` — the whole release, review to prod. *Formerly the retired `Merge, Assemble, Deploy` chip;* named `full-cycle` to avoid colliding with the read-only `bin/devops-cycle` snapshot tool. |
+| **`full-cycle`** (Mason Heartbeat act; full ship authority) | [`agents/mason/sops/full-cycle.md`](../agents/mason/sops/full-cycle.md): `pr-review` → `qa-release` → `production-deploy` — the whole release, review to prod. *Formerly the retired `Merge, Assemble, Deploy` chip;* named `full-cycle` to avoid colliding with the read-only `bin/devops-cycle` snapshot tool. |
 | **`deploy-with-task`** (Avi act; ship authority for ONE task) | [`agents/avi/sops/deploy-with-task.md`](../agents/avi/sops/deploy-with-task.md): **GUARD `release == main`** → `review-one <task>` (merge to `accepted` → `reviewed`) → `qa-release` (promotes `accepted → release`) → `production-deploy`. Interactive — launched bare it asks "What task?". *Formerly the `Deploy with Task <task>` write-up here.* |
 
 > **Retired chips (2026-07-02).** The four legacy release-card chips — `Avi Heartbeat
 > Slow`, `Avi Heartbeat Fast`, `Build and Deploy QA Release`, `Merge, Assemble,
 > Deploy` — were removed from the UI and relocated into the soul heartbeat acts:
 > serialized review is now Carl's **`pr-review-slow`** act, QA-only is `pr-review` →
-> Avi's **`qa-release`**, and the full autonomous run is Ritch's **`full-cycle`**
+> Avi's **`qa-release`**, and the full autonomous run is Mason's **`full-cycle`**
 > act. (2026-07-03: the acts went back to **review-only** — the accepted→release
 > merge lives in Avi's self-healing `qa-release` sweep.) The `bin/pr-review` review-only
 > loop still exists but is no longer a card chip.
@@ -760,7 +761,7 @@ The **Workflows card** (`tasks/_heartbeats_card`, the third of the four
 one soul at a time on a five-minute carousel; a click opens the Workflows sidebar
 with every soul and command. Each launcher is a soul face (**linking to `/agents/<slug>`**) with
 a **prompt-like row 1** (`Carl Heartbeat` / `Avi Heartbeat` / `Steffon Heartbeat` /
-`Ray Heartbeat` / `Turf Monster Heartbeat`) plus one or more **copyable action
+`Mason Heartbeat` / `Turf Monster Heartbeat`) plus one or more **copyable action
 rows**, each with a leading icon (❤️ on the heartbeat row; `1️⃣`–`3️⃣` on the three
 ordered release actions, a themed glyph on the rest). **Any row**, pasted into a
 fresh session, is a **recognized launcher**. The release tracker stays in the
@@ -770,7 +771,7 @@ with the souls:
 [`Carl`](../agents/carl/HEARTBEAT.md),
 [`Avi`](../agents/avi/HEARTBEAT.md),
 [`Steffon`](../agents/steffon/HEARTBEAT.md),
-[`Ritch`](../agents/ray/HEARTBEAT.md), and
+[`Mason`](../agents/mason/HEARTBEAT.md), and
 [`Turf Monster`](../agents/turf_monster/HEARTBEAT.md).
 
 It is titled **Workflows**, not Heartbeats, because every row is a flow the
@@ -789,7 +790,7 @@ only the card's name changed.
 | **Carl** (`Carl Heartbeat`) | `pr-review` · `pr-review-slow` | review submitted PRs — one Carl per PR, **merging each to `accepted`, never touching `release`/`main`** (waves ≤5, or serialized via `pr-review-slow`) | each PR `reviewed`/`blocked` |
 | **Avi** (`Avi Heartbeat`) | `qa-release` · `deploy-with-task` (direct-invoke only) | the **self-healing sweep** — merge the reviewed queue onto `release`, pre-QA gate, deploy QA, flip members `assembled` on QA-green (`bin/release prepare --yes`, stages 1–3) | RC **deployed to QA**, members `assembled` |
 | **Steffon** (`Steffon Heartbeat`) | `production-deploy` · `archive-shipped` | **downstream-first:** ship a QA-green release (`bin/release ship --yes`, stages 4–5, stamping `merged: "main"` at each ff) if one is ready; then archive shipped tasks (`bin/release archive --yes`) from the prior cycle | the ready release `shipped` (or no-op); then prior cycle `archived` |
-| **Ritch** (`Ray Heartbeat`) | `share-insights` · `full-cycle` · `grade-events` (optional since 2026-09-25: every task is graded once at ship) | grade the 10 most recent resolved activities at `/ray/heartbeat` only when named; share the banked insights out (regenerate the lessons doc from `ActionGrade.banked`; it installs nothing); OR run the whole cycle review→assemble→QA→prod ship (`full-cycle`, full ship authority) | 10 graded + insights banked; the bank shared out; or the whole release `shipped` |
+| **Mason** (`Mason Heartbeat`) | `share-insights` · `full-cycle` · `grade-events` (optional since 2026-09-25: every task is graded once at ship) | grade the 10 most recent resolved activities at `/ray/heartbeat` only when named; share the banked insights out (regenerate the lessons doc from `ActionGrade.banked`; it installs nothing); OR run the whole cycle review→assemble→QA→prod ship (`full-cycle`, full ship authority) | 10 graded + insights banked; the bank shared out; or the whole release `shipped` |
 
 **The release handoff seam.** The release stages (`Release::STAGES`, rendered on
 /deployments as the per-repo lanes tracker, `ApplicationHelper#release_repo_lanes`)
@@ -884,9 +885,9 @@ board):
    claim-next-review` until it lapses. It exits **10** rather than seating a second
    pair on a PR another live session already holds, and **also** exits 10 when the
    board refuses the claim as a self-review (the primary is in the author set) —
-   that arm names no holder and wants the author set reconciled instead. `ray` is the
+   that arm names no holder and wants the author set reconciled instead. `mason` is the
    orchestrator who also holds the launchable Documentation review seat — one
-   identity (slugged `alex` until 2026-09-24). (`--qa-owner SLUG` excludes a
+   identity (the `ray` soul held it until 2026-10-25). (`--qa-owner SLUG` excludes a
    different soul; `--builder SLUG`
    overrides the recorded built_by, and `--builder none` asserts that NO soul built
    it — cross-examined against the record and the PR's commits, and REFUSED when a
@@ -1448,7 +1449,7 @@ tiers that must be green by the time the task is `submitted` for review:
 | **library** | studio-engine change | `unit` `integration` — in the engine, plus consumer-CI in *both* apps |
 | **onchain** | new turf-vault instruction | `unit` `integration` — Anchor unit, Anchor lifecycle, Ruby decoder unit |
 | **onchain-vertical** | new workflow w/ wallet + DB + UI + program | `unit` `component` `integration` `e2e` — almost always its own `release` |
-| **docs** | SOP / runbook / README edit | none — no code tiers; routes to the documentation seat (Ritch) and certifies by review, not a test lane. **Claimable only on a diff observed to be prose, optionally with its own registry-guard tests** — `*_test.rb` under `test/docs/`, nothing else (`claimable_when: docs_with_guards_diff`) — which is what makes the empty column safe |
+| **docs** | SOP / runbook / README edit | none — no code tiers; routes to the documentation seat (Mason) and certifies by review, not a test lane. **Claimable only on a diff observed to be prose, optionally with its own registry-guard tests** — `*_test.rb` under `test/docs/`, nothing else (`claimable_when: docs_with_guards_diff`) — which is what makes the empty column safe |
 | **test-only** | delete a stale assertion; fix a flaky spec | none — a diff with no behavior has nothing for a tier to be evidence of; it owes a **control** instead (below), and is **not exempt from the CI gate** (unlike `docs`): the PR's settled green CI satisfies it exactly as for a feature, with `bin/fast-check` as the optional pre-flight before it |
 
 **The backticked tier names are load-bearing, not formatting.** They are the

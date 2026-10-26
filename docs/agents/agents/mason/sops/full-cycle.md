@@ -4,7 +4,7 @@
 
 ## Status: Active
 
-This is Ritch's `full-cycle` SOP. It runs review, QA release, and production
+This is Mason's `full-cycle` SOP. It runs review, QA release, and production
 deploy with explicit ship authority.
 
 ## Scope

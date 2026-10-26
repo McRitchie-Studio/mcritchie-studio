@@ -88,7 +88,7 @@ the whole run" is `qa-release` · `prepare`, whoever runs the release.
 | | What it holds | Who admits it | Where it lives |
 |---|---|---|---|
 | **Dream** | a question, a good answer, the reason, the story | Alex signs off each one | `docs/agents/dreams/<sequence>/<slug>.md`, tracked |
-| **Insight** | a one-line lesson graded from an activity | Ritch banks it (`grade-events`) | the board's Insight Bank |
+| **Insight** | a one-line lesson graded from an activity | Mason banks it (`grade-events`) | the board's Insight Bank |
 | **Provider memory** | one session's private notes | nobody | `~/.claude/…/memory/`, scratch |
 
 A dream is the only one of the three that carries its reasoning, and the only one
@@ -399,7 +399,7 @@ grant, and the words are the audit trail, not a signature.
 ### The card standard
 
 One format puts every dream decision to Alex in chat, at wrap and on demand
-(the [`dream-swap`](dream-swap.md) SOP). `bin/dream cards` renders it
+(the [`dream-swap`](../agents/mason/sops/dream-swap.md) SOP). `bin/dream cards` renders it
 (`bin/lib/dream_cards.rb`); paste its output, and fill in your call.
 
 ```text
@@ -568,7 +568,7 @@ worth keeping, write them as `proposed`, show any other proposed dreams still
 waiting, including the open `dream-proposal-*` findings
 (`bin/triage list --status open`), and ask for sign-off as cards
 ([The card standard](#the-card-standard)). When he says `dream-swap`, run the
-[`dream-swap`](dream-swap.md) SOP: the cards for every pending dream and the swaps
+[`dream-swap`](../agents/mason/sops/dream-swap.md) SOP: the cards for every pending dream and the swaps
 the data calls for.
 
 ## Files
@@ -584,7 +584,7 @@ the data calls for.
 | Soul loader, list, materialize, approvals, fired, grade, swap, cards, chat rulings | `bin/dream` |
 | One-click approvals | `app/models/dream_approval.rb`, `DreamsController#approve`, `app/controllers/api/v1/dream_approvals_controller.rb` |
 | Chat rulings | `app/models/dream_ruling.rb`, `app/controllers/api/v1/dream_rulings_controller.rb`, `bin/lib/dream_clearance.rb`, `app/views/dreams/_clearance.html.erb` |
-| The card standard | `bin/lib/dream_cards.rb` (`bin/dream cards`); the on-demand SOP [`dream-swap.md`](dream-swap.md) |
+| The card standard | `bin/lib/dream_cards.rb` (`bin/dream cards`); the on-demand SOP [`dream-swap.md`](../agents/mason/sops/dream-swap.md) |
 | Heat map | `app/models/dream_heat.rb` (`dream_fired` actions) |
 | The loop: grades, swaps, retirements, KPIs | `app/models/dream_grade.rb`, `dream_swap.rb`, `dream_retirement.rb`, `dream_loop.rb` (room, candidates, grace), `dream_kpis.rb`; `bin/lib/dream_layers.rb` (layer keys, budgets) |
 | Loop API | `app/controllers/api/v1/dream_grades_controller.rb`, `dream_swaps_controller.rb`, `dream_retirements_controller.rb`; `DreamsController#retire`, `#approve_swap` |

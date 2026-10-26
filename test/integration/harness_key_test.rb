@@ -148,7 +148,7 @@ class HarnessKeyTest < ActionDispatch::IntegrationTest
     key = granted_key
     assert_no_difference -> { AgentSession.where.not(tier: "studio").count } do
       %w[admin client harness].each do |tier|
-        mint(bearer(key), soul: "ray", tier: tier)
+        mint(bearer(key), soul: "mason", tier: tier)
         assert_response :forbidden, tier
         assert_match(/granted by the operator/, body["error"])
       end
@@ -156,7 +156,7 @@ class HarnessKeyTest < ActionDispatch::IntegrationTest
 
     # A request for an admin login mints nothing by itself: it waits for the operator.
     assert_no_difference -> { AgentSession.count } do
-      post "/api/v1/agent_login_requests", params: { soul: "ray", harness_session_id: HARNESS }, headers: bearer(key), as: :json
+      post "/api/v1/agent_login_requests", params: { soul: "mason", harness_session_id: HARNESS }, headers: bearer(key), as: :json
     end
     assert_response :created
     assert_equal "pending", body.dig("data", "status")

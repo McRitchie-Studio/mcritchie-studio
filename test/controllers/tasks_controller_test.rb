@@ -169,6 +169,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "ray") { |a| a.name = "Ritch" }
+    Agent.find_or_create_by!(slug: "mason") { |a| a.name = "Mason" }
     Agent.find_or_create_by!(slug: "turf-monster") { |a| a.name = "Turf Monster" }
 
     get deployments_path
@@ -199,8 +200,8 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='production-deploy']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='clean-infra']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='workspace-launch']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] button[data-row='action'][data-clip='grade-events']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] button[data-row='action'][data-clip='full-cycle']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='mason'] button[data-row='action'][data-clip='grade-events']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='mason'] button[data-row='action'][data-clip='full-cycle']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] button[data-row='action'][data-clip='ship-clock']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='heartbeat'][data-clip='Turf Monster Heartbeat']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='action'][data-clip='live-score-watch']"
@@ -293,10 +294,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#current-release code", { text: /Avi Heartbeat Slow/, count: 0 }
     assert_select "#current-release code", { text: /Merge, Assemble, Deploy/, count: 0 }
     # The launchers now live in the Workflows card — one per soul, including
-    # Carl's pr-review-slow and Ritch's full-cycle acts.
+    # Carl's pr-review-slow and Mason's full-cycle acts.
     assert_select "[data-test='heartbeats-card'] [data-test='heartbeat-launcher']", count: ApplicationController.helpers.heartbeat_launchers.size
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] code", text: "pr-review-slow"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] code", text: "full-cycle"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='mason'] code", text: "full-cycle"
   end
 
   test "deployments renders the status badge on the current release card" do
@@ -517,7 +518,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
   test "deployments shows the heartbeat launchers when no release exists" do
     Release.delete_all
-    %w[avi steffon ray].each { |s| Agent.find_or_create_by!(slug: s) { |a| a.name = s.titleize } }
+    %w[avi steffon ray mason].each { |s| Agent.find_or_create_by!(slug: s) { |a| a.name = s.titleize } }
 
     get deployments_path
 

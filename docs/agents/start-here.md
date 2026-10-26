@@ -102,6 +102,12 @@ its invocation exactly.
 | Carl `pr-review-primary` SOP (the primary reviewer's own steps) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-primary.md` |
 | Carl `pr-review-slow` SOP (the slow variant of pr-review) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
 | Carl `pr-review` SOP (the orchestrator) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
+| `Mason Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/mason/HEARTBEAT.md` |
+| Mason `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |
+| Mason `dream-swap` SOP (print the dream cards (adds, swaps, retires) for Alex and record his answer with his words) | `mcritchie-studio/docs/agents/agents/mason/sops/dream-swap.md` |
+| Mason `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/mason/sops/full-cycle.md` |
+| Mason `grade-events` SOP | `mcritchie-studio/docs/agents/agents/mason/sops/grade-events.md` |
+| Mason `share-insights` SOP | `mcritchie-studio/docs/agents/agents/mason/sops/share-insights.md` |
 | Pokemon `digest-video` SOP (download, store and record a music video; stage 1 of pipeline 3) | `mcritchie-studio/docs/agents/agents/pokemon/sops/digest-video.md` |
 | Pokemon `download-instagram` SOP (yt-dlp download of an Instagram reel or post; cookie path unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-instagram.md` |
 | Pokemon `download-tiktok` SOP (yt-dlp download of a TikTok video; unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
@@ -109,10 +115,8 @@ its invocation exactly.
 | Pokemon `email-image` SOP (make an email header with Alex in a Claude Code session: show base assets, generate, iterate, approve on his word, export) | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | Pokemon `wrap-it-up` SOP (hand a stuck session to a fresh one, then clear its board) | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
 | `Ray Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/ray/HEARTBEAT.md` |
-| Ray `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/ray/sops/clean-up.md` |
-| Ray `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/full-cycle.md` |
-| Ray `grade-events` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/grade-events.md` |
-| Ray `share-insights` SOP | `mcritchie-studio/docs/agents/agents/ray/sops/share-insights.md` |
+| Ray `focus-session` SOP (hold an epic, file just-in-time, build wide, review your own PRs) | `mcritchie-studio/docs/agents/agents/ray/sops/focus-session.md` |
+| Ray `launch-build-queue` SOP (work /build app requests: claim, build, point the subdomain, mark live) | `mcritchie-studio/docs/agents/agents/ray/sops/launch-build-queue.md` |
 | Ray `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/ray/sops/ship-clock.md` |
 | `Rex Heartbeat` launcher (CMO) | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
 | Rex `constraint-diagnosis` SOP (find the one thing limiting demand) | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
@@ -158,13 +162,10 @@ its invocation exactly.
 | `building-sop` (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `contact-capture` (offer Alex a create or update of an Apple Contacts card from a forwarded email's signature) | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
 | `credential-issues` (log it privately, triage rotate-now vs weekly) | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
-| `dream-swap` (print the dream cards (adds, swaps, retires) for Alex and record his answer with his words) | `mcritchie-studio/docs/agents/modules/dream-swap.md` |
 | `dream` (the bank of good answers, in a platform sequence, one per soul and step moment cards; capture and sign-off) | `mcritchie-studio/docs/agents/modules/dream.md` |
-| `focus-session` (hold an epic, file just-in-time, build wide, review your own PRs) | `mcritchie-studio/docs/agents/modules/focus-session.md` |
 | `form-fill` (complete an application from records, ask only what they cannot answer) | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 | `gmail-capture` (read-only mailbox pull into the desk queue) | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `knowledge-capture` (team@, intake protocol, sweep) | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
-| `launch-build-queue` (work /build app requests: claim, build, point the subdomain, mark live) | `mcritchie-studio/docs/agents/modules/launch-build-queue.md` |
 | `process-backlog` (groom designed, build four wide) | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
 | `slack-capture` (connect, read, categorize a channel) | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
 | `token-session` (GitHub token session broken: 401, `Bad credentials`, push refused) | `mcritchie-studio/docs/agents/modules/token-session.md` |

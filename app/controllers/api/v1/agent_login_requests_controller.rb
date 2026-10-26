@@ -4,7 +4,7 @@ module Api
     # section 3): an admin login, or with `kind: harness_key` and a `label` naming
     # the machine, that machine's harness key.
     #
-    #   POST /api/v1/agent_login_requests                post a request (steffon|ray)
+    #   POST /api/v1/agent_login_requests                post a request (steffon|mason)
     #   POST /api/v1/agent_login_requests/:slug/code     grant it with the one-time code
     #   POST /api/v1/agent_login_requests/:slug/collect  take the granted token, once
     #

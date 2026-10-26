@@ -23,14 +23,6 @@ Loads at: every session start
 | [`turn-a-reframe-into-a-test`](platform/turn-a-reframe-into-a-test.md) | Alex reframes the problem in a way I had not considered. How do I respond? | topic: diagnosis | approved |
 | [`verify-a-report-before-relaying-it`](platform/verify-a-report-before-relaying-it.md) | A subagent reports that it verified something. Can I pass that to Alex as fact? | topic: subagents, reporting | approved |
 
-## Ritch (1)
-
-Loads at: `bin/dream ray`
-
-| Dream | Question | Tags | Status |
-|---|---|---|---|
-| [`lead-with-the-finding-that-outranks-the-work`](carl/lead-with-the-finding-that-outranks-the-work.md) | A review turns up something pre-existing and outside the diff. Is it out of scope? | stage: submitted; topic: review | approved |
-
 ## Avi (1)
 
 Loads at: `bin/dream avi`
@@ -84,6 +76,14 @@ Loads at: `bin/dream turf-monster`
 |---|---|---|---|
 | [`reconcile-the-numbers-before-theorizing`](jasper/reconcile-the-numbers-before-theorizing.md) | A balance on screen looks wrong after money moved. Where do I start? | repo: turf-monster; risk: payment; topic: balances | approved |
 | [`read-the-state-before-the-mutation`](turf-monster/read-the-state-before-the-mutation.md) | Alex asks for a data change on a live contest. He is the owner; do I just make it? | repo: turf-monster; topic: contests, data-change | approved |
+
+## Mason (1)
+
+Loads at: `bin/dream mason`
+
+| Dream | Question | Tags | Status |
+|---|---|---|---|
+| [`lead-with-the-finding-that-outranks-the-work`](carl/lead-with-the-finding-that-outranks-the-work.md) | A review turns up something pre-existing and outside the diff. Is it out of scope? | stage: submitted; topic: review | approved |
 
 ## Pokémon (2)
 

@@ -10,6 +10,9 @@ runs each step in order, does every step that a machine can do, and stops at
 each step that needs a human with an exact instruction — "now buy the domain on
 Squarespace", "now approve our key" — then verifies the result before moving on.
 
+**Who leads.** On a client launch Ritch (`ray`) leads with the client and Steffon
+runs the infra steps below (Alex's approved sort, 2026-10-25).
+
 Every step is its own registered SOP. This file is the order, the hand-offs, and
 the package each step belongs to. The package contents live in
 `config/workspace_packages.yml` and render at `/packages` (the full stack at

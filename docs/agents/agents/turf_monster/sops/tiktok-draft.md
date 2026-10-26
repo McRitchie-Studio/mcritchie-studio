@@ -184,19 +184,19 @@ new draft of that clip for 15 minutes.
 
 ### The admin session
 
-An admin session belongs to an admin soul (Ritch or Steffon) and lasts 8 hours.
+An admin session belongs to an admin soul (Mason or Steffon) and lasts 8 hours.
 The board grants it. Ask, from the session that will draft:
 
 ```bash
-bin/agent-activity heartbeat ray          # or steffon; prints a login-… slug
+bin/agent-activity heartbeat mason        # or steffon; prints a login-… slug
 ```
 
 Alex answers the row with that slug on the board's tasks page, inside ten
 minutes, one of two ways:
 
 - **The one-time code** on the row. He gives it to you, and you post it:
-  `bin/agent-activity heartbeat ray --code <code>`.
-- **The Approve tap** on the row. Then run `bin/agent-activity heartbeat ray`
+  `bin/agent-activity heartbeat mason --code <code>`.
+- **The Approve tap** on the row. Then run `bin/agent-activity heartbeat mason`
   again to collect.
 
 The login is kept for this harness session, owner-only, and is never printed.

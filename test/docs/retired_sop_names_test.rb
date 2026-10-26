@@ -57,7 +57,7 @@ class RetiredSopNamesTest < ActiveSupport::TestCase
       refute_empty retired_hits([["probe", probe]]), "the scan missed #{probe.inspect}"
     end
 
-    ["dispatch `qa-deploy.yml`", "run `qa-release`", "`archive-shipped`", "`Ray Heartbeat`"].each do |live|
+    ["dispatch `qa-deploy.yml`", "run `qa-release`", "`archive-shipped`", "`Ray Heartbeat`", "`Mason Heartbeat`"].each do |live|
       assert_empty retired_hits([["probe", live]]), "the scan refused a live name: #{live.inspect}"
     end
   end

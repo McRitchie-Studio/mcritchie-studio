@@ -574,7 +574,7 @@ class ReleaseClaimCli
   end
 
   # A conductor claim is an admin-tier write, so each call presents the admin
-  # login this harness session holds (`heartbeat steffon|ray`, or
+  # login this harness session holds (`heartbeat steffon|mason`, or
   # AGENT_ADMIN_SESSION_TOKEN) and the board records the claim under that soul.
   # With no admin login the call uses the shared token.
   def post(path, body)

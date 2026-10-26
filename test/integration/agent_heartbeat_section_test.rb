@@ -21,6 +21,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     Agent.find_or_create_by!(slug: "carl") { |a| a.name = "Carl" }
     Agent.find_or_create_by!(slug: "avi")  { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "ray") { |a| a.name = "Ritch" }
+    Agent.find_or_create_by!(slug: "mason") { |a| a.name = "Mason" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "shannon") { |a| a.name = "Shannon" }
     # The name must parameterize BACK to the slug — Agent includes Sluggable, which
@@ -68,15 +69,25 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_match "Expedite ONE task to prod (asks: what task?)", response.body
   end
 
-  test "Ritch's heartbeat soul renders its acts + descriptions" do
+  test "Ritch's heartbeat soul renders his client acts" do
     get agent_path("ray")
     assert_response :success
 
     assert_select "[data-test='agent-heartbeat-section'][data-agent='ray']", count: 1
     assert_select "[data-test='heartbeat-name'][data-clip='Ray Heartbeat']"
-    assert_select "[data-test='action']", count: 4
-    assert_select "[data-test='action'][data-action='grade-events'][data-clip='grade-events']"
+    assert_select "[data-test='action']", count: 1
     assert_select "[data-test='action'][data-action='ship-clock'][data-clip='ship-clock']"
+    assert_select "[data-test='action'][data-action='full-cycle']", count: 0
+  end
+
+  test "Mason's heartbeat soul renders the CEO acts + descriptions" do
+    get agent_path("mason")
+    assert_response :success
+
+    assert_select "[data-test='agent-heartbeat-section'][data-agent='mason']", count: 1
+    assert_select "[data-test='heartbeat-name'][data-clip='Mason Heartbeat']"
+    assert_select "[data-test='action']", count: 3
+    assert_select "[data-test='action'][data-action='grade-events'][data-clip='grade-events']"
     assert_select "[data-test='action'][data-action='share-insights'][data-clip='share-insights']"
     assert_select "[data-test='action'][data-action='full-cycle'][data-clip='full-cycle']"
     assert_match "Grade 10 recent events for quality", response.body
@@ -96,13 +107,13 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
   # DRIFT GUARD, at the surface the operator actually reads: the heartbeat card
   # renders from app/, so the caption is pinned where it is rendered.
   test "the rendered heartbeat card never sells the share act as confirmed-only" do
-    get agent_path("ray")
+    get agent_path("mason")
     assert_response :success
 
-    card = css_select("[data-test='agent-heartbeat-section'][data-agent='ray']").to_s
-    assert card.present?, "no Ray heartbeat card rendered — this guard would pass vacuously"
+    card = css_select("[data-test='agent-heartbeat-section'][data-agent='mason']").to_s
+    assert card.present?, "no Mason heartbeat card rendered — this guard would pass vacuously"
     assert_includes card, "share-insights",
-                     "the Ritch card no longer renders the share-insights act, so this guard reads "\
+                     "the Mason card no longer renders the share-insights act, so this guard reads "\
                      "the wrong markup and its silence means nothing"
 
     refute_match(/confirmed/i, card,

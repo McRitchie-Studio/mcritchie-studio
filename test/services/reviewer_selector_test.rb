@@ -4,7 +4,7 @@ require "test_helper"
 # Carl-owns-review model: **Carl is the STANDING PRIMARY** (Lead Architect, deep
 # reviewer + owner) on every PR, and the selection only chooses the LIGHT (focused
 # second read) — a domain-fit pick from the specialist pool {shannon, jasper,
-# steffon, ray}, with a LOGGED random tiebreak, never the QA owner (no
+# steffon, mason}, with a LOGGED random tiebreak, never the QA owner (no
 # self-gating). Carl yields the primary seat only to the hard no-self-review rule
 # (he built the task, or a caller names him the qa_owner). It degrades gracefully
 # when the soul Agent rows aren't seeded.
@@ -56,7 +56,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal "carl", primary_slug(result)
     refute_equal "carl", light_slug(result), "the light is a specialist, never Carl"
     refute_equal "avi", light_slug(result), "the QA owner (avi) is never the light"
-    assert_includes %w[shannon jasper steffon ray], light_slug(result), "the light is drawn from the specialist pool"
+    assert_includes %w[shannon jasper steffon mason], light_slug(result), "the light is drawn from the specialist pool"
   end
 
   # --- the LIGHT is a domain-fit pick from the specialist pool ---
@@ -73,10 +73,10 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal "shannon", light_slug(result)
   end
 
-  test "a docs-shaped task selects Ritch (the documentation seat) as the light" do
+  test "a docs-shaped task selects Mason (the documentation seat) as the light" do
     result = ReviewerSelector.select(task_for(shape: "docs"))
     assert_equal "carl", primary_slug(result)
-    assert_equal "ray", light_slug(result), "the docs shape routes the light to Ritch"
+    assert_equal "mason", light_slug(result), "the docs shape routes the light to Mason"
   end
 
   # --- who may merge: the decision says so beside the pair ---
@@ -84,28 +84,28 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   test "a seated documentation seat is named as a merger of a docs-shape diff only" do
     rule = ReviewerSelector.explain(task_for(shape: "docs"))["merge_rule"]
 
-    assert_match(/\Aray, the documentation seat, may merge this PR only when its diff measures docs/, rule)
-    assert_includes rule, "bin/merge-permit <task> --agent ray --head <sha>"
+    assert_match(/\Amason, the documentation seat, may merge this PR only when its diff measures docs/, rule)
+    assert_includes rule, "bin/merge-permit <task> --agent mason --head <sha>"
     assert_match(/carl merges any other diff\z/, rule)
   end
 
   test "an unseated documentation seat is not offered the merge" do
     rule = ReviewerSelector.explain(task_for(shape: "backend"))["merge_rule"]
 
-    assert_equal "carl merges on merge-ready; the documentation seat (ray) is not seated on this PR", rule
+    assert_equal "carl merges on merge-ready; the documentation seat (mason) is not seated on this PR", rule
   end
 
   test "a documentation seat that authored the PR is not offered the merge" do
-    decision = ReviewerSelector.new(task_for(shape: "docs"), builder: "ray").decision
+    decision = ReviewerSelector.new(task_for(shape: "docs"), builder: "mason").decision
 
-    refute_includes decision["reviewers"].map { |r| r["slug"] }, "ray"
-    assert_match(/the documentation seat \(ray\) is not seated/, decision["merge_rule"])
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "mason"
+    assert_match(/the documentation seat \(mason\) is not seated/, decision["merge_rule"])
   end
 
   test "when carl yields to a documentation-seat primary, no named soul inherits the other diffs" do
     decision = ReviewerSelector.new(task_for(shape: "docs"), builder: "carl").decision
 
-    assert_equal "ray", decision["reviewers"].first["slug"]
+    assert_equal "mason", decision["reviewers"].first["slug"]
     assert_match(/a primary outside the author set merges any other diff\z/, decision["merge_rule"])
   end
 
@@ -382,13 +382,13 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   test "a none assertion the PR's commits contradict excludes the author it denies" do
     # The incident's own shape: nothing on the record, the author only on the PR.
     decision = ReviewerSelector.new(task_for(shape: "docs"), builder: ReviewerSelector::NO_BUILDER,
-                                                             pr_authors: ["ray"]).decision
+                                                             pr_authors: ["mason"]).decision
 
-    assert_equal ["ray"], decision["builder_none_contradicted_by"]
-    assert_equal({ "pr_commits" => ["ray"] }, decision["builder_none_contradictions"],
+    assert_equal ["mason"], decision["builder_none_contradicted_by"]
+    assert_equal({ "pr_commits" => ["mason"] }, decision["builder_none_contradictions"],
       "the PR is named as the witness, not the record")
-    refute_includes decision["candidates"], "ray", "ray cannot be a light candidate on his own PR"
-    refute_includes decision["reviewers"].map { |r| r["slug"] }, "ray",
+    refute_includes decision["candidates"], "mason", "mason cannot be a light candidate on his own PR"
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "mason",
       "and is not seated — the 2026-09-24 outcome, now impossible"
   end
 
@@ -527,9 +527,9 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   end
 
   test "the busy set is auto-excluded with no manual flag and reported in the audit" do
-    decision = ReviewerSelector.new(task_for(shape: "backend"), busy: %w[jasper ray]).decision
-    %w[jasper ray].each { |slug| refute_includes decision["candidates"], slug }
-    assert_equal %w[jasper ray], decision["excluded_busy"].sort
+    decision = ReviewerSelector.new(task_for(shape: "backend"), busy: %w[jasper mason]).decision
+    %w[jasper mason].each { |slug| refute_includes decision["candidates"], slug }
+    assert_equal %w[jasper mason], decision["excluded_busy"].sort
     assert_equal [], decision["kept_busy"]
     assert_equal "carl", decision["reviewers"].first["slug"]
     # The roll is seeded with the busy set's names, so which of the two specialists
@@ -570,7 +570,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_equal "shannon", decision["excluded_builder"]
     assert_equal ["jasper"], decision["excluded_busy"]
     assert_equal "carl", decision["reviewers"].first["slug"], "Carl is the standing primary"
-    assert_equal "ray", light_slug(decision["reviewers"]), "the last remaining specialist is the light"
+    assert_equal "mason", light_slug(decision["reviewers"]), "the last remaining specialist is the light"
   end
 
   test "the busy set folds into the seed so a busy-aware light pick is reproducible" do
@@ -680,7 +680,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     %w[shannon jasper].each { |slug| refute_includes decision["candidates"], slug }
     assert_includes decision["candidates"], "steffon", "steffon stays eligible (avi is the QA owner now)"
     assert_equal "carl", decision["reviewers"].first["slug"], "Carl is the standing primary"
-    assert_includes %w[steffon ray], light_slug(decision["reviewers"]), "the light is one of the remaining specialists"
+    assert_includes %w[steffon mason], light_slug(decision["reviewers"]), "the light is one of the remaining specialists"
   end
 
   # --- logged random tiebreak ---
@@ -810,7 +810,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     assert_nil primary["roll"], "a soul seated by role is never rolled; 0.0 read as a real draw"
     assert_equal 0, primary["fit"], "his fit is genuinely 0 — it is simply not why he is sitting there"
 
-    assert_equal "ray", light["slug"], "a domain-matched soul outranks every fit-0 candidate for the light"
+    assert_equal "mason", light["slug"], "a domain-matched soul outranks every fit-0 candidate for the light"
     assert_equal ReviewerSelector::SEAT_BASIS_DOMAIN_FIT, light["basis"]
     assert_equal 2, light["fit"], "and the seat carries the fit score it won on"
     assert light["roll"].is_a?(Numeric), "a ranked seat carries the roll it was actually drawn on"
@@ -826,7 +826,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     decision = ReviewerSelector.explain(task_for(shape: "docs"), builder: "carl")
     primary, light = decision["reviewers"]
 
-    assert_equal "ray", primary["slug"], "fit decides the primary seat wherever fit is allowed to decide it"
+    assert_equal "mason", primary["slug"], "fit decides the primary seat wherever fit is allowed to decide it"
     assert_equal 2, primary["fit"]
     assert_equal ReviewerSelector::SEAT_BASIS_DOMAIN_FIT, primary["basis"]
     refute_equal "carl", primary["slug"], "an author reviews nothing on his own PR"
@@ -885,7 +885,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   # LAST claimant, and the pool excluded one author of two — which seated Ritch on a
   # diff Ritch had written every test on (PR #1081, 2026-08-30).
 
-  def multi_author_task(shape: "backend", built_by: "steffon", builders: %w[steffon ray], unattributed: nil)
+  def multi_author_task(shape: "backend", built_by: "steffon", builders: %w[steffon mason], unattributed: nil)
     devops = { "shape" => shape, "built_by" => built_by, "builders" => builders }
     devops["builders_unattributed"] = unattributed if unattributed # the retired UNNAMED marker
     task = task_for(shape: shape)
@@ -896,10 +896,10 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   test "EVERY author on devops.builders is excluded from the light pool, not just built_by" do
     decision = ReviewerSelector.explain(multi_author_task)
 
-    assert_equal %w[steffon ray], decision["builders"], "both authors are on record"
-    refute_includes decision["candidates"], "ray", "the co-author is out of the light pool"
+    assert_equal %w[steffon mason], decision["builders"], "both authors are on record"
+    refute_includes decision["candidates"], "mason", "the co-author is out of the light pool"
     refute_includes decision["candidates"], "steffon", "the recorded builder is out of the light pool"
-    refute_includes decision["reviewers"].map { |r| r["slug"] }, "ray",
+    refute_includes decision["reviewers"].map { |r| r["slug"] }, "mason",
       "the co-author must never take the light seat on their own diff"
   end
 
@@ -954,11 +954,11 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
   test "an explicit override names SEVERAL authors and excludes them all" do
     # The hand-pass that saved the live review was `--busy ray`, which says the
     # wrong thing. Naming co-authors is now a first-class statement of the fact.
-    decision = ReviewerSelector.new(task_for(shape: "backend"), builder: "steffon,ray").decision
+    decision = ReviewerSelector.new(task_for(shape: "backend"), builder: "steffon,mason").decision
 
-    assert_equal %w[steffon ray], decision["builders"]
+    assert_equal %w[steffon mason], decision["builders"]
     assert_equal true, decision["builder_known"], "the caller has spoken for the task"
-    refute_includes decision["candidates"], "ray"
+    refute_includes decision["candidates"], "mason"
     refute_includes decision["candidates"], "steffon"
   end
 
@@ -977,7 +977,7 @@ class ReviewerSelectorTest < ActiveSupport::TestCase
     logger = CapturingLogger.new
     ReviewerSelector.new(multi_author_task, logger: logger).reviewers
 
-    assert_match(/builder=steffon\(excluded\),ray\(excluded\)/, logger.lines.last,
+    assert_match(/builder=steffon\(excluded\),mason\(excluded\)/, logger.lines.last,
       "both authors and their exclusion state are on the audit line")
   end
 

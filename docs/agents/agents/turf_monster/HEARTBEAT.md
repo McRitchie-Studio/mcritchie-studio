@@ -22,7 +22,7 @@ attribution and routes to its act SOPs:
   expected points, reprice, and check the result on /benchmarks.
 - [`content-build`](sops/content-build.md) - drain the content idea queue: claim
   a finished game's card, judge whether it is worth posting, write the take and
-  the scene list in your own voice, take Mason's pass on the line, and write it
+  the scene list in your own voice, take Ritch's pass on the line, and write it
   back.
 - [`collect-vault-revenue`](sops/collect-vault-revenue.md) - collect operator
   revenue out of the vault in TWO hops: sweep the `op_rev` ATA to the treasury

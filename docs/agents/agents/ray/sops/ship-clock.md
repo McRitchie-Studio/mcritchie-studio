@@ -128,7 +128,7 @@ Report to Alex in this order:
 
 ## Related
 
-- [`full-cycle`](full-cycle.md): review, QA and ship for whatever is queued.
+- [`full-cycle`](../../mason/sops/full-cycle.md): review, QA and ship for whatever is queued.
 - [`deploy-with-task`](../../avi/sops/deploy-with-task.md): a one-task expedite.
 - `docs/agents/ledgers/ship-clock.csv`: one row per benchmark run. The first row is
   team-tier-nine-hundred (2026-10-13), with T0 estimated.

@@ -118,13 +118,13 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
   # acquire in test_the_detached_renewers_own_argv_survives_the_guard_it_reenters,
   # because a hand copy proves the transcription, not the code.
   REAL_ARGV = [
-    { source: "docs/agents/agents/ray/sops/clean-up.md — clean-up takes the avi shift",
+    { source: "docs/agents/agents/mason/sops/clean-up.md — clean-up takes the avi shift",
       argv: %w[acquire avi],
       command: "acquire", lane: "avi", flags: {} },
-    { source: "docs/agents/agents/ray/sops/clean-up.md — clean-up drops it when the wave ends",
+    { source: "docs/agents/agents/mason/sops/clean-up.md — clean-up drops it when the wave ends",
       argv: %w[release avi],
       command: "release", lane: "avi", flags: {} },
-    { source: "docs/agents/agents/ray/sops/clean-up.md + system/devops-shift-lease.md:87 — the bare read",
+    { source: "docs/agents/agents/mason/sops/clean-up.md + system/devops-shift-lease.md:87 — the bare read",
       argv: %w[status],
       command: "status", lane: nil, flags: {} },
     { source: "bin/statusline#heartbeat_shift — the render-time heartbeat (the second renewer)",
@@ -240,7 +240,7 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
     assert_match(/"\$SHIFT_BIN" renew "\$lane"/, statusline,
                  "the status-line heartbeat is the one external caller that runs on every render")
 
-    cleanup = File.read(File.expand_path("../../docs/agents/agents/ray/sops/clean-up.md", __dir__))
+    cleanup = File.read(File.expand_path("../../docs/agents/agents/mason/sops/clean-up.md", __dir__))
     assert_match(/^bin\/devops-shift acquire avi$/, cleanup)
     assert_match(/^bin\/devops-shift release avi$/, cleanup)
     assert_match(/bin\/devops-shift status/, cleanup)

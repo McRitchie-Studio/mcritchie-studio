@@ -181,5 +181,5 @@ proposed, to the session that launched you.
 ## Related
 
 - [`../../../modules/building-sop.md`](../../../modules/building-sop.md): the builder reads the brief before submit.
-- [`../../../modules/focus-session.md`](../../../modules/focus-session.md): the session that launches the scout beside each builder.
+- [`../../ray/sops/focus-session.md`](../../ray/sops/focus-session.md): the session that launches the scout beside each builder.
 - `bin/lib/intent_scout.rb`: the marker, the auto-launch, the begin lines and the submit warning.

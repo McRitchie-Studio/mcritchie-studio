@@ -174,6 +174,6 @@ gone. Report the ruling, what was measured, and who acts next: the builder
 
 ## Related
 
-- [`../../../modules/focus-session.md`](../../../modules/focus-session.md) — where a contest is raised.
+- [`../../ray/sops/focus-session.md`](../../ray/sops/focus-session.md) — where a contest is raised.
 - [`../../../modules/address-blocker.md`](../../../modules/address-blocker.md) — the builder's path after an ACCEPT.
 - [`../../carl/sops/pr-review-primary.md`](../../carl/sops/pr-review-primary.md) — the review that raised the block.

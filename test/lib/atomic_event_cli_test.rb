@@ -1082,11 +1082,11 @@ class AgentActivityCliTest < Minitest::Test
     Dir.mktmpdir do |proj|
       env = SessionEnv.neutralized("CLAUDE_CODE_SESSION_ID" => SESSION, "CLAUDE_PROJECTS_DIR" => proj,
                                    "HOME" => proj, "TASK_USAGE_SANDBOX" => "1")
-      out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN, "heartbeat", "alex")
+      out, _err, status = Open3.capture3(env, RbConfig.ruby, BIN, "heartbeat", "carl")
 
       assert_predicate status, :success?
-      assert_includes out, "## Ritch's dream sequence"
-      assert_operator out.index("heartbeat set"), :<, out.index("## Ritch's dream sequence")
+      assert_includes out, "## Carl's dream sequence"
+      assert_operator out.index("heartbeat set"), :<, out.index("## Carl's dream sequence")
 
       out, _err, _status = Open3.capture3(env, RbConfig.ruby, BIN, "heartbeat", "--clear")
       refute_includes out, "dream sequence"
@@ -1348,7 +1348,7 @@ class AgentActivityCliTest < Minitest::Test
                  "it — the guard would refuse a flag the script supports")
   end
 
-  # ── [integration] admin login: `heartbeat steffon|ray` asks for the admin session ──
+  # ── [integration] admin login: `heartbeat steffon|mason` asks for the admin session ──
 
   ADMIN_TOKEN = "admin-session-token-never-printed"
   COLLECT_KEY = "collect-key-never-printed"
@@ -1357,7 +1357,7 @@ class AgentActivityCliTest < Minitest::Test
   def login_replies(overrides = {})
     @login_replies = {
       "agent_login_requests" => ["201 Created", JSON.generate("data" => {
-        "slug" => "login-abc", "soul" => "ray", "status" => "pending",
+        "slug" => "login-abc", "soul" => "mason", "status" => "pending",
         "ends_at" => (Time.now + 600).utc.iso8601, "collect_key" => COLLECT_KEY
       })],
       "code" => ["200 OK", JSON.generate("data" => { "slug" => "login-abc", "status" => "granted" })],
@@ -1367,7 +1367,7 @@ class AgentActivityCliTest < Minitest::Test
   end
 
   def collected_reply
-    ["200 OK", JSON.generate("data" => { "slug" => "sess-admin", "soul" => "ray", "tier" => "admin",
+    ["200 OK", JSON.generate("data" => { "slug" => "sess-admin", "soul" => "mason", "tier" => "admin",
                                          "expires_at" => (Time.now + 28_800).utc.iso8601, "token" => ADMIN_TOKEN })]
   end
 
@@ -1377,21 +1377,21 @@ class AgentActivityCliTest < Minitest::Test
   def test_integration_heartbeat_ray_posts_an_admin_login_request_and_keeps_its_key
     Dir.mktmpdir do |proj|
       login_replies
-      requests, out, err, = spawn_cli(%w[heartbeat ray], proj: proj)
+      requests, out, err, = spawn_cli(%w[heartbeat mason], proj: proj)
 
       create, collect = login_calls(requests)
       assert_equal %w[POST /api/v1/agent_login_requests], [create[:method], create[:path]]
-      assert_equal({ "soul" => "ray", "harness_session_id" => SESSION }, JSON.parse(create[:body]))
+      assert_equal({ "soul" => "mason", "harness_session_id" => SESSION }, JSON.parse(create[:body]))
       assert_equal "Bearer stub-token", create[:headers]["authorization"], "the machine credential asks"
       assert_equal "/api/v1/agent_login_requests/login-abc/collect", collect[:path]
       assert_equal({ "collect_key" => COLLECT_KEY, "harness_session_id" => SESSION }, JSON.parse(collect[:body]))
 
       held = JSON.parse(File.read(admin_login_file(proj)))
-      assert_equal ["ray", "login-abc", COLLECT_KEY], held.values_at("soul", "request", "collect_key")
+      assert_equal ["mason", "login-abc", COLLECT_KEY], held.values_at("soul", "request", "collect_key")
       assert_equal 0o600, File.stat(admin_login_file(proj)).mode & 0o777
-      assert_match(/admin login login-abc requested for ray/, out)
+      assert_match(/admin login login-abc requested for mason/, out)
       assert_match(/find the row that reads login-abc and answer only that row/, out)
-      assert_match(/Decline any other row for ray/, out)
+      assert_match(/Decline any other row for mason/, out)
       assert_match(/still pending/, out)
       refute_includes out + err, COLLECT_KEY
     end
@@ -1400,18 +1400,20 @@ class AgentActivityCliTest < Minitest::Test
   def test_integration_a_held_request_is_resumed_not_posted_again
     Dir.mktmpdir do |proj|
       login_replies
-      run_cli(%w[heartbeat ray], proj: proj)
-      again = login_calls(run_cli(%w[heartbeat ray], proj: proj))
+      run_cli(%w[heartbeat mason], proj: proj)
+      again = login_calls(run_cli(%w[heartbeat mason], proj: proj))
 
       assert_equal ["/api/v1/agent_login_requests/login-abc/collect"], again.map { |r| r[:path] }
     end
   end
 
-  def test_integration_heartbeat_alex_asks_as_ray_and_a_studio_soul_asks_for_nothing
-    Dir.mktmpdir do |proj|
-      login_replies
-      alex = login_calls(run_cli(%w[heartbeat alex], proj: proj))
-      assert_equal "ray", JSON.parse(alex.first[:body])["soul"]
+  def test_integration_heartbeat_ray_and_its_alias_alex_ask_for_nothing_since_ray_is_a_worker
+    %w[ray alex].each do |soul|
+      Dir.mktmpdir do |proj|
+        login_replies
+        assert_empty login_calls(run_cli(%W[heartbeat #{soul}], proj: proj)), "#{soul} holds no admin tier"
+        refute File.exist?(admin_login_file(proj))
+      end
     end
     Dir.mktmpdir do |proj|
       login_replies
@@ -1423,7 +1425,7 @@ class AgentActivityCliTest < Minitest::Test
   def test_integration_heartbeat_ray_help_posts_nothing_and_keeps_nothing
     Dir.mktmpdir do |proj|
       login_replies
-      requests, out, = spawn_cli(%w[heartbeat ray --help], proj: proj)
+      requests, out, = spawn_cli(%w[heartbeat mason --help], proj: proj)
 
       assert_empty requests, "--help reached the server"
       assert_match(/--code <code>/, out)
@@ -1434,26 +1436,26 @@ class AgentActivityCliTest < Minitest::Test
   def test_integration_the_code_grants_and_the_token_is_kept_never_printed
     Dir.mktmpdir do |proj|
       login_replies
-      run_cli(%w[heartbeat ray], proj: proj)
+      run_cli(%w[heartbeat mason], proj: proj)
 
       login_replies("collect" => collected_reply)
-      requests, out, err, = spawn_cli(%w[heartbeat ray --code ABCD-EFGH], proj: proj)
+      requests, out, err, = spawn_cli(%w[heartbeat mason --code ABCD-EFGH], proj: proj)
       code, collect = login_calls(requests)
       assert_equal "/api/v1/agent_login_requests/login-abc/code", code[:path]
       assert_equal({ "collect_key" => COLLECT_KEY, "harness_session_id" => SESSION, "code" => "ABCD-EFGH" }, JSON.parse(code[:body]))
       assert_equal "/api/v1/agent_login_requests/login-abc/collect", collect[:path]
 
       held = JSON.parse(File.read(admin_login_file(proj)))
-      assert_equal ["ray", "sess-admin", ADMIN_TOKEN], held.values_at("soul", "session", "token")
+      assert_equal ["mason", "sess-admin", ADMIN_TOKEN], held.values_at("soul", "session", "token")
       refute held.key?("collect_key"), "the spent key is dropped"
       assert_equal 0o600, File.stat(admin_login_file(proj)).mode & 0o777
       assert_equal ADMIN_TOKEN, AdminLogin.token_for(SESSION, proj)
-      assert_match(/admin session sess-admin granted to ray/, out)
+      assert_match(/admin session sess-admin granted to mason/, out)
       refute_includes out + err, ADMIN_TOKEN
 
-      requests, out, err, = spawn_cli(%w[heartbeat ray], proj: proj)
+      requests, out, err, = spawn_cli(%w[heartbeat mason], proj: proj)
       assert_empty login_calls(requests), "a held session asks for nothing"
-      assert_match(/admin session sess-admin held as ray/, out)
+      assert_match(/admin session sess-admin held as mason/, out)
       refute_includes out + err, ADMIN_TOKEN
     end
   end
@@ -1461,10 +1463,10 @@ class AgentActivityCliTest < Minitest::Test
   def test_integration_a_wrong_code_says_why_and_collects_nothing
     Dir.mktmpdir do |proj|
       login_replies
-      run_cli(%w[heartbeat ray], proj: proj)
+      run_cli(%w[heartbeat mason], proj: proj)
 
       login_replies("code" => ["403 Forbidden", JSON.generate("error" => "wrong code; 4 of 5 attempts left on login-abc")])
-      requests, _out, err, status = spawn_cli(%w[heartbeat ray --code NOPE-NOPE], proj: proj)
+      requests, _out, err, status = spawn_cli(%w[heartbeat mason --code NOPE-NOPE], proj: proj)
 
       assert_equal ["/api/v1/agent_login_requests/login-abc/code"], login_calls(requests).map { |r| r[:path] }
       assert_match(/admin login code refused — 403: wrong code; 4 of 5 attempts left/, err)
@@ -1476,7 +1478,7 @@ class AgentActivityCliTest < Minitest::Test
   def test_integration_a_refused_request_is_forgotten_with_the_reason
     Dir.mktmpdir do |proj|
       login_replies("collect" => ["410 Gone", JSON.generate("error" => "login-abc was refused: declined by the operator")])
-      _requests, _out, err, = spawn_cli(%w[heartbeat ray], proj: proj)
+      _requests, _out, err, = spawn_cli(%w[heartbeat mason], proj: proj)
 
       assert_match(/admin login not collected — 410: login-abc was refused: declined by the operator/, err)
       refute File.exist?(admin_login_file(proj))
@@ -1486,12 +1488,12 @@ class AgentActivityCliTest < Minitest::Test
   def test_integration_a_request_this_session_does_not_hold_is_named_for_decline
     Dir.mktmpdir do |proj|
       login_replies("agent_login_requests" => ["409 Conflict", JSON.generate(
-        "error" => "an admin login for ray is already open under this harness session id", "error_code" => "LOGIN_OPEN"
+        "error" => "an admin login for mason is already open under this harness session id", "error_code" => "LOGIN_OPEN"
       )])
-      requests, out, err, status = spawn_cli(%w[heartbeat ray], proj: proj)
+      requests, out, err, status = spawn_cli(%w[heartbeat mason], proj: proj)
 
       assert_equal ["/api/v1/agent_login_requests"], login_calls(requests).map { |r| r[:path] }, "nothing to collect"
-      assert_match(/admin login not requested — 409: an admin login for ray is already open/, err)
+      assert_match(/admin login not requested — 409: an admin login for mason is already open/, err)
       assert_match(/should NOT approve it, and should Decline it/, err)
       assert_match(/heartbeat set/, out, "the heartbeat itself still lands")
       refute File.exist?(admin_login_file(proj))
@@ -1502,7 +1504,7 @@ class AgentActivityCliTest < Minitest::Test
   def test_integration_a_heartbeat_as_the_other_admin_soul_revokes_the_held_session_first
     Dir.mktmpdir do |proj|
       login_replies("collect" => collected_reply)
-      run_cli(%w[heartbeat ray], proj: proj)
+      run_cli(%w[heartbeat mason], proj: proj)
       assert_equal ADMIN_TOKEN, AdminLogin.token_for(SESSION, proj)
 
       login_replies
@@ -1521,7 +1523,7 @@ class AgentActivityCliTest < Minitest::Test
   def test_integration_a_revoke_that_does_not_land_is_said
     Dir.mktmpdir do |proj|
       login_replies("collect" => collected_reply)
-      run_cli(%w[heartbeat ray], proj: proj)
+      run_cli(%w[heartbeat mason], proj: proj)
 
       login_replies("current" => ["500 Internal Server Error", JSON.generate("error" => "Internal server error")])
       _requests, out, err, = spawn_cli(%w[heartbeat --clear], proj: proj)
@@ -1535,7 +1537,7 @@ class AgentActivityCliTest < Minitest::Test
     [%w[heartbeat --clear], %w[close-open]].each do |argv|
       Dir.mktmpdir do |proj|
         login_replies("collect" => collected_reply)
-        run_cli(%w[heartbeat ray], proj: proj)
+        run_cli(%w[heartbeat mason], proj: proj)
         assert_equal ADMIN_TOKEN, AdminLogin.token_for(SESSION, proj)
 
         requests, out, err, = spawn_cli(argv, proj: proj)
@@ -1551,16 +1553,16 @@ class AgentActivityCliTest < Minitest::Test
     Dir.mktmpdir do |proj|
       soon = (Time.now + 30).utc.iso8601
       later = (Time.now + 3600).utc.iso8601
-      AdminLogin.write(SESSION, proj, { "soul" => "ray", "token" => "t", "expires_at" => soon }, env: { "CLAUDE_PROJECTS_DIR" => proj })
+      AdminLogin.write(SESSION, proj, { "soul" => "mason", "token" => "t", "expires_at" => soon }, env: { "CLAUDE_PROJECTS_DIR" => proj })
       assert_nil AdminLogin.token_for(SESSION, proj), "inside the refresh margin"
-      AdminLogin.write(SESSION, proj, { "soul" => "ray", "token" => "t", "expires_at" => later }, env: { "CLAUDE_PROJECTS_DIR" => proj })
+      AdminLogin.write(SESSION, proj, { "soul" => "mason", "token" => "t", "expires_at" => later }, env: { "CLAUDE_PROJECTS_DIR" => proj })
       assert_equal "t", AdminLogin.token_for(SESSION, proj)
       assert_nil AdminLogin.token_for("another-session", proj)
 
-      request = { "soul" => "ray", "request" => "login-abc", "collect_key" => "k", "ends_at" => later }
-      assert_equal request, AdminLogin.open_request(request, "ray")
+      request = { "soul" => "mason", "request" => "login-abc", "collect_key" => "k", "ends_at" => later }
+      assert_equal request, AdminLogin.open_request(request, "mason")
       assert_nil AdminLogin.open_request(request, "steffon")
-      assert_nil AdminLogin.open_request(request.merge("ends_at" => (Time.now - 1).utc.iso8601), "ray")
+      assert_nil AdminLogin.open_request(request.merge("ends_at" => (Time.now - 1).utc.iso8601), "mason")
       assert_equal [0, 0, 30, 600], [nil, "x", "30", "9999"].map { |value| AdminLogin.wait_seconds(value) }
     end
   end

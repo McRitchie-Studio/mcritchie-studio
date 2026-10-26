@@ -9,7 +9,7 @@ it. The entry map every session loads is `/Users/alex/projects/AGENTS.md`.
 |------------------|-------|
 | Task pipeline | `designed → building → submitted → reviewed → assembled → shipped`, plus `archived` (`Task::STAGES`); the board at `/tasks` and `/deployments` |
 | Agent registry | `/agents`, seeded from `config/souls.yml` (by `db/seeds/02_agents.rb`) and `db/seeds/03_skills.rb`; `Task::SOUL_ROSTER` reads the same `config/souls.yml` |
-| Activity record | Every session narrates with `bin/agent-activity`; Ritch grades at `/ray/heartbeat`; banked lessons at `/ray/insights` |
+| Activity record | Every session narrates with `bin/agent-activity`; Mason grades at `/ray/heartbeat`; banked lessons at `/ray/insights` |
 | Usage tracking | API cost and tokens per agent at `/usages` |
 | Error capture | `/error_logs` from `studio-engine` |
 | SSO | Satellites sign in through the hub; `config/satellites.yml` names each one's default role |
@@ -28,7 +28,7 @@ the human owner.
 | Soul | Seat |
 |------|------|
 | Pokémon | The general builder. Every task gets its own mascot; it builds the whole task to `submitted` |
-| Ritch | Orchestrator; runs focus sessions; the documentation review light; grades activities |
+| Mason | CEO: orchestrator; admin with Steffon; the documentation review light; grades activities |
 | Carl | Lead Architect; the standing primary reviewer on every code PR; merges into `accepted` |
 | Shannon | UI review light |
 | Jasper | On-chain review light |
@@ -39,10 +39,10 @@ the human owner.
 | Tywin | The Cyvasse app's operator and admin; internal, holds the keys |
 | Hank | The Commercial Welding business agent; not yet launched |
 | Rex | Marketing strategy (CMO) |
-| Mason | Brand voice and launches |
+| Ritch | Fractional CTO and client builder: focus sessions, the `/build` queue, `ship-clock`; brand voice and launches; Worker class |
 | Mack | General worker |
 
-The light for a PR is picked by domain fit from `{shannon, jasper, steffon, ray}`
+The light for a PR is picked by domain fit from `{shannon, jasper, steffon, mason}`
 with a per-task seeded tiebreak (`app/services/reviewer_selector.rb`); the QA owner
 and every author are excluded from the seat.
 
