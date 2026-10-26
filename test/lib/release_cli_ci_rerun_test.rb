@@ -33,6 +33,7 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
       def sh(*a, **_k)
         if a[0] == "gh" && a[1] == "run" && a[2] == "rerun"
           $reruns << a[3]
+          $stdout.puts("PARTIAL-RERUN") if a.include?("--failed")
           return ["", #{rerun_ok}]
         end
         ["", true]
@@ -51,7 +52,8 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
 
     assert_includes out, "AUTOMATIC RE-RUN, the one this gate allows"
     assert_includes out, "STATE=green"
-    assert_includes out, 'RERUNS=["11"]', "exactly one `gh run rerun 11 --failed`"
+    assert_includes out, 'RERUNS=["11"]', "exactly one `gh run rerun 11`"
+    refute_includes out, "PARTIAL-RERUN", "every job re-runs, so the executed-set guards read fresh receipts"
   end
 
   # [unit] A SECOND RED IS REAL: the re-run concluded red, so the gate fails on it.

@@ -3481,7 +3481,9 @@ end
 #
 # A red verdict whose failed runs are all first-attempt test-lane failures, or a
 # non-test job that died on bundler's gem-resolution error (the CDN race), is re-run
-# ONCE with `gh run rerun --failed`, loudly, and polled to its own conclusion. Never
+# ONCE, loudly, and polled to its own conclusion. ALL of the run's jobs are re-run
+# (`gh run rerun <id>`, never `--failed`): the hub's `*_executed_set` guards re-read
+# every shard's receipt, and a partial re-run leaves them reading the old attempt's. Never
 # more than once per repo and SHA in a process; a second red is real. Every read
 # fails CLOSED into "no re-run", so the gate's verdict is never softer than before.
 # Disarmed by RELEASE_CI_RERUN=off, and inert under an injected RELEASE_CI_STATUS
@@ -3509,13 +3511,13 @@ def ci_rerun_once!(repo, sha)
   end
 
   say("  ↻↻ #{repo}: CI RED for #{short(sha)} — AUTOMATIC RE-RUN, the one this gate allows: #{plan[:reason]}. " \
-      "Re-running the failed jobs of run#{plan[:run_ids].size == 1 ? '' : 's'} #{plan[:run_ids].join(', ')} " \
-      "(`gh run rerun --failed`); a second red is real.")
+      "Re-running every job of run#{plan[:run_ids].size == 1 ? '' : 's'} #{plan[:run_ids].join(', ')} " \
+      "(`gh run rerun`, all jobs, so the executed-set guards re-read fresh receipts); a second red is real.")
   plan[:run_ids].each do |id|
-    out, ok = sh("gh", "run", "rerun", id.to_s, "--failed", "-R", nwo, capture: true)
+    out, ok = sh("gh", "run", "rerun", id.to_s, "-R", nwo, capture: true)
     next if ok
 
-    say("  ✗ #{repo}: `gh run rerun #{id} --failed` was refused (#{out.to_s.strip.lines.last.to_s.strip}) — " \
+    say("  ✗ #{repo}: `gh run rerun #{id}` was refused (#{out.to_s.strip.lines.last.to_s.strip}) — " \
         "reading the red as it stands")
     return nil
   end

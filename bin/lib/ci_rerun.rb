@@ -18,8 +18,9 @@
 #     and rantly's CI carries no on-runner propagation wait (turf-monster's
 #     `.github/scripts/await-gem-propagation.sh` is that wait). A re-run was green.
 #
-# THE RULE, narrow on purpose. A red verdict earns ONE `gh run rerun --failed`
-# only when ALL of these hold, and every failed workflow run on the SHA meets them:
+# THE RULE, narrow on purpose. A red verdict earns ONE `gh run rerun` (every job
+# of the run, so the executed-set guards re-read fresh receipts) only when ALL of
+# these hold, and every failed workflow run on the SHA meets them:
 #
 #   1. The run failed on its FIRST attempt (`run_attempt == 1`): this SHA has never
 #      failed that lane before and been re-run. A lane that already failed once
