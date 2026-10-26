@@ -221,7 +221,7 @@ deployment shape.
 | 🔥 Commercial Welding | Product · Active | 4500-4599 | Managed satellite on studio-engine, `reserved` in `config/satellites.yml` (no link-tree entry before the acquisition closes); a Google Workspace client. git push to Heroku `commercial-welding`; QA on `commercial-welding-qa` at `qa.commercialwelding.llc` (both provisioned 2026-10-12; DNS pending) |
 | 📚 Moms App | Basic · Active | 4400-4499 | Release-managed standalone on studio-engine, profile `standalone-heroku` |
 | 🎞️ Dads App, 🎲 Prisoners Dilemma, 🏈 Weekly Lock, 📣 Rantly, 🗂️ Portfolio, 🍽️ 10&5 Hospitality, 🔎 Search Position | Basic · Showcase | 3700-4399, one block each | Release-managed standalones on profile `standalone-heroku`, Heroku `dads-app` or `mcr-<repo>`, no QA copies (`qa_evidence: exempt`). Rantly runs on studio-engine; the others have no engine and no database |
-| 📇 Rolio | Archived | 3300-3399 | Dormant; ladder `dormant`; Heroku `rolio-prod` and `rolio-qa` |
+| 📇 Rolio | Product · Active | 3300-3399 | Release-managed standalone, ladder `three-rung`; git push to Heroku `rolio-prod`; QA on `rolio-qa` |
 | ⛓️ Chain Ops | Archived | 3400-3499 | Never reached production; ladder `blocked`, no Heroku app |
 | 📊 Tax Studio | Archived | 3200-3299 | Heroku app `tax-studio` with no repo; ladder `planned` |
 | 🤝 Acquisition Studio | Archived | none | Retired prototype; McRitchie Industries holds its old block |

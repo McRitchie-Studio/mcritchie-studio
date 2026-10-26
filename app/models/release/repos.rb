@@ -60,8 +60,8 @@ class Release
     # Every registered repo — gem or app — that actually walks the three-rung
     # ladder, in registry order (gems first, then apps).
     #
-    # This is the set a ladder-status surface asks about: a `dormant` repo (rolio)
-    # has no live rungs to report, and a repo absent from the registry has no
+    # This is the set a ladder-status surface asks about: a parked repo (`dormant`,
+    # `planned`, `blocked`) has no live rungs to report, and a repo absent from the registry has no
     # ladder at all. Deriving it here rather than hardcoding a list means a new
     # satellite joins the moment it is registered, and leaves when it is retired.
     def three_rung_repos

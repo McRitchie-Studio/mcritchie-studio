@@ -63,7 +63,7 @@
 #     /tasks/recover-industries-engine-adoption, which was reclassified to `backend` rather
 #     than fabricate the tag — a correct call for that diff (no first-party UI code), and NOT
 #     a general escape: the next genuinely ui+db change here has no such out.
-#     THIS REPO IS NOT DORMANT, which is what separates it from rolio below.
+#     Rolio below is in the same position.
 #   · commercial-welding — NO playwright lane. NO e2e/ directory.           e2e **NOT COLLECTED**.
 #     Added 2026-10-12 with its QA copy. Industries' shape exactly: its ci.yml calls the
 #     hub's reusable-ci.yml with `playwright: false`, and its system lane runs
@@ -73,8 +73,8 @@
 #     A `ui+db` task in rolio therefore demands the `e2e` tier that nothing in rolio runs, and
 #     bin/dor-check credits the `[e2e]` tag a builder types. That is THE ORIGINAL BUG of
 #     /tasks/e2e-tiers-are-decorative (raised 2026-07-13), still breathing, one repo over.
-#     It is not a live wound today only because rolio is dormant — which is luck, not a
-#     mechanism, and luck is what this file is supposed to have replaced.
+#     Rolio rides the release on the three-rung ladder, so this is a live gap: a `ui+db`
+#     rolio task has no honest `e2e` line until rolio grows a playwright lane.
 #   · studio-engine, solana-studio, turf-vault — libraries/programs; no shape here demands e2e
 #     of them (`library`/`onchain` are unit+integration). NB this row is about TIER DEMAND,
 #     not lane absence: studio-engine added a playwright lane on 2026-08-12 (e2e/ +
