@@ -52,7 +52,7 @@ changes code. Paths are in the `turf-monster` repo.
   changing either.
 - **Stored span prices never move on deploy.** A pricing change reaches a live
   span only through `bin/rails "slates:reprice_span[<slug>]"` (dry run, then
-  `APPLY=1`); repricing paid picks is Alex's call.
+  `APPLY=1`); repricing paid picks is Alex McRitchie's call.
 
 **Feeds**
 
@@ -110,7 +110,7 @@ changes code. Paths are in the `turf-monster` repo.
 
 - **`bin/deploy` runs the full suite and prints only its last 25 lines.** Read the
   same SHA's CI log for the failure. `SKIP_TESTS=1` is read by that script only
-  and needs Alex's approval.
+  and needs Alex McRitchie's approval.
 - **A test that reads the day of the week passes on weekdays and fails on weekend
   deploys.** Freeze the clock in any test near a lock rule.
 - **Browser specs in a desk:** run `npm ci` first (a desk has no `node_modules`),

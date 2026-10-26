@@ -24,7 +24,7 @@ Every step carries one tag. The job of this SOP is to shrink the last column.
 | Tag | Meaning |
 |---|---|
 | **AUTOMATED** | A job, rake task or API does it. Named in the step. |
-| **AGENT** | An agent does it on a heartbeat: Rex for gates and offer, Steffon for DNS and infra, Ritch for copy. |
+| **AGENT** | An agent does it on a heartbeat: Rex for gates and offer, Steffon for DNS and infra, Alex for copy. |
 | **ALEX** | Irreducible: spends money, needs a click at a registrar with no API, or an OAuth consent only he can give. |
 
 Where a step says AGENT but names a gap, the gap is in the
@@ -54,11 +54,11 @@ spam). The domain earns its own history before mail carries it.
 | # | Step | Tag |
 |---|---|---|
 | 0.1 | Buy the domain ([`domain-purchase`](../../steffon/sops/domain-purchase.md)) | **ALEX** — money |
-| 0.2 | **Move the domain to Cloudflare** ([`domain-dns` § Cloudflare DNS](../../steffon/sops/domain-dns.md#cloudflare-dns--pro-and-above)). The agent creates the zone, its records and the `www` redirect by API; Alex turns DNSSEC off at the registrar (a scheduled outage of 15 minutes to an hour, up to a day on a .com, in a quiet window, with his OK), then pastes the nameservers Cloudflare assigns. This one paste makes every later DNS step an API call | **AGENT** for the zone · **ALEX** — two Squarespace clicks for the move and a third a day later to publish the DS (`domain-dns` step 6); Squarespace has no API |
+| 0.2 | **Move the domain to Cloudflare** ([`domain-dns` § Cloudflare DNS](../../steffon/sops/domain-dns.md#cloudflare-dns--pro-and-above)). The agent creates the zone, its records and the `www` redirect by API; Alex McRitchie turns DNSSEC off at the registrar (a scheduled outage of 15 minutes to an hour, up to a day on a .com, in a quiet window, with his OK), then pastes the nameservers Cloudflare assigns. This one paste makes every later DNS step an API call | **AGENT** for the zone · **ALEX** — two Squarespace clicks for the move and a third a day later to publish the DS (`domain-dns` step 6); Squarespace has no API |
 | 0.3 | Write every record through the Cloudflare DNS API (token `cloudflare.studio.provision`, [credential inventory](../../../modules/credential-inventory.md)): app records, SPF, DKIM, and DMARC with an `rua` address (the ZeroBounce DMARC monitor supplies one). Verify each with `dig` from outside | **AGENT** (Steffon) |
 | 0.4 | Search Console: add the property and write its TXT via the Cloudflare API; submit the sitemap | **AGENT**, after a one-time **ALEX** OAuth consent for the Search Console API |
 | 0.5 | Postmaster Tools: add the domain and write its TXT via the Cloudflare API | **AGENT**, after a one-time **ALEX** click to add the domain in Postmaster's UI |
-| 0.6 | Backlinks from domains that are already trusted: a page on `mcritchie.studio`, the app's social profiles, and one or two community posts | **AGENT** (Ritch for the words) |
+| 0.6 | Backlinks from domains that are already trusted: a page on `mcritchie.studio`, the app's social profiles, and one or two community posts | **AGENT** (Alex for the words) |
 | 0.7 | Take a baseline: Google Safe Browsing lookup, DNS blocklists (for example the Spamhaus DBL), and the ZeroBounce blacklist monitor. Record it clean before the first send | **AGENT** |
 | 0.8 | Keep a 301 from the established host to the new one with the path and query kept (Cyvasse: `cyvasse.mcritchie.studio` → `cyvasse.xyz`). Email links use the established host until Phase 3 moves them | **AGENT** (a task on the board) |
 
@@ -96,7 +96,7 @@ cleanest.
 
 The ramp protects reputation; the offer earns it. Mail that nobody opens,
 clicks or replies to reads as unwanted to a filter, however clean the list.
-Rex owns what the email asks for. Ritch owns every sentence in it.
+Rex owns what the email asks for. Alex owns every sentence in it.
 
 1. **An event, not an announcement.** "We're back" gives one reason to click,
    once. A fixed-time event (a weekly Cyvasse Night at a set hour; a season
@@ -171,7 +171,7 @@ row must be green to advance a stage.
 
 - **One amber or red gate** → step back one stage and halve the batch. Rerun the
   gate on the smaller batch.
-- **Red twice in a row** → stop the ramp and tell Alex, with the numbers.
+- **Red twice in a row** → stop the ramp and tell Alex McRitchie, with the numbers.
 - **Complaint rate at or above 0.08%, a new blocklist listing, or a spam-trap
   hit** → stop every send from that domain today. Re-verify the audience before
   resuming at stage 1.

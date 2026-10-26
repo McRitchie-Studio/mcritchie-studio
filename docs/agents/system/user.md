@@ -12,7 +12,7 @@ come from `Studio.routes`.
 
 | Page | Shows | Needs |
 |------|-------|-------|
-| `/` | The public McRitchie Studio landing page: positioning, Alex's profile, contact | nothing |
+| `/` | The public McRitchie Studio landing page: positioning, Alex McRitchie's profile, contact | nothing |
 | `/dashboard` | Every registered agent, task counts by stage, the twenty latest activities | admin |
 | `/agents`, `/agents/:slug` | The agent grid; one agent's skills, recent tasks and activity | admin |
 | `/agents/:slug/activities` | The cross-session narrated activity feed with grade cells | admin |
@@ -27,7 +27,7 @@ come from `Studio.routes`.
 | `/usages` | API cost and tokens per agent | admin |
 | `/error_logs`, `/error_logs/:id` | Captured errors; one error with its backtrace | admin |
 | `/docs`, `/docs/*path` | The agent docs under `docs/agents`, rendered | admin |
-| `/ray/heartbeat`, `/ray/pipeline`, `/ray/insights` | A session's actions for grading; the activity pipeline; the banked insights | admin |
+| `/mason/heartbeat`, `/mason/pipeline`, `/mason/insights` | A session's actions for grading; the activity pipeline; the banked insights | admin |
 
 ## Task stages
 

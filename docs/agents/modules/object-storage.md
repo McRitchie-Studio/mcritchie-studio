@@ -2,7 +2,7 @@
 
 ## Status: Active
 
-Steffon owns this module. Alex approved the S3 rules on 2026-09-01 and the move
+Steffon owns this module. Alex McRitchie approved the S3 rules on 2026-09-01 and the move
 to **Cloudflare R2** on 2026-09-26 (asset-library plan, Wave 1), and handed
 maintenance to Steffon's role: rule changes ride normal doc tasks under his
 name, and `bucket-provision`
@@ -20,7 +20,7 @@ their code, in production and QA, has no S3 or mirror stage left
 retired on 2026-10-10**; the little that remains is listed in
 [What remains of AWS](#what-remains-of-aws) at the end of this page. The hub's
 rules are in **The hub runs R2 only** below. The move closed on 2026-10-11.
-Why R2: Alex left AWS for a simpler operator experience, not for cost; R2 speaks
+Why R2: Alex McRitchie left AWS for a simpler operator experience, not for cost; R2 speaks
 the S3 API, so Active Storage and `Studio::S3` move by endpoint and key, not by
 rewrite. The whole plan (tiers, cutover recipe, asset catalog, AWS exit) is
 [`../system/asset-library-plan.md`](../system/asset-library-plan.md).
@@ -132,7 +132,7 @@ These are measured against Cloudflare's S3-compatibility page, not assumed.
   lifecycle rules. Its nightly object run is `.github/workflows/r2-backup.yml`,
   for the apps in its matrix (databases have their own nightly backup:
   [`db-restore-drill`](../agents/steffon/sops/db-restore-drill.md)). On a production
-  bucket without backup enabled, a destructive bulk operation needs Alex's
+  bucket without backup enabled, a destructive bulk operation needs Alex McRitchie's
   explicit yes; with it enabled, run a backup first and read its receipt.
 - **No tags, ACLs, or bucket policies.** Cost lines come from bucket names, and
   every grant lives on a token.
@@ -152,7 +152,7 @@ These are measured against Cloudflare's S3-compatibility page, not assumed.
 
 | Tier | Identity | Holds | Store |
 |---|---|---|---|
-| 1 | Alex's Cloudflare login | Alex only | his private vault |
+| 1 | Alex McRitchie's Cloudflare login | Alex McRitchie only | his private vault |
 | 2 | `cloudflare.studio.provision` (Cloudflare token name `mcritchie-studio-admin`) | Steffon's provisioning lane: Workers R2 Storage read/write, Account API Tokens read/write (mints the per-app tokens), Account DNS Settings, and (since the evening of 2026-09-26) DNS read/write on every domain in the account | `studio-agents-admin` (admin op lane only) |
 | 4 | `r2-<app>-prod` / `r2-<app>-dev` | one app's buckets, exactly | 1Password `r2.<app>` in `studio-agents`; Heroku config vars once the app cuts over |
 | 4b | `r2-<app>-backup` | reads `<app>-production`, writes `<app>-backup`; no app key can see the backup bucket | fields `access-key-id-backup` / `secret-access-key-backup` in `r2.<app>` |
@@ -192,12 +192,12 @@ is only true for the day it was taken.
 The fleet left AWS on 2026-10-10; the record of what was retired is the plan's
 [Wave 7 — the AWS exit record](../system/asset-library-plan.md#wave-7--the-aws-exit-record).
 No app holds an AWS credential, and nothing here is a procedure to run. Do not
-provision S3 buckets. What Alex kept on purpose:
+provision S3 buckets. What Alex McRitchie kept on purpose:
 
 | What | Why |
 |---|---|
 | The AWS account | a foothold, in case there is ever a reason to go back |
-| IAM user `agents-admin` (1Password item `AWS`, vault `studio-agents-admin`), with `ViewOnlyAccess` and the inline policy `agents-admin-wave7-retire` | the admin foothold; Alex kept both permissions on purpose, "to build trust" |
+| IAM user `agents-admin` (1Password item `AWS`, vault `studio-agents-admin`), with `ViewOnlyAccess` and the inline policy `agents-admin-wave7-retire` | the admin foothold; Alex McRitchie kept both permissions on purpose, "to build trust" |
 | S3 `mcritchie-studio-production`: 6 `email/` images | emails already sent embed their URLs; kept about one year from 2026-10-10 |
 | S3 `turf-monster-production`: 2 `email_banners/` images | the same, about one year |
 

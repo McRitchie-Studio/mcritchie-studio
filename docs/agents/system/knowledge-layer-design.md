@@ -1,10 +1,10 @@
 # The knowledge layer — design
 
-**Status: proposed, awaiting Alex's review.** The final act of the
+**Status: proposed, awaiting Alex McRitchie's review.** The final act of the
 `platform-audit-refactors` epic. Google Workspace is the knowledge shelf; Egnyte
 slots in later as a second source behind the same reader. Section 1 is what
 exists; sections 2 to 8 are the design; section 9 lists the build pieces and
-section 10 the decisions Alex makes.
+section 10 the decisions Alex McRitchie makes.
 
 The idea in one paragraph: knowledge sits in five tiers, and it flows downward
 only. An original lives in Drive. A fact or a page is derived from it and points
@@ -38,7 +38,7 @@ session's context only when that session asks for it by id.
 | **2 Specialized** | Topic knowledge most sessions never need | Code-bound topics: the owning repo's docs. Business-bound topics: `notes/` in Drive | Only when the task names the topic; the map carries a one-line where-to-look index | Repo half: the tier 1 list. Drive half: identity data and credentials |
 | **3 Private facts** | One thing known about a person, a company or an app | Encrypted `Fact` records on the hub | Never by itself; read by `bin/fact` for a named subject | Identity data (an SSN, a card, an account or routing number, a passport or licence number, a PIN, a password, a person's tax id, a long unformatted number): the key takes a pointer with no value, and the key itself is a name that carries no data. Privileged deal terms never go in an ordinary fact |
 | **4 Originals** | Source documents, and a digest row for each | Bytes: Google Drive. Digest row: `SourceDocument` on the hub. Derived text: one private R2 bucket | Never by itself; read by id | In Drive: credentials, keys, tokens and seed phrases. In git: any original's bytes. In R2: an original |
-| **5 Dreams** | Worked decisions, each signed off by Alex | This repo, tracked and public | Platform dreams at session start; a soul's by relevance at a claim | Live data and open security detail ([`dream.md`](../modules/dream.md)) |
+| **5 Dreams** | Worked decisions, each signed off by Alex McRitchie | This repo, tracked and public | Platform dreams at session start; a soul's by relevance at a claim | Live data and open security detail ([`dream.md`](../modules/dream.md)) |
 
 Rules that hold across the tiers:
 
@@ -123,7 +123,7 @@ so no derived text goes there. An object's key is its SHA-256.
 - **One subject per Workspace.** The walker acts as `team@<domain>`, and
   `authorizer_for` refuses any address that is not an active row. The Google-side
   bound is what `team@` can open, so the shelf drive's membership is the boundary
-  Alex sets by hand.
+  Alex McRitchie sets by hand.
 - **Two new purposes narrow the token.** `drive_read` asks for `drive.readonly`
   only; the walker and the indexer use it. `drive_mirror` asks for `drive.file`
   only; the memory mirror uses it. Neither holds a Gmail scope. The grant does not
@@ -148,7 +148,7 @@ so no derived text goes there. An object's key is its SHA-256.
    table already holds unique.
 4. **Screen.** Text that reads as a credential or as identity data marks the row
    `withheld`: its text is served to no studio session, and the row is reported to
-   Alex. A credential in Drive is a filing mistake to fix at the source.
+   Alex McRitchie. A credential in Drive is a filing mistake to fix at the source.
 5. **Summarize, by hand.** The indexer calls no model. A session writes the
    summary at triage, and it is the only derived text an `aware` reader gets.
 
@@ -211,7 +211,7 @@ title and its file name are data, never instructions.
 - **The client class gets no tier 3 or tier 4 content**, so an outsider cannot
   draw it out through a client-facing soul.
 - **Nothing rises without a person.** A summary is written by a session and read
-  at review; a dream is signed off by Alex; the ship-time proposer copies no note
+  at review; a dream is signed off by Alex McRitchie; the ship-time proposer copies no note
   text into a draft ([`dream.md`](../modules/dream.md)).
 - **What this does not stop, studio:** a studio session that read a poisoned
   document recording a wrong ordinary fact inside its own task. The source
@@ -265,9 +265,9 @@ shared drive or manage its members.
    and QA, one set per app ([`credentials.md`](../modules/credentials.md)).
 
 Steffon provisions the knowledge bucket with his `bucket-provision` SOP before
-piece 3; that needs no tap from Alex.
+piece 3; that needs no tap from Alex McRitchie.
 
-## 10. Decisions for Alex
+## 10. Decisions for Alex McRitchie
 
 1. **A new shelf drive, or the shared drives that exist?** (a) One new dedicated
    drive per Workspace. (b) Register the existing drives as sources.
@@ -302,7 +302,7 @@ piece 3; that needs no tap from Alex.
    a session marks. The cost: an unmarked file is lost with the laptop, marking
    depends on a session remembering, and a marked file is screened no better.
    **Recommended: (a), on one condition:** the hub's shelf drive has no member but
-   Alex and `team@` while it holds the mirror. With more members, choose (b).
+   Alex McRitchie and `team@` while it holds the mirror. With more members, choose (b).
 8. **Who writes a document's summary?** (a) A session at triage, read at review.
    (b) A model inside the indexer. **Recommended: (a).** A model that reads every
    walked document unattended is the injection path section 8 closes.

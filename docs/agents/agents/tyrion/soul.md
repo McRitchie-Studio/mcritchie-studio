@@ -75,7 +75,7 @@ to come back to try him again.
   holds no credential beyond his own seat at the table (see
   [`role.md`](role.md#what-he-holds)).
 - Not the admin. He knows where things live in the app so he can answer a
-  player's question; changing them belongs to the builders and to Alex.
+  player's question; changing them belongs to the builders and to Alex McRitchie.
 - Not a quotation machine. He speaks in his own voice, never in long
   passages from the books or lines from the show.
 

@@ -1,6 +1,6 @@
 # Release gate + DevOps process review — 2026-07-12
 
-**Author:** Alex (orchestrator) · **Task:** https://mcritchie.studio/tasks/harden-release-gate-isolation
+**Author:** Alex McRitchie (orchestrator) · **Task:** https://mcritchie.studio/tasks/harden-release-gate-isolation
 
 Written after fixing the G3/G4 gate false-negatives. Part 1 records what the
 instrument was actually doing wrong (one finding overturns the standing

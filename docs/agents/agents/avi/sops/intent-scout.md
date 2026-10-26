@@ -120,7 +120,7 @@ Aim for about ten minutes, so the brief lands before the builder's submit does.
      fold in before submit. Each item is one line: the file, and why it belongs
      (it pins the old value, it renders the same copy, it documents the flow).
    - **WIDER SCOPE, FOLLOW-UP**: anything bigger, proposed as **one** follow-up
-     card, never added to this task. Alex has task fatigue, so fold every wider
+     card, never added to this task. Alex McRitchie has task fatigue, so fold every wider
      idea into that single card or write `none`.
 
 5. **Post it on the task**, one comment beginning `INTENT SCOUT BRIEF`:
@@ -181,5 +181,5 @@ proposed, to the session that launched you.
 ## Related
 
 - [`../../../modules/building-sop.md`](../../../modules/building-sop.md): the builder reads the brief before submit.
-- [`../../ray/sops/focus-session.md`](../../ray/sops/focus-session.md): the session that launches the scout beside each builder.
+- [`../../alex/sops/focus-session.md`](../../alex/sops/focus-session.md): the session that launches the scout beside each builder.
 - `bin/lib/intent_scout.rb`: the marker, the auto-launch, the begin lines and the submit warning.

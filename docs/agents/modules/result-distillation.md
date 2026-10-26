@@ -19,7 +19,7 @@ one result at a time, live, by the agent producing the result.
   needs no agent effort.
 - A distilled finding answers *"what did I learn, and what does it change?"* It
   exists **only** if the agent writes it. A raw re-read left as the record forces
-  the next reader (another agent, Alex, the learning loop) to re-derive
+  the next reader (another agent, Alex McRitchie, the learning loop) to re-derive
   the judgment the agent already made.
 - So: when a result **decides** something, the agent records the decision — the
   finding — not just the operation that produced it.
@@ -79,7 +79,7 @@ feed the learning loop.
 raw tool result        (DATA — auto-captured, one row per tool call)
   └─ action finding     (DATA + judgment — bin/agent-activity action --finding --summary)
        └─ activity verdict   (the --outcome that synthesizes the findings)
-            └─ learning-loop insight   (Ray heartbeat distills verdicts → banked insight)
+            └─ learning-loop insight   (Mason heartbeat distills verdicts → banked insight)
 ```
 
 Reading up the ladder recovers *why*; reading down recovers *what*. The policy
@@ -136,5 +136,5 @@ reviewer records is only as trustworthy as the findings it was distilled from.
 The raw-capture layer this policy sits on top of is documented in
 `docs/agents/system/atomic-capture-hook.md` (the `PostToolUse` producer and the
 `AgentAction` contract); the session-level Distill grain lives in the OPSD
-learning loop surfaced at `/ray/heartbeat`. Neither is required reading to apply
+learning loop surfaced at `/mason/heartbeat`. Neither is required reading to apply
 this policy — the commands above stand on their own.

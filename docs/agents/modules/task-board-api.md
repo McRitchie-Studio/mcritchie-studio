@@ -200,7 +200,7 @@ read-only, from `Task::CostSummary`:
 covers and leaves out: [`../system/agent-usage.md`](../system/agent-usage.md#task-cost).
 (There are also `agents`, `activities`, and `usages` resources, and the dream
 bank's `dream_approvals`, `dream_retirements`, `dream_grades`, `dream_swaps` and
-`dream_rulings` (Alex's ruling given in chat, with his quoted words); out of scope
+`dream_rulings` (Alex McRitchie's ruling given in chat, with his quoted words); out of scope
 here. The dream routes are in [`dream.md`](dream.md), Acts 3 and 4.)
 
 ### Release Notes

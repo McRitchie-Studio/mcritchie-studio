@@ -10,7 +10,7 @@ The bank is the **single source of truth**; the tracked doc
 
 - **Curate a lesson** — bank it: `bin/agent-activity grade <activity-id> --disposition
   good|not --slug "<4–7 words>" [--long-form "<anchor>"] --bank` (Mason heartbeat
-  `grade-events`). The audit of that agent grade (`grader: mcr`) is Alex's admin path.
+  `grade-events`). The audit of that agent grade (`grader: mcr`) is Alex McRitchie's admin path.
 - **Feed it forward** — a fresh session loads the top-N via the `bin/session-insights`
   SessionStart loader, which GETs `/api/v1/insights`, so a new agent hatches already
   knowing them. Banking a lesson is what publishes it; the tracked doc below is the
@@ -41,7 +41,7 @@ its rules is promoted, the memory file points at the owning doc.
 
 A lesson says what to do. A **dream** shows a decision being made: the question a
 session faced, the good answer, and why. Dreams are tracked files in
-[`docs/agents/dreams/`](../dreams/README.md), each one signed off by Alex, and the
+[`docs/agents/dreams/`](../dreams/README.md), each one signed off by Alex McRitchie, and the
 same `bin/session-insights` loader prints the approved platform sequence ahead
 of the insights; a soul's own sequence prints when the soul is invoked
 (`bin/dream <soul>`). They are read locally, so they load with the board

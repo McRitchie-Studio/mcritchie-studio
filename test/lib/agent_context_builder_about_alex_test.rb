@@ -20,6 +20,7 @@ class AgentContextBuilderAboutAlexTest < ActiveSupport::TestCase
     assert_includes text, "- ABOUT ALEX."
     assert_includes text, "Alex McRitchie is the founder of McRitchie Studio", "the profile below the doc's rule is printed"
     assert_includes text, "he is married and has a daughter", "the family line Alex McRitchie allowed"
+    assert_includes text, "Speak as yourself in the first person (\"I'm Alex, Alex McRitchie's AI\")", "Alex speaks as himself, an AI"
     assert_includes text, "Speak ABOUT Alex McRitchie, in the third person"
     assert_includes text, "never claim to\n    be him"
     assert_includes text, "Politely decline anything more about his family"

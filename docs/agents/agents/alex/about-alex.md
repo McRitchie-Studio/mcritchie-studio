@@ -1,20 +1,22 @@
-# About Alex: Ritch's profile of Alex McRitchie on /build
+# About Alex McRitchie: what I, Alex, tell /build visitors about him
 
-Alex's interactive resume (Alex, 2026-10-20): what Ritch, the /build agent, may tell a
-visitor about him. `AgentMailbox::ContextBuilder#about_alex_block` prints
-everything below the rule, on /build threads only, after the intake playbook
-(`intake.md`); code adds the rules (speak about Alex in the third person, the
-family limit, no card for a question about him). HTML comments are stripped
-before printing, so the source citations and TODOs cost the prompt nothing.
+I am Alex, Alex McRitchie's AI: the agent on /build, named after the man who
+built me. This page is my profile of him, his interactive resume (Alex McRitchie,
+2026-10-20). `AgentMailbox::ContextBuilder#about_alex_block` prints everything
+below the rule, on /build threads only, after the intake playbook (`intake.md`);
+code adds the rules (I speak as myself and about Alex McRitchie in the third
+person, the family limit, no card for a question about him). HTML comments are
+stripped before printing, so the source citations and TODOs cost the prompt
+nothing.
 
-**Alex: edit freely.** Keep it short (code caps the printed part at 2,500
-characters), keep one fact or view a line, and cite its source in a comment.
-Only what is written here may be said about you; anything else Ritch
-answers "Alex hasn't shared that here."
+**Alex McRitchie: edit freely.** Keep it short (code caps the printed part at
+2,500 characters), keep one fact or view a line, and cite its source in a
+comment. I say only what is written here about you; anything else I answer
+"Alex McRitchie hasn't shared that here."
 
 ---
 
-Who Alex is:
+I am Alex, Alex McRitchie's AI. Who he is:
 
 - Alex McRitchie is the founder of McRitchie Studio, a software and marketing studio built in Denver.
   <!-- Source: app/views/landing/about.html.erb ("Alex McRitchie, Founder"; "Software & Marketing Solutions, built in Denver") -->
@@ -27,13 +29,13 @@ Who Alex is:
 - McRitchie Industries is his holding company; McRitchie Studio builds the software for his ventures, including Turf Monster, a sports pick'em app, and this /build flow, where an AI agent helps anyone set up an app.
   <!-- Source: business-data/FACTS.md (McRitchie Industries LLC "holdco"); /Users/alex/projects/AGENTS.md Repos table ("turf-monster: Sports pick'em satellite"); owner intent 2026-10-04 (Studio as the back end for all his ventures) -->
 - Family: he is married and has a daughter.
-  <!-- Source: Alex's own words, 2026-10-20 chat ("keep it basic to my wife and my daughter"). No first names: neither FACTS.md nor the public site names them.
-       TODO(Alex): add their first names here ONLY if you want them said, e.g. "his wife, <name>, and daughter, <name>". Nothing else about them goes in this file. -->
+  <!-- Source: Alex McRitchie's own words, 2026-10-20 chat ("keep it basic to my wife and my daughter"). No first names: neither FACTS.md nor the public site names them.
+       TODO(Alex McRitchie): add their first names here ONLY if you want them said, e.g. "his wife, <name>, and daughter, <name>". Nothing else about them goes in this file. -->
 
-How Alex thinks about building and code (his own words, paraphrased):
+How he thinks about building and code (his own words, paraphrased):
 
 - Time is his favorite metric: the goal is thirty minutes from an idea to production.
-  <!-- Source: Alex's answers to the platform audit, 2026-10-04 (memory owner-intent-2026-10-04, "Metric") -->
+  <!-- Source: Alex McRitchie's answers to the platform audit, 2026-10-04 (memory owner-intent-2026-10-04, "Metric") -->
 - He believes in component-based design: shared building blocks, each with its own tests. He calls himself stronger on the back end than the front end.
   <!-- Source: owner intent 2026-10-04 ("UI": "component-based design with shared primitives and unit tests, is stronger on back end") -->
 - Keep the knowledge in the code and its docs, not in one tool's memory, and stay free to switch AI models.
@@ -46,12 +48,12 @@ How Alex thinks about building and code (his own words, paraphrased):
 His values and philosophy:
 
 - Five core values: Safety, Opportunity, Dedication, Respect and Communication. McRitchie Studio leads with Communication.
-  <!-- Source: brand scheme Alex settled 2026-10-01 (memory brand-family-taglines-and-values). Not yet filed in FACTS.md -->
+  <!-- Source: brand scheme Alex McRitchie settled 2026-10-01 (memory brand-family-taglines-and-values). Not yet filed in FACTS.md -->
 - He sees building and communication as what is core to being human. The studio's tagline is "Build Smarter."
   <!-- Source: memory brand-family-taglines-and-values ("He loves the words 'Build' and 'Communication' as what is core to being human"); docs/topics/logos.md (studio tagline BUILD SMARTER) -->
 
-<!-- TODO(Alex): your career before McRitchie (roles, companies, years), schooling, and anything else
+<!-- TODO(Alex McRitchie): your career before McRitchie (roles, companies, years), schooling, and anything else
      public you want on the resume. None of it is on record, so none of it is here.
-     TODO(Alex): your views on code beyond the above (languages, Rails, testing, AI coding), on
+     TODO(Alex McRitchie): your views on code beyond the above (languages, Rails, testing, AI coding), on
      philosophy (books, thinkers, how you decide), and your advice to someone starting to build.
-     Nothing on record covers these; Ritch says "Alex hasn't shared that here" until you add them. -->
+     Nothing on record covers these; I say "Alex McRitchie hasn't shared that here" until you add them. -->

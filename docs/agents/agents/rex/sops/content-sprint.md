@@ -54,13 +54,13 @@ Rules of the batch:
 - Build the whole batch before publishing any of it. Producing daily turns a
   volume test into a stamina test.
 
-## Step 4 — Voice pass: Ritch
+## Step 4 — Voice pass: Alex
 
-Hand the batch to **Ritch**. He owns brand voice and he can veto a line.
+Hand the batch to **Alex**. He owns brand voice and he can veto a line.
 
 The seam, so it does not get relitigated weekly: **Rex sets what the batch is
-testing and how many; Ritch sets whether a given sentence is ours.** If volume is
-the constraint, Ritch ships at his floor rather than his ceiling — and his floor
+testing and how many; Alex sets whether a given sentence is ours.** If volume is
+the constraint, Alex ships at his floor rather than his ceiling — and his floor
 is still a floor, not a suggestion. He will not pass a claim the product cannot
 back, and Rex backs him on that against his own campaign.
 

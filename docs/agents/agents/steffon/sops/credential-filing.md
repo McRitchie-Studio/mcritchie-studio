@@ -77,7 +77,7 @@ landed. Never `--dry-run` with the real secret: its preview prints the concealed
 
 - **`read -rs VALUE` is one way in, not the only one.** When the agent
   generated the credential itself, assign `VALUE` from the command that
-  produced it and keep the refusal below it. When Alex holds the
+  produced it and keep the refusal below it. When Alex McRitchie holds the
   secret, he runs section 5 in HIS terminal and the variable is `$T` — the
   agent never holds that one at all.
 - **The refusal is not ceremony.** An unset `VALUE` does not abort the
@@ -115,7 +115,7 @@ Filing is **admin work**: the writing lane below is one you are expected to hold
 so an admin token that is absent or refused here is a setup gap on THIS MACHINE,
 not a lane closed to you. `source ~/.zprofile.admin` when the file is on disk but
 missing from this shell; `bin/setup-1pass-token --admin`, once, when the machine
-has no such file at all — only that second one is Alex's. Source it
+has no such file at all — only that second one is Alex McRitchie's. Source it
 **without a pipe**: a pipeline runs `source` in a subshell, so the token lands in
 a child that exits and the lane reads ABSENT while fully present.
 
@@ -166,21 +166,21 @@ missing grant; then confirm the assignment above actually ran (`(101)` under
 the ambient agent token is this SOP's most common failure); then switch
 lanes. If this machine has no `~/.zprofile.admin` at all, the one-time install
 is his — `bin/setup-1pass-token --admin` — but check the file's absence before
-saying so. Escalate to Alex only when no lane has the grant, naming the
+saying so. Escalate to Alex McRitchie only when no lane has the grant, naming the
 vault and the missing grant.
 
-## 5. Operator-supplied secrets: you make the item, Alex pastes only the secret
+## 5. Operator-supplied secrets: you make the item, Alex McRitchie pastes only the secret
 
-A secret that starts in Alex's hands (a bot token, a fresh service-account
+A secret that starts in Alex McRitchie's hands (a bot token, a fresh service-account
 token, a console-only key) must not be pasted into a session transcript:
-transcripts are durable. Do not hand him a filing script either (Alex,
-2026-10-15: "No, just make it lol"). The agent does the filing; Alex does only
+transcripts are durable. Do not hand him a filing script either (Alex McRitchie,
+2026-10-15: "No, just make it lol"). The agent does the filing; Alex McRitchie does only
 the one step that needs his hands:
 
 1. **You create the item** with sections 2-4 done (vault, name, logo, notes, the
    admin lane), the secret field present and **empty**, and every non-secret
    field filled (ids, URLs, scopes).
-2. **Alex pastes only the secret** into that field in the 1Password app and
+2. **Alex McRitchie pastes only the secret** into that field in the 1Password app and
    saves. Tell him the item title, the vault, the field label, and where in the
    provider's console the value is shown. Nothing else is asked of him.
 3. **You verify with the provider** (section 6): read the field and pipe it
@@ -223,7 +223,7 @@ clipboard (`printf '%s' "$VALUE" | pbcopy`) and clear the clipboard after
    side to digest, so the agent verifies it with the provider instead
    (section 5, step 3): the item's field piped into the provider's identity
    call answers with the account or bot id the item records. Only on the
-   section 5 fallback does Alex run the pair in HIS terminal against the
+   section 5 fallback does Alex McRitchie run the pair in HIS terminal against the
    variable HE has (`$T`, not the agent's `$VALUE`):
 
    ```bash

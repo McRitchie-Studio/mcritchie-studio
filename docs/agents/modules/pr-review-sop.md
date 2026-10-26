@@ -19,7 +19,7 @@ module **by reference**. Edit the review contract here and it flows everywhere.
 
 **There is no Avi supervisor.** Carl reviews deeply, owns the gates, summons the
 light, drives the verdict, and merges. Each reviewer reviews **as their own
-soul**, attributed in the Agent column of `/ray/heartbeat`. Stage ownership stays
+soul**, attributed in the Agent column of `/mason/heartbeat`. Stage ownership stays
 as `devops-cycle-design.md` §1.2 defines it; this is the how-to.
 History and rationale cut from this page live in
 [`../archive/pr-review-sop-2026-09-25.md`](../archive/pr-review-sop-2026-09-25.md).
@@ -118,8 +118,8 @@ Carl** (Agent tool, `subagent_type: carl`) as the **review OWNER**. Carl:
    **`--builder none` IS NOT A ROUTINE ESCAPE — reach for it last, and expect to be
    checked.** It asserts a fact about somebody else's work, and it was the one input
    that lifted a safety check on the caller's word alone. Measured 2026-09-24 on
-   `data-flow-doc-contradicts-code` (PR #1587, a docs PR **Ritch** wrote while the task
-   carried no stamp): `--builder none` seated **ray** as the light on Ritch's own diff
+   `data-flow-doc-contradicts-code` (PR #1587, a docs PR **Alex** wrote while the task
+   carried no stamp): `--builder none` seated **ray** as the light on Alex's own diff
    and reported the no-self-review property upheld, while `--builder ray` correctly
    excluded him. It stopped covering a **Pokémon** build on 2026-09-24 too, when
    `pokemon` joined the roster — a Pokémon build names `--builder pokemon` like any

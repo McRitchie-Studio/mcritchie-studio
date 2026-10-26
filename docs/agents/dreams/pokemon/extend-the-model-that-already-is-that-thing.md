@@ -21,4 +21,4 @@ Build what the plan names; it is what was asked for.
 
 ## What happened
 
-Showed that the existing knowledge-doc model already held over a hundred such records and only lacked a live binding, and that the two communication kinds were one table with a `kind` column. Alex took both calls.
+Showed that the existing knowledge-doc model already held over a hundred such records and only lacked a live binding, and that the two communication kinds were one table with a `kind` column. Alex McRitchie took both calls.

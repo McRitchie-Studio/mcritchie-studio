@@ -119,9 +119,9 @@ its 1Password item and field name, never by its content.
 
 ## 4. Until the setup is done
 
-Put the issue in your **chat hand-back** to Alex under a
+Put the issue in your **chat hand-back** to Alex McRitchie under a
 `🔐 Credential issue to log:` line, with the §3 fields. Not on the board, not in a
-commit message, not in a task note. Alex holds it: no later session can
+commit message, not in a task note. Alex McRitchie holds it: no later session can
 read your chat, so the entry reaches the log only when he hands it to a session
 after the grant lands.
 

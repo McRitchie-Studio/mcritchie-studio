@@ -225,7 +225,7 @@ certificate, and every `*.mcritchie.app` preview runs Full (strict).
 
 The hub's own names therefore move to **Cloudflare origin certificates behind a
 proxied Cloudflare record**, the same arrangement the preview domain uses
-(Alex's option A, 2026-10-24, task `edge-guard-cloudflare-ranges` plus
+(Alex McRitchie's option A, 2026-10-24, task `edge-guard-cloudflare-ranges` plus
 Steffon's infra lane). Browsers terminate TLS at Cloudflare; Cloudflare checks
 the origin certificate under **Full (strict)**. An origin certificate never
 renews and never needs to.
@@ -334,7 +334,7 @@ result from this host is evidence about DNS, never about Turf Monster. Smoke-tes
 the canonical host, which is what `config/qa_environments.yml`, `bin/prod-smoke`,
 and `config/satellites.yml` already record.
 
-**Decided 2026-09-02: retired.** Alex retired `turf.mcritchie.studio`
+**Decided 2026-09-02: retired.** Alex McRitchie retired `turf.mcritchie.studio`
 rather than repoint it at the live app, closing the question this section
 previously left open (https://mcritchie.studio/tasks/runbook-names-dead-host).
 No vanity host replaces it. `turfmonster.media` is canonical, and nothing should
@@ -390,11 +390,11 @@ Cutover sequence:
 
 Deploys, gem publishes, provider changes, and production env-var changes are
 Release-lane work. A feature agent can recommend deploy, but only the designated
-release conductor should run it after explicit approval from Alex or an
+release conductor should run it after explicit approval from Alex McRitchie or an
 already-approved rollout prompt. Mason's `full-cycle` launcher, Steffon's
 `production-deploy`, and Avi's `deploy-with-task` acts are such pre-approved
 production prompts; `pr-review` and Avi's `qa-release` sweep are not — they stop
-before prod. A grant lasts for the window Alex names ("for the night"); outside it,
+before prod. A grant lasts for the window Alex McRitchie names ("for the night"); outside it,
 drive work to `reviewed` and ask again before a release.
 Gem publishes specifically ride a release as
 first-class members and are published producer-first by **`bin/release prepare`
@@ -708,7 +708,7 @@ would hand the release sweep a green QA deploy it never performed.
 
 QA deploys are external writes, but they are not production deploys. They should
 use QA Heroku apps only, with production-like Rails boot and QA-safe config.
-Production deploy remains a separate, explicit ship decision Alex makes
+Production deploy remains a separate, explicit ship decision Alex McRitchie makes
 after he reviews the QA URL — a human gate in the pipeline (ship-authority), not
 an automated GitHub Environment reviewer rule. That automated rule and its in-app
 approval subsystem were removed 2026-07-20 (see the GitHub Actions panel section).

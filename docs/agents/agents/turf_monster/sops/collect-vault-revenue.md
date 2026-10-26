@@ -5,14 +5,14 @@
 
 This is Turf Monster's `collect-vault-revenue` SOP. It takes accumulated
 **operator revenue — entry fees** — out of the turf-vault `op_rev` ATA and
-delivers it to Alex's own wallet.
+delivers it to Alex McRitchie's own wallet.
 
 **It is TWO hops, and the first one does not reach his wallet.** Read the next
 section before running anything. Whoever believes one sweep finishes the job will
 watch a confirmed transaction land the money somewhere nobody can spend it from,
 and conclude something broke.
 
-Run it when entry fees have accumulated and Alex asks for them — after a slate
+Run it when entry fees have accumulated and Alex McRitchie asks for them — after a slate
 settles, at the end of a month, or on request. Nothing schedules it and nothing
 should.
 
@@ -41,7 +41,7 @@ or `main`, never promotes, and never deploys.
 | Hop | Instruction / action | From → To | Where you run it | Signers | In our codebase? |
 |---|---|---|---|---|---|
 | **1** | `sweep_operator_revenue` (turf-vault) | `op_rev` ATA → **Squads Treasury** ATA | `/admin/currencies` → `/admin/pending_transactions` | **3 of the 5** VaultState signers (`GovernanceConfig`) | **Yes** |
-| **2** | Squads vault transfer | **Squads Treasury** (the treasury vault PDA) → personal wallet | Steffon's [`squad-vault-ops`](../../steffon/sops/squad-vault-ops.md) queues it; Alex approves on `app.squads.so` | **3-of-5** Squads multisig: the two agent seats, then one of Alex's | **turf-vault `scripts/squad-vault-transfer.js` only — nothing in turf-monster** |
+| **2** | Squads vault transfer | **Squads Treasury** (the treasury vault PDA) → personal wallet | Steffon's [`squad-vault-ops`](../../steffon/sops/squad-vault-ops.md) queues it; Alex McRitchie approves on `app.squads.so` | **3-of-5** Squads multisig: the two agent seats, then one of Alex McRitchie's | **turf-vault `scripts/squad-vault-transfer.js` only — nothing in turf-monster** |
 
 **Hop 1 ends inside the Squads Treasury, not in a wallet.** The program pins the
 destination to the treasury authority — which IS the Squads vault PDA — so a
@@ -51,7 +51,7 @@ instead of the VaultState set, and that is the point: hop 1 consolidates, hop 2
 withdraws.
 
 **Hop 2 runs through [`squad-vault-ops`](../../steffon/sops/squad-vault-ops.md).**
-The agent queues the transfer and casts both agent approvals. Alex approves from
+The agent queues the transfer and casts both agent approvals. Alex McRitchie approves from
 one of his seats on the Squads page (ask for `7ZDJ`, then `3Qj4`, then `9gAC`), and executes it or tells the agent to.
 turf-monster has no job, rake task or admin button for it, and should not grow
 one.
@@ -72,7 +72,7 @@ phrase is what produced the wrong-address claims it now forbids.
 |---|---|---|
 | Governs | `sweep_operator_revenue` and every other turf-vault treasury op | The treasury vault's own balance, and the program upgrade authority |
 | Threshold today | **3 of 5** for this action, stored per action in `GovernanceConfig` | **3 of 5** |
-| Members | five, named below | **five**; read them from chain. The two sets share Alex's three wallets and differ in the agent keys, so do not assume one from the other |
+| Members | five, named below | **five**; read them from chain. The two sets share Alex McRitchie's three wallets and differ in the agent keys, so do not assume one from the other |
 | Lives in | `VaultState`, the turf-vault PDA at seeds `[b"vault"]` | the Squads V4 program, multisig account `4H3fP3otjMtupk1DQDjKXYY1dWjT6LNM4H4ZWZ1XcKSX` (mainnet) |
 | Interface | our admin UI — the Link Hub is `/admin/hub` (`/admin` alone is a 404), and the screens are `/admin/currencies` and `/admin/pending_transactions` | `app.squads.so`, linked from the `Squads Treasury` tile |
 | Changed by | `update_signers` | Squads' own config transaction |
@@ -84,16 +84,16 @@ turf-vault). Production's `SOLANA_MULTISIG_SIGNERS` lists the same five:
 | Slot | Address | Who |
 |---|---|---|
 | 0 | `3LTLPG1s952sdNatZWtnfM7r9F3ivWSnPSqfhQLBepJ9` | agent governance key (`solana.turf.governance.v2`); no agent signs mainnet with it outside First Rule 10 |
-| 1 | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Alex's Phantom, the mainnet default `MULTISIG_COSIGNER` |
+| 1 | `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr` | Alex McRitchie's Phantom, the mainnet default `MULTISIG_COSIGNER` |
 | 2 | `4S39sKHHPV8GPjUif9noN9gdsAFGs9WASuGxs7B9s5CY` | the server key (`solana.turf.server`, production `SOLANA_ADMIN_KEY`); the app signs with it automatically |
-| 3 | `9gACbzsCLmkYF9Yx1EBGmwMvvyfuTquJ6qs8QsoQvHXf` | Alex's second Phantom account |
-| 4 | `3Qj4v9qjhXgkru6zCRCErRVhy8Q6qU3NrNpvpXLTZboA` | Alex's second wallet |
+| 3 | `9gACbzsCLmkYF9Yx1EBGmwMvvyfuTquJ6qs8QsoQvHXf` | Alex McRitchie's second Phantom account |
+| 4 | `3Qj4v9qjhXgkru6zCRCErRVhy8Q6qU3NrNpvpXLTZboA` | Alex McRitchie's second wallet |
 
 So hop 1 needs **two human signatures**: `GovernanceConfig` stores 3 for
 `sweep_operator_revenue` (read on chain 2026-10-14), the server supplies one, and
-two of Alex's wallets supply the rest: `7ZDJ`, then `3Qj4`, then `9gAC`. Hop 2 needs
+two of Alex McRitchie's wallets supply the rest: `7ZDJ`, then `3Qj4`, then `9gAC`. Hop 2 needs
 **three** Squads approvals: the two agent seats cast theirs, so it needs **one**
-of Alex's. The retired keys `8K81…` (Ritch) and `CytJ…` (Mason) left the set on
+of Alex McRitchie's. The retired keys `8K81…` (Alex) and `CytJ…` (Mason) left the set on
 2026-10-14 and can no longer sign.
 
 ## The money model — why sweeping strands no payout
@@ -123,7 +123,7 @@ program pins where a sweep can go; Squads pins who may approve the withdrawal.
 | The sweep destination (`treasury_ata.owner == vault_state.treasury_authority`) | Whether to collect at all, and when |
 | Sweeping the FULL balance (the admin path always sends `amount: 0`) | How much should leave the Squads Treasury on hop 2 |
 | Refusing an empty `op_rev` account, and a wrong-owner treasury ATA | Reading a refusal and choosing its remedy |
-| Deriving both ATAs from the mint and the live `VaultState` | Confirming the destination wallet address with Alex |
+| Deriving both ATAs from the mint and the live `VaultState` | Confirming the destination wallet address with Alex McRitchie |
 | Enforcing the `GovernanceConfig` threshold (3) on hop 1, 3-of-5 on hop 2 | Queuing hop 2 and casting the two agent approvals (`squad-vault-ops`) |
 
 If you find yourself reasoning about **which address the sweep should go to**,
@@ -132,13 +132,13 @@ that reasoning — see the refusals table.
 
 ## Preconditions
 
-- Alex asked for the collection, and **named the destination wallet** for hop 2.
+- Alex McRitchie asked for the collection, and **named the destination wallet** for hop 2.
 - You know which **mint** you are collecting. One mint per call; in practice USDC,
   `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` on mainnet.
 - You can reach `/admin/hub` on the target app as an admin — the Link Hub, from
   which `Currencies`, `Treasury` and `Squads Treasury` all hang. `/admin` alone is
   a 404 in turf-monster.
-- **Alex has two of his wallets available** — hop 1 needs two of his cosigns
+- **Alex McRitchie has two of his wallets available** — hop 1 needs two of his cosigns
   (`7ZDJ`, then `3Qj4`, then `9gAC`), and hop 2 needs one approval from one of
   his Squads seats (the same three, in the same order).
 - The turf-vault program on that cluster is not paused.
@@ -247,7 +247,7 @@ controller derives the destination itself with `Solana::Vault#treasury_ata_for`,
 and the program then verifies it: `handle_sweep_operator_revenue` requires
 `treasury_ata.owner == vault_state.treasury_authority` and raises
 `TreasuryAuthorityMismatch` otherwise. There is no parameter that redirects a
-sweep to a wallet — not to Alex's, not to a signer's, not to anything. **The
+sweep to a wallet — not to Alex McRitchie's, not to a signer's, not to anything. **The
 first live attempt tried a signer address and was rejected**; that round trip is
 what this paragraph exists to save.
 
@@ -270,7 +270,7 @@ https://turfmonster.media/admin/pending_transactions
 
 **Pick the second wallet on the page BEFORE anyone clicks sign.** The server
 already holds its slot, and the action needs three signatures, so the row must
-reserve two browser signers: Alex's Phantom (`7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr`,
+reserve two browser signers: Alex McRitchie's Phantom (`7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr`,
 the mainnet `MULTISIG_COSIGNER` default) and one more of his wallets: tell him "switch to
 3Qj4", or `9gAC` when `3Qj4` is unavailable. The `4S39` pinch of First Rule 10
 does not apply here: `4S39` is the server key, already signing this row.
@@ -375,7 +375,7 @@ together:
   read, most likely — and nothing you initiate here will move the swept balance.
 
 Then run [`squad-vault-ops`](../../steffon/sops/squad-vault-ops.md) for the mint
-and amount Alex named, to his destination wallet:
+and amount Alex McRitchie named, to his destination wallet:
 
 ```bash
 node scripts/squad-vault-transfer.js plan --cluster=mainnet \
@@ -384,7 +384,7 @@ node scripts/squad-vault-transfer.js plan --cluster=mainnet \
 
 The tool reads the transfer from the Squads Treasury ATA, which is the treasury
 ATA step 1 printed. It queues the transfer, casts both agent approvals, and
-prints the hand-back. **The transaction then reads `Voting 2/3`.** Alex approves
+prints the hand-back. **The transaction then reads `Voting 2/3`.** Alex McRitchie approves
 from the link, and it executes once he or the agent runs execute. The agent
 executes only after his approval is on chain. If he is not reachable, the
 collection stops here with the money safely in the Squads Treasury. That is a

@@ -1,26 +1,26 @@
 # TikTok Draft
-<!-- registry: clip slug in, a notification in Alex's TikTok inbox and its code-written caption out -->
+<!-- registry: clip slug in, a notification in Alex McRitchie's TikTok inbox and its code-written caption out -->
 
 ## Status: Built; step 0 says whether this server is connected
 
 This is Turf Monster's `tiktok-draft` SOP. It is an input-output machine. The
 input is **a clip's slug**, the name printed on every clip card of an alt video
-(`bigxthaplug-6wa-alt-3-clip-03`). The output is **a notification in Alex's
+(`bigxthaplug-6wa-alt-3-clip-03`). The output is **a notification in Alex McRitchie's
 TikTok inbox** that opens that clip's primary version in the app's editor, and
 **a caption written by code**
 ("Cowboys 3-2 #nfl #nfltiktok #footballtiktok #dallascowboys #cowboys #fyp")
 for him to paste there. TikTok does not receive the caption, and it files
 nothing under Drafts.
 
-Alex posts from his phone ([On the phone](#on-the-phone)). Nothing here
+Alex McRitchie posts from his phone ([On the phone](#on-the-phone)). Nothing here
 publishes.
 
 **Until the server is connected, step 0 fails and you stop there.** Connecting
-it is Alex's, once, under [Setup](#setup).
+it is Alex McRitchie's, once, under [Setup](#setup).
 
 There are two doors into the same machine (`Tiktok::DraftClip`):
 
-| Door | Alex does | Who drafts |
+| Door | Alex McRitchie does | Who drafts |
 |---|---|---|
 | **The card** | Clicks **Draft to TikTok** on the clip's card | The server, in a background job |
 | **Chat** | Hands you a clip slug | You, with `bin/tiktok-draft` |
@@ -34,7 +34,7 @@ one. The second is told `a draft of <slug> is already …`.
 
 ## The split — read this before running anything
 
-| Alex | The code | You |
+| Alex McRitchie | The code | You |
 |---|---|---|
 | Which clip (its slug) | Which version: the clip's primary | Running the chat door's commands |
 | His word to draft it | The team, by a fixed rule (below) | Reading the dry run back to him |
@@ -42,7 +42,7 @@ one. The second is told `a draft of <slug> is already …`.
 | | The hashtags and the caption | |
 
 **You do not write the caption and you do not recall a fact.** If the drafted
-line is wrong, say why; Alex edits it on his phone, where the caption is pasted
+line is wrong, say why; Alex McRitchie edits it on his phone, where the caption is pasted
 anyway. A record from memory is the worst thing this SOP can hand him.
 
 **One clip, on his word.** Nothing is posted, but each draft lands on his
@@ -59,7 +59,7 @@ release lane.
 
 ## Entry
 
-Alex pastes the invocation with a slug:
+Alex McRitchie pastes the invocation with a slug:
 
 ```text
 tiktok-draft bigxthaplug-6wa-alt-3-clip-03
@@ -83,12 +83,12 @@ bin/tiktok-draft --whoami --production
 ```
 
 It refreshes the hub's TikTok token and asks TikTok whose account it is. It
-must print the account Alex expects on his phone. Then:
+must print the account Alex McRitchie expects on his phone. Then:
 
 | It says | Meaning | Action |
 |---|---|---|
 | `API 503: NOT_CONFIGURED …` | The server has no TikTok keys, or no account is connected; the message says which | Stop. Report it; see [Setup](#setup) |
-| `API 502: TIKTOK_REFUSED …` | TikTok refused the token or the scope | Report TikTok's words to Alex. A new token is the sign-in at `/admin/tiktok/connect`, his to run; the hub stores what comes back |
+| `API 502: TIKTOK_REFUSED …` | TikTok refused the token or the scope | Report TikTok's words to Alex McRitchie. A new token is the sign-in at `/admin/tiktok/connect`, his to run; the hub stores what comes back |
 | Another account | The keys belong to the wrong account | Stop. Do not draft |
 
 ### 1. Dry run
@@ -104,16 +104,16 @@ each exception, and the caption with its length against TikTok's 2,200.
 
 | It says | Meaning | What you do |
 |---|---|---|
-| `cannot draft: Clip N has no generated version yet` | No MP4 was uploaded back for this clip | Tell Alex; the clip needs a version first |
-| `cannot draft: … swaps nobody` | The alt video replaces no one, so there is no athlete | Tell Alex. This clip has no caption by rule |
-| `cannot draft: <athlete> has no team` | Neither the look nor the athlete carries a team | Tell Alex; he sets the team on the look or the athlete, then re-run |
+| `cannot draft: Clip N has no generated version yet` | No MP4 was uploaded back for this clip | Tell Alex McRitchie; the clip needs a version first |
+| `cannot draft: … swaps nobody` | The alt video replaces no one, so there is no athlete | Tell Alex McRitchie. This clip has no caption by rule |
+| `cannot draft: <athlete> has no team` | Neither the look nor the athlete carries a team | Tell Alex McRitchie; he sets the team on the look or the athlete, then re-run |
 | `cannot draft: <athlete>: the look "…" names team <slug>, which is not in the teams table` (or `the athlete record names team …`) | A team is named, but this server has no such team row | Not a missing team on the look. Report it: the teams must be loaded on the server ([Background](#background--not-needed-to-execute), "Where the teams come from"), or the slug is misspelled |
-| `cannot draft: … only an NFL team's record can be read` | The team is in another league | Tell Alex; this machine captions NFL teams only |
+| `cannot draft: … only an NFL team's record can be read` | The team is in another league | Tell Alex McRitchie; this machine captions NFL teams only |
 | `cannot draft: could not read ESPN …` | The record could not be read | Wait and re-run. Never supply a record |
 | `CHECK: … has no slogan hashtag on file` | The team table has no slogan tag | The caption went out without one. Say so |
 | `CHECK: ESPN shows no finished game …` | Preseason, or week one | The record is still the one ESPN reports. Say so |
 
-### 2. Show Alex, and wait for his word
+### 2. Show Alex McRitchie, and wait for his word
 
 The clip and its version, the athlete and team with the rule that chose them,
 the record and where it was read, any `CHECK:` line in plain words, and the
@@ -136,9 +136,9 @@ It ends on one of:
 
 | It prints | Meaning | Action |
 |---|---|---|
-| `attempt N: Version V · Sent to your TikTok inbox · …` | TikTok sent the notification to his inbox | Give Alex the three `next:` lines it prints and the caption ([On the phone](#on-the-phone)) |
+| `attempt N: Version V · Sent to your TikTok inbox · …` | TikTok sent the notification to his inbox | Give Alex McRitchie the three `next:` lines it prints and the caption ([On the phone](#on-the-phone)) |
 | `still processing after 150s` | TikTok has the bytes and is still working | Run step 4 in a minute |
-| `the upload reached TikTok but its status is unknown` | Every byte was sent; the status read broke | Tell Alex to look in his TikTok inbox on the phone. Run step 4. **Do not draft again** until he has looked |
+| `the upload reached TikTok but its status is unknown` | Every byte was sent; the status read broke | Tell Alex McRitchie to look in his TikTok inbox on the phone. Run step 4. **Do not draft again** until he has looked |
 | `attempt N failed: …` | TikTok refused, or the upload broke before it finished | Report TikTok's words. A retry is a new attempt, on his word |
 | `a draft of <slug> is already …` | An attempt is in flight | Run step 4. Do not draft twice |
 | `This session holds no admin login for this hub and AGENT_ADMIN_SESSION_TOKEN is not set` | No admin session is held | [The admin session](#the-admin-session) |
@@ -147,12 +147,12 @@ It ends on one of:
 
 **TikTok takes no caption with a draft.** Its inbox upload accepts the file
 alone, so the caption does not travel, and the editor opens with the TikTok
-app's own hashtag prefilled. Give Alex the caption in chat; the clip's card
+app's own hashtag prefilled. Give Alex McRitchie the caption in chat; the clip's card
 also shows it with **Copy caption**. Never tell him the caption was sent.
 
 ### On the phone
 
-What Alex does after `Sent to your TikTok inbox`. Give him these three steps
+What Alex McRitchie does after `Sent to your TikTok inbox`. Give him these three steps
 every time; the card and the command print the same lines.
 
 1. **Open the notification.** The TikTok app on the phone, then **Inbox**, then
@@ -175,7 +175,7 @@ bin/tiktok-draft <clip-slug> --production --status
 It lists every attempt for the clip and re-reads TikTok for one whose bytes
 TikTok holds: still processing, or uploaded with its status unknown. A failed
 attempt carries TikTok's reason on the row and on the card. Fix what TikTok
-named, then draft again on Alex's word; every attempt is kept.
+named, then draft again on Alex McRitchie's word; every attempt is kept.
 
 An attempt reads **Failed** only when TikTok said so or the upload broke before
 the last byte. Once the upload finished, nothing on our side fails it: it reads
@@ -191,7 +191,7 @@ The board grants it. Ask, from the session that will draft:
 bin/agent-activity heartbeat mason        # or steffon; prints a login-… slug
 ```
 
-Alex answers the row with that slug on the board's tasks page, inside ten
+Alex McRitchie answers the row with that slug on the board's tasks page, inside ten
 minutes, one of two ways:
 
 - **The one-time code** on the row. He gives it to you, and you post it:
@@ -220,7 +220,7 @@ export AGENT_ADMIN_SESSION_TOKEN="$(heroku run --no-tty -a mcritchie-studio -- b
 Never print the token, paste it into chat, or write it to a file: it opens
 every admin-tier endpoint until it ends. If the board does not grant you a
 login and you hold no shell on the hub, you hold no admin lane: stop and say
-so, and Alex uses the card.
+so, and Alex McRitchie uses the card.
 
 ## Door two: the card
 
@@ -238,7 +238,7 @@ The card is open to a signed-in admin only, and needs no agent session.
 
 ## What good looks like
 
-- The notification on Alex's phone opens the clip's primary version, and he asked for it.
+- The notification on Alex McRitchie's phone opens the clip's primary version, and he asked for it.
 - He was told the caption did not travel, and to turn on the AI-generated label.
 - Every number in the caption was read in this run, and he was shown where from.
 - No `CHECK:` line went by without his seeing it.
@@ -253,7 +253,7 @@ card, never from memory.
 ## Setup
 
 Once per TikTok account, and again when the refresh token dies. Every step is
-Alex's to authorize; the sign-in (step 4) is his to do, in his browser.
+Alex McRitchie's to authorize; the sign-in (step 4) is his to do, in his browser.
 
 The hub connects through a **sandbox** TikTok app. The production Turf Monster
 app was refused ("not approved for personal or company internal use"), and a
@@ -295,7 +295,7 @@ are set, by name. It carries **Sign in** (or **Sign in again**) and
    from its own item, never a new one; a fresh app with an empty database gets
    its own new set, filed under its own new item; never file over an existing
    item. Either is Steffon's
-   [`credential-filing`](../../steffon/sops/credential-filing.md), on Alex's
+   [`credential-filing`](../../steffon/sops/credential-filing.md), on Alex McRitchie's
    word; never invent keys in a session, and never copy production's keys to
    QA or the reverse. On an app without them, step 4 refuses before it asks
    TikTok for anything.
@@ -412,13 +412,13 @@ still saves for other edits.
 **Where the teams come from.** The hub's NFL teams are written by
 `db/seeds/10_teams_nfl.rb`, and their metadata by `rake teams:backfill_metadata`.
 No migration and no deploy step loads them: a server whose teams table is empty
-needs both run, on Alex's word.
+needs both run, on Alex McRitchie's word.
 
 **What the first real draft measured** (production, 2026-10-08, the sandbox
 app). TikTok's status read `SEND_TO_USER_INBOX` and the notification reached
 the phone's inbox within a few minutes. Nothing appeared under Drafts. The
 editor showed "Everyone can view this post", so a sandbox draft is not
-private-only: do not tell Alex it is. No caption arrived; the app's own hashtag
+private-only: do not tell Alex McRitchie it is. No caption arrived; the app's own hashtag
 was prefilled.
 
 **The recipe.** The mascot and the record, then the tags, lower case and never

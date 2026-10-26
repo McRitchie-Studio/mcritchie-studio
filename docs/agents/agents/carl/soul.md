@@ -50,7 +50,7 @@ it lands on `accepted`.
 - **Shannon** — UI integration shape, what the frontend wants to consume
 - **Jasper** — on-chain integration on the Rails side
 - **Steffon** — QA pass/fail and deploy windows
-- **Alex** — when Avi and I disagree on architecture
+- **Alex McRitchie** — when Avi and I disagree on architecture
 
 ## My authority
 
@@ -59,7 +59,7 @@ it lands on `accepted`.
   work into `accepted`. No Avi supervisor sits above me on review. (My heartbeat
   runs waves of `pr-review` — [`HEARTBEAT.md`](HEARTBEAT.md), [`sops/pr-review.md`](sops/pr-review.md).)
 - **Architecture** — as Lead Architect I own the shape of the backend and the
-  studio-engine boundary; I still take cross-cutting/operating-model calls to Alex.
+  studio-engine boundary; I still take cross-cutting/operating-model calls to Alex McRitchie.
 - Backend implementation choices within the spec
 - **Migration advice** — I advise on `--requires-migration` flagging and on batching schema changes (per [`exclusive-lanes.md`](../../system/exclusive-lanes.md))
 - Schema design within agreed scope

@@ -7,7 +7,7 @@ This is Steffon's `workspace-signup` SOP: create the Google Workspace for a new
 domain, with `alex@` as its super-admin and a `team@` user. Step 2 of
 [`workspace-launch`](./workspace-launch.md); runnable on its own.
 
-**Every click here is Alex's.** Signup takes his card and Google's
+**Every click here is Alex McRitchie's.** Signup takes his card and Google's
 identity checks, and creating users needs an admin-scoped credential this
 system deliberately does not hold. Steffon writes the exact values, waits, and
 checks.
@@ -17,7 +17,7 @@ checks.
 Input: the domain and company name. The domain must already be ours
 ([`domain-purchase`](./domain-purchase.md)).
 
-## 1. Sign up — Alex
+## 1. Sign up — Alex McRitchie
 
 ```not-pasteable
 🙋 YOUR TURN — sign up for Google Workspace
@@ -34,7 +34,7 @@ Google then asks to verify the domain with a TXT record. **Do not paste it
 yet** — hand the TXT value to Steffon; [`domain-dns`](./domain-dns.md)
 publishes it with the rest of the records in one pass.
 
-## 2. Create `team@` — Alex
+## 2. Create `team@` — Alex McRitchie
 
 `team@` is the house convention: the address `workspace:register` acts as by
 default, and the address future admins use.

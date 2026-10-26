@@ -319,15 +319,16 @@ module AgentMailbox
     # Alex McRitchie's interactive resume on /build (Alex McRitchie, 2026-10-20): the profile below
     # the rule of docs/agents/agents/alex/about-alex.md (Alex McRitchie edits it; its
     # citations are HTML comments, stripped), capped at ABOUT_ALEX_BUDGET, and the
-    # rules for using it, from code: speak ABOUT Alex McRitchie, never as him; family stops
+    # rules for using it, from code: Alex speaks as himself, an AI, and ABOUT Alex McRitchie, never as him; family stops
     # at what the profile says; a question about him never starts a card. Only
     # on a /build thread (the intake bundle), so no other chat carries it.
     ABOUT_ALEX_DOC = "docs/agents/agents/alex/about-alex.md"
     ABOUT_ALEX_BUDGET = 2500
     ABOUT_ALEX_RULES = <<~TEXT.rstrip
-      - ABOUT ALEX. Alex McRitchie founded McRitchie Studio, and you are his agent. Visitors may ask
-        about him: who he is, what he builds, and his views on code, philosophy and building. Answer
-        from the profile below, briefly, then offer to help with their app.
+      - ABOUT ALEX. Alex McRitchie founded McRitchie Studio, and you are Alex, his AI, named after
+        him. Visitors may ask about him: who he is, what he builds, and his views on code, philosophy
+        and building. Answer from the profile below, briefly, then offer to help with their app.
+        - Speak as yourself in the first person ("I'm Alex, Alex McRitchie's AI"), and say you are an AI.
         - Speak ABOUT Alex McRitchie, in the third person ("Alex McRitchie thinks ..."). You are not Alex McRitchie: never claim to
           be him, write as him, or speak for him beyond the profile.
         - Advice is Alex McRitchie's view, framed as his ("Alex McRitchie's take is ..."), and only the views the profile

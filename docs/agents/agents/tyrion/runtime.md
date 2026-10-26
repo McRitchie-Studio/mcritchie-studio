@@ -1,6 +1,6 @@
 # Tyrion — Runtime
 
-How Tyrion plays real people and talks to them: on an isolated NUC of Alex's,
+How Tyrion plays real people and talks to them: on an isolated NUC of Alex McRitchie's,
 OpenClaw carries his Discord conversation, and his runner (`cyvasse`
 `bin/tyrion`) plays his games on the site over the bot API. The bot API
 (task `tyrion-bot-api`) and the runner (task `tyrion-runner`) are built; the
@@ -23,7 +23,7 @@ IDENTITY.md and leaves his memory alone.
 ## The shape
 
 ```text
- isolated machine (Alex's)                        cyvasse.mcritchie.studio
+ isolated machine (Alex McRitchie's)                        cyvasse.mcritchie.studio
  ┌──────────────────────────────┐   HTTPS out    ┌─────────────────────────────┐
  │ tyrion runner (Node)         │ ─────────────▶ │ /api/bot/*  (bearer token,  │
  │  · poll inbox                │ ◀───────────── │  the tyrion account only)   │
@@ -36,7 +36,7 @@ IDENTITY.md and leaves his memory alone.
 
 ### Poll, not webhook
 
-A webhook needs something listening on Alex's machine that the internet can
+A webhook needs something listening on Alex McRitchie's machine that the internet can
 reach: an open port or a tunnel. That is the one hole an isolated machine must
 not have. So the runner **polls outward** instead: every two seconds while a
 live game is on, every thirty when idle, it asks the server what needs doing.
@@ -93,25 +93,25 @@ the API adds no power, only a door for one account.
 
 ## The threat model
 
-Alex's concern, in his words: nobody should be able to "squeeze my CC out of
+Alex McRitchie's concern, in his words: nobody should be able to "squeeze my CC out of
 him". There are two ways that could happen, and each has its own guard.
 
 | Threat | Guard |
 |---|---|
 | **Talking a secret out of him** (prompt injection in chat) | He holds none. His prompt contains his soul and the game, no keys, no internals. The output filter drops any line containing the runner's own secrets or a URL. The Cyvasse token can only play his own games |
-| **Running up the bill** (chatting endlessly to burn model credits: the real way to reach a card) | A dedicated model API key in its own workspace with a **hard monthly spend limit** (Discord chat through OpenClaw spends from the same key, so the limit covers both); the chat model set by `TYRION_CHAT_MODEL` (default `claude-opus-5-5` at low effort, the call Alex left to us), each line cut to 280 characters; at most one reply per opponent message, 20 replies per match, and a per-player daily cap, after which he plays on in silence. **Alex:** set the monthly cap |
+| **Running up the bill** (chatting endlessly to burn model credits: the real way to reach a card) | A dedicated model API key in its own workspace with a **hard monthly spend limit** (Discord chat through OpenClaw spends from the same key, so the limit covers both); the chat model set by `TYRION_CHAT_MODEL` (default `claude-opus-5-5` at low effort, the call Alex McRitchie left to us), each line cut to 280 characters; at most one reply per opponent message, 20 replies per match, and a per-player daily cap, after which he plays on in silence. **Alex McRitchie:** set the monthly cap |
 | **The machine is stolen or compromised** | It holds three revocable things: the Cyvasse bot token (revoke with the rake task), his Discord bot token (reset in the Discord developer portal) and the capped model key (revoke in the console). Nothing else lives on it |
 | **Talking him out of something on Discord** | The same answer as in match chat: he holds nothing, and his OpenClaw agent has no tools, so there is nothing to run, read or send |
 | **The token leaks** | Worst case, someone plays Tyrion's games badly. Revoke and reissue |
 | **Abuse in chat** | He stops talking and flags the match (`/flag`); admins read it on `/admin/matches/:id` |
-| **Name and likeness** | Characters are George R. R. Martin's. The app already names its computer players after them; the portrait rule (original art, no likeness) stands, and he never quotes the books at length. **Alex:** if Tyrion becomes a marketing face rather than a table opponent, that is a legal question worth asking first |
+| **Name and likeness** | Characters are George R. R. Martin's. The app already names its computer players after them; the portrait rule (original art, no likeness) stands, and he never quotes the books at length. **Alex McRitchie:** if Tyrion becomes a marketing face rather than a table opponent, that is a legal question worth asking first |
 
 ## Build order
 
 1. **cyvasse bot API** (task `tyrion-bot-api`) — tokens, the `/api/bot` endpoints, the heartbeat and
    the Play Now switch; backend shape, request tests for every refusal.
 2. **Tyrion runner** (task `tyrion-runner`) — the Node program in
-   `cyvasse/script/tyrion/`: setups, search, chat and filter. **Alex** may
+   `cyvasse/script/tyrion/`: setups, search, chat and filter. **Alex McRitchie** may
    still prefer a separate repo for the isolated machine.
 3. **Tune** — play him against the legacy bot and against people; adjust the
    weights in [`game.md`](game.md) from what he loses.

@@ -23,13 +23,13 @@ by name — see below):
   (`DbBackupSweepJob`, 03:30 Denver); the heartbeat owns only the drill.
 
 [`program-upgrade`](sops/program-upgrade.md) is not a heartbeat act: it upgrades an
-on-chain program devnet then mainnet, and runs when Alex names it. The heartbeat's
+on-chain program devnet then mainnet, and runs when Alex McRitchie names it. The heartbeat's
 entry reads program drift (below) so a program behind its source is reported, and
 gets a card, on every beat.
 
 **`workspace-launch` is Steffon's other job, and it is NOT part of the
 heartbeat.** It stands up a brand-new company workspace — domain, Google
-Workspace, DNS, agentic drafting access — and walks Alex through every
+Workspace, DNS, agentic drafting access — and walks Alex McRitchie through every
 step that needs him. It runs only when he names it (the `/deployments` Workflows
 card carries a chip for it). Master SOP: [`workspace-launch`](sops/workspace-launch.md);
 its steps are the sub-SOPs [`domain-purchase`](sops/domain-purchase.md),
@@ -40,14 +40,14 @@ its steps are the sub-SOPs [`domain-purchase`](sops/domain-purchase.md),
 creates the agents' Discord bot once and connects each client who requests it.
 
 [`agent-dispatcher`](sops/agent-dispatcher.md) is not a heartbeat act either: it
-installs the mailbox's worker on Alex's Mac once, and runs again only when its
+installs the mailbox's worker on Alex McRitchie's Mac once, and runs again only when its
 floor alert posts in Discord.
 
 [`conductor-host`](sops/conductor-host.md) is not a heartbeat act either: it
 turns a new Mac mini into the always-on conductor (both launchd services, a
 harness key, power settings) and moves the services off the laptop, once.
 
-Use this file when Alex invokes `Steffon Heartbeat`. When he invokes a
+Use this file when Alex McRitchie invokes `Steffon Heartbeat`. When he invokes a
 single Steffon act directly, read that act's SOP file.
 
 **Two kinds of cleaning, on purpose.** `archive-shipped` is the NATURAL beat — it
@@ -74,7 +74,7 @@ Steffon is the downstream bookend — the ship + archive end of the pipeline:
 
 Avi's `qa-release` sweep owns merging reviewed PRs onto `release`, deploying QA,
 and flipping members `assembled`. Do not run `bin/release prepare` or a QA deploy
-from Steffon's heartbeat unless Alex explicitly assigns a separate
+from Steffon's heartbeat unless Alex McRitchie explicitly assigns a separate
 conductor lane in the same session. Review is Carl's.
 
 ## Entry
@@ -87,7 +87,7 @@ bin/agent-activity heartbeat steffon
 ```
 
 The command also posts an admin login request and prints its `login-…` slug.
-Give Alex that slug: he answers only the board row that carries it. He either
+Give Alex McRitchie that slug: he answers only the board row that carries it. He either
 gives you the row's one-time code, and `bin/agent-activity heartbeat steffon
 --code <code>` grants and collects the session in one call, or he taps Approve,
 and you run the heartbeat again to collect
@@ -105,9 +105,9 @@ It prints `PROGRAM DRIFT` for each cluster that runs an older version than its
 source, naming the upgrade card or saying none exists, and `cannot confirm` for any
 cluster it could not read. A behind cluster with no card gets its card filed now,
 per [`program-upgrade`](sops/program-upgrade.md); the upgrade itself runs only when
-Alex names it, because mainnet needs his approvals. It also prints the mainnet
+Alex McRitchie names it, because mainnet needs his approvals. It also prints the mainnet
 upgrade reserve (the Squad vault `Bk9s…`): an `UPGRADE RESERVE SHORT` or `LOW` line
-goes to Alex as a funding ask, with the balance and the minimum it printed.
+goes to Alex McRitchie as a funding ask, with the balance and the minimum it printed.
 
 Then keep normal trajectory activities open with `bin/agent-activity start|next|end`.
 The heartbeat command makes activities self-attribute to Steffon unless a delegated
@@ -139,7 +139,7 @@ Run Steffon's heartbeat composition downstream-first:
    then run the drill (§3) on that one app. Otherwise report the next due date
    and skip it.
 
-When Alex launches `Steffon Heartbeat`, run the acts in that order.
+When Alex McRitchie launches `Steffon Heartbeat`, run the acts in that order.
 When an act is invoked directly, run only that act.
 
 **Nothing ready to ship?** `production-deploy` is an idempotent no-op that reports

@@ -9,12 +9,12 @@ input is **the team that won and a video**. The output is a post on
 #chiefs", with the video attached.
 
 The copy is written by code, not by you. `X::PostDraft` reads the team's live
-record and its tags and builds the line the same way every time. Alex approves
+record and its tags and builds the line the same way every time. Alex McRitchie approves
 it, and it posts.
 
 There are two doors into the same machine:
 
-| Door | Alex does | Who posts |
+| Door | Alex McRitchie does | Who posts |
 |---|---|---|
 | **The board** | Picks the team and uploads the MP4 on a Video Post (X) card, looks at the preview, clicks **Post to X** | The server, in a background job |
 | **Chat** | Hands you a file path and says who won | You, with `bin/x-post` |
@@ -25,14 +25,14 @@ door, and for the board's exceptions: a card whose draft failed, a card flagged
 
 ## The split — read this before running anything
 
-| Alex | The code | You |
+| Alex McRitchie | The code | You |
 |---|---|---|
 | The team that won | The record, read from ESPN at draft time | Running the chat door's commands |
 | The video | The tags, from the team table | Judging an exception the code flagged |
 | The approval: his click, or his "send it" | The copy, the length check, the upload, the link | Telling him what you found, in his words |
 
 **You do not write the copy and you do not recall a fact.** If the drafted line
-is wrong, say why and let Alex edit it; do not hand-build a different one. A
+is wrong, say why and let Alex McRitchie edit it; do not hand-build a different one. A
 record from memory is the worst thing this SOP can publish, and a model's
 memory of a season is always out of date.
 
@@ -48,7 +48,7 @@ no release lane.
 
 ## Entry
 
-**From the chip.** Alex copies `post-to-x` from the Turf Monster launcher on
+**From the chip.** Alex McRitchie copies `post-to-x` from the Turf Monster launcher on
 `/deployments` and pastes it into a fresh session with the rest of his input:
 
 ```text
@@ -68,7 +68,7 @@ bin/x-post whoami
 ```
 
 It must print `@turfmonstershow`. Any other handle, stop. An HTTP 401 means X
-no longer accepts the keys: report it to Alex, because new keys come from the X
+no longer accepts the keys: report it to Alex McRitchie, because new keys come from the X
 developer console and are refiled in `agent.turf.x` by `credential-rotation`.
 A 1Password failure (the item cannot be read at all) is `credential-issues`.
 
@@ -89,8 +89,8 @@ the team's most recent final, and a `CHECK:` line for each exception:
 
 | `CHECK:` says | What it means | What you do |
 |---|---|---|
-| the most recent final … is a LOSS | The record has not caught up, or Alex named the wrong team | Tell Alex. Do not post until the final shows as a win or he says otherwise |
-| kicked off … more than a week ago | That is last week's game | Tell Alex; the video may be for a game that has not gone final |
+| the most recent final … is a LOSS | The record has not caught up, or Alex McRitchie named the wrong team | Tell Alex McRitchie. Do not post until the final shows as a win or he says otherwise |
+| kicked off … more than a week ago | That is last week's game | Tell Alex McRitchie; the video may be for a game that has not gone final |
 | has no slogan hashtag on file | The team table has no tag for this team | The copy went out without one. Say so; he can add one |
 
 Make the directory first (`mkdir -p`), one per video, named for the video, and
@@ -109,11 +109,11 @@ against X's 280, and the video's size, dimensions, frame rate and length, and
 exits 1 with a `REFUSED` line for anything X would reject: over 280, over
 60fps, an unreadable file, more than eight tags.
 
-Then look at the video. Pull a few frames and confirm it is the team Alex
+Then look at the video. Pull a few frames and confirm it is the team Alex McRitchie
 named; a clip posted under the wrong team's record is public before anyone
 notices.
 
-### 3. Show Alex, and wait for his word
+### 3. Show Alex McRitchie, and wait for his word
 
 The copy exactly as `check` printed it, the record and the final it rests on,
 any `CHECK:` line in plain words, and the video's length. Several videos go in
@@ -150,12 +150,12 @@ with the same link files nothing twice.
 | `X refused the post, nothing is live` | X answered no: a 4xx, or the upload failed before any post existed | Fix what X named and run `post` again |
 | `X did not confirm the post and it MAY BE LIVE` | A server error, or an answer with no id | **Open the timeline first.** If the video is there, record its link with step 5 and stop |
 | `an attempt … never recorded a result, so it may be LIVE` | An earlier run died mid-post | The same: timeline first. `--again` only once you have seen it is not there |
-| `this video was already posted` | The ledger holds this file's sha256 | It prints the first link. Only Alex decides to post a video twice |
+| `this video was already posted` | The ledger holds this file's sha256 | It prints the first link. Only Alex McRitchie decides to post a video twice |
 
 X's own refusals, when it gives one: a 403 with "duplicate" means that exact
 text is already on the account, so look at the timeline before changing the
 copy; any other 403 is the app's write permission or the account, reported to
-Alex verbatim; a message about credits or billing is his to top up; a 429 is a
+Alex McRitchie verbatim; a message about credits or billing is his to top up; a 429 is a
 wait.
 
 ## Door two: the board — when a card needs you
@@ -168,24 +168,24 @@ bin/content list --workflow video_post_x --stage assembly
 - **A card at `idea`** has a video and no copy: its draft failed, usually
   because ESPN could not be read. The card says why. Its **Draft the copy**
   button retries; if ESPN is still down, run `bin/x-post draft <team>` to see
-  whether it is the feed or the team, and tell Alex.
-- **A card at `script`** is ready and waiting on Alex's click. Leave it. If it
+  whether it is the feed or the team, and tell Alex McRitchie.
+- **A card at `script`** is ready and waiting on Alex McRitchie's click. Leave it. If it
   carries a "Check before posting" line, that line is the same `CHECK:` as
   above and gets the same answer.
 - **A card at `assembly` saying "Check the timeline"** is a post that started
   and never reported back. The card links the timeline and offers two answers:
   paste the link if the video is live, or say it is not there. Look, then
-  tell Alex which; he clicks.
+  tell Alex McRitchie which; he clicks.
 - **The Post button is off and says "the X keys are not set on this server".**
   The server posts with four keys from `agent.turf.x`. Putting them on a server
-  is `credential-filing`, on Alex's word, and never on QA.
+  is `credential-filing`, on Alex McRitchie's word, and never on QA.
 
 ## What good looks like
 
-- Every post matches the text Alex approved, character for character.
-- Every number was read in this run, and Alex was shown where from.
+- Every post matches the text Alex McRitchie approved, character for character.
+- Every number was read in this run, and Alex McRitchie was shown where from.
 - Every post has a card at `posted` carrying its link.
-- No `CHECK:` line was posted through without Alex seeing it.
+- No `CHECK:` line was posted through without Alex McRitchie seeing it.
 
 ## Handoff
 
@@ -200,7 +200,7 @@ back and why. The link comes from the command's `posted:` line, the card, or
 **The recipe.** Hook: the mascot and the record. Tags, in order and lower
 case: `#nfl`, `#nflfootball`, the team's slogan tag from the team table, the
 city, the mascot, and `#tnf`, `#snf` or `#mnf` when the kickoff was in that
-window (Eastern time). A tag is never repeated. Alex set this shape on
+window (Eastern time). A tag is never repeated. Alex McRitchie set this shape on
 2026-10-04, and five of that night's posts match what the recipe produces
 today.
 
@@ -223,5 +223,5 @@ the docs route serves from `docs/agents` only). X bills the API per call; the
 developer console is the authority on the price.
 
 **AI-generated clips of real players.** X has a policy on labelling synthetic
-media. Whether and how these posts are labelled is Alex's decision; nothing in
+media. Whether and how these posts are labelled is Alex McRitchie's decision; nothing in
 this SOP labels them.

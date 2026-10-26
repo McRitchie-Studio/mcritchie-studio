@@ -1,28 +1,28 @@
 # Email Image
-<!-- registry: make an email header with Alex in a Claude Code session: show base assets, generate, iterate, approve on his word, export -->
+<!-- registry: make an email header with Alex McRitchie in a Claude Code session: show base assets, generate, iterate, approve on his word, export -->
 
 ## Status: Active
 
 The Pokémon's `email-image` SOP: make the header image for one transactional
-email, in a Claude Code session, with Alex. You show him what the brand's headers
+email, in a Claude Code session, with Alex McRitchie. You show him what the brand's headers
 are made from (the brand kit page), ask whether to add references, take his
 direction and his copy, generate candidates through the
 hub, show them to him inline, iterate on his notes, and approve only when he
 says so. Then you export the image and wire it into the app's mailer.
 
-Alex asked for it this way on 2026-10-06: "The actual generation of the image
+Alex McRitchie asked for it this way on 2026-10-06: "The actual generation of the image
 should come through a Claude Code SOP. That way you can show me the base list of
 assets and I can tell you the changes and copy to put on the email." The hub's
 `/email_images` page stays as the record and review page; its Generate button
 is a fallback.
 
-The builder of a new email runs it. Ritch has a veto on the headline wording,
-Shannon is the visual light on the PR, and Alex approves the image.
+The builder of a new email runs it. Alex has a veto on the headline wording,
+Shannon is the visual light on the PR, and Alex McRitchie approves the image.
 
 Plan and background: `/Users/alex/projects/.agents/epics/email-image-builder.md`
 (piece 6).
 
-**Start at the generator page.** Alex starts a run from
+**Start at the generator page.** Alex McRitchie starts a run from
 `https://mcritchie.studio/email_images/generator/<kit>` (admin only; the kit list
 is `/email_images/generator`, linked from `/email_images` and each brand kit page). It shows the brand's character model (or, for a
 kit no character fronts, the kit's references), up to four example headers, and
@@ -37,13 +37,13 @@ brand, email, headline and look from it as the brief's starting values.
 | Deterministic: the hub | Agentic: you |
 |---|---|
 | The brand kit: references, palette, style, the "never" list (`config/email_brand_kits.yml` plus the references added on `/email_images/brand_kits/<kit>`) | What the email is for, and which brand |
-| The generator call, the crop to 1200x600, the byte budget, our copy on R2 | The headline and subtext, from Alex's copy |
+| The generator call, the crop to 1200x600, the byte budget, our copy on R2 | The headline and subtext, from Alex McRitchie's copy |
 | The round cap, the claim, the cost record | Each round's direction, in a sentence the model can use |
-| Approve, retire, export, the catalog snippet | Judging candidates for brand fit before Alex sees them |
-| | Asking Alex; recording his word |
+| Approve, retire, export, the catalog snippet | Judging candidates for brand fit before Alex McRitchie sees them |
+| | Asking Alex McRitchie; recording his word |
 
 **You never approve on your own judgment.** `approve` takes `--by <who>` and
-stores it as the approver. Pass `--by alex` only after Alex has said, in this
+stores it as the approver. Pass `--by alex` only after Alex McRitchie has said, in this
 conversation, which candidate he wants.
 
 ## Scope
@@ -59,7 +59,7 @@ Every step below is `bin/email-image <subcommand>` (step 1 may use the kit page 
 for the reference; it is safe anywhere on the line and starts nothing.
 
 **(a) On the production hub. Recommended.** The OpenAI key and the R2 bucket live
-there, and the approval lands on the record Alex's page reads.
+there, and the approval lands on the record Alex McRitchie's page reads.
 
 ```bash
 heroku run --no-tty --exit-code -a mcritchie-studio -- bin/email-image <subcommand> …
@@ -85,7 +85,7 @@ print `https://assets.mcritchie.studio/…`.
 `openai.studio.applications`; never print it). Images land under
 `tmp/email-image/` (or `--out <dir>`) and you Read them directly. The records
 land in the desk's development database, not production, so an approval made
-here is not on Alex's page. Use it for a dry run, or when the hub is down.
+here is not on Alex McRitchie's page. Use it for a dry run, or when the hub is down.
 
 ## Preconditions
 
@@ -101,7 +101,7 @@ here is not on Alex's page. Use it for a dry run, or when the hub is down.
 
 ## The loop: one brief
 
-### 1. Show Alex the brand kit, and ask whether to add references
+### 1. Show Alex McRitchie the brand kit, and ask whether to add references
 
 Open the kit page with him, or run the CLI and show him what it prints:
 
@@ -121,11 +121,11 @@ Open the kit page with him, or run the CLI and show him what it prints:
   `origin=yaml|upload`, `label=`, `note=`, `file=`, `url=`), a palette swatch,
   the style and never-lists, every approved header (`approved …`), and the kit
   page's URL (`page …`). Open each `file=` (or fetch each `url=` in mode (a))
-  with Read so Alex sees them in the conversation.
+  with Read so Alex McRitchie sees them in the conversation.
 
 Summarise in two lines what the model will be handed: the mascot or mark, the
 style anchor, any added references and their notes, the colours. Then **ask
-Alex whether to add references** before a round: a new pose, a logo lockup, a
+Alex McRitchie whether to add references** before a round: a new pose, a logo lockup, a
 style example. He adds them on the kit page (**Add a reference**: PNG, JPEG or
 WebP up to 5 MB, a role of mascot, logo, style, product or other, a label, and
 an optional note such as "use this pose"), and archives any that should stop
@@ -142,7 +142,7 @@ reload the page after an upload to see it.
 
 ### 2. Brief
 
-Ask Alex, or read from the email's task: which app and email key, which variant,
+Ask Alex McRitchie, or read from the email's task: which app and email key, which variant,
 the headline, the subtext, and the text mode.
 
 ```bash
@@ -163,7 +163,7 @@ bin/email-image brief --app turf-monster --email drop_signup_confirmation \
 
 ### 3. Take his direction and copy
 
-Ask Alex what to change from the base look and confirm the exact words. Put
+Ask Alex McRitchie what to change from the base look and confirm the exact words. Put
 copy changes on the brief (`brief <slug> --headline …`), and turn his visual
 direction into one or two plain sentences for the round. Concrete beats
 adjectival: "the gator holds a golden ticket, stadium lights behind" works;
@@ -189,7 +189,7 @@ direction produced which image.
 
 ### 5. Judge, then show the candidates inline
 
-Open every candidate yourself first. Retire the plain misses before Alex sees
+Open every candidate yourself first. Retire the plain misses before Alex McRitchie sees
 them (`bin/email-image retire <slug> <artifact>`), and tell him you did:
 
 - a misspelled or extra word in a `baked` headline, or any lettering in `none`;
@@ -209,7 +209,7 @@ bin/email-image show <slug>        # every candidate, oldest round first, with i
 ```
 
 A brief has **four rounds** (two candidates each). `round 3/4` means one left;
-say so before you spend it. **Ask Alex before raising the cap**; with his yes:
+say so before you spend it. **Ask Alex McRitchie before raising the cap**; with his yes:
 
 ```bash
 bin/email-image brief <slug> --max-rounds 6
@@ -220,7 +220,7 @@ change the headline, the text mode or the notes, and say which.
 
 ### 7. Approve, only on his word
 
-When Alex names a candidate ("the second one", "approve artifact-…"), confirm
+When Alex McRitchie names a candidate ("the second one", "approve artifact-…"), confirm
 the slug back to him and record it:
 
 ```bash
@@ -228,7 +228,7 @@ bin/email-image approve <slug> <artifact-slug> --by alex
 ```
 
 Approving a second candidate retires the first; one header ships per email.
-The brief page shows the approved one inside the real email shell; give Alex the
+The brief page shows the approved one inside the real email shell; give Alex McRitchie the
 link (`https://mcritchie.studio/email_images/<slug>`) if he wants to see it
 there.
 
@@ -259,7 +259,7 @@ curl -sSfo <app-desk>/app/assets/images/emails/<file> "<approved url=>"
 The approved header becomes the `default_asset` of the email's
 `Studio::EmailCatalog` entry, registered in the app's
 `config/initializers/studio_emails.rb` and managed at the app's `/admin/emails`.
-**Every new transactional email registers there** (Alex's rule, 2026-10-07;
+**Every new transactional email registers there** (Alex McRitchie's rule, 2026-10-07;
 Turf PR #930 registered `drop_signup_confirmation` and `drop_signup_announcement`).
 
 Paste the snippet into the app's `config/initializers/studio_emails.rb`, with the
@@ -295,9 +295,9 @@ The CLI enforces these; know them so you can explain a refusal.
 
 ## What good looks like
 
-- Alex saw the brand kit (the page or the base assets inline) and was asked
+- Alex McRitchie saw the brand kit (the page or the base assets inline) and was asked
   whether to add references before the first round.
-- Alex saw every surviving candidate inline, in the conversation, before he chose.
+- Alex McRitchie saw every surviving candidate inline, in the conversation, before he chose.
 - Every round carries his direction in its notes, and `show` tells the story.
 - The approval reads `by alex`, made after his explicit word in the transcript.
 - The app's mailer preview renders the header at 600 px with its alt.
@@ -308,12 +308,12 @@ The CLI enforces these; know them so you can explain a refusal.
 - The generator is unconfigured (`set OPENAI_API_KEY`): report it; nothing was
   spent.
 - A candidate shows a real person's likeness, a team crest, or third-party
-  logos: retire it, tell Alex, and tighten the notes. Twice in a row, stop.
+  logos: retire it, tell Alex McRitchie, and tighten the notes. Twice in a row, stop.
 - The round cap is reached with nothing approvable: change the brief, and ask
   before raising `--max-rounds`.
 - A round fails twice with the same error: stop and report the `round N
   failed:` line; the hub logged it against the brief.
-- Alex is away: leave the candidates on the brief page, hand him the link, and
+- Alex McRitchie is away: leave the candidates on the brief page, hand him the link, and
   approve nothing.
 
 ## Handoff

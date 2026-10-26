@@ -39,14 +39,14 @@ or `ignore: true` to mute one).
 
 ## Part 1 — Create a bot (once per bot)
 
-The developer portal is Alex's account, so the portal clicks are his. The
-1Password item is not: Steffon makes it first, and Alex pastes only the token
+The developer portal is Alex McRitchie's account, so the portal clicks are his. The
+1Password item is not: Steffon makes it first, and Alex McRitchie pastes only the token
 ([`credential-filing`](./credential-filing.md) section 5).
 
 **Steffon, first:** create the item `agents.discord.<bot>` in `studio-agents`
 with the `bot-token` field present and **empty**, the `application-id` and
 `bot-user-id` fields ready, the Discord logo URL and the permission-matrix note
-(`credential-filing` sections 2 to 4). Then hand Alex his turn:
+(`credential-filing` sections 2 to 4). Then hand Alex McRitchie his turn:
 
 ```not-pasteable
 🙋 YOUR TURN — create the <bot> bot (<bot> = the soul it speaks as, e.g. avi)
@@ -69,7 +69,7 @@ Then Steffon:
 1. Fill `application-id` and `bot-user-id` on the item, then **verify the token
    with Discord** (`credential-filing` section 6): pipe the field straight into
    `GET https://discord.com/api/v10/users/@me` with an `Authorization: Bot …`
-   header, and print only the answer's `id`. It must equal the bot user ID Alex
+   header, and print only the answer's `id`. It must equal the bot user ID Alex McRitchie
    sent. Add the item's row to
    [`credential-inventory.md`](../../../modules/credential-inventory.md)
    ([`credential-filing`](./credential-filing.md)). If this bot becomes the
@@ -79,7 +79,7 @@ Then Steffon:
    into a second database.
 2. For the shared bot, put its user ID in `config/agent_routes.yml` as
    `discord.bot_user_id`, quoted, in a small PR. A bot user can also route a
-   soul: list it under that soul's `users`, as the live test does for Ritch.
+   soul: list it under that soul's `users`, as the live test does for Alex.
 3. Build the invite URL. Scope `bot`, and exactly the four permissions the public
    guide names: View Channels (1024), Send Messages (2048), Read Message History
    (65536) and Send Messages in Threads (274877906944), which sum to

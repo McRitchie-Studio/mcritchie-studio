@@ -67,7 +67,7 @@ The move is complete as of 2026-10-11 09:20 MDT.
   a year: `mcritchie-studio-production` (6 `email/` images) and
   `turf-monster-production` (2 `email_banners/` images), because sent emails
   embed their URLs.
-- The rest of the AWS exit, and what Alex kept: the plan's
+- The rest of the AWS exit, and what Alex McRitchie kept: the plan's
   [Wave 7 record](asset-library-plan.md#wave-7--the-aws-exit-record).
 
 ## Where each app stood, 2026-09-30

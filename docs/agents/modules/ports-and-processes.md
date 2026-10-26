@@ -93,7 +93,7 @@ If purchases stall locally, confirm the listener before assuming the Rails app i
   attaches to whatever answers on the default port, which may be a sibling desk's
   tree. Set `PW_BASE_URL=http://127.0.0.1:<your-port>` and prove the server is yours
   before believing a pass or a failure.
-- **Background commands die at two hours.** For a server Alex must use over time,
+- **Background commands die at two hours.** For a server Alex McRitchie must use over time,
   give him the one-line Terminal command, or start it only when he is ready to act,
   and read its log before believing "done".
 
@@ -131,4 +131,4 @@ reaches theirs.
 - **An instant `getaddrinfo: nodename nor servname provided` is usually a poisoned
   macOS DNS cache**, not a down service. Confirm with `dig` and `curl --resolve`,
   keep working with `RUBYOPT="-rresolv-replace"`, and hand the flush
-  (`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`) to Alex.
+  (`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`) to Alex McRitchie.

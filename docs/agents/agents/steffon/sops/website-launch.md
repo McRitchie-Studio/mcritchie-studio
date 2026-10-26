@@ -7,8 +7,8 @@ This is Steffon's `website-launch` SOP: put a hosted website on a new domain.
 It delivers the **Hosting mode** row on `/packages/stack`, and it is a step of
 [`workspace-launch`](./workspace-launch.md); runnable on its own.
 
-**Who leads.** On a client launch Ritch (`ray`) leads with the client and Steffon
-runs the infra steps below (Alex's approved sort, 2026-10-25).
+**Who leads.** On a client launch Alex (`alex`) leads with the client and Steffon
+runs the infra steps below (Alex McRitchie's approved sort, 2026-10-25).
 
 **To the customer it is always "an app we host."** What runs behind it depends
 on the package, and the customer never needs to know which:
@@ -19,8 +19,8 @@ on the package, and the customer never needs to know which:
 | Builder and up | 1 own domain · Basic dyno + Postgres + Redis mini, for realtime updates (Pro adds a worker). Postgres by tier: essential-0 (1 GB) Builder, essential-1 (10 GB) Pro, essential-2 (32 GB) Team; R2 files 10 / 50 / 100 GB (`config/workspace_packages.yml`) | **Our app**: a standalone Rails app on Heroku with its own Postgres database |
 | Pro and up | The bare domain as the address, `www` and other domains redirected at the edge | **Cloudflare DNS** ([`domain-dns` § Cloudflare DNS](./domain-dns.md#cloudflare-dns--pro-and-above)); Builder keeps `www` on Squarespace DNS |
 
-Tiers per the ladder Alex set on 2026-10-12: Vibe, Builder, Pro, Team, and Enterprise on request (`config/workspace_packages.yml`).
-Decided by Alex, 2026-09-24: "App we host. Behind the scenes it could
+Tiers per the ladder Alex McRitchie set on 2026-10-12: Vibe, Builder, Pro, Team, and Enterprise on request (`config/workspace_packages.yml`).
+Decided by Alex McRitchie, 2026-09-24: "App we host. Behind the scenes it could
 be Squarespace."
 
 The section names below are the 2026-09-24 packages. **Pro** is still the
@@ -30,7 +30,7 @@ on no v2 tier; it stays for a client already on Squarespace.
 ## What this act is NOT
 
 - **It never spends money on its own.** A Squarespace site plan and a Heroku
-  app plus database are recurring costs, so each is Alex's approval.
+  app plus database are recurring costs, so each is Alex McRitchie's approval.
 - **It never touches the mail records.** A website needs only `@`/`www` web
   records. MX, SPF, DKIM and DMARC from [`domain-dns`](./domain-dns.md) stay
   exactly as they are, and the last step re-checks them.
@@ -46,7 +46,7 @@ prove the site did not disturb it.
 
 ## Basic — a Squarespace site behind the scenes
 
-### 1. Create the site — Alex
+### 1. Create the site — Alex McRitchie
 
 ```not-pasteable
 🙋 YOUR TURN — create the website on Squarespace
@@ -72,7 +72,7 @@ Green when both answer `200` over HTTPS. Then run the last step.
 
 ## Pro — our hosted app with a database
 
-### 1. Approve the cost — Alex
+### 1. Approve the cost — Alex McRitchie
 
 ```not-pasteable
 🙋 YOUR TURN — approve the hosting cost
@@ -100,7 +100,7 @@ heroku certs:auto:enable -a <app-name>
 Deploy the app, and confirm `https://<app-name>.herokuapp.com/up` answers `200`
 before touching DNS. Then run step 3 and step 4, then the last step.
 
-### 3. Point the domain at it — Alex
+### 3. Point the domain at it — Alex McRitchie
 
 **Pro and above:** skip this step and step 4. The domain moves to Cloudflare
 DNS and the **bare domain** is the address, with `www` redirected at the edge:

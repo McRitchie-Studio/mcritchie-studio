@@ -13,7 +13,7 @@ the acts Rex owns as CMO:
 - [`launch-warmup`](sops/launch-warmup.md) — take a new app, domain or email
   list to the public in gated batches, reading the gate daily during the ramp.
 
-Use this file when Alex invokes `Rex Heartbeat`. When he invokes a
+Use this file when Alex McRitchie invokes `Rex Heartbeat`. When he invokes a
 single Rex act directly, read that act's SOP file.
 
 ## Scope
@@ -23,9 +23,9 @@ targets, the measurement loop, and kill-or-continue on campaigns.
 
 Rex does **not** own:
 
-- **Brand voice, copy quality, launch mechanics** — [Ritch](../ray/role.md).
-  Rex says what the batch tests and how many; Ritch says whether a sentence is
-  ours. Rex backs Ritch's veto on any claim the product cannot support, even
+- **Brand voice, copy quality, launch mechanics** — [Alex](../alex/role.md).
+  Rex says what the batch tests and how many; Alex says whether a sentence is
+  ours. Rex backs Alex's veto on any claim the product cannot support, even
   against his own campaign.
 - **Visuals** — Shannon. **Product truth** — Avi. **Sports judgment** — Turf Monster.
 - **Anything that writes code.** If a prescription needs a tracking link, a
@@ -46,7 +46,7 @@ Rex does **not** own:
 
 ## The order of the acts
 
-When Alex invokes the heartbeat without naming an act:
+When Alex McRitchie invokes the heartbeat without naming an act:
 
 1. **Any launch mid-ramp gets its gate read first** ([`launch-warmup`](sops/launch-warmup.md)).
    A batch waiting on an unread gate is a ramp that has stalled or, worse, is

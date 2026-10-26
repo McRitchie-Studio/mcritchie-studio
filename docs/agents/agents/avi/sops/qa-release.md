@@ -67,7 +67,7 @@ weight `light`/`suite`/`idle` from `config/devops_test_suites.yml`) for peers'
 `reviewed` tasks waiting, `assembled` stragglers, or an interrupted candidate in
 flight. Otherwise report "nothing to prepare" and stop.
 
-## Pre-sweep — batch Alex's dream approvals
+## Pre-sweep — batch Alex McRitchie's dream approvals
 
 Before the sweep, run `bin/dream approvals`; it lists his approvals and his
 retirements. If it lists any, a session batches
@@ -310,7 +310,7 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    gate **one after another**, not in parallel, and the gem gate runs before the app
    gates, so one sweep's worst case is the SUM of its repos' waits. That can exceed the
    2-hour cap on a background command. Run `prepare` where it may outlive that cap
-   (Alex's terminal), or watch for a cut-off and re-run: a re-run reads the greens
+   (Alex McRitchie's terminal), or watch for a cut-off and re-run: a re-run reads the greens
    that landed meanwhile on its first poll. `RELEASE_CI_POLL_TIMEOUT` is now a **floor**: raising it
    lengthens the wait, and lowering it never shortens a workflow-sized one. A wait past
    one hour re-mints the GitHub App read token (the sweep prints `re-minted the GitHub
@@ -431,14 +431,14 @@ When the candidate carries **turf-monster or turf-vault** work, QA-green is not 
 end of this act: run Turf Monster's
 [`contest-rehearsal`](../../turf_monster/sops/contest-rehearsal.md) on QA (devnet) to a
 green close — create, enter, play, settle with the on-chain payout co-signed and the
-arithmetic checked, close — and record it on the release. Alex, 2026-10-11: "it just
+arithmetic checked, close — and record it on the release. Alex McRitchie, 2026-10-11: "it just
 feels right to run a devnet gauntlet on the package before giving production the green
-light." **You run it unattended, by default** (Alex, 2026-10-12): every step in one
+light." **You run it unattended, by default** (Alex McRitchie, 2026-10-12): every step in one
 turn with `--cosign agent`, so the QA server key and Mack co-sign the settle and no
 Phantom tap is owed. At each `── STOP ──` block, check what it names yourself (the
 per-step checks are in the SOP's "unattended" paragraph) and go on; a step that stops
 or answers otherwise ends the run red. Run it watched (`--cosign link`, his Phantom
-co-sign at step 4) only when Alex asks to watch. Run step 3 as a bare `play` (no
+co-sign at step 4) only when Alex McRitchie asks to watch. Run step 3 as a bare `play` (no
 `--pace`): budget about 9 minutes for the whole gauntlet, about 4 of them step 3.
 
 Record the green close (your own usage on the event, as every agent completion carries):

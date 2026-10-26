@@ -61,7 +61,7 @@ Nightly database backups and a monthly restore drill are a paid-plan benefit.
 
 - **Rule.** Every live `studio` or `product` app with `database: true` has
   `backups: true`. A `basic` app has `backups: false` unless `BACKUP_EXCEPTIONS`
-  in `test/lib/app_registry_test.rb` names it with Alex's reason (today
+  in `test/lib/app_registry_test.rb` names it with Alex McRitchie's reason (today
   `moms-app`, his family app). An archived app has `backups: false`. The
   registry test enforces all three.
 - **What `backups: true` does.** Heroku runs the app's 02:00 America/Denver
@@ -216,10 +216,10 @@ deployment shape.
 |-----|---------------|------------|-------|
 | 🪎 McRitchie Studio | Studio · Active | 3000-3099 | The hub; deploys through GitHub Actions; QA at `qa.mcritchie.studio` |
 | 🐊 Turf Monster | Product · Showcase | 3100-3199 | Managed satellite on studio-engine; `bin/deploy` to `turf-monster-mainnet`; QA at `qa.turfmonster.media` |
-| 🐉 Cyvasse | Product · Showcase | 3600-3699 | Managed satellite on studio-engine; git push to Heroku `cyvasse`; canonical host `cyvasse.xyz` (`cyvasse.mcritchie.studio` 301s there and stays reserved); no QA copy by Alex's cost decision, so `qa_evidence: exempt` |
+| 🐉 Cyvasse | Product · Showcase | 3600-3699 | Managed satellite on studio-engine; git push to Heroku `cyvasse`; canonical host `cyvasse.xyz` (`cyvasse.mcritchie.studio` 301s there and stays reserved); no QA copy by Alex McRitchie's cost decision, so `qa_evidence: exempt` |
 | 📐 McRitchie Industries | Product · Active | 3500-3599 (3510 held for the MSAA dev server) | Managed satellite on studio-engine; the private business knowledge base; git push to Heroku `mcritchie-industries`; QA at `qa.mcritchie.industries` |
 | 🔥 Commercial Welding | Product · Active | 4500-4599 | Managed satellite on studio-engine, `reserved` in `config/satellites.yml` (no link-tree entry before the acquisition closes); a Google Workspace client. git push to Heroku `commercial-welding`; QA on `commercial-welding-qa` at `qa.commercialwelding.llc` (both provisioned 2026-10-12; DNS pending) |
-| 🛠️ alex.build | Product · Active | 4600-4699 | Managed satellite on studio-engine, `reserved` in `config/satellites.yml` until it goes live; the site for Alex, the AI hire. git push to Heroku `alex-build` (created 2026-10-25, nothing deployed); production host `alex.build` on Cloudflare DNS. No QA copy by Alex McRitchie's cost decision of 2026-10-25, so `qa_evidence: exempt`, cited in `QA_EXEMPT_BY_OPERATOR_DECISION` |
+| 🛠️ alex.build | Product · Active | 4600-4699 | Managed satellite on studio-engine, `reserved` in `config/satellites.yml` until it goes live; the site for Alex McRitchie, the AI hire. git push to Heroku `alex-build` (created 2026-10-25, nothing deployed); production host `alex.build` on Cloudflare DNS. No QA copy by Alex McRitchie's cost decision of 2026-10-25, so `qa_evidence: exempt`, cited in `QA_EXEMPT_BY_OPERATOR_DECISION` |
 | 📚 Moms App | Basic · Active | 4400-4499 | Release-managed standalone on studio-engine, profile `standalone-heroku` |
 | 🎞️ Dads App, 🎲 Prisoners Dilemma, 🏈 Weekly Lock, 📣 Rantly, 🗂️ Portfolio, 🍽️ 10&5 Hospitality, 🔎 Search Position | Basic · Showcase | 3700-4399, one block each | Release-managed standalones on profile `standalone-heroku`, Heroku `dads-app` or `mcr-<repo>`, no QA copies (`qa_evidence: exempt`). Rantly runs on studio-engine; the others have no engine and no database |
 | 📇 Rolio | Archived | 3300-3399 | Dormant; ladder `dormant`; Heroku `rolio-prod` and `rolio-qa` |

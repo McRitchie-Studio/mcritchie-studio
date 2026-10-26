@@ -35,7 +35,7 @@ resume with `bin/task begin <task-slug>`). Steps 4-9 apply either way.
 
 Without the fast lane: agree acceptance criteria; create the production task; `bin/agent-worktree
 plan <app> <task-slug>`; `new`; `bind-task`; move the task to `building`; `up` when a URL is
-needed; edit only inside the desk. When the local behavior is ready for Alex:
+needed; edit only inside the desk. When the local behavior is ready for Alex McRitchie:
 
 ```bash
 bin/task update <task-slug> --local-url http://localhost:<port>/<path> --approval waiting
@@ -317,7 +317,7 @@ park stranded work on a pushed `rescue/<slug>-<date>` branch.
 - **Read current truth from `origin/accepted`, never a primary.** A primary sits on
   `main`, often far behind; a miss there means "not shipped yet", and a version read
   from its tree describes its last fetch. Use `git show origin/accepted:<path>` or
-  your desk. A doc merged to `accepted` reaches Alex's primary only at a production ship.
+  your desk. A doc merged to `accepted` reaches Alex McRitchie's primary only at a production ship.
 - **Commit as soon as a coherent change exists.** A peer who claims the same task
   lands at the same path and a takeover resets it; uncommitted work is unrecoverable.
 - **Confirm the database before trusting a hand-run data command:**
@@ -353,7 +353,7 @@ keep both blocks at a CSS end-of-file conflict; merge sequentially, suite green 
 ## Handoff Contract
 
 Task URL first; then branch, desk path, local URLs, PR URL, `checks_run` and readiness.
-Never leave Alex with "run these commands."
+Never leave Alex McRitchie with "run these commands."
 
 ## Terminal Context
 

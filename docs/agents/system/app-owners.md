@@ -51,7 +51,7 @@ app-owner exception in [`agent-message-loop.md`](agent-message-loop.md) ("Held")
 An admin who does not own the app is answered by their own role, never by it.
 In that chat the owner may also say `go`, `no` or `change: …` on a `change`
 proposal (a `designed` task in the app's repo) while the app is under its cap,
-and nowhere else ("Confirm by reply" in the same page; Alex, 2026-10-18).
+and nowhere else ("Confirm by reply" in the same page; Alex McRitchie, 2026-10-18).
 
 ## The sidebar
 
@@ -96,7 +96,7 @@ no `HEALTH_TOKEN_<SLUG>` reads "not connected" and is never fetched.
 **Usage** is the CTO's answers this month, measured from each answer's run
 summary, against the monthly allowance of the app's package tier. Only client
 and public answers count against it. The allowances ship blank (unlimited) until
-Alex prices them. Detail: [`agent-usage.md`](agent-usage.md).
+Alex McRitchie prices them. Detail: [`agent-usage.md`](agent-usage.md).
 
 ## The report channel
 

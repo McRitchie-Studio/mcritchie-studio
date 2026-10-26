@@ -6,7 +6,7 @@
 This is Steffon's `conductor-host` SOP. It takes a new Mac mini from the box to
 **the board sees it**: the agent dispatcher and the client build launcher running
 under launchd on the mini, pinging the board every minute, with a harness key of
-its own, and nothing of the kind left running on Alex's laptop.
+its own, and nothing of the kind left running on Alex McRitchie's laptop.
 
 Why a separate box: the laptop is the conductor today, and it sleeps. From
 2026-10-21 to 2026-10-24 it slept on battery with the lid closed, and the
@@ -15,8 +15,8 @@ lid-closed sleep on battery
 (audit `platform-audit-2026-10-24`, lane infra, "Machine" and D6). A desktop on
 mains power with sleep turned off does not have that failure.
 
-Written so a contractor can run it. Alex's hands are needed in three places,
-marked **Alex** below; everything else is **Operator** (the person at the mini)
+Written so a contractor can run it. Alex McRitchie's hands are needed in three places,
+marked **Alex McRitchie** below; everything else is **Operator** (the person at the mini)
 or **Script** (`bin/conductor-host-setup`, which the operator runs).
 
 | Piece | Where |
@@ -32,18 +32,18 @@ or **Script** (`bin/conductor-host-setup`, which the operator runs).
 
 | Who | Does | Needs |
 |---|---|---|
-| **Alex** | (1) creates the mini's 1Password service account and pastes its token on the mini, and keeps the FileVault recovery key; (2) signs Claude Code in with his claude.ai account; (3) approves the mini's harness key on the board. Also runs the laptop half of the cutover | His 1Password, his claude.ai login, the board |
+| **Alex McRitchie** | (1) creates the mini's 1Password service account and pastes its token on the mini, and keeps the FileVault recovery key; (2) signs Claude Code in with his claude.ai account; (3) approves the mini's harness key on the board. Also runs the laptop half of the cutover | His 1Password, his claude.ai login, the board |
 | **Operator** | Unboxes, cables, walks macOS setup, runs every command in this page on the mini | The mini, a temporary account password, this page. No secret: the operator never sees a token |
 | **Script** | `pmset`, the directory layout, the hub clone, the Claude Code install, the two launchd agents (with `--take-over`), the harness-key request, and `--check` | Run by the operator, in Terminal on the mini |
 
 Once the token is on the mini (step 5), anyone signed in as `alex` there can read
 the `studio-agents` vault through `op`. That is why the operator's account
-password is temporary and Alex replaces it in step 11.
+password is temporary and Alex McRitchie replaces it in step 11.
 
 Never a secret in chat, a ticket or a screenshot. The script prints none: each
 item that needs one names the 1Password item instead.
 
-## Decisions Alex owes before the box arrives (defaults stand on silence)
+## Decisions Alex McRitchie owes before the box arrives (defaults stand on silence)
 
 1. **Host name.** Default `conductor-mini`. It is how the board tells the mini's
    pings from the laptop's (`mac`), so it must differ from every other Mac.
@@ -59,9 +59,9 @@ item that needs one names the 1Password item instead.
      `~/.zprofile`, `AGENT_API_SECRET` in the hub's `.env`, the harness key and
      the Claude login.
 3. **The admin (deployer) token stays on the laptop.** Production ships keep
-   running from Alex's laptop; the mini never holds `OP_ADMIN_SERVICE_ACCOUNT_TOKEN`.
+   running from Alex McRitchie's laptop; the mini never holds `OP_ADMIN_SERVICE_ACCOUNT_TOKEN`.
    `--check` treats one in `~/.zprofile.admin` as a miss unless run with
-   `--allow-admin-token`, which only Alex's say-so justifies.
+   `--allow-admin-token`, which only Alex McRitchie's say-so justifies.
 
 ## 1. Unbox and first boot (Operator)
 
@@ -70,17 +70,17 @@ item that needs one names the 1Password item instead.
    - Migration: **Not now**. This is a fresh build, not a copy of the laptop.
    - Apple Account: **Set up later**. The conductor needs none.
    - User account: an administrator, short name **`alex`**. Docs and the fixed
-     tooling path assume `/Users/alex/projects`. Use a temporary password; Alex
+     tooling path assume `/Users/alex/projects`. Use a temporary password; Alex McRitchie
      replaces it in step 11.
    - Location services, analytics, Siri, Screen Time: off.
    - FileVault: per decision 2. With A, turn it on and choose **Create a recovery
-     key and do not use my iCloud account**. **Alex** keeps the recovery key in
+     key and do not use my iCloud account**. **Alex McRitchie** keeps the recovery key in
      his own 1Password (not an agent vault).
 3. System Settings:
    - **General > Sharing > Computer name** `conductor-mini`, then in Terminal:
      `sudo scutil --set HostName conductor-mini && sudo scutil --set LocalHostName conductor-mini`.
    - **General > Sharing**: Remote Login on and Screen Sharing on, for `alex` only,
-     so Steffon and Alex can reach the box without a screen.
+     so Steffon and Alex McRitchie can reach the box without a screen.
    - **Network**: Ethernet first in the service order; Wi-Fi off.
    - **Energy**: "Prevent automatic sleeping when the display is off" on, "Wake
      for network access" on, "Start up automatically after a power failure" on.
@@ -133,7 +133,7 @@ Phases 1-3 install the Homebrew packages, Chrome, Postgres, Redis, Node, Rust,
 Solana and Anchor, and the shell lines. It stops at Phase 4 because the
 1Password token is not set yet. That stop is by design.
 
-## 5. The 1Password token (Alex)
+## 5. The 1Password token (Alex McRitchie)
 
 1. In 1Password (account `MWOV5OT5BRHATI4EGMN26C5DPA`): **Developer Tools >
    Service Accounts > Create**, name `conductor-mini`, **read on `studio-agents`
@@ -170,23 +170,23 @@ operator's; `bin/conductor-host-setup --check` prints the same line. It pipes
 writes nothing, rather than a blank `AGENT_API_SECRET=` line) and leaves the
 `.env` at `600`. Run it as printed and never `cat` the file afterwards.
 
-## 7. Claude Code sign-in (Alex)
+## 7. Claude Code sign-in (Alex McRitchie)
 
 ```bash
-claude auth login        # in a browser, with Alex's claude.ai account, not an API key
+claude auth login        # in a browser, with Alex McRitchie's claude.ai account, not an API key
 claude auth status       # authMethod must read claude.ai
 ```
 
 Both services run headless `claude` on this subscription and refuse an API key.
 
-## 8. The harness key (Operator, then Alex)
+## 8. The harness key (Operator, then Alex McRitchie)
 
 ```bash
 bin/conductor-host-setup                 # requests it now that the secret is in .env
 # or by hand: bin/harness-key request --label conductor-mini
 ```
 
-**Alex** approves the row `Harness key · conductor-mini` on
+**Alex McRitchie** approves the row `Harness key · conductor-mini` on
 `https://mcritchie.studio/tasks` (the Approve tap, or the one-time code in his
 reply). Then the operator collects it:
 
@@ -199,9 +199,9 @@ bin/harness-key status                   # slug, machine and length; never the k
 
 The dispatcher and the build launcher are headless: `claude -p` plus board API
 calls, no browser. Phase 1 installs Chrome; leave it signed out. Run
-[`chrome-profiles`](chrome-profiles.md) only if Alex starts working at the mini.
+[`chrome-profiles`](chrome-profiles.md) only if Alex McRitchie starts working at the mini.
 
-## 10. Cutover: one conductor, not two (Alex on the laptop, Operator on the mini)
+## 10. Cutover: one conductor, not two (Alex McRitchie on the laptop, Operator on the mini)
 
 Two dispatchers split the mailbox, and two launchers release each other's runs,
 so the laptop gives the role up first and the mini takes it within a minute.
@@ -209,7 +209,7 @@ so the laptop gives the role up first and the mini takes it within a minute.
 1. Pick a quiet minute: no build running (the app card reads no **Building**, or
    the laptop's `~/Library/Logs/client-build-launcher.log` shows none in flight).
    An uninstall sends a running build back in line, spending an attempt.
-2. **Alex**, on the laptop (launchd changes need his hands; in a Claude session
+2. **Alex McRitchie**, on the laptop (launchd changes need his hands; in a Claude session
    prefix the command with `!`):
 
    ```bash
@@ -230,7 +230,7 @@ so the laptop gives the role up first and the mini takes it within a minute.
    secret first. The dispatcher's silent alert fires only after 5 minutes without
    a ping, so a prompt take-over raises none.
 
-## 11. Smoke check (Operator, then Alex)
+## 11. Smoke check (Operator, then Alex McRitchie)
 
 ```bash
 bin/conductor-host-setup --check   # every item done, ending with:
@@ -243,11 +243,11 @@ tail -n 5 ~/Library/Logs/agent-dispatcher.log   # start dispatcher-conductor-min
 
 The board check reads `GET /api/v1/agent_dispatchers`: a live ping from the
 mini's dispatcher and its launcher, and no live primary on any other host. The
-same rows show on `/admin/agent_messages`. Then **Alex** posts
+same rows show on `/admin/agent_messages`. Then **Alex McRitchie** posts
 `@Avi what is building?` in `lobster-tank`; the log shows `claimed #N` and
 `completed #N` within about a minute.
 
-Last, **Alex** changes the account password the operator used (System Settings >
+Last, **Alex McRitchie** changes the account password the operator used (System Settings >
 Users & Groups) and keeps it in his own 1Password. Under decision A he also
 replaces the FileVault recovery key, which Setup Assistant showed the operator:
 `sudo fdesetup changerecovery -personal`, the new key into his own 1Password.
@@ -266,7 +266,7 @@ started by hand on any Mac, still wrap it: `caffeinate -is <command>`.
 
 | Moved to the mini | Stays on the laptop |
 |---|---|
-| The agent dispatcher (`studio.mcritchie.agent-dispatcher`) | Alex's interactive Claude sessions and their desks |
+| The agent dispatcher (`studio.mcritchie.agent-dispatcher`) | Alex McRitchie's interactive Claude sessions and their desks |
 | The client build launcher (`studio.mcritchie.client-build-launcher`) | The admin token and every production ship (`bin/release ship`) |
 | | The laptop's own harness key, if it holds one |
 
@@ -283,12 +283,12 @@ Back to the laptop, in the same order (give up first, take over second):
 ```bash
 # on the mini
 bin/conductor-host-setup --hand-off-to mac
-# on the laptop (Alex)
+# on the laptop (Alex McRitchie)
 rm -f ~/.config/mcritchie/conductor-elsewhere && bin/dispatcher install && bin/client-build-launcher install
 ```
 
 **If the mini never took over, or is dead,** skip the mini line: the laptop line
-alone resumes the laptop as conductor (Alex, with the `!` prefix in a Claude
+alone resumes the laptop as conductor (Alex McRitchie, with the `!` prefix in a Claude
 session). A dead mini that comes back starts both services at login
 (`RunAtLoad`), so run `bin/conductor-host-setup --hand-off-to mac` on it at once.
 

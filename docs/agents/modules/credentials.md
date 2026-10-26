@@ -43,7 +43,7 @@ Credential docs are split into two layers:
   `e2e_parallel_env_test.rb` prove each with a control.
 - Use `/opt/homebrew/bin/op` directly for targeted reads.
 - Prefer repo scripts that write or consume secrets without echoing them.
-- Do not scan vaults broadly unless Alex explicitly asks.
+- Do not scan vaults broadly unless Alex McRitchie explicitly asks.
 - Do not edit agent tool permissions or `.claude/settings*.json` to gain credential access.
 - If a permission is missing, report the exact vault, item, and operation needed instead of inventing a workaround.
 
@@ -274,7 +274,7 @@ marked `*` is a use outside them, and a line marked `k` a door the harness key
 also opens (the reads, narration, a task's create and its claim, counted as
 `PATCH api/v1/tasks#update (claim)`): those fall as each machine holds a key. The
 shared token stops writing only after the count outside the mint doors reads zero
-on production for the period Alex chooses.
+on production for the period Alex McRitchie chooses.
 
 ### Hooks and narration
 
@@ -472,7 +472,7 @@ lane is closed to you.** WHICH gap decides who closes it, and
 | State of the machine | Remedy | Whose |
 |---|---|---|
 | `~/.zprofile.admin` on disk, absent from THIS shell | `source ~/.zprofile.admin`, then retry | **yours** |
-| no `~/.zprofile.admin` at all — never provisioned | `bin/setup-1pass-token --admin`, once | **Alex's** — the install reads the token off his clipboard |
+| no `~/.zprofile.admin` at all — never provisioned | `bin/setup-1pass-token --admin`, once | **Alex McRitchie's** — the install reads the token off his clipboard |
 
 The second row is the **only** credential step on either lane that is his
 ([`token-session.md`](token-session.md) → *The one honest escalation*). Never
@@ -589,7 +589,7 @@ Default access is the AGENT vault (`studio-agents`). The ADMIN vault (`studio-ag
 > 1Password-shaped: the items, their fields, and how to wire them.
 >
 > **Blocked on a credential right now?** It is yours to fix, not
-> Alex's: `eval "$(bin/gh-auth-refresh --export)"`
+> Alex McRitchie's: `eval "$(bin/gh-auth-refresh --export)"`
 
 Every repo lives under the **McRitchie-Studio** org, and `git`/`gh` authenticate as one of **two GitHub App** installations
 rather than a personal token.

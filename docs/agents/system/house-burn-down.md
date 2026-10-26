@@ -80,12 +80,12 @@ The manual phase-by-phase steps below are kept as a fallback for debugging when 
 
 ## First-run audit
 
-Every step a first run of this runbook asks for, and who does it now (audited 2026-10-15, `/tasks/burn-down-restores-services`). **Automated** means `bin/ecosystem-build` did it before this audit; **automated by this task** means it does now; **Alex-only** means only the operator can, for the reason given, and the build's closing checklist names the exact command or link whenever the step is still owed; **follow-up** means it is manual today and could be automated.
+Every step a first run of this runbook asks for, and who does it now (audited 2026-10-15, `/tasks/burn-down-restores-services`). **Automated** means `bin/ecosystem-build` did it before this audit; **automated by this task** means it does now; **Alex McRitchie-only** means only the operator can, for the reason given, and the build's closing checklist names the exact command or link whenever the step is still owed; **follow-up** means it is manual today and could be automated.
 
 | # | First-run step | Where | Status |
 |---|----------------|-------|--------|
-| 1 | Xcode Command Line Tools | Phase 0 | Alex-only: a macOS installer dialog. Phase 1 now detects it and puts `xcode-select --install` on the checklist |
-| 2 | Homebrew | Phase 0 | Alex-only: its installer asks for the Mac password. On the checklist when missing |
+| 1 | Xcode Command Line Tools | Phase 0 | Alex McRitchie-only: a macOS installer dialog. Phase 1 now detects it and puts `xcode-select --install` on the checklist |
+| 2 | Homebrew | Phase 0 | Alex McRitchie-only: its installer asks for the Mac password. On the checklist when missing |
 | 3 | GitHub access for clones (`gh auth login`) | Phase 0, 4 | Automated by this task: Phase 5 mints the agent App token from 1Password (`bin/gh-auth-refresh --export`) when `gh` has no login |
 | 4 | Brew packages (`ruby@3.3`, `postgresql@14`, `redis`, `1password-cli`, `gh`, …) | Phase 1 | Automated |
 | 5 | Google Chrome | Phase 1 | Automated by this task: Phase 1 installs the cask unless `/Applications/Google Chrome.app` exists |
@@ -96,8 +96,8 @@ Every step a first run of this runbook asks for, and who does it now (audited 20
 | 10 | Rust, Solana CLI, Anchor | Phase 3 | Automated |
 | 11 | Local Solana dev keypair | Phase 3 | Automated |
 | 12 | Clone the repos | Phase 4 | Automated (Phase 5) |
-| 13 | 1Password AGENT service token | 5a-i | Alex-only: the token is created in his 1Password account and comes from his clipboard (`bin/setup-1pass-token`). The build stops at Phase 4 with it as checklist item |
-| 14 | 1Password ADMIN service token | 5a-ii | Alex-only: a second service account in his 1Password account. Needed only before a production deploy, so it blocks nothing; on the checklist until `~/.zprofile.admin` holds it |
+| 13 | 1Password AGENT service token | 5a-i | Alex McRitchie-only: the token is created in his 1Password account and comes from his clipboard (`bin/setup-1pass-token`). The build stops at Phase 4 with it as checklist item |
+| 14 | 1Password ADMIN service token | 5a-ii | Alex McRitchie-only: a second service account in his 1Password account. Needed only before a production deploy, so it blocks nothing; on the checklist until `~/.zprofile.admin` holds it |
 | 15 | Verify both token lanes | 5a | Agent lane automated (the Phase 4 vault guard). Deployer lane: follow-up; the build does not opt into the ship lane on purpose |
 | 16 | Local `.env` / `.env.development` | 5b | Automated (a generated dev key and the R2 dev pair). Optional per-feature keys (`RAILS_MASTER_KEY`, Google client, API keys) stay on demand: Phase 4 names each source |
 | 17 | Heroku CLI login | 5c | Automated: Phase 4 reads `HEROKU_API_KEY` from 1Password |
@@ -109,20 +109,20 @@ Every step a first run of this runbook asks for, and who does it now (audited 20
 | 23 | studio-engine bundle | 6d | Automated by this task (Phase 6) |
 | 24 | turf-vault `yarn install` + `anchor build` | 6e | Automated (Phase 7) |
 | 25 | Smoke: hub and satellite respond | 7 | Automated (Phase 8 curls each port) |
-| 26 | Smoke: a magic-link sign-in in each app | 7 | Alex-only: a person's sign-in in a browser. Optional |
+| 26 | Smoke: a magic-link sign-in in each app | 7 | Alex McRitchie-only: a person's sign-in in a browser. Optional |
 | 27 | Smoke: `solana address` | 7 | Automated (Phase 2 prints it) |
 | 28 | Smoke: `anchor test` | 7 | Follow-up: slow (a local validator); not run by the build |
 | 29 | Agent runtime (`AGENTS.md`, `CLAUDE.md`, skills, hooks) | Appendix B | Automated (Phase 5b) |
 | 30 | Agent dispatcher service | not in the runbook before | Automated by this task (Phase 10, from `config/local_services.yml`) |
 | 31 | Claude Code allow-rules for the dispatcher | not in the runbook before | Automated by this task (Phase 10, from `config/claude_allow_rules.json`) |
-| 32 | Install Claude Code | not in the runbook before | Alex-only for now: the checklist names the installer when `claude` is missing. Installing it unattended is a follow-up |
-| 33 | Sign Claude Code in with claude.ai | not in the runbook before | Alex-only: his claude.ai login in a browser. Phase 10 reads `claude auth status` and puts `claude auth login` on the checklist; it never logs in for him |
-| 34 | Chrome avatar-menu profiles | Appendix D | Alex-only: Google asks the person to sign each account in. Then `bin/chrome-profiles apply` and `pin-dock` restore the order from 1Password; on the checklist until the ordered launcher exists |
+| 32 | Install Claude Code | not in the runbook before | Alex McRitchie-only for now: the checklist names the installer when `claude` is missing. Installing it unattended is a follow-up |
+| 33 | Sign Claude Code in with claude.ai | not in the runbook before | Alex McRitchie-only: his claude.ai login in a browser. Phase 10 reads `claude auth status` and puts `claude auth login` on the checklist; it never logs in for him |
+| 34 | Chrome avatar-menu profiles | Appendix D | Alex McRitchie-only: Google asks the person to sign each account in. Then `bin/chrome-profiles apply` and `pin-dock` restore the order from 1Password; on the checklist until the ordered launcher exists |
 | 35 | Subagent definitions in `~/.claude/agents/` | soul docs (`claude-agent.md`) | Follow-up: copied by hand today; `bin/agent-runtime install` could mirror them |
 | 36 | Client build launcher service | not in the runbook before | Automated by task `launcher-in-burn-down` (Phase 10, the second entry in `config/local_services.yml`) |
 | 37 | `AGENT_API_SECRET` in the hub's `.env` for the launchd services | not in the runbook before | On the checklist when missing: Phase 10 names the `op read` that appends it. The build does not write the secret itself (Phase 4 writes `.env` without it on purpose) |
 
-Totals, 35 steps: 19 automated, 5 automated by this task, 8 Alex-only, 3 follow-up. Row 15 counts once, as automated; its deployer half is a fourth follow-up.
+Totals, 35 steps: 19 automated, 5 automated by this task, 8 Alex McRitchie-only, 3 follow-up. Row 15 counts once, as automated; its deployer half is a fourth follow-up.
 
 **Follow-ups, named, not built:** the deployer-lane check (15); `bin/tm up` in Phase 8 (21); `anchor test` as an opt-in smoke (28); an unattended Claude Code install (32); and mirroring subagent definitions (35). The production ship's service refresh now walks `config/local_services.yml` (`bin/release.rb#refresh_local_services`, task `launcher-in-burn-down`).
 
@@ -269,7 +269,7 @@ solana config set --url devnet
 solana address  # confirm your new pubkey
 ```
 
-This is a **local dev keypair**, NOT one of the agent vault wallets. The agent wallets (Ritch, Mason, Mack, Turf Monster) stay in 1Password.
+This is a **local dev keypair**, NOT one of the agent vault wallets. The agent wallets (Alex, Mason, Mack, Turf Monster) stay in 1Password.
 
 ---
 
@@ -497,7 +497,7 @@ bin/rails server                   # port 3000
 
 Visit http://localhost:3000 and sign in with a magic link to `alex@mcritchie.studio`.
 
-Seeds load 9 agents (Ritch, Avi, Carl, Shannon, Jasper, Steffon, Turf Monster, Mack, Mason), 35 skills, sample tasks, 32 NFL + 71 NCAA + 48 FIFA teams, ~2400 active contracts, ~570 PFF-graded athletes. The `db:seed` phase 32 (`32_headshot_links.rb`) makes network calls — let it run, or skip with `SKIP_NETWORK_SEEDS=1` if behind a firewall. **It is no longer safe to let it fail.** Both tasks it invokes now abort when they linked no coach (`coach-link-lane-false-green`, 2026-09-28), so a firewalled `db:seed` exits non-zero and `bin/ecosystem-build` `exit 1`s the rebuild. `SKIP_NETWORK_SEEDS=1` is the opt-out and is real code as of that change; until then it appeared in this sentence and nowhere else in the repository. A skipped run leaves every `Coach.espn_headshot_url` empty, so `nfl:upload_coach_headshots` caches nothing and every coach avatar falls back — the skip says so on stderr.
+Seeds load 9 agents (Alex, Avi, Carl, Shannon, Jasper, Steffon, Turf Monster, Mack, Mason), 35 skills, sample tasks, 32 NFL + 71 NCAA + 48 FIFA teams, ~2400 active contracts, ~570 PFF-graded athletes. The `db:seed` phase 32 (`32_headshot_links.rb`) makes network calls — let it run, or skip with `SKIP_NETWORK_SEEDS=1` if behind a firewall. **It is no longer safe to let it fail.** Both tasks it invokes now abort when they linked no coach (`coach-link-lane-false-green`, 2026-09-28), so a firewalled `db:seed` exits non-zero and `bin/ecosystem-build` `exit 1`s the rebuild. `SKIP_NETWORK_SEEDS=1` is the opt-out and is real code as of that change; until then it appeared in this sentence and nowhere else in the repository. A skipped run leaves every `Coach.espn_headshot_url` empty, so `nfl:upload_coach_headshots` caches nothing and every coach avatar falls back — the skip says so on stderr.
 
 For full NFL data (UDFAs, depth charts, ESPN headshots cached to the bucket), use the NFL rebuild workflow once it has been promoted into neutral agent docs. The underlying steps are `db:reset` -> `db:seed` -> `nfl:players_seed` -> `espn:scrape_depth_charts`. The headshot cache writes to the R2 dev bucket with the dev pair (`R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`) that `bin/ecosystem-build` writes into `.env.development`; no AWS credentials are involved (AWS was retired on 2026-10-10).
 
@@ -558,7 +558,7 @@ Current deployment facts drift quickly. Treat `turf-vault/docs/CURRENT_DEPLOYMEN
 
 **Gotcha**: `anchor test` will fail with `ts-mocha: command not found` if you skip `yarn install`. The Anchor scaffold's test runner is JS, not Rust.
 
-To deploy a new version: the program's upgrade authority is a Squads V4 multisig (one per cluster, each with its own threshold and members — `turf-monster/docs/SOLANA.md` states them once and carries the command to re-derive them), and **the vault PDA differs per cluster** — devnet (`EQGFJAcA…`) is `BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC`, mainnet (`DaFv83yo…`) is `Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm`. **Name the cluster on every run.** `turf-vault/scripts/squad-upgrade.js` REQUIRES `--cluster=devnet|mainnet`, has no default, and refuses when the RPC's genesis hash belongs to a different cluster. It reads that cluster's addresses from `scripts/squad.json` (the top level for mainnet, the `devnet` block for devnet) and its live Squads membership from the chain, and it refuses unless the program's upgrade authority is that cluster's Squads vault. It does **not** write the buffer: you write it and hand the buffer authority to that cluster's Squads vault first. It dry-runs unless `--send` arms it. On devnet the agent's three seats reach threshold 3, so an armed run upgrades end to end; on mainnet it casts the agent's two approvals and stops for Alex. A plain `anchor deploy` no longer works — it would be rejected by the on-chain upgrade-authority check. The devnet path:
+To deploy a new version: the program's upgrade authority is a Squads V4 multisig (one per cluster, each with its own threshold and members — `turf-monster/docs/SOLANA.md` states them once and carries the command to re-derive them), and **the vault PDA differs per cluster** — devnet (`EQGFJAcA…`) is `BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC`, mainnet (`DaFv83yo…`) is `Bk9sS7iiSRL18vuo2KVzkeGw7EekKqxMCjrdoyGGdJm`. **Name the cluster on every run.** `turf-vault/scripts/squad-upgrade.js` REQUIRES `--cluster=devnet|mainnet`, has no default, and refuses when the RPC's genesis hash belongs to a different cluster. It reads that cluster's addresses from `scripts/squad.json` (the top level for mainnet, the `devnet` block for devnet) and its live Squads membership from the chain, and it refuses unless the program's upgrade authority is that cluster's Squads vault. It does **not** write the buffer: you write it and hand the buffer authority to that cluster's Squads vault first. It dry-runs unless `--send` arms it. On devnet the agent's three seats reach threshold 3, so an armed run upgrades end to end; on mainnet it casts the agent's two approvals and stops for Alex McRitchie. A plain `anchor deploy` no longer works — it would be rejected by the on-chain upgrade-authority check. The devnet path:
 ```bash
 cd ~/projects/turf-vault
 anchor build

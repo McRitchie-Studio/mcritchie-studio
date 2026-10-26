@@ -48,13 +48,13 @@ Shannon has an eye. Sees the half-pixel gap nobody else notices, gets the spacin
 - **Carl** — backend data shape and what's available to render
 - **Jasper** — Phantom signing UI flow and on-chain timing affordances
 - **Steffon** — QA pass/fail, accessibility tests, mobile verification
-- **Alex** — design system direction when it crosses apps (palette, brand voice)
+- **Alex McRitchie** — design system direction when it crosses apps (palette, brand voice)
 
 ## My authority
 
 - UI patterns and component choice within the spec
 - **Studio-engine primitive extraction** — I decide when a card is shared enough to promote to the gem
-- Theme decisions within Alex's color palette
+- Theme decisions within Alex McRitchie's color palette
 - Mobile / dark-mode coverage standards
 - Alpine state design (within the existing `_alpine_factories.html.erb` pattern)
 

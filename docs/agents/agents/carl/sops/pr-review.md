@@ -16,7 +16,7 @@ is the deep/primary reviewer AND the OWNER of that review: he runs the gates,
 summons a light specialist at his discretion, drives the verdict, and merges.
 
 A focus session reviews its own epic's PRs by tier instead
-([`../../ray/sops/focus-session.md`](../../ray/sops/focus-session.md)): there,
+([`../../alex/sops/focus-session.md`](../../alex/sops/focus-session.md)): there,
 a prose-only PR gets Mason alone, who reviews and merges it. The documentation
 seat merges docs-shape PRs only, measured by `bin/merge-permit` at the merge
 ([`pr-review-primary.md`](pr-review-primary.md)); every other PR is Carl's to
@@ -137,7 +137,7 @@ returns `none`, report "no reviewable PRs" and stop, UNLESS it prints one of two
 warnings:
 
 - `no CI is ingested for <repo>` is a WIRING gap: the board receives no Actions
-  deliveries for that repo. Report the repos to Alex (recipe:
+  deliveries for that repo. Report the repos to Alex McRitchie (recipe:
   `../../../modules/deployment.md`, "Wiring a repo's Actions webhook").
 - `the board's OWN ingested CI is what this refusal read` is an INGESTION gap on
   ONE HEAD: the board holds no run for this PR's tip while GitHub says green.
@@ -297,7 +297,7 @@ light's report closes `g2b_light`. On a hand-run review, record the markers with
     --feedback "<builder's position vs review's position, in brief>" --agent carl
   ```
 
-  and surface it to Alex in the wave report as an **⚠ Escalated** line.
+  and surface it to Alex McRitchie in the wave report as an **⚠ Escalated** line.
 
   If the bounce is **mechanical** — red CI, a merge conflict, a dirty base;
   nothing for the operator to arbitrate — say so and the block proceeds, with the

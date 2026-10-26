@@ -3,7 +3,7 @@
 ## Status: Optional — not a heartbeat act since 2026-09-25
 
 Every task is now graded once when it ships (`Insights::TaskGrader`; thresholds in
-`config/learning_loop.yml`), so this manual act runs only when Alex asks
+`config/learning_loop.yml`), so this manual act runs only when Alex McRitchie asks
 for it by name.
 
 ## The learning loop, in three parts
@@ -64,8 +64,9 @@ bin/agent-activity grade <activity-id> --disposition not --slug "<4-7 words>" --
 Bank only insights that make the next agent smarter. Discard generic narration,
 routine success, and anything that should not become instruction.
 
-The browser path at `/ray/heartbeat` is the operator/admin equivalent. The CLI
-grades as Mason, stored under the `ray` grader key the seat inherited; Alex's confirmation lane remains in the browser
+The browser path at `/mason/heartbeat` is the operator/admin equivalent. The CLI
+grades as Mason, stored under the `mason` grader key (`ray` until ritch-renamed-alex). Whose work a grade
+judges is the graded activity's own `agent`: orchestration under `mason`, client work under `alex`. Alex McRitchie's confirmation lane remains in the browser
 pipeline.
 
 ## Exit Seam
