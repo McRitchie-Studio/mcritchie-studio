@@ -59,7 +59,7 @@ lanes are rare, so the cost is one extra mint. Do not "fix" this.
 | **Token rejected (401) on a `git` operation** | retire that token, next call mints once | automatic |
 | **Token rejected (401) on `gh` or an API call** | nothing retires it — it is served until it ages out | **you** — step 1 |
 | **Token present, but the one in YOUR shell is stale** | the session inherited a revoked `OP_SERVICE_ACCOUNT_TOKEN` while `~/.zprofile` already holds the live one; `op` then fails exactly as it would for a service account that no longer exists | **you** — step 1a |
-| **1Password unreachable, quota spent, or the service account genuinely gone** | `op` cannot serve the key, so `bin/gh-token` cannot mint — but you can, from the recorded app id plus a local `.pem`. **Two legs, `gh` and `git`, and both are yours to arm** | **you** — **step 1a first**, then *When 1Password itself is down* |
+| **1Password unreachable, quota spent, or the service account genuinely gone** | `op` cannot serve the key, so `bin/gh-token` cannot mint, and **neither can you: there is no `.pem` on disk** (the downloaded copies were deleted on Alex McRitchie's instruction, 2026-10-26). The key lives only as the item's `.pem` attachment | **you** — **step 1a first**; then *When 1Password itself is down* for what still works, and re-test in a fresh session |
 | **Deployer token needed, admin token absent, machine provisioned** | `source ~/.zprofile.admin` in this shell, then retry | **you** |
 | **Deployer token needed, and this machine has no `~/.zprofile.admin`** | install it once — `bin/setup-1pass-token --admin` | **Alex McRitchie** |
 
@@ -216,18 +216,23 @@ before you come here: a 403 that reads like a dead account is usually a stale
 token in your own shell, and on 2026-09-27 four agents reached this section with
 a perfectly live service account. When the reset does not recover it and the
 broker really cannot serve — unreachable, quota spent, or the account genuinely
-gone — **you can still mint**: `bin/gh-app-mint-token` takes its two halves from
-the environment and never touches 1Password:
+gone — **there is no agent-side mint**: the key has no copy on disk, so wait,
+re-test in a fresh session, and say so plainly. The recipe below still runs
+only when the key is already in your shell's `GH_APP_PEM`, read from 1Password
+while it still answered. `bin/gh-app-mint-token` takes its two halves from the
+environment and never touches 1Password:
 
 | Half | Where it is when 1Password is down |
 |---|---|
 | `GH_APP_ID` — the numeric app id | `export GH_APP_IDENTITY=agent` (or `deployer`): `bin/gh-app-mint-token` reads the id from `config/github_apps.yml#agent` / `config/github_apps.yml#deployer` in the checkout, so no 1Password read is needed. |
-| `GH_APP_PEM` — the private key | the `.pem` as last downloaded: `~/Downloads/mcritchie-{agent,deployer}.*.private-key.pem`. **Never** in the repo. |
+| `GH_APP_PEM` — the private key | **No on-disk copy exists.** The `~/Downloads/mcritchie-*.private-key.pem` files were deleted on Alex McRitchie's instruction on 2026-10-26. The key is only the `.pem` FILE attachment on the item (`github.mcritchie-agent` in `studio-agents`; `github.mcritchie-admin` in `studio-agents-admin`), which `bin/gh-app-git-credential#PEM` reads through `op`. With 1Password down there is **no key to read**, so this half exists only if `GH_APP_PEM` already holds it in this shell. **Never** write it to a file or the repo. |
 
-**This is a bypass, not a repair.** It works only on a machine that already has
-the `.pem` on disk, so it does not generalise — not to a fresh Mac, not to CI,
-not to an agent whose box never held the key. It also fixes nothing about the
-broker: a quota-spent service account is still quota-spent afterwards.
+**This is a bypass, not a repair, and since 2026-10-26 it has no on-disk
+fallback.** It mints without the broker only from a key already in hand. When
+`GH_APP_PEM` is empty there is no key on this machine and the bypass does not
+exist: do not go looking for a `.pem` on disk, stop, and re-test `op` later. It
+also fixes nothing about the broker: a quota-spent service account is still
+quota-spent.
 
 **No open ticket sits behind this, and nothing here waits on Alex McRitchie.** When this
 recipe is what gets you moving, the follow-up is step 1a.
@@ -294,7 +299,11 @@ cd /Users/alex/projects/mcritchie-studio
 
 # Both legs read the same two halves. Export them once.
 export GH_APP_IDENTITY=agent        # the app id comes from config/github_apps.yml
-export GH_APP_PEM="$(cat ~/Downloads/mcritchie-agent.*.private-key.pem)"
+# The key: there is NO copy on disk (deleted 2026-10-26). GH_APP_PEM must
+# already hold it in this shell; if it does not, there is no bypass.
+if [ -z "$GH_APP_PEM" ]; then
+  echo "no key in hand: there is no on-disk fallback; stop and re-test op later"
+fi
 
 # ── Leg 1: gh ─────────────────────────────────────────────────────────────────
 GH_TOKEN="$(bin/gh-app-mint-token)"
@@ -311,7 +320,7 @@ export GH_APP_TOKEN_CMD=/Users/alex/projects/mcritchie-studio/bin/gh-app-mint-to
 git push --dry-run origin HEAD                           # read the answer below
 ```
 
-Both legs mint with **zero** 1Password reads. **Do not `echo` the token**, keep
+Both legs mint with **zero** 1Password reads. **Do not `echo` the token** or the key, keep
 the empty-token guard (see *An empty token is not an absent one* below), and
 print only a length or a masked prefix. ⚠ **Never presence-check a token with
 `${GH_TOKEN:-unset}`** — that form *expands the secret* whenever the variable is
@@ -350,7 +359,7 @@ Two consequences of arming leg 2:
   the helper's `erase` branch passes it (`bin/gh-app-git-credential#REJECTED`), so
   a rejected credential costs one minted token nobody reads — wasteful, never
   fatal. For the **ship** lane, set `GH_APP_IDENTITY=deployer` and the PEM to the
-  deployer `.pem`; exporting
+  deployer item's key (its `.pem` attachment; no copy is on disk); exporting
   `GH_APP_ITEM` on its own would leave leg 2 on the agent identity, which is a
   wrong-identity *success* and harder to notice than a refusal.
 
@@ -397,10 +406,10 @@ Two traps in that check:
 | `could not read Username for 'https://github.com'` | the git credential helper could not mint, and no other helper answered | step 1, then **step 1a**, then step 2 — and if `op` still cannot serve, *When 1Password itself is down* → **leg 2**. Exporting `GH_TOKEN` never reaches `git` |
 | `gh` answers but `git push` still fails | **only the `gh` leg is armed.** They are two legs with two routes | **step 1a** first if you have not run it — a broken `op` starves the git leg while an exported `GH_TOKEN` keeps `gh` answering. Then *When 1Password itself is down* → **leg 2** (`GH_APP_TOKEN_CMD`), and re-check with `git push --dry-run` |
 | `remote: Invalid username or token` on a push **in the hub** | the App helper came up empty and the hub's repo-local `gh` fallback answered with a stale keyring token. A checkout without that fallback says `could not read Username` instead | **step 1a** first — an empty App helper is usually a stale `OP_SERVICE_ACCOUNT_TOKEN`, not a broker that cannot serve. Only then arm **leg 2**. Do not chase the local config; leave it alone |
-| `op` answers `(403) Forbidden (Service Account Deleted)` | **almost never a deleted account.** The token in your shell is stale — it names a service account that no longer exists, while `~/.zprofile` already holds the live one. The variable is still *set*, so it reads as a broken credential rather than a missing one | **step 1a** — `unset OP_SERVICE_ACCOUNT_TOKEN`, `source ~/.zprofile`, `op whoami`. Only if it STILL 403s after that is the account genuinely gone, and only then the hand-mint |
+| `op` answers `(403) Forbidden (Service Account Deleted)` | **almost never a deleted account.** The token in your shell is stale — it names a service account that no longer exists, while `~/.zprofile` already holds the live one. The variable is still *set*, so it reads as a broken credential rather than a missing one | **step 1a** — `unset OP_SERVICE_ACCOUNT_TOKEN`, `source ~/.zprofile`, `op whoami`. Only if it STILL 403s after that is the account genuinely gone; then no agent can mint (no `.pem` on disk), so report it |
 | `"agents" isn't a vault` | **the hub primary is stale** | fast-forward `main`; the fix shipped as `bin/lib/op_vaults.rb` |
-| `Too many requests` from `op` | account-wide daily quota | step 2 — read the `[ERROR]` line, not the summary; if the quota really is spent, mint by hand rather than wait |
-| `op read` of the `.pem` attachment answers `(401) Unauthorized` while the item's fields read fine | a 1Password service-side fault on file attachments, not a revoked grant or the quota | mint by hand (*When 1Password itself is down*) and re-test later in a fresh session |
+| `Too many requests` from `op` | account-wide daily quota | step 2 — read the `[ERROR]` line, not the summary; if the quota really is spent, wait for it: the key lives only in 1Password, and there is no `.pem` on disk |
+| `op read` of the `.pem` attachment answers `(401) Unauthorized` while the item's fields read fine | a 1Password service-side fault on file attachments, not a revoked grant or the quota | re-test later in a fresh session. The hand-mint cannot help: the key lives only in that attachment, and there is no `.pem` on disk |
 | Quota spent and nobody knows by what | nothing recorded WHICH command read | step 2a — `bin/op-reads` (and `--by context` for a fan-out). Do NOT re-derive it by measurement; that was tried on 2026-08-31 and came up empty |
 | `gh` acts as a person, not a bot | an EMPTY token fell back to the keyring | never hand `gh` an empty `GH_TOKEN`; see the trap below |
 | `ci:unreadable` on a task's `dor_review` gate row | the token expired **mid-gate** — CI was never read, and was never red | step 1, then re-run `bin/dor-check <slug> --gate-role review`. Do NOT chase a red CI; there is none |
@@ -467,9 +476,11 @@ does it name the install.
 
 ### The one honest escalation
 
-**A 1Password outage is not it.** Whatever `op` is doing, the hand-mint above
-needs neither the broker nor Alex McRitchie, as long as the `.pem` is on this
-machine. Reach for it before you decide the night is over.
+**A 1Password outage is not it.** There is nothing for Alex McRitchie to run:
+wait it out and re-test in a fresh session. No agent can mint through it either,
+unless the key is already in its shell: the key lives only in 1Password, and
+there is no `.pem` on disk (deleted on his instruction, 2026-10-26). Say that plainly
+rather than hunting for a key file.
 
 A machine that has **never been given** an admin token — no `~/.zprofile.admin`
 on disk at all — genuinely needs Alex McRitchie, once, to run

@@ -70,6 +70,20 @@ class HandMintRecipeTest < Minitest::Test
     end
   end
 
+  # ── 5b. THE RECIPE POINTS AT NO KEY FILE ON DISK ────────────────────────────
+  #
+  # The downloaded ~/Downloads/mcritchie-*.private-key.pem copies were deleted
+  # on Mr. McRitchie's instruction on 2026-10-26. A recipe that still reads a
+  # key file sends the reader hunting for one that is gone, so the SOP says
+  # there is no on-disk fallback, and the recipe reads no file for the key.
+  def test_the_recipe_reads_no_key_file_and_says_there_is_no_on_disk_fallback
+    block = recipe_block
+    refute_match(/Downloads|private-key\.pem|cat\s+\S*\.pem/, block,
+      "the hand-mint recipe reads a key file; the on-disk copies were deleted 2026-10-26.")
+    assert_match(/no on-disk fallback/i, read(SOP),
+      "#{SOP} must say plainly that there is no on-disk fallback for the key.")
+  end
+
   # ── 6. THE SECRET HALF IS NEVER IN THE REPO ─────────────────────────────────
   #
   # The id is recorded BECAUSE it is not a credential. The line that makes that
