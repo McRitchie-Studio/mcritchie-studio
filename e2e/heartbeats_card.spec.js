@@ -8,7 +8,7 @@ const { openDeploySidebar } = require("./helpers");
 // summary card's carousel, and every soul with every command in the Workflows sidebar.
 // This is the browser-level check that the acts render under the RIGHT souls end to end,
 // in the sidebar the operator actually opens.
-test("the Workflows sidebar lists six soul launchers with their acts", async ({ page }) => {
+test("the Workflows sidebar lists seven soul launchers with their acts", async ({ page }) => {
   await page.goto("/deployments");
 
   // The carousel starts on Turf Monster, the operator's spec.
