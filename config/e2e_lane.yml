@@ -61,7 +61,7 @@
 # HeartbeatController#latest_session_id, i.e. whichever session owns the newest AgentAction. The
 # seed grew newer fixtures ('sess-test-runs'), which now win that default and render ZERO spans,
 # so every locator timed out on a page that never had the rows. Pinning
-# ?session_id=e2e-heartbeat-0001 (as e2e/alex_heartbeat.spec.js already did) restores them.
+# ?session_id=e2e-heartbeat-0001 (as e2e/mason_heartbeat.spec.js, then alex_heartbeat.spec.js, already did) restores them.
 # Measured: bare path = 0 heartbeat-event nodes; pinned = 3 (Explore/Verify/Workflow).
 # The OTHER two in that file stay tagged on purpose — they assert a design that was REVERSED
 # (span grading moved out of the drawer and back inline), so they want deleting or rewriting,

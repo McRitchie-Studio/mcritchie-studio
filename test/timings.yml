@@ -299,7 +299,7 @@ test/integration/workspace_mail_purpose_test.rb: 0.83
 test/integration/workspace_purpose_scoped_tokens_test.rb: 0.6
 test/integration/mason_heartbeat_test.rb: 3.13
 test/integration/mason_pipeline_test.rb: 3.89
-test/integration/ray_seat_test.rb: 0.88
+test/integration/alex_seat_test.rb: 0.88
 test/jobs/agent_action_retention_job_test.rb: 0.4
 test/jobs/app_request_discord_job_test.rb: 0.46
 test/jobs/avi_sizing_job_test.rb: 0.38

@@ -71,10 +71,15 @@ alex = Agent.create!(
   name: "Alex",
   slug: "alex",
   status: "active",
-  agent_type: "orchestrator",
-  title: "Lead Orchestrator",
-  description: "Coordinates all agents and manages task assignment."
+  agent_type: "worker",
+  title: "Fractional CTO",
+  description: "The client-facing persona: faces clients on /build and builds their apps.",
+  avatar: "/agents/alex.webp"
 )
+# Mason holds the orchestrator seat (and the learning heartbeat's grader key) since
+# 2026-10-25; the demo rows below that orchestrate are his.
+Agent.create!(name: "Mason", slug: "mason", status: "active", agent_type: "orchestrator", title: "CEO",
+              description: "Coordinates all agents and manages task assignment.")
 
 mack = Agent.create!(
   name: "Mack",

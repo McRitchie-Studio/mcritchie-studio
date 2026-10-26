@@ -53,6 +53,9 @@
               <% if req.showcase? %>
                 <span class="rounded-full border border-warning px-2 py-0.5 text-xs font-semibold text-warning-ink" data-test="app-request-showcase">Showcase</span>
               <% end %>
+              <% if req.from_alex_build? %>
+                <span class="rounded-full border px-2 py-0.5 text-xs font-semibold text-muted" data-test="app-request-origin" title="Came from alex.build">alex.build</span>
+              <% end %>
             </div>
             <span class="text-xs text-muted whitespace-nowrap" title="<%= (req.queued_at || req.created_at).iso8601 %>">
               <%= req.queued_at ? "queued" : "started" %> <%= time_ago_in_words(req.queued_at || req.created_at) %> ago

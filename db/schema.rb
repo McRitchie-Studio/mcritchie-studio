@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_25_230000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_25_231000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -510,6 +510,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_25_230000) do
     t.string "cto_avatar"
     t.string "cto_name"
     t.datetime "discord_notified_at"
+    t.string "origin"
     t.jsonb "palette", default: {}, null: false
     t.text "prompt", null: false
     t.datetime "queued_at"

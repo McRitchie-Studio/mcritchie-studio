@@ -98,6 +98,7 @@ class BuildController < ApplicationController
     # A reader who came from an email: an app request made now is credited
     # to it (EmailEvents::Results).
     session[:email_ref] = params[:ref] if params[:ref].is_a?(String) && params[:ref].match?(/\A[\w-]{16,64}\z/)
+    remember_origin
     @intake_agent = Agent.find_by(slug: BuildIntake.soul)
     @examples = BuildGallery.examples
   end
@@ -107,7 +108,8 @@ class BuildController < ApplicationController
     return redirect_to(build_path, status: :see_other) if params.dig(:app_request, BrowserProof::HONEYPOT_FIELD).present?
 
     text = params.dig(:app_request, :prompt)
-    request_row = AppRequest.new(prompt: text, user: (current_user if logged_in?))
+    remember_origin
+    request_row = AppRequest.new(prompt: text, user: (current_user if logged_in?), origin: session[:build_origin])
     saved = rescue_and_log(target: request_row) do
       AppRequest.transaction do
         next false unless request_row.save
@@ -140,6 +142,8 @@ class BuildController < ApplicationController
     # Credited once, then forgotten: a later visitor on the same browser is
     # not this email's reader.
     EmailEvents::Results.record!(session.delete(:email_ref), "requested_app", source: "app") if session[:email_ref]
+    # Stamped on this request, then forgotten, as the email credit above.
+    session.delete(:build_origin)
     respond_to do |format|
       format.json { render json: { token: request_row.token, path: build_request_path(request_row.token) }, status: :created }
       # The page's own post: the conversation starts HERE. The empty thread
@@ -367,6 +371,14 @@ class BuildController < ApplicationController
   end
 
   private
+
+  # A visit from alex.build's CTAs (AppRequest.origin_from): remembered for the
+  # session until the first request it creates carries it. A later visit that
+  # names no origin keeps what an earlier one set.
+  def remember_origin
+    origin = AppRequest.origin_from(params: params, referer: request.referer)
+    session[:build_origin] = origin if origin
+  end
 
   # What launch_draft did: :launched (app_slug, app_cto), :queued (an admin's
   # showcase without the checklist) or :refused (reason, and which next step

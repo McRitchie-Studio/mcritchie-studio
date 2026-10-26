@@ -35,6 +35,36 @@ class AppRequest < ApplicationRecord
   OUR_DOMAINS = [ CLIENT_APP_DOMAIN, HUB_DOMAIN ].freeze
   PROMPT_LIMIT = 4000
 
+  # WHERE A SIGN-UP CAME FROM (alex-build-funnel-handoff). alex.build is Alex's
+  # front door (the McRitchie-Studio/alex-build app); its CTAs send visitors to the
+  # hub's /build. A visit names it by `?ref=alex.build`, `?utm_source=alex.build`
+  # (either spelling `alex.build` or `alex-build`), or by an alex.build referrer.
+  # BuildController remembers it for the session and stamps the request it
+  # creates, so a funnel count reads `origin` and never guesses.
+  ALEX_BUILD = "alex.build".freeze
+  ORIGINS = [ ALEX_BUILD ].freeze
+  ALEX_BUILD_TAGS = %w[alex.build alex-build alex_build].freeze
+  ALEX_BUILD_HOST = /\A(?:[a-z0-9-]+\.)*alex\.build\z/
+
+  validates :origin, inclusion: { in: ORIGINS }, allow_nil: true
+
+  # The origin a visit names, or nil. `params` is the request's query (ref,
+  # utm_source); `referer` the Referer header. Only the known value is ever
+  # returned, so a crafted parameter stores nothing.
+  def self.origin_from(params:, referer: nil)
+    tags = [ params[:ref], params[:utm_source] ].select { |value| value.is_a?(String) }.map { |value| value.strip.downcase }
+    return ALEX_BUILD if tags.any? { |tag| ALEX_BUILD_TAGS.include?(tag) }
+
+    host = begin
+      URI.parse(referer.to_s).host.to_s.downcase
+    rescue URI::InvalidURIError
+      ""
+    end
+    host.match?(ALEX_BUILD_HOST) ? ALEX_BUILD : nil
+  end
+
+  def from_alex_build? = origin == ALEX_BUILD
+
   # 3-30 characters of a-z, 0-9 and hyphens, starting and ending alphanumeric —
   # a valid DNS label that also reads as a name.
   SUBDOMAIN_FORMAT = /\A[a-z0-9][a-z0-9-]{1,28}[a-z0-9]\z/
