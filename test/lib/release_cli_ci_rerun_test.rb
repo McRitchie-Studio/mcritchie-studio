@@ -43,7 +43,7 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
 
   def poll(setup)
     run_cli([], setup: setup,
-                call: %(ci = poll_ci_verdict("rantly", #{SHA.inspect}, budget: 60); puts "STATE=\#{ci[:state]} RERUNS=\#{$reruns.inspect}"))
+                call: %($gate_sops = []; ci = poll_ci_verdict("rantly", #{SHA.inspect}, budget: 60); puts "STATE=\#{ci[:state]} RERUNS=\#{$reruns.inspect}"; puts "SOPS=\#{$gate_sops.inspect}"))
   end
 
   # [unit] THE FLAKE: red on attempt 1 → one re-run → the re-run's green certifies.
@@ -54,6 +54,7 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
     assert_includes out, "STATE=green"
     assert_includes out, 'RERUNS=["11"]', "exactly one `gh run rerun 11`"
     refute_includes out, "PARTIAL-RERUN", "every job re-runs, so the executed-set guards read fresh receipts"
+    assert_includes out, %("sop"=>"ci_rerun"), "the re-run is recorded on the gate run, not only printed"
   end
 
   # [unit] A SECOND RED IS REAL: the re-run concluded red, so the gate fails on it.

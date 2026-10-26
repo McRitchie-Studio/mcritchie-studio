@@ -108,9 +108,11 @@ changes code. Paths are in the `turf-monster` repo.
 
 **Deploy and tests**
 
-- **`bin/deploy` runs the full suite and prints only its last 25 lines.** Read the
-  same SHA's CI log for the failure. `SKIP_TESTS=1` is read by that script only
-  and needs Alex's approval.
+- **`bin/deploy` runs the full suite and prints only its last 25 lines,** unless the
+  release ship passes `--ci-verified=<sha>`: it does so only after reading GitHub CI
+  green for that exact SHA, and the script skips its suite only when the SHA is its
+  `HEAD`. On a local red, read the same SHA's CI log for the failure. `SKIP_TESTS=1`
+  is read by that script only and needs Alex's approval.
 - **A test that reads the day of the week passes on weekdays and fails on weekend
   deploys.** Freeze the clock in any test near a lock rule.
 - **Browser specs in a desk:** run `npm ci` first (a desk has no `node_modules`),

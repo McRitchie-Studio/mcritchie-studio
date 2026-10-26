@@ -3521,6 +3521,7 @@ def ci_rerun_once!(repo, sha)
         "reading the red as it stands")
     return nil
   end
+  gate_sop("ci_rerun", "↻ AUTOMATIC RE-RUN of #{repo}@#{short(sha)} run(s) #{plan[:run_ids].join(', ')}: #{plan[:reason]}", true)
   @ci_reruns[key] = plan[:run_ids]
 end
 
