@@ -35,7 +35,7 @@ require "application_system_test_case"
 # driver has to scroll, and a scroll collapses this app's sticky nav under the pointer.
 class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   setup do
-    %w[carl avi steffon ray].each { |s| Agent.find_or_create_by!(slug: s) { |a| a.name = s.capitalize } }
+    %w[carl avi steffon mason ray].each { |s| Agent.find_or_create_by!(slug: s) { |a| a.name = s.capitalize } }
     Agent.find_or_create_by!(slug: "turf-monster") { |a| a.name = "Turf Monster" }
   end
 
@@ -410,7 +410,7 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     carousel_acts = page.all("#{SUMMARY} button[data-row='action'] code", visible: :all)
     carousel_heads = page.all("#{SUMMARY} button[data-row='heartbeat'] code", visible: :all)
     assert_operator carousel_acts.size, :>=, 7, "expected every soul's act chips in the carousel at #{width}px"
-    assert_equal 5, carousel_heads.size, "expected five row-1 heartbeat chips in the carousel at #{width}px"
+    assert_equal 6, carousel_heads.size, "expected six row-1 heartbeat chips in the carousel at #{width}px"
     assert_every_chip_was_measured(carousel_acts, width)
     assert_chips_readable(carousel_acts, carousel_heads, width, where: "the Workflows summary card's carousel")
 
@@ -419,7 +419,7 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     acts = page.all("#{CARD} button[data-row='action'] code", visible: :all)
     heads = page.all("#{CARD} button[data-row='heartbeat'] code", visible: :all)
     assert_equal carousel_acts.size, acts.size, "the sidebar offers every act the carousel does"
-    assert_equal 5, heads.size, "expected five row-1 heartbeat chips in the sidebar at #{width}px"
+    assert_equal 6, heads.size, "expected six row-1 heartbeat chips in the sidebar at #{width}px"
     assert_every_chip_was_measured(acts, width)
     assert_chips_readable(acts, heads, width, where: "the Workflows sidebar")
   end
