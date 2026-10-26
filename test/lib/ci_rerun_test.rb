@@ -87,6 +87,10 @@ class CiRerunTest < Minitest::Test
   def test_cancelled_scheduled_and_jobless_runs_are_not_rerun
     assert_equal :none, CiRerun.plan(runs: [run_row(1, conclusion: "cancelled")], jobs_by_run: { 1 => ["test"] })[:action]
     assert_equal :none, CiRerun.plan(runs: [run_row(1, event: "schedule")], jobs_by_run: { 1 => ["test"] })[:action]
+    deploy = CiRerun.plan(runs: [run_row(1, event: "workflow_dispatch")], jobs_by_run: { 1 => ["deploy"] },
+                          log_for: ->(_id) { "is locked to studio-engine (0.1.0) ... can no longer be found in that source" })
+    assert_equal :none, deploy[:action], "a dispatched deploy run is never re-run, even on the resolution error"
+    assert_equal :rerun, CiRerun.plan(runs: [run_row(1, event: "pull_request")], jobs_by_run: { 1 => ["test"] })[:action]
     assert_equal :none, CiRerun.plan(runs: [run_row(1)], jobs_by_run: {})[:action]
     assert_equal :none, CiRerun.plan(runs: [], jobs_by_run: {})[:action]
   end

@@ -61,6 +61,10 @@ module CiRerun
 
   RERUN_CONCLUSIONS = %w[failure timed_out].freeze
   SCHEDULE_EVENT = "schedule"
+  # Only a commit-triggered CI run is re-run. A workflow_dispatch run on the SHA is
+  # a deploy (prod-deploy.yml, qa-deploy.yml) whose log can carry the same bundler
+  # error; re-running it would re-dispatch a deploy from inside a gate.
+  RERUN_EVENTS = %w[push pull_request].freeze
 
   def test_lane?(name)
     text = name.to_s
@@ -99,6 +103,7 @@ module CiRerun
       id = run["id"]
       label = "#{run['name'] || 'workflow'} (run #{id})"
       return { action: :none, reason: "#{label} was schedule-triggered — it does not test this commit" } if run["event"].to_s == SCHEDULE_EVENT
+      return { action: :none, reason: "#{label} was #{run['event'].inspect}-triggered — only a push or pull_request CI run is re-run, never a dispatched deploy" } unless RERUN_EVENTS.include?(run["event"].to_s)
       return { action: :none, reason: "#{label} concluded #{run['conclusion']} — only a failure or a timeout is re-run" } unless RERUN_CONCLUSIONS.include?(run["conclusion"].to_s)
 
       attempt = run["run_attempt"].to_i
