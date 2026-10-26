@@ -50,6 +50,19 @@ class AppProfileTest < Minitest::Test
     assert(drift.any? { |line| line.start_with?("qa_test_cmd:") }, "an extra key is drift too")
   end
 
+  # standalone-static (an app moved to Cloudflare R2) has no git remote, so the
+  # drift guard reads the parked Heroku app from prod_deploy.heroku_app instead.
+  def test_the_static_profile_expands_and_reads_back_with_no_drift
+    entry = AppProfile.expand("standalone-static", PARAMS)
+    assert_equal({ "strategy" => "static_cloudflare", "bucket" => "mcr-demo-static", "heroku_app" => "mcr-demo",
+                   "smoke_url" => "https://demo.mcritchie.studio" }, entry["prod_deploy"])
+    assert_empty AppProfile.drift(entry)
+
+    edited = Marshal.load(Marshal.dump(entry))
+    edited["prod_deploy"]["bucket"] = "someone-elses-bucket"
+    assert_includes AppProfile.drift(edited), 'prod_deploy.bucket: expected "mcr-demo-static", found "someone-elses-bucket"'
+  end
+
   def test_render_round_trips_through_yaml_under_apps
     entry = AppProfile.expand("standalone-heroku", PARAMS)
     text = "apps:\n#{AppProfile.render('demo', entry, notes: ['a note'])}"

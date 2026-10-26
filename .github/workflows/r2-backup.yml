@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   backup:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned, not the floating latest label: that moves to images Playwright cannot install chromium on (guard: test/lib/ci_runner_image_pin_test.rb)
     timeout-minutes: 45
     strategy:
       fail-fast: false

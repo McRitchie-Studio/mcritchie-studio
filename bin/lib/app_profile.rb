@@ -52,8 +52,11 @@ module AppProfile
   # drift guard can re-expand and compare. Nil when the entry cannot be read as
   # this profile at all (the comparison then reports the whole entry).
   def params_of(entry)
+    # A git_push_heroku entry names its app in the remote; a static_cloudflare
+    # entry (standalone-static) has no remote and names the parked app itself.
     remote = entry.dig("prod_deploy", "remote").to_s
-    heroku_app = remote[%r{\Ahttps://git\.heroku\.com/([a-z0-9-]+)\.git\z}, 1]
+    heroku_app = remote[%r{\Ahttps://git\.heroku\.com/([a-z0-9-]+)\.git\z}, 1] ||
+                 entry.dig("prod_deploy", "heroku_app").to_s[/\A[a-z0-9][a-z0-9-]*\z/]
     return nil unless heroku_app
 
     { heroku_app: heroku_app, smoke_url: entry.dig("prod_deploy", "smoke_url"), test_cmd: entry["test_cmd"] }
@@ -64,7 +67,10 @@ module AppProfile
   def drift(entry, path = PROFILES_PATH)
     name = entry["profile"].to_s
     params = params_of(entry)
-    return ["cannot read heroku_app from prod_deploy.remote #{entry.dig('prod_deploy', 'remote').inspect}"] unless params
+    unless params
+      return ["cannot read heroku_app from prod_deploy.remote #{entry.dig('prod_deploy', 'remote').inspect} " \
+              "or prod_deploy.heroku_app"]
+    end
 
     expected = expand(name, params, path)
     diff_lines(expected, entry)

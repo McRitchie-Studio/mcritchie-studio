@@ -95,6 +95,23 @@ class Release
       assert_match(/turf-monster: no earlier shipped release/, plan.refusals.join)
     end
 
+    test "[unit] a static_cloudflare app rolls back by rebuilding the previous SHA, and smokes itself" do
+      adapter = { "strategy" => "static_cloudflare", "bucket" => "mcr-rantly-static", "heroku_app" => "mcr-rantly",
+                  "smoke_url" => "https://rantly.mcritchie.studio" }
+      plan = RollbackPlan.build(
+        target: target("shipped_shas" => { "rantly" => "ra22222222" },
+                       "repos" => [{ "repo" => "rantly", "kind" => "app", "prod_deploy" => adapter }]),
+        history: [{ "slug" => "rel-old", "shipped_shas" => { "rantly" => "ra11111111" } }]
+      )
+
+      assert_not plan.refused?, plan.refusals.inspect
+      app = plan.apps.first
+      assert_equal %w[rantly static_cloudflare ra11111111], [app.repo, app.strategy, app.to_sha]
+      assert_equal "static build of ra111111 → r2://mcr-rantly-static (ship workspace; smokes its own marker)",
+                   plan.command_for(app)
+      assert_equal "", plan.smoke_url_for(app), "its deploy smokes /up and the marker at the SHA itself"
+    end
+
     test "[unit] each strategy redeploys the previous SHA its own way" do
       plan = RollbackPlan.build(
         target: target("shipped_shas" => { "mcritchie-studio" => "hub2222222", "turf-monster" => "aa22222222",

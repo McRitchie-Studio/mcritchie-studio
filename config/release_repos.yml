@@ -55,6 +55,21 @@
 #     and the only env added is DATABASE_URL for the workspace's private test DB
 #     (<app>_ship_test). RAILS_ENV stays unset, so a precompile builds the
 #     production artifact.
+#   static_cloudflare: build the app's static site and upload it to Cloudflare R2
+#     (docs/agents/modules/static-cloudflare.md). An app moves onto it only after
+#     bin/static-downgrade <repo> --execute has run, in its own follow-up PR (the
+#     runbook's cutover procedure); flipped earlier, the ship pushes main and then
+#     aborts on the missing bucket. The build runs in the SHIP WORKSPACE at the
+#     frozen SHA, with no test DB; the upload's last object is static-release.json
+#     naming the SHA, and the smoke needs /up 200 AND that marker, which is also
+#     what finalize reads.
+#       bucket        — the app's R2 bucket (<heroku app>-static).
+#       heroku_app    — the app's Heroku app, never pushed to: 0 dynos for 30 days
+#                       after the cutover, then deleted (runbook).
+#       smoke_url     — the production HOST (an R2 custom domain), no /up.
+#       build_command — optional, default bin/static-build (writes $OUT for $HOST).
+#       build_dir     — optional, default tmp/static/site.
+#       credential    — optional, the 1Password upload keys, default r2.static-sites.
 #
 # Optional `qa_deploy: { app: <qa-server-key> }` overrides the qa-server target;
 # absent, `Release::Repos.qa_app` uses the repo slug.

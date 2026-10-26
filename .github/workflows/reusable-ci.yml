@@ -116,7 +116,7 @@ jobs:
   # why test/lib/ci_workflow_triggers_test.rb permits it and refuses every event-context
   # condition.
   static:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned, not the floating latest label: that moves to images Playwright cannot install chromium on (guard: test/lib/ci_runner_image_pin_test.rb)
     timeout-minutes: 45
 
     steps:
@@ -170,7 +170,7 @@ jobs:
   # node:test with no npm install: bin/test-js is the whole lane.
   javascript:
     if: ${{ inputs.javascript }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Checkout code
@@ -186,7 +186,7 @@ jobs:
 
   island_animator:
     if: ${{ inputs.island-animator }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - name: Checkout code
@@ -256,7 +256,7 @@ jobs:
   # serial in-shard model is preserved.
   playwright:
     if: ${{ inputs.playwright }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     strategy:
@@ -437,7 +437,7 @@ jobs:
   # the lane's own switch, true on a bare call; test/lib/ci_workflow_triggers_test.rb
   # refuses every other condition.
   e2e_executed_set:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     needs: playwright
     if: ${{ always() && inputs.playwright }}
@@ -494,7 +494,7 @@ jobs:
   # is a separate, unconditional job rather than a claim in this comment.
   rails_plan:
     if: ${{ inputs.rails-shards }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
       shards: ${{ steps.plan.outputs.shards }}
@@ -527,7 +527,7 @@ jobs:
   rails:
     needs: rails_plan
     if: ${{ inputs.rails-shards }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     strategy:
@@ -663,7 +663,7 @@ jobs:
   # `bundler-cache: false` because the gate is stdlib-only (json + yaml). It audits the
   # suite, so it must not be breakable by a dependency problem in the thing it audits.
   rails_executed_set:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     needs: rails
     if: ${{ always() && inputs.rails-shards }}
@@ -702,7 +702,7 @@ jobs:
   # the two halves of that split are pinned together by test/lib/rails_lane_contract_test.rb.
   system:
     if: ${{ inputs.system }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     services:

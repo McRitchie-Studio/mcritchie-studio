@@ -206,8 +206,15 @@ class Release::ReposTest < ActiveSupport::TestCase
     "search-position" => "https://mcr-search-position-3c91e0b95f46.herokuapp.com"
   }.freeze
 
+  # The showcase apps already served from Cloudflare (static_cloudflare). An app
+  # joins this list in the follow-up PR that flips its registry entry, which runs
+  # only after `bin/static-downgrade <repo> --execute` (the runbook's cutover
+  # procedure). None has yet: flipped before the bucket exists, a ship would push
+  # main and then abort.
+  STATIC_SHOWCASE_APPS = %w[].freeze
+
   test "[unit] each showcase app deploys to its mcr- Heroku app by git_push_heroku" do
-    SHOWCASE_APPS.each do |repo, smoke_host|
+    SHOWCASE_APPS.except(*STATIC_SHOWCASE_APPS).each do |repo, smoke_host|
       assert_equal Release::Ladder::THREE_RUNG, Release::Repos.ladder(repo), "#{repo} is three-rung from birth"
       assert_includes Release::Ladder.sweepable(Release::Repos.config), repo
       assert_equal :app, Release::Repos.kind(repo), "#{repo} is an app, not a gem"
@@ -222,6 +229,22 @@ class Release::ReposTest < ActiveSupport::TestCase
       # or a trailing /up aborts a live deploy.
       assert_equal smoke_host, adapter["smoke_url"], "#{repo}'s smoke host is the pinned bare host, no /up"
       assert_equal "mcr-#{repo}", Release::ShipSequence.heroku_app_for(adapter), "#{repo}'s Heroku app name"
+    end
+  end
+
+  test "[unit] a showcase app moved to Cloudflare serves from its own R2 bucket, its Heroku app parked" do
+    on_static = SHOWCASE_APPS.keys.select { |repo| Release::Repos.prod_deploy(repo)["strategy"] == "static_cloudflare" }
+    assert_equal STATIC_SHOWCASE_APPS.sort, on_static.sort,
+                 "a showcase app flips to static_cloudflare only with its row here, after its downgrade has run"
+    STATIC_SHOWCASE_APPS.each do |repo|
+      assert_equal Release::Ladder::THREE_RUNG, Release::Repos.ladder(repo), "#{repo} keeps the three-rung ladder"
+      adapter = Release::Repos.prod_deploy(repo)
+      assert_equal "static_cloudflare", adapter["strategy"]
+      assert_equal "mcr-#{repo}-static", adapter["bucket"], "#{repo}'s bucket"
+      assert_equal "mcr-#{repo}", adapter["heroku_app"], "#{repo}'s Heroku app is named: 0 dynos for 30 days after the cutover, then deleted"
+      assert_equal SHOWCASE_APPS.fetch(repo), adapter["smoke_url"], "#{repo} keeps its host"
+      assert_nil adapter["remote"], "no git remote: a ship must never push a dyno nobody serves"
+      assert_equal "standalone-static", Release::Repos.config.dig("apps", repo, "profile")
     end
   end
 
@@ -516,7 +539,8 @@ class Release::ReposTest < ActiveSupport::TestCase
   # The fleet decision a profile carries, verbatim. Change it here and in
   # config/app_profiles.yml together.
   PROFILE_QA_DECISIONS = {
-    "standalone-heroku" => "Yes to both"
+    "standalone-heroku" => "Yes to both",
+    "standalone-static" => "Yes to both"
   }.freeze
 
   def profile_repos
