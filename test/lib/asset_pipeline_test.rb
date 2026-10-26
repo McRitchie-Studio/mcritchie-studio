@@ -57,6 +57,23 @@ class AssetPipelineTest < ActiveSupport::TestCase
     assert_empty offenders, "Propshaft ignores these settings, and Sprockets is not loaded"
   end
 
+  # Propshaft rewrites every url() in a stylesheet to the digested asset, and
+  # logs "Unable to resolve" for one it cannot find (a public/ file is not on the
+  # load path), so a production precompile is not clean. Compile them all here.
+  test "[unit] every stylesheet compiles with no unresolved url()" do
+    warnings = StringIO.new
+    original = Propshaft.logger
+    Propshaft.logger = Logger.new(warnings)
+    Rails.application.assets.load_path.assets.select { |a| a.content_type.to_s == "text/css" }.each(&:compiled_content)
+    assert_empty warnings.string.lines.grep(/Unable to resolve/), "a stylesheet references an asset Propshaft cannot find"
+
+    # The dark-page kit icon swap still reaches the build (app/assets/tailwind/application.css).
+    tailwind = Rails.application.assets.load_path.find("tailwind.css").compiled_content
+    assert_match %r{\.dark img\[src="/brand/icon-light\.svg"\]\{content:URL\("/brand/icon-dark\.svg"\)\}}, tailwind
+  ensure
+    Propshaft.logger = original
+  end
+
   # Rails' Mime registry knows no AVIF; Propshaft types an asset from it.
   test "[unit] an avif asset is typed image/avif" do
     asset = Rails.application.assets.load_path.find("hero/denver-hero-1280.avif")
