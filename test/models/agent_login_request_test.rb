@@ -5,7 +5,7 @@ require "test_helper"
 class AgentLoginRequestTest < ActiveSupport::TestCase
   HARNESS = "harness-one".freeze
 
-  def request(soul: "ray", harness: HARNESS, key: nil)
+  def request(soul: "mason", harness: HARNESS, key: nil)
     AgentLoginRequest.request!(soul: soul, harness_session_id: harness, collect_key: key)
   end
 
@@ -22,7 +22,7 @@ class AgentLoginRequestTest < ActiveSupport::TestCase
 
       assert session.admin?
       assert_nil session.task_slug
-      assert_equal "ray", session.soul
+      assert_equal "mason", session.soul
       assert_equal "operator_grant", session.issued_by
       assert_equal HARNESS, session.harness_session_id
       assert_equal 8.hours.from_now, session.expires_at
@@ -144,11 +144,15 @@ class AgentLoginRequestTest < ActiveSupport::TestCase
     %w[code collect_key token phrase_digest collect_digest].each { |key| assert_not_includes login.summary.keys, key }
   end
 
-  test "only an admin soul may ask, and alex is ray" do
+  test "only an admin soul may ask; alex and its retired slugs ray and xan are in the Worker class" do
     error = assert_raises(ActiveRecord::RecordInvalid) { request(soul: "carl") }
     assert_match(/holds no admin tier/, error.message)
     assert_raises(ActiveRecord::RecordInvalid) { request(soul: "nobody") }
-    assert_equal "ray", request(soul: "alex").soul
+    %w[alex ray xan].each do |soul|
+      error = assert_raises(ActiveRecord::RecordInvalid) { request(soul: soul) }
+      assert_match(/holds no admin tier; an admin login is for steffon and mason/, error.message)
+    end
+    assert_equal "mason", request(soul: "mason").soul
   end
 
   test "a second post under the same harness id cannot refuse or replace the open request" do
@@ -199,5 +203,44 @@ class AgentLoginRequestTest < ActiveSupport::TestCase
 
     held.first.refuse!(by: "alex@test.com", reason: "declined by the operator")
     assert request(harness: "harness-over")
+  end
+
+  # A request a soul posted while it was an admin soul (ray before
+  # mason-takes-ceo-seat), still pending when it left the tier. Planted past the
+  # create-time check, the way a deployed row still holds it.
+  def stranded_request(soul: "alex")
+    login = AgentLoginRequest.new(soul: soul, harness_session_id: HARNESS)
+    login.send(:assign_defaults)
+    login.save!(validate: false)
+    login
+  end
+
+  test "approving a pending request for a soul that left the admin tier refuses cleanly and mints nothing" do
+    login = stranded_request
+    sessions = AgentSession.count
+
+    message = refusal(:refused) { login.approve!(by: "alex@test.com") }
+
+    assert_match(/alex no longer holds the admin tier/, message)
+    assert_equal sessions, AgentSession.count, "no admin session was minted"
+    assert_equal %w[refused alex@test.com], [ login.reload.status, login.decided_by ], "the request is closed"
+  end
+
+  test "declining a pending request for a soul that left the admin tier declines it" do
+    login = stranded_request
+
+    assert_nothing_raised { login.refuse!(by: "alex@test.com", reason: "declined by the operator") }
+    assert_equal ["refused", "declined by the operator"], [ login.reload.status, login.refusal_reason ]
+  end
+
+  test "the launch-phrase code for a soul that left the admin tier refuses cleanly too" do
+    login = stranded_request
+    code = login.code
+
+    message = refusal(:refused) do
+      login.grant_with_code!(code: code, collect_key: login.collect_key, harness_session_id: HARNESS)
+    end
+    assert_match(/no longer holds the admin tier/, message)
+    assert_equal "refused", login.reload.status
   end
 end

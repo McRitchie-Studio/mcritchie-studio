@@ -12,9 +12,9 @@ class AgentMessages::RouterTest < ActiveSupport::TestCase
                                             mention_users: users, mention_roles: roles, parent_id: parent)
   end
 
-  test "a role mention routes to that role's soul (one shared bot with @Avi/@Ritch roles)" do
+  test "a role mention routes to that role's soul (one shared bot with @Avi/@Alex roles)" do
     result = route("<@&#{RAY_ROLE}> what's on the board?", roles: [ RAY_ROLE ])
-    assert_equal "ray", result.soul
+    assert_equal "alex", result.soul
     assert_equal "role", result.routed_by
   end
 
@@ -26,7 +26,7 @@ class AgentMessages::RouterTest < ActiveSupport::TestCase
 
   test "two souls mentioned: the one written first wins, and the other is named" do
     result = route("<@&#{RAY_ROLE}> and <@&#{AVI_ROLE}> please", roles: [ AVI_ROLE, RAY_ROLE ])
-    assert_equal "ray", result.soul
+    assert_equal "alex", result.soul
     assert_equal [ "avi" ], result.detail["also_mentioned"]
   end
 
@@ -59,18 +59,18 @@ class AgentMessages::RouterTest < ActiveSupport::TestCase
     assert_nil route("anyone?", routes: routes, channel: LOUNGE).soul
   end
 
-  test "the shipped config lists the McRitchie Studio guild with no channel entries and routes @Ritch anywhere in it" do
+  test "the shipped config lists the McRitchie Studio guild with no channel entries and routes @Alex anywhere in it" do
     routes = AgentMessages::Routes.load
-    ray = "1481150857809760399"
+    alex = "1481150857809760399"
     studio = "1332466565203103744"
     tank = "1479973077021495478"
     assert_equal [ studio ], routes.guild_ids
     assert_empty routes.overrides, "the guild is the boundary; no channel needs an entry"
-    assert_equal ray, routes.bot_user_id
+    assert_equal alex, routes.bot_user_id
 
     [ tank, "1332466565203103747", "999999999999999999" ].each do |channel|
-      mentioned = route("<@#{ray}> what is building?", routes: routes, guild: studio, channel: channel, users: [ ray ])
-      assert_equal [ "ray", "user" ], [ mentioned.soul, mentioned.routed_by ], "channel #{channel}"
+      mentioned = route("<@#{alex}> what is building?", routes: routes, guild: studio, channel: channel, users: [ alex ])
+      assert_equal [ "alex", "user" ], [ mentioned.soul, mentioned.routed_by ], "channel #{channel}"
     end
     assert_nil route("anyone around?", routes: routes, guild: studio, channel: tank).soul
     refute routes.guild?("123"), "a guild that is not listed is out of scope"
@@ -86,7 +86,7 @@ class AgentMessages::RouterTest < ActiveSupport::TestCase
     refute routes.ignored?(GUILD, LOUNGE)
     assert_equal "avi", routes.default_soul(GUILD, DESK)
     assert_nil agent_routes.default_soul(GUILD, DESK), "an empty default_soul is none"
-    assert_equal %w[avi ray], routes.souls.sort
+    assert_equal %w[alex avi], routes.souls.sort
     assert_equal "avi", routes.mention_map(GUILD)["role"][AVI_ROLE]
   end
 end

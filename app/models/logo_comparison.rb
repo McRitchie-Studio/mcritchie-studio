@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# TWO BRANDS' KITS SIDE BY SIDE (task logo-compare-and-original-edits; Alex 2026-10-11 23:06: "comparing two marketing
+# TWO BRANDS' KITS SIDE BY SIDE (task logo-compare-and-original-edits; Alex McRitchie 2026-10-11 23:06: "comparing two marketing
 # kits ... Commercial Welding V1 vs V2"). LogosController#compare draws it at /logos/compare?left=welding&right=welding_v2.
 #
 # Each SIDE draws its brand's KIT DEFAULT for the type: the saved choice (rule or form, text version, colouring,

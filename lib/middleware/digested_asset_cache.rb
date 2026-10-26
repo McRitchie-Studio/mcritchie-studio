@@ -4,7 +4,7 @@
 #
 # config.public_file_server.headers is one header for everything ActionDispatch::Static
 # serves out of public/, and public/ holds two kinds of file. Fingerprinted
-# /assets/* (the Sprockets digest is in the name, so an edit is a new URL) can be
+# /assets/* (the Propshaft digest is in the name, so an edit is a new URL) can be
 # cached for a year and marked immutable; the home hero is one of them, moved into
 # app/assets/images/hero. The unfingerprinted files beside them (the portraits
 # under /agents/, the brand kit, og.png, the email images, robots.txt) keep their
@@ -19,8 +19,11 @@
 class DigestedAssetCache
   ONE_YEAR = "public, max-age=#{365 * 24 * 60 * 60}, immutable".freeze
 
-  # /assets/<logical name>-<64-hex Sprockets 4 digest>.<ext>[.gz|.br]
-  DIGESTED = %r{\A/assets/.+-[0-9a-f]{64}\.[A-Za-z0-9.]+\z}
+  # /assets/<logical name>-<digest>.<ext>[.gz|.br]. Propshaft's digest is the first
+  # 8 hex of a SHA1 (Propshaft::Asset#digest); Sprockets 4 wrote 64. Eight or more
+  # takes both, so a slug precompiled before the move still rides the year, while
+  # an undigested name (application.css, denver-hero-1280.avif) never matches.
+  DIGESTED = %r{\A/assets/.+-[0-9a-f]{8,}\.[A-Za-z0-9.]+\z}
 
   def initialize(app)
     @app = app

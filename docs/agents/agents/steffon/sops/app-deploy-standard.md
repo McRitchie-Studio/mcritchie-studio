@@ -8,7 +8,10 @@ site, a showcase rebuild, a client demo) comes to ship through the release
 pipeline. It exists because every such app used to be registered by hand in
 several files, each re-explaining the same decisions, and one of them
 (`moms-app`) never got registered at all and was deployed by hand for months.
-Alex asked on 2026-09-28 for one standard every single-use app follows.
+Alex McRitchie asked on 2026-09-28 for one standard every single-use app follows.
+
+**Who leads.** On a client launch Alex (`alex`) leads with the client and Steffon
+runs the infra steps below (Alex McRitchie's approved sort, 2026-10-25).
 
 The standard is a **profile**: a named deploy shape defined once in
 `config/app_profiles.yml`, applied to an app by `bin/register-app`, which checks
@@ -36,7 +39,7 @@ Heroku, gated by its own CI, **with no QA copy**.
 | `test_cmd` | the app's CI `test` job command, verbatim (the last gate before production) |
 | `qa_evidence` | `exempt` |
 
-**The QA decision is the profile's, taken once.** On 2026-09-28 Alex was asked
+**The QA decision is the profile's, taken once.** On 2026-09-28 Alex McRitchie was asked
 "Confirm the fleet-wide QA rule: standalone apps ship without a QA copy unless
 there is a free tier" and answered "Yes to both" (the other half: build this
 standard now). The exact text lives in `config/app_profiles.yml`;
@@ -151,7 +154,7 @@ Anything already on the app's `accepted` rides the first release, so read
 
 Nightly database backups and a monthly restore drill are a paid-plan benefit.
 An app on a paid plan (tier `studio` or `product` in `config/apps.yml`) with a
-database gets them at deploy; a `basic` app does not, unless Alex names it as an
+database gets them at deploy; a `basic` app does not, unless Alex McRitchie names it as an
 exception. Provision the schedule in the deploy and take the first backup:
 
 ```bash

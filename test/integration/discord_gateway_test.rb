@@ -132,7 +132,7 @@ class DiscordGatewayTest < ActiveSupport::TestCase
     gateway.frames.find { |f| f["op"] == 2 }
   end
 
-  test "a MESSAGE_CREATE in an unlisted channel of a listed guild routes to ray, and the backstop poll dedupes it" do
+  test "a MESSAGE_CREATE in an unlisted channel of a listed guild routes to alex, and the backstop poll dedupes it" do
     gateway_listener = listener.start
     wait_until("a connection") { @gateways.any? }
     gateway = @gateways.first
@@ -159,7 +159,7 @@ class DiscordGatewayTest < ActiveSupport::TestCase
 
     wait_until("the last message") { AgentMessage.exists?(external_id: "8006") }
     message = AgentMessage.find_by!(external_id: "8001")
-    assert_equal [ "ray", "role", "received", LOUNGE, GUILD ],
+    assert_equal [ "alex", "role", "received", LOUNGE, GUILD ],
                  [ message.soul_slug, message.routed_by, message.status, message.channel_ref, message.guild_id ]
     assert_equal "discord-gateway", message.events.find_by(kind: "received").actor
     assert_nil AgentMessage.find_by(external_id: "8002"), "an unaddressed message is not stored"

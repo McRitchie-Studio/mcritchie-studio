@@ -16,7 +16,7 @@ class AdminLoginGrantTest < ActionDispatch::IntegrationTest
   def bearer(session) = { "Authorization" => "Bearer #{session.token}" }
   def body = JSON.parse(response.body)
 
-  def ask(headers = @legacy, soul: "ray", harness: HARNESS, key: nil)
+  def ask(headers = @legacy, soul: "mason", harness: HARNESS, key: nil)
     post "/api/v1/agent_login_requests", params: { soul: soul, harness_session_id: harness, collect_key: key }.compact,
                                          headers: headers, as: :json
   end
@@ -45,7 +45,7 @@ class AdminLoginGrantTest < ActionDispatch::IntegrationTest
   test "the machine credential posts a request and the response carries no code" do
     login, key = posted
 
-    assert_equal %w[ray pending], [ login.soul, body.dig("data", "status") ]
+    assert_equal %w[mason pending], [ login.soul, body.dig("data", "status") ]
     assert key.present?
     assert_not_includes response.body, login.code
     assert_not_includes response.body, login.display_code
@@ -235,7 +235,7 @@ class AdminLoginGrantTest < ActionDispatch::IntegrationTest
     collect(login, key)
     assert_response :ok
     session = AgentSession.from_token(body.dig("data", "token"))
-    assert_equal [ "admin", "ray", nil ], [ session.tier, session.soul, session.task_slug ]
+    assert_equal [ "admin", "mason", nil ], [ session.tier, session.soul, session.task_slug ]
   end
 
   test "a wrong, reused or lapsed code answers 4xx with the reason and grants nothing" do

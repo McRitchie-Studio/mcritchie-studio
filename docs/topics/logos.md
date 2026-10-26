@@ -34,7 +34,7 @@ every tone.
 
 ## Original and Alt colourings
 
-Every logo type has a **colouring** (task logo-original-and-alt; Alex,
+Every logo type has a **colouring** (task logo-original-and-alt; Alex McRitchie,
 2026-10-11: "when building the marketing kit we need the original"):
 
 | Colouring | What it draws | From |
@@ -56,7 +56,7 @@ logo.colourings       # [:original, :alt], or [:alt]
 - The **watermark** is always the single-colour version: colouring does not
   apply to it, and an Original asked of a watermark is the watermark.
 - **Word edits apply in Original and Alt; the icon's colour in Alt only.**
-  (Task logo-compare-and-original-edits, Alex 2026-10-11 23:06: to colour
+  (Task logo-compare-and-original-edits, Alex McRitchie 2026-10-11 23:06: to colour
   welding_v2's words he had to switch to Alt, which swapped the helmet for its
   single-colour version.) An Original's words take the picked colour and
   weight, and its icon stays the brand's art. An original ICON is the brand's
@@ -187,7 +187,7 @@ same layers, the same fills and the same per-tone icon the Navbar Logo draws.
 
 ### The icon is the atomic unit
 
-Alex, 2026-10-11 19:23, on a /logos row whose Stacked Logo (saved in Alt)
+Alex McRitchie, 2026-10-11 19:23, on a /logos row whose Stacked Logo (saved in Alt)
 showed the white single-colour helmet beside an Original Navbar and Icon:
 "Lets make sure the icon is distributed across the other logos. In a way the
 icon can act as an atomic unit that is used elsewhere." (Task
@@ -284,7 +284,7 @@ Let **u** be the small word's cap height (40 design units).
 
 ### The rule of three proportion
 
-Alex, 2026-10-14 11:43, from the reel "How to use the rule of three in logo
+Alex McRitchie, 2026-10-14 11:43, from the reel "How to use the rule of three in logo
 design": Commercial Welding v2's stacked hood is drawn too big, and he wants a
 smaller icon as an option beside the 3-2-1 look (task stacked-rule-of-three).
 
@@ -292,7 +292,7 @@ Every form draws in either **proportion** (`proportion:` on `layout` and
 `svg`; `StackedLogo::PROPORTIONS`). `three_two_one` is the default, and draws
 exactly what it drew before, to the byte. `rule_of_three` changes only the
 icon's size; the lines and the 2u gaps are exactly as above (the big line at
-3u, the small line at 1u tracked out to 60% of W). Alex, 12:07 the same day,
+3u, the small line at 1u tracked out to 60% of W). Alex McRitchie, 12:07 the same day,
 on the first build's 3u gaps: "space of 2 vertically between".
 
 | Proportion | Icon | Every gap | Height (two lines, tagline) | Height (one line) |
@@ -360,7 +360,7 @@ that line once, at a cap of 1 (`line`, `line_width`), and both proofs copy it:
   is the icon's height (60% of the name, 1.8u). A magenta bracket beside it is
   ticked at the icon's top and foot. It stands on the background, never on the icon,
   so it reads whatever the icon is filled with (review of PR 2042: drawn over the
-  icon it vanished, 1.02-1.32:1). Alex's item 4a replaced the column of letters
+  icon it vanished, 1.02-1.32:1). Alex McRitchie's item 4a replaced the column of letters
   spelled downwards that stood here before. A vertical line runs through the
   logo's centre, and a 1 marks the icon's top.
 - **Lines** only at band boundaries, across the logo and the ruler.
@@ -425,7 +425,7 @@ came from.
 
 ### Commercial Welding v2
 
-Alex's item 5 (task welding-llc-and-v2-helmet): a second Commercial Welding
+Alex McRitchie's item 5 (task welding-llc-and-v2-helmet): a second Commercial Welding
 brand to compare his tweaks with the original, listed in the row after v1. Its
 helmet (`welding_v2`, and `welding_v2_mono` on dark and as the watermark) is
 derived from v1's traced helmet by `Logos::WeldingV2`
@@ -443,7 +443,7 @@ not exactly what the derivation writes. The steps, on each tone's own trace:
 2. **Its box is its ink.** Until task stacked-rule-of-three the box was
    widened (426 to 443.75) so the midline, where the helmet's two halves meet,
    was the box's centre; that left about 17 units of empty box on one side,
-   and the hood looked off-centre in its box (Alex 2026-10-14 12:07: "there's
+   and the hood looked off-centre in its box (Alex McRitchie 2026-10-14 12:07: "there's
    some extra space on the right side"). That step is gone: each helmet keeps
    v1's trimmed ink box ([An icon's box is its ink](#an-icons-box-is-its-ink)),
    425.06 x 481 in colour, 425.54 x 482.74 single-colour, and a v1 source that
@@ -457,7 +457,7 @@ not exactly what the derivation writes. The steps, on each tone's own trace:
    within 40 units of the window (the band is 16 to 20 thick) move down with
    it, each curve's control points following their own end, so the band keeps
    its width and the rest of the white half stays put.
-4. **Clear the lens** (task kit-export-and-clear-lens; Alex 2026-10-12: "remove
+4. **Clear the lens** (task kit-export-and-clear-lens; Alex McRitchie 2026-10-12: "remove
    the white of the lens so I can see it clear"). The window is always written
    as a hole in the outer helmet's layer (even-odd), so the page shows through
    it. The Alt helmets already held it so; the Original's trace drew it as an
@@ -630,7 +630,7 @@ is, and that a watermark has none.
 | Navbar Logo | one logo on one rule, and one sentence stating that rule | **Rule** (`?rule=3`, `4` or `6`; the page shows the rule of 4 unless asked), **Words** and **Show guides** |
 | Stacked Logo | one logo in one form and proportion, and a short paragraph stating the proportion's method and that form | **Form** (`?form=`: "Two lines" or "One line", the brand's own and the default, and "With tagline" (`tagline`) where the brand has one; a brand without one says so in one line), **Proportion** (`?proportion=`: "3-2-1" or "Rule of three"; the kit's saved one is the default, else 3-2-1), **Words** and **Show guides** |
 
-**One logo, not three** (task logo-download-card, Alex 2026-10-14: the three text versions add little now the
+**One logo, not three** (task logo-download-card, Alex McRitchie 2026-10-14: the three text versions add little now the
 edit panel sets each word's colour and weight). The Navbar and Stacked tabs draw the tab's one logo in one text
 version. **Words** (`?text=homogeneous`, `first` or `second`) picks it; the default is the kit's saved text
 version, else the brand's (`BrandKit::DEFAULTS`). It stays a control because the edit panel's "As styled" colour
@@ -706,7 +706,7 @@ phone everything is one column.
 
 ### The Download card
 
-Alex, 2026-10-14: "some integrations have very specific size requirements and don't accept SVGs". Every tab has
+Alex McRitchie, 2026-10-14: "some integrations have very specific size requirements and don't accept SVGs". Every tab has
 one **Download** card (`logos/_download_card`, `app/javascript/logo_download.js`):
 
 - **Format**: SVG or PNG. **Tone**: Light, Dark or Watermark (every tone, on every page; it starts on the
@@ -714,7 +714,7 @@ one **Download** card (`logos/_download_card`, `app/javascript/logo_download.js`
 - **PNG sizes** are `Logos::PngSizes`, each named by what it serves. The Icon's presets set its long side
   (16, 32, 48, 64, 180 Apple touch, 192 Android and PWA, 256 the app favicon `script/brand_png.cjs` installs, 512, 1024) and keep its **true aspect** by default:
   Studio's chest at 512 is 512 × 416. **1:1 square** pads it, centred, to N × N for favicons and app icons
-  (Alex, 22:35: "we can have access to both"); an icon within 1% of square (Industries) is square either way and
+  (Alex McRitchie, 22:35: "we can have access to both"); an icon within 1% of square (Industries) is square either way and
   shows no toggle. The Navbar and Stacked Logos offer widths 400, 800, 1200 and 2400, and 1x, 2x and 4x of the
   height the page draws them at (60 and 240 px); they are never square. **Custom** sets a width or a height,
   the other side following the aspect (with 1:1 square, one side). The other side rounds to the nearest pixel,
@@ -731,7 +731,7 @@ one **Download** card (`logos/_download_card`, `app/javascript/logo_download.js`
 
 ### Editing a logo's parts
 
-Alex's item 4b (task logo-part-editor): the rules give the sizes, spacing and
+Alex McRitchie's item 4b (task logo-part-editor): the rules give the sizes, spacing and
 shapes; the operator picks the colours and weights. The Navbar Logo and
 Stacked Logo tabs draw ONE **Edit** panel (`logos/_edit_panel`), with the same
 rows in the same order on both, in Original and in Alt; **Edit parts** in the
@@ -792,7 +792,7 @@ To keep an edited logo as the brand's own, save it as the **kit choice**
 
 ### Comparing two kits
 
-Alex, 2026-10-11 23:06: "a new button/drop down for comparing two marketing
+Alex McRitchie, 2026-10-11 23:06: "a new button/drop down for comparing two marketing
 kits. That way I can compare the marketing kits for Commercial Welding V1 vs
 V2. I also want a grid to be showable." (Task logo-compare-and-original-edits.)
 
@@ -868,7 +868,7 @@ is itself refused is shown as the refusal in its cell and on the Kit card;
 save again or clear it.
 
 **The saved choice is the tab's default** (task logo-original-and-alt, item 9;
-Alex: "The goal of the logo modification is to set the defaults"). A Navbar or
+Alex McRitchie: "The goal of the logo modification is to set the defaults"). A Navbar or
 Stacked tab whose type the kit has saved opens on it: its rule or form, its
 colouring, its edits, and its text version marked **Kit default**
 (`BrandKit#page_defaults`, read by `LogoBrandPage`). URL params override it one
@@ -932,7 +932,7 @@ and a non-admin is turned away by the admin wall, writes and reads alike.
 
 ## The kit export
 
-Task kit-export-and-clear-lens (Alex 2026-10-12 00:55: his Commercial Welding
+Task kit-export-and-clear-lens (Alex McRitchie 2026-10-12 00:55: his Commercial Welding
 site drew an old navbar, not the one his kit saves). `BrandKitExport`
 (`app/models/brand_kit_export.rb`) gives a kit as files. Each is what the Kit
 card shows: the saved Icon, Navbar Logo and Stacked Logo, each drawing the kit
@@ -1001,16 +1001,16 @@ another app's sign-in card gives it), and `icon.png` is rasterized from `icon-da
 with `node script/brand_png.cjs <svg> <out.png> <size> [background] [safe-zone]`
 (Chromium draws it, the same engine the browser renders the SVG with; vips is absent here).
 It adds no margin: the icon's box is its ink, so the ink touches two opposite
-edges of the square (`test/lib/brand_favicon_test.rb`; Alex 2026-10-14 12:14
+edges of the square (`test/lib/brand_favicon_test.rb`; Alex McRitchie 2026-10-14 12:14
 found the old favicon small, with 32 px empty at the top of 256 and 10 at the
 sides from the script's 4% padding and Studio's 2-unit trace margin). The favicon draws the SMALL-SIZE MARK instead
 (task footer-stacked-logo): `public/favicon-mark.svg`, written by `bin/rails logos:favicon_mark BRAND=studio`
 from `Logos::SmallMark`, which derives it from the traced icon by dropping every island smaller than 2% of the
 icon's box (the sparkles, side dashes and loose coins) and trimming it to its ink. It is FIT in the square, never
-cropped: the long side touches two edges, centred, transparent elsewhere (Alex 08:22: "The goal is to make the
+cropped: the long side touches two edges, centred, transparent elsewhere (Alex McRitchie 08:22: "The goal is to make the
 favicon large so it's easy to spot"; 09:05 rejected a crop that clipped the chest as "cut off"). Its colour is `icon-dark.svg`'s.
 A mark is checked at 64, 32 and 16 px, the submark convention: at tab size those details draw as specks, and since
-they set the full icon's box, the chest filled only about 70% of the tab. Alex 2026-10-15 08:10, of the old
+they set the full icon's box, the chest filled only about 70% of the tab. Alex McRitchie 2026-10-15 08:10, of the old
 chest-only favicon: "That is the correct size". Then `node script/brand_png.cjs public/favicon-mark.svg
 public/favicon.png 256`. `test/lib/logos_small_mark_test.rb` fails when the committed mark drifts from the data,
 and `test/lib/brand_favicon_test.rb` when a loose speck sets the favicon's box or the mark is clipped. Everything else (the kit icon, the
@@ -1020,7 +1020,7 @@ artwork about 346 of 512): the manifest serves it as maskable, and Android
 crops a maskable icon to a circle.
 The last-resort link preview, `public/og.png` (task link-preview-stacked-logo), is
 `stacked-dark.svg` alone, 430 px tall and centred on 1200 × 630 `#1A1535`
-(Alex 2026-10-20: "just the stack logo for simplicity"). `brand_png.cjs` draws only
+(Alex McRitchie 2026-10-20: "just the stack logo for simplicity"). `brand_png.cjs` draws only
 squares, so it is ImageMagick: `magick -size 1200x630 'xc:#1A1535' \( +size -background none
 -density 300 public/brand/stacked-dark.svg -resize x430 \) -gravity center -composite
 -depth 8 -strip PNG24:public/og.png`. The `+size` is load-bearing: without it the canvas's
@@ -1030,7 +1030,7 @@ the wordmark falls off the frame, leaving only the chest. Look at the result.
 large-card shape unfurlers expect.
 
 **Access.** Every route is behind the admin wall, like the rest of `/logos`;
-it is not public (opening it to the world is Alex's call). A build fetch needs
+it is not public (opening it to the world is Alex McRitchie's call). A build fetch needs
 an admin's signed-in hub session cookie (sign in with a magic link, keep the
 cookie jar, then `curl -sS -b <jar> -o kit.zip -w '%{http_code} %{content_type}' https://mcritchie.studio/logos/<brand>/kit.zip`).
 Without one the hub answers with a 302 to sign-in, not the file, and `curl -f`
@@ -1060,7 +1060,7 @@ is refused too.
 
 ### An icon's box is its ink
 
-Alex, 2026-10-14 12:16: "The icons need to have the margins cleaned up so we
+Alex McRitchie, 2026-10-14 12:16: "The icons need to have the margins cleaned up so we
 don't have extra variables when building out the logos and themes." (Task
 stacked-rule-of-three.) Every icon's box (`w`, `h`: the viewBox of the icon
 alone, and the size every logo scales and centres it by) is exactly its ink.

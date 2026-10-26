@@ -108,7 +108,7 @@ satellites:
     heroku_app: "cyvasse"
     production_url: "https://cyvasse.mcritchie.studio"
     role: "viewer"
-    description: "Hex strategy board game, revived from Alex's first app"
+    description: "Hex strategy board game, revived from Alex McRitchie's first app"
     deploy_provider: "heroku"
     status: "reserved"
 
@@ -163,7 +163,7 @@ satellites:
     heroku_app: "mcr-portfolio"
     production_url: "https://portfolio.mcritchie.studio"
     role: "viewer"
-    description: "Showcase rebuild of Alex's portfolio of web apps since 2014; release-managed standalone (no studio-engine, no database)"
+    description: "Showcase rebuild of Alex McRitchie's portfolio of web apps since 2014; release-managed standalone (no studio-engine, no database)"
     deploy_provider: "heroku"
     status: "reserved"
 
@@ -204,10 +204,10 @@ satellites:
     display_name: "Commercial Welding"
     emoji: "🔥"
     port: 4500
-    # The production host is Commercial Welding's own domain, chosen by Alex: its DNS is on
+    # The production host is Commercial Welding's own domain, chosen by Alex McRitchie: its DNS is on
     # Squarespace (a Coming Soon page today) and its mail on Google Workspace, so the launch
     # repoints the web records only. Heroku apps `commercial-welding` and
-    # `commercial-welding-qa` were provisioned 2026-10-12 on Alex's word. Nothing
+    # `commercial-welding-qa` were provisioned 2026-10-12 on Alex McRitchie's word. Nothing
     # pairing Commercial Welding with McRitchie goes public before the acquisition
     # closes, so the row is `reserved`, not `active`: a reserved row draws no navbar
     # or link-tree entry (Satellite.active), and it still holds the desk ports.
@@ -215,5 +215,21 @@ satellites:
     production_url: "https://commercialwelding.llc"
     role: "viewer"
     description: "Commercial Welding LLC company site; studio-engine satellite on Heroku"
+    deploy_provider: "heroku"
+    status: "reserved"
+
+  - slug: alex-build
+    display_name: "alex.build"
+    emoji: "🛠️"
+    port: 4600
+    # alex.build (epic .agents/epics/alex-build.md): Alex McRitchie authorized the repo,
+    # the Heroku app and the DNS on 2026-10-25 ("2. Yes new app."). Heroku app
+    # `alex-build` (essential-0 Postgres) exists with nothing deployed, and going live
+    # waits on his clearance in chat, so the row is `reserved`, not `active`: a
+    # reserved row draws no navbar or link-tree entry, and it still holds the desk ports.
+    heroku_app: "alex-build"
+    production_url: "https://alex.build"
+    role: "viewer"
+    description: "alex.build, the site for Alex McRitchie the AI hire; studio-engine satellite on Heroku"
     deploy_provider: "heroku"
     status: "reserved"

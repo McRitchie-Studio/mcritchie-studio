@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-# [integration] A saved kit icon reaches every logo's SVG (task kit-icon-atomic-unit). Alex's case, 2026-10-11 19:23:
+# [integration] A saved kit icon reaches every logo's SVG (task kit-icon-atomic-unit). Alex McRitchie's case, 2026-10-11 19:23:
 # on Commercial Welding v2, a Stacked Logo saved in Alt and the Icon saved in Original. The table row and both tabs
 # then draw the Original helmet everywhere: each SVG served is, byte for byte, the library's drawing with Alt words
 # (or the tab's own) and the Original icon.

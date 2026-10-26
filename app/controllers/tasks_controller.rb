@@ -381,6 +381,10 @@ class TasksController < ApplicationController
   end
 
   def current_activity_agent_slug
+    # The owner's own mailbox is the human, whose local part spells the persona's
+    # slug (`alex`); his comment names no soul, and user_id names him.
+    return nil if AgentPerson.owner_email?(current_user&.email)
+
     prefix = current_user&.email.to_s.split("@").first.presence
     return prefix if prefix && Agent.exists?(slug: prefix)
 

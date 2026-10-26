@@ -6,7 +6,7 @@ class ContactMailerTest < ActionMailer::TestCase
     ContactSubmission.create!({ name: "Jordan Lee", email: "jordan@example.com", message: "Line one\nLine two" }.merge(attrs))
   end
 
-  test "goes to Alex, replies to the visitor, and names them in the subject" do
+  test "goes to Alex McRitchie, replies to the visitor, and names them in the subject" do
     mail = ContactMailer.submission(submission)
 
     assert_equal ["alex@mcritchie.studio"], mail.to

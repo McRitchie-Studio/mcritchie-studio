@@ -63,7 +63,7 @@ class LogosColouringTest < Minitest::Test
     assert_equal logo.icon_svg(tone: :watermark), logo.icon_svg(tone: :watermark, colouring: :original)
   end
 
-  # Task logo-compare-and-original-edits: Alex coloured welding_v2's words in Alt only because Original refused them,
+  # Task logo-compare-and-original-edits: Alex McRitchie coloured welding_v2's words in Alt only because Original refused them,
   # and Alt swapped the helmet for its single-colour version. The words now take their edits in Original too, and the
   # icon stays the original art.
   def test_word_edits_apply_in_original_and_leave_the_icon_as_the_brands_art

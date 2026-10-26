@@ -46,7 +46,7 @@ skills_data.each do |data|
 end
 
 assignments = {
-  "ray"          => ["task-orchestration", "rails-development", "api-integration", "monitoring"],
+  "mason"        => ["task-orchestration", "rails-development", "api-integration", "monitoring"],
   "avi"          => ["pr-review", "product-strategy", "release-management", "qa", "rails-development"],
   "carl"         => ["rails-development", "activerecord-postgres", "background-jobs", "api-design", "ruby-gem-authoring"],
   "shannon"      => ["ui-development", "tailwind-css", "alpine-js", "rails-views-erb", "design-systems"],
@@ -54,7 +54,7 @@ assignments = {
   "steffon"      => ["deployment", "devops", "heroku-administration", "ci-cd", "monitoring"],
   "turf-monster" => ["sports-analytics", "data-processing", "rails-development"],
   "mack"         => ["web-scraping", "data-processing", "api-integration", "database-management"],
-  "mason"        => ["brand-voice", "social-media", "copywriting", "content-strategy", "funnel-analytics"]
+  "alex"         => ["brand-voice", "social-media", "copywriting", "content-strategy", "funnel-analytics"]
 }
 
 assignments.each do |agent_slug, skill_slugs|

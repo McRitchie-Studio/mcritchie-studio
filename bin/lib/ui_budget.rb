@@ -13,7 +13,7 @@ require "yaml"
 #   n/a      nothing to judge (no rendered image, no /assets/ request)
 #   MISSING  the page, or a metric the ceiling needs, was never measured
 #
-# OVER REPORTS; MISSING FAILS. Alex has not ratified the ceilings yet, so a page
+# OVER REPORTS; MISSING FAILS. Alex McRitchie has not ratified the ceilings yet, so a page
 # past one is a finding in the table, not a red run: exit_code is 0 when the only
 # bad rows are OVER (task ui-budget-report-never-gates). MISSING is a different
 # fact. A host that is down, a page that 404s, or an axe pass that never ran means

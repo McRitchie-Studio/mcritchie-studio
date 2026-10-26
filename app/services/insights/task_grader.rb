@@ -31,7 +31,7 @@ module Insights
   #   Insights::TaskGrader.new(task, baseline: b).assessment   # read-only (the backfill)
   class TaskGrader
     CONFIG_PATH = Rails.root.join("config/learning_loop.yml")
-    GRADER = ActionGrade::RAY
+    GRADER = ActionGrade::MASON
     # BounceLedger's rule (bin/lib/bounce_ledger.rb): every qa_feedback row counts
     # EXCEPT these kinds — an unknown or missing kind counts, as it does there.
     NON_BOUNCE_KINDS = %w[environment dependency].freeze
@@ -254,7 +254,7 @@ module Insights
 
     # The insight feed reads ActionGrade.banked, and an ActionGrade must hang off an
     # action or an activity (its XOR). Like Insights::BlockMiner, hang it off the
-    # task's newest narrated activity Ritch has not graded yet, builder lane first.
+    # task's newest narrated activity Mason has not graded yet, builder lane first.
     # No activity → the learning stays on the task note and the grade, and the feed
     # does not carry it (recorded in facts so the gap is visible, not silent).
     def bank!(note, result)
@@ -359,7 +359,7 @@ module Insights
     end
 
     # The dry-run (default) and live backfill over the most recently shipped tasks —
-    # what `bin/rails learning_loop:backfill` runs, so Alex can read the loop's output
+    # what `bin/rails learning_loop:backfill` runs, so Alex McRitchie can read the loop's output
     # before it grades anything for real. Dry run writes NOTHING; live grades each
     # ungraded task exactly as the ship hook would (idempotent — graded ones are
     # skipped). One Baseline serves the whole run: the current trailing window.

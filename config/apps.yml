@@ -37,7 +37,7 @@
 #                   drill are a paid-plan benefit: every live studio or product
 #                   app with a database has true; a basic app has false unless
 #                   test/lib/app_registry_test.rb's BACKUP_EXCEPTIONS names it
-#                   with Alex's reason; an archived app has false
+#                   with Alex McRitchie's reason; an archived app has false
 #   restore_drilled the date of the last restore drill of this app's backup
 #                   ("YYYY-MM-DD", quoted), or null; Steffon's db-restore-drill
 #                   writes it
@@ -103,7 +103,7 @@ apps:
     database: true
     backups: true
     restore_drilled: null
-    description: Hex strategy board game, revived from Alex's first app
+    description: Hex strategy board game, revived from Alex McRitchie's first app
 
   - slug: mcritchie-industries
     name: McRitchie Industries
@@ -158,7 +158,7 @@ apps:
     hosted: true
     workspace: null
     database: true
-    backups: true # basic, but kept by Alex's exception (family app); see BACKUP_EXCEPTIONS
+    backups: true # basic, but kept by Alex McRitchie's exception (family app); see BACKUP_EXCEPTIONS
     restore_drilled: null
     description: Karen McRitchie's family audiobook and slideshow site
 
@@ -236,7 +236,7 @@ apps:
     database: false
     backups: false
     restore_drilled: null
-    description: Showcase rebuild of Alex's portfolio of web apps since 2014
+    description: Showcase rebuild of Alex McRitchie's portfolio of web apps since 2014
 
   - slug: prisoners-dilemma
     name: Prisoners Dilemma
@@ -370,6 +370,25 @@ apps:
     backups: false
     restore_drilled: null
     description: Retired prototype; McRitchie Industries replaced it and holds its port block
+
+  - slug: alex-build
+    name: alex.build
+    emoji: "🛠️"
+    color: "#5B3A8C"
+    tier: product
+    status: active
+    port: 4600
+    repo: McRitchie-Studio/alex-build
+    heroku_app: alex-build
+    production_url: https://alex.build
+    qa_url: null
+    engine: true
+    hosted: true
+    workspace: null
+    database: true
+    backups: true
+    restore_drilled: null
+    description: alex.build, the site for Alex McRitchie, the AI hire built by Alex McRitchie; studio-engine satellite, not yet deployed
 
 libraries:
   - slug: studio-engine

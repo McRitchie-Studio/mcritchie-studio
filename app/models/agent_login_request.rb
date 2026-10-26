@@ -1,7 +1,7 @@
 # One request for a login only the operator grants
 # (docs/agents/system/agent-sessions-design.md, section 3), of one of two kinds:
 #
-# - admin_login: an admin agent session. `bin/agent-activity heartbeat steffon|ray`
+# - admin_login: an admin agent session. `bin/agent-activity heartbeat steffon|mason`
 #   posts it.
 # - harness_key: one machine's harness key (AgentSession, tier harness), which
 #   mints studio logins. `bin/harness-key request` posts it, once per machine;
@@ -55,7 +55,10 @@ class AgentLoginRequest < ApplicationRecord
   validates :label, format: { with: LABEL, message: "names the machine in 1 to 63 letters, digits, spaces, dots, dashes or underscores" },
                     if: :harness_key?
   validates :harness_session_id, :requested_at, presence: true
-  validate :soul_fits_kind
+  # On create only: `soul` and `kind` are read-only, so a later write can never
+  # change what this checks, and a request posted while its soul was admin must
+  # still be decidable after the soul leaves the tier (decision_refusal answers it).
+  validate :soul_fits_kind, on: :create
 
   before_validation :assign_defaults, on: :create
 
@@ -230,6 +233,8 @@ class AgentLoginRequest < ApplicationRecord
   end
 
   def grant!(by:, issued_by:)
+    return refuse_stranded!(by) if stranded?
+
     session = if harness_key?
                 AgentSession.grant_harness_key!(label: label, issued_by: issued_by, harness_session_id: harness_session_id)
               else
@@ -260,6 +265,20 @@ class AgentLoginRequest < ApplicationRecord
       reason = agent_session ? agent_session.refusal_reason(now) : "#{slug} names no agent session"
       reason && Refusal.new(:refused, reason)
     end
+  end
+
+  # An admin_login whose soul has left the admin tier since it asked (the `ray`
+  # seat on 2026-10-25): nothing may be minted for it.
+  def stranded?
+    !harness_key? && AgentSession.tier_for_soul(soul) != "admin"
+  end
+
+  # Close a stranded request instead of minting: it is recorded refused, and the
+  # caller gets a Refusal to answer with (raised after the lock commits).
+  def refuse_stranded!(by)
+    reason = "#{soul} no longer holds the admin tier (#{AgentSession::ADMIN_SOULS.join(" and ")} do); nothing was minted"
+    update!(status: "refused", decided_by: by.to_s, decided_at: Time.current, refusal_reason: reason)
+    Refusal.new(:refused, "#{slug} was refused: #{reason}")
   end
 
   def lapse_reason

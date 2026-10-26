@@ -6,7 +6,7 @@ require "test_helper"
 # The attack each test replays: a page on a sibling site (a client app or a
 # preview under *.mcritchie.studio) submits a plain HTML form to a hub `.json`
 # route. The session cookie is SameSite=Lax and the sites are same-site, so the
-# browser sends Alex's cookie; a form POST needs no CORS preflight; and
+# browser sends Alex McRitchie's cookie; a form POST needs no CORS preflight; and
 # Rack::MethodOverride turns `_method=patch` or `_method=delete` into the verb.
 # The only thing the forging page cannot send is the token from the hub's own
 # <meta name="csrf-token">, so the write must be refused without it.

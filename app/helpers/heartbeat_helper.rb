@@ -1,4 +1,4 @@
-# Display helpers for the Alex learning-heartbeat activity table — pure label /
+# Display helpers for the Alex McRitchie learning-heartbeat activity table — pure label /
 # palette / formatter functions, kept here (not in the view) so they unit-test in
 # isolation. The table itself is read-only; nothing here mutates an AgentAction.
 module HeartbeatHelper

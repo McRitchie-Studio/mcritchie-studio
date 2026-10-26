@@ -12,8 +12,8 @@ module BuildIntake
   #              portrait key, Portraits.choosable?) → cto_name, cto_avatar
   #   address    subdomain             → subdomain (claimed only at Build)
   #
-  # Listed in the order Ritch asks (BuildIntake::STEPS). No tap checks that the
-  # step before it is set: the order is Ritch's to ask, and a draft started under
+  # Listed in the order Alex asks (BuildIntake::STEPS). No tap checks that the
+  # step before it is set: the order is Alex's to ask, and a draft started under
   # the old order (CTO before theme) still takes its theme tap.
   #
   # EVERY TAP ALSO SPEAKS (.agents/epics/build-with-ray-v2.md, 2-5: "It wasn't
@@ -58,7 +58,7 @@ module BuildIntake
       AppRequest.transaction do
         send(:"choose_#{field}", params)
         # Choose Theme or Use Domain on the answer already saved: nothing to
-        # write and nothing to tell Ritch, so no turn is spent (the card also
+        # write and nothing to tell Alex, so no turn is spent (the card also
         # disables its button while the pick is the saved one).
         unchanged = UNCHANGED_IS_A_NO_OP.include?(field.to_s) && !@request.changed?
         unless unchanged
@@ -82,7 +82,7 @@ module BuildIntake
     end
 
     # "Build something else": nothing to set. If this card's idea was the one
-    # locked in, it is unlocked, so the checklist and Ritch agree it is open.
+    # locked in, it is unlocked, so the checklist and Alex agree it is open.
     def choose_idea_else(params)
       card = card_for(params[:message_id], "idea")
       @request.answers = {} if @request.answers.is_a?(Hash) && @request.answers["title"].present? &&

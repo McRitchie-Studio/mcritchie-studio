@@ -37,7 +37,7 @@ class AgentMessages::FloorAlertTest < ActiveSupport::TestCase
   end
 
   def ping!(at)
-    AgentDispatcher.ping!({ "worker" => "d-1", "host" => "alex-mac", "souls" => [ "ray" ] }, now: at)
+    AgentDispatcher.ping!({ "worker" => "d-1", "host" => "alex-mac", "souls" => [ "alex" ] }, now: at)
   end
 
   test "a dispatcher that never pinged is not an outage" do
@@ -87,9 +87,9 @@ class AgentMessages::FloorAlertTest < ActiveSupport::TestCase
     t0 = Time.current
     ping!(t0)
     AgentDispatcher.last.update!(paused_until: t0 + 2.hours, pause_reason: "usage_limit")
-    waiting = agent_message!(soul: "ray", created_at: t0 - 11.minutes)
+    waiting = agent_message!(soul: "alex", created_at: t0 - 11.minutes)
     agent_message!(soul: nil, status: "unrouted", routed_by: "none", created_at: t0 - 1.hour)
-    agent_message!(soul: "ray", created_at: t0 - 2.minutes)
+    agent_message!(soul: "alex", created_at: t0 - 2.minutes)
     recorder = Recorder.new
     floor = alert(recorder)
 
@@ -98,7 +98,7 @@ class AgentMessages::FloorAlertTest < ActiveSupport::TestCase
 
     assert_equal 1, recorder.posts.size
     text = recorder.posts.first[2]["content"]
-    assert_match(/1 routed message\(s\) waiting over 10 minutes; oldest is ##{waiting.id} for ray, 11 min old/, text)
+    assert_match(/1 routed message\(s\) waiting over 10 minutes; oldest is ##{waiting.id} for alex, 11 min old/, text)
     assert_match(/paused until .* \(usage_limit\)/, text)
 
     waiting.update!(status: "completed")

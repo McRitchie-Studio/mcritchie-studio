@@ -2,7 +2,7 @@
 
 **Status: active (2026-10-19).** Design: `.agents/epics/client-app-zero-to-one.md`.
 Every app made through `/build` gets an automatic first version: a static bundle,
-built on Alex's Mac by a sandboxed headless builder and served by the shared host
+built on Alex McRitchie's Mac by a sandboxed headless builder and served by the shared host
 at `<sub>.<preview domain>`. Nobody waits for a person to pick it up.
 
 | Piece | Where |
@@ -92,7 +92,7 @@ same `cap` is free, the launcher takes the oldest startable one.
    cd <desk> && claude --agent pokemon "Build task <slug> to submitted: run /Users/alex/projects/.agents/bin/task begin <slug> to take the desk, then building-sop from Step 2."
    ```
 
-   A dispatcher soul or Alex's session starts the builder with that one command.
+   A dispatcher soul or Alex McRitchie's session starts the builder with that one command.
 4. A begin that fails reports `refused` with its last lines (never a link or token
    line). The card stays `designed`, the thread hears nothing, and the floor alert
    opens one `change_build_refused` incident for the card
@@ -195,7 +195,7 @@ outside, and the run wrote `done.txt`.
 - **Retry.** Once the cause is fixed, put it back in line:
   `bin/task move <slug> designed`. Each claim spends an attempt; past
   `max_attempts` the launcher leaves the task for a person (build it by hand with
-  [`launch-build-queue.md`](../modules/launch-build-queue.md)).
+  [`launch-build-queue.md`](../agents/alex/sops/launch-build-queue.md)).
 - **The launcher stops.** SIGTERM ends the builders and releases their tasks
   back to `designed` (the attempt stays spent). A run that had already published
   when the stop came keeps `preview_ready`, and its task ships: its bundle is live,
@@ -280,7 +280,7 @@ with the machine credential it already holds (`POST /api/v1/agent_sessions`,
   disk, logged, or shown to the builder.
 - A 401 at publish (an expired or revoked login) re-mints once and retries.
 
-**Install by hand** is Alex's: a launchd job is persistence, which an agent's auto
+**Install by hand** is Alex McRitchie's: a launchd job is persistence, which an agent's auto
 mode does not run. On a rebuilt Mac the burn-down's services phase installs it
 (below), once Claude Code is signed in with claude.ai. By hand, from the hub's
 primary checkout (install refuses a desk):

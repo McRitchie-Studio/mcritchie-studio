@@ -33,7 +33,7 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
     end
     cand = created.first || ActionGrade.seeded_candidates.last
 
-    assert_equal ActionGrade::RAY, cand.grader
+    assert_equal ActionGrade::MASON, cand.grader
     assert_equal ActionGrade::NOT, cand.disposition
     assert_equal newest.id, cand.agent_activity_id, "attributes to the newest span opened before the block"
     assert_equal blk.slug, cand.source_activity_slug
@@ -95,11 +95,11 @@ class Insights::BlockMinerTest < ActiveSupport::TestCase
     assert_not ActionGrade.exists?(source_activity_slug: blk.slug)
   end
 
-  test "[unit] never clobbers an already-Alex-graded span — falls back to the earlier ungraded one" do
+  test "[unit] never clobbers an already-Alex McRitchie-graded span — falls back to the earlier ungraded one" do
     now = Time.current
     older  = span(task_slug: "t-graded", opened_at: now - 20.minutes, seq: 0)
     newest = span(task_slug: "t-graded", opened_at: now - 10.minutes, seq: 1)
-    human = ActionGrade.create!(agent_activity: newest, grader: ActionGrade::RAY,
+    human = ActionGrade.create!(agent_activity: newest, grader: ActionGrade::MASON,
                                 disposition: ActionGrade::GOOD, slug: "already graded by hand")
     block(task_slug: "t-graded", text: "regression slipped through review", at: now - 5.minutes)
     resolution(task_slug: "t-graded", at: now - 1.minute)

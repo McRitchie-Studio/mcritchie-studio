@@ -30,7 +30,7 @@ remove.
 - **It never edits a file we do not own.** `drive.readonly` plus `drive.file`;
   never plain `drive`. A mail token holds neither.
 - **It never creates the 1Password item.** The agent service account is
-  READ-ONLY, measured. Alex files credentials; see
+  READ-ONLY, measured. Alex McRitchie files credentials; see
   [`./credential-filing.md`](./credential-filing.md).
 - **It never impersonates a subject that is not on the allow-list.** Delegation
   cannot be narrowed at the grant — it authorizes *any* user in the domain and
@@ -295,14 +295,14 @@ thread — but the body is never stored; it lives only in Gmail.
 
 Traps in this lane, each one silent:
 
-- **The printed link can 404 for Alex.** The `/u/<mailbox>/` form
+- **The printed link can 404 for Alex McRitchie.** The `/u/<mailbox>/` form
   (`Workspace::GmailClient.draft_url`) picks the account when several are signed
   in, and can still land on "account temporarily unavailable". Do not change it
   without testing in his browser. The fallback is the macOS clipboard carrying
   BOTH `public.html` and `public.utf8-plain-text` (set through `NSPasteboard`
   with `osascript -l JavaScript`), so the reply pastes formatted.
 - **The drafter cannot attach files**, and re-creating a draft leaves the old one
-  in the thread; only Alex can discard it.
+  in the thread; only Alex McRitchie can discard it.
 - **Hand the Gmail gem plain MIME.** It base64-encodes `raw` itself; encoding
   first sends gibberish, and no service double catches it.
 - **`make_creds(sub:)` is dropped with only a stderr line.** Assign `creds.sub`
@@ -385,7 +385,7 @@ failure on the revoke still deletes the row and says Google did not confirm.
 (APIs & Services → Library: Google Calendar API, Gmail API, Google Drive API),
 or its read answers 403 on the standing page.
 
-**Its own OAuth client, never the hub's sign-in client.** Alex creates it once in
+**Its own OAuth client, never the hub's sign-in client.** Alex McRitchie creates it once in
 Google Cloud Console (APIs & Services → Credentials → Create OAuth client ID →
 Web application), with the redirect URI the standing page prints while the client is unset
 (`https://mcritchie.studio/admin/google_calendar/callback` in production: the
@@ -596,7 +596,7 @@ Stop, and say so plainly, when:
 - There is no `team@` user. Ask them to create one; do not substitute a person's
   mailbox, which would put one employee's mail behind an agent's read.
 - The client wants us to send or edit rather than read. That is a different
-  grant and a different decision, and it is Alex's to make.
+  grant and a different decision, and it is Alex McRitchie's to make.
 
 ## Background — not needed to execute
 

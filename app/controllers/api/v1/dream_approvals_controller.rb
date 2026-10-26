@@ -2,12 +2,12 @@ require Rails.root.join("bin/lib/dream_bank").to_s
 
 module Api
   module V1
-    # GET /api/v1/dream_approvals — the dream approvals Alex recorded on /dreams that
+    # GET /api/v1/dream_approvals — the dream approvals Alex McRitchie recorded on /dreams that
     # the files do not carry yet, for `bin/dream approvals` and
     # `bin/dream apply-approvals` (docs/agents/modules/dream.md, Act 3).
     #
     # Read-only, bearer-gated like the other agent reads. There is deliberately no
-    # create here: an approval is Alex's word, given by his click
+    # create here: an approval is Alex McRitchie's word, given by his click
     # (DreamsController#approve, behind his signed-in admin session) or in chat,
     # which a session records with his verbatim words through POST
     # /api/v1/dream_rulings (DreamRuling). No agent token approves on its own.

@@ -3,11 +3,11 @@ require "rake"
 require_relative "../support/agent_message_fixtures"
 
 # [integration] The owner-only guard end to end, with the shipped
-# config/agent_answerers.yml: a stranger's @Ritch arriving through the ingest the
+# config/agent_answerers.yml: a stranger's @Alex arriving through the ingest the
 # gateway and poll share is stored held, the claim API (bin/dispatcher's call)
 # never hands it out, the admin page shows it with a CSRF-guarded Release button,
 # and releasing it (the button or `bin/rails agent_people:release`) makes it
-# claimable. Alex's own @Ritch is claimed, completed and queued for reply as before.
+# claimable. Alex McRitchie's own @Alex is claimed, completed and queued for reply as before.
 class AgentOwnerOnlyGuardTest < ActionDispatch::IntegrationTest
   include AgentMessageFixtures
 
@@ -28,12 +28,12 @@ class AgentOwnerOnlyGuardTest < ActionDispatch::IntegrationTest
   end
 
   def claim_over_http(worker)
-    post claim_api_v1_agent_messages_url, params: { souls: %w[ray avi], worker: worker }, headers: @shared, as: :json
+    post claim_api_v1_agent_messages_url, params: { souls: %w[alex avi], worker: worker }, headers: @shared, as: :json
     assert_response :success
     response.parsed_body["data"]
   end
 
-  test "a stranger's @Ritch is held and never claimed; Alex's is answered as before" do
+  test "a stranger's @Alex is held and never claimed; Alex McRitchie's is answered as before" do
     held = ingest(2001, author: STRANGER)
     assert_equal "held", held.status
 
@@ -55,7 +55,7 @@ class AgentOwnerOnlyGuardTest < ActionDispatch::IntegrationTest
     assert_nil claim_over_http("mac-1")
   end
 
-  test "[unit] a stranger's held message never shows typing; Alex's claimed one does" do
+  test "[unit] a stranger's held message never shows typing; Alex McRitchie's claimed one does" do
     held = ingest(2201, author: STRANGER)
     assert_no_enqueued_jobs(only: AgentMessageTypingJob) do
       post typing_api_v1_agent_message_url(held), params: { worker: "mac-1" }, headers: @shared, as: :json

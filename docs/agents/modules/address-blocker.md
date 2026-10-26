@@ -37,7 +37,7 @@ of misalignment before you read a word of prose:
 - **`dependency`** — waiting on another task, gem, or PR to land first. Resolve the upstream, then resubmit.
   **Exception — a summary leading `Escalated:` is the OPERATOR's blocker**, the
   review rubric's two-bounce circuit breaker parking a review deadlock for
-  Alex's call. Do not resolve, rework, or resubmit it — leave it held and
+  Alex McRitchie's call. Do not resolve, rework, or resubmit it — leave it held and
   surface it in your handoff. **An escalation carries a window**: 20 minutes
   from `blocked_at` (`operator_windows.escalation_minutes` in
   `config/release_builder.yml`), shown as a countdown chip on the card. The
@@ -163,7 +163,7 @@ retract a wrong block, post `bin/task note <slug> --handoff "…" --resolves-fee
   `begin` re-creates/rebinds the worktree, preflights, moves the task back to
   `building`, and clears a **rework** block (your begin is the answer to it; it
   records who cleared it). An environment, dependency or `Escalated:` block stands
-  until its cause is resolved or Alex answers; `--steal` takes it over a stale **builder** claim (`bin/submit` has no
+  until its cause is resolved or Alex McRitchie answers; `--steal` takes it over a stale **builder** claim (`bin/submit` has no
   `--steal`). If the holder is a REVIEWER, ask them to release it instead —
   `bin/task review-claim release <slug>` — because a steal mid-review strands the
   reviewer's verdict; the refusal you got names which holder you have:

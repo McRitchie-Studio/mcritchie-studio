@@ -11,7 +11,7 @@ class AgentPeopleRakeTest < ActiveSupport::TestCase
   setup do
     Rails.application.load_tasks unless Rake::Task.task_defined?("agent_people:forget")
     %w[agent_people:notes agent_people:forget agent_people:role].each { |t| Rake::Task[t].reenable }
-    @message = agent_message!(soul: "ray", channel: "discord", author_ref: "500", author_name: "Alex")
+    @message = agent_message!(soul: "alex", channel: "discord", author_ref: "500", author_name: "Alex")
     @notes = AgentPersonNote.record_from!(@message, [ "Favorite color is purple.", "Runs the hub." ])
     @person = @message.person
   end
@@ -38,7 +38,7 @@ class AgentPeopleRakeTest < ActiveSupport::TestCase
   test "notes lists each note with its id, date, source and soul" do
     out = run_task("agent_people:notes", { "PERSON" => @person.id.to_s })
     assert_includes out, "##{@person.id} Alex: 2 note(s)"
-    assert_match(/note #{@notes.first.id}  \d{4}-\d\d-\d\d  from ##{@message.id}  ray  Favorite color is purple\./, out)
+    assert_match(/note #{@notes.first.id}  \d{4}-\d\d-\d\d  from ##{@message.id}  alex  Favorite color is purple\./, out)
   end
 
   test "forget NOTE deletes that one note; PERSON with ALL=1 deletes them all" do

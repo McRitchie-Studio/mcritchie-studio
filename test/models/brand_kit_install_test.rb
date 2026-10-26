@@ -6,7 +6,7 @@ require "rake"
 # [unit] BrandKitInstall and `logos:install` (task studio-adopts-its-kit): a brand's saved kit written into an app's
 # public/brand/, each file byte-equal to what /logos/:brand/kit/<file> serves, and a second install a no-op.
 class BrandKitInstallTest < ActiveSupport::TestCase
-  # The studio kit Alex saved on production, 2026-10-14 05:25Z: the hub's own branding is drawn from it.
+  # The studio kit Alex McRitchie saved on production, 2026-10-14 05:25Z: the hub's own branding is drawn from it.
   STUDIO_NAVBAR = { "rule" => 4, "text" => "second", "edits" => { "first_weight" => "800", "ending_colour" => "8E82FE" }, "colouring" => "alt" }.freeze
   STUDIO_STACKED = { "form" => "two_line", "text" => "first", "edits" => { "ending_colour" => "8E82FE", "ending_weight" => "800" }, "colouring" => "alt" }.freeze
 

@@ -376,8 +376,8 @@ is narrower than "he never covers it," and getting the boundary right matters.
   > "if they want that thing, they will click on that thing, and then you just
   > give them that thing"
 - **Assume nothing** `Jmkq5RLjm0U` `HVOubeXUcx0` — retitle for strangers: *"the
-  Alex Hormozi guide to haters"* becomes *"business influencer crushes haters and
-  shows how you can too"*; *"day in the life of Alex Hormozi"* becomes *"day in
+  Alex McRitchie Hormozi guide to haters"* becomes *"business influencer crushes haters and
+  shows how you can too"*; *"day in the life of Alex McRitchie Hormozi"* becomes *"day in
   the life of a $200 million per year CEO."*
 - **Match the thumbnail to the first five seconds** `5JLqmQlGG0U` — confirm the
   packaging in the opening five seconds or the video underperforms regardless of

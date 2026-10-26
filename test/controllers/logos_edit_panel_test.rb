@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-# [component] The brand page's EDIT panel (task logo-part-editor, Alex's item 4b) through the routes: a row per part
+# [component] The brand page's EDIT panel (task logo-part-editor, Alex McRitchie's item 4b) through the routes: a row per part
 # on the Navbar and Stacked tabs (the Tagline row on the tagline form only), the brand's palette as the only colours,
 # a weight per word (disabled, with a reason, for traced lettering), the tagline's visibility, edits carried by every
 # other control and applied to every logo on the tab, a Reset, the watermark's refusal, and the 422s.
@@ -220,7 +220,7 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     assert_match(/traced lettering, which has one weight/, response.body)
   end
 
-  # Task logo-compare-and-original-edits (Alex 2026-10-11 23:06): the word rows work in Original. The words take the
+  # Task logo-compare-and-original-edits (Alex McRitchie 2026-10-11 23:06): the word rows work in Original. The words take the
   # edit and the icon stays the brand's art; only the Icon row needs Alt, and says so with a link that recolours the
   # icon alone.
   test "on the Original the word rows edit the words and the Icon row sends its colour to Alt" do
@@ -257,7 +257,7 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # Alex's reproduction: on welding_v2's Stacked tab in Original, colour the first word orange and save it as the
+  # Alex McRitchie's reproduction: on welding_v2's Stacked tab in Original, colour the first word orange and save it as the
   # default. The tab then opens on the Original helmet with orange words, not on Alt's single-colour helmet.
   test "welding_v2 Stacked saved in Original with an orange first word keeps the Original helmet" do
     get logo_brand_path("welding_v2", type: "stacked", first_colour: "D7602E")

@@ -20,7 +20,7 @@ release candidate, runs the pre-QA gate, deploys QA, and flips members
 - **QA-Release (assembly + QA — §1.2)** — Run **`bin/release prepare`** (the self-healing `qa-release` sweep): DETECT every `reviewed` task plus any `assembled` straggler, promote **ONE `accepted → release` batch PR per repo** onto the release candidate (re-stamping `merged: "release"`), run the **pre-QA gate** (integration + an e2e smoke on `origin/release`), deploy QA, and flip swept members `reviewed → assembled` **only on QA-green**. Stop at **Live on QA** — the Avi → Steffon handoff. A QA failure ejects the offender (`bin/release eject <task>`) and the rest rides the re-run. This is the **G3 Candidate** gate.
 - **Intent Scout** — While a builder builds, read the task's intent (not the diff) and post one two-list brief before submit: SAME INTENT, DO NOW and WIDER SCOPE, FOLLOW-UP ([`intent-scout`](sops/intent-scout.md)). Launched in the background at `bin/task begin`; read only, never a gate.
 - **Deploy-With-Task** — The single-task production expedite (`deploy-with-task`), guarded on a clean ladder (`accepted == release == main`, re-proven at the promote): `review-one` → `qa-release` → `production-deploy`. Interactive — launched bare it asks "What task?".
-- **Release Throughput** — Maximize release throughput: get every task that passes review into a QA candidate; default to including, not deferring. This never lowers the QA bar — rigor AND throughput. (Drives the `pr-review` → `qa-release` → `production-deploy` pipeline and its one-trigger form, Alex's ship-authority `full-cycle`.)
+- **Release Throughput** — Maximize release throughput: get every task that passes review into a QA candidate; default to including, not deferring. This never lowers the QA bar — rigor AND throughput. (Drives the `pr-review` → `qa-release` → `production-deploy` pipeline and its one-trigger form, Alex McRitchie's ship-authority `full-cycle`.)
 - **Product Coherence** — Make sure shipped features match the spec and the brand
 - **Roadmap** — Help prioritize what ships next based on user value vs cost
 
@@ -38,9 +38,9 @@ release candidate, runs the pre-QA gate, deploys QA, and flips members
 ## Workflow
 
 **Ticket refinement (before build):**
-1. Take problem/goal from Alex; sharpen into acceptance criteria
+1. Take problem/goal from Alex McRitchie; sharpen into acceptance criteria
 2. Confer with Carl on backend feasibility — pre-flag a known schema change with `bin/task create … --requires-migration` (or `bin/task update <task-slug> --requires-migration` once it exists); see `docs/agents/system/exclusive-lanes.md`
-3. Submit `po_size` — sealed-bid, blind to Ritch's `pm_size`
+3. Submit `po_size` — sealed-bid, blind to Mason's `pm_size`
 4. Assign to a Dev; their `dev_size` reveals alongside mine when all three are in
 
 **QA-release (after review — §1.2):** Avi owns assembly + QA — he sweeps the reviewed queue onto `release`, QAs the candidate, and hands it to Steffon on QA-green. He never reviews the code (Carl owns review) and never ships prod (Steffon owns the ship).
@@ -55,4 +55,4 @@ release candidate, runs the pre-QA gate, deploys QA, and flips members
 - **Steffon** — production ship readiness and deploy windows
 - **Shannon** — UI patterns, mobile/dark-mode coverage
 - **Jasper** — on-chain implications, PDA design, signing flow
-- **Alex** — priority order, business value, "is this worth doing at all"
+- **Alex McRitchie** — priority order, business value, "is this worth doing at all"

@@ -2,16 +2,16 @@ require "test_helper"
 require_relative "../support/agent_mailbox_in_process_api"
 require Rails.root.join("bin/lib/agent_dispatcher").to_s
 
-# [integration] The Change flow over the CTO web chat, end to end, as Alex will
+# [integration] The Change flow over the CTO web chat, end to end, as Alex McRitchie will
 # run it in production: signed in as alex@turfmonster.media (Turf Monster's
 # owner), he asks Turf for a feature in the web chat; bin/dispatcher's loop (the
 # real mailbox API in process, a stubbed Claude) answers with a PROPOSAL block;
 # the board records it and the answer shows the confirm line with the capability
-# and params, never the block; Alex replies `go` in the same web thread; the
+# and params, never the block; Alex McRitchie replies `go` in the same web thread; the
 # proposal job opens a `designed` task whose source thread is the Turf web chat;
 # and the result streams into the chat. A `go` in another web thread leaves the
-# proposal alone. An app owner who is not Alex may say go in their OWN app's chat
-# (Alex, 2026-10-18; AgentMessages::ProposalConfirm#owner_verdict); another
+# proposal alone. An app owner who is not Alex McRitchie may say go in their OWN app's chat
+# (Alex McRitchie, 2026-10-18; AgentMessages::ProposalConfirm#owner_verdict); another
 # owner's thread, a team-role owner, and another app's owner never run it.
 class CtoWebChatChangeFlowTest < ActionDispatch::IntegrationTest
   include ActionCable::TestHelper
@@ -80,7 +80,7 @@ class CtoWebChatChangeFlowTest < ActionDispatch::IntegrationTest
     assert_match(/> Runs: change `task` · .*title Show the slate's kickoff times/, ask.response_text, "the confirm line names the call")
     assert sent.any? { |html| html.include?("cto-chat-turn-#{ask.id}") && html.include?("Reply <strong>go</strong>") }
 
-    # Another web thread (Alex's admin account, its own thread with Turf) does not reach it.
+    # Another web thread (Alex McRitchie's admin account, its own thread with Turf) does not reach it.
     log_in_as(users(:alex))
     elsewhere = say("go")
     assert_not_equal ask.thread_key, elsewhere.thread_key
@@ -124,7 +124,7 @@ class CtoWebChatChangeFlowTest < ActionDispatch::IntegrationTest
                           summary: "Open a task", status: "proposed", expires_at: 1.day.from_now)
   end
 
-  test "[integration] an app owner who is not Alex says go in their own Turf chat and the designed task opens" do
+  test "[integration] an app owner who is not Alex McRitchie says go in their own Turf chat and the designed task opens" do
     partner = User.create!(email: "turf-partner@example.com", name: "Partner", role: "viewer")
     AppMembership.create!(app: apps(:turf_monster), user: partner)
     proposal = owner_proposal!(partner)

@@ -1,7 +1,7 @@
 require "test_helper"
 require_relative "../support/client_cto_fixtures"
 
-# [integration] The app's initial load (task build-sign-in-modal, Alex
+# [integration] The app's initial load (task build-sign-in-modal, Alex McRitchie
 # 2026-10-19): a newly launched app (AppCto launch_animation_pending) plays the
 # launch panel on its OWNER's first visit to /applications/:slug/chat and clears
 # the flag as it renders, so a refresh is the chat. An admin reading someone

@@ -22,7 +22,7 @@ class LogosPngSizesTest < Minitest::Test
     assert_raises(ArgumentError) { PngSizes.natural(%(<svg viewBox="0 0 0 10"/>)) }
   end
 
-  # Alex, 2026-10-14 22:35: an icon downloads in its true aspect by default, and as a padded 1:1 square on request.
+  # Alex McRitchie, 2026-10-14 22:35: an icon downloads in its true aspect by default, and as a padded 1:1 square on request.
   def test_the_icon_presets_set_the_long_side_and_keep_the_true_aspect_by_default
     presets = PngSizes.presets(:icon, *ICON)
     assert_equal [16, 32, 48, 64, 180, 192, 256, 512, 1024], presets.map { |preset| preset[:width] }, "the chest is wider than tall"

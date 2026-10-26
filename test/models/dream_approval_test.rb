@@ -14,7 +14,7 @@ class DreamApprovalTest < ActiveSupport::TestCase
                          tags: {}, source: "", story: "")
   end
 
-  test "[unit] only Alex's admin account approves; another admin or a viewer does not" do
+  test "[unit] only Alex McRitchie's admin account approves; another admin or a viewer does not" do
     assert DreamApproval.approver?(users(:alex))
     assert_not DreamApproval.approver?(users(:viewer))
     assert_not DreamApproval.approver?(nil)
@@ -86,16 +86,16 @@ class DreamApprovalTest < ActiveSupport::TestCase
   test "[unit] reconcile! stamps applied only where the file now reads approved" do
     flipped = DreamApproval.record!(dream(slug: "flipped"), users(:alex))
     waiting = DreamApproval.record!(dream(slug: "waiting"), users(:alex))
-    same_slug_elsewhere = DreamApproval.record!(dream(slug: "flipped", home: "ray"), users(:alex))
+    same_slug_elsewhere = DreamApproval.record!(dream(slug: "flipped", home: "alex"), users(:alex))
 
     stamped = DreamApproval.reconcile!([ dream(slug: "flipped", status: "approved"), dream(slug: "waiting"),
-                                         dream(slug: "flipped", home: "ray") ])
+                                         dream(slug: "flipped", home: "alex") ])
 
     assert_equal 1, stamped
     assert_not_nil flipped.reload.applied_at
     assert_nil waiting.reload.applied_at
     assert_nil same_slug_elsewhere.reload.applied_at, "a dream is keyed by home and slug"
-    assert_equal [ "carl/waiting", "ray/flipped" ], DreamApproval.pending_by_key([]).keys.sort
+    assert_equal [ "alex/flipped", "carl/waiting" ], DreamApproval.pending_by_key([]).keys.sort
   end
 
   test "[unit] the pending read names the deployed file's status, or missing" do

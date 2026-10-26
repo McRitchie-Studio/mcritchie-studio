@@ -13,11 +13,11 @@
     return {
       rowId: null,
       idField: null,
-      grades: { ray: null, mcr: null },
+      grades: { mason: null, mcr: null },
       hydrateGrades(el) {
         this.rowId = el.dataset.rowId;
         this.idField = el.dataset.idField;
-        this.grades.ray = this.readGrade(el.dataset, "ray");
+        this.grades.mason = this.readGrade(el.dataset, "mason");
         this.grades.mcr = this.readGrade(el.dataset, "mcr");
       },
       readGrade(data, who) {

@@ -5,7 +5,7 @@ require Rails.root.join("bin/lib/dream_layers").to_s
 
 # [unit] The swap side of the dream loop: a layer's room, its data-ranked out
 # candidates and their grace (DreamLoop), a session's one proposal (DreamSwap) and
-# Alex's one click on it, and the KPI strip (DreamKpis).
+# Alex McRitchie's one click on it, and the KPI strip (DreamKpis).
 class DreamLoopTest < ActiveSupport::TestCase
   setup { users(:alex).update_column(:slug, "alex-mcritchie-test") }
 
@@ -110,7 +110,7 @@ class DreamLoopTest < ActiveSupport::TestCase
     end
     assert_includes error.message, "grace"
     assert_raises(DreamSwap::NotProposable) do
-      DreamSwap.propose!(session_id: "s1", reason: "r", in_key: "carl/new", out_key: "ray/dream-00", layer: "soul/carl",
+      DreamSwap.propose!(session_id: "s1", reason: "r", in_key: "carl/new", out_key: "alex/dream-00", layer: "soul/carl",
                          dreams: dreams)
     end
 
@@ -133,7 +133,7 @@ class DreamLoopTest < ActiveSupport::TestCase
     end
   end
 
-  test "[unit] Alex's one click approves the in and retires the out together; nobody else's does" do
+  test "[unit] Alex McRitchie's one click approves the in and retires the out together; nobody else's does" do
     dreams = full_layer
     swap = DreamSwap.propose!(session_id: "s1", reason: "r", in_key: "carl/new", out_key: "carl/dream-00",
                               layer: "soul/carl", dreams: dreams)

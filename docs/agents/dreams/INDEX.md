@@ -11,25 +11,17 @@ Loads at: every session start
 | [`cannot-confirm-or-refute`](platform/cannot-confirm-or-refute.md) | A counterparty states a figure and the record I hold does not show it. Is the figure unsupported? | topic: evidence, counterparty | approved |
 | [`credential-dialog-is-not-yours-to-raise`](platform/credential-dialog-is-not-yours-to-raise.md) | A tool I am about to run wants the browser's cookies or a keychain item. Do I run it? | topic: credentials | approved |
 | [`leave-a-live-claim-alone`](platform/leave-a-live-claim-alone.md) | My board is clear except one card held by another session. Do I pick it up to finish the job? | topic: claims | approved |
-| [`list-the-candidates-before-acting-on-the-one`](platform/list-the-candidates-before-acting-on-the-one.md) | Alex says 'the last email I forwarded' or 'drop my entry', and more than one thing fits. Which do I act on? | topic: ambiguity | approved |
-| [`make-the-credential-item-yourself`](platform/make-the-credential-item-yourself.md) | A new or changed credential is needed and Alex holds the secret. Do I hand him a script to file it? | topic: credentials, 1password | proposed |
+| [`list-the-candidates-before-acting-on-the-one`](platform/list-the-candidates-before-acting-on-the-one.md) | Alex McRitchie says 'the last email I forwarded' or 'drop my entry', and more than one thing fits. Which do I act on? | topic: ambiguity | approved |
+| [`make-the-credential-item-yourself`](platform/make-the-credential-item-yourself.md) | A new or changed credential is needed and Alex McRitchie holds the secret. Do I hand him a script to file it? | topic: credentials, 1password | proposed |
 | [`never-probe-with-the-real-command`](platform/never-probe-with-the-real-command.md) | I need to know whether a lease has expired, or what flags a script takes. Can I just run it and see? | topic: probing | approved |
-| [`read-what-was-sent-before-drafting`](platform/read-what-was-sent-before-drafting.md) | I am drafting Alex's reply to a counterparty. The knowledge layer has the background. Is that enough? | topic: email, counterparty | approved |
-| [`report-exactly-what-you-verified`](platform/report-exactly-what-you-verified.md) | The API accepted my post. Do I tell Alex it is live? | topic: reporting | approved |
-| [`report-the-null-result`](platform/report-the-null-result.md) | Alex is excited about a model and the backtest comes back weak. What do I tell him? | topic: reporting | approved |
-| [`say-the-uncomfortable-reason`](platform/say-the-uncomfortable-reason.md) | Alex shows me a setup screen and asks whether it looks right. Most of it does. | topic: reporting | approved |
-| [`second-signature-ask-then-4s39`](platform/second-signature-ask-then-4s39.md) | A mainnet action Alex asked for needs one more signature than his wallet gave. Which key do I use? | topic: mainnet, signature, wallet, solana | proposed |
-| [`stop-retrying-a-race`](platform/stop-retrying-a-race.md) | The link I gave Alex was dead when he clicked it, twice. Do I send a third? | topic: diagnosis | approved |
-| [`turn-a-reframe-into-a-test`](platform/turn-a-reframe-into-a-test.md) | Alex reframes the problem in a way I had not considered. How do I respond? | topic: diagnosis | approved |
-| [`verify-a-report-before-relaying-it`](platform/verify-a-report-before-relaying-it.md) | A subagent reports that it verified something. Can I pass that to Alex as fact? | topic: subagents, reporting | approved |
-
-## Ritch (1)
-
-Loads at: `bin/dream ray`
-
-| Dream | Question | Tags | Status |
-|---|---|---|---|
-| [`lead-with-the-finding-that-outranks-the-work`](carl/lead-with-the-finding-that-outranks-the-work.md) | A review turns up something pre-existing and outside the diff. Is it out of scope? | stage: submitted; topic: review | approved |
+| [`read-what-was-sent-before-drafting`](platform/read-what-was-sent-before-drafting.md) | I am drafting Alex McRitchie's reply to a counterparty. The knowledge layer has the background. Is that enough? | topic: email, counterparty | approved |
+| [`report-exactly-what-you-verified`](platform/report-exactly-what-you-verified.md) | The API accepted my post. Do I tell Alex McRitchie it is live? | topic: reporting | approved |
+| [`report-the-null-result`](platform/report-the-null-result.md) | Alex McRitchie is excited about a model and the backtest comes back weak. What do I tell him? | topic: reporting | approved |
+| [`say-the-uncomfortable-reason`](platform/say-the-uncomfortable-reason.md) | Alex McRitchie shows me a setup screen and asks whether it looks right. Most of it does. | topic: reporting | approved |
+| [`second-signature-ask-then-4s39`](platform/second-signature-ask-then-4s39.md) | A mainnet action Alex McRitchie asked for needs one more signature than his wallet gave. Which key do I use? | topic: mainnet, signature, wallet, solana | proposed |
+| [`stop-retrying-a-race`](platform/stop-retrying-a-race.md) | The link I gave Alex McRitchie was dead when he clicked it, twice. Do I send a third? | topic: diagnosis | approved |
+| [`turn-a-reframe-into-a-test`](platform/turn-a-reframe-into-a-test.md) | Alex McRitchie reframes the problem in a way I had not considered. How do I respond? | topic: diagnosis | approved |
+| [`verify-a-report-before-relaying-it`](platform/verify-a-report-before-relaying-it.md) | A subagent reports that it verified something. Can I pass that to Alex McRitchie as fact? | topic: subagents, reporting | approved |
 
 ## Avi (1)
 
@@ -74,7 +66,7 @@ Loads at: `bin/dream steffon`
 | Dream | Question | Tags | Status |
 |---|---|---|---|
 | [`lead-with-the-finding-that-outranks-the-work`](carl/lead-with-the-finding-that-outranks-the-work.md) | A review turns up something pre-existing and outside the diff. Is it out of scope? | stage: submitted; topic: review | approved |
-| [`trace-the-live-process-before-explaining`](steffon/trace-the-live-process-before-explaining.md) | Alex shows me a surprising dialog or process and asks what it is. Do I explain what such things usually are? | topic: processes, diagnosis | approved |
+| [`trace-the-live-process-before-explaining`](steffon/trace-the-live-process-before-explaining.md) | Alex McRitchie shows me a surprising dialog or process and asks what it is. Do I explain what such things usually are? | topic: processes, diagnosis | approved |
 
 ## Turf Monster (2)
 
@@ -83,7 +75,15 @@ Loads at: `bin/dream turf-monster`
 | Dream | Question | Tags | Status |
 |---|---|---|---|
 | [`reconcile-the-numbers-before-theorizing`](jasper/reconcile-the-numbers-before-theorizing.md) | A balance on screen looks wrong after money moved. Where do I start? | repo: turf-monster; risk: payment; topic: balances | approved |
-| [`read-the-state-before-the-mutation`](turf-monster/read-the-state-before-the-mutation.md) | Alex asks for a data change on a live contest. He is the owner; do I just make it? | repo: turf-monster; topic: contests, data-change | approved |
+| [`read-the-state-before-the-mutation`](turf-monster/read-the-state-before-the-mutation.md) | Alex McRitchie asks for a data change on a live contest. He is the owner; do I just make it? | repo: turf-monster; topic: contests, data-change | approved |
+
+## Mason (1)
+
+Loads at: `bin/dream mason`
+
+| Dream | Question | Tags | Status |
+|---|---|---|---|
+| [`lead-with-the-finding-that-outranks-the-work`](carl/lead-with-the-finding-that-outranks-the-work.md) | A review turns up something pre-existing and outside the diff. Is it out of scope? | stage: submitted; topic: review | approved |
 
 ## Pokémon (2)
 

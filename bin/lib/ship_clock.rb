@@ -10,7 +10,7 @@ require_relative "ci_failure_digest"
 
 # ShipClock — prompt-to-production speed, measured from RECORDS (/tasks/ship-clock-benchmark).
 #
-# WHY. On 2026-10-13 Alex timed an easy story (team-tier-nine-hundred) from his prompt
+# WHY. On 2026-10-13 Alex McRitchie timed an easy story (team-tier-nine-hundred) from his prompt
 # to production. The agent could only ESTIMATE the start, because nothing stamped it,
 # and every other number came from memory. bin/ship-clock stamps T0 at the prompt and
 # rebuilds the rest of the timeline from what the pipeline already writes down:

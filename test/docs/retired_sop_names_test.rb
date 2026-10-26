@@ -18,7 +18,7 @@ class RetiredSopNamesTest < ActiveSupport::TestCase
     "the g1_cert gate (the local cert; the PR's settled CI replaced it)" => /\bg1[-_]cert\b|\bG1 Cert\b/i,
     "the qa-deploy SOP alias (qa-release; the qa-deploy.yml workflow is live)" => /\bqa-deploy\b(?!\.yml)/,
     "the archive-completed SOP alias (archive-shipped)" => /\barchive-completed\b/,
-    "the Alex Heartbeat alias (Ray Heartbeat)" => /\bAlex Heartbeat\b/
+    "the Ray and Xan Heartbeat aliases (Alex Heartbeat since ritch-renamed-alex)" => /\b(?:Ray|Xan) Heartbeat\b/
   }.freeze
 
   # bin/ship and bin/ship-wait are aliases of bin/submit and bin/submit-wait for one
@@ -52,12 +52,12 @@ class RetiredSopNamesTest < ActiveSupport::TestCase
 
   test "[unit] the retired-name scan bites every retired name and spares the live ones" do
     probes = ["the `g1_cert` gate", "see gates/g1-cert.md", "the G1 Cert chip", "run `qa-deploy`",
-              "`archive-completed` sweeps", "launch `Alex Heartbeat`"]
+              "`archive-completed` sweeps", "launch `Ray Heartbeat`", "launch `Xan Heartbeat`"]
     probes.each do |probe|
       refute_empty retired_hits([["probe", probe]]), "the scan missed #{probe.inspect}"
     end
 
-    ["dispatch `qa-deploy.yml`", "run `qa-release`", "`archive-shipped`", "`Ray Heartbeat`"].each do |live|
+    ["dispatch `qa-deploy.yml`", "run `qa-release`", "`archive-shipped`", "`Alex Heartbeat`", "`Mason Heartbeat`"].each do |live|
       assert_empty retired_hits([["probe", live]]), "the scan refused a live name: #{live.inspect}"
     end
   end

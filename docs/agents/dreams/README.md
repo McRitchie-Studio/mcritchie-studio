@@ -12,10 +12,10 @@ format and the sign-off rule are in [`../modules/dream.md`](../modules/dream.md)
 A directory is named for a `config/souls.yml` slug. A dream tagged for several
 souls loads in each of their sequences and lives under the first.
 
-- `status: proposed` is a candidate waiting for Alex. It loads nowhere.
-- `status: approved` is signed off by Alex. It loads in its sequences.
+- `status: proposed` is a candidate waiting for Alex McRitchie. It loads nowhere.
+- `status: approved` is signed off by Alex McRitchie. It loads in its sequences.
 
-Alex approves with one click on `/dreams`. `bin/dream apply-approvals` then
+Alex McRitchie approves with one click on `/dreams`. `bin/dream apply-approvals` then
 writes his recorded clicks into the files in one batch task; it carries out his
 approval and is never an agent's own.
 
@@ -24,7 +24,7 @@ a full layer means a swap, not an add. The budgets and the steps that print a
 moment card are in [`../modules/dream.md`](../modules/dream.md).
 
 At wrap, a session grades the dreams that fired in it and proposes at most one
-swap; Alex approves a swap, or retires a dream, with one click on `/dreams`, and
+swap; Alex McRitchie approves a swap, or retires a dream, with one click on `/dreams`, and
 `bin/dream apply-approvals` deletes each retired file. A retired dream keeps no
 file and no status ([Act 4](../modules/dream.md#act-4--the-loop-every-wrap)).
 

@@ -89,7 +89,7 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
   end
 
   test "being on the register does not grant a review seat" do
-    %w[pokemon rex turf-monster mack mason tyrion].each do |soul|
+    %w[pokemon rex turf-monster mack alex tyrion].each do |soul|
       assert Task.soul?(soul), "#{soul} is attributable"
       refute_includes ReviewerSelector::POOL, soul,
         "#{soul} builds or works; the roster answers identity, POOL answers review"
@@ -156,9 +156,9 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
 
     decision = ReviewerSelector.explain(task.reload)
     assert_equal true, decision["builder_known"], "the retired slug still names somebody"
-    assert_equal %w[ray], decision["builders"], "and it resolves to the one identity"
-    refute_includes decision["candidates"], "ray",
-      "a historical alex stamp must keep ray out of the pool — same soul, other name"
+    assert_equal %w[alex], decision["builders"], "and it resolves to the one identity"
+    refute_includes decision["candidates"], "alex",
+      "a historical alex stamp must keep alex out of the pool — same soul, other name"
     assert_empty Array(decision["kept_builders"])
   end
 

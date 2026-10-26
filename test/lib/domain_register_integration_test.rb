@@ -20,7 +20,7 @@ class DomainRegisterIntegrationTest < Minitest::Test
   BIN = File.expand_path("../../bin/domain-register", __dir__)
   TOKEN = "cf-registrar-secret-int-0123456789"
   ACCOUNT = "acctint0123456789abcd"
-  OK = "Alex in chat: buy acmecorp.dev at 10.46, 2026-10-19"
+  OK = "Alex McRitchie in chat: buy acmecorp.dev at 10.46, 2026-10-19"
 
   QUOTES = {
     "acmecorp.dev" => { "name" => "acmecorp.dev", "registrable" => true, "tier" => "standard",

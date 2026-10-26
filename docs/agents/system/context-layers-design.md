@@ -54,11 +54,11 @@ ground shifts:
 - **The first request** of a session or of a spawned agent.
 - **Entering an SOP step** (claim, build, local review, submit, review, release).
 - **A new task, repo or soul**: a different desk, a different app, a different seat.
-- **Alex redirects**: a new instruction replaces the plan the context was pulled for.
+- **Alex McRitchie redirects**: a new instruction replaces the plan the context was pulled for.
 - **A surprise**: a red CI, a refusal, a block, a number that does not match. A
   surprise means the agent's picture of where it stands is wrong, so it re-reads
   the step and the task before acting. Surprises are also where new dreams come
-  from: the answer that resolved one, signed off by Alex, becomes the next
+  from: the answer that resolved one, signed off by Alex McRitchie, becomes the next
   agent's dream.
 
 ## 4. The split: must-do is mechanical, judgment is a dream
@@ -67,7 +67,7 @@ ground shifts:
 |------|---------|----------------|-----|
 | **Must-do** | Launch Avi's intent scout at claim | A script or hook: `bin/task begin` launches it (`IntentScout.auto_launch`) | A step that must happen every time cannot depend on someone reading a line; the machine does it and says so |
 | **Must-do** | Record test tiers before submit | A refusal: `bin/dor-check --precheck` at 0/8 | Same; the check is cheap and the miss is expensive |
-| **Judgment** | Does this change earn Alex's local look? | A dream and the SOP's one judgment step | There is no rule to automate; a worked past answer is the best guide |
+| **Judgment** | Does this change earn Alex McRitchie's local look? | A dream and the SOP's one judgment step | There is no rule to automate; a worked past answer is the best guide |
 | **Judgment** | Fold a scout item in, or decline it? | A dream; the builder says why in its report | The builder decides; the brief is advice |
 
 The test for which kind a piece of guidance is: **could a script decide it from

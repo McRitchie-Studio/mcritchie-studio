@@ -102,7 +102,7 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
       action.update_columns(task_slug: "codex-stop-hook-cleanup")
       desk = DeskRecord.create!(worktree_path: "/tmp/slugkey-desk", status: DeskRecord::STATUSES.first)
       desk.update_columns(app_slug: "#{apps(:mcritchie_studio).slug}.sibling")
-      tasks(:new_task).update_columns(agent_slug: "Ray")
+      tasks(:new_task).update_columns(agent_slug: "Alex")
     end
 
     assert_not validated?("activities", "agent_slug"), "a dirty key sits NOT VALID until the cleanup"
@@ -120,7 +120,7 @@ class SlugForeignKeysTest < ActiveSupport::TestCase
     assert_equal "live-score-watch", note.metadata["task_handle"]
     assert_nil action.reload.task_slug
     assert_equal apps(:mcritchie_studio).slug, desk.reload.app_slug
-    assert_equal "ray", tasks(:new_task).reload.agent_slug
+    assert_equal "alex", tasks(:new_task).reload.agent_slug
     %w[activities.agent_slug activities.task_slug agent_actions.task_slug desk_records.app_slug tasks.agent_slug].each do |name|
       assert validated?(*name.split(".")), "#{name} is still NOT VALID"
     end

@@ -1,6 +1,6 @@
 # The per-app CTO morning reports: each app with a CTO (config/cto_reports.yml)
 # gets its own Discord message at 07:00 America/Denver, in that CTO's voice,
-# under its own report key `cto_report:<domain>`, so Alex picks a channel per
+# under its own report key `cto_report:<domain>`, so Alex McRitchie picks a channel per
 # app at /admin/report_destinations. It rides DailyAppReportJob after the
 # combined daily_app_report, sharing that run's health reads (one fetch per app
 # per morning). Operator guide: docs/agents/system/daily-app-report.md.

@@ -17,7 +17,7 @@ module AgentMessages
   #               layer and the proposal scope never cross users or apps
   #   the person  the user's own web identity (platform `web`, external id the
   #               user id), else the person an operator already linked to this
-  #               user (agent_people.user_id: Alex's hub user is the owner's),
+  #               user (agent_people.user_id: Alex McRitchie's hub user is the owner's),
   #               else a new `public` person for the user. Never matched by name
   #   answered?   the person's role (config/agent_answerers.yml), exactly as on
   #               Discord and email, OR the app-owner rule

@@ -11,7 +11,7 @@ web dyno to 2 workers × 3 threads = 6 — see the connection budget beside its 
 line.)
 
 An edge in front is the durable answer to that shape of traffic, and it gives
-Alex a lever he can pull mid-incident without a deploy.
+Alex McRitchie a lever he can pull mid-incident without a deploy.
 
 Roll it out **one domain at a time**, starting with the hub. Each domain is a separate
 nameserver migration with its own certificate risk; doing four at once means four ways
@@ -219,7 +219,7 @@ headroom on a 3-thread app.
 
 ## Domain inventory
 
-Registrar access is Alex's; the nameserver change cannot be done by an agent.
+Registrar access is Alex McRitchie's; the nameserver change cannot be done by an agent.
 
 | Domain | DNS host today | Heroku app | Records | Status |
 |---|---|---|---|---|

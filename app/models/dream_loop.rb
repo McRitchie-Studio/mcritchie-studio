@@ -6,7 +6,7 @@ require Rails.root.join("bin/lib/dream_layers").to_s
 # layer is, and which of its dreams the data says to swap out.
 #
 # A layer's ROOM is its budget (DreamLayers) less what it will hold once the queued
-# sign-offs ship: its approved dreams, less those Alex has retired (pending), plus
+# sign-offs ship: its approved dreams, less those Alex McRitchie has retired (pending), plus
 # the proposed ones he has approved (pending).
 #
 # The OUT candidates are the layer's approved dreams, not already retiring, past

@@ -199,7 +199,7 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
         assert_equal %w[signups_and_errors usage task], catalog
         assert @posts.last["content"].start_with?("**Turf** · I can pull that.")
 
-        # Alex's reply pings the shared bot that posted Turf's answer; the thread keeps Turf.
+        # Alex McRitchie's reply pings the shared bot that posted Turf's answer; the thread keeps Turf.
         AgentProposals::Executor.fetcher = fetcher
         go = perform_enqueued_jobs { ingest(5002, "GO", users: [ RAY_BOT ], reply_to: message.reload.reply_external_id) }
         assert_equal "turf_monster", go.soul_slug

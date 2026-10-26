@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Alex's one-click retirement of an approved dream, from /dreams
+# Alex McRitchie's one-click retirement of an approved dream, from /dreams
 # (docs/agents/modules/dream.md, Act 4). It is the "out" half of a swap, or a
 # retirement on its own.
 #
@@ -13,7 +13,7 @@
 # A row's `ruling` is "retire" (an approved dream leaves its layer) or "drop" (a
 # proposed dream is discarded); apply-approvals deletes the file either way.
 #
-# Only Alex retires or drops: his click, behind the same DreamApproval.approver?
+# Only Alex McRitchie retires or drops: his click, behind the same DreamApproval.approver?
 # check as an approval (via "click"), or his word in chat, recorded with the quote
 # and the session through POST /api/v1/dream_rulings (DreamRuling, via "chat").
 class DreamRetirement < ApplicationRecord
@@ -38,7 +38,7 @@ class DreamRetirement < ApplicationRecord
 
   # Raises NotRetirable, with the reason, unless `user` may retire `dream`.
   def self.check!(dream, user)
-    raise NotRetirable, "only Alex retires dreams" unless DreamApproval.approver?(user)
+    raise NotRetirable, "only Alex McRitchie retires dreams" unless DreamApproval.approver?(user)
     raise NotRetirable, "no such dream" if dream.nil?
     raise NotRetirable, "`#{dream.slug}` is #{dream.status}, not approved" unless dream.approved?
   end

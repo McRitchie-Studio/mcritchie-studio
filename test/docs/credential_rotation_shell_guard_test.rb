@@ -85,7 +85,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
   # The 1Password item holding the key `squad-upgrade.js` signs with as the BOT.
   # Derived 2026-09-14 by reading this item's private key into an env var and
   # deriving ONLY the public key: `8K81…`, which `turf-vault/scripts/squad.json`
-  # and `docs/CURRENT_DEPLOYMENT.md` both name "Alex Bot signer". That is what
+  # and `docs/CURRENT_DEPLOYMENT.md` both name "Alex McRitchie Bot signer". That is what
   # makes the SOP row's "supplied per run from 1Password" true OF THIS KEY.
   # Renamed from `agent.alex.solana` on 2026-09-15 AND moved to the
   # `studio-agents-admin` vault. The inventory row records the vault; this pin
@@ -890,7 +890,7 @@ class CredentialRotationShellGuardTest < ActiveSupport::TestCase
     # The row must keep NAMING the exception, not merely avoid overclaiming. This
     # is the load-bearing half: a blacklist of overclaiming phrasings is
     # unbounded ("all three", "every signing key", "both keys", "the BOT key and
-    # Alex key both come from 1Password" — that last one satisfies /bot key/ too),
+    # Alex McRitchie key both come from 1Password" — that last one satisfies /bot key/ too),
     # whereas a row that still says WHICH key is unfiled cannot be read as a
     # claim about all of them.
     assert_match(/7ZDJ/, row,

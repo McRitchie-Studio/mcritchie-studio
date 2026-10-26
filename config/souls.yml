@@ -18,30 +18,27 @@
 #               review_weight  NUMERIC weight (2.0 heavy, 1.0 light), never a label
 #
 # Carl is the standing primary and owner on every PR; he summons one domain light
-# from Shannon (UI), Jasper (Web3), Steffon (DevOps) and Ritch (Documentation). Avi
+# from Shannon (UI), Jasper (Web3), Steffon (DevOps) and Mason (Documentation). Avi
 # is the qa_owner and stays out of the light pool, so no soul both reviews and QAs
 # one change. See docs/agents/agents/carl/sops/pr-review.md.
 souls:
-- slug: ray
-  name: Ritch
+- slug: alex
+  name: Alex
   status: active
-  agent_type: orchestrator
-  title: Lead Orchestrator
-  description: 'Coordinates all agents, manages task assignment, and oversees system operations — the central brain of McRitchie Studio. Also holds the senior review pool''s Documentation seat: reviews docs, runbooks, the agent operating model, and READMEs on PRs that touch them.'
-  avatar: "/agents/ray.webp"
-  position: 0
-  emoji: "🧭"
+  agent_type: worker
+  title: Fractional CTO
+  description: 'The client-facing persona: outwardly focused, nice and funny, and happiest helping people get great software. Fractional CTO and forward-deployed engineer: faces clients on /build, holds focus sessions, works the /build app queue, builds and submits web apps, and runs ship-clock. Owns brand voice, launch comms and copy (Rex keeps marketing strategy). Worker class: no admin vault; Mason reviews and merges his docs PRs.'
+  avatar: "/agents/alex.webp"
+  position: 2
+  emoji: "🧑🏻"
   color: "#818CF8"
   metadata:
-    review_role: reviewer
-    reviewer: true
-    domains:
-    - documentation
-    - docs
-    - runbooks
-    - agent-operating-model
-    - readme
-    review_weight: 2.0
+    review_role:
+    reviewer: false
+    # Explicit empties, because db/seeds/02_agents.rb MERGES metadata: without
+    # them a deployed row keeps the review domains this soul held until 2026-10-25.
+    domains: []
+    review_weight:
 - slug: avi
   name: Avi
   status: active
@@ -177,16 +174,23 @@ souls:
 - slug: mason
   name: Mason
   status: active
-  agent_type: specialist
-  title: Marketing
-  description: Runs marketing — brand voice, launch comms, social, funnels, copy. (Previously held Infrastructure; that surface now belongs to Steffon.)
+  agent_type: orchestrator
+  title: CEO
+  description: 'The CEO: coordinates all agents, owns the learning loop and the full-cycle release launcher, and holds the senior review pool''s Documentation seat: reviews docs, runbooks, the agent operating model, and READMEs, and merges the docs-shape ones into accepted.'
   avatar: "/agents/mason.webp"
-  position: 2
+  position: 0
   emoji: "📣"
   color: "#EF4444"
   metadata:
-    review_role:
-    reviewer: false
+    review_role: reviewer
+    reviewer: true
+    domains:
+    - documentation
+    - docs
+    - runbooks
+    - agent-operating-model
+    - readme
+    review_weight: 2.0
 # The general builder. It is legion (each task wears its own mascot, recorded in
 # devops.mascot) but one soul, so the slug is stable and the costume is not. It
 # builds and never reviews: absent from ReviewerSelector::POOL, so naming it as
@@ -210,7 +214,7 @@ souls:
   status: active
   agent_type: specialist
   title: Chief Marketing Officer
-  description: 'Owns the demand side: diagnoses the one constraint limiting demand, designs and prices the offer, allocates channels, sets volume targets, and instruments a campaign so its result can be read. Advises the operator brand, Turf Monster, and McRitchie Industries. Strategy, not copy — brand voice and launch mechanics stay with Mason.'
+  description: 'Owns the demand side: diagnoses the one constraint limiting demand, designs and prices the offer, allocates channels, sets volume targets, and instruments a campaign so its result can be read. Advises the operator brand, Turf Monster, and McRitchie Industries. Strategy, not copy — brand voice and launch mechanics are Alex''s.'
   avatar:
   position: 10
   emoji: "📈"
@@ -234,7 +238,7 @@ souls:
   metadata:
     review_role:
     reviewer: false
-# The Commercial Welding business agent, renamed from Dawn (Alex, 2026-10-20):
+# The Commercial Welding business agent, renamed from Dawn (Alex McRitchie, 2026-10-20):
 # the old name collided with the seller in every deal conversation. Holds a
 # knowledge-layer seat but no privileged deal access (samson holds that).
 # Not yet launched. Non-reviewing.

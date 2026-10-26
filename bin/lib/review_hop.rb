@@ -73,7 +73,7 @@ module ReviewHop
       LOOPBACK_HOSTS.include?(host.to_s.downcase)
     end
 
-    # The Magic Link a builder hands Alex: the stack's own in-request mint, which
+    # The Magic Link a builder hands Alex McRitchie: the stack's own in-request mint, which
     # signs him in against the database the desk server serves. `bin/task begin`
     # prints it, so no doc spells the URL and no agent mints a token in a console
     # (a console binds the shared development database and the link 302s to /login).

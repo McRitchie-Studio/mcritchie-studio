@@ -179,7 +179,7 @@ class AppRequestTest < ActiveSupport::TestCase
     ], devops.fetch("acceptance")
     context = devops.fetch("agent_context")
     assert context.end_with?(
-      "\n\nWork this request by docs/agents/modules/launch-build-queue.md. " \
+      "\n\nWork this request by docs/agents/agents/alex/sops/launch-build-queue.md. " \
       "Every new app ships the site footer, and legal pages when it holds personal data: " \
       "docs/agents/system/new-app-onboarding-sop.md § 7."
     ), context
@@ -377,12 +377,12 @@ class AppRequestTest < ActiveSupport::TestCase
     refute BuildGallery.examples.any? { |e| e.url.include?("customer-app") }
   end
 
-  test "[unit] the status card waits for Ritch's theme card: a locked idea alone is not a start; the theme card or any later step is" do
+  test "[unit] the status card waits for Alex's theme card: a locked idea alone is not a start; the theme card or any later step is" do
     row = AppRequest.create!(prompt: "A league site")
     thread = BuildIntake.thread_key(row.token)
     turn = lambda do |n, card, status: "completed"|
       AgentMessage.create!(channel: "web", external_id: "build:#{row.token}:#{n}", channel_ref: "build", thread_key: thread,
-                           soul_slug: "ray", content: "hi", status: status, response_text: "ok", intake_card: card)
+                           soul_slug: "alex", content: "hi", status: status, response_text: "ok", intake_card: card)
     end
     turn.call(1, { "card" => "idea", "title" => "League Standings Hub", "features" => %w[a b] })
     refute row.intake_started?, "an idea card waiting in the thread does not bring the status card"
@@ -390,18 +390,18 @@ class AppRequestTest < ActiveSupport::TestCase
 
     row.update!(answers: { "title" => "League Standings Hub", "idea" => "League Standings Hub" })
     assert row.idea_locked?
-    refute row.intake_started?, "Start App locks the idea, but the card waits while Ritch types the theme card"
+    refute row.intake_started?, "Start App locks the idea, but the card waits while Alex types the theme card"
 
     turn.call(2, { "card" => "palette", "palettes" => [] }, status: "received")
     refute row.intake_started?, "a theme card on an answer not yet completed is not shown in the thread"
 
     other = AppRequest.create!(prompt: "Another site")
     AgentMessage.create!(channel: "web", external_id: "build:#{other.token}:1", channel_ref: "build", thread_key: BuildIntake.thread_key(other.token),
-                         soul_slug: "ray", content: "hi", status: "completed", response_text: "ok", intake_card: { "card" => "palette" })
+                         soul_slug: "alex", content: "hi", status: "completed", response_text: "ok", intake_card: { "card" => "palette" })
     refute row.intake_started?, "another request's theme card is not this one's"
 
     turn.call(3, { "card" => "palette", "palettes" => [] })
-    assert row.intake_started?, "Ritch's theme card is in the thread: the status card appears"
+    assert row.intake_started?, "Alex's theme card is in the thread: the status card appears"
 
     %w[palette cto address].each do |step|
       fresh = AppRequest.create!(prompt: "An old draft")

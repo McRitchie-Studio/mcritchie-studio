@@ -42,7 +42,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # The hero's call to action is the /build funnel, in the rainbow glow (Alex,
+  # The hero's call to action is the /build funnel, in the rainbow glow (Alex McRitchie,
   # 2026-10-19; /tasks/landing-build-ctas). It stands alone: the Meet Alex link
   # was dropped (Alex, 2026-10-20; /tasks/drop-hero-meet-alex).
   test "hero CTA is Build Your App to /build in the rainbow glow" do

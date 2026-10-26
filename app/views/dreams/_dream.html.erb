@@ -1,12 +1,12 @@
 <%# One dream as an expanding card: the question is the summary; opening it shows
     the answer, why, story, tags, status and source. Native <details>, so it opens
     without JavaScript; app/javascript/dreams_filter.js hides it by data-status. %>
-<%# Alex's pending approval (DreamApproval) and the heat count (DreamHeat) come from
+<%# Alex McRitchie's pending approval (DreamApproval) and the heat count (DreamHeat) come from
     the controller; the file still reads proposed until the batch task writes it. %>
 <% proposed = dream.status == DreamOrgChart::PROPOSED %>
 <% approval = proposed ? @approvals.to_h[DreamApproval.key_for(dream)] : nil %>
 <% fires = @heat ? @heat.count(dream.slug) : 0 %>
-<%# The loop (Act 4): sessions' grades, and Alex's pending retirement of an approved
+<%# The loop (Act 4): sessions' grades, and Alex McRitchie's pending retirement of an approved
     dream or drop of a proposed one (DreamRetirement#ruling). %>
 <% grade = @grades.to_h[dream.slug] %>
 <% retirement = (dream.approved? || proposed) ? @retirements.to_h[DreamApproval.key_for(dream)] : nil %>

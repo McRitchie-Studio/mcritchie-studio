@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [unit] The allowance month resets at 1:00 America/Denver on the 1st, and the
-# chat meter says so (task cto-chat-quality-pass, Alex 2026-10-19: "42% used ·
+# chat meter says so (task cto-chat-quality-pass, Alex McRitchie 2026-10-19: "42% used ·
 # Resets Nov 1 at 1am MST"; under a fifth left, "Resets in 3d 4h").
 class AgentUsageResetTest < ActiveSupport::TestCase
   ZONE = ActiveSupport::TimeZone["America/Denver"]

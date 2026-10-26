@@ -67,14 +67,14 @@ class ReviewPendingActionTest < ActiveSupport::TestCase
   #
   # An armed merge measures no diff, and the documentation seat may merge only a
   # diff measured docs-shape (bin/lib/merge_permission.rb). So he merges in person.
-  test "the documentation seat cannot arm a merge, under either slug" do
+  test "the documentation seat cannot arm a merge" do
     record_verdict
 
-    %w[ray alex].each do |seat|
+    %w[mason].each do |seat|
       error = assert_raises(ReviewPendingAction::Unauthorised) { arm(authorized_by: seat) }
 
-      assert_match(/ray holds the documentation seat, which merges docs-shape PRs only and in person/, error.message)
-      assert_match(/bin\/merge-permit <task> --agent ray --head/, error.message)
+      assert_match(/mason holds the documentation seat, which merges docs-shape PRs only and in person/, error.message)
+      assert_match(/bin\/merge-permit <task> --agent mason --head/, error.message)
       assert_match(/Carl, the standing primary, may arm/, error.message)
     end
     assert_equal 0, ReviewPendingAction.count
@@ -82,14 +82,36 @@ class ReviewPendingActionTest < ActiveSupport::TestCase
     assert arm(authorized_by: "carl").pending?
   end
 
-  # The refusal is about who ARMS. Ritch's light merge-ready standing as the latest
+  # The refusal is about who ARMS. Mason's merge-ready standing as the latest
   # report still lets Carl arm, exactly as before.
   test "the documentation seat's verdict still authorises another soul's arm" do
-    Agent.find_or_create_by!(slug: "ray") { |a| a.name = "Ritch" }
-    record_verdict(agent: "ray")
+    record_verdict(agent: "mason")
 
     assert_equal "carl", arm(authorized_by: "carl").authorized_by
     assert_nil ReviewPendingAction.seat_refusal_reason(nil, "", "carl", "steffon")
+  end
+
+  # ── only the review pool arms ─────────────────────────────────────────────
+  #
+  # An armed merge executes a reviewer's verdict with nobody present, so the soul
+  # arming it must be a reviewing soul. Alex (the persona, out of the pool since
+  # 2026-10-25), a builder, and Avi (the QA owner) are refused; so is a retired
+  # slug that resolves to one of them.
+  test "a soul outside the review pool cannot arm a merge" do
+    record_verdict
+
+    %w[alex ray pokemon avi rex].each do |soul|
+      error = assert_raises(ReviewPendingAction::Unauthorised, soul) { arm(authorized_by: soul) }
+      assert_match(/is not in the review pool \(shannon, carl, jasper, steffon\); only a reviewing soul arms a merge/,
+                   error.message)
+    end
+    assert_equal 0, ReviewPendingAction.count
+    assert_match(/alex is not in the review pool/, ReviewPendingAction.seat_refusal_reason("alex", nil))
+    assert_match(/alex is not in the review pool/, ReviewPendingAction.seat_refusal_reason("carl", "ray"),
+                 "a session may not arm under another soul's name either")
+    # CONTROL: every pool soul but the documentation seat arms.
+    %w[carl shannon jasper steffon].each { |soul| assert_nil ReviewPendingAction.seat_refusal_reason(soul), soul }
+    assert arm(authorized_by: "steffon").pending?
   end
 
   # Two spellings of one rule: the model's list and the merge primitive's.

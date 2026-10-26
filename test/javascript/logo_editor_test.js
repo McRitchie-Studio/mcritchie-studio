@@ -20,7 +20,7 @@ test("luminance and contrast follow WCAG 2: black on white is 21, a colour on it
   assert.equal(contrastRatio([99, 91, 178], [99, 91, 178]), 1);
 });
 
-test("the brand colours Alex picks measure as the gallery warns about them", () => {
+test("the brand colours Alex McRitchie picks measure as the gallery warns about them", () => {
   const white = [255, 255, 255];
   assert.ok(contrastRatio(hexToRgb("#635BB2"), white) > MIN_CONTRAST, "Deep Violet reads on the light page");
   assert.ok(contrastRatio(hexToRgb("#EEECFF"), white) < MIN_CONTRAST, "Violet Mist all but vanishes on it");

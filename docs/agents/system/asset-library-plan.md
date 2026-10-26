@@ -29,7 +29,7 @@ Welding's document tier were never part of the move and stay proposals; they
 are listed under **Open decisions** below. Tables dated before 2026-10-11 are
 snapshots of the day they name, kept as measured.
 
-Alex set the direction on 2026-09-26: leave AWS for a simpler operator
+Alex McRitchie set the direction on 2026-09-26: leave AWS for a simpler operator
 experience (not for cost), keep business documents where people already work,
 and give every app, agent and person one place to find an asset. This page is
 the plan and its decisions. The procedures it relies on live in their own SOPs
@@ -60,12 +60,12 @@ Agent knowledge (SOPs, runbooks, insights) stays in git and `KnowledgeDoc`.
 2. Code never reads tier 2 at request time. Drives are for people.
 3. Object keys carry no meaning (a UUID or content hash); meaning lives in the
    catalog.
-   *Amended 2026-09-29 (Alex):* music video and artist content uses
+   *Amended 2026-09-29 (Alex McRitchie):* music video and artist content uses
    human-readable snake_case keys; see
    [`music-video-pipeline-plan.md`](music-video-pipeline-plan.md#r2-storage).
 4. Dev/production split everywhere, enforced by keys, not discipline.
 
-## Decisions (Alex, 2026-09-26)
+## Decisions (Alex McRitchie, 2026-09-26)
 
 | Decision | Choice |
 |---|---|
@@ -78,7 +78,7 @@ Agent knowledge (SOPs, runbooks, insights) stays in git and `KnowledgeDoc`.
 
 **McRitchie Studio's Shared Drives** (created 2026-09-26, no prefix because each
 company is its own Workspace): `Admin`, `People`, `Brand`, `Content`,
-`Turf Monster`, `External`. Alex created them from a proposed set; the
+`Turf Monster`, `External`. Alex McRitchie created them from a proposed set; the
 membership rules are the proposal he applied, not a separate decision. Only
 `External` admits people outside the company, one folder per partner, shared by
 folder and never by drive. `People` admits members only. Agents reach Drive
@@ -88,7 +88,7 @@ made); it cannot create shared drives or manage membership.
 
 **Proposed, not decided.** The Decisions table and the Shared Drives above are
 decided; the Waves states, the writer checklist, the DNS measurements and the
-Wave 7 record describe what exists. These are proposals until Alex says
+Wave 7 record describe what exists. These are proposals until Alex McRitchie says
 otherwise: the catalog's shape and where it lives, the Wave 4 order, and
 Cloudflare Stream for video and CAD in the business-document tier. The Wave 2
 recipe and `DeskCapture`'s private R2 bucket were proposals too; both have run.
@@ -321,7 +321,7 @@ dialog also saved the wrong nameserver pair; Squarespace pushes each save about
 where the registrar stops signing before the registry drops the DS (Squarespace
 does), the domain is dark from that save until the DS is gone plus its TTL. So
 for any domain with a DS record (`dig DS <domain>` at the TLD server), schedule
-that window with Alex, disable DNSSEC as its own save, confirm the TLD no
+that window with Alex McRitchie, disable DNSSEC as its own save, confirm the TLD no
 longer returns a DS, wait one DS TTL, then change nameservers; confirm the
 domain name on the page before every save. `mcritchie.industries` has a DS
 today (measured 2026-09-30).
@@ -402,16 +402,16 @@ consent), then content (the generating services write through the catalog).
   ([`../modules/credential-inventory.md`](../modules/credential-inventory.md)).
 - **Copy.** The Industries privacy page names Cloudflare only (2026-10-11).
 - **The account sweep.** `agents-admin`, with `ViewOnlyAccess` (granted by
-  Alex 2026-10-07), swept the whole account and found nothing beyond S3, IAM
+  Alex McRitchie 2026-10-07), swept the whole account and found nothing beyond S3, IAM
   and the SES identities. That covers the check the 2026-09-29 measurement
-  below left to Alex's root login (EC2, Lambda, RDS, Route 53, CloudFront).
+  below left to Alex McRitchie's root login (EC2, Lambda, RDS, Route 53, CloudFront).
 
-**Kept on purpose** (Alex's decisions):
+**Kept on purpose** (Alex McRitchie's decisions):
 
 | What | Why |
 |---|---|
 | The AWS account itself | a foothold "in case there was ever a reason to go back" |
-| IAM user `agents-admin`, with `ViewOnlyAccess` and the inline policy `agents-admin-wave7-retire` (1Password item `AWS`, vault `studio-agents-admin`) | Alex kept both admin permissions, and the Cloudflare token's Zone WAF Edit, "to build trust" |
+| IAM user `agents-admin`, with `ViewOnlyAccess` and the inline policy `agents-admin-wave7-retire` (1Password item `AWS`, vault `studio-agents-admin`) | Alex McRitchie kept both admin permissions, and the Cloudflare token's Zone WAF Edit, "to build trust" |
 | S3 `mcritchie-studio-production` (6 `email/` images) | old sent emails embed these URLs; kept about one year |
 | S3 `turf-monster-production` (2 `email_banners/` images) | the same, about one year |
 | Resend's DNS records (`in.*` MX, `send.*` MX and SPF, `resend._domainkey`) | Resend's, not ours: Resend runs on SES, so some point at `amazonses.com` / `amazonaws.com` hosts. They stay |
@@ -482,14 +482,14 @@ September, and no other service above half a cent. The exit buys nimbleness, not
 
 **Not visible to the admin key.** Its policy grants S3, IAM reads and Cost
 Explorer, and refuses EC2, Lambda, RDS, Route 53 (zones and registered domains),
-CloudFront and SES. *Resolved:* Alex granted the key `ViewOnlyAccess` on
+CloudFront and SES. *Resolved:* Alex McRitchie granted the key `ViewOnlyAccess` on
 2026-10-07, and the exit's account sweep found nothing beyond S3, IAM and SES
 identities.
 The paragraph below is as written on 2026-09-29. Cost Explorer shows no measurable spend on any of them, which argues
 they are empty but does not prove it: Route 53 domain registrations bill once a
 year, and free-tier resources cost nothing, so either can tie the account
 without showing in August or September. Before closing the account,
-Alex checks those consoles with his root login, or grants the admin key
+Alex McRitchie checks those consoles with his root login, or grants the admin key
 read-only on them for one audit.
 
 ## Open decisions and blockers
@@ -499,9 +499,9 @@ plan's non-storage proposals.
 
 | Item | Owner | State |
 |---|---|---|
-| Commercial Welding's document tier (Egnyte or Drive); decision 3 of [`knowledge-layer-design.md`](knowledge-layer-design.md) | Alex, after the compliance question | **open** |
+| Commercial Welding's document tier (Egnyte or Drive); decision 3 of [`knowledge-layer-design.md`](knowledge-layer-design.md) | Alex McRitchie, after the compliance question | **open** |
 | Copy `DeskCapture`'s objects to its R2 bucket and flip `DESK_CAPTURE_BACKEND=r2` (bucket and code ready 2026-09-29); retire the SES fallback with the AWS exit | Steffon | **done 2026-10-10** |
-| Does Commercial Welding carry CMMC or ITAR obligations? | Alex | **open** |
+| Does Commercial Welding carry CMMC or ITAR obligations? | Alex McRitchie | **open** |
 | What writes the `commercial-welding-*` S3 buckets | Steffon | **closed 2026-10-10**: nothing did; both were empty and are deleted |
-| Before closing the AWS account, check EC2, Lambda, RDS, Route 53 (zones and registered domains) and CloudFront with the root login | Alex | **closed**: covered by the `ViewOnlyAccess` sweep (Wave 7 record); the account is kept on purpose, not closed |
-| Approve or amend the proposals (catalog, Wave 4 order, Stream and CAD) | Alex | **open**; the Wave 2 recipe and the `DeskCapture` bucket were proposals that have since run |
+| Before closing the AWS account, check EC2, Lambda, RDS, Route 53 (zones and registered domains) and CloudFront with the root login | Alex McRitchie | **closed**: covered by the `ViewOnlyAccess` sweep (Wave 7 record); the account is kept on purpose, not closed |
+| Approve or amend the proposals (catalog, Wave 4 order, Stream and CAD) | Alex McRitchie | **open**; the Wave 2 recipe and the `DeskCapture` bucket were proposals that have since run |

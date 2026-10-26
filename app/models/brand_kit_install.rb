@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# A BRAND'S KIT, INSTALLED INTO AN APP (task studio-adopts-its-kit; Alex 2026-10-14: "migrate the MS kit to the actual
+# A BRAND'S KIT, INSTALLED INTO AN APP (task studio-adopts-its-kit; Alex McRitchie 2026-10-14: "migrate the MS kit to the actual
 # application"). The rollout step that writes a kit's files into an app's public/brand/, so the app draws its logo
 # from the saved kit and never from a hand-made copy:
 #

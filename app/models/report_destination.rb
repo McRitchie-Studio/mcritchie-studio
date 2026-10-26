@@ -1,5 +1,5 @@
 # Where one registered report (config/report_destinations.yml) is posted: a
-# Discord channel from the directory, and whether delivery is on. Alex picks it at
+# Discord channel from the directory, and whether delivery is on. Alex McRitchie picks it at
 # /admin/report_destinations; ReportDestinations.deliver reads it
 # (docs/agents/system/report-destinations.md).
 class ReportDestination < ApplicationRecord

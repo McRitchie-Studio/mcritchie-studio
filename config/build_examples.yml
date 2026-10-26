@@ -33,7 +33,7 @@ names:
   10and5: "10&5 Hospitality"
 
 # `palettes` dresses an app's card in its own theme, by subdomain (the URL's
-# first label, as `lead`). Alex, 2026-10-20: the lower panel is filled with the
+# first label, as `lead`). Alex McRitchie, 2026-10-20: the lower panel is filled with the
 # app's DARK-MODE page background in both of the hub's themes (never the
 # Studio grey), the name is in the app's primary, the host and blurb in its
 # muted tone, and the border and hover glow in its primary. Every `name` and
@@ -64,7 +64,7 @@ examples:
   - name: Cyvasse
     url: https://cyvasse.xyz
     emoji: "🐉"
-    blurb: The hex strategy board game from Alex's first app, rebuilt as a live multiplayer game.
+    blurb: The hex strategy board game from Alex McRitchie's first app, rebuilt as a live multiplayer game.
     image: build_gallery/cyvasse.webp
     motion: build_gallery/cyvasse.mp4
   - name: Turf Monster

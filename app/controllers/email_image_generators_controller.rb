@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # THE EMAIL IMAGE GENERATOR PAGE (epic email-image-builder, task
-# email-image-generator-page): where Alex lands from Turf's /admin/emails. One
+# email-image-generator-page): where Alex McRitchie lands from Turf's /admin/emails. One
 # page per brand kit shows the character model, a few example headers, and the
 # `email-image` SOP's name plus a simple prompt to copy into a Claude Code
 # session. `/email_images/generator` lists the kits.

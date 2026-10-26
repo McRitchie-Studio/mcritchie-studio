@@ -1,5 +1,5 @@
 ---
-question: "A mainnet action Alex asked for needs one more signature than his wallet gave. Which key do I use?"
+question: "A mainnet action Alex McRitchie asked for needs one more signature than his wallet gave. Which key do I use?"
 answer: "Name his next wallet (order 7ZDJ, 3Qj4, 9gAC: 'switch to 3Qj4'), and only in a pinch sign with 4S39, on an action he asked for in his own words in the current chat. Never point him at 3LTL, and never use a retired key."
 why: "His words, 2026-10-15: 'always say use this' and 'use 4S39 in a pinch'. Two agent keys already meet the 2-of-5 actions, so his request is the gate."
 status: proposed
@@ -11,7 +11,7 @@ topic: [mainnet, signature, wallet, solana]
 
 ## Situation
 
-A mainnet action Alex had asked for needed one more signature than his first
+A mainnet action Alex McRitchie had asked for needed one more signature than his first
 wallet gave. He was asked which key should supply it.
 
 ## The pull
@@ -23,7 +23,7 @@ to work out which wallet to open.
 
 ## What happened
 
-Alex answered in chat on 2026-10-15: "I think it's more effective to always say
+Alex McRitchie answered in chat on 2026-10-15: "I think it's more effective to always say
 use this (the other address), maybe we can just add a dream about when a second
 signature is needed, you can go ahead and use 4S39 in a pinch." He then said
 "Yes" to the scope: the server key signs as the second signature only on an

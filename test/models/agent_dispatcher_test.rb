@@ -4,7 +4,7 @@ require "test_helper"
 # silent rule the floor alert reads, and the pruning that keeps the newest row.
 class AgentDispatcherTest < ActiveSupport::TestCase
   def ping(worker, at: Time.current, **extra)
-    AgentDispatcher.ping!({ "worker" => worker, "host" => "alex-mac", "souls" => %w[ray avi], "running" => 2,
+    AgentDispatcher.ping!({ "worker" => worker, "host" => "alex-mac", "souls" => %w[alex avi], "running" => 2,
                             "capacity" => 5, "state" => "running", "version" => "abc1234" }.merge(extra.transform_keys(&:to_s)),
                           now: at)
   end
@@ -16,7 +16,7 @@ class AgentDispatcherTest < ActiveSupport::TestCase
 
     assert_equal 1, AgentDispatcher.where(worker_id: "d-1").count
     assert_equal 0, row.running
-    assert_equal %w[ray avi], row.souls
+    assert_equal %w[alex avi], row.souls
     assert_in_delta t0 + 1.minute, row.last_seen_at, 1
     assert_in_delta t0, row.started_at, 1, "started_at defaults to the first ping and is kept"
   end

@@ -1,7 +1,7 @@
 # /agents/:slug/settings: a CTO's identity and its owner's settings
 # (docs/agents/system/app-owners.md). The one setting today is where the CTO's
 # daily report posts: the same ReportDestination row (`cto_report:<domain>`)
-# Alex edits at /admin/report_destinations.
+# Alex McRitchie edits at /admin/report_destinations.
 #
 # CTO souls only (config/cto_reports.yml). Past the AdminWall (SIGNED_IN), every
 # action answers 404 unless the viewer owns the CTO's app or is an admin, so a CTO

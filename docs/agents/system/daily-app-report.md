@@ -81,20 +81,20 @@ refuses an over-limit report rather than splitting it.
 ## Delivery
 
 Through the report-destination contract, key `daily_app_report`
-([`report-destinations.md`](report-destinations.md)): Alex picks the channel at
+([`report-destinations.md`](report-destinations.md)): Alex McRitchie picks the channel at
 `/admin/report_destinations`. The job calls `ReportDestinations.deliver` and logs
 `[daily-app-report] daily_app_report:<date> status=<status> url=<url>`; the
 receipt is the `report_deliveries` row for that key.
 
 - `:not_configured` or `:disabled`: a logged skip. The next run (or a manual
-  `perform_later` for that date) posts once Alex picks a channel.
+  `perform_later` for that date) posts once Alex McRitchie picks a channel.
 - `:failed`: `deliver` writes the ErrorLog; the job hands the same message and key
   to `ReportDeliveryJob`, which retries with back-off and still posts once.
 
 ## Per-app CTO reports
 
 The same run then posts **one report per app that has a CTO**, each under its own
-report key, so Alex picks a channel per app at `/admin/report_destinations`, and
+report key, so Alex McRitchie picks a channel per app at `/admin/report_destinations`, and
 each app's owner can pick their own at `/agents/:slug/settings`
 ([`app-owners.md`](app-owners.md)).
 

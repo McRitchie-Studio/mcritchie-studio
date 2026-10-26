@@ -9,7 +9,7 @@ and parked with its evidence intact.
 
 A task board is a **commitment** surface: everything on it is work we mean to do
 soon. A board that carries every good idea stops being a plan and becomes fog —
-and [`clean-up`](../agents/ray/sops/clean-up.md) exists to burn that fog off.
+and [`clean-up`](../agents/mason/sops/clean-up.md) exists to burn that fog off.
 
 But the opposite failure is worse, and we have now paid for it twice: **a fix that
 is written and then left unlanded does not stay written — it rots.** PR #361
@@ -194,7 +194,7 @@ firing on healthy work. Then the first question will be "where did 7500 come fro
 
 ## Parked — devnet on-chain CI
 
-Parked by Alex on 2026-07-14. **These two remain live board tasks** by his
+Parked by Alex McRitchie on 2026-07-14. **These two remain live board tasks** by his
 explicit decision — the only parked items that do — because they may belong to a
 concurrent CI/CD session.
 
@@ -215,7 +215,7 @@ concurrent CI/CD session.
 
 **The decision the first item waits on is not technical:** fund a validator lane so
 the program's instructions execute in CI, or say plainly that they do not. That is
-Alex's call.
+Alex McRitchie's call.
 
 ---
 
@@ -233,7 +233,7 @@ SOP's "stale unmerged desks" protocol.
 
 ## Parked — the `.studio-team-glow` specimen demos a card effect at chip scale
 
-Parked by Alex on 2026-08-08, found while building
+Parked by Alex McRitchie on 2026-08-08, found while building
 [`glow-changed-release-meter`](https://mcritchie.studio/tasks/glow-changed-release-meter).
 **Repo: `studio-engine`** (`app/views/style/_tricks.html.erb`), shape `library`.
 

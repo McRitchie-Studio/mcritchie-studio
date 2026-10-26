@@ -10,7 +10,7 @@ production_ship:
   #           Approve button on /deployments), and on lapse proceeds when G3 is
   #           green and no member carries an open escalation.
   #   auto  — ships on green with no prompt (`--yes` semantics).
-  #   cleared — Alex cleared the release in chat: `--clearance "<his words>"` is
+  #   cleared — Alex McRitchie cleared the release in chat: `--clearance "<his words>"` is
   #           required and recorded on the release; no window, no button.
   # `bin/release ship --yes` with no --mode is `auto`; an explicit --mode wins.
   # `timed` stays the default so a ship nobody cleared (a heartbeat, cron) asks.
@@ -27,7 +27,7 @@ production_ship:
 #                a timed ship proceeds on green with no open escalation.
 #   admin_login — an admin login request (AgentLoginRequest) + admin_login_minutes;
 #                on lapse nothing is granted.
-# Alex changes these numbers here; nothing else needs to move.
+# Alex McRitchie changes these numbers here; nothing else needs to move.
 operator_windows:
   approval_minutes: 10
   escalation_minutes: 20

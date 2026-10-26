@@ -2,13 +2,13 @@ const { test, expect } = require("@playwright/test");
 const { openDeploySidebar } = require("./helpers");
 
 // The /deployments WORKFLOWS surface: SIX soul launchers — Turf Monster (live scores),
-// Carl (review), Avi (assemble/QA), Steffon (ship + infra sweep), Ritch, and the general
+// Carl (review), Avi (assemble/QA), Steffon (ship + infra sweep), Alex, and the general
 // Pokémon (wrap-it-up). Since the
 // summary row (2026-09-18) they are drawn twice: ONE soul at a time on the Workflows
 // summary card's carousel, and every soul with every command in the Workflows sidebar.
 // This is the browser-level check that the acts render under the RIGHT souls end to end,
 // in the sidebar the operator actually opens.
-test("the Workflows sidebar lists six soul launchers with their acts", async ({ page }) => {
+test("the Workflows sidebar lists seven soul launchers with their acts", async ({ page }) => {
   await page.goto("/deployments");
 
   // The carousel starts on Turf Monster, the operator's spec.
@@ -20,7 +20,7 @@ test("the Workflows sidebar lists six soul launchers with their acts", async ({ 
   const card = page.locator("#deploy-sidebar-agents [data-test='heartbeats-card']");
   await expect(card).toBeVisible();
 
-  await expect(card.locator("[data-test='heartbeat-launcher']")).toHaveCount(6);
+  await expect(card.locator("[data-test='heartbeat-launcher']")).toHaveCount(7);
 
   // Carl owns review: his row carries the pr-review + pr-review-slow chips.
   const carl = card.locator("[data-test='heartbeat-launcher'][data-agent='carl']");
@@ -43,11 +43,12 @@ test("the Workflows sidebar lists six soul launchers with their acts", async ({ 
   await expect(steffon.locator("button[data-clip='clean-infra']")).toBeVisible();
   await expect(page.locator("button[data-clip='archive-shipped']")).toHaveCount(0);
 
-  // Ritch's third act is visible here — nothing in the sidebar hides behind a toggle.
-  const ray = card.locator("[data-test='heartbeat-launcher'][data-agent='ray']");
-  await expect(ray.locator("button[data-clip='full-cycle']")).toBeVisible();
-  // ship-clock: the typing-to-shipping benchmark.
-  await expect(ray.locator("button[data-clip='ship-clock']")).toBeVisible();
+  // Mason's third act is visible here — nothing in the sidebar hides behind a toggle.
+  const mason = card.locator("[data-test='heartbeat-launcher'][data-agent='mason']");
+  await expect(mason.locator("button[data-clip='full-cycle']")).toBeVisible();
+  // Alex's chip: ship-clock, the typing-to-shipping benchmark.
+  const alex = card.locator("[data-test='heartbeat-launcher'][data-agent='alex']");
+  await expect(alex.locator("button[data-clip='ship-clock']")).toBeVisible();
 
   // Turf Monster owns the live score watch.
   const turf = card.locator("[data-test='heartbeat-launcher'][data-agent='turf-monster']");

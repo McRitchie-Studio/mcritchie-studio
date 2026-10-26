@@ -1,8 +1,8 @@
-<%# Alex's words, when he gave the ruling in chat and a session recorded it with
+<%# Alex McRitchie's words, when he gave the ruling in chat and a session recorded it with
     `bin/dream approve|drop|retire --clearance` (DreamRuling). A click carries none. %>
 <% if row.chat? && row.clearance.present? %>
   <blockquote class="border-l-2 border-primary/40 pl-2 text-2xs text-secondary" data-test="dream-clearance">
-    <span class="font-semibold text-heading">Alex, in chat:</span>
+    <span class="font-semibold text-heading">Alex McRitchie, in chat:</span>
     &ldquo;<span data-test="dream-clearance-quote"><%= row.clearance %></span>&rdquo;
     <% if row.session_id.present? %>
       <span class="text-muted">· session <code><%= row.session_id.first(8) %></code></span>

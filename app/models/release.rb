@@ -602,7 +602,7 @@ class Release < ApplicationRecord
   #   * a repo DECLARING `qa_evidence: exempt` is exempt at the QA stamp ONLY.
   #
   # The QA-only scope is deliberate and load-bearing. Nine repos declare it:
-  # cyvasse (no QA copy, by Alex's 2026-09-25 cost decision), dads-app (no QA
+  # cyvasse (no QA copy, by Alex McRitchie's 2026-09-25 cost decision), dads-app (no QA
   # copy, by his 2026-09-26 Eco-dyno decision), the six showcase apps
   # (prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5, search-position:
   # no QA copies, his 2026-09-26 selection) and turf-vault.

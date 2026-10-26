@@ -36,8 +36,9 @@ class StudioThemePolishTest < ActionDispatch::IntegrationTest
                  "the pinned header is the page colour at 95%, blurred where supported")
     # THE KIT PAIR is the theme concern here: the mark is the saved kit's icon,
     # icon-light.svg on a light page and icon-dark.svg swapped in on a dark one
-    # (no invert: the kit draws each tone in its own colours).
-    assert_match(%r{^\s*\.dark img\[src="/brand/icon-light\.svg"\]\s*\{\s*content:\s*url\("/brand/icon-dark\.svg"\);\s*\}}m, css,
+    # (no invert: the kit draws each tone in its own colours). URL() is in
+    # capitals so Propshaft's url() rewriter leaves the public/ path alone.
+    assert_match(%r{^\s*\.dark img\[src="/brand/icon-light\.svg"\]\s*\{\s*content:\s*URL\("/brand/icon-dark\.svg"\);\s*\}}m, css,
                  "a dark page swaps in the kit's dark-page icon")
     assert_no_match(/\.nav-logo\s*\{[^}]*filter:\s*invert/m, css, "the kit icon is never inverted")
     if NavbarBrand.wordmark?

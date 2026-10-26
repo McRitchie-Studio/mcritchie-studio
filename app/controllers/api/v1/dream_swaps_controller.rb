@@ -7,7 +7,7 @@ module Api
     # GET  /api/v1/dream_swaps/candidates[?layer=<key>]  each layer's room and its
     #      data-ranked out candidates (DreamLoop), for `bin/dream swap-candidates`.
     # POST /api/v1/dream_swaps  a session's one swap proposal, or its "no swap", for
-    #      `bin/dream swap`. Proposing is agent work; approving is Alex's alone, on
+    #      `bin/dream swap`. Proposing is agent work; approving is Alex McRitchie's alone, on
     #      /dreams, so there is no approve route here.
     class DreamSwapsController < BaseController
       def candidates

@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# [unit] DreamClearance — the rule for Alex's quoted words on a chat ruling, shared
+# [unit] DreamClearance — the rule for Alex McRitchie's quoted words on a chat ruling, shared
 # by bin/dream and DreamRuling (docs/agents/modules/dream.md, Act 3, "In chat").
 #   ruby -Itest test/lib/dream_clearance_test.rb
 

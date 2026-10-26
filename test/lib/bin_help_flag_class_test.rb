@@ -94,7 +94,7 @@ class BinHelpFlagClassTest < Minitest::Test
     # redirect rules, adds Heroku domains and moves APP_HOST. One guard with a
     # per-subcommand flag dictionary, ahead of the first credential read.
     "domain-cutover"         => :cli_arg_guard,
-    # Buys domains on Cloudflare Registrar: the registration POST charges Alex's
+    # Buys domains on Cloudflare Registrar: the registration POST charges Alex McRitchie's
     # card. One guard with a per-subcommand flag dictionary, ahead of the first
     # credential read, so `register <d> --price x --ok y --help` buys nothing.
     "domain-register"        => :cli_arg_guard,

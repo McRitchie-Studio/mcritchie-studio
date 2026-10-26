@@ -3,7 +3,7 @@
 
 ## Status: Active
 
-This is Turf Monster's `sleeper-auction-watch` SOP. It sits beside Alex
+This is Turf Monster's `sleeper-auction-watch` SOP. It sits beside Alex McRitchie
 during a live Sleeper **auction** draft: it builds a dollar valuation for every
 player under that league's exact scoring rules, then calls a max bid on each
 player as he comes up for sale.
@@ -17,7 +17,7 @@ slot does not read as an outage, it reads as a season that starts a man down.
 
 **The watch holds no lane and writes nothing.** It reads Sleeper's public API
 and reports; it never bids, never nominates, never touches the board.
-Alex clicks every button. It takes no assembler and no deployer claim, so a
+Alex McRitchie clicks every button. It takes no assembler and no deployer claim, so a
 `qa-release` sweep or a `production-deploy` can run alongside it.
 
 ## The split — read this before running anything
@@ -49,7 +49,7 @@ mechanics and does not transfer.
 
 1. **The league is on Sleeper and the draft type is `auction`.** Confirm both in
    step 1; a snake draft ends this SOP.
-2. **You have the league id.** Ask Alex, or read it out of the browser
+2. **You have the league id.** Ask Alex McRitchie, or read it out of the browser
    URL: `https://sleeper.com/leagues/<league_id>/...`.
 3. **Node is available** — the scripts below are plain Node with `fetch`.
 4. **A scratch directory**, namespaced to this act. Everything below writes to
@@ -321,7 +321,7 @@ mkdir -p "${CLAUDE_SCRATCHPAD:-/tmp}/ff" && cd "${CLAUDE_SCRATCHPAD:-/tmp}/ff" \
 ```
 
 **The API trails the room by a few seconds and occasionally by a pick.** For a
-live bid call that is too slow. If Alex wants calls on the clock, also
+live bid call that is too slow. If Alex McRitchie wants calls on the clock, also
 watch the board itself — see **Watching the room** below.
 
 ## Watching the room
@@ -337,7 +337,7 @@ nohup "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
 until curl -s --max-time 1 http://127.0.0.1:9222/json/version >/dev/null; do sleep 1; done
 ```
 
-Alex logs in himself. **Do not screenshot until he says he is on the
+Alex McRitchie logs in himself. **Do not screenshot until he says he is on the
 draft page** — a fresh profile means he is typing credentials, and there is no
 reason to look at that. Then screenshot the active tab with Playwright over CDP
 (`chromium.connectOverCDP('http://127.0.0.1:9222')`), reading the most recently
@@ -349,7 +349,7 @@ off the screen and take exact prices from the API afterwards.
 
 ## Reporting — what a check prints
 
-Lead with the decision. Alex is on a 10-to-30-second clock and reads
+Lead with the decision. Alex McRitchie is on a 10-to-30-second clock and reads
 slowly; **the first line must be a verb**.
 
 1. **The call** — `BID — <player> at $<current>, model $<val>. Max $<n>.` or
@@ -409,9 +409,9 @@ call and reconcile on the next poll — never re-call a bid off a stale API read
 
 Stop when any is true, and say which:
 
-- Alex's roster reads full (every required slot filled)
+- Alex McRitchie's roster reads full (every required slot filled)
 - the draft status flips off `drafting`
-- Alex says stop
+- Alex McRitchie says stop
 
 Then print the final roster with price against model, the total value acquired
 against the budget, and where he ranked in surplus among the league. Name the
@@ -424,7 +424,7 @@ pid and leave it running unless he asks otherwise.
 ## What this SOP must never do
 
 - **Never place a bid or a nomination.** This act advises. Every click is
-  Alex's, and an auction purchase cannot be undone.
+  Alex McRitchie's, and an auction purchase cannot be undone.
 - **Never screenshot a login.** A throwaway Chrome profile means credentials get
   typed. Wait until he says he is on the draft page.
 - **Never call a bid off a stale read.** If the API and the board disagree, the

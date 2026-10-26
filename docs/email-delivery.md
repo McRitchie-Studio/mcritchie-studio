@@ -243,7 +243,7 @@ with `jsonb_set`; the traits import above keeps both keys:
 2. **Email-driven guests.** Contacts with a `played_match` converted email
    event, dated by the event; this needs no cyvasse read.
 
-Alex's own addresses (amcritchie@gmail.com, anything @mcritchie.studio) are
+Alex McRitchie's own addresses (amcritchie@gmail.com, anything @mcritchie.studio) are
 skipped. Both commands print counts only:
 
 ```bash
@@ -272,7 +272,7 @@ loads on production Cyvasse with `ref` intact. This is the same gate the
 
 The play-times email (`cyvasse_play_times`, task cyvasse-play-times-email) asks
 legacy players how their game on the new Cyvasse went, then when they can
-play, so Alex can pick a standing biweekly Cyvasse Night. The subject comes from
+play, so Alex McRitchie can pick a standing biweekly Cyvasse Night. The subject comes from
 `Broadcasts::CyvassePlayTimes` ("%{username}, how was your game on the new
 Cyvasse?", or the plain line without a username). It has one button and one
 plain link, both the tracked `l=survey` link to

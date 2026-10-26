@@ -2,15 +2,15 @@
 
 **What it is.** A message to an agent on Discord reaches the hub, is routed to a
 soul, waits in a queue, and is answered in the same channel by `bin/dispatcher`,
-the always-on worker on Alex's Mac (`bin/heartbeat` is the manual form of the
+the always-on worker on Alex McRitchie's Mac (`bin/heartbeat` is the manual form of the
 same answer path). Discord came first; since Phase 4 an email to a CTO on team@
 is answered by email too (below, "Email"), and since Phase 7 an app's owner or an
 admin can chat with the app's CTO on McRitchie Studio itself (below, "Web chat").
 Two domain front doors are routed,
-Avi (`avi`, McRitchie Studio's CTO, Alex 2026-10-15) and Turf (`turf_monster`,
+Avi (`avi`, McRitchie Studio's CTO, Alex McRitchie 2026-10-15) and Turf (`turf_monster`,
 Turf Monster), and each may PROPOSE what its domain's catalog allows, for the
-owner to confirm by reply (below, "Proposals and confirm"). Ritch stays routed as a
-helper (orchestration, docs review) with no catalog. Avi and Ritch keep one
+owner to confirm by reply (below, "Proposals and confirm"). Alex stays routed as a
+helper (client-facing) with no catalog. Avi and Alex keep one
 read-only action each, the same board read (`bin/task list`). Later phases add channels, agents and clients without
 changing the tables: `channel` plus a provider-neutral `external_id` name every
 row.
@@ -45,7 +45,7 @@ bin/dispatcher ──ping every minute──▶ agent_dispatchers ◀── Agen
 | Outbound | `AgentMessageReplyJob` → `AgentMessages::DiscordBot#post_reply`, as the soul's own bot (`DISCORD_BOT_TOKEN_<SOUL>`) or the shared bot (below, "Which bot replies") |
 | Typing | `bin/dispatcher` → `POST /api/v1/agent_messages/:id/typing` → `AgentMessageTypingJob` → `AgentMessages::DiscordBot#trigger_typing`, as the bot that will reply (below, "Typing") |
 | Worker API | `Api::V1::AgentMessagesController` (`/api/v1/agent_messages`) |
-| Worker | `bin/dispatcher` (`bin/lib/agent_dispatcher.rb`), under launchd on Alex's Mac; `bin/heartbeat` by hand. Both answer through `AgentMailbox::Responder` (`bin/lib/agent_mailbox.rb`) |
+| Worker | `bin/dispatcher` (`bin/lib/agent_dispatcher.rb`), under launchd on Alex McRitchie's Mac; `bin/heartbeat` by hand. Both answer through `AgentMailbox::Responder` (`bin/lib/agent_mailbox.rb`) |
 | Dispatcher health | `POST /api/v1/agent_dispatchers/ping` (with the Mac's op, gh and power health) → `agent_dispatchers`; `AgentDispatcherAlertJob` → `agent_mailbox_incidents`, Discord, and one email per episode state to `floor.escalation_email` |
 | Operating it | Steffon's [`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md) SOP |
 | Observing | `/admin/agent_messages` (Ops → Agent inbox), `bin/agent-inbox` |
@@ -140,12 +140,12 @@ override's `default_soul`. A message that meets none of these is dropped without
 being stored: across a whole guild, keeping it would hoard everyone's chatter. A
 reply to a kept message that itself had no soul is kept `unrouted`, visible and
 never handed to a worker. Among several mentioned souls, the one written first
-wins. One shared bot with `@Avi`/`@Ritch` roles and one bot user per soul both
+wins. One shared bot with `@Avi`/`@Alex` roles and one bot user per soul both
 work; the config lists either.
 
 **Held: the agents answer the owner, with two narrow exceptions.** `config/agent_answerers.yml` lists
 the ROLES the agents answer (below, "Audience"); today it is `owner` alone, so
-Alex is answered because his `agent_people` row is the owner, and so is every
+Alex McRitchie is answered because his `agent_people` row is the owner, and so is every
 identity linked to him. A routed message from anyone whose role is not listed
 (team, client, public, or no person) is stored `held` with a `held` event naming
 the role, never `received`. The guard is enforced again on the server in every
@@ -163,7 +163,7 @@ again. To answer a sender for good, give them an answered role
 (`bin/rails agent_people:role`); to answer a whole role, add it to the yml and
 deploy. What the agent may then say to them is the audience's rules.
 
-**The app-owner exception** (Alex, 2026-10-17; `app_owners:` in the same yml,
+**The app-owner exception** (Alex McRitchie, 2026-10-17; `app_owners:` in the same yml,
 `AgentMessages::Answerers#app_owner_thread?`). An app's CTO, ours from
 `config/cto_reports.yml` or a client app's `client_cto`, answers a `public` or
 `client` person whose hub user owns that app (`AppMembership` owner), on that app's
@@ -175,7 +175,7 @@ Discord, by email, and on an app they do not own. The claim's SQL guard carries
 the same rule. They are answered as that app's `client` (`Answerers#audience_for`,
 `MemoryBundle#audience`): no read action, no internal context, the client catalog.
 On that same thread they may say `go`, `no` or `change: …` on a `change` proposal
-while the app is under its cap ("Confirm by reply" below; Alex, 2026-10-18). Their
+while the app is under its cap ("Confirm by reply" below; Alex McRitchie, 2026-10-18). Their
 answers are metered as `client`, against `AgentUsage.owner_meter`: the tier's
 `cto_monthly_tokens` (Vibe, the free tier: 25,000), else
 `app_owners.default_monthly_tokens` (1,000,000) for a tier that names none,
@@ -196,7 +196,7 @@ takes the lease, the claim asks the usage gate (`AgentUsage.gate`): a client's
 or the public's message to an app at its monthly allowance is answered in code
 with the cap reply and the next message is tried; past 80% the message is
 claimed and its answer ends with a usage notice. Owner and team are never
-capped, and the shipped allowances are blank, so nothing is capped until Alex
+capped, and the shipped allowances are blank, so nothing is capped until Alex McRitchie
 prices the tiers ([`agent-usage.md`](agent-usage.md)).
 A claim with nothing waiting answers 200 with `data: null`. Several souls in one
 claim (`souls`) take the oldest message across them. With `wait` (seconds,
@@ -287,7 +287,7 @@ the minute ping going (state `stopping`) while it drains, since a restart drain
 can run up to about 8 minutes, past the floor alert's 5. It posts nothing to
 Discord itself. Every child gets an allow-listed environment
 (`AgentMailbox::CHILD_ENV_ALLOW`), so no API key, token, base URL or provider
-switch reaches Claude and it bills Alex's claude.ai subscription. Install, alerts and the unblock
+switch reaches Claude and it bills Alex McRitchie's claude.ai subscription. Install, alerts and the unblock
 playbook: [`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md).
 
 **The floor alert.** `AgentDispatcherAlertJob` runs every minute on the hub and
@@ -307,7 +307,7 @@ open 15 minutes or flaps, and ONE when the episode has been quiet 15 minutes; th
 per-card kinds stay on Discord.
 
 **Reports.** The same bot also posts scheduled reports (the CTO daily
-application report first) into a channel Alex picks per report at
+application report first) into a channel Alex McRitchie picks per report at
 `/admin/report_destinations`, from a directory of the guild's channels synced
 every 15 minutes. The contract other sessions build against,
 `ReportDestinations.deliver`, is [`report-destinations.md`](report-destinations.md).
@@ -315,7 +315,7 @@ every 15 minutes. The contract other sessions build against,
 **The heartbeat.** `bin/heartbeat <soul> --channel discord [--once] [--worker ID]
 [--dry-run]` is the manual form: it claims a message and reads its context
 bundle, which carries the sender's audience (below, "Audience"). For an owner or
-team sender it runs the soul's one read-only action (avi and ray: `bin/task list`,
+team sender it runs the soul's one read-only action (avi and alex: `bin/task list`,
 the board through the agent API; no action reads Heroku, which launchd cannot log
 in to); for anyone else it runs nothing. It builds the prompt from
 the five layers (below, "Memory"), the audience's rules, the action output and the
@@ -340,9 +340,9 @@ agent CLI is (`bin/lib/agent_api.rb`).
 An answer remembers the person it answers, on every channel they use. The
 memory is rebuilt from the hub's rows on every answer, never from a resumed
 Claude session, so any dispatcher on any machine builds the same context for the
-same rows (Alex's decision of 2026-10-14, option A). The one exception is a warm
+same rows (Alex McRitchie's decision of 2026-10-14, option A). The one exception is a warm
 domain's owner and team turns, behind a per-domain flag that is off ("Warm
-sessions" below); even those rebuild the audience, rules and thread per message. On 2026-10-15 Alex dropped
+sessions" below); even those rebuild the audience, rules and thread per message. On 2026-10-15 Alex McRitchie dropped
 the per-channel silo: "Let's give continuity for our people over omnichannel."
 The channel still matters in one way. The thread a message continues is the focus
 of its answer. Two pieces build the memory:
@@ -369,7 +369,7 @@ or a verified email address (below, "Email"). The pair is unique, so one id is a
 Every stored message with an author is stamped with its `person_id` when it is
 created (`AgentMessage` calls `AgentPerson.resolve!`), and the first message from an
 unknown id makes a new person. The migration backfilled every existing row from
-`(channel, author_ref)` and seeded Alex's Discord id (`536552944271753216`) as
+`(channel, author_ref)` and seeded Alex McRitchie's Discord id (`536552944271753216`) as
 "Alex", linked to the hub user whose email is `alex@mcritchie.studio` when one
 exists.
 
@@ -440,22 +440,22 @@ model call), and it stores no model-written text. A model-written summary saved
 on a row would carry anything a message had injected into it forward into every
 later answer to that person.
 
-**Whose memory.** Notes are per person and scoped by app DOMAIN (Alex,
+**Whose memory.** Notes are per person and scoped by app DOMAIN (Alex McRitchie,
 2026-10-15). Each note records the domain of the soul that filed it, read from
 the `souls:` map in `config/agent_domains.yml` (an empty domain for a soul the
 map does not name). Who reads a note turns on the sender's role when the answer
 is built, not when the note was filed (`AgentPersonNote.visible_for`):
 
-- **Owner and team.** Every soul reads every domain's notes: a fact about Alex,
+- **Owner and team.** Every soul reads every domain's notes: a fact about Alex McRitchie,
   such as his favorite color, is true whichever agent hears it, so a note Turf
   files is in Avi's USER layer too. A fact filed in two domains is shown once.
 - **Client and public.** A soul reads only the notes filed in its own domain.
-  What a Turf client told Turf stays with Turf's souls; Avi, Ritch and the other
+  What a Turf client told Turf stays with Turf's souls; Avi, Alex and the other
   `mcritchie_studio` souls never see it, and Turf never sees what that person told
-  Ritch.
+  Alex.
 
 The conversation history (the PERSON layer) is per person per soul either way:
-Avi does not see what Alex told Ritch.
+Avi does not see what Alex McRitchie told Alex.
 
 **Notes.** The USER layer has a writer: the answer itself. The prompt lets the
 model end its reply with a line reading exactly `===NOTES===`, then a JSON array
@@ -497,7 +497,7 @@ may legitimately end in one.
 `AgentPersonNote.record_from!` then decides what is kept:
 
 - **Only the message's author.** The facts are filed under the person who wrote
-  the message being completed, and under nobody else. A fact about Alex returned
+  the message being completed, and under nobody else. A fact about Alex McRitchie returned
   from Bea's run is Bea's note.
 - **Plain short text.** A fact is 3 to 200 characters, whitespace folded, and is
   refused if it carries a link, an `@` (mentions and addresses), markup, a code
@@ -515,7 +515,7 @@ may legitimately end in one.
   pinned by tests.
 - **Plain words are kept.** The directive and answer-shape words (always, never,
   ignore, forget, pretend, reply, respond, answer, you, must, should, act as, end
-  with, every message, in caps) were refused until 2026-10-15. Alex dropped that
+  with, every message, in caps) were refused until 2026-10-15. Alex McRitchie dropped that
   rule: they are ordinary English in real facts ("Never drinks coffee", "Prefers
   short answers"), and a note reaches the prompt only inside the untrusted fence,
   labeled as data.
@@ -570,14 +570,14 @@ restarts onto this release. Drop both once every dispatcher runs it.
 ## Audience: who the soul is speaking with
 
 Agents face clients, so what a soul may say depends on who sent the message
-(Alex's decision of 2026-10-15). The rules are a shared SOP,
+(Alex McRitchie's decision of 2026-10-15). The rules are a shared SOP,
 [`../modules/agent-communication.md`](../modules/agent-communication.md); its front
 matter is the machine-read block, and the prompt prints its words exactly.
 
 **Roles.** Every `agent_people` row has a `role`: `owner`, `team`, `client` or
 `public` (the default, held to those four by a check constraint), and a
 `client_domain` for a client (a key of `config/agent_domains.yml`; any other role
-has none). Alex's Discord person is seeded `owner` by the migration and
+has none). Alex McRitchie's Discord person is seeded `owner` by the migration and
 `AgentPerson.seed_owner!`. An operator changes a role with
 `bin/rails agent_people:role PERSON=<id> ROLE=team` (a client adds `DOMAIN=<key>`);
 `agent_people:list` prints each person's role.
@@ -610,7 +610,7 @@ read, the prompt tells the soul to reply only that a person will follow up.
 
 ## Proposals and confirm: domain agents (Phase 1)
 
-The plan is `.agents/epics/domain-agents.md` (Alex approved it 2026-10-15). Every
+The plan is `.agents/epics/domain-agents.md` (Alex McRitchie approved it 2026-10-15). Every
 domain has one FRONT-DOOR agent. It has no tools: it understands the request and
 PROPOSES one thing from its domain's catalog. Code checks the proposal, the owner
 confirms it in the thread, and code carries it out.
@@ -624,9 +624,9 @@ board and the worker read one file the same way). Each domain names its `soul`
 |------|---------|-------------------|
 | `ask` | Avi: `board_status` (stage counts), `recently_shipped` (`days` 1-30), `release_status` (the active release, its stage and member count, the submitted/reviewed/assembled counts, the last ship; read in process, no Heroku). Turf: `signups_and_errors` (`days` 1-7) | A named method in `AgentProposals::Queries`: code with bounded params, never model-written SQL. Turf's reads Turf Monster's engine health endpoint once per daily window (`DailyAppReport.health_for`, the daily app report's own path), never its database |
 | `operate` | empty | Phase 2 (a confirmed SOP, headless in a desk) |
-| `change` | both domains (`repo`, `default_shape`) | A `designed` board task (title, kind, shape, accept, test, risk) with the thread's link in `devops.source_thread`. A web-chat card on a studio or product app is started by the build launcher on Alex's Mac: it runs `bin/task begin` (desk, claim, Avi's scout), posts "Building started, task `<slug>`" in the thread, and posts the builder launch line to the ops channel ([client-build-launcher.md](client-build-launcher.md#change-cards)). A Discord or email card waits for a session |
+| `change` | both domains (`repo`, `default_shape`) | A `designed` board task (title, kind, shape, accept, test, risk) with the thread's link in `devops.source_thread`. A web-chat card on a studio or product app is started by the build launcher on Alex McRitchie's Mac: it runs `bin/task begin` (desk, claim, Avi's scout), posts "Building started, task `<slug>`" in the thread, and posts the builder launch line to the ops channel ([client-build-launcher.md](client-build-launcher.md#change-cards)). A Discord or email card waits for a session |
 
-Only the front door has a catalog. Ritch (and every other studio soul) maps to the
+Only the front door has a catalog. Alex (and every other studio soul) maps to the
 studio domain for its DOMAIN layer and proposes nothing. An `internal: true` domain (Commercial Welding) has no
 catalog and no prompt names it. Turf Monster has no aggregate entries endpoint the
 hub can read, so there is no entries-for-week ask yet.
@@ -693,7 +693,7 @@ and with none pending it is about nothing. A go in another thread, or a
 top-level go outside a Discord thread (which starts a thread of its own), finds
 no proposal and is routed as usual.
 
-**An app owner's word** (Alex, 2026-10-18: "the app owner should have that
+**An app owner's word** (Alex McRitchie, 2026-10-18: "the app owner should have that
 access"). A person who is not the owner role may still confirm, drop or change a
 proposal when `ProposalConfirm#owner_verdict` passes all three, each from facts
 code wrote:
@@ -764,13 +764,13 @@ short reason (an error class, never a message that could carry a secret).
 
 **Replies come from the front door's own bot** once its token is set
 (`DISCORD_BOT_TOKEN_AVI`, `DISCORD_BOT_TOKEN_TURF_MONSTER`; above, "Which bot
-replies"); until then they post through Ritch's shared bot, signed by the domain's
+replies"); until then they post through Alex's shared bot, signed by the domain's
 `reply_name` (`**Turf** · …`). Avi is routed by a mention of his own
 Discord app's bot user (`1560516264378507334`, 1Password `agents.discord.avi`,
 in the McRitchie guild, reply-only permissions); Turf by a mention of the
 existing "Turf Monster" Discord app's bot user (`1405042649479647293`, in the
 McRitchie guild). Tyrion is not routed: he answers through OpenClaw with his own
-bot, and Alex has not chosen between the two runtimes.
+bot, and Alex McRitchie has not chosen between the two runtimes.
 
 ## Email: the CTOs answer team@ (Phase 4)
 
@@ -852,20 +852,20 @@ SMTP envelope-from and HELO (sender-chosen text) into it:
   `config/initializers/agent_email_pins.rb`) when `email.pinned_dkim` is missing,
   misspelled, names a domain with no selector, or does not pin the team
   address's domain; without the pin, any DKIM pass for mcritchie.studio would be
-  trusted as Alex. Other environments boot without it.
+  trusted as Alex McRitchie. Other environments boot without it.
 
 Every lower `Authentication-Results`, every `ARC-Authentication-Results`, and
 `DeskCapture::Reader.dkim_from_raw` (which greps them all for a human reading
-provenance) are ignored. As of 2026-10-16 13:15 MDT Alex's mail to team@ passes:
+provenance) are ignored. As of 2026-10-16 13:15 MDT Alex McRitchie's mail to team@ passes:
 Google DKIM (`google._domainkey`) is published, and SES reads `dkim=pass
 header.i=@mcritchie.studio; dmarc=pass header.from=mcritchie.studio`, folded one
 result per line.
 
 **The person.** A VERIFIED sender resolves to a person by the `email` identity
-(`AgentPerson.resolve!(platform: "email", external_id: <From>)`): Alex's
+(`AgentPerson.resolve!(platform: "email", external_id: <From>)`): Alex McRitchie's
 `alex@mcritchie.studio` is an identity of the owner's person (the
 `AddEnvelopeToAgentMessages` migration and `AgentPerson.seed_owner!`). A verified
-stranger becomes their own `public` person; link another of Alex's addresses
+stranger becomes their own `public` person; link another of Alex McRitchie's addresses
 with `bin/rails agent_people:link PERSON=<id> PLATFORM=email EXTERNAL_ID=<addr>`.
 An UNVERIFIED sender gets no person at all: the row's author is
 `<addr> (unverified)`, its audience is the public, and a row with no person is
@@ -952,7 +952,7 @@ headers only): the trusted verdict must sit in SES's trace block. Tests:
 
 ## Web chat: the CTOs answer on McRitchie Studio (Phase 7, step 3)
 
-Alex, 2026-10-16: "when you're speaking with your agent via website, discord or
+Alex McRitchie, 2026-10-16: "when you're speaking with your agent via website, discord or
 email they respond in real time." A signed-in app owner (`app_memberships`) or an
 admin opens `/applications/:slug/chat` (the **Chat** button on the app's page and
 on its CTO's settings page) and talks with that app's CTO: Avi, Turf or Tyrion, or,
@@ -986,7 +986,7 @@ never cross users or apps. `channel_ref` is the app slug and `guild_id` is nil.
 **The person and the audience.** The session vouches for the hub USER, the way
 Discord vouches for an author id. The message's person is the user's `web`
 identity (`AgentPersonIdentity`, external id the user id), else the person an
-operator already linked to that user (`agent_people.user_id`; Alex's
+operator already linked to that user (`agent_people.user_id`; Alex McRitchie's
 `alex@mcritchie.studio` is the owner's, by `AgentPerson.seed_owner!`), else a new
 `public` person for the user. It is never matched by name. The audience is that
 person's role, exactly as on Discord and email, so the same envelope, rules,
@@ -998,7 +998,7 @@ from them would be. Ownership never grants the `owner` audience: that would prin
 "Alex McRitchie, the owner" and the internal role doc into their answers. When the
 exception is off, the page tells them their messages wait for an admin
 (`CtoChatsController#answered?` asks the same rule).
-Alex owns each app through a different hub account, so each of
+Alex McRitchie owns each app through a different hub account, so each of
 `AgentPerson::OWNER_HUB_EMAILS` (alex@mcritchie.studio, alex@turfmonster.media,
 amcritchie@gmail.com) is a `web` identity of the owner's person, linked by the
 `LinkOwnerWebIdentities` migration and `AgentPerson.seed_owner!`; his chat is
@@ -1013,7 +1013,7 @@ capability and its params), the owner's `go` in the same web thread opens a
 `designed` task, and the answer to the go carries its link. The task's
 `devops.source_thread` is the app's chat page (`/applications/<slug>/chat`) and its
 description says "Requested in the <slug> web chat" and links the message's admin
-page. The app's owner may say that `go` whether or not they are Alex (the app-owner
+page. The app's owner may say that `go` whether or not they are Alex McRitchie (the app-owner
 word, "Confirm by reply" above). A `go` in another web thread, or from a person who
 may not confirm, changes nothing (`test/integration/cto_web_chat_change_flow_test.rb`). Past `WebIngest::RATE_LIMIT` (30)
 messages in a thread within an hour the next is `held` with a `rate_limited`
@@ -1030,7 +1030,7 @@ CtoChatChannel`, one stream per user per app (`cto_chat:<app slug>:<user id>`).
   `WebChat::TYPING_FADE` (12) seconds after the last pulse, so a run that dies
   stops typing within seconds, and drops a pulse older than an answer already
   shown.
-- **Thinking, then typing** (Alex, 2026-10-18: "a distinction in thinking and
+- **Thinking, then typing** (Alex McRitchie, 2026-10-18: "a distinction in thinking and
   typing"). A web pulse carries a phase, read off the run itself: a web answer
   runs on `--output-format stream-json --include-partial-messages`
   (`AgentMailbox::ClaudeStream.cmd`, still `--safe-mode` and `--tools ""`), the
@@ -1097,7 +1097,7 @@ its reply renders as Markdown in the chat. Tests:
 
 ### Files: images and PDFs in the chat
 
-Alex, 2026-10-17: "drop assets that the agent can respond to. That is table
+Alex McRitchie, 2026-10-17: "drop assets that the agent can respond to. That is table
 stakes for a client facing chat." The design is
 `.agents/epics/chat-media-design.md`; this is its step 1, images and PDFs.
 
@@ -1135,7 +1135,7 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
   | Buckets | `mcritchie-studio-chat-production` (production), `mcritchie-studio-chat-dev` (QA and desks); location `enam`; the `expire-trash-3d` lifecycle rule (StudioTrashS3 moves deletes under `trash/`); NO custom domain, NO r2.dev URL |
   | Env (per Heroku app, and `.env.development`) | `CHAT_R2_ACCESS_KEY_ID`, `CHAT_R2_SECRET_ACCESS_KEY`: the pair's bucket-scoped keys (prod pair on production, dev pair on QA and desks). The endpoint is the existing `R2_ENDPOINT` |
   | 1Password | `r2.mcritchie-studio-chat` in `studio-agents`, made by Steffon's [`bucket-provision`](../agents/steffon/sops/bucket-provision.md) act with app `mcritchie-studio-chat` |
-  | Switch on | Alex's yes, then bucket-provision, then set the two vars; no deploy needed beyond the config restart |
+  | Switch on | Alex McRitchie's yes, then bucket-provision, then set the two vars; no deploy needed beyond the config restart |
 
   While the two variables are unset (`StorageBackend.chat_private_configured?`
   false; the default), `Attachments.enabled?` is false: the composer has no
@@ -1202,12 +1202,12 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
 - **Not yet:** audio and video, Discord attachments, office files, a sweep of
   and uploads never sent.
 
-## Build intake: Ritch answers the public on /build
+## Build intake: Alex answers the public on /build
 
-`/build` is a chat with Ritch (designs: `.agents/epics/build-with-xan-design.md`,
-`build-with-ray-v2.md`). A visitor, signed in or not, tells Ritch what they want to
-build; Ritch asks for the idea (at most two follow-ups), the theme, a CTO and an address,
-one card at a time, and the visitor's taps fill the status card. Ritch's summary card
+`/build` is a chat with Alex (designs: `.agents/epics/build-with-xan-design.md`,
+`build-with-ray-v2.md`). A visitor, signed in or not, tells Alex what they want to
+build; Alex asks for the idea (at most two follow-ups), the theme, a CTO and an address,
+one card at a time, and the visitor's taps fill the status card. Alex's summary card
 carries **Build My App**, which asks for sign-in only then; it launches through `AppLaunch`.
 Signed out, the press opens the sign-in modal (`modals/_auth`, magic link or Google) through
 an `open_modal` Turbo Stream (`app/javascript/modal_stream.js`), adding nothing to the thread,
@@ -1226,13 +1226,13 @@ CTO, Setting Up Domain over about eight seconds), which then visits the same cha
 goes straight to the chat; an admin viewing someone else's app neither sees nor spends it; a
 Turbo hover prefetch gets a 204 and spends nothing.
 
-- **The page** is the agent shell (`app/views/agent_chats/_shell.html.erb`): Ritch's
+- **The page** is the agent shell (`app/views/agent_chats/_shell.html.erb`): Alex's
   portrait, a status slot, the thread, the chat box. The status slot
-  (`build/_status_card`, stream target `build-checklist`) is the heading until Ritch's
+  (`build/_status_card`, stream target `build-checklist`) is the heading until Alex's
   theme card (`palette`) is in the thread, or a draft already holds a theme, CTO or
   address (`AppRequest#intake_started?`). Start App alone only turns the heading to
-  the locked idea's title while Ritch types (Alex, 2026-10-20). Then it is the app's
-  working title over Theme · Agent · Domain tiles, in the order Ritch asks, popping in
+  the locked idea's title while Alex types (Alex McRitchie, 2026-10-20). Then it is the app's
+  working title over Theme · Agent · Domain tiles, in the order Alex asks, popping in
   on the same poll that brings the theme card. It carries no Build control.
 - **The first message stays on /build.** The composer posts through Turbo;
   `BuildController#create` answers with Turbo Streams that replace the empty thread
@@ -1275,7 +1275,7 @@ Turbo hover prefetch gets a 204 and spends nothing.
   `/build` and every agent chat.
 - **No-op re-taps.** Choose Theme and Use Domain are disabled while the pick is the
   answer already saved, and `BuildIntake::Choice` ignores such a tap (no write, no
-  visitor turn, no turn of Ritch's). The domain card checks every suggestion's
+  visitor turn, no turn of Alex's). The domain card checks every suggestion's
   availability once, in its render (`AppRequest.unavailable_reasons`), and asks
   `/build/check` only when the name changes.
 - **A refused Build My App** (the plan's app limit, a name taken since the tap, an
@@ -1295,7 +1295,7 @@ Turbo hover prefetch gets a 204 and spends nothing.
   owner to the chat.
 - **Page moves** between /build, /build/:token and the app chat are Turbo visits with a
   view transition (`<meta name="view-transition">`): the shell names its portrait,
-  caption, status card and chat box, so Ritch's portrait becomes the CTO's. Turbo skips
+  caption, status card and chat box, so Alex's portrait becomes the CTO's. Turbo skips
   the transition under `prefers-reduced-motion`.
 
 - **The thread** is `web:build:<request token>` on the `web` channel, `channel_ref`
@@ -1303,11 +1303,11 @@ Turbo hover prefetch gets a 204 and spends nothing.
   A signed-out visitor writes as the request's own public person (web identity
   `build:<token>`); signed in, as their user's web person. Signing in adopts the draft,
   and the thread continues.
-- **Who is answered.** `config/agent_answerers.yml` `public_intake:` lets its soul (Ritch)
+- **Who is answered.** `config/agent_answerers.yml` `public_intake:` lets its soul (Alex)
   answer ANY person, but only on a `web` row whose thread key starts with `web:build:`
   (the prefix is pinned in code; `AgentMessages::Answerers#intake?` and its SQL twin in
   `#sql_guard`). Nowhere else is the public answered. The public still gets no action
-  (`Audience#may?(:read_action)` is owner and team) and Ritch has no catalog.
+  (`Audience#may?(:read_action)` is owner and team) and Alex has no catalog.
 - **Caps** (`BuildIntake::Caps`, from the same block), checked at ingest before a row is
   answerable: 12 answers per request signed out (40 signed in), 20 signed-out answers per
   visitor IP per hour (the IP is stored only as a keyed hash), 400 signed-out answers per
@@ -1317,9 +1317,9 @@ Turbo hover prefetch gets a 204 and spends nothing.
   honeypot (a hit stores nothing) and a signed render time the page's script writes in.
   A first message without it, or under two seconds, is stored `held` with a `bot_shield`
   event and never answered; the visitor reads "send it again".
-- **Cards.** Ritch's prompt gains an INTAKE section (`ContextBuilder#intake_block`): the
-  playbook from `docs/agents/agents/ray/intake.md`, the request's state from the bundle's
-  `intake` key (`BuildIntake::Context`), and the card format. Ritch offers a card as a
+- **Cards.** Alex's prompt gains an INTAKE section (`ContextBuilder#intake_block`): the
+  playbook from `docs/agents/agents/alex/intake.md`, the request's state from the bundle's
+  `intake` key (`BuildIntake::Context`), and the card format. Alex offers a card as a
   PROPOSAL block of kind `intake` (`idea`: a title and 2 to 3 key features; `cto`;
   `palette`, which the visitor reads as the theme; `address`, read as the domain;
   `summary`, no fields). Once every step is set, an answer that offered no card gets
@@ -1329,13 +1329,13 @@ Turbo hover prefetch gets a 204 and spends nothing.
   dark) are checked, unknown fields refuse the card, and the checked copy is stored on
   `agent_messages.intake_card` (`intake_card` / `intake_refused` events). A catalog
   proposal on a build thread is refused.
-- **About Alex** (Alex, 2026-10-20: his interactive resume). After the INTAKE section Ritch's
-  prompt on a build thread carries ABOUT ALEX (`ContextBuilder#about_alex_block`): Alex's
-  profile, the part of `docs/agents/agents/ray/about-alex.md` below its rule (he edits
+- **About Alex McRitchie** (Alex McRitchie, 2026-10-20: his interactive resume). After the INTAKE section Alex's
+  prompt on a build thread carries ABOUT ALEX (`ContextBuilder#about_alex_block`): Alex McRitchie's
+  profile, the part of `docs/agents/agents/alex/about-alex.md` below its rule (he edits
   it; its source citations and TODOs are HTML comments, stripped), capped at 2,500
-  characters, under rules written in CODE so an edit cannot drop them: speak about Alex
+  characters, under rules written in CODE so an edit cannot drop them: speak about Alex McRitchie
   in the third person and never as him; give advice only as the views the profile
-  records, and say "Alex hasn't shared that here" otherwise; family stops at what the
+  records, and say "Alex McRitchie hasn't shared that here" otherwise; family stops at what the
   profile says (married, a daughter), and anything more is politely declined; and a
   question about him offers no intake card. No other thread carries it.
 - **Taps** (`BuildIntake::Choice`, `PATCH /build/:token/intake`) are the only writes to
@@ -1375,7 +1375,7 @@ They are stored on the row (`AgentMessage.run_record` caps each). `/admin/agent_
 the machine that ran it:
 
 ```bash
-cd ~/.agents/mailbox/ray && claude --resume <session_id>
+cd ~/.agents/mailbox/alex && claude --resume <session_id>
 ```
 
 Resuming is for an operator reading a run. The answer path resumes only in a
@@ -1383,7 +1383,7 @@ warm domain, for owner and team turns ("Warm sessions" below).
 
 ## Typing: the bot shows it is answering
 
-Step 1 of real-time Discord agents (Alex, 2026-10-16; the plan is
+Step 1 of real-time Discord agents (Alex McRitchie, 2026-10-16; the plan is
 `.agents/epics/domain-agents.md`, "Real-time"). While an answer runs, the bot
 that will post the reply shows "typing…" in the message's channel or thread.
 
@@ -1472,7 +1472,7 @@ The design, for the step that builds it:
 
 ### Warm sessions
 
-Phase 7 step 2 (Alex, 2026-10-16; plan: `.agents/epics/domain-agents.md`). A warm
+Phase 7 step 2 (Alex McRitchie, 2026-10-16; plan: `.agents/epics/domain-agents.md`). A warm
 domain answers its owner and team messages by resuming ONE Claude session, held
 by a board lease and checkpointed after every turn, so a standby machine can take
 it over. **Off by default**: no domain sets the flag, and with it off the
@@ -1574,7 +1574,7 @@ back to its previous, readable checkpoint and answers 500 (ErrorLog through
    consolidation) removes the transcripts this process held for it, so a standby
    keeps no copy of the owner's conversation once it hands back.
 
-**The standby.** A second dispatcher (Alex's work machine) is registered on the
+**The standby.** A second dispatcher (Alex McRitchie's work machine) is registered on the
 board as `standby` for a list of warm domains: `agent_dispatchers.role` and
 `standby_domains`, set by `bin/rails agent_dispatchers:role` (the
 [`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md) SOP, "Standby on
@@ -1644,9 +1644,9 @@ Nothing reads Discord until a bot token is set. The code ships inert.
 - **The client's own half** (server, `#agents` channel, mentionable roles,
   Developer Mode, the IDs): the public guide at `/integrations/discord`
   (`app/views/integrations/discord.html.erb`).
-- **Our own live test** (2026-10-14) uses Ritch's own bot, not roles: the whole
+- **Our own live test** (2026-10-14) uses Alex's own bot, not roles: the whole
   McRitchie Studio guild (`1332466565203103744`, no channel entries), and the soul
-  `ray` routed by a mention of the Ritch bot user (`users`, not `roles`). The ids
+  `alex` (then `ray`) routed by a mention of the Alex bot user (`users`, not `roles`). The ids
   are in `config/agent_routes.yml`. `DISCORD_AGENT_BOT_TOKEN` is set from
   `agents.discord.xan` on `mcritchie-studio` only
   ([`credential-inventory.md`](../modules/credential-inventory.md)).
@@ -1654,17 +1654,17 @@ Nothing reads Discord until a bot token is set. The code ships inert.
 ## Test protocol
 
 Post in any channel or thread of the McRitchie Studio guild (`lobster-tank` is the
-quiet one), mentioning the Ritch bot user (`@Ritch`). The gateway stores it within a
+quiet one), mentioning the Alex bot user (`@Ritch` in Discord: the bot keeps that name until Alex McRitchie rules on renaming it). The gateway stores it within a
 second or two; with the dispatcher installed the answer follows and nothing else is needed;
 the rows below run the heartbeat by hand, with the dispatcher stopped
-(`bin/dispatcher uninstall`) so the two do not compete. Avi, Ritch and Turf are
-routed there; the rows use Ritch, and any routed soul works the same way.
+(`bin/dispatcher uninstall`) so the two do not compete. Avi, Alex and Turf are
+routed there; the rows use Alex, and any routed soul works the same way.
 
 | Scenario | Do | Expect |
 |----------|----|--------|
-| Serial | Post `@Ritch what is building?`. Run `bin/heartbeat ray --channel discord`, then run it again | The first run answers in the channel; the second prints `nothing for ray` |
-| Parallel | Post `@Ritch one` and `@Ritch two` as separate messages. Start two `bin/heartbeat ray --channel discord --once` at the same moment | Each message is answered once. Neither is read twice and no reply is doubled |
-| Two agents | Needs a second soul routed in the guild (a role, or a second bot user such as Mack's). Then post to each and run `bin/heartbeat ray --channel discord` | Ritch answers only its own message; the other stays `received` until that soul's heartbeat runs |
+| Serial | Post `@Ritch what is building?` (the bot's Discord name). Run `bin/heartbeat alex --channel discord`, then run it again | The first run answers in the channel; the second prints `nothing for alex` |
+| Parallel | Post `@Ritch one` and `@Ritch two` as separate messages. Start two `bin/heartbeat alex --channel discord --once` at the same moment | Each message is answered once. Neither is read twice and no reply is doubled |
+| Two agents | Needs a second soul routed in the guild (a role, or a second bot user such as Mack's). Then post to each and run `bin/heartbeat alex --channel discord` | Alex answers only its own message; the other stays `received` until that soul's heartbeat runs |
 | Unaddressed | Post a message that mentions nobody and replies to nothing | No row is stored; the admin page does not list it |
 
 The inbound half (guild scope, the addressed-only filter, overrides, the backstop)

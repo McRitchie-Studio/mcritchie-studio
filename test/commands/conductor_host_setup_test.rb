@@ -158,7 +158,7 @@ class ConductorHostSetupTest < Minitest::Test
     build_done_host(pending_key: true)
     out, = run_cli("--check", "--no-board")
 
-    assert_match(/MISSING\s+Harness key\s+requested \(login-abc\); waiting on Alex's Approve tap/, out)
+    assert_match(/MISSING\s+Harness key\s+requested \(login-abc\); waiting on Alex McRitchie's Approve tap/, out)
     assert_includes out, "bin/harness-key collect --wait 600"
   end
 

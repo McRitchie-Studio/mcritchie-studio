@@ -7,7 +7,7 @@
 # - studio: a builder or reviewer. Scoped to ONE task (task_slug required). A
 #   builder's (task_claim) is live while that task is building or submitted; a
 #   reviewer's (review_claim) while it is submitted and its review claim is live.
-# - admin: Steffon and Ritch. Unscoped within the admin tier; task_slug is always
+# - admin: Steffon and Mason. Unscoped within the admin tier; task_slug is always
 #   null, because the tier is the scope.
 # - client: Turf Monster and Tyrion. A runtime key (issued_by runtime_key) reaches
 #   the endpoints CLIENT_ENDPOINTS lists for its soul and nothing else.
@@ -19,7 +19,7 @@
 # hold, and nothing updates a row's tier, soul or scope after create.
 class AgentSession < ApplicationRecord
   TIERS = %w[admin studio client harness].freeze
-  ADMIN_SOULS = %w[steffon ray].freeze
+  ADMIN_SOULS = %w[steffon mason].freeze
   # A harness key belongs to a machine, not a soul; its row names the logged-out
   # builder.
   HARNESS_SOUL = "pokemon".freeze
@@ -134,7 +134,7 @@ class AgentSession < ApplicationRecord
   end
 
   # The operator's grant of an admin session (lib/tasks/agent_sessions.rake):
-  # Steffon or Ritch, for the admin TTL or fewer whole hours, never more.
+  # Steffon or Mason (ADMIN_SOULS), for the admin TTL or fewer whole hours, never more.
   def self.grant_admin!(soul:, hours: nil)
     max = TTL.fetch("admin") / 1.hour
     length = hours.nil? ? max : Integer(hours.to_s, 10, exception: false)
@@ -216,7 +216,9 @@ class AgentSession < ApplicationRecord
     self.class.verifier.generate({ "sid" => slug }, purpose: TOKEN_PURPOSE, expires_at: expires_at + TOKEN_GRACE)
   end
 
-  def admin? = tier == "admin"
+  # The tier alone is not enough: a soul that leaves ADMIN_SOULS (the `alex` soul did
+  # on 2026-10-25) must lose its live admin rows at once, not when they expire.
+  def admin? = tier == "admin" && ADMIN_SOULS.include?(Task.canonical_soul(soul))
   def studio? = tier == "studio"
   def client? = tier == "client"
   def harness? = tier == "harness"
@@ -286,10 +288,14 @@ class AgentSession < ApplicationRecord
     nil
   end
 
+  # Revoking never re-validates the row: the tier checks guard ISSUANCE, and a row
+  # issued to a soul that has since left the admin tier (a `ray` admin row from
+  # before 2026-10-25) must still revoke, not raise RecordInvalid. Only the two
+  # revocation columns (and updated_at) are written.
   def revoke!(by:)
     return if revoked?
 
-    update!(revoked_at: Time.current, revoked_by: by.to_s.presence)
+    update_columns(revoked_at: Time.current, revoked_by: by.to_s.presence, updated_at: Time.current)
   end
 
   # What the board and the API show for a session; never the token.

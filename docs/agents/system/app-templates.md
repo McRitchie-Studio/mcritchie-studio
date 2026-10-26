@@ -1,7 +1,7 @@
 # App Templates — the base app and the web3 bolt-on
 
 Every McRitchie app is built from one template; a Solana app adds a second on
-top. Decided by Alex (fullest statement:
+top. Decided by Alex McRitchie (fullest statement:
 [`gate-solana-routes-on-wallet`](https://mcritchie.studio/tasks/gate-solana-routes-on-wallet)),
 and enforced by a test in this repo since
 [`lint-web2-app-boundary`](https://mcritchie.studio/tasks/lint-web2-app-boundary).

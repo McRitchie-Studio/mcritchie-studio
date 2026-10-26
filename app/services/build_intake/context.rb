@@ -1,7 +1,7 @@
 module BuildIntake
   # The INTAKE part of the context bundle for a message on a /build thread
   # (AgentMessages::MemoryBundle#bundle, "intake"), which the worker's
-  # ContextBuilder#intake_block turns into Ritch's instructions for this turn.
+  # ContextBuilder#intake_block turns into Alex's instructions for this turn.
   #
   # Code-shaped on purpose: the step names, whether each is set, and the values
   # a TAP set, each already held to its card's rules (a CTO name, a palette
@@ -41,7 +41,7 @@ module BuildIntake
       out
     end
 
-    # How many of Ritch's earlier answers on this thread came BEFORE the idea was
+    # How many of Alex's earlier answers on this thread came BEFORE the idea was
     # confirmed: the idea gets at most two follow-up questions.
     def follow_ups(message)
       AgentMessage.where(channel: "web", thread_key: message.thread_key, status: "completed")

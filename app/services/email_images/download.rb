@@ -7,7 +7,7 @@ module EmailImages
   # THE BYTES BEHIND AN IMAGE URL this pipeline wrote: our bucket's https URL,
   # or the data URI the E2E fake stores in its place. Used by the export and by
   # bin/email-image to put candidates and brand assets on local disk, where an
-  # agent can open them and show them to Alex.
+  # agent can open them and show them to Alex McRitchie.
   #
   # Reads only. A failure raises Failed with the URL and the HTTP status; it
   # never retries and never follows a redirect to somewhere else.

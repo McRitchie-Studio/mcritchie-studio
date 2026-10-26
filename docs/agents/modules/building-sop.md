@@ -9,15 +9,15 @@ size exemption**: a one-line diff is still a Build-lane task.
 
 **Who.** A **feature agent**: the per-task Pokémon, whose soul and build checklist
 live in [`../agents/pokemon/role.md`](../agents/pokemon/role.md). A session holding
-an epic runs [`focus-session.md`](focus-session.md), spawns you per task, and
+an epic runs [`focus-session.md`](../agents/alex/sops/focus-session.md), spawns you per task, and
 spawns your reviewer when you report `submitted`.
 
 **Exit.** The task is on `submitted`, with a PR into `accepted` led by the task URL,
 and its review launched (Step 7): by you when you are the top-level session, or
 handed to the session that spawned you when you are a subagent. You never merge,
-deploy, or touch `release`/`main` unless Alex assigns you that lane in this session.
+deploy, or touch `release`/`main` unless Alex McRitchie assigns you that lane in this session.
 
-The one judgment call is **Step 4**: does the change earn Alex's local
+The one judgment call is **Step 4**: does the change earn Alex McRitchie's local
 review? Everything else is sequencing. The command-by-command rules (where each
 script runs, the author set, the long form) are in [`fast-lane.md`](fast-lane.md).
 The rationale and history this page no longer carries are frozen verbatim in
@@ -161,7 +161,7 @@ other recording traps: [`task-board-api.md`](task-board-api.md#footguns-verified
 
 ## Step 4 — Decide: does this change earn a LOCAL REVIEW?
 
-Ask: *would Alex want to see this running before it rides the pipeline?*
+Ask: *would Alex McRitchie want to see this running before it rides the pipeline?*
 
 - **Yes** when the change is **visual, UX, workflow, or copy**: a board card, a
   form, a page, an email, anything he would recognize on sight.
@@ -190,7 +190,7 @@ bin/verify-review-hop <slug>
 
 It walks the five legs the WAITING APPROVAL button walks: the board CTA → the
 local mint → the confirm page → the consume POST → the landing. Exit `0` means
-the button lands Alex **on the page under review**, signed in. `--json`
+the button lands Alex McRitchie **on the page under review**, signed in. `--json`
 gives a machine-readable verdict. It mints its own token, so it burns nothing you
 are about to hand over. Do not mark a task waiting without a green run.
 
@@ -217,7 +217,7 @@ are about to hand over. Do not mark a task waiting without a green run.
 
 On the board, a `--local-url` + `--approval waiting` task floats to the top of its
 stage, pulses, and grows a **WAITING APPROVAL** CTA. Each click mints a FRESH
-single-use `Studio::Link` and lands Alex signed in on the local page
+single-use `Studio::Link` and lands Alex McRitchie signed in on the local page
 (`GET /tasks/:slug/local_review`).
 
 In chat, return the review handoff with exact top-level labels (recipe:
@@ -338,15 +338,15 @@ A task idling on `submitted` until a sweep finds it is dead time. So the moment
   the single-task entry in [`pr-review`](../agents/carl/sops/pr-review.md#single-task-entry-on-submit).
 
 Either way the reviewer is a **separate reviewer** subagent, never you: Carl, or
-Ritch for a prose-only PR on the focus-session path (tier A in
-[`focus-session.md`](focus-session.md)). The author set keeps a builder off its own PR. The builder's part is to start the review, not to
+Mason for a prose-only PR on the focus-session path (tier A in
+[`focus-session.md`](../agents/alex/sops/focus-session.md)). The author set keeps a builder off its own PR. The builder's part is to start the review, not to
 do it. Review's gate-zero still owns the CI verdict and the merge.
 
 The floor is the backstop, not the plan: a card that sits `submitted` with a
 green DoR and no review claim for 30 minutes posts a `submitted_unclaimed` alert
 to the ops channel naming the review launch line
 ([`pr-review`](../agents/carl/sops/pr-review.md#single-task-entry-on-submit)).
-Telling Alex the task "now waits for review" is not launching it.
+Telling Alex McRitchie the task "now waits for review" is not launching it.
 
 ## Done when
 

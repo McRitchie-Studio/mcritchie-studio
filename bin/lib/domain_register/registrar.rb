@@ -47,13 +47,13 @@ module DomainRegister
        "the token cannot use the Registrar API: the admin-lane token cloudflare.studio.provision needs " \
        "Account > Registrar > Edit on McRitchie Studio's account (Cloudflare dashboard > My Profile > API Tokens)."],
       [/payment|billing|card|charge/i,
-       "no default payment method. Alex: Cloudflare dashboard > Manage Account > Billing > Payment info, " \
+       "no default payment method. Alex McRitchie: Cloudflare dashboard > Manage Account > Billing > Payment info, " \
        "add a card and make it the default."],
       [/agreement|terms/i,
-       "the Domain Registration Agreement is not accepted. Alex: Cloudflare dashboard > Domain Registration > " \
+       "the Domain Registration Agreement is not accepted. Alex McRitchie: Cloudflare dashboard > Domain Registration > " \
        "Register Domains, accept the agreement once."],
       [/contact|address book|registrant/i,
-       "no default registrant contact. Alex: Cloudflare dashboard > Domain Registration > Manage, set the " \
+       "no default registrant contact. Alex McRitchie: Cloudflare dashboard > Domain Registration > Manage, set the " \
        "default registrant contact (the entity's name, address, phone and email)."],
       [/domain limit|limit reached/i,
        "the account has reached Cloudflare's per-account domain limit; ask Cloudflare to raise it."]

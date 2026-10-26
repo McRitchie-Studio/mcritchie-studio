@@ -15,7 +15,7 @@
 #                   `proportion` (task stacked-rule-of-three) is stored only for the rule of three ("rule_of_three"):
 #                   absent is 3-2-1, so every choice saved before it reloads unchanged.
 #   originals       the ORIGINAL artwork, unedited (Active Storage, the hub's R2 service): SVG, PNG, JPEG, PDF or ZIP,
-#                   25 MB each. Alex: every kit keeps its original, so anyone can see where a derivation came from.
+#                   25 MB each. Alex McRitchie: every kit keeps its original, so anyone can see where a derivation came from.
 #   notes           the operator's own words on the kit
 #   updated_by      who changed it last (the admin's email)
 #

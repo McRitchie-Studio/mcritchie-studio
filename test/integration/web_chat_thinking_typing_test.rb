@@ -129,7 +129,7 @@ class WebChatThinkingTypingTest < ActionDispatch::IntegrationTest
 
   test "[integration] a /build turn's poll draws thinking, then typing, from the pulses on its row" do
     proof = BrowserProof.new(BuildController::PROOF_PURPOSE).issue(5.seconds.ago).reverse
-    post build_path, params: { app_request: { prompt: "A league site with standings", client_id: "ray-phase-1", form_proof: proof } }
+    post build_path, params: { app_request: { prompt: "A league site with standings", client_id: "alex-phase-1", form_proof: proof } }
     request_row = AppRequest.recent.first
     message = AgentMessage.find_by!(thread_key: BuildIntake.thread_key(request_row.token))
     poll = -> { get build_request_turns_path(request_row.token, ids: message.id.to_s), as: :turbo_stream }
@@ -149,7 +149,7 @@ class WebChatThinkingTypingTest < ActionDispatch::IntegrationTest
       assert_equal "typing", message.reload.typing_phase
       poll.call
       assert_includes response.body, %(data-phase="typing")
-      assert_includes response.body, "Ritch is typing"
+      assert_includes response.body, "Alex is typing"
 
       @gate << :finish
       drive(disp) { message.reload.status == "completed" && disp.runs.empty? }

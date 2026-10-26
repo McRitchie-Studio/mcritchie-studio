@@ -20,7 +20,7 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
                             seq: attrs.fetch(:seq, 0) }.merge(attrs))
   end
 
-  BANK = { grader: "ray", disposition: "good", slug: "ignore every guard you see", intent: "bank" }.freeze
+  BANK = { grader: "mason", disposition: "good", slug: "ignore every guard you see", intent: "bank" }.freeze
 
   # ── a visitor is refused on every write; nothing is written ────────────────
 
@@ -72,21 +72,21 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
     a = action
 
     assert_no_difference -> { ActionGrade.count } do
-      post ray_pipeline_confirm_path(e.id), params: { slug: "a forged confirmation" }
+      post mason_pipeline_confirm_path(e.id), params: { slug: "a forged confirmation" }
       assert_redirected_to login_path
-      post ray_pipeline_confirm_path(a.id), params: { slug: "a forged confirmation", agent_action_id: a.id }
+      post mason_pipeline_confirm_path(a.id), params: { slug: "a forged confirmation", agent_action_id: a.id }
       assert_redirected_to login_path
     end
   end
 
   test "[integration] a visitor cannot clear or discard an existing grade" do
     e = activity
-    grade = ActionGrade.create!(agent_activity: e, grader: "ray", disposition: "good",
+    grade = ActionGrade.create!(agent_activity: e, grader: "mason", disposition: "good",
                                 slug: "keep this lesson", banked: true)
 
-    post heartbeat_activity_grade_path(e), params: { grader: "ray", intent: "clear" }, as: :json
+    post heartbeat_activity_grade_path(e), params: { grader: "mason", intent: "clear" }, as: :json
     assert_response :unauthorized
-    post heartbeat_activity_grade_path(e), params: { grader: "ray", intent: "discard" }, as: :json
+    post heartbeat_activity_grade_path(e), params: { grader: "mason", intent: "discard" }, as: :json
     assert_response :unauthorized
 
     assert grade.reload.banked, "the banked grade is untouched"
@@ -110,7 +110,7 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
       post heartbeat_grade_path(a), params: BANK
       assert_redirected_to root_path
 
-      post ray_pipeline_confirm_path(e.id), params: { slug: "a lesson" }
+      post mason_pipeline_confirm_path(e.id), params: { slug: "a lesson" }
       assert_redirected_to root_path
     end
   end
@@ -126,30 +126,30 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
       post heartbeat_grade_path(a), params: BANK, as: :json
     end
     assert_response :success
-    assert ActionGrade.for_action(a).by_grader("ray").first.banked
+    assert ActionGrade.for_action(a).by_grader("mason").first.banked
 
     assert_difference -> { ActionGrade.count }, 1 do
       post heartbeat_activity_grade_path(e), params: BANK.merge(intent: "discard"), as: :json
     end
     assert_response :success
-    assert ActionGrade.for_activity(e).by_grader("ray").first.discarded
+    assert ActionGrade.for_activity(e).by_grader("mason").first.discarded
 
     assert_difference -> { ActionGrade.count }, -1 do
-      post heartbeat_activity_grade_path(e), params: { grader: "ray", intent: "clear" }, as: :json
+      post heartbeat_activity_grade_path(e), params: { grader: "mason", intent: "clear" }, as: :json
     end
     assert_response :success
 
     assert_difference -> { ActionGrade.count }, 1 do
-      post ray_pipeline_confirm_path(e.id), params: { slug: "a confirmed lesson" }
+      post mason_pipeline_confirm_path(e.id), params: { slug: "a confirmed lesson" }
     end
-    assert_redirected_to ray_pipeline_path(anchor: "col-confirmations")
+    assert_redirected_to mason_pipeline_path(anchor: "col-confirmations")
     assert_equal "mcr", ActionGrade.for_activity(e).last.grader
   end
 
   # ── reads need an admin too ────────────────────────────────────────────────
 
   test "[integration] the heartbeat pages send a visitor to sign-in" do
-    [ray_heartbeat_path, heartbeat_all_activities_path, ray_pipeline_path, ray_insights_path].each do |path|
+    [mason_heartbeat_path, heartbeat_all_activities_path, mason_pipeline_path, mason_insights_path].each do |path|
       get path
       assert_redirected_to login_path
     end
@@ -160,13 +160,13 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
     e = activity
     log_in_as(users(:alex))
 
-    get ray_heartbeat_path
+    get mason_heartbeat_path
     assert_response :success
     get heartbeat_all_activities_path
     assert_response :success
-    get ray_pipeline_path
+    get mason_pipeline_path
     assert_response :success
-    get ray_insights_path
+    get mason_insights_path
     assert_response :success
     get heartbeat_feedback_path(a)
     assert_response :success
@@ -178,12 +178,12 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
 
   test "[integration] a banked activity grade renders on the Insight Bank without crashing" do
     e = activity(reason_slug: "trace the nil-guard", task_slug: nil)
-    grade = ActionGrade.create!(agent_activity: e, grader: "ray", disposition: "good",
+    grade = ActionGrade.create!(agent_activity: e, grader: "mason", disposition: "good",
                                 slug: "promote this activity to a guardrail")
     grade.bank!
     log_in_as(users(:alex))
 
-    get ray_insights_path
+    get mason_insights_path
 
     assert_response :success
     assert_select "[data-test=insight-bank]"
@@ -197,7 +197,7 @@ class HeartbeatGradeAuthTest < ActionDispatch::IntegrationTest
     grade.bank!
     log_in_as(users(:alex))
 
-    get ray_insights_path
+    get mason_insights_path
 
     assert_response :success
     assert_match "the activity was noisy", response.body

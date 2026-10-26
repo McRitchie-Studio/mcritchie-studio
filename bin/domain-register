@@ -10,14 +10,14 @@ require_relative "lib/cli_arg_guard"
 
 USAGE = <<~TXT
   usage: bin/domain-register check <domain>...
-         bin/domain-register register <domain> --price <exact USD> --ok "<Alex's words, YYYY-MM-DD>" [--premium] [--dry-run]
+         bin/domain-register register <domain> --price <exact USD> --ok "<Alex McRitchie's words, YYYY-MM-DD>" [--premium] [--dry-run]
          bin/domain-register status <domain>
 
   check     availability, the registration and renewal price, the premium flag and
             why a domain cannot be bought by API. Read-only; up to 20 domains.
   register  SPENDS MONEY on the account's default card. Re-checks the domain at once
             and REFUSES unless it is available, the registration price equals --price
-            exactly, a premium domain carries --premium, and --ok quotes Alex's own
+            exactly, a premium domain carries --premium, and --ok quotes Alex McRitchie's own
             per-domain approval with the date. Registers for 1 year with auto-renew ON
             and WHOIS redaction ON, polls registration-status to the end, appends to
             the purchase ledger (the hub primary's tmp/domain-register/registrations.jsonl),

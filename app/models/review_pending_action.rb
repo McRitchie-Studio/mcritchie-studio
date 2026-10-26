@@ -137,18 +137,33 @@ class ReviewPendingAction < ApplicationRecord
   # test/models/review_pending_action_test.rb). An armed merge fires with nobody
   # present and measures no diff, so such a seat cannot arm one: it merges in
   # person, where bin/merge-permit measures the diff at the head being merged.
-  SHAPE_LIMITED_SEATS = %w[ray].freeze
+  SHAPE_LIMITED_SEATS = %w[mason].freeze
 
   # Why none of these souls may arm a merge, or nil when they all may. Asked of
   # the soul NAMED on the arm (the session's, the caller's), never of whoever
   # happened to record the standing verdict.
+  #
+  # Two refusals. The documentation seat merges in person (above). Every other
+  # named soul must sit in the review pool (ReviewerSelector::POOL): an armed
+  # merge executes a reviewer's verdict with nobody present, so a builder, the QA
+  # owner, or the client-facing persona (Alex, out of the pool since 2026-10-25)
+  # never arms one. A blank name is not a soul and is skipped; the shared token's
+  # arm still records the verdict's own reviewer (arm!).
   def self.seat_refusal_reason(*souls)
-    seat = souls.flatten.map { |soul| Task.canonical_soul(soul) }.find { |soul| SHAPE_LIMITED_SEATS.include?(soul) }
-    return nil unless seat
+    named = souls.flatten.map { |soul| Task.canonical_soul(soul) }.reject(&:empty?)
+    seat = named.find { |soul| SHAPE_LIMITED_SEATS.include?(soul) }
+    if seat
+      return "#{seat} holds the documentation seat, which merges docs-shape PRs only and in person: an armed merge " \
+             "measures no diff. Run bin/merge-permit <task> --agent #{seat} --head <validated-sha> and merge on its " \
+             "permit; Carl, the standing primary, may arm any merge-ready PR"
+    end
 
-    "#{seat} holds the documentation seat, which merges docs-shape PRs only and in person: an armed merge " \
-      "measures no diff. Run bin/merge-permit <task> --agent #{seat} --head <validated-sha> and merge on its " \
-      "permit; Carl, the standing primary, may arm any merge-ready PR"
+    outsider = named.find { |soul| !ReviewerSelector::POOL.include?(soul) }
+    return nil unless outsider
+
+    armers = ReviewerSelector::POOL - SHAPE_LIMITED_SEATS
+    "#{outsider} is not in the review pool (#{armers.join(", ")}); only a reviewing soul arms a merge. " \
+      "Leave the PR for its reviewer, or ask Carl, the standing primary"
   end
 
   def self.arm!(task:, repo:, pr_number:, head_sha:, pr_url: nil, base_branch: "accepted",

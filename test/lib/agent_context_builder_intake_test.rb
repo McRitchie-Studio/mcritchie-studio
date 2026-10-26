@@ -1,7 +1,7 @@
 require "test_helper"
 require Rails.root.join("bin/lib/agent_mailbox").to_s
 
-# [unit] Ritch's prompt on a /build thread: the board's bundle carries the intake
+# [unit] Alex's prompt on a /build thread: the board's bundle carries the intake
 # state (BuildIntake::Context via MemoryBundle), and the worker's ContextBuilder
 # prints the playbook, the state and the intake card format, fencing the one
 # free text (the confirmed idea). No intake section anywhere else.
@@ -17,7 +17,7 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
   end
 
   def prompt(context)
-    AgentMailbox::ContextBuilder.new(soul: "ray", message: { "channel" => "web", "content" => "hi", "author_name" => "Visitor" },
+    AgentMailbox::ContextBuilder.new(soul: "alex", message: { "channel" => "web", "content" => "hi", "author_name" => "Visitor" },
                                      context: context, repo_root: Rails.root.to_s, fence: "untrusted-test").prompt
   end
 
@@ -50,7 +50,7 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
   test "an owner's message on a /build thread is answered as the public: the visitor reads that thread" do
     owner = AgentPerson.create!(display_name: "Owner", role: "owner")
     message = AgentMessage.create!(channel: "web", external_id: "build:o-1", channel_ref: "build", person: owner,
-                                   thread_key: BuildIntake.thread_key("a" * 24), soul_slug: "ray", content: "hi", status: "received")
+                                   thread_key: BuildIntake.thread_key("a" * 24), soul_slug: "alex", content: "hi", status: "received")
     assert_equal "public", AgentMessages::MemoryBundle.new(message).bundle.dig("audience", "role")
   end
 
@@ -62,8 +62,8 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
                                 "portraits" => BuildIntake::Portraits::KEYS })
 
     assert_includes text, "THIS IS A /build INTAKE CHAT"
-    assert_includes text, "Your job is four answers, asked ONE AT A TIME", "the playbook comes from docs/agents/agents/ray/intake.md"
-    refute_includes text, "The prompt text Ritch answers from", "only the part below the doc's rule is printed"
+    assert_includes text, "Your job is four answers, asked ONE AT A TIME", "the playbook comes from docs/agents/agents/alex/intake.md"
+    refute_includes text, "The prompt text Alex answers from", "only the part below the doc's rule is printed"
     assert_includes text, "The request now: idea: set, theme: not set, cto: not set, address: not set. Next step: theme."
     assert_includes text, "Set by the visitor: cto_name Coach."
     assert_includes text, '"card": "palette"'
@@ -73,7 +73,7 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
     assert_operator text.index("2. The theme."), :<, text.index("3. Their CTO"), "the playbook asks for the theme before the CTO"
     assert_includes text, "taps Start App", "the idea card's CTA, by its name"
     assert_includes text, "tap Wake Up your CTO", "the CTO card's CTA, by its name"
-    refute_includes text, "Hatch CTO", "the CTO card's CTA was renamed (Alex, 2026-10-19)"
+    refute_includes text, "Hatch CTO", "the CTO card's CTA was renamed (Alex McRitchie, 2026-10-19)"
     assert_includes text, "Can you give me three new theme ideas?", "the playbook knows the theme card's ask for new themes"
     refute_includes text, "Build App", "no card says Build App any more"
     assert_includes text, "Portrait keys: #{BuildIntake::Portraits::KEYS.join(', ')}."
@@ -92,11 +92,11 @@ class AgentContextBuilderIntakeTest < ActiveSupport::TestCase
   end
 
   # The name the visitor reads is the roster's (config/souls.yml), never the slug.
-  test "the intake persona introduces itself as Ritch, not by its slug" do
+  test "the intake persona introduces itself as Alex, not by its slug" do
     text = prompt("intake" => { "steps" => BuildIntake::STEPS, "done" => {}, "values" => {} },
                   "audience" => { "role" => "public" })
-    assert text.start_with?("You are Ritch, an agent in the McRitchie ecosystem"), text.lines.first
-    assert_includes text, "You are Ritch, an AI agent of McRitchie Studio."
+    assert text.start_with?("You are Alex, an agent in the McRitchie ecosystem"), text.lines.first
+    assert_includes text, "You are Alex, an AI agent of McRitchie Studio."
     refute_match(/\bXan\b/, text)
   end
 end

@@ -95,7 +95,7 @@ class AgentEmailLoopTest < ActiveJob::TestCase
     assert_equal AgentReplyMailer.reply_message_id(message), message.reply_external_id
     assert message.events.exists?(kind: "reply_posted")
 
-    # Alex replies to the answer (Reply-To brings it to team@): it joins the thread.
+    # Alex McRitchie replies to the answer (Reply-To brings it to team@): it joins the thread.
     reply = agent_email(to: "team@mcritchie.studio", subject: "Re: What is on QA?", body: "Thanks. And next?",
                         message_id: "reply-after@mail.gmail.com", in_reply_to: message.reply_external_id,
                         references: [ message.external_id, message.reply_external_id ])

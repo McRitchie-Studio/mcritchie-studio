@@ -48,7 +48,7 @@ class EmailImageGeneratorsControllerTest < ActionDispatch::IntegrationTest
     AppearanceReferencePhoto.create!(appearance_slug: look.slug, source: "upload", chosen: true, title: "Kit mascot",
                                      image_url: "https://assets.example.test/mascot.png", created_at: 1.day.ago)
     AppearanceReferencePhoto.create!(appearance_slug: look.slug, source: "upload", chosen: true,
-                                     title: "Canonical sheet v3 (white jersey, pads, no helmet) - approved by Alex 2026-10-07",
+                                     title: "Canonical sheet v3 (white jersey, pads, no helmet) - approved by Alex McRitchie 2026-10-07",
                                      image_url: "https://assets.example.test/canonical.png")
     log_in_as(users(:alex))
 

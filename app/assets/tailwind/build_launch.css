@@ -1,5 +1,5 @@
 /* Build My App's hand-off to the CTO, in the app's own colours (task
-   build-launch-handoff, Alex 2026-10-18).
+   build-launch-handoff, Alex McRitchie 2026-10-18).
 
    1. The launch panel (app/views/build/_launch.html.erb,
       app/javascript/build_launch.js): the new CTO's portrait glows, and each of

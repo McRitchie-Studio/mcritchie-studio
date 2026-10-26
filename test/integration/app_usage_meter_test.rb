@@ -35,7 +35,7 @@ class AppUsageMeterTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='usage-meter-percent']", text: "85%"
       assert_select "[role='progressbar'][aria-valuenow='85']"
       assert_select "[data-test='usage-suggestion'][data-kind='tier']", text: "Pro ($500/month) raises it."
-      # A non-admin owner reads tokens and the meter, never dollars (Alex, 2026-10-16).
+      # A non-admin owner reads tokens and the meter, never dollars (Alex McRitchie, 2026-10-16).
       assert_select "[data-test='application-usage-month']", text: /1 answer, 850 tokens .*\), avg 3\.0s\./
       assert_select "[data-test='application-usage-totals']", text: /\$/, count: 0
       assert_select "[data-test='application-usage-admin']", count: 0

@@ -59,9 +59,9 @@ library ships in the stack image, so the whole change is one config var.
 - **Not changed:** `MALLOC_CONF` stays unset (jemalloc defaults) for the first
   measurement, so one variable moves at a time.
 
-## The commands (release lane, after Alex's go-ahead)
+## The commands (release lane, after Alex McRitchie's go-ahead)
 
-Steffon runs these. No agent runs them without Alex's explicit go-ahead in session.
+Steffon runs these. No agent runs them without Alex McRitchie's explicit go-ahead in session.
 
 ```bash
 # 0. Baseline first (see "Measure" below); save the output.
@@ -185,7 +185,7 @@ baselines were taken afterwards (see Baselines below).
 
 ### Rollout record (2026-10-06, Steffon)
 
-Alex approved option (a) at 21:05 MDT: move QA to heroku-26, then jemalloc on QA,
+Alex McRitchie approved option (a) at 21:05 MDT: move QA to heroku-26, then jemalloc on QA,
 then on production.
 
 | Release created (UTC) | App | Release | What |

@@ -20,7 +20,7 @@ class AppDevopsStages
   # on the step. Fewer than MIN_SAMPLES durations and there is no ETA at all (the
   # card shows the sub-label alone): a number from nothing would be a promise.
   #
-  # THE COUNTDOWN (task live-build-countdown, Alex 2026-10-20). A step with a
+  # THE COUNTDOWN (task live-build-countdown, Alex McRitchie 2026-10-20). A step with a
   # real start (entered_at; never a designed task, whose created_at is not a
   # start) also carries its expected finish, `deadline` = entered_at + the usual
   # time. The pill paints it as a clock ("05:48", "1:02:03" from an hour up;
@@ -56,7 +56,7 @@ class AppDevopsStages
     DEPLOYING = "deploying".freeze
 
     # THE LAUNCHER SEAM. The client build launcher (task client-build-launcher)
-    # claims designed launch tasks and runs builders from Alex's Mac. It is live
+    # claims designed launch tasks and runs builders from Alex McRitchie's Mac. It is live
     # when a dispatcher ping (AgentDispatcher, POST /api/v1/agent_dispatchers/ping)
     # carrying LAUNCHER_SOUL in its souls has been heard within
     # AgentDispatcher::SILENT_AFTER and is not paused. Until one pings, every

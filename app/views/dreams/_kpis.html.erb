@@ -6,9 +6,9 @@
        [ "mean-grade", "Mean grade", dream_kpi(kpis.mean_grade, " / 2"), "#{pluralize(kpis.grades, "grade")} · 30 d",
          "Mean of the grades sessions gave the dreams that fired in them (0 wrong, 1 helped, 2 decided)" ],
        [ "swaps-per-week", "Swaps per week", dream_kpi(kpis.swaps_per_week), "#{kpis.no_swaps} no-swap · 4 wk",
-         "Swaps and adds Alex approved over the last 4 weeks, per week" ],
+         "Swaps and adds Alex McRitchie approved over the last 4 weeks, per week" ],
        [ "approval-latency", "Approval latency", dream_kpi(kpis.latency_days, " d"), "median of #{pluralize(kpis.latency_count, "approval")}",
-         "Median days from a dream's proposal (its source date) to Alex's click" ]
+         "Median days from a dream's proposal (its source date) to Alex McRitchie's click" ]
      ].each do |key, label, value, note, title| %>
     <div class="rounded-lg border border-subtle bg-surface-alt/60 p-3" data-test="dream-kpi-<%= key %>" title="<%= title %>">
       <p class="text-2xs font-bold uppercase tracking-wide text-muted"><%= label %></p>

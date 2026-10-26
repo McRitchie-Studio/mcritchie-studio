@@ -463,7 +463,7 @@ class AgentApiTest < Minitest::Test
     end
   end
 
-  LOGIN = { "token" => "LOGIN", "soul" => "ray", "tier" => "admin" }.freeze
+  LOGIN = { "token" => "LOGIN", "soul" => "alex", "tier" => "admin" }.freeze
 
   def test_unit_call_presents_the_login_and_makes_no_second_call_when_it_is_answered
     { 201 => "created", 403 => "a refusal under the login is the answer", 500 => "an error is not retried" }.each do |code, why|

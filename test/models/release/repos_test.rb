@@ -105,7 +105,7 @@ class Release::ReposTest < ActiveSupport::TestCase
   # needs no edit to this file (app-deploy-standard).
   test "app_repos lists the registry's app hash keys" do
     assert_equal (%w[mcritchie-studio turf-monster turf-vault mcritchie-industries rolio
-                     tax-studio chain-ops commercial-welding] + profile_repos).sort,
+                     tax-studio chain-ops commercial-welding alex-build] + profile_repos).sort,
                  Release::Repos.app_repos.sort
   end
 
@@ -121,7 +121,7 @@ class Release::ReposTest < ActiveSupport::TestCase
   # cyvasse (epic cyvasse-revival) was registered before its Heroku app existed;
   # wire-cyvasse-production-deploy gave it the Heroku app `cyvasse` as its target.
   # git_push_heroku has no test step, so it gates like mcritchie-industries: CI's
-  # full suite, verbatim, as test_cmd. It has NO QA copy (Alex, on cost), so no
+  # full suite, verbatim, as test_cmd. It has NO QA copy (Alex McRitchie, on cost), so no
   # qa_test_cmd and a DECLARED QA exemption.
   test "[unit] cyvasse deploys to the Heroku app cyvasse by git_push_heroku" do
     assert_equal Release::Ladder::THREE_RUNG, Release::Repos.ladder("cyvasse")
@@ -143,13 +143,13 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_nil Release::Repos.qa_test_cmd("cyvasse"),
                "cyvasse has no QA app; a qa_test_cmd would make its QA exemption stale"
     assert Release::Repos.qa_evidence_exempt?("cyvasse"),
-           "no cyvasse-qa by Alex's decision (2026-09-25), so a sweep must not hold cyvasse at the QA stamp"
+           "no cyvasse-qa by Alex McRitchie's decision (2026-09-25), so a sweep must not hold cyvasse at the QA stamp"
   end
 
   # dads-app (epic dads-app) is a release-managed STANDALONE: no studio-engine and
   # no database. It gates like cyvasse (git_push_heroku has no test step, so
   # test_cmd is CI's full suite, verbatim) and, like cyvasse, has no QA copy by
-  # Alex's cost decision, so no qa_test_cmd and a DECLARED QA exemption.
+  # Alex McRitchie's cost decision, so no qa_test_cmd and a DECLARED QA exemption.
   test "[unit] dads-app deploys to the Heroku app dads-app by git_push_heroku" do
     assert_equal Release::Ladder::THREE_RUNG, Release::Repos.ladder("dads-app")
     assert_includes Release::Ladder.sweepable(Release::Repos.config), "dads-app"
@@ -172,7 +172,7 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_nil Release::Repos.qa_test_cmd("dads-app"),
                "dads-app has no QA app; a qa_test_cmd would make its QA exemption stale"
     assert Release::Repos.qa_evidence_exempt?("dads-app"),
-           "no QA copy by Alex's Eco-dyno decision (2026-09-26), so a sweep must not hold dads-app at the QA stamp"
+           "no QA copy by Alex McRitchie's Eco-dyno decision (2026-09-26), so a sweep must not hold dads-app at the QA stamp"
   end
 
   # No ActiveRecord, so no `db:test:prepare` task: a gate string carrying it would
@@ -190,7 +190,7 @@ class Release::ReposTest < ActiveSupport::TestCase
   # The four showcase apps (task register-showcase-apps, 2026-09-26) are
   # release-managed STANDALONES registered exactly like dads-app: no studio-engine,
   # no database, git_push_heroku to a `mcr-<repo>` Heroku app, CI's `test` job as
-  # test_cmd, and no QA copy by Alex's decision. One loop, each assertion naming
+  # test_cmd, and no QA copy by Alex McRitchie's decision. One loop, each assertion naming
   # its repo, so a failure says which app drifted.
   #
   # 10and5 and search-position (task register-two-more-showcase-apps, 2026-09-26)
@@ -255,7 +255,7 @@ class Release::ReposTest < ActiveSupport::TestCase
       assert_nil Release::Repos.qa_test_cmd(repo),
                  "#{repo} has no QA app; a qa_test_cmd would make its QA exemption stale"
       assert Release::Repos.qa_evidence_exempt?(repo),
-             "no QA copy by Alex's 2026-09-26 selection, so a sweep must not hold #{repo} at the QA stamp"
+             "no QA copy by Alex McRitchie's 2026-09-26 selection, so a sweep must not hold #{repo} at the QA stamp"
     end
   end
 
@@ -502,10 +502,11 @@ class Release::ReposTest < ActiveSupport::TestCase
 
   # Guards the guard: every assertion above would pass vacuously over an empty list.
   test "[unit] the QA-evidence exemption guard actually has a repo to check" do
-    # turf-vault is the one exemption that is not a profile's (QA does not apply
-    # to it); every other exempt repo takes its exemption from its profile's
-    # recorded decision, and is derived rather than pinned.
-    assert_equal (%w[turf-vault] + profile_repos).sort,
+    # turf-vault is the one exemption that is not a decision (QA does not apply
+    # to it). Every other exempt repo takes its exemption from its profile's
+    # recorded decision, or, off a profile, from QA_EXEMPT_BY_OPERATOR_DECISION;
+    # both are derived here, and a repo exempt by neither still fails this pin.
+    assert_equal (%w[turf-vault] + profile_repos + QA_EXEMPT_BY_OPERATOR_DECISION.keys).sort,
                  Release::Repos.qa_evidence_exempt_repos.sort,
                  "exactly these repos are declared exempt — a third one arriving unreviewed " \
                  "is what this pin is here to surface"
@@ -517,11 +518,11 @@ class Release::ReposTest < ActiveSupport::TestCase
   # that decision must be named here AND quoted in config/release_repos.yml, so a
   # deployable app cannot go exempt by a one-line YAML edit that no one decided.
   #
-  # Both lines are Alex's own words. dads-app's is his cost ask (chat,
+  # Both lines are Alex McRitchie's own words. dads-app's is his cost ask (chat,
   # 2026-09-26), answered by option C, one Eco dyno with no QA copy; the registry
   # comment quotes the "C" reply beside it.
   #
-  # The four showcase apps' line is the option Alex SELECTED in an
+  # The four showcase apps' line is the option Alex McRitchie SELECTED in an
   # AskUserQuestion prompt (chat, 2026-09-26: "Should the four showcase apps get
   # QA copies, or ship straight to production like Cyvasse and dads-app?"). The
   # option text was written by the agent; the choice was his. On 2026-09-26 he
@@ -534,7 +535,10 @@ class Release::ReposTest < ActiveSupport::TestCase
   # this list only has to name deployable exempt apps that are NOT on a profile.
   # The per-app quotes stay in release_repos.yml's comments and in the profile's
   # history.
-  QA_EXEMPT_BY_OPERATOR_DECISION = {}.freeze
+  #
+  # alex-build is on no profile, so it cites its own grant: Alex McRitchie's
+  # answer in chat, 2026-10-25, to "a QA copy or a QA exemption?", verbatim.
+  QA_EXEMPT_BY_OPERATOR_DECISION = { "alex-build" => "QA exeption" }.freeze
 
   # The fleet decision a profile carries, verbatim. Change it here and in
   # config/app_profiles.yml together.
@@ -859,7 +863,8 @@ class Release::ReposTest < ActiveSupport::TestCase
     "tax-studio" => "repo_script",
     "chain-ops" => nil,
     "moms-app" => "git_push_heroku",
-    "commercial-welding" => "git_push_heroku"
+    "commercial-welding" => "git_push_heroku",
+    "alex-build" => "git_push_heroku"
   }.freeze
 
   test "every app keeps its production deploy strategy" do

@@ -21,17 +21,17 @@ class BuildIntakeIngestTest < ActiveSupport::TestCase
     BuildIntake::Ingest.new(request: request, user: user, ip: ip).call(text, client_id: client_id, bot_reason: bot_reason)
   end
 
-  test "a signed-out visitor's message is a received row for Ritch on the request's thread" do
+  test "a signed-out visitor's message is a received row for Alex on the request's thread" do
     message = ingest("A league site with schedules", client_id: "client-0001")
 
-    assert_equal %w[web ray chat received build], [ message.channel, message.soul_slug, message.routed_by, message.status, message.channel_ref ]
+    assert_equal %w[web alex chat received build], [ message.channel, message.soul_slug, message.routed_by, message.status, message.channel_ref ]
     assert_equal "web:build:#{@request.token}", message.thread_key
     assert_equal "public", message.person.role
     assert AgentPersonIdentity.exists?(platform: "web", external_id: "build:#{@request.token}", agent_person_id: message.person_id)
     assert_equal false, message.envelope["signed_in"]
     assert_equal 24, message.envelope["ip_hash"].length
     refute_includes message.envelope.to_json, "203.0.113.4", "the raw IP is never stored"
-    assert_equal message, AgentMessage.claimable(soul: "ray").first
+    assert_equal message, AgentMessage.claimable(soul: "alex").first
 
     assert_equal message, ingest("A league site with schedules", client_id: "client-0001"), "a double submit stores one row"
     assert_equal message.person, ingest("And standings").person, "one visitor person per request"
@@ -50,7 +50,7 @@ class BuildIntakeIngestTest < ActiveSupport::TestCase
     message = ingest("price?", bot_reason: "no_browser_proof")
     assert_equal "held", message.status
     assert_equal "no_browser_proof", message.events.find_by(kind: "bot_shield").detail["reason"]
-    assert_empty AgentMessage.claimable(soul: "ray")
+    assert_empty AgentMessage.claimable(soul: "alex")
   end
 
   test "past the cap the visitor reads the sign-in line from code and no model runs" do
@@ -63,12 +63,12 @@ class BuildIntakeIngestTest < ActiveSupport::TestCase
     assert_match(/Sign in to continue/, capped.response_text)
     assert_equal "posted", capped.reply_status, "delivered at once; the page shows it on its next poll"
     assert capped.events.exists?(kind: "intake_capped")
-    assert_empty AgentMessage.claimable(soul: "ray")
+    assert_empty AgentMessage.claimable(soul: "alex")
   end
 
-  test "Ritch's answer with an intake card stores the checked card; a catalog proposal is refused" do
+  test "Alex's answer with an intake card stores the checked card; a catalog proposal is refused" do
     message = ingest("A league site")
-    AgentMessage.claim!(soul: "ray", worker: "mac-1")
+    AgentMessage.claim!(soul: "alex", worker: "mac-1")
     text = "Here are three names for your CTO.\n===PROPOSAL===\n" \
            '{"kind": "intake", "card": "cto", "names": ["Coach", "Ref", "Scout"], "portrait": "harbor"}'
     message.reload.complete!(worker: "mac-1", response_text: text)
@@ -79,7 +79,7 @@ class BuildIntakeIngestTest < ActiveSupport::TestCase
     assert_equal 0, AgentProposal.count, "a build thread never stores an AgentProposal"
 
     second = ingest("anything else?")
-    AgentMessage.claim!(soul: "ray", worker: "mac-1")
+    AgentMessage.claim!(soul: "alex", worker: "mac-1")
     second.reload.complete!(worker: "mac-1", response_text: "Sure.",
                             proposal: { "kind" => "ask", "capability" => "board_status", "params" => {} })
     assert_nil second.reload.intake_card
@@ -89,7 +89,7 @@ class BuildIntakeIngestTest < ActiveSupport::TestCase
 
   test "the delivered answer is marked posted with no broadcast" do
     message = ingest("hello")
-    AgentMessage.claim!(soul: "ray", worker: "mac-1")
+    AgentMessage.claim!(soul: "alex", worker: "mac-1")
     message.reload.complete!(worker: "mac-1", response_text: "Hi! What do you want to build?")
     perform_enqueued_jobs(only: AgentMessageReplyJob)
     assert_equal "posted", message.reload.reply_status

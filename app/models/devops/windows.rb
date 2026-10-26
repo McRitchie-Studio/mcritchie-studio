@@ -5,7 +5,7 @@ require "time"
 
 module Devops
   # The OPERATOR WINDOWS (docs/agents/system/devops-v3-design.md section 6):
-  # the minutes Alex gives himself to answer a UI approval, an escalation, a
+  # the minutes Alex McRitchie gives himself to answer a UI approval, an escalation, a
   # production-authority request and an admin login request before the pipeline
   # proceeds on a defined default. Every window here is DERIVED — a timestamp the task or release
   # already carries plus a length from config/release_builder.yml — so there is
@@ -27,7 +27,7 @@ module Devops
 
     # The ship modes `bin/release ship --mode` accepts; `production_ship.mode`
     # in the YAML picks the default for a launch that names none. `cleared` is
-    # Alex's clearance in chat, recorded on the release with his words.
+    # Alex McRitchie's clearance in chat, recorded on the release with his words.
     MODES = %w[ask timed auto cleared].freeze
     DEFAULT_MODE = "timed"
 

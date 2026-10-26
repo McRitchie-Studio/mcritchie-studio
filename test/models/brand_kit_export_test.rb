@@ -34,7 +34,7 @@ class BrandKitExportTest < ActiveSupport::TestCase
       assert_equal kit.variant(type, tone:).svg, files.svg(name), name
     end
     assert_equal Logos::Variant.new(Logos::NavbarLogo.new("welding_v2"), rule: 4, text: :homogeneous, tone: :dark, colouring: :original).svg,
-                 files.svg("navbar-dark.svg"), "Alex's saved Navbar: Original, homogeneous, rule of 4"
+                 files.svg("navbar-dark.svg"), "Alex McRitchie's saved Navbar: Original, homogeneous, rule of 4"
   end
 
   # Task stacked-rule-of-three: the export draws the saved proportion.

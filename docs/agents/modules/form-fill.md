@@ -1,12 +1,12 @@
-# Form Fill — complete an application on Alex's behalf
+# Form Fill — complete an application on Alex McRitchie's behalf
 <!-- registry: complete an application from records, ask only what they cannot answer -->
 
 ## Status: Active
 
-Alex forwards an application: insurance, benefits, a bank or vendor
+Alex McRitchie forwards an application: insurance, benefits, a bank or vendor
 form. The agent **fills in everything the records can answer**. It asks only the
 questions the records cannot answer, then hands back a draft for him to review,
-edit, and sign. The agent drafts; Alex attests.
+edit, and sign. The agent drafts; Alex McRitchie attests.
 
 This SOP stands alone. Every command is inline. It composes with one registered
 SOP, [`knowledge-capture`](knowledge-capture.md): a forwarded email arrives

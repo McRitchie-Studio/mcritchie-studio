@@ -16,7 +16,7 @@ require Rails.root.join("bin/lib/dream_layers").to_s
 # deployed bank only when that desk's PR ships, so the server records its key and
 # layer as the session gives them.
 #
-# Alex approves on /dreams with one click (approve!): the in through DreamApproval
+# Alex McRitchie approves on /dreams with one click (approve!): the in through DreamApproval
 # (the phase-1 approve) and the out through DreamRetirement, in one transaction.
 # Agents propose; they never approve.
 class DreamSwap < ApplicationRecord
@@ -102,7 +102,7 @@ class DreamSwap < ApplicationRecord
   # Raises NotApprovable, with the reason, unless `user` may approve this swap
   # against `dreams` (the deployed bank). Returns [incoming, outgoing].
   def check!(user, dreams)
-    raise NotApprovable, "only Alex approves swaps" unless DreamApproval.approver?(user)
+    raise NotApprovable, "only Alex McRitchie approves swaps" unless DreamApproval.approver?(user)
     raise NotApprovable, "a no-swap answer has nothing to approve" if kind == "none"
     raise NotApprovable, "already approved" if approved_at
 
@@ -120,7 +120,7 @@ class DreamSwap < ApplicationRecord
     [ incoming, outgoing ]
   end
 
-  # Alex's one click: approves the in and retires the out, in one transaction.
+  # Alex McRitchie's one click: approves the in and retires the out, in one transaction.
   # Raises NotApprovable with the reason.
   def approve!(user, dreams)
     incoming, outgoing = check!(user, dreams)

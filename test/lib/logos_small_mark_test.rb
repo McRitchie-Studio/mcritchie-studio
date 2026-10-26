@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# [unit] Logos::SmallMark (task footer-stacked-logo; Alex 2026-10-15 08:10, of the old chest-only favicon: "That is the
+# [unit] Logos::SmallMark (task footer-stacked-logo; Alex McRitchie 2026-10-15 08:10, of the old chest-only favicon: "That is the
 # correct size"): the favicon's mark is the icon with its specks dropped, derived from the traced data, never drawn.
 # It keeps whole islands (with the evenodd holes inside them) and drops every island under MIN_SHARE of the box, its
 # box is its ink, and the committed public/favicon-mark.svg is exactly what it derives from the studio icon.

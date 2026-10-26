@@ -23,7 +23,7 @@ app on display) and **archived** (nothing deploys it). Every app runs on Heroku.
 | [`prisoners-dilemma`](https://github.com/McRitchie-Studio/prisoners-dilemma) | showcase | Iterated prisoner's dilemma tournament in the browser | 3800 | https://prisoners-dilemma.mcritchie.studio | none |
 | [`weekly-lock`](https://github.com/McRitchie-Studio/weekly-lock) | showcase | One confident NFL pick a week | 3900 | https://weekly-lock.mcritchie.studio | none |
 | [`rantly`](https://github.com/McRitchie-Studio/rantly) | showcase | Social network with a 140-character minimum | 4000 | https://rantly.mcritchie.studio | none |
-| [`portfolio`](https://github.com/McRitchie-Studio/portfolio) | showcase | Alex's portfolio of web apps | 4100 | https://portfolio.mcritchie.studio | none |
+| [`portfolio`](https://github.com/McRitchie-Studio/portfolio) | showcase | Alex McRitchie's portfolio of web apps | 4100 | https://portfolio.mcritchie.studio | none |
 | [`10and5`](https://github.com/McRitchie-Studio/10and5) | showcase | Restaurant mystery-shopper platform | 4200 | https://10and5.mcritchie.studio | none |
 | [`search-position`](https://github.com/McRitchie-Studio/search-position) | showcase | Google search position checker | 4300 | https://search-position.mcritchie.studio | none |
 

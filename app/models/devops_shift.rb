@@ -3,7 +3,7 @@
 # A devops SHIFT lease — the "at most one live conductor per lane" gate that keeps
 # two same-role devops sessions from colliding (two Avi heartbeats, or an Avi
 # heartbeat + a standalone pr-review). A lane is a ROLE/shift key — `avi`, `steffon`,
-# `ray` — so same-role acts contend while different-role acts (a review vs a
+# `mason` — so same-role acts contend while different-role acts (a review vs a
 # qa-release) run side by side.
 #
 # It reuses the build-claim lease math verbatim (lib/claim_lease.rb): a holder is a
@@ -29,9 +29,18 @@ class DevopsShift < ApplicationRecord
   # still takes the avi shift for its board-sweep. The shift model/table are KEPT (the
   # avi lane is live); only steffon left the default set. An old row for a retired lane
   # is harmless: nothing acquires it, and it simply lapses.
-  # The `ray` lane was `alex` until 2026-09-24 and `xan` until 2026-10-18; a lane
-  # named by an old slug resolves through Task::SOUL_ALIASES in .lane_row.
-  LANES = %w[avi ray].freeze
+  # The orchestrator lane was `alex` until 2026-09-24, `xan` until 2026-10-18 and
+  # `ray` until 2026-10-25. The orchestrator's acts are Mason's now
+  # (mason-takes-ceo-seat), so the lane is `mason`; a lane named by an old key
+  # resolves through LANE_ALIASES, never Task::SOUL_ALIASES (which sends `ray` to
+  # the persona, `alex`). RenameRaySoulToAlex repointed the stored row.
+  LANES = %w[avi mason].freeze
+  LANE_ALIASES = { "ray" => "mason", "xan" => "mason" }.freeze
+
+  def self.canonical_lane(lane)
+    key = lane.to_s.strip.downcase
+    LANE_ALIASES.fetch(key, key)
+  end
 
   # The acquire verdict: whether THIS instance now holds the lane, the ClaimLease
   # disposition it was in, and the (updated) row for the holder message.
@@ -39,7 +48,7 @@ class DevopsShift < ApplicationRecord
 
   validates :lane, presence: true, uniqueness: true
 
-  before_validation { self.lane = Task.canonical_soul(lane.to_s.strip.downcase).presence }
+  before_validation { self.lane = self.class.canonical_lane(lane).presence }
 
   # Try to take (or renew) the lane for this live instance. Unclaimed / expired /
   # same-instance → acquired; a DIFFERENT live instance holds it → not acquired.
@@ -70,7 +79,7 @@ class DevopsShift < ApplicationRecord
   # Extend the lease — but ONLY for the instance that already holds it (renew never
   # steals). Returns true when renewed, false otherwise. This is the heartbeat path.
   def self.renew(lane:, session:, nonce:, now: Time.current, ttl: ClaimLease::DEFAULT_TTL_SECONDS)
-    row = find_by(lane: lane.to_s.strip.downcase)
+    row = find_by(lane: canonical_lane(lane))
     return false unless row
 
     renewed = false
@@ -87,7 +96,7 @@ class DevopsShift < ApplicationRecord
   # true when released. A clean session-end release frees the lane immediately
   # (rather than waiting out the TTL).
   def self.release(lane:, session:, nonce:, now: Time.current)
-    row = find_by(lane: lane.to_s.strip.downcase)
+    row = find_by(lane: canonical_lane(lane))
     return false unless row
 
     released = false
@@ -110,7 +119,7 @@ class DevopsShift < ApplicationRecord
   # winner's row. RaceTolerantCreate covers BOTH halves of that window (the
   # validator's RecordInvalid as well as the index's RecordNotUnique).
   def self.lane_row(lane)
-    find_or_create_tolerating_race!(lane: Task.canonical_soul(lane.to_s.strip.downcase))
+    find_or_create_tolerating_race!(lane: canonical_lane(lane))
   end
 
   # The ClaimLease-shaped view of this row (string keys, ISO8601 expiry) so the pure

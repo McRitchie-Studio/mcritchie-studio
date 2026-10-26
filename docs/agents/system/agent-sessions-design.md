@@ -3,7 +3,7 @@
 **Status: decided; phase two in progress.** Piece 3b of the
 `platform-audit-refactors` epic. Sections 1 to 7 state the model: what the code
 enforces, and what is decided and not built. Section 8 lists the remaining steps
-by task slug; section 9 holds the questions Alex has not answered.
+by task slug; section 9 holds the questions Alex McRitchie has not answered.
 How a soul logs in: [`../modules/credentials.md`](../modules/credentials.md#how-a-soul-logs-in-to-the-board).
 
 The page reads the code on `accepted`. The shared secret retires in two stages
@@ -29,10 +29,10 @@ built; the capability endpoints of section 4 are mostly not.
 | Actor on board writes | The session's soul when a session is present; the `actor` or `by` param is ignored. Under the shared token the param is recorded as sent | `app/controllers/concerns/api/agent_session_gate.rb#session_actor` |
 | Session-only endpoints | The facts API takes an agent session and answers the shared token 401. The TikTok draft create and the `ship_authorized` step of the release events API each take an admin session and answer anything else 403 | `app/controllers/api/v1/facts_controller.rb#require_agent_session!`, `app/controllers/concerns/api/agent_session_gate.rb#require_admin_session_only!` |
 | Turf Monster production | Calls two hub endpoints: `Studio::PushGameRecap` (`POST /api/v1/game_recaps`) and `Studio::SyncAthletes` (`GET /api/v1/athletes`). Each presents `STUDIO_RUNTIME_KEY`, Turf's own client key, when that is set, and exchanges `AGENT_API_SECRET` while it is not. Turf's config holds the shared secret until Steffon swaps it (section 8) | `turf-monster/app/services/studio/` |
-| Heartbeat attribution | `bin/agent-activity heartbeat <soul>` writes a sticky `.acting-agent` marker beside the session marker; every activity attributes to that soul until `--clear` or session end. Local, unverified. For Steffon and Ritch the same command also asks for the admin login (section 3) | `bin/atomic-event#heartbeat` |
+| Heartbeat attribution | `bin/agent-activity heartbeat <soul>` writes a sticky `.acting-agent` marker beside the session marker; every activity attributes to that soul until `--clear` or session end. Local, unverified. For Steffon and Mason the same command also asks for the admin login (section 3) | `bin/atomic-event#heartbeat` |
 | GitHub tokens | `bin/gh-app-mint-token` mints a GitHub App installation token: one-hour expiry (GitHub's), scoped by App identity (`github.mcritchie-agent` builds and reviews; `github.mcritchie-admin` ships, no pull-request scope), every repo of the installation. The admin item is in the admin vault, unreadable from the agent token. `bin/gh-app-git-credential` hands the token to git, so it reaches the shell and not the transcript | `bin/gh-app-mint-token`, `bin/gh-token#IDENTITIES` |
 | 1Password reads | Two lanes: the agent vault `studio-agents` through `OP_SERVICE_ACCOUNT_TOKEN` in every shell; the admin vault `studio-agents-admin` through `~/.zprofile.admin`, opt-in. Every `op` read is metered to `.agents/op-reads.log` (caller, action, context) and queried by `bin/op-reads` | `bin/secret`, `bin/lib/op_meter.rb`, [`../modules/credentials.md`](../modules/credentials.md) |
-| Operator windows | Four windows in `config/release_builder.yml#operator_windows` (approval 10 minutes, escalation 20, production 30, admin login 10), read by `Devops::Windows`. The production one is a grant: the ship posts a `ship_authorization` request and Alex taps Approve on `/deployments`, or `bin/release ship --mode cleared` records his chat clearance with no window | `app/controllers/releases_controller.rb#authorize_ship` |
+| Operator windows | Four windows in `config/release_builder.yml#operator_windows` (approval 10 minutes, escalation 20, production 30, admin login 10), read by `Devops::Windows`. The production one is a grant: the ship posts a `ship_authorization` request and Alex McRitchie taps Approve on `/deployments`, or `bin/release ship --mode cleared` records his chat clearance with no window | `app/controllers/releases_controller.rb#authorize_ship` |
 | Client-facing runtime | Tyrion: an isolated NUC, outbound only, a model with no tools, a 280-character output filter, a capped model key, a per-account bot token stored as a digest | [`../agents/tyrion/runtime.md`](../agents/tyrion/runtime.md) |
 
 What the shape means: the shared token proves a caller holds the secret, never
@@ -65,8 +65,8 @@ mint a session: every login is presented with the machine key (section 3).
 
 | Tier | Souls | Reaches |
 |---|---|---|
-| **Admin** | Steffon, Ritch (`AgentSession::ADMIN_SOULS`) | Any task, release writes, conductor lanes, agent updates, slug renames, sensitive facts, the TikTok draft. An admin soul may also hold a studio session, which narrows it |
-| **Studio** | Every other soul that is not a client: Carl, Jasper, Avi, Shannon, Rex, Mack, Mason and the Pokémon builders | Board writes for the one task held, and ordinary facts |
+| **Admin** | Steffon, Mason (`AgentSession::ADMIN_SOULS`) | Any task, release writes, conductor lanes, agent updates, slug renames, sensitive facts, the TikTok draft. An admin soul may also hold a studio session, which narrows it |
+| **Studio** | Every other soul that is not a client: Carl, Jasper, Avi, Shannon, Rex, Mack, Alex and the Pokémon builders | Board writes for the one task held, and ordinary facts |
 | **Client** | Turf Monster, Tyrion (`AgentSession::CLIENT_SOULS`) | A runtime key reaches the endpoints `AgentSession::CLIENT_ENDPOINTS` lists for its soul and answers 403 everywhere else, naming them. Turf Monster: `GET /api/v1/athletes` and `POST /api/v1/game_recaps`. Tyrion: none |
 | **Harness** | None: a harness key belongs to a machine and is held as `pokemon` | The doors `accepts_harness_key` names: those that mint a login (the studio login, a review claim, a login request) and `GET /api/v1/agent_sessions/current`; the board's reads (tasks, task activities, gate runs, review claims and pending actions, conductor claims, shifts, desk records, agents, insights, activity windows and the grading queue); narration (agent activities and actions); a task's create, in `designed`; and its claim, a move to `building` of a `designed` or `building` task that carries only the stage, the event, the devops and the size estimate. Every other endpoint answers 403, so it writes no task but the claim. It never becomes the session a request acts as, so it names no soul: a call under it declares its lane or actor as a call under the shared token does, and is never counted as a legacy use |
 
@@ -87,20 +87,20 @@ secret's token otherwise.
 |---|---|---|---|---|
 | Studio, builder | The task claim: `bin/task begin` logs the desk in (`POST /api/v1/agent_sessions`). The task must be `building`, and the soul must be one the claim recorded as its builder; any other soul answers 403 | The machine key | The task | When `bin/submit` reads the task back on `submitted` (it logs the desk out), when the task leaves `building` and `submitted`, or after 24 hours. `bin/task begin <slug>` on a resume logs in again |
 | Studio, reviewer | The review claim: `bin/task claim-next-review` and `review-claim acquire`. The mint sits inside the claim's lock. The soul must be in the reviewer pool and outside the task's author set | The machine key | The claimed task | When the task leaves `submitted`, when the claim lapses, is released or changes hands, or after 24 hours |
-| Admin | The one-time code the board shows on the request, carried in Alex's launch phrase, or an Approve tap on the board, inside the `admin_login` window of `Devops::Windows`. The session asks; the server posts the request; a lapse grants nothing | The machine key, plus the request id and its collect key | None: the admin tier is the scope | Eight hours, or the harness session's end |
+| Admin | The one-time code the board shows on the request, carried in Alex McRitchie's launch phrase, or an Approve tap on the board, inside the `admin_login` window of `Devops::Windows`. The session asks; the server posts the request; a lapse grants nothing | The machine key, plus the request id and its collect key | None: the admin tier is the scope | Eight hours, or the harness session's end |
 | Admin, from a hub shell | `bin/rails agent_sessions:grant_admin`: a shell on the hub can already write the database, so the shell is the grant. It runs outside the board: no request, no code, no tap and no window, and the row records `operator_grant`, the value an Approve tap writes | Nothing; the token prints on stdout for `AGENT_ADMIN_SESSION_TOKEN` | None | One to eight whole hours |
 | Harness key | A login request of kind `harness_key` (`bin/harness-key request`), which the operator grants once per machine with the same one-time code or Approve tap, inside the same window. The row on the board reads `Harness key · <machine>` | The machine key (the shared token on a machine with no key; a held key for a rotation), plus the request id and its collect key | The mint doors, the board's reads, narration, a task's create and its claim (section 2) | None in effect; `bin/rails agent_sessions:revoke SLUG=<sess-…>` ends it at once |
 | Client, a sibling app's two endpoints | `bin/rails agent_sessions:grant_runtime_key SOUL=turf-monster LABEL=<runtime>` from a hub shell. Stdout is the key and stderr the notice; a one-off dyno returns both on stdout | Nothing; the key goes into the runtime's config (`STUDIO_RUNTIME_KEY` on Turf Monster) | `AgentSession::CLIENT_ENDPOINTS` for the soul | None in effect; revoked by slug |
 | Client, an outward-facing runtime | Not built. Decided: only from the isolated runtime, with a runtime-bound key stored as a digest and shown once, as Tyrion's bot token is | The runtime key, from the runtime's own env | The runtime's channel (first case: Turf Monster's TikTok DMs) | The key's |
 
 **The admin request has two grants the server verifies** (`AgentLoginRequest`).
-`bin/agent-activity heartbeat steffon|ray` posts the request and prints its
+`bin/agent-activity heartbeat steffon|mason` posts the request and prints its
 server-issued `login-…` slug. The board shows an admin each open request by that
 slug, because the soul and the harness session id on a row are whatever the
 poster sent.
 
 - **The one-time code.** The row shows a code derived from the request; the table
-  holds its digest. Alex puts the code in his launch phrase and the agent posts
+  holds its digest. Alex McRitchie puts the code in his launch phrase and the agent posts
   it back (`heartbeat <soul> --code <code>`), with no tap. One grant spends the
   code, and the fifth wrong code refuses the request. A phrase with no code is
   words in a context and grants nothing.
@@ -257,7 +257,7 @@ Every shell reads `studio-agents` directly. The decided end state: a studio
 session reaches a credential only through a capability, so the agent vault token
 leaves the default shell profile. An admin session may still run `op read`, and
 each read is a break-glass event: the metered row in `op-reads.log` stays, and the
-server files who, which item, which session and why, on a page Alex can read.
+server files who, which item, which session and why, on a page Alex McRitchie can read.
 1Password remains the fallback when the server is down: the fresh-machine rebuild
 and a ship recovery read it as they do now. None of this section is built.
 
@@ -301,7 +301,7 @@ and a ship recovery read it as they do now. None of this section is built.
    the harness key also opens (`LegacyAuthUse.harness_key_doors`, listed under
    the first lines), which a machine with a key no longer rides the shared token
    through; the claim counts as `PATCH api/v1/tasks#update (claim)`. The gate is
-   its first line reading `0 outside the mint doors` for the period Alex chooses.
+   its first line reading `0 outside the mint doors` for the period Alex McRitchie chooses.
 
 A machine can rehearse Stage B alone with `AGENT_LEGACY_TOKEN=off` (section 3).
 
@@ -310,13 +310,13 @@ A machine can rehearse Stage B alone with `AGENT_LEGACY_TOKEN=off` (section 3).
 Stage B1 comes first: the callers the census names outside the mint doors are
 converted, each to a login or to a harness-key door. Stage B ships only after
 the census then reads zero outside the mint doors on production for the period
-Alex chooses. Each line names the code it changes.
+Alex McRitchie chooses. Each line names the code it changes.
 
 1. **The shared token answers 401 outside the mint doors.**
    `Api::V1::BaseController#authenticate_legacy_token!` refuses every action that
    is not in `LegacyAuthUse::MINT_DOORS`, with a reason that names the login:
    `bin/task begin` for a builder, a review claim for a reviewer, `bin/agent-activity
-   heartbeat steffon|ray` for an admin. Test:
+   heartbeat steffon|mason` for an admin. Test:
    `test_legacy_token_on_write_answers_401_naming_login`, with the control that a
    mint door still answers it.
 2. **`bin/task` loses its fallbacks.** `bin/task#api` no longer retries a refused
@@ -365,7 +365,7 @@ its parent's environment, working tree and files; it does not inherit its
 parent's context. So each login gets a **seat**:
 
 - The command that mints a login (`bin/task begin`, a review claim,
-  `heartbeat steffon|ray`) draws a random seat, keeps the login in a file named
+  `heartbeat steffon|mason`) draws a random seat, keeps the login in a file named
   for the seat's digest, and prints the seat once, to the agent that ran it.
 - A command presents the login only when the agent names the seat
   (`AGENT_SEAT=<seat>` on the command). The seat is a selector, not a
@@ -385,14 +385,14 @@ harness session that kept it.
 
 | Finding | State |
 |---|---|
-| Agents of one harness share a review login and the admin login | Specified above, for Alex to rule on; not built. Stage A does not widen it |
+| Agents of one harness share a review login and the admin login | Specified above, for Alex McRitchie to rule on; not built. Stage A does not widen it |
 | `bin/task` could not present an admin session, so `archived` had no command-line path under sessions | Built: `TASK_AS_ADMIN=1 bin/task move <slug> archived` |
 | A builder's session cannot archive its own task | By rule: `archived` is an admin transition. `bin/task` does not offer the studio login on that move, so today it rides the shared token; in Stage B it takes an admin login |
 | A reviewer who fix-forwards becomes an author and gets 403 on the move to `reviewed` | By rule: an author does not pass the verdict. Today: release the claim, then make the move on the shared token. Under sessions: release the claim, and a reviewer outside the author set claims and moves, or an admin outside it runs `TASK_AS_ADMIN=1 bin/task move <slug> reviewed` |
 | `ReviewClaimCli#release` deleted the kept review login without checking who owned it | Built: only the harness session that kept it forgets it |
 | The task API's `agent_session` picked the newest unrevoked session without asking whether it was live | Built: it names the newest session that is live |
 
-## 9. Open questions for Alex
+## 9. Open questions for Alex McRitchie
 
 Answered: `POST /api/v1/auth` stays, as the credential that mints a login and
 nothing else once Stage B ships. Questions 4 and 5 are answered as proposed: the
@@ -408,7 +408,7 @@ cannot grant; the TikTok draft SOP uses the board's grant.
    arbitration request, which keeps the admin tier to the two souls named.
 2. **Who runs `qa-release` under sessions?** A conductor claim is an admin write
    and Avi holds no admin tier. Proposed: the release lane is run as Steffon or
-   Ritch; or Avi's claim takes a studio login scoped to the release.
+   Mason; or Avi's claim takes a studio login scoped to the release.
 3. **How long must the census read zero before Stage B ships?** Proposed: seven
    days on production, covering one full release cycle.
 4. **What does a logged-out agent present to read the board and to narrate?**

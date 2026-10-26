@@ -108,8 +108,14 @@ module CommitIdentity
 
   # The soul mailbox convention already used across the ecosystem
   # (carl@, shannon@, steffon@ …). The local part IS the slug, so `git log
-  # --format=%ae` joins directly to the board's author set with no mapping table.
+  # --format=%ae` joins directly to the board's author set, with ONE exception:
+  # the `alex` persona keeps ray@, because alex@mcritchie.studio is Alex
+  # McRitchie's own verified address (ritch-renamed-alex; Task::SOUL_ALIASES
+  # folds ray@ back to `alex`).
   MAIL_DOMAIN = "mcritchie.studio"
+  MAILBOXES = { "alex" => "ray" }.freeze
+
+  def self.email_for(soul) = "#{MAILBOXES.fetch(soul, soul)}@#{MAIL_DOMAIN}"
 
   # `failed` names WHICH git call failed (:add or :commit) so the caller can say
   # so; nil on success.
@@ -127,7 +133,7 @@ module CommitIdentity
     return {} unless soul
 
     name = display_name(soul)
-    email = "#{soul}@#{MAIL_DOMAIN}"
+    email = email_for(soul)
     {
       "GIT_AUTHOR_NAME" => name, "GIT_AUTHOR_EMAIL" => email,
       "GIT_COMMITTER_NAME" => name, "GIT_COMMITTER_EMAIL" => email
@@ -214,7 +220,7 @@ module CommitIdentity
     end
 
     name = display_name(soul)
-    email = "#{soul}@#{MAIL_DOMAIN}"
+    email = email_for(soul)
     base = { soul: soul, name: name, email: email }
 
     git_dir, git_ok = git.call(dir, "rev-parse", "--path-format=absolute", "--git-dir")

@@ -36,7 +36,7 @@ class User < ApplicationRecord
     { email: "alex@mcritchie.studio",  name: "Alex McRitchie",  role: "admin" },
     { email: "team@mcritchie.studio",  name: "Team McRitchie",  role: "admin" },
     # THE SUPER-ADMIN LANE. admin@mcritchie.studio is the top-of-stack Google
-    # credential the Steffon and Alex agents sign in with (1Password
+    # credential the Steffon and Mason agents sign in with (1Password
     # `google.studio.admin`, vault `studio-agents-admin`). It is an operator SEAT
     # rather than a person.
     { email: "admin@mcritchie.studio", name: "Admin McRitchie", role: "admin" },

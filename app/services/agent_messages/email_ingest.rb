@@ -12,7 +12,7 @@ module AgentMessages
   #      lists, bounces. Guarded mail is not stored at all.
   #   2. Trust (EmailTrust): only the topmost amazonses.com verdict, with aligned
   #      DKIM and DMARC, names the sender. A verified sender resolves to a person
-  #      by the `email` identity (AgentPerson.resolve!); Alex's alex@mcritchie.studio
+  #      by the `email` identity (AgentPerson.resolve!); Alex McRitchie's alex@mcritchie.studio
   #      is the owner's. An unverified one has NO person, so it is the public,
   #      held, and never claimable, whatever its From line says.
   #   3. Thread: a reply whose In-Reply-To or References names an email the

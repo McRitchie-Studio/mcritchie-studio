@@ -1209,7 +1209,7 @@ end
 # devops.built_by only for a soul, reviewer-select reads only that key, and a
 # dropped stamp once seated a PR's own author as its reviewer.
 SOUL_ROSTER_PATH = File.expand_path("../config/souls.yml", __dir__)
-SOUL_ALIASES = { "alex" => "ray", "xan" => "ray" }.freeze
+SOUL_ALIASES = { "ray" => "alex", "xan" => "alex" }.freeze # mirrors Task::SOUL_ALIASES
 
 def soul_roster
   @soul_roster ||= YAML.safe_load_file(SOUL_ROSTER_PATH).fetch("souls").map { |soul| soul.fetch("slug").to_s }
@@ -1360,7 +1360,7 @@ def api(method, path, body = nil, opts = {})
 end
 
 # TASK_AS_ADMIN=1 makes this run act as the admin soul whose login this harness
-# session holds (`bin/agent-activity heartbeat steffon|ray`, or
+# session holds (`bin/agent-activity heartbeat steffon|mason`, or
 # AGENT_ADMIN_SESSION_TOKEN): every call presents that login, the board records
 # the admin soul as the actor, and the admin-tier writes (a move to `archived`
 # above all) pass. It is asked for, never assumed: a harness session's admin login
@@ -1383,7 +1383,7 @@ def admin_api(method, path, body, deadline = {})
   login = admin_login
   unless login
     die!("#{ADMIN_ENV} is set and this harness session holds no admin login. Run " \
-         "`bin/agent-activity heartbeat steffon` (or ray) and have the operator grant it, or export " \
+         "`bin/agent-activity heartbeat steffon` (or mason) and have the operator grant it, or export " \
          "#{HeldSession::ADMIN_ENV} from `bin/rails agent_sessions:grant_admin`; then run this again")
   end
 
@@ -2574,7 +2574,7 @@ end
 # the builder who resumes it is the one fixing it, so begin clears it at the claim
 # through PATCH /api/v1/tasks/<slug>/unblock, naming who (`by`); the board writes the
 # audit row (Task#builder_unblock!). Any other block (environment, dependency) waits on
-# something outside the desk, and an `Escalated:` block waits on Alex: begin leaves
+# something outside the desk, and an `Escalated:` block waits on Alex McRitchie: begin leaves
 # those standing, and the server refuses them 409 if asked. Report-only: the desk and
 # the claim stand either way.
 def clear_block_at_begin(slug, task, by:)

@@ -4,11 +4,11 @@
 ## Status: Active
 
 The Pokémon's `digest-video` SOP: stage 1 of pipeline 3 in the
-[music video pipeline plan](../../../system/music-video-pipeline-plan.md). Alex
+[music video pipeline plan](../../../system/music-video-pipeline-plan.md). Alex McRitchie
 says `digest video <url>`; the agent downloads the video, stores it, records
 it, and cuts it into the recast pipeline's chunks, so the cast stage can start.
 
-It runs on Alex's Mac, where the download works; YouTube often blocks cloud IPs.
+It runs on Alex McRitchie's Mac, where the download works; YouTube often blocks cloud IPs.
 `bin/digest-video <url>` runs steps 1 to 7 in one go:
 
 ```bash
@@ -37,7 +37,7 @@ The cast (stage 2) comes after, and the chunks do not wait for it.
 | `tiktok.com`, `vm.tiktok.com`, `vt.tiktok.com` | [`download-tiktok`](download-tiktok.md) | built; download UNMEASURED |
 | `instagram.com` | [`download-instagram`](download-instagram.md) | built; anonymous download measured 2026-10-04, cookie path UNMEASURED |
 
-Any other host: stop and ask Alex.
+Any other host: stop and ask Alex McRitchie.
 
 ## 2. Download
 
@@ -206,7 +206,7 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
    (Drop `--production` for the dev bucket and `localhost:3000`.) The full
    how-to, with the tag format, is [Lettered references](#lettered-references).
 
-   **The hand-back to Alex for a video is not complete until every chunk with
+   **The hand-back to Alex McRitchie for a video is not complete until every chunk with
    people on screen has A/B/C frames.** A chunk with no sightings in its
    window (credits, black, a title card) legitimately has none, and the alt
    video page does not count it. The alt video page and the asset zip's
@@ -219,7 +219,7 @@ Until then the agent runs them by hand on the Mac, from the source MP4.
      same ones. `--extract --alt N` picks moments that favour alt video N's
      swaps; use it only when one alt video is the point, and otherwise
      extract without `--alt` so the frames show everyone.
-   - Nothing told Alex the frames were missing: he downloaded an alt video's
+   - Nothing told Alex McRitchie the frames were missing: he downloaded an alt video's
      zip and found no A/B/C frames because this step had not run. The page now
      warns, but the step is the agent's, not the warning's.
 6. **Hand the operator the cast panel**, `/videos/<slug>` (admin). Each card

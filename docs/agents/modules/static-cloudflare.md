@@ -4,7 +4,7 @@
 Heroku dyno, and ship it through the release like any other app.
 
 **Why.** The seven showcase apps share Heroku's 1,000h Eco pool. It was overdrawn by
-75h on 2026-10-24, so all seven answered 503 for the last week of every month. Alex,
+75h on 2026-10-24, so all seven answered 503 for the last week of every month. Alex McRitchie,
 2026-10-25: the unpaid apps serve from Cloudflare. The lifecycle that will downgrade
 any unpaid app after its 30-day trial is epic `hosting-trial-lifecycle`
 (`/Users/alex/projects/.agents/epics/hosting-trial-lifecycle.md`); this page is its
@@ -139,7 +139,7 @@ code.
 
 ### The cutover procedure
 
-Alex's ruling: after the cutover the Heroku app stays at **0 dynos for 30 days**, then
+Alex McRitchie's ruling: after the cutover the Heroku app stays at **0 dynos for 30 days**, then
 is **deleted**. For each app, in order:
 
 1. `bin/static-downgrade <repo>`; read the plan.
@@ -148,7 +148,7 @@ is **deleted**. For each app, in order:
 3. Check the host in a browser: the home page, a content page, `/up`.
 4. Add the app's row to the **cutover log** below: the cutover date (today, Denver
    time), the delete date (day 30), and who deletes. Steffon deletes, by his
-   `heroku.studio.agents` lane, on Alex's standing ruling.
+   `heroku.studio.agents` lane, on Alex McRitchie's standing ruling.
 5. In a follow-up PR, flip the app's `config/release_repos.yml` entry to the
    `standalone-static` shape above (`strategy: static_cloudflare`, `bucket`,
    `heroku_app`, no `remote`), add the app to `STATIC_SHOWCASE_APPS` in

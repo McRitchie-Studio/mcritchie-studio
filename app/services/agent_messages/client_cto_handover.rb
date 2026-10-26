@@ -1,12 +1,12 @@
 module AgentMessages
-  # Ritch's handover to a new client CTO (docs/agents/system/client-cto.md; design:
+  # Alex's handover to a new client CTO (docs/agents/system/client-cto.md; design:
   # .agents/epics/build-with-xan-design.md, "Build my app"). AppLaunch calls it
   # inside the launch transaction, so a launched app always has its first chat
   # turn and a rolled-back launch has none.
   #
   # It stores ONE `web` AgentMessage in the owner's own chat thread with the
   # app's CTO (`web:<sub>:<user id>`), routed to `client_cto`: its content is
-  # Ritch's handover line, and it is stored ALREADY ANSWERED with the CTO's
+  # Alex's handover line, and it is stored ALREADY ANSWERED with the CTO's
   # opening message (#greeting), which code writes from the launch: the owner's
   # first name, the CTO's, the app's and its address. So the chat opens on the handover
   # and the greeting, never on a bare "typing…", and no model runs for it
@@ -23,7 +23,7 @@ module AgentMessages
   #
   # Idempotent on its external id (one handover per app per owner).
   module ClientCtoHandover
-    AUTHOR = "Ritch".freeze
+    AUTHOR = "Alex".freeze
     ACTOR = "app-launch".freeze
     VIA = "handover".freeze
     GREETING_SUMMARY = "code greeting".freeze
@@ -37,11 +37,11 @@ module AgentMessages
     def handover?(message) = message.envelope.is_a?(Hash) && message.envelope["via"] == VIA
 
     # The CTO's opening message, from the launch's data alone (task
-    # build-launch-handoff, Alex 2026-10-18): first person and by name, it greets
+    # build-launch-handoff, Alex McRitchie 2026-10-18): first person and by name, it greets
     # the owner by first name, says the CTO is the agent managing the app, that
     # the app is IN LINE to be built and what that means (the address, and the
     # status card's live progress: Prepping, Building, Reviewing, Releasing,
-    # Deploying), and what the owner can do here meanwhile. Short, in Alex's
+    # Deploying), and what the owner can do here meanwhile. Short, in Alex McRitchie's
     # plain voice; the plan stays on the summary card the owner just confirmed.
     # Markdown, as every answer.
     #
@@ -49,7 +49,7 @@ module AgentMessages
     # line (FirstNameAsk::QUESTION; task cto-chat-quality-pass): their reply
     # sets it, so the engine's first-name modal stays off this page.
     #
-    # NEVER "building now" (task app-card-stage-labels, Alex 2026-10-19): at
+    # NEVER "building now" (task app-card-stage-labels, Alex McRitchie 2026-10-19): at
     # launch the task is `designed` and nobody is building it yet; the card
     # (AppDevopsStages) says Building only once a builder holds it. A greeting
     # already stored keeps its words; only new launches read this text.

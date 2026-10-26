@@ -5,7 +5,7 @@
 #
 #   bin/ship-clock start <slug> [--at ISO] [--estimated] [--restamp]
 #       Stamp T0 (now, unless --at) as a board note on the task. Run it FIRST, at
-#       Alex's prompt. Before `bin/task begin` the task does not exist yet, so the
+#       Alex McRitchie's prompt. Before `bin/task begin` the task does not exist yet, so the
 #       stamp is kept on disk (~/.ship-clock/<slug>.json, or $SHIP_CLOCK_HOME) and
 #       the second `start` after begin moves THAT time onto the board.
 #   bin/ship-clock report <slug> [--json] [--t0 ISO] [--t0-estimated] [--log PATH ...]
@@ -21,7 +21,7 @@
 # (2026-10-13T08:15:00-06:00 or 2026-10-13T14:15:00Z). Every gh call is bounded by
 # SHIP_CLOCK_GH_TIMEOUT seconds (default 60); a timeout fails like a failed read.
 #
-# The SOP is docs/agents/agents/ray/sops/ship-clock.md; the logic is bin/lib/ship_clock.rb.
+# The SOP is docs/agents/agents/alex/sops/ship-clock.md; the logic is bin/lib/ship_clock.rb.
 
 require "optparse"
 require "fileutils"

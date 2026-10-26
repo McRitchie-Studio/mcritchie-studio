@@ -10,7 +10,7 @@ History cut from this page:
 
 Steffon owns stages 4-5 (Confirming, Deploying) as the **deployer**
 (`ReleaseConductorClaim` role `deployer`). This crosses the production gate: run it only
-when Alex launched `production-deploy` or granted ship authority in-session.
+when Alex McRitchie launched `production-deploy` or granted ship authority in-session.
 
 ## Entry
 
@@ -26,7 +26,7 @@ The App's pre-2026-09-26 item name is retired and refused; export the name above
 
 You are **expected to hold both**; an absent one is this machine's setup gap. Remedy:
 **`source ~/.zprofile.admin`** (yours), or, on a machine that never had one,
-**`bin/setup-1pass-token --admin`** once (Alex's: it reads his clipboard).
+**`bin/setup-1pass-token --admin`** once (Alex McRitchie's: it reads his clipboard).
 
 Run from the McRitchie Studio primary checkout, **under the deployer identity**:
 
@@ -88,9 +88,9 @@ The active release is `assembled` with `qa_deployed_at` stamped and members `ass
 **A release carrying turf-monster or turf-vault work also needs its devnet gauntlet:**
 a completed `devnet_gauntlet` event on the release, recorded by `qa-release` after a
 green [`contest-rehearsal`](../../turf_monster/sops/contest-rehearsal.md) on QA. Without
-it, do not ship: hand back to `qa-release` and ask Alex for the rehearsal.
+it, do not ship: hand back to `qa-release` and ask Alex McRitchie for the rehearsal.
 `bin/release ship` reads the record in its decision snapshot and refuses before
-anything is published or pushed (`Release::DevnetGauntlet`). Only Alex's words waive
+anything is published or pushed (`Release::DevnetGauntlet`). Only Alex McRitchie's words waive
 it: `bin/release ship --skip-devnet-gauntlet "<his words>"`, which ships with a loud
 warning and records nothing.
 
@@ -137,12 +137,12 @@ timeline"); the stamp is first-write-wins:
 api POST /api/v1/releases/current/events/confirming/start '{"event": {"actor": "steffon"}}'
 ```
 
-Then ship, naming the production-authority mode. When Alex cleared this release in
+Then ship, naming the production-authority mode. When Alex McRitchie cleared this release in
 the session (his words in the chat, or a launch prompt that grants the lane), his
 clearance is the grant:
 
 ```bash
-bin/release ship --mode cleared --clearance "<Alex's words>" --yes
+bin/release ship --mode cleared --clearance "<Alex McRitchie's words>" --yes
 ```
 
 When nobody cleared it (a heartbeat, a scheduled run), ask through the window:
@@ -156,13 +156,13 @@ Ship from the primary checkout. **`--mode` takes production authority**
 
 | Mode | What happens at the authority step |
 |---|---|
-| `cleared` | records Alex's chat clearance as the grant: `--clearance "<his words>"` is required, and the completion carries `granted_via chat`, `cleared_by` and the words. No window, no button, and each run records its own grant, so a re-run stores the words it was given. A blank clearance refuses before anything moves, and so does `--clearance` with any other mode. The Next Release card names it as cleared in chat and unsigned, never in the success tone a signed Approve gets. |
+| `cleared` | records Alex McRitchie's chat clearance as the grant: `--clearance "<his words>"` is required, and the completion carries `granted_via chat`, `cleared_by` and the words. No window, no button, and each run records its own grant, so a re-run stores the words it was given. A blank clearance refuses before anything moves, and so does `--clearance` with any other mode. The Next Release card names it as cleared in chat and unsigned, never in the success tone a signed Approve gets. |
 | `timed` (the config default, `production_ship.mode` in `config/release_builder.yml`) | posts the `ship_authorized` request on the release, shows a 30-minute countdown with an **Approve** button on the Next Release card, and waits. A grant deploys at once. On lapse it deploys only if G3 Candidate is green and no member carries an open escalation; otherwise it refuses, names why, and deploys nothing. |
 | `ask` | the interactive `confirm("Deploy this release to production?")` prompt — holds until a human answers (needs a TTY, or `--yes`). |
 | `auto` | proceeds on green with no prompt. `bin/release ship --yes` with no `--mode` is `auto`. |
 
 `--yes` answers the OTHER local confirms and skips nothing else. **The authority step is
-the only human gate; in `cleared` mode that gate is Alex's word in the chat, recorded on
+the only human gate; in `cleared` mode that gate is Alex McRitchie's word in the chat, recorded on
 the release.** A timed ship that refused at
 the lapse is re-run the same way once the blocker is cleared, or re-run and approved
 while its NEW window is open. The re-run posts a fresh window (its own request event,
@@ -197,7 +197,7 @@ how it was recorded and names no approver:
 | The Approve button | `Approved by <name> at <time>, <mode> mode.` |
 | `bin/release ship --mode ask` (with or without `--yes`) | `Recorded by the conductor CLI in ask mode (run as <actor>) at <time>; no web approval.` |
 | `bin/release ship` in `auto` mode | `Proceeded on green with no approval asked at <time> (auto mode).` |
-| `bin/release ship --mode cleared --clearance "<Alex's words>"` | `Cleared in chat by <cleared_by>, asserted by the conductor CLI (run as <actor>) at <time>; unsigned. "<the words>".` |
+| `bin/release ship --mode cleared --clearance "<Alex McRitchie's words>"` | `Cleared in chat by <cleared_by>, asserted by the conductor CLI (run as <actor>) at <time>; unsigned. "<the words>".` |
 | A timed window that lapsed (any row carrying `lapsed: true`) | `No approval was given: the window lapsed at <time> and the ship proceeded on green, timed mode.` |
 | A `ship_authorized` completion posted to the events API (an admin session only; the shared token answers 403) | `Recorded through the events API by <actor> at <time>; no web approval.` |
 | A row marked as from the web that carries no verified `owner_grant` (one recorded before the marker, one a caller labelled, or one signed under a rotated secret) | `Authorized at <time> (<mode> mode); approver not recorded.` |
@@ -460,7 +460,7 @@ retry. The seal never rolls back on its own; a red seal prints the rollback and 
 
 **Rolling back is `bin/release rollback [<release-slug>]`** (the newest shipped release
 by default). Run it bare first: it prints the plan and deploys nothing. **A real run is
-production authority, exactly as `ship` is: Alex in the session.** Then run it with
+production authority, exactly as `ship` is: Alex McRitchie in the session.** Then run it with
 `--mode ask` (confirm at the prompt) or `--mode auto` (or `--yes`):
 
 - **Each app goes back to the SHA the release before it shipped.** The hub redeploys

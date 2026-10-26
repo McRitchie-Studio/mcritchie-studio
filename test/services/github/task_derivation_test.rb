@@ -105,14 +105,15 @@ class Github::TaskDerivationTest < ActiveSupport::TestCase
       { "commit" => { "author" => { "email" => "amcritchie@gmail.com" }, "committer" => { "email" => "amcritchie@gmail.com" },
                       "message" => "zap\n\nCo-Authored-By: Steffon <steffon@mcritchie.studio>" } },
       { "commit" => { "author" => { "email" => "alex@mcritchie.studio" }, "committer" => {}, "message" => "docs" } },
+      { "commit" => { "author" => { "email" => "ray@mcritchie.studio" }, "committer" => {}, "message" => "persona" } },
       { "commit" => { "author" => { "email" => "310847602+mcritchie-agent[bot]@users.noreply.github.com" },
                       "committer" => {}, "message" => "Merge accepted" } },
       { "commit" => { "author" => { "email" => "stefon@mcritchie.studio" }, "committer" => {}, "message" => "typo soul" } }
     ]
     script = { "/repos/#{NWO}/pulls/42/commits" => commits, "/repos/#{NWO}/pulls/42" => pull(login: "carl") }
 
-    assert_equal %w[mack steffon ray carl].sort, derivation(script).first.authors(PR).sort,
-                 "alex resolves to ray; the operator, the bot and a non-roster local part name nobody"
+    assert_equal %w[mack steffon alex carl].sort, derivation(script).first.authors(PR).sort,
+                 "ray resolves to alex; the owner's alex@ mailbox, the operator, the bot and a non-roster local part name nobody"
   end
 
   # --- harden-derived-fact-reads -------------------------------------------------------

@@ -78,7 +78,7 @@ class CredentialsSeedTest < ActiveSupport::TestCase
   end
 
   # The Turf wallet rows restate credential-inventory.md as corrected on
-  # 2026-10-24 (task devnet-nightly-reference-sweep): solana.turf.alex is Alex's
+  # 2026-10-24 (task devnet-nightly-reference-sweep): solana.turf.alex is Alex McRitchie's
   # personal wallet, misfiled in the agent vault; the rehearsal player is
   # solana.turf.agent. A database seeded before, which told /credentials the
   # personal wallet was the rehearsal player, is corrected in place.
@@ -94,7 +94,7 @@ class CredentialsSeedTest < ActiveSupport::TestCase
     alex = record("studio-agents", "solana.turf.alex")
     assert_match(/personal Turf wallet \(DKbv…\)/, alex.scope_summary)
     refute_match(/39QT|rehearsal/i, alex.scope_summary, "the personal wallet is not the rehearsal player")
-    assert_nil alex.used_by, "no agent lane reads Alex's own wallet"
+    assert_nil alex.used_by, "no agent lane reads Alex McRitchie's own wallet"
     assert_match(/MISFILED.*private vault/, alex.notes)
 
     player = record("studio-agents", "solana.turf.agent")

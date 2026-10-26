@@ -31,8 +31,8 @@
 # rake's `test` TASK, whose body spawns an argless `rails test` that fires the hook for
 # free, so nothing here used to need saying (test/lib/tasks/test_prepare_asset_hook_test.rb
 # asserts the chain and its two edges).
-# Pass paths without it and every view-rendering test errors with `The asset "tailwind.css"
-# is not present in the asset pipeline` (the same trap bin/fast-check documents). Keeping
+# Pass paths without it and every view-rendering test errors with `The asset 'tailwind.css'
+# was not found in the load path` (the same trap bin/fast-check documents). Keeping
 # both inside this one command means a shard cannot be run un-prepared.
 #
 # THE MATRIX COMES FROM THE CONTRACT. ci.yml's `rails_plan` job runs `--matrix`, so the

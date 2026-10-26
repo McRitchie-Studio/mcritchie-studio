@@ -447,7 +447,7 @@ class InstallAgentSkillsTest < Minitest::Test
     "bin/session-preflight",
     "bin/agent-runtime",
     "docs/agents/modules/docs-maintenance.md",
-    "docs/agents/agents/ray/role.md"
+    "docs/agents/agents/mason/role.md"
   ].freeze
 
   def test_unit_no_drift_report_site_invites_a_hand_run_install_from_a_primary
@@ -477,7 +477,7 @@ class InstallAgentSkillsTest < Minitest::Test
   # report and a docs reviewer actually reach for.
   OWNER_NAMING_DOCS = [
     "docs/agents/modules/docs-maintenance.md",
-    "docs/agents/agents/ray/role.md"
+    "docs/agents/agents/mason/role.md"
   ].freeze
 
   def test_unit_entry_doc_drift_prose_names_the_owned_closer

@@ -261,7 +261,7 @@ class StatuslineTest < Minitest::Test
   end
 
   # tasks/show-mascot-gender-symbol: EVERY mascot wears its sign, not just Nidoran —
-  # the bash mirror of Pokemon#display_name. The session marker (the path Alex's
+  # the bash mirror of Pokemon#display_name. The session marker (the path Alex McRitchie's
   # fresh `⚙️🌈 Mawile · mcritchie-studio` session read) and the desk context both.
   def test_session_marker_renders_mawile_with_the_male_sign
     out = render_session_marker_in(session: SESSION, provider: :claude,

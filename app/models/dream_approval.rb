@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Alex's one-click approval of a proposed dream, recorded from /dreams
+# Alex McRitchie's one-click approval of a proposed dream, recorded from /dreams
 # (docs/agents/modules/dream.md, Act 3).
 #
 # The bank is tracked files that the session-start hook and bin/dream read offline,
@@ -9,7 +9,7 @@
 # release carrying that batch ships. Once the deployed file reads
 # `status: approved`, `reconcile!` stamps applied_at and the row stops being pending.
 #
-# Only Alex approves, in one of two ways. His click: DreamsController#approve, behind
+# Only Alex McRitchie approves, in one of two ways. His click: DreamsController#approve, behind
 # the admin wall and the APPROVER_EMAILS check (via "click"). His word in chat: an
 # agent records it through POST /api/v1/dream_rulings (DreamRuling), which refuses a
 # ruling without his quoted clearance and the session that heard it (via "chat").
@@ -63,7 +63,7 @@ class DreamApproval < ApplicationRecord
 
   # Raises NotApprovable, with the reason, unless `user` may approve `dream`.
   def self.check!(dream, user)
-    raise NotApprovable, "only Alex approves dreams" unless approver?(user)
+    raise NotApprovable, "only Alex McRitchie approves dreams" unless approver?(user)
     raise NotApprovable, "no such dream" if dream.nil?
     raise NotApprovable, "`#{dream.slug}` is #{dream.status}, not proposed" unless dream.status == PROPOSED
   end

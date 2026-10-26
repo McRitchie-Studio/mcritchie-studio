@@ -7,14 +7,14 @@ require_relative "session_markers"
 # AdminLogin: the admin login a harness session holds
 # (docs/agents/system/agent-sessions-design.md, section 3).
 #
-# `bin/agent-activity heartbeat steffon|ray` posts an admin login request and keeps
+# `bin/agent-activity heartbeat steffon|mason` posts an admin login request and keeps
 # its slug and collect key here; once the operator grants it, the collected session
 # token replaces them. One file per harness session, in the session-marker store,
 # owner-only. The token is a bearer credential: it lives in the file, never on
 # stdout.
 module AdminLogin
   SUFFIX = ".admin-login"
-  SOULS = %w[steffon ray].freeze
+  SOULS = %w[steffon mason].freeze
   # Stop using a token this many seconds before its session expires.
   REFRESH_MARGIN = 60
   # The longest `--wait`, and the pause between collect attempts, in seconds.

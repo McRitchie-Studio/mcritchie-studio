@@ -10,7 +10,7 @@ public leak) rotates here first; lesser issues are triaged in
 [`credential-issues`](../../../modules/credential-issues.md). **Precondition:** the admin lane,
 `OP_ADMIN_SERVICE_ACCOUNT_TOKEN`: `source ~/.zprofile.admin`, never through a pipe (the token lands
 in a subshell), then run each `op` call with `OP_SERVICE_ACCOUNT_TOKEN` set to the admin token's
-value (sourcing alone leaves `op` on the agents token, and `studio-agents-admin` "isn't a vault"); with no such file, Alex runs `bin/setup-1pass-token --admin` once.
+value (sourcing alone leaves `op` on the agents token, and `studio-agents-admin` "isn't a vault"); with no such file, Alex McRitchie runs `bin/setup-1pass-token --admin` once.
 **Placeholders:** `<VAR>` is the env-var name; `<item>` `<field>` `<vault>` the 1Password home;
 `<app>` `<file>` `<repo>` `<env>` one target; substitute each. This SOP assigns `$NEW`, `$OLD`,
 `$APPS`, `$ROTATED_AT`.
@@ -22,7 +22,7 @@ process) into a pipe, `op item edit` reading item JSON on stdin, and
 takes values only as arguments). `test/docs/secrets_on_argv_guard_test.rb` fails on a new argv form.
 **Never print the value** anywhere durable. List key names (`jq -r 'keys[]'`) and file names
 (`grep -rl`); hold the value in one shell variable; keep digests in the shell (the repo is
-public). A pushed value survives a force-push; a GitHub Support purge is Alex's call.
+public). A pushed value survives a force-push; a GitHub Support purge is Alex McRitchie's call.
 
 ### Compare by digest — and a digest of nothing is not a comparison
 Two EMPTY values match: `sha256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`,
@@ -56,7 +56,7 @@ Before minting, list every store (where, writer, value or public half): the list
 | 1Password | `op item list --vault <vault> --format json \| jq -r '.[].title'` | the vault's lane (`credential-filing` §4) |
 | Heroku, every app | the fleet sweep below | any Heroku lane |
 | GitHub Actions, repo and environment | `gh secret list -R McRitchie-Studio/<repo>` (`--env <env>`) | admin lane, `github.mcritchie-admin` |
-| GitHub Dependabot | `gh secret list --app dependabot -R McRitchie-Studio/<repo>` | Alex |
+| GitHub Dependabot | `gh secret list --app dependabot -R McRitchie-Studio/<repo>` | Alex McRitchie |
 | `.env`, primaries and desks | `grep -rl '^<VAR>=' /Users/alex/projects/*/.env /Users/alex/projects/*/.worktrees/*/.env` | you |
 | Env snapshots | `ls /Users/alex/projects/mcritchie-studio/tmp/env-snapshot-*.json` | you |
 | Public half | on-chain account, provider dashboard, webhook | often a third party |
@@ -147,7 +147,7 @@ Migrate (replaces 4.5): the same task, with both keys now on the app:
 `heroku run --exit-code --app turf-monster-mainnet --env "DRY_RUN=1" bin/rails solana:reencrypt_managed_wallets`,
 then without the `--env`. Complete only on
 `failed: 0`, `Read-back: T of T` and a last line `COMPLETE`; `NOT COMPLETE` is safe to re-run.
-A COMPROMISED key is an incident (old backups still open with it): rotate, move funds, tell Alex.
+A COMPROMISED key is an incident (old backups still open with it): rotate, move funds, tell Alex McRitchie.
 
 ## Phase 3 — Order the moves
 
@@ -163,7 +163,7 @@ is now `solana.turf.server` (`4S39…`):
 |---|---|---|
 | turf-vault `VaultState.signers` | `update_signers`, cosigned by signers who stay | read `VaultState` back |
 | Squads V4 upgrade multisig, per cluster | one config transaction, `app.squads.so` | `check_squads_rotation` below |
-| `scripts/squad-upgrade.js` devnet seat `ray` (`scripts/lib/squad-clusters.js`) | a turf-vault PR to the seat's `pubkey` | the bot key comes per run from `SQUAD_KEY_XAN`, filled by an admin-lane 1Password read; Alex's key (`7ZDJ…`) is a Phantom export with no filed item |
+| `scripts/squad-upgrade.js` devnet seat `ray` (`scripts/lib/squad-clusters.js`) | a turf-vault PR to the seat's `pubkey` | the bot key comes per run from `SQUAD_KEY_XAN`, filled by an admin-lane 1Password read; Alex McRitchie's key (`7ZDJ…`) is a Phantom export with no filed item |
 
 `update_signers` replaces the whole set (v0.26: five slots, 3 signatures) and its cosigners must
 survive it (`SignerContinuityRequired`, 6017), so **the outgoing key never signs**. Fund the new
@@ -223,7 +223,7 @@ Fix a mask FAIL now with one more transaction: `removeMember(<new pubkey>)` + `a
 
 ### 4.1 Mint, and put the value in `$NEW`
 Mint at the provider. An empty `$NEW` empties every store, so each write chains its guard with `&&`
-(an interactive shell prints a bare refusal and runs on). If Alex holds the value as `$T`
+(an interactive shell prints a bare refusal and runs on). If Alex McRitchie holds the value as `$T`
 (`credential-filing` §5's fallback, used only when the 1Password app is out of
 his reach; normally he pastes it into the item and you read it from there), he
 runs Phases 4 and 5 or enters it here; say which.
@@ -262,7 +262,7 @@ failed=0 && for app in $APPS; do
   printf '%s' "$NEW" | /Users/alex/projects/mcritchie-studio/bin/heroku-secret-set "$app" <VAR> || failed=1
 done && [ "$failed" = 0 ] && ROTATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 ```
-GitHub: Actions by the Phase 1 recipe; Dependabot is Alex's tab, given the repos and secret
+GitHub: Actions by the Phase 1 recipe; Dependabot is Alex McRitchie's tab, given the repos and secret
 names, the value handed over per `credential-filing` §5. Primaries: `bin/ecosystem-build`.
 Desks: reclaim finished ones ([`clean-infra`](clean-infra.md)) and rewrite live ones:
 ```bash
@@ -310,7 +310,7 @@ Only after Phase 5 passed everywhere (after a migration, 24 to 48 hours later); 
 
 | Source | Revoke with |
 |---|---|
-| Heroku authorization | the admin lane (`HEROKU_STUDIO_ADMIN_API_KEY`), or Alex at https://dashboard.heroku.com/account/applications; never this session's own |
+| Heroku authorization | the admin lane (`HEROKU_STUDIO_ADMIN_API_KEY`), or Alex McRitchie at https://dashboard.heroku.com/account/applications; never this session's own |
 | AWS key · provider key | delete it on the IAM user · revoke it in the provider console |
 | Signer, Squads member | already evicted in 4.3 |
 | Managed-wallet old key | `heroku config:unset MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS --app <app>`, then the verifier; keep the 1Password field while an old backup could return |

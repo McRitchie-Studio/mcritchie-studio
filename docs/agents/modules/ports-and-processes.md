@@ -25,8 +25,9 @@ disagree.
 | Search Position | 4300 | 4300-4399 | Showcase |
 | Moms App | 4400 | 4400-4499 | Active |
 | Commercial Welding | 4500 | 4500-4599 | Active (reserved satellite; Heroku apps provisioned 2026-10-12) |
+| alex.build | 4600 | 4600-4699 | Active (reserved satellite; Heroku app created 2026-10-25, not deployed) |
 
-Archived apps keep their blocks; do not reuse `3200-4599`. Which apps are
+Archived apps keep their blocks; do not reuse `3200-4699`. Which apps are
 managed satellites, release-managed standalones or neither is in
 [`app-registry.md`](app-registry.md). The unmanaged MSAA client workspace
 informally parks a dev app on `3510` inside McRitchie Industries' block; the
@@ -92,7 +93,7 @@ If purchases stall locally, confirm the listener before assuming the Rails app i
   attaches to whatever answers on the default port, which may be a sibling desk's
   tree. Set `PW_BASE_URL=http://127.0.0.1:<your-port>` and prove the server is yours
   before believing a pass or a failure.
-- **Background commands die at two hours.** For a server Alex must use over time,
+- **Background commands die at two hours.** For a server Alex McRitchie must use over time,
   give him the one-line Terminal command, or start it only when he is ready to act,
   and read its log before believing "done".
 
@@ -130,4 +131,4 @@ reaches theirs.
 - **An instant `getaddrinfo: nodename nor servname provided` is usually a poisoned
   macOS DNS cache**, not a down service. Confirm with `dig` and `curl --resolve`,
   keep working with `RUBYOPT="-rresolv-replace"`, and hand the flush
-  (`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`) to Alex.
+  (`sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`) to Alex McRitchie.

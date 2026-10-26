@@ -1,22 +1,22 @@
-# /build — the McRitchie Studio app funnel, as a chat with Ritch
+# /build — the McRitchie Studio app funnel, as a chat with Alex
 # (.agents/epics/build-with-xan-design.md, build-with-ray-v2.md; BuildIntake). A
-# visitor tells Ritch what they want to build; Ritch asks for the idea, a theme, a CTO
+# visitor tells Alex what they want to build; Alex asks for the idea, a theme, a CTO
 # and an address, one card at a time, and the visitor's taps fill the status
 # card. Build my app asks for sign-in only then, claims the subdomain and queues
 # the build for an agent. Nothing is generated here; builds are asynchronous.
 # Every page is the agent shell (app/views/agent_chats/_shell.html.erb).
 #
 #   GET   /build                   the opening question
-#   POST  /build                   the first message → a draft and Ritch's thread
+#   POST  /build                   the first message → a draft and Alex's thread
 #                                  (no account needed; bot-shielded). From the
 #                                  page it answers IN PLACE: Turbo Streams swap
 #                                  the empty thread for the draft's chat and
 #                                  move the address to /build/:token
 #   GET   /build/check?subdomain=  live availability, JSON
 #   GET   /build/requests          admin: every requested app, filterable by status
-#   GET   /build/:token            a draft: the chat with Ritch under its status card;
+#   GET   /build/:token            a draft: the chat with Alex under its status card;
 #                                  once queued, the request's status page
-#   POST  /build/:token/messages   one more message to Ritch
+#   POST  /build/:token/messages   one more message to Alex
 #   GET   /build/:token/turns      the poll: pending turns and the status card,
 #                                  as Turbo Streams (no /cable socket signed out)
 #   PATCH /build/:token/intake     a tap on an intake card (BuildIntake::Choice):
@@ -75,7 +75,7 @@ class BuildController < ApplicationController
   # owner's first visit (CtoChatsController#show).
   LAUNCH_ID = "build-launch".freeze
   # The intake agent as the page names it. The soul slug stays BuildIntake.soul.
-  AGENT_NAME = "Ritch".freeze
+  AGENT_NAME = "Alex".freeze
   AGENT_ROLE = "AI build agent".freeze
 
   # Every app requested through the funnel, newest first. ?status= narrows it;
@@ -98,6 +98,7 @@ class BuildController < ApplicationController
     # A reader who came from an email: an app request made now is credited
     # to it (EmailEvents::Results).
     session[:email_ref] = params[:ref] if params[:ref].is_a?(String) && params[:ref].match?(/\A[\w-]{16,64}\z/)
+    remember_origin
     @intake_agent = Agent.find_by(slug: BuildIntake.soul)
     @examples = BuildGallery.examples
   end
@@ -107,7 +108,8 @@ class BuildController < ApplicationController
     return redirect_to(build_path, status: :see_other) if params.dig(:app_request, BrowserProof::HONEYPOT_FIELD).present?
 
     text = params.dig(:app_request, :prompt)
-    request_row = AppRequest.new(prompt: text, user: (current_user if logged_in?))
+    remember_origin
+    request_row = AppRequest.new(prompt: text, user: (current_user if logged_in?), origin: session[:build_origin])
     saved = rescue_and_log(target: request_row) do
       AppRequest.transaction do
         next false unless request_row.save
@@ -140,6 +142,8 @@ class BuildController < ApplicationController
     # Credited once, then forgotten: a later visitor on the same browser is
     # not this email's reader.
     EmailEvents::Results.record!(session.delete(:email_ref), "requested_app", source: "app") if session[:email_ref]
+    # Stamped on this request, then forgotten, as the email credit above.
+    session.delete(:build_origin)
     respond_to do |format|
       format.json { render json: { token: request_row.token, path: build_request_path(request_row.token) }, status: :created }
       # The page's own post: the conversation starts HERE. The empty thread
@@ -176,7 +180,7 @@ class BuildController < ApplicationController
       end
       # An admin opening an unsigned draft from /build/requests only reads it;
       # attaching it would lock the visitor out of their own chat. Anyone else
-      # signing in ADOPTS the draft and its thread with Ritch.
+      # signing in ADOPTS the draft and its thread with Alex.
       @app_request.update!(user: current_user) if @app_request.user.nil? && !current_user.admin?
       session.delete(:build_draft_token)
     end
@@ -184,7 +188,7 @@ class BuildController < ApplicationController
     load_launch_refusal if @app_request.draft?
   end
 
-  # One more message to Ritch, from the chat's composer.
+  # One more message to Alex, from the chat's composer.
   def message
     return redirect_to(build_request_path(@app_request.token), status: :see_other) unless @app_request.draft?
 
@@ -232,9 +236,9 @@ class BuildController < ApplicationController
   end
 
   # A tap on an intake card: the only write to an intake field, and the
-  # visitor's turn it relays to Ritch (BuildIntake::Choice), so Ritch answers with
+  # visitor's turn it relays to Alex (BuildIntake::Choice), so Alex answers with
   # the next step without the visitor typing. The stream redraws the card, adds
-  # the relayed turn (pending, so the page polls for Ritch's answer) and the checklist.
+  # the relayed turn (pending, so the page polls for Alex's answer) and the checklist.
   def choose
     error = nil
     choice = BuildIntake::Choice.new(@app_request, user: (current_user if logged_in?), ip: request.remote_ip)
@@ -368,6 +372,14 @@ class BuildController < ApplicationController
 
   private
 
+  # A visit from alex.build's CTAs (AppRequest.origin_from): remembered for the
+  # session until the first request it creates carries it. A later visit that
+  # names no origin keeps what an earlier one set.
+  def remember_origin
+    origin = AppRequest.origin_from(params: params, referer: request.referer)
+    session[:build_origin] = origin if origin
+  end
+
   # What launch_draft did: :launched (app_slug, app_cto), :queued (an admin's
   # showcase without the checklist) or :refused (reason, and which next step
   # the summary card offers; incomplete when nothing was written).
@@ -380,7 +392,7 @@ class BuildController < ApplicationController
   # CtoChatsController#show: the new CTO's portrait, the app's name, three
   # steps in the app's colours, then the chat). Turbo follows the 303 as a
   # visit, and the draft and the panel both opt in to a view transition, so
-  # Ritch's portrait morphs into the CTO's.
+  # Alex's portrait morphs into the CTO's.
   def launched(outcome)
     redirect_to chat_application_path(outcome.app_slug), status: :see_other
   end
@@ -411,7 +423,7 @@ class BuildController < ApplicationController
                              domain: @app_request.errors.include?(:subdomain))
   end
 
-  # A signed-out Build My App (task build-sign-in-modal, Alex 2026-10-19: "a
+  # A signed-out Build My App (task build-sign-in-modal, Alex McRitchie 2026-10-19: "a
   # modal, not another step"): remember the press in THIS session
   # (BuildIntake::PendingLaunch, with the address the card showed; every press
   # binds it afresh) and answer with one Turbo Stream that opens the engine's

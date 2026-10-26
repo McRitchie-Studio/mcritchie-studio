@@ -1,5 +1,5 @@
 <%# locals: (card:, message:, request_row:, refusal: nil) %>
-<%# The summary card: once every step is set, Ritch's answer carries it (BuildIntake::Card "summary", attached by code when the answer offered no other card). Drawn from the REQUEST, never from the model: the app's title and features, the CTO, the theme and the domain, then Build My App, which runs the same launch as before (BuildController#update, AppLaunch). Signed out, the same press opens the sign-in modal, and the sign-in finishes the launch (BuildController#launch). A summary from before a later change still shows the request as it stands now. A refused launch (BuildController#refuse_launch) redraws this card, by its id, with `refusal`: the reason and a next step (the app they already have and the plans for a plan limit; another address for a taken name), above the button, which stays to try again. %>
+<%# The summary card: once every step is set, Alex's answer carries it (BuildIntake::Card "summary", attached by code when the answer offered no other card). Drawn from the REQUEST, never from the model: the app's title and features, the CTO, the theme and the domain, then Build My App, which runs the same launch as before (BuildController#update, AppLaunch). Signed out, the same press opens the sign-in modal, and the sign-in finishes the launch (BuildController#launch). A summary from before a later change still shows the request as it stands now. A refused launch (BuildController#refuse_launch) redraws this card, by its id, with `refusal`: the reason and a next step (the app they already have and the plans for a plan limit; another address for a taken name), above the button, which stays to try again. %>
 <% answers = request_row.answers.is_a?(Hash) ? request_row.answers : {} %>
 <% ready = request_row.draft? && request_row.intake_complete? %>
 <div id="<%= BuildController.summary_dom_id(message) %>" class="rounded-2xl border <%= refusal ? 'border-danger' : 'border-primary' %> bg-surface p-3 sm:p-4 space-y-4"
@@ -59,7 +59,7 @@
     </div>
   <% end %>
   <% if !ready %>
-    <p class="text-xs text-muted" data-test="build-summary-not-ready"><%= request_row.draft? ? "A step changed; finish it and Ritch will sum up again." : "This app is already in the build queue." %></p>
+    <p class="text-xs text-muted" data-test="build-summary-not-ready"><%= request_row.draft? ? "A step changed; finish it and Alex will sum up again." : "This app is already in the build queue." %></p>
   <% else %>
     <%# Turbo, so the 303 to the new CTO's chat is a view-transition visit (cto_chats/show, whose first visit plays the launch panel). Signed out, the same press opens the sign-in modal (BuildController#sign_in_to_launch), and the sign-in comes back to launch. While the press is in flight Turbo disables the button and marks the form aria-busy, which swaps its label for a spinner (the group-aria-busy classes) until the panel or the modal arrives. %>
     <%= form_with url: build_request_path(request_row.token), method: :patch, class: "group", data: { test: "build-summary-form", build_summary_form: true } do %>

@@ -177,7 +177,7 @@ class TaskArchiveGateTest < ActiveSupport::TestCase
   #
   # So the default is FRESH (a board write seconds ago), which is what the board
   # returns for any task that has just been created, moved, noted, or triaged — the
-  # ordinary state of everything Alex's clean-up sweeps. A test wanting the old blind
+  # ordinary state of everything Alex McRitchie's clean-up sweeps. A test wanting the old blind
   # reading has to ask for it by name.
   def task_body(stage, devops, liveness: 12, gate: false)
     { data: { slug: SLUG, stage: stage, title: "Probe Task",

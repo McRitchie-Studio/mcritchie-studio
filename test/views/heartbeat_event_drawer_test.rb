@@ -2,7 +2,7 @@ require "test_helper"
 
 # [component] the per-SPAN grading drawer body (heartbeat/activity_drawer) — the span-level
 # mirror of the per-action drawer. It shows the span summary (status + measured
-# token/cost/model of the activity) and two grade editors (Ritch + the McRitchie audit)
+# token/cost/model of the activity) and two grade editors (Mason + the McRitchie audit)
 # that POST to E2's grade_event endpoint. No inline radios — the editors use the same
 # disposition TOGGLE buttons as the per-action drawer.
 class HeartbeatEventDrawerTest < ActionView::TestCase
@@ -16,21 +16,21 @@ class HeartbeatEventDrawerTest < ActionView::TestCase
                            seq: attrs.fetch(:seq, 0), occurred_at: Time.current }.merge(attrs))
   end
 
-  test "[component] the span drawer renders Ritch + McRitchie editors posting to the E2 endpoint" do
+  test "[component] the span drawer renders Alex + McRitchie editors posting to the E2 endpoint" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "found the seam",
                model: "claude-opus-4-8", tokens_in: 9500, tokens_out: 610, cost: 0.2579)
     a1 = action(agent_activity_id: ev.id, seq: 0, model: "claude-opus-4-8", tokens_in: 9400, tokens_out: 360, cost: 0.05)
 
     render partial: "heartbeat/activity_drawer",
-           locals: { event: ev, actions: [a1], ray: nil, mcr: nil }
+           locals: { event: ev, actions: [a1], mason: nil, mcr: nil }
 
     # two grade editors, both posting to the span-grade endpoint
     assert_select "form[data-test=span-grade-form]", 2
     assert_select "form[action=?]", heartbeat_activity_grade_path(ev), 2
-    assert_select "form[data-grader=ray]"
+    assert_select "form[data-grader=mason]"
     assert_select "form[data-grader=mcr]"
     # the two graders are carried as hidden fields
-    assert_select "form[data-grader=ray] input[name=grader][value=ray]"
+    assert_select "form[data-grader=mason] input[name=grader][value=mason]"
     assert_select "form[data-grader=mcr] input[name=grader][value=mcr]"
     # disposition is a toggle, never an inline radio
     assert_select "input[type=radio]", false
@@ -41,25 +41,25 @@ class HeartbeatEventDrawerTest < ActionView::TestCase
     refute_includes rendered, "9.4k/360"
   end
 
-  test "[component] only Ritch's span editor carries the bank/discard controls" do
+  test "[component] only Alex's span editor carries the bank/discard controls" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
 
     render partial: "heartbeat/activity_drawer",
-           locals: { event: ev, actions: [], ray: nil, mcr: nil }
+           locals: { event: ev, actions: [], mason: nil, mcr: nil }
 
-    # Ritch banks; the McRitchie audit does not
-    assert_select "form[data-grader=ray] button[value=bank]", 1
+    # Mason banks; the McRitchie audit does not
+    assert_select "form[data-grader=mason] button[value=bank]", 1
     assert_select "form[data-grader=mcr] button[value=bank]", false
   end
 
   test "[component] an existing span grade pre-fills its editor slug" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    ray = ActionGrade.create!(agent_activity: ev, grader: "ray", disposition: "not",
+    mason = ActionGrade.create!(agent_activity: ev, grader: "mason", disposition: "not",
                                slug: "span drifted off its stated reason")
 
     render partial: "heartbeat/activity_drawer",
-           locals: { event: ev, actions: [], ray: ray, mcr: nil }
+           locals: { event: ev, actions: [], mason: mason, mcr: nil }
 
-    assert_select "form[data-grader=ray] input[name=slug][value=?]", "span drifted off its stated reason"
+    assert_select "form[data-grader=mason] input[name=slug][value=?]", "span drifted off its stated reason"
   end
 end

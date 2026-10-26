@@ -19,9 +19,9 @@ const PAGES = [
   { path: "/stages", navs: ["board_sections", "board_views"], current: "/stages" },
   { path: "/epics", navs: ["board_sections"], current: "/epics" },
   { path: "/triage", navs: ["board_sections", "board_views"], current: null },
-  { path: "/ray/heartbeat", navs: ["heartbeat"], current: null },
-  { path: "/ray/heartbeat/activities", navs: ["heartbeat"], current: "/ray/heartbeat/activities" },
-  { path: "/ray/pipeline", navs: ["heartbeat"], current: null },
+  { path: "/mason/heartbeat", navs: ["heartbeat"], current: null },
+  { path: "/mason/heartbeat/activities", navs: ["heartbeat"], current: "/mason/heartbeat/activities" },
+  { path: "/mason/pipeline", navs: ["heartbeat"], current: null },
 ];
 const WIDTHS = [
   { name: "phone", width: 390, height: 844 },

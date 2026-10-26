@@ -2,7 +2,7 @@
 # that turn a page of AgentActivity / AgentAction rows into the name / mascot / grade
 # maps the tables render, each as ONE query so the views never N+1. Extracted from
 # HeartbeatController so the reimagined /agents/activities page (AgentsController#activities)
-# reuses the exact same feed queries the /ray/heartbeat surface built, instead of
+# reuses the exact same feed queries the /mason/heartbeat surface built, instead of
 # forking a second copy. Pure reads — nothing here mutates a record.
 module ActivityFeed
   extend ActiveSupport::Concern
@@ -168,7 +168,7 @@ module ActivityFeed
 
   # Every visible ACTION's current grades in one query, grouped by action id then
   # keyed by grader — the action-level analogue of #activity_grade_lookup, so the
-  # /agents/activities drill-down rows render their inline Alex/McRitchie grade cells
+  # /agents/activities drill-down rows render their inline Mason/McRitchie grade cells
   # with no per-row query.
   def action_grade_lookup(actions)
     ids = Array(actions).map(&:id)

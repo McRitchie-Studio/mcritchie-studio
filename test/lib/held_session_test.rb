@@ -30,7 +30,7 @@ class HeldSessionTest < Minitest::Test
                               "expires_at" => expires_at, "token" => token, "harness_session_id" => owner })
   end
 
-  def keep_admin(proj, soul: "ray", session: HARNESS, expires_at: FUTURE)
+  def keep_admin(proj, soul: "alex", session: HARNESS, expires_at: FUTURE)
     AdminLogin.write(session, proj, { "soul" => soul, "session" => "sess-admin", "token" => "ADMIN-TOKEN",
                                       "expires_at" => expires_at }, env: { "CLAUDE_PROJECTS_DIR" => proj })
   end
@@ -48,7 +48,7 @@ class HeldSessionTest < Minitest::Test
 
       assert_equal %w[DESK-TOKEN studio pokemon sess-desk], find(proj, desk).values_at("token", "tier", "soul", "slug")
       assert_equal "ADMIN-TOKEN", find(proj, desk, tier: "admin")["token"]
-      assert_equal "ADMIN-TOKEN", find(proj, desk, soul: "ray")["token"]
+      assert_equal "ADMIN-TOKEN", find(proj, desk, soul: "alex")["token"]
       assert_equal "DESK-TOKEN", find(proj, desk, soul: "pokemon")["token"]
     end
   end
@@ -59,7 +59,7 @@ class HeldSessionTest < Minitest::Test
       keep_admin(proj, soul: "steffon")
 
       assert_nil find(proj, desk, soul: "carl"), "another agent of the same harness borrows no login"
-      assert_nil find(proj, desk, soul: "ray")
+      assert_nil find(proj, desk, soul: "alex")
     end
   end
 
@@ -94,7 +94,7 @@ class HeldSessionTest < Minitest::Test
       login = HeldSession.find(env: env(proj, "AGENT_ADMIN_SESSION_TOKEN" => "ENV-ADMIN"), projects_dir: proj, cwd: desk, tier: "admin")
 
       assert_equal ["ENV-ADMIN", "admin", nil], login.values_at("token", "tier", "soul")
-      assert_nil HeldSession.find(env: env(proj, "AGENT_ADMIN_SESSION_TOKEN" => "ENV-ADMIN"), projects_dir: proj, cwd: desk, soul: "ray"),
+      assert_nil HeldSession.find(env: env(proj, "AGENT_ADMIN_SESSION_TOKEN" => "ENV-ADMIN"), projects_dir: proj, cwd: desk, soul: "alex"),
                  "a login of unknown soul never answers for a named one"
     end
   end

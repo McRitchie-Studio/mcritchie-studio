@@ -8,7 +8,7 @@ Run this when a lane cannot reach GitHub: `Bad credentials`, a 401 or 403, a
 push that is refused on auth.
 
 It is **self-service**. Fixing it is yours, in one command, and then you keep
-going. Do not hand it to Alex — with one honest exception, named at the
+going. Do not hand it to Alex McRitchie — with one honest exception, named at the
 bottom.
 
 ---
@@ -61,7 +61,7 @@ lanes are rare, so the cost is one extra mint. Do not "fix" this.
 | **Token present, but the one in YOUR shell is stale** | the session inherited a revoked `OP_SERVICE_ACCOUNT_TOKEN` while `~/.zprofile` already holds the live one; `op` then fails exactly as it would for a service account that no longer exists | **you** — step 1a |
 | **1Password unreachable, quota spent, or the service account genuinely gone** | `op` cannot serve the key, so `bin/gh-token` cannot mint — but you can, from the recorded app id plus a local `.pem`. **Two legs, `gh` and `git`, and both are yours to arm** | **you** — **step 1a first**, then *When 1Password itself is down* |
 | **Deployer token needed, admin token absent, machine provisioned** | `source ~/.zprofile.admin` in this shell, then retry | **you** |
-| **Deployer token needed, and this machine has no `~/.zprofile.admin`** | install it once — `bin/setup-1pass-token --admin` | **Alex** |
+| **Deployer token needed, and this machine has no `~/.zprofile.admin`** | install it once — `bin/setup-1pass-token --admin` | **Alex McRitchie** |
 
 The 401 rungs are worth understanding, and **only the git one self-heals**. A
 credential helper never sees the 401 — git does. Git then calls the helper a
@@ -229,7 +229,7 @@ the `.pem` on disk, so it does not generalise — not to a fresh Mac, not to CI,
 not to an agent whose box never held the key. It also fixes nothing about the
 broker: a quota-spent service account is still quota-spent afterwards.
 
-**No open ticket sits behind this, and nothing here waits on Alex.** When this
+**No open ticket sits behind this, and nothing here waits on Alex McRitchie.** When this
 recipe is what gets you moving, the follow-up is step 1a.
 
 ### There are two legs, and they are armed separately
@@ -284,7 +284,7 @@ line, which the production ship points at
 ([`source-control.md`](source-control.md)). `bin/install-git-credential-helper`
 prints its change rather than making it
 (`bin/lib/credential_helper_install.rb#git_config_command`). Work around the
-hub's fallback; do not rely on it, and do not remove it — that config is Alex's
+hub's fallback; do not rely on it, and do not remove it — that config is Alex McRitchie's
 call.
 
 ### The recipe
@@ -415,7 +415,7 @@ Two traps in that check:
 **An empty token is not an absent one.** `GH_TOKEN="$(bin/gh-token)"` sets
 `GH_TOKEN` to the empty string when the mint fails, and `gh` treats empty as
 "not set" — so it silently falls back to the keyring, where a **personal**
-account may be signed in. On 2026-08-29 two merges landed under Alex's
+account may be signed in. On 2026-08-29 two merges landed under Alex McRitchie's
 own account this way, with every agent having been told not to use it. Check the
 value before exporting it, or let the command fail loudly.
 
@@ -468,11 +468,11 @@ does it name the install.
 ### The one honest escalation
 
 **A 1Password outage is not it.** Whatever `op` is doing, the hand-mint above
-needs neither the broker nor Alex, as long as the `.pem` is on this
+needs neither the broker nor Alex McRitchie, as long as the `.pem` is on this
 machine. Reach for it before you decide the night is over.
 
 A machine that has **never been given** an admin token — no `~/.zprofile.admin`
-on disk at all — genuinely needs Alex, once, to run
+on disk at all — genuinely needs Alex McRitchie, once, to run
 `bin/setup-1pass-token --admin`. That is the only credential step on either lane
 that is his. Everything else here, both lanes included, is yours.
 

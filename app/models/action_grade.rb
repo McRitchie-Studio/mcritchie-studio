@@ -1,4 +1,4 @@
-# The grading layer over the learning heartbeat — Ritch's feedback record.
+# The grading layer over the learning heartbeat — Mason's feedback record.
 #
 # A grade targets EXACTLY ONE of two things (an additive dual-FK, not a
 # polymorphic rewrite): a raw agent action OR a narrated agent activity. The model
@@ -7,12 +7,19 @@
 # Either target can carry up to TWO ActionGrade rows, distinguished by the
 # `grader` column:
 #
-#   grader = "ray"   — Ritch's grade of the action/activity itself.
-#   grader = "mcr"   — Mr. McRitchie's audit OF Ritch's grade for that target
-#                      (the recursive audit: McRitchie grades Ritch's grading).
+#   grader = "mason" — Mason's grade of the action/activity itself (grade-events
+#                      is Mason's SOP since mason-takes-ceo-seat).
+#   grader = "mcr"   — Alex McRitchie's audit OF Mason's grade for that target
+#                      (the recursive audit: McRitchie grades Mason's grading).
+#
+# WHOSE WORK A GRADE IS ABOUT is the target's own `agent`, never the grader: a
+# grade of orchestration work sits on an activity narrated by `mason`, a grade
+# of client work (the /build persona, focus sessions, client builds) on one
+# narrated by `alex`. Both are graded by Mason; the split is read off the
+# activity, so no second agent grader exists.
 #
 # The (agent_action_id, grader) and (agent_activity_id, grader) pairs are each
-# unique, so a target holds at most one Ritch grade and one McRitchie audit —
+# unique, so a target holds at most one Mason grade and one McRitchie audit —
 # never two of either.
 #
 # Each grade is a 4–7 word feedback `slug` plus a BINARY `disposition`
@@ -29,16 +36,23 @@
 # (the heartbeat UI wiring, T4) is responsible for wrapping these in rescue_and_log
 # with target/parent context, per backend discipline.
 class ActionGrade < ApplicationRecord
-  # Who graded — TWO rows per action: Ritch's grade, and the McRitchie audit of it.
-  RAY     = "ray"
+  # Who graded — TWO rows per action: Mason's grade, and the McRitchie audit of it.
+  MASON   = "mason"
   MCR     = "mcr"
-  GRADERS = [RAY, MCR].freeze
-  # The seat's retired slugs (`alex` until 2026-09-24, `xan` until 2026-10-18).
-  # Kept as compile-time aliases for an out-of-tree caller; every in-tree
-  # reference says RAY, and a row posted as "alex" or "xan" is normalized to RAY
-  # before validation below.
-  ALEX    = RAY
-  XAN     = RAY
+  GRADERS = [MASON, MCR].freeze
+  # The grading seat's retired keys: `xan` until 2026-10-18, `ray` until
+  # ritch-renamed-alex (2026-10-25), when grade-events had already moved to
+  # Mason. RenameRaySoulToAlex repointed the stored rows to `mason`; a grader
+  # posted under a retired key resolves here, not through Task::SOUL_ALIASES,
+  # because the persona those aliases now name (`alex`) grades nothing. A posted
+  # `alex` is therefore refused by the inclusion check, never silently relabelled.
+  GRADER_ALIASES = { "ray" => MASON, "xan" => MASON }.freeze
+  RAY     = MASON # compile-time alias for an out-of-tree caller
+
+  def self.canonical_grader(value)
+    key = value.to_s.strip
+    GRADER_ALIASES.fetch(key, key)
+  end
 
   # Binary disposition — the credit signal. No "pending" here: a row only exists
   # once a grader has committed to a verdict (the UI's pending state is the
@@ -80,9 +94,9 @@ class ActionGrade < ApplicationRecord
   belongs_to :source_activity, class_name: "Activity", foreign_key: :source_activity_slug,
                                primary_key: :slug, optional: true, inverse_of: :seeded_grades
 
-  # A retired grader slug (Task::SOUL_ALIASES) resolves to its successor rather
-  # than failing inclusion — the read alias, applied at the one write seam.
-  before_validation { self.grader = Task.canonical_soul(grader) if grader.present? }
+  # A retired grader key (GRADER_ALIASES) resolves to its successor rather than
+  # failing inclusion — the read alias, applied at the one write seam.
+  before_validation { self.grader = self.class.canonical_grader(grader) if grader.present? }
 
   validates :grader, inclusion: { in: GRADERS }
   validates :disposition, inclusion: { in: DISPOSITIONS }
@@ -90,13 +104,13 @@ class ActionGrade < ApplicationRecord
   # Exactly one target — a grade is of an action OR an activity, never both, never
   # neither (replaces the old agent_action presence guarantee).
   validate :exactly_one_target
-  # One Ritch grade + one McRitchie audit PER TARGET — never two of either. The
+  # One Mason grade + one McRitchie audit PER TARGET — never two of either. The
   # uniqueness is scoped per FK and only fires for the FK that is actually set,
   # so an action grade and an activity grade by the same grader never collide.
   validates :grader, uniqueness: { scope: :agent_action_id }, if: -> { agent_action_id.present? }
   validates :grader, uniqueness: { scope: :agent_activity_id },  if: -> { agent_activity_id.present? }
 
-  scope :by_grader,  ->(grader) { where(grader: Task.canonical_soul(grader)) }
+  scope :by_grader,  ->(grader) { where(grader: canonical_grader(grader)) }
   scope :banked,     -> { where(banked: true) }            # the Insight Bank
   scope :discarded,  -> { where(discarded: true) }
   scope :for_action, ->(action) { where(agent_action_id: action) }
@@ -106,7 +120,7 @@ class ActionGrade < ApplicationRecord
   scope :seeded_candidates, -> { where.not(source_activity_slug: nil) }
   # Candidates still AWAITING grade — seeded but not yet banked into the Insight
   # Bank nor set aside. The read the pipeline surfaces (heartbeat#pipeline): the
-  # queue of block-mined lessons for the operator/Ritch to promote or discard.
+  # queue of block-mined lessons for the operator/Mason to promote or discard.
   scope :pending_candidates, -> { seeded_candidates.where(banked: false, discarded: false) }
 
   # The learning loop's OUTPUT — the curated lessons a FRESH session carries in.
@@ -138,8 +152,8 @@ class ActionGrade < ApplicationRecord
   # invalid write (a grade is a deliberate act, not best-effort telemetry).
   #
   # `grader` is the CALLER's responsibility to constrain — the agent path passes
-  # RAY and NEVER MCR. That makes `grader` PROVENANCE, NOT PROOF: it records who
-  # wrote the row. The two writers are the bearer agent API (grader forced to RAY)
+  # MASON and NEVER MCR. That makes `grader` PROVENANCE, NOT PROOF: it records who
+  # wrote the row. The two writers are the bearer agent API (grader forced to MASON)
   # and the heartbeat browser surface (admin only), so an `mcr` row is an admin's;
   # test/integration/heartbeat_grade_auth_test.rb holds that line.
   def self.record_activity_grade(activity:, grader:, disposition: nil, slug: nil, long_form: :unset, intent: nil)
@@ -180,11 +194,10 @@ class ActionGrade < ApplicationRecord
     update!(discarded: true, banked: false)
   end
 
-  def ray?
-    grader == RAY
+  def mason?
+    grader == MASON
   end
-  alias alex? ray? # retired names (see ALEX and XAN above)
-  alias xan? ray?
+  alias ray? mason? # retired name (see GRADER_ALIASES above)
 
   def mcr?
     grader == MCR

@@ -4,7 +4,7 @@ How Tywin plays Cyvasse: the style, the questions he asks of every position,
 and the five setups he favours. His character is in [`soul.md`](soul.md).
 
 Every rule quoted here is the engine's (`cyvasse/app/javascript/cyvasse/`)
-as it stood on cyvasse `main` of 2026-09-30 (commit `7ac5bb5`), after Alex's
+as it stood on cyvasse `main` of 2026-09-30 (commit `7ac5bb5`), after Alex McRitchie's
 second round of rule changes: new strengths, trumps that work on attack only,
 and new cavalry jumps. Every claim about a setup was checked against that
 engine; the method is at the end. The rules are still moving, so re-run the
@@ -251,5 +251,5 @@ play on both sides, which rewards a sealed king. It does not measure how the
 setup fares against a thoughtful player. No game was drawn.
 
 The harness was not committed: it imports the Cyvasse engine, so it belongs in
-the `cyvasse` repo, with these five setups, if Alex wants them in the app
+the `cyvasse` repo, with these five setups, if Alex McRitchie wants them in the app
 (parked: see [`role.md`](role.md#decisions)).

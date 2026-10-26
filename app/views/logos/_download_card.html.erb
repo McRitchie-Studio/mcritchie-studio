@@ -20,7 +20,7 @@
 <% first_tone = @tones.first %>
 <% sizes = downloads.transform_values { |variant| Logos::PngSizes.natural(variant.svg) } %>
 <% presets = downloads.to_h { |tone, _| [tone, Logos::PngSizes.presets(@type, *sizes.fetch(tone))] } %>
-<%# The icon's 1:1 square sizes (Alex, 2026-10-14 22:35): true aspect is the default, the square a toggle. %>
+<%# The icon's 1:1 square sizes (Alex McRitchie, 2026-10-14 22:35): true aspect is the default, the square a toggle. %>
 <% square_presets = (downloads.to_h { |tone, _| [tone, Logos::PngSizes.presets(@type, *sizes.fetch(tone), square: true)] } if @type == :icon) %>
 <% default_key = Logos::PngSizes::DEFAULTS.fetch(@type) %>
 <% shown = downloads.fetch(first_tone) %>

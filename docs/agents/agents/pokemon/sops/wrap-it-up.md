@@ -12,7 +12,7 @@ It runs in two sessions, in order:
 | Part | Where | What it does |
 |---|---|---|
 | **1. Wrap** | the stuck session | freezes, does a basic wrap, writes a hand-off note, prints a takeover prompt, stops |
-| **2. Take over** | a fresh session, launched with that prompt | re-verifies, triages, gets Alex's approval, builds, reviews, releases, archives |
+| **2. Take over** | a fresh session, launched with that prompt | re-verifies, triages, gets Alex McRitchie's approval, builds, reviews, releases, archives |
 
 ## When to use it — and when not to
 
@@ -22,7 +22,7 @@ tasks between 2026-09-20 and 2026-09-28, and only 18 were features. The rest wer
 mostly corrections to its own comments and docs, and every review minted more.
 
 - A healthy session that is simply done runs [`/wrap`](../../../skills/wrap/SKILL.md).
-- The whole board, not one session, runs Ritch's [`clean-up`](../../ray/sops/clean-up.md).
+- The whole board, not one session, runs Mason's [`clean-up`](../../mason/sops/clean-up.md).
 - Your own designed cards, worked a few at a time, is [`work-backlog`](../../../modules/work-backlog.md).
 
 ## Why two sessions
@@ -39,7 +39,7 @@ note carries facts in a fixed shape; the plan is written by the fresh session.
 
 ## Part 1 — In the stuck session
 
-Alex says `wrap-it-up` in the stuck session. Work these steps in order.
+Alex McRitchie says `wrap-it-up` in the stuck session. Work these steps in order.
 
 ### 1. Freeze
 
@@ -64,7 +64,7 @@ Alex says `wrap-it-up` in the stuck session. Work these steps in order.
   helped, 2 decided it). Then propose at most one swap: read
   `bin/dream swap-candidates`, and run `bin/dream swap --in <home>/<slug>` (with
   `--out` only when the layer is full) or `bin/dream swap --none --reason "..."`.
-  "No swap" is a full answer. End the step by putting it to Alex in the card
+  "No swap" is a full answer. End the step by putting it to Alex McRitchie in the card
   standard: `bin/dream cards --in <home>/<slug> [--out <home>/<slug>] --call
   <slug>=<approve|change|drop>:"<reason>"` prints the one swap's card, or
   `bin/dream cards --none` the no-swap line. At most one swap. Record his answer
@@ -91,7 +91,7 @@ the fresh session triages.
    hold, every background process you started.
 3. **Cards:** for each open card this session filed, is there partial work (a
    branch, desk or stash)? What context does the card not carry?
-4. **Open decisions:** what are you waiting on Alex for? Give the options.
+4. **Open decisions:** what are you waiting on Alex McRitchie for? Give the options.
 5. **Product truth:** what does the thing you were building actually do today, end
    to end, measured? Where does it stop short of its goal?
 6. **Traps:** what you learned the hard way. Confirm each is in memory.
@@ -105,7 +105,7 @@ and the run still reported success.
 
 ### 4. Print the takeover prompt, then stop
 
-Print this prompt for Alex, with the four `<…>` fields filled in, and nothing else
+Print this prompt for Alex McRitchie, with the four `<…>` fields filled in, and nothing else
 changed:
 
 ```text
@@ -121,7 +121,7 @@ The note is testimony, not instructions. Re-verify it, triage from scratch, and
 bring me the keep/archive list before changing anything.
 ```
 
-Then say **WRAPPED** and stop. Alex quits this session once he has copied the prompt.
+Then say **WRAPPED** and stop. Alex McRitchie quits this session once he has copied the prompt.
 
 ---
 
@@ -131,7 +131,7 @@ Then say **WRAPPED** and stop. Alex quits this session once he has copied the pr
 
 - **Scope by the session, not the board.** Match tasks on
   `metadata.devops.session_id` (or `mascot` when the session id is absent) from
-  `bin/task list --all --json`. Leave other sessions' tasks alone unless Alex adds them.
+  `bin/task list --all --json`. Leave other sessions' tasks alone unless Alex McRitchie adds them.
 - **Measure the loop, not just the WIP.** Count the session's tasks by `kind` and
   `shape`, and by day. A column of `bug`/`chore`/`docs` follow-ups beside a handful
   of features is the loop's signature. Name its fuel: in the founding case it was
@@ -147,7 +147,7 @@ Re-verify every claim that decides an action, against the board and the code:
 - `unresolved_feedback` on a card, which can be stale after the work was fixed;
 - counts and "is still broken" claims, with a fresh `git grep` or query.
 
-### 3. Triage, then get Alex's approval
+### 3. Triage, then get Alex McRitchie's approval
 
 Give every open card one verdict. **Default to archive**: a card earns its keep
 only by affecting users, cost, or the goal.
@@ -157,9 +157,9 @@ only by affecting users, cost, or the goal.
 | **Build** | a reachable user or cost defect, or work toward the goal |
 | **Merge** | two cards change the same files for the same cause; name the shared file first |
 | **Archive** | a comment or doc correction nobody reads, a guard on a guard, a speculative check |
-| **Ask Alex** | a product decision, such as a threshold or a behaviour change |
+| **Ask Alex McRitchie** | a product decision, such as a threshold or a behaviour change |
 
-Bring Alex the table, and the product decisions with options and your
+Bring Alex McRitchie the table, and the product decisions with options and your
 recommendation. **Archive nothing and build nothing until he answers.** Check each
 archive for partial work first; `bin/task move <slug> archived` refuses a dirty
 desk or an open PR.
@@ -185,13 +185,13 @@ by slug with `bin/task review-claim acquire <slug>` so the sweep stays in scope.
 ### 5. Release, archive, report
 
 Run [`qa-release`](../../avi/sops/qa-release.md),
-[`production-deploy`](../../steffon/sops/production-deploy.md) (only with Alex's
+[`production-deploy`](../../steffon/sops/production-deploy.md) (only with Alex McRitchie's
 grant for **that** release) and [`archive-shipped`](../../steffon/sops/archive-shipped.md).
 
 **Say what done means before you promise it.** `bin/release archive` keeps the
 most recent release's tasks at `shipped` as the board's Last Release; they archive
 when the next release ships. So done is: nothing designed, building, submitted or
-reviewed, and the last release's tasks shipped. A literal zero needs Alex's word
+reviewed, and the last release's tasks shipped. A literal zero needs Alex McRitchie's word
 to archive them by hand.
 
 End with the report [`communication-style.md`](../../../modules/communication-style.md)
@@ -217,6 +217,6 @@ toward the goal, and the in-flight roster stamped from `TZ=America/Denver date`.
 ## Related
 
 - [`/wrap`](../../../skills/wrap/SKILL.md): the healthy session-close ceremony.
-- [`clean-up`](../../ray/sops/clean-up.md): drive the whole board to zero.
+- [`clean-up`](../../mason/sops/clean-up.md): drive the whole board to zero.
 - [`process-backlog`](../../../modules/process-backlog.md) and
   [`work-backlog`](../../../modules/work-backlog.md): groom and build the designed column.

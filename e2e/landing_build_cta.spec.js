@@ -1,6 +1,6 @@
 // [e2e] The landing hero's Build Your App (task landing-build-ctas).
 //
-// Alex, 2026-10-19: "Build Your App with a rainbow glow to draw the eyes." The
+// Alex McRitchie, 2026-10-19: "Build Your App with a rainbow glow to draw the eyes." The
 // hero CTA wears the cta-glow primitive's rainbow preset. On a 375px phone the
 // glow never scrolls the page sideways at any point of its motion; under reduced
 // motion the glow holds still; in light mode it takes deeper stops than in dark

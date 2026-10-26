@@ -87,7 +87,7 @@ held at `scheduled` with zero goals, and a contest with 7 paid entries scoring
 two weeks out of three for ten days.
 
 Watching the real slate, which is what `live-score-watch` means unless
-Alex says otherwise:
+Alex McRitchie says otherwise:
 
 ```bash
 cd /Users/alex/projects/turf-monster
@@ -342,7 +342,7 @@ Stop when any of these is true, and say which:
 - every game in the slot reads `FINAL`
 - the twelve-hour window has elapsed
 - `unknown_team` appeared and has not been resolved
-- Alex says stop
+- Alex McRitchie says stop
 
 Then report the totals above, and **say which environment they describe** — a
 rehearsal's totals and a production watch's totals read identically otherwise.

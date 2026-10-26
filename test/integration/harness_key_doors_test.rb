@@ -32,7 +32,7 @@ class HarnessKeyDoorsTest < ActionDispatch::IntegrationTest
       "GET api/v1/devops_shifts#index" => ->(h) { get "/api/v1/devops_shifts", headers: h },
       "GET api/v1/desk_records#index" => ->(h) { get "/api/v1/desk_records", headers: h },
       "GET api/v1/agents#index" => ->(h) { get "/api/v1/agents", headers: h },
-      "GET api/v1/agents#show" => ->(h) { get "/api/v1/agents/ray", headers: h },
+      "GET api/v1/agents#show" => ->(h) { get "/api/v1/agents/alex", headers: h },
       "GET api/v1/insights#index" => ->(h) { get "/api/v1/insights", headers: h },
       "GET api/v1/agent_activities#windows" => ->(h) { get "/api/v1/agent_activities/windows?session_id=#{sid}", headers: h },
       "GET api/v1/activity_grades#awaiting" => ->(h) { get "/api/v1/agent_activities/awaiting_grade", headers: h },
@@ -121,7 +121,7 @@ class HarnessKeyDoorsTest < ActionDispatch::IntegrationTest
       "checks" => [ @building, { devops: { checks: { "unit" => "pass" } } }, /this update is not the claim/ ],
       "a title" => [ @building, { title: "Renamed By A Key" }, /this update is not the claim/ ],
       "a claim that writes more than the claim" => [ @designed, { stage: "building", title: "Renamed In The Claim" }, /carries only stage, event, devops, dev_size, not title/ ],
-      "a claim that writes more in the query string" => [ @designed, { stage: "building" }, /carries only stage, event, devops, dev_size, not agent_slug, title/, "?title=Smuggled&agent_slug=ray" ],
+      "a claim that writes more in the query string" => [ @designed, { stage: "building" }, /carries only stage, event, devops, dev_size, not agent_slug, title/, "?title=Smuggled&agent_slug=alex" ],
       "a claim of a submitted task" => [ Task.create!(title: "Submitted Elsewhere", stage: "submitted"), { stage: "building" }, /claims a designed or building task; .* is submitted/ ]
     }
     writes.each do |name, (task, params, reason, query)|

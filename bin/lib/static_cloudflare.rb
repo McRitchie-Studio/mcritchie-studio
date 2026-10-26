@@ -123,7 +123,7 @@ module StaticCloudflare
     Target.from(repo, "bucket" => "#{heroku_app}-static", "smoke_url" => adapter["smoke_url"], "heroku_app" => heroku_app)
   end
 
-  # The apps a downgrade may move: the unpaid showcase apps Alex ruled serve from
+  # The apps a downgrade may move: the unpaid showcase apps Alex McRitchie ruled serve from
   # Cloudflare. Every other app (turf-monster, cyvasse, moms-app, a client app) is
   # refused before anything is read or written, whatever its profile says:
   # cyvasse and moms-app share standalone-heroku but hold a database. The
@@ -387,7 +387,7 @@ module StaticCloudflare
   #   3. smoke: /up and the marker at the frozen SHA, from Cloudflare, with a
   #      budget long enough for a new custom domain to activate
   #   4. only after a green smoke: the Heroku web dyno to 0. The app is kept at
-  #      0 dynos for 30 days after the cutover, then deleted (Alex's ruling; the
+  #      0 dynos for 30 days after the cutover, then deleted (Alex McRitchie's ruling; the
   #      runbook records the date and who deletes it)
   # A failure anywhere in 2 or 3 rolls the host swap back in reverse (put the
   # zone's prior rewrite rules back, detach the custom domain, re-create each

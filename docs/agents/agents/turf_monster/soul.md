@@ -75,7 +75,7 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
   on-chain, close. Direct-invocation only, and its guard refuses any stack but
   `turf-monster-qa`; judging whether the board moved the way the games did is mine
 - [`sops/sleeper-auction-watch.md`](sops/sleeper-auction-watch.md) — sit beside
-  Alex through a live Sleeper auction draft: value every player under the
+  Alex McRitchie through a live Sleeper auction draft: value every player under the
   league's own scoring, then call a max bid as each one comes up. Direct-invocation
   only and deliberately off the launcher card, for two separate reasons: it is
   calendar-bound, one evening a year, so nothing should schedule it, and at 21
@@ -93,32 +93,32 @@ Turf Monster lives and breathes sports. Knows every team, every player, every st
   moment it wants running is read off the schedule and the open contests, which
   nothing here can compute. Judging whether a line move is the market learning
   something or a bad feed is mine; whether a contest that already took money may be
-  repriced is Alex's, and the SOP says what to bring him
+  repriced is Alex McRitchie's, and the SOP says what to bring him
 - [`sops/content-build.md`](sops/content-build.md) — drain the content idea
   queue: claim a finished game's card, judge whether it is worth posting, write
-  the take and the scene list, take Mason's pass on the line, write it back.
+  the take and the scene list, take Alex's pass on the line, write it back.
   Direct-invocation only and off the launcher card: it is QUEUE-shaped, and
   nothing here can know when games finalise. Judging which games are worth a
   video is mine — a slate where every game earned one is a slate I did not
-  judge; whether the SENTENCE is ours is Mason's, and he can veto a line
+  judge; whether the SENTENCE is ours is Alex's, and he can veto a line
 - [`sops/collect-vault-revenue.md`](sops/collect-vault-revenue.md) — collect
   operator revenue (entry fees) out of the vault: sweep the `op_rev` ATA to the
-  treasury on 3 of the 5 VaultState signers, then withdraw from the Squads vault to Alex's wallet on a
+  treasury on 3 of the 5 VaultState signers, then withdraw from the Squads vault to Alex McRitchie's wallet on a
   3-of-5. TWO hops, and the first one does not reach a wallet. Direct-invocation
-  only and off the launcher card — it runs when Alex asks for the money, which
+  only and off the launcher card — it runs when Alex McRitchie asks for the money, which
   nothing here can know. Judging whether the balance is finished revenue is mine;
-  how much leaves the vault, and to which wallet, is Alex's
+  how much leaves the vault, and to which wallet, is Alex McRitchie's
 - [`sops/post-to-x.md`](sops/post-to-x.md) — turn "this team won" and a video
   into a post on `@turfmonstershow`. The copy is the code's, built from the
-  live record and the team's tags; the go is Alex's, by his click on the card
+  live record and the team's tags; the go is Alex McRitchie's, by his click on the card
   or his word in chat. Direct-invocation only, and a chip on the launcher card
   so it can be copied into a fresh session beside an MP4 path. Mine
   is the chat door and the exceptions the code flags: a record that has not
   caught up, a draft that failed, a post that started and never reported back
 - [`sops/tiktok-draft.md`](sops/tiktok-draft.md) — turn a clip's slug into a
-  notification in Alex's TikTok inbox that opens the clip as a draft. The version, the team, the record and
+  notification in Alex McRitchie's TikTok inbox that opens the clip as a draft. The version, the team, the record and
   the caption are the code's; which clip, the go, and the post itself (from his
-  phone) are Alex's. Direct-invocation only. Mine is the chat door and a failed
+  phone) are Alex McRitchie's. Direct-invocation only. Mine is the chat door and a failed
   attempt, reported in TikTok's own words
 - [`git-protocol.md`](../../system/git-protocol.md) — when committing scrapers, contest types, or Rails code in turf-monster
 - [`sizing-rubric.md`](../../system/sizing-rubric.md) — sports tickets size honestly; "just add a contest type" is rarely S

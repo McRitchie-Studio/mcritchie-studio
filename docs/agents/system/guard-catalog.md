@@ -1,7 +1,7 @@
 # Guard catalog — guards to success
 
-**Status: decided, with deviations awaiting Alex's call.** Piece 1h of the
-`platform-audit-refactors` epic. Alex's rule: prefer designs that succeed by
+**Status: decided, with deviations awaiting Alex McRitchie's call.** Piece 1h of the
+`platform-audit-refactors` epic. Alex McRitchie's rule: prefer designs that succeed by
 construction over guards. He accepted every disposition on this page as
 catalogued. Each row carries a mark that says what became of it, and
 [Deviations](#deviations) lists the rows a builder kept against the verdict.
@@ -34,7 +34,7 @@ Every DELETE and BY CONSTRUCTION row opens its Mark cell with one of these, and
   why. The part that stays counts as kept against the verdict.
 - **kept against the verdict:** the builder left the guard, with the reason.
 - **awaiting build:** the task named is filed and has not started.
-- **awaiting Alex:** no task or evidence settles the row; the cell says what is
+- **awaiting Alex McRitchie:** no task or evidence settles the row; the cell says what is
   unknown.
 
 A KEEP row needs nothing; its cell reads `kept`.
@@ -74,7 +74,7 @@ Each row states the guard as catalogued, the decision, and the group rows that c
 | 5 | NO-SIGNAL arm of `bin/dor-check` `required_evidence: [control]` | Refuses a test-only claim whose control replay comes back NO-SIGNAL with no `[control]` sentence; the message says "it is not refusing your change" | BY CONSTRUCTION: `bin/control-check` asks for the sentence when it stamps NO-SIGNAL and writes it into the stamp, so the state "NO-SIGNAL without a sentence" never exists. The "names no file from this diff" substring check folds in | The NO-SIGNAL path; the code comment reads "THE VERDICT NEVER REFUSES" | applied: `guards-certs-dor-and-ship` (group 1) |
 | 6 | "task is blocked" error in `bin/session-preflight` | A rework block leaves the task on `building` with `blocked_at` set; preflight errors on it, so the builder fixing the rework fails `bin/task begin`, and `bin/task` has no unblock | BY CONSTRUCTION: `begin` on a blocked `building` task is the answer to the block and clears it (`Task#unblock!`); preflight never fails after the claim | The comment above the check calls it a "warning"; the code adds an error | applied: `guards-preflight-and-desks` (group 4) |
 | 7 | Contract arithmetic in `config/e2e_lane.yml` (`E2eExecutedSet#count_failures` and the e2e quarantine ratchet) | `total_specs` and `executed` are hand-written counts every spec add must bump | BY CONSTRUCTION: compute both from the spec files at run time; keep only `quarantined` and the ceiling ratchet | 86 commits touch the file, 58 since 2026-09-06 | applied: `guards-registries-and-ratchets` (groups 1 and 9) |
-| 8 | Turf settlement winner limit (`turf-monster/app/models/contest.rb#settle_onchain!`) | No guard yet: a contest with more paid entries than one settle transaction holds fails at send, and the rescue logs it | BY CONSTRUCTION: formats that always fit one transaction, instead of a refusal at grade time | Worked example B; plan piece 0c | applied in part: `contest-formats-fit-one-settlement` (every format pays at most four ranks and the table snapshots at creation). Kept: contests created before the snapshot can carry a longer table; `pre-snapshot-contests-fit-settlement` reads them, and each reshape waits on Alex's ruling |
+| 8 | Turf settlement winner limit (`turf-monster/app/models/contest.rb#settle_onchain!`) | No guard yet: a contest with more paid entries than one settle transaction holds fails at send, and the rescue logs it | BY CONSTRUCTION: formats that always fit one transaction, instead of a refusal at grade time | Worked example B; plan piece 0c | applied in part: `contest-formats-fit-one-settlement` (every format pays at most four ranks and the table snapshots at creation). Kept: contests created before the snapshot can carry a longer table; `pre-snapshot-contests-fit-settlement` reads them, and each reshape waits on Alex McRitchie's ruling |
 | 9 | Guards on retired mechanisms and derived stamps | The cert-database reaper, the legacy build-lease hold, `cert_route` validation, the orphan `doc_only_diff` arm, the review pulse, and the `pr_url` and `merged` write-and-read-back checks | DELETE: each protects a mechanism v3 retired or a fact the board now derives from GitHub | Groups 1, 3, 5 and 6 below | applied: `guards-certs-dor-and-ship`, `guards-preflight-and-desks` and `guards-review-and-release` (groups 1, 2, 3, 5 and 6) |
 | 10 | Registries kept in copies | The SOP table, its `claude.md` list and Start Here labels; `config/apps.yml` against three registries; `Task::SOUL_ROSTER` against the seed; `bin/task` `BLOCK_KINDS` against the model's | BY CONSTRUCTION: generate each copy from one source, then delete the parity test. The model holds `Task::BLOCK_KINDS` and validates nothing, so the server check comes first | Group 9 below | applied in part: `guards-registries-and-ratchets` (the SOP tables, the roster, the block kinds). Kept: `app_registry_test.rb`, its own migration (group 9) |
 
@@ -181,7 +181,7 @@ created before the snapshot is the kept part of decision 8.
 | `bin/agent-worktree#refuse_unrecorded_teardown!` | A teardown with no ledger row; a board outage blocks every teardown | 166 stranded rows | 1 | BY CONSTRUCTION: queue the record locally and post it when the board answers | applied: `guards-preflight-and-desks` (a board that answers with a refusal still refuses) |
 | `bin/devops-reconcile` armed-state read | Warns on every run outside the hub (relative path) | 2026-09-23 | 1 | BY CONSTRUCTION: build the path with `BinHelpers.bin_for` | applied: `guards-preflight-and-desks` |
 | `bin/agent-worktree` usage, app, slug, own stack, config, ports, stack health, missing desk, ambiguous desk, primary checkout, remove blockers, teardown leak, reclaim holds, managed root, discovered git, orphan-DB sweep, desk DB proof, restore-primary, Redis, registry write; `DeskClaim.blocking`; `DeskGuard`; `bin/ledger-guard` (2); advisories (2) | Destroying a live desk or a shared database | 512 databases 2026-08-25; one live desk destroyed | 26 | KEEP | kept: `guards-preflight-and-desks` |
-| `ActingIdentity.check`, blank-token message, `GhIdentity.resolve`, `SessionIdentity` spare-process | Merging as Alex's account | 2026-08-29, two merges | 4 | KEEP. With no session the claim gates switch off quietly | kept: `guards-preflight-and-desks` |
+| `ActingIdentity.check`, blank-token message, `GhIdentity.resolve`, `SessionIdentity` spare-process | Merging as Alex McRitchie's account | 2026-08-29, two merges | 4 | KEEP. With no session the claim gates switch off quietly | kept: `guards-preflight-and-desks` |
 | `BranchPrune` and `MarkerPrune` fail-closed reads, skip and keep rules, lease push, lane; `bin/clean-artifacts` argument guard; log-cap advisory; `bin/devops-reconcile` usage and board read; `bin/atomic-event` arguments and notes | Deleting a live branch or session | 2026-08-31 | 10 | KEEP. The `stamp-lost` heal goes with decision 9 | kept: `guards-preflight-and-desks` |
 
 ## 6. Review flow (33)
@@ -245,11 +245,11 @@ created before the snapshot is the kept part of decision 8.
 | Task enums, dependencies and epic (normalize, then refuse), approval status, review check-in, intent event, builder stamp, clamps, race-tolerant create, `Ci::ReviewGate`, `ReviewPendingAction` (3), `DeskRecord` (2), `GateRun`, `Devops::Windows`, `Release#add` and states, `Release::Conductor`, `CredentialRecord`, learning and claim integrity, content claims, domain validations (one row for about 300 sites) | Invalid records; history rewrites; an auto-merge on one repo's CI | 2026-08-29 PR 1073; 2026-09-17 int4 clamp | 26 | KEEP. No stage-transition guard exists for tasks | kept: a KEEP needs nothing |
 | API: bearer and rescue folds, unsupported index params, intent, devops 422 fold, pending-action arm, conductor reassign, desk records, contents, music videos, webhook signature, game recaps, sessions, heartbeat grader, admin wall and local-only, web task forms | Bad tokens and inputs | `?status=submitted` returned every task | 13 | KEEP | kept: a KEEP needs nothing |
 | Agent login doors: a harness key outside its doors (the mint doors, the board reads, narration, a task's create and its claim), a client runtime key outside its soul's endpoints, a session asking for a harness key, a harness key asked to mint a tier above studio, `TASK_AS_ADMIN` with no admin login or an ended one, a sandboxed read of the operator's harness key or desk login | A machine or sibling-app credential used as an actor; a test run presenting a real login | · | 6 | KEEP | kept: `retire-shared-secret-fallback` |
-| CSRF on JSON writes: `verify_authenticity_token` on every browser write, a `.json` one included; `test/integration/csrf_skip_allowlist_test.rb` | A session-cookie write without the page's token → a same-site page (a client app or a preview under `*.mcritchie.studio`) form-POSTing to a `.json` route as Alex | Platform audit 2026-10-24 D5: four controllers skipped the check on `.json` | 1 | BY CONSTRUCTION: no controller skips the check by format. A write that carries no session token belongs to the bearer-gated `/api/v1` (`ActionController::API`), where CSRF does not apply. The allow-list test reads every controller's callback chain and admits only the one-click unsubscribe and the two svix-signed Resend webhooks, each with its reason | applied: `hub-security-gates-pass` (the four `.json` skips are gone; `test/integration/json_writes_keep_csrf_test.rb` refuses a forged form write to each controller and lands the board's own fetch with the page token) |
+| CSRF on JSON writes: `verify_authenticity_token` on every browser write, a `.json` one included; `test/integration/csrf_skip_allowlist_test.rb` | A session-cookie write without the page's token → a same-site page (a client app or a preview under `*.mcritchie.studio`) form-POSTing to a `.json` route as Alex McRitchie | Platform audit 2026-10-24 D5: four controllers skipped the check on `.json` | 1 | BY CONSTRUCTION: no controller skips the check by format. A write that carries no session token belongs to the bearer-gated `/api/v1` (`ActionController::API`), where CSRF does not apply. The allow-list test reads every controller's callback chain and admits only the one-click unsubscribe and the two svix-signed Resend webhooks, each with its reason | applied: `hub-security-gates-pass` (the four `.json` skips are gone; `test/integration/json_writes_keep_csrf_test.rb` refuses a forged form write to each controller and lands the board's own fetch with the page token) |
 
 ## Deviations
 
-Rows where what was built differs from the verdict. Each waits on Alex's call:
+Rows where what was built differs from the verdict. Each waits on Alex McRitchie's call:
 accept the builder's reason, or have the row applied.
 
 | Row | Group | What stays, and the builder's reason | Recommendation |
@@ -265,7 +265,7 @@ accept the builder's reason, or have the row applied.
 | Dirty gem primary, at QA and at ship | 7 | Both guard the gem publish | Keep |
 | Registries in copies (applied in part) | 9 | `app_registry_test.rb` and `bin_help_flag_class_test.rb`: each is its own migration | Apply later; prerequisite: one task per test |
 | `Release#at_most_one_active_release` (applied in part) | 10 | The validation beside the index: it answers 422 naming the reason, where the index alone answers `RecordNotUnique` with "That record already exists" and an ErrorLog row | Keep |
-| Decision 8, the settlement winner limit (applied in part) | top ten | Contests created before the payout snapshot | Apply later; prerequisite: Alex's ruling on each contest the census finds |
+| Decision 8, the settlement winner limit (applied in part) | top ten | Contests created before the payout snapshot | Apply later; prerequisite: Alex McRitchie's ruling on each contest the census finds |
 
 Three applied rows state a limit inside the construction, and no call is owed on
 them: `--pr-url-for a,b=<url>` still refuses, because one URL cannot split
@@ -273,7 +273,7 @@ them: `--pr-url-for a,b=<url>` still refuses, because one URL cannot split
 (group 5); the review-lane docs test keeps its two entry-doc ordering checks
 (group 8).
 
-## What Alex decides
+## What Alex McRitchie decides
 
 Rule on each row under Deviations. A KEEP needs nothing. The builders' evidence
 is on the six tasks the Mark cells name, in each task's notes and PR:

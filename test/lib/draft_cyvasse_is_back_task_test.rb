@@ -54,9 +54,9 @@ class DraftCyvasseIsBackTaskTest < ActiveSupport::TestCase
   end
 
   test "refresh leaves an edited subject and a sent broadcast as they are" do
-    edited = Broadcast.create!(slug: "cyvasse-is-back", template_key: "cyvasse_is_back", subject: "Alex's own", status: "draft")
+    edited = Broadcast.create!(slug: "cyvasse-is-back", template_key: "cyvasse_is_back", subject: "Alex McRitchie's own", status: "draft")
     assert_match "left as it is", refresh
-    assert_equal "Alex's own", edited.reload.subject
+    assert_equal "Alex McRitchie's own", edited.reload.subject
 
     edited.update!(subject: "Cyvasse is back", status: "sent", sent_at: 1.hour.ago)
     assert_match "left as it is", refresh

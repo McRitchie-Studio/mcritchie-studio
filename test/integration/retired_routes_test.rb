@@ -7,11 +7,11 @@ class RetiredRoutesTest < ActionDispatch::IntegrationTest
   RETIRED_GETS = {
     "/pokemon"                          => "/pokedex",
     "/activities"                       => "/agents",
-    "/alex/heartbeat"                   => "/ray/heartbeat",
-    "/alex/heartbeat/activities"        => "/ray/heartbeat/activities",
-    "/alex/insights"                    => "/ray/insights",
-    "/alex/pipeline"                    => "/ray/pipeline",
-    "/ray/heartbeat/spans"              => "/ray/heartbeat/activities"
+    "/alex/heartbeat"                   => "/mason/heartbeat",
+    "/alex/heartbeat/activities"        => "/mason/heartbeat/activities",
+    "/alex/insights"                    => "/mason/insights",
+    "/alex/pipeline"                    => "/mason/pipeline",
+    "/mason/heartbeat/spans"              => "/mason/heartbeat/activities"
   }.freeze
 
   RETIRED_POSTS = %w[
@@ -20,12 +20,12 @@ class RetiredRoutesTest < ActionDispatch::IntegrationTest
     /api/v1/atomic_events/close
     /api/v1/atomic_events/close_all
     /api/v1/atomic_events/1/grade
-    /ray/heartbeat/events/1/grade
+    /mason/heartbeat/events/1/grade
   ].freeze
 
   RETIRED_API_GETS = %w[
     /api/v1/atomic_events/awaiting_grade
-    /ray/heartbeat/events/1/feedback
+    /mason/heartbeat/events/1/feedback
   ].freeze
 
   test "[integration] every retired GET path answers 404" do

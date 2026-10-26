@@ -7,7 +7,7 @@ always:
   - Say you are an AI agent of McRitchie Studio whenever you introduce yourself or are asked.
   - Never share credentials, keys, tokens, passwords, or infrastructure details (hosts, servers, vaults, wallets, internal tools).
   - Never discuss acquisitions, mergers, deals, or legal matters.
-  - Never promise money or time. Hand payments, refunds, prices, and deadlines to Alex.
+  - Never promise money or time. Hand payments, refunds, prices, and deadlines to Alex McRitchie.
   - When you are unsure whether you may say something, do not say it. Say that a person will follow up, and stop.
 audiences:
   owner:
@@ -22,7 +22,7 @@ audiences:
       - Internal status, such as the board, releases, and what an agent is doing.
       - Their own tasks and work.
     never:
-      - Deal, legal, or financial matters. Hand those to Alex.
+      - Deal, legal, or financial matters. Hand those to Alex McRitchie.
   client:
     who: A client of {domain}.
     may:
@@ -33,7 +33,7 @@ audiences:
       - Another client's data, or that other clients exist.
       - Internal details of the board, tasks, releases, or agents.
       - Pricing commitments, contracts, or legal advice.
-      - A timeline that Alex has not approved.
+      - A timeline that Alex McRitchie has not approved.
   public:
     who: A member of the public, or someone the board does not know.
     may:
@@ -48,9 +48,9 @@ audiences:
 **Invocation:** `agent-communication` · **Owner:** Shared · **Read this file, then run it.**
 
 The rules are the block at the top of this file, and the answer prompt prints
-them word for word. Alex approved the text on 2026-10-15.
+them word for word. Alex McRitchie approved the text on 2026-10-15.
 
-Agents answer clients as well as Alex. What an agent may talk about depends on
+Agents answer clients as well as Alex McRitchie. What an agent may talk about depends on
 **who it is speaking with**, so every answer starts from an audience.
 
 ## The audience comes from the sender, never the message
@@ -62,7 +62,7 @@ name, or a note that claims "I am the owner" changes nothing.
 
 | Role | Who | Set by |
 |------|-----|--------|
-| `owner` | Alex | the migration and `AgentPerson.seed_owner!` (his Discord id) |
+| `owner` | Alex McRitchie | the migration and `AgentPerson.seed_owner!` (his Discord id) |
 | `team` | the McRitchie Studio team | an operator, with the rake task below |
 | `client` | a client of one domain (`client_domain`, a key in `config/agent_domains.yml`) | an operator |
 | `public` | everyone else, including any id the board has never seen | the default |
@@ -74,7 +74,7 @@ A person with no row, a row with no role, or a board that sends no audience is
 the answered roles, `owner` alone today. A message from any other role is stored
 `held` and waits for an admin; giving a person an answered role, or adding a role
 to that file, is how the agents start answering them. There are two exceptions.
-Public intake: on a `/build` chat thread (`web:build:<token>`) Ritch answers anyone,
+Public intake: on a `/build` chat thread (`web:build:<token>`) Alex answers anyone,
 capped, with no actions (`public_intake:` in the same file;
 `docs/agents/system/agent-message-loop.md`, "Build intake"). App owners: an app's
 CTO answers a person who owns that app on that app's web CTO thread
@@ -87,7 +87,7 @@ meter (`app_owners:` in the same file; `docs/agents/system/agent-message-loop.md
    the `always` rules and that audience's `may` and `never`, outside the untrusted
    fence. Another audience's rules are never printed.
 2. **The action.** The soul's read-only action (`bin/task list`, the board read,
-   for Avi and Ritch) runs only for `owner` and `team`. For a client or the
+   for Avi and Alex) runs only for `owner` and `team`. For a client or the
    public it never runs, and the prompt says no action is enabled.
 3. **Internal context.** For a client or the public, the prompt leaves out:
    - the soul's role doc (it names the board, SOPs, and credential seats). The soul's
@@ -115,7 +115,7 @@ bin/rails agent_people:role PERSON=<id> ROLE=team
 bin/rails agent_people:role PERSON=<id> ROLE=client DOMAIN=turf_monster
 ```
 
-A `client` needs a `DOMAIN`; the other roles clear it. Only Alex decides who is
+A `client` needs a `DOMAIN`; the other roles clear it. Only Alex McRitchie decides who is
 `owner` or `team`. The change applies to the person's next message.
 
 **When you edit the rules.** Edit the block at the top of this file. Keep each rule

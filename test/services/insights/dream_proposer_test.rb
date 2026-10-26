@@ -88,7 +88,7 @@ class Insights::DreamProposerTest < ActiveSupport::TestCase
   def test_proposes_on_accepted_contrarian_note
     task = shipped_task("dream-contrarian")
     handoff = note(task, "handoff", "Kept the old reader; the new one loses the retry.", by: "pokemon")
-    praise = note(task, "comment", "Alex: Good call. He accepted the recommendation against the obvious move.")
+    praise = note(task, "comment", "Alex McRitchie: Good call. He accepted the recommendation against the obvious move.")
 
     finding = propose(task)
 

@@ -27,9 +27,9 @@ class AgentDomainRegistryTest < ActiveSupport::TestCase
     assert_equal "mcritchie_studio", @registry.front_door("avi")["key"], "Avi, the studio's CTO, is its front door"
     assert_equal "Avi", @registry.reply_name("avi")
     assert_equal "turf_monster", @registry.front_door("turf_monster")["key"]
-    assert_nil @registry.front_door("ray"), "ray answers for the studio domain as a helper, not its front door"
-    assert_nil @registry.reply_name("ray")
-    assert_equal "mcritchie_studio", @registry.domain_key_for("ray"), "the DOMAIN layer mapping still loads"
+    assert_nil @registry.front_door("alex"), "alex answers for the studio domain as a helper, not its front door"
+    assert_nil @registry.reply_name("alex")
+    assert_equal "mcritchie_studio", @registry.domain_key_for("alex"), "the DOMAIN layer mapping still loads"
     assert_equal "Turf", @registry.reply_name("turf_monster")
     assert_includes @registry.shapes, "backend", "shapes come from config/feature_shapes.yml"
   end
@@ -39,7 +39,7 @@ class AgentDomainRegistryTest < ActiveSupport::TestCase
     turf = @registry.catalog("turf_monster", audience: @owner).map { |c| c["capability"] }
     assert_equal %w[board_status recently_shipped release_status usage task], avi
     assert_equal %w[signups_and_errors usage task], turf
-    assert_empty @registry.catalog("ray", audience: @owner), "ray has no catalog"
+    assert_empty @registry.catalog("alex", audience: @owner), "alex has no catalog"
     assert_equal %w[board_status recently_shipped release_status usage task],
                  @registry.catalog("avi", audience: @team).map { |c| c["capability"] }
     assert_equal %w[usage task], @registry.catalog("turf_monster", audience: @team).map { |c| c["capability"] },
@@ -61,8 +61,8 @@ class AgentDomainRegistryTest < ActiveSupport::TestCase
            "no param is accepted"
     refute @registry.validate(soul: "avi", audience: Audience.new(role: "client", client_domain: "mcritchie_studio"),
                               proposal: ask("release_status")).ok?, "a client may not ask it"
-    refute @registry.validate(soul: "ray", audience: @owner, proposal: ask("release_status")).ok?,
-           "ray proposes nothing"
+    refute @registry.validate(soul: "alex", audience: @owner, proposal: ask("release_status")).ok?,
+           "alex proposes nothing"
   end
 
   def test_a_valid_ask_is_normalized_with_its_default

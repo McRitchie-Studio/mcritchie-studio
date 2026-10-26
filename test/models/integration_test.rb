@@ -20,7 +20,7 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_equal Integration.entries.size, Integration.entries.map(&:key).uniq.size, "keys are unique"
   end
 
-  test "[unit] the statuses Alex set on 2026-10-13" do
+  test "[unit] the statuses Alex McRitchie set on 2026-10-13" do
     assert_equal "live", Integration.find(:google_workspace_connect).status
     assert_equal "pro", Integration.find(:google_workspace_connect).tier
     assert_equal "on_request", Integration.find(:discord).status
