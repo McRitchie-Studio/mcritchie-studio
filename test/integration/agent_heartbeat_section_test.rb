@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [component][integration] The HEARTBEAT section on the agent profile page
-# (agents/show). Souls that own a heartbeat (Carl / Avi / Steffon / Ritch / Turf
+# (agents/show). Souls that own a heartbeat (Carl / Avi / Steffon / Alex / Turf
 # Monster — the entries in ApplicationHelper#heartbeat_launchers) get a section listing their
 # heartbeat name plus each launcher act as a copyable phrase + a one-line
 # description. Agents that do NOT own a heartbeat (Shannon / Jasper) render no
@@ -20,7 +20,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
   setup do
     Agent.find_or_create_by!(slug: "carl") { |a| a.name = "Carl" }
     Agent.find_or_create_by!(slug: "avi")  { |a| a.name = "Avi" }
-    Agent.find_or_create_by!(slug: "ray") { |a| a.name = "Ritch" }
+    Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
     Agent.find_or_create_by!(slug: "mason") { |a| a.name = "Mason" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
     Agent.find_or_create_by!(slug: "shannon") { |a| a.name = "Shannon" }
@@ -69,12 +69,12 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_match "Expedite ONE task to prod (asks: what task?)", response.body
   end
 
-  test "Ritch's heartbeat soul renders his client acts" do
-    get agent_path("ray")
+  test "Alex's heartbeat soul renders his client acts" do
+    get agent_path("alex")
     assert_response :success
 
-    assert_select "[data-test='agent-heartbeat-section'][data-agent='ray']", count: 1
-    assert_select "[data-test='heartbeat-name'][data-clip='Ray Heartbeat']"
+    assert_select "[data-test='agent-heartbeat-section'][data-agent='alex']", count: 1
+    assert_select "[data-test='heartbeat-name'][data-clip='Alex Heartbeat']"
     assert_select "[data-test='action']", count: 1
     assert_select "[data-test='action'][data-action='ship-clock'][data-clip='ship-clock']"
     assert_select "[data-test='action'][data-action='full-cycle']", count: 0
@@ -96,8 +96,8 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     # the operator reads next to the phrase they are about to copy, so assert it
     # where it is rendered. "banked", not "confirmed" —
     # Insights::DocGenerator publishes ActionGrade.banked with NO grader filter, and
-    # a `grader: "mcr"` row is McRitchie's audit OF an Ritch grade, which the agent
-    # API cannot even write. The old wording told Ritch to publish a subset that does
+    # a `grader: "mcr"` row is McRitchie's audit OF a Mason grade, which the agent
+    # API cannot even write. The old wording told Alex to publish a subset that does
     # not exist and stood the act down over a full bank
     # (/tasks/sop-precondition-blocks-sharing, corrected in the docs by PR 1321).
     assert_select "[data-test='action'][data-action='share-insights'] span",
@@ -119,7 +119,7 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     refute_match(/confirmed/i, card,
                  "the heartbeat card tells the operator the share act publishes a CONFIRMED "\
                  "subset. It does not: Insights::DocGenerator publishes ActionGrade.banked with "\
-                 "no grader filter, the agent API always grades as `ray`, and the `mcr` row is "\
+                 "no grader filter, the agent API always grades as `mason`, and the `mcr` row is "\
                  "an audit OF that grade (writable with no token at all — see "\
                  "test/integration/heartbeat_grade_auth_test.rb). This wording once stood the SOP "\
                  "down over a full bank (/tasks/sop-precondition-blocks-sharing).")

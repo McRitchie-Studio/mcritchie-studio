@@ -25,18 +25,18 @@ class AppRegistryTest < Minitest::Test
   # when its question is answered; test_every_production_url_exception_is_still_needed
   # fails once the two files agree.
   PRODUCTION_URL_EXCEPTIONS = {
-    "cyvasse" => "Alex owns the Cyvasse URL decision: https://cyvasse.xyz (apps.yml) and " \
+    "cyvasse" => "Alex McRitchie owns the Cyvasse URL decision: https://cyvasse.xyz (apps.yml) and " \
                  "https://cyvasse.mcritchie.studio (satellites.yml) both answer, the second 301s to the first " \
                  "(satellites-legend-and-catalog-urls, 2026-10-06)"
   }.freeze
 
-  # Basic apps that keep nightly backups anyway, each with Alex's reason. Nightly
+  # Basic apps that keep nightly backups anyway, each with Alex McRitchie's reason. Nightly
   # backups are a paid-plan benefit (studio and product tiers); a row here is the
   # only way a basic app keeps them. test_every_backup_exception_is_still_needed
   # fails once a row stops being an exception.
   BACKUP_EXCEPTIONS = {
-    "moms-app" => "Alex's family app: the orchestrator kept its 02:00 schedule when backups moved to the paid " \
-                  "plans, by Alex's exception, unless he says otherwise (backups-paid-tier-and-agent-job, 2026-10-24)"
+    "moms-app" => "Alex McRitchie's family app: the orchestrator kept its 02:00 schedule when backups moved to the paid " \
+                  "plans, by Alex McRitchie's exception, unless he says otherwise (backups-paid-tier-and-agent-job, 2026-10-24)"
   }.freeze
 
   def self.load_yaml(rel) = YAML.safe_load_file(File.join(ROOT, rel))

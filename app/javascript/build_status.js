@@ -1,8 +1,8 @@
 // Small /build behaviours of the status card and the theme card (task
-// build-cards-quality-pass; Alex, 2026-10-19). build_chat.js wires them in.
+// build-cards-quality-pass; Alex McRitchie, 2026-10-19). build_chat.js wires them in.
 //
 //   - the status card pops again when Build My App is pressed (build_cards.css
-//     .build-status-pop); its first pop, when the poll bringing Ritch's theme card swaps the
+//     .build-status-pop); its first pop, when the poll bringing Alex's theme card swaps the
 //     heading for it, is agent_shell.js's agent-shell-enter-card;
 //   - the theme card's Dark / Light control is a toggle: a tap on the side
 //     already showing flips to the other;

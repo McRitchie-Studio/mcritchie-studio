@@ -1,6 +1,6 @@
 require "digest"
 
-# Deliver a registered report to the Discord channel Alex picked for it.
+# Deliver a registered report to the Discord channel Alex McRitchie picked for it.
 # THE CONTRACT other sessions build against: docs/agents/system/report-destinations.md.
 #
 #   result = ReportDestinations.deliver("daily_app_report",

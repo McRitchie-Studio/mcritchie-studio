@@ -91,7 +91,7 @@ class AppOwnersFlowTest < ActionDispatch::IntegrationTest
 
     log_in_as(@stranger)
     [ applications_path, settings_agents_path, application_path("cyvasse"), application_path("no-such-app"),
-      settings_agent_path("ray"), settings_agent_path("tyrion") ].each do |path|
+      settings_agent_path("alex"), settings_agent_path("tyrion") ].each do |path|
       get path
       assert_response :not_found, "GET #{path} as a stranger"
     end

@@ -5,7 +5,7 @@
 
 ## Status: Active
 
-This is Ritch's `ship-clock` SOP. Alex hands an agent one easy task. The agent takes
+This is Alex's `ship-clock` SOP. Alex McRitchie hands an agent one easy task. The agent takes
 it from his prompt to production and measures the speed with real numbers. The
 clock starts at his prompt and stops when the production ship goes green. The
 report splits that time into three parts:
@@ -26,13 +26,13 @@ runs (`gh run list`), the merge time, and the red jobs' logs. Logic and posture:
 
 ## Preconditions
 
-- **Alex's prompt grants production.** It must say to take the task to production
+- **Alex McRitchie's prompt grants production.** It must say to take the task to production
   (for example "ship it" or "all the way to prod"). That sentence is the clearance
   the ship quotes. Without it, stop at `submitted` and report the partial clock; do
   not wait on the Approve button.
 - **The task is small and startable.** It is one story with one repo, and nothing
   else is held in `reviewed` or on `release` that would ride along. If other work
-  is already in the pipeline, report that the clock will include it, and let Alex
+  is already in the pipeline, report that the clock will include it, and let Alex McRitchie
   decide.
 
 ## Procedure
@@ -63,10 +63,10 @@ builder never reviews its own PR.
 **4. QA.** Run [`qa-release`](../../avi/sops/qa-release.md): `bin/release prepare --yes`.
 
 **5. Production.** Run [`production-deploy`](../../steffon/sops/production-deploy.md)
-with Alex's words from the prompt:
+with Alex McRitchie's words from the prompt:
 
 ```bash
-bin/release ship --mode cleared --clearance "<Alex's words>" --yes
+bin/release ship --mode cleared --clearance "<Alex McRitchie's words>" --yes
 ```
 
 Keep every ship log (`ship-*.log`, `prepare-*.log`) in the scratchpad. They are
@@ -95,7 +95,7 @@ the row lands through a task: fold it into the next hub task you build, or open 
 
 ## Exit Seam
 
-Report to Alex in this order:
+Report to Alex McRitchie in this order:
 
 1. **One line:** the total, and the largest of the three parts.
 2. **The stage table** that `ship-clock report` prints, with Denver times and the

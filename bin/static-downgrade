@@ -14,7 +14,7 @@
 # Only an unpaid showcase app moves (StaticCloudflare::DOWNGRADABLE_APPS); any
 # other app is refused before a credential is read. A failure in the host swap or
 # its smoke rolls the swap back and prints the full manual undo; the dyno is
-# scaled to 0 only after a green smoke. Alex's ruling: the Heroku app then stays
+# scaled to 0 only after a green smoke. Alex McRitchie's ruling: the Heroku app then stays
 # at 0 dynos for 30 days after the cutover and is deleted on day 30. The
 # runbook's cutover procedure (docs/agents/modules/static-cloudflare.md) records
 # the date and who deletes it, and flips the app's config/release_repos.yml

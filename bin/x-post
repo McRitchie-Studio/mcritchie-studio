@@ -4,7 +4,7 @@
 # Post one local MP4 to X as @turfmonstershow — the mechanical half of the
 # Turf Monster `post-to-x` SOP (docs/agents/agents/turf_monster/sops/post-to-x.md).
 #
-# The split this serves: a soul decides the words and the hashtags, and Alex
+# The split this serves: a soul decides the words and the hashtags, and Alex McRitchie
 # approves the batch; this command decides nothing. It measures, refuses, uploads
 # and records.
 #
@@ -23,7 +23,7 @@
 # `check` TOUCHES NOTHING: no credential read, no network. It prints the exact
 # text that would go out, its weighted length, and the video's facts, and exits 1
 # on anything X would refuse. Run it for every post in a batch before asking
-# Alex to approve, because what he approves is what `check` printed.
+# Alex McRitchie to approve, because what he approves is what `check` printed.
 #
 # `post` IS PUBLIC AND IS NOT UNDONE BY THIS COMMAND. So it refuses without
 # --yes, refuses when the credentials do not belong to the expected account, and
@@ -235,7 +235,7 @@ when "post"
     die!("an attempt to post this video started #{unfinished['attempted_at']} and never recorded a result, so it may be LIVE. " \
          "Look at https://x.com/#{ACCOUNT} first. If it is there, do not post again; if it is not, re-run with --again.")
   end
-  die!("not posted: a post is public. Re-run with --yes once Alex has approved this exact text.") unless opts[:yes]
+  die!("not posted: a post is public. Re-run with --yes once Alex McRitchie has approved this exact text.") unless opts[:yes]
 
   load_creds!
   expected = opts[:account] || ACCOUNT

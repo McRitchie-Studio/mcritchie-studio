@@ -72,24 +72,24 @@ class AgentSessionTest < ActiveSupport::TestCase
 
   test "a slug that is no soul is refused, and an alias resolves to its successor" do
     refute AgentSession.new(soul: "nobody", tier: "studio", task_slug: @task.slug, issued_by: "task_claim").valid?
-    assert_equal "ray", AgentSession.create!(soul: "alex", tier: "studio", task_slug: @task.slug, issued_by: "task_claim").soul
+    assert_equal "alex", AgentSession.create!(soul: "alex", tier: "studio", task_slug: @task.slug, issued_by: "task_claim").soul
   end
 
-  test "the admin tier is Steffon and Mason; the ray soul is in the Worker class" do
+  test "the admin tier is Steffon and Mason; the alex soul is in the Worker class" do
     assert_equal "admin", AgentSession.tier_for_soul("mason")
     assert_equal "admin", AgentSession.tier_for_soul("steffon")
-    assert_equal "studio", AgentSession.tier_for_soul("ray")
-    assert_equal "studio", AgentSession.tier_for_soul("alex"), "the retired slug resolves to ray, not to an admin"
-    refute AgentSession.new(soul: "ray", tier: "admin", issued_by: "operator_grant").valid?
+    assert_equal "studio", AgentSession.tier_for_soul("alex")
+    assert_equal "studio", AgentSession.tier_for_soul("alex"), "the retired slug resolves to alex, not to an admin"
+    refute AgentSession.new(soul: "alex", tier: "admin", issued_by: "operator_grant").valid?
   end
 
   test "an admin row left over for a soul outside the admin tier is not admin" do
-    # The row an admin login wrote for `ray` before 2026-10-25 is still on file, unexpired.
-    stale = AgentSession.new(soul: "ray", tier: "admin", issued_by: "operator_grant", slug: "session-stale-ray",
+    # The row an admin login wrote for `alex` before 2026-10-25 is still on file, unexpired.
+    stale = AgentSession.new(soul: "alex", tier: "admin", issued_by: "operator_grant", slug: "session-stale-alex",
                              issued_at: Time.current, expires_at: 8.hours.from_now)
     stale.save!(validate: false)
 
-    refute stale.reload.admin?, "a ray admin row must not keep admin authority until it expires"
+    refute stale.reload.admin?, "an alex admin row must not keep admin authority until it expires"
     refute stale.covers_task?(@task.slug)
     assert AgentSession.create!(soul: "mason", tier: "admin", issued_by: "operator_grant").admin?
   end
@@ -100,7 +100,7 @@ class AgentSessionTest < ActiveSupport::TestCase
     assert key.expires_at > 50.years.from_now
     refute key.covers_task?(@task.slug)
 
-    refute AgentSession.new(soul: "ray", tier: "harness", issued_by: "operator_grant").valid?
+    refute AgentSession.new(soul: "alex", tier: "harness", issued_by: "operator_grant").valid?
     refute AgentSession.new(soul: "pokemon", tier: "harness", issued_by: "operator_grant", task_slug: @task.slug).valid?
     refute AgentSession.new(soul: "pokemon", tier: "harness", issued_by: "task_claim").valid?
     assert_raises(ActiveRecord::ReadonlyAttributeError) { key.update!(label: "another-mac") }
@@ -383,5 +383,16 @@ class AgentSessionTest < ActiveSupport::TestCase
                  builder.transition_refusal(@task, "archived"))
     assert_nil admin.transition_refusal(@task, "archived")
     assert_nil builder.transition_refusal(@task, "submitted")
+  end
+
+  test "a left-over admin row for a soul outside the admin tier revokes cleanly" do
+    stale = AgentSession.new(soul: "alex", tier: "admin", issued_by: "operator_grant", slug: "session-stale-revoke",
+                             issued_at: Time.current, expires_at: 1.hour.from_now)
+    stale.save!(validate: false)
+
+    assert_nothing_raised { stale.revoke!(by: "steffon") }
+    assert stale.reload.revoked?
+    assert_equal "steffon", stale.revoked_by
+    assert_match(/was revoked by steffon/, stale.refusal_reason)
   end
 end

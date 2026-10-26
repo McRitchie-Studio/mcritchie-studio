@@ -56,7 +56,7 @@ class VideoPerformerViewTest < ActionView::TestCase
     assert_select "[data-test='performer-recast'].flex.flex-col.flex-1", 1, "the card body is the flex column it is pinned in"
   end
 
-  # Piece 12 (Alex, 2026-10-06): the title names the person once named, and the description and
+  # Piece 12 (Alex McRitchie, 2026-10-06): the title names the person once named, and the description and
   # sightings fold behind it: one press for the description and one row of clear chips, then all.
   test "an unnamed card is titled Person N, a folded disclosure button with no secondary label showing" do
     @performer.update!(confidence_note: "Seen in the armchair throughout.")

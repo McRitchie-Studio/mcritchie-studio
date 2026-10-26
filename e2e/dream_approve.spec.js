@@ -3,11 +3,11 @@ const { loginWithMagicLink, watchPageErrors } = require("./helpers");
 
 // /dreams one-click approval (DreamsController#approve). The server reads the fixture
 // bank (DREAM_BANK_DIR in playwright.config.js), whose `proposed-money-idea` is
-// proposed. The seeded admin is not the approver and sees no button. Alex's account
+// proposed. The seeded admin is not the approver and sees no button. Alex McRitchie's account
 // (a parked admin identity, made on his first magic link) does, and one click turns
 // the card's Proposed badge into the pending-release badge. The filter is switched
 // to Proposed in place first (no reload), and the approve redirect keeps it.
-test("Alex approves a proposed dream in one click; another admin cannot", async ({ page }) => {
+test("Alex McRitchie approves a proposed dream in one click; another admin cannot", async ({ page }) => {
   const { pageErrors, report } = watchPageErrors(page);
   const card = page.locator("[data-test='dream-card'][data-dream='proposed-money-idea']");
 

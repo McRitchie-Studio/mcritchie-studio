@@ -13,7 +13,7 @@
 #   bin/dream propose --materialize <finding>
 #                                      write the proposed dream a dream-proposal-<task> triage finding
 #                                      holds into this desk, as docs/agents/dreams/<soul>/<task>.md
-#   bin/dream approvals                list the approvals and retirements Alex gave on /dreams that
+#   bin/dream approvals                list the approvals and retirements Alex McRitchie gave on /dreams that
 #                                      no file carries yet
 #   bin/dream apply-approvals          set each pending approval's file to `status: approved`, delete
 #                                      each retired dream's file, in this desk, and rewrite INDEX.md,
@@ -30,14 +30,14 @@
 #   bin/dream swap --none --reason "<why>"
 #                                      at wrap, this session's one swap proposal, or "no swap"
 #   bin/dream cards [--call <slug>=approve|change|drop[:<reason>] ...]
-#                                      the card standard for Alex in chat: every proposed dream awaiting
+#                                      the card standard for Alex McRitchie in chat: every proposed dream awaiting
 #                                      a ruling (ADD, or SWAP when its layer is full) plus the RETIRE
 #                                      cards the grades call for; the `dream-swap` SOP prints this
 #   bin/dream cards --in <home>/<slug> [--out <home>/<slug>] [--call ...]
 #   bin/dream cards --none
 #                                      at wrap, the one swap's card, or the "no swap" line
-#   bin/dream approve|drop|retire <slug> --clearance "<Alex's exact words>"
-#                                      record Alex's ruling given in chat, with his words and this
+#   bin/dream approve|drop|retire <slug> --clearance "<Alex McRitchie's exact words>"
+#                                      record Alex McRitchie's ruling given in chat, with his words and this
 #                                      session (approve or drop a proposed dream, retire an approved one)
 #
 # Reads tracked files; --task also reads the task from the board, and prints
@@ -47,7 +47,7 @@
 # runs only in a task desk and flips only a file that reads `status: proposed`.
 # fired posts a `dream_fired` action to the session's open activity
 # (bin/agent-activity action) and refuses an unknown dream.
-# apply-approvals also deletes the file of each retirement Alex recorded
+# apply-approvals also deletes the file of each retirement Alex McRitchie recorded
 # (GET /api/v1/dream_retirements). grade and swap post to the board under this
 # session's id; the board refuses a grade for a dream that did not fire in the
 # session, and a second swap answer. swap reads the --in file from this desk's bank,
@@ -490,7 +490,7 @@ class DreamCli
     approvals = pending_rows(@approvals_reader)
     retirements = pending_rows(@retirements_reader)
     if approvals.nil? || retirements.nil?
-      @err.puts("dream: could not read the pending rulings; a dream Alex already ruled on may show again.")
+      @err.puts("dream: could not read the pending rulings; a dream Alex McRitchie already ruled on may show again.")
     end
     ruled = Array(approvals).chain(Array(retirements)).to_set { |row| "#{row["dream_home"]}/#{row["dream_slug"]}" }
     dreams.select { |dream| dream.status == "proposed" && !ruled.include?("#{dream.home}/#{dream.slug}") }
@@ -507,7 +507,7 @@ class DreamCli
 
   RULED = { "approve" => "approved", "drop" => "dropped", "retire" => "retired" }.freeze
 
-  # bin/dream approve|drop|retire <slug> --clearance "<Alex's exact words>"
+  # bin/dream approve|drop|retire <slug> --clearance "<Alex McRitchie's exact words>"
   def rule(ruling, rest)
     target = rest.first.to_s
     flags = pairs(rest.drop(1))
@@ -537,7 +537,7 @@ class DreamCli
     if status == 200
       @out.puts("dream: `#{dream.home}/#{dream.slug}` already carries that ruling (#{data["via"] || "recorded"}); nothing new.")
     else
-      @out.puts("dream: #{RULED.fetch(ruling)} `#{dream.home}/#{dream.slug}` on Alex's word in chat: #{clearance.inspect}")
+      @out.puts("dream: #{RULED.fetch(ruling)} `#{dream.home}/#{dream.slug}` on Alex McRitchie's word in chat: #{clearance.inspect}")
     end
     @out.puts("The next batch task writes it into the files: bin/dream apply-approvals.")
     OK
@@ -571,7 +571,7 @@ class DreamCli
     data = response.is_a?(Hash) ? response["data"].to_h : {}
     @out.puts("dream: swap recorded · #{data["kind"] || (none ? "none" : "add")}" \
               "#{body["in"] ? " · in #{body["in"]}" : ""}#{body["out"] ? " · out #{body["out"]}" : ""} · #{reason}")
-    @out.puts("Alex approves it on /dreams with one click.") unless none
+    @out.puts("Alex McRitchie approves it on /dreams with one click.") unless none
     OK
   end
 
@@ -700,7 +700,7 @@ class DreamCli
     File.open(path, File::WRONLY | File::CREAT | File::EXCL) { |file| file.write(body) }
     @out.puts("dream: wrote #{path} (status proposed)",
               "Rewrite its question, answer and why from the source activities, run `bin/dream index --write`, " \
-              "and ask Alex to sign off (docs/agents/modules/dream.md Act 3).")
+              "and ask Alex McRitchie to sign off (docs/agents/modules/dream.md Act 3).")
     OK
   end
 

@@ -2,7 +2,7 @@
 # "Per-app CTO reports"). One entry per app that has a CTO: the soul whose voice
 # the report speaks in. Each entry posts under its own report key,
 # `cto_report:<domain>`, which must also be registered in
-# config/report_destinations.yml so Alex can pick its channel at
+# config/report_destinations.yml so Alex McRitchie can pick its channel at
 # /admin/report_destinations.
 #
 #   <domain>:        # the domain key (config/agent_domains.yml where it has one)

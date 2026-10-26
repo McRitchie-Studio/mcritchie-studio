@@ -2,7 +2,7 @@ const { test, expect } = require("@playwright/test");
 const { openDeploySidebar } = require("./helpers");
 
 // The /deployments WORKFLOWS surface: SIX soul launchers — Turf Monster (live scores),
-// Carl (review), Avi (assemble/QA), Steffon (ship + infra sweep), Ritch, and the general
+// Carl (review), Avi (assemble/QA), Steffon (ship + infra sweep), Alex, and the general
 // Pokémon (wrap-it-up). Since the
 // summary row (2026-09-18) they are drawn twice: ONE soul at a time on the Workflows
 // summary card's carousel, and every soul with every command in the Workflows sidebar.
@@ -46,9 +46,9 @@ test("the Workflows sidebar lists seven soul launchers with their acts", async (
   // Mason's third act is visible here — nothing in the sidebar hides behind a toggle.
   const mason = card.locator("[data-test='heartbeat-launcher'][data-agent='mason']");
   await expect(mason.locator("button[data-clip='full-cycle']")).toBeVisible();
-  // Ritch's chip: ship-clock, the typing-to-shipping benchmark.
-  const ray = card.locator("[data-test='heartbeat-launcher'][data-agent='ray']");
-  await expect(ray.locator("button[data-clip='ship-clock']")).toBeVisible();
+  // Alex's chip: ship-clock, the typing-to-shipping benchmark.
+  const alex = card.locator("[data-test='heartbeat-launcher'][data-agent='alex']");
+  await expect(alex.locator("button[data-clip='ship-clock']")).toBeVisible();
 
   // Turf Monster owns the live score watch.
   const turf = card.locator("[data-test='heartbeat-launcher'][data-agent='turf-monster']");

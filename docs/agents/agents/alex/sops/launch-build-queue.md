@@ -8,7 +8,7 @@ free account, and claims `<name>.mcritchie.app`. Each request is **queued**
 and built asynchronously.
 
 **Since 2026-10-19 the first version is automatic.** `bin/client-build-launcher`
-on Alex's Mac claims every launch task `AppLaunch` opens, builds a static bundle
+on Alex McRitchie's Mac claims every launch task `AppLaunch` opens, builds a static bundle
 with a sandboxed builder, and publishes it to the shared preview host
 ([`client-build-launcher.md`](../../../system/client-build-launcher.md)). This SOP is
 the hand path: a launch task the launcher left for a person (blocked past its

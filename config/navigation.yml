@@ -143,10 +143,10 @@ pages:
   intelligence:             { page: "intelligence#index",       audience: admin, label: Intelligence }
   pokedex:                  { page: "pokemon#index",            audience: admin, label: Pokédex }
   recent_tasks:             { page: "tasks#recent",             audience: admin, label: Recent tasks }
-  ray_heartbeat:            { page: "heartbeat#show",           audience: admin, label: Per-session heartbeat }
+  mason_heartbeat:            { page: "heartbeat#show",           audience: admin, label: Per-session heartbeat }
   heartbeat_all_activities: { page: "heartbeat#all_activities", audience: admin, label: All Activities, emoji: "🗃" }
-  ray_insights:             { page: "heartbeat#insights",       audience: admin, label: Insight Bank, emoji: "💡" }
-  ray_pipeline:             { page: "heartbeat#pipeline",       audience: admin, label: Pipeline }
+  mason_insights:             { page: "heartbeat#insights",       audience: admin, label: Insight Bank, emoji: "💡" }
+  mason_pipeline:             { page: "heartbeat#pipeline",       audience: admin, label: Pipeline }
 
 sidebar:
   - { title: Site,    group: admin, pages: [admin_dashboard, deployments, admin_theme, admin_style, admin_schema, logos, admin_emails, admin_link_preview, asset_browser] }
@@ -181,8 +181,8 @@ sub_navs:
       - { page: activities_agents, icon: true }
       - { page: pokedex }
       # The learning-loop surfaces and the recency list belong to the Deploy lane.
-      - { page: ray_pipeline, only: [deployments] }
-      - { page: ray_insights, label: Insights, only: [deployments] }
+      - { page: mason_pipeline, only: [deployments] }
+      - { page: mason_insights, label: Insights, only: [deployments] }
       - { page: recent_tasks, label: Recent, only: [deployments] }
 
   # The board switcher beside the title. The title already says where you are,
@@ -203,6 +203,6 @@ sub_navs:
     label: Heartbeat
     items:
       - { page: deployments, back: true, test_id: hb-nav-deployments }
-      - { page: ray_insights, icon: true, count: { key: insights, id: hb-insight-count } }
+      - { page: mason_insights, icon: true, count: { key: insights, id: hb-insight-count } }
       - { page: heartbeat_all_activities, icon: true, test_id: hb-nav-all-spans }
-      - { page: ray_heartbeat, back: true, only: [heartbeat_all_activities], test_id: hb-nav-session }
+      - { page: mason_heartbeat, back: true, only: [heartbeat_all_activities], test_id: hb-nav-session }

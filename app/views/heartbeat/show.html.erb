@@ -1,24 +1,24 @@
-<% content_for(:title, "Ritch · Learning Heartbeat") %>
+<% content_for(:title, "Mason · Learning Heartbeat") %>
 <% content_for(:full_width, true) %>
 
-<%# Ritch learning heartbeat — the agent-narrated activity table. Each row is an
+<%# Mason learning heartbeat — the agent-narrated activity table. Each row is an
     AgentActivity (category, reason -> result) with its measured span usage; expand an
     activity to drill into attributed raw actions read-only, or drop into the trailing
     "Unlabeled" group for the tool-calls the agent never narrated. A
     deliberate fixed-dark dashboard (like the launcher terminal, which stays dark on a
     light desktop) sitting on the theme-aware body. The palette mirrors the prototype;
     styles are scoped under the section id so they touch nothing else. The table is
-    read-only; clicking a drilled-down action opens the grading drawer, where Ritch
-    grades the action and the McRitchie audit-of-Ritch banks the keepers. %>
+    read-only; clicking a drilled-down action opens the grading drawer, where Mason
+    grades the action and the McRitchie audit-of-Mason banks the keepers. %>
 <%= render "heartbeat/styles" %>
 
 <%= render "heartbeat/scripts" %>
 
-<section id="ray-heartbeat" data-test="heartbeat" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
+<section id="mason-heartbeat" data-test="heartbeat" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
   <div class="hb-head">
     <header class="hb-topbar">
       <div class="hb-title">
-        <h1>Session Activities &middot; Ray Heartbeat</h1>
+        <h1>Session Activities &middot; Mason Heartbeat</h1>
         <p>
           The activities this session narrated, oldest &rarr; newest &mdash; each a category and a reason &rarr; result.
           Expand an activity to drill into the raw actions it framed; open one to grade it and its McRitchie audit.
@@ -38,7 +38,7 @@
 
     <div class="hb-toolbar">
       <% if @sessions.size > 1 %>
-        <%= form_with url: ray_heartbeat_path, method: :get, data: { turbo: false } do %>
+        <%= form_with url: mason_heartbeat_path, method: :get, data: { turbo: false } do %>
           <span class="hb-lab">Session</span>
           <%= select_tag :session_id,
                 options_for_select(@sessions, @session_id),
@@ -48,7 +48,7 @@
         <span class="hb-lab">Session</span>
         <span class="hb-meta hb-mono"><%= @session_id %></span>
       <% end %>
-      <%= render "components/sub_nav", nav: :heartbeat, current: :ray_heartbeat, counts: { insights: @counts[:insights] } %>
+      <%= render "components/sub_nav", nav: :heartbeat, current: :mason_heartbeat, counts: { insights: @counts[:insights] } %>
       <span class="hb-legend">
         <span><b>activity:</b> category &middot; reason &rarr; result</span>
         <span><b>drill down:</b> expand an activity &middot; click an action to grade</span>

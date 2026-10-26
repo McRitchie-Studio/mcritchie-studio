@@ -54,7 +54,7 @@ sha256) makes a revalidation a 304. A file whose name carries a content hash
 Every app on the host wears the same frame: the **Studio navbar** (the app's name, split
 as the engine's navbar splits it, with its CTO's portrait as the mark, a dark-mode toggle
 and a menu) and the engine's **site footer** ("Built with McRitchie Studio", back to
-`https://mcritchie.studio`), in the app's own palette, light and dark. Alex, 2026-10-20:
+`https://mcritchie.studio`), in the app's own palette, light and dark. Alex McRitchie, 2026-10-20:
 "We want to build all the apps to a standard and that should start with a template and
 have a continuity." So the frame is never copied into a bundle, where it would freeze
 and drift. The host owns it, in `ClientApps::StudioKit`
@@ -173,7 +173,7 @@ parser (what `request.host` believes: spaces around `=`, escaped quoted values) 
 plain scan, because Rack answers nil for a header it cannot parse. A trailing dot on any
 host is the same host.
 
-**Live since 2026-10-19, 23:45 MDT.** Alex chose `mcritchie.app` on 2026-10-19 (it
+**Live since 2026-10-19, 23:45 MDT.** Alex McRitchie chose `mcritchie.app` on 2026-10-19 (it
 replaced `mcritchie.si`). It is bought on Cloudflare Registrar, so the zone sits in our
 Cloudflare account with no nameserver move. The whole `.app` TLD is on the browsers' HSTS
 preload list, so a preview is reachable over https only (a browser upgrades every http

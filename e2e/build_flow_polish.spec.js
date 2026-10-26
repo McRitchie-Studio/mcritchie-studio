@@ -1,12 +1,12 @@
 // [e2e] The /build chat's polish (task build-flow-polish).
 //
-//   1. Alex, 2026-10-19: "When the chat is within 20px of the bottom, new agent
+//   1. Alex McRitchie, 2026-10-19: "When the chat is within 20px of the bottom, new agent
 //      text appearing should bump to the bottom so the user doesn't have to
 //      scroll to keep up." A reader at the end stays there while an answer types
 //      in letter by letter and while a new turn lands; a reader scrolled 200px up
 //      is not moved (app/javascript/chat_follow.js).
 //   2. Choose Theme on the theme already chosen posts nothing (no visitor turn,
-//      no turn of Ritch's); picking another theme enables it again.
+//      no turn of Alex's); picking another theme enables it again.
 //   3. The domain card makes no availability request of its own when it arrives
 //      (the server's render already checked every name once); a changed name is
 //      checked once.
@@ -34,14 +34,14 @@ async function adminToken(browser) {
   return token;
 }
 
-// Ritch answers the visitor's message through the real mailbox API; the page polls.
+// Alex answers the visitor's message through the real mailbox API; the page polls.
 async function rayAnswers(page, auth, content, text, card) {
   const worker = `e2e-polish-${Date.now()}`;
   for (let i = 0; i < 10; i += 1) {
-    const claimed = await page.request.post("/api/v1/agent_messages/claim", { headers: auth, data: { souls: ["ray"], worker, channel: "web" } });
+    const claimed = await page.request.post("/api/v1/agent_messages/claim", { headers: auth, data: { souls: ["alex"], worker, channel: "web" } });
     expect(claimed.ok()).toBeTruthy();
     const message = (await claimed.json()).data;
-    expect(message, `a ray message waiting for "${content}"`).toBeTruthy();
+    expect(message, `a alex message waiting for "${content}"`).toBeTruthy();
     const mine = message.content === content;
     const body = mine && card ? `${text}\n===PROPOSAL===\n${JSON.stringify({ kind: "intake", ...card })}` : (mine ? text : "ok");
     const done = await page.request.post(`/api/v1/agent_messages/${message.id}/complete`, { headers: auth, data: { worker, response_text: body } });
@@ -59,7 +59,7 @@ async function rayAnswers(page, auth, content, text, card) {
 async function start(page, idea) {
   await page.setExtraHTTPHeaders({ "X-Forwarded-For": `198.51.100.${1 + Math.floor(Math.random() * 250)}` });
   await page.goto("/build");
-  const box = page.getByLabel("Tell Ritch what you want to build");
+  const box = page.getByLabel("Tell Alex what you want to build");
   await box.fill(idea);
   await page.waitForTimeout(2200);
   await box.press("Enter");

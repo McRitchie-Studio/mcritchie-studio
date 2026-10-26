@@ -154,8 +154,9 @@ When finishing a meaningful feature:
 1. Search docs for the changed route, env var, port, provider, model, or workflow.
 2. Update the canonical doc.
 3. While editing active docs, fix nearby ambiguous owner/orchestrator language:
-   use **Alex** for Alexander Ray McRitchie, the owner/operator, **Mason** for
-   the CEO and orchestrator agent, and **Ritch** for the client-facing agent.
+   use **Alex McRitchie** (or "the owner") for Alexander Ray McRitchie, the
+   owner/operator, **Mason** for the CEO and orchestrator agent, and **Alex** for
+   the client-facing agent. A bare "Alex" means the agent.
 4. If an old doc is superseded but not safe to delete yet, add it to [`../maintenance/delete-later.md`](../maintenance/delete-later.md).
 5. Prefer deleting stale docs over preserving contradictory context.
 
@@ -209,7 +210,7 @@ Old Claude memory under `/Users/alex/.claude/` can contain useful history, but i
 
 Imported lessons from the first cleanup pass:
 
-- Give Alex something inspectable, usually a local URL, screenshot, or test result summary.
+- Give Alex McRitchie something inspectable, usually a local URL, screenshot, or test result summary.
 - Leave documentation cleaner than you found it.
 - Use targeted 1Password reads; never print secrets.
 - Treat old `3001` and `turf.mcritchie.studio` references as stale unless the

@@ -168,7 +168,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "[integration] deployments renders every soul launcher in the Workflows card" do
     Agent.find_or_create_by!(slug: "avi") { |a| a.name = "Avi" }
     Agent.find_or_create_by!(slug: "steffon") { |a| a.name = "Steffon" }
-    Agent.find_or_create_by!(slug: "ray") { |a| a.name = "Ritch" }
+    Agent.find_or_create_by!(slug: "alex") { |a| a.name = "Alex" }
     Agent.find_or_create_by!(slug: "mason") { |a| a.name = "Mason" }
     Agent.find_or_create_by!(slug: "turf-monster") { |a| a.name = "Turf Monster" }
 
@@ -186,11 +186,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] a[data-test='heartbeat-avatar-link'][href='/agents/carl']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] a[data-test='heartbeat-avatar-link'][href='/agents/avi']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] a[data-test='heartbeat-avatar-link'][href='/agents/steffon']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] a[data-test='heartbeat-avatar-link'][href='/agents/ray']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] a[data-test='heartbeat-avatar-link'][href='/agents/alex']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] a[data-test='heartbeat-avatar-link'][href='/agents/turf-monster']"
     # Each launcher exposes a prompt-like heartbeat row (row 1) plus its atom action rows —
     # Carl owns pr-review + pr-review-slow, Avi owns qa-release, Steffon owns
-    # production-deploy + clean-infra, Ritch carries full-cycle, Turf Monster watches scores.
+    # production-deploy + clean-infra, Mason carries full-cycle, Turf Monster watches scores.
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='heartbeat'][data-clip='Carl Heartbeat']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='action'][data-clip='pr-review']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] button[data-row='action'][data-clip='pr-review-slow']"
@@ -202,7 +202,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] button[data-row='action'][data-clip='workspace-launch']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='mason'] button[data-row='action'][data-clip='grade-events']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='mason'] button[data-row='action'][data-clip='full-cycle']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='ray'] button[data-row='action'][data-clip='ship-clock']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] button[data-row='action'][data-clip='ship-clock']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='heartbeat'][data-clip='Turf Monster Heartbeat']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] button[data-row='action'][data-clip='live-score-watch']"
     # archive-shipped left the card when production-deploy took over running it.
@@ -421,7 +421,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "[component] deployments board links to the cross-session Activities view" do
     get deployments_path
     assert_response :success
-    # the reimagined /agents/activities feed, not the old /ray/heartbeat/activities page
+    # the reimagined /agents/activities feed, not the old /mason/heartbeat/activities page
     assert_select %(nav[aria-label="Board sections"] a[href="#{activities_agents_path}"]),
       text: "🎭 Activities",
       count: 1
@@ -441,13 +441,13 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[component] deployments board links to the Ritch pipeline and insights" do
+  test "[component] deployments board links to the Mason pipeline and insights" do
     get deployments_path
     assert_response :success
-    assert_select %(nav[aria-label="Board sections"] a[href="#{ray_pipeline_path}"]),
+    assert_select %(nav[aria-label="Board sections"] a[href="#{mason_pipeline_path}"]),
       text: "Pipeline",
       count: 1
-    assert_select %(nav[aria-label="Board sections"] a[href="#{ray_insights_path}"]),
+    assert_select %(nav[aria-label="Board sections"] a[href="#{mason_insights_path}"]),
       text: "Insights",
       count: 1
   end
@@ -458,9 +458,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     [tasks_path, stages_path].each do |path|
       get path
       assert_response :success
-      assert_select %(nav[aria-label="Board sections"] a[href="#{ray_pipeline_path}"]), { count: 0 },
+      assert_select %(nav[aria-label="Board sections"] a[href="#{mason_pipeline_path}"]), { count: 0 },
         "expected no Pipeline link on #{path}"
-      assert_select %(nav[aria-label="Board sections"] a[href="#{ray_insights_path}"]), { count: 0 },
+      assert_select %(nav[aria-label="Board sections"] a[href="#{mason_insights_path}"]), { count: 0 },
         "expected no Insights link on #{path}"
     end
   end
@@ -518,7 +518,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
   test "deployments shows the heartbeat launchers when no release exists" do
     Release.delete_all
-    %w[avi steffon ray mason].each { |s| Agent.find_or_create_by!(slug: s) { |a| a.name = s.titleize } }
+    %w[avi steffon alex mason].each { |s| Agent.find_or_create_by!(slug: s) { |a| a.name = s.titleize } }
 
     get deployments_path
 
@@ -597,11 +597,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "[integration] the agent filter narrows the board columns but not the WIP tile" do
     Task.delete_all
     agent_rows!("avi")
-    Task.create!(title: "wip filter ray task", stage: "building", agent_slug: "ray")
+    Task.create!(title: "wip filter alex task", stage: "building", agent_slug: "alex")
     Task.create!(title: "wip filter other task", stage: "building", agent_slug: "avi")
     Task.create!(title: "wip filter third task", stage: "submitted", agent_slug: "avi")
 
-    get deployments_path(agent_slug: "ray")
+    get deployments_path(agent_slug: "alex")
     assert_response :success
     assert_select "[data-test='release-duration-wip']", text: /3/
   end
@@ -1421,7 +1421,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Carl per PR"              # review is Carl-owned, not Avi-supervised
     assert_includes response.body, "FROZEN ship SHA"          # Steffon's ship-time suite
     assert_includes response.body, "qa-release"               # Avi's QA release lane
-    assert_includes response.body, "full-cycle"               # the Ritch full-cycle ship launcher
+    assert_includes response.body, "full-cycle"               # the Mason full-cycle ship launcher
   end
 
   test "deployments and stages send a visitor to sign-in" do
@@ -2396,7 +2396,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "show renders task conversation" do
     Activity.create!(
       task_slug: @new_task.slug,
-      agent_slug: "ray",
+      agent_slug: "alex",
       activity_type: "qa_feedback",
       description: "QA blocked until the sidebar branch is rebased."
     )
@@ -2439,9 +2439,9 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_equal "qa_feedback", activity.activity_type
     # The admin here is alex@mcritchie.studio — the HUMAN. Until 2026-09-24 his
     # email's local part matched the orchestrator seat's slug, so an operator
-    # comment was attributed to the agent. The seat is `ray` now, so his
+    # comment was attributed to the agent. The seat is `alex` now, so his
     # comment carries no soul slug; the user_id below is what names him.
-    assert_nil activity.agent_slug, "the operator is not the Ritch seat"
+    assert_nil activity.agent_slug, "the operator is not the Alex seat"
     assert_equal @admin.id, activity.metadata["user_id"]
     assert_equal "task_conversation", activity.metadata["source"]
   end

@@ -15,31 +15,31 @@ class AgentTypingComponentTest < ActionView::TestCase
 
   AT = Time.utc(2026, 10, 18, 19, 30)
 
-  def ray = AgentStub.new(slug: "ray", name: "Ritch", avatar: "/agents/ray.png", avatar_color: "#123456", avatar_initials: "R")
+  def alex = AgentStub.new(slug: "alex", name: "Alex", avatar: "/agents/alex.png", avatar_color: "#123456", avatar_initials: "R")
 
   def render_typing(**locals)
-    render partial: "agent_chats/typing", locals: { agent_name: "Ritch", at: AT, **locals }
+    render partial: "agent_chats/typing", locals: { agent_name: "Alex", at: AT, **locals }
   end
 
-  test "[component] thinking: the portrait in the orbit and 'Ritch is thinking' on the shimmer, the bubble drawn but not chosen" do
-    render_typing(phase: "thinking", agent: ray)
+  test "[component] thinking: the portrait in the orbit and 'Alex is thinking' on the shimmer, the bubble drawn but not chosen" do
+    render_typing(phase: "thinking", agent: alex)
 
     assert_select ".agent-typing[data-test='cto-chat-typing'][data-phase='thinking'][data-typing-at='#{(AT.to_f * 1000).to_i}']" do
       assert_select ".agent-typing-thinks[data-test='cto-chat-thinking']" do
-        assert_select ".agent-typing-orbit[aria-hidden='true'] img[src='/agents/ray.png']"
+        assert_select ".agent-typing-orbit[aria-hidden='true'] img[src='/agents/alex.png']"
         assert_select ".agent-typing-orbit .w-10.h-10", 1, "the small portrait"
-        assert_select ".agent-typing-label.agent-typing-shimmer", text: "Ritch is thinking"
+        assert_select ".agent-typing-label.agent-typing-shimmer", text: "Alex is thinking"
       end
-      assert_select ".agent-typing-types[data-test='cto-chat-typing-bubble'] .agent-typing-label", text: "Ritch is typing"
+      assert_select ".agent-typing-types[data-test='cto-chat-typing-bubble'] .agent-typing-label", text: "Alex is typing"
     end
   end
 
-  test "[component] typing: the bubble's three dots and 'Ritch is typing'" do
-    render_typing(phase: "typing", agent: ray)
+  test "[component] typing: the bubble's three dots and 'Alex is typing'" do
+    render_typing(phase: "typing", agent: alex)
 
     assert_select ".agent-typing[data-phase='typing']" do
       assert_select ".agent-typing-bubble[aria-hidden='true'] .agent-typing-dot", 3
-      assert_select ".agent-typing-types .agent-typing-label", text: "Ritch is typing"
+      assert_select ".agent-typing-types .agent-typing-label", text: "Alex is typing"
     end
   end
 
@@ -50,7 +50,7 @@ class AgentTypingComponentTest < ActionView::TestCase
     render_typing(phase: "<script>")
     assert_select ".agent-typing[data-phase='typing']", 2
     assert_no_match(/<script>/, rendered)
-    assert_select ".agent-typing-orbit span", text: "R"
+    assert_select ".agent-typing-orbit span", text: "A"
   end
 
   test "[component] a client CTO's thinking look wears its own portrait" do

@@ -1,25 +1,26 @@
 # DevOps v3 — the focus-session pipeline
 
-> **Status:** proposal ratified by Alex on 2026-09-24, landing in phases. The
+> **Status:** proposal ratified by Alex McRitchie on 2026-09-24, landing in phases. The
 > published, illustrated version of this document is
 > https://claude.ai/artifact/BfMajAcq9XNvUxUaR9yJny. This file is the
 > repository copy and the one the phases cite. It supersedes
 > [`devops-cycle-design.md`](devops-cycle-design.md) (v2) once phases 1 to 4
 > land; until then v2 describes the mechanics still in force.
 >
-> **Names.** From this document on, **Alex** is the human owner and operator,
-> and **Ritch** is the agent that used to be called Alex. Ritch was the orchestrator
-> until 2026-10-25; **Mason** holds that seat since. Active docs adopt these names
+> **Names.** **Alex McRitchie** is the human owner and operator. **Alex** is the
+> client-facing agent (slug `alex`; the same seat was Xan, Ray and Ritch between
+> 2026-09-24 and 2026-10-25). It was the orchestrator until 2026-10-25;
+> **Mason** holds that seat since. Active docs adopt these names
 > as they are rewritten; archived snapshots stay as written.
 
 A focus session holds the epic, files tasks only when they are startable, builds
 them in parallel, and reviews its own PRs. The pipeline runs one suite per tree.
-The board reads its state from GitHub instead of being told. Alex's gates get a
+The board reads its state from GitHub instead of being told. Alex McRitchie's gates get a
 clock.
 
 ## 0. What was decided, and what it changes
 
-Alex's answers on 2026-09-24, each mapped to the design consequence it drives.
+Alex McRitchie's answers on 2026-09-24, each mapped to the design consequence it drives.
 
 | Topic | Decision | Consequence |
 |---|---|---|
@@ -34,38 +35,38 @@ Alex's answers on 2026-09-24, each mapped to the design consequence it drives.
 | Docs | AGENTS.md as a general view; agents drill into micro layers as needed. | Three layers: map, capability pages, archive (§8). |
 | Guards | Prefer things that just work. | The catalog in §7 with a disposition per guard. |
 | Learning loop | Bake it into the flow; grade on size, blockers, tokens, lines; 0 or 1 learning per task. | Auto-grade at ship, one line at most, only when a threshold trips (§9). |
-| Names | Alex is the human; the agent is Ritch. | §1. |
+| Names | Alex McRitchie is the human; the agent is Alex. | §1. |
 
-## 1. Names: Alex and Ritch
+## 1. Names: Alex McRitchie and Alex
 
-The agent seat formerly named Alex became **Xan** on 2026-09-24 (slug `xan`), and
-**Ray** on 2026-10-18 (Alex's middle name; display in `ray-display-rename`, slug
-`ray` in `ray-slug-rename`), and **Ritch** on
-2026-10-20 (display in `ritch-display-rename`; the slug stays `ray` until a
-later step): Lead Orchestrator, holder of the Documentation review seat, owner of `full-cycle` and the learning loop. On 2026-10-25 **Mason** (slug `mason`) took those seats as CEO, and Ritch became the client-facing fractional CTO and builder (`.agents/epics/alex-build.md`). The Solana signing identity
+The agent seat first named Alex became **Xan** on 2026-09-24 (slug `xan`), then
+**Ray** on 2026-10-18 (Alex McRitchie's middle name; display in `ray-display-rename`, slug
+`ray` in `ray-slug-rename`), then **Ritch** on 2026-10-20 (`ritch-display-rename`),
+and **Alex** again on 2026-10-25 (slug `alex`, `ritch-renamed-alex`). Until then it
+was Lead Orchestrator, holder of the Documentation review seat, owner of `full-cycle` and the learning loop. On 2026-10-25 **Mason** (slug `mason`) took those seats as CEO, and Alex became the client-facing fractional CTO and builder (`.agents/epics/alex-build.md`). The Solana signing identity
 `agent.xan.solana` (renamed from "Alex bot" on 2026-09-15, retired 2026-10-14) is
-unrelated and keeps its name. The human is **Alex** everywhere; "Mr. McRitchie"
+unrelated and keeps its name. The human is **Alex McRitchie** everywhere; "Mr. McRitchie"
 retires from active docs as they are rewritten.
 
 Mechanics: the slug is a foreign key in activities, scout reports, task events,
 builder stamps and review claims. Each rename is one task: a data migration
 repoints every stored value, the old slug stays a read alias
-(`Task::SOUL_ALIASES`: `alex` and `xan` both read as `ray`), and the old URLs
+(`Task::SOUL_ALIASES`: `ray` and `xan` both read as `alex`), and the old URLs
 301 to the new ones.
 
 ## 2. The shape of v3
 
 ```text
-Alex + focus session ──files a startable task──▶ Pokémon builder ──PR green──▶ reviewer (subagent)
+Alex McRitchie + focus session ──files a startable task──▶ Pokémon builder ──PR green──▶ reviewer (subagent)
    holds the epic plan                            desk · build · ship           review · merge
                                                        ▲                            │
                                                        └────── blocker ─────────────┘
                                                                                     ▼
                                                                                (accepted)
-                                                                                    │ Alex launches qa-release
+                                                                                    │ Alex McRitchie launches qa-release
                                                                                     ▼
                                                                           release → QA green
-                                                                                    │ Alex launches production-deploy
+                                                                                    │ Alex McRitchie launches production-deploy
                                                                                     │ (30-minute window)
                                                                                     ▼
                                                                               (main · shipped)
@@ -146,13 +147,13 @@ path for PRs whose session died.
   is wrong, it posts its position and fires a new SOP, `arbitrate-block`, run by
   Avi. Avi is the authority: he accepts the block, overrules it, or splits it,
   and his ruling is recorded on the task. Only a policy question Avi cannot
-  settle goes to Alex, with the 20-minute window. Contesting is a power, not a
+  settle goes to Alex McRitchie, with the 20-minute window. Contesting is a power, not a
   reflex; the SOP asks the builder for its evidence first.
 - **Every block and every ruling feeds the learning loop** (§9).
 - **The session owns the verdict.** One review owner per PR by construction.
 
 Souls to write or re-read in phase 1: the Pokémon builder soul and role, Avi's
-soul plus `arbitrate-block`, the five specialists' review checklists, Ritch's soul.
+soul plus `arbitrate-block`, the five specialists' review checklists, Alex's soul.
 
 **What the reviews did.** 3,439 scout reports. Request-changes share fell from
 35% in July to 17% in September. In 1,151 rounds with a second reader: both clean
@@ -223,13 +224,13 @@ deferred receipt, the local full suite.
 
 Measured: 274 UI approval requests, 100 approved, 46 dropped by the old handoff
 bug; answered ones took 16 minutes at the median and 5 hours at p90. 55
-escalations reached Alex; the next move landed 48 minutes later at the median.
+escalations reached Alex McRitchie; the next move landed 48 minutes later at the median.
 
 | Gate | Window | While the clock runs | When it lapses |
 |---|---|---|---|
 | UI approval | 10 min | Card pulses with the magic link; the builder keeps going | Review proceeds, as today; the card keeps asking; a later answer is recorded |
-| Escalation | 20 min | A contested block goes to Avi first (`arbitrate-block`); only a policy question he cannot settle reaches Alex, with both positions in one note | The ruling Avi recommended stands, labeled as an auto-decision; the task carries the open question |
-| Production authority | 30 min | The release is QA-green; the session asks once with the slug and members | Per-launch mode: `ask` holds; `timed` ships when the window lapses with G3 green and no open escalation; `auto` ships on green; `cleared` records Alex's chat clearance (his words, required) and ships with no window. Default `timed`. The default and the length live in `config/release_builder.yml` |
+| Escalation | 20 min | A contested block goes to Avi first (`arbitrate-block`); only a policy question he cannot settle reaches Alex McRitchie, with both positions in one note | The ruling Avi recommended stands, labeled as an auto-decision; the task carries the open question |
+| Production authority | 30 min | The release is QA-green; the session asks once with the slug and members | Per-launch mode: `ask` holds; `timed` ships when the window lapses with G3 green and no open escalation; `auto` ships on green; `cleared` records Alex McRitchie's chat clearance (his words, required) and ships with no window. Default `timed`. The default and the length live in `config/release_builder.yml` |
 
 Mechanically: one `window_expires_at` field per gate, set when the request is
 posted, one command the session runs to wait on it, and a countdown on the card.
@@ -253,7 +254,7 @@ window with a clock.
 |---|---|---|---|---|
 | Soul slug validation | Refuses `--agent Steffon` | A stamp that matches nothing | Added after four silent drops | derive: normalize, never refuse |
 | Author set + reviewer exclusion | Stamps builders; keeps them off their own review | Self-review | Six blank stamps in one sitting; roster exhaustion when Carl builds | derive: authors from git; the Pokémon builds, specialists review |
-| Acting identity (`gh api user` must 403) | Before a merge | Merging as Alex's personal account | Two such merges on 2026-08-29 | keep, inside the merge primitive |
+| Acting identity (`gh api user` must 403) | Before a merge | Merging as Alex McRitchie's personal account | Two such merges on 2026-08-29 | keep, inside the merge primitive |
 | UNNAMED builders | Session-only claims count as unattributed | An incomplete author set | Frequent refusals | **done:** deleted in PR 1601 |
 
 ### Claims and leases
@@ -368,7 +369,7 @@ and cost is captured on every task (34% today, falling).
 
 | Phase | Delivers | Mostly | Depends on |
 |---|---|---|---|
-| 0 | This document; the Ritch rename with its data migration | docs, one migration | Alex's decisions (§11) |
+| 0 | This document; the Alex rename with its data migration | docs, one migration | Alex McRitchie's decisions (§11) |
 | 1 | The focus-session SOP; the Pokémon builder soul; `arbitrate-block` and Avi's soul; the specialists' checklists; `epic_slug` and the epic chip | docs, small board change | 0 |
 | 2 | One verdict per tree: `dor-check` reads the CI verdict only; G3 and G4 credit the tree; the evidence system and its guards deleted | tooling deletions | 1 |
 | 3 | Operator windows: the fields, the wait command, the countdown, the launch mode | board and tooling | 1 |
@@ -382,7 +383,7 @@ from day 4.
 
 | Day | Lane A · docs | Lane B · board | Lane C · tooling |
 |---|---|---|---|
-| 1 | 0 · land this design | 0 · Ritch rename | 2a · `dor-check` reads the CI verdict only |
+| 1 | 0 · land this design | 0 · Alex rename | 2a · `dor-check` reads the CI verdict only |
 | 2 | 1 · SOP, builder soul, `arbitrate-block`, checklists | 1 · `epic_slug` and the epic chip | 2b · G3 and G4 credit the tree; delete the evidence system |
 | 3 | 1 · continued | 3 · operator windows | 4a · `merged` from git, PR from branch, authors from git |
 | 4 to 5 | 5 · AGENTS.md map and capability pages | 6 · auto-grade, actor and cost | 4b · delete batches with their tests |
@@ -422,11 +423,11 @@ read-back verifies the url either way. `--agent` is
 optional: review excludes the souls on the PR's commits, union any stamps.
 
 **Where it stands, 2026-09-25.** Every piece below is merged to `accepted`; none
-has reached `main`, because the v3 batch still waits on Alex's ship authority.
+has reached `main`, because the v3 batch still waits on Alex McRitchie's ship authority.
 
 | Phase | Landed on `accepted` (PR) |
 |---|---|
-| 0 | design 1577 · Ritch rename 1579 |
+| 0 | design 1577 · Alex rename 1579 |
 | 1 | focus-session SOP and souls 1578 · `epic_slug` and the chip 1580 |
 | 2 | `dor-check` reads the CI verdict 1582 · evidence system deleted 1589 · G4 reads the tree verdict 1584 |
 | 3 | operator windows 1586 · ship grant scoped to its request 1591 |
@@ -442,9 +443,9 @@ outside any checkout. 4c starts after the v3 batch reaches `main`.
 
 ## 11. Decisions recorded on 2026-09-24
 
-1. **Ritch** is the agent's name; Alex is the human.
+1. **Alex** is the agent's name; Alex McRitchie is the human.
 2. **Production window:** per-launch mode, `timed` by default; changeable in
-   `config/release_builder.yml`. Alex's clearance in chat is its own mode,
+   `config/release_builder.yml`. Alex McRitchie's clearance in chat is its own mode,
    `cleared`, which records his words on the release and asks no window.
 3. **The Pokémon builds everything;** specialists review; the builder may contest
    a block; Avi arbitrates.

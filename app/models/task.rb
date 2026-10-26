@@ -200,7 +200,7 @@ class Task < ApplicationRecord
   belongs_to :agent, foreign_key: :agent_slug, primary_key: :slug, optional: true
   belongs_to :release, foreign_key: :release_slug, primary_key: :slug, optional: true, inverse_of: :tasks
   has_many :activities, foreign_key: :task_slug, primary_key: :slug, dependent: :nullify
-  # Ritch's ship-time grade (Insights::TaskGrader); its lesson lives on as an ActionGrade.
+  # Mason's ship-time grade (Insights::TaskGrader); its lesson lives on as an ActionGrade.
   has_one :task_grade, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_events, foreign_key: :task_slug, primary_key: :slug, inverse_of: :task, dependent: :destroy
   has_many :task_transitions, foreign_key: :task_slug, primary_key: :slug,
@@ -1701,7 +1701,7 @@ class Task < ApplicationRecord
   # THE BUILDER'S UNBLOCK (guard catalog row 4.2, scoped by decision 6). `bin/task begin`
   # on a blocked task answers a REWORK block, and only that: an environment or
   # dependency block waits on something outside the desk, and an `Escalated:` block
-  # waits on Alex, whose answer a fresh begin must never forge (wait-window would read
+  # waits on Alex McRitchie, whose answer a fresh begin must never forge (wait-window would read
   # the cleared block as answered). Raised with the reason; the API answers it 409.
   class UnblockRefused < StandardError; end
 
@@ -1720,7 +1720,7 @@ class Task < ApplicationRecord
     summary = unresolved_feedback_activity&.block_summary.to_s
     return nil unless summary.lstrip.start_with?(Devops::Windows::ESCALATION_PREFIX)
 
-    "#{slug} carries an escalation (#{summary.strip.truncate(80)}), which only Alex answers; a builder's " \
+    "#{slug} carries an escalation (#{summary.strip.truncate(80)}), which only Alex McRitchie answers; a builder's " \
       "begin never clears it."
   end
 
@@ -2167,13 +2167,16 @@ class Task < ApplicationRecord
   SOUL_ROSTER = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls")
                     .map { |soul| soul.fetch("slug") }.freeze
 
-  # Retired slugs that still resolve on read: `alex` became `xan` on 2026-09-24
-  # (the human owner is Alex), and `xan` became `ray` on 2026-10-18 (Alex's middle
-  # name). Nothing writes a legacy slug; every stamp goes through .canonical_soul.
-  # RenameXanSoulToRay repointed the stored rows; the alias covers what it cannot
-  # reach: sticky session markers, typed `--actor xan`, commit emails
-  # `xan@mcritchie.studio`, and a dispatcher still claiming for `xan`.
-  SOUL_ALIASES = { "alex" => "ray", "xan" => "ray" }.freeze
+  # Retired slugs that still resolve on read. The seat was `alex` until 2026-09-24,
+  # `xan` until 2026-10-18 and `ray` until 2026-10-25, when Alex McRitchie ruled the
+  # full rename back to `alex` (ritch-renamed-alex). Nothing writes a legacy slug;
+  # every stamp goes through .canonical_soul. RenameRaySoulToAlex repointed the
+  # stored rows; the alias covers what it cannot reach: sticky session markers, a
+  # typed `--actor ray`, commit emails `ray@`/`xan@mcritchie.studio`, and a
+  # dispatcher still claiming for `ray`. `alex` is canonical again, so it maps to
+  # nothing. The learning heartbeat's grader and the devops lane went to Mason,
+  # not to the persona: ActionGrade::GRADER_ALIASES and DevopsShift::LANE_ALIASES own those.
+  SOUL_ALIASES = { "ray" => "alex", "xan" => "alex" }.freeze
 
   # The slug a soul is recorded under: an alias resolves to its successor, anything
   # else passes through stripped. Every soul stamp calls this.

@@ -4,14 +4,14 @@
 Turf Monster) cost tokens. The hub stores what each answer cost and rolls it up
 per domain. It also holds a client app to a monthly token allowance set by the
 app's package tier. This is step 2 of Phase 7 in `.agents/epics/domain-agents.md`
-(Alex, 2026-10-16). The warm session that step also names is built behind a
+(Alex McRitchie, 2026-10-16). The warm session that step also names is built behind a
 per-domain flag, off: [`agent-message-loop.md`](agent-message-loop.md), "Warm
 sessions". A warm turn's run summary is stored like any other (`run_meta.warm`
 says `fresh` or `resumed`); it is mostly cache reads, and owner and team turns
 are never metered.
 
 **One cap is on: the free tier's.** Vibe, the tier every `/build` app starts on,
-allows 25,000 CTO chat tokens a month, about 15-25 replies (Alex, 2026-10-19:
+allows 25,000 CTO chat tokens a month, about 15-25 replies (Alex McRitchie, 2026-10-19:
 "very small and updated after each message returned"; task free-budget-meter).
 Every paid tier's allowance in `config/workspace_packages.yml` is still blank,
 and blank is unlimited, until he prices them.
@@ -90,7 +90,7 @@ A message answered at the cap (below) carries no tokens and is not counted.
 - **What counts against it**: input + cache read + cache write + output tokens of
   the answers to **client** senders. Answers to the **public** are metered apart
   (`Meter#public_used`, shown on the meter as its own line) and never consume the
-  allowance, so a stranger cannot exhaust what the client pays for (Alex,
+  allowance, so a stranger cannot exhaust what the client pays for (Alex McRitchie,
   2026-10-16). Once the client's allowance is spent, a public message is still
   refused, with a plain line ("I can't answer right now. Please try again after
   Nov 1 at 1am MST.") that carries no meter, price or upgrade; a public answer never ends
@@ -260,7 +260,7 @@ stage move: [`atomic-capture-hook.md`](atomic-capture-hook.md).
 
 ## Not built here
 
-- Paid tiers' allowance numbers and top-up prices: Alex's call (Vibe's is set).
+- Paid tiers' allowance numbers and top-up prices: Alex McRitchie's call (Vibe's is set).
 - Counting the first version's build: the launcher records no tokens.
 - Billing: the allowances mean money only once client CTOs run on an API-billed
   runtime (Phase 6).

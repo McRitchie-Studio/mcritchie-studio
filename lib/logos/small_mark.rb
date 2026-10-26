@@ -7,7 +7,7 @@ module Logos
   # footer-stacked-logo). A mark is checked at 64, 32 and 16 px, the submark convention: below about 64 px a traced
   # icon's loose details (the studio chest's sparkles, side dashes and loose coins) draw as one-pixel specks, and
   # because an icon's box is its ink (Logos::IconInk) they also set its box, so the part that reads shrinks inside the
-  # tile. On the studio favicon the chest filled about 70% of the browser tab. Alex 2026-10-15 08:10, pointing at the
+  # tile. On the studio favicon the chest filled about 70% of the browser tab. Alex McRitchie 2026-10-15 08:10, pointing at the
   # old favicon (a crop of the chest alone): "That is the correct size".
   #
   # Derived, never drawn: the icon's path data is split into its islands (a subpath no other subpath's box holds,
@@ -19,7 +19,7 @@ module Logos
   #   Logos::SmallMark.svg(icon, fill: "#8E82FE")  # => an icon as an SVG document
   #
   # Only the favicon draws from it (bin/rails logos:favicon_mark, then script/brand_png.cjs), FIT in its square, never
-  # cropped (Alex 2026-10-15 09:05 rejected a crop that clipped the chest: "cut off"): the long side touches two
+  # cropped (Alex McRitchie 2026-10-15 09:05 rejected a crop that clipped the chest: "cut off"): the long side touches two
   # edges, centred, transparent elsewhere, which is as large as the whole chest can be in a square. The kit icon, the
   # navbar, the footer, the sign-in card and the PWA app icon keep the full icon.
   module SmallMark

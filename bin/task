@@ -1209,7 +1209,7 @@ end
 # devops.built_by only for a soul, reviewer-select reads only that key, and a
 # dropped stamp once seated a PR's own author as its reviewer.
 SOUL_ROSTER_PATH = File.expand_path("../config/souls.yml", __dir__)
-SOUL_ALIASES = { "alex" => "ray", "xan" => "ray" }.freeze
+SOUL_ALIASES = { "ray" => "alex", "xan" => "alex" }.freeze # mirrors Task::SOUL_ALIASES
 
 def soul_roster
   @soul_roster ||= YAML.safe_load_file(SOUL_ROSTER_PATH).fetch("souls").map { |soul| soul.fetch("slug").to_s }
@@ -2574,7 +2574,7 @@ end
 # the builder who resumes it is the one fixing it, so begin clears it at the claim
 # through PATCH /api/v1/tasks/<slug>/unblock, naming who (`by`); the board writes the
 # audit row (Task#builder_unblock!). Any other block (environment, dependency) waits on
-# something outside the desk, and an `Escalated:` block waits on Alex: begin leaves
+# something outside the desk, and an `Escalated:` block waits on Alex McRitchie: begin leaves
 # those standing, and the server refuses them 409 if asked. Report-only: the desk and
 # the claim stand either way.
 def clear_block_at_begin(slug, task, by:)

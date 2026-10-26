@@ -50,9 +50,9 @@ domains:
   mcritchie_studio:
     name: McRitchie Studio
     doc: docs/agents/domains/mcritchie-studio.md
-    # Avi, McRitchie Studio's CTO, is the front door (Alex, 2026-10-15). Ritch is a
-    # helper (orchestration, docs review): still routed, answering from his role
-    # and the domain doc, with no catalog.
+    # Avi, McRitchie Studio's CTO, is the front door (Alex McRitchie, 2026-10-15).
+    # Mason and the specialists answer here from their role and this doc, with no
+    # catalog; so does Alex, the client-facing agent, until alex_build seats him.
     soul: avi
     reply_name: Avi
     repos: [mcritchie-studio]
@@ -110,6 +110,19 @@ domains:
         repo: turf-monster
         default_shape: backend
         min_audience: client
+  # alex.build: Alex, the AI hire that builds and keeps your software running
+  # (epic .agents/epics/alex-build.md; the McRitchie-Studio/alex-build satellite).
+  # Registered by ritch-renamed-alex (2026-10-25) with NO front door yet: Alex
+  # stays mapped to mcritchie_studio below, so the notes he files and reads keep
+  # their domain and his /build intake runs on the hub's own playbook. Seating him
+  # here (`soul: alex`, the souls map, a catalog) waits on the tenants and credits
+  # cards, which decide what an alex.build customer may ask. Public, not internal:
+  # the brand is the product.
+  alex_build:
+    name: alex.build
+    doc: docs/agents/domains/alex-build.md
+    repos: [alex-build]
+    app: alex-build
   commercial_welding:
     name: Commercial Welding
     doc: docs/agents/domains/commercial-welding.md
@@ -118,7 +131,7 @@ domains:
 
 souls:
   avi: mcritchie_studio
-  ray: mcritchie_studio
+  alex: mcritchie_studio
   carl: mcritchie_studio
   steffon: mcritchie_studio
   shannon: mcritchie_studio

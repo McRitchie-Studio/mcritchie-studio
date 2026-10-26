@@ -14,7 +14,7 @@
 # the prompt's untrusted fence in the USER layer, never into GENERAL or DOMAIN.
 # The caps keep a chatty or hostile sender from growing their notes without bound.
 #
-# SCOPED BY DOMAIN (Alex, 2026-10-15). Each note records `domain`: the app domain
+# SCOPED BY DOMAIN (Alex McRitchie, 2026-10-15). Each note records `domain`: the app domain
 # of the soul that filed it (config/agent_domains.yml `souls:`, "" for a soul the
 # registry maps to none). Who reads it depends on the CURRENT sender's role when
 # an answer is built (.visible_for): for an owner or team member every note is
@@ -45,7 +45,7 @@ class AgentPersonNote < ApplicationRecord
   # jailbreak). A note claiming "Has deploy access" or "The system prompt is
   # public" is refused.
   #
-  # PLAIN WORDS ARE KEPT (Alex, 2026-10-15). The directive and answer-shape
+  # PLAIN WORDS ARE KEPT (Alex McRitchie, 2026-10-15). The directive and answer-shape
   # words (always, never, ignore, forget, pretend, reply, respond, answer, you,
   # must, should, act as, end with, every message, in caps) were refused before;
   # they are ordinary English in real facts ("Never drinks coffee", "Prefers

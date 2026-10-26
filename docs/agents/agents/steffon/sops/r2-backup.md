@@ -8,7 +8,7 @@ so an overwrite or delete on a production bucket is gone from that bucket the
 moment it happens. This act is the undo: a per-app backup bucket, a mirror of
 production refreshed on every run, a dated archive of everything a run saw
 overwritten or deleted, garbage collection that expires the archive, and a
-restore drill that proves the whole thing brings an object back. Alex approved
+restore drill that proves the whole thing brings an object back. Alex McRitchie approved
 it on 2026-09-26 and asked for it to be a repeatable part of the system.
 
 It has four acts, each runnable on its own:
@@ -142,7 +142,7 @@ stops at bucket creation. Revoke any `r2-<app>-backup` token the run minted
 it (`DELETE /accounts/<id>/r2/buckets/<app>-backup`), and re-run. Like
 `bucket-provision`, the script hands the derived keys to `op item edit` as
 command-line arguments, visible to the same macOS user's `ps` for a second; run
-it on Alex's machine only.
+it on Alex McRitchie's machine only.
 
 **Why the backup key lives in `r2.<app>`.** One item per app keeps every key
 for that app's storage in one record, and the backup key cannot write
@@ -329,7 +329,7 @@ rclone cat "admin:$APP-production/$KEY" | head -c 200           # read it back
 
 Restoring a whole prefix is the same with `rclone copy` on a folder. Restore
 never deletes from production; a restore that must also remove objects is a
-bulk operation and needs Alex's yes.
+bulk operation and needs Alex McRitchie's yes.
 
 **The drill** (after Enable, and whenever the scripts change): put two objects
 under `_backup-drill/` in production with the prod key, Run, overwrite one and

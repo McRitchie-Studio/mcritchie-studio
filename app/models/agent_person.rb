@@ -26,12 +26,21 @@ class AgentPerson < ApplicationRecord
   ROLES = AgentMailbox::Audience::ROLES
   DOMAINS_PATH = "config/agent_domains.yml"
 
-  # Alex: his Discord user id, and the hub user his email names.
-  OWNER = { name: "Alex", platform: "discord", external_id: "536552944271753216", email: "alex@mcritchie.studio" }.freeze
-  # Alex's hub accounts, one per app he owns (docs/agents/system/app-owners.md).
+  # Alex McRitchie: his Discord user id, and the hub user his email names.
+  OWNER = { name: "Alex McRitchie", platform: "discord", external_id: "536552944271753216", email: "alex@mcritchie.studio" }.freeze
+  # Alex McRitchie's hub accounts, one per app he owns (docs/agents/system/app-owners.md).
   # Each that exists is a `web` identity of the owner's person, so his CTO web
   # chat is answered as the owner from any of them (LinkOwnerWebIdentities).
   OWNER_HUB_EMAILS = %w[alex@mcritchie.studio alex@turfmonster.media amcritchie@gmail.com].freeze
+
+  # Is this one of Alex McRitchie's own addresses? Since ritch-renamed-alex the
+  # persona soul is slugged `alex`, so the local part of his mailbox
+  # (alex@mcritchie.studio) spells an agent's slug. Every reader that turns an
+  # email into a soul asks this first: the owner's address is the human, never
+  # the agent (the agent keeps ray@mcritchie.studio).
+  def self.owner_email?(email)
+    OWNER_HUB_EMAILS.include?(email.to_s.strip.downcase)
+  end
 
   belongs_to :user, optional: true
   has_many :identities, class_name: "AgentPersonIdentity", inverse_of: :person, dependent: :delete_all
@@ -92,7 +101,7 @@ class AgentPerson < ApplicationRecord
     AgentPersonIdentity.find_by!(platform: platform, external_id: external_id).person
   end
 
-  # Alex's person, his Discord identity, his email identity (alex@mcritchie.studio),
+  # Alex McRitchie's person, his Discord identity, his email identity (alex@mcritchie.studio),
   # his hub user when one carries his email, and the owner role. Idempotent (db/seeds; the migration that made the tables seeds the
   # same rows): an existing identity keeps its person, and only a missing user
   # link is filled in.

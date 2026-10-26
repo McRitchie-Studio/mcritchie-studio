@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# [unit] Logos::IconInk (task stacked-rule-of-three; Alex 2026-10-14 12:16: "The icons need to have the margins cleaned
+# [unit] Logos::IconInk (task stacked-rule-of-three; Alex McRitchie 2026-10-14 12:16: "The icons need to have the margins cleaned
 # up so we don't have extra variables when building out the logos and themes"): an icon's box is its ink. It measures
 # the ink exactly, trims a padded icon's box to it without touching its paths, and NavbarLogo refuses an icon that
 # comes in with a margin.
@@ -73,7 +73,7 @@ class LogosIconInkTest < Minitest::Test
     assert_equal({ "padded" => Ink.trim(padded), "tight" => Ink.trim(padded) }, JSON.parse(json))
   end
 
-  # Alex 2026-10-14 12:07, on Commercial Welding v2's stacked drawing: "there's some extra space on the right side" of
+  # Alex McRitchie 2026-10-14 12:07, on Commercial Welding v2's stacked drawing: "there's some extra space on the right side" of
   # the hood. Its box is its ink now, so in both proportions the hood's ink is centred on the name: equal margins to
   # the name's left and right ink edges, within half a design unit.
   def test_welding_v2s_hood_is_centred_on_its_ink_in_both_proportions

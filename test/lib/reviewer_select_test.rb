@@ -113,9 +113,9 @@ class ReviewerSelectCliTest < Minitest::Test
   # --- the `none` assertion is CROSS-EXAMINED, end to end (builder-none-fails-open) ---
   #
   # THE DEFECT, measured 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a
-  # docs PR Ritch wrote while the task carried no stamp): `--builder none` seated RAY
-  # as the light on Ritch's own diff and reported the no-self-review property upheld,
-  # while `--builder ray` correctly excluded him. It was the ONE input to this tool
+  # docs PR Alex wrote while the task carried no stamp): `--builder none` seated RAY
+  # as the light on Alex's own diff and reported the no-self-review property upheld,
+  # while `--builder alex` correctly excluded him. It was the ONE input to this tool
   # that lifted a safety check on the caller's word alone.
   #
   # These boot the real script, because the REFUSAL is the CLI's job — the selector
@@ -936,7 +936,7 @@ class ReviewerSelectCliTest < Minitest::Test
 
   # --- THE AUTHOR SET, end to end through the CLI ------------------------------
   # (reviewer-select-seats-authors) devops.built_by holds ONE soul; a task can have
-  # SEVERAL. On 2026-08-30 this very command seated ALEX as the light on a diff Ritch
+  # SEVERAL. On 2026-08-30 this very command seated ALEX as the light on a diff Alex
   # had written every test on, because built_by said "steffon" (PR #1081). The CLI
   # is where a human is present to choose, so it FAILS CLOSED where the in-app
   # recorder must keep degrading.
@@ -966,7 +966,7 @@ class ReviewerSelectCliTest < Minitest::Test
     # carrying it selects on its named authors.
     out, code = select({ "shape" => "backend", "built_by" => "steffon",
                          "builders" => %w[steffon],
-                         "builders_unattributed" => "sess-ray-0001" }, "--json --no-record")
+                         "builders_unattributed" => "sess-alex-0001" }, "--json --no-record")
     assert_equal 0, code, out
     decision = JSON.parse(out.lines.reverse.find { |l| l.strip.start_with?("{") })
     refute_includes decision["candidates"], "steffon"
@@ -999,7 +999,7 @@ class ReviewerSelectCliTest < Minitest::Test
 
   def test_a_PARTIAL_typo_in_the_builder_list_REFUSES
     # The sharp case: `steffon` resolves, `alexx` does not, so the set is non-empty
-    # and the authors read as KNOWN — while ray, the soul the caller meant to keep
+    # and the authors read as KNOWN — while alex, the soul the caller meant to keep
     # out, never registered. Honoring the half we understood is criterion 2's
     # fail-open wearing criterion 1's clothes.
     out, code = select_verbose({ "shape" => "backend" }, "--builder steffon,alexx --no-record")

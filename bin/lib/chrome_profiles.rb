@@ -274,7 +274,7 @@ module ChromeProfiles
 
     def refuse? = !refusals.empty?
 
-    # [[dir, label, "Alex (🪎 mcritchie.studio)"], ...] in menu order.
+    # [[dir, label, "Alex McRitchie (🪎 mcritchie.studio)"], ...] in menu order.
     def menu
       resolved.map { |dir, row, profile| [ dir, row.label, profile.menu_row(row.label) ] }
     end
@@ -324,7 +324,7 @@ module ChromeProfiles
     end
 
     # Constraint 3, enforced instead of remembered. A label that opens with the
-    # word Chrome already prepends renders as `Alex (Alex studio)`. A label
+    # word Chrome already prepends renders as `Alex McRitchie (Alex McRitchie studio)`. A label
     # EQUAL to that word is the opposite case and is fine — that is how Margot
     # and Mason get a bare row with no parentheses at all.
     def check_label(row, profile)

@@ -10,7 +10,7 @@ class ContactFlaggedDigestJobTest < ActiveJob::TestCase
     ContactSubmission.create!({ name: "Jordan Lee", email: "jordan@example.com", message: "Hello" }.merge(attrs))
   end
 
-  test "[integration] a flagged submission in the last day sends one digest to Alex" do
+  test "[integration] a flagged submission in the last day sends one digest to Alex McRitchie" do
     submission(spam_reason: "no_browser_proof")
     submission(spam_reason: "too_fast")
 

@@ -26,7 +26,7 @@ module TiktokDraftCli
   # What to do about a missing, expired or refused admin session.
   ADMIN_SESSION_HOWTO = "A draft needs an admin session (Mason or Steffon). Ask the board for one:\n" \
                         "  bin/agent-activity heartbeat mason    (or steffon; it prints a login-… slug)\n" \
-                        "Alex grants it on the board's tasks page: the Approve tap on the row with that slug, or the row's " \
+                        "Alex McRitchie grants it on the board's tasks page: the Approve tap on the row with that slug, or the row's " \
                         "one-time code, which you post with `bin/agent-activity heartbeat mason --code <code>`. It lasts 8 hours; " \
                         "then re-run this command.\n" \
                         "When the board cannot grant (it is down, or the hub is a local or desk one), a shell on that hub can:\n" \
@@ -78,7 +78,7 @@ module TiktokDraftCli
   def self.yes_refusal(base_url:, yes:)
     return nil if yes || local_hub?(base_url)
 
-    "a draft on #{base_url} lands on Alex's phone. Show him the --dry-run caption, then re-run with --yes on his word."
+    "a draft on #{base_url} lands on Alex McRitchie's phone. Show him the --dry-run caption, then re-run with --yes on his word."
   end
 
   class Runner

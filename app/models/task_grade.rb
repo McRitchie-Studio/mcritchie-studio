@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Ritch's ONE grade of a shipped task — the learning loop baked into the devops flow
+# Mason's ONE grade of a shipped task — the learning loop baked into the devops flow
 # (devops-v3 piece 6; docs/agents/system/devops-v3-design.md §9).
 #
 # Written by Insights::TaskGrader when a task reaches `shipped`, from facts already

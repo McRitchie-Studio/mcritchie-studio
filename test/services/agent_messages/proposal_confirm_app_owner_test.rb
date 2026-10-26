@@ -1,13 +1,13 @@
 require "test_helper"
 
-# [unit] An app owner's word on a proposal (Alex, 2026-10-18: "the app owner
+# [unit] An app owner's word on a proposal (Alex McRitchie, 2026-10-18: "the app owner
 # should have that access"; AgentMessages::ProposalConfirm#owner_verdict), with
 # the shipped config/agent_answerers.yml. The owner may say go, no or change: on
 # a proposal only on their OWN app's web CTO thread, only for a kind a client of
 # the app may build (change), and only under the app's owner meter. Everywhere
 # else (Discord, email, another app, another user's thread, an app they do not
 # own, a held person, a team-role owner) the word is refused and nothing runs.
-# The owner role (Alex) is unchanged: any thread, any kind, uncapped.
+# The owner role (Alex McRitchie) is unchanged: any thread, any kind, uncapped.
 class ProposalConfirmAppOwnerTest < ActiveSupport::TestCase
   include ActiveJob::TestHelper
 

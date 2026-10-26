@@ -1,7 +1,7 @@
 # Focus Session — hold an epic, file just-in-time, build wide, review your own PRs
 <!-- registry: hold an epic, file just-in-time, build wide, review your own PRs -->
 
-You are the session Alex is working with on an epic: a body of work larger than
+You are the session Alex McRitchie is working with on an epic: a body of work larger than
 one task. This module is the standing procedure for running it. You hold the
 plan, you file a task only when it can start now, you spawn a builder per
 startable task, and when a builder's PR turns green you spawn its reviewer
@@ -16,11 +16,11 @@ The design behind it is [`../system/devops-v3-design.md`](../../../system/devops
 
 The Build lane and the Review lane, for every task in one epic: `designed →
 building → submitted → reviewed`. You own the plan, the builders, and the
-reviewers. You stop at `reviewed`: work sits on `accepted` and Alex launches
+reviewers. You stop at `reviewed`: work sits on `accepted` and Alex McRitchie launches
 `qa-release` and `production-deploy` with written authority, as always. You
 never promote `accepted → release`, never touch `main`, never deploy.
 
-**Who runs it.** Ritch's SOP: he holds the epic with Alex as the fractional CTO
+**Who runs it.** Alex's SOP: he holds the epic with Alex McRitchie as the fractional CTO
 (since 2026-10-25). Any session may run it, under its own Pokémon identity. The builders you
 spawn are Pokémon too ([`../agents/pokemon/role.md`](../../pokemon/role.md)):
 one general builder soul, legion. The reviewers you spawn are the specialists:
@@ -72,10 +72,10 @@ flight, each open task with its stage and PR, and the live claims and desks.
 ## Next startable
 - <piece numbers whose dependencies are all reviewed or in the same batch>
 
-## Open questions for Alex
+## Open questions for Alex McRitchie
 - <anything that changes the plan and needs his call>
 
-## Waiting on Alex
+## Waiting on Alex McRitchie
 | Item | Question, as he would read it | Default if he says nothing |
 |------|-------------------------------|----------------------------|
 | <a decision or tap a filed task waits on> | <one line> | <the default> |
@@ -83,7 +83,7 @@ flight, each open task with its stage and PR, and the live claims and desks.
 ## Operator steps
 | Step owed | Exact command or tap | Who runs it |
 |-----------|----------------------|-------------|
-| <step> | <command> | <Alex or a lane> |
+| <step> | <command> | <Alex McRitchie or a lane> |
 ```
 
 Rules for the plan:
@@ -94,7 +94,7 @@ Rules for the plan:
 - **Dependencies are the schedule.** Anything with no unmet dependency is
   startable now, whatever wave you first imagined it in. Half of wave two
   usually starts with wave one.
-- **State is replaced, never logged.** `State now`, `Waiting on Alex` and
+- **State is replaced, never logged.** `State now`, `Waiting on Alex McRitchie` and
   `Operator steps` say what is true at the last update. An answered question or
   a finished step leaves its table; what it settled goes under `Decisions`.
 - **Re-plan freely.** When a builder learns the API works differently, rewrite
@@ -283,7 +283,7 @@ Decide, in one sentence, which of two things it is:
   Paste the contest text into Avi's brief as well: the task's show JSON carries
   only the latest note, so the brief is what guarantees he reads the evidence.
   Avi accepts, overrules, or splits the block and records the ruling. Only a
-  policy question he cannot settle goes to Alex, with a 20-minute window.
+  policy question he cannot settle goes to Alex McRitchie, with a 20-minute window.
 
 Contesting is a power, not a reflex. A block that names a reachable regression
 with a trigger you can reproduce is right; fix it.
@@ -292,7 +292,7 @@ with a trigger you can reproduce is right; fix it.
 
 As each task reaches `reviewed`, update the plan in place: replace **State
 now**, recompute **Next startable**, clear the answered rows of **Waiting on
-Alex** and **Operator steps**, read the machine, and launch the next builder.
+Alex McRitchie** and **Operator steps**, read the machine, and launch the next builder.
 When a builder's finding changes the plan, rewrite the pieces and log the decision before filing anything new.
 Stopping is fine: the plan is the state, and a fresh session resumes from it.
 
@@ -313,7 +313,7 @@ layers, then the roster:
 - **Still building or blocked** — slug, what it waits on, whether a contest is
   with Avi.
 - **Plan** — pieces done, next startable, decisions made this sitting, open
-  questions for Alex.
+  questions for Alex McRitchie.
 - **Ready for the ladder** — say plainly that `accepted` carries reviewed work
   and that `qa-release` is his to launch.
 

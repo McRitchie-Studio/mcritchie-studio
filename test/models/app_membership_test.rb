@@ -37,7 +37,7 @@ class AppMembershipTest < ActiveSupport::TestCase
   end
 
   test "[unit] seed_owners! links the known owners that exist, says what it did, and is idempotent" do
-    turf_owner = owner("alex@turfmonster.media", name: "Alex Turf")
+    turf_owner = owner("alex@turfmonster.media", name: "Alex McRitchie Turf")
 
     first = AppMembership.seed_owners!
     assert_equal({ "mcritchie-studio" => "created", "turf-monster" => "created", "cyvasse" => "no app" }, first)

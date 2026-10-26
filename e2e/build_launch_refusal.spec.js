@@ -1,4 +1,4 @@
-// [e2e] A refused Build My App (task build-launch-chat-growth). Alex's production
+// [e2e] A refused Build My App (task build-launch-chat-growth). Alex McRitchie's production
 // run, 2026-10-18: a free-plan account that already owned an app pressed Build My
 // App four times; each press was refused (then by the one-app limit) with a 422
 // page, and the page showed no reason, jumped to its footer and opened the Links
@@ -48,7 +48,7 @@ test("a refused Build My App shows its reason and next step on the summary card,
 
   const refusal = page.locator("[data-test='build-card-summary'] [data-test='build-summary-refusal']");
   await expect(refusal).toContainText("That name is taken.");
-  await expect(refusal.locator("[data-test='build-summary-next']")).toContainText("Ask Ritch for another address");
+  await expect(refusal.locator("[data-test='build-summary-next']")).toContainText("Ask Alex for another address");
   await expect(refusal).toBeInViewport();
 
   // The same page: no reload, the address kept, nothing appended outside the body,

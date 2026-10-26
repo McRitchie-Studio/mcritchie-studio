@@ -13,7 +13,7 @@
 # off the page: a new key shows up the moment a stack has it.
 class StackMatrix
   # Category order is the page's row order, and each list's order is the row
-  # order inside it: Alex reads a client top-down from its platform and email,
+  # order inside it: Alex McRitchie reads a client top-down from its platform and email,
   # to its app, to its data, then everything else.
   CATEGORIES = {
     "Platform & Email" => %w[google resend squarespace zerobounce ses],

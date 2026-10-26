@@ -1,6 +1,6 @@
-// The /build chat with Ritch (app/views/build/_chat.html.erb; BuildController#turns).
+// The /build chat with Alex (app/views/build/_chat.html.erb; BuildController#turns).
 // A signed-out visitor has no /cable socket, so instead of a Turbo stream the
-// page POLLS: while any turn is still waiting for Ritch (data-pending="true"), it
+// page POLLS: while any turn is still waiting for Alex (data-pending="true"), it
 // asks the server about exactly those turns and renders the Turbo Streams it
 // gets back (each turn replaced in place, and the checklist).
 //
@@ -22,7 +22,7 @@
 //     picker dialog (build/_animal_picker: a set of the animal bank in the
 //     app's colours); a pick swaps the preview; "New set" fetches another set
 //     from the server and swaps the grid; a tap on an avatar, Done or Enter
-//     closes it (the arrow keys only move the pick); a tap on one of Ritch's
+//     closes it (the arrow keys only move the pick); a tap on one of Alex's
 //     names fills the name field. The same picker sits in an app's CTO chat
 //     (cto_chats/_avatar_picker, a form marked data-build-portrait-save): there
 //     a tap, Enter or Space on an avatar, or Done, saves it in place

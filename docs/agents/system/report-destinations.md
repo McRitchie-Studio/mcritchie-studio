@@ -1,7 +1,7 @@
 # Report destinations (deliver a report to Discord)
 
 **What it is.** One call that posts a registered report into the Discord channel
-Alex picked for it, at most once per run: as the agents' shared bot, or, for a
+Alex McRitchie picked for it, at most once per run: as the agents' shared bot, or, for a
 CTO report, as that CTO's own bot ([Which bot posts](#which-bot-posts)). A session that sends
 a report (the CTO daily application report is the first) needs only this page.
 
@@ -42,7 +42,7 @@ it is one more reason to keep these keys on internal channels
 ([`agent-usage.md`](agent-usage.md)). A key may carry a colon
 (`cto_report:<domain>`); it stays one path segment on the page's Save.
 
-## 2. Alex picks the channel
+## 2. Alex McRitchie picks the channel
 
 At **`/admin/report_destinations`** (Ops → Report destinations), each registered
 key has a card with:
@@ -78,7 +78,7 @@ is archived.
   voice and category channels, and private and locked threads, are never offered.
 - **Archived.** A channel the sync no longer sees is archived, never deleted. A
   destination on an archived or no-longer-postable channel answers
-  `:not_configured` until the sync sees it postable again or Alex picks another.
+  `:not_configured` until the sync sees it postable again or Alex McRitchie picks another.
   The page keeps it selected, marked unavailable, so a Save does not clear it.
 - **Per CTO bot.** `postable_souls` lists the CTO souls whose own bot
   (`DISCORD_BOT_TOKEN_<SOUL>` set) has View Channel, Send Messages and Embed Links
@@ -109,7 +109,7 @@ ReportDeliveryJob.perform_later("daily_app_report", content: "…", embeds: [], 
 The job retries a Discord failure (`AgentMessages::DiscordBot::Error`, a rate
 limit included) with a polynomial back-off, five tries in all, using the same
 idempotency key. A `:not_configured` or `:disabled` answer is recorded and not
-retried, because it waits on Alex. `ReportDestinations.deliver!` is the raising
+retried, because it waits on Alex McRitchie. `ReportDestinations.deliver!` is the raising
 form the job uses.
 
 ## Which bot posts
@@ -172,7 +172,7 @@ Nothing is posted or recorded on any of these.
   content says.
 - **Other statuses retry.** A `:not_configured`, `:disabled` or `:failed` row is
   retried in place by the next call with the same key, so the report posts once
-  Alex picks a channel or Discord recovers.
+  Alex McRitchie picks a channel or Discord recovers.
 - **Concurrent calls.** The row is locked across the post: a second caller with
   the same key waits, then sees `posted`.
 - **Lost responses.** The post carries a nonce derived from the key

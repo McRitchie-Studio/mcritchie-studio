@@ -1,9 +1,10 @@
-ray_agent:
-  name: Ritch
-  slug: ray
+alex_agent:
+  name: Alex
+  slug: alex
   status: active
-  agent_type: orchestrator
-  title: Lead Orchestrator
+  agent_type: worker
+  title: Fractional CTO
+  avatar: /agents/alex.webp
 
 mack_agent:
   name: Mack
@@ -11,3 +12,10 @@ mack_agent:
   status: active
   agent_type: worker
   title: Task Worker
+
+mason_agent:
+  name: Mason
+  slug: mason
+  status: active
+  agent_type: orchestrator
+  title: CEO

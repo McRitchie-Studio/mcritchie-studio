@@ -113,7 +113,7 @@ namespace :contacts do
   # first-game-feedback-survey). The CSV is optional and comes from
   # script/contacts/cyvasse_new_stack_players.rb, run read-only on the cyvasse
   # app; with or without it, contacts with a played_match result from an email
-  # are tagged too. Alex's own addresses are skipped. Counts only.
+  # are tagged too. Alex McRitchie's own addresses are skipped. Counts only.
   # The pipe is in docs/email-delivery.md.
   #
   #   bin/rails "contacts:tag_new_stack_players[/tmp/cyvasse-new-stack.csv]"

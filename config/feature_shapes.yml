@@ -234,7 +234,7 @@ shapes:
       dor_tiers is empty (nothing to fabricate). The CI gate still applies to it
       as to every shape (a settled green CI on the PR); what a doc change is
       spared is the tier contract. It routes to the documentation seat
-      (Alex) in ReviewerSelector's SHAPE_DOMAINS. test_plan is dropped from
+      (Alex McRitchie) in ReviewerSelector's SHAPE_DOMAINS. test_plan is dropped from
       required_metadata for the same reason there is nothing to plan; prose
       acceptance is the reviewer's and the operator's at the QA stop, not a
       pre-submit tier.

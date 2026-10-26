@@ -157,6 +157,14 @@ class CommitIdentityTest < Minitest::Test
     end
   end
 
+  # The `alex` persona never commits under Alex McRitchie's own address.
+  def test_the_alex_persona_commits_as_ray_not_the_owner
+    env = CommitIdentity.env_for(devops(built_by: "alex"))
+    assert_equal "ray@mcritchie.studio", env["GIT_AUTHOR_EMAIL"]
+    assert_equal "ray@mcritchie.studio", env["GIT_COMMITTER_EMAIL"]
+    assert_equal "carl@mcritchie.studio", CommitIdentity.email_for("carl")
+  end
+
   def test_a_hyphenated_soul_slug_is_accepted
     env = CommitIdentity.env_for(devops(built_by: "turf-monster"))
 

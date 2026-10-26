@@ -26,7 +26,7 @@ module Logos
   #                       tone's `quiet` fill (`text` without one).
   #
   # Every form draws in either proportion (`proportion:`), which sets only the icon's size; the lines and the 2u
-  # gaps above are the same in both (Alex 2026-10-14 12:07: "space of 2 vertically between").
+  # gaps above are the same in both (Alex McRitchie 2026-10-14 12:07: "space of 2 vertically between").
   #
   #   three_two_one (default)  as above: the icon's height comes from the small line's width; every gap is 2u.
   #   rule_of_three            three copies of the icon side by side span exactly the big line's ink width W, so the

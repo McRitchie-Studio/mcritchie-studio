@@ -66,7 +66,7 @@ class WebChatTest < ActiveJob::TestCase
 
   test "a /build thread's phase is kept on the claimed row for its poll, and a late pulse never writes a finished row" do
     message = AgentMessage.create!(channel: "web", external_id: "web:phase-1", channel_ref: BuildIntake::CHANNEL_REF,
-                                   thread_key: BuildIntake.thread_key("tok-phase-1"), soul_slug: "ray",
+                                   thread_key: BuildIntake.thread_key("tok-phase-1"), soul_slug: "alex",
                                    content: "A league site", status: "claimed", claimed_by: "w1", claimed_at: Time.current)
     build_stream = AgentMessages::WebChat.stream_for(message)
 

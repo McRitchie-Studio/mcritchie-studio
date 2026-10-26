@@ -13,17 +13,17 @@ class AgentAudienceTest < ActiveSupport::TestCase
 
   setup do
     @root = Dir.mktmpdir("audience-root")
-    FileUtils.mkdir_p(File.join(@root, "docs/agents/agents/ray"))
+    FileUtils.mkdir_p(File.join(@root, "docs/agents/agents/alex"))
     FileUtils.mkdir_p(File.join(@root, "docs/agents/modules"))
     FileUtils.mkdir_p(File.join(@root, "config"))
-    File.write(File.join(@root, "docs/agents/agents/ray/role.md"), "Ritch orchestrates. INTERNAL ROLE DOC: op://vault.")
+    File.write(File.join(@root, "docs/agents/agents/alex/role.md"), "Alex orchestrates. INTERNAL ROLE DOC: op://vault.")
     FileUtils.cp(Rails.root.join(A::SOP_PATH), File.join(@root, A::SOP_PATH))
     File.write(File.join(@root, "config/agent_domains.yml"), <<~YAML)
       domains:
         studio: { name: McRitchie Studio, doc: docs/studio.md }
         turf_monster: { name: Turf Monster, doc: docs/turf.md }
         welding: { name: Commercial Welding, doc: docs/welding.md, internal: true }
-      souls: { ray: studio, mack: welding }
+      souls: { alex: studio, mack: welding }
     YAML
     File.write(File.join(@root, "docs/studio.md"), "The hub and its agents.")
     File.write(File.join(@root, "docs/welding.md"), "WELDING DEAL TERMS.")
@@ -35,7 +35,7 @@ class AgentAudienceTest < ActiveSupport::TestCase
 
   def aud(role, domain = nil) = A.new(role: role, client_domain: domain)
 
-  def prompt(audience, soul: "ray", action: @action)
+  def prompt(audience, soul: "alex", action: @action)
     AgentMailbox::ContextBuilder.new(soul: soul, message: @message, action: action, action_what: "the task board",
                                      repo_root: @root, fence: FENCE, audience: audience).prompt
   end
@@ -140,7 +140,7 @@ class AgentAudienceTest < ActiveSupport::TestCase
     outside = outside_fences(text)
     assert_includes outside, "You are speaking with: owner"
     rules["audiences"]["owner"]["may"].each { |r| assert_includes outside, r }
-    assert_includes text, "Ritch orchestrates."
+    assert_includes text, "Alex orchestrates."
     assert_includes text, "BOARD: 2 building"
     assert_includes text, "read the task board. Its output is below."
     rules["audiences"]["client"]["never"].each { |r| refute_includes text, r }
@@ -164,17 +164,17 @@ class AgentAudienceTest < ActiveSupport::TestCase
     refute_includes text, "ACTION OUTPUT"
     assert_includes text, "none is enabled for you yet"
     refute_includes text, "INTERNAL ROLE DOC", "the role doc is internal"
-    assert_includes text, "== GENERAL: who you are (your public profile) ==\nYou are Ray, an AI agent of McRitchie Studio."
+    assert_includes text, "== GENERAL: who you are (your public profile) ==\nYou are Alex, an AI agent of McRitchie Studio."
     assert_includes text, "say that a person\n  will follow up"
     refute_includes text, "say what you would do"
   end
 
   test "a public prompt has the public rules only, and a soul's public.md stands in for its role doc" do
-    File.write(File.join(@root, "docs/agents/agents/ray/public.md"), "<!-- note -->\nRitch helps visitors find their way.")
+    File.write(File.join(@root, "docs/agents/agents/alex/public.md"), "<!-- note -->\nAlex helps visitors find their way.")
     text = prompt(aud("public"))
     assert_includes text, "You are speaking with: public"
     assert_includes text, rules["audiences"]["public"]["never"].first
-    assert_includes text, "Ritch helps visitors find their way."
+    assert_includes text, "Alex helps visitors find their way."
     refute_includes text, "INTERNAL ROLE DOC"
     refute_includes text, "BOARD: 2 building"
   end
@@ -234,7 +234,7 @@ class AgentAudienceTest < ActiveSupport::TestCase
   def respond(audience_json)
     runner = Runner.new
     mailbox = Dir.mktmpdir("audience-mailbox")
-    responder = AgentMailbox::Responder.new(soul: "ray", runner: runner, repo_root: @root, mailbox_home: mailbox,
+    responder = AgentMailbox::Responder.new(soul: "alex", runner: runner, repo_root: @root, mailbox_home: mailbox,
                                             claude_cmd: %w[fake-claude], claude_home: mailbox)
     answer = responder.respond(@message, context: audience_json && { "audience" => audience_json })
     [ answer, runner ]

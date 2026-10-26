@@ -84,7 +84,7 @@ will never sign a transaction. Most apps are web2. See
 | Auth | engine passwordless + hub SSO | own auth (the app's call) |
 | DB | Postgres | **SQLite is fine for a demo**; Postgres when it matters |
 | External adapters (AI, payments, …) | mock-first behind a swappable adapter | same — mock-first behind a swappable adapter |
-| Object storage | **prompt Alex: provision buckets, y/n?** | same prompt — a silly little app says no |
+| Object storage | **prompt Alex McRitchie: provision buckets, y/n?** | same prompt — a silly little app says no |
 
 On a **yes**, run Steffon's
 [`bucket-provision`](../agents/steffon/sops/bucket-provision.md) (as a subagent
@@ -168,7 +168,7 @@ unrelated `bin/release status`.
 
 **Every new app — the site footer and its legal pages, from day one:**
 
-Decided by Alex, 2026-10-03: *"new apps have this built right in."* Every new
+Decided by Alex McRitchie, 2026-10-03: *"new apps have this built right in."* Every new
 app, either tier, adopts `studio-engine` and ships the engine's site footer in
 its first build, not in a later cleanup task. This is the source of truth for the
 rule; the launch SOPs point here. Detail: `studio-engine/docs/SITE_FOOTER.md`.

@@ -7,7 +7,7 @@ This is Steffon's `bucket-provision` SOP. It stands up **object storage for one
 app** on **Cloudflare R2**: the dev/production bucket pair and the two
 bucket-scoped tokens, in one sitting. Every app's storage lives in McRitchie
 Studio's Cloudflare account; apps inherit it rather than holding an account
-of their own (Alex, 2026-09-26). The conventions themselves live in
+of their own (Alex McRitchie, 2026-09-26). The conventions themselves live in
 [`../../../modules/object-storage.md`](../../../modules/object-storage.md);
 this file is the act that applies them.
 
@@ -39,7 +39,7 @@ cd /Users/alex/projects/mcritchie-studio
 bin/agent-activity start --category Workflow --reason "bucket-provision <app>"
 ```
 
-Inputs: the app slug (e.g. `rolio`) and Alex's yes to provisioning (the
+Inputs: the app slug (e.g. `rolio`) and Alex McRitchie's yes to provisioning (the
 onboarding prompt, or his direct ask). Prerequisites on the machine: `op`,
 `python3` and the `aws` CLI v2 (for the verify probes).
 
@@ -50,7 +50,7 @@ Cloudflare token `cloudflare.studio.provision` in `studio-agents-admin`
 (described in
 [`../../../modules/credential-inventory.md`](../../../modules/credential-inventory.md)).
 An admin token that is absent here is a setup gap on THIS MACHINE: `source
-~/.zprofile.admin` when the file exists, `bin/setup-1pass-token --admin` (Alex,
+~/.zprofile.admin` when the file exists, `bin/setup-1pass-token --admin` (Alex McRitchie,
 once) when it does not.
 
 ```bash
@@ -153,7 +153,7 @@ Never delete a bucket that holds objects.
 
 **Known exposure.** The script passes the derived keys to `op item create` as
 command-line arguments, which other processes run by the same macOS user can
-read in `ps` for the second the command runs. Run it on Alex's machine only,
+read in `ps` for the second the command runs. Run it on Alex McRitchie's machine only,
 not a shared host.
 
 ## 3. Verify — positive and negative

@@ -21,7 +21,7 @@ class DocsSeatMergeRuleDocsTest < ActiveSupport::TestCase
     "agents/carl/sops/pr-review-primary.md" => /Mason, the documentation seat, merges a docs-shape PR only/,
     "agents/carl/sops/pr-review.md" => /documentation seat merges docs-shape PRs only/,
     "agents/carl/sops/pr-review-light.md" => /documentation seat merges a docs-shape PR only as its PRIMARY/,
-    "agents/ray/sops/focus-session.md" => /documentation seat merges docs-shape PRs only/,
+    "agents/alex/sops/focus-session.md" => /documentation seat merges docs-shape PRs only/,
     "modules/pr-review-sop.md" => /documentation seat merges no other shape/,
     "agents/mason/role.md" => /Docs-shape only/,
     "agents/mason/HEARTBEAT.md" => /every other diff is Carl's to merge/,
@@ -53,7 +53,7 @@ class DocsSeatMergeRuleDocsTest < ActiveSupport::TestCase
   end
 
   test "[docs] the tier A row sends a refused diff to carl" do
-    body = norm("agents/ray/sops/focus-session.md")
+    body = norm("agents/alex/sops/focus-session.md")
 
     assert_includes body, "records its verdict with --head, and merges on bin/merge-permit's permit"
     assert_match(/If Mason reports a refusal .* the PR is tier B: spawn carl/, body)

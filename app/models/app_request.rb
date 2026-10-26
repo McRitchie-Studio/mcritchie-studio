@@ -35,6 +35,36 @@ class AppRequest < ApplicationRecord
   OUR_DOMAINS = [ CLIENT_APP_DOMAIN, HUB_DOMAIN ].freeze
   PROMPT_LIMIT = 4000
 
+  # WHERE A SIGN-UP CAME FROM (alex-build-funnel-handoff). alex.build is Alex's
+  # front door (the McRitchie-Studio/alex-build app); its CTAs send visitors to the
+  # hub's /build. A visit names it by `?ref=alex.build`, `?utm_source=alex.build`
+  # (either spelling `alex.build` or `alex-build`), or by an alex.build referrer.
+  # BuildController remembers it for the session and stamps the request it
+  # creates, so a funnel count reads `origin` and never guesses.
+  ALEX_BUILD = "alex.build".freeze
+  ORIGINS = [ ALEX_BUILD ].freeze
+  ALEX_BUILD_TAGS = %w[alex.build alex-build alex_build].freeze
+  ALEX_BUILD_HOST = /\A(?:[a-z0-9-]+\.)*alex\.build\z/
+
+  validates :origin, inclusion: { in: ORIGINS }, allow_nil: true
+
+  # The origin a visit names, or nil. `params` is the request's query (ref,
+  # utm_source); `referer` the Referer header. Only the known value is ever
+  # returned, so a crafted parameter stores nothing.
+  def self.origin_from(params:, referer: nil)
+    tags = [ params[:ref], params[:utm_source] ].select { |value| value.is_a?(String) }.map { |value| value.strip.downcase }
+    return ALEX_BUILD if tags.any? { |tag| ALEX_BUILD_TAGS.include?(tag) }
+
+    host = begin
+      URI.parse(referer.to_s).host.to_s.downcase
+    rescue URI::InvalidURIError
+      ""
+    end
+    host.match?(ALEX_BUILD_HOST) ? ALEX_BUILD : nil
+  end
+
+  def from_alex_build? = origin == ALEX_BUILD
+
   # 3-30 characters of a-z, 0-9 and hyphens, starting and ending alphanumeric —
   # a valid DNS label that also reads as a name.
   SUBDOMAIN_FORMAT = /\A[a-z0-9][a-z0-9-]{1,28}[a-z0-9]\z/
@@ -71,7 +101,7 @@ class AppRequest < ApplicationRecord
   # customer's words: it never mentions the house rules every new app ships
   # with. So the card names the SOP that carries them, and its acceptance asks
   # for the one a launch has shipped without (`footer_criterion`).
-  BUILDER_POINTER = "Work this request by docs/agents/agents/ray/sops/launch-build-queue.md. " \
+  BUILDER_POINTER = "Work this request by docs/agents/agents/alex/sops/launch-build-queue.md. " \
                     "Every new app ships the site footer, and legal pages when it holds personal data: " \
                     "docs/agents/system/new-app-onboarding-sop.md § 7.".freeze
 
@@ -95,7 +125,7 @@ class AppRequest < ApplicationRecord
   # exempt: Mr. McRitchie seeds the App Builder with showcase builds (his legacy
   # apps) through the same funnel, and those are not customers.
   validate :apps_per_account_limit, if: -> { user && !user.admin? && HOLDING.include?(status) }
-  # The intake fields (/build as a chat with Ritch, BuildIntake). Only a visitor's
+  # The intake fields (/build as a chat with Alex, BuildIntake). Only a visitor's
   # tap writes them (BuildIntake::Choice), and each is held here to the same
   # rules the card was, so no path can store a value a card could not show.
   validates :cto_name, format: { with: BuildIntake::Card::NAME, message: "must be 2 to 24 letters" }, allow_nil: true
@@ -195,7 +225,7 @@ class AppRequest < ApplicationRecord
   # unavailable_reason for several names in one pass: { name => reason or nil },
   # keyed by the names as given. One read of the reserved list and one query each
   # for the requests and apps holding any of them, however many names (the
-  # domain card checks all of Ritch's suggestions on every render).
+  # domain card checks all of Alex's suggestions on every render).
   def self.unavailable_reasons(names, except: nil)
     normal = Array(names).index_with { |name| normalize_subdomain(name) }
     wanted = normal.values.select { |name| name.match?(SUBDOMAIN_FORMAT) }.uniq
@@ -228,7 +258,7 @@ class AppRequest < ApplicationRecord
   # The checklist beside the /build chat: which of BuildIntake::STEPS are set,
   # in that order. A retired step name (BuildIntake::STEP_ALIASES: "colors")
   # still reads its step's value, but is never one of the keys, so the
-  # checklist's values, its JSON and Ritch's context carry each step once.
+  # checklist's values, its JSON and Alex's context carry each step once.
   def intake_checklist
     checklist = Hash.new { |_hash, name| BuildIntake::STEP_ALIASES.key?(name) ? checklist[BuildIntake.step(name)] : nil }
     checklist.merge!("idea" => answers.is_a?(Hash) && answers["idea"].present?,
@@ -240,16 +270,16 @@ class AppRequest < ApplicationRecord
   # Build my app lights up only when all four are set.
   def intake_complete? = intake_checklist.values.all?
 
-  # The intake card Ritch proposes themes on (BuildIntake::Card "palette"): the
+  # The intake card Alex proposes themes on (BuildIntake::Card "palette"): the
   # theme step's card in the thread.
   THEME_CARD = "palette".freeze
 
   # Whether the /build page shows the status card yet (build/_status_card):
-  # once Ritch's THEME card is in this request's thread, or any of the theme, the
+  # once Alex's THEME card is in this request's thread, or any of the theme, the
   # CTO or the address is set (a draft from before this rule may hold one
   # without a theme card). Locking the idea in (Start App) is not enough: the
-  # card waits while Ritch is still typing, and pops in on the turn the theme
-  # card lands (Alex, 2026-10-20; before that, 2026-10-18: no status tiles
+  # card waits while Alex is still typing, and pops in on the turn the theme
+  # card lands (Alex McRitchie, 2026-10-20; before that, 2026-10-18: no status tiles
   # until Start App). Before then the visitor sees the heading (idea_locked?
   # picks which one).
   def intake_started?
@@ -267,7 +297,7 @@ class AppRequest < ApplicationRecord
 
   # The app's working title on the status card: the title the visitor confirmed
   # (Start App on the idea card), else the newest idea card's proposed title, so
-  # the card is named the moment Ritch proposes it, else the claimed address in
+  # the card is named the moment Alex proposes it, else the claimed address in
   # words, else nil.
   def working_title
     confirmed = answers.is_a?(Hash) ? answers["title"].to_s.squish.presence : nil
@@ -280,7 +310,7 @@ class AppRequest < ApplicationRecord
                 .pick(Arel.sql("intake_card->>'title'")).to_s.squish.presence
   end
 
-  # The first unset step, in the order Ritch asks, or nil when all are set.
+  # The first unset step, in the order Alex asks, or nil when all are set.
   def next_intake_step = BuildIntake::STEPS.find { |step| !intake_checklist[step] }
 
   def queued? = status == "queued"

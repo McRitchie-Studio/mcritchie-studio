@@ -5,15 +5,15 @@
 
 This is Steffon's `db-restore-drill` SOP. Nightly database backups and a monthly
 restore drill are a **paid-plan benefit**: every live Studio or Product app with a
-database has them, and a Basic app has them only by Alex's named exception.
-Alex set it on 2026-10-24: "Lets still move the db backups to paid plans so its
+database has them, and a Basic app has them only by Alex McRitchie's named exception.
+Alex McRitchie set it on 2026-10-24: "Lets still move the db backups to paid plans so its
 another benefit of a paid plan" and "The nightly backup should be one of the
 agents jobs."
 
 `config/apps.yml` is the record. Each app row carries `database`, `backups` and
 `restore_drilled`; `test/lib/app_registry_test.rb` fails when a paid app with a
 database has `backups: false`, or a Basic app has `backups: true` without a
-`BACKUP_EXCEPTIONS` row (today only `moms-app`, Alex's family app).
+`BACKUP_EXCEPTIONS` row (today only `moms-app`, Alex McRitchie's family app).
 
 | Act | Who runs it | When | Section |
 |---|---|---|---|
@@ -28,7 +28,7 @@ The object-storage undo (Cloudflare R2 files) is a separate act:
 ## What this act is NOT
 
 - **It never restores into production.** A drill restores into a scratch
-  add-on on a QA app. A real recovery of production is an incident: Alex decides
+  add-on on a QA app. A real recovery of production is an incident: Alex McRitchie decides
   it, in his own words in the current chat.
 - **It never deletes a backup.** Heroku keeps its own retention
   (`num_keep` on each transfer).
@@ -215,7 +215,7 @@ bin/release status        # do not drill on a QA app while a release is mid-QA
    one by a row or two; name it). A table with deletes since the backup may run
    higher on the scratch side; say which. A lower scratch count, a failed
    restore, or an empty table that production fills is a **failed drill**:
-   report it to Alex at once with the backup name and the counts, and keep the
+   report it to Alex McRitchie at once with the backup name and the counts, and keep the
    scratch add-on for diagnosis.
 
 6. **Destroy the scratch add-on**, in the same session (it bills by the hour):

@@ -7,7 +7,7 @@ step-by-step build flow is [`building-sop.md`](building-sop.md); board mechanics
 are [`devops-task-board.md`](devops-task-board.md). The rationale and measurements
 this page no longer carries are frozen verbatim in
 [`../archive/fast-lane-2026-09-25.md`](../archive/fast-lane-2026-09-25.md).
-To time one task from Alex's prompt to production, run Ritch's [`ship-clock`](../agents/ray/sops/ship-clock.md) SOP.
+To time one task from Alex McRitchie's prompt to production, run Alex's [`ship-clock`](../agents/alex/sops/ship-clock.md) SOP.
 
 ## DevOps Routing — read before writing ANY code
 
@@ -359,7 +359,7 @@ Before handoff:
 
 ### A good session prompt
 
-For a new feature session, Alex should only need to say the target app
+For a new feature session, Alex McRitchie should only need to say the target app
 and the feature. A good prompt is:
 
 ```text

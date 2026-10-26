@@ -29,7 +29,7 @@ class EmailImageGeneratorsViewTest < ActionView::TestCase
     character = Character.create!(name: "Turf Monster", kind: "mascot", brand: "turf-monster")
     look = character.appearances.create!(descriptor: "Classic")
     AppearanceReferencePhoto.create!(appearance_slug: look.slug, source: "upload", chosen: true,
-                                     title: "Canonical sheet v3 (white jersey, pads, no helmet) - approved by Alex 2026-10-07",
+                                     title: "Canonical sheet v3 (white jersey, pads, no helmet) - approved by Alex McRitchie 2026-10-07",
                                      image_url: "https://assets.example.test/canonical.png")
   end
 

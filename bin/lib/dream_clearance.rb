@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# DreamClearance — the one rule for Alex's quoted words on a dream ruling given in
+# DreamClearance — the one rule for Alex McRitchie's quoted words on a dream ruling given in
 # chat (docs/agents/modules/dream.md, Act 3, "In chat").
 #
 # `bin/dream approve|drop|retire <slug> --clearance "<his words>"` checks it before
@@ -25,18 +25,18 @@ module DreamClearance
 
   module_function
 
-  # nil when `words` may stand as Alex's clearance for `slug`; else the reason.
+  # nil when `words` may stand as Alex McRitchie's clearance for `slug`; else the reason.
   def problem(words, slug: nil)
     text = words.to_s.strip
-    return "a clearance is Alex's exact words in this session; none was given" if text.empty?
+    return "a clearance is Alex McRitchie's exact words in this session; none was given" if text.empty?
     return nil if grammar_reply?(text)
 
     bare = text.delete("`\"'").sub(%r{\A.*/}, "").strip.downcase
     if slug && bare == slug.to_s.downcase
-      return "the clearance is only the slug `#{slug}`; quote Alex's own words"
+      return "the clearance is only the slug `#{slug}`; quote Alex McRitchie's own words"
     end
     if text.split(/\s+/).size < MIN_WORDS
-      return "the clearance #{text.inspect} is shorter than #{MIN_WORDS} words; quote Alex's whole reply " \
+      return "the clearance #{text.inspect} is shorter than #{MIN_WORDS} words; quote Alex McRitchie's whole reply " \
              "(a bare `yes` or `1 ✓` from the card grammar is accepted as it stands)"
     end
 

@@ -131,8 +131,8 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
       argv: %w[renew avi],
       command: "renew", lane: "avi", flags: {} },
     { source: "bin/devops-shift header:8 — acquire with the documented optional --label",
-      argv: ["acquire", "ray", "--label", "Mew"],
-      command: "acquire", lane: "ray", flags: { "label" => "Mew" } },
+      argv: ["acquire", "alex", "--label", "Mew"],
+      command: "acquire", lane: "alex", flags: { "label" => "Mew" } },
     { source: "test/lib/devops_shift_renewer_integration_test.rb#test_integration_a_headless_renewer_holds_the_lease_then_frees_it_when_its_anchor_dies — the real detached renew-loop",
       argv: ["renew-loop", "avi", "--anchor-pid", "4242", "--anchor-start", "Mon Aug 17 09:12:01 2026"],
       command: "renew-loop", lane: "avi",
@@ -297,11 +297,11 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
   def test_a_stray_positional_refuses
     Dir.mktmpdir do |proj|
       c = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
-      code = c.run(%w[acquire avi ray])
+      code = c.run(%w[acquire avi alex])
 
       assert_equal DevopsShiftCli::CANT_RUN, code
       assert_empty @api.calls
-      assert_match(/unrecognized argument "ray"/, @err.string)
+      assert_match(/unrecognized argument "alex"/, @err.string)
     end
   end
 

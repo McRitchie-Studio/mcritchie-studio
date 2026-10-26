@@ -1331,7 +1331,7 @@ class TaskCliTest < Minitest::Test
   def test_show_verbose_prints_the_author_sources_and_where_they_live
     _requests, out, _err, status = run_task(
       ["show", "demo-task", "--verbose"],
-      stub_devops: { "kind" => "bug", "built_by" => "ray", "builders" => %w[shannon ray] }
+      stub_devops: { "kind" => "bug", "built_by" => "alex", "builders" => %w[shannon alex] }
     )
     assert status.success?
     # Structural anchor: the two lines that FOLLOW the claim line, wherever the
@@ -1341,8 +1341,8 @@ class TaskCliTest < Minitest::Test
     claim_at = lines.index { |l| l.include?("claim: desk") }
     refute_nil claim_at, "the verbose block must still print the claim line"
     sources, locator = lines[claim_at + 1], lines[claim_at + 2]
-    assert_match(/built_by: ray/, sources)
-    assert_match(/builders: shannon, ray/, sources)
+    assert_match(/built_by: alex/, sources)
+    assert_match(/builders: shannon, alex/, sources)
     refute_match(/unattributed/, sources)
     assert_match(/metadata\.devops\.builders/, locator)
     assert_match(/agent_slug/, locator)

@@ -57,11 +57,11 @@
 # so this un-tags rather than re-tags. Verified before lowering: --grep-invert @quarantine over
 # the file is 12/12 green, and the ONE remaining failure is the still-tagged review-ticker spec.
 # 12 -> 10 on 2026-08-21 (/tasks/clear-the-quarantine-backlog): two heartbeat_feedback specs
-# REPAIRED. Cause was not the specs' logic — they loaded the bare /ray/heartbeat and relied on
+# REPAIRED. Cause was not the specs' logic — they loaded the bare /mason/heartbeat and relied on
 # HeartbeatController#latest_session_id, i.e. whichever session owns the newest AgentAction. The
 # seed grew newer fixtures ('sess-test-runs'), which now win that default and render ZERO spans,
 # so every locator timed out on a page that never had the rows. Pinning
-# ?session_id=e2e-heartbeat-0001 (as e2e/alex_heartbeat.spec.js already did) restores them.
+# ?session_id=e2e-heartbeat-0001 (as e2e/mason_heartbeat.spec.js, then alex_heartbeat.spec.js, already did) restores them.
 # Measured: bare path = 0 heartbeat-event nodes; pinned = 3 (Explore/Verify/Workflow).
 # The OTHER two in that file stay tagged on purpose — they assert a design that was REVERSED
 # (span grading moved out of the drawer and back inline), so they want deleting or rewriting,

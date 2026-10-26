@@ -2,12 +2,12 @@ require Rails.root.join("bin/lib/dream_bank").to_s
 
 module Api
   module V1
-    # GET /api/v1/dream_retirements — the retirements Alex recorded on /dreams whose
+    # GET /api/v1/dream_retirements — the retirements Alex McRitchie recorded on /dreams whose
     # files the deployed bank still holds, for `bin/dream apply-approvals`, which
     # deletes each file (docs/agents/modules/dream.md, Act 4).
     #
     # Read-only, like dream_approvals: a retirement (or a drop of a proposed dream,
-    # `ruling: drop`) is Alex's word, given by his click (DreamsController#retire,
+    # `ruling: drop`) is Alex McRitchie's word, given by his click (DreamsController#retire,
     # #approve_swap) or in chat through POST /api/v1/dream_rulings, with his quote.
     # The read reconciles first: a row whose file is gone is stamped applied.
     class DreamRetirementsController < BaseController

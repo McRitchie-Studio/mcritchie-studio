@@ -12,11 +12,11 @@
 #
 #   bin/tiktok-draft <clip-slug> --dry-run             the caption and the athlete/team it rests on; writes nothing
 #   bin/tiktok-draft <clip-slug>                       draft it on the local hub (localhost:3000) and wait
-#   bin/tiktok-draft <clip-slug> --production --yes    draft it on https://mcritchie.studio (Alex's word first)
+#   bin/tiktok-draft <clip-slug> --production --yes    draft it on https://mcritchie.studio (Alex McRitchie's word first)
 #
 # A draft needs an ADMIN agent session: the hub refuses the shared token on the
 # request that creates one. Ask the board for it (`bin/agent-activity heartbeat
-# mason|steffon`; Alex grants it on the tasks page) and this command presents the
+# mason|steffon`; Alex McRitchie grants it on the tasks page) and this command presents the
 # login the harness session then holds. When the board cannot grant, a shell on
 # that hub can (`bin/rails agent_sessions:grant_admin` into
 # AGENT_ADMIN_SESSION_TOKEN; the refusal prints the exact line). --dry-run,
@@ -39,7 +39,7 @@ parser = OptionParser.new do |opts|
   opts.on("--dry-run", "print the caption and what it rests on; record nothing, call no TikTok") { options[:dry_run] = true }
   opts.on("--status", "list the clip's attempts; re-read TikTok for one still processing") { options[:status] = true }
   opts.on("--whoami", "the TikTok account the hub's keys post as (the probe)") { options[:whoami] = true }
-  opts.on("--yes", "required to draft on any hub but this machine: Alex said to draft this clip") { options[:yes] = true }
+  opts.on("--yes", "required to draft on any hub but this machine: Alex McRitchie said to draft this clip") { options[:yes] = true }
   opts.on("--wait SECONDS", Integer, "how long to wait for the draft to settle (default 150)") { |v| options[:wait] = v }
   opts.on("-h", "--help") do
     puts opts

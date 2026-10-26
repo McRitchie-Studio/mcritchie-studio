@@ -49,11 +49,11 @@ module Api
       end
 
       test "[integration] an unknown kind answers 422 and names the kinds" do
-        rename("agents", "ray", "xander")
+        rename("agents", "alex", "xander")
 
         assert_response :unprocessable_entity
         assert_equal "UNKNOWN_KIND", body["error_code"]
-        assert_equal "ray", Agent.find_by!(slug: "ray").slug
+        assert_equal "alex", Agent.find_by!(slug: "alex").slug
       end
 
       test "[integration] a studio session cannot rename" do

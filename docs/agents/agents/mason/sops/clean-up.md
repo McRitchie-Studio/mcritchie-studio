@@ -19,7 +19,7 @@ sweep the infrastructure. One stuck session's work, rather than the whole board,
 
 ## Preconditions
 
-1. **Alex has explicitly assigned the ship lane this session.** This SOP
+1. **Alex McRitchie has explicitly assigned the ship lane this session.** This SOP
    merges to `release` and fast-forwards `main`. Without that assignment, run
    Phases 0-2 and 5 only, and stop at `reviewed`.
 2. Run from the McRitchie Studio primary checkout (`cd
@@ -31,7 +31,7 @@ sweep the infrastructure. One stuck session's work, rather than the whole board,
 
 ## Phase 0 — Scope guard (the carve-out)
 
-Alex often runs a second session while this one works. Do not archive its tasks,
+Alex McRitchie often runs a second session while this one works. Do not archive its tasks,
 reclaim its worktrees, or review its PRs. Ask once, before touching anything:
 *"Is any other session running? Name it and I'll carve it out."* Record **both** the session identity he gives (a Pokémon mascot and a short hash,
 e.g. `Sudowoodo …38bc`) and any subject area (e.g. "GitHub CI/CD"). Every task a
@@ -85,14 +85,14 @@ isolated test DB, so its tests hit a shared database.
 ## Phase 2 — Triage every open task
 
 One evaluator subagent per task, in waves of at most 5. Each returns one
-disposition; put every judgement to Alex as a table with a recommendation per row.
+disposition; put every judgement to Alex McRitchie as a table with a recommendation per row.
 
 | Disposition | Meaning | Test |
 |---|---|---|
 | **SHIP** | Built; PR green + mergeable. | Send it to review. |
 | **BUILD** | Not built, but earns its keep today. | An **active hazard**, or a **cheap port of a fix that already shipped elsewhere**. |
 | **ARCHIVE** | Off the board, no code. | See the rubric. |
-| **PARK** | Stays open by explicit operator decision. | Only Alex may park. Record the reason. |
+| **PARK** | Stays open by explicit operator decision. | Only Alex McRitchie may park. Record the reason. |
 | **HAND OFF** | Belongs to a carved-out session. | Report it; do not file it. |
 
 **Archive when any holds:** it patches a blacklist that a sound positive invariant
@@ -240,7 +240,7 @@ the single source for their mechanics. Run it in full, and supply what only this
 Two of its rules decide most judgement calls here. **Clean + merged is not
 sufficient**: a new worktree is git-identical to a merged one, so a bound desk
 stands until its task reaches a stage in `bin/agent-worktree#RECLAIMABLE_STAGES`. **Trust the safety gate over
-the description**: if Alex says three worktrees and the dry run finds seventeen,
+the description**: if Alex McRitchie says three worktrees and the dry run finds seventeen,
 surface it and believe the gate. File anything uncertain on the desk ledger
 (`bin/agent-worktree cleanup --write`) rather than deleting it.
 
@@ -281,7 +281,7 @@ bin/agent-worktree scale status
 gh pr list --limit 50
 ```
 
-Report to Alex:
+Report to Alex McRitchie:
 - **The number**: open tasks before → after, and every parked task with its reason.
 - **What shipped**, with the production URL.
 - **What was archived**, and why, one line each.

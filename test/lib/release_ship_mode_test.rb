@@ -137,7 +137,7 @@ class ReleaseShipModeTest < Minitest::Test
     stamp = out[/ship_authorized:started key="rel-ship:ship_authorized:started:cleared:(20[^"]+)" mode=cleared/, 1]
     assert stamp, "the request is keyed by the run's cleared_at: #{out}"
     assert_includes out, %(EVENT rel-ship ship_authorized:completed key="rel-ship:ship_authorized:completed:cleared:#{stamp}" mode=cleared)
-    assert_includes out, "cleared in chat by alex"
+    assert_includes out, "cleared in chat by Alex McRitchie", "the default names the owner in full, never a bare alex (the persona)"
     assert_includes out, "ship authority: cleared (--mode cleared)"
     refute_includes out, "production window", "a cleared ship posts no window and waits on no button"
   end

@@ -1,4 +1,4 @@
-<%# Sessions' open swap proposals (DreamSwap): an add, or one in and one out. Alex's
+<%# Sessions' open swap proposals (DreamSwap): an add, or one in and one out. Alex McRitchie's
     one click approves the in and retires the out (DreamsController#approve_swap). %>
 <% by_key = @chart.dreams.index_by { |dream| DreamApproval.key_for(dream) } %>
 <div class="card mb-4 p-4" id="dream-swaps" data-test="dream-swaps">

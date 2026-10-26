@@ -19,7 +19,7 @@
 >
 > Devnet upgrade authority for turf-vault `Dx8u…GaCT` is the Squads V4 vault
 > `BW13kgfiG2koFn3WRkte21NW9TFygsD1ge2fNJdjH6kC` (multisig PDA
-> `7nRuVw3VZFC6z85tYVDitPnaUHZCkqLpJRSTBNtPmtZB`, 2-of-3 Alex Bot / Alex /
+> `7nRuVw3VZFC6z85tYVDitPnaUHZCkqLpJRSTBNtPmtZB`, 2-of-3 Alex Bot / Alex McRitchie /
 > Mason). Migration was done programmatically via the Squads V4 SDK — see
 > `turf-vault/scripts/squad-upgrade.js` for the reusable upgrade tool and
 > `turf-vault/docs/CURRENT_DEPLOYMENT.md` for the current upgrade rule. Since the
@@ -121,7 +121,7 @@ This migration moves upgrade authority to a Squads multisig with the same 2-of-3
 
 ## Prerequisites
 
-- All 3 multisig signers (Alex Bot / Alex / Mason) have:
+- All 3 multisig signers (Alex Bot / Alex McRitchie / Mason) have:
   - Solana CLI installed + funded with SOL on the target cluster
   - Phantom (or any Squads-compatible wallet) configured
 - The current upgrade authority key (`~/.config/solana/id.json`) is in your possession
@@ -145,7 +145,7 @@ npm install -g @sqds/sdk
 ```
 
 Via web UI (https://app.squads.so):
-1. Connect Phantom as Alex (or Alex Bot if you have its keypair handy).
+1. Connect Phantom as Alex McRitchie (or Alex Bot if you have its keypair handy).
 2. "Create a Squad" → 2 of 3 threshold.
 3. Add members:
    - Alex Bot: `F6f8…KzhZ` — **RETIRED (leaked, 2026-06). Never place this key
@@ -154,7 +154,7 @@ Via web UI (https://app.squads.so):
      line is exactly how a retired key gets re-seated. It is on no Squad today:
      the first mainnet Squad `9dCLMZct…` removed it on 2026-09-16 (see **How it
      resolved**).
-   - Alex: `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr`
+   - Alex McRitchie: `7ZDJp7FUHhuceAqcW9CHe81hCiaMTjgWAXfprBM59Tcr`
    - Mason: `CytJS23p1zCM2wvUUngiDePtbMB484ebD7bK4nDqWjrR`
 4. Confirm and note the **Squad vault PDA** (this will be the new upgrade authority).
 
@@ -229,7 +229,7 @@ After devnet rehearsal succeeds:
 
 1. Deploy the audited program to mainnet (this happens with the single key still as authority).
 2. Smoke-test the mainnet deployment with the single key (a controlled deploy + verify).
-3. ~~Create a mainnet Squad with the same 3 signers (Alex Bot / Alex / Mason).~~
+3. ~~Create a mainnet Squad with the same 3 signers (Alex Bot / Alex McRitchie / Mason).~~
    **SUPERSEDED — do not do this.** The mainnet Squad exists and is **3-of-5**,
    and two of those three names are off it: `F6f8…KzhZ` is retired and must
    never be re-seated, and Mason's key sits on neither live Squad. (Mason is
@@ -291,6 +291,6 @@ Update `turf-vault/docs/CURRENT_DEPLOYMENT.md` and `turf-vault/README.md` after 
 > second of these: both live Squads now seat five members, not three. Raise current
 > governance questions against the live docs named at the top of this file.
 
-- Do we want a "break-glass" emergency upgrade keypair held by Alex only, paired with a strict legal/governance policy on when it can be used? Pros: faster response to exploits. Cons: re-introduces single-key risk.
+- Do we want a "break-glass" emergency upgrade keypair held by Alex McRitchie only, paired with a strict legal/governance policy on when it can be used? Pros: faster response to exploits. Cons: re-introduces single-key risk.
 - Are we comfortable with the existing 3 signers, or do we want to add a 4th (e.g. cold storage) before mainnet?
 - What's the alert path if someone proposes an unexpected upgrade via Squads (someone other than us)?

@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [unit] The answerer policy for public intake, with the shipped
-# config/agent_answerers.yml: Ritch answers a signed-out visitor ONLY on a web row
+# config/agent_answerers.yml: Alex answers a signed-out visitor ONLY on a web row
 # of a web:build: thread, the claim's SQL guard agrees with allowed?, the config
 # cannot widen the prefix, and the caps hold per request, per IP and per day.
 class BuildIntakeAnswererPolicyTest < ActiveSupport::TestCase
@@ -19,7 +19,7 @@ class BuildIntakeAnswererPolicyTest < ActiveSupport::TestCase
     BuildIntake.reset_policy!
   end
 
-  def row(thread_key:, soul: "ray", channel: "web", person: @stranger, status: "received", **extra)
+  def row(thread_key:, soul: "alex", channel: "web", person: @stranger, status: "received", **extra)
     AgentMessage.create!(channel: channel, external_id: SecureRandom.uuid, channel_ref: channel == "web" ? "build" : "1",
                          thread_key: thread_key, soul_slug: soul, content: "hi", person: person, status: status,
                          author_ref: "x", **extra)
@@ -29,7 +29,7 @@ class BuildIntakeAnswererPolicyTest < ActiveSupport::TestCase
 
   test "the shipped config answers the owner everywhere and the public only on /build threads" do
     assert_equal %w[owner], @answerers.roles
-    assert_equal "ray", @answerers.public_intake_soul
+    assert_equal "alex", @answerers.public_intake_soul
 
     intake = row(thread_key: build_thread)
     cto_chat = row(thread_key: "web:turf-monster:12", soul: "turf_monster")
@@ -56,21 +56,21 @@ class BuildIntakeAnswererPolicyTest < ActiveSupport::TestCase
     row(thread_key: build_thread, soul: "avi", person: person.call)
     intake = row(thread_key: build_thread, person: person.call)
 
-    assert_equal [ intake.id ], AgentMessage.claimable(soul: %w[ray avi turf_monster]).pluck(:id),
+    assert_equal [ intake.id ], AgentMessage.claimable(soul: %w[alex avi turf_monster]).pluck(:id),
                  "a lookalike key (web:buildx:, web_build_, a LIKE wildcard) or another soul is not intake"
   end
 
   test "a held intake row (bot shield) is never claimed" do
     row(thread_key: build_thread, status: "held")
-    assert_empty AgentMessage.claimable(soul: "ray")
+    assert_empty AgentMessage.claimable(soul: "alex")
   end
 
   test "the config cannot widen public intake or set a bad cap" do
-    base = { "soul" => "ray", "thread_prefix" => "web:build:", "turns_per_request" => 12,
+    base = { "soul" => "alex", "thread_prefix" => "web:build:", "turns_per_request" => 12,
              "signed_in_turns_per_request" => 40, "per_ip_per_hour" => 20, "daily_total" => 400 }
     assert AgentMessages::Answerers.new(%w[owner], public_intake: base).public_intake
 
-    [ { "thread_prefix" => "web:" }, { "thread_prefix" => "" }, { "soul" => "Ritch; DROP" },
+    [ { "thread_prefix" => "web:" }, { "thread_prefix" => "" }, { "soul" => "Alex; DROP" },
       { "turns_per_request" => 0 }, { "daily_total" => "400" } ].each do |bad|
       assert_raises(AgentMessages::Answerers::Invalid, bad.inspect) do
         AgentMessages::Answerers.new(%w[owner], public_intake: base.merge(bad))

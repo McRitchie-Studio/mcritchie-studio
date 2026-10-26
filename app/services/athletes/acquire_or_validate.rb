@@ -57,7 +57,7 @@ module Athletes
   #           outranks ESPN here, and that is measured, not assumed:
   #
   #             T.J. Watt        stored EDGE   ESPN "LB" -> normalizes to LB
-  #             Alex Highsmith   stored EDGE   ESPN "LB" -> normalizes to LB
+  #             Alex McRitchie Highsmith   stored EDGE   ESPN "LB" -> normalizes to LB
   #             Nick Herbig      stored EDGE   ESPN "LB" -> normalizes to LB
   #
   #           (measured 2026-09-27 over ESPN's Pittsburgh and Las Vegas rosters.)

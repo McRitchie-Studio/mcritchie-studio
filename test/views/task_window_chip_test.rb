@@ -97,7 +97,7 @@ class TaskWindowChipTest < ActionView::TestCase
                         metadata: { "devops" => { "approval_status" => "waiting" } })
     task.block!(by: "avi", kind: "dependency")
     Activity.create!(task_slug: task.slug, activity_type: "qa_feedback", agent_slug: "avi",
-                     description: "POLICY QUESTION for Alex.", metadata: { "summary" => "Escalated: which default wins", "kind" => "dependency" })
+                     description: "POLICY QUESTION for Alex McRitchie.", metadata: { "summary" => "Escalated: which default wins", "kind" => "dependency" })
     task.reload
 
     render_task_card(task, crew_board: :build, unresolved_feedback: task.unresolved_feedback_activity)

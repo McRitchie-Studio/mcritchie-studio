@@ -1,6 +1,6 @@
 // [unit] chat_follow: the chat thread follows new text for a reader within 20px
 // of its end, and leaves a reader who scrolled further up where they are (task
-// build-flow-polish; Alex, 2026-10-19). Driven with a stand-in scroll box and
+// build-flow-polish; Alex McRitchie, 2026-10-19). Driven with a stand-in scroll box and
 // stand-in observers: the rule reads scrollHeight, clientHeight and scrollTop
 // and writes scrollTop.
 import { test } from "node:test";

@@ -42,8 +42,8 @@
 #
 # 3. THE LABEL IS ONLY THE TEXT INSIDE THE PARENTHESES. Chrome prepends the
 #    account's Google first name and there is no way to stop it (constraint 3 in
-#    the SOP). So a label must NEVER repeat that word — label `Alex studio` on
-#    an account whose Google name is Alex renders as `Alex (Alex studio)`.
+#    the SOP). So a label must NEVER repeat that word — label `Alex McRitchie studio` on
+#    an account whose Google name is Alex McRitchie renders as `Alex McRitchie (Alex McRitchie studio)`.
 #    `bin/chrome-profiles` REFUSES a label that opens with the account's own
 #    first name rather than letting you discover it in the menu.
 #

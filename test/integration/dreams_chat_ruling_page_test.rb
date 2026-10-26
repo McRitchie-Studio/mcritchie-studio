@@ -3,7 +3,7 @@
 require "test_helper"
 require Rails.root.join("bin/lib/dream_bank").to_s
 
-# [component] /dreams shows Alex's chat ruling beside the card it rules on: the
+# [component] /dreams shows Alex McRitchie's chat ruling beside the card it rules on: the
 # quote and the session for a chat approval, retirement or drop, and nothing extra
 # for his click (docs/agents/modules/dream.md, Act 3, "In chat").
 class DreamsChatRulingPageTest < ActionDispatch::IntegrationTest

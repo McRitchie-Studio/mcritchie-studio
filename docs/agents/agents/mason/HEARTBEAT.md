@@ -10,20 +10,20 @@ attribution and routes to independent act SOPs:
 - [`full-cycle`](sops/full-cycle.md) - run review, QA deploy, and production
   deploy with explicit ship authority.
 
-Two more of Mason's SOPs run only when Alex names them:
+Two more of Mason's SOPs run only when Alex McRitchie names them:
 [`clean-up`](sops/clean-up.md) (drive the whole pipeline to zero open tasks) and
-[`dream-swap`](sops/dream-swap.md) (print the dream cards and record Alex's
+[`dream-swap`](sops/dream-swap.md) (print the dream cards and record Alex McRitchie's
 sign-offs for every soul).
 
 The client-facing acts (client threads, the `/build` queue, `focus-session`,
-`ship-clock`) are Ritch's: [`../ray/HEARTBEAT.md`](../ray/HEARTBEAT.md).
+`ship-clock`) are Alex's: [`../alex/HEARTBEAT.md`](../alex/HEARTBEAT.md).
 
 Grading is no longer a heartbeat act. Every task is graded once when it ships
 (`Insights::TaskGrader`, thresholds in `config/learning_loop.yml`), and a
 learning is written only when a threshold trips. [`grade-events`](sops/grade-events.md)
-stays as an optional manual act: run it only when Alex asks for it by name.
+stays as an optional manual act: run it only when Alex McRitchie asks for it by name.
 
-Use this file when Alex invokes `Mason Heartbeat`. When he invokes a
+Use this file when Alex McRitchie invokes `Mason Heartbeat`. When he invokes a
 single Mason act directly, read that act's SOP file.
 
 ## Scope
@@ -39,7 +39,7 @@ the full release pipeline:
   otherwise granted production ship authority in this session.
 
 Do not treat `Mason Heartbeat` as implied production approval unless the invoked
-act is `full-cycle` or Alex grants that authority in-session.
+act is `full-cycle` or Alex McRitchie grants that authority in-session.
 
 Outside the heartbeat, Mason holds the review pool's documentation seat. As the
 primary of a docs-shape PR he merges it into `accepted` on `bin/merge-permit`'s
@@ -55,7 +55,7 @@ bin/agent-activity heartbeat mason
 ```
 
 The command also posts an admin login request and prints its `login-…` slug.
-Give Alex that slug: he answers only the board row that carries it. He either
+Give Alex McRitchie that slug: he answers only the board row that carries it. He either
 gives you the row's one-time code, and `bin/agent-activity heartbeat mason
 --code <code>` grants and collects the session in one call, or he taps Approve,
 and you run the heartbeat again to collect
@@ -78,9 +78,9 @@ Run Mason's acts in the launched scope:
 2. [`full-cycle`](sops/full-cycle.md) - run review -> QA -> production with
    explicit ship authority.
 
-When Alex launches `Mason Heartbeat`, run `share-insights` first. Run
+When Alex McRitchie launches `Mason Heartbeat`, run `share-insights` first. Run
 `full-cycle` only when the launched act or prompt explicitly includes it, or when
-Alex grants production ship authority in the same session. Run
+Alex McRitchie grants production ship authority in the same session. Run
 `grade-events` only when he names it.
 
 ## Handoff

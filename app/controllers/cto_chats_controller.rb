@@ -45,7 +45,7 @@ class CtoChatsController < ApplicationController
   before_action :require_avatar_owner, only: %i[avatar avatars]
   # The CTO asks a nameless owner for their first name in the chat
   # (AgentMessages::FirstNameAsk), so the engine's first-name modal never opens
-  # over the launch panel or the thread (Alex 2026-10-19).
+  # over the launch panel or the thread (Alex McRitchie 2026-10-19).
   before_action :skip_first_name_modal!
   helper_method :composer_locals
 
@@ -130,7 +130,7 @@ class CtoChatsController < ApplicationController
 
   private
 
-  # The app's initial load (task build-sign-in-modal, Alex 2026-10-19): the
+  # The app's initial load (task build-sign-in-modal, Alex McRitchie 2026-10-19): the
   # owner's first visit after Build My App, however they arrived (the signed-in
   # press, the magic link's landing, Google's), plays the launch panel
   # (build/_launch: three steps in the app's colours, then a visit back here).

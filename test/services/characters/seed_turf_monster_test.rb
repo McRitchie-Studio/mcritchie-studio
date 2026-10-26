@@ -22,7 +22,7 @@ class Characters::SeedTurfMonsterTest < ActiveSupport::TestCase
 
     assert_equal %w[turf-monster Turf\ Monster mascot turf-monster],
                  [character.slug, character.name, character.kind, character.brand]
-    assert character.bio.start_with?("[Draft for Alex]")
+    assert character.bio.start_with?("[Draft for Alex McRitchie]")
     look = character.default_appearance
     assert_equal "Classic", look.descriptor
     art = AppearanceReferencePhoto.where(appearance_slug: look.slug).gallery_order
@@ -33,14 +33,14 @@ class Characters::SeedTurfMonsterTest < ActiveSupport::TestCase
   end
 
   test "a re-run adds nothing and keeps an edit" do
-    seed.update!(bio: "Alex's words")
+    seed.update!(bio: "Alex McRitchie's words")
     again = seed
 
     assert_equal 1, Character.count
     assert_equal 1, again.appearances.count
     assert_equal 2, AppearanceReferencePhoto.count
     assert_equal 2, @stored.size, "nothing stored twice"
-    assert_equal "Alex's words", again.reload.bio
+    assert_equal "Alex McRitchie's words", again.reload.bio
   end
 
   test "the seeded look is ready for a sheet build: its anchor is the mascot art" do

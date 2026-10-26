@@ -1,4 +1,4 @@
-// [e2e] /admin/report_destinations, the way Alex meets it: daily_app_report has
+// [e2e] /admin/report_destinations, the way Alex McRitchie meets it: daily_app_report has
 // no channel; the select offers only postable, unarchived channels, grouped by
 // category; he picks #cto-reports and saves; the card says it posts there, and
 // the choice survives a reload. At phone width nothing runs off the side.

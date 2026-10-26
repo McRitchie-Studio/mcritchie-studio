@@ -3,7 +3,7 @@
 require "test_helper"
 
 # [component] The /build turn's reading flow (build/_turn over agent_chats/_turn;
-# task build-chat-reading-flow): Ritch's words are plain text on the page, the
+# task build-chat-reading-flow): Alex's words are plain text on the page, the
 # visitor's keep their right-hand bubble, and the intake card his answer carries
 # keeps its bubble as the point of action, marked so it waits for the words to
 # finish typing (agent-action, app/assets/tailwind/agent_reply.css).
@@ -19,10 +19,10 @@ class BuildTurnReadingFlowTest < ActionView::TestCase
 
   def turn(**attrs)
     AgentMessage.create!({ channel: "web", external_id: "build:#{@row.token}:#{SecureRandom.hex(4)}", channel_ref: "build",
-                           thread_key: BuildIntake.thread_key(@row.token), soul_slug: "ray", content: "A league site" }.merge(attrs))
+                           thread_key: BuildIntake.thread_key(@row.token), soul_slug: "alex", content: "A league site" }.merge(attrs))
   end
 
-  test "[component] Ritch's words unbubbled, the visitor's bubbled, the idea card bubbled as the point of action" do
+  test "[component] Alex's words unbubbled, the visitor's bubbled, the idea card bubbled as the point of action" do
     message = turn(status: "completed", response_text: "Here's the app **I hear**.",
                    intake_card: { "card" => "idea", "title" => "League Hub", "features" => [ "Standings" ] })
     render partial: "build/turn", locals: { message: message, request_row: @row }

@@ -45,8 +45,9 @@ and carry its verdict through. Narrate as yourself: `bin/agent-activity … --ag
 
 - **Acceptance**: the change meets the task's acceptance criteria.
 - **Accuracy**: it matches the code. Quote the source you checked.
-- **Clarity**: findable, scannable, unambiguous. **Mason** is the CEO, **Ritch** the client-facing agent, **Alex**
-  is the owner.
+- **Clarity**: findable, scannable, unambiguous. **Mason** is the CEO, **Alex** the
+  client-facing agent (an AI), **Alex McRitchie** the owner. A bare "Alex" means
+  the agent; any gate on the owner's own words must name Alex McRitchie.
 - **Stale references**: broken links, renamed files and flags, contradictions
   with the canonical spec.
 - **No fabrication**: no command, flag or behavior the repo does not have.

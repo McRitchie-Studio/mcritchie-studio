@@ -5,7 +5,7 @@ require "time"
 module DomainRegister
   # check, register and status. Every refusal is decided from a domain-check made
   # IMMEDIATELY before the registration POST, never from an earlier check or a
-  # remembered price: a quote can change between Alex's OK and the purchase, and
+  # remembered price: a quote can change between Alex McRitchie's OK and the purchase, and
   # the OK covered one price.
   class Runner
     # Cloudflare's API registers no premium domain today ("do not call this
@@ -58,7 +58,7 @@ module DomainRegister
           reasons << "#{quote.name} is PREMIUM (#{quote.price_line}): pass --premium to acknowledge the premium fee"
         elsif !PREMIUM_VIA_API
           reasons << "#{quote.name} is PREMIUM and Cloudflare's API does not register premium domains yet: " \
-                     "Alex buys it in the dashboard"
+                     "Alex McRitchie buys it in the dashboard"
         end
       elsif !quote.registrable
         reasons << "#{quote.name} is not available: #{quote.reason || 'no reason given'} (#{quote.reason_text})"
@@ -73,18 +73,18 @@ module DomainRegister
       end
 
       if price.to_s.strip.empty?
-        reasons << "no --price: pass the exact USD registration price Alex approved"
+        reasons << "no --price: pass the exact USD registration price Alex McRitchie approved"
       elsif !price.to_s.strip.match?(PRICE)
         reasons << "--price #{price.inspect} is not a USD amount like 10.46"
       elsif quote.registration && BigDecimal(price.to_s.strip) != quote.registration
         reasons << "price changed: Cloudflare quotes #{CURRENCY} #{Quote.format(quote.registration)} now, " \
-                   "Alex approved #{CURRENCY} #{Quote.format(BigDecimal(price.to_s.strip))}: ask him again"
+                   "Alex McRitchie approved #{CURRENCY} #{Quote.format(BigDecimal(price.to_s.strip))}: ask him again"
       end
 
       if ok.to_s.strip.empty?
-        reasons << "no --ok: quote Alex's own words approving this domain at this price, with the date"
+        reasons << "no --ok: quote Alex McRitchie's own words approving this domain at this price, with the date"
       elsif !ok.to_s.match?(DATED)
-        reasons << "--ok carries no date: quote Alex's words with the date, e.g. \"buy it, 2026-10-19\""
+        reasons << "--ok carries no date: quote Alex McRitchie's words with the date, e.g. \"buy it, 2026-10-19\""
       end
 
       reasons
@@ -338,7 +338,7 @@ module DomainRegister
         hint ? "#{msg}\n  -> #{hint}" : msg
       when "action_required"
         "#{domain}: Cloudflare needs a person: #{workflow.dig('context', 'action') || 'see the dashboard'}. " \
-          "Alex acts in the dashboard; then bin/domain-register status #{domain}"
+          "Alex McRitchie acts in the dashboard; then bin/domain-register status #{domain}"
       else
         "#{domain}: still #{state} after #{@poll_timeout}s. The purchase may complete on its own: " \
           "bin/domain-register status #{domain} (do NOT re-run register)"

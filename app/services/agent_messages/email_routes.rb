@@ -63,7 +63,7 @@ module AgentMessages
     class PinsMissing < StandardError; end
 
     # Why these routes cannot pin the owner's domain, or [] when they can. The
-    # team address's domain is the one whose mail is trusted as Alex, so it must
+    # team address's domain is the one whose mail is trusted as Alex McRitchie, so it must
     # be pinned to at least one selector: a missing or misspelled `pinned_dkim`
     # would otherwise turn the pin off without a word, and any DKIM that passes
     # for the domain (a Resend send, say) would be trusted as him.

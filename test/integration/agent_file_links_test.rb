@@ -13,8 +13,8 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
       agent.agent_type = "product"
     end
 
-    Agent.find_or_create_by!(slug: "ray") do |agent|
-      agent.name = "Ritch"
+    Agent.find_or_create_by!(slug: "alex") do |agent|
+      agent.name = "Alex"
       agent.title = "Lead Orchestrator"
       agent.status = "active"
       agent.agent_type = "orchestrator"
@@ -57,12 +57,12 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
                     text: "deploy-with-task.md"
     end
 
-    assert_select "[data-test='agent-card'][data-agent='ray']" do
-      assert_select "[data-test='agent-file-link'][data-file='agents/ray/HEARTBEAT.md'][href=?]",
-                    doc_path("agents/ray/HEARTBEAT.md"),
+    assert_select "[data-test='agent-card'][data-agent='alex']" do
+      assert_select "[data-test='agent-file-link'][data-file='agents/alex/HEARTBEAT.md'][href=?]",
+                    doc_path("agents/alex/HEARTBEAT.md"),
                     text: "HEARTBEAT.md"
-      assert_select "[data-test='agent-file-link'][data-file='agents/ray/sops/ship-clock.md'][href=?]",
-                    doc_path("agents/ray/sops/ship-clock.md"),
+      assert_select "[data-test='agent-file-link'][data-file='agents/alex/sops/ship-clock.md'][href=?]",
+                    doc_path("agents/alex/sops/ship-clock.md"),
                     text: "ship-clock.md"
     end
 

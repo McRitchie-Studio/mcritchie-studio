@@ -93,7 +93,7 @@ Studio.configure do |config|
   if Studio.respond_to?(:navbar_scroll_timeline=)
     config.navbar_scroll_timeline = true
   end
-  # The signed-out navbar's primary button sells the funnel (Alex 2026-10-19):
+  # The signed-out navbar's primary button sells the funnel (Alex McRitchie 2026-10-19):
   # "Build App" to /build, with sign-in kept as a quiet link beside it and in
   # the phone row (studio-engine's Studio.navbar_signed_out_cta). Sign-in's own
   # words stay Studio.sign_in_label, which also words the engine's auth pages.
@@ -123,7 +123,7 @@ Studio.configure do |config|
       # reinstall that changes the shape fails test/integration/site_footer_test.rb.
       lockup: { light: "/brand/stacked-light.svg", dark: "/brand/stacked-dark.svg", width: 942, height: 885 },
       home_path: view.root_path,
-      # No tagline: Alex 2026-10-15 08:21 dropped "Software & Marketing
+      # No tagline: Alex McRitchie 2026-10-15 08:21 dropped "Software & Marketing
       # Solutions" with the stacked logo (task footer-stacked-logo).
       address: {
         street: "3000 Lawrence St", city_line: "Denver, CO 80205",
@@ -165,7 +165,7 @@ Studio.configure do |config|
   # Read it back as Studio.booking_url.
   #
   # draw_booking_routes stays off: /schedule is ScheduleController's, which
-  # keeps this app's page title and its line about Alex's calendar. The engine's
+  # keeps this app's page title and its line about Alex McRitchie's calendar. The engine's
   # page would replace both.
   config.booking_url = "https://calendar.google.com/calendar/appointments/schedules/" \
                        "AcZssZ3_1hQYaxXWJCG8T-AAuv6YHQN9w3aRBnp-rtQc10YqH6k6Yy6FjUTtZLnwoT27Sr30YcOuZI1K"
@@ -212,7 +212,7 @@ Studio.configure do |config|
   # `gem "lookbook"` in the Gemfile, after studio-engine, and this line. The
   # engine mounts it behind Studio::ComponentGallery::AdminConstraint, so an
   # admin with a live session gets the gallery and everyone else gets 404 on
-  # the gallery, /lookbook-assets and /admin/style/previews alike. Alex approved
+  # the gallery, /lookbook-assets and /admin/style/previews alike. Alex McRitchie approved
   # the memory on 2026-10-06 (about 28 MB per process); delete this line to take
   # the gallery off production without unbundling it.
   # test/integration/component_gallery_production_test.rb holds both cases.

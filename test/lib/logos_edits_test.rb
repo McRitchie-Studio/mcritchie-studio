@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# [unit] The operator's per-part edits (task logo-part-editor, Alex's item 4b): Logos::NavbarLogo and
+# [unit] The operator's per-part edits (task logo-part-editor, Alex McRitchie's item 4b): Logos::NavbarLogo and
 # Logos::StackedLogo take `edits:` for the icon, the first word, the ending and the tagline. A colour comes from the
 # brand's palette, a weight from EDIT_WEIGHTS (never for traced lettering), and the tagline can be hidden. Geometry
 # never moves except as a weight changes a word's width. No edits draws exactly what it drew before (the byte pins in

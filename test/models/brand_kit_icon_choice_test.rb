@@ -41,7 +41,7 @@ class BrandKitIconChoiceTest < ActiveSupport::TestCase
                  "with no kit icon, a choice keeps its own icon colour")
   end
 
-  # Alex's case (2026-10-11 19:23): Commercial Welding v2's Stacked Logo saved in Alt drew the white single-colour
+  # Alex McRitchie's case (2026-10-11 19:23): Commercial Welding v2's Stacked Logo saved in Alt drew the white single-colour
   # helmet beside an Original Navbar and Icon. With the Icon saved in Original, every logo draws the Original helmet.
   test "a saved icon is drawn by every logo, over the icon colour an older choice was saved with" do
     kit = BrandKit.for("welding_v2")

@@ -1,7 +1,7 @@
 # The hub's Content-Security-Policy. REPORT-ONLY: browsers send it as
 # Content-Security-Policy-Report-Only, block nothing, and POST each violation to
 # /csp_reports (CspReportsController → CspReport, read at /admin/csp_reports or
-# `bin/rails csp:reports`). Alex decided "CSP yes" for every app on 2026-10-06;
+# `bin/rails csp:reports`). Alex McRitchie decided "CSP yes" for every app on 2026-10-06;
 # the flip to enforcing waits on the data: zero genuine violations across 7 days
 # (studio-engine docs/FRONT_END_STANDARD.md, the CSP section, has the criterion
 # and what is still in the way).

@@ -1,7 +1,7 @@
 # Change cards start their builder (runbook: docs/agents/system/client-build-launcher.md,
 # "Change cards"). An owner's `go` on a change proposal in an app's web chat opens a
 # `designed` card (AgentProposals::Executor#change); bin/client-build-launcher on
-# Alex's Mac picks that card up here, runs `bin/task begin` for it, and reports
+# Alex McRitchie's Mac picks that card up here, runs `bin/task begin` for it, and reports
 # back, so the card reaches `building` with a desk and nobody has to notice it.
 #
 #   candidates            designed change cards a launcher may start, oldest first

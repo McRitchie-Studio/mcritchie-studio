@@ -2,7 +2,7 @@
 
 ## Status: Active
 
-Decided with Alex on 2026-09-29. This page is the plan for pipeline 3: turning a
+Decided with Alex McRitchie on 2026-09-29. This page is the plan for pipeline 3: turning a
 music video into a cast, looks and clips that pipeline 4 can swap athletes into.
 The acts live in Pokémon's SOPs, starting with
 [`digest-video`](../agents/pokemon/sops/digest-video.md).
@@ -103,7 +103,7 @@ Several 25-second candidates per video. Each one:
 - spans a seam: verse↔chorus, or singer 1↔singer 2;
 - is continuous music, with no intro, outro or silence;
 - carries a cast-shape label: solo, duo, trio, duo plus background, and so on;
-- carries a filled Higgsfield swap prompt. The template is Alex's proven prompt,
+- carries a filled Higgsfield swap prompt. The template is Alex McRitchie's proven prompt,
   with blanks for the target performer's description, the athlete, and who stays
   the same. The athlete and look come from the target's recast
   (`Videos::ClipPrompts`); every stored prompt of the video is rewritten
@@ -227,7 +227,7 @@ sandbox's limits are in Turf Monster's
 
 ## Where it runs
 
-The SOPs are agent-driven and run on Alex's Mac: YouTube often blocks cloud IPs,
+The SOPs are agent-driven and run on Alex McRitchie's Mac: YouTube often blocks cloud IPs,
 and the cast step is an agent vision pass. The app stores results through a small
 JSON API and gives the UI. Nothing Mac-specific goes in the app, so the agent side
 can move off the Mac later.
@@ -285,7 +285,7 @@ redirect, so a POST is never bounced). The R2 prefix below did not move.
 
 Writes go to the hub's existing R2 buckets, `mcritchie-studio-dev` and
 `mcritchie-studio-production` (credentials: 1Password item `r2.mcritchie-studio`). Names and
-folders are human-readable **snake_case**. Alex amended the asset library's
+folders are human-readable **snake_case**. Alex McRitchie amended the asset library's
 "object keys carry no meaning" rule for this content on 2026-09-29
 ([`asset-library-plan.md`](asset-library-plan.md)).
 
@@ -310,7 +310,7 @@ artists/<artist>/…                      general artist images
 ## Rights stance
 
 Captions are used for timing only. Publishing is low-stakes social posts, by
-Alex's decision.
+Alex McRitchie's decision.
 
 ## Cards
 

@@ -43,7 +43,7 @@ class AgentMessages::FloorEscalationTest < ActiveSupport::TestCase
   def at(minutes) = @t0 + minutes.minutes
 
   def ping!(time, **harness)
-    params = { "worker" => "d-1", "host" => "alex-mac", "souls" => [ "ray" ] }
+    params = { "worker" => "d-1", "host" => "alex-mac", "souls" => [ "alex" ] }
     params.merge!(harness.transform_keys(&:to_s))
     AgentDispatcher.ping!(params, now: time)
   end

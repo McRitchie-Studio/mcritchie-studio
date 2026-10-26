@@ -6,7 +6,7 @@
 This is Avi's `arbitrate-block` SOP. A builder has contested a review block
 with evidence, and Avi rules on it: the block stands, the block is overruled,
 or it is split. Avi is the authority. Only a policy question he cannot settle
-goes to Alex.
+goes to Alex McRitchie.
 
 ## Scope
 
@@ -129,18 +129,18 @@ Use the production board. Do not pass `--local`.
    overruled finding; ruling stands" --agent avi` and hand the task back to
    review.
 
-8. **Only a policy question goes to Alex.** If the disagreement is about what
+8. **Only a policy question goes to Alex McRitchie.** If the disagreement is about what
    the product should do rather than what the code does, and the acceptance and
    the epic plan do not settle it, escalate with both positions in one note and
    start the 20-minute window:
 
    ```bash
    bin/task block <slug> --kind dependency --summary "Escalated: <4-6 word question>" \
-     --feedback "POLICY QUESTION for Alex. Reviewer: <X>. Builder: <Z>. Avi's recommendation: <ruling I would make>. Window: 20 min from <time>; on lapse the recommendation stands." --agent avi
+     --feedback "POLICY QUESTION for Alex McRitchie. Reviewer: <X>. Builder: <Z>. Avi's recommendation: <ruling I would make>. Window: 20 min from <time>; on lapse the recommendation stands." --agent avi
    ```
 
    The board derives the 20-minute window from `blocked_at` and shows it as a
-   countdown chip on the card; put the same question to Alex in chat with the
+   countdown chip on the card; put the same question to Alex McRitchie in chat with the
    time, then wait on it:
 
    ```bash
@@ -170,10 +170,10 @@ Use the production board. Do not pass `--local`.
 The ruling is on the task in the `RULING:` shape; the block is cleared or
 standing accordingly; any escalation names its window; the throwaway desk is
 gone. Report the ruling, what was measured, and who acts next: the builder
-(ACCEPT), the reviewer (OVERRULE or SPLIT), or Alex (escalated).
+(ACCEPT), the reviewer (OVERRULE or SPLIT), or Alex McRitchie (escalated).
 
 ## Related
 
-- [`../../ray/sops/focus-session.md`](../../ray/sops/focus-session.md) — where a contest is raised.
+- [`../../alex/sops/focus-session.md`](../../alex/sops/focus-session.md) — where a contest is raised.
 - [`../../../modules/address-blocker.md`](../../../modules/address-blocker.md) — the builder's path after an ACCEPT.
 - [`../../carl/sops/pr-review-primary.md`](../../carl/sops/pr-review-primary.md) — the review that raised the block.

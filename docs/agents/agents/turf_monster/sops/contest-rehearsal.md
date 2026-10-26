@@ -82,7 +82,7 @@ Two exclusions, and neither is a preference:
   and contest creator, and when the player is also the fee payer the
   transaction needs one signature slot, not two — `prepare_entry` refuses.
   Production's key (`4S39…`, `solana.turf.server`, since 2026-10-14; the retired
-  Ritch `8K81…` before it) is in no devnet signer set and is not filed for the
+  Alex `8K81…` before it) is in no devnet signer set and is not filed for the
   rehearsal.
 - **turf-5 cannot play.** Its username is the reserved on-chain prefix `turf`
   and it has no `UserAccount`, so the program refuses to register it.
@@ -95,7 +95,7 @@ in a terminal but the thing being rehearsed is a web app.
 ### Two ways to run it: unattended (the gauntlet) or watched
 
 **Unattended, the default for an agent.** The devnet gauntlet is agent-run
-(Alex, 2026-10-12): run every step in one turn with `--cosign agent`, step 3 as
+(Alex McRitchie, 2026-10-12): run every step in one turn with `--cosign agent`, step 3 as
 a bare `bin/qa-contest-rehearsal play` (no `--pace`), and at each `── STOP ──`
 block check the thing it names yourself and record it, rather than handing
 back. The whole gauntlet takes about 9 minutes (measured on 2026-10-14, after
@@ -111,7 +111,7 @@ settle transaction's own token balances (the prize escrow, owned by the
 exactly their rank's payout); `close` returns a signature. Any step that stops
 or answers otherwise ends the run: report it.
 
-**Watched, when Alex asks to watch.** Then the old rule holds: run ONE step,
+**Watched, when Alex McRitchie asks to watch.** Then the old rule holds: run ONE step,
 hand him the URLs, and STOP until he answers.
 
 The driver prints a `── STOP ──` block at the end of every step naming what he
@@ -119,7 +119,7 @@ is confirming and what to run next. **In a watched run, when you see it, hand
 back; in an unattended run, check that thing yourself and record it.** It is there
 because this instruction, living only in this file, was read once at the top of
 a run and lost to momentum: on 2026-09-04 an agent ran create through close in a
-single turn and Alex never saw a board mid-flight. Nothing failed — the
+single turn and Alex McRitchie never saw a board mid-flight. Nothing failed — the
 SOP simply never said to stop.
 
 Step 4 with `--cosign link` is the one that cannot be waved through: the server
@@ -271,7 +271,7 @@ page's order), then confirms on the dyno with the same checks the Treasury page
 runs (`TxVerifier` per signer, then the contest is marked settled). If the send
 or the verification fails, the row stays `submitted` naming its transaction:
 press **Reconcile** on Treasury; never re-run the settle. Under `--cosign link` the server has already
-signed with its own key and the second signature is Alex's, from the co-signer
+signed with its own key and the second signature is Alex McRitchie's, from the co-signer
 wallet the step prints.
 
 ```text

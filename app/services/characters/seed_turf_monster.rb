@@ -6,18 +6,18 @@ module Characters
   # migration data step.
   #
   # CREATES WHAT IS MISSING AND NEVER OVERWRITES. The bio and personality are a
-  # DRAFT for Alex (drafted from the Turf brand kit's style text, the mascot art
+  # DRAFT for Alex McRitchie (drafted from the Turf brand kit's style text, the mascot art
   # and docs/agents/agents/turf_monster/soul.md); once he edits them on
   # /characters/turf-monster, a re-run leaves his words alone.
   #
   # The first look, "Classic", takes the kit's own references as its art: the
   # mascot (public/agents/turf-monster.webp) and the style anchor (Turf's welcome
   # banner). Each is stored once in our bucket and recognised on a re-run by its
-  # title. NO SHEET IS GENERATED HERE: piece B builds his turnaround with Alex.
+  # title. NO SHEET IS GENERATED HERE: piece B builds his turnaround with Alex McRitchie.
   class SeedTurfMonster
     SLUG = "turf-monster"
     LOOK = "Classic"
-    DRAFT = "[Draft for Alex] "
+    DRAFT = "[Draft for Alex McRitchie] "
 
     ATTRIBUTES = {
       name: "Turf Monster",

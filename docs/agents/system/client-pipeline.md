@@ -2,7 +2,7 @@
 
 An app's owner sees that app's work on the board, sanitized, at
 `/applications/:slug/pipeline`; and a client app's tier caps how many of its tasks
-build at once. Plan: Phase 8 of `.agents/epics/domain-agents.md` (Alex,
+build at once. Plan: Phase 8 of `.agents/epics/domain-agents.md` (Alex McRitchie,
 2026-10-16). Who owns which app: [`app-owners.md`](app-owners.md).
 
 ## The page
@@ -40,7 +40,7 @@ count, reviewer note, session id, repo list, desk path, local URL or other app.
 The owner reads a task's title only when its `devops.repositories` is exactly
 this app's repo. A task naming any other repo is platform work shared with other
 apps, where other clients' names live, so its card reads **Shared platform
-work** (Alex's default, 2026-10-16). The deny-list scrubber below cannot be
+work** (Alex McRitchie's default, 2026-10-16). The deny-list scrubber below cannot be
 complete; this rule is the structural guard.
 
 A title that crosses is free text an agent wrote, so it is scrubbed too
@@ -93,7 +93,7 @@ cap.
 
 A multi-repo task counts against every tiered app it names. A hub task that
 also names `turf-monster` takes one of Turf's lanes, so once Turf is on a tier,
-Alex's own Turf work shares that tier's cap.
+Alex McRitchie's own Turf work shares that tier's cap.
 
 `bin/task begin` asks first, before it cuts a desk: `GET
 /api/v1/tasks/:slug/building_lane` returns the refusal a claim would meet now, or

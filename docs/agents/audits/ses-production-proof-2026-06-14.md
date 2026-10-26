@@ -51,7 +51,7 @@ Updated 2026-06-14:
 | Domain | Transactional sender | Marketing sender |
 |--------|----------------------|------------------|
 | `mcritchie.studio` | `McRitchie Studio <team@mcritchie.studio>` | `Alex McRitchie <alex@mcritchie.studio>` |
-| `turfmonster.media` | `Turf Monster <team@turfmonster.media>` | `Alex from Turf Monster <alex@turfmonster.media>` |
+| `turfmonster.media` | `Turf Monster <team@turfmonster.media>` | `Alex McRitchie from Turf Monster <alex@turfmonster.media>` |
 
 Transactional means auth, security, account, receipt, and contest-result mail.
 Marketing means newsletter, broadcast, or launch-update mail. Avoid `noreply@`
@@ -72,7 +72,7 @@ We provided the requested sending-process details on June 11. We also finalized
 our sender convention so recipient expectations are clear:
 
 - Turf Monster transactional email: Turf Monster <team@turfmonster.media>
-- Turf Monster newsletter/marketing email: Alex from Turf Monster <alex@turfmonster.media>
+- Turf Monster newsletter/marketing email: Alex McRitchie from Turf Monster <alex@turfmonster.media>
 - McRitchie Studio transactional email: McRitchie Studio <team@mcritchie.studio>
 - McRitchie Studio marketing or product-update email: Alex McRitchie <alex@mcritchie.studio>
 

@@ -1,7 +1,7 @@
 <% content_for(:title, "#{heartbeat_model_short(@row.model)} pricing — Admin") %>
 
 <%# The activity feed's own style + script layers, so the session activity below renders
-    through the REAL agents/_activity_row partial (scoped under #ray-heartbeat) rather
+    through the REAL agents/_activity_row partial (scoped under #mason-heartbeat) rather
     than a bespoke table that would drift from /agents/activities. %>
 <%= render "heartbeat/styles" %>
 <%= render "agents/activities_styles" %>
@@ -114,7 +114,7 @@
   </section>
 
   <%# ── Session activity — the REAL feed table, reused (agents/_activity_row) ─────── %>
-  <section id="ray-heartbeat" class="aa-page card p-5">
+  <section id="mason-heartbeat" class="aa-page card p-5">
     <h2 class="text-heading font-semibold mb-3">Session activity</h2>
     <% if @activity_rows.any? %>
       <%= render "agents/activities_table", activity_rows: @activity_rows,

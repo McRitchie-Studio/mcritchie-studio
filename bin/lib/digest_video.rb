@@ -71,7 +71,7 @@ module DigestVideo
     when "youtube.com", "youtu.be" then "youtube"
     when *TIKTOK_HOSTS then "tiktok"
     when "instagram.com" then "instagram"
-    else raise Failure, "unsupported host #{host.inspect}: ask Alex"
+    else raise Failure, "unsupported host #{host.inspect}: ask Alex McRitchie"
     end
   rescue URI::InvalidURIError
     raise Failure, "not a URL: #{url}"
@@ -208,7 +208,7 @@ module DigestVideo
 
       info = JSON.parse(File.read(find(dir, id.to_s, ".info.json")))
       if info["_type"] == "playlist"
-        raise Failure, "#{url} is a post with #{info['playlist_count'] || 'several'} videos; a digest takes one: ask Alex"
+        raise Failure, "#{url} is a post with #{info['playlist_count'] || 'several'} videos; a digest takes one: ask Alex McRitchie"
       end
 
       id ||= info["id"].to_s
@@ -279,7 +279,7 @@ module DigestVideo
       credits = Videos::CreditParser.new.parse(title: title, uploader: uploader, artists: artists)
       Videos::ObjectKeys.new(primary: credits.primary, featured: credits.featured, song: credits.song)
     rescue ArgumentError => e # a title or name with no key-safe characters
-      raise Failure, "no R2 key for these credits (#{e.message}); ask Alex"
+      raise Failure, "no R2 key for these credits (#{e.message}); ask Alex McRitchie"
     end
 
     def short_code(url) = URI.parse(url).path.scan(/[\w-]+/).last || "tiktok"

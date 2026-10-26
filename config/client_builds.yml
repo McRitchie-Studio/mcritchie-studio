@@ -1,11 +1,11 @@
 # The automatic first version of every /build app (.agents/epics/client-app-zero-to-one.md;
 # runbook: docs/agents/system/client-build-launcher.md). Read by the board
 # (ClientBuilds.config, app/services/client_builds.rb) and by the launcher on
-# Alex's Mac (bin/client-build-launcher, bin/lib/client_build_launcher.rb).
+# Alex McRitchie's Mac (bin/client-build-launcher, bin/lib/client_build_launcher.rb).
 #
 # preview_domain   where the shared host serves each bundle: <sub>.<preview_domain>.
 #                  A separate registrable domain, so the hub's .mcritchie.studio
-#                  session cookie never reaches model-written code. Alex chose
+#                  session cookie never reaches model-written code. Alex McRitchie chose
 #                  mcritchie.app on 2026-10-19; the name is config, so a move
 #                  is one line here.
 # cap              builds running at once on the Mac. The 5-agent cap is shared with
@@ -13,7 +13,7 @@
 # max_attempts     claims one launch task may take. A failed run blocks the task; a
 #                  human re-queues it (bin/task move <slug> designed), and past this
 #                  many claims the launcher leaves it for a person.
-# run_minutes      the builder's wall-clock cap (Alex's ~45-minute build budget).
+# run_minutes      the builder's wall-clock cap (Alex McRitchie's ~45-minute build budget).
 # max_turns        the builder's turn cap: assistant turns in the stream before the
 #                  run is stopped.
 # model            the builder's model. Execution runs on Opus (focus-session.md, Step 6).

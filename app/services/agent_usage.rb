@@ -2,7 +2,7 @@
 # client app's share (docs/agents/system/agent-usage.md; Phase 7 of
 # .agents/epics/domain-agents.md).
 #
-#   AgentUsage.totals(souls: %w[avi ray], from:, to:)       # one Totals
+#   AgentUsage.totals(souls: %w[avi alex], from:, to:)       # one Totals
 #   AgentUsage.daily("turf_monster", days: 7)               # [[Date, Totals]] per Denver day
 #   AgentUsage.meter(app)                                   # this month's Meter for an App row
 #   AgentUsage.gate(message)                                # before a claim: :ok, :warn or :stop
@@ -15,12 +15,12 @@
 # WHAT COUNTS AGAINST AN ALLOWANCE: the answers to client senders
 # (run_meta.audience, stamped by the board at complete). Public answers are
 # metered SEPARATELY (Meter#public_used): they never consume the app's
-# allowance, so a stranger can never exhaust what the client paid for (Alex,
+# allowance, so a stranger can never exhaust what the client paid for (Alex McRitchie,
 # 2026-10-16). Owner and team answers are counted in the totals but never
 # metered and never capped. An answer from before this release carries no
 # audience and is not metered (only the owner was answered then).
 #
-# THE FIRST VERSION'S BUILD NEVER COUNTS (Alex, 2026-10-19: it is the cost of
+# THE FIRST VERSION'S BUILD NEVER COUNTS (Alex McRitchie, 2026-10-19: it is the cost of
 # acquiring the client). bin/client-build-launcher's claude runs happen on the
 # launcher's machine and write no answer rows, so their tokens never reach a
 # run summary; the build-progress lines it posts into the owner's chat
@@ -158,7 +158,7 @@ module AgentUsage
   end
 
   # The allowance month: [start, reset), from 1:00 America/Denver on the 1st to
-  # 1:00 on the next 1st (task cto-chat-quality-pass, Alex 2026-10-19: "Resets
+  # 1:00 on the next 1st (task cto-chat-quality-pass, Alex McRitchie 2026-10-19: "Resets
   # Nov 1 at 1am MST"). So the hour after Denver midnight on the 1st (two on a fall-back Sunday) still
   # belongs to the month before. A 1:00 that happens twice (the fall-back Sunday,
   # as on Nov 1 2026) is the SECOND one, standard time: 1am MST, as the meter says.

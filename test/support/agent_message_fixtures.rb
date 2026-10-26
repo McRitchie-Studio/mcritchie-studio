@@ -56,7 +56,7 @@ module AgentMessageFixtures
             "channels" => { DESK => { "name" => "agent-desk", "default_soul" => default_soul.to_s },
                             MUTED => { "name" => "random", "ignore" => true } },
             "souls" => { "avi" => { "roles" => [ AVI_ROLE ], "users" => [ AVI_BOT ] },
-                         "ray" => { "roles" => [ RAY_ROLE ], "users" => [] } }
+                         "alex" => { "roles" => [ RAY_ROLE ], "users" => [] } }
           }
         }
       }

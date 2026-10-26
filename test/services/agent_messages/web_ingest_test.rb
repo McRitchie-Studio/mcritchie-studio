@@ -160,14 +160,14 @@ class WebIngestTest < ActiveSupport::TestCase
 
   test "the web chat's CTOs are routed: the board and bin/dispatcher both serve them, Tyrion included" do
     routes = AgentMessages::Routes.load
-    assert_equal %w[avi turf_monster tyrion ray client_cto], routes.web_souls, "ray answers the /build intake chat"
+    assert_equal %w[avi turf_monster tyrion alex client_cto], routes.web_souls, "alex answers the /build intake chat"
     assert_includes routes.souls, "tyrion", "no guild routes Tyrion; the web chat does"
     assert_includes AgentMailbox.routed_souls, "tyrion"
     assert_includes AgentMailbox::Dispatcher::TYPING_CHANNELS, "web"
     assert_equal AgentMessage::TYPING_CHANNELS, AgentMailbox::Dispatcher::TYPING_CHANNELS, "board and worker agree"
   end
 
-  test "Alex's other hub accounts are the owner's web identities; nobody else's is" do
+  test "Alex McRitchie's other hub accounts are the owner's web identities; nobody else's is" do
     turf_alex = User.create!(email: "alex@turfmonster.media", name: "Alex", role: "viewer")
     AppMembership.create!(app: apps(:turf_monster), user: turf_alex)
     AgentPerson.seed_owner!

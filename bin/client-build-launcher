@@ -4,7 +4,7 @@
 # bin/client-build-launcher run [--once] [--dry-run] [--cap N] [--worker ID]
 # bin/client-build-launcher install [--if-changed] | uninstall | status | sandbox-check
 #
-# The automatic first version of every /build app, as a service on Alex's Mac
+# The automatic first version of every /build app, as a service on Alex McRitchie's Mac
 # beside bin/dispatcher (runbook: docs/agents/system/client-build-launcher.md;
 # design: .agents/epics/client-app-zero-to-one.md). `run` polls the production
 # board for designed "Build Launch App <sub>" tasks (the ones an AppRequest names),
@@ -27,7 +27,7 @@
 # `install` renders config/launchd/studio.mcritchie.client-build-launcher.plist
 # into ~/Library/LaunchAgents and loads it (logs in
 # ~/Library/Logs/client-build-launcher.log); it refuses a task desk under
-# .worktrees/. Alex runs it (installing a launchd job is persistence).
+# .worktrees/. Alex McRitchie runs it (installing a launchd job is persistence).
 #
 # `sandbox-check` proves the builder's confinement with the real `claude`: it plants
 # a canary file outside the run's directory and a canary secret in the environment,
@@ -96,7 +96,7 @@ when "run"
   end
   dry_run = parsed.bool?("--dry-run")
 
-  # Claude bills Alex's claude.ai subscription; the builder's environment is an
+  # Claude bills Alex McRitchie's claude.ai subscription; the builder's environment is an
   # allow-list (Sandbox::ENV_ALLOW), and this process drops the commonest key too.
   ENV.delete("ANTHROPIC_API_KEY")
   # `run` builds customers' apps with the real builder, always: a stand-in

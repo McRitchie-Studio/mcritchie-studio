@@ -1,7 +1,7 @@
 # /contact — the public contact form, and the SMS opt-in page a carrier reviews.
 #
 #   GET  /contact   the form, the three consent boxes, the disclosure under it
-#   POST /contact   store the submission as proof of consent, then tell Alex
+#   POST /contact   store the submission as proof of consent, then tell Alex McRitchie
 #
 # The consent rules live in ContactSubmission. This controller adds what only a
 # request knows (IP, user agent) and keeps bots out with a rate limit, a
@@ -69,7 +69,7 @@ class ContactSubmissionsController < ApplicationController
     saved = rescue_and_log(target: @submission) { @submission.save }
     return render(:new, status: :unprocessable_entity) unless saved
 
-    # A flagged row is kept for the record, and only an unflagged one reaches Alex.
+    # A flagged row is kept for the record, and only an unflagged one reaches Alex McRitchie.
     notify(@submission) unless @submission.flagged?
     redirect_to_sent(sms: @submission.sms_consent?)
   end

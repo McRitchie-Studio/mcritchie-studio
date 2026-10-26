@@ -2,7 +2,7 @@
 
 # THE SOP REGISTRY, generated from the SOP files.
 #
-# An SOP is invoked by NAME: Alex says `clean-up` and the agent resolves that phrase
+# An SOP is invoked by NAME: Alex McRitchie says `clean-up` and the agent resolves that phrase
 # through the registry table in docs/agents/index.md (installed as AGENTS.md) to a file.
 # The table and the Start Here rows used to be hand-kept copies of what the disk already
 # says, held together by tests. They are generated here instead, so a new SOP file is

@@ -213,29 +213,29 @@ class HeartbeatEventTableTest < ActionView::TestCase
     # a quick-grade form per grader, both posting to the E2 span grade endpoint
     assert_select "form[data-test=event-inline-grade]", 2
     assert_select "form[data-test=event-inline-grade][action=?]", heartbeat_activity_grade_path(ev), 2
-    assert_select "form[data-test=event-inline-grade][data-grader=ray] input[name=disposition][value=good]"
-    assert_select "form[data-test=event-inline-grade][data-grader=ray] input[name=disposition][value=not]"
+    assert_select "form[data-test=event-inline-grade][data-grader=mason] input[name=disposition][value=good]"
+    assert_select "form[data-test=event-inline-grade][data-grader=mason] input[name=disposition][value=not]"
     assert_select "form[data-test=event-inline-grade][data-grader=mcr] input[type=hidden][name=grader][value=mcr]"
-    assert_select "form[data-test=event-inline-grade][data-grader=ray] button[data-test=event-grade-clear]", 1
+    assert_select "form[data-test=event-inline-grade][data-grader=mason] button[data-test=event-grade-clear]", 1
     assert_select "form[data-test=event-inline-grade][data-grader=mcr] button[data-test=event-grade-clear]", 1
   end
 
-  test "[component] the two graders' quick-grades sit in SEPARATE Ritch + McRitchie cells, no grade button" do
+  test "[component] the two graders' quick-grades sit in SEPARATE Mason + McRitchie cells, no grade button" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
 
     render partial: "heartbeat/activity_table",
            locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {} }
 
-    # Grade split into two columns: an Ritch cell and a McRitchie audit cell, each holding
+    # Grade split into two columns: an Mason cell and a McRitchie audit cell, each holding
     # ONLY its own grader's inline quick-grade form (not one shared, side-by-side row).
     assert_select "td[data-test=event-grade-cell] .hb-evtfbstack", 1
     assert_select "td[data-test=event-grade-cell-mcr] .hb-evtfbstack", 1
     assert_select "td[data-test=event-grade-cell] .hb-evtmarkslot", 1
     assert_select "td[data-test=event-grade-cell-mcr] .hb-evtmarkslot", 1
-    assert_select "td[data-test=event-grade-cell] form[data-test=event-inline-grade][data-grader=ray]", 1
+    assert_select "td[data-test=event-grade-cell] form[data-test=event-inline-grade][data-grader=mason]", 1
     assert_select "td[data-test=event-grade-cell] form[data-grader=mcr]", false
     assert_select "td[data-test=event-grade-cell-mcr] form[data-test=event-inline-grade][data-grader=mcr]", 1
-    assert_select "td[data-test=event-grade-cell-mcr] form[data-grader=ray]", false
+    assert_select "td[data-test=event-grade-cell-mcr] form[data-grader=mason]", false
     # the old shared inline-grades container and the "grade ▸" drawer button are gone
     assert_select "[data-test=event-inline-grades]", false
     assert_select "[data-test=event-grade-open]", false
@@ -244,16 +244,16 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
   test "[component] an existing span grade pre-checks its inline disposition radio" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    grade = ActionGrade.create!(agent_activity: ev, grader: "ray", disposition: "good",
+    grade = ActionGrade.create!(agent_activity: ev, grader: "mason", disposition: "good",
                                 slug: "clean span with a crisp outcome")
 
     render partial: "heartbeat/activity_table",
            locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
-                     activity_grades: { ev.id => { "ray" => grade } } }
+                     activity_grades: { ev.id => { "mason" => grade } } }
 
-    assert_select "form[data-test=event-inline-grade][data-grader=ray] input[value=good][checked]"
-    assert_select "form[data-test=event-inline-grade][data-grader=ray] input[value=not][checked]", false
-    assert_select "form[data-test=event-inline-grade][data-grader=ray] button[data-test=event-grade-clear].is-visible", 1
+    assert_select "form[data-test=event-inline-grade][data-grader=mason] input[value=good][checked]"
+    assert_select "form[data-test=event-inline-grade][data-grader=mason] input[value=not][checked]", false
+    assert_select "form[data-test=event-inline-grade][data-grader=mason] button[data-test=event-grade-clear].is-visible", 1
   end
 
   test "[component] the span row shows a distinct open vs done status badge" do
@@ -456,18 +456,18 @@ class HeartbeatEventTableTest < ActionView::TestCase
 
   test "[component] a span's existing grade markers render server-side from activity_grades" do
     ev = event(seq: 0, closed_at: Time.current, outcome_slug: "done")
-    grade = ActionGrade.create!(agent_activity: ev, grader: "ray", disposition: "good",
+    grade = ActionGrade.create!(agent_activity: ev, grader: "mason", disposition: "good",
                                 slug: "tight span with a clean outcome")
 
     render partial: "heartbeat/activity_table",
            locals: { activity_rows: [[ev, []]], unlabeled: [], pokemon_by_slug: {},
-                     activity_grades: { ev.id => { "ray" => grade } } }
+                     activity_grades: { ev.id => { "mason" => grade } } }
 
-    # the Ritch marker is server-rendered (Nokogiri-visible), carrying its slug
-    assert_select "[data-test=event-grade-ray]"
+    # the Alex marker is server-rendered (Nokogiri-visible), carrying its slug
+    assert_select "[data-test=event-grade-mason]"
     assert_includes rendered, "tight span with a clean outcome"
     # and the tbody carries the hydration data the Alpine row reads
-    assert_select "tbody[data-test=heartbeat-event][data-ray-graded=true]"
+    assert_select "tbody[data-test=heartbeat-event][data-mason-graded=true]"
   end
 
   test "[component] a span's key method replaces the right status/action line" do

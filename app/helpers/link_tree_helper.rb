@@ -35,7 +35,7 @@ module LinkTreeHelper
   end
 
   # A signed-out visitor's way in, first in the sidebar. The navbar keeps only
-  # the Build App button, so Log in lives here (Alex, 2026-10-20;
+  # the Build App button, so Log in lives here (Alex McRitchie, 2026-10-20;
   # /tasks/drop-hero-meet-alex). Nothing once signed in.
   def visitor_link_sections
     return [] if logged_in?

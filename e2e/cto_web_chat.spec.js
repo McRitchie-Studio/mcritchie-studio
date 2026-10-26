@@ -8,7 +8,7 @@
 // meter is in tokens; the page fits a phone; the bubbles read in both themes.
 // An app's owner is answered on their own app's chat (the app-owner rule), with
 // no "not answered" notice, and another app's chat does not exist for them; and
-// an owner who is not Alex says go on a proposal there and sees the designed task.
+// an owner who is not Alex McRitchie says go on a proposal there and sees the designed task.
 //
 // NOT @qa-readonly: it writes agent messages. Nothing here talks to Discord or Claude.
 const { test, expect } = require("@playwright/test");

@@ -2,7 +2,7 @@ require "test_helper"
 require_relative "../support/client_cto_fixtures"
 
 # [unit] AppLaunch (Build my app): from a complete intake, ONE transaction makes
-# the App, its owner membership, its AppCto, the queued board task and Ritch's
+# the App, its owner membership, its AppCto, the queued board task and Alex's
 # handover; a failure anywhere leaves none of them; an incomplete intake is
 # refused before anything is written; the Discord and intake-move jobs run only
 # after the commit.
@@ -42,7 +42,7 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert task.metadata.dig("devops", "agent_context").end_with?(AppRequest::BUILDER_POINTER)
 
     handover = result.handover
-    assert_equal [ "web", "pawsome", "web:pawsome:#{users(:viewer).id}", "client_cto", "completed", "Ritch" ],
+    assert_equal [ "web", "pawsome", "web:pawsome:#{users(:viewer).id}", "client_cto", "completed", "Alex" ],
                  [ handover.channel, handover.channel_ref, handover.thread_key, handover.soul_slug, handover.status, handover.author_name ]
     assert_equal "Meet Nova, your CTO. I'll hand you over.", handover.content
   end
@@ -91,7 +91,7 @@ class AppLaunchTest < ActiveSupport::TestCase
     assert greeting.end_with?("Meanwhile, tell me anything you'd like added or changed, or ask about the plan.")
     assert_equal "designed", launched.task.reload.stage, "the greeting's claim matches the task: in line, not building"
     assert_no_match(/building now|it builds/i, greeting)
-    assert_operator greeting.split.size, :<=, 70, "short: Alex's voice, plain and warm"
+    assert_operator greeting.split.size, :<=, 70, "short: Alex McRitchie's voice, plain and warm"
 
     follow_up = AgentMessages::WebIngest.new(user: users(:viewer), cto: AppOwnership.cto_for_app("pawsome"))
                                         .call("Can it take payments?", client_id: "client-0001")

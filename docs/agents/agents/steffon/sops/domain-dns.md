@@ -8,12 +8,12 @@ domain receive mail through Google Workspace and send it without landing in
 spam. Step 3 of [`workspace-launch`](./workspace-launch.md); runnable on its
 own.
 
-**Steffon writes every record; Alex pastes them.** Squarespace DNS has
+**Steffon writes every record; Alex McRitchie pastes them.** Squarespace DNS has
 no API, so the paste is his. Steffon then checks each record from the public
 internet — a record is published when a public resolver sees it over DoH, not
 when the console shows it.
 
-**Pro and above run their DNS on Cloudflare** (Alex, 2026-10-12, set on Growth, which Pro and Team replaced the same day; the
+**Pro and above run their DNS on Cloudflare** (Alex McRitchie, 2026-10-12, set on Growth, which Pro and Team replaced the same day; the
 `Cloudflare DNS` row in `config/workspace_packages.yml`). Once a zone is on
 Cloudflare, Steffon writes its records by API and nothing is pasted; moving it
 there is [§ Cloudflare DNS — Pro and above](#cloudflare-dns--pro-and-above).
@@ -43,7 +43,7 @@ App mail goes through Resend (SES was retired on 2026-10-10); Resend's own
 records come from its domain page, not from this table. SPF must stay ONE TXT
 record.
 
-## 2. Generate the DKIM key — Alex
+## 2. Generate the DKIM key — Alex McRitchie
 
 ```not-pasteable
 🙋 YOUR TURN — generate the DKIM key
@@ -54,7 +54,7 @@ record.
    Then paste it here (it is public, not a secret).
 ```
 
-## 3. Paste the records — Alex
+## 3. Paste the records — Alex McRitchie
 
 ```not-pasteable
 🙋 YOUR TURN — add the DNS records
@@ -103,7 +103,7 @@ of clean reports — a separate, deliberate change.
   `commercialwelding.llc` and `mcritchie.industries` SERVFAILed on `8.8.8.8` and
   `1.1.1.1` from 11:52 to about 12:05 MDT, and Google's caches flapped until
   12:13; `turfmonster.media` did the same on 2026-09-29. Schedule it in a quiet
-  window, tell Alex it is an outage, and get his explicit OK before he clicks.
+  window, tell Alex McRitchie it is an outage, and get his explicit OK before he clicks.
 - **Verify over DNS-over-HTTPS and RDAP, never local `dig`.** This laptop
   intercepts all port-53 traffic with a non-validating resolver, so `dig` and
   `curl` here showed both domains healthy for the whole outage. Read
@@ -128,7 +128,7 @@ of clean reports — a separate, deliberate change.
   cache otherwise loops (new `www` → bare, old bare → registrar forwarding →
   `www`) or lands on a bare domain the old zone lacks. Measured 2026-10-13, and
   `bin/domain-cutover finalize` enforces it.
-- **Have Alex confirm the domain name on the registrar page before every save.**
+- **Have Alex McRitchie confirm the domain name on the registrar page before every save.**
   Registrar saves reach the registry minutes later, in order, so a save on the
   wrong domain is slow to undo.
 
@@ -158,7 +158,7 @@ export OP_ADMIN_SERVICE_ACCOUNT_TOKEN
 bin/domain-cutover <app> <domain> status
 ```
 
-**The only human steps are registrar clicks**, Alex's for our domains, the
+**The only human steps are registrar clicks**, Alex McRitchie's for our domains, the
 client's for theirs: DNSSEC off when a DS is published, then the nameservers.
 `plan` prints them for the domain's registrar (Squarespace, GoDaddy, Namecheap,
 Porkbun, or the no-click Cloudflare-hosted variant), addressed with `--to alex`
@@ -188,7 +188,7 @@ and `www` CNAME to the domain (proxied), sets SSL Full (strict), and writes the
 `www` → bare 301 **disabled**. It refuses during a SERVFAIL. Last, it prints the
 registrar guide.
 
-### 2. The registrar — Alex or the client
+### 2. The registrar — Alex McRitchie or the client
 
 Hand over the guide `plan` printed. When a DS is published, its first step is
 **DNSSEC off, a scheduled outage**: ask first ("Turning DNSSEC off takes
@@ -250,7 +250,7 @@ prompt (step 2 above); rerun with the value to publish `google._domainkey`. It
 refuses to overwrite a different MX, DMARC or DKIM unless given `--replace-mail`.
 A domain already on Google's single `smtp.google.com` MX is left alone.
 
-### 6. DNSSEC back on, from Cloudflare — Steffon, then Alex
+### 6. DNSSEC back on, from Cloudflare — Steffon, then Alex McRitchie
 
 After the move has settled (a day of green `verify`), sign the zone at
 Cloudflare and publish its DS at the registrar. No outage this time: the DS

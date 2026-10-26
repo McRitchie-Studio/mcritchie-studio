@@ -141,7 +141,7 @@ the table.
 
 ## Step 6 — Hand off
 
-Execution and voice → **Ritch**. Visuals → **Shannon**. Claims about the product
+Execution and voice → **Alex**. Visuals → **Shannon**. Claims about the product
 → **Avi**. Anything needing a code change rides the DevOps cycle like any other
 work.
 

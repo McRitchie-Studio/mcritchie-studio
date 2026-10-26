@@ -10,7 +10,7 @@ require_relative "agent_mailbox"
 require_relative "agent_domain_registry"
 require_relative "agent_harness_probe"
 
-# bin/dispatcher: the agent mailbox served as a set-and-forget service on Alex's
+# bin/dispatcher: the agent mailbox served as a set-and-forget service on Alex McRitchie's
 # Mac (docs/agents/agents/steffon/sops/agent-dispatcher.md). Every mechanic here
 # is deterministic and under test (test/integration/agent_dispatcher_loop_test.rb,
 # test/lib/agent_usage_limit_test.rb, test/lib/agent_dispatcher_launch_agent_test.rb);

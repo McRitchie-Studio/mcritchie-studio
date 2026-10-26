@@ -5,13 +5,13 @@
 # domain-purchase SOP, § Cloudflare Registrar (our own entities). A client's
 # domain never goes on Cloudflare Registrar; that rule lives in the same SOP.
 #
-# It spends money on Alex's card, so register refuses unless, re-checked
+# It spends money on Alex McRitchie's card, so register refuses unless, re-checked
 # immediately before the POST:
 #   - the domain is registrable,
 #   - the registration price equals --price EXACTLY (USD),
 #   - a premium domain carries --premium (and Cloudflare's API registers no
 #     premium domain today, so even then it stops: see Runner::PREMIUM_VIA_API),
-#   - --ok carries Alex's own words with the date (YYYY-MM-DD),
+#   - --ok carries Alex McRitchie's own words with the date (YYYY-MM-DD),
 #   - the ledger holds no open authorization for the domain, and
 #   - Cloudflare's registration-status answers its documented "No workflow
 #     found" (any workflow, or any other answer, refuses).
@@ -50,7 +50,7 @@ module DomainRegister
   # (studio-agents-admin; source ~/.zprofile.admin), never printed.
   #
   # One token for everything: cloudflare.studio.provision (api-token +
-  # account-id). Alex widened it on 2026-10-19 with Account > Registrar > Edit
+  # account-id). Alex McRitchie widened it on 2026-10-19 with Account > Registrar > Edit
   # rather than file a separate Registrar-only token, so the same value now
   # checks domains, BUYS them (the registration POST charges the account's
   # default card), and reads the new zone back. It is a cost-bearing credential.

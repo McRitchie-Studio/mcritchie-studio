@@ -42,7 +42,7 @@ module AgentMessages
   # PINNED SELECTORS. The domain check proves the DOMAIN, not the mailbox: any
   # holder of RESEND_API_KEY can send DKIM-passing mail `From: alex@mcritchie.studio`
   # under the `resend` selector. For a domain listed in `pinned` (config/agent_routes.yml
-  # `email.pinned_dkim`: mcritchie.studio → [google], Alex's Google Workspace
+  # `email.pinned_dkim`: mcritchie.studio → [google], Alex McRitchie's Google Workspace
   # key), every DKIM-Signature aligned with the From domain must be signed by
   # exactly that domain (`d=`, not a subdomain) under a pinned selector (`s=`),
   # and at least one must. SES's verdict does not print the

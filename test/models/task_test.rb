@@ -449,11 +449,11 @@ class TaskTest < ActiveSupport::TestCase
     # names a real Agent (sync_persona_identity drops a typo), so a stored persona
     # is always a real soul.
     task = Task.create!(title: "persona builder stamp",
-                        metadata: { "devops" => { "shape" => "backend", "persona" => "ray" } })
-    assert_equal "ray", task.devops["persona"], "guards the setup: the persona took"
+                        metadata: { "devops" => { "shape" => "backend", "persona" => "alex" } })
+    assert_equal "alex", task.devops["persona"], "guards the setup: the persona took"
     task.build!
 
-    assert_equal "ray", task.reload.devops_built_by,
+    assert_equal "alex", task.reload.devops_built_by,
       "the persona the card already shows is recorded as the builder"
   end
 

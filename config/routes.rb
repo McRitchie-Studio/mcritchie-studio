@@ -37,7 +37,7 @@ Rails.application.routes.draw do
   # return_to and the Google path through LandingController): it launches only
   # with the press's intent in this session (BuildIntake::PendingLaunch).
   get   "build/:token/launch", to: "build#launch", as: :build_request_launch
-  # The /build chat with Ritch (BuildIntake): a message, the poll for answers, and
+  # The /build chat with Alex (BuildIntake): a message, the poll for answers, and
   # a tap on an intake card.
   post  "build/:token/messages", to: "build#message", as: :build_request_messages
   get   "build/:token/turns",    to: "build#turns",   as: :build_request_turns
@@ -318,46 +318,50 @@ Rails.application.routes.draw do
   get "links", to: "links#index", as: :links
 
   # Session entry launcher — terminal-styled chooser for the avenue you enter a
-  # session as (Session agent · Avi · Ritch). Selecting Ritch routes to the learning
-  # heartbeat at /ray/heartbeat, the per-action atomic trajectory table
-  # (HeartbeatController#show). The named route (ray_heartbeat_path) is stable, so
+  # session as (Session agent · Avi · Mason). Selecting Mason routes to the learning
+  # heartbeat at /mason/heartbeat, the per-action atomic trajectory table
+  # (HeartbeatController#show). The named route (mason_heartbeat_path) is stable, so
   # the launcher anchor follows it; it was repointed off LauncherController's
   # placeholder once the real view (T2) landed.
   get "launcher", to: "launcher#index", as: :launcher
-  get "ray/heartbeat", to: "heartbeat#show", as: :ray_heartbeat
+  get "mason/heartbeat", to: "heartbeat#show", as: :mason_heartbeat
   # Feedback layer over the read-only trajectory (T5): a per-action grading drawer
   # (GET, lazy-loaded into a turbo-frame), the upsert/bank/discard write, and the
   # curated Insight Bank page. Like the view itself, this is an open meta surface.
-  get  "ray/heartbeat/actions/:id/feedback", to: "heartbeat#feedback", as: :heartbeat_feedback
-  post "ray/heartbeat/actions/:id/grade",    to: "heartbeat#grade",    as: :heartbeat_grade
+  get  "mason/heartbeat/actions/:id/feedback", to: "heartbeat#feedback", as: :heartbeat_feedback
+  post "mason/heartbeat/actions/:id/grade",    to: "heartbeat#grade",    as: :heartbeat_grade
   # Activity-level grade: upsert one grade for a narrated AgentActivity. JSON only
   # by design so it stays view-free from the drawer/turbo stream path.
-  post "ray/heartbeat/activities/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_activity_grade
+  post "mason/heartbeat/activities/:id/grade", to: "heartbeat#grade_activity", as: :heartbeat_activity_grade
   # The per-activity grading drawer body, lazy-loaded into the shared turbo-frame
   # on an activity's grade click.
-  get  "ray/heartbeat/activities/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_activity_feedback
+  get  "mason/heartbeat/activities/:id/feedback", to: "heartbeat#feedback_activity", as: :heartbeat_activity_feedback
   # Every AgentActivity across ALL sessions, newest-first, paginated 100/page —
   # the cross-session analogue of the per-session heartbeat.
-  get  "ray/heartbeat/activities", to: "heartbeat#all_activities", as: :heartbeat_all_activities
-  get  "ray/insights", to: "heartbeat#insights", as: :ray_insights
-  # The OPSD distillation pipeline, left→right: Activities → Insights (Ritch's
+  get  "mason/heartbeat/activities", to: "heartbeat#all_activities", as: :heartbeat_all_activities
+  get  "mason/insights", to: "heartbeat#insights", as: :mason_insights
+  # The OPSD distillation pipeline, left→right: Activities → Insights (Mason's
   # grades) → Confirmations (McRitchie's mcr grades). `confirm` records the McRitchie
   # (mcr) confirmation of an insight and redirects back (a no-JS form action).
-  get  "ray/pipeline", to: "heartbeat#pipeline", as: :ray_pipeline
-  post "ray/pipeline/confirm/:id", to: "heartbeat#confirm", as: :ray_pipeline_confirm
+  get  "mason/pipeline", to: "heartbeat#pipeline", as: :mason_pipeline
+  post "mason/pipeline/confirm/:id", to: "heartbeat#confirm", as: :mason_pipeline_confirm
 
-  # LEGACY /xan/* — the seat's slug from 2026-09-24 to 2026-10-18 (ray-slug-rename;
-  # Ray is Alex's middle name). Every GET under it 301s to the same path under
-  # /ray, QUERY STRING INCLUDED, so a bookmarked `?session_id=…` deep link or a
-  # printed handoff still lands on the page it named. The POST endpoints (grade,
-  # confirm) are form actions the pages themselves render, never a public URL, so
-  # they moved without a shim. Retire alongside the `xan` entry in
-  # Task::SOUL_ALIASES.
-  legacy_seat = redirect { |_params, request| request.fullpath.sub(%r{\A/xan/}, "/ray/") }
-  get "xan/heartbeat",       to: legacy_seat
-  get "xan/heartbeat/*rest", to: legacy_seat, format: false
-  get "xan/insights",        to: legacy_seat
-  get "xan/pipeline",        to: legacy_seat
+  # LEGACY /ray/* and /xan/* — the seat's slug was `xan` from 2026-09-24 to
+  # 2026-10-18 and `ray` until 2026-10-25 (ritch-renamed-alex). The learning
+  # heartbeat is Mason's since then (grade-events moved to him in
+  # mason-takes-ceo-seat), so it answers under /mason. Every GET under an old
+  # prefix 301s to the same path under /mason, QUERY STRING INCLUDED, so a
+  # bookmarked `?session_id=…` deep link or a printed handoff still lands on the
+  # page it named. The POST endpoints (grade, confirm) are form actions the pages
+  # themselves render, never a public URL, so they moved without a shim. Retire
+  # alongside the `ray` and `xan` entries in Task::SOUL_ALIASES.
+  legacy_seat = redirect { |_params, request| request.fullpath.sub(%r{\A/(?:ray|xan)/}, "/mason/") }
+  %w[ray xan].each do |old|
+    get "#{old}/heartbeat",       to: legacy_seat
+    get "#{old}/heartbeat/*rest", to: legacy_seat, format: false
+    get "#{old}/insights",        to: legacy_seat
+    get "#{old}/pipeline",        to: legacy_seat
+  end
 
   resources :chat, only: [:index, :create]
   resources :schedule, only: [:index]
@@ -695,9 +699,9 @@ Rails.application.routes.draw do
   # The dream bank as an org chart: platform, then each soul with its SOPs. Admin-only
   # (AdminWall default). Reads docs/agents/dreams live; see DreamOrgChart.
   get "dreams", to: "dreams#index"
-  # Alex's one-click approval of a proposed dream (DreamApproval). Approver-only.
+  # Alex McRitchie's one-click approval of a proposed dream (DreamApproval). Approver-only.
   post "dreams/approvals", to: "dreams#approve", as: :dream_approvals
-  # Alex's one-click retirement of an approved dream, and his one click on a
+  # Alex McRitchie's one-click retirement of an approved dream, and his one click on a
   # session's swap proposal (DreamRetirement, DreamSwap). Approver-only.
   post "dreams/retirements", to: "dreams#retire", as: :dream_retirements
   post "dreams/swaps/:id/approval", to: "dreams#approve_swap", as: :dream_swap_approval
@@ -972,7 +976,7 @@ Rails.application.routes.draw do
         end
       end
       # DevOps SHIFT lease (devops-shift-lease) — at most one live conductor per role
-      # lane (avi/steffon/ray), so two same-role sessions can't collide. `acquire` is
+      # lane (avi/mason), so two same-role sessions can't collide. `acquire` is
       # the atomic take-or-stand-down, `renew` the heartbeat, `release` the clean
       # session-end drop; `index` is the "who's on shift" read.
       resources :devops_shifts, only: [:index] do
@@ -982,10 +986,10 @@ Rails.application.routes.draw do
           post :release
         end
       end
-      # Learning-loop grading — the bearer AGENT path for the Ray heartbeat
+      # Learning-loop grading — the bearer AGENT path for the Mason heartbeat
       # grade-events loop. `awaiting` lists resolved activities still ungraded by
-      # Ritch; `grade` upserts Ritch's grade of one activity. The grader is FORCED to ray here
-      # (the mcr audit-of-Ritch stays admin-browser-only), so the shared agent token
+      # Mason; `grade` upserts Mason's grade of one activity. The grader is FORCED to mason here
+      # (the mcr audit-of-Mason stays admin-browser-only), so the shared agent token
       # can never forge McRitchie's audit.
       get  "agent_activities/awaiting_grade", to: "activity_grades#awaiting", as: :awaiting_grade_agent_activities
       post "agent_activities/:id/grade",      to: "activity_grades#create",   as: :grade_agent_activity
@@ -996,17 +1000,17 @@ Rails.application.routes.draw do
       # (ActionGrade.banked) as a capped, newest-first list, so a SessionStart hook
       # can inject past sessions' lessons into a fresh agent's context.
       get "insights", to: "insights#index"
-      # Pending dream approvals (read-only; an approval is Alex's click on /dreams, or
+      # Pending dream approvals (read-only; an approval is Alex McRitchie's click on /dreams, or
       # his quoted word in chat through dream_rulings below).
       get "dream_approvals", to: "dream_approvals#index"
       # The dream loop (Act 4): a session's grade of a dream that fired in it, its one
       # swap proposal, the data-ranked swap candidates, and the pending retirements
-      # (read-only; a retirement is Alex's click on /dreams or his word in chat).
+      # (read-only; a retirement is Alex McRitchie's click on /dreams or his word in chat).
       post "dream_grades", to: "dream_grades#create"
       get  "dream_swaps/candidates", to: "dream_swaps#candidates", as: :dream_swap_candidates
       post "dream_swaps", to: "dream_swaps#create"
       get  "dream_retirements", to: "dream_retirements#index"
-      # Alex's ruling given in chat (approve, drop, retire), recorded with his quoted
+      # Alex McRitchie's ruling given in chat (approve, drop, retire), recorded with his quoted
       # words and the session (DreamRuling). The only API route that approves.
       post "dream_rulings", to: "dream_rulings#create"
     end

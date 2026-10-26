@@ -3,7 +3,7 @@ module AgentMessages
   # (docs/agents/modules/agent-communication.md; docs/agents/system/agent-message-loop.md,
   # "Held"). A person is answered when their role (AgentPerson#role, set by an
   # operator, never by a message) is one of them. Today the list is owner only,
-  # which is the owner-only allow-list folded into the owner role: Alex is
+  # which is the owner-only allow-list folded into the owner role: Alex McRitchie is
   # answered because his person is the owner, and every identity linked to him
   # with him.
   #
@@ -17,13 +17,13 @@ module AgentMessages
   # once answered, AgentMailbox::Audience holds the answer to that role's rules.
   #
   # PUBLIC INTAKE is the one exception (`public_intake:` in the same file;
-  # BuildIntake): its soul (Ritch) answers ANY person, the public included, on a
+  # BuildIntake): its soul (Alex) answers ANY person, the public included, on a
   # `web` row whose thread key starts with web:build:, and nowhere else. The
   # prefix is pinned to BuildIntake::THREAD_PREFIX at load, so a config typo can
   # never open a wider set of threads. The caps are BuildIntake::Caps, enforced
   # where those rows are written (BuildIntake::Ingest).
   #
-  # APP OWNERS are the second exception (`app_owners:` in the same file; Alex,
+  # APP OWNERS are the second exception (`app_owners:` in the same file; Alex McRitchie,
   # 2026-10-17): an app's CTO answers a person who OWNS that app, on that app's
   # web CTO thread and nowhere else (app_owner_thread?). Every fact it reads is
   # one code wrote: the row's channel (web), its channel_ref (the app, set by

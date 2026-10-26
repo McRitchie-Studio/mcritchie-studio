@@ -7,7 +7,7 @@ module EmailImages
   # bin/email-image — the agent's handle on email header briefs, built so an
   # agent in a Claude Code session can run the whole `email-image` SOP
   # (docs/agents/agents/pokemon/sops/email-image.md) without the browser:
-  # show Alex the brand's base assets, open a brief from his copy, generate a
+  # show Alex McRitchie the brand's base assets, open a brief from his copy, generate a
   # round with his direction, show him the candidates, approve on his word,
   # export.
   #
@@ -81,7 +81,7 @@ module EmailImages
 
     # THE BASE ASSETS, step 1 of the SOP: what the brand's headers are made from
     # (the YAML references and the ones added on the kit page), on disk so the
-    # agent can open each one and show Alex, and the kit page's URL.
+    # agent can open each one and show Alex McRitchie, and the kit page's URL.
     def assets
       opts = download_options
       kit = EmailImages::BrandKit.find!(positional!("name a brand kit (#{EmailImages::BrandKit.keys.join(', ')})"))
@@ -178,7 +178,7 @@ module EmailImages
       0
     end
 
-    # APPROVE ONLY ON ALEX'S WORD. --by names who said so and is stored as the
+    # APPROVE ONLY ON ALEX MCRITCHIE'S WORD. --by names who said so and is stored as the
     # approver, so the record shows a person, not a script.
     def approve
       by = nil
@@ -187,7 +187,7 @@ module EmailImages
       artifact = record.candidates.find_by!(slug: positional!("name the candidate's artifact slug"))
       reject_extra_positionals!
       if by.blank?
-        raise ArgumentError, "--by is required: approve only on Alex's explicit word, and name him (--by alex)"
+        raise ArgumentError, "--by is required: approve only on Alex McRitchie's explicit word, and name him (--by \"Alex McRitchie\")"
       end
 
       record.approve!(artifact, by: by.strip)

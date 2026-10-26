@@ -14,7 +14,7 @@ module Contacts
   #           guest who played from an email, credited to the email's contact.
   #           The event's date is the first-game date.
   #
-  # Matches by lowercased email, never creates a contact, and skips Alex's own
+  # Matches by lowercased email, never creates a contact, and skips Alex McRitchie's own
   # addresses (EXCLUDED_EMAILS, anything @EXCLUDED_DOMAIN). The traits are
   # merged into traits["cyvasse"] with jsonb_set, so the traits import's keys
   # and every other source's traits stay as they are; Contacts::
@@ -81,7 +81,7 @@ module Contacts
 
     private
 
-    # { email => traits } from the CSV, plus the row counts. Alex's own
+    # { email => traits } from the CSV, plus the row counts. Alex McRitchie's own
     # addresses are set aside here (@excluded), before any lookup.
     def read_csv
       @excluded = Set.new

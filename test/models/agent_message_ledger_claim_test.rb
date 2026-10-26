@@ -8,26 +8,26 @@ class AgentMessageLedgerClaimTest < ActiveSupport::TestCase
   include AgentMessageFixtures
 
   test "a person's second message waits for their first; another person's does not" do
-    first = agent_message!(soul: "ray", author_ref: "500", content: "one")
-    second = agent_message!(soul: "ray", author_ref: "500", content: "two")
-    bea = agent_message!(soul: "ray", author_ref: "501", content: "bea")
+    first = agent_message!(soul: "alex", author_ref: "500", content: "one")
+    second = agent_message!(soul: "alex", author_ref: "500", content: "two")
+    bea = agent_message!(soul: "alex", author_ref: "501", content: "bea")
 
-    assert_equal first, AgentMessage.claim!(soul: "ray", worker: "w1").message
-    assert_equal bea, AgentMessage.claim!(soul: "ray", worker: "w2").message, "a different person is not held back"
-    assert_nil AgentMessage.claim!(soul: "ray", worker: "w3").message, "the same person's second waits"
+    assert_equal first, AgentMessage.claim!(soul: "alex", worker: "w1").message
+    assert_equal bea, AgentMessage.claim!(soul: "alex", worker: "w2").message, "a different person is not held back"
+    assert_nil AgentMessage.claim!(soul: "alex", worker: "w3").message, "the same person's second waits"
 
     first.reload.complete!(worker: "w1", response_text: "done")
-    assert_equal second, AgentMessage.claim!(soul: "ray", worker: "w3").message
+    assert_equal second, AgentMessage.claim!(soul: "alex", worker: "w3").message
   end
 
   test "the hold spans channels but not souls, and rows with no author are not held" do
-    agent_message!(soul: "ray", author_ref: "500")
+    agent_message!(soul: "alex", author_ref: "500")
     to_avi = agent_message!(soul: "avi", author_ref: "500")
-    elsewhere = agent_message!(soul: "ray", author_ref: "500", channel_ref: QUIET)
-    agent_message!(soul: "ray", author_ref: "")
-    anon = agent_message!(soul: "ray", author_ref: "")
+    elsewhere = agent_message!(soul: "alex", author_ref: "500", channel_ref: QUIET)
+    agent_message!(soul: "alex", author_ref: "")
+    anon = agent_message!(soul: "alex", author_ref: "")
 
-    claimable = AgentMessage.claimable(soul: %w[ray avi]).to_a
+    claimable = AgentMessage.claimable(soul: %w[alex avi]).to_a
     assert_includes claimable, to_avi
     refute_includes claimable, elsewhere, "the same person in another channel waits, so its answer remembers the first"
     assert_includes claimable, anon

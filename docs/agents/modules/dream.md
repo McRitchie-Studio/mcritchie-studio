@@ -22,21 +22,21 @@ A soul's skills are its dream sequence plus its role page. The tags decide the
 layer: a dream with `sop:` and `step:` tags is a step dream; otherwise a dream with
 no `soul` tag is platform. A dream tagged for several souls loads in each of their
 sequences and lives under the first. Directories use the `config/souls.yml` slugs
-(`turf-monster`, `ray`). The design behind the layers is
+(`turf-monster`, `alex`). The design behind the layers is
 [`../system/context-layers-design.md`](../system/context-layers-design.md).
 [`../dreams/INDEX.md`](../dreams/INDEX.md) lists every dream by sequence and step.
 The hub's `/dreams` page (admin only, linked from `/agents`) shows the bank as
 an org chart: platform dreams on top, then each soul's dreams by stage, then the
 SOPs it runs with a dream count each and, under each SOP, its step dreams by step.
 Each card carries its fire count ([Fired](#fired--the-heat-map)) and mean grade, a
-proposed one carries Alex's Approve button ([Act 3](#act-3--sign-off-alex)), and an
+proposed one carries Alex McRitchie's Approve button ([Act 3](#act-3--sign-off-alex)), and an
 approved one his Retire button. A KPI strip and the open swap proposals sit on top
 ([Act 4](#act-4--the-loop-every-wrap)).
 
 ## Budgets: a full layer means a swap, not an add
 
 Every approved dream costs context in each session that loads it, so each layer
-has a cap on **approved** dreams. Proposed dreams do not count until Alex
+has a cap on **approved** dreams. Proposed dreams do not count until Alex McRitchie
 approves them.
 
 | Layer | Cap |
@@ -87,12 +87,12 @@ the whole run" is `qa-release` · `prepare`, whoever runs the release.
 
 | | What it holds | Who admits it | Where it lives |
 |---|---|---|---|
-| **Dream** | a question, a good answer, the reason, the story | Alex signs off each one | `docs/agents/dreams/<sequence>/<slug>.md`, tracked |
+| **Dream** | a question, a good answer, the reason, the story | Alex McRitchie signs off each one | `docs/agents/dreams/<sequence>/<slug>.md`, tracked |
 | **Insight** | a one-line lesson graded from an activity | Mason banks it (`grade-events`) | the board's Insight Bank |
 | **Provider memory** | one session's private notes | nobody | `~/.claude/…/memory/`, scratch |
 
 A dream is the only one of the three that carries its reasoning, and the only one
-Alex approves by hand.
+Alex McRitchie approves by hand.
 
 ## Act 1 — Dream (every session start, and every soul)
 
@@ -209,9 +209,9 @@ read, the claim prints no dreams. The exit code is the claim's own.
 
 Propose a dream when one of these happens:
 
-- Alex says "good call", or accepts a recommendation that went against the
+- Alex McRitchie says "good call", or accepts a recommendation that went against the
   obvious move.
-- A review, or Alex, catches a decision that was wrong, and the right answer is
+- A review, or Alex McRitchie, catches a decision that was wrong, and the right answer is
   now clear. A dream may be born from a bad decision; it records the good one,
   and its story says plainly that the session got it wrong.
 - You chose not to do something tempting, and the reason would transfer.
@@ -333,17 +333,17 @@ proposed dream for one known soul, and never overwrites a file. Then:
    The title and the file name come from the task: reword or rename one that
    names a client, a company or a person, because this repository is public.
 2. Run `bin/dream index --write` and commit both files.
-3. Ask Alex to sign off (Act 3). A proposed dream loads in no sequence; the index lists it `proposed`.
+3. Ask Alex McRitchie to sign off (Act 3). A proposed dream loads in no sequence; the index lists it `proposed`.
 
-## Act 3 — Sign-off (Alex)
+## Act 3 — Sign-off (Alex McRitchie)
 
-Alex approves each dream, in one of two ways: his click on `/dreams`, or his word
+Alex McRitchie approves each dream, in one of two ways: his click on `/dreams`, or his word
 in chat, which the session records with his quoted words. Either way the row waits
 for a batch task to write it into the files.
 
 **One click on `/dreams`.** A proposed dream's card has an **Approve** button for
-Alex. The click records a `DreamApproval` row; the card then reads *Approved,
-loads after the next release*. Only Alex's own signed-in account can click:
+Alex McRitchie. The click records a `DreamApproval` row; the card then reads *Approved,
+loads after the next release*. Only Alex McRitchie's own signed-in account can click:
 another admin seat sees no button and is refused. The only API route that
 creates an approval is the chat ruling below, and only on his quoted words.
 The file still reads `proposed` until a batch task writes it:
@@ -351,10 +351,10 @@ The file still reads `proposed` until a batch task writes it:
 1. `bin/dream approvals` lists the pending approvals
    (`GET /api/v1/dream_approvals`). `qa-release` checks it before each sweep.
 2. In one hub task desk, `bin/dream apply-approvals` sets each pending file to
-   `status: approved` and rewrites `INDEX.md`. It carries out Alex's recorded
+   `status: approved` and rewrites `INDEX.md`. It carries out Alex McRitchie's recorded
    click; it is not an agent approving. A file that no longer reads
    `proposed`, or is gone, is skipped and named. The same run deletes the file
-   of each retirement Alex recorded (`GET /api/v1/dream_retirements`, Act 4).
+   of each retirement Alex McRitchie recorded (`GET /api/v1/dream_retirements`, Act 4).
 3. Commit and submit that one task for every pending approval, never one task per
    dream.
 4. Once the release ships, the deployed file reads approved, and `/dreams` and
@@ -364,9 +364,9 @@ The file still reads `proposed` until a batch task writes it:
 then record each answer he gives with his exact words:
 
 ```bash
-/Users/alex/projects/.agents/bin/dream approve <slug> --clearance "<Alex's exact words>"
-/Users/alex/projects/.agents/bin/dream drop    <slug> --clearance "<Alex's exact words>"
-/Users/alex/projects/.agents/bin/dream retire  <slug> --clearance "<Alex's exact words>"
+/Users/alex/projects/.agents/bin/dream approve <slug> --clearance "<Alex McRitchie's exact words>"
+/Users/alex/projects/.agents/bin/dream drop    <slug> --clearance "<Alex McRitchie's exact words>"
+/Users/alex/projects/.agents/bin/dream retire  <slug> --clearance "<Alex McRitchie's exact words>"
 ```
 
 Each posts `POST /api/v1/dream_rulings` (`DreamRuling`), the chat twin of
@@ -380,7 +380,7 @@ grant, and the words are the audit trail, not a signature.
 | `retire` | an approved dream | a `DreamRetirement`, ruling `retire` | deletes the file |
 
 - Every row is stamped `via: chat`, with the verbatim clearance and the session
-  id, and names Alex as the approver. `/dreams` shows the quote beside the
+  id, and names Alex McRitchie as the approver. `/dreams` shows the quote beside the
   approval, drop or retirement; a click carries none.
 - The clearance is refused when it is empty, only the dream's slug, or shorter
   than three words (`bin/lib/dream_clearance.rb`, checked by the CLI and again by
@@ -392,13 +392,13 @@ grant, and the words are the audit trail, not a signature.
 - The dream must be in the deployed bank. A dream that exists only in your desk
   is ruled in its file, on the same words: set `status: approved`, or delete the
   file, and quote him in the PR.
-- **An agent never approves on its own judgment.** It records only what Alex said
+- **An agent never approves on its own judgment.** It records only what Alex McRitchie said
   in that session, quoted. A grade, a swap proposal, a card's "My call" and his
   silence are never an approval.
 
 ### The card standard
 
-One format puts every dream decision to Alex in chat, at wrap and on demand
+One format puts every dream decision to Alex McRitchie in chat, at wrap and on demand
 (the [`dream-swap`](../agents/mason/sops/dream-swap.md) SOP). `bin/dream cards` renders it
 (`bin/lib/dream_cards.rb`); paste its output, and fill in your call.
 
@@ -507,7 +507,7 @@ candidates:
 One answer per session; the board refuses a second. `--in` must be a file reading
 `status: proposed` in this desk's bank; its layer is read from the file.
 
-**Then put it to Alex as a card** ([The card standard](#the-card-standard)), the
+**Then put it to Alex McRitchie as a card** ([The card standard](#the-card-standard)), the
 last thing the Dreams step does:
 
 ```bash
@@ -533,7 +533,7 @@ their grace sooner. The approval time is the `/dreams` click, else the date that
 opens the dream's `source:` line; a dream with neither predates the loop and is
 past grace.
 
-**3. Alex approves on `/dreams`, or in chat.** The open swaps sit above the chart. His
+**3. Alex McRitchie approves on `/dreams`, or in chat.** The open swaps sit above the chart. His
 **Approve swap** click records the in through the Act 3 approval and the out as a
 retirement, together. A **Retire** button on any approved card retires one on its
 own. Both are his alone, checked exactly as Approve is: another admin seat sees no
@@ -551,8 +551,8 @@ approved file to `status: approved` and **deletes** each retired file (Act 3's
 |---|---|
 | Fire rate | dream fires per session, over sessions that opened an activity in the last 30 days |
 | Mean grade | the mean of the grades given in the last 30 days, 0 to 2 |
-| Swaps per week | swaps and adds Alex approved over the last 4 weeks, per week (and the no-swap answers) |
-| Approval latency | median days from a dream's proposal (its `source:` date) to Alex's click, over the newest 100 approvals |
+| Swaps per week | swaps and adds Alex McRitchie approved over the last 4 weeks, per week (and the no-swap answers) |
+| Approval latency | median days from a dream's proposal (its `source:` date) to Alex McRitchie's click, over the newest 100 approvals |
 
 Each card shows its mean grade and fire count, and its heat: cold (never fired),
 warm (1 to 4 fires), hot (5 or more).
@@ -561,7 +561,7 @@ warm (1 to 4 fires), hot (5 or more).
 works in and reads its caps from `DreamBank::BUDGETS`, the same constant
 `bin/dream index --check` enforces ([Budgets](#budgets-a-full-layer-means-a-swap-not-an-add)).
 
-## When Alex says `dream`
+## When Alex McRitchie says `dream`
 
 Run Acts 2 and 3 for the current session: list the decisions from this session
 worth keeping, write them as `proposed`, show any other proposed dreams still

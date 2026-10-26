@@ -4,7 +4,7 @@
 ## Status: Active
 
 The Pokémon's `download-youtube` SOP: the YouTube sub-SOP of
-[`digest-video`](digest-video.md). Facts measured 2026-09-28 on Alex's Mac.
+[`digest-video`](digest-video.md). Facts measured 2026-09-28 on Alex McRitchie's Mac.
 
 ## Tools
 

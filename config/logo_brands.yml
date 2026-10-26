@@ -216,7 +216,7 @@ welding:
   watermark:
     icon_key: welding_mono
 
-# Alex's item 5 (task welding-llc-and-v2-helmet): v1 beside v2, to compare his tweaks with the original branding. The
+# Alex McRitchie's item 5 (task welding-llc-and-v2-helmet): v1 beside v2, to compare his tweaks with the original branding. The
 # helmet is v1's, derived by Logos::WeldingV2 (rake logos:welding_v2); the name is v1's without LLC.
 welding_v2:
   title: Commercial Welding v2

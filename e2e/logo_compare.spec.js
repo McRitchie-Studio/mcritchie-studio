@@ -1,4 +1,4 @@
-// [e2e] Compare two kits and word edits in Original (task logo-compare-and-original-edits; Alex
+// [e2e] Compare two kits and word edits in Original (task logo-compare-and-original-edits; Alex McRitchie
 // 2026-10-11 23:06: "comparing two marketing kits ... Commercial Welding V1 vs V2", "I also want a
 // grid to be showable", and the Navbar/Stacked word colours in Original). The Compare button opens
 // v1 against v2; Show grid draws both sides' construction guides at one scale, bottoms aligned;

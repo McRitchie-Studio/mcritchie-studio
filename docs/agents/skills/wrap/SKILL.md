@@ -70,7 +70,7 @@ swap (`bin/dream swap-candidates`, then `bin/dream swap --in ...` or
 `bin/dream cards --in <home>/<slug> [--out <home>/<slug>] --call <slug>=<approve|change|drop>:"<reason>"`
 prints the one swap's card (apply the test first: a must-do belongs in a command,
 not a dream), or `bin/dream cards --none` prints "no swap". At most one swap.
-Record Alex's answer with his words (`bin/dream approve|drop|retire <slug>
+Record Alex McRitchie's answer with his words (`bin/dream approve|drop|retire <slug>
 --clearance "..."`); silence records nothing. Detail:
 `docs/agents/modules/dream.md`, "The card standard" and Acts 3-4.
 
@@ -132,7 +132,7 @@ pass by silently.
   - **why** — the misalignment class from `block_kind`: `rework` = diff needs
     changes · `environment` = desk/QA/creds · `dependency` = waiting on upstream
     (but a `dependency` summary leading `Escalated:` is the OPERATOR's — a
-    review-deadlock parked for Alex; report it, never clear it);
+    review-deadlock parked for Alex McRitchie; report it, never clear it);
   - **fix** — the narrowest next move.
 - To clear one while warm, follow `modules/address-blocker.md`: read summary →
   details → PR/task context → recontextualize to the gap → fix → resubmit.

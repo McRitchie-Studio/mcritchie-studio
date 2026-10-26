@@ -2,7 +2,7 @@ module Admin
   # The hub's Fathom connection (the `sign_in` method of config/integrations.yml,
   # dogfooded here before clients get it): one Fathom sign-in, one ability,
   # reading meeting notes and transcripts. Its first use is a knowledge sweep
-  # of Alex's own conversations.
+  # of Alex McRitchie's own conversations.
   #
   # /admin/fathom (show) is the standing page: is it connected and as whom, and
   # a live read proving it (the first page of meetings and whether there are

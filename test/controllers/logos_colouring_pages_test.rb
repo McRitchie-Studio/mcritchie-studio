@@ -138,7 +138,7 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='no-original']", 0
   end
 
-  # Item 9 (Alex, 13:11): "The goal of the logo modification is to set the defaults." A saved kit choice is the tab's
+  # Item 9 (Alex McRitchie, 13:11): "The goal of the logo modification is to set the defaults." A saved kit choice is the tab's
   # default; URL params override it for exploring; the page says which it shows.
   def save(brand, **choice) = BrandKit.for(brand).save_choice(choice.delete(:type), ActionController::Parameters.new(choice), by: "alex@test.com")
   def state = css_select("[data-test='kit-default-state']").first

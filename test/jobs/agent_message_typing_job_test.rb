@@ -117,7 +117,7 @@ class AgentMessageTypingJobTest < ActiveJob::TestCase
     calls = []
     completed = claimed_message
     completed.complete!(worker: "w1", response_text: "Done.")
-    released = claimed_message(soul: "ray")
+    released = claimed_message(soul: "alex")
     released.release!(worker: "w1", reason: "failed")
 
     with_tokens do
@@ -148,7 +148,7 @@ class AgentMessageTypingJobTest < ActiveJob::TestCase
 
   test "[unit] an audience that gets no answer never types, even if its row were somehow claimed" do
     owner_only = AgentMessages::Answerers.new(%w[owner])
-    stranger = agent_message!(soul: "ray", status: "claimed", author_ref: "777000000000000009", claimed_by: "w1",
+    stranger = agent_message!(soul: "alex", status: "claimed", author_ref: "777000000000000009", claimed_by: "w1",
                               claimed_at: Time.current, lease_expires_at: 10.minutes.from_now, attempts: 1)
     refute_equal "owner", stranger.person.role
 
@@ -157,7 +157,7 @@ class AgentMessageTypingJobTest < ActiveJob::TestCase
     stranger.update!(hold_released_at: Time.current, hold_released_by: "alex")
     assert_nil stranger.typing_refusal(worker: "w1", answerers: owner_only), "an admin-released hold is answered"
 
-    held = agent_message!(soul: "ray", status: "held", author_ref: "777000000000000010")
+    held = agent_message!(soul: "alex", status: "held", author_ref: "777000000000000010")
     assert_equal "not_holder", held.typing_refusal(worker: "w1", answerers: owner_only)
 
     AgentMessages::Answerers.current = owner_only

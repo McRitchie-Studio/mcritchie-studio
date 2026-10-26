@@ -12,7 +12,7 @@ module AgentMessages
   #   nothing runs. Two kinds of sender may:
   #     - the owner role (Audience#may?(:confirm_proposal), the person's role,
   #       never anything the message says), on any thread, uncapped
-  #     - an APP OWNER (Alex, 2026-10-18), only through owner_verdict: on that
+  #     - an APP OWNER (Alex McRitchie, 2026-10-18), only through owner_verdict: on that
   #       app's own web CTO thread for that user (the same rule that answers
   #       them, Answerers#app_owner_thread?), on a proposal of a kind a client
   #       of the app may have built (OWNER_KINDS, checked again against the

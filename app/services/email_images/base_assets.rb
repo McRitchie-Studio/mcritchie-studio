@@ -4,7 +4,7 @@ require "fileutils"
 
 module EmailImages
   # WHAT A BRAND'S HEADERS ARE MADE FROM, as files an agent can open and show
-  # Alex before a round (the `email-image` SOP, step 1): the kit's reference
+  # Alex McRitchie before a round (the `email-image` SOP, step 1): the kit's reference
   # images (mascot or logo, style anchor), its palette, its style words, and the
   # headers already approved for that brand.
   #
@@ -61,7 +61,7 @@ module EmailImages
       end
     end
 
-    # The palette as one strip of colour blocks, in the kit's order, so Alex
+    # The palette as one strip of colour blocks, in the kit's order, so Alex McRitchie
     # sees the colours rather than reads hex. Local only (no public URL).
     def palette_swatch
       label = @kit.palette.map { |name, hex| "#{name} #{hex}" }.join(", ")
@@ -82,7 +82,7 @@ module EmailImages
       nil
     end
 
-    # Every brief of this brand whose header Alex approved: the house look so
+    # Every brief of this brand whose header Alex McRitchie approved: the house look so
     # far, and the natural style anchor for the next one.
     def approved_headers
       briefs = EmailImageBrief.where(brand_kit: @kit.key).where.not(approved_artifact_slug: nil).ordered

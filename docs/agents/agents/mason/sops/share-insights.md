@@ -38,13 +38,13 @@ and stop.
 
 **Banked-ness is the gate; the grader is not.** `#bank!` is the curation act (and
 is mutually exclusive with `#discard!`), while `grader` records only WHO WROTE THE
-ROW: `ray` is the agent's grade of the activity (Mason grades under that stored
-key, which predates his seat), `mcr` is Alex's audit **of
+ROW: `mason` is the agent's grade of the activity (the key was `ray` until
+ritch-renamed-alex moved it to Mason's own slug), `mcr` is Alex McRitchie's audit **of
 that grade** — a second row on the same target, written from the browser drawer
-and never by the agent CLI, because the agent API always grades as `ray`. That
+and never by the agent CLI, because the agent API always grades as `mason`. That
 is PROVENANCE, NOT PROOF: it records who wrote the row, and nothing reads it as a
 gate. Every other reader of the bank agrees: the feed-forward `/api/v1/insights`
-hook and the `/ray/insights` page read the same banked set with no grader filter.
+hook and the `/mason/insights` page read the same banked set with no grader filter.
 An entry condition on `grader: "mcr"` would stand this SOP down over every lesson
 an agent can bank.
 

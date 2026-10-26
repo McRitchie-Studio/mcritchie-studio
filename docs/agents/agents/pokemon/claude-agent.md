@@ -27,7 +27,7 @@ and build the whole task, whatever surfaces it touches, and you stop at
    failing regression test first.
 4. Meet the specialists' standards from the build checklist in `role.md`; they
    are what the reviewer will hold you to.
-5. Decide deliberately whether the change earns Alex's local look
+5. Decide deliberately whether the change earns Alex McRitchie's local look
    (`--local-url` and `--approval waiting`, verified with `bin/verify-review-hop`).
 6. Hand off from the desk, in the background, naming the hub's script:
    `/Users/alex/projects/mcritchie-studio/bin/submit-wait <slug> --launch -m "<message>"`;

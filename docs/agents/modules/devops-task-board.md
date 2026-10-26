@@ -44,7 +44,7 @@ durable handoff records. If an agent records task metadata outside production
 while implementing, the agent must backfill or update the production task before
 PR handoff.
 
-If Alex starts work in chat and no task exists yet, the feature agent
+If Alex McRitchie starts work in chat and no task exists yet, the feature agent
 creates a flat production task from the ask before allocating a worktree or
 editing files. If a task already exists, the agent updates that task instead of
 creating a duplicate.
@@ -69,7 +69,7 @@ script while `docs/agents/sop.md` skips. Anything else (`.github/workflows/*`,
 exemption. See [gates/dor.md](gates/dor.md).
 
 Feature agents should first identify the feature and accumulate acceptance
-criteria until the agent and Alex are aligned on the goal. The task is
+criteria until the agent and Alex McRitchie are aligned on the goal. The task is
 the durable version of that alignment. Exceptions are narrow conductor sessions
 such as Avi running the DevOps/QA cycle, pure read-only audits, and explicit
 release/deploy lanes; those sessions still update tasks when they change
@@ -89,7 +89,7 @@ Minimum task setup before implementation:
   `Task.slug` remains the immutable production task id.
 - `repositories` lists every repo expected to change.
 - `acceptance` records concrete acceptance criteria. If the ask is ambiguous,
-  confirm criteria with Alex before building.
+  confirm criteria with Alex McRitchie before building.
 - `risk_tags` captures likely risk such as `auth`, `email`, `solana`,
   `payment`, `migration`, `ui`, `provider`, `docs`, or `deploy`.
 - `test_plan` records the checks the agent expects to run.
@@ -105,7 +105,7 @@ Stage movement:
 2. Move to `building` when an agent claims the task and creates or enters the
    worktree.
 3. Before opening the PR, use the Operator Validation Gate when the work has a
-   local UI or inspectable workflow Alex should approve.
+   local UI or inspectable workflow Alex McRitchie should approve.
 4. Move to `submitted` only after the branch is pushed, the PR exists, the
    local URL is recorded when applicable, and `checks_run` records actual
    feature-agent verification.
@@ -139,7 +139,7 @@ Handoff connections:
 
 ## Operator Validation Gate
 
-Use this gate when a feature agent has built enough for Alex to inspect
+Use this gate when a feature agent has built enough for Alex McRitchie to inspect
 locally. Ask BEFORE opening the PR — that is still the flow — but a request you
 set at `building` now SURVIVES the handoff and keeps pulsing while the task sits
 in review, so a ship no longer costs you the request (fixed 2026-09-09).
@@ -165,10 +165,10 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
    card ranks above its stage peers, pulses, and flashes a card-width **WAITING
    APPROVAL** bar. Clicking that bar bounces to the LOCAL stack's dev-only mint
    endpoint (`/_studio/local_review`, studio-engine >= 0.19), which signs
-   Alex in on THAT server and lands him on the page under review — the
+   Alex McRitchie in on THAT server and lands him on the page under review — the
    board itself cannot mint a session for another server, which is why it hands
    off instead of minting. It refuses any `local_url` that is not loopback.
-5. If Alex approves, finish DoR, commit, push, open the PR, and hand off.
+5. If Alex McRitchie approves, finish DoR, commit, push, open the PR, and hand off.
    If he has not answered yet, hand off anyway — `bin/submit` carries the request
    into `submitted` and the card keeps pulsing in the review column.
 6. If changes are requested, set `--approval changes_requested` and keep the task
@@ -195,7 +195,7 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
    and the documented `bin/submit` then discarded the request on its move to
    `submitted` — measured three times in one night, on turf PRs 644, 647 and 653.
    Following the docs produced the discard every time, and the pulse is the only
-   mechanism that asks for Alex's attention at all.
+   mechanism that asks for Alex McRitchie's attention at all.
 
 8. **Already past `reviewed`? Record his answer where you stand — never move the
    task back.** From `reviewed` on, the code is on `accepted`: moving the task back
@@ -219,7 +219,7 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
 
 ## Operator windows
 
-Three clocks give Alex a bounded time to answer, and name what happens
+Three clocks give Alex McRitchie a bounded time to answer, and name what happens
 when he does not (design: `docs/agents/system/devops-v3-design.md`, section 6).
 Every window is **derived** — a timestamp the task or release already carries
 plus a length from `config/release_builder.yml` (`operator_windows:`) — so there
@@ -229,7 +229,7 @@ is no window column, and changing a length moves every countdown at once.
 |---|---|---|---|---|
 | UI approval | `devops.approval_requested_at`, while `approval_status` is `waiting` | 10 min | the card's countdown chip beside the WAITING APPROVAL bar | review proceeds as today; the chip reads `unanswered, proceeding`; a later answer is still recorded |
 | Escalation | `blocked_at` on a `dependency` block whose summary leads `Escalated:` | 20 min | the countdown chip on the card | the session applies the recommendation the block's feedback carries, labeled `auto-decision` |
-| Production authority | the `ship_authorized` request `bin/release ship --mode timed` posts | 30 min | the Next Release card's countdown chip and its **Approve** button | the ship proceeds if G3 is green and no member carries an open escalation; otherwise it refuses and names why. `bin/release ship --mode cleared --clearance "<Alex's words>"` records his chat clearance instead: no request, no window, no button, and the card names it as cleared in chat and unsigned |
+| Production authority | the `ship_authorized` request `bin/release ship --mode timed` posts | 30 min | the Next Release card's countdown chip and its **Approve** button | the ship proceeds if G3 is green and no member carries an open escalation; otherwise it refuses and names why. `bin/release ship --mode cleared --clearance "<Alex McRitchie's words>"` records his chat clearance instead: no request, no window, no button, and the card names it as cleared in chat and unsigned |
 
 The chip (`tasks/_window_chip`) sits beside the epic chip on the card and in the
 Next Release card's badge cluster, ticks `mm:ss` from the server-painted value,
@@ -255,7 +255,7 @@ posts `POST /deployments/<release>/ship_authorization`, which records the one
 `ship_authorized completed` event under the conductor's own idempotency key —
 so a grant and the ship's own completion stamp are one row. `bin/release ship
 --mode ask|timed|auto|cleared` picks how authority is taken (default `timed`, from
-`production_ship.mode`); `--yes` alone is `auto`; `cleared` records Alex's chat
+`production_ship.mode`); `--yes` alone is `auto`; `cleared` records Alex McRitchie's chat
 clearance from `--clearance "<his words>"` and opens no window; the recipe lives
 in Steffon's `production-deploy` SOP.
 
@@ -404,7 +404,7 @@ tell you nothing is wrong:
 answered "no block" while `bin/task bounces` read `BREAKER: TRIPPED` and the PR head
 had not moved since the send-back. The task was promoted to `submitted` and a
 reviewer briefed that a merge-ready verdict was on record — one step from a correct
-verdict becoming send-back 2 of 2, which escalates to Alex over a
+verdict becoming send-back 2 of 2, which escalates to Alex McRitchie over a
 resubmission that never happened.
 
 **Ask the tree instead.** The board now serves a `resubmission` verdict on every task
@@ -429,7 +429,7 @@ in moves it too. Before re-reviewing, compare the blobs of the files the bounce
 named (`git rev-parse <old-head>:<file>` against the new head).
 
 **A stage is a value, not a lock.** Another session can move an `archived` task
-back out and build it. Re-read at wrap every task you moved, and tell Alex that
+back out and build it. Re-read at wrap every task you moved, and tell Alex McRitchie that
 archiving parks work rather than deleting it.
 
 Do not skip `assembled` for user-facing app changes. Do not move a task to
@@ -731,7 +731,7 @@ the hub's.
 `bin/submit` pushes, opens the PR, and polls `gh pr checks`; `begin`'s preflight
 reads PR state. When one of those refuses — `Bad credentials`, a 401/403, an
 unreadable CI, a `gh auth login` prompt — it is **yours to fix, and NOT an
-escalation to Alex**: run `eval "$(bin/gh-auth-refresh --export)"`, read
+escalation to Alex McRitchie**: run `eval "$(bin/gh-auth-refresh --export)"`, read
 its **stderr** (`eval` reports the `export` builtin's status, so it hides the
 command's exit code), then re-run the wrapper — **it resumes**, so a stale token
 costs you the refresh and nothing else. Never fall back to `gh auth login`: `gh`
@@ -926,7 +926,7 @@ procedure lives:
 | QA release | Avi | [`qa-release`](../agents/avi/sops/qa-release.md) | promotes all of `accepted` onto `release` (a fast-forward per repo, or the batch PR when diverged), deploys QA, flips members to `assembled` only on QA-green |
 | Production | Steffon | [`production-deploy`](../agents/steffon/sops/production-deploy.md) | fast-forwards `release → main`, stamps `merged: main`, moves members to `shipped` |
 
-Production stays gated until Alex explicitly approves release work.
+Production stays gated until Alex McRitchie explicitly approves release work.
 
 **What review reads besides the diff.** `devops.post_deploy_cmd` runs verbatim
 against production on ship: reject a bare `db:seed` and require a narrow, idempotent

@@ -4,9 +4,9 @@ require "json"
 require_relative "icon_ink"
 
 module Logos
-  # Commercial Welding v2's helmet, derived from v1's traced helmet (Alex's item 5, task welding-llc-and-v2-helmet):
+  # Commercial Welding v2's helmet, derived from v1's traced helmet (Alex McRitchie's item 5, task welding-llc-and-v2-helmet):
   #
-  #   1. Its box is its ink (Logos::IconInk; task stacked-rule-of-three, Alex 2026-10-14 12:16). Until then the box
+  #   1. Its box is its ink (Logos::IconInk; task stacked-rule-of-three, Alex McRitchie 2026-10-14 12:16). Until then the box
   #      was widened so the helmet's midline (where its blue half meets its white half) was the box's centre, which
   #      left a margin of about 17 units on one side; that step is gone, and the helmet is centred on its ink.
   #   2. Lens down: the lens (the window, with the spark in it, as one unit) moves down so it sits on the rule of 3's
@@ -94,7 +94,7 @@ module Logos
       IconInk.trim({ "w" => @source.fetch("w"), "h" => @source.fetch("h"), "source" => source_note, "layers" => layers })
     end
 
-    # THE LENS IS SEE-THROUGH (task kit-export-and-clear-lens; Alex 2026-10-12: "remove the white of the lens so I can
+    # THE LENS IS SEE-THROUGH (task kit-export-and-clear-lens; Alex McRitchie 2026-10-12: "remove the white of the lens so I can
     # see it clear"): the window is always written as a hole in the outer helmet's layer (even-odd), never as a shape
     # of its own. Alt's primary already holds it so; the Original's trace drew it as an opaque white shape in its white
     # layer over the blue silhouette, so there it moves into the silhouette and the page shows through. The white half

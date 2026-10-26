@@ -8,7 +8,7 @@ The Pokémon's `download-instagram` SOP: the Instagram sub-SOP of
 `instagram.com` links of the form `/reel/<code>`, `/reels/<code>`, `/p/<code>`
 and `/tv/<code>`, each also under a `/<handle>/` prefix.
 
-**Anonymous download measured 2026-10-04** on Alex's Mac (yt-dlp 2026.08.19,
+**Anonymous download measured 2026-10-04** on Alex McRitchie's Mac (yt-dlp 2026.08.19,
 five public posts). **The cookie path is UNMEASURED**: the one attempt waited
 45 seconds on a macOS Keychain prompt and was stopped. Record what the first
 cookie run finds here.
@@ -46,21 +46,21 @@ on its own, because a second anonymous try only spends the rate limit.
 bin/digest-video <url> --cookies-from-browser chrome
 ```
 
-The flag passes straight to yt-dlp. The cookie is Alex's session. Never write
+The flag passes straight to yt-dlp. The cookie is Alex McRitchie's session. Never write
 it to a file in a repo, and never print it. yt-dlp writes the session into the
 `.info.json` it leaves in the working folder (the `cookies` and `http_headers`
 fields), so on a cookie run the script strips both from every `.info.json` in
 that folder as soon as yt-dlp returns, on success or failure.
 
 macOS asks for the Keychain password the first time yt-dlp reads Chrome's
-cookies. Alex answers that prompt; an agent cannot.
+cookies. Alex McRitchie answers that prompt; an agent cannot.
 
 ## 3. Links the script refuses
 
 | Link | Why | What to do |
 |---|---|---|
 | `/share/reel/<token>` | It carries no post code, and yt-dlp does not read it | Open it and paste the `/reel/` or `/p/` URL it lands on (UNMEASURED: no real share link has been tried) |
-| A post with several videos | yt-dlp returns a playlist, one file per video | Ask Alex which video; a digest takes one |
+| A post with several videos | yt-dlp returns a playlist, one file per video | Ask Alex McRitchie which video; a digest takes one |
 | A profile, a story, a tag page or a sound's page (`/reels/audio/<id>/`) | It names no single post | Paste the post's own URL |
 
 ## 4. Check the codec

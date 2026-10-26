@@ -15,7 +15,7 @@ class SchedulePageTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "title", "Schedule a Call · McRitchie Studio"
     assert_select "h1", "Schedule a call"
-    assert_select "p", "Pick a time that works and it lands on Alex's calendar."
+    assert_select "p", "Pick a time that works and it lands on Alex McRitchie's calendar."
     # The URL waits in data-src: the page's script assigns src after `load`.
     # data-studio-booking marks the frame as one the engine's script arms.
     assert_select "[data-booking-wrap][data-studio-booking] iframe[data-booking-frame][data-studio-booking]", 1 do |frames|

@@ -17,7 +17,7 @@ class SlugCensusTest < ActiveSupport::TestCase
     connection.remove_foreign_key(:athletes, :people, column: :person_slug)
     now = Time.current
     SkillAssignment.insert_all!([
-      { agent_slug: agents(:ray_agent).slug, skill_slug: "no-such-skill", created_at: now, updated_at: now },
+      { agent_slug: agents(:alex_agent).slug, skill_slug: "no-such-skill", created_at: now, updated_at: now },
       { agent_slug: "no-such-agent", skill_slug: "also-no-such-skill", created_at: now, updated_at: now }
     ])
     Athlete.insert_all!([ { slug: "orphan-athlete", person_slug: "no-such-person", sport: "football", created_at: now, updated_at: now } ])

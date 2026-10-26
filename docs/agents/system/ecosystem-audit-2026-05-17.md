@@ -234,7 +234,7 @@ The two production-readiness questions are quite different. Treating them separa
 **Current state**
 - Deployed to devnet at `7Hy8GmJWPMdt6bx3VG4BLFnpNX9TBwkPt87W6bkHgr2J`.
 - 29 ts-mocha tests against localnet — strong coverage of instructions + multisig.
-- Multisig: 2-of-3 signers (Alex Bot / Alex human / Mason) stored in `VaultState`. Settlement, force_close, update_signers all 2-of-3.
+- Multisig: 2-of-3 signers (Alex Bot / Alex McRitchie human / Mason) stored in `VaultState`. Settlement, force_close, update_signers all 2-of-3.
 - **Upgrade authority is currently a single keypair** (`~/.config/solana/id.json`). This is the single largest production risk — whoever holds that one keypair can ship a malicious upgrade without multisig approval.
 - IDL auto-publishes on deploy; no IDL hash verification in turf-monster.
 

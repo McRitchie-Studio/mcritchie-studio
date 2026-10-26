@@ -41,7 +41,7 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
       end
       assert_select "[data-test='dream-card'][data-dream='wait-for-the-light']"
     end
-    assert_select "[data-test='soul-column'][data-soul='ray'] [data-test='dream-card'][data-dream='wait-for-the-light']",
+    assert_select "[data-test='soul-column'][data-soul='alex'] [data-test='dream-card'][data-dream='wait-for-the-light']",
                   1, "a multi-soul dream shows under each soul"
     assert_select "[data-test='soul-column'][data-soul='turf-monster'] [data-test='sop-row']", minimum: 1
   end
@@ -167,7 +167,7 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
 
   PROPOSED = { dream_home: "pokemon", dream_slug: "proposed-money-idea" }.freeze
 
-  test "[integration] Alex sees Approve on a proposed dream only, and one click records it" do
+  test "[integration] Alex McRitchie sees Approve on a proposed dream only, and one click records it" do
     get dreams_path
     assert_select "[data-dream='proposed-money-idea'] [data-test='dream-approve']", 1
     assert_select "[data-dream='money-review-reads-the-ledger'] [data-test='dream-approve']", 0
@@ -227,7 +227,7 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
     assert_response :redirect
   end
 
-  test "[integration] an admin who is not Alex sees no button and cannot approve" do
+  test "[integration] an admin who is not Alex McRitchie sees no button and cannot approve" do
     reset!
     seat = User.create!(email: "admin@mcritchie.studio", name: "Admin McRitchie", role: "admin")
     log_in_as(seat)
@@ -239,7 +239,7 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
     assert_no_difference -> { DreamApproval.count } do
       post dream_approvals_path, params: PROPOSED
     end
-    assert_equal "Not approved: only Alex approves dreams.", flash[:alert]
+    assert_equal "Not approved: only Alex McRitchie approves dreams.", flash[:alert]
   end
 
   test "[integration] a dream shows its fire count and recent decisions" do

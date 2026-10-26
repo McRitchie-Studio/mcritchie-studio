@@ -1,13 +1,13 @@
-# Dream Swap — put the pending dream decisions to Alex
-<!-- registry: print the dream cards (adds, swaps, retires) for Alex and record his answer with his words -->
+# Dream Swap — put the pending dream decisions to Alex McRitchie
+<!-- registry: print the dream cards (adds, swaps, retires) for Alex McRitchie and record his answer with his words -->
 
 ## Status: Active
 
-**Purpose.** Put every dream decision that waits on Alex to him in one message, in
+**Purpose.** Put every dream decision that waits on Alex McRitchie to him in one message, in
 the card standard, and record his answer. The bank holds the good answers past
 sessions gave; it stays good only if he rules on what comes in and what goes out.
 
-**When.** Alex says `dream-swap`. The same cards end the Dreams step at wrap
+**When.** Alex McRitchie says `dream-swap`. The same cards end the Dreams step at wrap
 ([`wrap-it-up.md`](../../pokemon/sops/wrap-it-up.md), `/wrap`), where they
 show at most one swap.
 
@@ -77,7 +77,7 @@ set one) and the board.
 
 ## Never
 
-- Never record a ruling Alex did not give in this session, and never paraphrase
+- Never record a ruling Alex McRitchie did not give in this session, and never paraphrase
   his words into the clearance.
 - Never approve on your own judgment. A card's "My call" is advice; his reply is
   the ruling.

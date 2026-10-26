@@ -15,79 +15,79 @@ class HeartbeatFeedbackCellTest < ActionView::TestCase
   def render_table(action, grades)
     render inline: <<~ERB, locals: { action: action, row_grades: grades[action.id] || {} }
       <table><tbody><tr>
-        <%= render "heartbeat/feedback_cell", action: action, grader: ActionGrade::RAY, grade: row_grades[ActionGrade::RAY] %>
+        <%= render "heartbeat/feedback_cell", action: action, grader: ActionGrade::MASON, grade: row_grades[ActionGrade::MASON] %>
         <%= render "heartbeat/feedback_cell", action: action, grader: ActionGrade::MCR, grade: row_grades[ActionGrade::MCR] %>
       </tr></tbody></table>
     ERB
   end
 
-  test "[component] every row carries inline good/not radios for Ritch and the McRitchie audit" do
+  test "[component] every row carries inline good/not radios for Mason and the McRitchie audit" do
     a = action(stage: "building")
 
     render_table(a, {})
 
-    assert_select "td#fb-ray-#{a.id} input[type=radio][name=disposition][value=good]"
-    assert_select "td#fb-ray-#{a.id} input[type=radio][name=disposition][value=not]"
+    assert_select "td#fb-mason-#{a.id} input[type=radio][name=disposition][value=good]"
+    assert_select "td#fb-mason-#{a.id} input[type=radio][name=disposition][value=not]"
     assert_select "td#fb-mcr-#{a.id} input[type=radio][name=disposition][value=good]"
     assert_select "td#fb-mcr-#{a.id} input[type=radio][name=disposition][value=not]"
     # ungraded -> the add-slug prompt, no disposition selected
-    assert_select "td#fb-ray-#{a.id} .hb-addfb"
-    assert_select "td#fb-ray-#{a.id} label.hb-rb.on-good", false
+    assert_select "td#fb-mason-#{a.id} .hb-addfb"
+    assert_select "td#fb-mason-#{a.id} label.hb-rb.on-good", false
   end
 
   test "[component] a stored disposition renders as the selected radio and shows the slug" do
     a = action(stage: "building")
-    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::RAY,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::MASON,
                                 slug: "good catch flagging the gaps", disposition: ActionGrade::GOOD)
 
-    render_table(a, { a.id => { "ray" => grade } })
+    render_table(a, { a.id => { "mason" => grade } })
 
-    assert_select "td#fb-ray-#{a.id} label.hb-rb.on-good"
-    assert_select "td#fb-ray-#{a.id} input[type=radio][value=good][checked=checked]"
-    assert_select "td#fb-ray-#{a.id} .hb-fbslug", text: "good catch flagging the gaps"
+    assert_select "td#fb-mason-#{a.id} label.hb-rb.on-good"
+    assert_select "td#fb-mason-#{a.id} input[type=radio][value=good][checked=checked]"
+    assert_select "td#fb-mason-#{a.id} .hb-fbslug", text: "good catch flagging the gaps"
   end
 
   test "[component] a not disposition highlights the not radio" do
     a = action(stage: "building")
-    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::RAY,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::MASON,
                                 slug: "slow diagnosing the column", disposition: ActionGrade::NOT)
 
-    render_table(a, { a.id => { "ray" => grade } })
+    render_table(a, { a.id => { "mason" => grade } })
 
-    assert_select "td#fb-ray-#{a.id} label.hb-rb.on-not"
-    assert_select "td#fb-ray-#{a.id} input[type=radio][value=not][checked=checked]"
+    assert_select "td#fb-mason-#{a.id} label.hb-rb.on-not"
+    assert_select "td#fb-mason-#{a.id} input[type=radio][value=not][checked=checked]"
   end
 
   test "[component] a banked grade shows the bank marker" do
     a = action(stage: "building")
-    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::RAY,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::MASON,
                                 slug: "promote this to a guardrail", disposition: ActionGrade::GOOD, banked: true)
 
-    render_table(a, { a.id => { "ray" => grade } })
+    render_table(a, { a.id => { "mason" => grade } })
 
-    assert_select "td#fb-ray-#{a.id} .hb-bankmark"
-    assert_select "td#fb-ray-#{a.id} .hb-discardmark", false
+    assert_select "td#fb-mason-#{a.id} .hb-bankmark"
+    assert_select "td#fb-mason-#{a.id} .hb-discardmark", false
   end
 
   test "[component] a discarded grade shows the discard marker" do
     a = action(stage: "building")
-    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::RAY,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::MASON,
                                 slug: "noise not worth keeping here", disposition: ActionGrade::NOT, discarded: true)
 
-    render_table(a, { a.id => { "ray" => grade } })
+    render_table(a, { a.id => { "mason" => grade } })
 
-    assert_select "td#fb-ray-#{a.id} .hb-discardmark"
-    assert_select "td#fb-ray-#{a.id} .hb-bankmark", false
+    assert_select "td#fb-mason-#{a.id} .hb-discardmark"
+    assert_select "td#fb-mason-#{a.id} .hb-bankmark", false
   end
 
   test "[component] a long-form note shows the long-form marker" do
     a = action(stage: "building")
-    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::RAY,
+    grade = ActionGrade.create!(agent_action: a, grader: ActionGrade::MASON,
                                 slug: "good catch flagging the gaps", disposition: ActionGrade::GOOD,
                                 long_form: "Anchor: flag the gap before building.")
 
-    render_table(a, { a.id => { "ray" => grade } })
+    render_table(a, { a.id => { "mason" => grade } })
 
-    assert_select "td#fb-ray-#{a.id} .hb-longmark"
+    assert_select "td#fb-mason-#{a.id} .hb-longmark"
   end
 end

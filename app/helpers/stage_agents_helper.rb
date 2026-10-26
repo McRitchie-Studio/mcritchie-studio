@@ -139,9 +139,12 @@ module StageAgentsHelper
   # Resolve a TaskEvent#actor — which may be an agent slug, a session id, or an
   # email — to an Agent, or nil when it matches no soul (a raw session id, an
   # external email). agents_by_slug is a prebuilt slug→Agent map so this never
-  # queries per call. Email actors match on the local part (alex@… → alex).
+  # queries per call. Email actors match on the local part (carl@… → carl), except
+  # Alex McRitchie's own addresses: alex@mcritchie.studio is the human, never the
+  # `alex` persona (AgentPerson.owner_email?).
   def resolve_actor_agent(actor, agents_by_slug)
     return nil if actor.blank?
+    return nil if AgentPerson.owner_email?(actor)
 
     key = Task.canonical_soul(actor.to_s.strip.downcase)
     agents_by_slug[key] || agents_by_slug[key.split("@").first]

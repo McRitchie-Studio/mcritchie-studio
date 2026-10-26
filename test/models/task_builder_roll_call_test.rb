@@ -7,8 +7,8 @@
 # finishes the job) OVERWRITES the first author. Measured 2026-08-30 on two tasks in
 # one sitting: credential-prose-tells-truth reads built_by=avi and
 # agent-flag-silently-drops reads built_by=steffon, yet ALEX wrote the tests on the
-# first and the whole rework on the second. `bin/reviewer-select` then seated Ritch as
-# the LIGHT on Ritch's own diff (PR #1081).
+# first and the whole rework on the second. `bin/reviewer-select` then seated Alex as
+# the LIGHT on Alex's own diff (PR #1081).
 #
 # `builders` accumulates instead — append-only, SERVER-OWNED (absent from
 # DEVOPS_KEYS, so no client can write or shrink it). A claim that names NOBODY adds
@@ -59,19 +59,19 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
     assert_equal %w[steffon], authors(task)
 
-    claim!(task, actor: "ray", session: ALEX_SESSION)
+    claim!(task, actor: "alex", session: ALEX_SESSION)
 
-    assert_equal "ray", task.reload.devops["built_by"], "built_by still names the CURRENT builder"
-    assert_equal %w[steffon ray], authors(task), "and the set remembers the one it replaced"
+    assert_equal "alex", task.reload.devops["built_by"], "built_by still names the CURRENT builder"
+    assert_equal %w[steffon alex], authors(task), "and the set remembers the one it replaced"
   end
 
   test "the set is seeded from a built_by stamped before the accumulator existed" do
     task = new_task
     task.update_columns(metadata: { "devops" => { "built_by" => "shannon" } })
 
-    claim!(task.reload, actor: "ray", session: ALEX_SESSION)
+    claim!(task.reload, actor: "alex", session: ALEX_SESSION)
 
-    assert_equal %w[shannon ray], authors(task), "the legacy author is not lost on the next claim"
+    assert_equal %w[shannon alex], authors(task), "the legacy author is not lost on the next claim"
   end
 
   test "a client cannot shrink the author set through a raw whole-column metadata write" do
@@ -80,11 +80,11 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     # record could be laundered clean between the handoff and the review.
     task = new_task
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
-    claim!(task, actor: "ray", session: ALEX_SESSION)
+    claim!(task, actor: "alex", session: ALEX_SESSION)
 
     task.update!(metadata: { "devops" => { "checks_run" => ["[unit] something"] } })
 
-    assert_equal %w[steffon ray], authors(task), "the server rebuilds the set on every save"
+    assert_equal %w[steffon alex], authors(task), "the server rebuilds the set on every save"
   end
 
   test "a re-claim by an author already on record adds nobody twice" do
@@ -165,11 +165,11 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     task = new_task
     task.update!(metadata: { "devops" => task.devops.merge("shape" => "backend") })
     claim!(task, actor: "steffon", session: STEFFON_SESSION)
-    claim!(task, actor: "ray", session: ALEX_SESSION)
+    claim!(task, actor: "alex", session: ALEX_SESSION)
 
     seated = ReviewerSelector.select(task.reload).map { |r| r["slug"] }
 
-    refute_includes seated, "ray", "the co-author whose tests are in the diff"
+    refute_includes seated, "alex", "the co-author whose tests are in the diff"
     refute_includes seated, "steffon", "the soul who opened the desk"
     assert_equal 2, seated.uniq.size, "a pair still forms"
   end
@@ -192,7 +192,7 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
   # shannon's agent claimed the task and died to a session limit with NOTHING
   # committed; ALEX wrote the whole diff and both test files, and shipped it. The
   # set held only shannon, so the selector excluded a soul who wrote nothing and
-  # left the real author in the pool at ray:0.9968, ranked 3rd.
+  # left the real author in the pool at alex:0.9968, ranked 3rd.
 
   test "shipping from a session that never claimed adds nobody" do
     task = new_task
@@ -208,9 +208,9 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     task = new_task
     claim!(task, actor: "shannon", session: STEFFON_SESSION)
 
-    submit!(task, actor: "ray")
+    submit!(task, actor: "alex")
 
-    assert_equal %w[shannon ray], authors(task), "the soul who shipped it is an author too"
+    assert_equal %w[shannon alex], authors(task), "the soul who shipped it is an author too"
     assert_equal "shannon", task.reload.devops["built_by"],
       "and built_by keeps its meaning: the soul who CLAIMED the desk"
   end
@@ -223,7 +223,7 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     claim!(task, actor: "shannon", session: STEFFON_SESSION)
     submit!(task, actor: STEFFON_SESSION)
 
-    Current.task_event_actor = "ray"
+    Current.task_event_actor = "alex"
     task.reload.update!(metadata: { "devops" => task.reload.devops.merge("pr_url" => "https://example.test/pr/1") })
     Current.reset
 
@@ -236,11 +236,11 @@ class TaskBuilderRollCallTest < ActiveSupport::TestCase
     task = new_task
     task.update!(metadata: { "devops" => task.devops.merge("shape" => "backend") })
     claim!(task, actor: "shannon", session: STEFFON_SESSION)
-    submit!(task, actor: "ray")
+    submit!(task, actor: "alex")
 
     seated = ReviewerSelector.select(task.reload).map { |r| r["slug"] }
 
-    refute_includes seated, "ray", "the soul who wrote and shipped the diff"
+    refute_includes seated, "alex", "the soul who wrote and shipped the diff"
     refute_includes seated, "shannon", "the soul who opened the desk"
     assert_equal 2, seated.uniq.size, "a pair still forms"
   end

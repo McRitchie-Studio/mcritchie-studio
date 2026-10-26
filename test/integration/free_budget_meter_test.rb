@@ -2,7 +2,7 @@ require "test_helper"
 require_relative "../support/client_cto_fixtures"
 
 # [integration] The free tier's CTO chat budget end to end, shipped config
-# (task free-budget-meter; Alex, 2026-10-19): an owner of a /build app (Vibe,
+# (task free-budget-meter; Alex McRitchie, 2026-10-19): an owner of a /build app (Vibe,
 # 25,000 tokens a month) writes through /applications/:slug/chat, the
 # dispatcher's claim and complete, and the reply job's delivery, which pushes
 # the updated meter ("1,840 of 25,000 tokens this month") to the open page.

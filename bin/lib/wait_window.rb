@@ -3,7 +3,7 @@
 # bin/lib/wait_window.rb — the decision logic behind `bin/task wait-window`.
 #
 # THE OPERATOR-WINDOW WAIT (docs/agents/system/devops-v3-design.md section 6).
-# A session that escalated a block to Alex, or asked him to look at a demo, has
+# A session that escalated a block to Alex McRitchie, or asked him to look at a demo, has
 # one question: has he answered, or has the window lapsed so the default applies?
 # This module answers it from the task API's DERIVED `windows` list
 # (Task#operator_windows) — the board's clock and config decide; the CLI holds no

@@ -3,11 +3,11 @@ require "test_helper"
 # [component] the /agents/activities table partial — the reimagined 7-column x 3-sub-row
 # feed. Each activity is a tbody: Agent (stacked soul-over-mascot), Activity (category +
 # goal / →result-with-fade / key command), Cost (cost / model / tokens), Details
-# (start+status / end-or-live-counter+action-count / issue slug), and the Ritch + McRitchie inline grade
+# (start+status / end-or-live-counter+action-count / issue slug), and the Mason + McRitchie inline grade
 # cells. Expanding drills into the raw actions (2-sub-row: #seq KIND + summary / key
 # method; cost / tokens; #seq KIND + outcome) which carry their OWN inline grade cells.
 # The wide input/output blobs never render here — the feed loads through
-# AgentAction.for_activity_drilldown (capped, blob-free); only /ray/heartbeat's
+# AgentAction.for_activity_drilldown (capped, blob-free); only /mason/heartbeat's
 # drawer shows them.
 class AgentsActivitiesTableTest < ActionView::TestCase
   def activity(**attrs)
@@ -27,7 +27,7 @@ class AgentsActivitiesTableTest < ActionView::TestCase
 
   test "[component] renders the six-column header" do
     render_table []
-    %w[Agent Activity Cost Details Alex McRitchie].each do |h|
+    %w[Agent Activity Cost Details Mason McRitchie].each do |h|
       assert_select "thead th", text: h
     end
   end
@@ -147,28 +147,28 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     assert_select ".aa-detailend .aa-spinner"
   end
 
-  test "[component] each activity carries Ritch + McRitchie inline grade cells posting to the activity endpoint" do
+  test "[component] each activity carries Mason + McRitchie inline grade cells posting to the activity endpoint" do
     ev = activity(closed_at: Time.current, outcome_slug: "done")
 
     render_table [[ev, []]]
 
-    assert_select "td[data-test=aa-activity-grade-ray] form[action=?]", heartbeat_activity_grade_path(ev)
+    assert_select "td[data-test=aa-activity-grade-mason] form[action=?]", heartbeat_activity_grade_path(ev)
     assert_select "td[data-test=aa-activity-grade-mcr] form[action=?]", heartbeat_activity_grade_path(ev)
-    assert_select "td[data-test=aa-activity-grade-ray] input[name=disposition][value=good]"
-    assert_select "td[data-test=aa-activity-grade-ray] input[name=disposition][value=not]"
-    assert_select "td[data-test=aa-activity-grade-ray] button.aa-gradeclear"
+    assert_select "td[data-test=aa-activity-grade-mason] input[name=disposition][value=good]"
+    assert_select "td[data-test=aa-activity-grade-mason] input[name=disposition][value=not]"
+    assert_select "td[data-test=aa-activity-grade-mason] button.aa-gradeclear"
   end
 
   test "[component] an existing activity grade pre-checks its radio and shows its note slug" do
     ev = activity(closed_at: Time.current, outcome_slug: "done")
-    grade = ActionGrade.create!(agent_activity: ev, grader: "ray", disposition: "good",
+    grade = ActionGrade.create!(agent_activity: ev, grader: "mason", disposition: "good",
                                 slug: "clean activity with a crisp outcome")
 
-    render_table [[ev, []]], activity_grades: { ev.id => { "ray" => grade } }
+    render_table [[ev, []]], activity_grades: { ev.id => { "mason" => grade } }
 
-    assert_select "td[data-test=aa-activity-grade-ray] input[value=good][checked]"
-    assert_select "[data-test=aa-activity-note-ray]", text: /clean activity with a crisp outcome/
-    assert_select "tbody[data-test=aa-activity][data-ray-graded=true]"
+    assert_select "td[data-test=aa-activity-grade-mason] input[value=good][checked]"
+    assert_select "[data-test=aa-activity-note-mason]", text: /clean activity with a crisp outcome/
+    assert_select "tbody[data-test=aa-activity][data-mason-graded=true]"
   end
 
   test "[component] an activity with no actions renders the empty drill-down row" do
@@ -227,13 +227,13 @@ class AgentsActivitiesTableTest < ActionView::TestCase
     assert_select "tr.aa-omitted-row", false
   end
 
-  test "[component] action rows carry their own Ritch + McRitchie grade cells posting to the action endpoint" do
+  test "[component] action rows carry their own Mason + McRitchie grade cells posting to the action endpoint" do
     ev = activity(closed_at: Time.current, outcome_slug: "done")
     act = action(agent_activity_id: ev.id, seq: 0)
 
     render_table [[ev, [act]]]
 
-    assert_select "tr[data-test=aa-turn] td[data-test=aa-action-grade-ray] form[action=?]", heartbeat_grade_path(act)
+    assert_select "tr[data-test=aa-turn] td[data-test=aa-action-grade-mason] form[action=?]", heartbeat_grade_path(act)
     assert_select "tr[data-test=aa-turn] td[data-test=aa-action-grade-mcr] form[action=?]", heartbeat_grade_path(act)
   end
 

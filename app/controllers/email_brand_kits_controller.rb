@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # EMAIL BRAND KITS (epic email-image-builder, task email-brand-asset-page): the
-# page Alex opens with an agent before a generation run (the `email-image` SOP,
+# page Alex McRitchie opens with an agent before a generation run (the `email-image` SOP,
 # step 1). Each kit's base assets (references, palette, font, style and
 # "never" rules), every header approved for the brand, its open briefs, and
 # the form that adds a reference image.
