@@ -77,6 +77,24 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
     assert_includes out, "STATE=green"
   end
 
+  # [unit] ONCE PER SHA PER PROCESS: a second gate reading the same SHA (a resumed
+  # poll, a second read of the frozen tree) gets no second re-run.
+  def test_a_second_poll_of_the_same_sha_spends_no_second_rerun
+    runs_after = [{ "id" => 11, "conclusion" => "failure", "run_attempt" => 2, "event" => "push",
+                    "status" => "completed", "head_sha" => SHA }]
+    setup = poll_stub(verdicts: [{ state: :red, failing: ["test"] }], runs_after: runs_after) +
+            # A fresh first attempt again, as if a different run had failed on the same SHA.
+            %(\ndef ci_workflow_runs(_nwo, _sha) = [{ "id" => 12, "conclusion" => "failure", "run_attempt" => 1, ) +
+            %("event" => "push", "status" => "completed", "head_sha" => #{SHA.inspect} }]\n)
+    out = run_cli([], setup: setup, call: <<~CALL)
+      poll_ci_verdict("rantly", #{SHA.inspect}, budget: 0)
+      poll_ci_verdict("rantly", #{SHA.inspect}, budget: 0)
+      puts "RERUNS=\#{$reruns.inspect}"
+    CALL
+
+    assert_includes out, 'RERUNS=["12"]', "one re-run for the SHA across both polls: #{out}"
+  end
+
   def test_a_real_lint_failure_is_not_rerun
     out = poll(poll_stub(verdicts: [{ state: :red, failing: ["lint"] }], jobs: ["lint"], log: "Offenses: 2"))
 
