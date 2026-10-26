@@ -27,7 +27,7 @@ class AgentPerson < ApplicationRecord
   DOMAINS_PATH = "config/agent_domains.yml"
 
   # Alex McRitchie: his Discord user id, and the hub user his email names.
-  OWNER = { name: "Alex", platform: "discord", external_id: "536552944271753216", email: "alex@mcritchie.studio" }.freeze
+  OWNER = { name: "Alex McRitchie", platform: "discord", external_id: "536552944271753216", email: "alex@mcritchie.studio" }.freeze
   # Alex McRitchie's hub accounts, one per app he owns (docs/agents/system/app-owners.md).
   # Each that exists is a `web` identity of the owner's person, so his CTO web
   # chat is answered as the owner from any of them (LinkOwnerWebIdentities).
