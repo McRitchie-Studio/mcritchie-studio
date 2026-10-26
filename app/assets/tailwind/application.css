@@ -1,12 +1,14 @@
 @import 'tailwindcss';
 
-/* Never scan installed gems. CI (setup-ruby's bundler-cache) and the Heroku
-   build both install the bundle into vendor/bundle inside the app, which no
-   .gitignore covers, so Tailwind read gem READMEs as source and compiled their
-   examples (tailwindcss-rails' bg-[url(image.svg)]) into the build. Propshaft
-   then logs "Unable to resolve 'image.svg'" on every precompile
-   (test/lib/asset_pipeline_test.rb). */
-@source not "../../../vendor/bundle";
+/* Never read a gem's Markdown as source. CI (setup-ruby's bundler-cache) and
+   the Heroku build install the bundle into vendor/bundle inside the app, which
+   no .gitignore covers, so Tailwind compiled the examples in gem READMEs
+   (tailwindcss-rails' bg-[url(image.svg)]) into the build, and Propshaft logs
+   "Unable to resolve 'image.svg'" on every precompile
+   (test/lib/asset_pipeline_test.rb). Only *.md: the engine's own @source
+   (studio-engine's views and components) lives under vendor/bundle there too,
+   and excluding the whole directory drops those classes from the build. */
+@source not "../../../vendor/bundle/**/*.md";
 
 @import '../builds/tailwind/studio_engine';
 
