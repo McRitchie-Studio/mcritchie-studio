@@ -134,7 +134,7 @@ class AgentSession < ApplicationRecord
   end
 
   # The operator's grant of an admin session (lib/tasks/agent_sessions.rake):
-  # Steffon or Alex, for the admin TTL or fewer whole hours, never more.
+  # Steffon or Mason (ADMIN_SOULS), for the admin TTL or fewer whole hours, never more.
   def self.grant_admin!(soul:, hours: nil)
     max = TTL.fetch("admin") / 1.hour
     length = hours.nil? ? max : Integer(hours.to_s, 10, exception: false)
@@ -288,10 +288,14 @@ class AgentSession < ApplicationRecord
     nil
   end
 
+  # Revoking never re-validates the row: the tier checks guard ISSUANCE, and a row
+  # issued to a soul that has since left the admin tier (a `ray` admin row from
+  # before 2026-10-25) must still revoke, not raise RecordInvalid. Only the two
+  # revocation columns (and updated_at) are written.
   def revoke!(by:)
     return if revoked?
 
-    update!(revoked_at: Time.current, revoked_by: by.to_s.presence)
+    update_columns(revoked_at: Time.current, revoked_by: by.to_s.presence, updated_at: Time.current)
   end
 
   # What the board and the API show for a session; never the token.

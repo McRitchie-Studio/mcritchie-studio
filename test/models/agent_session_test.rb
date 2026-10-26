@@ -89,7 +89,7 @@ class AgentSessionTest < ActiveSupport::TestCase
                              issued_at: Time.current, expires_at: 8.hours.from_now)
     stale.save!(validate: false)
 
-    refute stale.reload.admin?, "a alex admin row must not keep admin authority until it expires"
+    refute stale.reload.admin?, "an alex admin row must not keep admin authority until it expires"
     refute stale.covers_task?(@task.slug)
     assert AgentSession.create!(soul: "mason", tier: "admin", issued_by: "operator_grant").admin?
   end
@@ -383,5 +383,16 @@ class AgentSessionTest < ActiveSupport::TestCase
                  builder.transition_refusal(@task, "archived"))
     assert_nil admin.transition_refusal(@task, "archived")
     assert_nil builder.transition_refusal(@task, "submitted")
+  end
+
+  test "a left-over admin row for a soul outside the admin tier revokes cleanly" do
+    stale = AgentSession.new(soul: "alex", tier: "admin", issued_by: "operator_grant", slug: "session-stale-revoke",
+                             issued_at: Time.current, expires_at: 1.hour.from_now)
+    stale.save!(validate: false)
+
+    assert_nothing_raised { stale.revoke!(by: "steffon") }
+    assert stale.reload.revoked?
+    assert_equal "steffon", stale.revoked_by
+    assert_match(/was revoked by steffon/, stale.refusal_reason)
   end
 end

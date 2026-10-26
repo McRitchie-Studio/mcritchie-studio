@@ -975,7 +975,7 @@ Rails.application.routes.draw do
         end
       end
       # DevOps SHIFT lease (devops-shift-lease) — at most one live conductor per role
-      # lane (avi/steffon/alex), so two same-role sessions can't collide. `acquire` is
+      # lane (avi/mason), so two same-role sessions can't collide. `acquire` is
       # the atomic take-or-stand-down, `renew` the heartbeat, `release` the clean
       # session-end drop; `index` is the "who's on shift" read.
       resources :devops_shifts, only: [:index] do

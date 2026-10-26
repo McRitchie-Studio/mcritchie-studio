@@ -1,7 +1,7 @@
 module Api
   module V1
     # The DevOps SHIFT lease sink — at most one live conductor per role lane
-    # (avi/steffon/alex). A launching devops session `acquire`s its lane; if a
+    # (avi/mason). A launching devops session `acquire`s its lane; if a
     # DIFFERENT live instance already holds it, the response says so and the SOP tells
     # the caller to stand down. `renew` is the heartbeat, `release` the clean drop,
     # `index` the "who's on shift" read. Authed like the rest of the API (Bearer).

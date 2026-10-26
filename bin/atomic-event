@@ -541,7 +541,7 @@ class AgentActivityCli
   # `--agent` on an individual `start`/`next` still WINS over the sticky, so a
   # delegated reviewer keeps its own soul. Writes a tiny per-session file beside
   # the session marker; a fresh session never inherits it. No HTTP, except for an
-  # admin soul (steffon, alex), whose heartbeat also runs admin_login below.
+  # admin soul (steffon, mason: AgentSession::ADMIN_SOULS), whose heartbeat also runs admin_login below.
   def heartbeat(argv, flags)
     sid = resolve_session_id(flags)
     return warn_note("atomic-event: no session id — nothing to set") unless present?(sid)
