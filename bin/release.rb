@@ -4222,14 +4222,7 @@ def prepare
       # Recording it here ships the exact commit QA froze. (Gems aren't QA-
       # deployed, but their release branch is still the source ship publishes from;
       # the frozen_sha_for fallback stays as defense for un-prepared repos.)
-      sha = ""
-      path = repo_path(repo)
-      if !DRY && Dir.exist?(path)
-        sh("git", "-C", path, "fetch", "origin", "--quiet")
-        out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
-        sha = out.strip if ok
-      end
-      qa_shas[repo] = sha
+      qa_shas[repo] = release_tip_sha(repo)
       next
     end
 
@@ -4244,6 +4237,15 @@ def prepare
     unless qa_registered?(qa_app)
       say("")
       say("  ⚠ #{repo}: no QA environment registered (qa_environments.yml) — skipping QA deploy")
+      # FREEZE IT ANYWAY. A QA-exempt repo (rantly, moms-app) still ships, and the
+      # ship freezes every repo at its qa_sha. With none recorded, frozen_sha_for
+      # falls back to origin/#{RELEASE_BRANCH} LIVE — and on a RESUMED ship that head is
+      # the ship's own final-gem re-lock, while every QA'd repo freezes at its
+      # candidate lock, so the gem candidate preflight refuses with "some consumers
+      # lock X and others a candidate of it" (rel-20261025-3f919b and
+      # rel-20261026-61874c, both fixed by hand). Its origin/#{RELEASE_BRANCH} here
+      # already carries this sweep's candidate lock bump (step 4d).
+      qa_shas[repo] = release_tip_sha(repo)
       next
     end
 
@@ -5182,6 +5184,40 @@ def gem_version_for(repo, group, frozen_ref = nil)
   return member["version"].to_s if member
 
   gem_version_local(repo)
+end
+
+# Record, on the release, every ship SHA that came from the live fallback rather
+# than from qa_shas. Returns the { repo => sha } it recorded. Best-effort: a failed
+# write warns (this ship is unaffected; only a resume would re-resolve live).
+def backfill_qa_shas!(rel_slug, qa_shas, ship_sha)
+  missing = ship_sha.select do |repo, sha|
+    Release::ShipSequence.frozen_sha(qa_shas, repo).nil? && !sha.to_s.empty?
+  end
+  return {} if missing.empty? || DRY
+
+  step("record: qa_shas backfill #{missing.map { |r, s| "#{r}@#{short(s)}" }.join(', ')} " \
+       "(never frozen by prepare; resolved from origin/#{RELEASE_BRANCH} before anything moved)")
+  conductor("Release::Conductor.record_qa_shas(release: Release.find_by!(slug: #{rel_slug.inspect}), " \
+            "shas: #{missing.inspect}); puts({qa_shas: true}.to_json)")
+  missing
+rescue SystemExit, StandardError => e
+  say("  ⚠ qa_shas backfill not recorded (#{e.message}); this ship is unaffected, but a resumed ship " \
+      "would re-resolve #{missing.keys.join(', ')} from origin/#{RELEASE_BRANCH} — record them by hand: " \
+      "Release::Conductor.record_qa_shas(release:, shas: #{missing.inspect})")
+  {}
+end
+
+# origin/#{RELEASE_BRANCH}'s head in `repo` after a fetch: the SHA prepare freezes
+# into qa_shas for a repo it does not QA-deploy (a gem, a QA-exempt app). "" under
+# DRY, for a repo with no clone, or when the ref does not resolve; record_qa_shas
+# drops a blank, so the ship's live fallback still answers for it.
+def release_tip_sha(repo)
+  path = repo_path(repo)
+  return "" if DRY || !Dir.exist?(path)
+
+  sh("git", "-C", path, "fetch", "origin", "--quiet")
+  out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+  ok ? out.strip : ""
 end
 
 # The QA-frozen SHA to ship for a repo — the value `prepare` recorded under
@@ -9263,6 +9299,11 @@ def ship
   # Resolved BEFORE the preflight, which pins each app's ship workspace at it.
   ship_sha = {}
   repos.each { |g| ship_sha[g["repo"]] = frozen_sha_for(g["repo"], qa_shas) }
+  # A repo prepare never froze (a release prepared before QA-exempt repos were
+  # frozen) just resolved origin/#{RELEASE_BRANCH} live. Record that SHA now, before
+  # anything moves, so a RESUMED ship freezes it at the same commit instead of at
+  # the re-lock this ship is about to push there.
+  backfill_qa_shas!(rel_slug, qa_shas, ship_sha) unless resuming_member_ship
 
   # PREFLIGHT — before ANYTHING is published, pushed, or deployed: materialize the
   # ship workspaces at the frozen SHA (so an env failure aborts while the release is
