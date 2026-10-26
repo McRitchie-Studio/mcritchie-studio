@@ -3,7 +3,7 @@
 # The operator's grant of an ADMIN agent session, from a shell on the hub
 # (docs/agents/system/agent-sessions-design.md, section 3).
 #
-#   bin/rails agent_sessions:grant_admin                  Ritch, 8 hours
+#   bin/rails agent_sessions:grant_admin                  Mason, 8 hours
 #   bin/rails agent_sessions:grant_admin SOUL=steffon HOURS=1
 #
 # A shell on the hub IS the grant: whoever can run this can already write the
