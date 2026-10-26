@@ -209,6 +209,9 @@ RELEASE_TASK_CMD = Remedy.command("task", __dir__).freeze
 # Sizes how long a gate holds a PENDING CI verdict from the workflows that produce it
 # (task gem-gate-outwaits-consumer-ci). Pure and Rails-free; see ci_poll_budget_for.
 require_relative "lib/ci_poll_budget"
+# The ONE automatic re-run a red release CI verdict may earn (a flaky test lane, or
+# bundler's gem-resolution error from the RubyGems CDN race). Pure; see poll_ci_verdict.
+require_relative "lib/ci_rerun"
 # CleanCheck is the pure verdict behind the `deploy-with-task` clean-LADDER GUARD
 # (`bin/release status --clean-only`): given BOTH rungs the expedite walks — work
 # riding `release` (board + release-ahead-of-main git count) and work parked on
@@ -3419,10 +3422,27 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
   last_state = nil
   refreshes = CiStatus.gh_auth_summary[:refreshes]
   ci = nil
+  rerun = nil # the run ids this poll re-ran, once one is spent
   loop do
     ci = ci_verdict(repo, sha)
     refreshes = say_ci_token_refresh(repo, refreshes)
-    return ci unless ci_poll_action(ci) == :wait
+    action = ci_poll_action(ci)
+    if action == :abort && ci.is_a?(Hash) && ci[:state] == :red
+      if rerun
+        # The re-run's FIRST attempt is still on the SHA until GitHub picks the re-run
+        # up, so a red read before it settles is the old verdict, not the second one.
+        if ci_rerun_settled?(repo, sha, rerun)
+          say("  ✗ #{repo}: CI is RED again for #{short(sha)} after the automatic re-run — a second red is real")
+          return ci
+        end
+        action = :wait
+      elsif (rerun = ci_rerun_once!(repo, sha))
+        # A fresh window for the re-run: it is a new run of the lanes, not the tail of the old one.
+        deadline = [deadline, monotonic_s + budget].max
+        action = :wait
+      end
+    end
+    return ci unless action == :wait
 
     remaining = deadline - monotonic_s
     if remaining <= 0
@@ -3436,6 +3456,87 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
     last_state = ci[:state]
     sleep([interval, remaining].min)
   end
+end
+
+# --- THE ONE AUTOMATIC RE-RUN (bin/lib/ci_rerun.rb) ---------------------------
+#
+# A red verdict whose failed runs are all first-attempt test-lane failures, or a
+# non-test job that died on bundler's gem-resolution error (the CDN race), is re-run
+# ONCE with `gh run rerun --failed`, loudly, and polled to its own conclusion. Never
+# more than once per repo and SHA in a process; a second red is real. Every read
+# fails CLOSED into "no re-run", so the gate's verdict is never softer than before.
+# Disarmed by RELEASE_CI_RERUN=off, and inert under an injected RELEASE_CI_STATUS
+# (the meta-tests' verdict seam reaches no GitHub run to re-run).
+def ci_rerun_disarmed?
+  ENV["RELEASE_CI_RERUN"].to_s.strip.downcase == "off" || !ENV["RELEASE_CI_STATUS"].to_s.empty?
+end
+
+# Spend the one re-run when the rule allows it. Returns the re-run ids, or nil.
+def ci_rerun_once!(repo, sha)
+  @ci_reruns ||= {}
+  key = [repo, sha.to_s]
+  return nil if @ci_reruns.key?(key) || ci_rerun_disarmed? || DRY
+
+  @ci_reruns[key] = nil
+  nwo = repo_name_with_owner(repo)
+  return nil if nwo.empty?
+
+  runs = CiRerun.failed_runs(ci_workflow_runs(nwo, sha), sha)
+  plan = CiRerun.plan(runs: runs, jobs_by_run: runs.to_h { |r| [r["id"], ci_failed_job_names(nwo, r["id"])] },
+                      log_for: ->(id) { ci_failed_log(nwo, id) })
+  if plan[:action] != :rerun
+    say("  #{repo}: CI RED for #{short(sha)} — no automatic re-run (#{plan[:reason]})")
+    return nil
+  end
+
+  say("  ↻↻ #{repo}: CI RED for #{short(sha)} — AUTOMATIC RE-RUN, the one this gate allows: #{plan[:reason]}. " \
+      "Re-running the failed jobs of run#{plan[:run_ids].size == 1 ? '' : 's'} #{plan[:run_ids].join(', ')} " \
+      "(`gh run rerun --failed`); a second red is real.")
+  plan[:run_ids].each do |id|
+    out, ok = sh("gh", "run", "rerun", id.to_s, "--failed", "-R", nwo, capture: true)
+    next if ok
+
+    say("  ✗ #{repo}: `gh run rerun #{id} --failed` was refused (#{out.to_s.strip.lines.last.to_s.strip}) — " \
+        "reading the red as it stands")
+    return nil
+  end
+  @ci_reruns[key] = plan[:run_ids]
+end
+
+# Has every re-run been picked up and concluded? A failed read is "not yet".
+def ci_rerun_settled?(repo, sha, run_ids)
+  nwo = repo_name_with_owner(repo)
+  return false if nwo.empty?
+
+  CiRerun.settled?(ci_workflow_runs(nwo, sha), run_ids)
+end
+
+# The SHA's workflow runs (Actions API), [] on any failed read.
+def ci_workflow_runs(nwo, sha)
+  body, ok = CiStatus.gh_read_status("api", "repos/#{nwo}/actions/runs?head_sha=#{sha}&per_page=100")
+  return [] unless ok
+
+  runs = JSON.parse(body)["workflow_runs"]
+  runs.is_a?(Array) ? runs : []
+rescue StandardError
+  []
+end
+
+# The names of a run's failed jobs (latest attempt), [] on any failed read.
+def ci_failed_job_names(nwo, run_id)
+  body, ok = CiStatus.gh_read_status("api", "repos/#{nwo}/actions/runs/#{run_id}/jobs?filter=latest&per_page=100")
+  return [] unless ok
+
+  Array(JSON.parse(body)["jobs"]).select { |j| %w[failure timed_out].include?(j["conclusion"].to_s) }
+                                 .map { |j| j["name"].to_s }
+rescue StandardError
+  []
+end
+
+# A run's failed-step log, "" on any failed read (so the resolution check says no).
+def ci_failed_log(nwo, run_id)
+  out, ok = sh("gh", "run", "view", run_id.to_s, "--log-failed", "-R", nwo, capture: true)
+  ok ? out.to_s : ""
 end
 
 # A wait past one App token's hour re-mints the read token (CiStatus.gh_read_status).
