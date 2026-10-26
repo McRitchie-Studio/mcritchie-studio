@@ -16,8 +16,7 @@ module Ci
       assert_includes repos, "studio-engine"
       assert_includes repos, "mcritchie-industries"
 
-      # rolio is registered but `ladder: dormant` — it has no live rungs.
-      refute_includes repos, "rolio", "a dormant repo has no ladder to report"
+      assert_includes repos, "rolio", "rolio is an active three-rung satellite again"
     end
 
     # THE RULE THIS ONCE ASSERTED, in the past tense: a three-rung repo mapping to nil
@@ -78,15 +77,15 @@ module Ci
       # were provisioned, then three-rung (bespoke, shaped like Industries).
       profile_repos = Release::Repos.config.fetch("apps", {})
                                     .select { |_repo, meta| meta.is_a?(Hash) && meta["profile"] }.keys
-      assert_equal (%w[commercial-welding mcritchie-industries mcritchie-studio solana-studio studio-engine turf-monster
-                       turf-vault] + profile_repos).sort,
+      assert_equal (%w[commercial-welding mcritchie-industries mcritchie-studio rolio solana-studio studio-engine
+                       turf-monster turf-vault] + profile_repos).sort,
                    Ci::AppLadder.reportable_repos.sort
     end
 
     test "ladder reads the registry for a gem and for an app alike" do
       assert_equal "three-rung", Release::Repos.ladder("studio-engine")
       assert_equal "three-rung", Release::Repos.ladder("mcritchie-studio")
-      assert_equal "dormant", Release::Repos.ladder("rolio")
+      assert_equal "three-rung", Release::Repos.ladder("rolio")
       assert_nil Release::Repos.ladder("not-a-real-repo")
     end
 

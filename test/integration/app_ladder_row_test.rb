@@ -44,10 +44,11 @@ class AppLadderRowTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "a dormant repo gets no card" do
+  test "a parked repo gets no card" do
     get deployments_path
 
-    assert_select "[data-test='app-ladder-card'][data-repo='rolio']", 0
+    assert_select "[data-test='app-ladder-card'][data-repo='tax-studio']", 0
+    assert_select "[data-test='app-ladder-card'][data-repo='chain-ops']", 0
   end
 
   # On the ladder and declaring a suite — so it earns a card like any other repo.

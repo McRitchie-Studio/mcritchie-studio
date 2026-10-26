@@ -250,9 +250,7 @@ apps:
     # No Ruby in the tree at all; JavaScript lints with prettier, which is not this lane.
     lint_lane: none
   rolio:
-    # Archived; its GitHub remote no longer resolves for the agent identity, and it
-    # has no `accepted` rung. `dormant` keeps it out of the conductor's repo list.
-    ladder: dormant
+    ladder: three-rung
     accepted_trigger_lint: true
     # Rails/SQLite, no studio-engine. git_push_heroku runs no tests, so both gates
     # name CI's full suite, verbatim (repos_test reads rolio's ci.yml at
