@@ -1,5 +1,15 @@
 @import 'tailwindcss';
 
+/* Never read a gem's Markdown as source. CI (setup-ruby's bundler-cache) and
+   the Heroku build install the bundle into vendor/bundle inside the app, which
+   no .gitignore covers, so Tailwind compiled the examples in gem READMEs
+   (tailwindcss-rails' bg-[url(image.svg)]) into the build, and Propshaft logs
+   "Unable to resolve 'image.svg'" on every precompile
+   (test/lib/asset_pipeline_test.rb). Only *.md: the engine's own @source
+   (studio-engine's views and components) lives under vendor/bundle there too,
+   and excluding the whole directory drops those classes from the build. */
+@source not "../../../vendor/bundle/**/*.md";
+
 @import '../builds/tailwind/studio_engine';
 
 /* studio-engine's opt-in motion/effect primitives (.spinner, .progress-meter,
@@ -516,8 +526,13 @@
      itself: task footer-stacked-logo). The engine renders one <img> per logo,
      so each is given icon-light.svg (ink, for a light page) and a dark page
      replaces the picture with icon-dark.svg (violet), the kit's own dark-page
-     artwork. */
-  .dark img[src="/brand/icon-light.svg"] { content: url("/brand/icon-dark.svg"); }
+     artwork.
+     URL() in capitals on purpose: the icon stays in public/brand, where
+     logos:install writes the kit, so it is not on Propshaft's load path, and
+     Propshaft's CSS url() rewriter (case-sensitive) would log "Unable to resolve"
+     on every compile. CSS function names are case-insensitive, so browsers read
+     it as url(); test/lib/asset_pipeline_test.rb pins both halves. */
+  .dark img[src="/brand/icon-light.svg"] { content: URL("/brand/icon-dark.svg"); }
   @media (min-width: 768px) {
     .nav-shell { --nav-avatar: calc(2.5rem - 0.5rem * var(--nav-p, 0)); } /* 40px -> 32px */
     .nav-shell [data-nav-account] > [aria-hidden] > * {

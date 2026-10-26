@@ -109,12 +109,10 @@ module ComponentGalleryProbe
   end
 
   def run
-    # Production serves the stylesheets the slug precompiled (assets.compile is
-    # off); this boot precompiled none, so a preview frame's stylesheet_link_tag
-    # would raise AssetNotFound. Let the tag fall back to a plain path instead:
-    # what is under test is who reaches the frame and that it renders, not the
-    # asset build.
-    ActionView::Base.unknown_asset_fallback = true
+    # This boot precompiled nothing, so there is no public/assets/.manifest.json
+    # and Propshaft resolves a preview frame's stylesheet_link_tag from the load
+    # path (its Dynamic resolver), production or not. Nothing to stub: Propshaft
+    # raises on a missing asset whatever unknown_asset_fallback says.
 
     result ={ "env" => Rails.env, "flag" => Studio.lookbook_in_production, "eager_load" => Rails.application.config.eager_load }
 

@@ -47,7 +47,7 @@ class LineupGraphicsFontTest < ActionDispatch::IntegrationTest
     # The digested path is the proof the asset RESOLVED. A template that emits a
     # bare, undigested filename renders without raising and 404s in the browser,
     # which is the failure this assertion exists to separate from success.
-    assert_match(%r{/assets/studio/montserrat-latin-[0-9a-f]{16,}\.woff2}, response.body,
+    assert_match(%r{/assets/studio/montserrat-latin-[0-9a-f]{8,}\.woff2}, response.body,
                  "expected a digested, same-origin Montserrat woff2 from studio-engine's vendored " \
                  "assets; without it the @font-face names a file the browser cannot fetch and the " \
                  "page silently falls back to system-ui")

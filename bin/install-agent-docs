@@ -277,6 +277,7 @@ hook_bin_dir() {
 # answer depend on where the CALLER stands. Both arms measured 2026-09-27:
 #
 #   cwd with no checkout above it  -> Sprockets::Railtie::ManifestNeededError
+#                                     (measured under Sprockets, 2026-09-27)
 #   cwd inside ANY checkout (a desk) -> boots fine, Rails.root = THAT checkout
 #
 # The second arm is the dangerous one, and it is why a Gemfile is worse than no

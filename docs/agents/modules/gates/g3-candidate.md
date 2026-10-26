@@ -69,9 +69,9 @@ run inside it rides the close:
   **hub** self-heals: `rails test`/`rails test:system` each run rake
   `test:prepare`, which tailwindcss-rails enhances with `tailwindcss:build`, so
   the gitignored `app/assets/builds/tailwind.css` is built on demand. **Rolio**
-  needs no build at all: it is sprockets + importmap and leaves
-  `config.assets.compile` at its default `true` in test, so its stylesheets
-  compile at request time from tracked sources. In both, Selenium Manager fetches
+  needs no build at all: it is Propshaft + importmap with no Tailwind build, and
+  Propshaft's test-env server serves its stylesheets straight from tracked
+  sources. In both, Selenium Manager fetches
   a chromedriver matched to the installed Chrome; a host with **no Chrome** fails
   at driver resolution — an **ENV error, NOT a release regression**: nothing to
   eject or revert. (The pre-v2 gate guarded this up front with a browser pre-check,

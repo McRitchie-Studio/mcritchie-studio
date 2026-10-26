@@ -7,7 +7,8 @@ require Rails.root.join("lib/middleware/digested_asset_cache")
 # nothing changed on anything else (see lib/middleware/digested_asset_cache.rb).
 class DigestedAssetCacheTest < ActiveSupport::TestCase
   WEEK = "public, max-age=604800"
-  DIGEST = "a" * 64
+  DIGEST = "a" * 64 # Sprockets 4, still on a slug precompiled before the move
+  PROPSHAFT = "0f3c9a1e" # Propshaft: the first 8 hex of a SHA1
 
   def call(path, status: 200, headers: { "cache-control" => WEEK })
     app = ->(_env) { [ status, headers.dup, [ "body" ] ] }
@@ -15,7 +16,9 @@ class DigestedAssetCacheTest < ActiveSupport::TestCase
   end
 
   test "a digested asset gets a year, immutable" do
-    %W[/assets/application-#{DIGEST}.css /assets/controllers/nav-#{DIGEST}.js /assets/application-#{DIGEST}.css.gz].each do |path|
+    %W[/assets/application-#{PROPSHAFT}.css /assets/controllers/nav-#{PROPSHAFT}.js
+       /assets/tailwind-#{PROPSHAFT}.css.gz /assets/hero/denver-hero-1280-#{PROPSHAFT}.avif
+       /assets/application-#{DIGEST}.css /assets/controllers/nav-#{DIGEST}.js /assets/application-#{DIGEST}.css.gz].each do |path|
       _status, headers, _body = call(path)
       assert_equal "public, max-age=31536000, immutable", headers["cache-control"], path
     end
@@ -29,7 +32,8 @@ class DigestedAssetCacheTest < ActiveSupport::TestCase
 
   test "an unfingerprinted file keeps the week" do
     [ "/denver-hero.avif", "/agents/carl.webp", "/brand/navbar-dark.svg", "/assets/application.css",
-      "/assets/application-#{"a" * 8}.css", "/hero/denver-hero-#{DIGEST}.avif" ].each do |path|
+      "/assets/hero/denver-hero-1280.avif", "/assets/application-#{"a" * 7}.css",
+      "/assets/application-#{"g" * 8}.css", "/hero/denver-hero-#{PROPSHAFT}.avif" ].each do |path|
       _status, headers, _body = call(path)
       assert_equal WEEK, headers["cache-control"], path
     end
@@ -44,7 +48,7 @@ class DigestedAssetCacheTest < ActiveSupport::TestCase
   # from public/assets, and the header that reaches the client is the year.
   class ThroughStaticTest < ActionDispatch::IntegrationTest
     setup do
-      @file = Rails.root.join("public/assets/digested-asset-cache-probe-#{SecureRandom.hex(32)}.txt")
+      @file = Rails.root.join("public/assets/digested-asset-cache-probe-#{SecureRandom.hex(4)}.txt")
       @made_dir = !@file.dirname.exist?
       FileUtils.mkdir_p(@file.dirname)
       File.write(@file, "probe")

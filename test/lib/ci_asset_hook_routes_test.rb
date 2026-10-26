@@ -127,7 +127,7 @@ class CiAssetHookRoutesTest < ActiveSupport::TestCase
                  "— they neither invoke it nor spawn an unfiltered `rails <task>`: " \
                  "#{uncovered.inspect}. On a virgin runner app/assets/builds/tailwind.css is " \
                  "never built and every view-rendering test errors with `The asset " \
-                 "\"tailwind.css\" is not present in the asset pipeline`. Add " \
+                 "'tailwind.css' was not found in the load path`. Add " \
                  "`bin/rails db:test:prepare test:prepare` to the step, as bin/ci-shard does."
   end
 

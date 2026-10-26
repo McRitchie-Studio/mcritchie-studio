@@ -490,7 +490,8 @@ checkout starts with no built CSS. Put those two facts together:
 | A hand-run single file | `bin/rails test test/x_test.rb` | **no** | **was red** |
 
 The red is `The asset "tailwind.css" is not present in the asset pipeline` on
-every view-rendering test — dozens of errors on a diff that never touched a
+every view-rendering test (under Propshaft, since 2026-10-25, the same miss reads
+`The asset 'tailwind.css' was not found in the load path.`) — dozens of errors on a diff that never touched a
 view, which reads as a phantom regression. The three runners this repo owns now
 prepare the test env themselves — `bin/fast-check`'s `test-prepare` lane,
 `bin/agent-worktree`'s `prepare_test_env` (run by `new` at bringup, by `up`, and
