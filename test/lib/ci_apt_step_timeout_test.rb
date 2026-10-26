@@ -245,6 +245,45 @@ class CiAptStepTimeoutTest < Minitest::Test
                     "everyone to ignore it on the red one"
   end
 
+  def test_apt_drops_a_silent_socket_and_reads_the_cached_archives
+    # 2026-10-26: the mirror answered `update`, then stalled MID-DOWNLOAD until the
+    # outer budget killed the attempt — six reruns in a row on studio-engine's
+    # consumer-ci, blocking a production release. apt's own Acquire timeouts drop a
+    # silent socket in 30s and re-fetch it; the archive dir is the one the workflow
+    # restores with actions/cache, so a warm run never downloads the .debs at all.
+    result = run_script(mode: "healthy")
+
+    assert_equal 2, result[:apt_args].length, "expected update + install, saw #{result[:apt_args].inspect}"
+    result[:apt_args].each do |args|
+      %w[Acquire::Retries=5 Acquire::http::Timeout=30 Acquire::https::Timeout=30].each do |opt|
+        assert_includes args, opt, "apt-get ran without #{opt}, so a stalled socket hangs the attempt: #{args}"
+      end
+      assert_match %r{Dir::Cache::Archives=\S*/apt-archives}, args,
+                   "apt-get must read and write the ~/apt-archives dir the workflow caches: #{args}"
+    end
+  end
+
+  def test_every_fetch_restores_the_deb_cache_first
+    offenders = []
+    Dir[WORKFLOW_GLOB].sort.each do |path|
+      jobs = (YAML.load_file(path, aliases: true) || {})["jobs"] || {}
+      jobs.each do |job_name, job|
+        next unless job.is_a?(Hash)
+
+        steps = Array(job["steps"]).select { |s| s.is_a?(Hash) }
+        fetch = steps.index { |s| s["run"].to_s.include?("apt-retry") }
+        next if fetch.nil?
+
+        cache = steps.index { |s| s["uses"].to_s.start_with?("actions/cache") && s.dig("with", "path").to_s.include?("apt-archives") }
+        offenders << "#{File.basename(path)} :: #{job_name}" if cache.nil? || cache > fetch
+      end
+    end
+
+    assert_empty offenders,
+                 "these jobs call apt-retry without first restoring ~/apt-archives with actions/cache, " \
+                 "so every run re-downloads every .deb from a mirror that stalls:\n  " + offenders.join("\n  ")
+  end
+
   def test_it_refuses_to_run_with_no_packages
     result = run_script(mode: "healthy", packages: [])
 
@@ -264,6 +303,7 @@ class CiAptStepTimeoutTest < Minitest::Test
       apt_count   = File.join(dir, "apt.count")
       timeout_log = File.join(dir, "timeout.log")
       dpkg_count  = File.join(dir, "dpkg.count")
+      apt_args    = File.join(dir, "apt.args")
 
       # sudo: run the command, nothing more. The real one adds privilege; the
       # script's behaviour does not depend on having it.
@@ -296,6 +336,7 @@ class CiAptStepTimeoutTest < Minitest::Test
       write_stub File.join(bin, "apt-get"), <<~SH
         n=$(( $(cat "#{apt_count}" 2>/dev/null || echo 0) + 1 ))
         echo "$n" > "#{apt_count}"
+        echo "$*" >> "#{apt_args}"
         case "#{mode}" in
           healthy) exit 0 ;;
           flaky)   [ "$n" -ge "#{ok_on}" ] && exit 0 ;;
@@ -322,7 +363,8 @@ class CiAptStepTimeoutTest < Minitest::Test
         output: output,
         apt_calls: File.exist?(apt_count) ? File.read(apt_count).to_i : 0,
         dpkg_calls: File.exist?(dpkg_count) ? File.read(dpkg_count).to_i : 0,
-        timeout_calls: File.exist?(timeout_log) ? File.read(timeout_log).lines.map(&:strip) : []
+        timeout_calls: File.exist?(timeout_log) ? File.read(timeout_log).lines.map(&:strip) : [],
+        apt_args: File.exist?(apt_args) ? File.read(apt_args).lines.map(&:strip) : []
       }
     end
   end

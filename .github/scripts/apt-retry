@@ -33,12 +33,28 @@
 # of the workflow cannot tell what the step runs, and it copies the budgets into every
 # job. Here the budgets live once, under test, and each workflow step stays a literal,
 # readable invocation. Do not inline it again.
+#
+# WHY APT'S OWN TIMEOUTS TOO. On 2026-10-26 the mirror answered `apt-get update`
+# and then stalled MID-DOWNLOAD — the hub's ci.yml and studio-engine's consumer-ci
+# both hit it, the engine's six reruns in a row, blocking a production release. An
+# outer budget can only kill the whole attempt. Acquire::*::Timeout makes apt drop a
+# socket that goes silent for 30s and Acquire::Retries re-fetches that one file, so
+# a stalled connection costs half a minute instead of the attempt's whole budget.
+#
+# WHY THE ARCHIVE DIR UNDER $HOME. The workflow restores ~/apt-archives with
+# actions/cache before calling this, so a warm run downloads only the package index
+# from the mirror. apt writes the .debs as root; the chown on success hands them
+# back to the runner user so the post-job cache save can read them.
 set -uo pipefail
 
 # Overridable ONLY so the test can exercise the real file quickly instead of a
 # rewritten copy of it; nothing in CI sets it. test/lib/ci_apt_step_timeout_test.rb
 # asserts the default below, so shrinking it here fails there.
 : "${APT_RETRY_BUDGETS:=90 300 900}"
+
+ARCHIVES="$HOME/apt-archives"
+mkdir -p "$ARCHIVES/partial"
+APT_OPTS="-o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o APT::Keep-Downloaded-Packages=true -o Dir::Cache::Archives=$ARCHIVES"
 
 if [ "$#" -eq 0 ]; then
   echo "::error::apt-retry needs at least one package name"
@@ -54,8 +70,11 @@ for budget in $APT_RETRY_BUDGETS; do
   # that timeout runs the command in its OWN PROCESS GROUP and signals the group,
   # so a surviving grandchild cannot hold /var/lib/dpkg/lock against the next
   # attempt. Never pass --foreground here; that is what turns the group off.
-  if sudo timeout -k 10 "$budget" bash -c \
-       'apt-get update && apt-get install --no-install-recommends -y "$@"' apt-retry "$@"; then
+  # APT_OPTS is unquoted on purpose inside the inner shell: it is a fixed list of
+  # `-o Key=Value` words with no spaces in any value, and it must split into them.
+  if sudo timeout -k 10 "$budget" env APT_OPTS="$APT_OPTS" bash -c \
+       'apt-get $APT_OPTS update && apt-get $APT_OPTS install --no-install-recommends -y "$@"' apt-retry "$@"; then
+    sudo chown -R "$(id -u):$(id -g)" "$ARCHIVES" || true
     [ "$attempt" -eq 1 ] || echo "::notice::apt succeeded on attempt $attempt"
     exit 0
   fi
