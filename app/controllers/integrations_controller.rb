@@ -7,7 +7,8 @@ class IntegrationsController < ApplicationController
   # sees the household's (admin-owned) connections through /admin/google;
   # anyone else sees and manages only their own, through /integrations/google
   # (/tasks/every-user-connects-google). A signed-out visitor sees the
-  # marketing cards and their contact-form Connect; nothing is read for them.
+  # marketing cards; nothing is read for them. Their Google cards' Connect
+  # opens the sign-in modal, every other card's the contact form.
   GOOGLE_CARDS = { "google_calendar" => :calendar, "gmail" => :gmail, "google_drive" => :drive }.freeze
   GOOGLE_METHOD = "sign_in".freeze
   # The section whose top carries Connect Google (all three at once) for an

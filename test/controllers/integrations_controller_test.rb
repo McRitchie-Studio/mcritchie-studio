@@ -48,10 +48,28 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{entry('google_workspace_connect')} [data-test='entry-lead'][data-lead='google'] [data-test='brand-logo']"
     css_select("[data-test='entry-cta']").each do |cta|
       item = cta.ancestors("[data-test='integration-entry']").first["data-entry"]
+      next if IntegrationsController::GOOGLE_CARDS.key?(item) # opens the sign-in modal; its own test below
       intent = Integration.find(item).intent
       expected = item == "discord" ? integrations_discord_path : contact_form_path(source: { page: "integrations", item: item, intent: intent })
       assert_equal expected, cta["href"], item
     end
+  end
+
+  test "[integration] signed out, each Google card's Connect opens the sign-in modal back to /integrations; Fathom's still opens the contact form" do
+    get integrations_path
+
+    IntegrationsController::GOOGLE_CARDS.each_key do |item|
+      assert_select "#{entry(item)} [data-test='entry-cta']", count: 1 do |ctas|
+        cta = ctas.first
+        assert_equal "button", cta.name, item
+        assert_nil cta["href"], item
+        assert_equal "auth", cta["data-opens"], item
+        assert_includes cta["@click"], "$store.modals.open('auth'", item
+        assert_includes cta["@click"], "returnTo: '#{integrations_path}'", item
+        assert_includes cta["@click"], "title: 'Sign in to connect Google'", item
+      end
+    end
+    assert_select "#{entry('fathom')} [data-test='entry-cta'][href='#{contact_form_path(source: { page: "integrations", item: "fathom", intent: Integration.find("fathom").intent })}']", count: 1
   end
 
   test "[component] Extra build requests is a Builder add-on: From Builder, its blurb, Quote and Talk to us" do

@@ -48,7 +48,9 @@
 #
 # The button is not configured: it follows from the group and the status, so a
 # Coming soon entry can never offer to connect. Every button opens the /contact
-# form prefilled, carrying {page, item, intent} into the submission's `source`.
+# form prefilled, carrying {page, item, intent} into the submission's `source`,
+# except a signed-out visitor's on a google_sign_in card, which opens the
+# sign-in modal (IntegrationsController::GOOGLE_CARDS).
 #   integrations, live or on_request  "Connect"       intent connect
 #   integrations, soon                "Get notified"  intent notify
 #   add_ons                           "Talk to us"    intent add_on
@@ -93,7 +95,8 @@ groups:
       # One person's own Google sign-in, one read each (GoogleConnection::ABILITIES).
       # Any signed-in user sees each card's Connect or Disconnect for their own
       # account; an admin's are the household's, on /admin/google too
-      # (IntegrationsController::GOOGLE_CARDS).
+      # (IntegrationsController::GOOGLE_CARDS). A visitor's Connect opens the
+      # sign-in modal, back to /integrations.
       - key: google_calendar
         name: Google Calendar
         icon: "📅"
