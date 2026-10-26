@@ -62,7 +62,7 @@ class Broadcasts::CyvasseNightTest < ActionDispatch::IntegrationTest
     assert_includes body, "Bring your 30 wins’ worth of experience."
     assert_includes body, "See Cyvasse Night"
     assert_includes body, "Add it to your calendar"
-    assert_includes body, "— Alex McRitchie"
+    assert_includes body, "— Alex"
     assert_includes body, "we’ll build it"
   end
 
