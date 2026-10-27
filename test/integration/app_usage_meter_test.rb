@@ -8,13 +8,6 @@ require "test_helper"
 # unlimited. [component] The meter renders used, allowance, percent and the
 # config-priced suggestion.
 class AppUsageMeterTest < ActionDispatch::IntegrationTest
-  # Pinned mid-month. The tier suggestion fires when this month's usage PROJECTS past
-  # the allowance (AgentUsage::Suggestion.projected), and 850 tokens projects past
-  # 1,000 only early in a month: from about the 27th the projection falls under it
-  # and the suggestion assertion went red on the calendar (2026-10-27), not on code.
-  setup { travel_to Time.zone.local(2026, 10, 10, 12, 0, 0) }
-  teardown { travel_back }
-
   setup do
     @app = apps(:turf_monster)
     @app.update!(package_tier: "builder")
