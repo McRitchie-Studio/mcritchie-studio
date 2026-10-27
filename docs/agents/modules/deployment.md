@@ -577,6 +577,11 @@ How a gem rides a release:
    prepare and its ship: the `v<version>` tag is pushed when the ship publishes
    the final, so every re-run of prepare before then reads the version as
    allocated already.
+   A re-run first re-derives that unpublished version from the current members:
+   it moves UP when a joining member earns more (folding the unpublished section
+   back into the bucket and rolling it again), re-rolls the same version when
+   entries merged after the roll, and otherwise skips
+   (`Release::GemVersion#reallocation`).
 
    **History.** Before 2026-09-09 prepare published and tagged without ever
    touching `CHANGELOG.md`, and nothing failed when it didn't. Measured at
