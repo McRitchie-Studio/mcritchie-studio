@@ -88,9 +88,9 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
       CARDS.each do |key, ability|
         assert_equal "none", slot(key)["data-state"], key
         assert_equal ability, slot(key)["data-ability"]
-        link = slot(key).at_css("a[data-test='google-connect']")
+        link = slot(key).at_css("[data-test='google-connect']")
         assert_equal "Connect #{GoogleConnection::ABILITY_NAMES.fetch(ability.to_sym)}", link.text.strip
-        assert_equal admin_google_connect_path(ability:, return_to: "/integrations"), link["href"]
+        assert_equal admin_google_connect_path(ability:, return_to: "/integrations"), connect_target(link), key
         assert_nil slot(key).at_css("[data-test='google-disconnect']")
       end
       assert_equal 3, css_select("[data-test='google-connection']").size, "only the three Google cards"
@@ -132,6 +132,63 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
 
   def connect_all = css_select("[data-test='google-connect-all']").first
 
+  # Where a Connect goes: a link's href, or the href the Gmail admin-trust
+  # modal's Continue follows (the trigger's data-href).
+  def connect_target(node) = node.name == "a" ? node["href"] : node["data-href"]
+
+  test "[component] signed-in /integrations: the Gmail Connect is a modal trigger carrying the client ID; Calendar and Drive still link straight" do
+    log_in_as users(:viewer)
+    with_connect_env do
+      get integrations_path
+
+      gmail = slot("gmail").at_css("[data-test='google-connect']")
+      assert_equal "button", gmail.name, "Gmail's Connect is a button, not a link to Google"
+      assert_equal "gmail-admin", gmail["data-opens"]
+      assert_equal "test-connect-id", gmail["data-client-id"]
+      assert_equal integrations_google_connect_path(ability: :gmail, return_to: "/integrations"), gmail["data-href"]
+      assert_includes gmail["@click"], "$store.modals.open('gmail-admin'"
+      { "google_calendar" => :calendar, "google_drive" => :drive }.each do |key, ability|
+        link = slot(key).at_css("[data-test='google-connect']")
+        assert_equal "a", link.name, "#{key} links straight to Google"
+        assert_equal integrations_google_connect_path(ability:, return_to: "/integrations"), link["href"]
+        assert_nil link["data-opens"]
+      end
+      assert_no_match(/test-connect-secret/, response.body, "never the secret")
+    end
+  end
+
+  test "[component] Connect the rest links straight once Gmail is connected, and opens the modal while Gmail is missing" do
+    log_in_as users(:alex)
+    with_connect_env do
+      store_google(scope: "openid #{GMAIL}")
+      get integrations_path
+      button = connect_all.at_css("[data-test='google-connect-all-button']")
+      assert_equal "a", button.name, "Gmail already connected: no admin modal"
+      assert_nil button["data-opens"]
+
+      GoogleConnection.delete_all
+      store_google(scope: "openid #{CALENDAR}")
+      get integrations_path
+      button = connect_all.at_css("[data-test='google-connect-all-button']")
+      assert_equal "Connect the rest", button.text.strip
+      assert_equal "gmail-admin", button["data-opens"]
+    end
+  end
+
+  test "[component] the Gmail trigger carries no client ID when none is set" do
+    log_in_as users(:viewer)
+    with_connect_env do
+      ENV.delete("GOOGLE_CONNECT_CLIENT_ID")
+      GoogleConnect::OAuthClient.sign_in_stand_in = Object.new # connectable without a configured client
+      get integrations_path
+      gmail = slot("gmail")&.at_css("[data-test='google-connect']")
+      assert gmail, "Connect still shows through the stand-in"
+      assert_equal "", gmail["data-client-id"].to_s
+    ensure
+      GoogleConnect::OAuthClient.sign_in_stand_in = nil
+    end
+  end
+
   test "[component] Connect Google sits above the three Google cards for an admin, outside their grid" do
     log_in_as users(:alex)
     with_connect_env do
@@ -143,9 +200,10 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
       assert_nil connect_all.at_css("[data-test='integration-entry']")
       assert_nil connect_all.ancestors(".grid").first, "not a cell of the card grid"
       assert_equal "none", connect_all["data-state"]
-      link = connect_all.at_css("a[data-test='google-connect-all-button']")
+      link = connect_all.at_css("[data-test='google-connect-all-button']")
       assert_equal "Connect Google", link.text.strip
-      assert_equal admin_google_connect_path(ability: "all", return_to: "/integrations"), link["href"]
+      assert_equal "gmail-admin", link["data-opens"], "Gmail is in the sign-in, so the admin-trust modal comes first"
+      assert_equal admin_google_connect_path(ability: "all", return_to: "/integrations"), connect_target(link)
     end
   end
 
@@ -204,14 +262,14 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
 
       CARDS.each do |key, ability|
         assert_equal "none", slot(key)["data-state"], key
-        link = slot(key).at_css("a[data-test='google-connect']")
-        assert_equal integrations_google_connect_path(ability:, return_to: "/integrations"), link["href"], key
+        link = slot(key).at_css("[data-test='google-connect']")
+        assert_equal integrations_google_connect_path(ability:, return_to: "/integrations"), connect_target(link), key
         assert_nil card(key).at_css("[data-test='entry-cta']"), "#{key}: their real Connect replaces the contact-form one"
       end
       all = css_select("[data-test='google-connect-all']").first
       assert_equal "none", all["data-state"]
       assert_equal integrations_google_connect_path(ability: GoogleConnection::ALL, return_to: "/integrations"),
-                   all.at_css("[data-test='google-connect-all-button']")["href"]
+                   connect_target(all.at_css("[data-test='google-connect-all-button']"))
       assert_no_match(/alex@mcritchie\.studio/, response.body, "the household's account never shows to a non-admin")
       assert_no_match(%r{/admin/google}, response.body)
       assert card("github_org").at_css("[data-test='entry-cta']"), "a non-Google card keeps its CTA"

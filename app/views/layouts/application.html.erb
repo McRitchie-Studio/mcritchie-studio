@@ -59,7 +59,7 @@
         two-line title. %>
     <script nonce="<%= content_security_policy_nonce %>">
       window.StudioModals = window.StudioModals || {};
-      window.StudioModals.CARD_WIDTHS = Object.assign({}, window.StudioModals.CARD_WIDTHS || {}, { 'auth': 'max-w-md' });
+      window.StudioModals.CARD_WIDTHS = Object.assign({}, window.StudioModals.CARD_WIDTHS || {}, { 'auth': 'max-w-md', 'gmail-admin': 'max-w-md' });
     </script>
     <%= render "studio/modals/host" do %>
       <template x-if="$store.modals.current().id === 'auth'">
@@ -67,6 +67,9 @@
       </template>
       <template x-if="$store.modals.current().id === 'check-inbox'">
         <%= render "modals/check_inbox" %>
+      </template>
+      <template x-if="$store.modals.current().id === 'gmail-admin'">
+        <%= render "modals/gmail_admin" %>
       </template>
       <%# The shared first-name step (engine primitive). Rendered from the gem so
           this app and turf-monster ask the same question the same way; the

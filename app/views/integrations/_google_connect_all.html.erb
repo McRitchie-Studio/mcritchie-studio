@@ -1,5 +1,6 @@
-<%# Signed in only: Connect Google, one sign-in asking for Calendar, Gmail and Drive together (GoogleConnection::ALL), at the top of the /integrations Google section and of /admin/google. Locals: connections (each ability to its connection or nil), connectable (the server can take one), return_to (nil comes back to /admin/google) and own (optional: true sends a non-admin through /integrations/google, for their own account). Every ability connected: the account, no button. Some: Connect the rest. None: Connect Google. Not connectable and not all connected: nothing renders. No token renders. %>
+<%# Signed in only: Connect Google, one sign-in asking for Calendar, Gmail and Drive together (GoogleConnection::ALL), at the top of the /integrations Google section and of /admin/google. Locals: connections (each ability to its connection or nil), connectable (the server can take one), return_to (nil comes back to /admin/google) and own (optional: true sends a non-admin through /integrations/google, for their own account) and gmail_gate (optional: true, from /integrations, opens the Gmail admin-trust modal first while Gmail is still missing; /admin/google links straight). Every ability connected: the account, no button. Some: Connect the rest. None: Connect Google. Not connectable and not all connected: nothing renders. No token renders. %>
 <% own = local_assigns.fetch(:own, false) %>
+<% gmail_gate = local_assigns.fetch(:gmail_gate, false) %>
 <% connected = GoogleConnection::ABILITIES.keys.select { connections[_1] } %>
 <% missing = GoogleConnection::ABILITIES.keys - connected %>
 <% state = if missing.empty? then "all" elsif connected.any? then "some" else "none" end %>
@@ -20,8 +21,17 @@
       <% end %>
     </div>
     <% unless state == "all" %>
-      <%= link_to (state == "some" ? "Connect the rest" : "Connect Google"), (own ? integrations_google_connect_path(ability: GoogleConnection::ALL, return_to:) : admin_google_connect_path(ability: GoogleConnection::ALL, return_to:)),
-                  class: "btn btn-primary btn-sm w-full shrink-0 justify-center text-center sm:w-auto", data: { test: "google-connect-all-button", turbo: false } %>
+      <% label = state == "some" ? "Connect the rest" : "Connect Google" %>
+      <% href = own ? integrations_google_connect_path(ability: GoogleConnection::ALL, return_to:) : admin_google_connect_path(ability: GoogleConnection::ALL, return_to:) %>
+      <% button_class = "btn btn-primary btn-sm w-full shrink-0 justify-center text-center sm:w-auto" %>
+      <% if gmail_gate && missing.include?(:gmail) %>
+        <%# Gmail is in the sign-in, so the admin-trust modal (modals/_gmail_admin) comes first; its Continue follows the same href. %>
+        <button type="button" class="<%= button_class %>" data-test="google-connect-all-button" data-opens="gmail-admin"
+                data-href="<%= href %>" data-client-id="<%= GoogleConnect::OAuthClient.client_id %>"
+                @click="$store.modals.open('gmail-admin', { href: $el.dataset.href, clientId: $el.dataset.clientId })"><%= label %></button>
+      <% else %>
+        <%= link_to label, href, class: button_class, data: { test: "google-connect-all-button", turbo: false } %>
+      <% end %>
     <% end %>
   </div>
 <% end %>

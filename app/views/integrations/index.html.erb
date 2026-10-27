@@ -23,7 +23,7 @@
           cards, outside their grid, so the card rows stay as they are. %>
       <% if @google && group.key == IntegrationsController::GOOGLE_GROUP %>
         <div class="mb-5">
-          <%= render "integrations/google_connect_all", connections: @google.slice(*GoogleConnection::ABILITIES.keys), connectable: @google[:connectable], own: @google[:own], return_to: integrations_path %>
+          <%= render "integrations/google_connect_all", connections: @google.slice(*GoogleConnection::ABILITIES.keys), connectable: @google[:connectable], own: @google[:own], return_to: integrations_path, gmail_gate: true %>
         </div>
       <% end %>
 
