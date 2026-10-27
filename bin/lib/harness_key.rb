@@ -95,6 +95,11 @@ module HarnessKey
     file
   end
 
+  # Move a legacy key into the secret cache and leave a symlink (bin/secret migrate).
+  def migrate!(projects_dir, env: ENV)
+    SecretCache.adopt_legacy!(guarded_path(projects_dir, env), FILE, env: cache_env(projects_dir, env))
+  end
+
   def clear(projects_dir, env: ENV)
     legacy = guarded_path(projects_dir, env)
     SecretCache.delete(FILE, env: cache_env(projects_dir, env))

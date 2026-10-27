@@ -478,6 +478,11 @@ while (arg = args.shift)
   when "--force" then force = true
   when "--reject" then reject = args.shift.to_s.strip
   when "--forget" then forget = true
+  when "--migrate"
+    # Adopt the legacy file into the folder and leave a link (bin/secret migrate).
+    # Prints nothing; never mints.
+    SecretCache.adopt_legacy!(legacy_store_path, SecretCache::GITHUB_FILE)
+    exit 0
   when "--expires-at" then expires_at = true
   when "--status"
     # NOT `status and exit 0`: `status` returns nil, the `and` short-circuits, the
