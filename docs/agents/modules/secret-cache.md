@@ -49,7 +49,7 @@ added back.
 makes `bin/secret <vault> <item> [field]` serve that item from the folder. None are
 named by default. To choose one, read the data first: since 2026-10-27 every
 `bin/secret` read records its item in the read log (the `via` column reads
-`secret:<vault>/<item>`; query with `bin/op-reads`).
+`secret:<vault>/<item>`; query with `bin/op-reads`). A read the cache answers is logged too, with the action `cache-hit`, so quota spend and cache hits stay apart.
 
 ## The one read path: `bin/secret`
 

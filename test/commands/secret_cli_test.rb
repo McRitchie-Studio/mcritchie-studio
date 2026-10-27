@@ -250,6 +250,7 @@ class SecretCliTest < Minitest::Test
 
     assert_equal %w[THE-VALUE THE-VALUE], [first, second]
     assert_equal 1, File.read(counter).lines.size, "the second read came from the cache"
+    assert_includes File.read(File.join(@root, "op-reads.log")), "cache-hit", "the hit is logged for the data pass"
     assert_includes status_out, "agent.heroku: expires in"
     refute_includes status_out, "THE-VALUE"
   end

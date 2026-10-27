@@ -253,7 +253,12 @@ module SecretCacheCli
 
   def item_value(name, meta, env, err)
     cached = SecretCache.cached_item(name, env: env)
-    return cached if cached
+    if cached
+      # Recorded beside the op reads with its own action, so bin/op-reads separates
+      # quota spend from reads the cache answered. Never the value.
+      OpMeter.record(action: "cache-hit", outcome: "ok", via: "secret:#{meta['vault']}/#{meta['item']}", env: env)
+      return cached
+    end
 
     ref = "op://#{meta['vault']}/#{meta['item']}/#{meta['field'] || 'password'}"
     value = Tempfile.create("secret-op-err") do |errfile|
