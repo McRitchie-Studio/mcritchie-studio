@@ -19,20 +19,53 @@ namespace :logos do
     end
   end
 
-  desc "Install a brand's saved kit into an app: BRAND=studio [DEST=public/brand] writes every kit file, byte-equal to /logos/<brand>/kit/<file>, plus kit.json"
+  # FROM= (task brand-kit-applied-status) installs the kit a kit.json names instead of this database's: production's
+  # kit, read with `BrandKitInstall.manifest_for` there (the brand-kit-rollout SOP), so a desk installs the exact kit
+  # and saved_at production holds without copying the row.
+  desc "Install a brand's saved kit into an app: BRAND=studio [DEST=public/brand] [FROM=<kit.json>] writes every kit file, byte-equal to /logos/<brand>/kit/<file>, plus kit.json"
   task install: :environment do
     brand = ENV["BRAND"].to_s
     unless Logos::NavbarLogo.brands.include?(brand)
-      abort "usage: bin/rails logos:install BRAND=<brand> [DEST=<dir>] — brands: #{Logos::NavbarLogo.brands.join(', ')}"
+      abort "usage: bin/rails logos:install BRAND=<brand> [DEST=<dir>] [FROM=<kit.json>] — brands: #{Logos::NavbarLogo.brands.join(', ')}"
     end
 
-    kit = BrandKit.for(brand)
-    warn "logos:install: #{brand} has no saved kit in this database (#{Rails.env}); writing the brand's defaults" unless kit.persisted?
+    kit = if ENV["FROM"].present?
+            begin
+              BrandKitInstall.kit_from_manifest(File.read(ENV["FROM"]), brand:)
+            rescue Errno::ENOENT, JSON::ParserError, ArgumentError => e
+              abort "logos:install: FROM=#{ENV['FROM']}: #{e.message}"
+            end
+          else
+            BrandKit.for(brand)
+          end
+    warn "logos:install: #{brand} has no saved kit in this database (#{Rails.env}); writing the brand's defaults" unless kit.persisted? || ENV["FROM"].present?
     dest = ENV["DEST"].presence ? Pathname(ENV["DEST"]).expand_path : BrandKitInstall.default_dest
     result = BrandKitInstall.new(kit, dest:).call
     result.written.each { |name| puts "wrote     #{dest.join(name)}" }
     result.unchanged.each { |name| puts "unchanged #{dest.join(name)}" }
     result.refused.each { |name, why| warn "refused   #{name}: #{why}" }
+  end
+
+  # Task brand-kit-applied-status: the brand-kit-rollout SOP's last step, run on the hub's PRODUCTION database once the
+  # app's live /brand/kit.json carries the kit's saved_at. SAVED_AT is that saved_at (default: the kit's own).
+  desc "Record that a brand's kit was applied to an app: BRAND=turf APP=turf-monster [AT=<time>] [BY=<who>] [SAVED_AT=<kit.json saved_at>]"
+  task applied: :environment do
+    brand = ENV["BRAND"].to_s
+    app = ENV["APP"].to_s
+    usage = "usage: bin/rails logos:applied BRAND=<brand> APP=<app slug> [AT=<time>] [BY=<who>] [SAVED_AT=<time>] — brands: #{Logos::NavbarLogo.brands.join(', ')}"
+    abort usage unless Logos::NavbarLogo.brands.include?(brand) && app.present?
+    abort "logos:applied: no app #{app.inspect} in this database (#{Rails.env})" unless App.exists?(slug: app)
+
+    time = lambda do |name|
+      value = ENV[name].presence or next
+      Time.zone.parse(value) || abort("logos:applied: #{name}=#{value.inspect} is not a time")
+    rescue ArgumentError
+      abort "logos:applied: #{name}=#{value.inspect} is not a time"
+    end
+    by = ENV["BY"].presence || ENV["USER"].presence || "unknown"
+    link = BrandKitApp.record_applied!(brand:, app_slug: app, by:, at: time.call("AT"), saved_at: time.call("SAVED_AT"))
+    puts "#{brand} → #{app}: #{link.status_label} (used #{link.used_at.utc.iso8601} by #{link.used_by}, " \
+         "kit saved #{link.applied_saved_at&.utc&.iso8601 || 'never'})"
   end
 
   # Task stacked-rule-of-three: an icon's box is its ink (Logos::IconInk), and NavbarLogo refuses one that is not.

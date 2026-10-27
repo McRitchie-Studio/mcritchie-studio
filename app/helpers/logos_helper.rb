@@ -177,10 +177,12 @@ module LogosHelper
   # kit is saved once it holds a saved Icon, Navbar or Stacked choice: a record left with none (a cleared choice, only
   # originals or notes) is not saved yet (task logo-gallery-polish-pass, item 4). The saver is named by their user
   # name (`savers`, BrandKit.saver_names), else their email's local part; `full: true` adds the email in brackets,
-  # for the title attribute of a status cut short.
+  # for the title attribute of a status cut short. The date is the kit's saved_at (its last logo choice saved or
+  # cleared; task brand-kit-applied-status), else updated_at for a kit saved before saved_at was kept. The brand page,
+  # its Kit card and Compare show it; the /logos table shows each app's status instead (brand_kit_apps/_status).
   def logo_kit_status(kit, savers = {}, full: false)
     saved = kit&.persisted? && BrandKit::CHOICE_TYPES.any? { |type| kit.saved?(type) }
-    status = saved ? ["Kit: saved #{kit.updated_at.strftime('%b %-d, %Y')}", logo_kit_saver(kit, savers, full:)].compact.join(" ") : "Kit: not saved yet"
+    status = saved ? ["Kit: saved #{(kit.saved_at || kit.updated_at).strftime('%b %-d, %Y')}", logo_kit_saver(kit, savers, full:)].compact.join(" ") : "Kit: not saved yet"
     originals = kit&.persisted? ? kit.originals_attachments.size : 0
     originals.positive? ? "#{status} · originals: #{originals}" : status
   end

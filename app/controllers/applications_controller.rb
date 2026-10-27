@@ -6,7 +6,9 @@
 # exist for them, so an unannounced app's slug never leaks.
 #
 #   index   the visible apps; 404 for a viewer who owns none
-#   show    name, emoji and colour, a lazy health frame, the CTO card
+#   show    name, emoji and colour, a lazy health frame, the CTO card, and the
+#           brand kits it takes with their status (BrandKitApp; Applied, Kit
+#           changed or Not applied), the brand linked to /logos for an admin
 #   health  the frame: the app's health for the last morning window, cached
 #   usage   JSON: this month's CTO usage meter and today's totals (AgentUsage,
 #           docs/agents/system/agent-usage.md); owner or admin, like the page.
@@ -36,6 +38,8 @@ class ApplicationsController < ApplicationController
     @owners = @app.memberships.owners.includes(:user).map(&:user) if @admin
     @meter = viewer_meter
     @today = viewer_totals(usage_today(@meter))
+    @kit_links = @app.brand_kit_apps.order(:brand).to_a
+    @kits = BrandKit.where(brand: @kit_links.map(&:brand)).index_by(&:brand)
   end
 
   def pipeline

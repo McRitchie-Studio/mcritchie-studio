@@ -1,0 +1,13 @@
+<%# ONE KIT-TO-APP LINK'S STATUS LINE (BrandKitApp#status; task brand-kit-applied-status): "<label> Applied", "Kit
+    changed" (amber: the kit was saved after the app last applied it) or "Not applied". The title gives the dates: the
+    kit's save and the application, after the label in full (the line may cut it short). Shared by the /logos brand column (label: the app's emoji and name) and the app's
+    page (label: the brand's name). Locals: link (BrandKitApp), kit (its BrandKit, or nil: never saved), label. %>
+<% status = link.status(kit) %>
+<% day = ->(time) { time&.strftime("%b %-d, %Y") } %>
+<% title = ["#{strip_tags(label.to_s).strip}: Kit #{kit&.saved_at ? "saved #{day.(kit.saved_at)}" : 'never saved'}",
+            (link.used_at ? "applied #{day.(link.used_at)}#{" (kit of #{day.(link.applied_saved_at)})" if link.applied_saved_at}" : "not applied yet")].join("; ") %>
+<p class="flex items-baseline gap-1 min-w-0" data-test="kit-app-status" data-app="<%= link.app_slug %>" data-brand="<%= link.brand %>"
+   data-status="<%= status %>" title="<%= title %>">
+  <span class="truncate text-secondary"><%= label %></span>
+  <span class="shrink-0 font-semibold <%= { applied: 'text-success-ink', changed: 'text-warning-ink', not_applied: 'text-muted' }.fetch(status) %>"><%= BrandKitApp::STATUSES.fetch(status) %></span>
+</p>

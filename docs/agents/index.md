@@ -161,6 +161,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | Invocation | Owner | Read |
 |------------|-------|------|
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
+| `brand-kit-rollout` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/brand-kit-rollout.md` |
 | `focus-session` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/focus-session.md` |
 | `launch-build-queue` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/launch-build-queue.md` |
 | `ship-clock` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/ship-clock.md` |

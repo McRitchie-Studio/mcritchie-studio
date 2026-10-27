@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 
 import {
   MAX_SIDE, pngSize, drawRect, pngFilename, sizedSvg, rasterise, presetsFor,
-  naturalSize, rasterSize, rasterFilename, rasterPlan, tableFormat, downloadTableLink, sizeWords,
+  naturalSize, rasterSize, rasterFilename, rasterPlan, tableFormat, downloadTableLink, sizeWords, tableLinkLabel,
 } from "../../app/javascript/logo_download.js";
 
 const NAVBAR = [2560.42, 300.0];
@@ -160,4 +160,14 @@ test("in the SVG format the table link is left to download the SVG itself", asyn
 test("a link's accessible name says the size it is drawn at", () => {
   assert.equal(sizeWords("width:800"), "800 px wide");
   assert.equal(sizeWords("long:512"), "512 px on its long side");
+});
+
+// Task brand-kit-applied-status (Shannon's light review of logos-index-download-formats): the table's format names the
+// link on top of the server's label, so a saved choice's ", kit choice" cue is never dropped.
+test("a table link's name keeps the server's label, kit choice included, in each format", () => {
+  const served = "Download: Studio navbar logo, rule of 4, light, kit choice";
+  assert.equal(tableLinkLabel(served, "svg", "width:800"), "Download SVG: Studio navbar logo, rule of 4, light, kit choice");
+  assert.equal(tableLinkLabel(served, "png", "width:800"), "Download PNG, 800 px wide: Studio navbar logo, rule of 4, light, kit choice");
+  assert.equal(tableLinkLabel(served, "jpeg", "long:512"), "Download JPEG, 512 px on its long side: Studio navbar logo, rule of 4, light, kit choice");
+  assert.equal(tableLinkLabel("", "svg", "width:800", "Studio icon"), "Download SVG: Studio icon", "no served label: the logo's own");
 });

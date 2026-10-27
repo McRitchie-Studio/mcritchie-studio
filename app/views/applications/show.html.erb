@@ -23,6 +23,18 @@
     <% end %>
   </div>
 
+  <%# The brand kits this app takes (BrandKitApp; task brand-kit-applied-status), as the /logos brand column shows them. %>
+  <% if @kit_links.any? %>
+    <div class="card p-4 space-y-2 text-sm" data-test="application-brand-kits">
+      <h2 class="font-semibold text-heading text-base">Brand kit</h2>
+      <% @kit_links.each do |link| %>
+        <% name = Logos::Variant.brand_name(Logos::NavbarLogo.new(link.brand)) %>
+        <%= render "brand_kit_apps/status", link:, kit: @kits[link.brand],
+                   label: @admin ? link_to(name, logo_brand_path(link.brand), class: "text-primary hover:underline") : name %>
+      <% end %>
+    </div>
+  <% end %>
+
   <div class="card p-4 space-y-3 text-sm" data-test="application-cto-card">
     <h2 class="font-semibold text-heading text-base">CTO</h2>
     <% if @cto %>
