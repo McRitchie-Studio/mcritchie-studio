@@ -19,6 +19,9 @@
 //
 //      <button data-copy-hex="#1A1535"> … <span data-copy-hex-label> … <span data-copy-hex-status>
 //
+//    A spectrum step is the same button. The spectrum's Copy CSS tokens button copies a whole block the same
+//    way; its data-copy-name ("CSS tokens") is what the status says it copied, in place of the block itself.
+//
 // 4. A COPY SVG BUTTON fetches its logo from the logo's own URL (the Download link's, without
 //    download=1) on click and puts the SVG on the clipboard, then says Copied or Copy failed
 //    for a moment (task logo-gallery-polish-pass: the page used to carry every SVG inline,
@@ -99,6 +102,7 @@ function wireSwatch(button) {
   button.dataset.copyHexWired = "1";
   const label = button.querySelector("[data-copy-hex-label]");
   const status = button.parentElement.querySelector("[data-copy-hex-status]");
+  const rest = label ? label.textContent : "";
   let timer;
   button.addEventListener("click", () => {
     const hex = button.dataset.copyHex;
@@ -106,10 +110,10 @@ function wireSwatch(button) {
       .then((ok) => (ok === false ? "Copy failed" : "Copied"), () => "Copy failed")
       .then((word) => {
         if (label) label.textContent = word;
-        if (status) status.textContent = word === "Copied" ? `Copied ${hex}` : word;
+        if (status) status.textContent = word === "Copied" ? `Copied ${button.dataset.copyName || hex}` : word;
         clearTimeout(timer);
         timer = setTimeout(() => {
-          if (label) label.textContent = hex;
+          if (label) label.textContent = rest;
           if (status) status.textContent = "";
         }, 1600);
       });

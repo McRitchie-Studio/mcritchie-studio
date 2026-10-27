@@ -50,7 +50,9 @@
 #            {name, hex}, one list per brand, no split by tone (Logos::BrandKit).
 #            The logo fills above stay per tone; the palette is what the gallery
 #            shows, and the only colours its edit panel may pick (task
-#            logo-part-editor, docs/topics/logos.md)
+#            logo-part-editor, docs/topics/logos.md). ORDER MATTERS to the
+#            spectrum too: the first colour with a hue is the brand's lead, and
+#            its white and black ramps lean toward it (Logos::Spectrum)
 # typefaces  the brand's typeface hierarchy, most prominent first, 1 to 3 levels
 #            of {role, family, weight}. `family` is a face the hub serves
 #            (Montserrat). A level set in the brand's own traced lettering has no
