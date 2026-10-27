@@ -115,7 +115,7 @@ served at `/assets/<name>-<8-hex digest>.<ext>`. There is no `manifest.js` and n
 
 ## Tech Stack
 
-- Ruby 3.3.11 / Node 22.x / Rails 8.1 / PostgreSQL
+- Ruby 3.3.11 / Node 22.x / Rails 8.1 / PostgreSQL. Node's pin is `.tool-versions` (mise, CI); Heroku's `heroku/nodejs` buildpack reads `package.json` `engines` (`22.x`), which `bin/rails studio:node:check` holds to the same major. Nothing links `node_modules/.studio-engine` on Heroku (`node_tooling:link` refuses there)
 - Tailwind CSS via `tailwindcss-rails` gem (compiled with `@apply` support, not CDN)
 - Alpine.js via CDN for interactivity
 - Montserrat font (Google Fonts CDN)
