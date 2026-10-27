@@ -198,6 +198,7 @@ require_relative "../app/models/devops/windows"
 require_relative "lib/ship_authority"
 require_relative "lib/projects_root"
 require_relative "lib/local_services"
+require_relative "lib/bounded_command" # the record-op deadline (run_record_op)
 require_relative "lib/static_cloudflare" # the static_cloudflare prod_deploy strategy
 # `status` prints PROGRAM DRIFT: on-chain programs behind their source (program_drift_report).
 require_relative "lib/program_drift"
@@ -1336,6 +1337,36 @@ end
 # The snippet as it is sent for TRAIN: unchanged on the hub, guarded on any other.
 def train_guarded(ruby) = hub_train? ? ruby : TRAIN_BOARD_GUARD + ruby
 
+# THE RECORD-OP DEADLINE. On 2026-10-27 one `heroku run` record op hung for 26
+# minutes: the one-off dyno was already gone (`heroku ps` listed none), but the CLI
+# client kept waiting on its rendezvous socket, and `bin/release ship` froze right
+# after the CI gate until a human killed the client. Open3.capture2e has no
+# deadline. A healthy record op takes 20 to 60 seconds (a cold dyno boot plus one
+# Rails runner), so five minutes is generous and still bounds the worst case.
+#
+# On expiry the child's whole PROCESS GROUP gets SIGKILL (BoundedCommand,
+# pgroup: true): `heroku` is a launcher script whose node process would otherwise
+# outlive a kill of the launcher alone. The caller then takes the existing
+# "record op failed" abort, which every best-effort write already rescues
+# (record_release_event, record_gate_open/close, record_deploy_intent) and every
+# deploy-critical write already treats as fatal. macOS ships no `timeout`
+# binary, so the bound is Ruby's, not a shell wrapper's.
+RECORD_OP_DEADLINE_ENV = "RELEASE_RECORD_OP_DEADLINE"
+RECORD_OP_DEFAULT_DEADLINE = 300
+
+# Seconds: RELEASE_RECORD_OP_DEADLINE when it is a positive number (tests shorten
+# it), else the default.
+def record_op_deadline
+  value = Float(ENV[RECORD_OP_DEADLINE_ENV].to_s, exception: false)
+  value&.positive? ? value : RECORD_OP_DEFAULT_DEADLINE
+end
+
+# One record-op child, bounded. Returns [combined stdout+stderr, success, timed_out].
+def run_record_op(cmd, deadline: record_op_deadline)
+  result = BoundedCommand.run(nil, cmd, deadline: deadline, pgroup: true, err: [:child, :out])
+  [result.out.to_s, result.success?, result.timed_out?]
+end
+
 def conductor(ruby, read_only: false)
   ruby = train_guarded(ruby)
   payload = conductor_payload(with_conductor_session(ruby))
@@ -1345,8 +1376,13 @@ def conductor(ruby, read_only: false)
     puts "  [dry-run] #{PROD ? 'heroku run ' : ''}rails runner: #{ruby}"
     return {}
   end
-  out, status = Open3.capture2e(*cmd)
-  abort!("record op failed:\n#{out}") unless status.success?
+  out, ok, timed_out = run_record_op(cmd)
+  if timed_out
+    abort!("record op failed: no answer within #{record_op_deadline.round}s, so the " \
+           "#{PROD ? '`heroku run` client' : 'rails runner'} was killed (#{RECORD_OP_DEADLINE_ENV} sets the bound). " \
+           "Whether the write landed is unknown; re-running is safe, every conductor write is idempotent.\n#{out}")
+  end
+  abort!("record op failed:\n#{out}") unless ok
   line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
   abort!("record op returned no JSON:\n#{out}") unless line
   JSON.parse(line)
