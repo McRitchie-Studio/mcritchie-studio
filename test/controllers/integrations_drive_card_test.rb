@@ -30,7 +30,12 @@ class IntegrationsDriveCardTest < ActionDispatch::IntegrationTest
           assert_equal integrations_drive_token_path, button.first["data-token-url"]
           assert_equal "https://apis.google.com/js/api.js", button.first["data-loader-url"]
         end
-        assert_select "#{CARD} [data-test='drive-folder-hint']", text: /share it with your agent's email address/
+        # A plain viewer's row is read by no agent (GoogleConnection#who_reads), so
+        # the card says picked, never "shared with your agents".
+        assert_select "#{CARD} [data-test='google-who-reads'][data-reader='owner']", text: "Only you can see this"
+        assert_select "#{CARD} [data-test='drive-pick-count']", text: /1 file picked:/
+        assert_select "#{CARD} [data-test='drive-folder-hint']", text: /not what is inside a folder\.\z/
+        refute_match(/shared with your agents/, css_select(CARD).text)
         assert_select "#{CARD} [data-test='drive-legacy']", 0
         refute_includes response.body, "test-picker-key", "the key comes from the token endpoint only"
         assert_no_match(/synthetic-refresh|ya29\./, response.body)
@@ -46,7 +51,7 @@ class IntegrationsDriveCardTest < ActionDispatch::IntegrationTest
 
         assert_select "#{CARD} [data-test='drive-picker-unset']", text: /Drive picking isn't set up yet\./
         assert_select "#{CARD} [data-test='drive-pick-files']", 0
-        assert_select "#{CARD} [data-test='drive-pick-count']", text: /No files shared/
+        assert_select "#{CARD} [data-test='drive-pick-count']", text: /No files picked yet/
       end
     end
   end
@@ -59,8 +64,23 @@ class IntegrationsDriveCardTest < ActionDispatch::IntegrationTest
 
         assert_select "#{CARD}[data-state='connected'] [data-test='drive-picks'][data-mode='legacy']"
         assert_select "#{CARD} [data-test='drive-legacy']", text: /reads every file in your Drive/
+        assert_select "#{CARD} [data-test='drive-legacy'] a[href='https://myaccount.google.com/permissions']"
         assert_select "#{CARD} a[data-test='drive-reconnect'][href=?]", integrations_google_connect_path(ability: :drive, return_to: integrations_path)
         assert_select "#{CARD} [data-test='drive-pick-files']", 0
+      end
+    end
+  end
+
+  test "[component] an admin's own Drive card says its picks are shared with your agents, as who_reads does" do
+    with_connect_env do
+      with_picker_key do
+        log_in_as users(:alex)
+        store_google(scope: "openid #{DRIVE}", abilities: [ :drive ]).drive_picks.create!(file_id: "f1", name: "Q3 plan", picked_at: Time.current)
+        get integrations_path
+
+        assert_select "#{CARD} [data-test='google-who-reads'][data-reader='agents']"
+        assert_select "#{CARD} [data-test='drive-pick-count']", text: /1 file shared with your agents:/
+        assert_select "#{CARD} [data-test='drive-folder-hint']", text: /To give your agents a whole folder, share it with your agent's email address/
       end
     end
   end

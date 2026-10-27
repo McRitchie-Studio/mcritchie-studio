@@ -27,8 +27,8 @@
       <% if gmail_gate && missing.include?(:gmail) %>
         <%# Gmail is in the sign-in, so the admin-trust modal (modals/_gmail_admin) comes first; its Continue follows the same href. %>
         <button type="button" class="<%= button_class %>" data-test="google-connect-all-button" data-opens="gmail-admin"
-                data-href="<%= href %>" data-client-id="<%= GoogleConnect::OAuthClient.client_id %>"
-                @click="$store.modals.open('gmail-admin', { href: $el.dataset.href, clientId: $el.dataset.clientId })"><%= label %></button>
+                data-href="<%= href %>" data-client-id="<%= GoogleConnect::OAuthClient.client_id %>" data-aria-label="<%= GmailAdminModalHelper::TITLE %>"
+                @click="$store.modals.open('gmail-admin', { href: $el.dataset.href, clientId: $el.dataset.clientId, ariaLabel: $el.dataset.ariaLabel })"><%= label %></button>
       <% else %>
         <%= link_to label, href, class: button_class, data: { test: "google-connect-all-button", turbo: false } %>
       <% end %>

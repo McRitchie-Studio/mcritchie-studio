@@ -347,4 +347,13 @@ class Admin::GoogleControllerTest < ActionDispatch::IntegrationTest
     assert_equal "[FILTERED]", logged["code"]
     assert_equal "s1", logged["state"]
   end
+  test "[component] the standing page says agents read each household connection" do
+    store_google(scope: "openid #{CALENDAR}")
+    reads_answer_everything
+    with_connect_env { get admin_google_path }
+
+    line = css_select("[data-test='google-section'][data-ability='calendar'] [data-test='google-who-reads']").first
+    assert_equal "Your agents can read this", line.text.squish
+    assert_empty css_select("[data-test='google-section'][data-ability='drive'] [data-test='google-who-reads']")
+  end
 end

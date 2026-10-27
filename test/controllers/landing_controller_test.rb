@@ -120,7 +120,8 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
 
     drive = css_select("[data-test='google-drive-use']").first.text.squish
     assert_includes drive, "only the files you choose"
-    assert_includes drive, "we can open only those files"
+    assert_includes drive, "we read only those files"
+    assert_includes drive, "Google may keep listing the older permission", "true for a reconnected legacy token too"
     assert_includes drive, "older read-only permission, which covers every file in your Drive, until you reconnect"
     refute_includes css_select("[data-test='google-user-data']").text.squish, "nothing we ask Google for can send, change or delete"
   end

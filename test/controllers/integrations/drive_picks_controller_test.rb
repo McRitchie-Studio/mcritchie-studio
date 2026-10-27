@@ -95,7 +95,43 @@ class Integrations::DrivePicksControllerTest < ActionDispatch::IntegrationTest
       assert_equal [ "f1", "Q3 plan", "https://drive.google.com/f1" ], [ pick.file_id, pick.name, pick.url ]
       assert_equal viewer.reload.slug, pick.picked_by
       assert(read_requests.all? { _2 == "ya29.picks" }, "read with the connection's own token")
-      assert_match(/1 file shared with your agents\. Not shared: 2 items/, flash[:notice])
+      # A plain viewer's connection is read by no agent (GoogleConnection#who_reads).
+      assert_match(/1 file picked\. Only you can see this: no agent reads this connection\. Not shared: 2 items/, flash[:notice])
+    end
+  end
+
+  # Regression (Carl, PR 2277): Revoked is an OAuthClient::Error, and #record's
+  # per-id rescue swallowed it, so a revoked connection answered "Not shared: N
+  # items" after one token attempt per id and never the 409 reconnect.
+  test "[integration] a revoked connection stops a pick at the first token with the 409 reconnect, recording nothing" do
+    with_connect_env do
+      connection = own_drive
+      google_answers(400, { error: "invalid_grant" })
+      google_reads({})
+
+      post_json integrations_drive_picks_path, connection_id: connection.id, file_ids: %w[f1 f2 f3 f4 f5]
+
+      assert_response :conflict
+      assert_includes response.parsed_body["error"], "Google no longer accepts this connection"
+      assert_equal 1, google_requests.size, "one token attempt, not one per id"
+      assert_empty read_requests
+      assert_equal 0, GoogleDrivePick.count
+      refute_match(/Not shared|picked|shared with/, flash[:notice].to_s, "no per-id refusal notice")
+    end
+  end
+
+  test "[integration] the notices name who the picks reach: the household's agents for an admin's own row" do
+    with_connect_env do
+      log_in_as users(:alex)
+      connection = store_google(scope: "openid #{DRIVE}", abilities: [ :drive ])
+      google_answers(200, { access_token: "ya29.picks" })
+      google_reads("#{GoogleConnect::DriveReader::FILES_URL}/f1" => [ 200, { id: "f1", name: "Q3 plan", mimeType: "application/pdf" } ])
+
+      post_json integrations_drive_picks_path, connection_id: connection.id, file_ids: %w[f1]
+      assert_equal "1 file shared with your agents.", flash[:notice]
+
+      delete integrations_drive_pick_path(connection.drive_picks.sole)
+      assert_equal "Q3 plan is no longer shared with your agents.", flash[:notice]
     end
   end
 

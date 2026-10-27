@@ -5,10 +5,16 @@ require "test_helper"
 # Resets Nov 1 at 1am MST"; under a fifth left, "Resets in 3d 4h").
 class AgentUsageResetTest < ActiveSupport::TestCase
   ZONE = ActiveSupport::TimeZone["America/Denver"]
+  NOW = Time.utc(2026, 10, 20, 4, 50)
+
+  # The tokens bar's countdown reads the wall clock (Meter#countdown_line), so
+  # the clock stands where the meter does; past the Nov 1 reset it would count
+  # down to a moment already gone. TimeHelpers travels back after each test.
+  setup { travel_to NOW }
 
   def range_at(utc) = AgentUsage.month_range(Time.utc(*utc))
 
-  def meter(used:, allowance: 25_000, now: Time.utc(2026, 10, 20, 4, 50))
+  def meter(used:, allowance: 25_000, now: NOW)
     start, finish = AgentUsage.month_range(now)
     AgentUsage::Meter.new(app_slug: "pawsome", allowance: allowance, used: used, public_used: 0,
                           totals: AgentUsage::Totals.zero, capped_count: 0, period_start: start, period_end: finish,

@@ -41,6 +41,7 @@ test("an admin connects Calendar then Drive from the integrations cards, sees ea
   await expect(page.getByText("Google Calendar connected for stand-in@example.com.")).toBeVisible();
   await expect(calendar).toHaveAttribute("data-state", "connected");
   await expect(calendar.locator("[data-test='google-account']")).toHaveText(/Connected as\s+stand-in@example\.com/);
+  await expect(calendar.locator("[data-test='google-who-reads']")).toHaveText("Your agents can read this");
   await expect(drive).toHaveAttribute("data-state", "none");
 
   await drive.getByRole("link", { name: "Connect Google Drive" }).click();
@@ -186,4 +187,37 @@ test("a Connect Google that unticks Gmail connects the other two, and a disconne
     await card.getByRole("button", { name: "Disconnect" }).click();
     await expect(card).toHaveAttribute("data-state", "none");
   }
+});
+
+// The Gmail admin-trust modal on a phone (/tasks/google-connect-hardening-polish):
+// the dialog is named by its title, Continue to Google is on screen without
+// scrolling the card (its button row is sticky), and the live "Email my admin"
+// href, built by app/javascript/gmail_admin_modal.js in the browser, breaks its
+// body lines with CRLF.
+test("at 375px the Gmail modal is named, keeps Continue to Google in view, and its mailto body uses CRLF", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto("/integrations");
+
+  await slot(page, "gmail").getByRole("button", { name: "Connect Gmail" }).click();
+  const dialog = page.getByRole("dialog", { name: "Gmail needs your Google admin's OK" });
+  await expect(dialog).toBeVisible();
+  const modal = adminModal(page);
+  const continueLink = modal.getByRole("link", { name: "Continue to Google" });
+  await expect(continueLink).toBeInViewport({ ratio: 1 });
+
+  const card = await modal.evaluate((el) => {
+    const scroller = el.closest(".overflow-y-auto");
+    const box = scroller.getBoundingClientRect();
+    return { scrollTop: scroller.scrollTop, scrolls: scroller.scrollHeight > scroller.clientHeight, bottom: box.bottom };
+  });
+  expect(card.scrollTop).toBe(0);
+  expect(card.scrolls).toBe(true); // the control: the card is taller than the phone, so the sticky row is what keeps Continue visible
+  const link = await continueLink.boundingBox();
+  expect(link.y + link.height).toBeLessThanOrEqual(card.bottom + 0.5);
+
+  const href = await modal.locator("[data-test='gmail-admin-email']").getAttribute("href");
+  const body = /[?&]body=([^&]*)/.exec(href)[1];
+  expect(body).toContain("%0D%0A");
+  expect(body.replaceAll("%0D%0A", "")).not.toMatch(/%0A|%0D/);
 });
