@@ -1,0 +1,18 @@
+<%# THE DOWNLOAD FORMAT CONTROL (task logos-index-download-formats), beside Context and Colouring on the /logos table:
+    PNG, SVG or JPEG for every row's Download links, PNG unless asked. Plain links built from logo_page_params, like
+    the Colouring control, so every other setting is kept and every other control (and every brand and compare page)
+    keeps this one; choosing PNG drops the param. The PNG and the JPEG are drawn in the browser
+    (app/javascript/logo_download.js), so the control is served hidden and the script shows it: with JavaScript off
+    every Download link gives the logo's SVG, and a control offering PNG would say otherwise. Locals: path (a lambda
+    from page params to a URL). %>
+<% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
+<% look = ->(on) { "btn btn-sm #{on ? 'btn-primary border border-transparent' : 'btn-neutral'} #{ring}" } %>
+<% default = LogoBrandPage::DOWNLOAD_FORMATS.keys.first %>
+<div class="flex flex-wrap items-center gap-2" role="group" aria-label="Download format" data-test="download-format-control" data-logo-raster-js hidden>
+  <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Download</span>
+  <% LogoBrandPage::DOWNLOAD_FORMATS.each do |format, label| %>
+    <%= link_to label, path.(logo_page_params(download_format: (format unless format == default))),
+                class: look.(format == @download_format), aria: { current: ("true" if format == @download_format) },
+                data: { test: "download-format-option", format: } %>
+  <% end %>
+</div>

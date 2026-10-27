@@ -64,7 +64,7 @@ class LogosIndexDownloadsTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='download-format-option'][aria-current='true']", "JPEG"
     assert_select "[data-test='logo-brands'][data-download-format='jpeg']"
     # Every other control and the brand links carry it.
-    css_select("[data-test='colouring-option'], #{row('industries')} th a[href^='/logos/industries']").each do |link|
+    css_select("[data-test='colouring-option'], #{row('industries')} th > a, #{row('industries')} [data-test='logo-sample']").each do |link|
       assert_equal "jpeg", query(link["href"])["download_format"], link.to_s
     end
     assert_select "[data-test='context-form'] input[type=hidden][name='download_format'][value='jpeg']"

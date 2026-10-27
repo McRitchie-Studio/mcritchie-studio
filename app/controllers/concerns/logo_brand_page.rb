@@ -27,6 +27,19 @@ module LogoBrandPage
     @tones = @context == :watermark ? [:watermark] : Logos::NavbarLogo::BAKED
     @colouring_param = Logos::Variant.colouring(params[:colouring])
     @icon_colouring_param = Logos::Variant.colouring(params[:icon_colouring])
+    @download_format = download_format(params[:download_format])
+  end
+
+  # The /logos table's download format (task logos-index-download-formats): ?download_format= png, svg or jpeg, PNG
+  # unless asked. Read on every page so every link carries it (LogosHelper#logo_page_params) and the table opens on it
+  # again; anything else is refused, as every other logo param is.
+  DOWNLOAD_FORMATS = { png: "PNG", svg: "SVG", jpeg: "JPEG" }.freeze
+
+  def download_format(value)
+    return DOWNLOAD_FORMATS.keys.first if value.nil?
+
+    DOWNLOAD_FORMATS.keys.find { |format| format.to_s == value.to_s } or
+      raise Logos::NavbarLogo::Error, "a download format is #{DOWNLOAD_FORMATS.keys.join(', ')}, not #{value.to_s.inspect[0, 40]}"
   end
 
   # The colouring a brand's logos are shown in: the page's ?colouring=, else `default` (a brand page's kit default),

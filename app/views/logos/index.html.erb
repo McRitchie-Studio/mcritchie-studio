@@ -5,10 +5,11 @@
     Watermark turns it dark and shows the watermark logos), then its
     typeface hierarchy (each level's name in its own face) and its palette (its one list of named colours; a click copies a hex). Each logo links to its own tab of the brand page.
     The Navbar and Stacked Logos are the brand's saved kit choices (BrandKit,
-    read in one query; their badges say Saved) or its defaults, each with a
-    download, and the brand cell says when its kit was saved. Each row draws ONE
-    icon in all three tiles: the kit's saved icon, else the brand's own (task
-    kit-icon-atomic-unit).
+    read in one query; their badges say Saved) or its defaults, and the brand
+    cell says when its kit was saved and holds the row's downloads (Navbar,
+    Stacked and Icon, as shown, in the header's Download format). With a saved kit
+    icon all three tiles draw it (task kit-icon-atomic-unit); without one a
+    saved choice keeps the icon it was saved with, as its brand page draws it.
     Below the xl breakpoint a row is a stack of labelled cells; the wrapper
     scrolls sideways if a table row ever outgrows it, so the page body never
     does. Admin only (LogosController). %>
@@ -22,18 +23,20 @@
       <h1 class="text-xl sm:text-2xl font-bold text-heading mr-auto">Logos</h1>
       <%= render "context_form", url: logos_path %>
       <%= render "colouring_control", path: ->(page) { logos_path(page) }, chosen: @colouring_param || :original, default: :original %>
+      <%= render "download_format_control", path: ->(page) { logos_path(page) } %>
       <%# Two kits side by side (task logo-compare-and-original-edits), opening on Commercial Welding v1 and v2. %>
       <% left, right = LogoComparison.default_pair %>
       <%= link_to "Compare kits", logos_compare_path({ left:, right: }.merge(logo_page_keeps)), class: "btn btn-sm btn-neutral focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!", data: { test: "compare-link" } %>
     </div>
     <p class="text-sm text-secondary">Each brand's icon, Navbar Logo and Stacked Logo, drawn from its icon and its name. Open a brand to see every version and how it was built.</p>
-    <p class="text-2xs text-muted" data-test="kit-note">A brand's Icon, Navbar and Stacked Logos are its saved kit choices where it has them (marked Saved), else its defaults. Each row draws one icon: the kit's, else the brand's own. Choose and save them on the brand's page.</p>
+    <p class="text-2xs text-muted" data-test="kit-note">A brand's Icon, Navbar and Stacked Logos are its saved kit choices where it has them (marked Saved), else its defaults, each drawn exactly as its brand page draws it. With a saved icon, all three draw it; without one, a saved Navbar or Stacked Logo keeps the icon it was saved with. Choose and save them on the brand's page.</p>
     <%= render "context_notes" %>
   </div>
 
   <div class="card p-4 sm:p-5">
     <div class="overflow-x-auto" data-test="logo-table-scroll">
-      <table class="w-full block xl:table text-sm" data-test="logo-brands">
+      <%# The format every row's Download links give (logos/_download_format_control; read by app/javascript/logo_download.js). %>
+      <table class="w-full block xl:table text-sm" data-test="logo-brands" data-download-format="<%= @download_format %>">
         <thead class="hidden xl:table-header-group text-left text-3xs uppercase tracking-wide text-muted">
           <tr>
             <th scope="col" class="pb-2 pr-3 font-semibold">Brand</th>
@@ -53,26 +56,13 @@
                     brand's logos; the title gives it in full, the saver's email included. %>
                 <p class="text-3xs text-muted font-normal truncate xl:max-w-44" data-test="logo-kit-status"
                    title="<%= logo_kit_status(@kits[logo.brand], @savers, full: true) %>"><%= logo_kit_status(@kits[logo.brand], @savers) %></p>
+                <%= render "index_downloads", samples:, kit: @kits[logo.brand] %>
               </th>
               <%# At least as wide as the widest brand's cluster on one line (Industries and Commercial Welding, about
                   432 px with the cell's padding), so the table never squeezes a brand's Navbar tile under its square. %>
               <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top xl:min-w-[28rem]" data-test="logo-cell">
                 <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted">Logos</p>
-                <% kit = @kits[logo.brand] %>
-                <%= render "cluster", logo:, name:, samples:, saved: BrandKit::CHOICE_TYPES.select { |type| kit&.saved?(type) } %>
-                <%# The Navbar and Stacked Logos as shown, saved choice or default, as files: one pair per tone. %>
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 text-3xs" data-test="logo-downloads">
-                  <% BrandKit::TYPES.each do |type| %>
-                    <% sample = samples.fetch(type) %>
-                    <% next if sample.is_a?(Logos::NavbarLogo::Error) %>
-                    <%= logo_themed(sample.keys) do |tone| %>
-                      <% shown = sample.fetch(tone) %>
-                      <%= link_to "Download #{LogosHelper::LOGO_BADGES.fetch(type)}", logo_asset_path(shown, download: 1),
-                                  class: "font-semibold text-primary hover:underline", data: { test: "logo-sample-download", type:, turbo: false },
-                                  aria: { label: "Download: #{shown.label}#{', kit choice' if kit&.saved?(type)}" } %>
-                    <% end %>
-                  <% end %>
-                </div>
+                <%= render "cluster", logo:, name:, samples:, saved: BrandKit::CHOICE_TYPES.select { |type| @kits[logo.brand]&.saved?(type) } %>
               </td>
               <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top xl:min-w-[11rem]" data-test="logo-typeface">
                 <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted">Typeface</p>
