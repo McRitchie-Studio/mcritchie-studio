@@ -8,7 +8,8 @@ require_relative "../bin/lib/projects_root"
 #   <projects>/.agents/task-usage/<session>.json     the usage/cost baselines
 #   <projects>/.agents/sessions/<session>.*          the narration markers
 #   <projects>/.agents/atomic-capture/token.json     the agent-API token cache
-#   <projects>/.agents/github-tokens.json            the GitHub App token cache
+#   <projects>/.agents/github-tokens.json            the GitHub App token cache (legacy; now a link)
+#   <projects>/.secret-cache/                        the expiring-credential cache (bin/lib/secret_cache.rb)
 #   <projects>/.agents/locks/*.lock                  the conductor's flocks
 #   <projects>/.agents/worktree-registry.json        the worktree registry
 #   <projects>/.agents/agent-worktree.lock           the DB-allocation flock
@@ -99,6 +100,10 @@ module TaskUsageSandbox
     # the operator's real .agents.
     "github-token" => %w[CLAUDE_PROJECTS_DIR],
     "harness-key" => %w[CLAUDE_PROJECTS_DIR],      # bin/lib/harness_key.rb — this machine's harness key
+    # bin/lib/secret_cache.rb — <projects>/.secret-cache, the cache of expiring
+    # credentials. It lives OUTSIDE .agents, so its write seam passes its own real
+    # folder as the rule-2 state_dir (SecretCache.real_dir).
+    "secret-cache" => %w[MCR_SECRET_CACHE_DIR CLAUDE_PROJECTS_DIR],
     "agent-locks" => %w[MCR_PRIMARY_LOCK_DIR],     # bin/release.rb — the conductor flocks
     "worktree-registry" => %w[AGENT_WORKTREE_REGISTRY PROJECTS_DIR], # bin/agent-worktree — the registry snapshot
     "worktree-lock" => %w[AGENT_WORKTREE_LOCK PROJECTS_DIR],         # bin/agent-worktree — the DB-allocation flock

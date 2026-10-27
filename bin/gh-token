@@ -7,6 +7,8 @@
 #   token="$(bin/gh-token --identity deployer)"   # the ship identity (pushes main, deploys)
 #   bin/gh-token --status                    # human-readable cache state; prints NO token
 #   bin/gh-token --reject "$token"           # retire a REJECTED session; prints nothing
+#   bin/gh-token --forget                    # drop the identity's cached tokens; prints nothing
+#   bin/gh-token --expires-at                # ISO time the token a read would return expires; no token
 #
 # The identity comes from --identity, else GH_APP_ITEM, else `agent` (see LANE
 # below). To install the result into `gh`'s own keyring, use bin/gh-auth-refresh —
@@ -22,13 +24,21 @@
 #
 # THE CACHE, and why it is a file. Agents run as separate processes, so an exported
 # environment variable is invisible to a sibling — the shared state has to be on
-# disk. `<projects>/.agents/github-tokens.json`, mode 0600, holding two SLOTS per
-# identity:
+# disk. `<projects>/.secret-cache/github-tokens.json` (bin/lib/secret_cache.rb,
+# folder 0700, file 0600; doc docs/agents/modules/secret-cache.md), holding two
+# SLOTS per identity:
 #
 #   { "agent": { "active": "a",
-#                "a": { "token": "…", "created_at": "…" },
-#                "b": { "token": "…", "created_at": "…" } },
+#                "a": { "token": "…", "created_at": "…", "expires_at": "…" },
+#                "b": { "token": "…", "created_at": "…", "expires_at": "…" } },
 #     "deployer": { … } }
+#
+# THE LEGACY PATH KEEPS WORKING (2026-10-27). The cache lived at
+# `<projects>/.agents/github-tokens.json` until the secret-cache move. The first
+# write here moves it into the folder and leaves a symlink at the old path, so an
+# older copy of this script (an installed tooling snapshot) still reads the shared
+# session. An older writer renames over that link; the read below therefore takes
+# the freshest usable token from BOTH files, and the next write re-points the link.
 #
 # TWO SLOTS, TOGGLED (the operator's design, and it earns its keep): a GitHub App
 # token stays valid until it expires EVEN AFTER a newer one is minted. So a fresh
@@ -73,6 +83,7 @@ require_relative "../lib/task_usage_sandbox"
 require_relative "lib/op_vaults"
 require_relative "lib/op_meter"
 require_relative "lib/gh_identity"
+require_relative "lib/secret_cache"
 
 IDENTITIES = {
   # `lane` selects the VAULT and the TOKEN (see bin/lib/op_vaults.rb). The
@@ -104,9 +115,15 @@ end
 
 # Installation tokens live ~60 minutes. Refresh at 50 so a token handed out now
 # survives the operation it was fetched for — a caller that starts a 6-minute merge
-# with 90 seconds left is the failure this margin exists to prevent.
-LIFETIME_SECONDS = 3600
-REFRESH_AFTER_SECONDS = 3000
+# with 90 seconds left is the failure this margin exists to prevent. The last ten
+# minutes are the secret cache's REFRESH WINDOW (SecretCache::GITHUB_REFRESH_WINDOW):
+# a read inside it mints and returns a fresh token.
+LIFETIME_SECONDS = SecretCache::GITHUB_LIFETIME
+REFRESH_AFTER_SECONDS = SecretCache::GITHUB_LIFETIME - SecretCache::GITHUB_REFRESH_WINDOW
+# When a refresh FAILS (op hung, signed out), a token with at least this much life
+# left is still served, with a warning: a token that works for five more minutes
+# beats no token at all.
+STILL_VALID_MARGIN_SECONDS = 60
 
 # WHICH IDENTITIES MAY BE CACHED AT ALL — and `deployer` deliberately may not.
 #
@@ -143,7 +160,19 @@ PROJECTS = ENV["CLAUDE_PROJECTS_DIR"].to_s.strip.empty? ? File.expand_path("~/pr
 # GitHub token in it. That is not a formality: this command printed a live token to a
 # terminal once already (see --status), and the blast radius of a cached one is worse.
 def store_path
+  TaskUsageSandbox.enforce!(File.join(SecretCache.dir, SecretCache::GITHUB_FILE), store: "github-token")
+end
+
+# The pre-2026-10-27 location. Read through and re-pointed at the folder; never
+# written as a file again (see THE LEGACY PATH KEEPS WORKING above).
+def legacy_store_path
   TaskUsageSandbox.enforce!(File.join(PROJECTS, ".agents", "github-tokens.json"), store: "github-token")
+end
+
+# A cache that is UNSAFE (widened mode, inside a git repo) is not a cache miss:
+# serving or writing a credential there is the failure, so say so and stop.
+def unsafe!(error)
+  die!("#{error.message} (docs/agents/modules/secret-cache.md)")
 end
 
 def die!(message)
@@ -152,8 +181,10 @@ def die!(message)
 end
 
 def read_store
+  SecretCache.check_safe!
   return {} unless File.exist?(store_path)
 
+  SecretCache.check_file!(store_path)
   parsed = JSON.parse(File.read(store_path))
   # WELL-FORMED JSON IS NOT A WELL-SHAPED CACHE. `{not json` raises and is caught
   # below, but `[]`, `null` and `"scalar"` parse CLEANLY and then blow up downstream
@@ -162,18 +193,33 @@ def read_store
   # file. Shape-check here so the promise on the next line is true for every corrupt
   # cache, not just the unparseable spelling.
   parsed.is_a?(Hash) ? parsed : {}
+rescue SecretCache::Unsafe => e
+  unsafe!(e)
 rescue StandardError
   {} # a corrupt cache is a cache miss, never a failure — we can always mint
 end
 
+# The legacy file, only while it is a FILE an older writer left (a symlink points
+# back into the folder and adds nothing). Read-only, corrupt-tolerant.
+def read_legacy_store
+  path = legacy_store_path
+  return {} unless File.file?(path) && !File.symlink?(path)
+
+  parsed = JSON.parse(File.read(path))
+  parsed.is_a?(Hash) ? parsed : {}
+rescue StandardError
+  {}
+end
+
 def write_store(store)
-  FileUtils.mkdir_p(File.dirname(store_path))
   # Write-then-rename so a reader never sees a half-written cache, and 0600 BEFORE
-  # the secret lands in it.
-  tmp = "#{store_path}.#{Process.pid}.tmp"
-  File.open(tmp, File::CREAT | File::WRONLY | File::TRUNC, 0o600) { |f| f.write("#{JSON.pretty_generate(store)}\n") }
-  File.rename(tmp, store_path)
-  File.chmod(0o600, store_path)
+  # the secret lands in it (SecretCache.write_json). Then point the legacy path at
+  # the folder again, so an older reader shares this session.
+  store_path
+  SecretCache.write_json(SecretCache::GITHUB_FILE, store)
+  SecretCache.adopt_legacy!(legacy_store_path, SecretCache::GITHUB_FILE, relink: true)
+rescue SecretCache::Unsafe => e
+  unsafe!(e)
 rescue StandardError => e
   warn("gh-token: could not persist the cache (#{e.class}) — continuing with a fresh mint each call")
 end
@@ -190,16 +236,23 @@ end
 # The freshest USABLE token for this identity, or nil. "Freshest" is by created_at,
 # never by which slot is flagged active — so a toggle can never serve something
 # older than what it replaced.
-def usable_token(entry)
-  %w[a b].filter_map { |key|
-    slot = entry[key]
-    next unless slot.is_a?(Hash) && !slot["token"].to_s.strip.empty?
+def usable_token(*entries, max_age: REFRESH_AFTER_SECONDS)
+  entries.select { |e| e.is_a?(Hash) }.flat_map { |entry|
+    %w[a b].filter_map { |key|
+      slot = entry[key]
+      next unless slot.is_a?(Hash) && !slot["token"].to_s.strip.empty?
 
-    age = age_of(slot)
-    next if age.nil? || age >= REFRESH_AFTER_SECONDS
+      age = age_of(slot)
+      next if age.nil? || age >= max_age
 
-    [age, slot["token"]]
+      [age, slot["token"]]
+    }
   }.min_by(&:first)&.last
+end
+
+# Both caches' entries for this identity: the folder's, then the legacy file's.
+def cached_entries(identity)
+  [read_store[identity], read_legacy_store[identity]]
 end
 
 def read_secret(ref, lane = OpVaults::DEFAULT_LANE)
@@ -241,8 +294,23 @@ def mint(identity)
   lane = meta.fetch(:lane)
   item = GhIdentity.item_for(identity)
   app_id = read_secret(OpVaults.ref(item, "app-id", lane), lane).strip
-  pem = read_secret(OpVaults.ref(item, PEM_ATTACHMENTS.fetch(item), lane), lane)
+  # A failed first read (op hung or signed out) is not followed by a second one:
+  # each bounded attempt can cost its whole deadline, and the contingency below is
+  # what the caller needs, in seconds rather than minutes.
+  pem = app_id.empty? ? "" : read_secret(OpVaults.ref(item, PEM_ATTACHMENTS.fetch(item), lane), lane)
   if app_id.empty? || pem.strip.empty?
+    SecretCache.record_failure!("github.#{identity}")
+    # A still-valid token (inside the refresh window, not expired) beats none.
+    if cacheable?(identity)
+      fallback = usable_token(*cached_entries(identity),
+                              max_age: LIFETIME_SECONDS - STILL_VALID_MARGIN_SECONDS)
+      if fallback
+        warn("gh-token: refresh failed (1Password unreadable); serving the cached #{identity} token " \
+             "that is still valid — run `bin/secret status`")
+        return [fallback, false]
+      end
+    end
+    warn(SecretCache.contingency_lines("github.#{identity}").join("\n"))
     # The parenthetical goes BEFORE the diagnosis, never after. OpVaults.diagnose
     # ends on an indented, copy-pasteable command; anything appended lands on that
     # same line, so `bin/setup-1pass-token --admin (is `op` signed in?)` is what the
@@ -256,7 +324,25 @@ def mint(identity)
   token = IO.popen({ "GH_APP_ID" => app_id, "GH_APP_PEM" => pem }, [MINT_BIN], &:read).to_s.strip
   die!("the mint script produced no token for #{identity}") unless $?.success? && !token.empty?
 
-  token
+  [token, true]
+end
+
+# Drop every cached token for this identity, in the folder and in a legacy FILE.
+# Silent; the next read mints. `bin/secret forget github.<identity>` calls this.
+def forget!(identity)
+  store = read_store
+  if store.key?(identity)
+    store.delete(identity)
+    write_store(store)
+  end
+  path = legacy_store_path
+  return unless File.file?(path) && !File.symlink?(path)
+
+  legacy = read_legacy_store
+  return unless legacy.key?(identity)
+
+  legacy.delete(identity)
+  File.write(path, "#{JSON.pretty_generate(legacy)}\n")
 end
 
 # Mint into the INACTIVE slot and flip. The previous token stays intact and valid,
@@ -289,6 +375,7 @@ def reject!(identity, token)
   return if doomed.empty?
 
   doomed.each { |slot| entry.delete(slot) }
+  reject_legacy!(identity, token)
   # `active` names a slot. If the rejected one WAS active, the pointer now dangles;
   # reads tolerate that (usable_token walks a/b and skips non-Hashes) but leaving it
   # would be a lie about the cache's state, so drop it when its target is gone.
@@ -297,8 +384,28 @@ def reject!(identity, token)
   write_store(store)
 end
 
+# The same retirement in a legacy FILE an older writer left, so the read-through
+# cannot hand back a token GitHub has refused.
+def reject_legacy!(identity, token)
+  path = legacy_store_path
+  return unless File.file?(path) && !File.symlink?(path)
+
+  legacy = read_legacy_store
+  entry = legacy[identity]
+  return unless entry.is_a?(Hash)
+
+  doomed = %w[a b].select { |slot| entry[slot].is_a?(Hash) && entry[slot]["token"].to_s == token }
+  return if doomed.empty?
+
+  doomed.each { |slot| entry.delete(slot) }
+  File.write(path, "#{JSON.pretty_generate(legacy)}\n")
+rescue StandardError
+  nil
+end
+
 def refresh(identity)
-  token = mint(identity)
+  token, minted = mint(identity)
+  return token unless minted
 
   # Re-read immediately before writing so a concurrent minter's slot is preserved
   # rather than clobbered — not for exclusion (there is none), just so both agents'
@@ -322,10 +429,13 @@ def refresh(identity)
   entry = store[identity]
   entry = {} unless entry.is_a?(Hash)
   target = entry["active"] == "a" ? "b" : "a"
-  entry[target] = { "token" => token, "created_at" => Time.now.utc.iso8601 }
+  now = Time.now.utc
+  entry[target] = { "token" => token, "created_at" => now.iso8601,
+                    "expires_at" => (now + LIFETIME_SECONDS).iso8601 }
   entry["active"] = target
   store[identity] = entry
   write_store(store)
+  SecretCache.record_mint!("github.#{identity}", now + LIFETIME_SECONDS)
 
   # The token is returned from memory, never re-read from the cache: a failed
   # persist must not fail the CALL. Worst case we mint again next time.
@@ -359,12 +469,16 @@ end
 identity = nil
 force = false
 reject = nil
+forget = false
+expires_at = false
 args = ARGV.dup
 while (arg = args.shift)
   case arg
   when "--identity" then identity = args.shift.to_s.strip
   when "--force" then force = true
   when "--reject" then reject = args.shift.to_s.strip
+  when "--forget" then forget = true
+  when "--expires-at" then expires_at = true
   when "--status"
     # NOT `status and exit 0`: `status` returns nil, the `and` short-circuits, the
     # exit never runs, and execution falls through to the bare token print — which
@@ -389,11 +503,27 @@ if reject
   exit 0
 end
 
+# FORGET IS A WRITE TOO, and prints nothing: a rotated key must not linger.
+if forget
+  forget!(identity)
+  exit 0
+end
+
+# When the token a read would return expires, as an ISO time; empty when none is
+# cached. Never a token: bin/secret status and the long-run pre-refresh read it.
+if expires_at
+  if cacheable?(identity)
+    stamp = SecretCache.github_expires_at(identity, [read_store, read_legacy_store])
+    puts stamp.iso8601 if stamp
+  end
+  exit 0
+end
+
 # `cacheable?` is checked BEFORE the read, not after: serving a token this script
 # will no longer write is exactly the stale-credential path the purge above exists
 # to prevent.
 unless force || !cacheable?(identity)
-  cached = usable_token(read_store[identity] || {})
+  cached = usable_token(*cached_entries(identity))
   if cached
     puts cached
     exit 0
