@@ -134,6 +134,37 @@ class HerokuTokenCommandTest < Minitest::Test
     assert_equal 1, FakeHerokuOp.calls(@op_dir).size, "eleven heroku calls, one 1Password read"
   end
 
+  # Two shim directories on PATH (the fixed-path tooling and a hub checkout) must
+  # not exec each other forever: every copy is skipped by its marker line.
+  def test_two_shim_directories_on_path_reach_the_real_cli
+    other = File.join(@dir, "other-shims")
+    FileUtils.mkdir_p(other)
+    FileUtils.cp(SHIM, File.join(other, "heroku"))
+    File.chmod(0o755, File.join(other, "heroku"))
+    # The copy's own ../heroku-token must resolve too, as it would in a real tree.
+    FileUtils.ln_s(BIN, File.join(@dir, "heroku-token"))
+    path = "#{other}:#{File.dirname(SHIM)}:#{File.dirname(@heroku)}:#{RUBY_DIR}:/usr/bin:/bin"
+    out, err, status = run_cmd(File.join(other, "heroku"), "apps", extra: { "PATH" => path })
+
+    assert status.success?, err
+    assert_includes out, "argv=apps"
+    assert_includes out, "key=#{digest(LIVE)}"
+  end
+
+  def test_shims_alone_on_path_refuse_instead_of_looping
+    other = File.join(@dir, "other-shims")
+    FileUtils.mkdir_p(other)
+    FileUtils.cp(SHIM, File.join(other, "heroku"))
+    File.chmod(0o755, File.join(other, "heroku"))
+    path = "#{other}:#{File.dirname(SHIM)}:#{RUBY_DIR}:/usr/bin:/bin"
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    _out, err, status = run_cmd(SHIM, "apps", extra: { "PATH" => path, "HEROKU_API_KEY" => "HRKU-caller" })
+
+    assert_equal 127, status.exitstatus, err
+    assert_includes err, "no Heroku CLI on PATH besides heroku-token shims"
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - started, :<, 10
+  end
+
   def test_the_shim_skips_itself_on_path
     shim_dir = File.dirname(SHIM)
     out, err, status = run_cmd(SHIM, "apps", extra: { "PATH" => "#{shim_dir}:#{File.dirname(@heroku)}:#{RUBY_DIR}:/usr/bin:/bin" })

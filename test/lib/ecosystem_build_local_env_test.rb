@@ -106,6 +106,24 @@ class EcosystemBuildLocalEnvTest < Minitest::Test
     refute_match(/^op read/, calls, "nothing to write, so no vault read is spent")
   end
 
+  # A rebuilt Mac must get the shim PATH block, or plain `heroku`, the conductor's
+  # `heroku run` and a git push to Heroku have no credential (Carl, PR 2271). Phase 4
+  # writes it with bin/heroku-profile-migrate, idempotently, and takes out any
+  # Heroku literal an older profile carries.
+  def test_phase_four_writes_the_shim_block_into_zprofile
+    app_dir("mcritchie-studio")
+    zprofile = File.join(@dir, ".zprofile")
+    File.write(zprofile, "export HEROKU_API_KEY=HRKU-old-literal-0000000000000000\n")
+    out = run_phase(apps: %w[mcritchie-studio])
+
+    body = File.read(zprofile)
+    assert_includes body, %(export PATH="#{File.join(ROOT, 'bin', 'shims')}:$PATH"), out
+    refute_includes body, "HRKU-old-literal"
+    refute_includes out, "HRKU-old-literal"
+    run_phase(apps: %w[mcritchie-studio])
+    assert_equal body, File.read(zprofile), "a second run changes nothing"
+  end
+
   # What the writer left out has to be findable by the operator who needs it.
   def test_the_left_out_variables_are_named_with_their_source
     app_dir("mcritchie-studio")

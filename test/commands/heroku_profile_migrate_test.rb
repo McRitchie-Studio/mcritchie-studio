@@ -110,8 +110,17 @@ class HerokuProfileMigrateTest < Minitest::Test
       saved = backups(path)
       assert_equal 1, saved.size
       assert_equal 0o600, mode(saved.first)
-      assert_equal original, File.read(saved.first), "the backup is the file as it was"
+      backup = File.read(saved.first)
+      SECRETS.grep(/\AHRKU-/).each do |token|
+        refute_includes backup, token, "the backup must not keep a Heroku token"
+      end
+      refute_match(/HRKU-/, backup)
+      assert_equal original.lines.size, backup.lines.size, "the backup keeps the file's shape, line for line"
+      original.each_line.zip(backup.each_line).each do |was, kept|
+        assert_equal was, kept, "a line holding no Heroku value is kept verbatim" unless was.match?(/HEROKU_|HRKU-/)
+      end
     end
+    assert_includes File.read(backups(@admin).first), "# HEROKU_STUDIO_ADMIN_API_KEY=[redacted"
 
     assert_includes out, "removed HEROKU_API_KEY (line 1)"
     assert_includes out, "HEROKU_STUDIO_APPLICATIONS_API_KEY (line 4)"
@@ -180,11 +189,32 @@ class HerokuProfileMigrateTest < Minitest::Test
     assert_equal ZPROFILE_ADMIN, File.read(@admin)
   end
 
-  def test_an_absent_profile_is_skipped
+  def test_an_absent_admin_profile_is_skipped
     FileUtils.rm_f(@admin)
     out, err, status = run_bin
 
     assert status.success?, "#{out}\n#{err}"
     assert_includes out, "~/.zprofile.admin: not present, skipped"
+  end
+
+  # A fresh Mac (bin/ecosystem-build): no ~/.zprofile yet, so it is created with
+  # just the block, 0600, and no backup.
+  def test_an_absent_agent_profile_is_created_with_the_block
+    FileUtils.rm_f(@zprofile)
+    out, err, status = run_bin("--agent-only")
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_equal 0o600, mode(@zprofile)
+    assert_includes File.read(@zprofile), %(export PATH="#{File.expand_path(@shims)}:$PATH")
+    assert_empty backups(@zprofile)
+  end
+
+  def test_agent_only_leaves_the_admin_profile_alone
+    out, err, status = run_bin("--agent-only")
+
+    assert status.success?, "#{out}\n#{err}"
+    refute_includes File.read(@zprofile), STALE_AGENTS
+    assert_equal ZPROFILE_ADMIN, File.read(@admin)
+    refute_includes out, ".zprofile.admin"
   end
 end

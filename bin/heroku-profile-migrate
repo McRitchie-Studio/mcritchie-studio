@@ -19,8 +19,9 @@
 #            naming where the tokens went. At the end so a later PATH prepend in
 #            the same file cannot put the real CLI ahead of the shim.
 #   keeps    a private backup (mode 0600) of the file as it was, beside it,
-#            before the first byte changes. A file already migrated is left
-#            untouched and gets no backup.
+#            before the first byte changes, with every removed value (and any
+#            other HRKU- value) REDACTED: the backup keeps the shape, never a
+#            token. A file already migrated is left untouched, with no backup.
 #
 # PREFLIGHT, before anything is written: the shim must exist and be executable,
 # and every lane whose literal is about to go must resolve from 1Password NOW,
@@ -77,8 +78,10 @@ module HerokuProfileMigrate
     removed = []
     others = []
     kept = []
+    redacted = []
     in_block = false
     text.each_line.with_index(1) do |line, lineno|
+      redacted << redact(line)
       if line.start_with?(BEGIN_MARK)
         in_block = true
         next
@@ -100,7 +103,19 @@ module HerokuProfileMigrate
     body = kept.join
     body << "\n" unless body.empty? || body.end_with?("\n")
     body << block(kind, shim_dir)
-    { body: body, removed: removed, others: others }
+    { body: body, removed: removed, others: others, redacted: redacted.join }
+  end
+
+  # A line as the BACKUP keeps it: a Heroku assignment becomes a comment naming
+  # the variable with no value, and any other Heroku-shaped value is masked. The
+  # backup exists to recover the file's shape, so it must not be a second,
+  # forgotten home for the tokens this script takes out (Carl, PR 2271).
+  def redact(line)
+    if (m = line.match(ASSIGNMENT))
+      newline = line.end_with?("\n") ? "\n" : ""
+      return "# #{m[1]}=[redacted by bin/heroku-profile-migrate; read it with bin/heroku-token]#{newline}"
+    end
+    line.gsub(HEROKU_SHAPED, "[redacted]")
   end
 
   def write_private(path, body)
@@ -117,14 +132,14 @@ module HerokuProfileMigrate
     File.unlink(tmp) if tmp && File.exist?(tmp)
   end
 
-  def backup(path, stamp)
+  def backup(path, stamp, body)
     dest = "#{path}.bak-heroku-token-#{stamp}"
     n = 1
     while File.exist?(dest)
       dest = "#{path}.bak-heroku-token-#{stamp}-#{n}"
       n += 1
     end
-    File.open(dest, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |f| f.write(File.binread(path)) }
+    File.open(dest, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |f| f.write(body) }
     File.chmod(0o600, dest)
     dest
   end
@@ -132,6 +147,7 @@ end
 
 dry_run = false
 verify = true
+agent_only = false
 # $PROGRAM_NAME, not __dir__: __dir__ is the realpath, which for the fixed-path
 # tooling is a per-SHA directory that a later install retires.
 shim_dir = File.join(File.dirname(File.expand_path($PROGRAM_NAME)), "shims")
@@ -139,6 +155,7 @@ shim_given = false
 parser = OptionParser.new do |o|
   o.banner = "usage: bin/heroku-profile-migrate [--dry-run] [--skip-verify] [--shim-dir DIR]"
   o.on("--dry-run", "report what would change; writes nothing, reads no 1Password item") { dry_run = true }
+  o.on("--agent-only", "migrate ~/.zprofile only; leave ~/.zprofile.admin alone (bin/ecosystem-build)") { agent_only = true }
   o.on("--skip-verify", "do not prove each lane resolves from 1Password before removing its literal") { verify = false }
   o.on("--shim-dir DIR", "the directory holding the heroku shim (default #{shim_dir})") do |d|
     shim_dir = d
@@ -171,6 +188,7 @@ profiles = [
   [:agent, File.expand_path(ENV.fetch("HEROKU_PROFILE_ZPROFILE", "~/.zprofile"))],
   [:admin, File.expand_path(ENV.fetch("HEROKU_PROFILE_ZPROFILE_ADMIN", "~/.zprofile.admin"))]
 ]
+profiles = profiles.first(1) if agent_only
 
 unless File.file?(File.join(shim_dir, "heroku")) && File.executable?(File.join(shim_dir, "heroku"))
   warn "heroku-profile-migrate: refusing — no executable heroku shim at #{shim_dir}/heroku. " \
@@ -182,12 +200,15 @@ stamp = Time.now.strftime("%Y%m%d%H%M%S")
 refused = false
 profiles.each do |kind, path|
   label = path.sub(/\A#{Regexp.escape(Dir.home)}/, "~")
-  unless File.file?(path)
+  absent = !File.file?(path)
+  if absent && kind == :admin
     puts "#{label}: not present, skipped"
     next
   end
 
-  text = File.read(path)
+  # An absent ~/.zprofile (a fresh Mac before any token is installed) is created
+  # holding just the block, so the shim is on PATH from the first login shell.
+  text = absent ? "" : File.read(path)
   result = HerokuProfileMigrate.rewrite(text, kind, shim_dir)
   result[:others].each do |name, lineno|
     warn "#{label}: line #{lineno} holds a Heroku-shaped value under #{name}; left as it is, review it by hand"
@@ -222,14 +243,14 @@ profiles.each do |kind, path|
     end
   end
 
-  saved = HerokuProfileMigrate.backup(path, stamp)
+  saved = absent ? nil : HerokuProfileMigrate.backup(path, stamp, result[:redacted])
   HerokuProfileMigrate.write_private(path, result[:body])
-  puts "#{label}: #{summary.sub(/\Aremove/, 'removed')}; wrote the heroku-token block; " \
-       "backup at #{saved.sub(/\A#{Regexp.escape(Dir.home)}/, '~')} (0600)"
+  where = saved ? "backup at #{saved.sub(/\A#{Regexp.escape(Dir.home)}/, '~')} (0600, values redacted)" : "created it"
+  puts "#{label}: #{summary.sub(/\Aremove/, 'removed')}; wrote the heroku-token block; #{where}"
 end
 
 unless dry_run || refused
   puts "Open a new shell (or `source ~/.zprofile`); `command -v heroku` should print #{shim_dir}/heroku."
-  puts "Delete the backups once `bin/heroku-token agents --check` passes: they still hold the old values."
+  puts "The backups hold no token (each removed value is redacted); delete them once you no longer need the old layout."
 end
 exit(refused ? 1 : 0)

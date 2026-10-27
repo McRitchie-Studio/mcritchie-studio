@@ -625,7 +625,24 @@ phase_secrets() {
                "run bin/heroku-token agents --check for the reason (it prints no value)"
       return 1
     fi
-    log_ok "heroku.studio.agents" "resolves (read at use time; nothing written to ~/.zprofile)"
+    log_ok "heroku.studio.agents" "resolves (read at use time; no token written to ~/.zprofile)"
+  fi
+
+  # The shim PATH block: without it a plain `heroku`, the conductor's `heroku run`
+  # and a git push to git.heroku.com (helper `!heroku git:credentials`; there is no
+  # ~/.netrc) have no credential on a rebuilt Mac. The SAME block, written by the
+  # same idempotent script an existing Mac migrates with; it also takes out any
+  # Heroku literal an older profile still carries (0600 backup, values redacted).
+  # This checkout's shims (the hub primary on a fresh Mac). Re-running the migrator
+  # from the fixed-path tooling later repoints the block there; either works.
+  local shim_dir="$BIN_DIR/shims"
+  if "$BIN_DIR/heroku-profile-migrate" --agent-only --shim-dir "$shim_dir" >/dev/null; then
+    log_ok "~/.zprofile heroku-token block" "shim $shim_dir first on PATH"
+    export PATH="$shim_dir:$PATH"
+  else
+    log_fail "could not write the heroku-token block to ~/.zprofile" \
+             "run $BIN_DIR/heroku-profile-migrate --agent-only --dry-run for the reason (it prints names only)"
+    return 1
   fi
 
   local who

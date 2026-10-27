@@ -475,8 +475,13 @@ profiles kept the revoked value, and `bin/heroku-secret-set` 401'd on it.
   runs with `OP_CACHE=false` under a deadline (`MCR_OP_DEADLINE`, 20 s), so a hang
   costs one command 20 seconds, not the machine its morning.
 - A caller that sets `HEROKU_API_KEY` (CI, a test, an override) is used as given.
+- A long run reads once: `bin/release` and `bin/qa-server` resolve the token
+  before their first write and export it, so their many `heroku` calls cost one
+  read (`HerokuToken.export_once!`), not one each against the hourly quota.
 - `bin/heroku-profile-migrate` takes the literals out of both profiles and writes
-  the PATH block. It is idempotent, keeps a 0600 backup and prints names only.
+  the PATH block. It is idempotent, keeps a 0600 backup with every removed value
+  redacted, and prints names only. `bin/ecosystem-build` runs it (`--agent-only`)
+  on every bringup, so a rebuilt Mac gets the block too.
   Do not add a Heroku `export` back to a profile; a rotation never needs one.
 
 ### An admin lane is MEANT to hold admin credentials

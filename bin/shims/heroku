@@ -9,6 +9,12 @@
 # is the next `heroku` on PATH after this directory; HEROKU_SHIM_REAL overrides
 # it (tests). Prints nothing of its own except a refusal.
 set -euo pipefail
+# heroku-token-shim-marker: every copy of this file carries this line, and the
+# PATH scan below skips any `heroku` that does. Two shim directories on PATH (the
+# fixed-path tooling and a hub checkout, say) would otherwise exec each other
+# forever. Matching the marker, not just this directory, is the guard; an env
+# sentinel would also refuse a legitimate nested call, such as git's
+# `heroku git:credentials` helper run under a command the shim started.
 
 shim_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
@@ -20,13 +26,14 @@ if [ -z "$real" ]; then
     dir="$(cd "$entry" 2>/dev/null && pwd -P)" || continue
     [ "$dir" = "$shim_dir" ] && continue
     if [ -x "$dir/heroku" ] && [ ! -d "$dir/heroku" ]; then
+      grep -q '^# heroku-token-shim-marker' "$dir/heroku" 2>/dev/null && continue
       real="$dir/heroku"
       break
     fi
   done
 fi
 if [ -z "$real" ]; then
-  echo "heroku (shim): no Heroku CLI on PATH after $shim_dir — install it (brew install heroku/brew/heroku)." >&2
+  echo "heroku (shim): no Heroku CLI on PATH besides heroku-token shims — install it (brew install heroku/brew/heroku)." >&2
   exit 127
 fi
 
