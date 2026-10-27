@@ -427,8 +427,8 @@ module HerokuCiKeyRotation
       say "== receipt"
       say "  #{ITEM}: authorization #{plan[:old_id]} -> #{auth[:id]}; #{SECRET} rotated on " \
           "#{TARGETS.map { |t| t[:env] }.join(' and ')}; old key revoked."
-      say "  ~/.zprofile.admin: HEROKU_STUDIO_APPLICATIONS_API_KEY still holds the REVOKED key. Refresh it from " \
-          "op://#{VAULT}/#{ITEM}/#{KEY_FIELD} (never paste the value into chat)."
+      say "  Nothing to refresh by hand: no shell profile holds this key; bin/heroku-token applications reads " \
+          "op://#{VAULT}/#{ITEM}/#{KEY_FIELD} when it is used."
     end
 
     def in_flight(workflow) = @github.runs(workflow).count { |r| r["status"] != "completed" }

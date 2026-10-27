@@ -369,7 +369,7 @@ agent_vault_visible() {
 # Build PATH for child processes (idempotent)
 export PATH="$RUBY_PREFIX/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin:$MISE_SHIMS:$SOLANA_PREFIX/bin:$CARGO_PREFIX/bin:/opt/homebrew/bin:$PATH"
 
-# Pull OP_SERVICE_ACCOUNT_TOKEN + HEROKU_API_KEY from ~/.zprofile if they live there
+# Pull OP_SERVICE_ACCOUNT_TOKEN from ~/.zprofile if it lives there (no Heroku key does)
 if [ -f "$HOME/.zprofile" ]; then
   # shellcheck disable=SC1091
   set +u; source "$HOME/.zprofile" 2>/dev/null || true; set -u
@@ -612,27 +612,24 @@ phase_secrets() {
       ;;
   esac
 
-  # Heroku API key (auto-pull from 1P if not set). The item's `legacy-personal-api-key`
-  # field operates the fleet until the app transfers land and is deleted at cutover,
-  # after which the lane's own `credential` takes over — so prefer legacy when present.
+  # Heroku API key. No profile holds one since 2026-10-27: bin/heroku-token reads
+  # heroku.studio.agents from 1Password when a command needs it, and
+  # bin/shims/heroku (first on PATH via the block bin/heroku-profile-migrate
+  # writes into ~/.zprofile) does that for every plain `heroku` call. So this
+  # phase only proves the lane resolves; it never writes a token to disk.
+  local heroku_token_bin="$BIN_DIR/heroku-token"
   if [ -z "${HEROKU_API_KEY:-}" ]; then
-    log_act "fetching heroku.studio.agents from 1Password"
-    HEROKU_API_KEY=$(op_metered op item get "heroku.studio.agents" --vault "${MCR_OP_VAULT_AGENT:-studio-agents}" --format json 2>/dev/null \
-      | jq -r 'first((.fields[]? | select(.label == "legacy-personal-api-key") | .value), (.fields[]? | select(.label == "credential") | .value) | select(. != null and . != "")) // empty')
-    if [ -z "$HEROKU_API_KEY" ]; then
-      log_fail "heroku.studio.agents item missing or both key fields empty"
-      echo "    Expected: $agent_vault/heroku.studio.agents with 'legacy-personal-api-key' (pre-cutover) or 'credential' (post-cutover)"
+    log_act "checking heroku.studio.agents resolves from 1Password"
+    if ! "$heroku_token_bin" agents --check >/dev/null; then
+      log_fail "heroku.studio.agents did not resolve" \
+               "run bin/heroku-token agents --check for the reason (it prints no value)"
       return 1
     fi
-    export HEROKU_API_KEY
-    sed -i '' '/HEROKU_API_KEY/d' "$HOME/.zprofile" 2>/dev/null || true
-    echo "export HEROKU_API_KEY=$HEROKU_API_KEY" >> "$HOME/.zprofile"
-    chmod 600 "$HOME/.zprofile"
-    log_ok "HEROKU_API_KEY saved to ~/.zprofile"
+    log_ok "heroku.studio.agents" "resolves (read at use time; nothing written to ~/.zprofile)"
   fi
 
   local who
-  who=$(heroku auth:whoami 2>&1 | grep -v "Warning" | tail -1)
+  who=$("$heroku_token_bin" agents -- heroku auth:whoami 2>&1 | grep -v "Warning" | tail -1)
   if [[ "$who" == *@* ]]; then
     log_ok "Heroku auth" "$who"
   else
