@@ -9,10 +9,10 @@ require "test_helper"
 # config-priced suggestion.
 class AppUsageMeterTest < ActionDispatch::IntegrationTest
   setup do
-    # The suggestion projects this month's use to month end (AgentUsage::Suggestion.projected):
-    # 850 tokens at real time read as over the 1,000 allowance only before about the 26th, so
-    # every PR went red late in the month. Pin the clock to early in the month, before any row.
-    travel_to Time.current.beginning_of_month + 3.days + 12.hours
+    # Early in a month, so 850 tokens projects past the 1,000 allowance (AgentUsage::Suggestion.projected): late in a
+    # month the projection falls under it and the tier suggestion the meter test reads is gone (it went red on
+    # 2026-10-27 for every PR).
+    travel_to Time.zone.local(2026, 10, 3, 12)
     @app = apps(:turf_monster)
     @app.update!(package_tier: "builder")
     Agent.create!(slug: "turf-monster", name: "Turf Monster", status: "active", agent_type: "specialist")

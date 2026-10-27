@@ -138,7 +138,8 @@ class BrandKit < ApplicationRecord
   # original). With nothing saved, the default is drawn in the brand's own colouring (its Original where it has one)
   # unless asked.
   # A Navbar or Stacked Logo draws the KIT'S ICON (#kit_icon) where one is saved, or `icon` (an icon Logos::Variant)
-  # when given: the table's one icon per row (task kit-icon-atomic-unit). With neither, its own, as before.
+  # when given (task kit-icon-atomic-unit). With neither, its own, as before: the /logos table passes none, so a saved
+  # choice there draws exactly as on its brand page (task logos-index-download-formats).
   def variant(type, tone: :light, colouring: nil, icon: nil)
     type = type.to_sym
     icon ||= kit_icon unless type == :icon
