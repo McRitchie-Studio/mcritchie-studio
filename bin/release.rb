@@ -6495,13 +6495,19 @@ def gem_allocation_plan(group, failures)
   end
 
   live = rubygems_versions(repo)
+  current = gem_version_from_ref(repo, tip)
+  # Read once, here: the re-run after an abort needs to know whether CHANGELOG.md
+  # already rolled `current` and has gained entries since (Release::GemVersion
+  # #reallocation), and the guard below judges the same text.
+  changelog = changelog_at(repo, tip)
 
   decision = Release::GemVersion.allocation(
-    current: gem_version_from_ref(repo, tip),
+    current: current,
     tag_version: tag&.delete_prefix("v"),
     live_versions: live,
     ahead_commits: ahead_out.lines.map(&:chomp).reject { |l| l.strip.empty? },
-    members: gem_version_members(group)
+    members: gem_version_members(group),
+    pending_entries: changelog ? Release::Changelog.refold?(changelog, version: current) : false
   )
 
   if decision.refuse?
@@ -6519,7 +6525,7 @@ def gem_allocation_plan(group, failures)
   # written and nothing published — and gated on `allocate?` because that is
   # exactly where the roll below happens. A gem the sweep is not versioning is a
   # gem this has no business holding up.
-  if (refusal = changelog_refusal(repo, tip, published_version(tag, live)))
+  if (refusal = changelog_refusal(repo, tip, published_version(tag, live), replaces: decision.replaces))
     failures << "gem #{repo}: #{refusal}"
     return nil
   end
@@ -6547,13 +6553,19 @@ def changelog_at(repo, tip)
 end
 
 # nil when the gem is safe to roll; the refusal sentence otherwise.
-def changelog_refusal(repo, tip, published)
+#
+# A RE-allocation (`replaces`) is judged on the file it will actually roll: the
+# unpublished section folded back into the bucket. Judged as it stands, that
+# section is a heading AHEAD of the last published version, and the guard would
+# refuse the very re-run that exists to fix it.
+def changelog_refusal(repo, tip, published, replaces: nil)
   text = changelog_at(repo, tip)
   unless text
     say("  gem #{repo}: no CHANGELOG.md at origin/#{ACCEPTED_BRANCH} — nothing to roll")
     return nil
   end
 
+  text = Release::Changelog.unroll(text, version: replaces) || text if replaces
   Release::Changelog.refusal(text, published_version: published)
 end
 
@@ -6599,14 +6611,16 @@ def commit_gem_version!(repo, tip, decision, failures)
     end
     File.write(ws_version, rewritten)
 
-    rolled = roll_changelog!(repo, workspace, version, failures)
+    rolled = roll_changelog!(repo, workspace, version, failures, replaces: decision.replaces)
     next if rolled == :failed
 
     next unless relock_gem_workspace!(repo, workspace, version, failures)
 
     staged = [version_file, lock_tracked?(workspace) ? "Gemfile.lock" : nil, rolled ? CHANGELOG_FILE : nil].compact
     sh("git", "-C", workspace, "add", "--", *staged)
-    _, committed = sh("git", "-C", workspace, "commit", "-m", "Release #{version}", capture: true)
+    message = "Release #{version}"
+    message += " (re-allocated over unpublished #{decision.replaces})" if decision.replaces
+    _, committed = sh("git", "-C", workspace, "commit", "-m", message, capture: true)
     unless committed
       failures << "gem #{repo}: could not commit #{version} in the ship workspace"
       next
@@ -6649,11 +6663,18 @@ CHANGELOG_FILE = "CHANGELOG.md"
 # every unrollable shape in the decide phase. If the two ever disagree, that is a
 # defect in this pair and it fails LOUDLY here rather than publishing a gem whose
 # changelog quietly stayed behind.
-def roll_changelog!(repo, workspace, version, failures)
+def roll_changelog!(repo, workspace, version, failures, replaces: nil)
   path = File.join(workspace, CHANGELOG_FILE)
   return false unless File.exist?(path)
 
-  text   = File.read(path)
+  text = File.read(path)
+  # A re-allocation first folds the unpublished section it supersedes back into
+  # the bucket (Release::Changelog.unroll), so the roll below files every entry
+  # of this release under ONE heading, the version it will actually ship as.
+  if replaces && (unrolled = Release::Changelog.unroll(text, version: replaces))
+    step("  gem #{repo}: folded the unpublished '#{replaces}' section back into '## Unreleased' to roll it again")
+    text = unrolled
+  end
   date   = Time.now.strftime("%Y-%m-%d")
   rolled = Release::Changelog.roll(text, version: version, date: date)
   if rolled.nil?

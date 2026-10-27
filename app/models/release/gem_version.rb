@@ -150,7 +150,10 @@ class Release
     SKIP     = "skip"
     REFUSE   = "refuse"
 
-    Decision = Struct.new(:action, :version, :reason, keyword_init: true) do
+    # `replaces` is set only on a RE-allocation: the version already allocated on
+    # `accepted` (never published) that this decision supersedes. The CLI then
+    # unrolls that version's CHANGELOG section before it rolls the bucket again.
+    Decision = Struct.new(:action, :version, :reason, :replaces, keyword_init: true) do
       def allocate?
         action == ALLOCATE
       end
@@ -175,6 +178,9 @@ class Release
     #   live_versions — what RubyGems already has (strings, or the versions-API hashes)
     #   ahead_commits — the commits between that tag and the `accepted` tip
     #   members       — this gem's candidate members (kind / risk_tags / gem_bump)
+    #   pending_entries — true when CHANGELOG.md at `accepted` already rolled
+    #                   `current` directly beneath the bucket AND the bucket has
+    #                   gained entries since (Release::Changelog.refold?)
     #
     # SKIP is the answer whenever allocation has no business acting, and the two
     # skips are different: nothing to publish (no commits past the tag), and
@@ -184,7 +190,7 @@ class Release
     # EXACT complement of the stranded-work guard's trigger: this allocates in
     # precisely the cases that guard fires on, which is why the guard stays
     # armed behind it as the backstop rather than being replaced by it.
-    def allocation(current:, tag_version:, live_versions:, ahead_commits:, members:)
+    def allocation(current:, tag_version:, live_versions:, ahead_commits:, members:, pending_entries: false)
       members = Array(members)
       commits = Array(ahead_commits).map { |c| c.to_s.strip }.reject(&:empty?)
       live    = live_numbers(live_versions)
@@ -235,6 +241,9 @@ class Release
                                  "`Release #{current}` commit on origin/release and push it")
         end
 
+        again = reallocation(current, published, live, members, pending_entries)
+        return again if again
+
         return skip_decision("#{current} already advanced past #{reference} — allocated already")
       end
 
@@ -264,6 +273,48 @@ class Release
 
       Decision.new(action: ALLOCATE, version: allocated,
                    reason: explain(baseline, members))
+    end
+
+    # THE RE-RUN AFTER AN ABORT. `current` is past the last tag and not live: a
+    # previous prepare allocated it and stopped before the publish. It is still
+    # the release's to change, and the members may have changed since. On
+    # 2026-10-27 prepare allocated studio-engine 0.115.1 (a patch), aborted, and
+    # the re-run swept engine-node-tooling-package, which asked for a minor; the
+    # skip above kept 0.115.1, and that member's CHANGELOG entries, merged after
+    # the roll, shipped under 0.115.2.
+    #
+    # So re-derive from the CURRENT members against the same floor a first
+    # allocation uses, and:
+    #   * move UP when they now earn more than `current` — never down, so a
+    #     deliberate hand-bump past the derived number still stands, and an
+    #     ejected member never walks a number back under a candidate already
+    #     published for it;
+    #   * otherwise, re-roll the SAME version when the bucket gained entries
+    #     since its roll (`pending_entries`), so they ship in it;
+    #   * otherwise nil: the skip stands, exactly as before.
+    #
+    # Nothing here can touch a published number: `current` is not live (the
+    # caller refused that case), and the floor is the highest of the tag and the
+    # live list, so a derived number is never live; the check below asserts it.
+    def reallocation(current, published, live, members, pending_entries)
+      baseline = highest_version(published)
+      bump = release_bump(members)
+      derived = baseline && bump && advance(baseline, bump)
+      return nil unless derived
+
+      if Gem::Version.new(derived) > Gem::Version.new(current.to_s.strip.sub(/\Av/, ""))
+        return refuse_decision("#{derived} is already live on RubyGems and can never be re-pushed") if live.include?(derived)
+
+        return Decision.new(action: ALLOCATE, version: derived, replaces: current.to_s.strip,
+                            reason: "re-derived: #{current} was allocated but never published, and the members " \
+                                    "now earn more — #{explain(baseline, members)}")
+      end
+
+      return nil unless pending_entries
+
+      Decision.new(action: ALLOCATE, version: current.to_s.strip, replaces: current.to_s.strip,
+                   reason: "#{current} was allocated but never published; re-rolling the CHANGELOG entries " \
+                           "merged since into it")
     end
 
     def skip_decision(reason)
