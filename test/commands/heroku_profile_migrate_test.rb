@@ -101,7 +101,7 @@ class HerokuProfileMigrateTest < Minitest::Test
     assert_includes admin, "export OP_ADMIN_SERVICE_ACCOUNT_TOKEN=ops_fixture_admin"
     assert_includes admin, "export SOME_OTHER_KEY=#{STRAY}", "a value under another name is never touched"
     assert body.end_with?("# <<< heroku-token <<<\n"), "the block is LAST, after any PATH prepend"
-    assert_includes body, %(export PATH="#{File.expand_path(@shims)}:$PATH")
+    assert_includes body, %(export PATH="#{File.expand_path(@shims)}${_ht_p:+:$_ht_p}")
     refute_includes admin, "export PATH", "the admin block changes no PATH"
 
     assert_equal 0o600, mode(@zprofile)
@@ -135,6 +135,17 @@ class HerokuProfileMigrateTest < Minitest::Test
     assert path.start_with?("#{File.expand_path(@shims)}:"), path
     twice, = Open3.capture2({ "PATH" => "/usr/bin:/bin" }, "sh", "-c", ". \"$1\"; . \"$1\"; printf %s \"$PATH\"", "sh", @zprofile)
     assert_equal 1, twice.split(":").count(File.expand_path(@shims)), "sourcing twice adds the shim once"
+  end
+
+  # A nested login shell: path_helper has already put the real CLI ahead of an
+  # inherited shim entry. Sourcing the block must move the shim back to the front.
+  def test_the_block_moves_an_inherited_shim_back_in_front_of_the_real_cli
+    assert run_bin.last.success?
+    shims = File.expand_path(@shims)
+    path, = Open3.capture2({ "PATH" => "/opt/homebrew/bin:#{shims}:/usr/bin:/bin" }, "sh", "-c",
+                           ". \"$1\" >/dev/null 2>&1; printf %s \"$PATH\"", "sh", @zprofile)
+    assert_equal [shims], path.split(":").first(1) & [shims], path
+    assert_equal 1, path.split(":").count(shims), "the inherited entry is moved, not duplicated"
   end
 
   def test_a_second_run_changes_nothing
@@ -205,7 +216,7 @@ class HerokuProfileMigrateTest < Minitest::Test
 
     assert status.success?, "#{out}\n#{err}"
     assert_equal 0o600, mode(@zprofile)
-    assert_includes File.read(@zprofile), %(export PATH="#{File.expand_path(@shims)}:$PATH")
+    assert_includes File.read(@zprofile), %(export PATH="#{File.expand_path(@shims)}${_ht_p:+:$_ht_p}")
     assert_empty backups(@zprofile)
   end
 

@@ -63,7 +63,12 @@ module HerokuProfileMigrate
              "# Heroku tokens are read from 1Password when used (bin/heroku-token); no",
              "# profile holds one, so a rotation never leaves a stale copy here."]
     if kind == :agent
-      lines << "case \":$PATH:\" in *\":#{shim_dir}:\"*) ;; *) export PATH=\"#{shim_dir}:$PATH\" ;; esac"
+      # MOVE the shim to the front on every source, never "add it if absent": a
+      # nested login shell inherits a PATH that holds it, /etc/zprofile's
+      # path_helper then puts /opt/homebrew/bin (the real CLI) ahead of it, and a
+      # skip-if-present guard would leave it there. POSIX sh, no subprocess.
+      lines << %{_ht_p=":$PATH:"; while :; do case "$_ht_p" in *":#{shim_dir}:"*) _ht_p="${_ht_p%%:"#{shim_dir}":*}:${_ht_p#*:"#{shim_dir}":}" ;; *) break ;; esac; done}
+      lines << %{_ht_p="${_ht_p#:}"; _ht_p="${_ht_p%:}"; export PATH="#{shim_dir}${_ht_p:+:$_ht_p}"; unset _ht_p}
     else
       lines << "# Admin lanes: source this file, then bin/heroku-token admin|applications -- <cmd>."
     end
