@@ -62,6 +62,25 @@ module AgentMessages
   # (AgentProposal.record_from!) read, so no layer answers a higher role than
   # the rules the worker prints.
   #
+  # THE GOOGLE LAYER (`google_context`) is a small read-only snapshot of the
+  # sender's OWN Google (GoogleConnect::OwnerContext: calendar, newest mail
+  # headers, newest Drive files), present only when the sender is the OWNER of
+  # what this soul answers for (#google_context?), and nil for everyone else.
+  # Two owners, both server-side facts, never the message's:
+  #   - a client CTO's app owner on that app's own CTO thread
+  #     (Answerers#app_owner_thread?: web channel, the thread key built for
+  #     that user, the app's CTO soul, an owner AppMembership), answered as
+  #     that app's client: THEIR OWN connections only;
+  #   - on any hub soul (every soul but client_cto), a sender answered as the
+  #     owner audience whose person holds the owner role AND whose hub user is
+  #     an admin: the household's connections (GoogleConnection.household,
+  #     the set /admin/google reads).
+  # FAIL CLOSED: no person, no hub user, a /build thread, a public, team or
+  # client sender, another app's owner, a mismatched audience, or any error
+  # while deciding all mean no google_context. Its text (subjects, snippets,
+  # titles, file names) is written by strangers, so the worker prints it
+  # inside the untrusted fence as data.
+  #
   # `ledger` and `user.notes` (a string) repeat the pre-omnichannel shape for a
   # worker still running the older ContextBuilder; drop them once every
   # dispatcher runs this release.
@@ -114,6 +133,7 @@ module AgentMessages
         "user" => user_json,
         "proposals" => proposals_json,
         "persona" => persona_json,
+        "google_context" => google_context_json,
         "ledger" => { "turns" => person_turns, "summary" => summary, "pin" => thread_turns.last }
       }.merge(intake_json).merge(attachments_json)
     end
@@ -204,6 +224,33 @@ module AgentMessages
     def app_owner?
       user = person&.user
       user&.slug.present? && AppMembership.owners.exists?(app_slug: @message.channel_ref, user_slug: user.slug)
+    end
+
+    # The owner's Google snapshot, or nil. See THE GOOGLE LAYER above.
+    def google_context_json
+      reader = google_reader
+      reader&.snapshot
+    rescue StandardError => e
+      Rails.logger.warn("[memory_bundle] google_context skipped: #{e.class}")
+      nil
+    end
+
+    # Which owner's Google this message may read (a GoogleConnect::OwnerContext),
+    # or nil. Every branch must hold; anything unexpected is nil.
+    def google_reader
+      return nil unless audience_person && person
+
+      user = person.user
+      return nil unless user&.persisted?
+
+      if client_cto?
+        return nil unless audience == { "role" => "client", "client_domain" => @message.channel_ref.to_s.tr("-", "_") }
+        return nil unless Answerers.current.app_owner_thread?(@message, person)
+
+        GoogleConnect::OwnerContext.for_user(user)
+      elsif audience["role"] == "owner" && person.role == "owner" && user.admin?
+        GoogleConnect::OwnerContext.household
+      end
     end
 
     # The client CTO's persona for this app, or nil (every other soul, or a
