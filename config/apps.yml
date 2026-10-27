@@ -373,7 +373,7 @@ apps:
 
   - slug: alex-build
     name: alex.build
-    emoji: "🛠️"
+    emoji: "🧑🏻"
     color: "#5B3A8C"
     tier: product
     status: active

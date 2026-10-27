@@ -453,7 +453,7 @@ apps:
     # git_push_heroku runs no tests, so the gate names CI's full suite, verbatim.
     test_cmd: bin/rails db:test:prepare test test:system
     #
-    # QA-evidence exempt on cost, by operator decision ("QA exeption", Alex McRitchie
+    # QA-evidence exempt on cost, by operator decision ("QA exeption", Alex
     # McRitchie in chat): no QA copy. A change reaches production gated by CI and
     # review only, as cyvasse. QA only: `shipped` still needs the release -> main record.
     qa_evidence: exempt

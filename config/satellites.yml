@@ -220,7 +220,7 @@ satellites:
 
   - slug: alex-build
     display_name: "alex.build"
-    emoji: "🛠️"
+    emoji: "🧑🏻"
     port: 4600
     # alex.build (epic .agents/epics/alex-build.md): Alex McRitchie authorized the repo,
     # the Heroku app and the DNS on 2026-10-25 ("2. Yes new app."). Heroku app

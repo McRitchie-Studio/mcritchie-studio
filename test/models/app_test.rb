@@ -24,4 +24,11 @@ class AppTest < ActiveSupport::TestCase
     app.update!(name: "Ten and Five")
     assert_equal "10and5", app.reload.slug, "a rename does not move the slug"
   end
+
+  test "alex.build wears the Alex agent's emoji in both registries" do
+    apps = YAML.safe_load_file(Rails.root.join("config/apps.yml"))["apps"]
+    satellites = YAML.safe_load_file(Rails.root.join("config/satellites.yml"))["satellites"]
+    assert_equal "🧑🏻", apps.find { |a| a["slug"] == "alex-build" }["emoji"]
+    assert_equal "🧑🏻", satellites.find { |s| s["slug"] == "alex-build" }["emoji"]
+  end
 end
