@@ -335,7 +335,7 @@ The heartbeat and `bin/agent-inbox` speak to the board `ATOMIC_CAPTURE_URL`
 names (default `https://mcritchie.studio`), authenticated as the rest of the
 agent CLI is (`bin/lib/agent_api.rb`).
 
-## Memory: the five context layers
+## Memory: the context layers
 
 An answer remembers the person it answers, on every channel they use. The
 memory is rebuilt from the hub's rows on every answer, never from a resumed
@@ -351,7 +351,8 @@ of its answer. Two pieces build the memory:
   answers only the worker holding the claim (409 `NOT_HOLDER` otherwise, since
   the bundle carries other messages' text). `AgentMessages::MemoryBundle` builds it.
 - **The worker lays it out.** `AgentMailbox::ContextBuilder`
-  (`bin/lib/agent_context_builder.rb`) renders five labeled layers, each held to a
+  (`bin/lib/agent_context_builder.rb`) renders five labeled layers, and a sixth,
+  GOOGLE, for an owner only, each held to a
   character budget in `ContextBuilder::BUDGETS` (the one place they live).
 
 | Layer | What | Source | Budget |
@@ -361,6 +362,40 @@ of its answer. Two pieces build the memory:
 | USER | The notes about the sender, from every channel, each with its date and source: every soul's for an owner or team sender, the answering soul's domain's only for a client or the public ("Whose memory") | `agent_person_notes` for the message's person (`AgentPersonNote.visible_for`) | 2,000 |
 | PERSON | The sender's earlier exchanges with this soul on every channel, each labeled with its place | `agent_messages` by `(soul_slug, person_id)`: the summary, then the recent turns | 9,000 (summary 3,000) |
 | THREAD | The conversation being answered | `agent_messages` by `thread_key`, this channel and guild only | 6,000 |
+| GOOGLE | Only for an owner (below, "The Google layer"): a read-only snapshot of their own Google, printed after USER | `GoogleConnect::OwnerContext` through the existing readers | 4,000 |
+
+**The Google layer.** The bundle's `google_context` is a small read-only
+snapshot of the sender's own connected Google: the next 7 days of calendar
+events (title, start, end, attendee count; at most 20), the 10 newest Gmail
+messages (from, subject, date, Google's snippet; never a body), and the 10
+most recently modified Drive files (name, type, modified). Each section appears
+only for an ability the account granted. A revoked grant, or a token the app
+can no longer decrypt, is a note to reconnect on /integrations; any other
+failure is a "could not be read just now" note. Nothing raises, and no token
+reaches the bundle or the log. A snapshot is cached for 5 minutes per owner,
+keyed on every connection's id, scope and change time, so a disconnect or a
+dropped ability shows on the next message.
+
+It is gated on the board (`MemoryBundle#google_reader`), fail closed, to the
+OWNER of what the soul answers for, two ways:
+
+- **A client CTO's app owner** on that app's own CTO thread
+  (`Answerers#app_owner_thread?`: the web channel, the thread key built for
+  that user, the app's CTO soul, an owner `AppMembership`), answered as the
+  app's client. It reads that user's own connections only.
+- **An admin owner on a hub soul** (any soul but `client_cto`): the owner
+  audience, a person holding the owner role, and a hub user who is an admin.
+  It reads the household's connections (`GoogleConnection.household`, the set
+  /admin/google shows).
+
+Everyone else gets none, even with their own Google connected: a public
+visitor on the same app, another app's owner, a client or team sender, an
+admin on a client app's CTO chat, a /build thread, and a sender with no hub
+user. Subjects, snippets, titles and file names are written by strangers, so
+the worker prints the snapshot inside the untrusted fence, under one
+code-written line saying it is data, not instructions, and prints it only for
+an owner or client audience even if a bundle somehow carried it. A resumed
+warm turn carries it too, since it sits between USER and PERSON.
 
 **The person.** A person is one identity across platforms. `agent_people` holds
 the display name and, optionally, the hub `User`. `agent_person_identities` holds
