@@ -20,6 +20,9 @@ module LogosHelper
   # read from its own saved choice. The page's own ?icon_colouring= (task kit-icon-atomic-unit: exploring an icon other
   # than the kit's) is carried as asked.
   #
+  # The /logos table's download format (?download_format=, task logos-index-download-formats) is carried by every page,
+  # less its default (PNG), so the table opens on it again from any brand or compare page.
+  #
   # The text version (?text=, the Words control) is the tab's own: it is carried while the tab stays, and dropped by a
   # link to another tab, which opens on its own kit's text version (task logo-download-card).
   def logo_page_params(**changes)
@@ -32,7 +35,7 @@ module LogosHelper
       rule: (@rule unless @rule == defaults.fetch(:rule, 4)),
       form: (@form unless @type == :stacked && @form == defaults.fetch(:form, @logo&.form)),
       proportion: (@proportion unless @type == :stacked && @proportion == defaults.fetch(:proportion, Logos::Variant::PROPORTIONS.keys.first)),
-      guides: (1 if @guides) }
+      guides: (1 if @guides), download_format: logo_download_format_param }
       .merge(Logos::Variant.edit_params(edits || {})).merge(changes).compact
   end
 
@@ -41,8 +44,12 @@ module LogosHelper
   # on top; a change to nil drops a param.
   def logo_compare_params(**changes)
     { left: @left, right: @right, type: (@type unless @type == :navbar), context: (@context if @context == :watermark),
-      colouring: @colouring_param, rule: @rule_param, form: @form_param, proportion: @proportion_param, grid: (1 if @grid) }.merge(changes).compact
+      colouring: @colouring_param, rule: @rule_param, form: @form_param, proportion: @proportion_param, grid: (1 if @grid),
+      download_format: logo_download_format_param }.merge(changes).compact
   end
+
+  # The page's ?download_format= as a URL param: nil for the default (PNG) or none read.
+  def logo_download_format_param = (@download_format unless @download_format.nil? || @download_format == LogoBrandPage::DOWNLOAD_FORMATS.keys.first)
 
   # The compare page a brand page's Compare button opens: this brand on the left, its other version (or the next
   # brand) on the right, on the tab's type, in the page's context and colouring.
@@ -63,7 +70,7 @@ module LogosHelper
   def logo_tab_default_path = logo_brand_path(@logo.brand, { type: (@type unless @type == :navbar) }.merge(logo_page_params.slice(:context, :guides)).compact)
 
   # The page params that keep the page's context and colouring, for a link or form that leaves the tab's own settings.
-  def logo_page_keeps(*more) = logo_page_params.slice(:context, :colouring, *more)
+  def logo_page_keeps(*more) = logo_page_params.slice(:context, :colouring, :download_format, *more)
 
   # A brand's own colouring on a page with no ?colouring=: its Original where it has one, else Alt.
   def logo_default_colouring(logo) = logo.original? ? :original : :alt
