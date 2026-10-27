@@ -210,7 +210,7 @@ test("theme toggle switches dark/light and updates localStorage", async ({ page 
   await expect(html).toHaveClass(/dark/);
 
   // Click theme toggle button
-  await page.click('button[title="Toggle theme"]:visible');
+  await page.click('header button[title="Toggle theme"]:visible'); // the navbar's: the footer carries a second toggle
 
   // Should switch to light (dark class removed)
   await expect(html).not.toHaveClass(/dark/);
@@ -225,7 +225,7 @@ test("theme persists on reload", async ({ page }) => {
   await page.waitForFunction(() => window.Alpine, null, { timeout: 10_000 });
 
   // Toggle to light
-  await page.click('button[title="Toggle theme"]:visible');
+  await page.click('header button[title="Toggle theme"]:visible'); // the navbar's: the footer carries a second toggle
   await expect(page.locator("html")).not.toHaveClass(/dark/);
 
   // Reload

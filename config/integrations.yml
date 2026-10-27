@@ -96,7 +96,9 @@ groups:
       # Any signed-in user sees each card's Connect or Disconnect for their own
       # account; an admin's are the household's, on /admin/google too
       # (IntegrationsController::GOOGLE_CARDS). A visitor's Connect opens the
-      # sign-in modal, back to /integrations.
+      # sign-in modal, back to /integrations. A signed-in user's Gmail Connect
+      # (and Connect Google while Gmail is missing) opens the Gmail admin-trust
+      # modal first (modals/_gmail_admin); Calendar and Drive link straight.
       - key: google_calendar
         name: Google Calendar
         icon: "📅"

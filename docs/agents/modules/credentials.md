@@ -579,7 +579,11 @@ timed-out attempt is logged `timeout` and retried ONCE with `OP_CACHE=false`, wh
 skips the 1Password cache daemon; the retry logs its own row (`ok`, `fail:<n>`, or
 a second `timeout`). `bin/op-reads` counts timeouts in their own column. Callers
 change nothing: `bin/gh-token`, `bin/gh-app-git-credential`, the board CLI and the
-agent API all get the bound from the wrapper. The shell half's watchdog is perl
+agent API all get the bound from the wrapper, and since 2026-10-27 so do the last
+bare readers under `bin/`: `DomainCutover::Credentials.op_read` (the release's
+static-site deploy), `bin/r2-backup --op`, `bin/lib/dev_google_client.rb` and
+`DomainRegister::Credentials.op_read`. `test/lib/op_reads_are_bounded_test.rb`
+refuses a new Ruby call under `bin/` that spawns `op` outside the wrapper. The shell half's watchdog is perl
 (`timeout` is not installed on the Mac), and it forks and kills from the parent,
 because `op` is a Go binary and ignores an inherited SIGALRM. Why: from 2026-10-21
 to 2026-10-24 the daemon never became ready after a reboot, every read waited about

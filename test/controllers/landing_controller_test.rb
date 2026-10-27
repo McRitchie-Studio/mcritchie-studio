@@ -94,6 +94,24 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_equal "McRitchie Studio.", manifest["description"]
   end
 
+  # [component] /privacy carries the Google User Data section Google's OAuth
+  # verification reviews: what each permission reads, the never-list, how to
+  # disconnect, and the Limited Use sentence, verbatim, linking the policy.
+  test "[component] /privacy renders the Google user data section and the Limited Use link" do
+    get privacy_path
+
+    section = css_select("[data-test='google-user-data']").first
+    assert section, "the Google User Data section renders"
+    text = section.text.squish
+    [ "Google Calendar", "Gmail", "Google Drive", "read only", "do not sell Google data", "advertising",
+      "train or improve generalized artificial intelligence or machine learning models", "stored encrypted",
+      "myaccount.google.com/permissions", "revoke the token with Google and delete it" ].each { assert_includes text, _1 }
+    assert_includes section.at_css("[data-test='google-limited-use']").text.squish,
+                    "McRitchie Studio's use and transfer to any other app of information received from Google APIs will adhere to the Google API Services User Data Policy, including the Limited Use requirements."
+    assert_equal "https://developers.google.com/terms/api-services-user-data-policy", section.at_css("[data-test='google-limited-use-link']")["href"]
+    assert section.at_css("a[href='/integrations']"), "disconnect points at /integrations"
+  end
+
   # [component] /privacy doubles as the Messaging Terms and Conditions a carrier
   # reads when it reviews the SMS registration. Each line below is one they check.
   test "privacy page is the combined privacy policy and messaging terms" do
@@ -101,7 +119,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "h1", text: "Privacy Policy and Messaging Terms and Conditions"
-    assert_includes response.body, "Last updated: September 30, 2026"
+    assert_includes response.body, "Last updated: October 27, 2026"
     text = css_select("[data-test='privacy-page']").text.squish
     assert_includes text, "McRitchie Studio LLC (doing business as McRitchie Studio)"
     assert_includes text, "3000 Lawrence St, Denver, CO 80205"

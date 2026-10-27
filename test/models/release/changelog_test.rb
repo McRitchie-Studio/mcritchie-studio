@@ -634,4 +634,70 @@ class ReleaseChangelogTest < Minitest::Test
 
     assert_empty CL.misfiled_entries(after, base: before, sides: [before, after], published: ["0.39.0"])
   end
+
+  # --- the unroll: an allocated version that never shipped (2026-10-27) -------
+  #
+  # Prepare rolled studio-engine's bucket into 0.115.1, aborted before the
+  # publish, and a member that joined on the re-run earned a minor. The re-run
+  # folds the unpublished section back into the bucket and rolls it again.
+
+  ROLLED_UNPUBLISHED = <<~MD
+    # Changelog
+
+    ## Unreleased
+
+    ### Added
+    - node tooling package
+
+    ## 0.115.1 — 2026-10-27
+
+    ### Fixed
+    - confetti resolves on the hub
+
+    ## 0.115.0 — 2026-10-26
+
+    - preset deleted
+  MD
+
+  def test_unroll_folds_the_unpublished_section_back_into_the_bucket_newest_first
+    unrolled = CL.unroll(ROLLED_UNPUBLISHED, version: "0.115.1")
+
+    refute_includes unrolled, "## 0.115.1"
+    assert_equal ["### Added", "- node tooling package", "", "### Fixed", "- confetti resolves on the hub"],
+                 CL.unreleased_entries(unrolled)
+    assert_includes unrolled, "## 0.115.0 — 2026-10-26\n\n- preset deleted\n", "shipped history is untouched"
+  end
+
+  def test_unroll_then_roll_files_every_entry_of_the_release_under_the_re_derived_version
+    rolled = CL.roll(CL.unroll(ROLLED_UNPUBLISHED, version: "0.115.1"), version: "0.116.0", date: "2026-10-27")
+
+    assert_equal ["## Unreleased", "## 0.116.0 — 2026-10-27", "## 0.115.0 — 2026-10-26"],
+                 CL.headings(rolled).map { |h| h[:line] }
+    assert_empty CL.unreleased_entries(rolled)
+    assert_nil CL.refusal(CL.unroll(ROLLED_UNPUBLISHED, version: "0.115.1"), published_version: "0.115.0"),
+               "the guard passes the unrolled file it will actually roll"
+  end
+
+  def test_the_guard_refuses_the_rolled_file_as_it_stands_which_is_why_the_cli_judges_the_unroll
+    assert_match(/AHEAD/, CL.refusal(ROLLED_UNPUBLISHED, published_version: "0.115.0"))
+  end
+
+  def test_unroll_touches_only_the_section_directly_beneath_the_bucket
+    assert_nil CL.unroll(ROLLED_UNPUBLISHED, version: "0.115.0"), "not the newest section: a file this did not write"
+    assert_nil CL.unroll(ROLLED_UNPUBLISHED, version: "0.116.0"), "no such section"
+    assert_nil CL.unroll(ROLLED_UNPUBLISHED, version: "nonsense")
+    assert_nil CL.unroll("# Changelog\n\n## 0.115.1\n\n- x\n", version: "0.115.1"), "no bucket"
+  end
+
+  def test_unroll_with_an_empty_bucket_still_returns_the_section_to_it
+    text = ROLLED_UNPUBLISHED.sub("### Added\n- node tooling package\n\n", "")
+    assert_equal ["### Fixed", "- confetti resolves on the hub"], CL.unreleased_entries(CL.unroll(text, version: "0.115.1"))
+  end
+
+  def test_refold_is_true_only_when_entries_arrived_after_the_roll_of_that_version
+    assert CL.refold?(ROLLED_UNPUBLISHED, version: "0.115.1")
+    refute CL.refold?(ROLLED_UNPUBLISHED.sub("### Added\n- node tooling package\n\n", ""), version: "0.115.1"),
+           "an empty bucket has nothing to re-roll"
+    refute CL.refold?(ROLLED_UNPUBLISHED, version: "0.115.0"), "the bucket's entries belong past a shipped version"
+  end
 end

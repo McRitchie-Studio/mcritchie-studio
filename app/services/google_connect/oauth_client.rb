@@ -55,6 +55,11 @@ module GoogleConnect
 
       def configured? = ENV_NAMES.all? { |name| ENV[name].present? }
 
+      # The OAuth client's public id, or nil when unset. Not a secret: Google
+      # puts it in every authorize URL. A Workspace admin pastes it into the
+      # Admin console to mark the app Trusted (modals/_gmail_admin).
+      def client_id = ENV["GOOGLE_CONNECT_CLIENT_ID"].presence
+
       # The scopes a sign-in for `abilities` asks for: identity plus each one's read.
       def scopes_for(abilities) = GoogleConnection::IDENTITY_SCOPES + Array(abilities).map { GoogleConnection.scope_for(_1) }
 
