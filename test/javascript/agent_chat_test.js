@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { BEAT_MS, carriedDraft, carryPhase, freshClientId, indicatorKey, phasesIn, restoreSend, startSend, syncDelay } from "../../app/javascript/agent_chat.js";
+import { BEAT_MS, carriedDraft, carryPhase, freshClientId, indicatorKey, phasesIn, restoreSend, sendFailed, startSend, syncDelay } from "../../app/javascript/agent_chat.js";
 
 function indicator(phase, slotId = "cto-chat-typing") {
   const slot = { id: slotId, closest: () => slot };
@@ -107,4 +107,11 @@ test("restoreSend puts an unsent text and its files back, but never over a new d
   assert.equal(restoreSend(typed, "sent", "old-client-id-1"), false);
   assert.equal(typed.field.value, "a new draft");
   assert.equal(typed.id.value, "fresh-uuid-0003", "the new draft keeps its own id");
+});
+
+test("sendFailed: a network error or a refused answer puts the send back; a success or an abort does not", () => {
+  assert.equal(sendFailed({ error: new Error("offline") }), true);
+  assert.equal(sendFailed({ success: false, fetchResponse: { statusCode: 429 } }), true, "an empty 429 draws no composer");
+  assert.equal(sendFailed({ success: true, fetchResponse: { statusCode: 200 } }), false);
+  assert.equal(sendFailed({ formSubmission: {} }), false, "a send aborted by the next one");
 });

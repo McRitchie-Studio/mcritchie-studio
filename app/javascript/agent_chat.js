@@ -96,8 +96,8 @@ export function startSend(form, random) {
   return text;
 }
 
-// A send whose answer never came (Turbo's submit-end carries an error): its text,
-// files and client id go back in, unless something new was typed meanwhile. The id
+// A send that failed (sendFailed): its text, files and client id go back in,
+// unless something new was typed meanwhile. The id
 // matters: the server may have stored the send before the answer was lost, and a
 // retry on the same id is then kept once (WebIngest), not stored twice.
 export function restoreSend(form, text, clientId) {
@@ -108,6 +108,13 @@ export function restoreSend(form, text, clientId) {
   const id = form.querySelector("input[name$='[client_id]']");
   if (id && clientId) id.value = clientId;
   return true;
+}
+
+// Whether a send's submit-end means it failed: a network error, or an answer that
+// was not a success (an empty 429 draws nothing, so the box would stay empty). A send
+// aborted by the next one carries neither, and is not put back.
+export function sendFailed(detail) {
+  return Boolean(detail?.error) || Boolean(detail?.fetchResponse && !detail.success);
 }
 
 // What a composer redrawn by the server holds: what the server drew there (a
@@ -222,7 +229,7 @@ if (typeof document !== "undefined") {
     const form = event.target.closest(FORM);
     const submission = event.detail?.formSubmission;
     const sent = submission && sending.get(submission);
-    if (event.detail?.error && sent) restoreSend(form, sent.text, sent.clientId);
+    if (sent && sendFailed(event.detail)) restoreSend(form, sent.text, sent.clientId);
     if (submission) sending.delete(submission);
     announce(form, "");
     requestAnimationFrame(() => document.querySelector(`${FORM} textarea`)?.focus());
