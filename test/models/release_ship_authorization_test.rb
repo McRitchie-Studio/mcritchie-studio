@@ -135,12 +135,12 @@ class ReleaseShipAuthorizationTest < ActiveSupport::TestCase
 
   test "[integration] a cleared run after an auto run leaves the chat clearance as the grant" do
     assert_equal :auto, ship!(mode: "auto", start: 2.hours.ago)
-    assert_equal :cleared, ship!(mode: "cleared", start: 1.hour.ago, clearance: "ship it", cleared_by: "alex")
+    assert_equal :cleared, ship!(mode: "cleared", start: 1.hour.ago, clearance: "ship it", cleared_by: "Alex McRitchie")
 
     grant = @rel.reload.ship_authorization_grant
     assert_equal "chat", grant.metadata["granted_via"]
     assert_equal "ship it", grant.metadata["clearance"]
-    assert_equal "alex", grant.metadata["cleared_by"]
+    assert_equal "Alex McRitchie", grant.metadata["cleared_by"]
     state = @rel.ship_authorization_state
     assert_equal "cleared", state["mode"]
     assert_equal "ship it", state["clearance"]
@@ -160,7 +160,7 @@ class ReleaseShipAuthorizationTest < ActiveSupport::TestCase
 
   test "[integration] a second cleared run records its own words" do
     ship!(mode: "cleared", start: 2.hours.ago, clearance: "ship the morning release")
-    ship!(mode: "cleared", start: 1.hour.ago, clearance: "ship it again", cleared_by: "alex")
+    ship!(mode: "cleared", start: 1.hour.ago, clearance: "ship it again", cleared_by: "Alex McRitchie")
 
     assert_equal "ship it again", @rel.reload.ship_authorization_state["clearance"]
   end

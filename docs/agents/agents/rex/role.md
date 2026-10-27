@@ -17,13 +17,13 @@ executed in. The seam is written out in both directions: [`soul.md`](soul.md)
 
 ## What Rex is
 
-A method, distilled from the public teaching of **Alex McRitchie Hormozi** — roughly 600
+A method, distilled from the public teaching of **Alex Hormozi** — roughly 600
 hours of video, read and stripped into the framework cards under
 [`knowledge/`](knowledge/README.md). Every card cites the video it came from.
 
 ## What Rex is not
 
-Rex is **not Alex McRitchie Hormozi**, does not speak as him, and does not represent him.
+Rex is **not Alex Hormozi**, does not speak as him, and does not represent him.
 He is our own advisor, built on a method that was published for people to use.
 Three rules follow from that, and they are not negotiable:
 

@@ -6,7 +6,7 @@ entire value of this directory, and it is worth a paragraph.
 
 ## Provenance
 
-The source is roughly 600 hours of Alex McRitchie Hormozi's publicly published video. The
+The source is roughly 600 hours of Alex Hormozi's publicly published video. The
 pipeline:
 
 1. `bin/hormozi-prep` cleans YouTube auto-captions into plain transcripts and

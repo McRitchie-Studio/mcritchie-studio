@@ -480,6 +480,12 @@ Rails.application.routes.draw do
     end
   end
 
+  # LEGACY /agents/ray and /agents/xan — the seat's agent page under its old slugs
+  # (see the /ray/* note above). It held the orchestrator seat, which is Mason's
+  # since 2026-10-25, so the bare page 301s to /agents/mason. Declared above
+  # `resources :agents` so #show never sees the slug; nothing deeper is shimmed.
+  get "agents/:slug", to: redirect("/agents/mason"), constraints: { slug: /ray|xan/ }
+
   resources :agents, only: [:index, :show], param: :slug do
     member do
       get :settings, to: "agent_settings#show"
