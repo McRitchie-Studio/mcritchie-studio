@@ -52,6 +52,15 @@ module Logos
 
     module_function
 
+    # The size a one-click download from the /logos table is drawn at (task logos-index-download-formats): the type's
+    # DEFAULTS preset as the browser reads it (app/javascript/logo_download.js, rasterSize), "width:800" (the width set,
+    # the height following) or "long:512" (the icon's long side, the other following; 512 × 512 for a square icon).
+    # The table sends no SVG to the page, so the browser reads the drawing's own size from the file it fetches.
+    def default_size(type)
+      key = DEFAULTS.fetch(type.to_sym)
+      key.start_with?("w") ? "width:#{key.delete_prefix('w')}" : "long:#{key}"
+    end
+
     # The drawing's own width and height, from its root viewBox: [662.45, 538.14].
     def natural(svg)
       box = svg[/<svg\b[^>]*\bviewBox="([^"]+)"/, 1] or raise ArgumentError, "an SVG with no viewBox"

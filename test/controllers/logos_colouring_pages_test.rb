@@ -95,7 +95,7 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
     end
     get logos_path(colouring: "alt")
     css_select("[data-test='logo-sample'] img").each { |img| assert_equal named(img["src"], nil), query(img["src"])["colouring"], img["src"] }
-    css_select("[data-test='logo-brand-row'] th a").each { |link| assert_equal "alt", query(link["href"])["colouring"], "the brand links keep it" }
+    css_select("[data-test='logo-brand-row'] th > a").each { |link| assert_equal "alt", query(link["href"])["colouring"], "the brand links keep it" }
   end
 
   test "a kit choice saves the page's colouring, and a choice saved before colourings reads as Alt" do
