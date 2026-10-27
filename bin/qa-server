@@ -716,6 +716,16 @@ end
 if __FILE__ == $PROGRAM_NAME
   guard_argv!
   cmd = ARGV.shift || "help"
+  # One 1Password read for the whole run, before the first `heroku` call, and
+  # exported to every child (HerokuToken.export_once!; bin/release does the same).
+  if %w[plan provision status deploy].include?(cmd)
+    require_relative "lib/heroku_token"
+    begin
+      HerokuToken.export_once!(:agents)
+    rescue HerokuToken::Unresolved => e
+      abort "qa-server: no Heroku token: #{e.message} Nothing was done."
+    end
+  end
 
   case cmd
   when "list"

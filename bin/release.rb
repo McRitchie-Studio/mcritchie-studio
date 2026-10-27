@@ -11194,6 +11194,22 @@ def exit_after_prepare(outcome)
   exit(status) unless status.zero?
 end
 
+# THE SHIP'S HEROKU TOKEN, read ONCE. On PROD every board op is a `heroku run`
+# (#conductor) and ShipAuthority polls on a timer, so a run makes dozens to
+# hundreds of `heroku` calls. No profile exports HEROKU_API_KEY (credentials.md,
+# "Heroku tokens resolve at use time"), and bin/shims/heroku would otherwise spend
+# a 1Password read on each one: enough to exhaust the shared hourly quota mid-ship,
+# and a board write that fails after the release->main fast-forward leaves the ship
+# half done. So the token is resolved here, before any write, and exported: every
+# child inherits it and the shim reads nothing. A caller's own HEROKU_API_KEY is
+# kept. Unresolved refuses before the first mutation.
+def export_heroku_token!
+  require_relative "lib/heroku_token"
+  HerokuToken.export_once!(:agents)
+rescue HerokuToken::Unresolved => e
+  abort!("no Heroku token for the PROD board: #{e.message} Nothing was done.")
+end
+
 # Guarded so the file can be `require`d (helper coverage) without dispatching.
 if __FILE__ == $PROGRAM_NAME
   # BEFORE the dispatcher, always. Every mutation this CLI can perform is reached
@@ -11203,6 +11219,7 @@ if __FILE__ == $PROGRAM_NAME
   # the floor. Unknown subcommands still fall through to the `else`.
   guard_argv!
   refuse_bad_train!
+  export_heroku_token! if PROD && Release::Cli.guard_args(ARGV.first)
   case ARGV.shift
   when "init"    then init
   when "merge"   then merge

@@ -88,6 +88,20 @@ class HerokuTokenTest < Minitest::Test
                     "the read must be bounded, not wait out the hang"
   end
 
+  def test_export_once_reads_one_time_and_exports_for_every_child
+    env = @env.dup
+    assert_equal AGENTS, HerokuToken.export_once!(:agents, env: env, op_bin: @op)
+    assert_equal AGENTS, env["HEROKU_API_KEY"], "exported for children"
+    3.times { HerokuToken.export_once!(:agents, env: env, op_bin: @op) }
+    assert_equal 1, FakeHerokuOp.calls(@dir).size, "a second call reads nothing"
+  end
+
+  def test_export_once_keeps_a_callers_key
+    env = @env.merge("HEROKU_API_KEY" => "HRKU-caller")
+    assert_equal "HRKU-caller", HerokuToken.export_once!(:agents, env: env, op_bin: @op)
+    assert_empty FakeHerokuOp.calls(@dir)
+  end
+
   def test_an_unknown_lane_is_refused
     assert_raises(HerokuToken::Unresolved) { resolve(:production) }
   end

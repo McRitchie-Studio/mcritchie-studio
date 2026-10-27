@@ -104,6 +104,23 @@ module HerokuToken
     read(name, spec, env, op_bin || env["HEROKU_TOKEN_OP_BIN"].to_s.then { |b| b.empty? ? "op" : b })
   end
 
+  # ONE read for a whole process tree. A long-running caller that shells out to
+  # `heroku` many times (bin/release: every board op is a `heroku run`, and the
+  # ship polls; bin/qa-server) calls this once, BEFORE its first write, so every
+  # child, and the shim inside it, finds HEROKU_API_KEY already set and reads
+  # nothing. Without it each call is its own 1Password read, and a ship that
+  # exhausts the hourly quota fails a board write halfway (Carl, PR 2271).
+  # Returns the token; raises Unresolved, so the caller refuses before acting.
+  def export_once!(name = :agents, env: ENV, op_bin: nil)
+    lane(name)
+    current = env["HEROKU_API_KEY"].to_s.strip
+    return current unless current.empty?
+
+    token = resolve(name, env: env, op_bin: op_bin)
+    env["HEROKU_API_KEY"] = token
+    token
+  end
+
   def read(name, spec, env, op_bin)
     op_lane = spec[:op_lane]
     token_var = OpVaults.token_env(op_lane)
