@@ -219,11 +219,14 @@ colouring then governs the **words** (the name and the tagline) only.
   Stacked choice saved while the kit has an icon stores no icon colour of its
   own; an older choice that carries one keeps working, and the kit icon wins
   when it is drawn.
-- **The table.** Each /logos row draws one icon in its Icon, Navbar and Stacked
-  tiles: the kit's icon, else the brand's icon in the page's colouring (its
-  Original where it has one). So with no kit icon a saved Alt choice is drawn
-  there with the brand's own icon, while its brand page and Kit card still
-  draw it exactly as saved.
+- **The table.** With a kit icon, each /logos row draws it in its Icon,
+  Navbar and Stacked tiles. Without one, the Icon tile is the brand's icon in
+  the page's colouring (its Original where it has one), and a saved Navbar or
+  Stacked choice is drawn exactly as saved, its own icon included, as its brand
+  page, Kit card, SVG route and kit export draw it (task
+  logos-index-download-formats, Alex McRitchie 2026-10-27: the table drew
+  Commercial Welding v2's Alt Stacked choice with the Original helmet, a logo
+  no other page drew).
 
 ## The Stacked Logo
 
@@ -525,7 +528,7 @@ admin sidebar as **Logos**.
 
 | Route | Shows |
 |-------|-------|
-| `/logos` | One row per brand in `config/logo_brands.yml`. Its **Logos** cell is one tight cluster (`logos/_cluster`): the **Stacked** Logo as a square on the left, the **Navbar** Logo beside it (each the brand's saved kit choice, its badge marked **Saved**, else its default: the Stacked Logo in its own form with the first word leading, the Navbar Logo on the rule of 4 with the second word leading), and the **Icon** as a small square under the Navbar Logo (all three drawing the row's one icon: the kit's, else the brand's own), each a tile with a badge naming its type and linking to its tab of the brand page; under it a **Download** of the Navbar and the Stacked Logo as shown. The brand cell says when its kit was saved. Then its **Typeface** hierarchy and its **Colours** (below). |
+| `/logos` | One row per brand in `config/logo_brands.yml`. Its **Logos** cell is one tight cluster (`logos/_cluster`): the **Stacked** Logo as a square on the left, the **Navbar** Logo beside it (each the brand's saved kit choice, its badge marked **Saved**, else its default: the Stacked Logo in its own form with the first word leading, the Navbar Logo on the rule of 4 with the second word leading), and the **Icon** as a small square under the Navbar Logo (with a saved kit icon all three draw it; without one each draws exactly what its brand page draws, so a saved choice keeps the icon it was saved with), each a tile with a badge naming its type and linking to its tab of the brand page. The brand cell says when its kit was saved, and under that holds the row's **Download Navbar**, **Download Stacked** and **Download Icon**, each the logo as shown ([below](#the-tables-downloads)). The header's **Download** control (PNG, SVG or JPEG; PNG unless `?download_format=` asks) sets every row's links. Then its **Typeface** hierarchy and its **Colours** (below). |
 | `/logos/compare` | **Two brands' kits side by side** ([below](#comparing-two-kits)): `?left=` and `?right=` (Commercial Welding v1 and v2 unless asked), `?type=`, and the shared `?rule=`, `?form=`, `?colouring=`, `?context=` and `?grid=1`. |
 | `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows ONE logo, with the **Download card** beside it ([below](#the-download-card)): SVG or PNG at preset or custom sizes, any tone, and **Copy SVG**. Under the tabs: the edit panel and **Kit choice** (on the Icon tab, the icon's colour and the kit icon), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**. |
 | `/logos/:brand/icon` | The icon as `image/svg+xml`. Params: `tone`, `colouring` (`original`, `alt`), `icon_colour`. Named `<brand>-icon-<tone>[-original].svg`. |
@@ -726,8 +729,27 @@ one **Download** card (`logos/_download_card`, `app/javascript/logo_download.js`
   `-<w>x<h>.png`. The logo's words are outlined paths, so no font is needed, and the SVG is same-origin, so
   the canvas is never tainted. No server route and no native dependency.
 - Without JavaScript the card is one Download SVG link and Copy SVG for the page's tone.
-- Every SVG the gallery and the kit export serve is already the icon's true ink box; only this card makes a PNG,
-  so the 1:1 option lives here alone.
+- Every SVG the gallery and the kit export serve is already the icon's true ink box; only this card makes a PNG
+  at a chosen size, so the 1:1 option lives here alone.
+
+### The table's downloads
+
+Alex McRitchie, 2026-10-27. Each `/logos` row's brand cell has **Download Navbar**, **Download Stacked** and
+**Download Icon** (`logos/_index_downloads`), each the logo its tile shows, one link per tone (the one matching the
+hub theme shows). The header's **Download** control picks the format for every row: **PNG** (the default), **SVG**
+or **JPEG**, kept as `?download_format=` and carried by every gallery link (brand pages and Compare too), so the
+table opens on it again.
+
+- Every link's `href` is the logo's SVG download. In SVG, or with JavaScript off, the link does its own work; the
+  control is served hidden and `app/javascript/logo_download.js` shows it, since without the script there is no
+  PNG to offer.
+- PNG and JPEG are drawn in the browser exactly as the Download card draws them: the SVG fetched from its own URL,
+  its size read from its `viewBox`, drawn at the type's **default preset** (`Logos::PngSizes.default_size`: 800 px
+  wide for the Navbar and Stacked Logos; the icon's long side 512, its true aspect, or 512 × 512 when it is
+  square), and saved as the SVG's name plus `-<w>x<h>.png` or `.jpg`.
+- A PNG is transparent. A JPEG has no transparency, so it is filled with the solid background the Download card
+  offers for that tone (`Logos::PngSizes::BACKGROUNDS`: white behind the light logo, black behind the dark one and
+  the watermark).
 
 ### Editing a logo's parts
 

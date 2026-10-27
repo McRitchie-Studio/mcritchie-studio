@@ -101,4 +101,9 @@ class LogosPngSizesTest < Minitest::Test
     end
     assert_equal %i[light dark watermark], PngSizes::BACKGROUNDS.keys
   end
+
+  # The /logos table's one-click raster size is each type's default preset, in the form logo_download.js reads.
+  def test_default_size_names_the_default_preset_for_the_browser
+    assert_equal({ icon: "long:512", navbar: "width:800", stacked: "width:800" }, PngSizes::DEFAULTS.keys.to_h { |type| [type, PngSizes.default_size(type)] })
+  end
 end

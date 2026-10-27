@@ -1,4 +1,5 @@
-// The brand page's Download card (logos/_download_card, task logo-download-card).
+// The brand page's Download card (logos/_download_card, task logo-download-card), and the /logos table's one-click
+// PNG and JPEG downloads (logos/_index_downloads, task logos-index-download-formats; at the end of this file).
 //
 // Some integrations take no SVG and want an exact pixel size, so the card can give the tab's logo as a PNG. The PNG is
 // drawn HERE, in the browser: the logo's SVG is fetched from its own URL (the one Copy SVG uses), sized to the target,
@@ -112,14 +113,25 @@ function setOptions(select, presets) {
   select.value = [...select.options].some((o) => o.value === was) ? was : (presets[0] ? presets[0].key : "custom");
 }
 
-// Draws the PNG and resolves with its Blob. `deps` carries the browser (fetchFn, createImage, createCanvas, URL) so
-// the order of the steps is testable.
-export async function rasterise(url, { size, naturalWidth, naturalHeight, background }, deps) {
+// The logo's SVG, as text, from its own URL; refused unless the answer is an SVG.
+export async function fetchSvg(url, deps) {
   const response = await deps.fetchFn(url, { credentials: "same-origin" });
   const type = (response.headers && response.headers.get("content-type")) || "";
   if (!response.ok || !type.includes("image/svg+xml")) throw new Error(`no SVG at ${url} (${response.status})`);
+  return response.text();
+}
+
+// Draws the PNG and resolves with its Blob. `deps` carries the browser (fetchFn, createImage, createCanvas, URL) so
+// the order of the steps is testable.
+export async function rasterise(url, options, deps) {
+  return drawSvg(await fetchSvg(url, deps), options, deps);
+}
+
+// Draws SVG text onto a canvas of `size` and resolves with its Blob: a PNG unless `mime` says otherwise ("image/jpeg").
+// `background` (a CSS colour) fills the canvas first; without one the canvas stays transparent.
+export async function drawSvg(text, { size, naturalWidth, naturalHeight, background, mime = "image/png" }, deps) {
   const rect = drawRect(size.fit, size.width, size.height, naturalWidth, naturalHeight);
-  const svg = sizedSvg(await response.text(), rect.width, rect.height);
+  const svg = sizedSvg(text, rect.width, rect.height);
   const objectUrl = deps.URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
   try {
     const image = deps.createImage();
@@ -132,7 +144,7 @@ export async function rasterise(url, { size, naturalWidth, naturalHeight, backgr
       context.fillRect(0, 0, size.width, size.height);
     }
     context.drawImage(image, rect.x, rect.y, rect.width, rect.height);
-    return await new Promise((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("the canvas gave no PNG"))), "image/png"));
+    return await new Promise((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error(`the canvas gave no ${mime}`))), mime));
   } finally {
     deps.URL.revokeObjectURL(objectUrl);
   }
@@ -233,8 +245,123 @@ function wireCard(card) {
   sync();
 }
 
+// ---- The /logos table's one-click downloads (logos/_index_downloads, task logos-index-download-formats) ----
+//
+//   <table data-download-format="png|svg|jpeg"> … <a data-logo-raster href="<the SVG download>" data-svg data-filename
+//      data-background data-raster-size="width:800|long:512" data-label>
+//
+// Every link's href is the SVG download, so with JavaScript off, or in the SVG format, the link does its own work. In
+// PNG or JPEG this takes the click, fetches the logo's SVG, reads its drawing's size from its viewBox, and draws it at
+// the type's default preset (Logos::PngSizes.default_size) as the Download card does.
+
+export const RASTER_FORMATS = { png: { mime: "image/png", ext: "png", label: "PNG" }, jpeg: { mime: "image/jpeg", ext: "jpg", label: "JPEG" } };
+
+// The drawing's own width and height, from its root viewBox (Logos::PngSizes.natural), or null.
+export function naturalSize(text) {
+  const root = /<svg\b[^>]*>/.exec(text);
+  const box = root && /\bviewBox="([^"]+)"/.exec(root[0]);
+  if (!box) return null;
+  const [, , width, height] = box[1].trim().split(/[\s,]+/).map(Number);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+// The canvas for a default preset spec: "width:800" sets the width, the height following; "long:512" sets an icon's
+// long side, the other following, and a drawing within 1% of square (Logos::PngSizes::SQUARE_TOLERANCE) is N × N with
+// the drawing fitted inside, as the server's icon presets are. Null when the size cannot be drawn.
+export function rasterSize(spec, naturalWidth, naturalHeight) {
+  const [kind, raw] = String(spec).split(":");
+  const value = Number(raw);
+  if (kind === "long") {
+    if (Math.abs(naturalWidth / naturalHeight - 1) <= 0.01) {
+      const side = pngSize("width", value, 1, 1);
+      return side && { ...side, fit: "contain" };
+    }
+    const size = pngSize(naturalWidth >= naturalHeight ? "width" : "height", value, naturalWidth, naturalHeight);
+    return size && { ...size, fit: "fill" };
+  }
+  if (kind !== "width") return null;
+  const size = pngSize("width", value, naturalWidth, naturalHeight);
+  return size && { ...size, fit: "fill" };
+}
+
+// The file's name: the SVG's, with its size and the format's extension (studio-icon-light-512x416.jpg).
+export function rasterFilename(svgFilename, width, height, ext) {
+  return `${svgFilename.replace(/\.svg$/i, "")}-${width}x${height}.${ext}`;
+}
+
+// What one table link would draw in `format`: { url, filename, mime, size, naturalWidth, naturalHeight, background }
+// once the SVG is read. A JPEG has no transparency, so it is always filled: with the link's data-background, the solid
+// background the brand page's Download card offers for that tone (Logos::PngSizes::BACKGROUNDS). A PNG stays
+// transparent, as the card's default is.
+export function rasterPlan(data, format, text) {
+  const raster = RASTER_FORMATS[format];
+  if (!raster) return null;
+  const natural = naturalSize(text);
+  if (!natural) throw new Error("the SVG has no viewBox");
+  const size = rasterSize(data.rasterSize, natural.width, natural.height);
+  if (!size) throw new Error(`no ${raster.label} size for ${data.rasterSize}`);
+  return {
+    size,
+    naturalWidth: natural.width,
+    naturalHeight: natural.height,
+    mime: raster.mime,
+    background: format === "jpeg" ? data.background : null,
+    filename: rasterFilename(data.filename, size.width, size.height, raster.ext),
+  };
+}
+
+// The format a table link downloads in: its table's data-download-format, else SVG.
+export function tableFormat(link) {
+  const table = link.closest("[data-download-format]");
+  return (table && table.dataset.downloadFormat) || "svg";
+}
+
+// Draws one table link's file and saves it. Resolves with the plan, or null when the link downloads its SVG itself.
+export async function downloadTableLink(link, deps, saveFn = save) {
+  const format = tableFormat(link);
+  if (!RASTER_FORMATS[format]) return null;
+  const text = await fetchSvg(link.dataset.svg, deps);
+  const plan = rasterPlan(link.dataset, format, text);
+  saveFn(await drawSvg(text, plan, deps), plan.filename);
+  return plan;
+}
+
+function onTableClick(event) {
+  const link = event.target.closest && event.target.closest("a[data-logo-raster]");
+  if (!link || !RASTER_FORMATS[tableFormat(link)]) return; // the SVG: the link's own download
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  if (link.getAttribute("aria-busy") === "true") return;
+  const error = document.querySelector("[data-logo-raster-error]");
+  if (error) error.hidden = true;
+  link.setAttribute("aria-busy", "true");
+  downloadTableLink(link, browserDeps())
+    .catch((failure) => {
+      if (!error) return;
+      error.textContent = `The ${RASTER_FORMATS[tableFormat(link)].label} could not be drawn (${link.dataset.label}): ${failure.message}. The link's SVG still downloads with the SVG format.`;
+      error.hidden = false;
+    })
+    .finally(() => link.removeAttribute("aria-busy"));
+}
+
+// A default preset spec in words, for a link's accessible name: "800 px wide", "512 px on its long side".
+export function sizeWords(spec) {
+  const [kind, value] = String(spec).split(":");
+  return kind === "long" ? `${value} px on its long side` : `${value} px wide`;
+}
+
+// Shows the format control (served hidden: without JavaScript every link is an SVG) and names each link's format.
+export function installTableDownloads(root = document) {
+  root.querySelectorAll("[data-logo-raster-js]").forEach((el) => { el.hidden = false; });
+  root.querySelectorAll("a[data-logo-raster]").forEach((link) => {
+    const raster = RASTER_FORMATS[tableFormat(link)];
+    link.setAttribute("aria-label", `Download ${raster ? `${raster.label}, ${sizeWords(link.dataset.rasterSize)}` : "SVG"}: ${link.dataset.label}`);
+  });
+}
+
 export function installLogoDownload(root = document) {
   root.querySelectorAll("[data-logo-download]").forEach(wireCard);
+  installTableDownloads(root);
 }
 
 // Turbo's Back copy carries the wired marker but not the listeners: clear it so the restored card is wired afresh.
@@ -243,6 +370,7 @@ export function clearLogoDownloadForCache(root = document) {
 }
 
 if (typeof document !== "undefined") {
+  document.addEventListener("click", onTableClick);
   document.addEventListener("turbo:before-cache", () => clearLogoDownloadForCache());
   document.addEventListener("turbo:load", () => installLogoDownload());
   if (document.readyState !== "loading") installLogoDownload();

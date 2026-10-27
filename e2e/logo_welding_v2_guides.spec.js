@@ -40,6 +40,6 @@ test("welding v1 and v2 sit in neighbouring rows of the logo table", async ({ pa
   await open(page, "/logos", 1280);
   const brands = await page.locator("[data-test='logo-brand-row']").evaluateAll((rows) => rows.map((row) => row.dataset.brand));
   expect(brands.indexOf("welding_v2")).toBe(brands.indexOf("welding") + 1);
-  await expect(page.locator("[data-test='logo-brand-row'][data-brand='welding'] th a")).toHaveText("Commercial Welding v1");
-  await expect(page.locator("[data-test='logo-brand-row'][data-brand='welding_v2'] th a")).toHaveText("Commercial Welding v2");
+  await expect(page.locator("[data-test='logo-brand-row'][data-brand='welding'] th > a")).toHaveText("Commercial Welding v1");
+  await expect(page.locator("[data-test='logo-brand-row'][data-brand='welding_v2'] th > a")).toHaveText("Commercial Welding v2");
 });

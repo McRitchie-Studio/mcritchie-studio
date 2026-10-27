@@ -1,0 +1,27 @@
+<%# ONE ROW'S DOWNLOADS (task logos-index-download-formats), in the /logos table's brand column: the Navbar Logo, the
+    Stacked Logo and the icon, each exactly as its tile shows it (saved choice or default; the row's icon), one link per
+    tone the page carries, the one matching the hub theme shown (LogosHelper#logo_themed).
+
+    Each href is the logo's SVG download, so with JavaScript off every link gives the SVG. In the header's PNG or JPEG
+    format (the table's data-download-format) app/javascript/logo_download.js takes the click and draws the file in the
+    browser, as the brand page's Download card does: the logo's own SVG (data-svg) onto a canvas at the type's default
+    preset (data-raster-size, Logos::PngSizes.default_size), named after the SVG (data-filename). A JPEG has no
+    transparency, so it is filled with data-background: the solid background the Download card offers for that tone
+    (Logos::PngSizes::BACKGROUNDS: white behind a light logo, black behind a dark or watermark one). A type the
+    library refused for this brand has no download. Locals: samples (per type, the variants by tone, or the refusal),
+    kit (the brand's BrandKit, or nil). %>
+<div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 text-3xs font-normal xl:max-w-44" data-test="logo-downloads">
+  <% %i[navbar stacked icon].each do |type| %>
+    <% sample = samples.fetch(type) %>
+    <% next if sample.is_a?(Logos::NavbarLogo::Error) %>
+    <%= logo_themed(sample.keys) do |tone| %>
+      <% shown = sample.fetch(tone) %>
+      <%= link_to "Download #{LogosHelper::LOGO_BADGES.fetch(type)}", logo_asset_path(shown, download: 1),
+                  class: "font-semibold text-primary hover:underline",
+                  data: { test: "logo-sample-download", type:, turbo: false, logo_raster: true, svg: logo_asset_path(shown),
+                          filename: shown.filename, background: Logos::PngSizes::BACKGROUNDS.fetch(tone),
+                          raster_size: Logos::PngSizes.default_size(type), label: shown.label },
+                  aria: { label: "Download: #{shown.label}#{', kit choice' if kit&.saved?(type)}" } %>
+    <% end %>
+  <% end %>
+</div>
