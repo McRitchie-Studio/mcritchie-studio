@@ -289,6 +289,8 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         visit integrations_path
         within(google_slot("gmail")) { click_on "Connect Gmail" }
         continue = find("[data-test='gmail-admin-continue']")
+        # Measure the card at rest, after its entrance animation (a scaled card reports scaled rects).
+        page.document.synchronize { raise Capybara::ExpectationNotMet, "modal still animating" unless page.evaluate_script("document.querySelector(\"[role='dialog']\").getAnimations({ subtree: true }).every((a) => a.playState !== 'running' || a.effect.getTiming().iterations === Infinity)") }
 
         geometry = page.evaluate_script(<<~JS)
           (() => {

@@ -13,8 +13,8 @@
     <% if ability.to_sym == :gmail %>
       <%# Gmail first opens the admin-trust modal (modals/_gmail_admin); its Continue follows the same href. %>
       <button type="button" class="btn btn-primary btn-sm" data-test="google-connect" data-opens="gmail-admin"
-              data-href="<%= href %>" data-client-id="<%= GoogleConnect::OAuthClient.client_id %>"
-              @click="$store.modals.open('gmail-admin', { href: $el.dataset.href, clientId: $el.dataset.clientId })">Connect <%= name %></button>
+              data-href="<%= href %>" data-client-id="<%= GoogleConnect::OAuthClient.client_id %>" data-aria-label="<%= GmailAdminModalHelper::TITLE %>"
+              @click="$store.modals.open('gmail-admin', { href: $el.dataset.href, clientId: $el.dataset.clientId, ariaLabel: $el.dataset.ariaLabel })">Connect <%= name %></button>
     <% else %>
       <%= link_to "Connect #{name}", href, class: "btn btn-primary btn-sm", data: { test: "google-connect", turbo: false } %>
     <% end %>
