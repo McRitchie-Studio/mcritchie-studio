@@ -32,15 +32,16 @@
 # names that variable, without changing or printing it.
 #
 # Overrides (tests, other machines): HEROKU_PROFILE_ZPROFILE,
-# HEROKU_PROFILE_ZPROFILE_ADMIN, --shim-dir (default
-# <projects>/.agents/bin/shims, the fixed-path tooling no checkout can move).
+# HEROKU_PROFILE_ZPROFILE_ADMIN, --shim-dir (default: shims/ beside the path
+# this script was INVOKED by, unresolved, so running it from the fixed-path
+# tooling writes that stable path, which no checkout can move; a default inside
+# a desk is refused, because the desk is reclaimed).
 #
 # Exit: 0 migrated or already clean · 1 refused (nothing written to that file)
 # · 2 usage.
 require "fileutils"
 require "optparse"
 require_relative "lib/heroku_token"
-require_relative "lib/projects_root"
 
 module HerokuProfileMigrate
   BEGIN_MARK = "# >>> heroku-token (managed by bin/heroku-profile-migrate) >>>"
@@ -131,12 +132,18 @@ end
 
 dry_run = false
 verify = true
-shim_dir = File.join(ProjectsRoot.default_projects_dir, ".agents", "bin", "shims")
+# $PROGRAM_NAME, not __dir__: __dir__ is the realpath, which for the fixed-path
+# tooling is a per-SHA directory that a later install retires.
+shim_dir = File.join(File.dirname(File.expand_path($PROGRAM_NAME)), "shims")
+shim_given = false
 parser = OptionParser.new do |o|
   o.banner = "usage: bin/heroku-profile-migrate [--dry-run] [--skip-verify] [--shim-dir DIR]"
   o.on("--dry-run", "report what would change; writes nothing, reads no 1Password item") { dry_run = true }
   o.on("--skip-verify", "do not prove each lane resolves from 1Password before removing its literal") { verify = false }
-  o.on("--shim-dir DIR", "the directory holding the heroku shim (default #{shim_dir})") { |d| shim_dir = d }
+  o.on("--shim-dir DIR", "the directory holding the heroku shim (default #{shim_dir})") do |d|
+    shim_dir = d
+    shim_given = true
+  end
   o.on("-h", "--help", "print this help") do
     puts o
     puts "heroku-profile-migrate: help only. CHANGES NOTHING: no profile read or written."
@@ -154,6 +161,11 @@ unless rest.empty?
   exit 2
 end
 shim_dir = File.expand_path(shim_dir)
+if !shim_given && shim_dir.include?("/.worktrees/")
+  warn "heroku-profile-migrate: refusing — the default shim directory #{shim_dir} is inside a desk, which is " \
+       "reclaimed. Run it from the fixed-path tooling, or pass --shim-dir. NOTHING WAS WRITTEN."
+  exit 1
+end
 
 profiles = [
   [:agent, File.expand_path(ENV.fetch("HEROKU_PROFILE_ZPROFILE", "~/.zprofile"))],
