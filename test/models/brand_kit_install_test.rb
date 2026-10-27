@@ -27,8 +27,17 @@ class BrandKitInstallTest < ActiveSupport::TestCase
     BrandKitExport::FILES.each_key do |name|
       assert_equal export.svg(name).b, @dir.join(name).binread, name
     end
-    assert_equal({ "brand" => "studio", "icon" => nil, "navbar" => STUDIO_NAVBAR, "stacked" => STUDIO_STACKED },
+    assert_equal({ "brand" => "studio", "icon" => nil, "navbar" => STUDIO_NAVBAR, "stacked" => STUDIO_STACKED, "saved_at" => nil },
                  JSON.parse(@dir.join("kit.json").read))
+  end
+
+  # Task brand-kit-applied-status: kit.json names the kit's version, so an app's live /brand/kit.json says which save
+  # it serves (the brand-kit-rollout SOP reads it before `logos:applied`).
+  test "the manifest carries the kit's saved_at in ISO 8601 UTC seconds" do
+    kit = studio_kit
+    kit.update!(saved_at: Time.utc(2026, 10, 27, 18, 4, 5, 123_456))
+    BrandKitInstall.new(kit, dest: @dir).call
+    assert_equal "2026-10-27T18:04:05Z", JSON.parse(@dir.join("kit.json").read)["saved_at"]
   end
 
   test "the saved choices reach the files: the navbar is the saved one, not the default" do
