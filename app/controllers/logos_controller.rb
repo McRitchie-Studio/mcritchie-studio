@@ -53,8 +53,11 @@ class LogosController < ApplicationController
   # Each sample is a map of the tones it is shown in to its variant (logos/_cluster).
   # The Navbar and Stacked samples are the brand's SAVED kit choices where it has them (BrandKit; task
   # brand-kit-record), else its defaults (BrandKit::DEFAULTS); every saved kit is read in one query.
-  # ONE ICON PER ROW (task kit-icon-atomic-unit): the kit's saved icon, else the brand's icon in the page's colouring,
-  # and the row's Navbar and Stacked samples draw that same icon, so the three tiles never disagree.
+  # THE ICON (task kit-icon-atomic-unit): the kit's saved icon, else the brand's icon in the page's colouring. With a
+  # kit icon, all three tiles draw it. Without one, a SAVED Navbar or Stacked choice draws the icon it was saved with
+  # (task logos-index-download-formats: the index forced the brand's Original helmet onto Commercial Welding v2's Alt
+  # Stacked choice, which its brand page, the /stacked route and the kit export all draw in Alt), so every tile is
+  # the logo its brand page shows and its download gives.
   def index
     brands = Logos::NavbarLogo.brands
     @kits = BrandKit.by_brand(brands)
@@ -63,7 +66,7 @@ class LogosController < ApplicationController
       logo = Logos::NavbarLogo.new(brand)
       kit = @kits[brand] || BrandKit.new(brand:)
       icon = kit.kit_icon || Logos::Variant.new(logo, type: :icon, colouring: page_colouring(logo))
-      [logo, { stacked: kit_sample(kit, :stacked, icon), navbar: kit_sample(kit, :navbar, icon),
+      [logo, { stacked: kit_sample(kit, :stacked), navbar: kit_sample(kit, :navbar),
                icon: @tones.to_h { |tone| [tone, Logos::Variant.new(logo, type: :icon, tone:, colouring: icon.colouring, edits: icon.edits)] } }]
     end
   end
@@ -157,9 +160,10 @@ class LogosController < ApplicationController
   # shows in its place: a brand that cannot be stacked, or a saved choice the brand's data can no longer draw.
   # A saved choice is shown in its saved colouring, and a default in the brand's own (its Original where it has one),
   # unless the page asks for one (?colouring=), which every brand that has it is shown in.
-  # Every sample draws the row's one icon.
-  def kit_sample(kit, type, icon)
-    @tones.to_h { |tone| [tone, kit.variant(type, tone:, colouring: @colouring_param, icon:)] }
+  # Every sample draws the kit's icon where one is saved (BrandKit#variant), else the icon of its own choice: exactly
+  # what LogoBrandPage#load_icon draws on the brand page.
+  def kit_sample(kit, type)
+    @tones.to_h { |tone| [tone, kit.variant(type, tone:, colouring: @colouring_param)] }
   rescue Logos::NavbarLogo::Error => e
     e
   end
