@@ -97,12 +97,13 @@ function wireContext(select) {
   });
 }
 
-function wireSwatch(button) {
+export function wireSwatch(button) {
   if (button.dataset.copyHexWired) return;
   button.dataset.copyHexWired = "1";
   const label = button.querySelector("[data-copy-hex-label]");
   const status = button.parentElement.querySelector("[data-copy-hex-status]");
-  const rest = label ? label.textContent : "";
+  // Kept on the label, not read afresh: a Turbo snapshot taken mid-"Copied" is re-wired on Back with that word showing.
+  const rest = label ? (label.dataset.copyHexRest ??= label.textContent) : "";
   let timer;
   button.addEventListener("click", () => {
     const hex = button.dataset.copyHex;
