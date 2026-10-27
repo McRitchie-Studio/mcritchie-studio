@@ -37,7 +37,7 @@ class NodeToolingAdoptionTest < Minitest::Test
                            .map { |s| ["#{File.basename(file)} #{job_name}", s.fetch("with", {})] }
       end
     end
-    assert_operator steps.size, :>=, 3, "expected the javascript, playwright and ui-budget setup-node steps"
+    assert_operator steps.size, :>=, 4, "expected the javascript, playwright, system and ui-budget setup-node steps"
 
     steps.each do |where, with|
       assert_includes with["node-version-file"].to_s, ".tool-versions", "#{where}: setup-node does not read .tool-versions"
