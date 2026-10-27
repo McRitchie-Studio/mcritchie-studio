@@ -347,16 +347,20 @@ grant of none stores nothing.
 
 **Every connection has an owner** (`google_connections.user_id`, the user who
 signed it in; /tasks/every-user-connects-google). An admin's connections are the
-**household's**, and **agents read only the household's**:
+**household's**, and **agents read the household's**:
 `GoogleConnection.for`, `.current` and every agent-side lookup start from
-`GoogleConnection.household` (admin-owned rows), so a viewer's connection is
-never agent input. A promoted user's rows join the household; a demoted admin's
-leave it. Each connection on both pages says who reads it ("Your agents can
-read this" for the household's, "Only you can see this" for anyone else's),
-from one rule, `GoogleConnection#who_reads`. An account another user already
-connected is refused ("That Google account is already connected by another
-user"), never taken over; the same user signing in again keeps incremental
-consent.
+`GoogleConnection.household` (admin-owned rows). The one exception: the agent
+answering a client app's owner on their own app's CTO chat reads that owner's
+own rows (`GoogleConnection.owned_by`, through `GoogleConnect::OwnerContext`;
+`docs/agents/system/agent-message-loop.md`, "The Google layer"). No agent reads
+one user's connection for anyone else. A promoted user's rows join the
+household; a demoted admin's leave it. Each connection on both pages says who
+reads it, from one rule, `GoogleConnection#who_reads`: "Your agents can read
+this" for the household's, "Your app's agent can read this when you chat with
+it" for a client app owner's own, "Only you can see this" for anyone else's. An
+account another user already connected is refused ("That Google account is
+already connected by another user"), never taken over; the same user signing in
+again keeps incremental consent.
 
 The household page is **`/admin/google`** (admin only; `/admin/google_calendar`
 redirects there): a section per ability with its account, its live read or

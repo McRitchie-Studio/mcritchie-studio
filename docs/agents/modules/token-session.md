@@ -19,7 +19,11 @@ A GitHub App gives you a **private key**, which changes only when someone
 rotates it. The key signs a short **JWT**, and the JWT buys an **installation
 token** that lives about an hour. That installation token *is* the session.
 Agents on the `agent` lane share one from a file on disk, so a warm `git push`
-costs **zero** 1Password reads.
+costs **zero** 1Password reads. That file lives in the
+[secret cache](secret-cache.md) (`/Users/alex/projects/.secret-cache/`):
+`bin/secret status` shows how long each token has left, and `bin/secret
+contingency github.agent` prints the ordered steps for when `op` hangs (this
+SOP is step 2; asking Alex McRitchie to quit and reopen the 1Password app is step 3).
 
 **How often the key is actually read** — there is no lock, so this is a floor,
 not a ceiling. `agent` is cached, so N concurrent agents that all miss the cache

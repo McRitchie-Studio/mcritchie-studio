@@ -15,12 +15,15 @@
 # OWNERSHIP (/tasks/every-user-connects-google). Every row belongs to the user
 # who signed it in (user_id). Any signed-in user may connect their own account
 # from /integrations; an admin's connections are the HOUSEHOLD's, the ones
-# /admin/google shows. AGENTS READ ONLY THE HOUSEHOLD: .for, .current and every
-# agent-side lookup start from .household, so a viewer's connection is never
-# agent input. A promoted user's rows join the household; a demoted admin's
-# leave it. Each page says so beside the connection (#who_reads). An account
-# another user already connected is refused (TakenByAnotherUser), never taken
-# over.
+# /admin/google shows. Agents read the HOUSEHOLD (.for, .current and every
+# agent-side lookup start from .household) with ONE exception: the agent
+# answering an owner in their own chat reads THAT owner's own rows (.owned_by,
+# through GoogleConnect::OwnerContext, gated in AgentMessages::MemoryBundle):
+# a client app's owner on their own app's CTO thread
+# (/tasks/agent-reads-owner-google). No agent reads one user's rows for another
+# user. A promoted user's rows join the household; a demoted admin's
+# leave it. Each page says who reads a connection beside it (#who_reads). An account another user already connected is refused
+# (TakenByAnotherUser), never taken over.
 #
 # Until 2026-10-14 this was GoogleCalendarConnection (google_calendar_connections);
 # the rename kept every row and token.
@@ -73,9 +76,13 @@ class GoogleConnection < ApplicationRecord
 
     def scope_for(ability) = ABILITIES.fetch(ability.to_sym)
 
-    # The household's connections: those an admin owns. The only rows agents
-    # and the /admin/google page read.
+    # The household's connections: those an admin owns. The rows the hub's
+    # agents and the /admin/google page read (an app owner's own: .owned_by).
     def household = joins(:user).merge(User.where(role: "admin"))
+
+    # One user's own connections, and nobody else's: the rows the agent
+    # answering that user in their own chat may read (GoogleConnect::OwnerContext).
+    def owned_by(user) = where(user_id: user.id)
 
     # Newest first, the order every "which connection" answer reads in.
     def newest_first = order(connected_at: :desc, id: :desc)
@@ -154,19 +161,31 @@ class GoogleConnection < ApplicationRecord
   end
 
   # WHO READS IT, the one rule every page's "who reads this" line comes from
-  # (#who_reads): agents read a connection exactly when it is the household's,
-  # an admin's (.household, the scope .for and every agent-side lookup start
-  # from). Anyone else's is seen by its owner alone.
-  #
-  # Until /tasks/agent-reads-owner-google lands (GoogleConnect::OwnerContext,
-  # GoogleConnection.owned_by), no agent reads a non-admin's connection; when
-  # it does, this rule and its copy change together, here.
-  WHO_READS = { agents: "Your agents can read this", owner: "Only you can see this" }.freeze
+  # (#who_reads), mirroring the agent side's gate
+  # (AgentMessages::MemoryBundle#google_owner_context):
+  #   :agents     an admin's row, the household's: the hub souls read it for
+  #               an admin (.household, GoogleConnect::OwnerContext.household)
+  #   :app_agent  a client app owner's own row (an owner AppMembership): their
+  #               app's CTO reads it when they chat with it on their app's own
+  #               thread (.owned_by, OwnerContext.for_user), and nobody else
+  #   :owner      anyone else's: no agent reads it
+  # A rule change on the agent side changes this predicate and its copy here.
+  WHO_READS = {
+    agents: "Your agents can read this",
+    app_agent: "Your app's agent can read this when you chat with it",
+    owner: "Only you can see this"
+  }.freeze
 
+  # Do the household's agents read it (an admin's row)?
   def agents_read? = user&.admin? == true
 
-  # :agents or :owner, the key of WHO_READS.
-  def reader = agents_read? ? :agents : :owner
+  # :agents, :app_agent or :owner, the key of WHO_READS.
+  def reader
+    return :agents if agents_read?
+    return :app_agent if user&.slug.present? && AppMembership.owners.exists?(user_slug: user.slug)
+
+    :owner
+  end
 
   def who_reads = WHO_READS.fetch(reader)
 

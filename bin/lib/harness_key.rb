@@ -6,13 +6,20 @@ require "time"
 require "fileutils"
 require_relative "projects_root"
 require_relative "../../lib/task_usage_sandbox"
+require_relative "secret_cache"
 
 # HarnessKey: this machine's harness key (docs/agents/system/agent-sessions-design.md,
 # section 3). The operator grants one per machine (`bin/harness-key request`, then
 # the Approve tap or the one-time code). It mints studio logins at a task claim and
 # a review claim, reads the board, narrates, creates a task and makes its claim
-# (DOORS); it writes no other task. One file under the projects root's `.agents/`,
-# owner-only. The key is a bearer credential: it lives in the file, never on stdout.
+# (DOORS); it writes no other task. One owner-only file in the secret cache,
+# <projects>/.secret-cache/harness-key.json (bin/lib/secret_cache.rb). The key is a
+# bearer credential: it lives in the file, never on stdout.
+#
+# THE LEGACY PATH (2026-10-27). It lived at <projects>/.agents/harness-key.json. A
+# read takes the folder's file, else the legacy one; the first write moves the
+# legacy file into the folder and leaves a symlink, so an older reader still finds
+# the key; a clear removes both.
 #
 # A machine with no key presents the shared secret's token, as before.
 module HarnessKey
@@ -29,19 +36,40 @@ module HarnessKey
   end
 
   # Where the key is kept, for a message: never a path a caller can act on.
-  WHERE = "#{FILE} in the projects root's agent state directory"
+  WHERE = "#{FILE} in the projects root's secret cache folder"
 
   # A sandboxed process (a test run) never reads the operator's real key: it
   # would present it to whatever board the test points at.
   def read(projects_dir, env: ENV)
-    file = path(projects_dir)
+    cache_env = cache_env(projects_dir, env)
+    # readable_dir, not dir: a sandboxed read aimed at the real folder answers
+    # nothing quietly (as this method always has), where dir would abort the run.
+    home = SecretCache.readable_dir(cache_env)
+    file = home ? File.join(home, FILE) : ""
+    if File.file?(file)
+      SecretCache.check_safe!(cache_env)
+      SecretCache.check_file!(file)
+    else
+      file = path(projects_dir)
+    end
     return nil unless File.file?(file)
     return nil if TaskUsageSandbox.violation(file, store: STORE, env: TaskUsageSandbox.guard_env(env))
 
     data = JSON.parse(File.read(file))
     data.is_a?(Hash) ? data : nil
+  rescue SecretCache::Unsafe => e
+    # Loud, and still no key: an unsafe folder is never read, and the caller falls
+    # back to the shared token exactly as for a machine with no key.
+    warn("harness-key: #{e.message}")
+    nil
   rescue StandardError
     nil
+  end
+
+  # The env the secret cache resolves against: this projects dir, unless the
+  # caller pinned the cache folder itself.
+  def cache_env(projects_dir, env)
+    env.to_h.merge("CLAUDE_PROJECTS_DIR" => projects_dir.to_s)
   end
 
   # The granted key, or nil when the machine holds none.
@@ -62,16 +90,23 @@ module HarnessKey
   end
 
   def write(projects_dir, data, env: ENV)
-    file = guarded_path(projects_dir, env)
-    FileUtils.mkdir_p(File.dirname(file))
-    File.write(file, JSON.pretty_generate(data), perm: MODE)
-    File.chmod(MODE, file)
+    legacy = guarded_path(projects_dir, env)
+    cache_env = cache_env(projects_dir, env)
+    SecretCache.adopt_legacy!(legacy, FILE, env: cache_env)
+    file = SecretCache.write_json(FILE, data, env: cache_env)
+    SecretCache.adopt_legacy!(legacy, FILE, env: cache_env, relink: true)
     file
   end
 
+  # Move a legacy key into the secret cache and leave a symlink (bin/secret migrate).
+  def migrate!(projects_dir, env: ENV)
+    SecretCache.adopt_legacy!(guarded_path(projects_dir, env), FILE, env: cache_env(projects_dir, env))
+  end
+
   def clear(projects_dir, env: ENV)
-    file = guarded_path(projects_dir, env)
-    File.delete(file) if File.file?(file)
+    legacy = guarded_path(projects_dir, env)
+    SecretCache.delete(FILE, env: cache_env(projects_dir, env))
+    File.delete(legacy) if File.file?(legacy) || File.symlink?(legacy)
   rescue Errno::ENOENT
     nil
   end

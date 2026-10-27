@@ -18,6 +18,11 @@
 #                   25 MB each. Alex McRitchie: every kit keeps its original, so anyone can see where a derivation came from.
 #   notes           the operator's own words on the kit
 #   updated_by      who changed it last (the admin's email)
+#   saved_at        when a logo choice (icon, navbar or stacked) was last saved or cleared: the kit's VERSION, which an
+#                   app's installed kit.json carries (BrandKitInstall). Notes and originals move updated_at, never
+#                   this, because no app installs them (task brand-kit-applied-status).
+#
+# The apps a kit feeds are its app_links (BrandKitApp), each Applied, Kit changed or Not applied against saved_at.
 #
 # A choice's `edits` are the gallery's own URL params (Logos::Variant::EDIT_PARAMS: first_colour, ending_weight, …),
 # and a choice is read through the same parser the URL is (Logos::Variant.parse, then the logo's own refusal), so a
@@ -52,6 +57,7 @@ class BrandKit < ApplicationRecord
   MAX_NOTES = 5_000
 
   has_many_attached :originals
+  has_many :app_links, class_name: "BrandKitApp", foreign_key: :brand, primary_key: :brand, inverse_of: :brand_kit
 
   validates :brand, presence: true, uniqueness: true
   validates :notes, length: { maximum: MAX_NOTES }
@@ -229,6 +235,7 @@ class BrandKit < ApplicationRecord
     variant = self.class.variant(brand, type, choice.merge("edits" => edits, "colouring" => colouring, "proportion" => proportion).compact)
     self[:"#{type}_choice"] = self.class.choice_of(variant)
     self.updated_by = by
+    self.saved_at = Time.current
     save!
     variant
   end
@@ -238,6 +245,7 @@ class BrandKit < ApplicationRecord
 
     self[:"#{type}_choice"] = nil
     self.updated_by = by
+    self.saved_at = Time.current
     save!
   end
 

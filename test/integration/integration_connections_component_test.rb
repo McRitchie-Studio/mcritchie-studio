@@ -312,6 +312,19 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "[component] /integrations tells a client app's owner that their app's agent reads their connection in their chat" do
+    owner = User.create!(email: "app-owner@example.com", name: "App Owner", role: "viewer")
+    AppMembership.create!(app: apps(:turf_monster), user: owner)
+    store_google(email: "owner@gmail.test", scope: "openid #{CALENDAR}", user: owner)
+    with_connect_env do
+      log_in_as owner
+      get integrations_path
+      line = slot("google_calendar").at_css("[data-test='google-who-reads']")
+      assert_equal "Your app's agent can read this when you chat with it", line.text.squish
+      assert_equal "app_agent", line["data-reader"]
+    end
+  end
+
   def fathom_slot = card("fathom").at_css("[data-test='entry-method'][data-method='sign_in'] [data-test='fathom-connection']")
 
   test "[component] Fathom card shows Connect for admin only" do

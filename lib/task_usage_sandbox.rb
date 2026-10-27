@@ -8,7 +8,8 @@ require_relative "../bin/lib/projects_root"
 #   <projects>/.agents/task-usage/<session>.json     the usage/cost baselines
 #   <projects>/.agents/sessions/<session>.*          the narration markers
 #   <projects>/.agents/atomic-capture/token.json     the agent-API token cache
-#   <projects>/.agents/github-tokens.json            the GitHub App token cache
+#   <projects>/.agents/github-tokens.json            the GitHub App token cache (legacy; now a link)
+#   <projects>/.secret-cache/                        the expiring-credential cache (bin/lib/secret_cache.rb)
 #   <projects>/.agents/locks/*.lock                  the conductor's flocks
 #   <projects>/.agents/worktree-registry.json        the worktree registry
 #   <projects>/.agents/agent-worktree.lock           the DB-allocation flock
@@ -99,6 +100,10 @@ module TaskUsageSandbox
     # the operator's real .agents.
     "github-token" => %w[CLAUDE_PROJECTS_DIR],
     "harness-key" => %w[CLAUDE_PROJECTS_DIR],      # bin/lib/harness_key.rb — this machine's harness key
+    # bin/lib/secret_cache.rb — <projects>/.secret-cache, the cache of expiring
+    # credentials. It lives OUTSIDE .agents, so rule 2 compares it against its own
+    # real root (real_secret_cache_dir, via real_root_for).
+    "secret-cache" => %w[MCR_SECRET_CACHE_DIR CLAUDE_PROJECTS_DIR],
     "agent-locks" => %w[MCR_PRIMARY_LOCK_DIR],     # bin/release.rb — the conductor flocks
     "worktree-registry" => %w[AGENT_WORKTREE_REGISTRY PROJECTS_DIR], # bin/agent-worktree — the registry snapshot
     "worktree-lock" => %w[AGENT_WORKTREE_LOCK PROJECTS_DIR],         # bin/agent-worktree — the DB-allocation flock
@@ -153,6 +158,19 @@ module TaskUsageSandbox
     File.join(ProjectsRoot.default_projects_dir, ".agents")
   end
 
+  # The operator's real expiring-credential cache — <projects>/.secret-cache
+  # (bin/lib/secret_cache.rb). It lives BESIDE .agents, not inside it, so it is a
+  # second rule-2 root, and the guard (not the lib) names it, for the same reason
+  # it names .agents.
+  def real_secret_cache_dir
+    File.join(ProjectsRoot.default_projects_dir, ".secret-cache")
+  end
+
+  # The real root a store's rule 2 compares against.
+  def real_root_for(store)
+    store.to_s == "secret-cache" ? real_secret_cache_dir : real_state_dir
+  end
+
   def active?(env = ENV)
     value = env[ENV_KEY].to_s.strip
     !value.empty? && !FALSEY.include?(value.downcase)
@@ -162,7 +180,7 @@ module TaskUsageSandbox
   # is allowed. Pure — `state_dir` is injectable so the rules can be tested
   # against a stand-in root, because proving them against the REAL one would mean
   # attempting the very write this guard exists to prevent.
-  def violation(path, store:, env: ENV, state_dir: real_state_dir)
+  def violation(path, store:, env: ENV, state_dir: real_root_for(store))
     return nil unless active?(env)
 
     pins = STORES.fetch(store)
@@ -185,7 +203,7 @@ module TaskUsageSandbox
   #
   # A violation aborts the process (see FAIL CLOSED above); a no-sandbox process
   # (an agent's real `bin/task move`) is untouched.
-  def enforce!(path, store:, env: ENV, state_dir: real_state_dir)
+  def enforce!(path, store:, env: ENV, state_dir: real_root_for(store))
     message = violation(path, store: store, env: env, state_dir: state_dir)
     return path unless message
 

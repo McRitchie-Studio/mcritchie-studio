@@ -311,19 +311,20 @@ class GoogleConnectionTest < ActiveSupport::TestCase
     own = GoogleConnection.store!(grant, email: "v@example.com", user: viewer, abilities: ALL, now: NOW)
 
     assert_equal "Your agents can read this", household.who_reads
-    assert_equal "Only you can see this", own.who_reads
+    assert_equal "Only you can see this", own.who_reads, "a viewer who owns no app: no agent reads it"
   end
 
-  test "[unit] an app owner's own connection still says only they see it, until agents read it" do
-    # Pre /tasks/agent-reads-owner-google: no agent reads a non-admin's row, an
-    # app owner's included. When that task lands, this test changes with the rule.
+  test "[unit] an app owner's own connection says their app's agent reads it in their chat" do
+    # /tasks/agent-reads-owner-google: the client CTO reads its app owner's own
+    # rows on that owner's own thread (OwnerContext.for_user), and no one else's.
     owner = User.create!(email: "app-owner@example.com", name: "App Owner", role: "viewer")
     AppMembership.create!(app: apps(:turf_monster), user: owner)
     row = GoogleConnection.store!(grant, email: "owner@example.com", user: owner, abilities: ALL, now: NOW)
 
-    assert_equal :owner, row.reader
-    assert_equal "Only you can see this", row.who_reads
-    assert_nil GoogleConnection.for(:calendar), "the control: the agent reader does not answer it either"
+    assert_equal :app_agent, row.reader
+    assert_equal "Your app's agent can read this when you chat with it", row.who_reads
+    assert_equal [ row ], GoogleConnection.owned_by(owner).to_a, "the rows the owner's app agent reads"
+    assert_nil GoogleConnection.for(:calendar), "the household's agents still do not"
   end
 
   test "[unit] the ownership migration backfills each row from connected_by, falling back to the operator" do
@@ -348,5 +349,15 @@ class GoogleConnectionTest < ActiveSupport::TestCase
 
     assert_equal({ "a@example.com" => alex.id, "v@example.com" => viewer.id, "gone@example.com" => alex.id }, owners)
     assert_not GoogleConnection.columns_hash["user_id"].null, "user_id is required once backfilled"
+  end
+
+  test "[unit] owned_by is one user's own rows, never another user's, admin or not" do
+    viewer = users(:viewer)
+    mine = GoogleConnection.store!(grant, email: "viewer@example.com", user: viewer, abilities: ALL, now: NOW)
+    GoogleConnection.store!(grant, email: "alex@mcritchie.studio", user: alex, abilities: ALL, now: NOW)
+
+    assert_equal [ mine ], GoogleConnection.owned_by(viewer).to_a
+    assert_equal [ "alex@mcritchie.studio" ], GoogleConnection.owned_by(alex).pluck(:email)
+    assert_not_includes GoogleConnection.household.to_a, mine, "a viewer's row is still never the household's"
   end
 end
