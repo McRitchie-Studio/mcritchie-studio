@@ -30,17 +30,17 @@ class BrandKitAppStatusTest < ActionDispatch::IntegrationTest
     hub = line("studio", "mcritchie-studio")
     assert_equal "🪎 McRitchie Studio Applied", hub.text.squish
     assert_includes status_word(hub)["class"].split, "text-success-ink"
-    assert_equal "Kit saved Oct 20, 2026; applied Oct 21, 2026 (kit of Oct 20, 2026)", hub["title"]
+    assert_equal "🪎 McRitchie Studio: Kit saved Oct 20, 2026; applied Oct 21, 2026 (kit of Oct 20, 2026)", hub["title"]
 
     turf = line("studio", "turf-monster")
     assert_equal "🐊 Turf Monster Kit changed", turf.text.squish
     assert_equal "changed", turf["data-status"]
     assert_includes status_word(turf)["class"].split, "text-warning-ink", "Kit changed is amber"
-    assert_match(/\AKit saved Oct 20, 2026; /, turf["title"], "the title gives the kit's save date")
+    assert_match(/\A🐊 Turf Monster: Kit saved Oct 20, 2026; /, turf["title"], "the title gives the kit's save date")
 
     fresh = line("turf", "turf-monster")
     assert_equal "🐊 Turf Monster Not applied", fresh.text.squish
-    assert_equal "Kit never saved; not applied yet", fresh["title"]
+    assert_equal "🐊 Turf Monster: Kit never saved; not applied yet", fresh["title"]
     assert_includes status_word(fresh)["class"].split, "text-muted"
 
     assert_select "[data-brand='industries'] [data-test='logo-kit-apps']", 0, "a brand with no linked app shows no list"
