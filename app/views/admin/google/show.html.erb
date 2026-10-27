@@ -92,9 +92,10 @@
         </div>
       <% else %>
         <div data-test="google-read" data-count="<%= section.read.size %>">
-          <p class="font-medium text-heading">Recently changed files</p>
+          <% picked = connection.drive_picked? %>
+          <p class="font-medium text-heading" data-test="drive-read-kind" data-kind="<%= picked ? 'picked' : 'legacy' %>"><%= picked ? "Files picked for agents" : "Recently changed files (whole Drive: reconnect to choose files)" %></p>
           <% if section.read.empty? %>
-            <p class="mt-1 text-muted">The Drive has no files.</p>
+            <p class="mt-1 text-muted"><%= picked ? "No files picked yet: choose them from the Google Drive card on /integrations." : "The Drive has no files." %></p>
           <% else %>
             <ul class="mt-1 divide-y divide-subtle">
               <% section.read.each do |file| %>

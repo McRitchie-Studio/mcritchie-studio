@@ -1,0 +1,44 @@
+<%# The Google Drive card's files (/tasks/drive-files-you-pick), under its connected account. A legacy drive.readonly connection reads the whole Drive as it always did and says to reconnect to choose files (reconnect_href asks for drive.file). A drive.file connection lists the files picked for it, and its owner gets Pick files, which opens the Google Picker (app/javascript/drive_picker.js: the token, key and app id come from the token endpoint, never this HTML), or "isn't set up yet" when the server has no Picker key. Files only: Google grants no folder contents under drive.file (the task's folder evidence), so the hint says to share a folder with the agent's address instead. %>
+<% own = connection.user_id == current_user&.id %>
+<% picks = connection.drive_picked? ? connection.drive_picks.newest_first.to_a : [] %>
+<div class="mt-2 w-full space-y-2 text-sm" data-test="drive-picks" data-drive-picks data-mode="<%= connection.legacy?(:drive) ? 'legacy' : 'picked' %>">
+  <% if connection.legacy?(:drive) %>
+    <p class="text-body" data-test="drive-legacy">
+      This connection uses Google's older permission, which reads every file in your Drive.
+      <%= link_to "Reconnect to choose files", reconnect_href, class: "font-medium text-primary hover:underline", data: { test: "drive-reconnect", turbo: false } %>,
+      and your agents will read only the files you pick.
+    </p>
+  <% else %>
+    <p class="text-muted" data-test="drive-pick-count">
+      <% if picks.empty? %>No files shared with your agents yet.<% else %><%= pluralize(picks.size, "file") %> shared with your agents:<% end %>
+    </p>
+    <% if picks.any? %>
+      <ul class="divide-y divide-subtle" data-test="drive-pick-list">
+        <% picks.each do |pick| %>
+          <li class="py-1.5 flex items-center justify-between gap-2" data-test="drive-pick" data-file-id="<%= pick.file_id %>">
+            <% if pick.url.present? %>
+              <%= link_to pick.name, pick.url, class: "min-w-0 text-heading hover:underline [overflow-wrap:anywhere]", target: "_blank", rel: "noopener" %>
+            <% else %>
+              <span class="min-w-0 text-heading [overflow-wrap:anywhere]"><%= pick.name %></span>
+            <% end %>
+            <% if own %>
+              <%= button_to "Remove", integrations_drive_pick_path(pick), method: :delete, class: "btn btn-neutral btn-sm shrink-0",
+                            form: { class: "inline-flex shrink-0", data: { test: "drive-unpick", turbo_confirm: "Stop sharing #{pick.name} with your agents?" } } %>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+    <% if !own %>
+      <p class="text-muted" data-test="drive-not-own">Only the person who connected <%= connection.email %> can choose its files.</p>
+    <% elsif GoogleConnect::Picker.configured? %>
+      <button type="button" class="btn btn-primary btn-sm" data-test="drive-pick-files" data-drive-picker
+              data-token-url="<%= integrations_drive_token_path %>" data-picks-url="<%= integrations_drive_picks_path %>"
+              data-loader-url="<%= GoogleConnect::Picker::LOADER_URL %>" data-connection-id="<%= connection.id %>">Pick files</button>
+    <% else %>
+      <p class="text-body" data-test="drive-picker-unset">Drive picking isn't set up yet.<% if current_user&.admin? %> <span class="text-muted">(<%= GoogleConnect::Picker::API_KEY_ENV %> is not set on this server.)</span><% end %></p>
+    <% end %>
+    <p class="text-muted text-xs" data-test="drive-folder-hint">Google shares only the files you pick, not what is inside a folder. To give your agents a whole folder, share it with your agent's email address.</p>
+    <p class="text-danger-ink" data-test="drive-picker-status" data-drive-picker-status role="status" hidden></p>
+  <% end %>
+</div>
