@@ -1,0 +1,221 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/heroku-profile-migrate — take every literal Heroku token out of the shell
+# profiles and put the heroku-token block in their place. Idempotent; prints
+# variable names, line numbers and paths, never a value.
+#
+#   bin/heroku-profile-migrate --dry-run     # what it would change; writes nothing
+#   source ~/.zprofile.admin                 # the admin lanes' preflight needs it
+#   bin/heroku-profile-migrate               # migrate ~/.zprofile and ~/.zprofile.admin
+#
+# WHAT IT CHANGES, per profile:
+#   removes  every assignment to HEROKU_API_KEY or HEROKU_STUDIO_*_API_KEY
+#            (`export NAME=...` or `NAME=...`, whatever the right-hand side,
+#            a literal or an `op read` run at every shell start alike)
+#   adds     one managed block at the END of the file. In ~/.zprofile it puts
+#            bin/shims first on PATH, so `heroku` resolves its token through
+#            bin/heroku-token at use time; in ~/.zprofile.admin it is a comment
+#            naming where the tokens went. At the end so a later PATH prepend in
+#            the same file cannot put the real CLI ahead of the shim.
+#   keeps    a private backup (mode 0600) of the file as it was, beside it,
+#            before the first byte changes. A file already migrated is left
+#            untouched and gets no backup.
+#
+# PREFLIGHT, before anything is written: the shim must exist and be executable,
+# and every lane whose literal is about to go must resolve from 1Password NOW,
+# read with any exported override ignored (bin/lib/heroku_token.rb), so the
+# migration cannot strand a lane. A lane that does not resolve leaves its whole
+# file unchanged. --skip-verify skips the 1Password reads (the shim check stays).
+#
+# It also counts a Heroku-shaped value (HRKU-...) held under any OTHER name and
+# names that variable, without changing or printing it.
+#
+# Overrides (tests, other machines): HEROKU_PROFILE_ZPROFILE,
+# HEROKU_PROFILE_ZPROFILE_ADMIN, --shim-dir (default
+# <projects>/.agents/bin/shims, the fixed-path tooling no checkout can move).
+#
+# Exit: 0 migrated or already clean · 1 refused (nothing written to that file)
+# · 2 usage.
+require "fileutils"
+require "optparse"
+require_relative "lib/heroku_token"
+require_relative "lib/projects_root"
+
+module HerokuProfileMigrate
+  BEGIN_MARK = "# >>> heroku-token (managed by bin/heroku-profile-migrate) >>>"
+  END_MARK = "# <<< heroku-token <<<"
+  NAME = /HEROKU_API_KEY|HEROKU_STUDIO_[A-Z0-9_]*_API_KEY/
+  ASSIGNMENT = /\A\s*(?:export\s+)?(#{NAME})=/
+  HEROKU_SHAPED = /HRKU-[A-Za-z0-9_-]{8,}/
+  OTHER_ASSIGNMENT = /\A\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=/
+
+  module_function
+
+  def lane_for(name)
+    HerokuToken::LANES.find { |_lane, spec| spec[:env].include?(name) }&.first
+  end
+
+  def block(kind, shim_dir)
+    lines = [BEGIN_MARK,
+             "# Heroku tokens are read from 1Password when used (bin/heroku-token); no",
+             "# profile holds one, so a rotation never leaves a stale copy here."]
+    if kind == :agent
+      lines << "case \":$PATH:\" in *\":#{shim_dir}:\"*) ;; *) export PATH=\"#{shim_dir}:$PATH\" ;; esac"
+    else
+      lines << "# Admin lanes: source this file, then bin/heroku-token admin|applications -- <cmd>."
+    end
+    lines << END_MARK
+    lines.join("\n") + "\n"
+  end
+
+  # Returns { body:, removed: [[name, lineno]], others: [[name, lineno]] }.
+  # +body+ is the file with every Heroku assignment and any old managed block
+  # taken out, and the current block appended.
+  def rewrite(text, kind, shim_dir)
+    removed = []
+    others = []
+    kept = []
+    in_block = false
+    text.each_line.with_index(1) do |line, lineno|
+      if line.start_with?(BEGIN_MARK)
+        in_block = true
+        next
+      end
+      if in_block
+        in_block = false if line.start_with?(END_MARK)
+        next
+      end
+      if (m = line.match(ASSIGNMENT))
+        removed << [m[1], lineno]
+        next
+      end
+      if line.match?(HEROKU_SHAPED)
+        name = line[OTHER_ASSIGNMENT, 1] || "(not an assignment)"
+        others << [name, lineno]
+      end
+      kept << line
+    end
+    body = kept.join
+    body << "\n" unless body.empty? || body.end_with?("\n")
+    body << block(kind, shim_dir)
+    { body: body, removed: removed, others: others }
+  end
+
+  def write_private(path, body)
+    dir = File.dirname(path)
+    tmp = File.join(dir, ".#{File.basename(path)}.heroku-token-#{Process.pid}")
+    File.open(tmp, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |f|
+      f.write(body)
+      f.flush
+      f.fsync
+    end
+    File.chmod(0o600, tmp)
+    File.rename(tmp, path)
+  ensure
+    File.unlink(tmp) if tmp && File.exist?(tmp)
+  end
+
+  def backup(path, stamp)
+    dest = "#{path}.bak-heroku-token-#{stamp}"
+    n = 1
+    while File.exist?(dest)
+      dest = "#{path}.bak-heroku-token-#{stamp}-#{n}"
+      n += 1
+    end
+    File.open(dest, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |f| f.write(File.binread(path)) }
+    File.chmod(0o600, dest)
+    dest
+  end
+end
+
+dry_run = false
+verify = true
+shim_dir = File.join(ProjectsRoot.default_projects_dir, ".agents", "bin", "shims")
+parser = OptionParser.new do |o|
+  o.banner = "usage: bin/heroku-profile-migrate [--dry-run] [--skip-verify] [--shim-dir DIR]"
+  o.on("--dry-run", "report what would change; writes nothing, reads no 1Password item") { dry_run = true }
+  o.on("--skip-verify", "do not prove each lane resolves from 1Password before removing its literal") { verify = false }
+  o.on("--shim-dir DIR", "the directory holding the heroku shim (default #{shim_dir})") { |d| shim_dir = d }
+  o.on("-h", "--help", "print this help") do
+    puts o
+    puts "heroku-profile-migrate: help only. CHANGES NOTHING: no profile read or written."
+    exit 0
+  end
+end
+begin
+  rest = parser.parse(ARGV)
+rescue OptionParser::ParseError => e
+  warn "heroku-profile-migrate: #{e.message}\n#{parser}"
+  exit 2
+end
+unless rest.empty?
+  warn "heroku-profile-migrate: unexpected argument(s): #{rest.join(' ')}\n#{parser}"
+  exit 2
+end
+shim_dir = File.expand_path(shim_dir)
+
+profiles = [
+  [:agent, File.expand_path(ENV.fetch("HEROKU_PROFILE_ZPROFILE", "~/.zprofile"))],
+  [:admin, File.expand_path(ENV.fetch("HEROKU_PROFILE_ZPROFILE_ADMIN", "~/.zprofile.admin"))]
+]
+
+unless File.file?(File.join(shim_dir, "heroku")) && File.executable?(File.join(shim_dir, "heroku"))
+  warn "heroku-profile-migrate: refusing — no executable heroku shim at #{shim_dir}/heroku. " \
+       "The fast-lane tooling carries it once this change has shipped; or pass --shim-dir. NOTHING WAS WRITTEN."
+  exit 1
+end
+
+stamp = Time.now.strftime("%Y%m%d%H%M%S")
+refused = false
+profiles.each do |kind, path|
+  label = path.sub(/\A#{Regexp.escape(Dir.home)}/, "~")
+  unless File.file?(path)
+    puts "#{label}: not present, skipped"
+    next
+  end
+
+  text = File.read(path)
+  result = HerokuProfileMigrate.rewrite(text, kind, shim_dir)
+  result[:others].each do |name, lineno|
+    warn "#{label}: line #{lineno} holds a Heroku-shaped value under #{name}; left as it is, review it by hand"
+  end
+  if result[:body] == text
+    puts "#{label}: already migrated, unchanged"
+    next
+  end
+
+  names = result[:removed].map { |name, lineno| "#{name} (line #{lineno})" }
+  summary = names.empty? ? "no literal to remove" : "remove #{names.join(', ')}"
+  if dry_run
+    puts "#{label}: would #{summary}; would write the heroku-token block"
+    next
+  end
+
+  if verify
+    lanes = result[:removed].map { |name, _| HerokuProfileMigrate.lane_for(name) }.compact.uniq
+    failures = lanes.filter_map do |lane|
+      HerokuToken.resolve(lane, from_env: false)
+      nil
+    rescue HerokuToken::Unresolved => e
+      "#{lane}: #{e.message}"
+    end
+    unless failures.empty?
+      warn "#{label}: refusing — a lane whose literal would go does not resolve from 1Password, so removing it " \
+           "would strand it. #{failures.join(' ')} NOTHING WAS WRITTEN to #{label}."
+      refused = true
+      next
+    end
+  end
+
+  saved = HerokuProfileMigrate.backup(path, stamp)
+  HerokuProfileMigrate.write_private(path, result[:body])
+  puts "#{label}: #{summary.sub(/\Aremove/, 'removed')}; wrote the heroku-token block; " \
+       "backup at #{saved.sub(/\A#{Regexp.escape(Dir.home)}/, '~')} (0600)"
+end
+
+unless dry_run || refused
+  puts "Open a new shell (or `source ~/.zprofile`); `command -v heroku` should print #{shim_dir}/heroku."
+  puts "Delete the backups once `bin/heroku-token agents --check` passes: they still hold the old values."
+end
+exit(refused ? 1 : 0)
