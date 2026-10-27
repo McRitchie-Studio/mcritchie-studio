@@ -344,12 +344,18 @@ function onTableClick(event) {
     .finally(() => link.removeAttribute("aria-busy"));
 }
 
+// A default preset spec in words, for a link's accessible name: "800 px wide", "512 px on its long side".
+export function sizeWords(spec) {
+  const [kind, value] = String(spec).split(":");
+  return kind === "long" ? `${value} px on its long side` : `${value} px wide`;
+}
+
 // Shows the format control (served hidden: without JavaScript every link is an SVG) and names each link's format.
 export function installTableDownloads(root = document) {
   root.querySelectorAll("[data-logo-raster-js]").forEach((el) => { el.hidden = false; });
   root.querySelectorAll("a[data-logo-raster]").forEach((link) => {
     const raster = RASTER_FORMATS[tableFormat(link)];
-    link.setAttribute("aria-label", `Download ${raster ? raster.label : "SVG"}: ${link.dataset.label}`);
+    link.setAttribute("aria-label", `Download ${raster ? `${raster.label}, ${sizeWords(link.dataset.rasterSize)}` : "SVG"}: ${link.dataset.label}`);
   });
 }
 

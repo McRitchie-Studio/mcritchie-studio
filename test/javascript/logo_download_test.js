@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 
 import {
   MAX_SIDE, pngSize, drawRect, pngFilename, sizedSvg, rasterise, presetsFor,
-  naturalSize, rasterSize, rasterFilename, rasterPlan, tableFormat, downloadTableLink,
+  naturalSize, rasterSize, rasterFilename, rasterPlan, tableFormat, downloadTableLink, sizeWords,
 } from "../../app/javascript/logo_download.js";
 
 const NAVBAR = [2560.42, 300.0];
@@ -155,4 +155,9 @@ test("in the SVG format the table link is left to download the SVG itself", asyn
   const deps = fakeDeps("<svg viewBox=\"0 0 1 1\"></svg>");
   assert.equal(await downloadTableLink(fakeLink("svg"), deps, () => assert.fail("nothing saved")), null);
   assert.deepEqual(deps.log, []);
+});
+
+test("a link's accessible name says the size it is drawn at", () => {
+  assert.equal(sizeWords("width:800"), "800 px wide");
+  assert.equal(sizeWords("long:512"), "512 px on its long side");
 });
