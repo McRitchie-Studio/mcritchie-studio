@@ -32,7 +32,8 @@ class Admin::GoogleControllerTest < ActionDispatch::IntegrationTest
       GoogleConnect::CalendarReader::EVENTS_URL => [ 200, { items: [ { id: "e1", summary: "Lender call", start: { dateTime: 1.day.from_now.iso8601 }, end: { dateTime: (1.day.from_now + 1.hour).iso8601 } } ] } ],
       "#{GoogleConnect::GmailReader::MESSAGES_URL}/" => [ 200, { id: "m1", payload: { headers: [ { name: "Subject", value: "Term sheet" } ] } } ],
       GoogleConnect::GmailReader::MESSAGES_URL => [ 200, { resultSizeEstimate: 9, messages: [ { id: "m1" } ] } ],
-      GoogleConnect::DriveReader::FILES_URL => [ 200, { files: [ { id: "f1", name: "Q3 plan", mimeType: "x", modifiedTime: 1.hour.ago.iso8601 } ] } ]
+      "#{GoogleConnect::DriveReader::FILES_URL}/f1" => [ 200, { id: "f1", name: "Q3 plan", mimeType: "x", modifiedTime: 1.hour.ago.iso8601 } ],
+      GoogleConnect::DriveReader::FILES_URL => [ 200, { files: [ { id: "f9", name: "Whole-Drive file", mimeType: "x", modifiedTime: 1.hour.ago.iso8601 } ] } ]
     )
   end
 
@@ -187,7 +188,8 @@ class Admin::GoogleControllerTest < ActionDispatch::IntegrationTest
 
   test "[integration] the standing page proves each connected ability with its read, and shows no token" do
     with_connect_env do
-      store_google(scope: "openid #{CALENDAR} #{GMAIL} #{DRIVE}")
+      connection = store_google(scope: "openid #{CALENDAR} #{GMAIL} #{DRIVE}")
+      connection.drive_picks.create!(file_id: "f1", name: "Q3 plan", picked_at: Time.current)
       reads_answer_everything
       get admin_google_path
 
@@ -196,6 +198,8 @@ class Admin::GoogleControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-ability='calendar'] [data-test='google-read-item']", text: /Lender call/
       assert_select "[data-ability='gmail'] [data-test='google-read-item']", text: /Term sheet/
       assert_select "[data-ability='drive'] [data-test='google-read-item']", text: /Q3 plan/
+      assert_select "[data-ability='drive'] [data-test='google-read-item']", text: /Whole-Drive file/, count: 0
+      assert_select "[data-test='drive-read-kind'][data-kind='picked']"
       assert_select "[data-test='google-disconnect']", 3
       assert_select "[data-test='google-connect']", 0
       assert_select "[data-test='google-server']", 0, "nothing is missing, so no setup shows"

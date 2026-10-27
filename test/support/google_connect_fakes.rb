@@ -5,6 +5,10 @@ module GoogleConnectFakes
   CALENDAR = GoogleConnection::ABILITIES[:calendar]
   GMAIL = GoogleConnection::ABILITIES[:gmail]
   DRIVE = GoogleConnection::ABILITIES[:drive]
+  # The whole-Drive scope a row connected before drive-files-you-pick still holds.
+  DRIVE_LEGACY = "https://www.googleapis.com/auth/drive.readonly".freeze
+  # The Picker's browser key, set by name in tests that open it.
+  PICKER_KEY = { "GOOGLE_PICKER_API_KEY" => "test-picker-key" }.freeze
   # What Google writes in `scope` for a calendar sign-in (it spells email out).
   SCOPE = "openid https://www.googleapis.com/auth/userinfo.email #{CALENDAR}".freeze
 
@@ -14,6 +18,14 @@ module GoogleConnectFakes
     yield
   ensure
     originals&.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
+  end
+
+  def with_picker_key(set: true)
+    original = ENV["GOOGLE_PICKER_API_KEY"]
+    set ? ENV["GOOGLE_PICKER_API_KEY"] = PICKER_KEY.values.first : ENV.delete("GOOGLE_PICKER_API_KEY")
+    yield
+  ensure
+    original.nil? ? ENV.delete("GOOGLE_PICKER_API_KEY") : ENV["GOOGLE_PICKER_API_KEY"] = original
   end
 
   # An id_token whose payload names `email` (Google signs it; nothing here checks).

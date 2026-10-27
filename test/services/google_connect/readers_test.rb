@@ -100,7 +100,7 @@ class GoogleConnect::ReadersTest < ActiveSupport::TestCase
       query = Rack::Utils.parse_query(URI(read_requests.last[0]).query)
       assert_equal "modifiedTime desc", query["orderBy"]
       assert_equal "5", query["pageSize"]
-      assert_equal "files(id,name,mimeType,modifiedTime)", query["fields"]
+      assert_equal "files(id,name,mimeType,modifiedTime,webViewLink)", query["fields"]
     end
   end
 
@@ -112,6 +112,48 @@ class GoogleConnect::ReadersTest < ActiveSupport::TestCase
 
       error = assert_raises(GoogleConnect::OAuthClient::Error) { GoogleConnect::DriveReader.new(conn).newest }
       assert_equal "Google Drive could not be reached: OpenSSL::SSL::SSLError", error.message
+    end
+  end
+  # [unit] drive-files-you-pick: a drive.file connection reads each picked file
+  # by id and nothing else (no Drive-wide list); a file Google no longer hands
+  # over is left out; a legacy drive.readonly row reads the newest of the
+  # whole Drive as before; a row without Drive reads nothing.
+  test "[unit] the drive reader reads only picked files for a drive.file connection" do
+    with_connect_env do
+      conn = connection("openid #{DRIVE}")
+      conn.drive_picks.create!(file_id: "f1", name: "old name", picked_at: 1.hour.ago)
+      conn.drive_picks.create!(file_id: "gone", name: "Gone", picked_at: 2.hours.ago)
+      fresh_token
+      google_reads("#{GoogleConnect::DriveReader::FILES_URL}/f1" => [ 200, { id: "f1", name: "Q3 plan", mimeType: "x", webViewLink: "https://docs.google.com/d/f1" } ],
+                   "#{GoogleConnect::DriveReader::FILES_URL}/gone" => [ 404, { error: { message: "File not found" } } ],
+                   GoogleConnect::DriveReader::FILES_URL => [ 200, { files: [ { id: "other", name: "Not picked" } ] } ])
+
+      files = GoogleConnect::DriveReader.new(conn).files
+
+      assert_equal [ "Q3 plan" ], files.map(&:name)
+      assert_equal "https://docs.google.com/d/f1", files.first.url
+      urls = read_requests.map(&:first)
+      assert(urls.all? { URI(_1).path.start_with?("/drive/v3/files/") }, "never a Drive-wide list: #{urls}")
+      assert_equal 2, urls.size
+    end
+  end
+
+  test "[unit] the drive reader reads a legacy row's whole Drive and a Drive-less row's nothing" do
+    with_connect_env do
+      legacy = connection("openid #{CALENDAR}")
+      legacy.update_columns(scope: "openid #{DRIVE_LEGACY}")
+      fresh_token
+      google_reads(GoogleConnect::DriveReader::FILES_URL => [ 200, { files: [ { id: "f9", name: "Anything" } ] } ])
+
+      assert_equal [ "Anything" ], GoogleConnect::DriveReader.new(legacy).files.map(&:name)
+      assert_empty GoogleConnect::DriveReader.new(connection("openid #{CALENDAR}")).files
+    end
+  end
+
+  test "[unit] a single-file read refuses anything that is not a Drive id" do
+    with_connect_env do
+      conn = connection("openid #{DRIVE}")
+      assert_raises(ArgumentError) { GoogleConnect::DriveReader.new(conn).file("../../files?q=x") }
     end
   end
 end
