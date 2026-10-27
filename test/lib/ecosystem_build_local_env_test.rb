@@ -117,7 +117,7 @@ class EcosystemBuildLocalEnvTest < Minitest::Test
     out = run_phase(apps: %w[mcritchie-studio])
 
     body = File.read(zprofile)
-    assert_includes body, %(export PATH="#{File.join(ROOT, 'bin', 'shims')}:$PATH"), out
+    assert_includes body, %(export PATH="#{File.join(ROOT, 'bin', 'shims')}${_ht_p:+:$_ht_p}"), out
     refute_includes body, "HRKU-old-literal"
     refute_includes out, "HRKU-old-literal"
     run_phase(apps: %w[mcritchie-studio])
