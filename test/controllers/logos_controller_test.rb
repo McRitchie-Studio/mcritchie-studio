@@ -181,6 +181,29 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # Task brand-colour-spectrum-ramps: every palette colour as an eleven-step ramp of copy buttons, the brand's hex on
+  # one step, and the CSS tokens behind one more copy button.
+  test "a brand page shows a copyable 50-950 spectrum for every palette colour and its CSS tokens" do
+    log_in_as(@admin)
+    get logo_brand_path("welding_v2")
+    assert_response :success
+    assert_select "section[data-test='brand-spectrum'] h2", "Spectrum"
+    palette = [["Welding Blue", "#2D5E8E"], ["Spark Orange", "#D7602E"], ["Ember", "#F08A5A"], ["White", "#FFFFFF"]]
+    ramps = css_select("[data-test='logo-spectrum-ramp']")
+    assert_equal palette.map(&:first), ramps.map { |ramp| ramp["data-name"] }
+    ramps.zip(palette).each do |ramp, (name, hex)|
+      steps = ramp.css("[data-test='logo-spectrum-step']")
+      assert_equal %w[50 100 200 300 400 500 600 700 800 900 950], steps.map { |step| step["data-step"] }, name
+      assert_equal [hex], steps.select { |step| step.key?("data-anchor") }.map { |step| step["data-hex"] }, name
+      assert_equal [hex], ramp.css("[data-test='logo-spectrum-brand']").map { |label| label.ancestors("li").first["data-hex"] }, name
+      steps.each { |step| assert_equal step["data-hex"], step.at_css("button[data-copy-hex]")["data-copy-hex"], "#{name} #{step['data-step']}" }
+    end
+    assert_select "[data-test='logo-spectrum-step'][data-step='700'][data-hex='#2D5E8E'] [data-test='logo-spectrum-contrast']", "6.8:1 AA"
+    copy_css = css_select("[data-test='logo-spectrum-copy-css']").first["data-copy-hex"]
+    assert_includes copy_css, "--welding-v2-welding-blue-700: #2D5E8E;"
+    assert_select "[data-test='logo-spectrum-tokens'] pre", /--welding-v2-ember-400: #F08A5A;/
+  end
+
   # The typeface hierarchies Alex McRitchie asked for (at most three levels, the most prominent first), as [role, name shown].
   HIERARCHIES = {
     "studio" => [["Display", "Montserrat ExtraBold", 800], ["Text", "Montserrat Light", 300], ["Tagline", "Montserrat Medium", 500]],

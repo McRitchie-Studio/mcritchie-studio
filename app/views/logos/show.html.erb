@@ -201,4 +201,13 @@
       <%= render "logos/typefaces", kit: @kit %>
     </section>
   </div>
+
+  <%# Every palette colour as a 50-950 ramp, each step copyable, and the lot as CSS tokens (logos/_spectrum). %>
+  <section class="card p-4 sm:p-5 space-y-3" data-test="brand-spectrum" aria-labelledby="brand-spectrum-title">
+    <div class="space-y-1">
+      <h2 id="brand-spectrum-title" class="text-sm font-bold text-heading">Spectrum</h2>
+      <p class="text-xs text-muted">Each colour from 50 (lightest) to 950 (darkest). The brand's own hex sits on its nearest step, marked Brand. Click a step to copy it.</p>
+    </div>
+    <%= render "logos/spectrum", kit: @kit %>
+  </section>
 <% end %>

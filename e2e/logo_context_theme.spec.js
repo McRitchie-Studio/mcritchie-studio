@@ -130,3 +130,33 @@ test("a palette swatch copies its hex on click and says so, then shows the hex a
   expect(await page.evaluate(() => navigator.clipboard.readText().catch(() => "#635BB2"))).toBe("#635BB2");
   await expect(swatch.locator("[data-test='logo-swatch-hex']")).toHaveText("#635BB2", { timeout: 4000 });
 });
+
+// Task brand-colour-spectrum-ramps: a spectrum step copies like a swatch; Copy CSS tokens copies the whole block and
+// names it in the status rather than repeating it, then shows its own label again.
+test("a spectrum step copies its hex, and Copy CSS tokens copies every step and says CSS tokens", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openIn(page, "light", "/logos/welding_v2");
+  const step = page.locator("[data-test='logo-spectrum-step'][data-step='700'][data-hex='#2D5E8E']");
+  await expect(step.locator("[data-test='logo-spectrum-brand']")).toHaveText("Brand");
+  await step.locator("button").click();
+  await expect(step.locator("[role='status']")).toHaveText(/Copied #2D5E8E|Copy failed/);
+  expect(await page.evaluate(() => navigator.clipboard.readText().catch(() => "#2D5E8E"))).toBe("#2D5E8E");
+  await expect(step.locator("[data-copy-hex-label]")).toHaveText("#2D5E8E", { timeout: 4000 });
+
+  const tokens = page.locator("[data-test='logo-spectrum-tokens']");
+  await tokens.locator("summary").click();
+  const copy = tokens.locator("[data-test='logo-spectrum-copy-css']");
+  await copy.click();
+  await expect(tokens.locator("[role='status']")).toHaveText(/^(Copied CSS tokens|Copy failed)$/);
+  const clip = await page.evaluate(() => navigator.clipboard.readText().catch(() => ""));
+  expect(clip.match(/^  --welding-v2-[a-z-]+-\d+: #[0-9A-F]{6};$/gm)).toHaveLength(44);
+  await expect(copy).toHaveText("Copy CSS tokens", { timeout: 4000 });
+});
+
+test("at phone width the spectrum stacks into one column and the page does not scroll sideways", async ({ page }) => {
+  await openIn(page, "light", "/logos/welding_v2", 390);
+  const lefts = await page.locator("[data-test='logo-spectrum-ramp']").first().locator("[data-test='logo-spectrum-step']")
+    .evaluateAll((steps) => [...new Set(steps.map((step) => Math.round(step.getBoundingClientRect().left)))]);
+  expect(lefts).toHaveLength(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

@@ -1,10 +1,10 @@
 // [unit] logo_gallery: the logo gallery's Context control drives the hub theme
 // (task brand-gallery-palette-and-theme). The rules read a theme and a choice and
 // answer what to show, whether to flip the theme and whether to load the page.
-import { test } from "node:test";
+import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
-import { contextShown, choice, setTheme, fetchSvg, copySvg } from "../../app/javascript/logo_gallery.js";
+import { contextShown, choice, setTheme, fetchSvg, copySvg, wireSwatch } from "../../app/javascript/logo_gallery.js";
 
 function root(dark) {
   const classes = new Set(dark ? ["dark"] : []);
@@ -103,4 +103,20 @@ test("copySvg rejects when the SVG cannot be fetched, or no clipboard takes it",
   await assert.rejects(copySvg("/u", { clipboard, fetchFn: answer(500) }));
   await assert.rejects(copySvg("/u", { clipboard: undefined, fetchFn: answer(), copyText: () => false }));
   assert.equal(await copySvg("/u", { clipboard: undefined, fetchFn: answer(), copyText: () => true }), true);
+});
+
+test("a swatch re-wired from a snapshot taken mid-Copied goes back to its hex, not to Copied", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  globalThis.window = { copyText: () => true };
+  const label = { textContent: "Copied", dataset: { copyHexRest: "#2D5E8E" } };
+  let click;
+  const button = { dataset: { copyHex: "#2D5E8E" }, querySelector: () => label, parentElement: { querySelector: () => null },
+    addEventListener: (_, fn) => { click = fn; } };
+  wireSwatch(button);
+  click();
+  await new Promise((done) => setImmediate(done));
+  mock.timers.tick(1600);
+  assert.equal(label.textContent, "#2D5E8E");
+  mock.timers.reset();
+  delete globalThis.window;
 });

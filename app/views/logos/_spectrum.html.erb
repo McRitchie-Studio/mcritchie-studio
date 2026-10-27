@@ -1,0 +1,42 @@
+<%# A BRAND'S SPECTRUM (task brand-colour-spectrum-ramps): for each palette colour, an eleven-step ramp from 50
+    (lightest) to 950 (darkest), built by Logos::Spectrum, with the brand's own hex unchanged on its nearest step
+    (marked Brand). Each step is a copy button like a palette swatch (data-copy-hex, wired by app/javascript/logo_gallery.js
+    through window.copyText): its step, its hex, and the contrast of whichever of white or black text it is set in.
+    "Copy CSS tokens" copies every step as a custom property, --<brand>-<colour>-<step>. Locals: kit. %>
+<% spectrum = Logos::Spectrum.new(kit) %>
+<div class="space-y-5" data-test="logo-spectrum" data-brand="<%= kit.brand %>">
+  <% spectrum.ramps.each do |ramp| %>
+    <section class="min-w-0 space-y-2" data-test="logo-spectrum-ramp" data-name="<%= ramp.name %>" aria-label="<%= ramp.name %> spectrum">
+      <h3 class="flex flex-wrap items-baseline gap-x-2 text-xs">
+        <span class="font-semibold text-heading"><%= ramp.name %></span>
+        <span class="font-mono text-muted"><%= ramp.hex %> at <%= ramp.anchor.step %></span>
+      </h3>
+      <ul class="grid grid-cols-1 lg:grid-cols-11 rounded-lg overflow-hidden border border-subtle">
+        <% ramp.steps.each do |step| %>
+          <li class="min-w-0" data-test="logo-spectrum-step" data-step="<%= step.step %>" data-hex="<%= step.hex %>"<%= " data-anchor" if step.anchor? %>>
+            <button type="button"
+                    class="flex h-9 w-full min-w-0 items-center gap-3 px-3 text-left lg:h-20 lg:flex-col lg:items-start lg:justify-end lg:gap-0.5 lg:p-2 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+                    style="background-color: <%= step.hex %>; color: <%= step.text %>;"
+                    aria-label="Copy <%= ramp.name %> <%= step.step %> <%= step.hex %>" data-copy-hex="<%= step.hex %>">
+              <span class="w-20 shrink-0 text-2xs font-bold lg:w-auto"><%= step.step %><% if step.anchor? %> <span class="rounded-sm px-1 text-3xs uppercase tracking-wide" style="background-color: <%= step.text %>; color: <%= step.hex %>;" data-test="logo-spectrum-brand">Brand</span><% end %></span>
+              <span class="truncate font-mono text-2xs" data-copy-hex-label><%= step.hex %></span>
+              <span class="ml-auto truncate text-3xs opacity-80 lg:ml-0" data-test="logo-spectrum-contrast"><%= step.contrast %>:1<%= " #{step.grade}" if step.grade %></span>
+            </button>
+            <span class="sr-only" role="status" data-copy-hex-status></span>
+          </li>
+        <% end %>
+      </ul>
+    </section>
+  <% end %>
+
+  <details class="rounded-lg border border-subtle" data-test="logo-spectrum-tokens">
+    <summary class="cursor-pointer px-3 py-2 text-xs font-semibold text-heading">CSS tokens</summary>
+    <div class="space-y-2 border-t border-subtle p-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <button type="button" class="btn btn-primary btn-sm" data-copy-hex="<%= spectrum.css %>" data-copy-name="CSS tokens" data-test="logo-spectrum-copy-css"><span data-copy-hex-label>Copy CSS tokens</span></button>
+        <span class="text-2xs text-muted" role="status" data-copy-hex-status></span>
+      </div>
+      <pre class="max-h-64 overflow-auto text-2xs font-mono text-body"><%= spectrum.css %></pre>
+    </div>
+  </details>
+</div>

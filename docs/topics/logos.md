@@ -580,6 +580,32 @@ A palette colour's hex passes the library's own `#hex` guard, and every name
 and role must be plain words; anything else raises `Logos::NavbarLogo::Error`
 when the kit is loaded.
 
+### Spectrum
+
+Under the kit, the brand page (`/logos/:brand` only, not the index or compare)
+shows every palette colour as a **spectrum**: an eleven-step ramp, 50 (lightest)
+to 950 (darkest), built by `Logos::Spectrum` (`lib/logos/spectrum.rb`) and drawn
+by `logos/_spectrum`. Nothing is stored; the ramps are worked out from
+`palette:` on every request, so a new brand or a changed hex gets its spectrum
+at once.
+
+- The ramp is built in OKLCH. Lightness follows one fixed curve
+  (`Spectrum::LIGHTNESS`); the hue stays the colour's own; chroma tapers toward
+  either end.
+- The brand's hex sits **unchanged** on the step nearest its own lightness,
+  marked Brand: Commercial Welding's Welding Blue lands on 700, Spark Orange on
+  500, Ember on 400.
+- A colour with almost no chroma (white, black, a grey) is a **neutral**: it
+  holds one faint chroma at every step. A grey keeps its own slight hue; white
+  or black borrows the hue of the brand's **lead colour**, the first colour in
+  `palette:` order that has one. Palette order therefore decides which way a
+  brand's whites and blacks lean.
+- Each step is a copy button like a palette swatch (`data-copy-hex`). It shows
+  its step, its hex, and the WCAG contrast of whichever of white or black text
+  reads better on it, graded AA (4.5:1) or AA Large (3:1).
+- **Copy CSS tokens** copies every step as a custom property,
+  `--<brand>-<colour>-<step>` (`--welding-v2-welding-blue-700: #2D5E8E;`).
+
 ### Context is the hub theme
 
 There are **no plates**: every logo on `/logos` and `/logos/:brand` sits on the
