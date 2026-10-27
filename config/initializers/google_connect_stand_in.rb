@@ -47,7 +47,7 @@ module GoogleConnectStandIn
 
       granted = Base64.urlsafe_decode64(code.delete_prefix(PREFIX)).split
       scope = @lock.synchronize { @granted |= granted }.join(" ")
-      claims = Base64.urlsafe_encode64({ email: EMAIL }.to_json, padding: false)
+      claims = Base64.urlsafe_encode64({ email: EMAIL, email_verified: true }.to_json, padding: false)
       { "access_token" => "stand-in-access-#{SecureRandom.hex(8)}", "refresh_token" => "stand-in-refresh-#{SecureRandom.hex(8)}",
         "scope" => scope, "id_token" => "stand-in.#{claims}.stand-in" }
     end
@@ -55,6 +55,7 @@ module GoogleConnectStandIn
     def access_token(_connection) = "stand-in-access"
 
     # Google drops the whole grant; the next sign-in echoes nothing before it.
+    # `_connection` is nil for a just-issued grant the callback refused.
     def revoke(_connection)
       @lock.synchronize { @granted = [] }
       true

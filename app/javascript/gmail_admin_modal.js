@@ -21,7 +21,7 @@ function mailto(clientId) {
     "4. Choose Trusted.",
     "",
     "Thank you!",
-  ].join("\n");
+  ].join("\r\n"); // RFC 6068: a mailto body breaks lines with CRLF; some mail clients join bare LFs into one line
   return `mailto:?subject=${encodeURIComponent(SUBJECT)}&body=${encodeURIComponent(body)}`;
 }
 

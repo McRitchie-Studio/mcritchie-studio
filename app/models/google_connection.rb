@@ -22,7 +22,7 @@
 # a client app's owner on their own app's CTO thread
 # (/tasks/agent-reads-owner-google). No agent reads one user's rows for another
 # user. A promoted user's rows join the household; a demoted admin's
-# leave it. An account another user already connected is refused
+# leave it. Each page says who reads a connection beside it (#who_reads). An account another user already connected is refused
 # (TakenByAnotherUser), never taken over.
 #
 # Until 2026-10-14 this was GoogleCalendarConnection (google_calendar_connections);
@@ -76,8 +76,8 @@ class GoogleConnection < ApplicationRecord
 
     def scope_for(ability) = ABILITIES.fetch(ability.to_sym)
 
-    # The household's connections: those an admin owns. The only rows agents
-    # and the /admin/google page read.
+    # The household's connections: those an admin owns. The rows the hub's
+    # agents and the /admin/google page read (an app owner's own: .owned_by).
     def household = joins(:user).merge(User.where(role: "admin"))
 
     # One user's own connections, and nobody else's: the rows the agent
@@ -90,12 +90,6 @@ class GoogleConnection < ApplicationRecord
     # The household's most recently connected account.
     def current = household.newest_first.first
 
-    # The household's readable connection that grants `ability`, most recent
-    # first; nil when none does. Never a non-admin's row.
-    def for(ability)
-      household.newest_first.find { |connection| connection.readable? && connection.can?(ability) }
-    end
-
     # Stores the account a sign-in connected, owned by `user`. `grant` is the
     # token endpoint's JSON; `email` is the account it names; `abilities` are the ones THIS
     # sign-in asked for. The row keeps the scopes it already had and adds the
@@ -106,9 +100,46 @@ class GoogleConnection < ApplicationRecord
     # lacks the refresh token; the message names the field, never a value.
     # Raises TakenByAnotherUser, storing nothing, when another user owns the
     # account's row (readable or not): no silent takeover.
+    #
+    # TWO SIGN-INS AT ONCE of the same new account (two tabs, a double click)
+    # both find no row; the second insert then meets the unique email index
+    # (RecordNotUnique), or its uniqueness validation sees the first's row.
+    # store! looks again ONCE: the row is there now, so the same user's sign-in
+    # merges into it and another user's is refused (TakenByAnotherUser). One
+    # row either way; a second collision raises for the caller to answer.
     def store!(grant, email:, user:, abilities:, now: Time.current)
+      looked_again = false
+      begin
+        store_once!(grant, email:, user:, abilities:, now:)
+      rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+        raise if looked_again || (e.is_a?(ActiveRecord::RecordInvalid) && !e.record.errors.of_kind?(:email, :taken))
+
+        looked_again = true
+        retry
+      end
+    end
+
+    # The account's row, locked for this sign-in, or a new one. The seam a
+    # test races (google_connection_test: two sign-ins at once).
+    def row_for_update(email) = lock.find_or_initialize_by(email:)
+
+    # The household's readable connection that grants `ability`, most recent
+    # first; nil when none does. Never a non-admin's row.
+    def for(ability)
+      household.newest_first.find { |connection| connection.readable? && connection.can?(ability) }
+    end
+
+    # The abilities among `abilities` whose scope the grant carries.
+    def granted_abilities(grant, abilities)
+      scopes = grant["scope"].to_s.split
+      abilities.map(&:to_sym).select { scopes.include?(scope_for(_1)) }
+    end
+
+    private
+
+    def store_once!(grant, email:, user:, abilities:, now:)
       transaction(requires_new: true) do
-        connection = lock.find_or_initialize_by(email: email.to_s.downcase)
+        connection = row_for_update(email.to_s.downcase)
         raise TakenByAnotherUser if connection.persisted? && connection.user_id != user.id
         # A row whose token can no longer be read is replaced, not updated.
         unless connection.new_record? || connection.readable?
@@ -122,20 +153,41 @@ class GoogleConnection < ApplicationRecord
       end
     end
 
-    # The abilities among `abilities` whose scope the grant carries.
-    def granted_abilities(grant, abilities)
-      scopes = grant["scope"].to_s.split
-      abilities.map(&:to_sym).select { scopes.include?(scope_for(_1)) }
-    end
-
-    private
-
     # The grant's scopes, less every ability scope this sign-in did not ask for.
     def granted_scopes(grant, abilities)
       unasked = ABILITIES.values - abilities.map { scope_for(_1) }
       grant["scope"].to_s.split - unasked
     end
   end
+
+  # WHO READS IT, the one rule every page's "who reads this" line comes from
+  # (#who_reads), mirroring the agent side's gate
+  # (AgentMessages::MemoryBundle#google_owner_context):
+  #   :agents     an admin's row, the household's: the hub souls read it for
+  #               an admin (.household, GoogleConnect::OwnerContext.household)
+  #   :app_agent  a client app owner's own row (an owner AppMembership): their
+  #               app's CTO reads it when they chat with it on their app's own
+  #               thread (.owned_by, OwnerContext.for_user), and nobody else
+  #   :owner      anyone else's: no agent reads it
+  # A rule change on the agent side changes this predicate and its copy here.
+  WHO_READS = {
+    agents: "Your agents can read this",
+    app_agent: "Your app's agent can read this when you chat with it",
+    owner: "Only you can see this"
+  }.freeze
+
+  # Do the household's agents read it (an admin's row)?
+  def agents_read? = user&.admin? == true
+
+  # :agents, :app_agent or :owner, the key of WHO_READS.
+  def reader
+    return :agents if agents_read?
+    return :app_agent if user&.slug.present? && AppMembership.owners.exists?(user_slug: user.slug)
+
+    :owner
+  end
+
+  def who_reads = WHO_READS.fetch(reader)
 
   # Can the stored refresh token be decrypted with this app's keys?
   def readable?

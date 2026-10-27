@@ -15,11 +15,18 @@
                      household path, already chosen by the server). Continue goes there.
     props.clientId — GoogleConnect::OAuthClient.client_id: the public OAuth
                      client id, never a secret. Blank hides the id row and copy.
+    props.ariaLabel — GmailAdminModalHelper::TITLE, the heading below: the modal host
+                     names the dialog from it, so a screen reader announces the
+                     title rather than the bare id "gmail-admin".
+
+    Continue to Google stays in view: the button row is sticky to the bottom of
+    the host's scrolling card, so on a 375px phone it shows without scrolling
+    while the steps above scroll behind it.
     No Alpine component of its own and no inline <script>: props come straight from $store.modals, and
     the mailto and the copy (navigator.clipboard) are app/javascript/gmail_admin_modal.js. %>
 <div class="text-left" data-test="gmail-admin-modal">
   <div class="flex items-start justify-between gap-4 mb-4">
-    <h3 class="text-heading font-bold text-xl">Gmail needs your Google admin's OK</h3>
+    <h3 class="text-heading font-bold text-xl"><%= GmailAdminModalHelper::TITLE %></h3>
     <button type="button" @click="$store.modals.close()" class="text-muted hover:text-heading -mt-1" aria-label="Close" data-test="gmail-admin-close">
       <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
     </button>
@@ -55,7 +62,7 @@
 
   <p class="text-xs text-muted mt-3" data-test="gmail-admin-personal">A personal @gmail.com account has no admin, so it can't connect Gmail yet.</p>
 
-  <div class="flex flex-col-reverse gap-2 mt-5 sm:flex-row sm:justify-end">
+  <div class="sticky -bottom-6 -mx-6 -mb-6 mt-5 flex flex-col-reverse gap-2 border-t border-subtle bg-surface px-6 pb-6 pt-4 sm:flex-row sm:justify-end" data-test="gmail-admin-actions">
     <button type="button" @click="$store.modals.close()" class="btn btn-neutral btn-lg justify-center" data-test="gmail-admin-not-now">Not now</button>
     <a :href="($store.modals.current().props || {}).href" data-turbo="false" class="btn btn-primary btn-lg justify-center" data-test="gmail-admin-continue">Continue to Google</a>
   </div>

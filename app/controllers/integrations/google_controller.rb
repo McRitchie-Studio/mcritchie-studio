@@ -7,8 +7,9 @@ module Integrations
   # theirs. Disconnect reaches only the rows they own: another user's
   # connection, the household's included, is never touched from here.
   #
-  # A non-admin's connection is theirs alone: agents read only the household's
-  # (GoogleConnection.household), never one made here by a non-admin.
+  # Who reads a connection made here is GoogleConnection#who_reads: a client
+  # app owner's own app agent in their own chat (/tasks/agent-reads-owner-google),
+  # otherwise no agent; the household's agents never read it.
   class GoogleController < ApplicationController
     include GoogleSignIn
 
