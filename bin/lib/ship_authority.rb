@@ -52,8 +52,21 @@ module ShipAuthority
   # One prod-board read per poll (a `heroku run` on PROD), so the cadence is
   # coarse; the last sleep is trimmed to the window end so lapse is read on time.
   POLL_INTERVAL_S = 45
+  # The human owner, as the release record names him: the default `--by` (stamped
+  # on releases.confirmed_by and the release events' actor) and the default
+  # `--cleared-by`. Never ENV["USER"]: the Mac login is `alex`, which since
+  # 2026-10-25 is the persona soul's slug, so a login default attributed every
+  # ship to an agent (rename-loose-ends; ConfirmedByAlexToAlexMcritchie rewrote
+  # the rows it had written).
+  OWNER = "Alex McRitchie"
 
   module_function
+
+  # `bin/release ship|finalize|rollback --by NAME`: the name as given, else OWNER.
+  def confirmer(explicit)
+    name = explicit.to_s.strip
+    name.empty? ? OWNER : name
+  end
 
   # The conductor's idempotency key for a timed run's event, scoped to the window
   # it belongs to, or for a cleared run's event, scoped to its `cleared_at`; nil
@@ -122,7 +135,7 @@ module ShipAuthority
     end
 
     by = cleared_by.to_s.strip
-    by = "alex" if by.empty?
+    by = OWNER if by.empty?
     cleared_at = clock.call.utc.iso8601(3)
     recorder.call("started", { "mode" => "cleared", "cleared_at" => cleared_at })
     recorder.call("completed", { "mode" => "cleared", "granted_via" => "chat", "cleared_by" => by, "clearance" => words,

@@ -99,10 +99,46 @@ class ShipAuthorityTest < Minitest::Test
     assert h.said.any? { |line| line.include?("cleared in chat by alex") }
   end
 
-  def test_cleared_defaults_the_clearer_to_alex
+  # The clearer is the human owner, never the `alex` persona soul (rename-loose-ends):
+  # `alex` is an agent slug since 2026-10-25, and only Alex McRitchie clears a ship.
+  def test_cleared_defaults_the_clearer_to_alex_mcritchie
     h = Harness.new
     h.take!(mode: "cleared", clearance: "go")
-    assert_equal "alex", h.events.last.last["cleared_by"]
+    assert_equal "Alex McRitchie", h.events.last.last["cleared_by"]
+    assert h.said.any? { |line| line.include?("cleared in chat by Alex McRitchie") }
+  end
+
+  def test_cleared_treats_a_blank_clearer_as_the_owner
+    h = Harness.new
+    h.take!(mode: "cleared", clearance: "go", cleared_by: "   ")
+    assert_equal ShipAuthority::OWNER, h.events.last.last["cleared_by"]
+  end
+
+  # --- the --by default ---------------------------------------------------------
+
+  # `bin/release ship|finalize|rollback --by` lands in releases.confirmed_by and the
+  # release events' actor. Its default was ENV["USER"] — the Mac login, `alex`,
+  # which reads as the persona soul since 2026-10-25. It is the owner's name now,
+  # and the login never leaks in.
+  def test_confirmer_defaults_to_alex_mcritchie_not_the_login
+    with_env("USER" => "alex") do
+      assert_equal "Alex McRitchie", ShipAuthority.confirmer(nil)
+      assert_equal "Alex McRitchie", ShipAuthority.confirmer("")
+      assert_equal "Alex McRitchie", ShipAuthority.confirmer("  ")
+    end
+  end
+
+  def test_confirmer_keeps_an_explicit_by
+    assert_equal "conductor", ShipAuthority.confirmer("conductor")
+    assert_equal "steffon", ShipAuthority.confirmer(" steffon ")
+  end
+
+  def with_env(vars)
+    saved = vars.keys.to_h { |k| [k, ENV[k]] }
+    vars.each { |k, v| ENV[k] = v }
+    yield
+  ensure
+    saved.each { |k, v| ENV[k] = v }
   end
 
   def test_cleared_with_blank_clearance_refuses_before_recording

@@ -9314,7 +9314,7 @@ def ship
   # `bin/release finalize <release>` is the same path with its own verb.
   return finalize(Release::Cli.positional_slugs(ARGV).first) if Release::Cli.take_flag(ARGV, "--finalize-only")
 
-  by = opt_value("--by") || ENV["USER"] || "operator"
+  by = ShipAuthority.confirmer(opt_value("--by"))
   # The production-authority MODE, resolved before anything moves so a bad --mode
   # or a bad config default aborts here: explicit --mode > `--yes` (auto) > the
   # config default (config/release_builder.yml production_ship.mode, `timed`).
@@ -9734,7 +9734,7 @@ end
 # no double records). install-agent-docs + primary-restore ride along (idempotent
 # file ops) whenever any step is pending.
 def finalize(slug = nil)
-  by = opt_value("--by") || ENV["USER"] || "operator"
+  by = ShipAuthority.confirmer(opt_value("--by"))
   @ship_live = []
   say("Finalize release (record the steps a killed ship skipped)#{PROD ? ' (PROD)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
@@ -10813,7 +10813,7 @@ end
 #     Every record write is best-effort once a deploy has run.
 #   * GEMS are named and left published: a gem version cannot be unpublished.
 def rollback(slug = nil)
-  by = opt_value("--by") || ENV["USER"] || "operator"
+  by = ShipAuthority.confirmer(opt_value("--by"))
   slug = slug.to_s.strip
   slug = opt_value("--slug").to_s.strip if slug.empty?
   authority = begin
