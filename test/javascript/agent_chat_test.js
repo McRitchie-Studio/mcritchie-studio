@@ -96,13 +96,15 @@ test("carriedDraft keeps what was typed unless the server drew text (a refused s
 test("restoreSend puts an unsent text and its files back, but never over a new draft", () => {
   const form = composer({ text: "Lost in transit", tokens: ["tok-a"] });
   startSend(form, () => "fresh-uuid-0002");
-  assert.equal(restoreSend(form, "Lost in transit"), true);
+  assert.equal(restoreSend(form, "Lost in transit", "old-client-id-1"), true);
   assert.equal(form.field.value, "Lost in transit");
   assert.equal(form.tokenInputs[0].disabled, false);
+  assert.equal(form.id.value, "old-client-id-1", "a retry of a send the server may have stored is kept once");
 
   const typed = composer({ text: "sent" });
   startSend(typed, () => "fresh-uuid-0003");
   typed.field.value = "a new draft";
-  assert.equal(restoreSend(typed, "sent"), false);
+  assert.equal(restoreSend(typed, "sent", "old-client-id-1"), false);
   assert.equal(typed.field.value, "a new draft");
+  assert.equal(typed.id.value, "fresh-uuid-0003", "the new draft keeps its own id");
 });

@@ -96,13 +96,17 @@ export function startSend(form, random) {
   return text;
 }
 
-// A send that never reached the server (Turbo's submit-end carries an error): its
-// text and files go back in, unless something new was typed meanwhile.
-export function restoreSend(form, text) {
+// A send whose answer never came (Turbo's submit-end carries an error): its text,
+// files and client id go back in, unless something new was typed meanwhile. The id
+// matters: the server may have stored the send before the answer was lost, and a
+// retry on the same id is then kept once (WebIngest), not stored twice.
+export function restoreSend(form, text, clientId) {
   const field = form.querySelector("textarea");
   form.querySelectorAll("input[name$='[attachments][]']").forEach((token) => { token.disabled = false; });
   if (!field || field.value.trim() !== "" || !text) return false;
   field.value = text;
+  const id = form.querySelector("input[name$='[client_id]']");
+  if (id && clientId) id.value = clientId;
   return true;
 }
 
@@ -209,14 +213,16 @@ if (typeof document !== "undefined") {
     const form = event.target.closest?.(FORM);
     announce(form, "Sending…");
     // Keyed by the submission: a send aborted by the next one ends after it starts.
-    if (form && event.detail?.formSubmission) sending.set(event.detail.formSubmission, startSend(form));
+    const clientId = form?.querySelector("input[name$='[client_id]']")?.value;
+    if (form && event.detail?.formSubmission) sending.set(event.detail.formSubmission, { text: startSend(form), clientId });
   });
 
   document.addEventListener("turbo:submit-end", (event) => {
     if (!event.target.closest?.(FORM) && !event.target.matches?.(FORM)) return;
     const form = event.target.closest(FORM);
     const submission = event.detail?.formSubmission;
-    if (event.detail?.error && submission) restoreSend(form, sending.get(submission));
+    const sent = submission && sending.get(submission);
+    if (event.detail?.error && sent) restoreSend(form, sent.text, sent.clientId);
     if (submission) sending.delete(submission);
     announce(form, "");
     requestAnimationFrame(() => document.querySelector(`${FORM} textarea`)?.focus());
