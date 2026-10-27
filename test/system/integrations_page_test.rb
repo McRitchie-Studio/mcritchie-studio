@@ -245,6 +245,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         assert mailto.start_with?("mailto:?subject="), mailto
         assert_includes CGI.unescape(mailto), "test-connect-id"
         assert_includes CGI.unescape(mailto), "Choose Trusted"
+        assert_includes mailto, "%0D%0A", "the body breaks its lines with CRLF (RFC 6068)"
 
         find("[data-test='gmail-admin-copy']").click
         assert_selector "[data-test='gmail-admin-copy']", text: "Copied"

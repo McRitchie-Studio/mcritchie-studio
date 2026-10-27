@@ -314,6 +314,18 @@ class GoogleConnectionTest < ActiveSupport::TestCase
     assert_equal "Only you can see this", own.who_reads
   end
 
+  test "[unit] an app owner's own connection still says only they see it, until agents read it" do
+    # Pre /tasks/agent-reads-owner-google: no agent reads a non-admin's row, an
+    # app owner's included. When that task lands, this test changes with the rule.
+    owner = User.create!(email: "app-owner@example.com", name: "App Owner", role: "viewer")
+    AppMembership.create!(app: apps(:turf_monster), user: owner)
+    row = GoogleConnection.store!(grant, email: "owner@example.com", user: owner, abilities: ALL, now: NOW)
+
+    assert_equal :owner, row.reader
+    assert_equal "Only you can see this", row.who_reads
+    assert_nil GoogleConnection.for(:calendar), "the control: the agent reader does not answer it either"
+  end
+
   test "[unit] the ownership migration backfills each row from connected_by, falling back to the operator" do
     alex.update_column(:slug, "alex-mcritchie-alex@mcritchie.studio")
     viewer.update_column(:slug, "viewer-user-viewer@example.com")
