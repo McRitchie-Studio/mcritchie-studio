@@ -21,6 +21,14 @@
 # leave it. An account another user already connected is refused
 # (TakenByAnotherUser), never taken over.
 #
+# DRIVE IS FILES YOU PICK (/tasks/drive-files-you-pick). The drive ability
+# asks for drive.file, under which Google lets the app open only the files the
+# person chose in the Google Picker (or files the app made). Each choice is a
+# GoogleDrivePick on the connection (#drive_picks). A row connected before the
+# change still holds drive.readonly (LEGACY_SCOPES): it keeps reading as it did,
+# and its card says to reconnect to choose files. Reconnecting Drive swaps the
+# legacy scope for drive.file here; nothing ever moves a row the other way.
+#
 # Until 2026-10-14 this was GoogleCalendarConnection (google_calendar_connections);
 # the rename kept every row and token.
 #
@@ -33,11 +41,19 @@ class GoogleConnection < ApplicationRecord
 
   # Every sign-in asks who the account is, plus the one ability's read scope.
   IDENTITY_SCOPES = %w[openid email].freeze
-  # Each ability and the one read-only scope that unlocks it. None can write.
+  # Each ability and the one scope a sign-in asks for to unlock it. Calendar
+  # and Gmail are read-only scopes. Drive's is drive.file: the hub reads only
+  # the files the person picks (#drive_picks), and writes nothing.
   ABILITIES = {
     calendar: "https://www.googleapis.com/auth/calendar.events.readonly",
     gmail: "https://www.googleapis.com/auth/gmail.readonly",
-    drive: "https://www.googleapis.com/auth/drive.readonly"
+    drive: "https://www.googleapis.com/auth/drive.file"
+  }.freeze
+  # Scopes an ability was granted under before it narrowed. Never asked for
+  # again; a row holding one still counts as granting the ability (#can?) and
+  # reads the way it always did (#legacy?).
+  LEGACY_SCOPES = {
+    drive: %w[https://www.googleapis.com/auth/drive.readonly]
   }.freeze
   ABILITY_NAMES = { calendar: "Google Calendar", gmail: "Gmail", drive: "Google Drive" }.freeze
   # The `ability` param of Connect Google: every ability in one consent.
@@ -49,6 +65,9 @@ class GoogleConnection < ApplicationRecord
   end
 
   belongs_to :user
+  # The Drive files picked for this connection. The foreign key cascades too,
+  # since a disconnect deletes the row with delete_all.
+  has_many :drive_picks, class_name: "GoogleDrivePick", inverse_of: :google_connection, dependent: :delete_all
 
   encrypts :refresh_token
   self.filter_attributes += %i[refresh_token]
@@ -107,12 +126,16 @@ class GoogleConnection < ApplicationRecord
           where(id: connection.id).delete_all
           connection = new(email: connection.email)
         end
-        granted = (connection.scopes | granted_scopes(grant, abilities)).join(" ").presence
+        # A sign-in that asks for an ability retires its legacy scope here.
+        kept = connection.scopes - abilities.flat_map { legacy_scopes_for(_1) }
+        granted = (kept | granted_scopes(grant, abilities)).join(" ").presence
         connection.assign_attributes(refresh_token: grant["refresh_token"].to_s, scope: granted, user:, connected_by: user.slug, connected_at: now)
         connection.save!
         connection
       end
     end
+
+    def legacy_scopes_for(ability) = LEGACY_SCOPES.fetch(ability.to_sym, [])
 
     # The abilities among `abilities` whose scope the grant carries.
     def granted_abilities(grant, abilities)
@@ -122,10 +145,12 @@ class GoogleConnection < ApplicationRecord
 
     private
 
-    # The grant's scopes, less every ability scope this sign-in did not ask for.
+    # The grant's scopes, less every ability scope this sign-in did not ask
+    # for and every legacy scope: include_granted_scopes echoes an old
+    # drive.readonly grant, and taking it would widen a row past what was asked.
     def granted_scopes(grant, abilities)
       unasked = ABILITIES.values - abilities.map { scope_for(_1) }
-      grant["scope"].to_s.split - unasked
+      grant["scope"].to_s.split - unasked - LEGACY_SCOPES.values.flatten
     end
   end
 
@@ -140,8 +165,18 @@ class GoogleConnection < ApplicationRecord
   # The granted scope as names (Google writes one space-separated string).
   def scopes = scope.to_s.split
 
-  # Did Google grant this ability's read? A person can untick it on the consent screen.
-  def can?(ability) = scopes.include?(self.class.scope_for(ability))
+  # Did Google grant this ability? A person can untick it on the consent
+  # screen. A legacy scope counts (#legacy?).
+  def can?(ability) = scopes.intersect?([ self.class.scope_for(ability), *self.class.legacy_scopes_for(ability) ])
+
+  # Does this row hold the ability only under its old, wider scope (Drive's
+  # drive.readonly)? Such a row reads as it always did until it reconnects.
+  def legacy?(ability)
+    !scopes.include?(self.class.scope_for(ability)) && scopes.intersect?(self.class.legacy_scopes_for(ability))
+  end
+
+  # Does Drive read only the files picked for this row (drive.file)?
+  def drive_picked? = scopes.include?(self.class.scope_for(:drive))
 
   # The abilities this connection grants, in ABILITIES order.
   def abilities = ABILITIES.keys.select { can?(_1) }
@@ -149,7 +184,11 @@ class GoogleConnection < ApplicationRecord
   # Forgets one ability here and keeps the token for the others. Google cannot
   # revoke a single scope, so the grant itself still holds it until the last
   # ability goes (then the caller revokes the token and deletes the row).
+  # Dropping Drive forgets its picks too.
   def drop!(ability)
-    update!(scope: (scopes - [ self.class.scope_for(ability) ]).join(" ").presence)
+    transaction do
+      drive_picks.delete_all if ability.to_sym == :drive
+      update!(scope: (scopes - [ self.class.scope_for(ability), *self.class.legacy_scopes_for(ability) ]).join(" ").presence)
+    end
   end
 end
