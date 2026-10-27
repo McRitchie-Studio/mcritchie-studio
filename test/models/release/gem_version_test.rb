@@ -211,6 +211,16 @@ class ReleaseGemVersionTest < Minitest::Test
     assert_equal "0.117.0", decision.version, "0.116.0 is live and can never be re-pushed"
   end
 
+  # rubygems_versions answers [] on ANY failed read, so beside a tag an empty live
+  # list is unread, not empty, and a live-but-untagged `current` looks unpublished.
+  def test_a_re_derive_never_acts_on_an_unread_live_list
+    decision = allocation(current: "0.115.1", tag: "0.115.0", live: [],
+                          members: [member(kind: "feature")], pending_entries: true)
+
+    assert_equal GV::SKIP, decision.action
+    assert_nil decision.replaces
+  end
+
   def test_a_first_allocation_carries_no_replaces
     assert_nil allocation(members: [member(kind: "feature")]).replaces
   end
