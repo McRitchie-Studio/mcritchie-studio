@@ -9,8 +9,10 @@
 #
 # Each file is BrandKitExport#svg, byte for byte: the same bytes /logos/:brand/kit/<file> serves for the kit record in
 # THIS database. A file whose bytes are already right is not rewritten, so a second install changes nothing.
-# Beside the files, kit.json records what they were drawn from (the brand and its three choices, null for a default),
-# so a later reader can tell which saved kit the committed files are, and a test can redraw them to check.
+# Beside the files, kit.json records what they were drawn from (the brand and its three choices, null for a default)
+# and the kit's saved_at (ISO 8601, UTC; null for a kit never saved), so a later reader can tell which saved kit the
+# committed files are, a test can redraw them to check, and the brand-kit-rollout SOP can read an app's live
+# /brand/kit.json to record the version it serves (`bin/rails logos:applied`, BrandKitApp).
 class BrandKitInstall
   MANIFEST = "kit.json"
 
@@ -25,9 +27,11 @@ class BrandKitInstall
 
   def self.default_dest = Rails.root.join("public/brand")
 
-  # The manifest's content: the brand and each choice as stored (nil where the brand's default is drawn).
+  # The manifest's content: the brand, each choice as stored (nil where the brand's default is drawn), and the kit's
+  # saved_at to the second.
   def self.manifest_for(kit)
     { "brand" => kit.brand }.merge(BrandKit::CHOICE_TYPES.to_h { |type| [type.to_s, kit.choice(type)] })
+                            .merge("saved_at" => kit.saved_at&.utc&.iso8601)
   end
 
   # Writes every file the kit draws, and the manifest. Returns which were written, which were already right, and

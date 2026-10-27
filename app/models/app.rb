@@ -25,6 +25,10 @@ class App < ApplicationRecord
   has_many :preview_versions, class_name: "AppPreviewVersion", foreign_key: :app_slug, primary_key: :slug,
                               inverse_of: :app, dependent: :delete_all
 
+  # The brand kits this app takes, each Applied, Kit changed or Not applied (BrandKitApp; task
+  # brand-kit-applied-status). Shown on the app's page and in the /logos brand column.
+  has_many :brand_kit_apps, foreign_key: :app_slug, primary_key: :slug, inverse_of: :app, dependent: :delete_all
+
   # The default app a brand-new session adopts before any task exists — the
   # SessionStart hook seeds "<random Pokémon> · mcritchie-studio".
   DEFAULT_SLUG = "mcritchie-studio".freeze
