@@ -114,6 +114,26 @@ class AlexSeatTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # The seat's agent page under its old slugs answered "Agent not found"
+  # (rename-loose-ends). It held the orchestrator seat, which is Mason's now, so the
+  # page forwards there. Only the bare page: /agents/ray/settings is not a shim,
+  # and the persona's own page stays /agents/alex.
+  test "the retired /agents/ray and /agents/xan pages forward to /agents/mason" do
+    %w[/agents/ray /agents/xan].each do |old|
+      get old
+      assert_response :moved_permanently, old
+      assert_equal "http://www.example.com/agents/mason", response.location, old
+    end
+  end
+
+  test "the persona and the orchestrator keep their own agent pages" do
+    get "/agents/mason"
+    refute_equal 301, response.status
+    get "/agents/alex"
+    refute_equal 301, response.status
+    refute_match %r{/agents/mason}, response.location.to_s
+  end
+
   test "the launcher enters the learning heartbeat as mason, and no avenue names a retired slug" do
     get launcher_path
     assert_response :success
