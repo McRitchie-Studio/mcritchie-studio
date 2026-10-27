@@ -78,7 +78,10 @@ module DomainRegister
     # `op read`, value on stdout only, stderr dropped so nothing echoes. A failed
     # read (an expired or wrong admin token, a missing item) raises, so it is
     # never mistaken for an item that exists but is empty.
-    def op_read(ref, env, runner: ->(e, argv) { [IO.popen(e, argv, err: File::NULL, &:read).to_s, $?] })
+    # The default runner is bounded and metered (OpMeter.popen), like every op read
+    # under bin/; a killed read leaves a failed `$?`, which raises below.
+    def op_read(ref, env, runner: ->(e, argv) { [OpMeter.popen(e, argv, via: "domain_register", err: File::NULL).to_s, $?] })
+      require_relative "op_meter"
       out, status = runner.call(env, ["op", "read", ref])
       unless status&.success?
         require_relative "op_vaults"
