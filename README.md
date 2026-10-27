@@ -118,7 +118,7 @@ Seeds load 9 agents with avatars, 35 skills, sample tasks, plus 32 NFL + 75 NCAA
 
 - Ruby **3.3.11** (use Homebrew Ruby and match `.ruby-version`; see [house-burn-down.md gotcha 1](docs/agents/system/house-burn-down.md))
 - PostgreSQL 14+
-- Node.js **22.x** (keeps local dev, CI, and Heroku aligned; `turf-vault` needs at least Node 20.18.0)
+- Node.js **22.x** (keeps local dev, CI, and Heroku aligned; `turf-vault` needs at least Node 20.18.0). The pin is `.tool-versions` (`nodejs 22`), read by mise and by CI's `setup-node`; `package.json` `engines` (`22.x`) is what Heroku's Node buildpack reads. `bin/rails studio:node:check` holds both to studio-engine's `versions.json`
 - Bundler 2.4+ (`gem install bundler`)
 
 ## Test

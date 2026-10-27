@@ -74,6 +74,15 @@ warn "→ prod-smoke #{app}: @qa-readonly against #{base_url} (read-only)"
 # external-base hook (it skips the local webServer when set), so this hits the
 # live prod host with no local Rails boot. --grep keeps it to the @qa-readonly
 # tests even though the spec lives alongside mutating specs.
+# playwright.config.js builds on studio-engine's Node tooling, linked at
+# node_modules/.studio-engine. The seal runs this in the ship workspace right after
+# an `npm ci`, which deletes that link, so link it here, every run (~2s).
+unless system("bin/rails", "node_tooling:link", chdir: ROOT, out: File::NULL)
+  warn "✗ prod-smoke #{app}: could not link studio-engine's Node tooling (bin/rails node_tooling:link)"
+  puts({ app: app, url: base_url, passed: false }.to_json) if json_out
+  exit 1
+end
+
 env = { "BASE_URL" => base_url }
 ok = system(env, "npx", "playwright", "test", "--grep", "@qa-readonly", chdir: ROOT)
 

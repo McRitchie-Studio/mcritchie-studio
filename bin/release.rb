@@ -9140,6 +9140,9 @@ def resolve_seal_tree(frozen)
   deps_failure = ensure_seal_playwright!(path)
   return Release::SealTree.refuse(deps_failure) if deps_failure
 
+  link_failure = link_seal_node_tooling!(path)
+  return Release::SealTree.refuse(link_failure) if link_failure
+
   head, = git_capture("-C", path, "rev-parse", "HEAD")
   Release::SealTree.resolve(workspace: path, frozen_sha: frozen, head_sha: head)
 rescue SystemExit, StandardError => e
@@ -9174,6 +9177,26 @@ end
 
 # The install command — a seam so the tests can stand in a fake npm.
 def seal_npm_ci_cmd = %w[npm ci --no-audit --no-fund]
+
+# The shipped playwright.config.js builds on studio-engine's Node tooling, linked at
+# node_modules/.studio-engine, and the `npm ci` above deletes that link. Relink it in
+# the workspace before the smoke, so a tree that cannot link is UNSEALED (the specs
+# could not run) rather than a red seal. A shipped tree from before the hub adopted
+# the package (no lib/tasks/node_tooling.rake) has nothing to link. bin/prod-smoke
+# links too, for a run outside the seal; the second link is a no-op.
+SEAL_NODE_LINK_TIMEOUT_SECONDS = 120
+
+def link_seal_node_tooling!(path)
+  return nil unless File.exist?(File.join(path, "lib", "tasks", "node_tooling.rake"))
+
+  out, ok, timed_out = sh_bounded(*seal_node_link_cmd, chdir: path, timeout: SEAL_NODE_LINK_TIMEOUT_SECONDS)
+  return "linking studio-engine's Node tooling timed out after #{SEAL_NODE_LINK_TIMEOUT_SECONDS}s in the ship workspace" if timed_out
+  return nil if ok
+
+  "could not link studio-engine's Node tooling in the ship workspace (#{out.to_s.lines.last.to_s.strip})"
+end
+
+def seal_node_link_cmd = %w[bin/rails node_tooling:link]
 
 # Run a command with a wall-clock limit. Returns [output, ok, timed_out]. The
 # child runs in its own process group, so a timeout kills npm AND the node

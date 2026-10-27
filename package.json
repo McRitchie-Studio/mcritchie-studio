@@ -11,8 +11,8 @@
     "tiktok:login": "node script/tiktok_login.js"
   },
   "devDependencies": {
-    "@playwright/test": "^1.52.0",
-    "axe-core": "^4.11.0"
+    "@playwright/test": "1.62.1",
+    "axe-core": "4.11.0"
   },
   "dependencies": {
     "tailwindcss": "^4.3.1"

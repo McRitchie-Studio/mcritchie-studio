@@ -991,8 +991,8 @@ bin/devops-tests --lane qa_acceptance
 
 ```bash
 bin/rails test
-bin/test-js        # node:test units for app/javascript/board (test/javascript)
-npm test
+bin/test-js        # node:test units for app/javascript/board (test/javascript); links the engine hook first
+bin/rails node_tooling:link && npm test   # after an npm ci: the config loads node_modules/.studio-engine
 ```
 
 > **Running the Rails suite from an agent shell.** `bin/agent-runtime install`

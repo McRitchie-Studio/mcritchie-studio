@@ -335,6 +335,54 @@ class ReleaseSealCliTest < Minitest::Test
     end
   end
 
+  # --- the seal relinks studio-engine's Node tooling (/tasks/hub-adopts-node-tooling)
+  # The shipped playwright.config.js requires node_modules/.studio-engine, which the
+  # seal's own `npm ci` deletes. A tree carrying lib/tasks/node_tooling.rake is
+  # relinked before the smoke; one that cannot link is UNSEALED, never a red seal.
+  def seal_tree_with_node_tooling(hub)
+    system("git", "-C", hub, "checkout", "-q", "main", out: File::NULL, err: File::NULL) || flunk("checkout")
+    FileUtils.mkdir_p(File.join(hub, "lib", "tasks"))
+    File.write(File.join(hub, "lib", "tasks", "node_tooling.rake"), "# stand-in\n")
+    system("git", "-C", hub, "add", "-A", out: File::NULL, err: File::NULL) || flunk("add")
+    system("git", "-C", hub, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "adopt",
+           out: File::NULL, err: File::NULL) || flunk("commit")
+    `git -C #{hub} rev-parse HEAD`.strip
+  end
+
+  def test_seal_relinks_the_node_tooling_in_the_ship_workspace_before_the_smoke
+    Dir.mktmpdir do |dir|
+      hub, = seal_git_fixture(dir)
+      adopted = seal_tree_with_node_tooling(hub)
+      ran = File.join(dir, "link-ran")
+      link = fake_npm(dir, "pwd > #{ran}")
+      setup = SEAL_STUB + %(def repo_path(_repo) = #{hub.inspect}\ndef seal_node_link_cmd = [#{link.inspect}]\n)
+      args = %([{ "repo" => "mcritchie-studio" }], { "mcritchie-studio" => #{adopted.inspect} }, "rel-seal")
+      out = run_cli(["--yes"], setup: setup, call: "p(production_smoke_seal(#{args}))")
+
+      assert File.exist?(ran), "the shipped tree that uses the package is relinked"
+      assert_equal File.realpath(File.join(hub, ".worktrees", "_ship")), File.realpath(File.read(ran).strip),
+                   "...in the ship workspace"
+      assert_includes out, "SPECS-NEW"
+      assert_includes out, %("green")
+    end
+  end
+
+  def test_seal_that_cannot_link_the_node_tooling_is_unsealed_not_red
+    Dir.mktmpdir do |dir|
+      hub, = seal_git_fixture(dir)
+      adopted = seal_tree_with_node_tooling(hub)
+      link = fake_npm(dir, "echo 'node_tooling:link: refused'; exit 1")
+      setup = SEAL_STUB + %(def repo_path(_repo) = #{hub.inspect}\ndef seal_node_link_cmd = [#{link.inspect}]\n)
+      args = %([{ "repo" => "mcritchie-studio" }], { "mcritchie-studio" => #{adopted.inspect} }, "rel-seal")
+      out = run_cli(["--yes"], setup: setup, call: "p(production_smoke_seal(#{args}))")
+
+      refute_includes out, "SPECS-", "the smoke never runs without the package it loads"
+      assert_includes out, "could not link studio-engine's Node tooling in the ship workspace (node_tooling:link: refused)"
+      assert_includes out, %("unsealed")
+      refute_includes out, "bin/release rollback"
+    end
+  end
+
   # --- the seal's npm ci: skipped when current, re-run on a new lockfile, bounded
   # Review of PR #1605: node_modules survives the workspace's `git clean -fd`, so
   # a ship that bumps @playwright/test would run on stale deps and seal a false

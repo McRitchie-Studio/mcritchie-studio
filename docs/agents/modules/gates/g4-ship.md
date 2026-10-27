@@ -78,10 +78,12 @@ The gate window spans the whole irreversible half of the ship:
   primary's PRE-ship specs against the new prod. The workspace gets its node
   deps from `npm ci`, re-run whenever the shipped `package-lock.json` differs
   from the one last installed (so a Playwright bump never runs on stale deps),
-  and bounded at 600s so a hung install cannot stall the ship.
+  and bounded at 600s so a hung install cannot stall the ship. The `npm ci`
+  deletes `node_modules/.studio-engine`, which the shipped `playwright.config.js`
+  loads, so the seal relinks it (`bin/rails node_tooling:link`) before the smoke.
 - **Unsealed is not red.** When the shipped specs cannot run (the pin fails,
   the SHA does not match, `bin/prod-smoke` or playwright is missing, the deps
-  do not match the shipped lockfile, `npm ci` times out, or the script cannot
+  do not match the shipped lockfile, `npm ci` times out, the Node tooling cannot be linked, or the script cannot
   execute), the seal records **unsealed**: no seal is written,
   the `prod_smoke` event is `completed` with `metadata.seal: "unsealed"` and
   the message `unsealed: could not run the shipped specs — <reason>`, and no

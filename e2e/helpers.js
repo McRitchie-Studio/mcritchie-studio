@@ -40,6 +40,27 @@ async function loginWithMagicLink(page, email) {
   }
 }
 
+// WHY THE HUB KEEPS ITS OWN watchPageErrors AND blockThirdPartyRequests, and does not
+// take the two in studio-engine's Node tooling package (node_modules/.studio-engine/
+// e2e_helpers.js, which the hub's playwright.config.js already builds on). Decided
+// 2026-10-27 in /tasks/hub-adopts-node-tooling; each swap would lose coverage:
+//
+//   * The shared watchPageErrors returns a bare list and scopes by `ownOriginOnly`.
+//     This one also takes `allowOrigins`, and returns `failures` (every 4xx/5xx and
+//     failed request, with its URL), `ignored` (third-party console errors, shown,
+//     never counted) and `report()`, which puts the network first. That report is what
+//     names the resource behind a URL-less "Failed to load resource" line; the shared
+//     list cannot, and the callers' assertion messages print `report()`. It also keeps
+//     every pageerror, where the shared one drops an error whose stack is all off-origin.
+//   * The shared blockOffsiteRequests ANSWERS every off-origin request with an empty 200,
+//     navigations included. blockThirdPartyRequests ABORTS subresources with
+//     `blockedbyclient` (so `failures` reads net::ERR_BLOCKED_BY_CLIENT, self-evidently
+//     us) and never touches a navigation, and it compares against the document's own
+//     origin rather than loopback, so it still works against QA_BASE_URL.
+//
+// Folding them together is an engine change (extend the shared helpers with these
+// options), not a hub one. Until then these stay, pinned by e2e/page_error_collector.spec.js.
+//
 // The live-broadcast family's shared "the page stayed clean" watcher.
 //
 // WHAT IT ASSERTS IS UNCHANGED. `pageErrors` collects exactly what the ten
