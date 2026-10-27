@@ -8,7 +8,7 @@
 # so those rows read as the agent. The default is now "Alex McRitchie"
 # (ShipAuthority::OWNER), and this moves the rows the old default wrote.
 #
-# WHICH `alex` ROWS. Production, read-only, 2026-10-27: 524 rows held `alex`, in
+# WHICH `alex` ROWS. Production, read-only, 2026-10-27: 525 rows held `alex`, in
 # two populations that never overlap in time.
 #   * 367 confirmed 2026-06-20 .. 2026-09-24 05:23 UTC. Written as `alex` while
 #     `alex` was BOTH the login and the orchestrator soul's slug; RenameAlexSoulToXan
@@ -17,11 +17,15 @@
 #     Their deploy_prod events were rewritten in the same RenameRaySoulToAlex
 #     transaction (xmin = that migration's schema_migrations row). Which `alex`
 #     they meant is not recoverable, so they keep the renames' ruling. Untouched.
-#   * 157 confirmed 2026-09-25 13:19 UTC .. today. Written as `alex` while `alex`
-#     was NOT a soul slug (xan, then ray, held the seat). No rename migration ever
-#     rewrote them or their deploy_prod event (every one carries actor `alex`,
-#     untouched by RenameRaySoulToAlex). So `alex` there is the login default: the
-#     owner. These move. (The ~151 the reviewers counted, plus confirmations since.)
+#   * 158 confirmed 2026-09-25 13:19 UTC .. today. Written as `alex` while `alex`
+#     was NOT a soul slug (xan, then ray, held the seat). Every one has a
+#     deploy_prod `completed` event with actor `alex` that no rename rewrote
+#     (its xmin is not RenameRaySoulToAlex's), and Release#ship! writes that event
+#     and confirmed_by from the same `--by`. RenameRaySoulToAlex did touch 9 of
+#     these rows (their duration_metrics actors) and 8 events of earlier aborted
+#     soul-named runs on 4 of them, never their confirmed_by. So `alex` there is
+#     the login default: the owner. These move. (158 on prod at review, 2026-10-27
+#     10:45 UTC; the ~151 the reviewers counted, plus confirmations since.)
 # CUTOFF splits the two at the first second of 2026-09-25 UTC, between the last
 # row of the first population and the first of the second.
 #
