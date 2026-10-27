@@ -148,6 +148,9 @@ class CiSuiteWorkflowTest < Minitest::Test
 
     assert_equal "ci", CiSuiteWorkflow.caller_job(ci).first
     assert_equal "bin/rails db:test:prepare test:system", CiSuiteWorkflow.caller_suite_command(ci, suite_yaml: suite)
-    assert_equal ["bin/test-js"], CiSuiteWorkflow.runs(CiSuiteWorkflow.as_called(suite), "javascript")
+    # The javascript lane bundles (bin/test-js links studio-engine's node:test hook), so it
+    # awaits the gem propagation first, as every bundling lane does.
+    assert_equal [".github/scripts/await-gem-propagation.sh", "bin/test-js"],
+                 CiSuiteWorkflow.runs(CiSuiteWorkflow.as_called(suite), "javascript")
   end
 end

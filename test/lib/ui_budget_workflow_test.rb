@@ -52,7 +52,8 @@ class UiBudgetWorkflowTest < Minitest::Test
   def test_the_browser_and_node_deps_are_installed_from_the_lockfile
     assert_equal "npm ci", step("Install JS dependencies")["run"]
     assert_match(/npx playwright install --with-deps chromium/, step("Install Playwright browser")["run"])
-    assert_equal 22, step("Set up Node").dig("with", "node-version")
+    assert_equal ".tool-versions", step("Set up Node").dig("with", "node-version-file")
+    assert_nil step("Set up Node").dig("with", "node-version"), "Node's major is pinned once, in .tool-versions"
   end
 
   def test_summary_and_artifact_survive_a_failing_run

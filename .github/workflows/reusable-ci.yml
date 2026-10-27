@@ -168,6 +168,15 @@ jobs:
 
   # The JavaScript unit tests (test/javascript, for app/javascript/board), on
   # node:test with no npm install: bin/test-js is the whole lane.
+  #
+  # RUBY IS SET UP HERE because the hub's bin/test-js registers studio-engine's
+  # shared node:test hook, which ships inside the gem: it runs
+  # `bin/rails node_tooling:link` first, and that needs the bundle. A caller whose
+  # bin/test-js needs no Ruby pays one cached bundle restore and nothing else.
+  #
+  # NODE'S MAJOR comes from the caller's .tool-versions when it has one (the pin
+  # studio-engine's `studio:node:check` holds an app to); a caller with no
+  # .tool-versions keeps 22, the ecosystem's major.
   javascript:
     if: ${{ inputs.javascript }}
     runs-on: ubuntu-24.04
@@ -176,10 +185,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Await RubyGems propagation for locked gems
+        if: ${{ inputs.await-gem-propagation }}
+        run: .github/scripts/await-gem-propagation.sh
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: .ruby-version
+          rubygems: ${{ inputs.rubygems }}
+          bundler-cache: true
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: ${{ hashFiles('.tool-versions') != '' && '.tool-versions' || '' }}
+          node-version: ${{ hashFiles('.tool-versions') == '' && '22' || '' }}
 
       - name: Run JavaScript unit tests
         run: bin/test-js
@@ -354,14 +375,27 @@ jobs:
           rubygems: ${{ inputs.rubygems }}
           bundler-cache: true
 
+      # Node's major from the caller's .tool-versions, else 22 (see the javascript job).
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: ${{ hashFiles('.tool-versions') != '' && '.tool-versions' || '' }}
+          node-version: ${{ hashFiles('.tool-versions') == '' && '22' || '' }}
           cache: npm
 
       - name: Install JS dependencies
         run: npm ci
+
+      # playwright.config.js builds on studio-engine's Node tooling package, which
+      # ships in the gem and is linked at node_modules/.studio-engine. `npm ci` just
+      # deleted node_modules, so the link comes AFTER it. Then the pins: Node's major,
+      # package.json engines and the exact Playwright and axe-core versions must match
+      # the engine's versions.json (`studio:node:check` names each drift and exits 1).
+      - name: Link studio-engine's Node tooling
+        run: bin/rails node_tooling:link
+
+      - name: Check Node pins against studio-engine
+        run: bin/rails studio:node:check
 
       # CACHE THE BROWSER, keyed on the resolved Playwright version. Measured on run
       # 32338350375 this step cost 14s per shard — three shards, every run, re-downloading

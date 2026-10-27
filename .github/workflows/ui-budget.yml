@@ -51,10 +51,12 @@ jobs:
         with:
           ruby-version: .ruby-version
 
+      # Node's major comes from .tool-versions, the one pin mise reads locally and
+      # studio-engine's versions.json holds (`bin/rails studio:node:check`).
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version-file: .tool-versions
           cache: npm
 
       # Playwright and axe-core come from package-lock.json; axe is injected from
