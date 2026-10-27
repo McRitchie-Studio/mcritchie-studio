@@ -11145,6 +11145,10 @@ if __FILE__ == $PROGRAM_NAME
   # the floor. Unknown subcommands still fall through to the `else`.
   guard_argv!
   refuse_bad_train!
+  # A long run starts with GitHub tokens that cannot expire mid-run: bin/secret
+  # prewarm mints any with under 45 minutes left (docs/agents/modules/secret-cache.md).
+  # Never fatal; a failure prints the contingency and the run goes on.
+  system(File.join(__dir__, "secret"), "prewarm", out: $stderr) if %w[prepare ship].include?(ARGV.first)
   case ARGV.shift
   when "init"    then init
   when "merge"   then merge
