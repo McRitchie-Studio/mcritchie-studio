@@ -118,10 +118,20 @@ class SecretCacheTest < Minitest::Test
   def test_unit_a_folder_inside_a_git_repository_is_refused
     with_home do |root, env, _home|
       FileUtils.mkdir_p(File.join(root, ".git"))
+      File.write(File.join(root, ".git", "HEAD"), "ref: refs/heads/main\n")
 
       error = assert_raises(SecretCache::Unsafe) { SecretCache.ensure_home!(env) }
       assert_includes error.message, "inside the git repository"
       refute File.exist?(File.join(root, ".secret-cache")), "nothing was created inside the repo"
+    end
+  end
+
+  # A stray `.git` folder with no HEAD is not a repository (~/.git on this Mac).
+  def test_unit_a_stray_dot_git_folder_without_head_is_not_a_repository
+    with_home do |root, env, home|
+      FileUtils.mkdir_p(File.join(root, ".git", "info"))
+      SecretCache.ensure_home!(env)
+      assert File.directory?(home)
     end
   end
 

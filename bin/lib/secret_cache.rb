@@ -151,12 +151,15 @@ module SecretCache
 
   # ── safety ─────────────────────────────────────────────────────────────────
 
-  # The directory (or a parent) that holds a `.git`, or nil. A cache inside a
-  # repository is one `git add -A` away from a commit.
+  # The directory (or a parent) that holds a REAL `.git`, or nil: a `.git` file (a
+  # worktree's gitdir pointer) or a `.git` folder with a HEAD. A stray `.git` folder
+  # with no HEAD (this Mac has ~/.git holding only info/) is not a repository.
+  # A cache inside a repository is one `git add -A` away from a commit.
   def enclosing_repo(path)
     current = File.expand_path(path)
     loop do
-      return current if File.exist?(File.join(current, ".git"))
+      dot_git = File.join(current, ".git")
+      return current if File.file?(dot_git) || File.file?(File.join(dot_git, "HEAD"))
 
       parent = File.dirname(current)
       return nil if parent == current
