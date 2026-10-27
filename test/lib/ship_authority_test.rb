@@ -89,14 +89,14 @@ class ShipAuthorityTest < Minitest::Test
 
   def test_cleared_records_the_chat_grant_with_the_clearance_and_asks_nobody
     h = Harness.new(confirm: false)
-    assert_equal :cleared, h.take!(mode: "cleared", clearance: "  ship it, this message is my clearance ", cleared_by: "alex")
+    assert_equal :cleared, h.take!(mode: "cleared", clearance: "  ship it, this message is my clearance ", cleared_by: "Alex McRitchie")
     assert_equal %w[started completed], h.events.map(&:first)
     done = h.events.last.last
-    assert_equal({ "mode" => "cleared", "granted_via" => "chat", "cleared_by" => "alex",
+    assert_equal({ "mode" => "cleared", "granted_via" => "chat", "cleared_by" => "Alex McRitchie",
                    "clearance" => "ship it, this message is my clearance", "cleared_at" => "2026-09-24T20:00:00.000Z" }, done)
     assert_equal({ "mode" => "cleared", "cleared_at" => "2026-09-24T20:00:00.000Z" }, h.events.first.last)
     assert_empty h.reads, "cleared never polls the board for a grant"
-    assert h.said.any? { |line| line.include?("cleared in chat by alex") }
+    assert h.said.any? { |line| line.include?("cleared in chat by Alex McRitchie") }
   end
 
   # The clearer is the human owner, never the `alex` persona soul (rename-loose-ends):
