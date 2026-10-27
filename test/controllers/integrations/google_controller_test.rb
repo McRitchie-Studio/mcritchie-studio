@@ -252,7 +252,9 @@ class Integrations::GoogleControllerTest < ActionDispatch::IntegrationTest
       state = begin_connect("calendar")["state"]
       google_answers(200, token_grant(email: "viewer@gmail.test", scope: "openid email #{CALENDAR}", refresh_token: "1//issued"))
       collide = lambda do |*, **|
-        store_google(email: "viewer@gmail.test", scope: "openid #{CALENDAR}", user: viewer, refresh_token: "1//winner")
+        # The other tab's sign-in committed first (created directly: store! itself is the stub).
+        GoogleConnection.create!(email: "viewer@gmail.test", scope: "openid #{CALENDAR}", user: viewer, refresh_token: "1//winner",
+                                 connected_by: viewer.slug, connected_at: Time.current)
         raise ActiveRecord::RecordNotUnique, "duplicate key value violates unique constraint"
       end
       GoogleConnection.stub(:store!, collide) { get admin_google_callback_path(code: "c0de", state:) }

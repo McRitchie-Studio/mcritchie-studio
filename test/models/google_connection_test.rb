@@ -253,22 +253,24 @@ class GoogleConnectionTest < ActiveSupport::TestCase
 
   # --- /tasks/google-connect-hardening-polish ---
 
-  # Runs the block while the FIRST row lookup races another sign-in: `competitor`
-  # commits its row for the same account after this sign-in looked and found
-  # none, and after its uniqueness validation passed (as two simultaneous
-  # callbacks do), so the insert meets the unique index. Later lookups are real.
+  # Runs the block as the loser of a race: `competitor`, the other sign-in,
+  # has committed its row for the same account, but this sign-in's FIRST
+  # lookup ran before that commit (it found no row) and its uniqueness
+  # validation passed too, as two simultaneous callbacks do, so its insert
+  # meets the unique index. (The competitor commits before the block because a
+  # row inserted inside this sign-in's own savepoint would roll back with it.)
+  # Later lookups are real.
   def racing(competitor)
+    competitor.call
     calls = 0
-    real = ->(email) { GoogleConnection.lock.find_or_initialize_by(email:) }
     looked_up = lambda do |email|
       calls += 1
-      next real.(email) unless calls == 1
+      next GoogleConnection.lock.find_or_initialize_by(email:) unless calls == 1
 
-      competitor.call
       GoogleConnection.new(email:).tap { |row| row.define_singleton_method(:valid?) { |*| true } }
     end
     GoogleConnection.stub(:row_for_update, looked_up) { yield }
-    assert_operator calls, :>=, 2, "the race was run: the lookup happened again after the insert failed"
+    assert_equal 2, calls, "the race was run: one stale lookup, then one real one after the insert failed"
   end
 
   test "[unit] two simultaneous sign-ins of one new account by the same user resolve to one row" do

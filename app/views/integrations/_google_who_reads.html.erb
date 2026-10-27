@@ -1,0 +1,2 @@
+<%# Who reads one Google connection, beside its account on /integrations (integrations/_google_connection) and /admin/google: "Your agents can read this" for the household's, "Only you can see this" for anyone else's. The words and the rule are GoogleConnection#who_reads, the same predicate the agent reader's .household scope draws, so the page cannot say something the code does not do. Local: connection. %>
+<span class="block text-xs text-muted" data-test="google-who-reads" data-reader="<%= connection.reader %>"><%= connection.who_reads %></span>
