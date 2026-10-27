@@ -1387,7 +1387,10 @@ def ensure_heroku_token!
 
   require_relative "lib/heroku_token"
   # Only the shim reads 1Password per call; any other `heroku` brings its own auth.
-  return($heroku_token_ready = true) unless HerokuToken.shim_on_path?
+  unless HerokuToken.shim_on_path?
+    $heroku_token_ready = true
+    return
+  end
 
   HerokuToken.export_once!(:agents)
   $heroku_token_ready = true
