@@ -117,14 +117,14 @@
       <ul class="list-disc pl-6 space-y-1">
         <li><strong>Google Calendar</strong> (calendar events, read only): we read your events so your agents can prepare you for your meetings.</li>
         <li><strong>Gmail</strong> (read only): we read your mail so your agents can show you what needs an answer.</li>
-        <li><strong>Google Drive</strong> (read only): we read the files you point your agents to, so they can work from your documents.</li>
+        <li><strong>Google Drive</strong> (read only): Google's read-only Drive permission covers every file in your Drive. We read your files so your agents can work from your documents.</li>
       </ul>
       <p><strong>How we use it:</strong> only to provide the features you see, for you: agents working on your behalf. We do not use Google data for any other purpose.</p>
       <p><strong>How we store it:</strong> the token Google issues is stored encrypted, and our database is encrypted at rest. We keep the token until you disconnect.</p>
       <p><strong>What we never do:</strong> we do not sell Google data. We do not use it for advertising, including personalized or retargeted ads. We do not use it to train or improve generalized artificial intelligence or machine learning models.</p>
       <p><strong>Sharing:</strong> we do not transfer Google data to anyone except as needed to provide the feature you are using (for example, to the AI provider that runs an agent's request, under terms that do not allow it to train on that data), with your consent, to comply with the law, or to protect security.</p>
       <p><strong>People:</strong> no person reads your Google data unless you ask us to (for example, for support), it is needed for security, such as investigating abuse, or the law requires it.</p>
-      <p><strong>Disconnecting:</strong> disconnect any Google permission on our <%= link_to "Integrations page", integrations_path, class: "text-primary hover:underline" %>, or remove McRitchie Studio's access at <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener" class="text-primary hover:underline">myaccount.google.com/permissions</a>. Disconnecting one permission there stops us reading it; when you disconnect the last one, we revoke the token with Google and delete it.</p>
+      <p><strong>Disconnecting:</strong> disconnect any Google permission on our <%= link_to "Integrations page", integrations_path, class: "text-primary hover:underline" %>, or remove McRitchie Studio's access at <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener" class="text-primary hover:underline">myaccount.google.com/permissions</a>. Disconnecting one permission on our Integrations page stops us reading it; when you disconnect the last one, we revoke the token with Google and delete it. Removing access at Google ends every permission at once.</p>
       <p data-test="google-limited-use">McRitchie Studio's use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener" class="text-primary hover:underline" data-test="google-limited-use-link">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
     </section>
 
