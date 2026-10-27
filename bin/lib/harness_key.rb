@@ -42,7 +42,10 @@ module HarnessKey
   # would present it to whatever board the test points at.
   def read(projects_dir, env: ENV)
     cache_env = cache_env(projects_dir, env)
-    file = File.join(SecretCache.dir(cache_env), FILE)
+    # readable_dir, not dir: a sandboxed read aimed at the real folder answers
+    # nothing quietly (as this method always has), where dir would abort the run.
+    home = SecretCache.readable_dir(cache_env)
+    file = home ? File.join(home, FILE) : ""
     if File.file?(file)
       SecretCache.check_safe!(cache_env)
       SecretCache.check_file!(file)
