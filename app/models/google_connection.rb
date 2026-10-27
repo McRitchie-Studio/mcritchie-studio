@@ -15,9 +15,13 @@
 # OWNERSHIP (/tasks/every-user-connects-google). Every row belongs to the user
 # who signed it in (user_id). Any signed-in user may connect their own account
 # from /integrations; an admin's connections are the HOUSEHOLD's, the ones
-# /admin/google shows. AGENTS READ ONLY THE HOUSEHOLD: .for, .current and every
-# agent-side lookup start from .household, so a viewer's connection is never
-# agent input. A promoted user's rows join the household; a demoted admin's
+# /admin/google shows. Agents read the HOUSEHOLD (.for, .current and every
+# agent-side lookup start from .household) with ONE exception: the agent
+# answering an owner in their own chat reads THAT owner's own rows (.owned_by,
+# through GoogleConnect::OwnerContext, gated in AgentMessages::MemoryBundle):
+# a client app's owner on their own app's CTO thread
+# (/tasks/agent-reads-owner-google). No agent reads one user's rows for another
+# user. A promoted user's rows join the household; a demoted admin's
 # leave it. An account another user already connected is refused
 # (TakenByAnotherUser), never taken over.
 #
@@ -94,6 +98,10 @@ class GoogleConnection < ApplicationRecord
     # The household's connections: those an admin owns. The only rows agents
     # and the /admin/google page read.
     def household = joins(:user).merge(User.where(role: "admin"))
+
+    # One user's own connections, and nobody else's: the rows the agent
+    # answering that user in their own chat may read (GoogleConnect::OwnerContext).
+    def owned_by(user) = where(user_id: user.id)
 
     # Newest first, the order every "which connection" answer reads in.
     def newest_first = order(connected_at: :desc, id: :desc)

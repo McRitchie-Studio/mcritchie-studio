@@ -47,11 +47,11 @@ class HarnessKeyCliTest < Minitest::Test
 
   def pin(proj) = { "CLAUDE_PROJECTS_DIR" => proj }
 
-  def test_unit_the_key_file_is_owner_only_and_under_dot_agents
+  def test_unit_the_key_file_is_owner_only_and_in_the_secret_cache
     Dir.mktmpdir do |proj|
       file = HarnessKey.write(proj, { "slug" => "sess-key", "token" => "KEY" }, env: pin(proj))
 
-      assert_equal File.join(proj, ".agents", "harness-key.json"), file
+      assert_equal File.join(proj, ".secret-cache", "harness-key.json"), file
       assert_raises(NoMethodError) { HarnessKey.path(proj) }
       assert_equal 0o600, File.stat(file).mode & 0o777
       assert_equal "KEY", HarnessKey.token(proj, env: pin(proj))

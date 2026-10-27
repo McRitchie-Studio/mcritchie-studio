@@ -53,7 +53,7 @@ class GoogleConnect::ReadersTest < ActiveSupport::TestCase
       conn = connection(GMAIL)
       fresh_token
       google_reads(
-        "#{GoogleConnect::GmailReader::MESSAGES_URL}/m1" => [ 200, { id: "m1", internalDate: "1792000000000",
+        "#{GoogleConnect::GmailReader::MESSAGES_URL}/m1" => [ 200, { id: "m1", internalDate: "1792000000000", snippet: "Rates &amp; terms",
                                                                      payload: { headers: [ { name: "Subject", value: "Term sheet" }, { name: "From", value: "Lender <l@example.com>" } ] } } ],
         "#{GoogleConnect::GmailReader::MESSAGES_URL}/m2" => [ 200, { id: "m2", payload: { headers: [] } } ],
         GoogleConnect::GmailReader::MESSAGES_URL => [ 200, { resultSizeEstimate: 201, messages: [ { id: "m1" }, { id: "m2" } ] } ]
@@ -64,6 +64,8 @@ class GoogleConnect::ReadersTest < ActiveSupport::TestCase
       assert_equal 201, inbox.estimate
       assert_equal [ "Term sheet", "(no subject)" ], inbox.messages.map(&:subject)
       assert_equal "Lender <l@example.com>", inbox.messages.first.from
+      assert_equal "Rates & terms", inbox.messages.first.snippet, "Google's snippet, unescaped"
+      assert_equal "", inbox.messages.last.snippet
       assert_equal Time.at(1_792_000_000).utc, inbox.messages.first.received_at
       list, first = read_requests.map(&:first)
       assert_equal "5", Rack::Utils.parse_query(URI(list).query)["maxResults"]

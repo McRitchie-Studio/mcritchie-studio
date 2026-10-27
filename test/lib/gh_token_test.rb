@@ -65,7 +65,16 @@ class GhTokenTest < Minitest::Test
     File.exist?(path) ? File.read(path) : ""
   end
 
-  def store_path(dir) = File.join(dir, ".agents", "github-tokens.json")
+  def store_path(dir) = File.join(dir, ".secret-cache", "github-tokens.json")
+
+  # The secret cache refuses a folder wider than 0700 or a file wider than 0600
+  # (bin/lib/secret_cache.rb), so a hand-seeded store is laid down the same way.
+  def write_store(dir, content)
+    FileUtils.mkdir_p(File.dirname(store_path(dir)), mode: 0o700)
+    File.chmod(0o700, File.dirname(store_path(dir)))
+    File.write(store_path(dir), content, perm: 0o600)
+    File.chmod(0o600, store_path(dir))
+  end
   # A MISSING FILE IS A VALID STATE, not an error. A deployer-only run caches no
   # token since `never-cache-deployer-token`, so this file may never be created —
   # "nothing was cached" is precisely what several assertions here mean to check.
@@ -112,7 +121,7 @@ class GhTokenTest < Minitest::Test
       # Age slot a past the refresh window; nothing else changes.
       data = store(dir)
       data["agent"]["a"]["created_at"] = (Time.now.utc - 3300).iso8601
-      File.write(store_path(dir), JSON.generate(data))
+      write_store(dir, JSON.generate(data))
 
       out, = run_token(env.merge("GH_TOKEN_MINT_BIN" => begin
         m = File.join(dir, "mint2")
@@ -135,7 +144,7 @@ class GhTokenTest < Minitest::Test
       env = with_env(dir)
       run_token(env)
       FileUtils.mkdir_p(File.dirname(store_path(dir)))
-      File.write(store_path(dir), JSON.generate(
+      write_store(dir, JSON.generate(
         "agent" => {
           "active" => "a",
           "a" => { "token" => "ghs_OLDER", "created_at" => (Time.now.utc - 600).iso8601 },
@@ -363,7 +372,7 @@ class GhTokenTest < Minitest::Test
       Dir.mktmpdir do |dir|
         env = with_env(dir)
         FileUtils.mkdir_p(File.dirname(store_path(dir)))
-        File.write(store_path(dir), payload)
+        write_store(dir, payload)
 
         out, err, status = run_token(env)
         assert status.success?, "#{label} must degrade to a mint, not crash — got: #{err}"
@@ -544,7 +553,7 @@ class GhTokenTest < Minitest::Test
     entry = slots.transform_values { |token| { "token" => token, "created_at" => now } }
     entry["active"] = slots.keys.first
     FileUtils.mkdir_p(File.dirname(store_path(dir)))
-    File.write(store_path(dir), JSON.generate(identity => entry))
+    write_store(dir, JSON.generate(identity => entry))
   end
 
 end
