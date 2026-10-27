@@ -32,7 +32,8 @@ class Admin::GoogleControllerTest < ActionDispatch::IntegrationTest
       GoogleConnect::CalendarReader::EVENTS_URL => [ 200, { items: [ { id: "e1", summary: "Lender call", start: { dateTime: 1.day.from_now.iso8601 }, end: { dateTime: (1.day.from_now + 1.hour).iso8601 } } ] } ],
       "#{GoogleConnect::GmailReader::MESSAGES_URL}/" => [ 200, { id: "m1", payload: { headers: [ { name: "Subject", value: "Term sheet" } ] } } ],
       GoogleConnect::GmailReader::MESSAGES_URL => [ 200, { resultSizeEstimate: 9, messages: [ { id: "m1" } ] } ],
-      GoogleConnect::DriveReader::FILES_URL => [ 200, { files: [ { id: "f1", name: "Q3 plan", mimeType: "x", modifiedTime: 1.hour.ago.iso8601 } ] } ]
+      "#{GoogleConnect::DriveReader::FILES_URL}/f1" => [ 200, { id: "f1", name: "Q3 plan", mimeType: "x", modifiedTime: 1.hour.ago.iso8601 } ],
+      GoogleConnect::DriveReader::FILES_URL => [ 200, { files: [ { id: "f9", name: "Whole-Drive file", mimeType: "x", modifiedTime: 1.hour.ago.iso8601 } ] } ]
     )
   end
 
@@ -187,7 +188,8 @@ class Admin::GoogleControllerTest < ActionDispatch::IntegrationTest
 
   test "[integration] the standing page proves each connected ability with its read, and shows no token" do
     with_connect_env do
-      store_google(scope: "openid #{CALENDAR} #{GMAIL} #{DRIVE}")
+      connection = store_google(scope: "openid #{CALENDAR} #{GMAIL} #{DRIVE}")
+      connection.drive_picks.create!(file_id: "f1", name: "Q3 plan", picked_at: Time.current)
       reads_answer_everything
       get admin_google_path
 
@@ -196,6 +198,8 @@ class Admin::GoogleControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-ability='calendar'] [data-test='google-read-item']", text: /Lender call/
       assert_select "[data-ability='gmail'] [data-test='google-read-item']", text: /Term sheet/
       assert_select "[data-ability='drive'] [data-test='google-read-item']", text: /Q3 plan/
+      assert_select "[data-ability='drive'] [data-test='google-read-item']", text: /Whole-Drive file/, count: 0
+      assert_select "[data-test='drive-read-kind'][data-kind='picked']"
       assert_select "[data-test='google-disconnect']", 3
       assert_select "[data-test='google-connect']", 0
       assert_select "[data-test='google-server']", 0, "nothing is missing, so no setup shows"
@@ -224,6 +228,23 @@ class Admin::GoogleControllerTest < ActionDispatch::IntegrationTest
       get admin_google_path
 
       assert_select "[data-ability='calendar'][data-state='read_failed'] [data-test='google-read-error']", /revoked or went unused/
+    end
+  end
+
+  # [component] drive-files-you-pick: a legacy drive.readonly row still reads the
+  # whole Drive's newest and is labelled so; a drive.file row without the Picker
+  # key says by NAME what to set.
+  test "[integration] the Drive section reads a legacy row's whole Drive, and names the missing Picker key" do
+    with_connect_env do
+      store_google(scope: "openid #{DRIVE_LEGACY}").update_columns(scope: "openid #{DRIVE_LEGACY}")
+      reads_answer_everything
+      get admin_google_path
+      assert_select "[data-ability='drive'] [data-test='drive-read-kind'][data-kind='legacy']", /reconnect to choose files/
+      assert_select "[data-ability='drive'] [data-test='google-read-item']", text: /Whole-Drive file/
+
+      GoogleConnection.update_all(scope: "openid #{DRIVE}")
+      with_picker_key(set: false) { get admin_google_path }
+      assert_select "[data-ability='drive'] [data-test='drive-picker-unset']", /GOOGLE_PICKER_API_KEY/
     end
   end
 
@@ -325,5 +346,14 @@ class Admin::GoogleControllerTest < ActionDispatch::IntegrationTest
 
     assert_equal "[FILTERED]", logged["code"]
     assert_equal "s1", logged["state"]
+  end
+  test "[component] the standing page says agents read each household connection" do
+    store_google(scope: "openid #{CALENDAR}")
+    reads_answer_everything
+    with_connect_env { get admin_google_path }
+
+    line = css_select("[data-test='google-section'][data-ability='calendar'] [data-test='google-who-reads']").first
+    assert_equal "Your agents can read this", line.text.squish
+    assert_empty css_select("[data-test='google-section'][data-ability='drive'] [data-test='google-who-reads']")
   end
 end

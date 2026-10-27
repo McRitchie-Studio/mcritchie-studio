@@ -24,6 +24,16 @@ QA lane holds:
 
 The App's pre-2026-09-26 item name is retired and refused; export the name above.
 
+**The Heroku token.** No profile exports `HEROKU_API_KEY`. `bin/release` reads
+`heroku.studio.agents` from 1Password ONCE, at its first PROD board op (which
+precedes every write), and exports it to every child. It does this only when
+`bin/shims/heroku` is the `heroku` on PATH: any other CLI brings its own login. So every `heroku run`
+board op, the ship-authority poll and each git push to Heroku shares that one
+read. If the read fails, the run refuses before acting ("no Heroku token for the
+PROD board ... Nothing was done"): fix what it names (usually `source ~/.zprofile`)
+and re-run. A `HEROKU_API_KEY` you export yourself is used as given. Detail:
+[`credentials.md`](../../../modules/credentials.md), "Heroku tokens resolve at use time".
+
 You are **expected to hold both**; an absent one is this machine's setup gap. Remedy:
 **`source ~/.zprofile.admin`** (yours), or, on a machine that never had one,
 **`bin/setup-1pass-token --admin`** once (Alex McRitchie's: it reads his clipboard).

@@ -176,7 +176,8 @@ ruby -rjson -e '
 ```
 
 Run it from a scratch directory; it writes two JSON files there. Never print the
-API key; `HEROKU_API_KEY` comes from `~/.zprofile` like every other Heroku read.
+API key; with `HEROKU_API_KEY` unset, run it under `bin/heroku-token agents -- ...`, which reads
+`heroku.studio.agents` from 1Password like every other Heroku call.
 
 **Baseline already taken (24 hours to 2026-10-07 01:49 UTC, 10-minute buckets):**
 peak 1,034 MB, steady (p50) 799 MB, swap max 26 MB in 27 of 145 buckets, quota

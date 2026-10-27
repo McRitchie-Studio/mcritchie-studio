@@ -463,6 +463,39 @@ A `bin/gh-token --identity deployer` that fails naming
 `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` is the isolation WORKING — do not route around
 it by granting the agent token access to the admin vault.
 
+### Heroku tokens resolve at use time
+
+No shell profile holds a Heroku token (since 2026-10-27). A profile literal goes
+stale the moment its key rotates: the agents key turned over on 2026-10-24, the
+profiles kept the revoked value, and `bin/heroku-secret-set` 401'd on it.
+
+| Lane | 1Password item | 1Password token | Run |
+|------|----------------|-----------------|-----|
+| `agents` | `heroku.studio.agents` (`studio-agents`) | `OP_SERVICE_ACCOUNT_TOKEN` | a plain `heroku ...`, or `bin/heroku-token agents -- <cmd>` |
+| `admin` | `heroku.studio.admin` (`studio-agents-admin`) | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` | `source ~/.zprofile.admin`, then `bin/heroku-token admin -- <cmd>` |
+| `applications` | `heroku.studio.applications` (`studio-applications`) | `OP_ADMIN_SERVICE_ACCOUNT_TOKEN` | `source ~/.zprofile.admin`, then `bin/heroku-token applications -- <cmd>` |
+
+- `bin/heroku-token <lane> -- <cmd>` reads the item and runs `<cmd>` with
+  `HEROKU_API_KEY` in its own environment, so every `heroku` call inside it shares
+  one read. `--check` prints a digest prefix, never the value.
+- `~/.zprofile` puts `bin/shims` (the fixed-path tooling) first on PATH. The
+  `bin/shims/heroku` shim runs the real CLI and, when `HEROKU_API_KEY` is unset,
+  reads the agents token first. That covers scripts and the
+  `heroku git:credentials` helper too.
+- Reads happen only at use, never at shell start: background agents open many
+  shells, and the op cache daemon can hang a read for fifteen minutes. Each read
+  runs with `OP_CACHE=false` under a deadline (`MCR_OP_DEADLINE`, 20 s), so a hang
+  costs one command 20 seconds, not the machine its morning.
+- A caller that sets `HEROKU_API_KEY` (CI, a test, an override) is used as given.
+- A long run reads once: `bin/release` (at its first PROD board op) and
+  `bin/qa-server` resolve the token before their first write and export it, so their many `heroku` calls cost one
+  read (`HerokuToken.export_once!`), not one each against the hourly quota.
+- `bin/heroku-profile-migrate` takes the literals out of both profiles and writes
+  the PATH block. It is idempotent, keeps a 0600 backup with every removed value
+  redacted, and prints names only. `bin/ecosystem-build` runs it (`--agent-only`)
+  on every bringup, so a rebuilt Mac gets the block too.
+  Do not add a Heroku `export` back to a profile; a rotation never needs one.
+
 ### An admin lane is MEANT to hold admin credentials
 
 Everything above says what an ordinary agent shell **cannot** do. It never says

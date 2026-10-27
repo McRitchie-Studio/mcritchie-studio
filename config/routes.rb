@@ -21,6 +21,11 @@ Rails.application.routes.draw do
   # registered callback, /admin/google_calendar/callback (GoogleSignIn).
   get "integrations/google/connect", to: "integrations/google#connect", as: :integrations_google_connect
   delete "integrations/google/connection", to: "integrations/google#disconnect", as: :integrations_google_disconnect
+  # The Drive files a user picks for their own drive.file connection, in the
+  # Google Picker (Integrations::DrivePicksController, /tasks/drive-files-you-pick).
+  post "integrations/google/drive/token", to: "integrations/drive_picks#token", as: :integrations_drive_token
+  post "integrations/google/drive/picks", to: "integrations/drive_picks#create", as: :integrations_drive_picks
+  delete "integrations/google/drive/picks/:id", to: "integrations/drive_picks#destroy", as: :integrations_drive_pick
   # The app funnel: prompt → sign in → claim <name>.mcritchie.app → queued
   # for an agent. `check` is the live subdomain availability probe.
   get   "build",        to: "build#new",    as: :build

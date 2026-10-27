@@ -5,7 +5,7 @@ module Admin
   # (GoogleConnection::ABILITIES), each connected and disconnected on its own.
   # /admin/google (show) is the standing page: per ability, is it connected and
   # as whom, and a live read proving it (the next week's events, the newest
-  # mail, the newest Drive files), with Google's error said plainly; and one
+  # mail, the picked Drive files, or a legacy row's newest), with Google's error said plainly; and one
   # button, Connect or Disconnect. The OAuth client and encryption keys show
   # (by NAME, never a value) only while one is missing.
   #
@@ -56,7 +56,7 @@ module Admin
       read = case ability
              when :calendar then GoogleConnect::CalendarReader.new(connection).events
              when :gmail then GoogleConnect::GmailReader.new(connection).newest
-             when :drive then GoogleConnect::DriveReader.new(connection).newest
+             when :drive then GoogleConnect::DriveReader.new(connection).files
              end
       [ read, nil ]
     rescue GoogleConnect::OAuthClient::Revoked

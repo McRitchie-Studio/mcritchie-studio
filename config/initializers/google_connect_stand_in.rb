@@ -47,7 +47,7 @@ module GoogleConnectStandIn
 
       granted = Base64.urlsafe_decode64(code.delete_prefix(PREFIX)).split
       scope = @lock.synchronize { @granted |= granted }.join(" ")
-      claims = Base64.urlsafe_encode64({ email: EMAIL }.to_json, padding: false)
+      claims = Base64.urlsafe_encode64({ email: EMAIL, email_verified: true }.to_json, padding: false)
       { "access_token" => "stand-in-access-#{SecureRandom.hex(8)}", "refresh_token" => "stand-in-refresh-#{SecureRandom.hex(8)}",
         "scope" => scope, "id_token" => "stand-in.#{claims}.stand-in" }
     end
@@ -55,6 +55,7 @@ module GoogleConnectStandIn
     def access_token(_connection) = "stand-in-access"
 
     # Google drops the whole grant; the next sign-in echoes nothing before it.
+    # `_connection` is nil for a just-issued grant the callback refused.
     def revoke(_connection)
       @lock.synchronize { @granted = [] }
       true
@@ -76,6 +77,10 @@ module GoogleConnectStandIn
           payload: { headers: [ { name: "Subject", value: "Stand-in: message #{n}" }, { name: "From", value: "Sender #{n} <s#{n}@example.com>" } ] } }
       elsif url.start_with?(GoogleConnect::GmailReader::MESSAGES_URL)
         { resultSizeEstimate: 42, messages: (1..3).map { { id: "stand-in-m#{_1}" } } }
+      elsif (id = url[%r{/drive/v3/files/([\w-]+)}, 1])
+        # One picked file by id (DriveReader#file): any id answers, named after itself.
+        { id:, name: "Stand-in: picked #{id}", mimeType: "application/vnd.google-apps.document", modifiedTime: (start - 1.hour).iso8601,
+          webViewLink: "https://docs.google.com/document/d/#{id}" }
       elsif url.start_with?(GoogleConnect::DriveReader::FILES_URL)
         { files: [
           { id: "f1", name: "Stand-in: Q3 plan", mimeType: "application/vnd.google-apps.document", modifiedTime: (start - 2.hours).iso8601 },

@@ -1,4 +1,4 @@
-<%# The standing Google connection page (/admin/google): one section per ability (Google Calendar, Gmail, Google Drive), each with its status, the account that grants it, a live read proving it (the next week's events, the newest mail, the newest files) or Google's error said plainly, and one button: Connect, or Disconnect once connected. Above them, Connect Google asks for all three in one sign-in (integrations/_google_connect_all). The OAuth client and encryption setup shows only while one of them is missing, by NAME only. It renders no token and no part of one, and no value of any env var. %>
+<%# The standing Google connection page (/admin/google): one section per ability (Google Calendar, Gmail, Google Drive), each with its status, the account that grants it and who reads it (integrations/_google_who_reads), a live read proving it (the next week's events, the newest mail, the newest files) or Google's error said plainly, and one button: Connect, or Disconnect once connected. Above them, Connect Google asks for all three in one sign-in (integrations/_google_connect_all). The OAuth client and encryption setup shows only while one of them is missing, by NAME only. It renders no token and no part of one, and no value of any env var. %>
 <% can_connect = @configured && @encryption_ready %>
 <% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
 <section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="google-connection-page">
@@ -35,6 +35,7 @@
             <p class="text-body" data-test="google-account">
               <span class="font-semibold text-heading break-all" data-field="account"><%= connection.email %></span>
               <span class="block text-muted text-xs" data-field="connected">Connected <%= stamp.(connection.connected_at) %><% if connection.connected_by.present? %> by <%= connection.connected_by %><% end %></span>
+              <%= render "integrations/google_who_reads", connection: %>
             </p>
           <% end %>
         </div>
@@ -92,9 +93,13 @@
         </div>
       <% else %>
         <div data-test="google-read" data-count="<%= section.read.size %>">
-          <p class="font-medium text-heading">Recently changed files</p>
+          <% picked = connection.drive_picked? %>
+          <% if picked && !GoogleConnect::Picker.configured? %>
+            <p class="mb-2 text-body" data-test="drive-picker-unset"><span class="font-semibold text-warning-ink">Drive picking isn't set up yet.</span> Set <span class="font-mono text-xs"><%= GoogleConnect::Picker::API_KEY_ENV %></span> (a browser key restricted to this site and the Picker API) so people can choose files.</p>
+          <% end %>
+          <p class="font-medium text-heading" data-test="drive-read-kind" data-kind="<%= picked ? 'picked' : 'legacy' %>"><%= picked ? "Files picked for agents" : "Recently changed files (whole Drive: reconnect to choose files)" %></p>
           <% if section.read.empty? %>
-            <p class="mt-1 text-muted">The Drive has no files.</p>
+            <p class="mt-1 text-muted"><%= picked ? "No files picked yet: choose them from the Google Drive card on /integrations." : "The Drive has no files." %></p>
           <% else %>
             <ul class="mt-1 divide-y divide-subtle">
               <% section.read.each do |file| %>

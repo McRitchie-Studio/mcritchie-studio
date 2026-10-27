@@ -5,6 +5,10 @@ module GoogleConnectFakes
   CALENDAR = GoogleConnection::ABILITIES[:calendar]
   GMAIL = GoogleConnection::ABILITIES[:gmail]
   DRIVE = GoogleConnection::ABILITIES[:drive]
+  # The whole-Drive scope a row connected before drive-files-you-pick still holds.
+  DRIVE_LEGACY = "https://www.googleapis.com/auth/drive.readonly".freeze
+  # The Picker's browser key, set by name in tests that open it.
+  PICKER_KEY = { "GOOGLE_PICKER_API_KEY" => "test-picker-key" }.freeze
   # What Google writes in `scope` for a calendar sign-in (it spells email out).
   SCOPE = "openid https://www.googleapis.com/auth/userinfo.email #{CALENDAR}".freeze
 
@@ -16,11 +20,25 @@ module GoogleConnectFakes
     originals&.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
   end
 
-  # An id_token whose payload names `email` (Google signs it; nothing here checks).
-  def id_token_for(email) = "h.#{Base64.urlsafe_encode64({ email: }.to_json, padding: false)}.s"
+  # The Picker's key (unless set: false) and app id, set by name for the block.
+  def with_picker_key(set: true)
+    env = PICKER_KEY.merge("GOOGLE_PICKER_APP_ID" => "1234567")
+    originals = env.keys.index_with { ENV[_1] }
+    env.each { |k, v| set ? ENV[k] = v : ENV.delete(k) }
+    yield
+  ensure
+    originals&.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
+  end
 
-  def token_grant(email: "alex@mcritchie.studio", scope: SCOPE, refresh_token: "1//synthetic-refresh")
-    { access_token: "ya29.synthetic", refresh_token:, scope:, id_token: id_token_for(email), token_type: "Bearer" }
+  # An id_token whose payload names `email` and whether Google verified it
+  # (Google signs it; nothing here checks). `verified: :absent` leaves the claim out.
+  def id_token_for(email, verified: true)
+    claims = verified == :absent ? { email: } : { email:, email_verified: verified }
+    "h.#{Base64.urlsafe_encode64(claims.to_json, padding: false)}.s"
+  end
+
+  def token_grant(email: "alex@mcritchie.studio", scope: SCOPE, refresh_token: "1//synthetic-refresh", verified: true)
+    { access_token: "ya29.synthetic", refresh_token:, scope:, id_token: id_token_for(email, verified:), token_type: "Bearer" }
   end
 
   # A stored connection granting `scope` (the calendar sign-in's by default), as a

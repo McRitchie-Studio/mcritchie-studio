@@ -44,10 +44,20 @@ class GoogleConnect::OwnerContextTest < ActiveSupport::TestCase
       end } ],
       **messages(mails),
       GoogleConnect::GmailReader::MESSAGES_URL => [ 200, { resultSizeEstimate: mails, messages: (1..mails).map { { id: "m#{_1}" } } } ],
+      # One file by id (a picked file's read), then the whole-Drive list (a legacy row's).
+      **(1..files).to_h do |i|
+        [ "#{GoogleConnect::DriveReader::FILES_URL}/f#{i}?",
+          [ 200, { id: "f#{i}", name: "File #{i}", mimeType: "application/vnd.google-apps.document", modifiedTime: "2026-10-26T15:00:00Z" } ] ]
+      end,
       GoogleConnect::DriveReader::FILES_URL => [ 200, { files: (1..files).map do |i|
         { id: "f#{i}", name: "File #{i}", mimeType: "application/vnd.google-apps.document", modifiedTime: "2026-10-26T15:00:00Z" }
       end } ]
     }
+  end
+
+  # Picks f1..f<count> for `connection`, f1 the newest pick.
+  def pick_files(connection, count)
+    (1..count).each { |i| connection.drive_picks.create!(file_id: "f#{i}", name: "File #{i}", picked_at: NOW - i.minutes) }
   end
 
   def snapshot(user = @owner, cache: ActiveSupport::Cache::NullStore.new)
@@ -83,7 +93,7 @@ class GoogleConnect::OwnerContextTest < ActiveSupport::TestCase
 
   test "[unit] every section is capped: 20 events, 10 mails with snippet and no body, 10 files; long text is cut" do
     with_connect_env do
-      store_google(email: "owner@example.com", scope: ALL, user: @owner)
+      pick_files(store_google(email: "owner@example.com", scope: ALL, user: @owner), 15)
       fresh_token
       routes = all_routes(events: 30, mails: 12, files: 15)
       routes[GoogleConnect::CalendarReader::EVENTS_URL][1][:items].first[:summary] = "x" * 1000
@@ -107,7 +117,7 @@ class GoogleConnect::OwnerContextTest < ActiveSupport::TestCase
 
   test "[unit] a revoked connection is a reconnect note, never an exception, and no token leaves the service" do
     with_connect_env do
-      store_google(email: "owner@example.com", scope: ALL, user: @owner, refresh_token: "1//REFRESH-SECRET")
+      pick_files(store_google(email: "owner@example.com", scope: ALL, user: @owner, refresh_token: "1//REFRESH-SECRET"), 1) # a picked file, so Drive asks for a token too
       google_answers(400, { error: "invalid_grant" })
       google_reads(all_routes)
 
@@ -242,6 +252,43 @@ class GoogleConnect::OwnerContextTest < ActiveSupport::TestCase
         travel 20.seconds
         snapshot(cache:)
         assert_operator read_requests.size, :>, calls, "a degraded snapshot is rebuilt after DEGRADED_TTL"
+      end
+    end
+  end
+
+  # [unit] drive-files-you-pick: a drive.file connection's Drive section is the
+  # files the owner picked, each read by id, never a Drive-wide list; a legacy
+  # drive.readonly row still reads its newest files; a pick or an unpick is a
+  # new cache key, so the agent sees it on the next message.
+  test "[unit] Drive is only the picked files for a drive.file connection, and the newest for a legacy one" do
+    with_connect_env do
+      connection = store_google(email: "owner@example.com", scope: "openid email #{DRIVE}", user: @owner)
+      pick_files(connection, 2)
+      fresh_token
+      google_reads(all_routes(files: 5))
+
+      assert_equal [ "File 1", "File 2" ], snapshot["drive"]["files"].map { _1["name"] }
+      assert(read_requests.none? { URI(_1[0]).path == "/drive/v3/files" }, "no Drive-wide list for a drive.file row")
+
+      connection.update_columns(scope: "openid email #{DRIVE_LEGACY}")
+      assert_equal 5, snapshot["drive"]["files"].size, "a legacy row reads as it did until it reconnects"
+    end
+  end
+
+  test "[unit] a drive.file connection with no picks reads no file, and picking changes the cache key" do
+    with_connect_env do
+      connection = store_google(email: "owner@example.com", scope: "openid email #{DRIVE}", user: @owner)
+      fresh_token
+      google_reads(all_routes(files: 3))
+      context = -> { GoogleConnect::OwnerContext.for_user(@owner, now: NOW) }
+
+      before = context.().cache_key
+      assert_equal({ "files" => [] }, snapshot["drive"])
+      assert_empty read_requests.select { _1[0].start_with?(GoogleConnect::DriveReader::FILES_URL) }
+
+      travel 1.second do
+        pick_files(connection, 1)
+        refute_equal before, context.().cache_key, "a pick touches the connection"
       end
     end
   end

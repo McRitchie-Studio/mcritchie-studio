@@ -11,10 +11,13 @@
 #   bin/rotate-heroku-ci-key --dry-run    # read-only preflight + the plan
 #   bin/rotate-heroku-ci-key              # the real rotation
 #
-# Needs the admin lane: HEROKU_STUDIO_ADMIN_API_KEY (the only Heroku key allowed to
-# create authorizations — the agents key is refused, observed 2026-09-26) and
-# OP_ADMIN_SERVICE_ACCOUNT_TOKEN (reads and writes studio-applications, and mints
-# the github.mcritchie-admin App token through bin/gh-token).
+# Needs the admin lane: OP_ADMIN_SERVICE_ACCOUNT_TOKEN (reads and writes
+# studio-applications, and mints the github.mcritchie-admin App token through
+# bin/gh-token), and the admin Heroku key (the only Heroku key allowed to create
+# authorizations — the agents key is refused, observed 2026-09-26). The admin key
+# is HEROKU_STUDIO_ADMIN_API_KEY when the caller sets it, else read from
+# heroku.studio.admin at run time (bin/lib/heroku_token.rb): no profile holds a
+# Heroku literal since 2026-10-27, so nothing needs refreshing after a rotation.
 #
 # Test seams: ROTATE_HEROKU_CI_KEY_API_BASE, ROTATE_HEROKU_CI_KEY_OP_BIN,
 # ROTATE_HEROKU_CI_KEY_GH_BIN, ROTATE_HEROKU_CI_KEY_GH_TOKEN_CMD,
@@ -22,6 +25,7 @@
 
 require "optparse"
 require_relative "lib/heroku_ci_key_rotation"
+require_relative "lib/heroku_token"
 
 dry_run = false
 parser = OptionParser.new do |o|
@@ -53,8 +57,14 @@ def need(name)
   exit 1
 end
 
-admin_key = need("HEROKU_STUDIO_ADMIN_API_KEY")
 op_token = need("OP_ADMIN_SERVICE_ACCOUNT_TOKEN")
+admin_key =
+  begin
+    HerokuToken.resolve(:admin, op_bin: ENV.fetch("ROTATE_HEROKU_CI_KEY_OP_BIN", "op"))
+  rescue HerokuToken::Unresolved => e
+    warn "rotate-heroku-ci-key: no admin Heroku key — #{e.message} Nothing was done."
+    exit 1
+  end
 
 secrets = [admin_key, op_token]
 shell = HerokuCiKeyRotation::Shell.new(->(text) { HerokuCiKeyRotation.redact(text, secrets) })

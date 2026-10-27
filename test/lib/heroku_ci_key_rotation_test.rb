@@ -166,7 +166,8 @@ class HerokuCiKeyRotationTest < Minitest::Test
     ], mutations
     assert_equal NEW_KEY, @vault.store["credential"]
     assert_equal NEW_ID, @vault.store["authorization-id"]
-    assert_includes @out.string, "HEROKU_STUDIO_APPLICATIONS_API_KEY"
+    assert_includes @out.string, "Nothing to refresh by hand"
+    refute_includes @out.string, "zprofile", "no profile holds the key, so the receipt names none to refresh"
     assert_no_secret_printed
   end
 

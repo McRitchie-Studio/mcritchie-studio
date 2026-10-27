@@ -62,10 +62,6 @@ class CredentialShellOrphanGuardTest < ActiveSupport::TestCase
       "rather than assigned in any SOP — a SOP that assigned one would be printing it",
     "OP_APPLICATIONS_SERVICE_ACCOUNT_TOKEN" => "1Password service-account token, exported by the launcher",
     "OP_INDUSTRIES_SERVICE_ACCOUNT_TOKEN"   => "1Password service-account token, exported by the launcher",
-    "HEROKU_STUDIO_ADMIN_API_KEY" =>
-      "the Heroku admin lane's key, staged by `source ~/.zprofile.admin` (credential-inventory " \
-      "heroku.studio.admin); a SOP that assigned it would be printing it, and db-restore-drill.md " \
-      "refuses an empty one with `${…:?}` before it is used"
   }.freeze
 
   # A SOP with a REAL orphan that this guard cannot fix from here, because the remedy
