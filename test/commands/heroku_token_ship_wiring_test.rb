@@ -26,9 +26,13 @@ class HerokuTokenShipWiringTest < Minitest::Test
     FileUtils.rm_rf(@dir)
   end
 
-  def run_script(*argv)
+  SHIMS = File.join(ROOT, "bin", "shims")
+
+  # +shim+: put bin/shims first on PATH, as ~/.zprofile does after the migration.
+  def run_script(*argv, shim: true)
+    path = [(SHIMS if shim), @dir, File.dirname(RbConfig.ruby), ENV.fetch("PATH")].compact.join(":")
     env = SessionEnv.neutralized(FakeHerokuOp::SCRUB.merge(
-      "PATH" => "#{@dir}:#{File.dirname(RbConfig.ruby)}:#{ENV.fetch('PATH')}",
+      "PATH" => path,
       "HEROKU_TOKEN_OP_BIN" => File.join(@dir, "no-such-op"),
       "MCR_OP_READS_LOG" => File.join(@dir, "op-reads.log"),
       "BUNDLE_GEMFILE" => nil, "BUNDLE_BIN_PATH" => nil, "RUBYOPT" => nil, "RUBYLIB" => nil
@@ -56,6 +60,15 @@ class HerokuTokenShipWiringTest < Minitest::Test
     refute status.success?
     assert_includes err, "qa-server: no Heroku token"
     assert_empty heroku_calls
+  end
+
+  # A `heroku` that is not the shim (the real CLI with its own login, a test's
+  # fake) never reads 1Password, so bin/release neither resolves nor refuses.
+  def test_without_the_shim_on_path_release_neither_reads_nor_refuses
+    _out, err, _status = run_script(File.join(ROOT, "bin", "release.rb"), "status", shim: false)
+
+    refute_includes err, "no Heroku token"
+    refute_empty heroku_calls, "the run went on to its own heroku"
   end
 
   def test_release_resolves_after_the_argument_guard_so_help_reads_nothing

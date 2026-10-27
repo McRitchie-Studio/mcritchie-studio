@@ -1379,11 +1379,16 @@ end
 # reads nothing. The first board op precedes every mutation, so an Unresolved
 # refuses before anything is written. Lazy, not at dispatch, so a path that never
 # reaches Heroku (a --local run, a stubbed step, a dry run that prints) reads
-# nothing. A caller's own HEROKU_API_KEY is kept.
+# nothing. Nor when the `heroku` on PATH is not the shim (the real CLI with its
+# own login, a test's fake): only the shim spends a read per call. A caller's own
+# HEROKU_API_KEY is kept.
 def ensure_heroku_token!
   return if $heroku_token_ready
 
   require_relative "lib/heroku_token"
+  # Only the shim reads 1Password per call; any other `heroku` brings its own auth.
+  return($heroku_token_ready = true) unless HerokuToken.shim_on_path?
+
   HerokuToken.export_once!(:agents)
   $heroku_token_ready = true
 rescue HerokuToken::Unresolved => e

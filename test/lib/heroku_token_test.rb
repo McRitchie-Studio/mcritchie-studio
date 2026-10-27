@@ -102,6 +102,18 @@ class HerokuTokenTest < Minitest::Test
     assert_empty FakeHerokuOp.calls(@dir)
   end
 
+  def test_shim_on_path_is_true_only_when_the_shim_is_the_first_heroku
+    shims = File.expand_path("../../bin/shims", __dir__)
+    fake = File.join(@dir, "fakebin")
+    FileUtils.mkdir_p(fake)
+    File.write(File.join(fake, "heroku"), "#!/bin/sh\n")
+    File.chmod(0o755, File.join(fake, "heroku"))
+
+    assert HerokuToken.shim_on_path?("PATH" => "#{shims}:#{fake}")
+    refute HerokuToken.shim_on_path?("PATH" => "#{fake}:#{shims}"), "another heroku first brings its own auth"
+    refute HerokuToken.shim_on_path?("PATH" => @dir), "no heroku at all"
+  end
+
   def test_an_unknown_lane_is_refused
     assert_raises(HerokuToken::Unresolved) { resolve(:production) }
   end

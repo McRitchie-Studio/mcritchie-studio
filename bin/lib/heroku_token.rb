@@ -121,6 +121,28 @@ module HerokuToken
     token
   end
 
+  # The marker line every copy of bin/shims/heroku carries.
+  SHIM_MARKER = "# heroku-token-shim-marker"
+
+  # Is the `heroku` this process would run the heroku-token shim? Only the shim
+  # spends a 1Password read per call, so only then does a long run need
+  # export_once!. A different `heroku` first on PATH (the real CLI with its own
+  # login, a test's fake) never consults 1Password, and resolving for it would
+  # read, or refuse, for nothing.
+  def shim_on_path?(env = ENV)
+    env["PATH"].to_s.split(File::PATH_SEPARATOR).each do |dir|
+      next if dir.empty?
+
+      path = File.join(dir, "heroku")
+      next unless File.file?(path) && File.executable?(path)
+
+      return File.foreach(path).first(40).any? { |line| line.start_with?(SHIM_MARKER) }
+    end
+    false
+  rescue SystemCallError, IOError, ArgumentError
+    false
+  end
+
   def read(name, spec, env, op_bin)
     op_lane = spec[:op_lane]
     token_var = OpVaults.token_env(op_lane)

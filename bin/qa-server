@@ -720,8 +720,9 @@ if __FILE__ == $PROGRAM_NAME
   # exported to every child (HerokuToken.export_once!; bin/release does the same).
   if %w[plan provision status deploy].include?(cmd)
     require_relative "lib/heroku_token"
+    # Only when the shim would run: it is the `heroku` that reads per call.
     begin
-      HerokuToken.export_once!(:agents)
+      HerokuToken.export_once!(:agents) if HerokuToken.shim_on_path?
     rescue HerokuToken::Unresolved => e
       abort "qa-server: no Heroku token: #{e.message} Nothing was done."
     end
