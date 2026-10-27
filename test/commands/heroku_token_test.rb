@@ -18,6 +18,8 @@ class HerokuTokenCommandTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
   BIN = File.join(ROOT, "bin", "heroku-token")
   SHIM = File.join(ROOT, "bin", "shims", "heroku")
+  # `#!/usr/bin/env ruby` must find THIS Ruby even when a test narrows PATH.
+  RUBY_DIR = File.dirname(RbConfig.ruby)
   LIVE = "HRKU-live-agents-ffffffffffffffffffffffffffffffffffffffffffffffff"
   ADMIN = "HRKU-live-admin-9999999999999999999999999999999999999999999999"
 
@@ -48,7 +50,9 @@ class HerokuTokenCommandTest < Minitest::Test
       "OP_SERVICE_ACCOUNT_TOKEN" => "ops_fixture_agent",
       "HEROKU_TOKEN_OP_BIN" => @op,
       "MCR_OP_READS_LOG" => File.join(@dir, "op-reads.log"),
-      "PATH" => "#{File.dirname(@heroku)}:#{ENV.fetch('PATH')}"
+      "PATH" => "#{File.dirname(@heroku)}:#{RUBY_DIR}:#{ENV.fetch('PATH')}",
+      # The children are plain scripts: keep the suite's Bundler out of them.
+      "BUNDLE_GEMFILE" => nil, "BUNDLE_BIN_PATH" => nil, "RUBYOPT" => nil, "RUBYLIB" => nil
     ).merge(extra))
   end
 
@@ -113,7 +117,7 @@ class HerokuTokenCommandTest < Minitest::Test
 
   def test_the_shim_skips_itself_on_path
     shim_dir = File.dirname(SHIM)
-    out, err, status = run_cmd(SHIM, "apps", extra: { "PATH" => "#{shim_dir}:#{File.dirname(@heroku)}:/usr/bin:/bin" })
+    out, err, status = run_cmd(SHIM, "apps", extra: { "PATH" => "#{shim_dir}:#{File.dirname(@heroku)}:#{RUBY_DIR}:/usr/bin:/bin" })
 
     assert status.success?, err
     assert_includes out, "argv=apps", "the shim must find the real CLI behind itself, not loop"

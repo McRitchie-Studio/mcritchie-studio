@@ -194,12 +194,14 @@ profiles.each do |kind, path|
 
   if verify
     lanes = result[:removed].map { |name, _| HerokuProfileMigrate.lane_for(name) }.compact.uniq
-    failures = lanes.filter_map do |lane|
-      HerokuToken.resolve(lane, from_env: false)
-      nil
-    rescue HerokuToken::Unresolved => e
-      "#{lane}: #{e.message}"
-    end
+    failures = lanes.map do |lane|
+      begin
+        HerokuToken.resolve(lane, from_env: false)
+        nil
+      rescue HerokuToken::Unresolved => e
+        "#{lane}: #{e.message}"
+      end
+    end.compact
     unless failures.empty?
       warn "#{label}: refusing — a lane whose literal would go does not resolve from 1Password, so removing it " \
            "would strand it. #{failures.join(' ')} NOTHING WAS WRITTEN to #{label}."
