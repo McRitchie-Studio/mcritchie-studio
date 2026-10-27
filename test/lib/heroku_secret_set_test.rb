@@ -11,6 +11,8 @@ require "json"
 require "open3"
 require "socket"
 require_relative "../support/session_env"
+require_relative "../support/fake_heroku_op"
+require "tmpdir"
 
 class HerokuSecretSetTest < Minitest::Test
   BIN = File.expand_path("../../bin/heroku-secret-set", __dir__)
@@ -55,6 +57,26 @@ class HerokuSecretSetTest < Minitest::Test
       assert_match(/^authorization: Bearer fake-heroku-token\r$/i, seen[0][:head])
       assert_equal({ "FIXTURE_SECRET" => "s3cret-value" }, JSON.parse(seen[0][:body]), "one trailing newline is stripped")
       refute_includes out + err, "s3cret-value", "the value must never be printed"
+    end
+  end
+
+  # No profile exports HEROKU_API_KEY since 2026-10-27, so an ordinary shell
+  # reaches this path: the agents item, read through bin/lib/heroku_token.rb.
+  def test_without_heroku_api_key_the_token_is_read_from_1password
+    Dir.mktmpdir("heroku-secret-set-op") do |dir|
+      op = FakeHerokuOp.install(dir, "studio-agents/heroku.studio.agents" => "HRKU-from-1password")
+      with_api do |base, seen|
+        env = SessionEnv.neutralized(FakeHerokuOp::SCRUB.merge(
+          "HEROKU_API_BASE" => base, "HEROKU_TOKEN_OP_BIN" => op,
+          "OP_SERVICE_ACCOUNT_TOKEN" => "ops_fixture_agent", "MCR_OP_READS_LOG" => File.join(dir, "reads.log")
+        ))
+        out, err, status = Open3.capture3(env, "ruby", BIN, "fixture-app", "FIXTURE_SECRET", stdin_data: "v\n")
+
+        assert status.success?, err
+        assert_match(/^authorization: Bearer HRKU-from-1password\r$/i, seen[0][:head])
+        refute_includes out + err, "HRKU-from-1password", "the token must never be printed"
+        assert_equal ["false"], FakeHerokuOp.calls(dir).map { |c| c["cache"] }, "one read, op cache bypassed"
+      end
     end
   end
 
