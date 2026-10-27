@@ -164,6 +164,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `brand-kit-rollout` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/brand-kit-rollout.md` |
 | `focus-session` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/focus-session.md` |
 | `launch-build-queue` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/launch-build-queue.md` |
+| `marketing-kit` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/marketing-kit.md` |
 | `ship-clock` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/ship-clock.md` |
 | `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | `arbitrate-block` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |

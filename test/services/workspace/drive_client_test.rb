@@ -45,6 +45,14 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
       metadata
     end
 
+    def create_file(metadata, **kwargs)
+      @calls << [ :create_file, { name: metadata.name, parents: metadata.parents, mime_type: metadata.mime_type,
+                                  content_type: kwargs[:content_type], has_body: !kwargs[:upload_source].nil? } ]
+      raise @raises.shift if @raises.any?
+
+      metadata
+    end
+
     def list_permissions(id, **kwargs)
       @calls << [ :list_permissions, id ]
       Struct.new(:permissions).new([])
@@ -145,6 +153,28 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
     assert_equal "Working copy", args[:name]
     assert_equal [ "our-folder" ], args[:parents],
       "a copy with no parent lands in the subject's root; into a folder we do not own it is refused"
+  end
+
+  test "files_create converts on upload: the stored type and the sent type travel separately" do
+    service = ServiceDouble.new
+    client(service).files_create(name: "Guide", parents: "kit", mime_type: "application/vnd.google-apps.document",
+                                 body: "<h1>x</h1>", content_type: "text/html")
+
+    _name, args = service.calls.first
+    assert_equal [ "kit" ], args[:parents]
+    assert_equal "application/vnd.google-apps.document", args[:mime_type]
+    assert_equal "text/html", args[:content_type]
+    assert args[:has_body]
+  end
+
+  test "a create retries a throttle but never a server error, which may have landed" do
+    sleeps = []
+    service = ServiceDouble.new(raises: [ throttled, Google::Apis::ServerError.new("backendError", status_code: 503) ])
+
+    error = assert_raises(Workspace::ApiRetry::Error) { client(service, sleeps: sleeps).files_create(name: "f", parents: [ "p" ]) }
+    assert_match(/not retried/, error.message)
+    assert_equal [ 1 ], sleeps, "the throttle waited once; the 503 did not retry"
+    assert_equal 2, service.calls.size
   end
 
   test "files_export returns the exported bytes" do

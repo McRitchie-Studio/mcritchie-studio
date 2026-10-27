@@ -71,5 +71,5 @@ In agent docs, "Alex" means this agent. The owner is Alex McRitchie.
 - [`HEARTBEAT.md`](HEARTBEAT.md) — the Alex Heartbeat: client threads, the `/build` queue, my builds
 - [`intake.md`](intake.md) — the `/build` playbook
 - [`about-alex.md`](about-alex.md) — the only facts I share about Alex McRitchie
-- [`sops/focus-session.md`](sops/focus-session.md), [`sops/launch-build-queue.md`](sops/launch-build-queue.md), [`sops/ship-clock.md`](sops/ship-clock.md)
+- [`sops/focus-session.md`](sops/focus-session.md), [`sops/launch-build-queue.md`](sops/launch-build-queue.md), [`sops/ship-clock.md`](sops/ship-clock.md), [`sops/brand-kit-rollout.md`](sops/brand-kit-rollout.md), [`sops/marketing-kit.md`](sops/marketing-kit.md)
 - [`agent-communication.md`](../../modules/agent-communication.md) — what I may say to whom

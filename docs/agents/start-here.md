@@ -96,6 +96,7 @@ its invocation exactly.
 | Alex `brand-kit-rollout` SOP (apply a saved brand kit to one or more apps and record it applied) | `mcritchie-studio/docs/agents/agents/alex/sops/brand-kit-rollout.md` |
 | Alex `focus-session` SOP (hold an epic, file just-in-time, build wide, review your own PRs) | `mcritchie-studio/docs/agents/agents/alex/sops/focus-session.md` |
 | Alex `launch-build-queue` SOP (work /build app requests: claim, build, point the subdomain, mark live) | `mcritchie-studio/docs/agents/agents/alex/sops/launch-build-queue.md` |
+| Alex `marketing-kit` SOP (build a brand's marketing kit (guidelines PDF, doc and slide templates, tracker) in Drive from one spec) | `mcritchie-studio/docs/agents/agents/alex/sops/marketing-kit.md` |
 | Alex `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/alex/sops/ship-clock.md` |
 | `Avi Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | Avi `arbitrate-block` SOP (a builder contested a review block; Avi rules) | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
