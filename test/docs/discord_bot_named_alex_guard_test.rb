@@ -39,7 +39,7 @@ class DiscordBotNamedAlexGuardTest < ActiveSupport::TestCase
   end
 
   test "[unit] the scan bites every stale spelling and spares the current ones" do
-    ['Post `@Ritch what is building?`', "@ritch one", 'its Discord name is still "Ritch"',
+    ["Post `@Ritch what is building?`", "@ritch one", 'its Discord name is still "Ritch"',
      "Its Discord name is still Ritch:"].each do |probe|
       assert stale?(probe), "the scan missed #{probe.inspect}"
     end
