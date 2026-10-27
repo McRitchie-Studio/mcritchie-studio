@@ -388,7 +388,8 @@ last ability revokes the token at Google and deletes the row. A TLS or network
 failure on the revoke still deletes the row and says Google did not confirm.
 
 **Each API must be enabled** in the OAuth client's Google Cloud project
-(APIs & Services → Library: Google Calendar API, Gmail API, Google Drive API),
+(APIs & Services → Library: Google Calendar API, Gmail API, Google Drive API,
+and Google Picker API for Drive),
 or its read answers 403 on the standing page.
 
 **Its own OAuth client, never the hub's sign-in client.** Alex McRitchie creates it once in
@@ -414,6 +415,20 @@ op item get <item> --vault <vault> --format json |
 
 The pair travels on stdin from the filed item, never as arguments
 ([`credentials.md`](../../../modules/credentials.md)).
+
+**Drive is files you pick (drive.file).** The Drive ability asks for
+`drive.file`, not `drive.readonly`, so the person chooses files in the Google
+Picker and the hub reads only those (`GoogleDrivePick`). The Picker needs:
+the **Google Picker API** enabled in the same Cloud project, and a browser
+**API key** (APIs & Services → Credentials → Create credentials → API key),
+restricted to HTTP referrer `https://mcritchie.studio/*` and to the Picker API,
+set on the app as `GOOGLE_PICKER_API_KEY`. The Picker's app id is the project
+number, read from the digits leading `GOOGLE_CONNECT_CLIENT_ID`
+(`GOOGLE_PICKER_APP_ID` overrides it). Without the key the Drive card says
+"Drive picking isn't set up yet". A row connected under `drive.readonly`
+keeps reading the whole Drive until its owner reconnects Drive. Picking a
+folder is not offered: Google documents no grant of its contents under
+`drive.file` (the evidence is on `/tasks/drive-files-you-pick`).
 
 Locally, `GOOGLE_CALENDAR_STAND_IN=1` walks the whole flow against a stand-in
 (`config/initializers/google_connect_stand_in.rb`) that grants whichever scopes
