@@ -22,9 +22,12 @@
 # EVERY stored soul-slug value in one transaction, and Task::SOUL_ALIASES keeps
 # `ray` (and `xan`) resolving to `alex` for what no migration can reach.
 #
-# WHAT IS NOT TOUCHED. `alex` values already stored (none should exist: the slug
-# was `xan` and then `ray` since 2026-09-24, and SOUL_ALIASES folded every typed
-# `alex` into `ray`); free-text columns that name the HUMAN (releases'
+# WHAT IS NOT TOUCHED. `alex` values already stored (the slug was `xan` and then
+# `ray` since 2026-09-24, and SOUL_ALIASES folded every typed `alex` into `ray`,
+# so no SOUL value held it — but releases.confirmed_by did: 157 rows the
+# `bin/release --by` login default wrote as `alex` after 2026-09-25, which name
+# the owner and which ConfirmedByAlexToAlexMcritchie moved, 2026-10-27; this
+# header said "none should exist" until then); free-text columns that name the HUMAN (releases'
 # cleared_by metadata, decided_by, issued_by); task slugs, branches and desk
 # paths that spell `ray`; the `ray@mcritchie.studio` address the seat keeps; and
 # the 1Password items and the Discord bot, which live outside the database.

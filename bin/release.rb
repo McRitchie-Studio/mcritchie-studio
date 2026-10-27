@@ -9328,10 +9328,10 @@ def ship
   # travel onto the release with the completion, so a bare `--mode cleared` aborts
   # here, before anything moves, rather than reading as a silent `auto`.
   clearance = opt_value("--clearance").to_s.strip
-  cleared_by = opt_value("--cleared-by").to_s.strip
-  # The owner, by his full name: a bare "alex" names the client-facing agent since
-  # ritch-renamed-alex, and the record says who cleared, never who typed.
-  cleared_by = "Alex McRitchie" if cleared_by.empty?
+  # The owner, by his full name (ShipAuthority::OWNER): a bare "alex" names the
+  # client-facing agent since ritch-renamed-alex, and the record says who cleared,
+  # never who typed.
+  cleared_by = ShipAuthority.confirmer(opt_value("--cleared-by"))
   if ship_mode == "cleared" && clearance.empty?
     abort!("--mode cleared needs --clearance \"<Alex McRitchie's words>\": his clearance in chat is the grant, " \
            "and the words are recorded on the release")
