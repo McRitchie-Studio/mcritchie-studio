@@ -211,6 +211,11 @@ half that repairs **this shell**.
 
 ## When 1Password itself is down — mint by hand, on BOTH legs
 
+**A hang is not an outage.** When every `op` call waits minutes before it
+answers, the 1Password CLI's cache daemon is wedged and the service is fine:
+`export OP_CACHE=false` in this shell and run step 1 again (bound a probe with
+`perl -e 'alarm 20; exec @ARGV' op whoami`). The daemon clears on its own.
+
 Steps 1-4 all end at `op`. **This is the last rung, not the first.** Run step 1a
 before you come here: a 403 that reads like a dead account is usually a stale
 token in your own shell, and on 2026-09-27 four agents reached this section with
@@ -408,6 +413,7 @@ Two traps in that check:
 | `remote: Invalid username or token` on a push **in the hub** | the App helper came up empty and the hub's repo-local `gh` fallback answered with a stale keyring token. A checkout without that fallback says `could not read Username` instead | **step 1a** first — an empty App helper is usually a stale `OP_SERVICE_ACCOUNT_TOKEN`, not a broker that cannot serve. Only then arm **leg 2**. Do not chase the local config; leave it alone |
 | `op` answers `(403) Forbidden (Service Account Deleted)` | **almost never a deleted account.** The token in your shell is stale — it names a service account that no longer exists, while `~/.zprofile` already holds the live one. The variable is still *set*, so it reads as a broken credential rather than a missing one | **step 1a** — `unset OP_SERVICE_ACCOUNT_TOKEN`, `source ~/.zprofile`, `op whoami`. Only if it STILL 403s after that is the account genuinely gone; then no agent can mint (no `.pem` on disk), so report it |
 | `"agents" isn't a vault` | **the hub primary is stale** | fast-forward `main`; the fix shipped as `bin/lib/op_vaults.rb` |
+| every `op` call (and so `gh-auth-refresh`, `git fetch`) hangs for minutes | the 1Password CLI cache daemon is wedged; the service is fine | `export OP_CACHE=false`, then step 1 again. Not an outage, so do not wait it out |
 | `Too many requests` from `op` | account-wide daily quota | step 2 — read the `[ERROR]` line, not the summary; if the quota really is spent, wait for it: the key lives only in 1Password, and there is no `.pem` on disk |
 | `op read` of the `.pem` attachment answers `(401) Unauthorized` while the item's fields read fine | a 1Password service-side fault on file attachments, not a revoked grant or the quota | re-test later in a fresh session. The hand-mint cannot help: the key lives only in that attachment, and there is no `.pem` on disk |
 | Quota spent and nobody knows by what | nothing recorded WHICH command read | step 2a — `bin/op-reads` (and `--by context` for a fan-out). Do NOT re-derive it by measurement; that was tried on 2026-08-31 and came up empty |
