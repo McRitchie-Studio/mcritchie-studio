@@ -87,7 +87,7 @@ The chosen palette (`AppPalette`: `primary`, `accent`, `surface`, `text`, light 
 - **Memory.** The client CTO's PERSON layer is cut to the one app (`channel_ref`), so an
   owner of two client apps never hears one CTO recall the other's chat.
 - **The owner's Google.** On the app owner's own CTO thread, `MemoryBundle` adds
-  `google_context`: a 5-minute-cached, read-only snapshot of the OWNER's own connected
+  `google_context` (answered cold, never warm): a 5-minute-cached, read-only snapshot of the OWNER's own connected
   Google (calendar, newest mail headers and snippets, newest Drive files), printed in the
   GOOGLE layer inside the untrusted fence. A visitor, another app's owner, and any other
   audience get none (`docs/agents/system/agent-message-loop.md`, "The Google layer").

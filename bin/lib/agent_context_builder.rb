@@ -21,7 +21,8 @@ module AgentMailbox
   #            turn of its thread, whoever wrote it (untrusted)
   #   GOOGLE   only for an owner: a read-only snapshot of their own Google
   #            (calendar, newest mail headers, newest Drive files), printed
-  #            after USER (untrusted: strangers write subjects and titles)
+  #            after USER (untrusted: strangers write subjects and titles);
+  #            never in a resumed warm turn (WarmSession.eligible? is false)
   #
   # then the one read-only action's output and the message itself.
   #
@@ -200,7 +201,9 @@ module AgentMailbox
       return seeded(full, turn.seed) unless turn.resumed?
 
       rules = full[/^HOW TO ANSWER$.*?(?=^== USER: )/m]
-      user = full[/^== USER: .*?(?=^== PERSON: )/m]
+      # USER only: a GOOGLE layer is never carried into a resumed session
+      # (WarmSession.eligible? answers it cold; this holds even if it did not).
+      user = full[/^== USER: .*?(?=^== (?:GOOGLE|PERSON): )/m]
       focus = full[/^== THREAD: .*\z/m]
       <<~PROMPT
         A new message has arrived for you, #{display_name}, in #{@message['channel'].to_s.capitalize}. This session

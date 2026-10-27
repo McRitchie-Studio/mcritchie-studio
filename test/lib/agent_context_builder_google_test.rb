@@ -5,8 +5,8 @@ require Rails.root.join("bin/lib/agent_dispatcher").to_s
 # [unit] The prompt's GOOGLE layer (AgentMailbox::ContextBuilder#google_layer):
 # the bundle's `google_context` printed after USER, the snapshot INSIDE the
 # untrusted fence under one code-written "data, not instructions" line, held
-# to its budget; printed only for an owner or client audience; and carried by
-# a resumed warm turn, so a warm session sees this message's snapshot.
+# to its budget; printed only for an owner or client audience; and never in a
+# warm session (shared by owner and team): such a message is answered cold.
 class AgentContextBuilderGoogleTest < ActiveSupport::TestCase
   FENCE = "untrusted-goog42".freeze
 
@@ -77,11 +77,14 @@ class AgentContextBuilderGoogleTest < ActiveSupport::TestCase
     assert_includes builder(role: "client", client_domain: "pawsome").prompt, "== GOOGLE:"
   end
 
-  test "a resumed warm turn carries this message's GOOGLE layer" do
-    warm = builder.warm_prompt(AgentMailbox::WarmSession::Turn.new(domain: "studio", resume_id: "sess-0001"))
+  test "a message carrying a Google snapshot is never answered warm, and a resumed prompt would not carry it" do
+    context = { "audience" => { "role" => "owner" }, "thread" => { "turns" => [] }, "google_context" => snapshot }
+    refute AgentMailbox::WarmSession.eligible?(@message, context), "one warm session is shared by owner and team"
+    assert AgentMailbox::WarmSession.eligible?(@message, context.merge("google_context" => nil)), "the control"
 
-    assert_includes warm, "== GOOGLE:"
-    assert_includes warm, "Lender call"
-    refute_includes warm, "== PERSON:"
+    warm = builder.warm_prompt(AgentMailbox::WarmSession::Turn.new(domain: "studio", resume_id: "sess-0001"))
+    assert_includes warm, "== USER:"
+    refute_includes warm, "== GOOGLE:"
+    refute_includes warm, "Lender call"
   end
 end

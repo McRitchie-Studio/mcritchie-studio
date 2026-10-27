@@ -201,4 +201,48 @@ class GoogleConnect::OwnerContextTest < ActiveSupport::TestCase
       assert_equal 5.minutes, GoogleConnect::OwnerContext::TTL
     end
   end
+
+  test "[unit] a build has one deadline for every Google call: a slow section and the ones after it are short notes" do
+    with_connect_env do
+      store_google(email: "owner@example.com", scope: ALL, user: @owner)
+      fresh_token
+      routes = all_routes
+      GoogleConnect::Reader.http = lambda do |url, token|
+        read_requests << [ url, token ]
+        sleep 5 if url.start_with?(GoogleConnect::CalendarReader::EVENTS_URL)
+        status, body = routes.find { |prefix, _| url.start_with?(prefix) }.last
+        [ status, JSON.generate(body) ]
+      end
+
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      snap = GoogleConnect::OwnerContext.for_user(@owner, now: NOW, cache: ActiveSupport::Cache::NullStore.new, budget: 0.3).snapshot
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+      assert_operator elapsed, :<, 2.0, "the build stops at its budget, not at Google's pace"
+      %w[calendar gmail drive].each do |ability|
+        assert_equal({ "note" => GoogleConnect::OwnerContext::OUT_OF_TIME }, snap[ability], ability)
+      end
+      assert_equal 6.0, GoogleConnect::OwnerContext::BUDGET
+    end
+  end
+
+  test "[unit] a snapshot with a could-not-read note is cached for a minute, a complete one for five" do
+    with_connect_env do
+      store_google(email: "owner@example.com", scope: "openid email #{GMAIL}", user: @owner)
+      fresh_token
+      google_reads(GoogleConnect::GmailReader::MESSAGES_URL => [ 500, { error: { message: "backend error" } } ])
+      cache = ActiveSupport::Cache::MemoryStore.new
+
+      travel_to(NOW) do
+        assert_equal GoogleConnect::OwnerContext::UNAVAILABLE, snapshot(cache:)["gmail"]["note"]
+        calls = read_requests.size
+        travel 50.seconds
+        snapshot(cache:)
+        assert_equal calls, read_requests.size, "still cached inside the minute"
+        travel 20.seconds
+        snapshot(cache:)
+        assert_operator read_requests.size, :>, calls, "a degraded snapshot is rebuilt after DEGRADED_TTL"
+      end
+    end
+  end
 end

@@ -73,13 +73,16 @@ module AgentMessages
   #     that app's client: THEIR OWN connections only;
   #   - on any hub soul (every soul but client_cto), a sender answered as the
   #     owner audience whose person holds the owner role AND whose hub user is
-  #     an admin: the household's connections (GoogleConnection.household,
-  #     the set /admin/google reads).
+  #     an admin, on a PRIVATE channel only (#private_channel?: the web chat,
+  #     verified email, a Discord DM; never a guild channel members read): the
+  #     household's connections (GoogleConnection.household, the set
+  #     /admin/google reads).
   # FAIL CLOSED: no person, no hub user, a /build thread, a public, team or
   # client sender, another app's owner, a mismatched audience, or any error
   # while deciding all mean no google_context. Its text (subjects, snippets,
   # titles, file names) is written by strangers, so the worker prints it
-  # inside the untrusted fence as data.
+  # inside the untrusted fence as data, and a message carrying it is answered
+  # cold, never in a warm session (AgentMailbox::WarmSession.eligible?).
   #
   # `ledger` and `user.notes` (a string) repeat the pre-omnichannel shape for a
   # worker still running the older ContextBuilder; drop them once every
@@ -248,8 +251,23 @@ module AgentMessages
         return nil unless Answerers.current.app_owner_thread?(@message, person)
 
         GoogleConnect::OwnerContext.for_user(user)
-      elsif audience["role"] == "owner" && person.role == "owner" && user.admin?
+      elsif audience["role"] == "owner" && person.role == "owner" && user.admin? && private_channel?
         GoogleConnect::OwnerContext.household
+      end
+    end
+
+    # Whether only the sender reads this conversation, so the household's
+    # calendar, mail snippets and file names (one-time codes among them) may be
+    # answered in it: the hub's web chat, an email whose sender passed DKIM and
+    # DMARC (EmailTrust, stamped in the envelope at ingest), or a Discord DM (no
+    # guild; the gateway drops DMs today, so none arrives). A guild channel,
+    # which every member reads, never is.
+    def private_channel?
+      case @message.channel.to_s
+      when "web" then @message.guild_id.blank?
+      when "email" then (@message.envelope || {}).dig("trust", "verified") == true
+      when "discord" then @message.guild_id.blank?
+      else false
       end
     end
 

@@ -372,9 +372,19 @@ most recently modified Drive files (name, type, modified). Each section appears
 only for an ability the account granted. A revoked grant, or a token the app
 can no longer decrypt, is a note to reconnect on /integrations; any other
 failure is a "could not be read just now" note. Nothing raises, and no token
-reaches the bundle or the log. A snapshot is cached for 5 minutes per owner,
-keyed on every connection's id, scope and change time, so a disconnect or a
-dropped ability shows on the next message.
+reaches the bundle or the log; each failure is recorded in ErrorLog with
+token-shaped text redacted. One build has a 6-second budget for every Google
+call together (`OwnerContext::BUDGET`): a section not finished in time is a
+"not available right now" note, so the context request never nears Heroku's
+30-second limit. A snapshot is cached per owner, keyed on every connection's
+id, scope and change time, so a disconnect or a dropped ability here shows on
+the next message. Two cache gaps, on purpose:
+
+- A grant revoked at Google itself (not on /integrations) keeps showing the
+  cached snapshot for up to 5 minutes (`TTL`).
+- A snapshot carrying a "could not be read" or "not available right now" note
+  is cached too, for 1 minute (`DEGRADED_TTL`), so an outage costs one
+  budgeted build a minute rather than one per message.
 
 It is gated on the board (`MemoryBundle#google_reader`), fail closed, to the
 OWNER of what the soul answers for, two ways:
@@ -384,18 +394,25 @@ OWNER of what the soul answers for, two ways:
   that user, the app's CTO soul, an owner `AppMembership`), answered as the
   app's client. It reads that user's own connections only.
 - **An admin owner on a hub soul** (any soul but `client_cto`): the owner
-  audience, a person holding the owner role, and a hub user who is an admin.
-  It reads the household's connections (`GoogleConnection.household`, the set
+  audience, a person holding the owner role, and a hub user who is an admin,
+  on a PRIVATE channel only (`MemoryBundle#private_channel?`): the hub's web
+  chat, an email that passed DKIM and DMARC, or a Discord DM (the gateway drops
+  DMs today, so none arrives). Never a shared guild channel: calendar items and
+  mail snippets, one-time codes among them, would post where members read. It
+  reads the household's connections (`GoogleConnection.household`, the set
   /admin/google shows).
 
 Everyone else gets none, even with their own Google connected: a public
 visitor on the same app, another app's owner, a client or team sender, an
-admin on a client app's CTO chat, a /build thread, and a sender with no hub
-user. Subjects, snippets, titles and file names are written by strangers, so
+admin on a client app's CTO chat, an admin in a guild channel or by
+unverified email, a /build thread, and a sender with no hub user. Subjects, snippets, titles and file names are written by strangers, so
 the worker prints the snapshot inside the untrusted fence, under one
 code-written line saying it is data, not instructions, and prints it only for
-an owner or client audience even if a bundle somehow carried it. A resumed
-warm turn carries it too, since it sits between USER and PERSON.
+an owner or client audience even if a bundle somehow carried it. A message
+whose bundle carries it is never answered warm: one warm session per domain
+is shared by owner and team senders, so the snapshot would persist into a team
+turn. `WarmSession.eligible?` is false for it, and a resumed prompt cuts USER
+before GOOGLE besides.
 
 **The person.** A person is one identity across platforms. `agent_people` holds
 the display name and, optionally, the hub `User`. `agent_person_identities` holds
@@ -1526,7 +1543,9 @@ or an own earlier turn, carrying quoted or forwarded material
 (`WarmSession.quotes?`: a `>` line, an "On … wrote:" line, a forwarded or
 original-message banner, a From: header followed by Sent:/Date:); and a thread
 whose newest proposal was not offered to this sender on a turn the prompt shows
-(the bundle's `proposals.last.own` and `source_message_id`). A verbatim paste
+(the bundle's `proposals.last.own` and `source_message_id`); and a message
+whose bundle carries an owner's Google snapshot (`google_context`, "The Google
+layer"). A verbatim paste
 with no such marker cannot be told from the sender's own words and is treated as
 theirs. Later: one session per (domain, user).
 

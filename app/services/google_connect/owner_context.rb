@@ -1,4 +1,5 @@
 require "digest"
+require "timeout"
 
 module GoogleConnect
   # A small, read-only snapshot of ONE owner's own Google, for the agent that
@@ -27,12 +28,22 @@ module GoogleConnect
   # ours, never a token), and the Rails log names the class only. No token or
   # token fragment reaches the output.
   #
-  # CACHE. A snapshot is cached for TTL per owner, under a key that folds in
-  # every connection's id, scope and change time: a disconnect or a dropped
-  # ability is a new key, so it shows on the next message. A grant revoked at
-  # Google itself is seen within TTL.
+  # DEADLINE. One snapshot build (a cache miss) has BUDGET seconds for every
+  # Google call together; a section that has not finished in time, or never
+  # started, is a "not available right now" note. So the context request, which
+  # builds it inside the API call, never nears Heroku's 30-second router limit.
+  #
+  # CACHE. A complete snapshot is cached for TTL per owner, under a key that
+  # folds in every connection's id, scope and change time: a disconnect or a
+  # dropped ability is a new key, so it shows on the next message. Two gaps,
+  # on purpose: a grant revoked at Google itself (not here) is seen only when
+  # the cache expires, within TTL; and a snapshot with a "could not be read" or
+  # "not available right now" note is cached too, for DEGRADED_TTL, so a
+  # Google outage costs one budgeted build a minute, not one per message.
   class OwnerContext
     TTL = 5.minutes
+    DEGRADED_TTL = 1.minute
+    BUDGET = 6.0
     WINDOW = 7.days
     EVENTS = 20
     MESSAGES = 10
@@ -42,6 +53,11 @@ module GoogleConnect
     CACHE_PREFIX = "google_owner_context/v1".freeze
     RECONNECT = "This Google connection no longer works: reconnect it on /integrations.".freeze
     UNAVAILABLE = "Could not be read just now.".freeze
+    OUT_OF_TIME = "Not available right now (Google was slow to answer).".freeze
+    TRANSIENT = [ UNAVAILABLE, OUT_OF_TIME ].freeze
+
+    # A section that ran past the build's deadline.
+    class OutOfTime < StandardError; end
 
     # A stored token this app's keys cannot open, raised only to be captured.
     class Unreadable < StandardError; end
@@ -55,11 +71,12 @@ module GoogleConnect
 
     def self.household(**) = new(GoogleConnection.household, owner_key: "household", **)
 
-    def initialize(scope, owner_key:, now: Time.current, cache: Rails.cache)
+    def initialize(scope, owner_key:, now: Time.current, cache: Rails.cache, budget: BUDGET)
       @connections = scope.newest_first.to_a
       @owner_key = owner_key
       @now = now
       @cache = cache
+      @budget = budget
     end
 
     # The snapshot ({ "as_of", "accounts", ability => section }), or nil when
@@ -67,7 +84,13 @@ module GoogleConnect
     def snapshot
       return nil if @connections.empty?
 
-      @cache.fetch(cache_key, expires_in: TTL) { build }
+      key = cache_key
+      cached = @cache.read(key)
+      return cached if cached
+
+      built = build
+      @cache.write(key, built, expires_in: degraded?(built) ? DEGRADED_TTL : TTL)
+      built
     end
 
     def cache_key
@@ -78,6 +101,7 @@ module GoogleConnect
     private
 
     def build
+      @deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @budget
       sections = GoogleConnection::ABILITIES.keys.filter_map do |ability|
         granting = @connections.select { |c| c.can?(ability) }
         next if granting.empty?
@@ -93,7 +117,15 @@ module GoogleConnect
         return { "note" => RECONNECT }
       end
 
-      send(ability, connection)
+      left = @deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      raise OutOfTime, "no time left before #{ability} started" unless left.positive?
+
+      # No exception class given, so the interrupt cannot be swallowed by a
+      # `rescue` inside the readers; it surfaces here as Timeout::Error.
+      Timeout.timeout(left) { send(ability, connection) }
+    rescue OutOfTime, Timeout::Error => e
+      capture(ability, e)
+      { "note" => OUT_OF_TIME }
     rescue OAuthClient::Revoked, ActiveRecord::Encryption::Errors::Base => e
       capture(ability, e)
       { "note" => RECONNECT }
@@ -101,6 +133,8 @@ module GoogleConnect
       capture(ability, e)
       { "note" => UNAVAILABLE }
     end
+
+    def degraded?(snapshot) = snapshot.values.any? { |v| v.is_a?(Hash) && TRANSIENT.include?(v["note"]) }
 
     # Records a failed read where an operator sees it (ErrorLog, as ReadFailed:
     # the ability, the original class and its message with anything

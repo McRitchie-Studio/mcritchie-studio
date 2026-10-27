@@ -166,12 +166,32 @@ module AgentMessages
       refute_match(/SECRET|refresh|ya29/, context.to_json)
     end
 
-    test "an admin owner on a hub soul gets the household snapshot" do
+    test "an admin owner @mentioning a hub soul in a shared guild channel gets nothing; unverified email neither" do
+      alex = AgentPerson.seed_owner!
+      connect!(users(:alex), email: "alex@mcritchie.studio")
+
+      guild = agent_message!(soul: "alex", author_ref: "500", person: alex)
+      assert_equal "owner", MemoryBundle.new(guild).audience["role"], "the owner, in a channel every member reads"
+      assert_nil google(guild)
+      unverified = agent_message!(soul: "alex", channel: "email", guild_id: nil, author_ref: "alex@mcritchie.studio",
+                                  person: alex, envelope: { "trust" => { "verified" => false } })
+      assert_nil google(unverified)
+      assert_empty read_requests
+    end
+
+    test "an admin owner on a hub soul in a private channel (DM, verified email, web chat) gets the household snapshot" do
       alex = AgentPerson.seed_owner!
       connect!(users(:alex), email: "alex@mcritchie.studio")
       connect!(@owner, email: "pat@example.com", scope: ALL)
 
-      context = google(agent_message!(soul: "alex", author_ref: "500", person: alex))
+      dm = agent_message!(soul: "alex", guild_id: nil, author_ref: "500", person: alex)
+      email = agent_message!(soul: "alex", channel: "email", guild_id: nil, author_ref: "alex@mcritchie.studio",
+                             person: alex, envelope: { "trust" => { "verified" => true } })
+      web = cto_row(user: users(:alex), person: alex, app: "mcritchie-studio", soul: "alex")
+      assert_equal 1, google(email)["accounts"]
+      assert_equal 1, google(web)["accounts"]
+
+      context = google(dm)
 
       assert_equal 1, context["accounts"], "the admin's row only, never the app owner's"
       assert_equal [ "Groomer supplier call" ], context["calendar"]["events"].map { _1["title"] }
