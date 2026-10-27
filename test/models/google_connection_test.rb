@@ -251,6 +251,67 @@ class GoogleConnectionTest < ActiveSupport::TestCase
     end
   end
 
+  # --- /tasks/google-connect-hardening-polish ---
+
+  # Runs the block while the FIRST row lookup races another sign-in: `competitor`
+  # commits its row for the same account after this sign-in looked and found
+  # none, and after its uniqueness validation passed (as two simultaneous
+  # callbacks do), so the insert meets the unique index. Later lookups are real.
+  def racing(competitor)
+    calls = 0
+    real = ->(email) { GoogleConnection.lock.find_or_initialize_by(email:) }
+    looked_up = lambda do |email|
+      calls += 1
+      next real.(email) unless calls == 1
+
+      competitor.call
+      GoogleConnection.new(email:).tap { |row| row.define_singleton_method(:valid?) { |*| true } }
+    end
+    GoogleConnection.stub(:row_for_update, looked_up) { yield }
+    assert_operator calls, :>=, 2, "the race was run: the lookup happened again after the insert failed"
+  end
+
+  test "[unit] two simultaneous sign-ins of one new account by the same user resolve to one row" do
+    racing(-> { GoogleConnection.store!(grant, email: "race@example.com", user: viewer, abilities: [ :calendar ], now: NOW) }) do
+      GoogleConnection.store!(grant(scope: "openid #{DRIVE}"), email: "race@example.com", user: viewer, abilities: [ :drive ], now: NOW + 1.second)
+    end
+
+    row = GoogleConnection.sole
+    assert_equal viewer, row.user
+    assert_equal %i[calendar drive], row.abilities, "the second sign-in merged into the row the first inserted"
+  end
+
+  test "[unit] a sign-in racing another user's for the same new account is refused, never a second row" do
+    racing(-> { GoogleConnection.store!(grant, email: "race@example.com", user: alex, abilities: ALL, now: NOW) }) do
+      assert_raises(GoogleConnection::TakenByAnotherUser) do
+        GoogleConnection.store!(grant(refresh_token: "1//loser"), email: "race@example.com", user: viewer, abilities: ALL, now: NOW)
+      end
+    end
+
+    row = GoogleConnection.sole
+    assert_equal alex, row.user
+    assert_equal TOKEN, row.refresh_token
+  end
+
+  test "[unit] agents_read? is exactly membership of the household agents read" do
+    household = GoogleConnection.store!(grant, email: "home@example.com", user: alex, abilities: ALL, now: NOW)
+    own = GoogleConnection.store!(grant, email: "v@example.com", user: viewer, abilities: ALL, now: NOW)
+
+    assert household.agents_read?
+    refute own.agents_read?
+    [ household, own ].each do |row|
+      assert_equal GoogleConnection.household.exists?(row.id), row.agents_read?, row.email
+    end
+  end
+
+  test "[unit] who_reads says agents read a household connection and only the owner sees their own" do
+    household = GoogleConnection.store!(grant, email: "home@example.com", user: alex, abilities: ALL, now: NOW)
+    own = GoogleConnection.store!(grant, email: "v@example.com", user: viewer, abilities: ALL, now: NOW)
+
+    assert_equal "Your agents can read this", household.who_reads
+    assert_equal "Only you can see this", own.who_reads
+  end
+
   test "[unit] the ownership migration backfills each row from connected_by, falling back to the operator" do
     alex.update_column(:slug, "alex-mcritchie-alex@mcritchie.studio")
     viewer.update_column(:slug, "viewer-user-viewer@example.com")

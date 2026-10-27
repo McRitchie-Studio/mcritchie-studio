@@ -293,6 +293,25 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # --- who reads it (/tasks/google-connect-hardening-polish) ---
+
+  test "[component] /integrations says who reads each connection: agents for the household's, only the owner for a non-admin's" do
+    store_google(scope: "openid #{CALENDAR}") # the household's, owned by the admin
+    store_google(email: "viewer@gmail.test", scope: "openid #{CALENDAR}", user: users(:viewer))
+    with_connect_env do
+      log_in_as users(:alex)
+      get integrations_path
+      assert_equal "Your agents can read this", slot("google_calendar").at_css("[data-test='google-who-reads']").text.squish
+      assert_equal "agents", slot("google_calendar").at_css("[data-test='google-who-reads']")["data-reader"]
+      assert_nil slot("gmail").at_css("[data-test='google-who-reads']"), "no line where nothing is connected"
+
+      log_in_as users(:viewer)
+      get integrations_path
+      assert_equal "Only you can see this", slot("google_calendar").at_css("[data-test='google-who-reads']").text.squish
+      assert_equal "owner", slot("google_calendar").at_css("[data-test='google-who-reads']")["data-reader"]
+    end
+  end
+
   def fathom_slot = card("fathom").at_css("[data-test='entry-method'][data-method='sign_in'] [data-test='fathom-connection']")
 
   test "[component] Fathom card shows Connect for admin only" do

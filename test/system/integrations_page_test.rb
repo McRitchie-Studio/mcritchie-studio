@@ -278,4 +278,40 @@ class IntegrationsPageTest < ApplicationSystemTestCase
   ensure
     reset_google_connect
   end
+  # --- Gmail modal polish (/tasks/google-connect-hardening-polish) ---
+
+  test "[e2e] at 375px the Gmail admin modal shows Continue to Google without scrolling, and the dialog has a readable name" do
+    sign_in_as_viewer
+    with_connect_env do
+      GoogleConnect::OAuthClient.sign_in_stand_in = GoogleConnectStandIn::SignIn.new
+      [ 667, 568 ].each do |height| # an iPhone SE, and the shortest phone still sold
+        page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 375, height:, deviceScaleFactor: 1, mobile: true)
+        visit integrations_path
+        within(google_slot("gmail")) { click_on "Connect Gmail" }
+        continue = find("[data-test='gmail-admin-continue']")
+
+        geometry = page.evaluate_script(<<~JS)
+          (() => {
+            const button = document.querySelector("[data-test='gmail-admin-continue']").getBoundingClientRect();
+            const card = document.querySelector("[data-test='gmail-admin-modal']").closest(".overflow-y-auto");
+            const box = card.getBoundingClientRect();
+            return { top: button.top, bottom: button.bottom, cardTop: box.top, cardBottom: box.bottom,
+                     scrollTop: card.scrollTop, scrolls: card.scrollHeight > card.clientHeight, viewport: window.innerHeight };
+          })()
+        JS
+        assert_equal 0, geometry["scrollTop"], "the card opened at its top"
+        assert_operator geometry["bottom"], :<=, geometry["cardBottom"], "Continue sits inside the card's visible area at 375x#{height}: #{geometry}"
+        assert_operator geometry["top"], :>=, geometry["cardTop"], "at 375x#{height}: #{geometry}"
+        assert_operator geometry["bottom"], :<=, geometry["viewport"], "at 375x#{height}: #{geometry}"
+        assert geometry["scrolls"], "the control: the card is taller than the phone at 375x#{height}, so Continue is visible because it stays put" if height == 568
+
+        dialog = find("[role='dialog']", visible: :all)
+        assert_equal "Gmail needs your Google admin's OK", dialog["aria-label"]
+        assert_equal integrations_google_connect_path(ability: :gmail, return_to: "/integrations"), URI(continue["href"]).request_uri
+        click_on "Not now"
+      end
+    end
+  ensure
+    reset_google_connect
+  end
 end
