@@ -49,3 +49,52 @@ test("the shared chat script: Shift+Enter is a new line, Enter sends, focus stay
 
   expect(pageErrors, report()).toEqual([]);
 });
+
+// Task shell-growth-spec-stops-flaking. The CTO chat shows a sent turn TWICE over:
+// the turn's ActionCable broadcast (AgentMessages::WebChat.broadcast_turn) and the
+// POST's own answer, which also replaces the composer with a fresh client id. The
+// broadcast can land first, so for a moment the owner sees their message while the
+// composer still holds the OLD form. A second message sent then rode the first's
+// client id, and AgentMessages::WebIngest stored it as a double submit of the first:
+// it vanished (e2e/agent_shell_growth.spec.js flaked on exactly this, in CI). And a
+// draft typed in that moment was wiped when the late replace landed. The race is made
+// certain here by holding the POST's answer after the server has stored the message.
+test("a message sent before the last send's answer lands is kept, and so is a draft typed meanwhile", async ({ page }) => {
+  const { pageErrors, report } = watchPageErrors(page);
+  await loginWithMagicLink(page, "owner@cyvasse.test");
+  await page.goto("/applications/cyvasse/chat");
+
+  const held = [];
+  await page.route("**/applications/cyvasse/chat", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    const response = await route.fetch(); // the server has stored and broadcast the turn
+    held.push(response);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.fulfill({ response }).catch(() => {}); // an aborted submission has no one to answer
+  });
+
+  const input = page.locator("[data-test='cto-chat-input']");
+  const sent = (text) => page.locator("[data-test='cto-chat-sent']", { hasText: text });
+  const stamp = Date.now();
+  const first = `First of two ${stamp}`;
+  const second = `Second of two ${stamp}`;
+
+  await input.fill(first);
+  await input.press("Enter");
+  await expect(sent(first), "the broadcast shows the turn while the answer is held").toHaveCount(1);
+  expect(held.length, "the answer is still held").toBe(1);
+
+  await input.fill(second);
+  await input.press("Enter");
+  await expect(sent(second), "the second message is its own turn, not a double submit of the first").toHaveCount(1);
+  await expect(sent(first)).toHaveCount(1);
+
+  // A draft typed while the second send posts survives its answer's composer swap.
+  const draft = `A thought still being typed ${stamp}`;
+  await input.fill(draft);
+  await page.waitForTimeout(2000); // past the held answer
+  await expect(page.locator("[data-test='cto-chat-input']")).toHaveValue(draft);
+  await expect(sent(draft), "a draft is not sent").toHaveCount(0);
+
+  expect(pageErrors, report()).toEqual([]);
+});
