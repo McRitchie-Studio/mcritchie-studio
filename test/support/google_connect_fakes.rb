@@ -20,12 +20,14 @@ module GoogleConnectFakes
     originals&.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
   end
 
+  # The Picker's key (unless set: false) and app id, set by name for the block.
   def with_picker_key(set: true)
-    original = ENV["GOOGLE_PICKER_API_KEY"]
-    set ? ENV["GOOGLE_PICKER_API_KEY"] = PICKER_KEY.values.first : ENV.delete("GOOGLE_PICKER_API_KEY")
+    env = PICKER_KEY.merge("GOOGLE_PICKER_APP_ID" => "1234567")
+    originals = env.keys.index_with { ENV[_1] }
+    env.each { |k, v| set ? ENV[k] = v : ENV.delete(k) }
     yield
   ensure
-    original.nil? ? ENV.delete("GOOGLE_PICKER_API_KEY") : ENV["GOOGLE_PICKER_API_KEY"] = original
+    originals&.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
   end
 
   # An id_token whose payload names `email` (Google signs it; nothing here checks).
