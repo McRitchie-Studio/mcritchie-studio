@@ -121,4 +121,44 @@ class GoogleConnect::OAuthClientTest < ActiveSupport::TestCase
       assert_no_match(/synthetic-refresh/, logged, "the token never reaches the log")
     end
   end
+  # --- /tasks/google-connect-hardening-polish ---
+
+  test "[unit] email_verified? is true only when Google's id_token says email_verified true" do
+    verified = ->(claim) { GoogleConnect::OAuthClient.email_verified?({ "id_token" => id_token_for("a@b.test", verified: claim) }) }
+    assert verified.(true)
+    assert verified.("true"), "Google's older tokens carry the claim as a string"
+    refute verified.(false)
+    refute verified.("false")
+    refute verified.(:absent), "no claim is not a verified email"
+    refute GoogleConnect::OAuthClient.email_verified?({})
+    refute GoogleConnect::OAuthClient.email_verified?({ "id_token" => "a.%%%.c" })
+  end
+
+  test "[unit] revoke_grant revokes a just-issued grant's refresh token and reports Google's answer" do
+    google_answers(200, {})
+    assert GoogleConnect::OAuthClient.revoke_grant({ "refresh_token" => "1//issued", "access_token" => "ya29.issued" })
+    assert_equal GoogleConnect::OAuthClient::REVOKE_URL, google_requests.last[:url]
+    assert_equal({ token: "1//issued" }, google_requests.last[:form])
+
+    google_answers(400, { error: "invalid_token" })
+    refute GoogleConnect::OAuthClient.revoke_grant({ "refresh_token" => "1//issued" })
+  end
+
+  test "[unit] revoke_grant falls back to the access token, and asks Google nothing for an empty grant" do
+    google_answers(200, {})
+    assert GoogleConnect::OAuthClient.revoke_grant({ "access_token" => "ya29.only" })
+    assert_equal({ token: "ya29.only" }, google_requests.last[:form])
+
+    google_requests.clear
+    refute GoogleConnect::OAuthClient.revoke_grant({})
+    refute GoogleConnect::OAuthClient.revoke_grant(nil)
+    assert_empty google_requests
+  end
+
+  test "[unit] revoke_grant never raises: a network error logs its class and answers false" do
+    GoogleConnect::OAuthClient.http = ->(_method, _url, _form) { raise Errno::ECONNREFUSED, "synthetic" }
+    logged = capture_log { assert_equal false, GoogleConnect::OAuthClient.revoke_grant({ "refresh_token" => "1//issued-secret" }) }
+    assert_match(/revoke failed/, logged)
+    assert_no_match(/issued-secret/, logged, "the token never reaches the log")
+  end
 end

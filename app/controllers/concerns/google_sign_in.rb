@@ -22,6 +22,15 @@
 # refusal: the callback stores what was granted and says what was left
 # unticked. Only a grant of none of them stores nothing.
 #
+# WHAT THE CALLBACK REFUSES (/tasks/google-connect-hardening-polish): a
+# callback in a session whose signed-in user is not the one who pressed
+# Connect (the state is bound to that user's id); an account Google does not
+# report as verified (email_verified); a grant of none of the asked abilities;
+# an account another user connected. Each refusal revokes the token Google
+# just issued unless a stored connection already holds that account's grant
+# (#refuse_grant says why). Two simultaneous sign-ins of one new account end
+# as one row (GoogleConnection.store! looks again) and never a 500.
+#
 # WHERE IT COMES BACK. Each Connect and Disconnect takes ?return_to=, honoured
 # only when it is exactly one of the person's return paths (never an open
 # redirect): an admin's are /integrations and /admin/google, anyone else's
@@ -54,6 +63,7 @@ module GoogleSignIn
 
     session[:google_connect_return_to] = back
     session[:google_connect_ability] = params[:ability].to_s
+    session[:google_connect_user_id] = current_user.id
     redirect_to GoogleConnect::OAuthClient.authorize_url(redirect_uri: google_callback_url, state: new_google_state, abilities:),
                 allow_other_host: true
   rescue GoogleConnect::OAuthClient::NotConfigured
@@ -62,30 +72,67 @@ module GoogleSignIn
 
   def finish_google_sign_in
     expected = session.delete(:google_connect_oauth_state).to_s
+    started_by = session.delete(:google_connect_user_id)
     back = google_return_to(session.delete(:google_connect_return_to))
     requested = GoogleConnection.abilities_for(session.delete(:google_connect_ability))
     return render(plain: "OAuth state mismatch: start the connection again.", status: :bad_request) unless google_state_matches?(expected) && requested
 
     return redirect_to(back, alert: google_refusal(params[:error].to_s)) if params[:error].present?
+    return refuse_other_starter(back) unless started_by.present? && started_by == current_user.id
     return redirect_to(back, alert: ENCRYPTION_NOT_SET) unless GoogleConnection.encryption_ready?
 
     grant = GoogleConnect::OAuthClient.exchange_code(code: params[:code], redirect_uri: google_callback_url)
     email = GoogleConnect::OAuthClient.email_from(grant)
-    return redirect_to(back, alert: "Google did not say which account signed in, so nothing was saved. Start again.") if email.nil?
+    return refuse_grant(grant, nil, back, "Google did not say which account signed in, so nothing was saved. Start again.") if email.nil?
+    return refuse_grant(grant, email, back, unverified(email)) unless GoogleConnect::OAuthClient.email_verified?(grant)
+
     granted = GoogleConnection.granted_abilities(grant, requested)
-    return redirect_to(back, alert: nothing_granted(email, requested)) if granted.empty?
+    return refuse_grant(grant, email, back, nothing_granted(email, requested)) if granted.empty?
 
     connection = GoogleConnection.store!(grant, email:, user: current_user, abilities: requested)
     redirect_to back, notice: connected_notice(connection.email, requested, granted)
   rescue GoogleConnection::TakenByAnotherUser => e
     Rails.logger.info("[google_connect] refused: account owned by another user, by=#{current_user.slug}")
-    redirect_to back, alert: e.message
+    refuse_grant(grant, email, back, e.message)
+  rescue ActiveRecord::RecordNotUnique
+    Rails.logger.info("[google_connect] refused: a simultaneous sign-in of the same account stored it first, by=#{current_user.slug}")
+    refuse_grant(grant, email, back, "#{email} was connecting in another tab at the same moment. It is connected once; nothing else changed.")
   rescue ActiveRecord::RecordInvalid => e
-    redirect_to back, alert: "Google answered, but the connection was not saved: #{e.record.errors.full_messages.to_sentence}."
+    refuse_grant(grant, email, back, "Google answered, but the connection was not saved: #{e.record.errors.full_messages.to_sentence}.")
   rescue GoogleConnect::OAuthClient::NotConfigured
     redirect_to back, alert: KEYS_NOT_SET
   rescue GoogleConnect::OAuthClient::Error => e
     redirect_to back, alert: "Google refused to exchange the sign-in code (#{e.message}). Start again: a code works once."
+  end
+
+  # A callback reached in a session whose signed-in user is not the one who
+  # pressed Connect (someone else signed in on this browser mid-flow): the
+  # connection would land on the wrong person. Nothing is stored; the code is
+  # exchanged only so its grant can be refused and revoked (refuse_grant).
+  def refuse_other_starter(back)
+    Rails.logger.info("[google_connect] refused: callback user differs from the one who pressed Connect, by=#{current_user.slug}")
+    message = "This Google sign-in was started by someone else signed in on this browser, so nothing was connected. Press Connect again."
+    grant = GoogleConnect::OAuthClient.exchange_code(code: params[:code], redirect_uri: google_callback_url) if params[:code].present?
+    refuse_grant(grant, GoogleConnect::OAuthClient.email_from(grant.to_h), back, message)
+  rescue GoogleConnect::OAuthClient::Error
+    redirect_to back, alert: message
+  end
+
+  # Refuses a sign-in Google already granted: comes back with `message` and
+  # revokes the just-issued token, so no grant the hub will not keep stays live
+  # at Google. Google revokes per GRANT (every token the account gave this OAuth
+  # client), so when a stored connection already holds this account the revoke
+  # is skipped: it would cut that connection, and the refused token, never
+  # stored, logged or shown, is simply dropped.
+  def refuse_grant(grant, email, back, message)
+    held = email.present? && GoogleConnection.exists?(email: email.to_s.downcase)
+    revoked = grant.present? && !held && GoogleConnect::OAuthClient.revoke_grant(grant)
+    Rails.logger.info("[google_connect] refused grant: held=#{held} revoked=#{revoked} by=#{current_user.slug}")
+    redirect_to back, alert: message
+  end
+
+  def unverified(email)
+    "Google has not verified #{email}, so it was not connected. Verify the address with Google, then connect again."
   end
 
   # Disconnects one ability from every connection in `scope` that grants it.
