@@ -12,7 +12,9 @@
 class GoogleDrivePick < ApplicationRecord
   FOLDER_MIME = "application/vnd.google-apps.folder".freeze
 
-  belongs_to :google_connection, inverse_of: :drive_picks
+  # touch: a pick or unpick changes the connection's updated_at, which
+  # GoogleConnect::OwnerContext folds into its cache key.
+  belongs_to :google_connection, inverse_of: :drive_picks, touch: true
 
   validates :file_id, presence: true, uniqueness: { scope: :google_connection_id }, format: { with: /\A[\w-]+\z/ }
   validates :name, :picked_at, presence: true
