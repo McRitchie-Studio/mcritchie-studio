@@ -134,8 +134,95 @@ class ReleaseGemVersionTest < Minitest::Test
   # things to the caller (abort the sweep vs. carry on), and a test that only
   # checked the version would pass while the two were swapped.
 
-  def allocation(current: "0.4.0", tag: "0.4.0", live: ["0.4.0"], ahead: ["abc1234 work"], members: [member])
-    GV.allocation(current: current, tag_version: tag, live_versions: live, ahead_commits: ahead, members: members)
+  def allocation(current: "0.4.0", tag: "0.4.0", live: ["0.4.0"], ahead: ["abc1234 work"], members: [member],
+                 pending_entries: false)
+    GV.allocation(current: current, tag_version: tag, live_versions: live, ahead_commits: ahead, members: members,
+                  pending_entries: pending_entries)
+  end
+
+  # --- the re-run after an aborted prepare (2026-10-27) ------------------------
+  #
+  # Prepare allocated studio-engine 0.115.1 (a patch), aborted before the publish,
+  # and the re-run swept engine-node-tooling-package, which asked for a minor.
+  # The skip kept 0.115.1. An allocated version that never published is still
+  # the release's to change, so the re-run re-derives it from the CURRENT members.
+
+  def test_a_rerun_re_derives_an_unpublished_version_up_when_a_joining_member_earns_more
+    decision = allocation(current: "0.115.1", tag: "0.115.0", live: %w[0.115.0 0.115.1.rc1 0.115.1.rc2],
+                          members: [member(kind: "chore"), member(kind: "feature", slug: "engine-node-tooling-package")])
+
+    assert_equal GV::ALLOCATE, decision.action
+    assert_equal "0.116.0", decision.version
+    assert_equal "0.115.1", decision.replaces, "the CLI unrolls the superseded version's CHANGELOG section"
+    assert_includes decision.reason, "re-derived"
+    assert_includes decision.reason, "engine-node-tooling-package"
+  end
+
+  def test_a_gem_bump_override_on_a_joining_member_also_re_derives
+    decision = allocation(current: "0.115.1", tag: "0.115.0", live: %w[0.115.0],
+                          members: [member(kind: "chore"), member(kind: "chore", bump: "minor", slug: "b")])
+
+    assert_equal "0.116.0", decision.version
+  end
+
+  # Never DOWN: a hand-bump past the derived number stands, and an ejected member
+  # never walks a number back under a candidate already published for it.
+  def test_a_rerun_never_moves_an_unpublished_version_down
+    decision = allocation(current: "0.116.0", tag: "0.115.0", live: %w[0.115.0 0.116.0.rc1],
+                          members: [member(kind: "chore")])
+
+    assert_equal GV::SKIP, decision.action
+    assert_nil decision.replaces
+  end
+
+  def test_a_rerun_whose_members_earn_the_same_bump_still_skips
+    decision = allocation(current: "0.115.1", tag: "0.115.0", live: %w[0.115.0], members: [member(kind: "bug")])
+
+    assert_equal GV::SKIP, decision.action
+    assert_includes decision.reason, "already advanced"
+  end
+
+  # Same bump, but the bucket gained entries after the roll: re-roll the SAME
+  # version so they ship in it rather than under the next one.
+  def test_a_rerun_re_rolls_the_same_version_when_entries_arrived_after_its_roll
+    decision = allocation(current: "0.115.1", tag: "0.115.0", live: %w[0.115.0], members: [member(kind: "bug")],
+                          pending_entries: true)
+
+    assert_equal GV::ALLOCATE, decision.action
+    assert_equal "0.115.1", decision.version
+    assert_equal "0.115.1", decision.replaces
+    assert_includes decision.reason, "re-rolling"
+  end
+
+  def test_a_published_version_is_never_re_derived
+    decision = allocation(current: "0.115.1", tag: "0.115.0", live: %w[0.115.0 0.115.1],
+                          members: [member(kind: "feature")], pending_entries: true)
+
+    assert_equal GV::REFUSE, decision.action, "a live current is the untagged-publish refusal, never a re-derive"
+  end
+
+  # The re-derive floor is the same as a first allocation's: the highest of the
+  # tag and the live list, so it can never hand back a number RubyGems holds.
+  def test_a_re_derive_floors_on_the_live_list_too
+    decision = allocation(current: "0.115.1", tag: "0.115.0", live: %w[0.115.0 0.116.0],
+                          members: [member(kind: "feature")])
+
+    assert_equal GV::ALLOCATE, decision.action
+    assert_equal "0.117.0", decision.version, "0.116.0 is live and can never be re-pushed"
+  end
+
+  # rubygems_versions answers [] on ANY failed read, so beside a tag an empty live
+  # list is unread, not empty, and a live-but-untagged `current` looks unpublished.
+  def test_a_re_derive_never_acts_on_an_unread_live_list
+    decision = allocation(current: "0.115.1", tag: "0.115.0", live: [],
+                          members: [member(kind: "feature")], pending_entries: true)
+
+    assert_equal GV::SKIP, decision.action
+    assert_nil decision.replaces
+  end
+
+  def test_a_first_allocation_carries_no_replaces
+    assert_nil allocation(members: [member(kind: "feature")]).replaces
   end
 
   def test_allocates_the_members_bump_past_the_last_published_version

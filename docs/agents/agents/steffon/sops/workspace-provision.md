@@ -347,11 +347,14 @@ grant of none stores nothing.
 
 **Every connection has an owner** (`google_connections.user_id`, the user who
 signed it in; /tasks/every-user-connects-google). An admin's connections are the
-**household's**, and **agents read only the household's**:
+**household's**, and **agents read the household's**:
 `GoogleConnection.for`, `.current` and every agent-side lookup start from
-`GoogleConnection.household` (admin-owned rows), so a viewer's connection is
-never agent input. A promoted user's rows join the household; a demoted admin's
-leave it. An account another user already connected is refused ("That Google
+`GoogleConnection.household` (admin-owned rows). The one exception: the agent
+answering a client app's owner on their own app's CTO chat reads that owner's
+own rows (`GoogleConnection.owned_by`, through `GoogleConnect::OwnerContext`;
+`docs/agents/system/agent-message-loop.md`, "The Google layer"). No agent reads
+one user's connection for anyone else. A promoted user's rows join the
+household; a demoted admin's leave it. An account another user already connected is refused ("That Google
 account is already connected by another user"), never taken over; the same
 user signing in again keeps incremental consent.
 
@@ -369,7 +372,13 @@ admin's buttons go through `/admin/google` and show the household's accounts; a
 non-admin's go through `/integrations/google/connect` and
 `/integrations/google/connection` (`Integrations::GoogleController`) and show
 and disconnect only their own. A signed-out visitor sees the cards and their
-normal contact-form CTA only. Both doors share one flow (`GoogleSignIn`) and
+normal contact-form CTA only. On `/integrations` the Gmail card's Connect, and
+Connect Google or Connect the rest while Gmail is still missing, first open the
+Gmail admin-trust modal (`app/views/modals/_gmail_admin.html.erb`): Gmail read is
+a restricted scope Google will not verify for us, so the user's Workspace admin
+marks the OAuth client (`GOOGLE_CONNECT_CLIENT_ID`, shown with a copy button)
+Trusted under Security → API controls → Manage Third-Party App Access; its
+Continue goes on to the same connect route. `/admin/google` links straight. Both doors share one flow (`GoogleSignIn`) and
 **one callback**, `/admin/google_calendar/callback`, which admits any signed-in
 user carrying the OAuth state their Connect set, so the console owes no new
 redirect URI. `?return_to=` is honoured only for `/integrations` and (for an

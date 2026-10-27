@@ -28,6 +28,7 @@ require "tmpdir"
 require "fileutils"
 require "json"
 require_relative "../support/session_env"
+require_relative "../../app/models/release/changelog"
 
 class ReleaseGemAllocationTest < Minitest::Test
   BIN = File.expand_path("../../bin/release.rb", __dir__)
@@ -763,6 +764,90 @@ class ReleaseGemAllocationTest < Minitest::Test
 
       assert ok, out
       assert_includes out, "allocated 0.6.0"
+    end
+  end
+
+  # --- the re-run after an aborted prepare (2026-10-27) ------------------------
+  #
+  # Prepare allocated studio-engine 0.115.1 (a patch) and rolled the bucket into
+  # it, then aborted before the publish. A member that asked for a minor merged
+  # onto `accepted`, and the re-run kept 0.115.1, so the gem shipped a patch and
+  # that member's CHANGELOG entry shipped under 0.115.2. These drive the real
+  # allocate twice against real git, with the member's merge in between.
+
+  # A member merging onto `accepted` after the first allocation: one code change
+  # and one entry under `## Unreleased`, pushed by ref.
+  def merge_member_onto_accepted(repo, entry)
+    git(repo, "fetch", "--quiet", "origin")
+    git(repo, "checkout", "--quiet", "-B", "member", "origin/accepted")
+    File.write(File.join(repo, "lib", "studio", "#{entry.tr(' ', '_')}.rb"), "# #{entry}\n")
+    path = File.join(repo, "CHANGELOG.md")
+    File.write(path, File.read(path).sub("## Unreleased\n", "## Unreleased\n\n### Added\n\n- #{entry}\n"))
+    git(repo, "add", "-A")
+    git(repo, "commit", "--quiet", "-m", "merge #{entry}")
+    git(repo, "push", "--quiet", "origin", "member:refs/heads/accepted")
+    git(repo, "checkout", "--quiet", "release")
+  end
+
+  def test_a_rerun_re_derives_the_unpublished_version_when_a_joining_member_earns_a_minor
+    with_root do |root|
+      origin, repo = build_projects_root(root, changelog: changelog)
+      out, ok = allocate(root, members: [member(kind: "bug", slug: "first-fix")])
+      assert ok, out
+      assert_includes pushed(origin, "lib/studio/version.rb"), %(VERSION = "0.4.1"), "the first pass allocates a patch"
+
+      merge_member_onto_accepted(repo, "node tooling package")
+      out, ok = allocate(root, members: [member(kind: "bug", slug: "first-fix"),
+                                         member(kind: "feature", slug: "node-tooling")],
+                               live: %w[0.4.0 0.4.1.rc1])
+
+      assert ok, "the re-run should re-allocate:\n#{out}"
+      assert_includes pushed(origin, "lib/studio/version.rb"), %(VERSION = "0.5.0"),
+                      "the joining feature member must carry the unpublished 0.4.1 up to a minor"
+      assert_includes pushed(origin, "Gemfile.lock"), "studio-engine (0.5.0)"
+      assert_includes out, "re-derived"
+      assert_includes git(origin, "log", "-1", "--format=%s", "accepted"), "re-allocated over unpublished 0.4.1"
+
+      rolled = pushed(origin, "CHANGELOG.md")
+      refute_includes rolled, "## 0.4.1", "the superseded, never-published heading must not survive"
+      assert_operator rolled.index("## 0.5.0"), :<, rolled.index("- node tooling package")
+      assert_operator rolled.index("## 0.5.0"), :<, rolled.index("- entry one")
+      assert_operator rolled.index("- entry one"), :<, rolled.index("## 0.4.0"),
+                      "every entry of this release sits under its one heading, above the shipped one"
+    end
+  end
+
+  def test_a_rerun_with_the_same_bump_re_rolls_late_entries_into_the_same_version
+    with_root do |root|
+      origin, repo = build_projects_root(root, changelog: changelog)
+      _, ok = allocate(root, members: [member(kind: "bug", slug: "first-fix")])
+      assert ok
+
+      merge_member_onto_accepted(repo, "late fix")
+      out, ok = allocate(root, members: [member(kind: "bug", slug: "first-fix"), member(kind: "bug", slug: "late")])
+
+      assert ok, out
+      assert_includes pushed(origin, "lib/studio/version.rb"), %(VERSION = "0.4.1"), "same bump, same number"
+      rolled = pushed(origin, "CHANGELOG.md")
+      assert_equal 1, rolled.scan("## 0.4.1").size
+      assert_operator rolled.index("## 0.4.1"), :<, rolled.index("- late fix"),
+                      "the late entry ships in 0.4.1, not under the next version"
+      assert_empty Release::Changelog.unreleased_entries(rolled)
+    end
+  end
+
+  def test_a_rerun_with_nothing_new_still_skips
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog)
+      _, ok = allocate(root, members: [member(kind: "bug", slug: "first-fix")])
+      assert ok
+      head = git(origin, "rev-parse", "accepted")
+
+      out, ok = allocate(root, members: [member(kind: "bug", slug: "first-fix")])
+
+      assert ok, out
+      assert_includes out, "allocated already"
+      assert_equal head, git(origin, "rev-parse", "accepted"), "an idempotent re-run writes nothing"
     end
   end
 end

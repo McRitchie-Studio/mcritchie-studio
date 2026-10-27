@@ -59,8 +59,17 @@ module DomainCutover
     end
 
     # `op read`, value on stdout only; stderr dropped so nothing echoes.
+    #
+    # BOUNDED AND METERED through OpMeter.popen (20 seconds an attempt, one retry
+    # past the cache daemon, then SIGKILL). This is the read `bin/release` makes for
+    # a static_cloudflare deploy (StaticCloudflare::Credentials.r2), and it was the
+    # last bare IO.popen on the release path: from 06:14 to 08:17 MDT on 2026-10-27
+    # every `op` call hung, and an unbounded read here would have frozen the ship
+    # rather than failed it. A timed-out read returns "", which every caller
+    # already refuses as an empty item.
     def op_read(ref, env)
-      IO.popen(env, ["op", "read", ref], err: File::NULL, &:read).to_s.strip
+      require_relative "op_meter"
+      OpMeter.popen(env, ["op", "read", ref], via: "domain_cutover", err: File::NULL).to_s.strip
     rescue Errno::ENOENT
       raise Abort, "the 1Password CLI (op) is not on PATH"
     end

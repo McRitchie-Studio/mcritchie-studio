@@ -9,8 +9,10 @@
 #
 # Each file is BrandKitExport#svg, byte for byte: the same bytes /logos/:brand/kit/<file> serves for the kit record in
 # THIS database. A file whose bytes are already right is not rewritten, so a second install changes nothing.
-# Beside the files, kit.json records what they were drawn from (the brand and its three choices, null for a default),
-# so a later reader can tell which saved kit the committed files are, and a test can redraw them to check.
+# Beside the files, kit.json records what they were drawn from (the brand and its three choices, null for a default)
+# and the kit's saved_at (ISO 8601, UTC; null for a kit never saved), so a later reader can tell which saved kit the
+# committed files are, a test can redraw them to check, and the brand-kit-rollout SOP can read an app's live
+# /brand/kit.json to record the version it serves (`bin/rails logos:applied`, BrandKitApp).
 class BrandKitInstall
   MANIFEST = "kit.json"
 
@@ -25,9 +27,26 @@ class BrandKitInstall
 
   def self.default_dest = Rails.root.join("public/brand")
 
-  # The manifest's content: the brand and each choice as stored (nil where the brand's default is drawn).
+  # The manifest's content: the brand, each choice as stored (nil where the brand's default is drawn), and the kit's
+  # saved_at to the second.
   def self.manifest_for(kit)
     { "brand" => kit.brand }.merge(BrandKit::CHOICE_TYPES.to_h { |type| [type.to_s, kit.choice(type)] })
+                            .merge("saved_at" => kit.saved_at&.utc&.iso8601)
+  end
+
+  # An unsaved BrandKit holding what a kit.json names (its choices and saved_at), to install a kit another database
+  # holds (production's, read with .manifest_for there). An ArgumentError when it names another brand, or a choice
+  # the brand cannot draw.
+  def self.kit_from_manifest(json, brand:)
+    manifest = JSON.parse(json)
+    raise ArgumentError, "it names brand #{manifest['brand'].inspect}, not #{brand.inspect}" unless manifest["brand"] == brand.to_s && Logos::NavbarLogo.brands.include?(brand.to_s)
+
+    kit = BrandKit.new(brand: brand.to_s, saved_at: manifest["saved_at"] && Time.iso8601(manifest["saved_at"]),
+                       **BrandKit::CHOICE_TYPES.to_h { |type| [:"#{type}_choice", manifest[type.to_s]] })
+    BrandKit::CHOICE_TYPES.each { |type| BrandKit.variant(kit.brand, type, kit.choice(type)) if kit.saved?(type) }
+    kit
+  rescue BrandKit::Error => e
+    raise ArgumentError, e.message
   end
 
   # Writes every file the kit draws, and the manifest. Returns which were written, which were already right, and

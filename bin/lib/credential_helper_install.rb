@@ -54,7 +54,7 @@ require_relative "projects_root"
 #
 # WHAT SURVIVES RELOCATION, AND WHY THIS IS SAFE. The one thing that could have
 # broken is the SHARED SESSION: bin/gh-token holds the hour-long installation
-# token in `<projects>/.agents/github-tokens.json`, and a warm git operation
+# token in `<projects>/.secret-cache/github-tokens.json`, and a warm git operation
 # costs ZERO 1Password reads because of it. Splitting that cache would send
 # every git operation back down the mint path — three 1Password reads each —
 # which is the failure the helper's own header records as eighteen hours of

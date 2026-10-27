@@ -55,6 +55,10 @@ module AgentMailbox
     #                  member quoting a public post would plant it in the session
     #   THREAD         every earlier turn is the sender's own (`own`, set on the
     #                  board), and none of those quotes either
+    #   GOOGLE         no owner Google snapshot (`google_context`): its subjects,
+    #                  snippets and titles are strangers' words, and one warm
+    #                  session per domain is shared by the owner and the team,
+    #                  so a persisted snapshot would reach a team turn
     #   PROPOSAL       the thread's newest proposal (model-written, printed in the
     #                  catalog block) is absent, or was offered on one of those
     #                  shown own turns (`own` and `source_message_id`, set on the
@@ -68,6 +72,8 @@ module AgentMailbox
       return false if message.is_a?(Hash) && quotes?(message["content"])
 
       return false unless AUDIENCES.include?(Audience.from_context(context).role)
+      # An owner's Google snapshot is answered cold, never persisted (GOOGLE above).
+      return false if context.is_a?(Hash) && !context["google_context"].nil?
 
       # THREAD carries every earlier turn, whoever wrote it: one not the sender's
       # own (a client's, the public's) would persist in the session, so answer cold.

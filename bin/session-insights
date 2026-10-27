@@ -25,10 +25,20 @@
 # approved dreams with no soul tag, then the helper roster. Dreams are tracked
 # files, read locally, so they load even when the board gives no insights. Dreams
 # print first; insights follow. A soul's own sequence loads through bin/dream.
+#
+# And it names any SECRET CACHE entry expired or expiring within the hour
+# (bin/lib/secret_cache.rb, docs/agents/modules/secret-cache.md), ahead of both. A
+# few stats and file reads, no process and no network, and silent when nothing is
+# due; the require is optional so a tree without the lib still starts sessions.
 
 require "json"
 require_relative "lib/agent_api"
 require_relative "lib/dream_bank"
+begin
+  require_relative "lib/secret_cache"
+rescue LoadError
+  nil
+end
 
 class SessionInsights
   include AgentApi::Presence
@@ -66,6 +76,8 @@ class SessionInsights
   # SessionStart injection JSON. Silent no-op otherwise. ALWAYS returns without raising.
   def run
     insights = additional_context(fetch_insights).to_s.strip
+    secrets = secret_cache_context
+    insights = [ secrets, insights ].reject(&:empty?).join(SEPARATOR)
     context = session_context(dreams: dream_context(budget: dream_budget(insights)), insights: insights)
     return if context.empty?
 
@@ -77,6 +89,15 @@ class SessionInsights
               ))
   rescue StandardError
     # swallow — a feed-forward hook must never break or delay a session start
+  end
+
+  # Expired or soon-expiring secret-cache entries; "" when none or no lib.
+  def secret_cache_context
+    return "" unless defined?(SecretCache)
+
+    SecretCache.session_block(env: @env).to_s.strip
+  rescue StandardError
+    ""
   end
 
   # The platform sequence as a context block; "" when it is empty or unreadable.

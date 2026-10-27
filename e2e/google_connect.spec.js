@@ -91,6 +91,14 @@ test("the Gmail read shows on the admin page after connecting it there", async (
 });
 
 const connectAll = (page) => page.locator("[data-test='google-connect-all']");
+// While Gmail is missing, Connect Google (and Connect the rest) on /integrations
+// opens the Gmail admin-trust modal first; its Continue goes on to Google.
+const adminModal = (page) => page.locator("[data-test='gmail-admin-modal']");
+const throughAdminModal = async (page, name) => {
+  await connectAll(page).getByRole("button", { name }).click();
+  await expect(adminModal(page)).toBeVisible();
+  await adminModal(page).getByRole("link", { name: "Continue to Google" }).click();
+};
 
 test("an admin connects Calendar, Gmail and Drive at once with Connect Google", async ({ page }) => {
   // Every Disconnect asks to confirm. One standing handler accepts each, so a
@@ -101,7 +109,7 @@ test("an admin connects Calendar, Gmail and Drive at once with Connect Google", 
   const cards = { calendar: slot(page, "google_calendar"), gmail: slot(page, "gmail"), drive: slot(page, "google_drive") };
   await expect(connectAll(page)).toHaveAttribute("data-state", "none");
 
-  await connectAll(page).getByRole("link", { name: "Connect Google" }).click();
+  await throughAdminModal(page, "Connect Google");
   await expect(page).toHaveURL(/\/integrations$/);
   await expect(page.getByText("Google Calendar, Gmail, and Google Drive connected for stand-in@example.com.")).toBeVisible();
   for (const card of Object.values(cards)) await expect(card).toHaveAttribute("data-state", "connected");
@@ -138,7 +146,8 @@ test("a Connect Google that unticks Gmail connects the other two, and a disconne
 
   // Google's consent screen, with Gmail unticked: the sign-in comes back with a
   // code granting the other two.
-  const href = await connectAll(page).getByRole("link", { name: "Connect Google" }).getAttribute("href");
+  await connectAll(page).getByRole("button", { name: "Connect Google" }).click();
+  const href = await adminModal(page).getByRole("link", { name: "Continue to Google" }).getAttribute("href");
   const toGoogle = await page.request.get(href, { maxRedirects: 0 });
   expect(toGoogle.status()).toBe(302);
   const back = new URL(toGoogle.headers()["location"]);
@@ -155,7 +164,7 @@ test("a Connect Google that unticks Gmail connects the other two, and a disconne
   await expect(connectAll(page)).toHaveAttribute("data-state", "some");
 
   // Connect the rest grants Gmail too.
-  await connectAll(page).getByRole("link", { name: "Connect the rest" }).click();
+  await throughAdminModal(page, "Connect the rest");
   await expect(cards.gmail).toHaveAttribute("data-state", "connected");
   await expect(connectAll(page)).toHaveAttribute("data-state", "all");
 

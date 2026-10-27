@@ -93,6 +93,7 @@ its invocation exactly.
 | SOP or heartbeat | Read |
 |------------------|------|
 | `Alex Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
+| Alex `brand-kit-rollout` SOP (apply a saved brand kit to one or more apps and record it applied) | `mcritchie-studio/docs/agents/agents/alex/sops/brand-kit-rollout.md` |
 | Alex `focus-session` SOP (hold an epic, file just-in-time, build wide, review your own PRs) | `mcritchie-studio/docs/agents/agents/alex/sops/focus-session.md` |
 | Alex `launch-build-queue` SOP (work /build app requests: claim, build, point the subdomain, mark live) | `mcritchie-studio/docs/agents/agents/alex/sops/launch-build-queue.md` |
 | Alex `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/alex/sops/ship-clock.md` |
@@ -167,6 +168,7 @@ its invocation exactly.
 | `gmail-capture` (read-only mailbox pull into the desk queue) | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `knowledge-capture` (team@, intake protocol, sweep) | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
 | `process-backlog` (groom designed, build four wide) | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
+| `secret-cache` (read, refresh, forget and recover cached expiring credentials; 1Password is the fallback) | `mcritchie-studio/docs/agents/modules/secret-cache.md` |
 | `slack-capture` (connect, read, categorize a channel) | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
 | `token-session` (GitHub token session broken: 401, `Bad credentials`, push refused) | `mcritchie-studio/docs/agents/modules/token-session.md` |
 | `work-backlog` (your own tasks, two-three wide) | `mcritchie-studio/docs/agents/modules/work-backlog.md` |

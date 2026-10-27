@@ -750,6 +750,12 @@ table opens on it again.
 - A PNG is transparent. A JPEG has no transparency, so it is filled with the solid background the Download card
   offers for that tone (`Logos::PngSizes::BACKGROUNDS`: white behind the light logo, black behind the dark one and
   the watermark).
+- Each link's accessible name is the server's (`Download: <logo>`, with `, kit choice` for a saved choice), and the
+  script puts the format in front of it (`Download PNG, 800 px wide: <logo>, kit choice`), so the saved cue is kept.
+
+Under the downloads, one line per app the kit feeds: the app's emoji and name and its status, **Applied**, **Kit
+changed** (amber) or **Not applied** ([which apps have the kit](#which-apps-have-the-kit)). The line's title gives
+the kit's save date and when the app applied it.
 
 ### Editing a logo's parts
 
@@ -866,6 +872,7 @@ YAML and stores nothing; those stay in the YAML for now.
 | `stacked_choice` | `{"form" => "tagline", "proportion" => "rule_of_three", "text" => "first", "colouring" => "original", "edits" => {}}`, or null. `proportion` is stored only for the rule of three: absent is 3-2-1, so a choice saved before it reloads unchanged |
 | `notes` | the operator's own words on the kit |
 | `updated_by` | the admin who changed it last (email) |
+| `saved_at` | when an Icon, Navbar or Stacked choice was last saved or cleared: the kit's version, which `kit.json` carries. Notes and originals move `updated_at`, never this (task brand-kit-applied-status; backfilled from `updated_at` for kits saved before it) |
 | `originals` | Active Storage attachments: the original artwork |
 
 A choice's `colouring` is optional: one saved before colourings has none and
@@ -913,8 +920,9 @@ with a line saying what was saved. **Clear saved choice** puts the brand back on
 The brand page's header says `Kit: saved <date> by <who>` (the saver's user
 name, else their email's local part; the title adds the email) while an Icon,
 Navbar or Stacked choice is saved, and `Kit: not saved yet` otherwise, notes and
-originals included; ` · originals: N` follows when the kit holds any. The /logos
-table shows the same status cut to one line. Clear lands on the tab at the Kit
+originals included; ` · originals: N` follows when the kit holds any. Its date
+is `saved_at`. The /logos table does not show this line: under each row's
+downloads it lists the apps the kit feeds ([which apps have the kit](#which-apps-have-the-kit)). Clear lands on the tab at the Kit
 choice card (`#kit-choice`). Its **Kit** card shows the three choices (Icon, Navbar, Stacked) in the page's tone, each with
 **Open on its tab** and **Download**, and the kit's notes; its **Download kit** button gives them all as files
 ([the kit export](#the-kit-export)).
@@ -998,7 +1006,8 @@ are the same bytes.
 the brand's kit, as THIS database holds it, into `DEST` (default this app's
 `public/brand/`): every file `BrandKitExport::FILES` names, byte-equal to what
 `/logos/<brand>/kit/<file>` serves, plus `kit.json`, the brand and the three
-choices the files were drawn from (`null` for a default). A file already right
+choices the files were drawn from (`null` for a default), and the kit's
+`saved_at` (ISO 8601 UTC seconds, `null` for a kit never saved). A file already right
 is not rewritten, so a second run changes nothing. Point `DEST` at another
 app's `public/brand/` to roll a kit out there.
 
@@ -1050,6 +1059,35 @@ squares, so it is ImageMagick: `magick -size 1200x630 'xc:#1A1535' \( +size -bac
 the wordmark falls off the frame, leaving only the chest. Look at the result.
 `test/integration/link_preview_adoption_test.rb` fails when it is not 1200 × 630, the
 large-card shape unfurlers expect.
+
+### Which apps have the kit
+
+Task brand-kit-applied-status (Alex McRitchie 2026-10-27). `BrandKitApp` (table `brand_kit_apps`) links a kit to an
+app: a kit feeds many apps, and an app may take many kits (Commercial Welding v1 and v2 both feed
+`commercial-welding`). `brand` is the kit's brand key, not a foreign key (a kit row is only created on its first
+save); `app_slug` is a slug FK to `apps`. `used_at` and `used_by` say when and by whom the kit was last applied, and
+`applied_saved_at` the kit `saved_at` that application carried. `BrandKitApp#status`:
+
+| Status | When |
+|--------|------|
+| **Applied** | applied, and the applied version (`applied_saved_at`, else `used_at`) is at or after the kit's `saved_at`, to the second |
+| **Kit changed** | the kit was saved after the app last applied it |
+| **Not applied** | never applied (no `used_at`) |
+
+The /logos brand column and the app's page (`/applications/<slug>`, its **Brand kit** card; the brand links to
+`/logos` for an admin) show it. Record an application on the hub's production database, once the app's live
+`/brand/kit.json` names the version:
+
+```bash
+bin/rails logos:applied BRAND=<brand> APP=<app slug> [AT=<time>] [BY=<who>] [SAVED_AT=<kit.json saved_at>]
+```
+
+It creates the link if needed. The migration seeded `studio → mcritchie-studio`, `industries →
+mcritchie-industries`, `turf → turf-monster`, and `welding` and `welding_v2 → commercial-welding`, skipping an app
+with no row. Only the hub's link was stamped, and only where its committed `public/brand/kit.json` equals the studio
+kit's saved choices; every other app reads Not applied until it is rolled out. The whole procedure is Alex's
+[`brand-kit-rollout`](../agents/agents/alex/sops/brand-kit-rollout.md). Nothing polls an app's `kit.json` yet;
+the SOP reads it by hand.
 
 **Access.** Every route is behind the admin wall, like the rest of `/logos`;
 it is not public (opening it to the world is Alex McRitchie's call). A build fetch needs

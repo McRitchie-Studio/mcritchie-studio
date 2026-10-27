@@ -350,12 +350,23 @@ export function sizeWords(spec) {
   return kind === "long" ? `${value} px on its long side` : `${value} px wide`;
 }
 
+// A table link's accessible name in the table's format, built on the server's own label ("Download: <logo>, kit
+// choice"), so the server's cues (the ", kit choice" a saved choice carries) survive: "Download PNG, 800 px wide: <logo>,
+// kit choice". `serverLabel` is the label the page was served with; `fallback` names the logo when there is none.
+export function tableLinkLabel(serverLabel, format, rasterSize, fallback = "") {
+  const raster = RASTER_FORMATS[format];
+  const named = String(serverLabel || "").replace(/^Download:\s*/, "") || fallback;
+  return `Download ${raster ? `${raster.label}, ${sizeWords(rasterSize)}` : "SVG"}: ${named}`;
+}
+
 // Shows the format control (served hidden: without JavaScript every link is an SVG) and names each link's format.
+// The served aria-label is kept once in data-server-label, so a second install (a Turbo visit) builds on it, not on
+// its own last answer.
 export function installTableDownloads(root = document) {
   root.querySelectorAll("[data-logo-raster-js]").forEach((el) => { el.hidden = false; });
   root.querySelectorAll("a[data-logo-raster]").forEach((link) => {
-    const raster = RASTER_FORMATS[tableFormat(link)];
-    link.setAttribute("aria-label", `Download ${raster ? `${raster.label}, ${sizeWords(link.dataset.rasterSize)}` : "SVG"}: ${link.dataset.label}`);
+    if (link.dataset.serverLabel === undefined) link.dataset.serverLabel = link.getAttribute("aria-label") || "";
+    link.setAttribute("aria-label", tableLinkLabel(link.dataset.serverLabel, tableFormat(link), link.dataset.rasterSize, link.dataset.label));
   });
 }
 

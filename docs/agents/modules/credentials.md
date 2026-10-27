@@ -47,6 +47,16 @@ Credential docs are split into two layers:
 - Do not edit agent tool permissions or `.claude/settings*.json` to gain credential access.
 - If a permission is missing, report the exact vault, item, and operation needed instead of inventing a workaround.
 
+## Expiring credentials: the secret cache comes first
+
+A credential that expires or rotates (the GitHub App installation tokens, the
+harness key) is read from `/Users/alex/projects/.secret-cache/` first, and from
+1Password only on a miss, an expiry or a read inside its refresh window. Read it
+through `bin/secret` (`status`, `get`, `refresh`, `forget`); when a key is rotated,
+`bin/secret forget --source <item>`. Environment secrets (`~/.zprofile`, Heroku
+config) stay where they are. Production dynos cannot read the folder. Detail,
+including the contingency when `op` hangs: [`secret-cache.md`](secret-cache.md).
+
 ## Commands that print what they touch
 
 Before running anything near a credential, ask what it prints. Each of these has
@@ -223,8 +233,10 @@ bin/harness-key collect --code <code>   # with the row's one-time code; or `coll
 bin/harness-key status                  # the slug, the machine and the key's length; whether the board accepts it
 ```
 
-The key is kept in `<projects>/.agents/harness-key.json`, owner-only, and no
-command prints it. It has no expiry: `bin/rails agent_sessions:keys` lists every
+The key is kept in the [secret cache](secret-cache.md),
+`<projects>/.secret-cache/harness-key.json`, owner-only, and no command prints it
+(the old `<projects>/.agents/harness-key.json` is a symlink to it until every
+reader has switched). It has no expiry: `bin/rails agent_sessions:keys` lists every
 key without a value, and `bin/rails agent_sessions:revoke SLUG=<sess-…>` ends one
 at once. A machine with no key, or whose key was revoked, presents the shared
 token and says so.
@@ -551,7 +563,11 @@ timed-out attempt is logged `timeout` and retried ONCE with `OP_CACHE=false`, wh
 skips the 1Password cache daemon; the retry logs its own row (`ok`, `fail:<n>`, or
 a second `timeout`). `bin/op-reads` counts timeouts in their own column. Callers
 change nothing: `bin/gh-token`, `bin/gh-app-git-credential`, the board CLI and the
-agent API all get the bound from the wrapper. The shell half's watchdog is perl
+agent API all get the bound from the wrapper, and since 2026-10-27 so do the last
+bare readers under `bin/`: `DomainCutover::Credentials.op_read` (the release's
+static-site deploy), `bin/r2-backup --op`, `bin/lib/dev_google_client.rb` and
+`DomainRegister::Credentials.op_read`. `test/lib/op_reads_are_bounded_test.rb`
+refuses a new Ruby call under `bin/` that spawns `op` outside the wrapper. The shell half's watchdog is perl
 (`timeout` is not installed on the Mac), and it forks and kills from the parent,
 because `op` is a Go binary and ignores an inherited SIGALRM. Why: from 2026-10-21
 to 2026-10-24 the daemon never became ready after a reboot, every read waited about

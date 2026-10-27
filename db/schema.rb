@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -829,12 +829,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_120000) do
     t.index ["slug"], name: "index_body_archetypes_on_slug", unique: true
   end
 
+  create_table "brand_kit_apps", force: :cascade do |t|
+    t.string "app_slug", null: false
+    t.datetime "applied_saved_at"
+    t.string "brand", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.datetime "used_at"
+    t.string "used_by"
+    t.index ["app_slug"], name: "index_brand_kit_apps_on_app_slug"
+    t.index ["brand", "app_slug"], name: "index_brand_kit_apps_on_brand_and_app_slug", unique: true
+  end
+
   create_table "brand_kits", force: :cascade do |t|
     t.string "brand", null: false
     t.datetime "created_at", null: false
     t.jsonb "icon_choice"
     t.jsonb "navbar_choice"
     t.text "notes"
+    t.datetime "saved_at"
     t.jsonb "stacked_choice"
     t.datetime "updated_at", null: false
     t.string "updated_by"
@@ -3003,6 +3016,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_120000) do
   add_foreign_key "athlete_grades", "athletes", column: "athlete_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "athlete_grades", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "athletes", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "brand_kit_apps", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
   add_foreign_key "broadcast_deliveries", "broadcasts"
   add_foreign_key "broadcast_deliveries", "contacts"
   add_foreign_key "builders", "people"

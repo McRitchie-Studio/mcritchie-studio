@@ -43,8 +43,10 @@ module DevGoogleClient
     { id: values["GOOGLE_CLIENT_ID"], secret: values["GOOGLE_CLIENT_SECRET"] }
   end
 
+  # Bounded and metered through OpMeter.popen, like every op read under bin/.
   def op_read(ref)
-    out = IO.popen(["op", "read", ref], err: File::NULL, &:read)
+    require_relative "op_meter"
+    out = OpMeter.popen({}, ["op", "read", ref], via: "dev_google_client", err: File::NULL)
     $?.success? ? out : "" # rubocop:disable Style/SpecialGlobalVars
   end
 

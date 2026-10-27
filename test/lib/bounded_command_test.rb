@@ -47,6 +47,22 @@ class BoundedCommandTest < Minitest::Test
 
   # A grandchild that inherits stdout (a daemon started in the background)
   # must not hold the call open after the child itself has exited.
+  # pgroup: true moves the child out of the caller's group, so a Ctrl-C or a
+  # SIGTERM to the caller no longer reaches it: the caller must kill it on the way out.
+  def test_unit_a_signal_to_the_caller_takes_the_child_group_with_it
+    Dir.mktmpdir do |dir|
+      marker = File.join(dir, "survived")
+      lib = File.expand_path("../../bin/lib/bounded_command", __dir__)
+      script = %(require #{lib.inspect}; BoundedCommand.run({}, ["sh", "-c", "(sleep 1; touch #{marker}) & exec sleep 600"], deadline: 60, pgroup: true))
+      caller_pid = Process.spawn("ruby", "-e", script, out: File::NULL, err: File::NULL)
+      sleep 0.4
+      Process.kill(:TERM, caller_pid)
+      Process.wait(caller_pid)
+      sleep 1.3
+      refute File.exist?(marker), "the child's group outlived a signal to its caller"
+    end
+  end
+
   def test_unit_a_grandchild_holding_stdout_does_not_stall_a_finished_child
     result, seconds = elapsed { BoundedCommand.run({}, ["sh", "-c", "(sleep 30 &); printf done"], deadline: 10) }
 

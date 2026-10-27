@@ -381,6 +381,56 @@ class Release
       "#{rolled.join("\n").rstrip}\n"
     end
 
+    # --- the unroll: an allocated version that never shipped ------------------
+
+    # `text` with the section for `version` folded back into `## Unreleased`, or
+    # nil when that section is not the one directly beneath the bucket.
+    #
+    # WHY IT EXISTS. Prepare rolls the bucket into the version it allocates, on
+    # `accepted`, before anything is published. When that prepare aborts and the
+    # re-run sweeps NEW members, the allocated version has not shipped, so it is
+    # still the release's to change: on 2026-10-27 studio-engine 0.115.1 stayed a
+    # patch although a joining member earned a minor, and that member's entries,
+    # merged under `## Unreleased` after the roll, shipped under 0.115.2. The
+    # re-run unrolls the unpublished section and rolls the whole bucket again,
+    # under the re-derived version (Release::GemVersion#allocation's `replaces`).
+    #
+    # ONLY THE SECTION DIRECTLY BELOW THE BUCKET, and only when it names exactly
+    # `version`. That is where the previous roll put it; anything else is a file
+    # this did not write, and nil sends the caller back to the ordinary roll and
+    # its guard. The newer entries (the bucket's) go first, then the section's,
+    # each block kept whole: two blocks may each carry a `### Added`, which renders
+    # correctly and moves no entry between releases.
+    def unroll(text, version:)
+      wanted = parse_version(version)
+      return nil unless wanted
+
+      lines = body_lines(text)
+      start = unreleased_index(lines)
+      return nil unless start
+
+      finish = section_end(lines, start)
+      return nil unless finish < lines.size && version_of(lines[finish]) == wanted
+
+      section_finish = section_end(lines, finish)
+      pending = trim(lines[(start + 1)...finish])
+      rolled  = trim(lines[(finish + 1)...section_finish])
+      body    = pending + (pending.empty? || rolled.empty? ? [] : [""]) + rolled
+
+      merged = lines[0..start]
+      merged += [""] + body unless body.empty?
+      merged += [""] + lines[section_finish..] if section_finish < lines.size
+
+      "#{merged.join("\n").rstrip}\n"
+    end
+
+    # True when `version` was rolled directly beneath the bucket AND the bucket has
+    # gained entries since: the allocated-but-unpublished version they belong in
+    # would otherwise ship without them, and they would land under the next one.
+    def refold?(text, version:)
+      entries?(text) && !unroll(text, version: version).nil?
+    end
+
     # --- the misfile guard: a merge across a roll ------------------------------
 
     # Lines one side of a merge ADDED to `## Unreleased` that the merge RESULT
