@@ -12,7 +12,7 @@ apps, through the normal pipeline, and ends by recording each app as **Applied**
 on the hub. The /logos brand column and each app's page (`/applications/<slug>`)
 show every link as **Applied**, **Kit changed** (amber: the kit was saved after
 the app last applied it) or **Not applied**. Design and status rules:
-[`docs/topics/logos.md` § Which apps have the kit](../../../../topics/logos.md#which-apps-have-the-kit).
+`docs/topics/logos.md` § Which apps have the kit.
 
 ## Preconditions
 
