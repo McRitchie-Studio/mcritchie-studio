@@ -237,7 +237,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
       modal = find("[data-test='gmail-admin-modal']")
       assert_text "Gmail needs your Google admin's OK"
       within(modal) do
-        assert_selector "[data-test='gmail-admin-steps'] li", count: 4
+        assert_selector "[data-test='gmail-admin-steps'] [data-test='gmail-admin-step']", count: 4
         assert_text "Manage Third-Party App Access"
         assert_text "personal @gmail.com"
         assert_selector "[data-test='gmail-admin-client-id']", text: "test-connect-id"

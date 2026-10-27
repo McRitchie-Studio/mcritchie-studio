@@ -31,12 +31,13 @@
   </p>
 
   <p class="text-heading text-sm font-medium mt-4 mb-2">For your admin</p>
-  <ol class="list-decimal pl-5 space-y-1 text-sm text-body" data-test="gmail-admin-steps">
-    <li>Sign in to <a href="https://admin.google.com" target="_blank" rel="noopener" class="text-primary hover:underline">admin.google.com</a>.</li>
-    <li>Go to Security → Access and data control → API controls → Manage Third-Party App Access → Configure new app.</li>
-    <li>Search for the client ID below and select McRitchie Studio.</li>
-    <li>Choose Trusted.</li>
-  </ol>
+  <%# Numbered divs, not <ol>/<li>: the layout carries this template on every page, and a page test counting its own "ol li" would count these too. %>
+  <div role="list" class="space-y-1 text-sm text-body" data-test="gmail-admin-steps">
+    <div role="listitem" class="flex gap-2" data-test="gmail-admin-step"><span class="shrink-0 text-muted">1.</span><span>Sign in to <a href="https://admin.google.com" target="_blank" rel="noopener" class="text-primary hover:underline">admin.google.com</a>.</span></div>
+    <div role="listitem" class="flex gap-2" data-test="gmail-admin-step"><span class="shrink-0 text-muted">2.</span><span>Go to Security → Access and data control → API controls → Manage Third-Party App Access → Configure new app.</span></div>
+    <div role="listitem" class="flex gap-2" data-test="gmail-admin-step"><span class="shrink-0 text-muted">3.</span><span>Search for the client ID below and select McRitchie Studio.</span></div>
+    <div role="listitem" class="flex gap-2" data-test="gmail-admin-step"><span class="shrink-0 text-muted">4.</span><span>Choose Trusted.</span></div>
+  </div>
 
   <template x-if="($store.modals.current().props || {}).clientId">
     <div class="mt-4" data-test="gmail-admin-client">

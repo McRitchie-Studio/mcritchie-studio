@@ -9,6 +9,9 @@ require "test_helper"
 # config-priced suggestion.
 class AppUsageMeterTest < ActionDispatch::IntegrationTest
   setup do
+    # Mid-month, so 850 of 1,000 tokens projects past the allowance (850 / 10 * 31);
+    # on the real clock the suggestion vanished from about the 27th of a month on.
+    travel_to Time.zone.local(2026, 10, 10, 12)
     @app = apps(:turf_monster)
     @app.update!(package_tier: "builder")
     Agent.create!(slug: "turf-monster", name: "Turf Monster", status: "active", agent_type: "specialist")
