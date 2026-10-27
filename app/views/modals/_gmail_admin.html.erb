@@ -17,7 +17,7 @@
                      client id, never a secret. Blank hides the id row and copy.
     No inline <script>: the copy is navigator.clipboard in an Alpine handler. %>
 <div x-data="{
-       copied: false,
+       copyState: '',
        get props() { var c = $store.modals.current(); return (c && c.props) || {}; },
        get clientId() { return this.props.clientId || ''; },
        get mailto() {
@@ -34,8 +34,9 @@
          return 'mailto:?subject=' + encodeURIComponent('Please trust McRitchie Studio in our Google Workspace') + '&body=' + encodeURIComponent(body);
        },
        async copy() {
-         try { await navigator.clipboard.writeText(this.clientId); this.copied = true; setTimeout(() => { this.copied = false; }, 2000); }
-         catch (e) { this.copied = false; }
+         try { await navigator.clipboard.writeText(this.clientId); this.copyState = 'Copied'; }
+         catch (e) { this.copyState = 'Copy failed'; }
+         setTimeout(() => { this.copyState = ''; }, 2000);
        }
      }"
      class="text-left" data-test="gmail-admin-modal">
@@ -65,7 +66,7 @@
       <div class="flex items-center gap-2">
         <code class="min-w-0 flex-1 rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading [overflow-wrap:anywhere]" data-test="gmail-admin-client-id" x-text="clientId"></code>
         <button type="button" @click="copy()" class="btn btn-neutral btn-sm shrink-0" data-test="gmail-admin-copy">
-          <span x-text="copied ? 'Copied' : 'Copy'">Copy</span>
+          <span x-text="copyState || 'Copy'">Copy</span>
         </button>
       </div>
     </div>
