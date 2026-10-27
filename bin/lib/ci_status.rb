@@ -682,7 +682,7 @@ module CiStatus
   # through GhAuthRetry; this file never opted in — the module's own warning ("N
   # scripts meant N chances to forget") coming true — so the fix is WIRING, not a
   # third copy. ACQUISITION STAYS IN bin/gh-token: one shared two-slot on-disk cache
-  # at <projects>/.agents/github-tokens.json, so sibling agent processes reuse one
+  # at <projects>/.secret-cache/github-tokens.json, so sibling agent processes reuse one
   # token instead of each minting its own.
   #
   # NARROW ON PURPOSE, in three ways the tests pin:
