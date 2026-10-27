@@ -231,6 +231,23 @@ class Admin::GoogleControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # [component] drive-files-you-pick: a legacy drive.readonly row still reads the
+  # whole Drive's newest and is labelled so; a drive.file row without the Picker
+  # key says by NAME what to set.
+  test "[integration] the Drive section reads a legacy row's whole Drive, and names the missing Picker key" do
+    with_connect_env do
+      store_google(scope: "openid #{DRIVE_LEGACY}").update_columns(scope: "openid #{DRIVE_LEGACY}")
+      reads_answer_everything
+      get admin_google_path
+      assert_select "[data-ability='drive'] [data-test='drive-read-kind'][data-kind='legacy']", /reconnect to choose files/
+      assert_select "[data-ability='drive'] [data-test='google-read-item']", text: /Whole-Drive file/
+
+      GoogleConnection.update_all(scope: "openid #{DRIVE}")
+      with_picker_key(set: false) { get admin_google_path }
+      assert_select "[data-ability='drive'] [data-test='drive-picker-unset']", /GOOGLE_PICKER_API_KEY/
+    end
+  end
+
   test "[integration] the standing page names the missing OAuth client and offers no Connect" do
     with_connect_env(creds: false) do
       get admin_google_path
