@@ -220,6 +220,9 @@ module SecretCacheCli
   # Before bin/release prepare/ship: a token with less than LONG_RUN_MIN_LEFT left
   # is minted fresh now, so it cannot expire mid-run. Never fatal.
   def prewarm(env, out, err)
+    # A sandboxed (test) process never mints: prewarm is a convenience, not a gate.
+    return 0 if TaskUsageSandbox.active?(TaskUsageSandbox.guard_env(env)) && env["SECRET_PREWARM_IN_SANDBOX"] != "1"
+
     minutes = SecretCache::LONG_RUN_MIN_LEFT / 60
     SecretCache.manifest(env).each do |name, meta|
       next unless meta["kind"] == "github-app-token" && meta["persist"] != false

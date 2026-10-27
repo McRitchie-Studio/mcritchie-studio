@@ -335,6 +335,12 @@ def forget!(identity)
     store.delete(identity)
     write_store(store)
   end
+  purge_legacy!(identity)
+end
+
+# Remove the identity from a legacy FILE an older writer left. A symlink points
+# into the folder, which the caller has already handled.
+def purge_legacy!(identity)
   path = legacy_store_path
   return unless File.file?(path) && !File.symlink?(path)
 
@@ -343,6 +349,8 @@ def forget!(identity)
 
   legacy.delete(identity)
   File.write(path, "#{JSON.pretty_generate(legacy)}\n")
+rescue StandardError
+  nil
 end
 
 # Mint into the INACTIVE slot and flip. The previous token stays intact and valid,
@@ -367,6 +375,9 @@ end
 def reject!(identity, token)
   return if token.empty?
 
+  # The legacy file first, and unconditionally: the folder may hold nothing for
+  # this identity while an older writer's file still serves the refused token.
+  reject_legacy!(identity, token)
   store = read_store
   entry = store[identity]
   return unless entry.is_a?(Hash)
@@ -375,7 +386,6 @@ def reject!(identity, token)
   return if doomed.empty?
 
   doomed.each { |slot| entry.delete(slot) }
-  reject_legacy!(identity, token)
   # `active` names a slot. If the rejected one WAS active, the pointer now dangles;
   # reads tolerate that (usable_token walks a/b and skips non-Hashes) but leaving it
   # would be a lie about the cache's state, so drop it when its target is gone.
@@ -421,6 +431,7 @@ def refresh(identity)
       store.delete(identity)
       write_store(store)
     end
+    purge_legacy!(identity)
     return token
   end
 
