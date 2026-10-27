@@ -1019,7 +1019,7 @@ may not confirm, changes nothing (`test/integration/cto_web_chat_change_flow_tes
 messages in a thread within an hour the next is `held` with a `rate_limited`
 event. A message is at most 4,000 characters, the prompt's message budget. The
 form carries a client id per send, so a double submit stores one row. The
-script (`app/javascript/agent_chat.js#startSend`) gives the form a fresh id and
+script (`startSend` in `app/javascript/agent_chat.js`) gives the form a fresh id and
 empties the box the moment Turbo has read a send: the sent turn is broadcast
 as well as answered, and the broadcast can land before the answer redraws the
 composer, so a second message written in that moment must not ride the first's
