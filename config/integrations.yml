@@ -98,7 +98,9 @@ groups:
       # (IntegrationsController::GOOGLE_CARDS). Agents read the household, and
       # a client app's owner's own rows only for that owner's own CTO chat
       # (GoogleConnection.owned_by). A visitor's Connect opens the
-      # sign-in modal, back to /integrations.
+      # sign-in modal, back to /integrations. A signed-in user's Gmail Connect
+      # (and Connect Google while Gmail is missing) opens the Gmail admin-trust
+      # modal first (modals/_gmail_admin); Calendar and Drive link straight.
       - key: google_calendar
         name: Google Calendar
         icon: "📅"

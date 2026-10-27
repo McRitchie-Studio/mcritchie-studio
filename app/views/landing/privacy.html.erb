@@ -5,7 +5,7 @@
 
 <section class="max-w-3xl mx-auto px-4 py-10 prose-custom" data-test="privacy-page">
   <h1 class="text-3xl font-bold text-heading mb-2">Privacy Policy and Messaging Terms and Conditions</h1>
-  <p class="text-muted text-sm mb-8">Last updated: September 30, 2026</p>
+  <p class="text-muted text-sm mb-8">Last updated: October 27, 2026</p>
 
   <div class="space-y-6 text-body leading-relaxed">
     <section>
@@ -20,6 +20,7 @@
       <p><strong>Text messages:</strong> If you opt in to text messages, we collect your mobile number, the messages you send us, and your opt-in and opt-out history.</p>
       <p><strong>Account information:</strong> When you sign in (by a magic link emailed to you, or Google sign-in), we store your name, email address, authentication metadata and session records needed to keep the account secure.</p>
       <p><strong>Requests and mailing list:</strong> When you ask us to build an app or join our mailing list, we store what you submit (for example your description of the app) and your email address. Our emails record whether they were opened and which links were clicked.</p>
+      <p><strong>Google account data:</strong> When you connect Google Calendar, Gmail or Google Drive, we store the token Google issues and read your Google data only as described in <a href="#google-user-data" class="text-primary hover:underline">section 15, Google User Data</a>.</p>
       <p><strong>Third-party platform credentials:</strong> When an account holder authorizes the Service to post to social media accounts they control, we store the access tokens and account identifiers those platforms issue.</p>
       <p><strong>Content data:</strong> We store content created through the Service, such as titles, captions, images, video links and references to public sports data.</p>
       <p><strong>Usage data:</strong> Standard server logs (IP address, request path, timestamp, user agent) for operational monitoring and security.</p>
@@ -45,9 +46,9 @@
       <p>We share other information only with:</p>
       <ul class="list-disc pl-6 space-y-1">
         <li><strong>Service providers</strong> that host the Service, store its files, deliver its email, and carry its phone calls and text messages. They process information for us, only to provide that service.</li>
-        <li><strong>Sign-in providers:</strong> Google, when you choose Google sign-in.</li>
+        <li><strong>Sign-in providers:</strong> Google, when you choose Google sign-in or connect a Google account.</li>
         <li><strong>Platforms you direct us to:</strong> social media platforms, when an account holder instructs the Service to publish content.</li>
-        <li><strong>AI providers:</strong> when an account holder uses an AI feature, the content of that request is sent to the AI provider to produce the result. Contact form submissions and mobile numbers are not sent to AI providers.</li>
+        <li><strong>AI providers:</strong> when an account holder uses an AI feature, the content of that request is sent to the AI provider to produce the result. That includes Google data an agent reads for you, under terms that do not allow the provider to train on it (section 15). Contact form submissions and mobile numbers are not sent to AI providers.</li>
         <li><strong>Legal:</strong> if required by law or to protect rights, safety and property.</li>
       </ul>
     </section>
@@ -82,7 +83,7 @@
 
     <section>
       <h2 class="text-xl font-semibold text-heading mb-2">9. Data Retention</h2>
-      <p>We keep account, content and credential data for as long as the Service is operated, or until you ask us to delete it. We keep contact form submissions and consent records for as long as we need them to answer you and to show that consent was given or withdrawn. Server logs are retained for up to 90 days.</p>
+      <p>We keep account, content and credential data for as long as the Service is operated, or until you ask us to delete it. A Google token is deleted when you disconnect it (section 15). We keep contact form submissions and consent records for as long as we need them to answer you and to show that consent was given or withdrawn. Server logs are retained for up to 90 days.</p>
     </section>
 
     <section>
@@ -110,8 +111,25 @@
       <p>We may update this page from time to time. The "Last updated" date at the top shows when it was last revised.</p>
     </section>
 
+    <section id="google-user-data" data-test="google-user-data">
+      <h2 class="text-xl font-semibold text-heading mb-2">15. Google User Data</h2>
+      <p>You can connect your Google account so that agents working for you can read it. Each permission is read only: nothing we ask Google for can send, change or delete anything in your account.</p>
+      <ul class="list-disc pl-6 space-y-1">
+        <li><strong>Google Calendar</strong> (calendar events, read only): we read your events so your agents can prepare you for your meetings.</li>
+        <li><strong>Gmail</strong> (read only): we read your mail so your agents can show you what needs an answer.</li>
+        <li><strong>Google Drive</strong> (read only): Google's read-only Drive permission covers every file in your Drive. We read your files so your agents can work from your documents.</li>
+      </ul>
+      <p><strong>How we use it:</strong> only to provide the features you see, for you: agents working on your behalf. We do not use Google data for any other purpose.</p>
+      <p><strong>How we store it:</strong> the token Google issues is stored encrypted, and our database is encrypted at rest. We keep the token until you disconnect.</p>
+      <p><strong>What we never do:</strong> we do not sell Google data. We do not use it for advertising, including personalized or retargeted ads. We do not use it to train or improve generalized artificial intelligence or machine learning models.</p>
+      <p><strong>Sharing:</strong> we do not transfer Google data to anyone except as needed to provide the feature you are using (for example, to the AI provider that runs an agent's request, under terms that do not allow it to train on that data), with your consent, to comply with the law, or to protect security.</p>
+      <p><strong>People:</strong> no person reads your Google data unless you ask us to (for example, for support), it is needed for security, such as investigating abuse, or the law requires it.</p>
+      <p><strong>Disconnecting:</strong> disconnect any Google permission on our <%= link_to "Integrations page", integrations_path, class: "text-primary hover:underline" %>, or remove McRitchie Studio's access at <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener" class="text-primary hover:underline">myaccount.google.com/permissions</a>. Disconnecting one permission on our Integrations page stops us reading it; when you disconnect the last one, we revoke the token with Google and delete it. Removing access at Google ends every permission at once.</p>
+      <p data-test="google-limited-use">McRitchie Studio's use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener" class="text-primary hover:underline" data-test="google-limited-use-link">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+    </section>
+
     <section>
-      <h2 class="text-xl font-semibold text-heading mb-2">15. Contact</h2>
+      <h2 class="text-xl font-semibold text-heading mb-2">16. Contact</h2>
       <p>McRitchie Studio LLC (doing business as McRitchie Studio)<br>3000 Lawrence St, Denver, CO 80205<br>Email: <a href="mailto:alex@mcritchie.studio" class="text-primary hover:underline">alex@mcritchie.studio</a><br>Phone: (303) 222-2113</p>
     </section>
   </div>

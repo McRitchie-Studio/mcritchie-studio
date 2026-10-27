@@ -198,6 +198,7 @@ require_relative "../app/models/devops/windows"
 require_relative "lib/ship_authority"
 require_relative "lib/projects_root"
 require_relative "lib/local_services"
+require_relative "lib/bounded_command" # the record-op deadline (run_record_op)
 require_relative "lib/static_cloudflare" # the static_cloudflare prod_deploy strategy
 # `status` prints PROGRAM DRIFT: on-chain programs behind their source (program_drift_report).
 require_relative "lib/program_drift"
@@ -1336,6 +1337,36 @@ end
 # The snippet as it is sent for TRAIN: unchanged on the hub, guarded on any other.
 def train_guarded(ruby) = hub_train? ? ruby : TRAIN_BOARD_GUARD + ruby
 
+# THE RECORD-OP DEADLINE. On 2026-10-27 one `heroku run` record op hung for 26
+# minutes: the one-off dyno was already gone (`heroku ps` listed none), but the CLI
+# client kept waiting on its rendezvous socket, and `bin/release ship` froze right
+# after the CI gate until a human killed the client. Open3.capture2e has no
+# deadline. A healthy record op takes 20 to 60 seconds (a cold dyno boot plus one
+# Rails runner), so five minutes is generous and still bounds the worst case.
+#
+# On expiry the child's whole PROCESS GROUP gets SIGKILL (BoundedCommand,
+# pgroup: true): `heroku` is a launcher script whose node process would otherwise
+# outlive a kill of the launcher alone. The caller then takes the existing
+# "record op failed" abort, which every best-effort write already rescues
+# (record_release_event, record_gate_open/close, record_deploy_intent) and every
+# deploy-critical write already treats as fatal. macOS ships no `timeout`
+# binary, so the bound is Ruby's, not a shell wrapper's.
+RECORD_OP_DEADLINE_ENV = "RELEASE_RECORD_OP_DEADLINE"
+RECORD_OP_DEFAULT_DEADLINE = 300
+
+# Seconds: RELEASE_RECORD_OP_DEADLINE when it is a positive number (tests shorten
+# it), else the default.
+def record_op_deadline
+  value = Float(ENV[RECORD_OP_DEADLINE_ENV].to_s, exception: false)
+  value&.positive? ? value : RECORD_OP_DEFAULT_DEADLINE
+end
+
+# One record-op child, bounded. Returns [combined stdout+stderr, success, timed_out].
+def run_record_op(cmd, deadline: record_op_deadline)
+  result = BoundedCommand.run(nil, cmd, deadline: deadline, pgroup: true, err: [:child, :out])
+  [result.out.to_s, result.success?, result.timed_out?]
+end
+
 def conductor(ruby, read_only: false)
   ruby = train_guarded(ruby)
   payload = conductor_payload(with_conductor_session(ruby))
@@ -1345,8 +1376,13 @@ def conductor(ruby, read_only: false)
     puts "  [dry-run] #{PROD ? 'heroku run ' : ''}rails runner: #{ruby}"
     return {}
   end
-  out, status = Open3.capture2e(*cmd)
-  abort!("record op failed:\n#{out}") unless status.success?
+  out, ok, timed_out = run_record_op(cmd)
+  if timed_out
+    abort!("record op failed: no answer within #{record_op_deadline.round}s, so the " \
+           "#{PROD ? '`heroku run` client' : 'rails runner'} was killed (#{RECORD_OP_DEADLINE_ENV} sets the bound). " \
+           "Whether the write landed is unknown; re-running is safe, every conductor write is idempotent.\n#{out}")
+  end
+  abort!("record op failed:\n#{out}") unless ok
   line = out.lines.reverse.find { |l| l.strip.start_with?("{") }
   abort!("record op returned no JSON:\n#{out}") unless line
   JSON.parse(line)
@@ -6342,7 +6378,8 @@ def allocate_gem_versions!(gem_groups, label: nil)
            "#{gem_meta_for(group['repo'])['version_file']} → roll CHANGELOG.md's '## Unreleased' into the " \
            "allocated version → `bundle lock` → ONE commit of all three onto " \
            "origin/#{ACCEPTED_BRANCH} → promote onto origin/#{RELEASE_BRANCH} (a fast-forward when contained) " \
-           "(skips when already advanced; REFUSES rather than guess)")
+           "(skips when already advanced, unless the members now earn more or entries arrived after the roll; " \
+           "REFUSES rather than guess)")
     end
     return
   end
@@ -6459,13 +6496,19 @@ def gem_allocation_plan(group, failures)
   end
 
   live = rubygems_versions(repo)
+  current = gem_version_from_ref(repo, tip)
+  # Read once, here: the re-run after an abort needs to know whether CHANGELOG.md
+  # already rolled `current` and has gained entries since (Release::GemVersion
+  # #reallocation), and the guard below judges the same text.
+  changelog = changelog_at(repo, tip)
 
   decision = Release::GemVersion.allocation(
-    current: gem_version_from_ref(repo, tip),
+    current: current,
     tag_version: tag&.delete_prefix("v"),
     live_versions: live,
     ahead_commits: ahead_out.lines.map(&:chomp).reject { |l| l.strip.empty? },
-    members: gem_version_members(group)
+    members: gem_version_members(group),
+    pending_entries: changelog ? Release::Changelog.refold?(changelog, version: current) : false
   )
 
   if decision.refuse?
@@ -6483,7 +6526,7 @@ def gem_allocation_plan(group, failures)
   # written and nothing published — and gated on `allocate?` because that is
   # exactly where the roll below happens. A gem the sweep is not versioning is a
   # gem this has no business holding up.
-  if (refusal = changelog_refusal(repo, tip, published_version(tag, live)))
+  if (refusal = changelog_refusal(repo, tip, published_version(tag, live), replaces: decision.replaces))
     failures << "gem #{repo}: #{refusal}"
     return nil
   end
@@ -6511,13 +6554,19 @@ def changelog_at(repo, tip)
 end
 
 # nil when the gem is safe to roll; the refusal sentence otherwise.
-def changelog_refusal(repo, tip, published)
+#
+# A RE-allocation (`replaces`) is judged on the file it will actually roll: the
+# unpublished section folded back into the bucket. Judged as it stands, that
+# section is a heading AHEAD of the last published version, and the guard would
+# refuse the very re-run that exists to fix it.
+def changelog_refusal(repo, tip, published, replaces: nil)
   text = changelog_at(repo, tip)
   unless text
     say("  gem #{repo}: no CHANGELOG.md at origin/#{ACCEPTED_BRANCH} — nothing to roll")
     return nil
   end
 
+  text = Release::Changelog.unroll(text, version: replaces) || text if replaces
   Release::Changelog.refusal(text, published_version: published)
 end
 
@@ -6563,14 +6612,16 @@ def commit_gem_version!(repo, tip, decision, failures)
     end
     File.write(ws_version, rewritten)
 
-    rolled = roll_changelog!(repo, workspace, version, failures)
+    rolled = roll_changelog!(repo, workspace, version, failures, replaces: decision.replaces)
     next if rolled == :failed
 
     next unless relock_gem_workspace!(repo, workspace, version, failures)
 
     staged = [version_file, lock_tracked?(workspace) ? "Gemfile.lock" : nil, rolled ? CHANGELOG_FILE : nil].compact
     sh("git", "-C", workspace, "add", "--", *staged)
-    _, committed = sh("git", "-C", workspace, "commit", "-m", "Release #{version}", capture: true)
+    message = "Release #{version}"
+    message += " (re-allocated over unpublished #{decision.replaces})" if decision.replaces
+    _, committed = sh("git", "-C", workspace, "commit", "-m", message, capture: true)
     unless committed
       failures << "gem #{repo}: could not commit #{version} in the ship workspace"
       next
@@ -6613,11 +6664,18 @@ CHANGELOG_FILE = "CHANGELOG.md"
 # every unrollable shape in the decide phase. If the two ever disagree, that is a
 # defect in this pair and it fails LOUDLY here rather than publishing a gem whose
 # changelog quietly stayed behind.
-def roll_changelog!(repo, workspace, version, failures)
+def roll_changelog!(repo, workspace, version, failures, replaces: nil)
   path = File.join(workspace, CHANGELOG_FILE)
   return false unless File.exist?(path)
 
-  text   = File.read(path)
+  text = File.read(path)
+  # A re-allocation first folds the unpublished section it supersedes back into
+  # the bucket (Release::Changelog.unroll), so the roll below files every entry
+  # of this release under ONE heading, the version it will actually ship as.
+  if replaces && (unrolled = Release::Changelog.unroll(text, version: replaces))
+    step("  gem #{repo}: folded the unpublished '#{replaces}' section back into '## Unreleased' to roll it again")
+    text = unrolled
+  end
   date   = Time.now.strftime("%Y-%m-%d")
   rolled = Release::Changelog.roll(text, version: version, date: date)
   if rolled.nil?

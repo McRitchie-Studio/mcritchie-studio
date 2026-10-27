@@ -1,0 +1,62 @@
+<%# Gmail needs a Google Workspace admin's OK. Mounted by the modal host's
+    <template x-if="...id === 'gmail-admin'"> (layouts/application) — single root.
+
+    Gmail read (gmail.readonly) is a RESTRICTED Google scope: Google lets an app
+    read mail only after a security assessment, or when the account's Workspace
+    admin marks the app's OAuth client Trusted. The hub takes the second road, so
+    a signed-in user's Gmail Connect, and Connect Google while Gmail is still
+    missing (integrations/_google_connection, _google_connect_all), open this
+    first instead of going straight to Google.
+
+    Open it with:
+      $store.modals.open('gmail-admin', { href: '<connect path>', clientId: '<id or blank>' })
+
+    props.href     — the connect route the button would have followed (own or
+                     household path, already chosen by the server). Continue goes there.
+    props.clientId — GoogleConnect::OAuthClient.client_id: the public OAuth
+                     client id, never a secret. Blank hides the id row and copy.
+    No Alpine component of its own and no inline <script>: props come straight from $store.modals, and
+    the mailto and the copy (navigator.clipboard) are app/javascript/gmail_admin_modal.js. %>
+<div class="text-left" data-test="gmail-admin-modal">
+  <div class="flex items-start justify-between gap-4 mb-4">
+    <h3 class="text-heading font-bold text-xl">Gmail needs your Google admin's OK</h3>
+    <button type="button" @click="$store.modals.close()" class="text-muted hover:text-heading -mt-1" aria-label="Close" data-test="gmail-admin-close">
+      <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+
+  <p class="text-secondary text-sm">
+    Google lets an app read mail only after a security review, or when your company's Google Workspace admin trusts the app.
+    So your admin approves McRitchie Studio once, for your whole company, and then anyone there can connect Gmail.
+  </p>
+
+  <p class="text-heading text-sm font-medium mt-4 mb-2">For your admin</p>
+  <%# Numbered divs, not <ol>/<li>: the layout carries this template on every page, and a page test counting its own "ol li" would count these too. %>
+  <div role="list" class="space-y-1 text-sm text-body" data-test="gmail-admin-steps">
+    <div role="listitem" class="flex gap-2" data-test="gmail-admin-step"><span class="shrink-0 text-muted">1.</span><span>Sign in to <a href="https://admin.google.com" target="_blank" rel="noopener" class="text-primary hover:underline">admin.google.com</a>.</span></div>
+    <div role="listitem" class="flex gap-2" data-test="gmail-admin-step"><span class="shrink-0 text-muted">2.</span><span>Go to Security → Access and data control → API controls → Manage Third-Party App Access → Configure new app.</span></div>
+    <div role="listitem" class="flex gap-2" data-test="gmail-admin-step"><span class="shrink-0 text-muted">3.</span><span>Search for the client ID below and select McRitchie Studio.</span></div>
+    <div role="listitem" class="flex gap-2" data-test="gmail-admin-step"><span class="shrink-0 text-muted">4.</span><span>Choose Trusted.</span></div>
+  </div>
+
+  <template x-if="($store.modals.current().props || {}).clientId">
+    <div class="mt-4" data-test="gmail-admin-client">
+      <p class="text-xs text-muted mb-1">OAuth client ID</p>
+      <div class="flex items-center gap-2">
+        <code class="min-w-0 flex-1 rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading [overflow-wrap:anywhere]" data-test="gmail-admin-client-id" x-text="($store.modals.current().props || {}).clientId"></code>
+        <button type="button" @click="window.GmailAdmin.copy($el, ($store.modals.current().props || {}).clientId)" class="btn btn-neutral btn-sm shrink-0" data-test="gmail-admin-copy">
+          <span data-copy-label>Copy</span>
+        </button>
+      </div>
+    </div>
+  </template>
+
+  <a :href="window.GmailAdmin.mailto(($store.modals.current().props || {}).clientId)" class="btn btn-neutral btn-sm w-full justify-center mt-4" data-test="gmail-admin-email">Email my admin</a>
+
+  <p class="text-xs text-muted mt-3" data-test="gmail-admin-personal">A personal @gmail.com account has no admin, so it can't connect Gmail yet.</p>
+
+  <div class="flex flex-col-reverse gap-2 mt-5 sm:flex-row sm:justify-end">
+    <button type="button" @click="$store.modals.close()" class="btn btn-neutral btn-lg justify-center" data-test="gmail-admin-not-now">Not now</button>
+    <a :href="($store.modals.current().props || {}).href" data-turbo="false" class="btn btn-primary btn-lg justify-center" data-test="gmail-admin-continue">Continue to Google</a>
+  </div>
+</div>

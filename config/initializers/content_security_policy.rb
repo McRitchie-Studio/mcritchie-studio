@@ -84,7 +84,7 @@ module HubCsp
   # when a script's text changes without its hash, printing the new value.
   PINNED_SCRIPT_HASHES = {
     "studio/_at_time_script" => "sha256-kIOuRYmYbGVrhT216UVVU2pt1rRgLf4S5n9hII0ZEHo=",
-    "layouts/application modal widths" => "sha256-nJvDqJoiAB5rKrG1lr69B1xZwbqT+8hemhBbfh8To2c=",
+    "layouts/application modal widths" => "sha256-aZcDxynz/nxhgNobHNVgLXf13ltywKQzafn8neCF3xk=",
     "layouts/application first-name ask" => "sha256-PRFP/EDlSi+SUsL7i6U6qlsmZcknKOhZjvLW7EsH9jU=",
     "layouts/application postMagicLink" => "sha256-WO33zDNlb0N5B0PL471ZBnOPKagrrd+xHHcKKVWRWiY="
   }.freeze

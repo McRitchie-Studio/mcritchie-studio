@@ -166,4 +166,17 @@ class Release::GemCandidateTest < ActiveSupport::TestCase
     _, problems = C.qa_candidate("0.96.0", "hub" => "0.96.0.rc1", "turf" => "0.96.0")
     assert_match(/some consumers lock 0\.96\.0 and others a candidate/, problems.join)
   end
+
+  # A prepare re-run that RE-ALLOCATED the final (0.115.1 → 0.116.0, see
+  # Release::GemVersion#reallocation) leaves the superseded final's candidates live
+  # and tagged, even at the old tip. They belong to a number that will never ship:
+  # the new final starts at its own rc1, so consumers re-pin to it, never to a
+  # stale 0.115.1.rcN.
+  test "a re-allocated final starts its own candidates at rc1" do
+    plan = C.plan(final: "0.116.0", live: %w[0.115.0 0.115.1.rc1 0.115.1.rc2],
+                  tip_tags: %w[rc-0.115.1.rc2], all_tags: %w[rc-0.115.1.rc1 rc-0.115.1.rc2])
+
+    assert_predicate plan, :publish?
+    assert_equal "0.116.0.rc1", plan.version
+  end
 end

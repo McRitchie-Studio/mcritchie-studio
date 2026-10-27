@@ -63,6 +63,15 @@ class GoogleConnect::OAuthClientTest < ActiveSupport::TestCase
     end
   end
 
+  test "[unit] client_id is the public client id, nil when unset or blank" do
+    with_connect_env { assert_equal "test-connect-id", GoogleConnect::OAuthClient.client_id }
+    with_connect_env(creds: false) { assert_nil GoogleConnect::OAuthClient.client_id }
+    with_connect_env do
+      ENV["GOOGLE_CONNECT_CLIENT_ID"] = ""
+      assert_nil GoogleConnect::OAuthClient.client_id
+    end
+  end
+
   test "[unit] the exchange posts the code with the connections client and returns Google's JSON" do
     with_connect_env do
       google_answers

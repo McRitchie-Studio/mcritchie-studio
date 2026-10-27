@@ -222,4 +222,60 @@ class IntegrationsPageTest < ApplicationSystemTestCase
     reset_google_connect
   end
 
+  # --- Gmail needs a Workspace admin's OK (/tasks/google-verification-readiness) ---
+
+  test "[system] signed in, clicking Connect Gmail opens the admin modal, the copy button copies the client ID, Continue lands on the connect route" do
+    sign_in_as_viewer
+    with_connect_env do
+      GoogleConnect::OAuthClient.sign_in_stand_in = GoogleConnectStandIn::SignIn.new
+      page.driver.browser.execute_cdp("Browser.grantPermissions", permissions: %w[clipboardReadWrite clipboardSanitizedWrite])
+      visit integrations_path
+
+      within(google_slot("gmail")) { click_on "Connect Gmail" }
+
+      assert_current_path integrations_path # the control: no trip to Google yet
+      modal = find("[data-test='gmail-admin-modal']")
+      assert_text "Gmail needs your Google admin's OK"
+      within(modal) do
+        assert_selector "[data-test='gmail-admin-steps'] [data-test='gmail-admin-step']", count: 4
+        assert_text "Manage Third-Party App Access"
+        assert_text "personal @gmail.com"
+        assert_selector "[data-test='gmail-admin-client-id']", text: "test-connect-id"
+        mailto = find("[data-test='gmail-admin-email']")["href"]
+        assert mailto.start_with?("mailto:?subject="), mailto
+        assert_includes CGI.unescape(mailto), "test-connect-id"
+        assert_includes CGI.unescape(mailto), "Choose Trusted"
+
+        find("[data-test='gmail-admin-copy']").click
+        assert_selector "[data-test='gmail-admin-copy']", text: "Copied"
+      end
+      assert_equal "test-connect-id", page.evaluate_async_script("navigator.clipboard.readText().then(arguments[0])")
+
+      click_on "Not now"
+      assert_no_selector "[data-test='gmail-admin-modal']"
+
+      within(google_slot("gmail")) { click_on "Connect Gmail" }
+      within("[data-test='gmail-admin-modal']") { click_on "Continue to Google" }
+
+      assert_current_path integrations_path
+      assert_text "Gmail connected for #{GoogleConnectStandIn::EMAIL}."
+      assert_selector "#{google_slot('gmail')}[data-state='connected']"
+    end
+  ensure
+    reset_google_connect
+  end
+
+  test "[system] signed in, Drive's Connect still goes straight to Google with no admin modal" do
+    sign_in_as_viewer
+    with_connect_env do
+      GoogleConnect::OAuthClient.sign_in_stand_in = GoogleConnectStandIn::SignIn.new
+      visit integrations_path
+      within(google_slot("google_drive")) { click_on "Connect Google Drive" }
+
+      assert_text "Google Drive connected for #{GoogleConnectStandIn::EMAIL}."
+      assert_no_selector "[data-test='gmail-admin-modal']"
+    end
+  ensure
+    reset_google_connect
+  end
 end
