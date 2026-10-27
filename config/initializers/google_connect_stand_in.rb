@@ -76,6 +76,10 @@ module GoogleConnectStandIn
           payload: { headers: [ { name: "Subject", value: "Stand-in: message #{n}" }, { name: "From", value: "Sender #{n} <s#{n}@example.com>" } ] } }
       elsif url.start_with?(GoogleConnect::GmailReader::MESSAGES_URL)
         { resultSizeEstimate: 42, messages: (1..3).map { { id: "stand-in-m#{_1}" } } }
+      elsif (id = url[%r{/drive/v3/files/([\w-]+)}, 1])
+        # One picked file by id (DriveReader#file): any id answers, named after itself.
+        { id:, name: "Stand-in: picked #{id}", mimeType: "application/vnd.google-apps.document", modifiedTime: (start - 1.hour).iso8601,
+          webViewLink: "https://docs.google.com/document/d/#{id}" }
       elsif url.start_with?(GoogleConnect::DriveReader::FILES_URL)
         { files: [
           { id: "f1", name: "Stand-in: Q3 plan", mimeType: "application/vnd.google-apps.document", modifiedTime: (start - 2.hours).iso8601 },
