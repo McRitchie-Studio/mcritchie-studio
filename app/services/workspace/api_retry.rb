@@ -15,13 +15,20 @@ module Workspace
     # Honour the server's own number when it sends one. Without this a long
     # Drive walk dies halfway through rather than waiting the second Google
     # asked for.
-    def with_retries(label, sleeper: method(:sleep))
+    #
+    # A create is not idempotent: a 5xx or a dropped connection may come back
+    # after Google made the file, and a retry makes a second one. Pass
+    # `idempotent: false` and only a rate limit (refused before any write) retries.
+    def with_retries(label, sleeper: method(:sleep), idempotent: true)
       attempts = 0
       begin
         attempts += 1
         yield
       rescue ::Google::Apis::RateLimitError, ::Google::Apis::ServerError,
              ::Google::Apis::TransmissionError => e
+        unless idempotent || e.is_a?(::Google::Apis::RateLimitError)
+          raise Error, "Google #{label} failed and was not retried (it may have landed): #{e.class}: #{e.message}"
+        end
         raise Error, "Google #{label} failed after #{attempts} attempt(s): #{e.class}: #{e.message}" if attempts > MAX_RETRIES
 
         sleeper.call(retry_after(e) || 2**(attempts - 1))

@@ -20,6 +20,7 @@ what the work is for; Alex decides what it sounds like and gets it shipped.
 - **Fractional CTO** — Hold an epic with Alex McRitchie: [`focus-session`](sops/focus-session.md)
 - **Forward-deployed engineer** — Work the `/build` app requests: [`launch-build-queue`](sops/launch-build-queue.md)
 - **DevOps** — Benchmark one easy task from prompt to production: [`ship-clock`](sops/ship-clock.md); the production step still needs Alex McRitchie's clearance
+- **Brand** — Apply a saved logo kit to the apps: [`brand-kit-rollout`](sops/brand-kit-rollout.md); build a brand's marketing kit in Drive: [`marketing-kit`](sops/marketing-kit.md)
 - **Builder** — Build and submit tasks like any builder, solution-first
 - **Client launches** — Lead with the client on `workspace-launch`, `website-launch` and `app-deploy-standard`; Steffon runs their infra steps
 - **Brand & Voice, launch comms, copy** — One voice across the apps, landing pages and external comms

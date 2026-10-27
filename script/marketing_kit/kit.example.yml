@@ -1,0 +1,134 @@
+# A marketing kit spec: the one file bin/marketing-kit builds a brand's kit from.
+# This is a worked example for a made-up brand. `bin/marketing-kit init DIR` copies it to DIR/kit.yml.
+# Paths are relative to this file. Procedure: docs/agents/agents/alex/sops/marketing-kit.md
+#
+# A real brand's spec does NOT go in this repo (it is public). It lives in the kit itself,
+# in Drive under 01 Brand/Kit source, and the SOP's working copy sits in the scratchpad.
+
+name: Ridgeline Fabrication            # in copy
+legal_name: Ridgeline Fabrication LLC  # contracts and formal documents (defaults to name)
+short: RF                              # file prefix: RF_logo_…, RF Template — Slides
+tagline: Built to last.                # with its full stop; shown in capitals beside the logo
+owner: Jordan Example                  # owner of the kit in 00 Start Here and the tracker
+updated: 2026-10-27
+
+palette:                               # 3 to 8 swatches, shown in this order
+  # key: what the renderers draw with. primary, accent and dark are required;
+  # accent_on_dark, primary_deep and accent_deep fall back to accent / primary / accent.
+  - { key: primary, name: Ridge Green, hex: "#2F6B4F", role: Main colour }
+  - { key: accent, name: Copper, hex: "#C8702E", role: Accent }
+  - { key: dark, name: Charcoal, hex: "#1B2124", role: Dark backgrounds }
+  - { key: accent_on_dark, name: Bright Copper, hex: "#E8955A", role: Accent on dark }
+  - { key: primary_deep, name: Deep Green, hex: "#1F4A36", role: Darker green }
+  - { name: Stone, hex: "#E9E5DD", role: Soft backgrounds }
+colour_tip: Mostly white or Charcoal, with green doing the work and a little copper for warmth.
+
+fonts:                                 # all optional; these are the defaults
+  family: Montserrat
+  fallback: Arial
+  heading: 800
+  subhead: 700
+  body: 400
+  # note: one line shown under the font samples
+
+lines:                                 # the tagline is added first on its own
+  - { label: Who we are, text: The fabrication shop builders call when it has to fit the first time. }
+  - { label: Proof, text: Measured twice. Built once. }
+one_sentence: Ridgeline Fabrication is a custom steel and aluminium fabrication shop serving builders across the valley.
+pitch: >-
+  We build the steel parts of your project: stairs, railings, frames and brackets. We measure on site,
+  fabricate in our own shop and install with our own crew, so it fits the first time.
+voice: Plain, confident and specific. Name the job, the material and the result.
+
+contact:
+  lines:                               # the contact block, one line each
+    - Ridgeline Fabrication LLC
+    - 100 Example Road, Springfield, ST 00000
+    - 555-0100 · hello@ridgeline.example
+  phone: 555-0100
+  email: hello@ridgeline.example
+  proposals_email: quotes@ridgeline.example
+  website: ridgeline.example
+  website_url: https://ridgeline.example
+  address: 100 Example Road, Springfield, ST 00000
+
+logos:
+  # Files by fixed name. png/: full_light, full_dark, horizontal_light, horizontal_dark, icon_light
+  # are required; icon_dark and icon_512 optional. svg/: the same names, all optional.
+  # From a saved hub kit: brand-kit-rollout step 3 (export) and step 5 (rasters).
+  dir: logos
+quick_grab_logos: [full_light.png, full_dark.png, horizontal_light.png, horizontal_dark.png, icon_512.png]
+
+photos:
+  dir: photos
+  style: Real work by our own crew, never stock. Show clean, finished work and safe practice.
+  items:                               # every photo the kit carries, with what it shows
+    - { file: shop-floor.jpg, subject: The shop floor }
+    - { file: stair-install.jpg, subject: A steel stair going in }
+    - { file: weld-closeup.jpg, subject: A clean weld, close up }
+  favourites: [shop-floor.jpg, stair-install.jpg]   # copied to the top of the kit
+  guidelines_grid: [shop-floor.jpg, stair-install.jpg, weld-closeup.jpg]   # up to 6, on the guidelines' photo page
+  slots:                               # which photo goes where; any slot left out uses cover
+    cover: shop-floor.jpg
+    slide_half: stair-install.jpg
+    slide_spot: weld-closeup.jpg
+    # guidelines_cover, template_hero, template_band, proposal_cover, proposal_about, proposal_why,
+    # slide_cover, slide_full, slide_quote
+
+ideas:                                 # the guidelines' ideas page; six fit
+  - { title: Job of the month, text: One finished project with a photo and two lines on the scope. }
+  - { title: Meet the crew, text: One person, their trade and a favourite job. }
+  - { title: Email signature, text: The horizontal logo and the tagline on every email. }
+
+general_template:
+  cta_label: REQUEST A QUOTE
+  cta_url: https://ridgeline.example/contact
+
+proposal:                              # every key optional; generic placeholders fill the gaps
+  credentials_line: Certified welders · Licensed and insured
+  about: >-
+    Ridgeline Fabrication designs, builds and installs custom steel and aluminium work for builders
+    and property owners across the valley.
+  about_columns:
+    - { title: What we build, text: Stairs, railings, frames, brackets and one-off parts. }
+    - { title: How we work, text: We measure on site, fabricate in our shop and install with our own crew. }
+  why:
+    - { title: Experienced, text: Our team is fully insured and our welders are certified. }
+    - { title: Careful, text: Every job is measured on site and checked before it leaves the shop. }
+  # details: [[label, placeholder], …]   schedule: [{phase, steps: […]}, …]
+  # pricing: [[item, detail], …]         pricing_terms: [[label, text], …]   pricing_model: placeholder text
+  # clients: [names]  clients_note: text   motto: text   number_format: RF-YYYY-000
+  # terms_of_service: { intro: [paragraphs], items: [[title, text], …] }   the brand's own terms, verbatim
+
+slides:                                # every key optional; [bracketed] placeholders fill the gaps
+  points_title: "[Why Ridgeline]"
+  points:
+    - ["[Certified]", "[Skilled welders]", "[Certified welders on every job]"]
+    - ["[100%]", "[Measured on site]", "[Every part fits the first time]"]
+    - ["[In-house]", "[One team]", "[Built in our shop, installed by our crew]"]
+  # agenda: [4 lines]  spotlight: [[label, value] x5]  timeline: [[phase, when, what] x4]
+  # pricing: [[item, description], …]  contact: [lines on the closing slide]
+
+tracker:
+  channels:                            # [channel, handle or URL, status, owner, notes]
+    - [Website, ridgeline.example, Live, Jordan Example, ""]
+  # backlog: [[item, why, priority, requested by, due, status], …]  (a starter list is used when empty)
+  # claims: [[claim, where it appears, issue, action, status], …]   adds a Claims to Review tab
+
+start_here:
+  status: v1.
+  # rows: [[folder or file, what it holds, use it for], …]   extra rows for the What is where table
+  # extra_html: a fragment added after the house rules (for example, claims to check before reuse)
+
+brand_guide:
+  intro: The logos, colours and type that make Ridgeline look like Ridgeline.
+  # logo_notes_html: a fragment added under the logo table (dos and don'ts)
+
+docs:                                  # docs the brand writes itself: HTML fragments (h1, h2, h3, p, ul, li, table, b)
+  - { title: Messaging and Boilerplate, folder: 03 Messaging, file: docs/messaging.html }
+
+drive:
+  subject: team@mcritchie.studio       # the Workspace account that owns the kit
+  # root_name: Ridgeline Fabrication — Marketing Kit   (the default: "<name> — Marketing Kit")
+  # root_id: an existing kit folder's id, when the name alone is ambiguous
+  share_with: [owner@ridgeline.example]

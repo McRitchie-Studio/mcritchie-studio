@@ -6,10 +6,10 @@ module Workspace
   # the tasks that consume this.
   #
   # WRITE SURFACE, stated plainly because it matters more than the read surface:
-  # #files_copy and #files_update are the only two methods here that change
-  # anything, and under this credential's scopes they can only reach files the
-  # app itself created (see Credentials::SCOPES on why `drive.file` means that
-  # under domain-wide delegation). The ownership CHECK that decides whether to
+  # #files_create, #files_copy, #files_update and #permissions_create are the
+  # only methods here that change anything, and under this credential's scopes
+  # they can only reach files the app itself created (see Credentials::SCOPES on
+  # why `drive.file` means that under domain-wide delegation). The ownership CHECK that decides whether to
   # copy before editing is a caller's job and lands with the binding task; this
   # class deliberately does not pretend to make that decision.
   class DriveClient
@@ -93,6 +93,19 @@ module Workspace
       end
     end
 
+    # A new file or folder in `parents`. `mime_type` is what Drive should STORE:
+    # pass a Google type (document, spreadsheet, presentation) with a `body` of
+    # another `content_type` and Drive converts on upload. A folder has no body.
+    def files_create(name:, parents:, mime_type: nil, body: nil, content_type: nil)
+      metadata = ::Google::Apis::DriveV3::File.new(name: name, parents: Array(parents))
+      metadata.mime_type = mime_type if mime_type
+
+      with_retries("files.create", sleeper: @sleeper, idempotent: false) do
+        service.create_file(metadata, upload_source: (StringIO.new(body) if body), content_type: content_type,
+                                      fields: FILE_FIELDS, supports_all_drives: true)
+      end
+    end
+
     def files_update(id, name: nil, body: nil, content_type: nil)
       metadata = ::Google::Apis::DriveV3::File.new
       metadata.name = name if name
@@ -110,6 +123,15 @@ module Workspace
       with_retries("permissions.list", sleeper: @sleeper) do
         service.list_permissions(id, fields: "permissions(id,type,role,emailAddress)",
                                      supports_all_drives: true)
+      end
+    end
+
+    # Shares a file with one person, without Google's notification email.
+    def permissions_create(id, email:, role: "writer")
+      permission = ::Google::Apis::DriveV3::Permission.new(type: "user", role: role, email_address: email)
+      with_retries("permissions.create", sleeper: @sleeper, idempotent: false) do
+        service.create_permission(id, permission, send_notification_email: false, fields: "id,type,role,emailAddress",
+                                                  supports_all_drives: true)
       end
     end
 

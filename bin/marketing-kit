@@ -1,0 +1,77 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/marketing-kit — build a brand's marketing kit from its spec and put it in Drive.
+#
+#   bin/marketing-kit init DIR                       start a spec: copies the worked example to DIR/kit.yml
+#   bin/marketing-kit build SPEC --out DIR           render every file into DIR (+ DIR/manifest.json)
+#   bin/marketing-kit publish SPEC --out DIR         create or update the kit in Drive from DIR's manifest
+#       --dry-run                                    read Drive and report; write nothing
+#       --replace NAME                               overwrite this existing Doc/Sheet/Slides (repeatable)
+#       --replace-all                                overwrite every existing Doc/Sheet/Slides
+#
+# build needs Google Chrome (the guidelines PDF) and python3 (the slides and tracker; a venv is made
+# under ~/.cache/marketing-kit on first use); --no-pdf and --no-office skip them. publish writes as the
+# spec's drive.subject. Procedure: docs/agents/agents/alex/sops/marketing-kit.md
+require "optparse"
+require "fileutils"
+
+EXAMPLE = File.expand_path("../script/marketing_kit/kit.example.yml", __dir__)
+options = { pdf: true, office: true, replace: [] }
+parser = OptionParser.new do |opts|
+  opts.banner = "usage: bin/marketing-kit init DIR | build SPEC --out DIR [--no-pdf] [--no-office] | " \
+                "publish SPEC --out DIR [--dry-run] [--replace NAME]... [--replace-all]"
+  opts.on("--out DIR", "the local build folder") { |d| options[:out] = d }
+  opts.on("--[no-]pdf", "print the guidelines PDF (needs Chrome)") { |v| options[:pdf] = v }
+  opts.on("--[no-]office", "draw the slides and tracker (needs python3)") { |v| options[:office] = v }
+  opts.on("--dry-run", "publish: report only") { options[:dry_run] = true }
+  opts.on("--replace NAME", "publish: overwrite this existing Google file") { |n| options[:replace] << n unless options[:replace] == :all }
+  opts.on("--replace-all", "publish: overwrite every existing Google file") { options[:replace] = :all }
+  opts.on("-h", "--help", "print this help") do
+    puts opts
+    exit 0
+  end
+end
+begin
+  parser.parse!
+rescue OptionParser::ParseError => e
+  abort "bin/marketing-kit: #{e.message}\n#{parser.banner}"
+end
+command, target = ARGV.shift(2)
+abort "bin/marketing-kit: unexpected argument #{ARGV.first}\n#{parser.banner}" if ARGV.any?
+abort parser.banner unless %w[init build publish].include?(command) && target
+
+if command == "init"
+  dest = File.join(File.expand_path(target), "kit.yml")
+  abort "bin/marketing-kit: #{dest} exists; not overwriting" if File.exist?(dest)
+  FileUtils.mkdir_p([File.dirname(dest), *%w[logos/svg logos/png photos docs].map { |d| File.join(File.dirname(dest), d) }])
+  FileUtils.cp(EXAMPLE, dest)
+  puts "wrote #{dest}\nnext: put the logo files in logos/png and logos/svg, the photos in photos/, then edit kit.yml"
+  exit
+end
+
+abort "bin/marketing-kit: #{command} needs --out DIR" unless options[:out]
+require_relative "../config/environment"
+
+begin
+  spec = MarketingKit::Spec.load(target)
+  case command
+  when "build"
+    build = MarketingKit::Build.new(spec, out: options[:out], pdf: options[:pdf], office: options[:office]).run
+    build.entries.group_by(&:folder).each do |folder, entries|
+      puts "#{folder.presence || '(root)'}: #{entries.map(&:name).join(', ')}"
+    end
+    puts "#{build.entries.size} files; manifest #{File.join(build.out, 'manifest.json')}"
+  when "publish"
+    manifest = File.join(File.expand_path(options[:out]), "manifest.json")
+    abort "bin/marketing-kit: no manifest at #{manifest}; run build first" unless File.file?(manifest)
+    pub = MarketingKit::Publisher.new(spec, manifest: manifest, dry_run: options[:dry_run], replace: options[:replace]).run
+    pub.results.reject { |r| %i[same kept shared].include?(r.action) }.each { |r| puts "#{r.action.to_s.ljust(9)} #{r.path}" }
+    kept = pub.results.select { |r| r.action == :kept }.map(&:path)
+    puts "kept (existing Google files, not overwritten): #{kept.join(', ')}" if kept.any?
+    puts pub.counts.map { |k, v| "#{k} #{v}" }.join(" · ") + (options[:dry_run] ? "  (dry run: nothing written)" : "")
+    puts "kit: https://drive.google.com/drive/folders/#{pub.root_id}" if pub.root_id
+  end
+rescue MarketingKit::Error, Workspace::ApiRetry::Error => e
+  abort "bin/marketing-kit: #{e.message}"
+end

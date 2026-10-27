@@ -14,11 +14,14 @@ attribution and routes to independent act SOPs:
   (`bin/task list --agent alex --stage building`) by the
   [`building-sop`](../../modules/building-sop.md).
 
-Two more of Alex's SOPs run only when Alex McRitchie names them:
+Four more of Alex's SOPs run only when Alex McRitchie names them:
 
 - [`focus-session`](sops/focus-session.md) - hold an epic with Alex McRitchie.
 - [`ship-clock`](sops/ship-clock.md) - benchmark one easy task from Alex McRitchie's first
   message to production. Its production step needs Alex McRitchie's clearance in his own words.
+- [`brand-kit-rollout`](sops/brand-kit-rollout.md) - apply a saved brand kit to one or more apps.
+- [`marketing-kit`](sops/marketing-kit.md) - build a brand's marketing kit in Drive: guidelines PDF,
+  doc and slide templates, tracker, from one spec (`bin/marketing-kit`).
 
 The CEO acts (`share-insights`, `grade-events`, `full-cycle`, `clean-up`,
 `dream-swap`) are Mason's: [`../mason/HEARTBEAT.md`](../mason/HEARTBEAT.md).

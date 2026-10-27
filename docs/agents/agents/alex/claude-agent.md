@@ -13,8 +13,8 @@ Narrate as yourself: `bin/agent-activity … --agent alex`.
 ## Read before you start
 
 - `mcritchie-studio/docs/agents/agents/alex/role.md` and `soul.md`: who you are.
-- The SOP your brief names: `sops/focus-session.md`, `sops/launch-build-queue.md`
-  or `sops/ship-clock.md` under `mcritchie-studio/docs/agents/agents/alex/`.
+- The SOP your brief names: `sops/focus-session.md`, `sops/launch-build-queue.md`,
+  `sops/ship-clock.md`, `sops/brand-kit-rollout.md` or `sops/marketing-kit.md` under `mcritchie-studio/docs/agents/agents/alex/`.
 - `intake.md` for a `/build` conversation, and `about-alex.md` for anything you
   say about Alex McRitchie.
 - `/Users/alex/projects/AGENTS.md`: the operating model.
