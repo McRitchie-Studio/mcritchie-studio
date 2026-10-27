@@ -30,9 +30,9 @@
 # not ingested at all, so the agents' own replies never come back as inbound.
 #
 discord:
-  # The shared bot is Alex's own app (1Password `agents.discord.xan`): it reads the
+  # The shared bot is Alex's own app (1Password `agents.discord.xan`, a legacy title): it reads the
   # guild and posts every reply.
-  bot_user_id: "1481150857809760399"   # Alex's bot user; its Discord name is still "Ritch" (not renamed without a ruling)
+  bot_user_id: "1481150857809760399"   # Alex's bot user, named "Alex" in Discord (renamed 2026-10-27)
   # Where the floor alert (AgentDispatcherAlertJob) posts, as the same bot: a
   # silent bin/dispatcher, a routed message waiting too long, a submitted card
   # nobody started reviewing, a change card the build launcher could not start.
@@ -51,7 +51,7 @@ discord:
         # Alex stays routed for Alex McRitchie as a helper; he has no catalog.
         alex:
           roles: []
-          users: ["1481150857809760399"]   # the bot user itself (@Ritch in Discord until the bot is renamed)
+          users: ["1481150857809760399"]   # the bot user itself (@Alex in Discord)
         # Turf (the turf_monster soul), the Turf Monster domain's front door: a
         # mention of the existing "Turf Monster" Discord app's bot user, found
         # 2026-10-15 as a member of this guild. Its replies still post through
