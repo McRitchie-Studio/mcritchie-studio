@@ -71,8 +71,8 @@ done
 `op service-account ratelimit`). Dependabot is its own store; `studio-engine`'s `consumer-ci.yml` reads
 `MCRITCHIE_AGENT_APP_ID` and `MCRITCHIE_AGENT_PRIVATE_KEY` there. Desks hold birth-day `.env`
 copies. The hub's CI `HEROKU_API_KEY` (`heroku.studio.applications`) is scripted:
-`bin/rotate-heroku-ci-key --dry-run`, then without the flag, then refresh
-`HEROKU_STUDIO_APPLICATIONS_API_KEY` in `~/.zprofile.admin`. Actions secrets (4.4), admin lane:
+`bin/rotate-heroku-ci-key --dry-run`, then without the flag; no profile holds a Heroku key, so
+there is nothing to refresh by hand (`bin/heroku-token`). Actions secrets (4.4), admin lane:
 ```bash
 export GH_TOKEN="$(GH_APP_ITEM=github.mcritchie-admin /Users/alex/projects/mcritchie-studio/bin/gh-token)"
 : "${NEW:?refusing to set an empty value}" && printf '%s' "$NEW" | gh secret set <VAR> --env <env> -R McRitchie-Studio/<repo>
@@ -310,7 +310,7 @@ Only after Phase 5 passed everywhere (after a migration, 24 to 48 hours later); 
 
 | Source | Revoke with |
 |---|---|
-| Heroku authorization | the admin lane (`HEROKU_STUDIO_ADMIN_API_KEY`), or Alex McRitchie at https://dashboard.heroku.com/account/applications; never this session's own |
+| Heroku authorization | the admin lane (`bin/heroku-token admin -- ...`), or Alex McRitchie at https://dashboard.heroku.com/account/applications; never this session's own |
 | AWS key · provider key | delete it on the IAM user · revoke it in the provider console |
 | Signer, Squads member | already evicted in 4.3 |
 | Managed-wallet old key | `heroku config:unset MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS --app <app>`, then the verifier; keep the 1Password field while an old backup could return |
