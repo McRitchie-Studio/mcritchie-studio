@@ -125,6 +125,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # Rewrites db/migrate; the parse (and --help) comes before any file is touched,
     # and an unknown flag or a stray argument aborts with the usage line.
     "db-baseline"            => :optparse,
+    # Builds a marketing kit locally (build) or writes it to Drive (publish).
+    # OptionParser reads the WHOLE line before dispatch, so `publish SPEC --out D
+    # --help` prints and exits; an unknown flag, command or stray argument aborts.
+    "marketing-kit"          => :optparse,
     # Asks the board for this machine's harness key and keeps it. `--help` is wired
     # through OptionParser and prints before dispatch; an unknown flag, an unknown
     # command and a stray positional all refuse before any request or write.

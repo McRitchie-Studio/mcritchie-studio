@@ -27,6 +27,10 @@ parser = OptionParser.new do |opts|
   opts.on("--dry-run", "publish: report only") { options[:dry_run] = true }
   opts.on("--replace NAME", "publish: overwrite this existing Google file") { |n| options[:replace] << n unless options[:replace] == :all }
   opts.on("--replace-all", "publish: overwrite every existing Google file") { options[:replace] = :all }
+  opts.on("-h", "--help", "print this help") do
+    puts opts
+    exit 0
+  end
 end
 begin
   parser.parse!
