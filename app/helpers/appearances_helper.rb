@@ -1,7 +1,7 @@
 # THE CHIP PALETTES for the character-model page.
 #
 # In a helper rather than inline in the ERB for a reason that is specific to
-# Tailwind: `config/tailwind.config.js` scans `app/helpers/**/*.rb`, so a class
+# Tailwind: its automatic source detection scans `app/helpers/**/*.rb`, so a class
 # named here compiles exactly as one named in a view — while a class assembled
 # from a fragment ("bg-#{role}/10") compiles in NEITHER place, because the scanner
 # reads text and never runs Ruby. Every class below is therefore written out
@@ -132,7 +132,7 @@ module AppearancesHelper
   # ── THE SCOUTING PAGE'S OWN CHIPS AND EXPLANATIONS ───────────────────────────
   #
   # Every class below is written out WHOLE for the reason this file's header gives:
-  # `config/tailwind.config.js` scans helpers as text, so an assembled class
+  # Tailwind scans helpers as text, so an assembled class
   # ("bg-#{role}/10") compiles nowhere. And every colour is a THEME ROLE, never a
   # raw palette shade, so the page reads in light mode as well as dark.
 

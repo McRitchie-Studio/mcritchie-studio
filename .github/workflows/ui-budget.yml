@@ -70,7 +70,16 @@ jobs:
           restore-keys: |
             playwright-${{ runner.os }}-
 
+      # `--with-deps` runs its OWN apt-get update/install, outside
+      # .github/scripts/apt-retry, so apt's timeouts are set machine-wide for it: a
+      # silent socket drops in 30s and the file is re-fetched instead of hanging
+      # until the job bound (the 2026-10-26 mirror stall; guard:
+      # test/lib/ci_apt_step_timeout_test.rb).
+      - name: Harden apt fetches
+        run: printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-retries
+
       - name: Install Playwright browser
+        timeout-minutes: 15
         run: npx playwright install --with-deps chromium
 
       - name: Measure and judge

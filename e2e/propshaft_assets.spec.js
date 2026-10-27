@@ -37,6 +37,23 @@ test("the public pages load fingerprinted Propshaft assets that apply, at 390 an
     }
   }
 
+  // The engine's motion layer arrives through its host.css (studio-engine 0.114.2;
+  // the hub no longer imports engine-motion.css itself): a .spinner spins.
+  await page.goto("/about");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const spin = await page.evaluate(() => {
+    const el = document.createElement("span");
+    el.className = "spinner";
+    document.body.appendChild(el);
+    const style = getComputedStyle(el);
+    const result = { name: style.animationName, iteration: style.animationIterationCount, width: style.width };
+    el.remove();
+    return result;
+  });
+  expect(spin.name, "the motion layer's .spinner animates").toBe("spin");
+  expect(spin.iteration).toBe("infinite");
+  expect(spin.width).toBe("16px");
+
   // The dark-page kit icon swap (app/assets/tailwind/application.css) survives Propshaft.
   await page.goto("/signin");
   await page.evaluate(() => document.documentElement.classList.add("dark"));

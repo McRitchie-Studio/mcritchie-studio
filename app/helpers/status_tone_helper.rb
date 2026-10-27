@@ -12,7 +12,7 @@
 # utilities by scanning source text, so a class assembled at runtime
 # ("text-#{role}-ink") is never compiled and silently renders unstyled.
 #
-# The roles and their tokens (studio-engine tailwind/studio.tailwind.config.js):
+# The roles and their tokens (studio-engine app/assets/tailwind/studio_engine/theme.css):
 #   success / warning / danger  fill `bg-<role>`, ink `text-<role>-ink`
 #   primary                     the theme's primary scale; its chip text is
 #                               `text-heading`, because the primary colour is

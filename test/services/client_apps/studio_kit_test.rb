@@ -84,6 +84,20 @@ class ClientApps::StudioKitTest < ActiveSupport::TestCase
     assert_nil Kit.asset_for("/_studio/kit/#{Kit.version}/../secrets")
   end
 
+  # studio-engine 0.114.2 moved the theme into theme.css, which engine.css
+  # imports; the JS preset is a deprecated shim due for removal, and a kit that
+  # still read it would break at request time when it goes.
+  test "[unit] the kit compiles CSS-first, with no @config and no JS preset" do
+    input = Kit::Css.input_css
+    refute_match(/@config\b/, input)
+    refute_match(/studio\.tailwind\.config|\.js["']/, input)
+    assert_includes input, Kit::Css.engine_root.join(Kit::Css::ENGINE_CSS).to_s
+    refute Kit::Css.const_defined?(:ENGINE_CONFIG), "the kit names the JS preset again"
+
+    css = Kit.assets.fetch("studio-kit.css")
+    assert css.include?(".text-heading{"), "the theme's ink utilities no longer reach the kit"
+  end
+
   test "[unit] the kit fits inside a bundle's own limits with room to spare" do
     total = Kit.assets.values.sum(&:bytesize)
     assert_operator total, :<, 100_000, "the kit is #{total} bytes, served once per app and cached a year"
@@ -159,7 +173,7 @@ class ClientApps::StudioKitTest < ActiveSupport::TestCase
             FileUtils.cp(File.join(source_root.to_s, rel), dest)
           end
           [ [ Rails.root, Kit::Css::SHELL_CSS, app ], [ Kit::Css.engine_root, Kit::Css::ENGINE_CSS, engine ],
-            [ Kit::Css.engine_root, Kit::Css::ENGINE_CONFIG, engine ] ].each do |from, rel, to|
+            [ Kit::Css.engine_root, Kit::Css::ENGINE_THEME_CSS, engine ] ].each do |from, rel, to|
             FileUtils.mkdir_p(File.dirname(File.join(to, rel)))
             FileUtils.cp(File.join(from.to_s, rel), File.join(to, rel))
           end
@@ -173,6 +187,12 @@ class ClientApps::StudioKitTest < ActiveSupport::TestCase
 
         File.write(app_two.join(Kit::Css::SHELL_CSS), "/* edited */", mode: "a")
         assert_not_equal first, Kit::Css.digest(app_root: app_two, engine_root: engine_two), "an edited input is a new kit"
+
+        # The copies carry no tailwind/studio.tailwind.config.js, so a digest
+        # that still read the JS preset would raise above. theme.css is what
+        # engine.css imports for the tokens: a token edit is a new kit.
+        File.write(engine_one.join(Kit::Css::ENGINE_THEME_CSS), "/* edited */", mode: "a")
+        assert_not_equal first, Kit::Css.digest(app_root: app_one, engine_root: engine_one), "an edited theme.css is a new kit"
       end
     end
   end

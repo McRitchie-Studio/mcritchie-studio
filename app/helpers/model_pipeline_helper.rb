@@ -1,7 +1,7 @@
 # THE MODEL PIPELINE BOARD'S PALETTES.
 #
 # In a helper rather than inline in the ERB for the reason AppearancesHelper's header
-# gives: `config/tailwind.config.js` scans `app/helpers/**/*.rb`, so a class named here
+# gives: Tailwind's source detection scans `app/helpers/**/*.rb`, so a class named here
 # compiles exactly as one named in a view — while a class ASSEMBLED from a fragment
 # ("bg-#{role}/10") compiles in NEITHER place, because the scanner reads text and never
 # runs Ruby. Every class below is therefore written out whole, and that is the
@@ -17,7 +17,7 @@ module ModelPipelineHelper
   # theme HAS four that are safe as text on both themes: neutral, `warning`, `success`
   # and `primary`. There is deliberately no `info` role and no bare `text-danger` /
   # `text-warning` / `text-success` — only the `-ink` partners clear WCAG AA on both
-  # surfaces (studio-engine's tailwind config says so in its own comment), so a fifth
+  # surfaces (studio-engine's theme.css says so in its own comment), so a fifth
   # hue would have had to come from a raw palette shade and would be theme-blind.
   # `source` and `generation` therefore share `primary` at two different weights.
   LANE_COUNT_CLASSES = {
