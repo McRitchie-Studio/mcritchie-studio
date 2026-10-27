@@ -177,7 +177,7 @@ class BrandKitsControllerTest < ActionDispatch::IntegrationTest
     assert_equal %w[STACKED NAVBAR ICON], css_select("[data-brand='industries'] [data-test='logo-badge']").map { |b| b.text.upcase }
 
     downloads = css_select("[data-brand='studio'] [data-test='logo-sample-download']")
-    assert_equal %w[navbar navbar stacked stacked], downloads.map { |a| a["data-type"] }
+    assert_equal %w[navbar navbar stacked stacked icon icon], downloads.map { |a| a["data-type"] }
     get downloads.first["href"]
     assert_equal "attachment", response.headers["Content-Disposition"][/\A\w+/]
     assert_match(/studio-navbar-rule3-first-light-custom\.svg/, response.headers["Content-Disposition"])

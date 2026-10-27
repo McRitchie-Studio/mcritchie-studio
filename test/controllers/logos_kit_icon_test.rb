@@ -116,12 +116,16 @@ class LogosKitIconTest < ActionDispatch::IntegrationTest
                  "the Original helmet's dark tone (its white half holds on a dark page), with Alt words"
   end
 
-  test "each /logos row draws one icon in all three tiles: the kit's, else the brand's own" do
+  # Without a kit icon a saved choice keeps the icon it was saved with, as its brand page draws it (task
+  # logos-index-download-formats: forcing the brand's Original onto an Alt choice drew a logo no other page drew).
+  test "each /logos row draws the kit's icon in all three tiles; without one, a saved choice keeps its own" do
     BrandKit.for("welding_v2").save_choice(:stacked, ActionController::Parameters.new(form: "tagline", text: "first", colouring: "alt"), by: "alex@test.com")
     get logos_path
-    row = ->(brand) { css_select("[data-test='logo-cluster'][data-brand='#{brand}'] img").map { |img| query(img["src"]) } }
+    tile = ->(brand, type) { css_select("[data-test='logo-cluster'][data-brand='#{brand}'] [data-test='logo-sample'][data-type='#{type}'] img").map { |img| query(img["src"]) } }
+    row = ->(brand) { %w[stacked navbar icon].flat_map { |type| tile.(brand, type) } }
     icons = ->(srcs) { srcs.map { |src| src["icon_colouring"] || src["colouring"] || "alt" }.uniq }
-    assert_equal %w[original], icons.(row.("welding_v2")), "no kit icon: the brand's own Original, in all three tiles"
+    assert_equal %w[alt], icons.(tile.("welding_v2", "stacked")), "no kit icon: the saved Alt choice's own helmet"
+    assert_equal %w[original], icons.(tile.("welding_v2", "navbar") + tile.("welding_v2", "icon")), "the defaults: the brand's own Original"
 
     save_icon("welding_v2", colouring: "alt")
     get logos_path
