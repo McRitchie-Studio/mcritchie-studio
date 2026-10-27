@@ -8,7 +8,14 @@ require "test_helper"
 # unlimited. [component] The meter renders used, allowance, percent and the
 # config-priced suggestion.
 class AppUsageMeterTest < ActionDispatch::IntegrationTest
+  # Mid-month, so the run date never moves the suggestion: Suggestion.projected
+  # runs used ÷ days elapsed × days in month, and the 850 fixture tokens project
+  # under the 1,000 allowance from about the 27th. ActiveSupport's TimeHelpers
+  # travels back after each test.
+  NOW = Time.zone.parse("2026-10-16 12:00 MDT")
+
   setup do
+    travel_to NOW
     @app = apps(:turf_monster)
     @app.update!(package_tier: "builder")
     Agent.create!(slug: "turf-monster", name: "Turf Monster", status: "active", agent_type: "specialist")
