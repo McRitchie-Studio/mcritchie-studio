@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { BEAT_MS, carryPhase, indicatorKey, phasesIn, syncDelay } from "../../app/javascript/agent_chat.js";
+import { BEAT_MS, carriedDraft, carryPhase, freshClientId, indicatorKey, phasesIn, restoreSend, startSend, syncDelay } from "../../app/javascript/agent_chat.js";
 
 function indicator(phase, slotId = "cto-chat-typing") {
   const slot = { id: slotId, closest: () => slot };
@@ -56,4 +56,53 @@ test("indicators are matched across a redraw by their slot or turn", () => {
 test("the sync delay is the clock's place in the beat, as a negative CSS time", () => {
   assert.equal(syncDelay(BEAT_MS * 1000 + 600), "-600ms");
   assert.equal(syncDelay(BEAT_MS * 3), "-0ms");
+});
+
+// [unit] The send that spends the composer (task shell-growth-spec-stops-flaking): a
+// second send from the same form, before the first's answer redraws it, is a message of
+// its own; a draft typed meanwhile survives the redraw; a send that never reached the
+// server gets its text and files back.
+function composer({ text = "", clientId = "old-client-id-1", tokens = [] } = {}) {
+  const field = { value: text };
+  const id = { value: clientId };
+  const tokenInputs = tokens.map((value) => ({ value, disabled: false }));
+  return {
+    field, id, tokenInputs,
+    querySelector: (sel) => (sel === "textarea" ? field : sel === "input[name$='[client_id]']" ? id : null),
+    querySelectorAll: (sel) => (sel === "input[name$='[attachments][]']" ? tokenInputs : []),
+  };
+}
+
+test("startSend gives the form a fresh client id, empties the box, sets its files aside, and returns the text", () => {
+  const form = composer({ text: "First message", tokens: ["tok-a"] });
+  assert.equal(startSend(form, () => "fresh-uuid-0001"), "First message");
+  assert.equal(form.id.value, "fresh-uuid-0001", "a second send from this form is not the first again");
+  assert.equal(form.field.value, "");
+  assert.equal(form.tokenInputs[0].disabled, true, "the first send's files do not ride the second");
+});
+
+test("freshClientId is empty where the browser has no randomUUID, so the server mints one", () => {
+  assert.equal(freshClientId(() => undefined), "");
+  assert.match(freshClientId(), /^[0-9a-f-]{36}$/);
+});
+
+test("carriedDraft keeps what was typed unless the server drew text (a refused send's echo)", () => {
+  assert.equal(carriedDraft("", "still typing"), "still typing");
+  assert.equal(carriedDraft("refused text", "still typing"), "refused text");
+  assert.equal(carriedDraft("", ""), "");
+  assert.equal(carriedDraft("  ", "typed"), "typed");
+});
+
+test("restoreSend puts an unsent text and its files back, but never over a new draft", () => {
+  const form = composer({ text: "Lost in transit", tokens: ["tok-a"] });
+  startSend(form, () => "fresh-uuid-0002");
+  assert.equal(restoreSend(form, "Lost in transit"), true);
+  assert.equal(form.field.value, "Lost in transit");
+  assert.equal(form.tokenInputs[0].disabled, false);
+
+  const typed = composer({ text: "sent" });
+  startSend(typed, () => "fresh-uuid-0003");
+  typed.field.value = "a new draft";
+  assert.equal(restoreSend(typed, "sent"), false);
+  assert.equal(typed.field.value, "a new draft");
 });
