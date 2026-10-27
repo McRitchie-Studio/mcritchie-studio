@@ -390,6 +390,25 @@ apps:
     restore_drilled: null
     description: alex.build, the site for Alex McRitchie, the AI hire built by Alex McRitchie; studio-engine satellite, not yet deployed
 
+  - slug: voicebox
+    name: Voicebox
+    emoji: "🎙️"
+    color: "#0891B2"
+    tier: basic
+    status: active
+    port: 4700
+    repo: McRitchie-Studio/voicebox
+    heroku_app: voicebox
+    production_url: https://voicebox.mcritchie.studio
+    qa_url: null
+    engine: true
+    hosted: true
+    workspace: null
+    database: true
+    backups: false
+    restore_drilled: null
+    description: Voicebox, a phone-first voice recorder that turns a spoken idea into a prompt posted to Slack; studio-engine satellite, not yet deployed
+
 libraries:
   - slug: studio-engine
     name: Studio Engine

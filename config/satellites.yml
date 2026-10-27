@@ -233,3 +233,19 @@ satellites:
     description: "alex.build, the site for Alex McRitchie the AI hire; studio-engine satellite on Heroku"
     deploy_provider: "heroku"
     status: "reserved"
+
+  - slug: voicebox
+    display_name: "Voicebox"
+    emoji: "🎙️"
+    port: 4700
+    # Voicebox: Alex McRitchie approved the app and its ~$12/month cost in chat on
+    # 2026-10-27 ("Go"). Heroku app `voicebox` (essential-0 Postgres, Basic dyno)
+    # exists with nothing deployed, so the row is `reserved`, not `active`: a reserved
+    # row draws no navbar or link-tree entry, and it still holds the desk ports.
+    # The host voicebox.mcritchie.studio is planned and not wired yet.
+    heroku_app: "voicebox"
+    production_url: "https://voicebox.mcritchie.studio"
+    role: "viewer"
+    description: "Voicebox, a phone-first voice recorder that turns a spoken idea into a prompt posted to Slack; studio-engine satellite on Heroku"
+    deploy_provider: "heroku"
+    status: "reserved"

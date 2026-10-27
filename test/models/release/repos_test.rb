@@ -864,7 +864,8 @@ class Release::ReposTest < ActiveSupport::TestCase
     "chain-ops" => nil,
     "moms-app" => "git_push_heroku",
     "commercial-welding" => "git_push_heroku",
-    "alex-build" => "git_push_heroku"
+    "alex-build" => "git_push_heroku",
+    "voicebox" => "git_push_heroku"
   }.freeze
 
   test "every app keeps its production deploy strategy" do
