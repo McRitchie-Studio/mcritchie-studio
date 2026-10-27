@@ -30,16 +30,48 @@
 // set, and review defeated it in one word: `.only` on a healthy spec, lane collapses 51 → 1,
 // three shards green, every guard green. Bounded, not merely deplored — and bounded by the
 // property, not by a list of the spellings we happened to imagine.
+//
+// THE SHARED BASE. The keys every app's browser lane shares (one chromium project, one
+// worker, the 30s test timeout, the baseURL from the environment, a Rails webServer on
+// /up) come from studio-engine's Node tooling package, linked at
+// node_modules/.studio-engine by `bin/rails node_tooling:link` (CI's playwright lane
+// runs it after `npm ci`, which deletes node_modules). Only what is the hub's own is
+// written here. `testDir` and `forbidOnly` are written here too, though the base sets
+// the same values: test/lib/e2e_quarantine_ratchet_test.rb reads THIS file for them,
+// and a base that ever changed them would otherwise move the lane in silence.
+const path = require("node:path");
 const { defineConfig } = require("@playwright/test");
-const port = process.env.E2E_PORT || "3000";
-const externalBaseURL = process.env.QA_BASE_URL || process.env.PW_BASE_URL || process.env.BASE_URL;
-const baseURL = externalBaseURL || `http://127.0.0.1:${port}`;
 
-const config = {
+function studioTooling(file) {
+  const linked = path.join(__dirname, "node_modules", ".studio-engine", file);
+  try {
+    return require(linked);
+  } catch (error) {
+    if (error.code !== "MODULE_NOT_FOUND" || !error.message.includes(linked)) throw error;
+    throw new Error(`studio-engine's Node tooling is not linked (${linked}): run \`bin/rails node_tooling:link\` after npm ci`);
+  }
+}
+const { studioBaseURL, studioPlaywrightConfig } = studioTooling("playwright_base.js");
+
+// QA_BASE_URL is the hub's own name for an external stack (the QA read-only smoke);
+// the base reads PW_BASE_URL, then BASE_URL, so QA_BASE_URL is handed over as the first.
+const env = { ...process.env, PW_BASE_URL: process.env.QA_BASE_URL || process.env.PW_BASE_URL };
+const { port, external } = studioBaseURL({ defaultPort: "3000", env });
+
+// The ops pages sit behind the admin wall, so every spec starts signed in as the seeded
+// admin (e2e/global-setup.js). Visitor specs opt out with helpers.js's VISITOR state.
+// Against an external stack there is no seeded admin, so neither applies.
+const signedIn = external
+  ? { setup: {}, use: {} }
+  : {
+    setup: { globalSetup: require.resolve("./e2e/global-setup.js") },
+    use: { storageState: require("./e2e/global-setup.js").ADMIN_STATE },
+  };
+
+const config = studioPlaywrightConfig({
+  defaultPort: "3000",
+  env,
   testDir: "./e2e",
-  timeout: 30_000,
-  retries: 0,
-  workers: 1,
   // A COMMITTED `test.only` COLLAPSES THIS LANE TO ONE SPEC, ENTIRELY GREEN — and without
   // this line nothing anywhere notices. Found by mutation in review of #543: `.only` on one
   // healthy spec takes the lane from 51 specs to 1. Shard 1/3 runs that single test and
@@ -57,25 +89,15 @@ const config = {
   // `testIgnore` edit, a deleted spec file and an empty shard all turn the Rails test job
   // red. Belt (here, at the lane) and braces (there, at the set).
   forbidOnly: !!process.env.CI,
+  ...signedIn.setup,
   use: {
-    baseURL,
-    headless: true,
     // The smooth-load convention animates every Turbo page swap; under
     // prefers-reduced-motion Turbo never starts the view transition at all,
     // so e2e gets instant swaps and clicks never land mid-animation.
     reducedMotion: "reduce",
+    ...signedIn.use,
   },
-  projects: [
-    { name: "chromium", use: { browserName: "chromium" } },
-  ],
-};
-
-if (!externalBaseURL) {
-  // The ops pages sit behind the admin wall, so every spec starts signed in as the seeded
-  // admin (e2e/global-setup.js). Visitor specs opt out with helpers.js's VISITOR state.
-  config.globalSetup = require.resolve("./e2e/global-setup.js");
-  config.use.storageState = require("./e2e/global-setup.js").ADMIN_STATE;
-  config.webServer = {
+  webServer: {
     // tailwindcss:build is LOAD-BEARING, and its absence is invisible until every page
     // 500s. app/assets/builds/ is GITIGNORED — a fresh checkout (a new worktree, or any
     // CI runner) has nothing in it but .keep — and `db:test:prepare` does NOT build it.
@@ -92,8 +114,6 @@ if (!externalBaseURL) {
     // browser tier never depends on, or waits on, real DNS.
     command:
       `bin/rails db:test:prepare && bin/rails tailwindcss:build && bin/rails runner e2e/seed.rb && E2E_FAKE_IMAGE_GENERATION=1 E2E_FAKE_VIDEO_STORAGE=1 DNS_HOST_NO_LIVE_CALLS=1 bin/rails server -p ${port} -e test`,
-    url: `http://127.0.0.1:${port}/up`,
-    reuseExistingServer: !process.env.CI,
     // The command above chains FOUR Rails boots (db:test:prepare, tailwindcss:build,
     // the seed runner, then the server) before /up can answer. At ~4-8s per boot a
     // loaded machine blows a 30s ceiling with the server perfectly healthy — measured
@@ -104,7 +124,6 @@ if (!externalBaseURL) {
     // to the browser (the default `test` adapter only captures broadcasts for
     // minitest assertions), so the /deployments live-update round-trip works.
     env: {
-      RAILS_ENV: "test",
       LOCAL_EMAIL_CAPTURE: "1",
       CABLE_ADAPTER: "async",
       // /dreams reads the fixture bank, which always holds a proposed dream for
@@ -134,7 +153,7 @@ if (!externalBaseURL) {
         "e2e-rel-sha": { passed: 8, failed: 0, pending: 0 },
       }),
     },
-  };
-}
+  },
+});
 
 module.exports = defineConfig(config);

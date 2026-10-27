@@ -42,6 +42,11 @@ abort "bin/e2e-census-check: no contract at #{contract_path}" unless File.exist?
 tag = YAML.safe_load_file(contract_path).fetch("quarantine_tag")
 census = E2eSpecCensus.count(File.join(root, "e2e"), quarantine_tag: tag)
 bin = ENV["E2E_CENSUS_PLAYWRIGHT_BIN"] || E2eSpecCensus.playwright_bin(root)
+# Listing loads playwright.config.js, which requires studio-engine's Node tooling at
+# node_modules/.studio-engine: link it first, or a fresh desk lists nothing.
+if bin && !File.exist?(File.join(root, "node_modules", ".studio-engine"))
+  system(File.join(root, "bin", "rails"), "node_tooling:link", chdir: root, out: File::NULL, err: File::NULL)
+end
 listed, why = E2eSpecCensus.listed(root, quarantine_tag: tag, bin: bin)
 
 unless listed
