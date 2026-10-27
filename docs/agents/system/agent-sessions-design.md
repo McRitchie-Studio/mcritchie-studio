@@ -113,7 +113,8 @@ carries the code. The harness that asked collects the granted token once and
 keeps it in a file named for its harness session id, owner-only; a lapsed or
 refused request mints nothing and its collect answers 410.
 
-**The harness key** is kept in `<projects>/.agents/harness-key.json`, owner-only
+**The harness key** is kept in `<projects>/.secret-cache/harness-key.json`
+([`secret-cache.md`](../modules/secret-cache.md); until 2026-10-27 `<projects>/.agents/harness-key.json`), owner-only
 (`bin/lib/harness_key.rb`), and no command prints it: `bin/harness-key status`
 reports its slug, its machine and its length. `bin/task begin` and a review claim
 present it to mint the login, and fall back to the shared token when the machine

@@ -40,6 +40,7 @@ class DeployerTokenNeverCachedTest < Minitest::Test
       refute_includes JSON.parse(File.read(store)).keys, "deployer",
                       "a deployer mint must write NO cache entry — a token on disk is " \
                       "readable by every lane for #{'REFRESH_AFTER_SECONDS'} seconds"
+      refute_deployer_token_in_secret_cache(root)
     end
   end
 
@@ -60,6 +61,7 @@ class DeployerTokenNeverCachedTest < Minitest::Test
                       "a leftover deployer entry must never be SERVED"
       refute_includes JSON.parse(File.read(store)).keys, "deployer",
                       "a leftover deployer entry must be PURGED, not left to age out"
+      refute_deployer_token_in_secret_cache(root)
     end
   end
 
@@ -102,6 +104,23 @@ class DeployerTokenNeverCachedTest < Minitest::Test
   end
 
   private
+
+  # The secret cache (<projects>/.secret-cache, 2026-10-27) is where the cache now
+  # lives; the legacy store above is the read-through. Neither may hold a deployer
+  # token, and no file in the folder may carry one (the manifest names the entry,
+  # never a value).
+  def refute_deployer_token_in_secret_cache(root)
+    home = File.join(root, ".secret-cache")
+    tokens = File.join(home, "github-tokens.json")
+    refute_includes JSON.parse(File.read(tokens)).keys, "deployer" if File.file?(tokens)
+    Dir.glob(File.join(home, "*")).each do |file|
+      next if File.symlink?(file)
+
+      text = File.read(file)
+      refute_includes text, "STUB-TOKEN\"", "#{File.basename(file)} holds no deployer token" unless file == tokens
+      refute_includes text, "LEFTOVER-FROM-OLD-VERSION"
+    end
+  end
 
   def in_sandbox
     Dir.mktmpdir("gh-token-cache") do |root|

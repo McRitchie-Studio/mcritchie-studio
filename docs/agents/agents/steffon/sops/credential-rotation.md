@@ -274,6 +274,12 @@ for f in /Users/alex/projects/*/.worktrees/*/.env; do
   mv "$tmp" "$f"; chmod 600 "$f"
 done
 ```
+The local [secret cache](../../../modules/secret-cache.md): drop every entry the rotated
+item feeds, so the old value never lingers on this Mac (prints names, never a value):
+```bash
+/Users/alex/projects/.agents/bin/secret forget --source "<item>"
+/Users/alex/projects/.agents/bin/secret status
+```
 Env snapshots, after `bin/ecosystem-build`; this irreversible sweep keeps only the fresh one:
 ```bash
 : "${ROTATED_AT:?stamp ROTATED_AT above, when the Heroku writes finished}" &&

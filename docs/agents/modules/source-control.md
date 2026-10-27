@@ -135,7 +135,8 @@ installs the tooling, the same line names the hub primary's copy.
 2. **`gh`'s own keyring**
 3. the stored fallback
 
-`bin/gh-token`'s cache (`<projects>/.agents/github-tokens.json`) is a **fourth,
+`bin/gh-token`'s cache (`<projects>/.secret-cache/github-tokens.json`, the
+[secret cache](secret-cache.md); the old `.agents` path is a symlink) is a **fourth,
 separate** store. **None of these refresh each other**, so "I just minted a
 token" and "`gh` works" are different claims.
 

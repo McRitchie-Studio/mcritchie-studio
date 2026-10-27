@@ -168,6 +168,7 @@ its invocation exactly.
 | `gmail-capture` (read-only mailbox pull into the desk queue) | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `knowledge-capture` (team@, intake protocol, sweep) | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
 | `process-backlog` (groom designed, build four wide) | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
+| `secret-cache` (read, refresh, forget and recover cached expiring credentials; 1Password is the fallback) | `mcritchie-studio/docs/agents/modules/secret-cache.md` |
 | `slack-capture` (connect, read, categorize a channel) | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
 | `token-session` (GitHub token session broken: 401, `Bad credentials`, push refused) | `mcritchie-studio/docs/agents/modules/token-session.md` |
 | `work-backlog` (your own tasks, two-three wide) | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
