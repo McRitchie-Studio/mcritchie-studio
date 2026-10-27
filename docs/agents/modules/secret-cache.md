@@ -17,7 +17,7 @@ token that lives one hour.
 |---|---|
 | Folder | `/Users/alex/projects/.secret-cache/` (`<projects>/.secret-cache`), top-level, **not** inside `.agents/`, because local apps, desks and workflows on this Mac read it too |
 | Modes | folder `0700`, files `0600`. The tooling **refuses** a wider mode, on read and on write, and names the `chmod` fix |
-| Git | never inside a repository; the tooling refuses a folder with a `.git` at or above it |
+| Git | never inside a repository; the tooling refuses a folder with a real repository at or above it (a `.git` file, or a `.git` folder holding a HEAD; a stray `.git` folder such as `~/.git` here does not count) |
 | Backup | Time Machine may back it up; it is not excluded |
 | Production | **Heroku dynos cannot read it.** It is a file on this Mac. An app in production keeps its credentials in its config vars |
 | Override | `MCR_SECRET_CACHE_DIR` (tests); else `CLAUDE_PROJECTS_DIR/.secret-cache`; else `~/projects/.secret-cache` |
