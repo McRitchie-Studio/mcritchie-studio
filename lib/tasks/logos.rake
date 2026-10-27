@@ -19,15 +19,26 @@ namespace :logos do
     end
   end
 
-  desc "Install a brand's saved kit into an app: BRAND=studio [DEST=public/brand] writes every kit file, byte-equal to /logos/<brand>/kit/<file>, plus kit.json"
+  # FROM= (task brand-kit-applied-status) installs the kit a kit.json names instead of this database's: production's
+  # kit, read with `BrandKitInstall.manifest_for` there (the brand-kit-rollout SOP), so a desk installs the exact kit
+  # and saved_at production holds without copying the row.
+  desc "Install a brand's saved kit into an app: BRAND=studio [DEST=public/brand] [FROM=<kit.json>] writes every kit file, byte-equal to /logos/<brand>/kit/<file>, plus kit.json"
   task install: :environment do
     brand = ENV["BRAND"].to_s
     unless Logos::NavbarLogo.brands.include?(brand)
-      abort "usage: bin/rails logos:install BRAND=<brand> [DEST=<dir>] — brands: #{Logos::NavbarLogo.brands.join(', ')}"
+      abort "usage: bin/rails logos:install BRAND=<brand> [DEST=<dir>] [FROM=<kit.json>] — brands: #{Logos::NavbarLogo.brands.join(', ')}"
     end
 
-    kit = BrandKit.for(brand)
-    warn "logos:install: #{brand} has no saved kit in this database (#{Rails.env}); writing the brand's defaults" unless kit.persisted?
+    kit = if ENV["FROM"].present?
+            begin
+              BrandKitInstall.kit_from_manifest(File.read(ENV["FROM"]), brand:)
+            rescue Errno::ENOENT, JSON::ParserError, ArgumentError => e
+              abort "logos:install: FROM=#{ENV['FROM']}: #{e.message}"
+            end
+          else
+            BrandKit.for(brand)
+          end
+    warn "logos:install: #{brand} has no saved kit in this database (#{Rails.env}); writing the brand's defaults" unless kit.persisted? || ENV["FROM"].present?
     dest = ENV["DEST"].presence ? Pathname(ENV["DEST"]).expand_path : BrandKitInstall.default_dest
     result = BrandKitInstall.new(kit, dest:).call
     result.written.each { |name| puts "wrote     #{dest.join(name)}" }

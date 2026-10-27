@@ -79,6 +79,27 @@ class BrandKitInstallTest < ActiveSupport::TestCase
     refute error.success?
   end
 
+  # Task brand-kit-applied-status: a rollout installs production's kit from its kit.json, so the desk's database
+  # needs no copy of the row, and the app's kit.json names production's saved_at.
+  test "FROM installs the kit a kit.json names, saved_at included, and refuses another brand or an undrawable choice" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("logos:install")
+    task = Rake::Task["logos:install"]
+    source = @dir.join("production-kit.json")
+    source.write(JSON.generate("brand" => "studio", "icon" => nil, "navbar" => STUDIO_NAVBAR, "stacked" => STUDIO_STACKED,
+                               "saved_at" => "2026-10-27T18:04:05Z"))
+    dest = @dir.join("app")
+    with_env("BRAND" => "studio", "DEST" => dest.to_s, "FROM" => source.to_s) { task.reenable; capture_io { task.invoke } }
+    assert_equal "2026-10-27T18:04:05Z", JSON.parse(dest.join("kit.json").read)["saved_at"]
+    assert_equal BrandKitExport.new(studio_kit, base_url: "").svg("navbar-light.svg").b, dest.join("navbar-light.svg").binread
+    assert_equal 1, BrandKit.count, "nothing is written to this database"
+
+    [JSON.generate("brand" => "turf"), JSON.generate("brand" => "studio", "navbar" => STUDIO_NAVBAR.merge("rule" => 99))].each do |bad|
+      source.write(bad)
+      error = assert_raises(SystemExit) { with_env("BRAND" => "studio", "DEST" => dest.to_s, "FROM" => source.to_s) { task.reenable; capture_io { task.invoke } } }
+      refute error.success?
+    end
+  end
+
   # The committed public/brand/ files are the kit kit.json names, drawn by today's logo library: a change to the
   # library or the kit without a reinstall fails here. Fix: bin/rails logos:install BRAND=studio, with the kit saved.
   test "the hub's committed public/brand files match their manifest" do
@@ -96,8 +117,9 @@ class BrandKitInstallTest < ActiveSupport::TestCase
   private
 
   def with_env(vars)
-    saved = vars.keys.to_h { |key| [key, ENV[key]] }
-    vars.each { |key, value| ENV[key] = value }
+    keys = vars.keys | %w[FROM]
+    saved = keys.to_h { |key| [key, ENV[key]] }
+    keys.each { |key| ENV[key] = vars[key] }
     yield
   ensure
     saved.each { |key, value| ENV[key] = value }

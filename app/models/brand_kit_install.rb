@@ -34,6 +34,21 @@ class BrandKitInstall
                             .merge("saved_at" => kit.saved_at&.utc&.iso8601)
   end
 
+  # An unsaved BrandKit holding what a kit.json names (its choices and saved_at), to install a kit another database
+  # holds (production's, read with .manifest_for there). An ArgumentError when it names another brand, or a choice
+  # the brand cannot draw.
+  def self.kit_from_manifest(json, brand:)
+    manifest = JSON.parse(json)
+    raise ArgumentError, "it names brand #{manifest['brand'].inspect}, not #{brand.inspect}" unless manifest["brand"] == brand.to_s && Logos::NavbarLogo.brands.include?(brand.to_s)
+
+    kit = BrandKit.new(brand: brand.to_s, saved_at: manifest["saved_at"] && Time.iso8601(manifest["saved_at"]),
+                       **BrandKit::CHOICE_TYPES.to_h { |type| [:"#{type}_choice", manifest[type.to_s]] })
+    BrandKit::CHOICE_TYPES.each { |type| BrandKit.variant(kit.brand, type, kit.choice(type)) if kit.saved?(type) }
+    kit
+  rescue BrandKit::Error => e
+    raise ArgumentError, e.message
+  end
+
   # Writes every file the kit draws, and the manifest. Returns which were written, which were already right, and
   # which the brand's data cannot draw (name => why); a refused file is left as it was.
   def call
