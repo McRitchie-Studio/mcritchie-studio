@@ -122,12 +122,12 @@ groups:
       - key: google_drive
         name: Google Drive
         icon: "📁"
-        blurb: Sign in with Google and your agents read your Drive files to answer from them. Read only, so they cannot change, share or delete a file.
+        blurb: Sign in with Google, then pick the Drive files your agents may read; they answer from those files and no others. Read only, so they cannot change, share or delete a file.
         status: live
         tier: pro
         connects: [sign_in]
         abilities:
-          - { key: read_drive, name: Read your Drive files to answer from them, via: [sign_in] }
+          - { key: read_drive, name: Read the Drive files you pick to answer from them, via: [sign_in] }
 
   - key: meeting_notes
     title: Connect your meeting notes

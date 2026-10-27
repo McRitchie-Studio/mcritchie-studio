@@ -64,7 +64,7 @@ module AgentMessages
   #
   # THE GOOGLE LAYER (`google_context`) is a small read-only snapshot of the
   # sender's OWN Google (GoogleConnect::OwnerContext: calendar, newest mail
-  # headers, newest Drive files), present only when the sender is the OWNER of
+  # headers, the Drive files they picked, or a legacy row's newest), present only when the sender is the OWNER of
   # what this soul answers for (#google_context?), and nil for everyone else.
   # Two owners, both server-side facts, never the message's:
   #   - a client CTO's app owner on that app's own CTO thread

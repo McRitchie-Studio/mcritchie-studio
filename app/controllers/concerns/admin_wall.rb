@@ -89,6 +89,10 @@ module AdminWall
     # and stores the connection as the signed-in user's (GoogleSignIn). The
     # callback answers only with the OAuth state a Connect put in that session.
     "integrations/google" => %w[connect disconnect],
+    # The Drive files they pick for their own connection (/tasks/drive-files-you-pick):
+    # the Picker's token, and recording or forgetting a pick. 404 unless the
+    # connection is theirs (Integrations::DrivePicksController).
+    "integrations/drive_picks" => %w[token create destroy],
     "admin/google" => %w[callback]
   }.transform_values(&:freeze).freeze
 

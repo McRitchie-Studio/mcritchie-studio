@@ -19,6 +19,8 @@ pin "depth_chart"
 pin "scroll_tab_stop"
 pin "logo_gallery"
 pin "gmail_admin_modal"
+# The Drive card's Google Picker (app/views/integrations/_drive_picks.html.erb).
+pin "drive_picker"
 pin "logo_editor"
 pin "logo_download"
 # The chat composer's files (app/views/agent_chats/_attachments.html.erb).

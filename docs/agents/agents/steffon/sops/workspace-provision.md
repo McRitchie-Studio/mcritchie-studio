@@ -354,9 +354,13 @@ answering a client app's owner on their own app's CTO chat reads that owner's
 own rows (`GoogleConnection.owned_by`, through `GoogleConnect::OwnerContext`;
 `docs/agents/system/agent-message-loop.md`, "The Google layer"). No agent reads
 one user's connection for anyone else. A promoted user's rows join the
-household; a demoted admin's leave it. An account another user already connected is refused ("That Google
-account is already connected by another user"), never taken over; the same
-user signing in again keeps incremental consent.
+household; a demoted admin's leave it. Each connection on both pages says who
+reads it, from one rule, `GoogleConnection#who_reads`: "Your agents can read
+this" for the household's, "Your app's agent can read this when you chat with
+it" for a client app owner's own, "Only you can see this" for anyone else's. An
+account another user already connected is refused ("That Google account is
+already connected by another user"), never taken over; the same user signing in
+again keeps incremental consent.
 
 The household page is **`/admin/google`** (admin only; `/admin/google_calendar`
 redirects there): a section per ability with its account, its live read or
@@ -379,11 +383,22 @@ a restricted scope Google will not verify for us, so the user's Workspace admin
 marks the OAuth client (`GOOGLE_CONNECT_CLIENT_ID`, shown with a copy button)
 Trusted under Security → API controls → Manage Third-Party App Access; its
 Continue goes on to the same connect route. `/admin/google` links straight. Both doors share one flow (`GoogleSignIn`) and
-**one callback**, `/admin/google_calendar/callback`, which admits any signed-in
-user carrying the OAuth state their Connect set, so the console owes no new
-redirect URI. `?return_to=` is honoured only for `/integrations` and (for an
-admin) `/admin/google`. A single-ability callback whose grant lacks its scope
-(unticked on Google's screen) stores nothing.
+**one callback**, `/admin/google_calendar/callback`, which admits the signed-in
+user who pressed Connect, carrying the OAuth state that Connect set, so the
+console owes no new redirect URI. `?return_to=` is honoured only for
+`/integrations` and (for an admin) `/admin/google`. A single-ability callback
+whose grant lacks its scope (unticked on Google's screen) stores nothing.
+
+**What the callback refuses** (/tasks/google-connect-hardening-polish): a
+callback reached while someone other than the user who pressed Connect is
+signed in on that browser (the state is bound to that user's id); an account
+whose email Google does not report as verified (`email_verified` in the
+id_token); a grant of none of the asked abilities; an account another user
+connected. Each refusal revokes the token Google just issued, **unless a stored
+connection already holds that account**: Google's revoke drops the whole grant
+(every token the account gave this OAuth client), so revoking then would cut
+the connection someone already has. Two simultaneous sign-ins of one new
+account end as one row and a plain message, never a 500.
 
 **Disconnect is per ability.** Google cannot revoke a single scope, so an
 account keeping other abilities only forgets this one here; disconnecting its
@@ -391,7 +406,8 @@ last ability revokes the token at Google and deletes the row. A TLS or network
 failure on the revoke still deletes the row and says Google did not confirm.
 
 **Each API must be enabled** in the OAuth client's Google Cloud project
-(APIs & Services → Library: Google Calendar API, Gmail API, Google Drive API),
+(APIs & Services → Library: Google Calendar API, Gmail API, Google Drive API,
+and Google Picker API for Drive),
 or its read answers 403 on the standing page.
 
 **Its own OAuth client, never the hub's sign-in client.** Alex McRitchie creates it once in
@@ -417,6 +433,31 @@ op item get <item> --vault <vault> --format json |
 
 The pair travels on stdin from the filed item, never as arguments
 ([`credentials.md`](../../../modules/credentials.md)).
+
+**Drive is files you pick (drive.file).** The Drive ability asks for
+`drive.file`, not `drive.readonly`, so the person chooses files in the Google
+Picker and the hub reads only those (`GoogleDrivePick`). The Picker needs:
+the **Google Picker API** enabled in the same Cloud project, and a browser
+**API key** (APIs & Services → Credentials → Create credentials → API key),
+restricted to HTTP referrer `https://mcritchie.studio/*` and to the Picker API,
+set on the app as `GOOGLE_PICKER_API_KEY`. Its 1Password item already exists:
+`google-picker.studio.applications` in vault `studio-applications`, field
+`credential` ([`credential-inventory.md`](../../../modules/credential-inventory.md)).
+The referrer restriction is production's host ONLY: before the Picker works on
+QA (or any other host), an operator adds that host as a referrer on the key, or
+files a separate key for it. That is an operator action in the Cloud console,
+not code; until then the Picker fails to open there, even though the card shows
+Pick files. The Picker's app id is the project
+number, read from the digits leading `GOOGLE_CONNECT_CLIENT_ID`
+(`GOOGLE_PICKER_APP_ID` overrides it). Without the key the Drive card says
+"Drive picking isn't set up yet". A row connected under `drive.readonly`
+keeps reading the whole Drive until its owner reconnects Drive. After the
+reconnect the hub reads only picked files, but Google keeps the old
+`drive.readonly` grant on the token (`include_granted_scopes`) until the person
+removes McRitchie Studio at myaccount.google.com/permissions; the hub does not
+revoke-and-regrant, since revoking the token would end Calendar and Gmail too. Picking a
+folder is not offered: Google documents no grant of its contents under
+`drive.file` (the evidence is on `/tasks/drive-files-you-pick`).
 
 Locally, `GOOGLE_CALENDAR_STAND_IN=1` walks the whole flow against a stand-in
 (`config/initializers/google_connect_stand_in.rb`) that grants whichever scopes

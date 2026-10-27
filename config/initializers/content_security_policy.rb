@@ -18,7 +18,11 @@
 #                and the engine's head nonce their own tags), and ONE third-party
 #                file, named by path rather than host because cdnjs mirrors every
 #                npm package: cropper.js (studio/_cropper_assets, the avatar and
-#                banner croppers). 'unsafe-eval' stays while Alpine runs: Alpine
+#                banner croppers). And Google's API loader host, apis.google.com:
+#                the Drive card's Google Picker (drive_picker.js) loads
+#                /js/api.js from it, and that loader fetches the Picker's own
+#                scripts from the same host (/tasks/drive-files-you-pick).
+#                'unsafe-eval' stays while Alpine runs: Alpine
 #                evaluates every x-data, x-on and :binding with new Function, and the
 #                hub's body is x-data on every page. 'report-sample' makes a report
 #                quote the first 40 characters it would block.
@@ -37,8 +41,9 @@
 #                pages play R2 files).
 #   connect-src  'self' and this host's websocket origin (Action Cable, Turbo
 #                Streams); every fetch the front end makes is same-origin.
-#   frame-src    'self' (the broadcast and email-image previews) and Google
-#                Calendar (the booking popup, Studio.booking_url).
+#   frame-src    'self' (the broadcast and email-image previews), Google
+#                Calendar (the booking popup, Studio.booking_url) and
+#                docs.google.com, the Google Picker's own frame.
 #   frame-ancestors 'self': the same-origin preview iframes frame hub pages; nothing
 #                else may (what X-Frame-Options SAMEORIGIN already says).
 #   form-action  'self' and accounts.google.com: Sign in with Google posts to
@@ -63,6 +68,9 @@ module HubCsp
   R2_PRESIGNED = "https://*.r2.cloudflarestorage.com".freeze
   GOOGLE_CALENDAR = "https://calendar.google.com".freeze
   GOOGLE_ACCOUNTS = "https://accounts.google.com".freeze
+  # The Google Picker (/tasks/drive-files-you-pick): its loader's host, and the frame it opens.
+  GOOGLE_APIS = "https://apis.google.com".freeze
+  GOOGLE_PICKER_FRAME = "https://docs.google.com".freeze
 
   # Inline scripts that run on EVERY page from the layout body, allowed by their
   # SHA-256 as well as (where we control the tag) the nonce. Why a hash too: a Turbo
@@ -117,13 +125,13 @@ end
 Rails.application.configure do
   config.content_security_policy do |policy|
     policy.default_src     :self
-    policy.script_src      :self, :unsafe_eval, :report_sample, HubCsp::CROPPER_JS, *HubCsp::PINNED_SCRIPT_HASHES.values
+    policy.script_src      :self, :unsafe_eval, :report_sample, HubCsp::CROPPER_JS, HubCsp::GOOGLE_APIS, *HubCsp::PINNED_SCRIPT_HASHES.values
     policy.style_src       :self, :unsafe_inline, HubCsp::CROPPER_CSS
     policy.img_src         :self, :data, :blob, :https
     policy.media_src(*HubCsp.media_sources)
     policy.font_src        :self, :data
     policy.connect_src     :self, HubCsp::CABLE_ORIGIN
-    policy.frame_src       :self, HubCsp::GOOGLE_CALENDAR
+    policy.frame_src       :self, HubCsp::GOOGLE_CALENDAR, HubCsp::GOOGLE_PICKER_FRAME
     policy.worker_src      :self, :blob
     policy.object_src      :none
     policy.frame_ancestors :self

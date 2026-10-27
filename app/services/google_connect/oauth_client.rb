@@ -23,9 +23,10 @@ module GoogleConnect
   # a Google API scope on the sign-in client would tie this grant to the login's
   # secret, so rotating one would break the other.
   #
-  # WHAT IT ASKS FOR: who the account is (openid, email) and one read-only
-  # scope per ability (GoogleConnection::ABILITIES): calendar events, Gmail,
-  # Drive. Nothing it asks for can create, change, send or delete.
+  # WHAT IT ASKS FOR: who the account is (openid, email) and one scope per
+  # ability (GoogleConnection::ABILITIES): read-only calendar events and Gmail,
+  # and Drive's drive.file, which reaches only the files the person picks (or
+  # the app creates). The hub only reads; no reader holds a write path.
   #
   # Env vars (names only; values live in 1Password and Heroku config):
   #   GOOGLE_CONNECT_CLIENT_ID      the connections OAuth client's id
@@ -99,24 +100,57 @@ module GoogleConnect
       def revoke(connection)
         return sign_in_stand_in.revoke(connection) if sign_in_stand_in
 
-        status, = call(:post, REVOKE_URL, token: connection.refresh_token)
-        status == 200
-      rescue Error, ActiveRecord::Encryption::Errors::Base, *NETWORK_ERRORS => e
+        revoke_token(connection.refresh_token)
+      rescue ActiveRecord::Encryption::Errors::Base => e
         Rails.logger.warn("[google_connect] revoke failed: #{e.class}")
         false
+      end
+
+      # Revokes a grant the callback was just issued and then refused, so no
+      # token the hub will not keep is left live at Google: its refresh token,
+      # else its access token. Google revokes the whole GRANT (every token the
+      # account gave this client), so the caller must not call this when a
+      # stored connection holds the same account (GoogleSignIn#discard_grant).
+      # Answers whether Google said it did; never raises.
+      def revoke_grant(grant)
+        token = grant.to_h.values_at("refresh_token", "access_token").find(&:present?)
+        return false if token.nil?
+        return sign_in_stand_in.revoke(nil) if sign_in_stand_in
+
+        revoke_token(token)
       end
 
       # The account an exchange signed in, from its id_token. The token came
       # straight from Google's token endpoint over TLS, so its claims are read
       # without a signature check (OpenID Connect Core 3.1.3.7).
-      def email_from(grant)
-        payload = grant["id_token"].to_s.split(".")[1].to_s
-        JSON.parse(Base64.urlsafe_decode64(payload + ("=" * (-payload.size % 4))))["email"].to_s.presence
-      rescue ArgumentError, JSON::ParserError
-        nil
-      end
+      def email_from(grant) = id_claims(grant)["email"].to_s.presence
+
+      # Has Google verified the account's email? Only an id_token saying
+      # email_verified true (a boolean, or the string older tokens carry) is a
+      # yes; a missing claim, a false or a malformed token is a no. An
+      # unverified address is not proof the person owns it.
+      def email_verified?(grant) = [ true, "true" ].include?(id_claims(grant)["email_verified"])
 
       private
+
+      # The id_token's claims, {} when it is missing or malformed.
+      def id_claims(grant)
+        payload = grant.to_h["id_token"].to_s.split(".")[1].to_s
+        claims = JSON.parse(Base64.urlsafe_decode64(payload + ("=" * (-payload.size % 4))))
+        claims.is_a?(Hash) ? claims : {}
+      rescue ArgumentError, JSON::ParserError
+        {}
+      end
+
+      # POSTs one token to Google's revoke endpoint. Never raises: a TLS or
+      # network failure is logged (its class only) and answers false.
+      def revoke_token(token)
+        status, = call(:post, REVOKE_URL, token:)
+        status == 200
+      rescue Error, *NETWORK_ERRORS => e
+        Rails.logger.warn("[google_connect] revoke failed: #{e.class}")
+        false
+      end
 
       def ensure_configured!
         raise NotConfigured, "#{ENV_NAMES.join(' and ')} are not set on this server" unless configured?
