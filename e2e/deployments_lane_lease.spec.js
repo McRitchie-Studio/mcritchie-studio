@@ -64,11 +64,22 @@ test("the Next Release card names the assembler live, and a second session is ha
     // The lane fits a phone: no sentence pushes the card wider than the viewport.
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(sentence("assembler")).toBeVisible();
-    const overflow = await lane.evaluate((el) => ({
+    // The resize slides the open sidebar in again, and from Chromium 1234 (Playwright
+    // 1.62.1) a single read lands mid-slide: measured 2026-10-27, the sidebar's left
+    // edge at 71px, then 6px, then 0 once settled, the lane then fitting at 357 of 390.
+    // The slide starts a frame AFTER the resize, so there is no animation to await at
+    // the moment of the read; poll the settled geometry instead. A lane that really
+    // overflows never settles inside the viewport, so this still fails it.
+    const measure = () => lane.evaluate((el) => ({
       lane: el.scrollWidth - el.clientWidth,
       right: el.getBoundingClientRect().right,
       viewport: document.documentElement.clientWidth,
     }));
+    await expect.poll(async () => {
+      const { right, viewport } = await measure();
+      return right <= viewport + 1;
+    }, { message: "the lane's right edge settles inside the 390px viewport" }).toBe(true);
+    const overflow = await measure();
     expect(overflow.lane).toBeLessThanOrEqual(1);
     expect(overflow.right).toBeLessThanOrEqual(overflow.viewport + 1);
   } finally {
