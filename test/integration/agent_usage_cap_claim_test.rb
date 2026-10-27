@@ -11,7 +11,13 @@ class AgentUsageCapClaimTest < ActiveSupport::TestCase
   include AgentMessageFixtures
   include ActiveJob::TestHelper
 
+  # Mid-month, so the run date never moves the cap reply's "Nov 1" reset or
+  # lets spent!'s hour-ago answer fall into the month before. TimeHelpers
+  # travels back after each test.
+  NOW = Time.zone.parse("2026-10-16 12:00 MDT")
+
   setup do
+    travel_to NOW
     @app = apps(:turf_monster)
     @app.update!(package_tier: "builder", cto_cap_lifted_at: nil)
     @client = AgentPerson.create!(display_name: "Client", role: "client", client_domain: "turf_monster")
