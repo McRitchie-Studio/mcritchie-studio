@@ -6378,7 +6378,8 @@ def allocate_gem_versions!(gem_groups, label: nil)
            "#{gem_meta_for(group['repo'])['version_file']} → roll CHANGELOG.md's '## Unreleased' into the " \
            "allocated version → `bundle lock` → ONE commit of all three onto " \
            "origin/#{ACCEPTED_BRANCH} → promote onto origin/#{RELEASE_BRANCH} (a fast-forward when contained) " \
-           "(skips when already advanced; REFUSES rather than guess)")
+           "(skips when already advanced, unless the members now earn more or entries arrived after the roll; " \
+           "REFUSES rather than guess)")
     end
     return
   end

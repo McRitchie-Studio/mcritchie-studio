@@ -186,7 +186,9 @@ class Release
     # skips are different: nothing to publish (no commits past the tag), and
     # already allocated (`current` is strictly past everything published — an
     # idempotent re-run, or a deliberate hand-bump). The second is what keeps a
-    # re-run from burning a fresh number every pass, and it is deliberately the
+    # re-run from burning a fresh number every pass — unless the members now earn
+    # MORE than that unpublished number, or entries arrived after its roll; then
+    # it is RE-allocated (see #reallocation) — and it is deliberately the
     # EXACT complement of the stranded-work guard's trigger: this allocates in
     # precisely the cases that guard fires on, which is why the guard stays
     # armed behind it as the backstop rather than being replaced by it.
@@ -217,8 +219,10 @@ class Release
       # same reference the stranded-work guard uses, so the two can never
       # disagree about whether this gem needs a version. A version already past
       # the last tag is settled: either it is unpublished (phase 2 publishes it)
-      # or it is live (phase 2 skips it), and in BOTH cases a fresh number would
-      # be unearned. Judging this against the live list instead would re-allocate
+      # or it is live (phase 2 skips it), and in BOTH cases a fresh number from
+      # the SAME members would be unearned. (An unpublished one is re-derived
+      # from the CURRENT members first, upward only: #reallocation.) Judging this
+      # against the live list instead would re-allocate
       # every time a publish landed but its tag push did not — burning a RubyGems
       # number per re-run for a version that was already released.
       # The tag when there is one; the highest live version only when there is

@@ -472,7 +472,9 @@ How a gem rides a release:
    BEFORE the publish
    (finding-d0621629719b, now closed). There is nothing for you to run.
    Allocation is idempotent — a re-run reads a version already past the last
-   `v*` tag (the highest live version only when no tag exists) and skips — and
+   `v*` tag (the highest live version only when no tag exists) and skips, unless
+   that unpublished version is now too low for the members or entries arrived
+   after its roll, when it re-allocates (below) — and
    it **refuses rather than guesses**: an
    unreadable `--gem-bump`, an unparseable last version, a `version_file` that
    declares its version twice, a `bundle lock` that did not land the new
@@ -840,6 +842,11 @@ Each of these reads can fail quietly enough to look like an answer.
   is on stderr, and `2>&1` makes it read as the value.
 - **`heroku run` output can vanish** while the command ran. Confirm a mutation with a
   separate read-only query, and make mutating scripts idempotent and self-guarding.
+- **A `heroku run` client can hang after its dyno is gone** (2026-10-27: 26 minutes,
+  `heroku ps` empty). `bin/release` kills a record op's client at
+  `RELEASE_RECORD_OP_DEADLINE` (300 s) and takes the `record op failed` path. Killing
+  the local client does not stop a dyno that is still running, so a re-run leans on
+  the conductor writes being idempotent, as they are.
   A run hung on its first read-only step is usually the laptop's network: kill the
   heroku child and re-run.
 - **`heroku releases` lists newest first.** Read it whole; `| tail` shows older rows.

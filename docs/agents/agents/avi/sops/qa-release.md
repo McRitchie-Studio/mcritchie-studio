@@ -209,7 +209,7 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
 
    A write-phase failure is not a REFUSE: an earlier gem's version commit may already
    sit on `origin/accepted`. **Leave it THERE** — the re-run SKIPs it as allocated
-   already. Moving it onto `release` alone creates the MIXED state, where the next run
+   already (or RE-ALLOCATEs it, when the members changed). Moving it onto `release` alone creates the MIXED state, where the next run
    prints `no commits past the last published tag — nothing to publish` and skips
    silently.
 
@@ -279,11 +279,11 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
 
    | The sweep stops | The world | A re-run |
    |---|---|---|
-   | after the version commit, before any publish | `x.y.z` on the gem's `accepted` (and `release` once promoted); nothing on RubyGems | SKIPs the allocation as `allocated already`, publishes `rc1` |
+   | after the version commit, before any publish | `x.y.z` on the gem's `accepted` (and `release` once promoted); nothing on RubyGems | SKIPs the allocation as `allocated already`, publishes `rc1`; RE-ALLOCATEs when a joining member earns more or added entries, and the new number starts at its own `rc1` |
    | after a candidate's push, before its tag | `rcN` live, untagged | publishes `rcN+1`; the untagged one is never locked |
    | after the tag, before the consumer bump (PUBLISHED GEM NOT READY lands here) | `rcN` live and tagged; consumers on the previous version | reuses `rcN`, bumps |
    | after some consumers bumped | those consumers' `accepted` and `release` lock `rcN` | reuses `rcN`; a bumped lock commits nothing, the rest bump |
-   | at a red gate, or QA not green | consumers lock `rcN`; members `reviewed`; `x.y.z` unpublished | after the fix: a moved gem tip publishes `rcN+1` and re-bumps; an unmoved one reuses `rcN`. `x.y.z` is the same either way |
+   | at a red gate, or QA not green | consumers lock `rcN`; members `reviewed`; `x.y.z` unpublished | after the fix: a moved gem tip publishes `rcN+1` and re-bumps; an unmoved one reuses `rcN`. `x.y.z` is the same either way unless a joining member earns more (RE-ALLOCATE) |
    | with the gem's task ejected | a consumer still locks `rcN` of a gem the release no longer carries | REFUSES (the STRAY CANDIDATE row) until the lock is restored |
    | (after the ship) with a consumer's `accepted` having moved during QA | the ship's advance of `accepted` is refused as a non-fast-forward, so that `accepted` still locks `rcN` while `release` and `main` lock `x.y.z` | nothing is wrong on production. The next sweep's promote merges it (only `release` changed the lock, so the final wins) and its merge-forward keeps `main` in `release`. To clear it sooner, run the DIVERGED reconcile recipe in `production-deploy.md` |
 
