@@ -17,7 +17,7 @@
         <% picks.each do |pick| %>
           <li class="py-1.5 flex items-center justify-between gap-2" data-test="drive-pick" data-file-id="<%= pick.file_id %>">
             <% if pick.url.present? %>
-              <%= link_to pick.name, pick.url, class: "min-w-0 text-heading hover:underline [overflow-wrap:anywhere]", target: "_blank", rel: "noopener" %>
+              <%= safe_link_to pick.name, pick.url, class: "min-w-0 text-heading hover:underline [overflow-wrap:anywhere]", target: "_blank", rel: "noopener" %>
             <% else %>
               <span class="min-w-0 text-heading [overflow-wrap:anywhere]"><%= pick.name %></span>
             <% end %>
