@@ -95,7 +95,9 @@ groups:
       # One person's own Google sign-in, one read each (GoogleConnection::ABILITIES).
       # Any signed-in user sees each card's Connect or Disconnect for their own
       # account; an admin's are the household's, on /admin/google too
-      # (IntegrationsController::GOOGLE_CARDS). A visitor's Connect opens the
+      # (IntegrationsController::GOOGLE_CARDS). Agents read the household, and
+      # a client app's owner's own rows only for that owner's own CTO chat
+      # (GoogleConnection.owned_by). A visitor's Connect opens the
       # sign-in modal, back to /integrations.
       - key: google_calendar
         name: Google Calendar

@@ -347,11 +347,14 @@ grant of none stores nothing.
 
 **Every connection has an owner** (`google_connections.user_id`, the user who
 signed it in; /tasks/every-user-connects-google). An admin's connections are the
-**household's**, and **agents read only the household's**:
+**household's**, and **agents read the household's**:
 `GoogleConnection.for`, `.current` and every agent-side lookup start from
-`GoogleConnection.household` (admin-owned rows), so a viewer's connection is
-never agent input. A promoted user's rows join the household; a demoted admin's
-leave it. An account another user already connected is refused ("That Google
+`GoogleConnection.household` (admin-owned rows). The one exception: the agent
+answering a client app's owner on their own app's CTO chat reads that owner's
+own rows (`GoogleConnection.owned_by`, through `GoogleConnect::OwnerContext`;
+`docs/agents/system/agent-message-loop.md`, "The Google layer"). No agent reads
+one user's connection for anyone else. A promoted user's rows join the
+household; a demoted admin's leave it. An account another user already connected is refused ("That Google
 account is already connected by another user"), never taken over; the same
 user signing in again keeps incremental consent.
 

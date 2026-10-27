@@ -274,4 +274,14 @@ class GoogleConnectionTest < ActiveSupport::TestCase
     assert_equal({ "a@example.com" => alex.id, "v@example.com" => viewer.id, "gone@example.com" => alex.id }, owners)
     assert_not GoogleConnection.columns_hash["user_id"].null, "user_id is required once backfilled"
   end
+
+  test "[unit] owned_by is one user's own rows, never another user's, admin or not" do
+    viewer = users(:viewer)
+    mine = GoogleConnection.store!(grant, email: "viewer@example.com", user: viewer, abilities: ALL, now: NOW)
+    GoogleConnection.store!(grant, email: "alex@mcritchie.studio", user: alex, abilities: ALL, now: NOW)
+
+    assert_equal [ mine ], GoogleConnection.owned_by(viewer).to_a
+    assert_equal [ "alex@mcritchie.studio" ], GoogleConnection.owned_by(alex).pluck(:email)
+    assert_not_includes GoogleConnection.household.to_a, mine, "a viewer's row is still never the household's"
+  end
 end

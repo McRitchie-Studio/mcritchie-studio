@@ -111,13 +111,16 @@ class GoogleConnect::OwnerContextTest < ActiveSupport::TestCase
       google_answers(400, { error: "invalid_grant" })
       google_reads(all_routes)
 
-      snap = snapshot
+      snap = assert_difference -> { ErrorLog.count }, 3 do
+        snapshot
+      end
 
       %w[calendar gmail drive].each do |ability|
         assert_equal({ "note" => GoogleConnect::OwnerContext::RECONNECT }, snap[ability])
       end
       assert_match "/integrations", GoogleConnect::OwnerContext::RECONNECT
       refute_match(/REFRESH-SECRET|SECRET-ACCESS|1\/\/|ya29/, snap.to_json)
+      refute_match(/REFRESH-SECRET|SECRET-ACCESS|1\/\/|ya29/, ErrorLog.pluck(:message, :inspect).flatten.join(" "))
     end
   end
 
@@ -134,6 +137,9 @@ class GoogleConnect::OwnerContextTest < ActiveSupport::TestCase
 
       assert_equal({ "note" => GoogleConnect::OwnerContext::UNAVAILABLE }, snap["gmail"])
       assert_match "gmail read failed: GoogleConnect::OAuthClient::Error", log.string
+      assert_equal "user:#{@owner.id} gmail: GoogleConnect::OAuthClient::Error: Gmail answered 500: token [redacted] rejected",
+                   ErrorLog.last.message, "the operator sees Google's words, a token-shaped echo redacted"
+      refute_match(/SECRET|ya29/, ErrorLog.pluck(:message, :inspect).flatten.join(" "))
       refute_match(/SECRET|ya29/, log.string + snap.to_json)
     ensure
       Rails.logger = original
@@ -147,8 +153,11 @@ class GoogleConnect::OwnerContextTest < ActiveSupport::TestCase
 
       with_other_encryption_key do
         refute GoogleConnection.find(conn.id).readable?
-        assert_equal({ "note" => GoogleConnect::OwnerContext::RECONNECT }, snapshot["drive"])
+        assert_difference -> { ErrorLog.count }, 1 do
+          assert_equal({ "note" => GoogleConnect::OwnerContext::RECONNECT }, snapshot["drive"])
+        end
       end
+      assert_match "cannot be decrypted", ErrorLog.last.message
       assert_empty read_requests
     end
   end

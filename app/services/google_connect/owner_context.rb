@@ -22,9 +22,10 @@ module GoogleConnect
   #
   # FAILURE. A revoked grant, or a token this app can no longer decrypt, is a
   # section `note` telling the owner to reconnect on /integrations; any other
-  # failure is a note that it could not be read just now. Nothing raises, and no
-  # token, token fragment or Google error text reaches the output or the log
-  # (the log names the exception class only).
+  # failure is a note that it could not be read just now. Nothing raises. Every
+  # failure is captured in ErrorLog (its class and message: Google's words or
+  # ours, never a token), and the Rails log names the class only. No token or
+  # token fragment reaches the output.
   #
   # CACHE. A snapshot is cached for TTL per owner, under a key that folds in
   # every connection's id, scope and change time: a disconnect or a dropped
@@ -42,7 +43,15 @@ module GoogleConnect
     RECONNECT = "This Google connection no longer works: reconnect it on /integrations.".freeze
     UNAVAILABLE = "Could not be read just now.".freeze
 
-    def self.for_user(user, **) = new(GoogleConnection.where(user_id: user.id), owner_key: "user:#{user.id}", **)
+    # A stored token this app's keys cannot open, raised only to be captured.
+    class Unreadable < StandardError; end
+    # What ErrorLog records for a failed read.
+    class ReadFailed < StandardError; end
+    # Google's token shapes (access ya29.…, refresh 1//…), redacted from any
+    # message this class records.
+    TOKEN_SHAPES = %r{ya29\.[\w.-]+|1//[\w.-]+}
+
+    def self.for_user(user, **) = new(GoogleConnection.owned_by(user), owner_key: "user:#{user.id}", **)
 
     def self.household(**) = new(GoogleConnection.household, owner_key: "household", **)
 
@@ -79,14 +88,28 @@ module GoogleConnect
     end
 
     def section(ability, connection)
-      return { "note" => RECONNECT } unless connection
+      unless connection
+        capture(ability, Unreadable.new("#{@owner_key}'s #{ability} connection cannot be decrypted with this app's keys"))
+        return { "note" => RECONNECT }
+      end
 
       send(ability, connection)
-    rescue OAuthClient::Revoked, ActiveRecord::Encryption::Errors::Base
+    rescue OAuthClient::Revoked, ActiveRecord::Encryption::Errors::Base => e
+      capture(ability, e)
       { "note" => RECONNECT }
     rescue StandardError => e
-      Rails.logger.warn("[google_owner_context] #{ability} read failed: #{e.class}")
+      capture(ability, e)
       { "note" => UNAVAILABLE }
+    end
+
+    # Records a failed read where an operator sees it (ErrorLog, as ReadFailed:
+    # the ability, the original class and its message with anything
+    # token-shaped redacted), and never raises.
+    def capture(ability, error)
+      Rails.logger.warn("[google_owner_context] #{ability} read failed: #{error.class}")
+      ErrorLog.capture!(ReadFailed.new("#{@owner_key} #{ability}: #{error.class}: #{redact(error.message)}"))
+    rescue StandardError => e
+      Rails.logger.warn("[google_owner_context] could not record the failure: #{e.class}")
     end
 
     def calendar(connection)
@@ -118,6 +141,8 @@ module GoogleConnect
 
       all_day ? time.to_date.iso8601 : time.utc.iso8601
     end
+
+    def redact(message) = message.to_s.gsub(TOKEN_SHAPES, "[redacted]")[0, 500]
 
     # One line, at most `limit` characters.
     def text(value, limit = TEXT)
