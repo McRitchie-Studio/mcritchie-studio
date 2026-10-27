@@ -112,6 +112,19 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert section.at_css("a[href='/integrations']"), "disconnect points at /integrations"
   end
 
+  # [component] drive-files-you-pick: the Drive line says a new connection reads
+  # only the files the person chooses, and stays true for a legacy drive.readonly
+  # one (every file, until it reconnects). Nothing claims a scope can't write.
+  test "[component] /privacy narrows Drive to the files you choose and keeps the legacy line true" do
+    get privacy_path
+
+    drive = css_select("[data-test='google-drive-use']").first.text.squish
+    assert_includes drive, "only the files you choose"
+    assert_includes drive, "we can open only those files"
+    assert_includes drive, "older read-only permission, which covers every file in your Drive, until you reconnect"
+    refute_includes css_select("[data-test='google-user-data']").text.squish, "nothing we ask Google for can send, change or delete"
+  end
+
   # [component] /privacy doubles as the Messaging Terms and Conditions a carrier
   # reads when it reviews the SMS registration. Each line below is one they check.
   test "privacy page is the combined privacy policy and messaging terms" do

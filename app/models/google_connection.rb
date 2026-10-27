@@ -1,6 +1,6 @@
 # A Google account the hub reads with a person's own sign-in: the `sign_in`
 # connection method of config/integrations.yml. One sign-in, many abilities:
-# each of ABILITIES is one read scope (Calendar, Gmail, Drive), asked for on
+# each of ABILITIES is one scope (Calendar, Gmail, Drive), asked for on
 # its own from its /integrations card or the /admin/google page, or all three
 # at once from Connect Google (ALL), and Google adds it to the account's grant
 # (incremental consent). Nothing is copied by hand and no token is ever shown.
