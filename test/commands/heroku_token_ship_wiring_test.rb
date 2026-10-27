@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# [unit] bin/release and bin/qa-server resolve the Heroku token ONCE, before
+# [unit] bin/release (at its first PROD board op) and bin/qa-server resolve the Heroku token ONCE, before
 # their first `heroku` call, and refuse cleanly when it cannot be resolved: no
 # heroku call is made and nothing is written. The single-read property itself is
 # proven in test/commands/heroku_token_test.rb (one export, many calls, one read).
