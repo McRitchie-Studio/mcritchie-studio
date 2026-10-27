@@ -51,6 +51,7 @@ class LogosIndexDownloadsTest < ActionDispatch::IntegrationTest
 
   test "the format toggle opens on PNG, and ?download_format= sets every row's links and survives navigation" do
     get logos_path
+    assert_select "[data-test='download-format-control'][hidden]", 1, "served hidden: with JavaScript off every link is an SVG, so no PNG is offered"
     assert_select "[data-test='download-format-control'] [data-test='download-format-option']", 3
     assert_equal %w[PNG SVG JPEG], css_select("[data-test='download-format-option']").map { |a| a.text.strip }
     assert_select "[data-test='download-format-option'][aria-current='true']", "PNG"

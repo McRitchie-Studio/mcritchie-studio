@@ -31,6 +31,8 @@
     <p class="text-sm text-secondary">Each brand's icon, Navbar Logo and Stacked Logo, drawn from its icon and its name. Open a brand to see every version and how it was built.</p>
     <p class="text-2xs text-muted" data-test="kit-note">A brand's Icon, Navbar and Stacked Logos are its saved kit choices where it has them (marked Saved), else its defaults, each drawn exactly as its brand page draws it. With a saved icon, all three draw it; without one, a saved Navbar or Stacked Logo keeps the icon it was saved with. Choose and save them on the brand's page.</p>
     <%= render "context_notes" %>
+    <%# Says when a PNG or JPEG could not be drawn in the browser (app/javascript/logo_download.js). %>
+    <p class="text-2xs font-semibold text-warning-ink" role="status" data-test="logo-raster-error" data-logo-raster-error hidden></p>
   </div>
 
   <div class="card p-4 sm:p-5">

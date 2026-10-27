@@ -5,7 +5,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { MAX_SIDE, pngSize, drawRect, pngFilename, sizedSvg, rasterise, presetsFor } from "../../app/javascript/logo_download.js";
+import {
+  MAX_SIDE, pngSize, drawRect, pngFilename, sizedSvg, rasterise, presetsFor,
+  naturalSize, rasterSize, rasterFilename, rasterPlan, tableFormat, downloadTableLink,
+} from "../../app/javascript/logo_download.js";
 
 const NAVBAR = [2560.42, 300.0];
 
@@ -86,4 +89,70 @@ test("an icon's presets are its true aspect, or its 1:1 square list when the tog
   assert.deepEqual(presetsFor(data, false), [{ key: "512", width: 512, height: 416, fit: "fill" }]);
   assert.deepEqual(presetsFor(data, true), [{ key: "512", width: 512, height: 512, fit: "contain" }]);
   assert.deepEqual(presetsFor({ presets: data.presets }, true), presetsFor(data, false), "a wide logo has no square list");
+});
+
+// [unit] The /logos table's one-click downloads (task logos-index-download-formats): the format comes from the table,
+// the size is the type's default preset read against the SVG's own viewBox, a JPEG is filled with the tone's
+// background and a PNG left transparent, and the SVG format leaves the link to download the file itself.
+
+test("the drawing's size is read from the root viewBox", () => {
+  assert.deepEqual(naturalSize('<?xml version="1.0"?><svg xmlns="x" viewBox="0 0 2560.42 300"><svg viewBox="0 0 1 1"/></svg>'), { width: 2560.42, height: 300 });
+  assert.equal(naturalSize("<svg width=\"10\"></svg>"), null);
+  assert.equal(naturalSize('<svg viewBox="0 0 0 5"></svg>'), null);
+});
+
+test("a default preset spec sizes the canvas as Logos::PngSizes does", () => {
+  assert.deepEqual(rasterSize("width:800", ...NAVBAR), { width: 800, height: 94, fit: "fill" }, "the w800 preset");
+  assert.deepEqual(rasterSize("long:512", 662.45, 538.14), { width: 512, height: 416, fit: "fill" }, "an icon's true aspect, long side 512");
+  assert.deepEqual(rasterSize("long:512", 300, 600), { width: 256, height: 512, fit: "fill" }, "a tall icon's long side is its height");
+  assert.deepEqual(rasterSize("long:512", 215, 217), { width: 512, height: 512, fit: "contain" }, "within 1% of square: N x N");
+  assert.equal(rasterSize("bogus:1", 1, 1), null);
+});
+
+test("a raster file is named after the SVG with its size and extension", () => {
+  assert.equal(rasterFilename("welding_v2-stacked-tagline-first-dark-custom.svg", 800, 640, "jpg"), "welding_v2-stacked-tagline-first-dark-custom-800x640.jpg");
+});
+
+const LINK = { svg: "/logos/studio/navbar?tone=dark", filename: "studio-navbar-rule4-second-dark.svg", background: "#000000", rasterSize: "width:800", label: "Studio" };
+
+test("a JPEG is filled with the tone's background; a PNG stays transparent", () => {
+  const svg = '<svg viewBox="0 0 2 1"></svg>';
+  const jpeg = rasterPlan(LINK, "jpeg", svg);
+  assert.equal(jpeg.mime, "image/jpeg");
+  assert.equal(jpeg.background, "#000000");
+  assert.equal(jpeg.filename, "studio-navbar-rule4-second-dark-800x400.jpg");
+  const png = rasterPlan(LINK, "png", svg);
+  assert.equal(png.mime, "image/png");
+  assert.equal(png.background, null);
+  assert.equal(png.filename, "studio-navbar-rule4-second-dark-800x400.png");
+  assert.equal(rasterPlan(LINK, "svg", svg), null);
+  assert.throws(() => rasterPlan(LINK, "png", "<svg></svg>"), /no viewBox/);
+});
+
+function fakeLink(format, data = LINK) {
+  const table = format ? { dataset: { downloadFormat: format } } : null;
+  return { dataset: { ...data }, closest: (selector) => (selector === "[data-download-format]" ? table : null) };
+}
+
+test("a table link reads its format from its table, SVG when none is set", () => {
+  assert.equal(tableFormat(fakeLink("jpeg")), "jpeg");
+  assert.equal(tableFormat(fakeLink(null)), "svg");
+});
+
+test("a JPEG table download fetches the SVG once, fills the canvas, draws it and saves a .jpg", async () => {
+  const deps = fakeDeps('<svg viewBox="0 0 2 1" width="2" height="1"></svg>');
+  const saved = [];
+  const plan = await downloadTableLink(fakeLink("jpeg"), deps, (blob, name) => saved.push([blob, name]));
+  assert.deepEqual(plan.size, { width: 800, height: 400, fit: "fill" });
+  assert.deepEqual(deps.log, [
+    ["fetch", LINK.svg], ["createObjectURL"], ["decode"], ["canvas", 800, 400],
+    ["fillStyle", "#000000"], ["fillRect", 0, 0, 800, 400], ["drawImage", "blob:svg", 0, 0, 800, 400], ["toBlob", "image/jpeg"], ["revoke", "blob:svg"],
+  ]);
+  assert.deepEqual(saved, [[{ type: "image/jpeg" }, "studio-navbar-rule4-second-dark-800x400.jpg"]]);
+});
+
+test("in the SVG format the table link is left to download the SVG itself", async () => {
+  const deps = fakeDeps("<svg viewBox=\"0 0 1 1\"></svg>");
+  assert.equal(await downloadTableLink(fakeLink("svg"), deps, () => assert.fail("nothing saved")), null);
+  assert.deepEqual(deps.log, []);
 });
