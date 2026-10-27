@@ -36,7 +36,7 @@ module HarnessKey
   end
 
   # Where the key is kept, for a message: never a path a caller can act on.
-  WHERE = "#{FILE} in the projects root's secret cache (#{SecretCache::DIR_NAME})"
+  WHERE = "#{FILE} in the projects root's secret cache folder"
 
   # A sandboxed process (a test run) never reads the operator's real key: it
   # would present it to whatever board the test points at.

@@ -38,7 +38,6 @@ require_relative "../../lib/task_usage_sandbox"
 # NEVER A VALUE IN OUTPUT. Nothing here prints, logs or raises with a secret value.
 # Status speaks in times; the manifest and README hold names and metadata only.
 module SecretCache
-  DIR_NAME = ".secret-cache"
   DIR_MODE = 0o700
   FILE_MODE = 0o600
   STORE = "secret-cache"
@@ -124,19 +123,30 @@ module SecretCache
 
   # ── where ──────────────────────────────────────────────────────────────────
 
+  # THE FOLDER, LAUNDERED. Every exported path to the folder goes through the
+  # sandbox (lib/task_usage_sandbox.rb): an armed test run that is unpinned, or
+  # pinned back at the operator's real folder, aborts here
+  # (test/lib/state_store_containment_test.rb holds this file to that, LAYER 2a).
   def dir(env = ENV)
+    TaskUsageSandbox.enforce!(location(env), store: STORE, env: TaskUsageSandbox.guard_env(env))
+  end
+
+  # The folder for a READ: nil, quietly, when a sandboxed run may not touch it, so
+  # a read in a test answers "nothing cached" rather than reaching the real folder.
+  def readable_dir(env = ENV)
+    return nil if TaskUsageSandbox.violation(location(env), store: STORE, env: TaskUsageSandbox.guard_env(env))
+
+    TaskUsageSandbox.enforce!(location(env), store: STORE, env: TaskUsageSandbox.guard_env(env))
+  end
+
+  # The raw resolution. Private: callers get #dir or #readable_dir.
+  def location(env = ENV)
     override = env[DIR_ENV].to_s.strip
     return File.expand_path(override) unless override.empty?
 
     projects = env["CLAUDE_PROJECTS_DIR"].to_s.strip
     projects = File.expand_path("~/projects") if projects.empty?
-    File.join(File.expand_path(projects), DIR_NAME)
-  end
-
-  # The operator's real folder, for the sandbox's rule 2 (a pin aimed back inside
-  # it is refused). Resolved from the repo's location, not an env var.
-  def real_dir
-    File.join(ProjectsRoot.default_projects_dir, DIR_NAME)
+    File.join(File.expand_path(projects), folder_name)
   end
 
   # ── safety ─────────────────────────────────────────────────────────────────
@@ -161,11 +171,13 @@ module SecretCache
 
   # Fail loudly when the folder (if it exists) is unsafe. Cheap: a few stats.
   def check_safe!(env = ENV)
-    home = dir(env)
+    home = readable_dir(env)
+    return nil unless home
+
     repo = enclosing_repo(home)
     if repo
       raise Unsafe, "secret cache #{home} is inside the git repository at #{repo}; " \
-                    "move it out (it belongs at <projects>/#{DIR_NAME}) — refusing to read or write it"
+                    "move it out (it belongs directly under the projects folder) — refusing to read or write it"
     end
     return home unless File.exist?(home)
 
@@ -195,8 +207,7 @@ module SecretCache
   # manifest. Every write goes through here. Under TASK_USAGE_SANDBOX an unpinned
   # run aborts rather than reach the operator's real folder.
   def ensure_home!(env = ENV)
-    home = TaskUsageSandbox.enforce!(dir(env), store: STORE, env: TaskUsageSandbox.guard_env(env),
-                                               state_dir: real_dir)
+    home = dir(env)
     check_safe!(env)
     unless File.directory?(home)
       FileUtils.mkdir_p(File.dirname(home))
@@ -220,7 +231,10 @@ module SecretCache
   # cache miss.
   def read_json(file, env: ENV)
     check_safe!(env)
-    path = File.join(dir(env), file)
+    home = readable_dir(env)
+    return nil unless home
+
+    path = File.join(home, file)
     return nil unless File.file?(path)
 
     check_file!(path)
@@ -238,8 +252,7 @@ module SecretCache
   end
 
   def delete(file, env: ENV)
-    home = TaskUsageSandbox.enforce!(dir(env), store: STORE, env: TaskUsageSandbox.guard_env(env),
-                                               state_dir: real_dir)
+    home = dir(env)
     path = File.join(home, file)
     File.delete(path) if File.exist?(path) || File.symlink?(path)
     true
@@ -248,7 +261,8 @@ module SecretCache
   end
 
   def file_exist?(file, env: ENV)
-    File.file?(File.join(dir(env), file))
+    home = readable_dir(env)
+    !home.nil? && File.file?(File.join(home, file))
   end
 
   def atomic_write(path, content)
@@ -495,7 +509,8 @@ module SecretCache
   # The SessionStart block: every entry expired or expiring within the hour, or ""
   # when nothing is due. Never raises and never spawns a process.
   def session_block(env: ENV, now: Time.now, horizon: SESSION_HORIZON)
-    return "" unless File.directory?(dir(env))
+    home = readable_dir(env)
+    return "" unless home && File.directory?(home)
 
     due = manifest(env).map do |name, meta|
       state = entry_state(name, meta, env: env, now: now)
@@ -510,7 +525,7 @@ module SecretCache
     end.compact
     return "" if due.empty?
 
-    "## Secret cache (#{dir(env)})\n#{due.join("\n")}"
+    "## Secret cache (#{home})\n#{due.join("\n")}"
   rescue Unsafe => e
     "## Secret cache\n- UNSAFE: #{e.message}"
   rescue StandardError
@@ -569,6 +584,14 @@ module SecretCache
       owner, readers, on-expiry action and contingency. Names and metadata only.
     MD
   end
+
+  # The folder's name. Private, like every raw builder here (LAYER 2a).
+  def folder_name
+    ".secret-cache"
+  end
+
+  private_class_method :location
+  private_class_method :folder_name
 
   def write_readme(home)
     path = File.join(home, README)

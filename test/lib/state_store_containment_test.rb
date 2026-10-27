@@ -147,6 +147,12 @@ class StateStoreContainmentTest < Minitest::Test
     "bin/gh-token" => [:ruby, "GitHub token cache: store_path is the ONE seam and it enforce!s — " \
                               "the cache holds a live credential, so a sandboxed run must abort rather " \
                               "than write one into the operator's real .agents"],
+    "bin/lib/secret_cache.rb" => [:ruby, "the secret cache (<projects>/.secret-cache), the SECOND real root: " \
+                                         "location and folder_name are PRIVATE; the exported dir enforce!s and " \
+                                         "readable_dir answers nil to a sandboxed read"],
+    "bin/secret" => [:bash, "READ-ONLY in bash: it greps the cache manifest for an op-item entry and " \
+                            "writes nothing; every cache write is the Ruby half's (bin/lib/secret_cache_cli.rb " \
+                            "through SecretCache.dir), and test/commands/secret_cli_test.rb drives it pinned"],
     "bin/statusline" => [:bash, "BASH heartbeat throttles — LAYER 2 cannot read it; LAYER 3 executes it"],
     "bin/install-agent-docs" => [:bash, "BASH fast-lane tooling install into .agents/tooling + the .agents/bin " \
                                         "symlink — LAYER 2 cannot read it. It carries the two enforce! rules in " \
@@ -203,6 +209,12 @@ class StateStoreContainmentTest < Minitest::Test
     "bin/lib/agent_api.rb" => {
       "token_cache_path" => "BUILDER — private; guarded_token_cache_path is what mutations use",
       "read_cached_token" => "READ — returns the cached token, never writes"
+    },
+    "bin/lib/secret_cache.rb" => {
+      "folder_name" => "BUILDER — private; the folder's name, used only by location",
+      "location" => "BUILDER — private; dir and readable_dir launder it",
+      "readable_dir" => "READ — asks TaskUsageSandbox.violation whether a read may proceed (nil if not), " \
+                        "and returns only the enforce!d path"
     },
     "bin/lib/harness_key.rb" => {
       "path" => "BUILDER — private; guarded_path is what write and clear use",
@@ -301,9 +313,12 @@ class StateStoreContainmentTest < Minitest::Test
   # and `.agentsx` is a different name. Comments are stripped before the scan, so prose
   # — "<projects>/.agents/locks" in a header — cannot match.
   #
+  # `.secret-cache` is the SECOND real root (2026-10-27, bin/lib/secret_cache.rb): the
+  # expiring-credential cache lives beside .agents, not inside it, so the scan names both.
+  #
   # The marker_path clauses are belt-and-braces for LAYER 2a: they catch a reach into
   # the (private) builder even though 2a makes such a reach impossible to obtain.
-  PATH_RE = /(?<!\w)\.agents(?!\w)|SessionMarkers\.marker_path\(|send\(:marker_path/
+  PATH_RE = /(?<!\w)\.agents(?!\w)|(?<!\w)\.secret-cache(?!\w)|SessionMarkers\.marker_path\(|send\(:marker_path/
 
   # Only the TOP-LEVEL residual scan still uses this — an inert top-level enforce! line is
   # not a violation. The PER-METHOD launder is handled by SUBTRACTION now (scan_source /

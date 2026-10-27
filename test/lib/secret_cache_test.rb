@@ -37,8 +37,17 @@ class SecretCacheTest < Minitest::Test
   def test_unit_the_folder_is_top_level_under_projects_not_inside_dot_agents
     assert_equal "/p/.secret-cache", SecretCache.dir("CLAUDE_PROJECTS_DIR" => "/p")
     assert_equal "/elsewhere", SecretCache.dir("CLAUDE_PROJECTS_DIR" => "/p", "MCR_SECRET_CACHE_DIR" => "/elsewhere")
-    assert_equal File.join(File.expand_path("~/projects"), ".secret-cache"), SecretCache.dir({})
-    refute_includes SecretCache.dir({}), "/.agents/"
+    unarmed = { "TASK_USAGE_SANDBOX" => "0" }
+    assert_equal File.join(File.expand_path("~/projects"), ".secret-cache"), SecretCache.dir(unarmed)
+    refute_includes SecretCache.dir(unarmed), "/.agents/"
+  end
+
+  # An armed run READS nothing from the real folder, quietly; it never aborts a read.
+  def test_unit_an_armed_unpinned_read_answers_nothing
+    armed = { "TASK_USAGE_SANDBOX" => "1" }
+    assert_nil SecretCache.readable_dir(armed)
+    assert_nil SecretCache.read_json(SecretCache::GITHUB_FILE, env: armed)
+    assert_equal "", SecretCache.session_block(env: armed)
   end
 
   # ── the folder's shape ─────────────────────────────────────────────────────
