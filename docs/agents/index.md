@@ -141,7 +141,7 @@ Desks take ports from managed ranges (hub `3000-3099`): `docs/agents/modules/por
 | **Release**: `accepted` → QA → production | `docs/agents/agents/avi/sops/qa-release.md`, `docs/agents/agents/steffon/sops/production-deploy.md`, `docs/agents/modules/gates/` |
 | **Desks and infra** | `docs/agents/modules/worktrees.md` |
 | Tests | `docs/agents/modules/testing.md` |
-| **Credentials** and GitHub auth | `docs/agents/modules/token-session.md` (a broken session), `docs/agents/modules/source-control.md` (how auth works), `docs/agents/modules/credentials.md` (1Password) |
+| **Credentials** and GitHub auth | `docs/agents/modules/token-session.md` (a broken session), `docs/agents/modules/source-control.md` (how auth works), `docs/agents/modules/credentials.md` (1Password), `docs/agents/modules/secret-cache.md` (expiring tokens, read locally first: `bin/secret status`) |
 | **Business facts**: an entity's name, EIN, address, code, headcount or advisors; a form to fill | Pull from `business-data/FACTS.md` (private `mcritchie-industries` repo) first, and add any durable fact you learn in the same pass: `docs/agents/modules/knowledge-capture.md` (the quick reference rule). Forms: `docs/agents/modules/form-fill.md` |
 | **Communication**: reporting to Alex McRitchie | `docs/agents/modules/communication-style.md` |
 | **Learning**: grades and insights | `docs/agents/agents/mason/sops/grade-events.md` |
@@ -235,6 +235,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `knowledge-capture` | Shared | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
 | `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
+| `secret-cache` | Shared | `mcritchie-studio/docs/agents/modules/secret-cache.md` |
 | `slack-capture` | Shared | `mcritchie-studio/docs/agents/modules/slack-capture.md` |
 | `token-session` | Shared | `mcritchie-studio/docs/agents/modules/token-session.md` |
 | `work-backlog` | Shared | `mcritchie-studio/docs/agents/modules/work-backlog.md` |
