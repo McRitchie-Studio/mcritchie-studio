@@ -1,4 +1,4 @@
-<%# Signed in only (IntegrationsController#index sets the Google connections for a signed-in user and nobody else): one ability's connection (calendar, gmail or drive), on that card's Sign in row. An admin's is the household's, through /admin/google; with own true it is the viewer's own, through /integrations/google. Connect when no readable connection grants it and the server can take one; otherwise the account and Disconnect. Both come back to this page. No token renders. %>
+<%# Signed in only (IntegrationsController#index sets the Google connections for a signed-in user and nobody else): one ability's connection (calendar, gmail or drive), on that card's Sign in row. An admin's is the household's, through /admin/google; with own true it is the viewer's own, through /integrations/google. Connect when no readable connection grants it and the server can take one (Gmail's opens the admin-trust modal first, modals/_gmail_admin); otherwise the account and Disconnect. Both come back to this page. No token renders. %>
 <% name = GoogleConnection::ABILITY_NAMES.fetch(ability) %>
 <% own = local_assigns.fetch(:own, false) %>
 <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1" data-test="google-connection" data-ability="<%= ability %>" data-state="<%= connection ? 'connected' : 'none' %>">
@@ -8,7 +8,14 @@
                   class: "btn btn-neutral btn-sm",
                   form: { class: "inline-flex", data: { test: "google-disconnect", turbo_confirm: "Disconnect #{name} for #{connection.email}?" } } %>
   <% elsif connectable %>
-    <%= link_to "Connect #{name}", (own ? integrations_google_connect_path(ability:, return_to: integrations_path) : admin_google_connect_path(ability:, return_to: integrations_path)),
-                class: "btn btn-primary btn-sm", data: { test: "google-connect", turbo: false } %>
+    <% href = own ? integrations_google_connect_path(ability:, return_to: integrations_path) : admin_google_connect_path(ability:, return_to: integrations_path) %>
+    <% if ability.to_sym == :gmail %>
+      <%# Gmail first opens the admin-trust modal (modals/_gmail_admin); its Continue follows the same href. %>
+      <button type="button" class="btn btn-primary btn-sm" data-test="google-connect" data-opens="gmail-admin"
+              data-href="<%= href %>" data-client-id="<%= GoogleConnect::OAuthClient.client_id %>"
+              @click="$store.modals.open('gmail-admin', { href: $el.dataset.href, clientId: $el.dataset.clientId })">Connect <%= name %></button>
+    <% else %>
+      <%= link_to "Connect #{name}", href, class: "btn btn-primary btn-sm", data: { test: "google-connect", turbo: false } %>
+    <% end %>
   <% end %>
 </div>
