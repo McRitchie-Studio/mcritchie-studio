@@ -85,6 +85,11 @@ module BoundedCommand
       sleep 0.02 if eof && !status
     end
     finish(buf, status, false)
+  rescue SignalException
+    # pgroup: true took the child out of our group, so Ctrl-C or SIGTERM to us
+    # never reached it: take it with us rather than orphan it.
+    kill(pid, pgroup) unless status
+    raise
   ensure
     reader.close unless reader.closed?
   end
