@@ -313,6 +313,14 @@ class BinHelpFlagClassTest < Minitest::Test
     # -h arm that exits before stdin or the network is touched; a wrong argument
     # count exits 2. Behavioural proof: test/lib/heroku_secret_set_test.rb.
     "heroku-secret-set"      => :optparse,
+    # Reads a Heroku token from 1Password and execs the command after `--` with it
+    # in the child's environment; -h exits before any read, an unknown flag or a
+    # wrong shape exits 2. Behavioural proof: test/commands/heroku_token_test.rb.
+    "heroku-token"           => :optparse,
+    # Rewrites ~/.zprofile and ~/.zprofile.admin. The parse, and its -h arm, run
+    # before any profile is read; an unknown flag or a stray positional exits 2.
+    # Behavioural proof against fixture profiles: test/commands/heroku_profile_migrate_test.rb.
+    "heroku-profile-migrate" => :optparse,
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/docs-installer-help-publishes).
     # These two were the sharpest pair in the gap bucket, because the thing they
     # publish is GLOBAL and shared. `bin/install-agent-docs install --help` read its

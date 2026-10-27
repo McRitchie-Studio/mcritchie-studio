@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# bin/shims/heroku — the `heroku` that ~/.zprofile puts first on PATH. It runs
+# the real Heroku CLI, and when HEROKU_API_KEY is unset it first reads the
+# agents token from 1Password through bin/heroku-token, so no profile has to
+# hold a Heroku literal (bin/lib/heroku_token.rb says why).
+#
+# HEROKU_API_KEY already set (CI, a caller's override, a command running under
+# bin/heroku-token) passes straight through with no 1Password read. The real CLI
+# is the next `heroku` on PATH after this directory; HEROKU_SHIM_REAL overrides
+# it (tests). Prints nothing of its own except a refusal.
+set -euo pipefail
+# heroku-token-shim-marker: every copy of this file carries this line, and the
+# PATH scan below skips any `heroku` that does. Two shim directories on PATH (the
+# fixed-path tooling and a hub checkout, say) would otherwise exec each other
+# forever. Matching the marker, not just this directory, is the guard; an env
+# sentinel would also refuse a legitimate nested call, such as git's
+# `heroku git:credentials` helper run under a command the shim started.
+
+shim_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+
+real="${HEROKU_SHIM_REAL:-}"
+if [ -z "$real" ]; then
+  IFS=: read -r -a entries <<< "${PATH:-}"
+  for entry in "${entries[@]}"; do
+    [ -n "$entry" ] || continue
+    dir="$(cd "$entry" 2>/dev/null && pwd -P)" || continue
+    [ "$dir" = "$shim_dir" ] && continue
+    if [ -x "$dir/heroku" ] && [ ! -d "$dir/heroku" ]; then
+      grep -q '^# heroku-token-shim-marker' "$dir/heroku" 2>/dev/null && continue
+      real="$dir/heroku"
+      break
+    fi
+  done
+fi
+if [ -z "$real" ]; then
+  echo "heroku (shim): no Heroku CLI on PATH besides heroku-token shims — install it (brew install heroku/brew/heroku)." >&2
+  exit 127
+fi
+
+if [ -n "${HEROKU_API_KEY:-}" ]; then
+  exec "$real" "$@"
+fi
+exec "$shim_dir/../heroku-token" agents -- "$real" "$@"

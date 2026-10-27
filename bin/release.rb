@@ -1367,6 +1367,37 @@ def run_record_op(cmd, deadline: record_op_deadline)
   [result.out.to_s, result.success?, result.timed_out?]
 end
 
+# THE SHIP'S HEROKU TOKEN, read ONCE, at the first real PROD `heroku` call. On
+# PROD every board op is a `heroku run` (#conductor) and ShipAuthority polls on a
+# timer, so a run makes dozens to hundreds of `heroku` calls. No profile exports
+# HEROKU_API_KEY (credentials.md, "Heroku tokens resolve at use time"), and
+# bin/shims/heroku would otherwise spend a 1Password read on each one: enough to
+# exhaust the shared hourly quota mid-ship, and a board write that fails after the
+# release->main fast-forward leaves the ship half done (Carl, PR 2271). So the
+# first call resolves it and exports it: every later call, and every child (git's
+# heroku credential helper, post_deploy's `heroku run`), inherits it and the shim
+# reads nothing. The first board op precedes every mutation, so an Unresolved
+# refuses before anything is written. Lazy, not at dispatch, so a path that never
+# reaches Heroku (a --local run, a stubbed step, a dry run that prints) reads
+# nothing. Nor when the `heroku` on PATH is not the shim (the real CLI with its
+# own login, a test's fake): only the shim spends a read per call. A caller's own
+# HEROKU_API_KEY is kept.
+def ensure_heroku_token!
+  return if $heroku_token_ready
+
+  require_relative "lib/heroku_token"
+  # Only the shim reads 1Password per call; any other `heroku` brings its own auth.
+  unless HerokuToken.shim_on_path?
+    $heroku_token_ready = true
+    return
+  end
+
+  HerokuToken.export_once!(:agents)
+  $heroku_token_ready = true
+rescue HerokuToken::Unresolved => e
+  abort!("no Heroku token for the PROD board: #{e.message} Nothing was done.")
+end
+
 def conductor(ruby, read_only: false)
   ruby = train_guarded(ruby)
   payload = conductor_payload(with_conductor_session(ruby))
@@ -1376,6 +1407,7 @@ def conductor(ruby, read_only: false)
     puts "  [dry-run] #{PROD ? 'heroku run ' : ''}rails runner: #{ruby}"
     return {}
   end
+  ensure_heroku_token! if PROD
   out, ok, timed_out = run_record_op(cmd)
   if timed_out
     abort!("record op failed: no answer within #{record_op_deadline.round}s, so the " \

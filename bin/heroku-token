@@ -1,0 +1,78 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/heroku-token — run a command with a Heroku token read from 1Password at
+# the moment of use, or check that a lane resolves. It never prints the token.
+#
+#   bin/heroku-token agents -- heroku config --app mcritchie-studio-qa
+#   bin/heroku-token agents -- bin/secret-key-base-swap ...
+#   source ~/.zprofile.admin && bin/heroku-token admin --check
+#
+# Lanes (bin/lib/heroku_token.rb): agents, admin, applications. The command runs
+# with HEROKU_API_KEY set to the lane's token in ITS environment only, so every
+# `heroku` call inside it (and the `heroku git:credentials` helper git runs)
+# shares one read instead of one each.
+#
+# The profiles hold no Heroku literal since 2026-10-27; ~/.zprofile puts
+# bin/shims first on PATH instead, and bin/shims/heroku calls this script when
+# HEROKU_API_KEY is unset. That is why an ordinary `heroku ...` still works.
+#
+# --check reads the item (ignoring any override in the environment) and prints
+# the lane, the item and a 12-hex sha256 prefix of the value, so two machines or
+# two moments can be compared without the value appearing anywhere.
+#
+# Exit: 0 resolved (or the command's own status) · 1 unresolved · 2 usage.
+require "digest"
+require "optparse"
+require_relative "lib/heroku_token"
+
+check = false
+parser = OptionParser.new do |o|
+  o.banner = "usage: bin/heroku-token <lane> -- <command> [args...]\n" \
+             "       bin/heroku-token <lane> --check\n" \
+             "lanes: #{HerokuToken::LANES.keys.join(', ')}"
+  o.on("--check", "read the lane's item and print a digest prefix; prints no value") { check = true }
+  o.on("-h", "--help", "print this help") do
+    puts o
+    puts "heroku-token: help only. READS NOTHING: no 1Password call, no command run."
+    exit 0
+  end
+end
+
+argv = ARGV.dup
+split = argv.index("--")
+command = split ? argv[(split + 1)..] : []
+own = split ? argv[0...split] : argv
+begin
+  rest = parser.parse(own)
+rescue OptionParser::ParseError => e
+  warn "heroku-token: #{e.message}\n#{parser}"
+  exit 2
+end
+
+unless rest.length == 1 && (check ^ !command.empty?)
+  warn "heroku-token: name one lane and either --check or `-- <command>`\n#{parser}"
+  exit 2
+end
+lane = rest.first
+
+begin
+  token = HerokuToken.resolve(lane, from_env: !check)
+rescue HerokuToken::Unresolved => e
+  warn "heroku-token: #{e.message} Nothing was run."
+  exit 1
+end
+
+if check
+  spec = HerokuToken.lane(lane)
+  puts "heroku-token: #{lane} resolves from #{spec[:item]} (sha256 #{Digest::SHA256.hexdigest(token)[0, 12]}…)"
+  exit 0
+end
+
+begin
+  # [cmd, argv0] keeps a one-word command away from the shell.
+  exec({ "HEROKU_API_KEY" => token }, [command.first, command.first], *command.drop(1))
+rescue SystemCallError => e
+  warn "heroku-token: could not run #{command.first}: #{e.class}"
+  exit 127
+end

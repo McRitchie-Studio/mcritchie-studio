@@ -88,18 +88,18 @@ credential by [`credential-filing`](credential-filing.md):
    capture), described "hub backup sweep", and file it in the same pipe as
    **`heroku.mcritchie-studio.applications`** in the `studio-applications` vault
    (app-scoped: only the hub's runtime uses it). Run it from the admin lane:
-   `source ~/.zprofile.admin` first, which stages `HEROKU_STUDIO_ADMIN_API_KEY`
-   (only that key may create or revoke an authorization; the agent key is
-   refused), and give it to the CLI as `HEROKU_API_KEY` in the command's own
-   environment, never on its argv. The token goes from `--json` through `jq`
+   `source ~/.zprofile.admin` first (for `OP_ADMIN_SERVICE_ACCOUNT_TOKEN`), and
+   run the CLI under `bin/heroku-token admin -- heroku ...`, which reads
+   `heroku.studio.admin` (only that key may create or revoke an authorization;
+   the agent key is refused) into the command's own environment, never its argv. The token goes from `--json` through `jq`
    into the item's concealed field on stdin, so it never reaches the terminal,
    a variable or an argument; plain `authorizations:create` would print it.
 
    ```bash
    source ~/.zprofile.admin
-   : "${HEROKU_STUDIO_ADMIN_API_KEY:?refusing -- the admin profile staged no key}"
+   : "${OP_ADMIN_SERVICE_ACCOUNT_TOKEN:?refusing -- the admin profile staged no token}"
    set -o pipefail
-   HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" \
+   /Users/alex/projects/.agents/bin/heroku-token admin -- \
      heroku authorizations:create -d "hub backup sweep" -s identity,read-protected,write-protected --json |
      jq '{title: "heroku.mcritchie-studio.applications", category: "API_CREDENTIAL",
           fields: [{id: "credential", label: "credential", type: "CONCEALED", value: .access_token.token},
@@ -124,11 +124,11 @@ credential by [`credential-filing`](credential-filing.md):
    again. No row means Heroku never answered and nothing is orphaned.
 
    ```bash
-   : "${HEROKU_STUDIO_ADMIN_API_KEY:?refusing -- source ~/.zprofile.admin first}"
+   : "${OP_ADMIN_SERVICE_ACCOUNT_TOKEN:?refusing -- source ~/.zprofile.admin first}"
    live="$(op item get heroku.mcritchie-studio.applications --vault studio-applications --fields label=authorization-id)" &&
-     [ -n "$live" ] && HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" heroku authorizations --json |
+     [ -n "$live" ] && /Users/alex/projects/.agents/bin/heroku-token admin -- heroku authorizations --json |
      jq -r --arg live "$live" '.[] | select(.description == "hub backup sweep" and .id != $live) | "\(.id)  \(.created_at)"'
-   HEROKU_API_KEY="$HEROKU_STUDIO_ADMIN_API_KEY" heroku authorizations:revoke <id>
+   /Users/alex/projects/.agents/bin/heroku-token admin -- heroku authorizations:revoke <id>
    ```
 
    On a first filing, before the item exists, the read refuses: every row is then

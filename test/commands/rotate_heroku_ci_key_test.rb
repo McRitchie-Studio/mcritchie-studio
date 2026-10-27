@@ -81,12 +81,34 @@ class RotateHerokuCiKeyTest < Minitest::Test
   end
 
   def test_without_the_admin_lane_it_does_nothing
-    out, err, status = run_script("--dry-run", env: { "HEROKU_STUDIO_ADMIN_API_KEY" => nil })
+    out, err, status = run_script("--dry-run", env: { "OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => nil })
 
     assert_equal 1, status.exitstatus, "#{out}\n#{err}"
     assert_includes err, "source ~/.zprofile.admin"
     assert_empty @requests
     assert_empty log("op")
+  end
+
+  # No profile stages HEROKU_STUDIO_ADMIN_API_KEY since 2026-10-27: with it unset,
+  # the admin key is read from heroku.studio.admin with the ADMIN service account.
+  def test_without_an_exported_admin_key_it_reads_heroku_studio_admin
+    out, err, status = run_script("--dry-run", env: { "HEROKU_STUDIO_ADMIN_API_KEY" => nil })
+
+    assert status.success?, "#{out}\n#{err}"
+    assert_includes log("op"), "read op://studio-agents-admin/heroku.studio.admin/credential"
+    assert_includes @requests, ["GET", "/account"], "the admin key read from 1Password reached Heroku"
+    assert_no_secret_leaked(out, err)
+  end
+
+  def test_an_admin_key_that_does_not_resolve_does_nothing
+    @no_admin_item = true
+    write_fakes
+    out, err, status = run_script("--dry-run", env: { "HEROKU_STUDIO_ADMIN_API_KEY" => nil })
+
+    assert_equal 1, status.exitstatus, "#{out}\n#{err}"
+    assert_includes err, "no admin Heroku key"
+    assert_empty @requests
+    assert_no_secret_leaked(out, err)
   end
 
   # [integration] A failure that is NOT an Abort (here Heroku answers 200 with a
@@ -129,6 +151,7 @@ class RotateHerokuCiKeyTest < Minitest::Test
     base = {
       "HEROKU_STUDIO_ADMIN_API_KEY" => ADMIN_KEY,
       "OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => OP_TOKEN,
+      "MCR_OP_READS_LOG" => File.join(@dir, "op-reads.log"),
       "ROTATE_HEROKU_CI_KEY_API_BASE" => "http://127.0.0.1:#{@server.addr[1]}",
       "ROTATE_HEROKU_CI_KEY_OP_BIN" => File.join(@dir, "op"),
       "ROTATE_HEROKU_CI_KEY_GH_BIN" => File.join(@dir, "gh"),
@@ -206,6 +229,9 @@ class RotateHerokuCiKeyTest < Minitest::Test
       File.open(File.join(dir, "op.log"), "a") { |f| f.puts ARGV.join(" ") }
       item = File.join(dir, "item.json")
       case ARGV.first(2)
+      in ["read", ref] if ref.include?("/heroku.studio.admin/")
+        exit 1 if #{@no_admin_item ? "true" : "false"}
+        puts "#{ADMIN_KEY}"
       in ["read", ref]
         field = ref.split("/").last
         puts JSON.parse(File.read(item))["fields"].find { |f| f["label"] == field }["value"]
