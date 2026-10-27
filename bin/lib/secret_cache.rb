@@ -365,6 +365,10 @@ module SecretCache
   end
 
   def update_entry!(name, env)
+    # Bookkeeping never aborts its caller: a sandboxed run that may not touch the
+    # folder records nothing, quietly (the read or mint it describes goes on).
+    return false unless readable_dir(env)
+
     home = ensure_home!(env)
     path = File.join(home, MANIFEST)
     data = JSON.parse(File.read(path))

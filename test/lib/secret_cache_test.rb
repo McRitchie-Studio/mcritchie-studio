@@ -143,6 +143,15 @@ class SecretCacheTest < Minitest::Test
     refute $?.success?, "an unpinned sandboxed write must abort, never reach the operator's folder"
   end
 
+  # Regression (CI 2026-10-27, credential_remedy_reaches_the_operator_test): a failed
+  # deployer mint in an armed, unpinned run aborted on its BOOKKEEPING, hiding the
+  # remedy the operator needed. Recording a mint or a failure never aborts.
+  def test_unit_bookkeeping_in_an_armed_unpinned_run_records_nothing_and_never_aborts
+    armed = { "TASK_USAGE_SANDBOX" => "1" }
+    assert_equal false, SecretCache.record_failure!("github.deployer", env: armed)
+    assert_equal false, SecretCache.record_mint!("github.agent", Time.now, env: armed)
+  end
+
   # ── time left, in words ────────────────────────────────────────────────────
 
   def test_unit_states_read_in_plain_words
