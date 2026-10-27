@@ -23,9 +23,10 @@ module GoogleConnect
   # a Google API scope on the sign-in client would tie this grant to the login's
   # secret, so rotating one would break the other.
   #
-  # WHAT IT ASKS FOR: who the account is (openid, email) and one read-only
-  # scope per ability (GoogleConnection::ABILITIES): calendar events, Gmail,
-  # Drive. Nothing it asks for can create, change, send or delete.
+  # WHAT IT ASKS FOR: who the account is (openid, email) and one scope per
+  # ability (GoogleConnection::ABILITIES): read-only calendar events and Gmail,
+  # and Drive's drive.file, which reaches only the files the person picks (or
+  # the app creates). The hub only reads; no reader holds a write path.
   #
   # Env vars (names only; values live in 1Password and Heroku config):
   #   GOOGLE_CONNECT_CLIENT_ID      the connections OAuth client's id

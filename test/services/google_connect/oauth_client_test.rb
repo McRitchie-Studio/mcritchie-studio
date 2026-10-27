@@ -34,7 +34,11 @@ class GoogleConnect::OAuthClientTest < ActiveSupport::TestCase
         assert_equal "offline", query["access_type"]
         assert_equal "consent", query["prompt"]
         assert_equal "st", query["state"]
-        assert_match(/readonly\z/, query["scope"].split.last, "never a write scope")
+        # Calendar and Gmail read only; Drive the narrow drive.file (picked files),
+        # never the whole-Drive drive.readonly or the full drive scope.
+        assert_match(%r{(readonly|/drive\.file)\z}, query["scope"].split.last, "never a wide write scope")
+        refute_includes query["scope"].split, "https://www.googleapis.com/auth/drive.readonly"
+        refute_includes query["scope"].split, "https://www.googleapis.com/auth/drive"
       end
     end
   end

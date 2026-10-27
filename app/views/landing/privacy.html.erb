@@ -113,11 +113,11 @@
 
     <section id="google-user-data" data-test="google-user-data">
       <h2 class="text-xl font-semibold text-heading mb-2">15. Google User Data</h2>
-      <p>You can connect your Google account so that agents working for you can read it. Each permission is read only: nothing we ask Google for can send, change or delete anything in your account.</p>
+      <p>You can connect your Google account so that agents working for you can read it. We only read: we never send, change or delete anything in your account.</p>
       <ul class="list-disc pl-6 space-y-1">
         <li><strong>Google Calendar</strong> (calendar events, read only): we read your events so your agents can prepare you for your meetings.</li>
         <li><strong>Gmail</strong> (read only): we read your mail so your agents can show you what needs an answer.</li>
-        <li><strong>Google Drive</strong> (read only): Google's read-only Drive permission covers every file in your Drive. We read your files so your agents can work from your documents.</li>
+        <li data-test="google-drive-use"><strong>Google Drive</strong> (only the files you choose): you pick files in Google's file picker, and we read only those files, so your agents can work from your documents. Google's permission for this would also let an app edit the files you pick; we only read them. If you connected Drive before October 27, 2026, your connection still uses Google's older read-only permission, which covers every file in your Drive, until you reconnect Drive on our <a href="/integrations" class="text-primary hover:underline">Integrations page</a> and choose files. After you reconnect we read only the files you pick, but Google may keep listing the older permission for McRitchie Studio until you remove it at <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener" class="text-primary hover:underline">myaccount.google.com/permissions</a>.</li>
       </ul>
       <p><strong>How we use it:</strong> only to provide the features you see, for you: agents working on your behalf. We do not use Google data for any other purpose.</p>
       <p><strong>How we store it:</strong> the token Google issues is stored encrypted, and our database is encrypted at rest. We keep the token until you disconnect.</p>

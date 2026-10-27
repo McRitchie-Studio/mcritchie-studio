@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_180000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_190000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1694,6 +1694,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_180000) do
     t.index ["user_id"], name: "index_google_connections_on_user_id"
   end
 
+  create_table "google_drive_picks", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "file_id", null: false
+    t.bigint "google_connection_id", null: false
+    t.string "mime_type"
+    t.string "name", null: false
+    t.datetime "picked_at", null: false
+    t.string "picked_by"
+    t.datetime "updated_at", null: false
+    t.string "url"
+    t.index ["google_connection_id", "file_id"], name: "index_google_drive_picks_on_google_connection_id_and_file_id", unique: true
+  end
+
   create_table "image_caches", force: :cascade do |t|
     t.integer "bytes"
     t.string "content_type"
@@ -3050,6 +3063,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_180000) do
   add_foreign_key "github_builder_commit_range_caches", "github_commit_ranges"
   add_foreign_key "github_builder_commit_range_caches", "tracked_github_builders"
   add_foreign_key "google_connections", "users", on_delete: :cascade
+  add_foreign_key "google_drive_picks", "google_connections", on_delete: :cascade
   add_foreign_key "knowledge_sources", "workspace_accounts"
   add_foreign_key "mailbox_drafts", "workspace_mailboxes"
   add_foreign_key "news", "people", column: "primary_person_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify

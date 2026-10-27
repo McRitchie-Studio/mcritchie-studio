@@ -16,7 +16,12 @@ module GoogleConnect
   # WHAT. Each section only for an ability one of those connections grants:
   #   calendar  the next 7 days, at most EVENTS: title, start, end, attendee count
   #   gmail     the newest MESSAGES: from, subject, date, Google's snippet (no body)
-  #   drive     the newest-modified FILES: name, type, modified
+  #   drive     at most FILES: name, type, modified. For a drive.file connection
+  #             the files the owner picked in the Google Picker and no others;
+  #             for a legacy drive.readonly row, the newest-modified of the
+  #             whole Drive until it reconnects (DriveReader#files,
+  #             /tasks/drive-files-you-pick). A pick touches its connection,
+  #             so it is a new cache key.
   # Every string is flattened to one line and cut to TEXT; the counts are caps.
   # Subjects, snippets, titles and names are written by whoever sent the mail or
   # made the file, so the caller prints them inside the prompt's untrusted fence.
@@ -50,7 +55,8 @@ module GoogleConnect
     FILES = 10
     TEXT = 160
     SNIPPET = 200
-    CACHE_PREFIX = "google_owner_context/v1".freeze
+    # v2: Drive reads picked files for drive.file rows (drive-files-you-pick).
+    CACHE_PREFIX = "google_owner_context/v2".freeze
     RECONNECT = "This Google connection no longer works: reconnect it on /integrations.".freeze
     UNAVAILABLE = "Could not be read just now.".freeze
     OUT_OF_TIME = "Not available right now (Google was slow to answer).".freeze
@@ -163,7 +169,7 @@ module GoogleConnect
     end
 
     def drive(connection)
-      files = DriveReader.new(connection).newest(limit: FILES).first(FILES)
+      files = DriveReader.new(connection).files(limit: FILES).first(FILES)
       { "files" => files.map do |f|
         { "name" => text(f.name), "type" => text(f.mime_type.to_s.split(/[\/.]/).last, 40),
           "modified" => f.modified_at&.utc&.iso8601 }

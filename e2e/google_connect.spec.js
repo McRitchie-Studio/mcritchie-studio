@@ -19,7 +19,8 @@ const { loginWithMagicLink } = require("./helpers");
 const SCOPES = {
   calendar: "https://www.googleapis.com/auth/calendar.events.readonly",
   gmail: "https://www.googleapis.com/auth/gmail.readonly",
-  drive: "https://www.googleapis.com/auth/drive.readonly",
+  // drive.file: only the files picked in the Google Picker (drive-files-you-pick).
+  drive: "https://www.googleapis.com/auth/drive.file",
 };
 // The stand-in's code for a sign-in granting `scopes` (GoogleConnectStandIn.code_for).
 const standInCode = (scopes) => "stand-in-code." + Buffer.from(scopes.join(" ")).toString("base64url");
@@ -56,7 +57,9 @@ test("an admin connects Calendar then Drive from the integrations cards, sees ea
   await expect(section("calendar")).toHaveAttribute("data-state", "connected");
   await expect(section("calendar").locator("[data-test='google-read-item']").first()).toContainText("Stand-in: lender call");
   await expect(section("drive")).toHaveAttribute("data-state", "connected");
-  await expect(section("drive").locator("[data-test='google-read-item']")).toHaveCount(3);
+  // A new Drive connection reads only picked files, and none are picked yet.
+  await expect(section("drive").locator("[data-test='drive-read-kind']")).toHaveAttribute("data-kind", "picked");
+  await expect(section("drive").locator("[data-test='google-read-item']")).toHaveCount(0);
   await expect(section("gmail")).toHaveAttribute("data-state", "none");
   expect(await page.content()).not.toMatch(/stand-in-(refresh|access)/);
 

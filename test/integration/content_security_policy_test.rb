@@ -21,13 +21,13 @@ class ContentSecurityPolicyTest < ActionDispatch::IntegrationTest
     hashes = HubCsp::PINNED_SCRIPT_HASHES.values.map { |hash| "'#{hash}'" }.join(" ")
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' 'report-sample' https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js #{hashes} 'nonce-#{nonce}'",
+      "script-src 'self' 'unsafe-eval' 'report-sample' https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js https://apis.google.com #{hashes} 'nonce-#{nonce}'",
       "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css",
       "img-src 'self' data: blob: https:",
       "media-src 'self' blob: https://assets.mcritchie.studio https://*.r2.cloudflarestorage.com",
       "font-src 'self' data:",
       "connect-src 'self' ws://www.example.com",
-      "frame-src 'self' https://calendar.google.com",
+      "frame-src 'self' https://calendar.google.com https://docs.google.com",
       "worker-src 'self' blob:",
       "object-src 'none'",
       "frame-ancestors 'self'",
@@ -134,6 +134,16 @@ class ContentSecurityPolicyTest < ActionDispatch::IntegrationTest
       refute_match(/nonce/, source.lines.grep(/<script|tag\.script|javascript_tag/).join,
                    "#{file} now renders a nonce: drop #{name} from ENGINE_PENDING_NONCE (keep its hash for Turbo visits)")
     end
+  end
+
+  # [unit] drive-files-you-pick: the Google Picker's loader host may run scripts
+  # and its frame host may be framed, and nothing wider: a host, never a wildcard.
+  test "the policy admits the Google Picker's loader and frame hosts only" do
+    directives = Rails.application.config.content_security_policy.directives
+    assert_includes directives["script-src"], "https://apis.google.com"
+    assert_includes directives["frame-src"], "https://docs.google.com"
+    refute(directives["script-src"].any? { _1.to_s.include?("*") }, "no wildcard script host")
+    refute_includes directives["script-src"], "https://docs.google.com"
   end
 
   test "the policy is report-only with a per-request nonce on script-src only" do

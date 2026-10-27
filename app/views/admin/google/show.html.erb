@@ -93,9 +93,13 @@
         </div>
       <% else %>
         <div data-test="google-read" data-count="<%= section.read.size %>">
-          <p class="font-medium text-heading">Recently changed files</p>
+          <% picked = connection.drive_picked? %>
+          <% if picked && !GoogleConnect::Picker.configured? %>
+            <p class="mb-2 text-body" data-test="drive-picker-unset"><span class="font-semibold text-warning-ink">Drive picking isn't set up yet.</span> Set <span class="font-mono text-xs"><%= GoogleConnect::Picker::API_KEY_ENV %></span> (a browser key restricted to this site and the Picker API) so people can choose files.</p>
+          <% end %>
+          <p class="font-medium text-heading" data-test="drive-read-kind" data-kind="<%= picked ? 'picked' : 'legacy' %>"><%= picked ? "Files picked for agents" : "Recently changed files (whole Drive: reconnect to choose files)" %></p>
           <% if section.read.empty? %>
-            <p class="mt-1 text-muted">The Drive has no files.</p>
+            <p class="mt-1 text-muted"><%= picked ? "No files picked yet: choose them from the Google Drive card on /integrations." : "The Drive has no files." %></p>
           <% else %>
             <ul class="mt-1 divide-y divide-subtle">
               <% section.read.each do |file| %>
