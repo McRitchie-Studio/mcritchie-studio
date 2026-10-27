@@ -29,7 +29,7 @@ The cog toggles the fixed link sidebar (`components/_link_sidebar.html.erb`, the
 - **Text**: Use `text-heading`, `text-body`, `text-secondary`, `text-muted` — never hardcode `text-white` for headings or `text-gray-*` for body text
 - **Borders**: Use `border-subtle`, `border-strong` — never hardcode `border-navy-*`
 - **CSS var naming**: `--color-cta` / `--color-cta-hover` for singular CTA color. Full `--color-primary-{50..900}` palette with RGB variants for Tailwind `primary-*` utilities.
-- **Tailwind config**: `config/tailwind.config.js` dynamically loads studio engine's shared config (`const studioColors = require(\`${studioPath}/tailwind/studio.tailwind.config.js\`)`). Safelists `primary-{50..900}` × `bg/text/border` × opacity variants to ensure compilation.
+- **Tailwind config**: none in the hub. `app/assets/tailwind/application.css` imports `../builds/tailwind/studio_engine`, which studio-engine (0.114.2+) points at its `host.css`: the theme tokens and class-based `dark:` variant (`theme.css`), the engine's `@source` scan and its motion layer. There is no `@config`, no JS preset and no safelist: a class compiles only if it is written whole in source, so never assemble one (`bg-#{role}/10`). The old primary safelist was inert under Tailwind 4, which ignores a JS config's `safelist`; only the 15 primary classes the source spells ever compiled. `test/lib/tailwind_css_first_test.rb` holds the shape.
 
 ## Stage Badge Palette
 

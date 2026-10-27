@@ -139,8 +139,11 @@ class Admin::FathomControllerTest < ActionDispatch::IntegrationTest
 
   test "[integration] the standing page proves the read: meetings, newest title, transcript size and summary length" do
     with_fathom_env do
-      store_fathom(refresh_token: "r1")
-      fathom_tokens([ 200, fathom_grant(refresh_token: "r2", access_token: "a-page") ])
+      # Long, unique tokens: the page carries a random CSP nonce, and a short
+      # fixture ("r2") matched inside one and failed this test at random.
+      stored, rotated, access = "fathom-stored-refresh-7f3c9a", "fathom-rotated-refresh-2b8e41", "fathom-page-access-d05a6e"
+      store_fathom(refresh_token: stored)
+      fathom_tokens([ 200, fathom_grant(refresh_token: rotated, access_token: access) ])
       fathom_reads_answer_everything
       get admin_fathom_path
 
@@ -151,8 +154,8 @@ class Admin::FathomControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-field='transcript'][data-lines='3'][data-speakers='2']"
       assert_select "[data-field='summary'][data-length='#{SUMMARY.dig(:summary, :markdown_formatted).length}']"
       assert_select "[data-test='fathom-disconnect']"
-      assert_equal "r2", FathomConnection.sole.refresh_token, "the page's refresh stored the new token"
-      assert_no_match(/r1|r2|a-page|fathom-synthetic/, response.body)
+      assert_equal rotated, FathomConnection.sole.refresh_token, "the page's refresh stored the new token"
+      assert_no_match(Regexp.union(stored, rotated, access, "fathom-synthetic"), response.body)
     end
   end
 

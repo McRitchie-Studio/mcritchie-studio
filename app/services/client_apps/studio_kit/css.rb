@@ -9,11 +9,15 @@ module ClientApps
     # Tailwind (tailwindcss-ruby, the binary tailwindcss-rails builds the hub
     # with), against only the kit's templates:
     #
-    #   - the engine's theme (tailwind/studio.tailwind.config.js: the page,
-    #     surface, heading and primary colour utilities read the ThemeResolver
-    #     tokens) and class-based dark mode;
-    #   - engine.css: its @utility primitives (btn, btn-primary, card, badge,
-    #     input-field, ...) and the navbar's nav-shell band table;
+    #   - engine.css, the engine's NARROW layer: it imports theme.css (the
+    #     design tokens as @theme, so the page, surface, heading and primary
+    #     colour utilities read the ThemeResolver tokens, and the class-based
+    #     dark: variant), then its @utility primitives (btn, btn-primary, card,
+    #     badge, input-field, ...) and the navbar's nav-shell band table. No
+    #     @config and no JavaScript preset: studio-engine 0.114.2 moved the
+    #     theme from tailwind/studio.tailwind.config.js into theme.css (README
+    #     "Tailwind"). Not host.css: its @source lines would scan every engine
+    #     view and its motion layer would add about 44 KB the kit never uses;
     #   - Tailwind's theme and utilities layers, but NOT its preflight: the
     #     kit goes onto pages whose own CSS was written without a reset, and a
     #     reset would restyle their content;
@@ -27,7 +31,8 @@ module ClientApps
     # assets:precompile (lib/tasks/studio_kit.rake), which the Heroku build runs,
     # and writes app/assets/builds/studio_kit/<digest>.css into the slug. The
     # digest is of CONTENT only (the engine and Tailwind versions, and each
-    # input's bytes under its path RELATIVE to its root), never an absolute
+    # input's bytes under its path RELATIVE to its root: the kit templates,
+    # shell.css, engine.css and the theme.css it imports), never an absolute
     # path: Heroku builds in /tmp/build_<hash> and runs in /app, and the two
     # must name the same file, or every dyno would compile on its first
     # client-app request.
@@ -44,9 +49,9 @@ module ClientApps
                     input-field label-upper empty-state].freeze
       OUT_SUBDIR = "app/assets/builds/studio_kit"
       ENGINE_TOKEN = "{{ENGINE_ROOT}}"
-      CONFIG_TOKEN = "{{CONFIG}}"
       ENGINE_CSS = "app/assets/tailwind/studio_engine/engine.css"
-      ENGINE_CONFIG = "tailwind/studio.tailwind.config.js"
+      # engine.css @imports this; the digest reads it so a token edit is a new kit.
+      ENGINE_THEME_CSS = "app/assets/tailwind/studio_engine/theme.css"
       ENGINE_SOURCES = %w[app/views/components/_theme_toggle.html.erb].freeze
       SHELL_CSS = "app/assets/studio_kit/shell.css"
 
@@ -78,9 +83,7 @@ module ClientApps
           FileUtils.mkdir_p(path.dirname)
           Dir.mktmpdir("studio-kit") do |dir|
             input = File.join(dir, "input.css")
-            config = File.join(dir, "tailwind.config.js")
-            File.write(config, config_js)
-            File.write(input, input_css(config))
+            File.write(input, input_css)
             out = File.join(dir, "out.css")
             _stdout, stderr, status = Open3.capture3(executable, "-i", input, "-o", out, "--minify", chdir: Rails.root.to_s)
             raise BuildFailed, "tailwindcss failed: #{stderr.lines.last(5).join}" unless status.success? && File.file?(out)
@@ -103,11 +106,11 @@ module ClientApps
         # directory and the running slug) agree.
         def digest(app_root: Rails.root, engine_root: self.engine_root)
           parts = [ engine_version, executable_version,
-                    config_js(ENGINE_TOKEN), input_css(CONFIG_TOKEN, app_root: app_root, engine_root: engine_root, tokens: true) ]
+                    input_css(app_root: app_root, engine_root: engine_root, tokens: true) ]
           sources(app_root: app_root, engine_root: engine_root).each do |root, relative|
             parts << relative << File.binread(File.join(root.to_s, relative))
           end
-          parts << File.binread(File.join(engine_root.to_s, ENGINE_CSS)) << File.binread(File.join(engine_root.to_s, ENGINE_CONFIG))
+          [ ENGINE_CSS, ENGINE_THEME_CSS ].each { |rel| parts << rel << File.binread(File.join(engine_root.to_s, rel)) }
           Digest::SHA256.hexdigest(parts.join("\0"))[0, 16]
         end
 
@@ -129,24 +132,15 @@ module ClientApps
           kit + ENGINE_SOURCES.map { |rel| [ engine_root, rel ] }
         end
 
-        def config_js(engine = engine_root)
-          path = engine == ENGINE_TOKEN ? "#{ENGINE_TOKEN}/#{ENGINE_CONFIG}" : File.join(engine.to_s, ENGINE_CONFIG)
-          <<~JS
-            const studio = require(#{path.to_json});
-            module.exports = { darkMode: 'class', content: [], theme: studio.theme };
-          JS
-        end
-
         # The Tailwind input. With tokens: true every absolute path is a token
         # (for the digest); otherwise the real paths (for the compile).
-        def input_css(config, app_root: Rails.root, engine_root: self.engine_root, tokens: false)
+        def input_css(app_root: Rails.root, engine_root: self.engine_root, tokens: false)
           at = ->(root, rel) { tokens ? "#{root == engine_root ? ENGINE_TOKEN : '{{APP_ROOT}}'}/#{rel}" : File.join(root.to_s, rel) }
           <<~CSS
             @layer theme, base, components, utilities;
             @import "tailwindcss/theme.css" layer(theme);
             @import "tailwindcss/utilities.css" layer(utilities) source(none);
             @import #{at.call(engine_root, ENGINE_CSS).to_json};
-            @config #{config.to_json};
             @source not #{at.call(engine_root, 'app/components').to_json};
             #{sources(app_root: app_root, engine_root: engine_root).map { |root, rel| "@source #{at.call(root, rel).to_json};" }.join("\n")}
             @source inline(#{SAFELIST.join(' ').to_json});
