@@ -34,6 +34,13 @@ class CreateBrandKitAppsMigrationTest < ActiveSupport::TestCase
     assert ActiveRecord::Base.connection.foreign_key_exists?(:brand_kit_apps, :apps, column: :app_slug)
   end
 
+  test "the seeds file and the migration seed the same links" do
+    assert_equal M::LINKS, BrandKitApp::SEED_LINKS
+    out, = capture_io { 2.times { load Rails.root.join("db/seeds/05_brand_kit_apps.rb") } }
+    assert_includes out, "skipped welding_v2 → commercial-welding (no app row)"
+    assert_equal [%w[studio mcritchie-studio], %w[turf turf-monster]], BrandKitApp.order(:brand).pluck(:brand, :app_slug)
+  end
+
   test "seeds a link per pair whose app exists, names the missing apps, and stamps nothing it cannot prove" do
     skipped = seed(manifest(navbar: NAVBAR))   # no studio kit row: nothing to prove the hub against
     assert_equal %w[mcritchie-industries commercial-welding], skipped

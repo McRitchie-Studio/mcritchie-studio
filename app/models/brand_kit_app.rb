@@ -17,6 +17,10 @@
 #
 # The brand-kit-rollout SOP (docs/agents/agents/alex/sops/brand-kit-rollout.md) is how a link moves to :applied.
 class BrandKitApp < ApplicationRecord
+  # The links every database starts with (db/seeds/05_brand_kit_apps.rb; deployed ones by the CreateBrandKitApps
+  # migration, which keeps its own copy): brand key → app slug.
+  SEED_LINKS = [%w[studio mcritchie-studio], %w[industries mcritchie-industries], %w[turf turf-monster],
+                %w[welding commercial-welding], %w[welding_v2 commercial-welding]].freeze
   STATUSES = { applied: "Applied", changed: "Kit changed", not_applied: "Not applied" }.freeze
 
   belongs_to :app, foreign_key: :app_slug, primary_key: :slug, inverse_of: :brand_kit_apps
