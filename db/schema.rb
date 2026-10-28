@@ -845,6 +845,64 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_210000) do
     t.index ["slug"], name: "index_body_archetypes_on_slug", unique: true
   end
 
+  create_table "book_closes", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "entity", null: false
+    t.datetime "generated_at"
+    t.string "generated_by"
+    t.string "month", null: false
+    t.string "pdf_file_id"
+    t.string "sheet_file_id"
+    t.string "status", null: false
+    t.jsonb "summary", default: {}, null: false
+    t.integer "unclassified_count", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.index ["entity", "month"], name: "index_book_closes_on_entity_and_month", unique: true
+    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying::text, 'final'::character varying::text])", name: "book_closes_status_known"
+  end
+
+  create_table "book_entries", force: :cascade do |t|
+    t.string "account_key", null: false
+    t.bigint "amount_cents", null: false
+    t.bigint "book_statement_id", null: false
+    t.string "category"
+    t.string "classified_by"
+    t.datetime "created_at", null: false
+    t.string "description", null: false
+    t.string "entity", null: false
+    t.text "note"
+    t.integer "position", null: false
+    t.date "posted_on", null: false
+    t.string "purpose"
+    t.string "section", null: false
+    t.datetime "updated_at", null: false
+    t.index ["book_statement_id", "position"], name: "index_book_entries_on_book_statement_id_and_position", unique: true
+    t.index ["book_statement_id"], name: "index_book_entries_on_book_statement_id"
+    t.index ["entity", "category"], name: "index_book_entries_on_entity_and_category"
+    t.index ["entity", "posted_on"], name: "index_book_entries_on_entity_and_posted_on"
+  end
+
+  create_table "book_statements", force: :cascade do |t|
+    t.string "account_key", null: false
+    t.bigint "closing_cents", null: false
+    t.datetime "created_at", null: false
+    t.bigint "credits_cents", default: 0, null: false
+    t.bigint "debits_cents", default: 0, null: false
+    t.string "drive_file_id"
+    t.string "entity", null: false
+    t.string "inbox_file_id"
+    t.bigint "opening_cents", null: false
+    t.date "period_end", null: false
+    t.date "period_start", null: false
+    t.bigint "service_charges_cents", default: 0, null: false
+    t.string "source_name"
+    t.string "source_sha256", null: false
+    t.datetime "updated_at", null: false
+    t.index ["entity", "account_key", "period_start", "period_end"], name: "index_book_statements_on_period", unique: true
+    t.index ["entity", "source_sha256"], name: "index_book_statements_on_entity_and_source_sha256", unique: true
+    t.index ["inbox_file_id"], name: "index_book_statements_on_inbox_file_id"
+  end
+
   create_table "brand_kit_apps", force: :cascade do |t|
     t.string "app_slug", null: false
     t.datetime "applied_saved_at"
@@ -3045,6 +3103,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_210000) do
   add_foreign_key "athlete_grades", "athletes", column: "athlete_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "athlete_grades", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "athletes", "people", column: "person_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "book_entries", "book_statements", on_delete: :cascade
   add_foreign_key "brand_kit_apps", "apps", column: "app_slug", primary_key: "slug", on_update: :cascade, on_delete: :cascade
   add_foreign_key "broadcast_deliveries", "broadcasts"
   add_foreign_key "broadcast_deliveries", "contacts"

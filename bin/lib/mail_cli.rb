@@ -37,18 +37,20 @@ module MailCli
   # The script piped into `rails runner -`. The request rides base64 so no
   # quoting in it can break the script; the line prefix is assembled at runtime
   # so the script's own text never contains it, even if a transport echoes it.
-  def runner_script(request, token)
+  # `service` and `tag` let another CLI (bin/books, BooksCli) ride the same
+  # transport to its own dyno half.
+  def runner_script(request, token, service: "MailExport", tag: "mail")
     encoded = Base64.strict_encode64(JSON.generate(request))
     <<~RUBY
       require "base64"
       require "json"
       request = JSON.parse(Base64.strict_decode64(#{encoded.inspect}))
       answer = begin
-        MailExport.call(request)
+        #{service}.call(request)
       rescue StandardError => e
         { "error" => "\#{e.class}: \#{e.message}" }
       end
-      prefix = "@@mail:" + #{token.inspect} + "@@ "
+      prefix = "@@#{tag}:" + #{token.inspect} + "@@ "
       Base64.strict_encode64(JSON.generate(answer)).scan(/.{1,#{CHUNK}}/m).each { |c| $stdout.puts(prefix + c) }
       $stdout.puts(prefix + "END")
       $stdout.flush
@@ -56,11 +58,11 @@ module MailCli
   end
 
   # Pull the answer out of everything the run printed.
-  def extract(output, token)
-    prefix = "@@mail:#{token}@@ "
+  def extract(output, token, tag: "mail", service: "MailExport")
+    prefix = "@@#{tag}:#{token}@@ "
     chunks = output.to_s.each_line.map { |l| l.delete_suffix("\n").delete_suffix("\r") }
                    .select { |l| l.start_with?(prefix) }.map { |l| l.delete_prefix(prefix) }
-    raise Error, "no answer in the run's output (did the dyno boot? is MailExport deployed?)" if chunks.empty?
+    raise Error, "no answer in the run's output (did the dyno boot? is #{service} deployed?)" if chunks.empty?
     raise Error, "the answer was cut off before its END line" unless chunks.last == "END"
 
     JSON.parse(Base64.strict_decode64(chunks[0...-1].join))
