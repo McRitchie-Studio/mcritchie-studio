@@ -1,0 +1,38 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/books — the month-close bookkeeping: file bank statements from the
+# entity's Drive Inbox, answer the lines no rule could classify, and write each
+# month's Sheet and PDF to Drive. One `heroku run` per call. The logic is in
+# bin/lib/books_cli.rb (local half) and app/services/books/export.rb (the dyno
+# half). SOP: docs/agents/modules/close-the-month.md.
+#
+#   bin/books setup|status|unclassified <entity>
+#   bin/books intake <entity> [--file PDF ...] --by WHO
+#   bin/books classify <entity> <id> [<id> ...] --category KEY [--purpose TEXT] [--note TEXT] --by WHO
+#   bin/books close <entity> <YYYY-MM> --by WHO
+#
+# Exit: 0 ok · 1 the run failed, or intake refused a statement · 2 usage.
+
+require "optparse"
+require_relative "lib/books_cli"
+
+verb = ARGV.shift
+if verb.nil? || %w[-h --help help].include?(verb)
+  puts BooksCli::USAGE
+  exit(verb.nil? ? 2 : 0)
+end
+
+opts = BooksCli.default_options
+OptionParser.new do |o|
+  o.banner = BooksCli::USAGE
+  o.on("--file PDF", "intake: a statement PDF to file (repeatable)") { |v| opts[:files] << v }
+  o.on("--category KEY", "classify: a category in config/books.yml, or none") { |v| opts[:category] = v }
+  o.on("--purpose TEXT", "classify: groups distributions on the balance sheet") { |v| opts[:purpose] = v }
+  o.on("--note TEXT", "classify: who said so, and when") { |v| opts[:note] = v }
+  o.on("--by WHO", "who decided or ran this") { |v| opts[:by] = v }
+  o.on("--app NAME", "Heroku app (default #{opts[:app]})") { |v| opts[:app] = v }
+  o.on("--local", "run bin/rails runner here instead of heroku") { opts[:local] = true }
+end.parse!(ARGV)
+
+exit BooksCli.run(verb, ARGV, opts)
