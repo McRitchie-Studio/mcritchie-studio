@@ -118,7 +118,12 @@ class MergeRexSoulIntoAlexMigrationTest < ActiveSupport::TestCase
     migrate(:up)
     assert_equal snapshot, M.counts("alex")
 
+    # `say` prints only while Migration.verbose is on, and another test may have
+    # turned it off; pin it so the message is measured, not the suite order.
+    was = ActiveRecord::Migration.verbose
+    ActiveRecord::Migration.verbose = true
     out, = migrate(:down)
+    ActiveRecord::Migration.verbose = was
     assert_match(/changes nothing/, out)
     assert_equal snapshot, M.counts("alex"), "down moves no row back"
   end
