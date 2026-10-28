@@ -441,7 +441,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_180000) do
     t.index ["agent_slug", "kind", "target"], name: "index_agent_setups_one_live_per_target", unique: true, where: "(closed_at IS NULL)"
     t.index ["status"], name: "index_agent_setups_on_status"
     t.check_constraint "kind::text = 'discord_bot'::text", name: "agent_setups_kind_known"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'checking'::character varying, 'verifying'::character varying, 'needs_attention'::character varying, 'ready'::character varying, 'closed'::character varying]::text[])", name: "agent_setups_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'checking'::character varying::text, 'verifying'::character varying::text, 'needs_attention'::character varying::text, 'ready'::character varying::text, 'closed'::character varying::text])", name: "agent_setups_status_known"
   end
 
   create_table "agents", force: :cascade do |t|
