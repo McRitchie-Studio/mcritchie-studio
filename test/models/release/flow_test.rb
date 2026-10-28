@@ -114,7 +114,125 @@ class Release
       assert_equal [newer.slug], Release::Flow.recent(limit: 1).entries.map(&:slug)
     end
 
+    # --- THE COUNTDOWN: an in-flight release's estimate --------------------------
+
+    # The acceptance example: in QA with 5m spent of an 18m QA median, the release still
+    # owes the 13m left of QA plus the Hold and Ship medians.
+    test "[unit] estimate in QA: the rest of the QA median plus every later median" do
+      flow = medians_flow(batch: 10, qa: 18, hold: 4, ship: 7)
+      release = active(created: 0, g3: 20)
+      now = @t0 + 25.minutes
+
+      estimate = flow.estimate(release, now: now)
+
+      assert_equal "qa", estimate.phase
+      assert_equal @t0 + 20.minutes, estimate.phase_started_at
+      assert_equal 25 * 60, estimate.elapsed
+      assert_equal (13 + 4 + 7) * 60, estimate.remaining
+      assert_equal now + estimate.remaining, estimate.eta
+      assert_equal 0, estimate.overrun
+      refute estimate.over?
+    end
+
+    test "[unit] estimate picks the latest phase begun: batch, hold, ship" do
+      flow = medians_flow(batch: 10, qa: 18, hold: 4, ship: 7)
+
+      batch = flow.estimate(active(created: 0), now: @t0 + 3.minutes)
+      assert_equal ["batch", (7 + 18 + 4 + 7) * 60], [batch.phase, batch.remaining]
+
+      hold = flow.estimate(active(created: 0, g3: 5, assembled: 20), now: @t0 + 21.minutes)
+      assert_equal ["hold", (3 + 7) * 60], [hold.phase, hold.remaining]
+
+      ship = flow.estimate(active(created: 0, g3: 5, assembled: 20, g4: 30), now: @t0 + 32.minutes)
+      assert_equal ["ship", 5 * 60], [ship.phase, ship.remaining]
+    end
+
+    # OVERRUN. A phase past its median owes none of it again (no negative remaining);
+    # later phases still count. In the LAST phase nothing is left, so the estimate is
+    # past due and the eta is the moment it was due — the clock counts the overrun up.
+    test "[unit] an overrun never goes negative, and past due in Ship reads as over" do
+      flow = medians_flow(batch: 10, qa: 18, hold: 4, ship: 7)
+
+      late_qa = flow.estimate(active(created: 0, g3: 5), now: @t0 + 35.minutes)
+      assert_equal (4 + 7) * 60, late_qa.remaining, "QA owes nothing more; Hold and Ship still do"
+      assert_equal 12 * 60, late_qa.overrun
+      refute late_qa.over?, "time is still expected, so the hero still counts down"
+
+      late_ship = flow.estimate(active(created: 0, g3: 5, assembled: 20, g4: 30), now: @t0 + 49.minutes)
+      assert_equal 0, late_ship.remaining
+      assert_equal 12 * 60, late_ship.overrun
+      assert late_ship.over?
+      assert_equal @t0 + 37.minutes, late_ship.eta, "due when Ship's 7m median ran out"
+    end
+
+    test "[unit] no active release or no history means no estimate" do
+      flow = medians_flow(batch: 10, qa: 18, hold: 4, ship: 7)
+
+      assert_nil Release::Flow.estimate_for(nil, default: flow)
+      assert_nil Release::Flow.new([]).estimate(active(created: 0), now: @t0)
+      shipped_one = shipped(created: 0, assembled: 10, shipped: 20)
+      assert_nil Release::Flow.estimate_for(shipped_one, default: flow), "a shipped release has nothing to count down"
+    end
+
+    # A release carrying a gem is estimated from gem releases once there are three of
+    # them; with fewer it falls back to the overall window.
+    test "[unit] gem releases read gem history only from three samples up" do
+      overall = medians_flow(batch: 10, qa: 18, hold: 4, ship: 7)
+      gem_three = Release::Flow.new(3.times.map { |i| phased("gem-#{i}", batch: 10, qa: 40, hold: 4, ship: 20) })
+      gem_two = Release::Flow.new(gem_three.entries.first(2))
+      now = @t0 + 25.minutes
+
+      app = Release::Flow.estimate_for(active(created: 0, g3: 20), default: overall, now: now, gem_history: gem_three)
+      refute app.gem_history, "an app release never reads gem history"
+      assert_equal (13 + 4 + 7) * 60, app.remaining
+
+      gem_release = active(created: 0, g3: 20)
+      Task.create!(title: "Engine member", stage: "assembled", release_slug: gem_release.slug,
+                   metadata: { "devops" => { "shape" => "library", "repositories" => ["studio-engine"] } })
+
+      gem = Release::Flow.estimate_for(gem_release.reload, default: overall, now: now, gem_history: gem_three)
+      assert gem.gem_history
+      assert_equal (35 + 4 + 20) * 60, gem.remaining
+
+      thin = Release::Flow.estimate_for(gem_release, default: overall, now: now, gem_history: gem_two)
+      refute thin.gem_history
+      assert_equal (13 + 4 + 7) * 60, thin.remaining, "two gem samples are too few: the overall medians"
+    end
+
+    test "[integration] recent_gem keeps only shipped releases that carried a gem" do
+      app = shipped(created: 0, assembled: 10, shipped: 20)
+      gem = shipped(created: 30, assembled: 40, shipped: 50)
+      Task.create!(title: "App member", stage: "shipped", release_slug: app.slug,
+                   metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+      Task.create!(title: "Gem member", stage: "shipped", release_slug: gem.slug,
+                   metadata: { "devops" => { "shape" => "library", "repositories" => ["studio-engine"] } })
+
+      assert_equal [gem.slug], Release::Flow.recent_gem.entries.map(&:slug)
+    end
+
     private
+
+    # Five entries whose every phase median is the given minutes.
+    def medians_flow(**minutes)
+      Release::Flow.new(5.times.map { |i| phased("rel-#{i}", **minutes) })
+    end
+
+    def phased(slug, **minutes)
+      phases = minutes.to_h { |key, value| [key.to_s, value * 60] }
+      entry(slug, phases.values.sum, phases)
+    end
+
+    # An in-flight release: minutes after @t0 for each stamp it has reached; g3 and g4
+    # are the start of a first attempt.
+    def active(created:, g3: nil, assembled: nil, g4: nil)
+      Release.active.update_all(state: "abandoned") # one active release per train
+      release = Release.create!(branch: "release", state: "assembling",
+                                created_at: @t0 + created.minutes,
+                                assembled_at: assembled && @t0 + assembled.minutes)
+      gate(release, "g3_candidate", g3, g3 + 1) if g3
+      gate(release, "g4_ship", g4, g4 + 1) if g4
+      release.reload
+    end
 
     # Minutes after @t0 for each stamp; g3/g4 are [start, finish] of a first attempt.
     def shipped(created:, assembled:, shipped:, g3: nil, g4: nil)

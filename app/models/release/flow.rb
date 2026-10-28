@@ -46,6 +46,14 @@ class Release
     # ordinary releases sit within 2x of the median, the two long ones past 8x.
     OUTLIER_FACTOR = 3
 
+    # A gem release's own history is used for an in-flight gem release's estimate only
+    # once it has this many samples; below it, the overall window is the better guess.
+    GEM_HISTORY_MIN = 3
+
+    # How far back to look for gem releases. Gem releases are rarer than app releases,
+    # so the window that finds ten of them is wider than the ten-release card window.
+    GEM_HISTORY_SCAN = 50
+
     Entry = Struct.new(:slug, :mascot, :mascot_name, :shipped_at, :total, :phases, keyword_init: true) do
       def phase(key) = phases.fetch(key.to_s, 0)
 
@@ -53,20 +61,66 @@ class Release
       def dominant_phase = phases.max_by { |_key, seconds| seconds }&.first
     end
 
+    # THE COUNTDOWN — where an in-flight release is and when it should land.
+    #
+    #   phase            the PHASE_KEYS key it is in now
+    #   phase_started_at when that phase began (the same boundary phases_for uses)
+    #   elapsed          seconds since the release opened
+    #   remaining        seconds still expected: max(phase median − time in phase, 0)
+    #                    plus the medians of every later phase
+    #   overrun          seconds the current phase has run past its median (0 if not)
+    #   eta              the moment to count down to. now + remaining while time is
+    #                    left; once nothing is left (an overrun in the last phase) it is
+    #                    the moment the release was DUE, so the clock counts the overrun
+    #                    up from it ("+12m over") instead of sitting at zero
+    #   gem_history      true when the medians came from gem releases only
+    Estimate = Struct.new(:phase, :phase_started_at, :elapsed, :remaining, :overrun, :eta, :gem_history,
+                          keyword_init: true) do
+      def over? = remaining.zero? && overrun.positive?
+
+      def phase_label = PHASES.find { |p| p[:key] == phase }&.dig(:label)
+    end
+
     attr_reader :entries
 
     def self.recent(limit: DEPLOYMENT_DASHBOARD_SAMPLE)
-      releases = Release.where(state: "shipped")
-                        .where.not(shipped_at: nil)
-                        .order(shipped_at: :desc)
-                        .includes(:gate_runs)
-                        .limit(limit).to_a
+      new(entries_for(shipped_scope.limit(limit).to_a))
+    end
+
+    # The last `limit` shipped releases that carried a gem member — the history a gem
+    # release is estimated from. Scans a wider window and filters in Ruby off the
+    # preloaded tasks (Task#gem_release? reads shape and repo, not a column).
+    def self.recent_gem(limit: DEPLOYMENT_DASHBOARD_SAMPLE, scan: GEM_HISTORY_SCAN)
+      releases = shipped_scope.includes(:tasks).limit(scan).to_a
+      new(entries_for(releases.select { |release| carries_gem?(release) }.first(limit)))
+    end
+
+    # The in-flight release's estimate, from the history that fits it: a release
+    # carrying a gem reads gem-release history when there are GEM_HISTORY_MIN samples,
+    # else the overall window `default`. nil with no release or no history.
+    def self.estimate_for(release, default:, now: Time.current, gem_history: nil)
+      return nil if release.nil? || !release.active?
+
+      if carries_gem?(release)
+        gem_flow = gem_history || recent_gem
+        return gem_flow.estimate(release, now: now, gem_history: true) if gem_flow.size >= GEM_HISTORY_MIN
+      end
+      default&.estimate(release, now: now)
+    end
+
+    def self.carries_gem?(release) = release.tasks.any?(&:gem_release?)
+
+    def self.shipped_scope
+      Release.where(state: "shipped").where.not(shipped_at: nil).order(shipped_at: :desc).includes(:gate_runs)
+    end
+
+    def self.entries_for(releases)
       mascots = Pokemon.where(slug: releases.filter_map { |release| release.devops_field("mascot") })
                        .index_by(&:slug)
       genders = conductor_genders(releases)
-      new(releases.map do |release|
+      releases.map do |release|
         entry_for(release, mascots[release.devops_field("mascot")], gender: genders[release.slug])
-      end)
+      end
     end
 
     def self.entry_for(release, mascot = nil, gender: release.mascot_gender)
@@ -110,6 +164,16 @@ class Release
       end
     end
 
+    # When each phase of a release STARTED, keyed by PHASE_KEYS, nil where it has not
+    # (yet). The same stamps phases_for reads, unclamped: an in-flight release has no
+    # shipped_at to clamp against, and a later phase that has begun is where it is.
+    def self.phase_starts(release)
+      { "batch" => release.created_at,
+        "qa" => first_gate_start(release, "g3_candidate") || release.assembled_at,
+        "hold" => release.assembled_at,
+        "ship" => first_gate_start(release, "g4_ship") || release.prod_deploy_started_at }
+    end
+
     # Filtered in Ruby off the preloaded association, like Release#latest_gate_run,
     # so a window of releases costs no query per row.
     def self.first_gate_start(release, key)
@@ -135,6 +199,28 @@ class Release
     # of the summed time — that is dominated by the outliers' batching, which is the
     # very distortion this object exists to take out of the headline.
     def phase_median(key) = median(entries.map { |entry| entry.phase(key) })
+
+    # THE ESTIMATE for one in-flight release, against this window's medians. Pure: the
+    # clock is an argument. The phase it is in is the LATEST phase that has started;
+    # a phase with no history (median nil) expects nothing. nil for an empty window.
+    def estimate(release, now: Time.current, gem_history: false)
+      return nil unless any?
+
+      starts = self.class.phase_starts(release)
+      index = PHASE_KEYS.rindex { |key| starts[key] } || 0
+      phase = PHASE_KEYS[index]
+      phase_started_at = [starts[phase] || release.created_at, now].min
+      in_phase = (now - phase_started_at).to_i
+      median = phase_median(phase).to_i
+      later = PHASE_KEYS.drop(index + 1).sum { |key| phase_median(key).to_i }
+      remaining = [median - in_phase, 0].max + later
+      overrun = [in_phase - median, 0].max
+      eta = remaining.positive? ? now + remaining : phase_started_at + median
+
+      Estimate.new(phase: phase, phase_started_at: phase_started_at,
+                   elapsed: [(now - release.created_at).to_i, 0].max,
+                   remaining: remaining, overrun: overrun, eta: eta, gem_history: gem_history)
+    end
 
     # Where the window's time went in aggregate, as a fraction of the summed total —
     # the "outliers included" view the sidebar shows beside the medians, so the
