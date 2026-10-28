@@ -1,0 +1,78 @@
+# The books the month close keeps (Books::Config; SOP docs/agents/modules/close-the-month.md).
+#
+# One entry per entity. Adding McRitchie Industries or East 49th later is another
+# entry here, not new code. Commercial Welding keeps its own books.
+#
+#   <entity>:
+#     name:          legal name, printed on every artifact
+#     drive_subject: whose Drive holds the books: the domain's ACTIVE workspace_account subject
+#                    (team@<domain>). It is the only address the hub may act as in Drive; a
+#                    mailbox such as alex@ opens mail, never Drive (WorkspaceAccount::PURPOSES)
+#     share_with:    who the books folder is shared with as a writer, so it appears in their
+#                    Drive under "Shared with me" and they can drop statements in its Inbox
+#     drive_root:    the folder `bin/books setup` creates in that Drive's root. Let setup create
+#                    it: under drive.file the hub can only write into folders it made itself
+#     accounts:      key → bank, the statement's product line, the last four digits the
+#                    statement prints, and the first day of the account's first statement
+#     rules:         first match wins; `match` is a case-insensitive regex over the
+#                    description with its spaces removed (statement text drops them
+#                    unpredictably: "SERVICEFEE", "FEDWIRETRANSFER"), and an optional `sign`
+#                    (in | out). A rule may leave `category` out to mark a line that
+#                    always needs a person's answer.
+#
+# Categories are the chart of accounts. `kind` places each one:
+#   income | expense           the P&L (expense amounts are negative in the ledger)
+#   contribution | distribution  equity, never the P&L (a single-member LLC's draws are
+#                              not expenses, and must never be shown as ones)
+#   transfer                   between the entity's own accounts; nets to zero
+categories:
+  revenue: { label: Revenue, kind: income }
+  interest_income: { label: Interest income, kind: income }
+  other_income: { label: Other income, kind: income }
+  bank_fees: { label: Bank fees, kind: expense }
+  software_services: { label: Software and services, kind: expense }
+  professional_fees: { label: Professional fees, kind: expense }
+  other_expense: { label: Other expense, kind: expense }
+  member_contribution: { label: Member contribution, kind: contribution }
+  member_distribution: { label: Member distribution, kind: distribution }
+  internal_transfer: { label: Internal transfer, kind: transfer }
+
+entities:
+  studio:
+    name: McRitchie Studio LLC
+    drive_subject: team@mcritchie.studio
+    share_with: alex@mcritchie.studio
+    drive_root: McRitchie Studio Books
+    accounts:
+      money_market:
+        bank: huntington
+        product: Huntington Business Premier Plus MMA
+        last4: "9501"
+        opened_on: 2026-02-04
+      checking:
+        bank: huntington
+        product: Huntington Business Checking 100
+        last4: "0881"
+        opened_on: 2026-05-09
+    rules:
+      - name: interest
+        match: INTERESTPAYMENT
+        category: interest_income
+      - name: bank-fee
+        match: SERVICEFEE|SERVICECHARGE|WIRETRANSFERFEES
+        category: bank_fees
+      - name: own-account-transfer
+        match: INTERNETTFR(TO|FRM)CHECKING.*X+(9501|0881)
+        category: internal_transfer
+      # Alex McRitchie 2026-10-21: the US Bank bill pays (card ending 2383) bought deal
+      # flow for the Commercial Welding acquisition. Acquisition costs are Industries'
+      # deal, paid out of Studio, so they leave Studio as distributions.
+      - name: deal-flow-bill-pay
+        match: USBANKNAPAYMENT.*2383
+        sign: out
+        category: member_distribution
+        purpose: Acquisition costs
+      # Wires and transfers carry no counterparty on the statement: someone must say
+      # what each one was.
+      - name: wire-needs-answer
+        match: FEDWIRETRANSFER|TRANSFERDEBIT
