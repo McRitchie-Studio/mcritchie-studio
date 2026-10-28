@@ -44,7 +44,7 @@
                     </div>
                   </td>
                   <td class="hidden md:table-cell py-2 px-3 break-all">
-                    <%= link_to row.production_url.delete_prefix("https://"), row.production_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", data: { test: "application-url" } %>
+                    <%= safe_link_to row.production_url.delete_prefix("https://"), row.production_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", data: { test: "application-url" } %>
                   </td>
                   <td class="py-2 px-3 whitespace-nowrap">
                     <% if row.health_reported? %>
