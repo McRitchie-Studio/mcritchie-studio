@@ -1410,6 +1410,36 @@ Turbo hover prefetch gets a 204 and spends nothing.
   (`GET /build/:token/turns`, `app/javascript/build_chat.js`) while a turn is pending;
   `WebChat.deliver!` marks a build-thread answer posted without a broadcast.
 
+## Satellite chat: every app talks to the same thread
+
+Alex McRitchie, 2026-10-27: "I want to make agent chat shared in all apps." One thread
+per (person, soul), held by the hub, whichever app the person chats from (epic
+`.agents/epics/agent-chat-primitive.md`; its Contract section is fixed). A satellite's
+SERVER calls the hub; its browser talks only to its own app, which polls.
+
+| Piece | Where |
+|-------|-------|
+| The two endpoints | `Api::V1::AgentChatsController`: `POST /api/v1/agent_chat/messages` (`soul`, `text`, `person`, `ip`; `201 {turn}`, `422`, `429` capped, `404` no web chat) and `GET /api/v1/agent_chat/turns` (`soul`, `person`, `after`, `limit` ≤ 50; `200 {turns, pending}`) |
+| The app's credential | `AppCredential` (purpose `agent-chat`): the hub keeps the SHA-256 digest only. `bin/rails app_credentials:mint APP=<slug>` prints the secret once, for 1Password `apps.<slug>.agent-chat` and the app's `AGENT_CHAT_TOKEN`; minting again revokes the old one. No credential, a wrong one or a revoked one: 401 |
+| Which app reaches which soul | `config/agent_routes.yml` `web: apps: <slug>: [souls]` (`alex-build: [alex]`), and the soul must be in `web: souls:`; else 404 |
+| The person and the thread | `AgentChat::Visitor`: `person.email` that is a hub User is their web person, thread `chat:<soul>:<user id>`; an email with no User is its own public person (web identity `email:<address>`), thread `chat:<soul>:person:<id>`; `person.anon_token` is a public Visitor, thread `chat:<soul>:anon:<HMAC digest>` (the token itself is never stored) |
+| Inbound | `AgentChat::Ingest`: a `web` row, `channel_ref` `chat`, the app in `envelope.app` (never in the key), the visitor's IP hashed as /build's |
+| Turns | `AgentChat::Turns`: a row is a user turn and, once answered, an agent turn, both carrying the row's id (`after` is a message id; key a turn by id and role). Status `pending` (received), `typing` (claimed), `answered`, `failed` (held, dead, or no words) |
+
+- **Who answers.** The person's role, as everywhere, and the public on the public-intake
+  soul's chat threads: `Answerers#intake?` and its SQL guard answer `chat:alex:` as they
+  answer `web:build:`, a prefix built in code. Another soul's public row is `held`.
+- **The fold.** A signed-in post that also carries the visitor's `anon_token` moves that
+  soul's anon thread into the person's thread first (`AgentChat::Ingest#fold!`): each row
+  gets a `thread_folded` event and keeps the person who wrote it. Once moved, the anon
+  thread is empty, so the fold runs once.
+- **Caps** (`AgentChat::Caps`, /build's numbers from `config/agent_answerers.yml`): signed
+  out, `turns_per_request` per anon thread, and the per-IP hourly and daily totals shared
+  with /build (`BuildIntake::Caps#public_cap`); signed in, `WebIngest::RATE_LIMIT` per
+  thread per hour. At a cap the hub answers 429 with the line to show and stores nothing.
+- **Delivery.** `WebChat.polled?` covers these threads as /build's: the answer is marked
+  posted with no broadcast and the typing phase is kept on the row for the poll.
+
 ## Viewing a run
 
 Each soul's Claude runs from its own folder, `~/.agents/mailbox/<soul>`
