@@ -6,8 +6,11 @@
 Alex McRitchie asked for it on 2026-10-27: "a close the month SOP we can run with
 generates fresh artifacts to Google Drive for book keeping." He chose the shape the
 same day. Statements arrive through a Drive Inbox folder. Each close writes a live
-Google Sheet plus its PDF. Studio is set up now, and the config is built for more
-entities. The command runs on demand, with a reminder on the 5th.
+Google Sheet plus its PDF. Two entities are configured, each with its own books
+folder in its own domain's Drive: `studio` (McRitchie Studio LLC, in
+`team@mcritchie.studio`'s Drive) and `industries` (McRitchie Industries LLC, in
+`team@mcritchie.industries`'s Drive, added 2026-10-28). The command runs on demand,
+with a reminder on the 5th.
 
 This SOP stands alone; every command is inline. It is Mack's, the CFO (moved from the shared modules on 2026-10-28 by the accountability chart), and his heartbeat runs it on the 5th; any agent may still run it. Alex McRitchie
 answers what the bank statement cannot: what a wire was for, or whether a deposit
@@ -34,6 +37,10 @@ was revenue. **The agent never guesses a classification.**
   `alex@mcritchie.studio` as a writer, so it appears in his Drive under "Shared with
   me". `bin/books setup studio` creates the tree, shares it, and prints the links.
   It is safe to re-run.
+
+  Each entity has its own folder of the same shape. McRitchie Industries' is
+  `McRitchie Industries Books/`, in `team@mcritchie.industries`'s Drive, shared with
+  the same `alex@mcritchie.studio`; `bin/books setup industries` creates it.
 
   **Never create these folders by hand.** Under the `drive.file` scope, the hub can
   write only into folders it made itself. **Never point `drive_subject` at a
@@ -179,6 +186,10 @@ not run through this.
 - **Inbox files stay in the Inbox.** The hub cannot move a file it did not
   create. Intake records each file's id and skips it next time. Alex may delete
   them once they are filed.
+- **A Huntington "Transfer Credit" names no sender.** Industries' rules hold every
+  one for an answer. Its first two (2026-09-02: $400,000 to the money market and
+  $30,000 to checking, both from Studio) are member contributions, per Alex
+  McRitchie on 2026-10-28; Studio books the same money as distributions.
 - **Never paste a statement's full account number** anywhere. The books carry
   only the last four digits.
 - **The PDF is what a lender reads.** Read the Notes tab before handing it over,
