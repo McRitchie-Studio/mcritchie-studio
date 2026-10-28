@@ -3,6 +3,7 @@
 require "json"
 require "time"
 require "fileutils"
+require "securerandom"
 require_relative "projects_root"
 require_relative "../../lib/task_usage_sandbox"
 
@@ -61,6 +62,20 @@ module SecretCache
   # location inside a git repository. Its message names the folder and the fix and
   # never a value.
   class Unsafe < StandardError; end
+
+  # Raised when anything would put an ADMIN-vault credential on disk: an op-item
+  # entry whose vault is an admin vault, or a GitHub slot for an identity whose
+  # manifest entry is fed from one (github.deployer). A build lane must never be
+  # able to lift an admin credential off this folder, so the write is refused
+  # outright rather than quietly skipped. A subclass of Unsafe, so every caller
+  # that already stops on an unsafe folder stops here too.
+  class AdminVaultRefused < Unsafe; end
+
+  # The admin vault's default name (bin/lib/op_vaults.rb, the deployer lane), and
+  # the variable that renames it. Named here rather than required from op_vaults
+  # so bin/gh-token can keep loading this file under /usr/bin/ruby.
+  ADMIN_VAULT_DEFAULT = "studio-agents-admin"
+  ADMIN_VAULT_ENV = "MCR_OP_VAULT_ADMIN"
 
   CONTINGENCY = [
     "Use the other GitHub identity's cached token if it is still valid and its scope covers the job " \
@@ -195,10 +210,24 @@ module SecretCache
     home
   end
 
-  def check_file!(path)
-    return path unless File.exist?(path)
+  # A cache file must be a REGULAR file this user owns, at 0600 or narrower. A
+  # symlink is refused (it could point a read or a later rename anywhere), and so
+  # is a file another account owns (it could have been planted to be served).
+  # +uid+ is a seam for the test: nothing else passes it.
+  def check_file!(path, uid: Process.uid)
+    return path unless File.exist?(path) || File.symlink?(path)
 
-    mode = File.stat(path).mode & 0o777
+    stat = File.lstat(path)
+    raise Unsafe, "secret cache file #{path} is a symlink; refusing it — delete it and let the tooling rewrite it" if stat.symlink?
+    unless stat.file?
+      raise Unsafe, "secret cache file #{path} is not a regular file; refusing it"
+    end
+    if stat.uid != uid
+      raise Unsafe, "secret cache file #{path} is owned by uid #{stat.uid}, not this user (uid #{uid}); " \
+                    "refusing it — delete it and find what wrote it"
+    end
+
+    mode = stat.mode & 0o777
     if wider?(mode, FILE_MODE)
       raise Unsafe, format("secret cache file %s has mode %04o, wider than 0600; run `chmod 600 %s` " \
                            "and find what widened it", path, mode, path)
@@ -250,6 +279,7 @@ module SecretCache
   # Write-then-rename, 0600 before the secret lands, so a reader never sees half a
   # file and no moment exists where the file is wider than 0600.
   def write_json(file, data, env: ENV)
+    refuse_admin_github!(data, env) if file == GITHUB_FILE
     home = ensure_home!(env)
     atomic_write(File.join(home, file), "#{JSON.pretty_generate(data)}\n")
   end
@@ -268,14 +298,79 @@ module SecretCache
     !home.nil? && File.file?(File.join(home, file))
   end
 
+  # The temp file is opened O_EXCL | O_NOFOLLOW under a random name: it must be a
+  # NEW file this process created, never a pre-planted file or a symlink that would
+  # send the secret somewhere else. Only a temp file this call created is cleaned up.
   def atomic_write(path, content)
-    tmp = "#{path}.#{Process.pid}.tmp"
-    File.open(tmp, File::CREAT | File::WRONLY | File::TRUNC, FILE_MODE) { |f| f.write(content) }
+    tmp = "#{path}.#{Process.pid}.#{SecureRandom.hex(8)}.tmp"
+    created = false
+    File.open(tmp, atomic_write_flags, FILE_MODE) do |f|
+      created = true
+      f.write(content)
+    end
     File.chmod(FILE_MODE, tmp)
     File.rename(tmp, path)
+    created = false
     path
   ensure
-    File.delete(tmp) if tmp && File.exist?(tmp)
+    File.delete(tmp) if created && tmp && File.file?(tmp) && !File.symlink?(tmp)
+  end
+
+  # The flags atomic_write opens its temp file with: create, and fail if the name
+  # exists (O_EXCL) or is a symlink (O_NOFOLLOW).
+  def atomic_write_flags
+    File::CREAT | File::EXCL | File::WRONLY | File::NOFOLLOW
+  end
+
+  # ── the admin-vault refusal ───────────────────────────────────────────────
+
+  def admin_vault?(vault, env = ENV)
+    v = vault.to_s.strip
+    return false if v.empty?
+
+    configured = env[ADMIN_VAULT_ENV].to_s.strip
+    v == ADMIN_VAULT_DEFAULT || (!configured.empty? && v == configured)
+  end
+
+  # True when an entry is fed from an admin vault: its own vault field, or a
+  # source that names one ("studio-agents-admin/github.mcritchie-admin ...").
+  def admin_entry?(meta, env = ENV)
+    return false unless meta.is_a?(Hash)
+    return true if admin_vault?(meta["vault"], env)
+
+    source = meta["source"].to_s.sub(/\A1Password\s+/, "")
+    admin_vault?(source.split("/").first, env)
+  end
+
+  def refuse_admin!(name, meta, env = ENV)
+    return unless admin_entry?(meta, env)
+
+    raise AdminVaultRefused, "secret cache: #{name} is fed from an admin vault and is never written to disk; " \
+                             "read it per call instead (docs/agents/modules/secret-cache.md)"
+  end
+
+  # A GitHub store may hold only identities whose entry is not admin-fed.
+  def refuse_admin_github!(data, env)
+    return unless data.is_a?(Hash)
+
+    entries = manifest_for_refusal(env)
+    data.each_key do |identity|
+      name, meta = entries.find { |_n, m| m["kind"] == "github-app-token" && m["identity"].to_s == identity.to_s }
+      refuse_admin!(name, meta, env) if name
+    end
+  end
+
+  # The manifest for a refusal check; the defaults when the folder is unreadable,
+  # so a broken manifest can never loosen the refusal.
+  def manifest_for_refusal(env)
+    merged = DEFAULT_ENTRIES.dup
+    begin
+      manifest(env).each { |n, m| merged[n] = m }
+    rescue StandardError
+      nil
+    end
+    DEFAULT_ENTRIES.each { |n, m| merged[n] = m if admin_entry?(m, env) }
+    merged
   end
 
   # ── legacy migration ───────────────────────────────────────────────────────
@@ -440,6 +535,7 @@ module SecretCache
 
   def store_item(name, value, env: ENV, now: Time.now)
     meta = entry(name, env) || {}
+    refuse_admin!(name, meta, env)
     lifetime = meta["lifetime_seconds"].to_i
     lifetime = 86_400 unless lifetime.positive?
     expires = now + lifetime
