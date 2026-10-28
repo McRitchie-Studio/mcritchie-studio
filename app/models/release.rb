@@ -176,6 +176,10 @@ class Release < ApplicationRecord
   # Release.current / .last_shipped in the broadcast — and so a rolled-back
   # transaction never broadcasts a state that didn't land.
   after_commit :broadcast_release_modules, on: %i[create update]
+  # The DevOps card's phase flag, collected per SAVE: a transaction can save the
+  # release several times (Conductor.qa_green!: tested stamp, assemble!, deploy_qa
+  # stamp) and after_commit sees only the last save's saved_changes.
+  after_save :note_flow_change
   after_commit :refresh_duration_metrics_safely, on: %i[create update]
   # The app chat's status card (AppDevopsStages::Live): its members' apps move
   # from Releasing to Deploying, or off the card, as production starts or ends.
@@ -1208,9 +1212,16 @@ class Release < ApplicationRecord
     # The DevOps card's clocks, re-estimated on a PHASE change only — prepare (create),
     # QA green (assembled), ship start, shipped, abandoned, or a reopen — never on a
     # mascot stamp or a metadata write, which cannot move the estimate.
-    DeploymentsBroadcaster.devops_card if previously_new_record? || saved_changes.keys.intersect?(FLOW_COLUMNS)
+    DeploymentsBroadcaster.devops_card if @flow_changed
+  ensure
+    @flow_changed = false
   end
 
   # The columns Release::Flow reads a phase boundary or the active singleton from.
   FLOW_COLUMNS = %w[state assembled_at prod_deploy_started_at shipped_at abandoned_at created_at].freeze
+
+  # Raised by ANY save in the transaction, so a later non-phase save cannot hide it.
+  def note_flow_change
+    @flow_changed = true if previously_new_record? || saved_changes.keys.intersect?(FLOW_COLUMNS)
+  end
 end

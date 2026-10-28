@@ -447,6 +447,22 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     refute_includes html, %(data-test="devops-qa-countdown"), "QA is green: the QA clock is gone"
   end
 
+  # The REAL QA-green path saves the release several times in one transaction (the
+  # tested stamp, assemble!, then the deploy_qa stamp); after_commit fires once, with
+  # only the LAST save's saved_changes, which name no phase column.
+  test "[integration] Conductor.qa_green! broadcasts the card though its last save moves no phase column" do
+    seed_shipped_history
+    member = Task.create!(title: "QA green member", stage: "reviewed",
+                          metadata: { "devops" => { "repositories" => ["mcritchie-studio"] } })
+    release = Release::Conductor.sweep!(member)
+
+    streams = devops_card_streams { Release::Conductor.qa_green!(release, qa_url: "https://qa.mcritchie.studio/deployments") }
+
+    assert_equal "assembled", release.reload.state
+    assert streams.any?, "QA green, the conductor's way, re-renders the DevOps card"
+    refute_includes streams.last.to_html, %(data-test="devops-qa-countdown"), "and the QA clock is gone"
+  end
+
   test "[integration] each phase change re-renders the card; a non-phase save does not" do
     seed_shipped_history
 
