@@ -97,7 +97,7 @@ the read path.
 ## When an entry expires, and when 1Password fails
 
 **Expiry.** A GitHub token read inside its last ten minutes, or after it expired,
-makes a bounded `op` read (20 s per attempt, retried once without the 1Password
+makes a bounded `op` read (14 s per attempt, retried once without the 1Password
 cache daemon: `bin/lib/op_meter.rb`), mints a token, rewrites the cache, and
 returns the fresh token. When the first `op` read fails, the second is skipped, so
 a hung `op` reaches the contingency in seconds.
@@ -117,7 +117,9 @@ an expiry that did not move forward.
    line says what the other identity holds now.
 2. Run the [`token-session`](token-session.md) SOP.
 3. Ask Alex McRitchie to quit and reopen the 1Password app. That cleared the
-   2026-10-27 hang.
+   2026-10-27 hang. A hung read now says so in one line (`1Password is not
+   answering`) and exits 75; a release can wait it out with
+   `bin/release prepare|ship --wait-for-1password[=MINUTES]`.
 4. Report it as a blocker: name the entry, the failing `op` read, and the steps
    you tried.
 

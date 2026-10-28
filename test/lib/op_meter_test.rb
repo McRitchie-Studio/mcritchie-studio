@@ -414,10 +414,11 @@ class OpMeterTest < Minitest::Test
     end
   end
 
-  def test_unit_the_deadline_defaults_to_twenty_seconds
-    assert_equal 20, OpMeter.deadline({})
-    assert_equal 20, OpMeter.deadline("MCR_OP_DEADLINE" => "nonsense")
-    assert_equal 20, OpMeter.deadline("MCR_OP_DEADLINE" => "0")
+  # Fourteen: an attempt and its uncached retry stay under thirty seconds.
+  def test_unit_the_deadline_defaults_to_fourteen_seconds
+    assert_equal 14, OpMeter.deadline({})
+    assert_equal 14, OpMeter.deadline("MCR_OP_DEADLINE" => "nonsense")
+    assert_equal 14, OpMeter.deadline("MCR_OP_DEADLINE" => "0")
     assert_in_delta 1.5, OpMeter.deadline("MCR_OP_DEADLINE" => "1.5")
   end
 

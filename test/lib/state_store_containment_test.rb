@@ -257,7 +257,9 @@ class StateStoreContainmentTest < Minitest::Test
     "bin/qa-intake" => {},
     "bin/lib/op_meter.rb" => {
       "log_path" => "BUILDER — private; append launders it at the write seam",
-      "records" => "READ — parses the log for bin/op-reads; append is the only writer"
+      "records" => "READ — parses the log for bin/op-reads; append is the only writer",
+      "timeouts_since" => "READ — counts the log tail's timeout rows for bin/release's abort hint; " \
+                          "append is the only writer"
     },
     # A THIRD shape, named rather than filed under one it does not fit. EMITS is
     # not BUILDER (it returns no store path: it returns the env file's own path,

@@ -94,7 +94,7 @@ module SecretCache
     "refresh_window" => "last 10 minutes: a read inside the window mints and returns a fresh token",
     "refresh_window_seconds" => GITHUB_REFRESH_WINDOW,
     "owner" => "steffon",
-    "on_expired" => "bounded op read (about 20 s per attempt, bin/lib/op_meter.rb), mint, rewrite the cache",
+    "on_expired" => "bounded op read (about 14 s per attempt, under 30 s with its retry, bin/lib/op_meter.rb), mint, rewrite the cache",
     "contingency" => CONTINGENCY
   }.freeze
 

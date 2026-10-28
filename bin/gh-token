@@ -315,6 +315,11 @@ def mint(identity)
       end
     end
     warn(SecretCache.contingency_lines("github.#{identity}").join("\n"))
+    # A HUNG 1Password is not a signed-out one: OpMeter has already printed the one
+    # line that names it and its fix, so the sign-in advice below would only
+    # mislead. Exit HUNG_EXIT, which bin/gh-app-git-credential reads as "do not
+    # spend thirty more seconds on your own reads" (release-survives-1password-hang).
+    exit(OpMeter::HUNG_EXIT) if OpMeter.hung?
     # The parenthetical goes BEFORE the diagnosis, never after. OpVaults.diagnose
     # ends on an indented, copy-pasteable command; anything appended lands on that
     # same line, so `bin/setup-1pass-token --admin (is `op` signed in?)` is what the

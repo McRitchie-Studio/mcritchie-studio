@@ -111,7 +111,8 @@ warning and records nothing.
 
 **Direct-drive this act — do NOT wrap it in a subagent**: a subagent that dies
 mid-ship leaves a partial `release → main` state. **Recovery from an INTERRUPTED ship:
-re-run `bin/release ship --yes`**; `merged: "main"` repos skip re-ff, a published gem
+re-run `bin/release ship --yes`** (add `--wait-for-1password` when it stopped on
+`1Password is not answering`: it waits for 1Password and resumes the ship itself); `merged: "main"` repos skip re-ff, a published gem
 skips its push, and a pushed re-lock is reused (see **Gems: the final publish**).
 
 **Gate before confirming the ship.** The Avi → Steffon handoff exists only when
