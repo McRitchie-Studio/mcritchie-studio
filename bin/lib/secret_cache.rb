@@ -392,7 +392,10 @@ module SecretCache
     target = File.join(home, file)
     legacy_is_file = File.file?(legacy_path) && !File.symlink?(legacy_path)
     if legacy_is_file && !File.exist?(target)
-      atomic_write(target, File.read(legacy_path))
+      content = File.read(legacy_path)
+      # An admin-fed slot (the deployer) an older writer left is never adopted.
+      content = "#{JSON.pretty_generate(JSON.parse(content).then { |d| d.is_a?(Hash) ? d.except(*admin_identities(env)) : {} })}\n" if file == GITHUB_FILE
+      atomic_write(target, content)
       relink = true
     end
     return target unless relink && legacy_is_file
@@ -402,8 +405,13 @@ module SecretCache
     File.symlink(target, link_tmp)
     File.rename(link_tmp, legacy_path)
     target
-  rescue SystemCallError
+  rescue SystemCallError, JSON::ParserError
     target
+  end
+
+  def admin_identities(env)
+    manifest_for_refusal(env).values.select { |m| m["kind"] == "github-app-token" && admin_entry?(m, env) }
+                             .map { |m| m["identity"].to_s }
   end
 
   # ── manifest ───────────────────────────────────────────────────────────────

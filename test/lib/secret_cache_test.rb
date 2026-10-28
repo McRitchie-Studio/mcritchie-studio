@@ -296,6 +296,18 @@ class SecretCacheTest < Minitest::Test
     end
   end
 
+  def test_unit_adoption_drops_a_legacy_deployer_slot
+    with_home do |root, env, home|
+      legacy = File.join(root, ".agents", "github-tokens.json")
+      FileUtils.mkdir_p(File.dirname(legacy))
+      File.write(legacy, JSON.generate("agent" => {}, "deployer" => { "a" => { "token" => TOKEN } }))
+      SecretCache.adopt_legacy!(legacy, SecretCache::GITHUB_FILE, env: env)
+      adopted = File.read(File.join(home, SecretCache::GITHUB_FILE))
+      assert_includes adopted, "agent"
+      refute_includes adopted, TOKEN, "the deployer slot never reaches the folder"
+    end
+  end
+
   # ── op-item values (none by default) ──────────────────────────────────────
 
   def test_unit_an_op_item_value_is_served_until_its_refresh_window
