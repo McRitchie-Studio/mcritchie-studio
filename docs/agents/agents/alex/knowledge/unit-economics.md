@@ -174,7 +174,7 @@ market constraint.
 least three to one." `i7bLRKwKSms` accepts it **only** where lead generation,
 conversion and delivery are all automated, and puts a mostly-manual service
 business at 12:1 or better. That is a 4x difference in the floor, and it decides
-whether a business is viable. Rex uses the conditional version: check the
+whether a business is viable. Alex uses the conditional version: check the
 automation profile before quoting 3:1 at anyone.
 
 Two smaller tensions worth knowing:
@@ -208,7 +208,7 @@ more than $100 `Mst4hreQYl0`.
 > "whatever you have today believe it or not is likely going to be the best cost
 > per car customer you're ever going to get"
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 - **industries** — run the back-of-napkin version off last year's books: total
   gross profit ÷ customers, and a CAC that is close to zero because everything

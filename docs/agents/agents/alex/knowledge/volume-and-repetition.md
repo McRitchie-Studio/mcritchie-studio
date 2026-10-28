@@ -178,7 +178,7 @@ far less post-production, so the team can ship more of it `JOfsujnXxCg`.
 
 > "So I want you to think in hundreds."
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 - **operator-brand** — this card *is* the prescription. No audience means
   everything is new, so the experimentation exception applies: publish until

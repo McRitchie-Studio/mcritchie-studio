@@ -1,7 +1,7 @@
 # SOP — Launch Warm-up
 <!-- registry: gated rollout of a new app, domain or email list -->
 
-**Owner:** Rex · **Runs:** whenever something new is about to meet the public: a
+**Owner:** Alex (Sales/Marketing; this SOP came with Rex's method on 2026-10-28) · **Runs:** whenever something new is about to meet the public: a
 new app, a new domain for an existing app, or a new or imported email list. It
 runs daily during the ramp, then hands over to
 [`content-sprint`](content-sprint.md).
@@ -24,8 +24,8 @@ Every step carries one tag. The job of this SOP is to shrink the last column.
 | Tag | Meaning |
 |---|---|
 | **AUTOMATED** | A job, rake task or API does it. Named in the step. |
-| **AGENT** | An agent does it on a heartbeat: Rex for gates and offer, Steffon for DNS and infra, Alex for copy. |
-| **ALEX** | Irreducible: spends money, needs a click at a registrar with no API, or an OAuth consent only he can give. |
+| **AGENT** | An agent does it on a heartbeat: Alex for gates, offer and copy, Steffon for DNS and infra. |
+| **OWNER** | Alex McRitchie. Irreducible: spends money, needs a click at a registrar with no API, or an OAuth consent only he can give. |
 
 Where a step says AGENT but names a gap, the gap is in the
 [tooling appendix](#appendix--tooling-to-build). Until it is built, the agent
@@ -53,11 +53,11 @@ spam). The domain earns its own history before mail carries it.
 
 | # | Step | Tag |
 |---|---|---|
-| 0.1 | Buy the domain ([`domain-purchase`](../../steffon/sops/domain-purchase.md)) | **ALEX** — money |
-| 0.2 | **Move the domain to Cloudflare** ([`domain-dns` § Cloudflare DNS](../../steffon/sops/domain-dns.md#cloudflare-dns--pro-and-above)). The agent creates the zone, its records and the `www` redirect by API; Alex McRitchie turns DNSSEC off at the registrar (a scheduled outage of 15 minutes to an hour, up to a day on a .com, in a quiet window, with his OK), then pastes the nameservers Cloudflare assigns. This one paste makes every later DNS step an API call | **AGENT** for the zone · **ALEX** — two Squarespace clicks for the move and a third a day later to publish the DS (`domain-dns` step 6); Squarespace has no API |
+| 0.1 | Buy the domain ([`domain-purchase`](../../steffon/sops/domain-purchase.md)) | **OWNER** — money |
+| 0.2 | **Move the domain to Cloudflare** ([`domain-dns` § Cloudflare DNS](../../steffon/sops/domain-dns.md#cloudflare-dns--pro-and-above)). The agent creates the zone, its records and the `www` redirect by API; Alex McRitchie turns DNSSEC off at the registrar (a scheduled outage of 15 minutes to an hour, up to a day on a .com, in a quiet window, with his OK), then pastes the nameservers Cloudflare assigns. This one paste makes every later DNS step an API call | **AGENT** for the zone · **OWNER** — two Squarespace clicks for the move and a third a day later to publish the DS (`domain-dns` step 6); Squarespace has no API |
 | 0.3 | Write every record through the Cloudflare DNS API (token `cloudflare.studio.provision`, [credential inventory](../../../modules/credential-inventory.md)): app records, SPF, DKIM, and DMARC with an `rua` address (the ZeroBounce DMARC monitor supplies one). Verify each with `dig` from outside | **AGENT** (Steffon) |
-| 0.4 | Search Console: add the property and write its TXT via the Cloudflare API; submit the sitemap | **AGENT**, after a one-time **ALEX** OAuth consent for the Search Console API |
-| 0.5 | Postmaster Tools: add the domain and write its TXT via the Cloudflare API | **AGENT**, after a one-time **ALEX** click to add the domain in Postmaster's UI |
+| 0.4 | Search Console: add the property and write its TXT via the Cloudflare API; submit the sitemap | **AGENT**, after a one-time **OWNER** OAuth consent for the Search Console API |
+| 0.5 | Postmaster Tools: add the domain and write its TXT via the Cloudflare API | **AGENT**, after a one-time **OWNER** click to add the domain in Postmaster's UI |
 | 0.6 | Backlinks from domains that are already trusted: a page on `mcritchie.studio`, the app's social profiles, and one or two community posts | **AGENT** (Alex for the words) |
 | 0.7 | Take a baseline: Google Safe Browsing lookup, DNS blocklists (for example the Spamhaus DBL), and the ZeroBounce blacklist monitor. Record it clean before the first send | **AGENT** |
 | 0.8 | Keep a 301 from the established host to the new one with the path and query kept (Cyvasse: `cyvasse.mcritchie.studio` → `cyvasse.xyz`). Email links use the established host until Phase 3 moves them | **AGENT** (a task on the board) |
@@ -80,7 +80,7 @@ bounced far past Resend's 4% limit
 | 1.2 | Put the tag in `Broadcast::VERIFIED_AUDIENCES` so batches go verified-only by default (`app/models/broadcast.rb#VERIFIED_AUDIENCES`) | **AGENT** (a task on the board) |
 | 1.3 | Verify the most recently active first: `bin/rails "contacts:verify[<limit>,<last_active.csv>]"`, with a `DRY_RUN=1` pass before it. It refuses to submit more than the credit balance, and it records a status on each contact | **AUTOMATED** (ZeroBounce bulk API) |
 | 1.4 | Invalid, abuse, do-not-mail and spam-trap results are unsubscribed as they are recorded (`app/models/contact.rb#UNDELIVERABLE_STATUSES`). Catch-all and unknown wait | **AUTOMATED** |
-| 1.5 | Credits run out → more credits, or cancel the plan when the list is done | **ALEX** — money |
+| 1.5 | Credits run out → more credits, or cancel the plan when the list is done | **OWNER** — money |
 
 **The division:** ZeroBounce ONE is $99 for 10,000 credits, about 1 cent an
 address. It removed 19% of Cyvasse's first 10,000 (16% invalid, 1.5% abuse,
@@ -96,7 +96,7 @@ cleanest.
 
 The ramp protects reputation; the offer earns it. Mail that nobody opens,
 clicks or replies to reads as unwanted to a filter, however clean the list.
-Rex owns what the email asks for. Alex owns every sentence in it.
+Alex owns what the email asks for and every sentence in it: the offer first, then the words.
 
 1. **An event, not an announcement.** "We're back" gives one reason to click,
    once. A fixed-time event (a weekly Cyvasse Night at a set hour; a season
@@ -152,7 +152,7 @@ held.
 
 ### The gate — read before every advance
 
-**AGENT** (Rex, on the heartbeat), **24 hours after the batch's last send**:
+**AGENT** (Alex, on the heartbeat), **24 hours after the batch's last send**:
 complaints lag, and a gate read at hour one is a gate that always passes. Every
 row must be green to advance a stage.
 
@@ -223,7 +223,7 @@ What this SOP would have changed: Phase 1 before the first 101, Phase 0's
 seven-day rule before the sign-in email, and Phase 2's event before the first
 batch.
 
-## The ALEX steps that remain
+## The OWNER steps that remain
 
 1. **Buy the domain**: money, and Squarespace has no purchase API.
 2. **Turn DNSSEC off and point the nameservers at Cloudflare**: two Squarespace

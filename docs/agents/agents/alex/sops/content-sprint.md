@@ -1,7 +1,7 @@
 # SOP — Content Sprint
 <!-- registry: the weekly test-at-volume loop -->
 
-**Owner:** Rex · **Runs:** weekly, per client, once a constraint has been named
+**Owner:** Alex (Sales/Marketing; this SOP came with Rex's method on 2026-10-28) · **Runs:** weekly, per client, once a constraint has been named
 by [`constraint-diagnosis.md`](constraint-diagnosis.md).
 
 A sprint tests **one** thing at volume and reads the result. If you cannot say
@@ -54,15 +54,17 @@ Rules of the batch:
 - Build the whole batch before publishing any of it. Producing daily turns a
   volume test into a stamina test.
 
-## Step 4 — Voice pass: Alex
+## Step 4 — Voice pass
 
-Hand the batch to **Alex**. He owns brand voice and he can veto a line.
-
-The seam, so it does not get relitigated weekly: **Rex sets what the batch is
-testing and how many; Alex sets whether a given sentence is ours.** If volume is
-the constraint, Alex ships at his floor rather than his ceiling — and his floor
-is still a floor, not a suggestion. He will not pass a claim the product cannot
-back, and Rex backs him on that against his own campaign.
+Read the batch again as the voice, not the strategist. Alex holds both seats now
+(Rex folded into him on 2026-10-28), so the seam that used to sit between two
+souls is a second pass by one: **the strategy pass sets what the batch is testing
+and how many; the voice pass sets whether a given sentence is ours, and can veto a
+line.** If volume is the constraint, ship at the voice floor rather than its
+ceiling — and the floor is still a floor, not a suggestion. A claim the product
+cannot back never passes, even against the campaign the strategy pass wrote.
+Nothing in the batch quotes or credits the method's source (see
+[`role.md`](../role.md) § The method and its three rules).
 
 Anything visual goes to **Shannon**. Anything claiming what the product does gets
 a check from **Avi** before it leaves the building.

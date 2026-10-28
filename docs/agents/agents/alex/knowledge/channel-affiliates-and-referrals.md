@@ -337,7 +337,7 @@ brand whose association is already worth something, which he concedes.
 
 **The 1099 is the tell.** The same fact — commission means tax paperwork — is his
 reason *not* to pay in `DaRXece2ItE` and his reason the paperwork is *good* in
-`60_7PU9JDIw`. Same friction, opposite verdict. Rex should quote whichever half
+`60_7PU9JDIw`. Same friction, opposite verdict. Alex should quote whichever half
 matches the client's product, and say that he does too.
 
 ### 2. Reciprocate, or refuse to?
@@ -376,7 +376,7 @@ Three numbers, one launch, and they do not agree.
 A 3x spread — too small to be the speech-recognition dollar-magnitude problem the
 [`README`](README.md) warns about, too large to average. The plausible reading is
 that 10,000 is a mid-launch count and the others are retrospective totals, but
-**that is inference and he never reconciles them.** Rex quotes the shape — *tens
+**that is inference and he never reconciles them.** Alex quotes the shape — *tens
 of thousands, from a standing list, for zero cash* — and never a specific figure.
 
 **The registration number is stable**, for what it is worth: 500,000 registered,
@@ -424,7 +424,7 @@ a benefit and credits it with messaging changes he would never otherwise have ma
 
 > "Referrals everyone promises, no one delivers."
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 - **industries** — the welding shop is the `60_7PU9JDIw` local case almost
   exactly, and the two no-commission plays are the ones to run: find the general

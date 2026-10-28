@@ -13,7 +13,7 @@ already given.
 
 This dossier is therefore **marketing-only** and deliberately carries no
 financials, no counterparties, no terms and no dates from the transaction. If
-Rex needs a number from that side, he asks Alex McRitchie for that number, for
+Alex needs a number from that side, he asks Alex McRitchie for that number, for
 that decision, once — he does not go reading the deal room to do marketing.
 
 ## The business
@@ -58,7 +58,7 @@ are logged anywhere, whether past customers exist as a list, whether the busines
 appears in local search, and whether anyone has ever asked a satisfied customer
 for a referral on purpose.
 
-## Numbers Rex needs (currently unknown)
+## Numbers Alex needs (currently unknown)
 
 | # | Question | Why |
 |---|---|---|
