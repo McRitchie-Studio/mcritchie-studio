@@ -399,6 +399,96 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
                  "every other save declares a kind no handler claims — the signature decides"
   end
 
+  # --- the DevOps card's clocks ride the same stream (task devops-card-goes-live) ---
+  #
+  # The card's landing and QA-green countdowns are estimated server-side; before this
+  # it was read only at page load, so a release that went QA green, started shipping
+  # or shipped while the page sat open kept its stale clock ("+Xm over") until reload.
+
+  # Shipped history so Release::Flow has medians: each release 20m batch, 30m qa,
+  # 10m hold, 10m ship.
+  def seed_shipped_history(count = 3)
+    count.times do |i|
+      start = (i + 1).days.ago
+      Release.create!(branch: "release", state: "shipped", created_at: start,
+                      assembling_started_at: start, assembled_at: start + 50.minutes,
+                      prod_deploy_started_at: start + 60.minutes, shipped_at: start + 70.minutes)
+    end
+  end
+
+  def devops_card_streams(&)
+    capture_turbo_stream_broadcasts("deployments", &).select { |s| s["target"] == "devops-summary-card" }
+  end
+
+  test "[unit] devops_card REPLACES the #devops-summary-card slot with the card partial" do
+    seed_shipped_history
+    Release.open!
+
+    streams = devops_card_streams { DeploymentsBroadcaster.devops_card }
+
+    assert_equal 1, streams.size
+    assert_equal "replace", streams.first["action"]
+    html = streams.first.to_html
+    assert_includes html, %(id="devops-summary-card"), "the replacement keeps the target id, so the next push lands too"
+    assert_includes html, %(data-test="devops-countdown"), "an in-flight release draws the landing clock"
+    assert_includes html, %(data-test="devops-qa-countdown"), "not yet QA green: the QA clock is there"
+    refute_includes html, "<script", "no inline script to need a nonce: the ticker is the delegated module"
+  end
+
+  test "[integration] QA green broadcasts a card replace with the QA clock gone" do
+    seed_shipped_history
+    release = Release.open!
+
+    streams = devops_card_streams { release.assemble! }
+
+    assert_equal 1, streams.size, "QA green (assembled) re-renders the DevOps card once"
+    html = streams.first.to_html
+    assert_includes html, %(data-test="devops-countdown"), "the landing clock stays"
+    refute_includes html, %(data-test="devops-qa-countdown"), "QA is green: the QA clock is gone"
+  end
+
+  test "[integration] each phase change re-renders the card; a non-phase save does not" do
+    seed_shipped_history
+
+    release = nil
+    opened = devops_card_streams { release = Release.open! }
+    assert_equal 1, opened.size, "prepare (a release opens) pushes the card"
+
+    assert_empty devops_card_streams { release.update!(qa_url: "https://qa.example.test") },
+                 "a save that moves no phase boundary leaves the card alone"
+
+    assert_equal 1, devops_card_streams { release.assemble! }.size, "QA green"
+    reopened = devops_card_streams { release.reopen! }
+    assert_includes reopened.sole.to_html, %(data-test="devops-qa-countdown"), "a reopen brings the QA clock back"
+    release.assemble!
+
+    assert_equal 1, devops_card_streams { release.update!(prod_deploy_started_at: Time.current) }.size, "ship start"
+
+    shipped = devops_card_streams { release.ship!(by: "avi") }
+    assert shipped.any?, "shipped pushes the card"
+    refute_includes shipped.last.to_html, %(data-test="devops-countdown"), "nothing in flight: back to the typical release"
+    assert_includes shipped.last.to_html, %(data-test="devops-typical")
+
+    other = Release.open!
+    assert_equal 1, devops_card_streams { other.abandon! }.size, "abandoned (archived) pushes the card"
+  end
+
+  test "[integration] a release's G3 and G4 gate runs re-estimate the card; other gates do not" do
+    seed_shipped_history
+    release = Release.open!
+    run = ->(key) { GateRun.new(subject_type: "release", subject_slug: release.slug, key: key) }
+
+    assert_equal 1, devops_card_streams { DeploymentsBroadcaster.gate_run(run.call("g3_candidate")) }.size
+    assert_equal 1, devops_card_streams { DeploymentsBroadcaster.gate_run(run.call("g4_ship")) }.size
+    assert_empty devops_card_streams { DeploymentsBroadcaster.gate_run(run.call("g2_review")) }
+  end
+
+  test "[unit] devops_card is guarded — a dead cable can't break the release write" do
+    Turbo::StreamsChannel.stub(:broadcast_replace_to, ->(*_a, **_k) { raise Gem::LoadError, "redis not in bundle" }) do
+      assert_nothing_raised { assert_nil DeploymentsBroadcaster.devops_card }
+    end
+  end
+
   test "[integration] Release wires the module broadcast on after_commit" do
     assert Release._commit_callbacks.any? { |c| c.filter == :broadcast_release_modules },
       "Release must broadcast the live release modules after a commit"

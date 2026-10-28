@@ -22,8 +22,11 @@
     The full story — every release as a row, the phase table, WIP by stage, and the
     original six stage averages — opens in the sidebar (tasks/_devops_detail).
 
-    Not a broadcast slot: like the card it replaced, it reads shipped history and a
-    WIP count at render time.
+    A BROADCAST SLOT (#devops-summary-card): DeploymentsBroadcaster.devops_card
+    re-renders it over the "deployments" stream whenever the in-flight release changes
+    phase — prepare (a release opens), QA green (assembled), ship start, shipped,
+    abandoned — so the clocks below are re-estimated live. Its WIP count is read at
+    that render too, so a task move alone does not refresh it.
 
     THE COUNTDOWN. While a release is in flight (estimate, a Release::Flow::Estimate)
     the hero is no longer history but a clock: the time left until that release
@@ -35,9 +38,9 @@
     green (the end of the QA phase) and disappears once QA is green. The line under
     the hero is then the RUNNING AVERAGE (the mean). With
     nothing in flight the card is exactly as it was: the median, "typical release".
-    Like the rest of the card it is read at render: a release that ships or opens
-    while the page sits open shows only on the next load (the card is not in
-    DeploymentsBroadcaster), so a shipped release can read "+Xm over" until then.
+    The estimate is server-side, so a phase change re-renders the card (above) rather
+    than leaving a page-load clock to read "+Xm over"; the ticker is delegated, so
+    the swapped card keeps ticking with nothing to re-arm.
 
     Locals: flow (Release::Flow or nil), estimate (Release::Flow::Estimate or nil),
             wip_count, wip_by_stage %>

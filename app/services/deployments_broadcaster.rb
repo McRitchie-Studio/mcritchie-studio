@@ -166,6 +166,36 @@ class DeploymentsBroadcaster
     end
   end
 
+  # Push the refreshed DEVOPS SUMMARY CARD (tasks/_devops_summary_card) to every
+  # /deployments viewer, so its two clocks — the landing countdown and the QA-green
+  # clock — are re-estimated the moment the in-flight release changes phase, rather
+  # than counting "+Xm over" off a page-load estimate until a reload.
+  #
+  # Its estimate (Release::Flow#estimate) reads only phase boundaries: the release's
+  # created_at, assembled_at, prod_deploy_started_at, shipped_at and its first
+  # g3_candidate / g4_ship gate starts. So its callers are exactly the writes that
+  # move one of those — Release#broadcast_release_modules on a phase-bearing column
+  # (FLOW_COLUMNS there), and .gate_run for a release's g3/g4 run — not every
+  # release save or CI tick. A replace of the stable #devops-summary-card slot,
+  # computed fresh with the controller's own reads; devops_countdown.js is delegated
+  # (it re-reads the page's [data-devops-countdown] spans each tick), so the swapped
+  # card ticks with no re-arming and no inline script. Guarded like every sibling.
+  def self.devops_card
+    Studio::Cable.safe_broadcast do
+      flow = Release::Flow.recent
+      Turbo::StreamsChannel.broadcast_replace_to(
+        STREAM, target: "devops-summary-card",
+        partial: "tasks/devops_summary_card",
+        locals: { flow: flow, estimate: Release::Flow.estimate_for(Release.current, default: flow),
+                  wip_count: Task.wip_count, wip_by_stage: Task.wip_by_stage }
+      )
+    end
+  end
+
+  # The gate keys whose first start is a Release::Flow phase boundary (batch → qa,
+  # hold → ship), so their release-grain runs re-estimate the DevOps card.
+  DEVOPS_CARD_GATE_KEYS = %w[g3_candidate g4_ship].freeze
+
   # A CI check job was upserted (CiCheckJob after_commit) — push the refreshed CI
   # progress bar to the affected task card + the Next Release card so the board ticks
   # up with NO reload. Only the tiny bar SLOT swaps — a MORPH, so the fill width
@@ -246,6 +276,7 @@ class DeploymentsBroadcaster
   def self.gate_run(run)
     if run.subject_type == "release"
       release_modules(fx: "gate_run.#{run.key}")
+      devops_card if DEVOPS_CARD_GATE_KEYS.include?(run.key)
     else
       Studio::Cable.safe_broadcast do
         task = Task.find_by(slug: run.subject_slug)

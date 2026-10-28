@@ -1205,5 +1205,12 @@ class Release < ApplicationRecord
     # sends). A release opening / assembling / shipping re-stamps `merged` across its
     # members, which is what the row's rung counts read.
     DeploymentsBroadcaster.app_ladder
+    # The DevOps card's clocks, re-estimated on a PHASE change only — prepare (create),
+    # QA green (assembled), ship start, shipped, abandoned, or a reopen — never on a
+    # mascot stamp or a metadata write, which cannot move the estimate.
+    DeploymentsBroadcaster.devops_card if previously_new_record? || saved_changes.keys.intersect?(FLOW_COLUMNS)
   end
+
+  # The columns Release::Flow reads a phase boundary or the active singleton from.
+  FLOW_COLUMNS = %w[state assembled_at prod_deploy_started_at shipped_at abandoned_at created_at].freeze
 end
