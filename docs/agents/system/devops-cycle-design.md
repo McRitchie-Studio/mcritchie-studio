@@ -1113,8 +1113,11 @@ the whole deploy instead of an empty dashed ship slot until `ship!` lands (the
 2026-06-25 incident). Append-only + idempotent (`ship!` supersedes it; a
 partial-ship abort leaves it open — correct, Steffon is still shipping — and a re-run
 reuses it). **Producer-first:** before any app deploy, it walks every
-**gem member** in order and publishes its FINAL version (`prepare` published
-only a release candidate): the gem's build from the frozen SHA (studio-engine:
+**gem member** in order and publishes its FINAL version. (Since 2026-10-28 the
+default flow publishes the final at `prepare`, so the ship finds it live and re-locks
+nothing: [`gem-release-flow.md`](gem-release-flow.md). What follows is the candidate
+flow, `RELEASE_GEM_FLOW=candidate`, in which `prepare` published only a release
+candidate): the gem's build from the frozen SHA (studio-engine:
 `bin/release-check --build`; otherwise `gem build <gemspec>`), a file-by-file
 comparison with the candidate QA ran, `gem push`, a `v<version>` tag in the gem
 repo, and a checksum read of the served `.gem`. An already-live final (a re-run)

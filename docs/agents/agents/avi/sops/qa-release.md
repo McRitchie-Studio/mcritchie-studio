@@ -152,14 +152,21 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    `origin/release`, merge `origin/main` into it, push to `release`, re-run `bin/release
    prepare`. **Do not `reset` `release` to "clean up" an aborted sweep.** A landed
    merge-forward is carried onto `accepted` the same way as the batch PR's merge commit.
-4d. **Allocate gem versions, publish a release candidate of each gem member, lock
-   consumers to it — BEFORE the gate and QA** (producer-first).
+4d. **Allocate gem versions, publish the final of each gem member, lock consumers to
+   it — BEFORE the gate and QA** (producer-first).
 
-   **`prepare` never pushes a final gem version.** A RubyGems version can never be
-   re-pushed, so prepare publishes the prerelease `x.y.z.rcN` and
-   `bin/release ship` publishes `x.y.z` from the same tree once QA is green and
-   production is granted. A red QA strands only a candidate: the allocated `x.y.z`
-   stays free, and the next sweep publishes the next candidate of it.
+   **`prepare` publishes the final `x.y.z` and tags it `v<x.y.z>`** (decided
+   2026-10-28, [`gem-release-flow.md`](../../../system/gem-release-flow.md)). The
+   consumers' lock commits name `x.y.z`, so the pre-QA gate, QA and production all read
+   one tree and the ship re-locks nothing. A red QA that leaves the gem's tree alone
+   (an app member ejected) reuses the live `x.y.z` on the re-run. A red QA that changes
+   the gem burns `x.y.z`: leave it published, never yank it, and the next sweep's
+   allocation, reading commits past `v<x.y.z>`, takes the next patch. A gem member
+   ejected after its final published leaves consumers locked to it; prepare and the
+   ship refuse that tree until the gem rides again or the lock goes back to the
+   version on the gem's `main`. With `RELEASE_GEM_FLOW=candidate` (a rollback lever
+   for one release) the older flow below runs instead: prepare publishes the
+   prerelease `x.y.z.rcN` and `bin/release ship` publishes `x.y.z`.
 
    **Each candidate is gated on GitHub's CLEAN-ENV verdict for the exact tip it is
    built from**, and fails closed. The gem's own `bin/release-check --build` runs first

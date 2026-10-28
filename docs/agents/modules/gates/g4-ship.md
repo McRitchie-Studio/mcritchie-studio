@@ -284,6 +284,13 @@ every run that ships it.
 
 ### The final gem publish and the re-lock read
 
+Under the default flow `prepare` has already published `x.y.z` and every consumer
+locks it ([`gem-release-flow.md`](../../system/gem-release-flow.md)). Acts 1 to 3 skip
+it as live, act 5 finds nothing to re-lock, act 6 reads nothing, and the SHAs that
+deploy are the ones QA gated. Before any deploy the ship also refuses a tree that locks
+a published version past a gem's `main` that this release does not ship. The table
+below is the full sequence a candidate release (`RELEASE_GEM_FLOW=candidate`) runs.
+
 `prepare` publishes a gem's release candidate and locks consumers to it; the ship
 publishes the final. The acts, in order, after ship authority:
 

@@ -611,6 +611,11 @@ How a gem rides a release:
    and the QA deploy read that post-bump SHA, so QA exercises a published
    artifact of the tree. A RubyGems push can never be re-pushed, which is why
    prepare never pushes `x.y.z`: a red QA strands a prerelease, not a version.
+   **The default flow publishes the final here instead**
+   ([`gem-release-flow.md`](../system/gem-release-flow.md)): phase 2 pushes `x.y.z`,
+   tags `v<x.y.z>`, and the consumer bump locks it, so step 4 below finds the gem live
+   and nothing to re-lock. The candidate wording here and in step 4 describes
+   `RELEASE_GEM_FLOW=candidate`.
 4. **Run Deployment publishes the final, re-locks, and reads CI again.**
    `bin/release ship` orders members gems-before-apps (honoring
    `dependencies`) and, before any app deploy: builds `x.y.z` from the gem's

@@ -6,6 +6,30 @@ the final gem version, consumers lock that final before the pre-QA gate, and
 re-locks a gem's consumers or waits for fresh CI on the re-lock commits. On the one
 release measured, that removes about 31 of the ship's 47 minutes.
 
+## Prior art: this repo published the final at prepare once before
+
+Final-at-prepare is not new here. It was the flow until the candidate flow replaced
+it (`test/lib/release_ship_final_gem_test.rb`, "the old flow published the final at
+prepare"), and the failure it is known for happened: on 2026-08-15 prepare published
+studio-engine 0.48.0, committed the consumer lock bump at once, and CI's
+`bundle install` ran before RubyGems served the version. The pre-QA gate went red
+twice, and 0.48.0 was stranded, published and never shipped
+(`test/lib/release_cli_gem_await_test.rb`). That is why qa-release said "prepare never
+pushes a final gem version".
+
+Two things the old flow lacked are now in place, and they are what make B safe:
+
+1. **The propagation wait.** `await_published_gems!` holds every lock bump until
+   RubyGems' compact index serves the version and it installs locally, and CI runs
+   `.github/scripts/await-gem-propagation.sh` before `bundle install`. The 0.48.0
+   cause cannot recur, and the wait is already paid at prepare under A, so B adds
+   none.
+2. **Allocation and the `v*` tag.** In August a stranded version needed a person to
+   bump the version file by hand (qa-release's STRANDED GEM WORK row). Today phase 0
+   allocates the version from the last `v*` tag and RubyGems. Prepare under B tags
+   `v<x.y.z>` at the tree it published, so the next prepare either reuses it (same
+   tree) or allocates the next patch (the tree moved). Nobody types a version.
+
 ## The three flows
 
 | | A: today until this change | B: final at prepare (chosen) | C: hybrid, credit the re-lock |
@@ -113,14 +137,25 @@ is the same tree `accepted` already locks, so it adds no new exposure.
 - `bin/release ship`: unchanged code. With `X` live and every consumer locking it,
   `ship_gem` skips the push, `repin_consumers` finds nothing to re-lock, and the
   re-lock gate gates nothing. A release prepared under A still ships under A.
-- Release status and `Release::Flow` read actuals (shipped releases' timestamps), not
-  an estimate that assumes the re-lock, so neither needed a change; the ship phase on
-  `/deployments` shortens as releases ship under B.
+- Where the shorter ship shows: no surface carried a gem-release estimate that
+  assumed the re-lock. `bin/release status` prints the ladder verdict and program
+  drift only. The board's release summary (`app/views/tasks/_release_summary.html.erb`)
+  shows the gem artifact, which is now the final from QA onward. `Release::Flow` and
+  `bin/ship-clock` read actuals from shipped releases, so their Ship phase shortens as
+  releases ship under B. The "about 12 minutes" in `building-sop.md` is a task submit,
+  not a release, and is unchanged. The ship's printed steps (`bin/release prepare`'s
+  dry run and step lines) now name the final flow.
+- Unchanged in the ship: the producer-lock bump and the cardless-consumer re-lock
+  (`relock_cardless_consumers`) still run after the deploy, at the final, as before.
+  They are best-effort and do not hold production, so moving them earlier saves no
+  ship time.
 
 ## Measuring it
 
 The acceptance asks for a before-and-after on a real or rehearsed release. The
-"before" is the table above. The "after" is the first gem release shipped under B:
+"before" is the table above, read from `rel-20261028-4dcb39` (the only gem release
+measured). No release has shipped under B yet, so the "after" is an estimate from the
+same release with the gem segment removed, about 16 minutes against 47. The "after" is the first gem release shipped under B:
 read its ship's start from the log and its hub deploy dispatch from
 `gh run list -R McRitchie-Studio/mcritchie-studio --workflow prod-deploy.yml`. The
 expected gap is about one minute (gate read and authority), against 32 today.
