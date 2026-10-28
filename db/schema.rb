@@ -842,7 +842,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_200000) do
     t.integer "unclassified_count", default: 0, null: false
     t.datetime "updated_at", null: false
     t.index ["entity", "month"], name: "index_book_closes_on_entity_and_month", unique: true
-    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying, 'final'::character varying]::text[])", name: "book_closes_status_known"
+    t.check_constraint "status::text = ANY (ARRAY['draft'::character varying::text, 'final'::character varying::text])", name: "book_closes_status_known"
   end
 
   create_table "book_entries", force: :cascade do |t|
