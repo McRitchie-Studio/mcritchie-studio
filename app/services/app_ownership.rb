@@ -119,7 +119,9 @@ module AppOwnership
     if apps.one?
       links << Link.new(label: apps.first.name, href: routes.application_path(apps.first.slug), emoji: apps.first.emoji.presence || "📱", kind: "app")
       links << Link.new(label: "Pipeline", href: routes.pipeline_application_path(apps.first.slug), emoji: "🛠️", kind: "pipeline")
-    else
+    elsif !admin?(user)
+      # An admin's sidebar already carries Applications (config/navigation.yml), so
+      # an admin who owns several apps does not get a second, identical link.
       links << Link.new(label: "Applications", href: routes.applications_path, emoji: "📱", kind: "apps")
     end
     if owned_ctos.one?

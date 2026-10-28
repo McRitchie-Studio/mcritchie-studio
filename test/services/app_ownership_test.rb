@@ -68,6 +68,17 @@ class AppOwnershipTest < ActiveSupport::TestCase
     assert_equal [ "McRitchie Studio", "Pipeline", "Avi" ], AppOwnership.sidebar_links(alex).map(&:label)
   end
 
+  test "[unit] an admin who owns several apps gets no owner Applications link: the registry's sidebar entry carries it" do
+    alex = users(:alex)
+    alex.save!
+    own!(alex, apps(:mcritchie_studio))
+    own!(alex, apps(:turf_monster))
+
+    links = AppOwnership.sidebar_links(alex)
+    assert_not_includes links.map(&:href), "/applications"
+    assert_includes links.map(&:label), "Agents"
+  end
+
   test "[unit] report channels: the CTO's own bot's postable set when its token is set, else the shared bot's" do
     guild = "940000000000000001"
     both = DiscordChannel.create!(guild_external_id: guild, external_id: "1", name: "both", kind: "text", postable: true, postable_souls: [ "turf_monster" ])

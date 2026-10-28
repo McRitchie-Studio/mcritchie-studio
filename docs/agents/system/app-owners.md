@@ -72,10 +72,10 @@ A CTO's name is its domain's `reply_name` in `config/agent_domains.yml`
 
 | Path | What it shows |
 |------|---------------|
-| `/applications` | The visible apps, each with its CTO |
+| `/applications` | The visible apps in two tables (`ApplicationsWatchList`): **Live** on the left (a live `config/apps.yml` status and a production URL; health lazy-loaded per row from the daily report, Workspace mail on the app's own domain, warnings for a delinquent account, a missing backup or a blocked task) and **Pending launch** on the right (every other app but libraries and archived ones, each with why and its open tasks by stage). Each app shows its emoji circle with its CTO's avatar on top (the emoji alone without a CTO), and clicking it opens the app's pipeline, its todos and steps. An owner sees the same split over their own apps, with task counts but no titles. An admin reaches it from the sidebar's Studio section (config/navigation.yml, audience `signed_in`); an owner from their own sidebar links |
 | `/applications/:slug` | Name, emoji and colour, health, the CTO card, and agent usage (the meter, this month's and today's totals); owners listed for admins, and for admins the tier and cap-lift form |
 | `/applications/:slug/pipeline` | The app's tasks by lane, read-only and sanitized for an owner; the building lanes in use. Detail: [`client-pipeline.md`](client-pipeline.md) |
-| `/applications/:slug/health` | The lazy health frame, cached 15 minutes per app |
+| `/applications/:slug/health` | The lazy health frame, cached 15 minutes per app; `?compact=1` is the index's one-badge cell |
 | `/applications/:slug/usage` | The usage meter as JSON |
 | `/applications/:slug/usage_cap` | `PATCH`, admin only (the wall refuses anyone else): the app's package tier and the cap lift |
 | `/applications/:slug/chat` | `GET` and `POST`: the viewer's own live chat with the app's CTO, with typing, the answer streamed in, and the usage meter in tokens. Detail: [`agent-message-loop.md`](agent-message-loop.md#web-chat-the-ctos-answer-on-mcritchie-studio-phase-7-step-3) |

@@ -1,0 +1,6 @@
+<%# locals: (app:, cto:) %>
+<%# An app's CTO as a small link: its settings page for one of our souls, the app's chat for a client CTO. %>
+<% if cto %>
+  <%= link_to "CTO: #{cto.display_name}", cto.settings? ? settings_agent_path(cto.slug) : chat_application_path(app.slug),
+              class: "text-xs text-primary hover:underline", data: { test: "application-cto-link" } %>
+<% end %>

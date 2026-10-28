@@ -130,12 +130,22 @@ class AdminWallPublicSetTest < ActionDispatch::IntegrationTest
   end
 
   test "[unit] every registry page marked admin is behind the wall" do
-    admin_pages = Navigation.pages.values.reject(&:public?)
+    admin_pages = Navigation.pages.values.select { |page| page.audience == "admin" }
     assert admin_pages.size > 40
 
     admin_pages.each do |page|
       assert_not AdminWall.public?(page.controller, page.action), "#{page.key} (#{page.action_id}) is an admin page"
       assert_not AdminWall.signed_in?(page.controller, page.action), "#{page.key} (#{page.action_id}) must need an admin"
+    end
+  end
+
+  test "[unit] every registry page marked signed_in is one the wall opens to a signed-in user, never a visitor" do
+    pages = Navigation.pages.values.select { |page| page.audience == "signed_in" }
+    assert_includes pages.map(&:key), "applications"
+
+    pages.each do |page|
+      assert AdminWall.signed_in?(page.controller, page.action), "#{page.key} (#{page.action_id}) must be in AdminWall::SIGNED_IN"
+      assert_not AdminWall.public?(page.controller, page.action), "#{page.key} (#{page.action_id}) is not public"
     end
   end
 

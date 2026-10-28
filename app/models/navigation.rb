@@ -3,7 +3,7 @@
 # section sub-navs (components/_sub_nav) and the admin wall (AdminWall).
 #
 # A registry that does not validate does not load: an audience other than
-# `public` or `admin`, a placement naming an unknown page, or one controller
+# `public`, `admin` or `signed_in`, a placement naming an unknown page, or one controller
 # action declared twice raises Navigation::Invalid. Nothing here reads the route
 # table, because the wall builds its list while the app is still loading;
 # test/models/navigation_test.rb holds each page equal to its route.
@@ -11,7 +11,9 @@ class Navigation
   class Invalid < StandardError; end
 
   PATH = Rails.root.join("config/navigation.yml")
-  AUDIENCES = %w[public admin].freeze
+  # signed_in: a page AdminWall::SIGNED_IN lets any signed-in user open (its
+  # controller decides who sees what), whose NAV entry is still an admin's.
+  AUDIENCES = %w[public admin signed_in].freeze
   GROUPS = %w[admin general].freeze
   STYLES = %w[links buttons chips].freeze
 
@@ -117,7 +119,7 @@ class Navigation
       controller, action = attrs["page"].to_s.split("#", 2)
       raise Invalid, "#{key}: page must be controller#action" if controller.blank? || action.blank?
       unless AUDIENCES.include?(attrs["audience"])
-        raise Invalid, "#{key}: audience must be public or admin, got #{attrs['audience'].inspect}"
+        raise Invalid, "#{key}: audience must be public, admin or signed_in, got #{attrs['audience'].inspect}"
       end
       raise Invalid, "#{key}: a label is required" if attrs["label"].blank?
 
