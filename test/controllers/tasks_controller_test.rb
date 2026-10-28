@@ -812,6 +812,42 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "#last-release", { text: /#{Regexp.escape(active.slug)}/, count: 0 }
   end
 
+  # THE DEVOPS COUNTDOWN (task devops-card-counts-down-to-ship): an assembling release
+  # renders the clock with its ETA stamp; with none in flight the median stands.
+  test "[integration] deployments counts the DevOps card down while a release is assembling" do
+    Release.delete_all
+    3.times do |i|
+      done = Release.open!(branch: "release/flow-#{i}")
+      done.update_columns(created_at: (3 - i).hours.ago - 40.minutes)
+      done.ship!
+      done.update_columns(shipped_at: (3 - i).hours.ago)
+    end
+
+    get deployments_path
+    assert_response :success
+    assert_select "[data-test='devops-countdown']", 0
+    assert_select "[data-test='devops-typical']", 1
+
+    active = Release.open!(branch: "release/flow-active")
+    get deployments_path
+    assert_response :success
+    assert_select "#devops-summary-card [data-test='devops-countdown'][data-phase='batch']" do
+      assert_select "[data-test='devops-eta'][data-devops-countdown]" do |(hero)|
+        eta = Time.iso8601(hero["data-deadline"])
+        assert_in_delta active.created_at + 40.minutes, eta, 5.seconds, "batch-only history: due one median after it opened"
+      end
+      assert_select "[data-test='devops-landing']", text: /lands ~\d{1,2}:\d{2} (AM|PM) MT/
+    end
+    assert_select "#devops-summary-card [data-test='devops-qa-countdown'] [data-test='devops-qa-eta'][data-deadline]", 1,
+                  "a release still in Batch has a QA clock"
+    assert_select "[data-test='devops-typical']", 0
+
+    active.update!(assembled_at: Time.current)
+    get deployments_path
+    assert_select "#devops-summary-card [data-test='devops-countdown'][data-phase='hold']", 1
+    assert_select "[data-test='devops-qa-countdown']", 0, "QA is green: the QA clock is gone"
+  end
+
   # ONE ROW OF FOUR SUMMARY CARDS, each opening a sidebar that holds the full card it
   # stands for. The full cards keep their ids — #current-release, #last-release,
   # #heartbeats-card, #release-duration-card, #app-ladder-detail — because every

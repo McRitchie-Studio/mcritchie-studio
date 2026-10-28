@@ -1136,6 +1136,33 @@ kit's saved choices; every other app reads Not applied until it is rolled out. T
 [`brand-kit-rollout`](../agents/agents/alex/sops/brand-kit-rollout.md). Nothing polls an app's `kit.json` yet;
 the SOP reads it by hand.
 
+### Which brands have a Google kit
+
+Task marketing-kit-on-logos (Alex McRitchie 2026-10-28). `BrandMarketingKit` (table `brand_marketing_kits`) records
+a brand's Google marketing kit, the Drive folder `bin/marketing-kit publish` builds (Alex's
+[`marketing-kit`](../agents/agents/alex/sops/marketing-kit.md) SOP), the same way `BrandKitApp` records an app. One
+row per brand; `brand` is the brand key, not a foreign key. `drive_url` is the kit's root folder (only a
+`https://drive.google.com/` link is accepted), `owner` the Google account that owns it (`team@<domain>`, the spec's `drive.subject`),
+`published_at` and `published_by` the last publish, and `published_saved_at` the kit `saved_at` it carried.
+`BrandMarketingKit#status`:
+
+| Status | When |
+|--------|------|
+| **Up to date** | the published version (`published_saved_at`, else `published_at`) is at or after the kit's `saved_at`, to the second; also a brand whose logos were never saved |
+| **Kit changed** | the brand's logos were saved after the last publish |
+| **No Google kit** | the brand has no row |
+
+The /logos brand column shows it on every brand, under the app lines: the Google Drive mark, the owner, the status
+and an **Open** link to the folder. Only the
+logos are watched: the kit's colours, words and photos live in its private spec, which the hub never sees. A real
+publish of a spec with a `brand:` key prints the command; run it on the hub's production database:
+
+```bash
+bin/rails logos:marketing_kit BRAND=<brand> URL=<drive folder url> [OWNER=<team@domain>] [AT=<time>] [BY=<who>] [SAVED_AT=<time>]
+```
+
+It creates the row if needed. Nothing is seeded: a kit's folder id is client data, and this repo is public.
+
 **Access.** Every route is behind the admin wall, like the rest of `/logos`;
 it is not public (opening it to the world is Alex McRitchie's call). A build fetch needs
 an admin's signed-in hub session cookie (sign in with a magic link, keep the

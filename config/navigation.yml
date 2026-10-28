@@ -9,7 +9,9 @@
 #             page      controller#action the route serves. The wall reads this,
 #                       so it is spelled out; test/models/navigation_test.rb holds
 #                       it equal to the route table.
-#             audience  public (any visitor) or admin. Nothing else loads. A page
+#             audience  public (any visitor) or admin. Nothing else loads, but
+#                       signed_in: a page AdminWall::SIGNED_IN opens to any
+#                       signed-in user, whose nav entry is an admin's. A page
 #                       that is not listed here is admin-only: the wall is
 #                       default-deny, and this file can only open what it names.
 #             args      positional arguments for the route helper.
@@ -82,6 +84,9 @@ pages:
   # Two dashboards, two names: /dashboard is the studio overview, /admin/dashboard
   # is the site's users and request logs.
   dashboard:      { page: "dashboard#index",      audience: admin, label: Studio dashboard, emoji: "📊", hover_emoji: "📈", desc: Overview + activity }
+  # Owners reach /applications too (AdminWall::SIGNED_IN); their own sidebar link
+  # is AppOwnership.sidebar_links, so this entry shows to an admin only.
+  applications:   { page: "applications#index",   audience: signed_in, label: Applications, emoji: "📱", hover_emoji: "🚀", desc: Live apps + pending launch }
   agents:         { page: "agents#index",         audience: admin, label: Agents, emoji: "🦞", hover_emoji: "🤝", desc: "Agents and pending setups (Discord bots and the like)" }
   builders:       { page: "builders#index",       audience: admin, label: Builders, emoji: "🏗️", hover_emoji: "🚀", desc: Builder roster + commit pace }
   tasks:          { page: "tasks#index",          audience: admin, label: Tasks, emoji: "✅", hover_emoji: "🚦", desc: Task board }
@@ -160,7 +165,7 @@ sidebar:
   # The recast pipeline: every generated version of every source video.
   - { title: Video,   group: admin, pages: [alt_videos] }
   # Studio and Directory hold admin pages only, so a visitor never sees them.
-  - { title: Studio,    group: general, pages: [dashboard, agents, builders, tasks, news_index, contents, model_pipeline, body_archetypes, videos] }
+  - { title: Studio,    group: general, pages: [dashboard, applications, agents, builders, tasks, news_index, contents, model_pipeline, body_archetypes, videos] }
   - { title: NFL,       group: general, pages: [nfl_hub, games_season] }
   - { title: Directory, group: general, pages: [teams, people, docs] }
   # Public on purpose: the App Builder is the funnel's front door and the packages

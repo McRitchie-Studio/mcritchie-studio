@@ -1,0 +1,10 @@
+<%# locals: (app:, cto:) %>
+<%# An app's mark on /applications: its emoji circle (applications/_app_badge) with its CTO's avatar (applications/_cto_avatar) overlapping it, agent on top; the emoji circle alone for an app with no CTO. %>
+<span class="flex items-center shrink-0" data-test="app-avatar-pair" data-agent="<%= cto ? "yes" : "no" %>">
+  <%= render "applications/app_badge", app: app %>
+  <% if cto %>
+    <span class="-ml-5 relative z-10 rounded-full ring-2 ring-surface" data-test="app-avatar-agent" title="<%= cto.display_name %>">
+      <%= render "applications/cto_avatar", cto: cto, size: "sm" %>
+    </span>
+  <% end %>
+</span>
