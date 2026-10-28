@@ -98,6 +98,23 @@ class MergeRexSoulIntoAlexMigrationTest < ActiveSupport::TestCase
                  "a period alex never used simply moves"
   end
 
+  # Two usage rows may share a period when the model is NULL (NULLs are distinct
+  # under the unique index). Every rex counter lands once, on one alex row.
+  test "null-model usages are summed once, onto one alex row" do
+    day = Date.current - 5
+    ins("usages", agent_slug: "rex", period_date: day, period_type: "daily", model: nil, api_calls: 3)
+    ins("usages", agent_slug: "rex", period_date: day, period_type: "daily", model: nil, api_calls: 4)
+    first = ins("usages", agent_slug: "alex", period_date: day, period_type: "daily", model: nil, api_calls: 10)
+    second = ins("usages", agent_slug: "alex", period_date: day, period_type: "daily", model: nil, api_calls: 20)
+
+    migrate(:up)
+
+    rows = M.shim("usages").where(period_date: day, period_type: "daily", model: nil)
+    assert_equal 0, rows.where(agent_slug: "rex").count
+    assert_equal 37, rows.sum(:api_calls), "every call counted exactly once"
+    assert_equal [17, 20], [M.shim("usages").find(first).api_calls, M.shim("usages").find(second).api_calls]
+  end
+
   test "lists that named both seats keep one alex, in place" do
     migrate(:up)
 

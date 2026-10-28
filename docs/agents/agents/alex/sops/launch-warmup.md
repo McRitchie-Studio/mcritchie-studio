@@ -1,7 +1,7 @@
 # SOP — Launch Warm-up
 <!-- registry: gated rollout of a new app, domain or email list -->
 
-**Owner:** Alex (Sales/Marketing; this SOP came with Rex's method on 2026-10-28) · **Runs:** whenever something new is about to meet the public: a
+**Owner:** Alex (Sales/Marketing) · **Runs:** whenever something new is about to meet the public: a
 new app, a new domain for an existing app, or a new or imported email list. It
 runs daily during the ramp, then hands over to
 [`content-sprint`](content-sprint.md).

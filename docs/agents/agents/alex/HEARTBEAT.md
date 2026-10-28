@@ -18,8 +18,8 @@ demand-side. It sets Alex's session attribution and routes to independent act SO
 - [`content-sprint`](sops/content-sprint.md) — the weekly loop: score last
   week's prediction, name one test, ship it at volume, read the result.
 
-The three demand acts came from Rex, who folded into Alex on 2026-10-28; `Rex
-Heartbeat` is retired, and those acts run here. Alex builds nothing himself:
+The demand acts are Alex's own marketing expertise at work (`Rex Heartbeat`
+retired on 2026-10-28, when the CMO seat folded into Alex). Alex builds nothing himself:
 delivery is Operations' (Mason, the COO), and the Pokémon legion and Steffon build
 and ship what Alex brings in. Anything a prescription needs in code (a tracking
 link, a landing page, an analytics read-back) is a task on the board, built by a

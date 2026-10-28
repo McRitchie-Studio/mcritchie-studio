@@ -1,7 +1,7 @@
 # SOP — Constraint Diagnosis
 <!-- registry: find the one thing limiting demand -->
 
-**Owner:** Alex (Sales/Marketing; this SOP came with Rex's method on 2026-10-28) · **Runs:** at the start of every engagement, and any time someone
+**Owner:** Alex (Sales/Marketing) · **Runs:** at the start of every engagement, and any time someone
 asks "what should we do about marketing?"
 
 Run it start to finish from this file.
@@ -15,7 +15,7 @@ said "the first row that trips is the constraint; do not continue down the
 table." That produced three distinct failures:
 
 1. **Capacity tripped on inference.** The corpus states it as a question you ASK
-   the owner. v1 let the advisor (then Rex) trip it on his own guess, stop, and never reach the real
+   the owner. v1 let the diagnoser trip it on his own guess, stop, and never reach the real
    answer.
 2. **The table could not express "underpriced."** Every row detected a *failure*
    signal. Underpricing emits the opposite — everything sells — so an underpriced
@@ -148,7 +148,7 @@ work.
 ## Step 7 — Read the result against the prediction
 
 Did the number move? By how much? Was the prediction high, low, or right — **say
-which.** An advisor with no wrong predictions on the board is not measuring.
+which.** A marketer with no wrong predictions on the board is not measuring.
 
 Then run this SOP again. It is a loop, not an onboarding.
 
@@ -159,6 +159,6 @@ Then run this SOP again. It is a loop, not an onboarding.
 Before a card justifies a decision, **quote the line being relied on.** If the
 quote does not say what is needed, the card does not support the decision.
 
-In eval round one Rex (the seat this method came from) cited two cards to support the *opposite* of what they say,
+In eval round one the diagnosis cited two cards to support the *opposite* of what they say,
 both inside the paragraph carrying his conclusion. A citation that is never
 opened is decoration, and decoration is how a wrong answer acquires authority.

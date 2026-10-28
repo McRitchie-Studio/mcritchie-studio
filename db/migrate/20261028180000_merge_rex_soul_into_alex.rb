@@ -257,17 +257,22 @@ class MergeRexSoulIntoAlex < ActiveRecord::Migration[8.1]
             "(SELECT 1 FROM skill_assignments b WHERE b.agent_slug = #{quote(TO)} AND b.skill_slug = a.skill_slug)")
   end
 
-  # A rex usage row for a period alex also used: the seat's usage is the sum.
+  # A rex usage row for a period alex also used: the seat's usage is the sum. The
+  # rex rows are summed per key first and land on ONE alex row (the lowest id), so
+  # a NULL model, which the unique index lets repeat, is never counted twice.
   def settle_held_usages
     return unless connection.table_exists?(:usages)
 
     counters = USAGE_COUNTERS.select { |col| connection.column_exists?(:usages, col) }
-    match = "b.agent_slug = #{quote(FROM)} AND b.period_date = a.period_date AND " \
-            "b.period_type = a.period_type AND b.model IS NOT DISTINCT FROM a.model"
     if counters.any?
-      sets = counters.map { |col| "#{col} = COALESCE(a.#{col}, 0) + COALESCE(b.#{col}, 0)" }.join(", ")
-      execute("UPDATE usages a SET #{sets}, updated_at = NOW() FROM usages b " \
-              "WHERE a.agent_slug = #{quote(TO)} AND #{match}")
+      sums = counters.map { |col| "SUM(COALESCE(#{col}, 0)) AS #{col}" }.join(", ")
+      sets = counters.map { |col| "#{col} = COALESCE(a.#{col}, 0) + s.#{col}" }.join(", ")
+      execute("UPDATE usages a SET #{sets}, updated_at = NOW() FROM " \
+              "(SELECT period_date, period_type, model, #{sums} FROM usages WHERE agent_slug = #{quote(FROM)} " \
+              "GROUP BY period_date, period_type, model) s " \
+              "WHERE a.id = (SELECT MIN(c.id) FROM usages c WHERE c.agent_slug = #{quote(TO)} " \
+              "AND c.period_date = s.period_date AND c.period_type = s.period_type " \
+              "AND c.model IS NOT DISTINCT FROM s.model)")
     end
     execute("DELETE FROM usages b WHERE b.agent_slug = #{quote(FROM)} AND EXISTS " \
             "(SELECT 1 FROM usages a WHERE a.agent_slug = #{quote(TO)} AND a.period_date = b.period_date " \
