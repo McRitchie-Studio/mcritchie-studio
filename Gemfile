@@ -44,12 +44,6 @@ gem "omniauth-google-oauth2"
 gem "google-apis-drive_v3", "~> 0.87"
 gem "google-apis-gmail_v1", "~> 0.53"
 gem "googleauth", "~> 1.17"
-
-# Bookkeeping (Books::, task studio-books-month-close): pdf-reader pulls the text
-# out of bank statement PDFs on a dyno, where there is no poppler; caxlsx writes
-# the month-close workbook that Drive converts into a native Sheet.
-gem "pdf-reader", "~> 2.15"
-gem "caxlsx", "~> 4.2"
 gem "omniauth-rails_csrf_protection"
 
 # Rate limiting (prelaunch audit H6 — SSO hub brute-force prevention)

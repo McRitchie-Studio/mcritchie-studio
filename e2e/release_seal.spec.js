@@ -22,9 +22,10 @@ test("the Last Release card shows the production smoke-seal badge", async ({ pag
   // The seal sits left of the consolidated state badge in the same top-right row.
   const state = page.locator("#last-release [data-test='release-state-badge']");
   await expect(state).toBeVisible();
-  const seal = await badge.boundingBox();
-  const shipped = await state.boundingBox();
-  expect(seal.x).toBeLessThan(shipped.x);
+  // Both boxes from one layout (one evaluate), so no frame can fall between the two reads.
+  const [seal, shipped] = await page.locator("#last-release").evaluate((el) =>
+    ["release-smoke-seal-badge", "release-state-badge"].map((t) => el.querySelector(`[data-test='${t}']`).getBoundingClientRect().x));
+  expect(seal).toBeLessThan(shipped);
 
   // The tooltip carries the full verdict line for an operator hover.
   await expect(badge).toHaveAttribute("title", /Production smoke seal: passed/);
