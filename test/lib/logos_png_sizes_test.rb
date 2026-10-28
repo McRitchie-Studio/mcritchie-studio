@@ -22,33 +22,23 @@ class LogosPngSizesTest < Minitest::Test
     assert_raises(ArgumentError) { PngSizes.natural(%(<svg viewBox="0 0 0 10"/>)) }
   end
 
-  # Alex McRitchie, 2026-10-14 22:35: an icon downloads in its true aspect by default, and as a padded 1:1 square on request.
+  # Alex McRitchie, 2026-10-14 22:35: an icon downloads in its true aspect by default. A padded square is the card's
+  # Custom size, N × N without Keep aspect ratio (logo_download.js customSize), since task brand-page-split-layout.
   def test_the_icon_presets_set_the_long_side_and_keep_the_true_aspect_by_default
     presets = PngSizes.presets(:icon, *ICON)
     assert_equal [16, 32, 48, 64, 180, 192, 256, 512, 1024], presets.map { |preset| preset[:width] }, "the chest is wider than tall"
     assert_equal [512, 416], presets.find { |preset| preset[:key] == "512" }.values_at(:width, :height), "512 × 538.14 / 662.45 = 415.9"
     assert(presets.all? { |preset| preset[:fit] == "fill" }, "no padding")
     assert_equal "512 × 416", presets.find { |preset| preset[:key] == "512" }[:label]
+    assert_equal "Apple touch icon", presets.find { |preset| preset[:key] == "180" }[:use]
     tall = PngSizes.presets(:icon, 425.06, 481.0)
     assert_equal [452, 512], tall.find { |preset| preset[:key] == "512" }.values_at(:width, :height), "a tall icon: the height is the long side"
-  end
-
-  def test_the_square_icon_presets_pad_to_n_by_n_and_name_what_they_serve
-    presets = PngSizes.presets(:icon, *ICON, square: true)
-    assert_equal [16, 32, 48, 64, 180, 192, 256, 512, 1024], presets.map { |preset| preset[:width] }
-    assert(presets.all? { |preset| preset[:width] == preset[:height] && preset[:fit] == "contain" }, "the icon fitted inside a square")
-    assert_equal "Apple touch icon", presets.find { |preset| preset[:key] == "180" }[:use]
-    assert_equal "Android and PWA icon", presets.find { |preset| preset[:key] == "192" }[:use]
   end
 
   def test_an_icon_within_one_percent_of_square_is_square_either_way
     assert PngSizes.square?(215.0, 217.0), "Industries"
     refute PngSizes.square?(*ICON)
     assert_equal [[512, 512, "contain"]], PngSizes.presets(:icon, 215.0, 217.0).select { |preset| preset[:key] == "512" }.map { |preset| preset.values_at(:width, :height, :fit) }
-  end
-
-  def test_square_means_nothing_for_the_wide_logos
-    assert_equal PngSizes.presets(:navbar, *NAVBAR), PngSizes.presets(:navbar, *NAVBAR, square: true)
   end
 
   def test_the_navbar_presets_keep_the_aspect_in_whole_pixels
@@ -112,8 +102,6 @@ class LogosPngSizesTest < Minitest::Test
       assert_includes standard.map { |preset| preset[:key] }, PngSizes::DEFAULTS.fetch(type), type
       assert_equal PngSizes.presets(type, *size).select { |preset| standard.include?(preset) }.sort_by { |p| standard.index(p) }, standard
     end
-    assert_equal %w[32 64 180 256 512 1024], PngSizes.standard(:icon, *ICON, square: true).map { |preset| preset[:key] }
-    assert(PngSizes.standard(:icon, *ICON, square: true).all? { |preset| preset[:width] == preset[:height] })
   end
 
   # The /logos table's one-click raster size is each type's default preset, in the form logo_download.js reads.

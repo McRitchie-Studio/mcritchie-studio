@@ -14,6 +14,13 @@ show every link as **Applied**, **Kit changed** (amber: the kit was saved after
 the app last applied it) or **Not applied**. Design and status rules:
 `docs/topics/logos.md` § Which apps have the kit.
 
+**What a kit carries.** The logos (nine SVGs and `kit.json`) and the raster icons
+drawn from them (favicon, `icon.png`, `og.png`). Nothing else: an app's theme
+colours (the engine's `theme_*` settings in `config/initializers/studio.rb`) and
+its fonts are set by hand today. For a new app on an existing brand, copy them
+from an app already on that brand, or from the brand's Colours and Spectrum cards
+on `/logos/<brand>`, in the same task.
+
 ## Preconditions
 
 - **The kit is saved on production.** Its Icon, Navbar and Stacked choices are
@@ -21,7 +28,12 @@ the app last applied it) or **Not applied**. Design and status rules:
   kit's version is its `saved_at`; a later save turns every app's link to Kit
   changed.
 - **The link exists, or the rollout will create it.** `/logos` lists the apps a
-  kit feeds. A new kit-to-app pairing is created by step 6.
+  kit feeds. A new kit-to-app pairing is created by step 7.
+- **The app has its hub row.** `logos:applied` links a kit to an app by its
+  `apps` slug on the hub's production database, and aborts with `no app "<slug>"
+  in this database` when the row is missing. A NEW app gets its row from the hub's
+  `config/apps.yml` (seeded by `db/seeds/00_apps.rb` on every deploy), so its
+  entry ships to the hub's production before step 7.
 
 ## Procedure
 
@@ -96,6 +108,17 @@ It prints `<brand> → <app>: Applied (…)`; `/logos` and the app's page now sa
 Applied. A mismatch is a stale deploy or a kit saved since step 3: do not
 record it; find which and go again. Nothing polls an app's `kit.json` yet, so
 this read is the only check.
+
+## Redistributing after a kit change
+
+Saving a kit on `/logos/<brand>` (Save as default, or the Kit choice card) gives
+it a new `saved_at`, and every app linked to it turns **Kit changed**. Nothing
+tells anyone; `/logos` and each app's page show it. To bring those apps up to
+date, run steps 2 to 7 again for them, with the kit exported fresh in step 3. A
+second `logos:install` rewrites only the files that changed, so the diff is the
+change itself; the rasters of step 5 are drawn from the SVGs and must be redrawn
+too, even when only a colour moved. An app is Applied again only once its live
+`kit.json` names the new `saved_at`.
 
 ## Done when
 

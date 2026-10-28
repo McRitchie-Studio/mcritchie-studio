@@ -1,16 +1,17 @@
 <%# THE DOWNLOAD CARD (task logo-download-card), the same on all three tabs: the tab's one logo as a PNG (the
     default) or an SVG, in any tone, from one Download button (task brand-page-split-layout). Some integrations take no
-    SVG and want an exact pixel size, so PNG offers the type's three standard sizes (Logos::PngSizes::STANDARD, each
-    named by what it serves) and Custom, with the size always in Width × Height: with Keep aspect ratio on, either side sets the other; off, both are free and the
-    logo is fitted, centred, inside that canvas, which a dotted outline on the page's logo shows. The PNG is drawn in the browser (app/javascript/logo_download.js): the logo's own SVG,
-    from its own URL, onto a canvas at the chosen size, then saved as <the SVG's name>-<w>x<h>.png. The logo's words
-    are outlined paths, so no font is needed.
+    SVG and want an exact pixel size, so PNG offers the type's six standard sizes (Logos::PngSizes::STANDARD, each
+    named by its long side, its use in the title) and Custom, with the size always in Width × Height. Keep aspect
+    ratio, enabled only for Custom: on, the side last typed sets the other; off, both are free and the logo is fitted,
+    centred, inside that canvas, which a dotted outline on the page's logo shows. The PNG is drawn in the browser
+    (app/javascript/logo_download.js): the logo's own SVG, from its own URL, onto a canvas at the chosen size, then
+    saved as <the SVG's name>-<w>x<h>.png. The logo's words are outlined paths, so no font is needed.
 
     Without JavaScript the card is the Tone row and one Download link, for the SVG: the Format and Size rows are served
     hidden, and logo_download.js shows them. A PNG is transparent; a JPEG with a background is the /logos table's.
 
     Every tone's choice is on its radio: its SVG URL, its download URL and filename, its drawing's own width and
-    height, its presets and its solid background. The tones are listed Dark first. Locals: downloads ({ light:, dark:,
+    height and its presets. The tones are listed Dark first. Locals: downloads ({ light:, dark:,
     watermark: } Logos::Variants of the tab's logo, as shown). %>
 <% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
 <% field = "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading" %>
@@ -50,7 +51,6 @@
                                    data: { test: "download-tone-option", svg: logo_asset_path(variant), download_url: logo_asset_path(variant, download: 1),
                                            filename: variant.filename, natural_width: width, natural_height: height,
                                            presets: presets.fetch(tone).to_json,
-                                           background: Logos::PngSizes::BACKGROUNDS.fetch(tone),
                                            label: variant.label } %><%= Logos::Variant::CONTEXTS.fetch(tone) %>
             </label>
           <% end %>
