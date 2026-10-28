@@ -250,12 +250,39 @@ prompt (step 2 above); rerun with the value to publish `google._domainkey`. It
 refuses to overwrite a different MX, DMARC or DKIM unless given `--replace-mail`.
 A domain already on Google's single `smtp.google.com` MX is left alone.
 
-### 6. DNSSEC back on, from Cloudflare — Steffon, then Alex McRitchie
+### 6. DNSSEC back on, from Cloudflare — Steffon; the DS step depends on the registrar
 
 After the move has settled (a day of green `verify`), sign the zone at
-Cloudflare and publish its DS at the registrar. No outage this time: the DS
-goes up only after the zone is already signing. The command does not do this
-step; the zone id is in `tmp/domain-cutover/<domain>.json`.
+Cloudflare, and see its DS published at the registry. A domain bought on
+Cloudflare Registrar ([`domain-purchase`](./domain-purchase.md) Path A) never
+moved its nameservers, so it owes no wait: sign it once its zone is active.
+No outage this time: the DS goes up only after the zone is already signing.
+The command does not do this step. A moved domain's zone id is in
+`tmp/domain-cutover/<domain>.json`; a bought one's is in the Cloudflare zone
+listing (`GET /zones?name=<domain>`).
+
+**First read the registrar.** Who publishes the DS depends on it, so read it
+before you enable anything or hand anyone a step. RDAP is the source: it
+answers every TLD we hold, while whois returns nothing for our Squarespace
+TLDs (`mcritchie.studio`, `turfmonster.media`, `mcritchie.industries` print no
+`Registrar:` line). It goes over HTTPS, so the laptop's port-53 intercept
+cannot answer it wrongly:
+
+```bash
+curl -sL "https://rdap.org/domain/<domain>" | jq -c '{
+  registrar: ([.entities[]? | select(.roles | index("registrar"))
+               | .vcardArray[1][]? | select(.[0] == "fn") | .[3]][0]),
+  signed: .secureDNS.delegationSigned,
+  ds: [.secureDNS.dsData[]? | {keyTag, algorithm, digestType, digest}] }'
+whois <domain> | grep -iE "^ *(registrar|dnssec):" | head -3   # cross-check, where it answers
+```
+
+`Cloudflare, Inc.` is Path A; `Squarespace Domains II LLC` (or the upstream
+registrar Squarespace may show; see [`domain-purchase`](./domain-purchase.md))
+is Path B. For a moved domain `bin/domain-cutover <app> <domain> status` prints
+the same registrar, read over RDAP at `plan`.
+
+**Then sign the zone** (both paths):
 
 ```bash
 source ~/.zprofile.admin
@@ -267,6 +294,22 @@ curl -s -X PATCH https://api.cloudflare.com/client/v4/zones/<zone-id>/dnssec \
   | jq '.result | {status, key_tag, algorithm, digest_type, digest}'
 ```
 
+Keep the four values it prints: the green check compares them.
+
+**Path A: `Registrar: Cloudflare, Inc.`** Cloudflare Registrar publishes the DS
+at the registry itself when zone DNSSEC turns on. No owner step is owed: do not
+hand Alex McRitchie (or a client) a DS card. Wait a few minutes, then run the
+green check. Worked example, alex.build on 2026-10-28: enabling DNSSEC returned
+key tag 2371, algorithm 13, digest type 2, digest
+`DD1AC653CA0415D90162F0357D53DF0B88B9F6AF8A3DD76D0BCA49955B838110`; minutes
+later RDAP read `delegationSigned: true` (whois: `DNSSEC: signedDelegation`),
+the `dns.google` DS answer carried that same key tag and digest, and the apex and `www` A answers read `"AD": true`, with nobody
+clicking anything. (The SOP then sent a Squarespace card that was never owed;
+this path is the fix.)
+
+**Path B: a Squarespace registrar.** The DS is
+Alex McRitchie's paste. Hand him the card with the values the PATCH printed:
+
 ```not-pasteable
 🙋 YOUR TURN — publish the DS record
    Where:  https://account.squarespace.com/domains → <domain> → DNS → DNSSEC
@@ -276,7 +319,25 @@ curl -s -X PATCH https://api.cloudflare.com/client/v4/zones/<zone-id>/dnssec \
    Then tell me "done".
 ```
 
-Green when RDAP reads `secureDNS.delegationSigned: true`, the zone's DNSSEC
-status reads `active`, and `dns.google/resolve` answers `Status` 0 with
-`"AD": true`.
+A client-owned domain at any other registrar takes the same four values on the
+client's own registrar page, by the client's hand.
+
+**Green, either path**, when all three hold:
+
+```bash
+curl -sL "https://rdap.org/domain/<domain>" | jq '.secureDNS.delegationSigned'   # true
+curl -s "https://dns.google/resolve?name=<domain>&type=DS"    | jq '.Answer[].data'
+curl -s "https://dns.google/resolve?name=<domain>&type=A"     | jq '{Status, AD}'
+curl -s "https://dns.google/resolve?name=www.<domain>&type=A" | jq '{Status, AD}'
+```
+
+- RDAP reads `secureDNS.delegationSigned: true` (whois, where it answers:
+  `DNSSEC: signedDelegation`);
+- the DS at the TLD, read over DoH and never with a local `dig DS`, carries the
+  key tag, algorithm, digest type and digest Cloudflare printed (the zone's
+  DNSSEC status then reads `active`);
+- `dns.google/resolve` answers `Status` 0 with `"AD": true` for the apex and `www`.
+
+A domain still unsigned an hour after the PATCH (Path A) or after his "done"
+(Path B) is a blocker to raise, not a card to resend.
 
