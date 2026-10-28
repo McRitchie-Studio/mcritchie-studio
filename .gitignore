@@ -46,9 +46,14 @@
 /lib/pff/
 
 # Playwright
-# No trailing slash: a desk links node_modules to the primary's, and "node_modules/"
-# matches only a directory, so the symlink was committed (PR #1806).
+# No trailing slash: "node_modules/" matches only a directory, and a desk once held
+# node_modules as one link to the primary's, which got committed (PR #1806). A desk's
+# node_modules is now a real directory of per-package links (bin/lib/desk_node_modules.rb);
+# the pattern still covers a link, should a hand-made one appear.
 node_modules
+# A desk that links its packages writes .npmrc (script-shell = the npm script guard,
+# bin/lib/desk_node_modules.rb); ignored so the desk stays clean for `git worktree remove`.
+/.npmrc
 test-results/
 playwright-report/
 playwright/.cache/
