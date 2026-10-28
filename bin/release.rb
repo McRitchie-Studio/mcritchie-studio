@@ -6768,11 +6768,24 @@ def commit_gem_version!(repo, tip, decision, failures)
 
     staged = [version_file, lock_tracked?(workspace) ? "Gemfile.lock" : nil, rolled ? CHANGELOG_FILE : nil].compact
     sh("git", "-C", workspace, "add", "--", *staged)
+    # NOTHING TO COMMIT IS SAID, NOT SKIPPED IN SILENCE. When origin/accepted already
+    # carries the version file, its lock and its changelog at this version (a hand
+    # bump the refusal above asks for, or a re-roll that moved nothing), `git commit`
+    # exits 1 and its "nothing to commit" went nowhere, so the log could not tell a
+    # no-op from a failure. The tree already IS the version commit: say so, push
+    # nothing, and carry on.
+    _, staged_clean = git_capture("-C", workspace, "diff", "--cached", "--quiet")
+    if staged_clean
+      step("  gem #{repo}: #{version} — nothing to commit: origin/#{ACCEPTED_BRANCH} already carries " \
+           "#{staged.join(', ')} at #{version}, so no version commit was made and nothing was pushed")
+      next
+    end
     message = "Release #{version}"
     message += " (re-allocated over unpublished #{decision.replaces})" if decision.replaces
-    _, committed = sh("git", "-C", workspace, "commit", "-m", message, capture: true)
+    commit_out, committed = sh("git", "-C", workspace, "commit", "-m", message, capture: true)
     unless committed
-      failures << "gem #{repo}: could not commit #{version} in the ship workspace"
+      failures << "gem #{repo}: could not commit #{version} in the ship workspace " \
+                  "(git: #{commit_out.to_s.strip.lines.last(3).join(' ').strip})"
       next
     end
 
