@@ -199,6 +199,7 @@ require_relative "lib/ship_authority"
 require_relative "lib/projects_root"
 require_relative "lib/local_services"
 require_relative "lib/bounded_command" # the record-op deadline (run_record_op)
+require_relative "lib/one_password_wait" # --wait-for-1password, and OpMeter for the hang hint
 require_relative "lib/static_cloudflare" # the static_cloudflare prod_deploy strategy
 # `status` prints PROGRAM DRIFT: on-chain programs behind their source (program_drift_report).
 require_relative "lib/program_drift"
@@ -465,6 +466,10 @@ def qa_registered?(app)
   QA_ENVIRONMENTS.key?(app.to_s)
 end
 
+# The command line as typed, kept before the global flags below consume it: the
+# --wait-for-1password supervisor re-runs the step with exactly this line, minus
+# its own flag (bin/lib/one_password_wait.rb).
+RELEASE_ARGV = ARGV.dup.freeze
 DRY = Release::Cli.take_flag(ARGV, "--dry-run")
 # Production is the DEFAULT target now (the board IS production) — pass --local to
 # opt into the old, stale-local-db behavior. `--prod` is still consumed so the old
@@ -490,6 +495,15 @@ TRAIN, TRAIN_ERROR = Release::Trains.take_flag(ARGV, RELEASE_TRAINS)
 # the gate; this one demands `--reason`, confirms, and records a RED gate SOP. See
 # test_gate.
 SKIP_TEST_GATE = Release::Cli.take_flag(ARGV, "--skip-test-gate")
+# OPT-IN: prepare and ship wait out a hung 1Password and resume the step
+# (bin/lib/one_password_wait.rb). Global like the flags above, so the argument
+# guard never sees it; any other subcommand refuses it at dispatch.
+WAIT_FOR_1PASSWORD, WAIT_FOR_1PASSWORD_ERROR =
+  begin
+    [OnePasswordWait.take!(ARGV), nil]
+  rescue OnePasswordWait::BadMinutes => e
+    [nil, e.message]
+  end
 
 # THE ARGUMENT GUARD — runs before the dispatcher can reach a single subcommand.
 #
@@ -525,7 +539,50 @@ def guard_argv!(argv = ARGV, out: $stdout, err: $stderr, exiter: nil)
   CliArgGuard.guard!(argv.drop(1), out: out, err: err, exiter: exiter, **spec)
 end
 
-def abort!(msg) = abort("✗ #{msg}")
+def abort!(msg) = abort("✗ #{msg}#{op_hang_hint}")
+
+# THE MISLEADING-401 GUARD (release-survives-1password-hang). When 1Password
+# hangs, the read that hung is usually a child's (gh-token under git's credential
+# helper, bin/secret), and what reaches this process is that child's next error:
+# a GitHub 401, an exit 9. Every bounded `op` attempt that runs out is logged as
+# `timeout` in .agents/op-reads.log by whichever process made it, so an abort
+# during prepare/ship/archive checks that log for timeouts since the run began and,
+# when there are any, names the real cause under the reported one. "" otherwise,
+# and always "" outside a real dispatch ($release_started_at unset).
+def op_hang_hint
+  return "" unless $release_started_at
+
+  count = OpMeter.timeouts_since($release_started_at)
+  return "" if count.zero?
+
+  "\n✗ #{OpMeter::HUNG_LINE} (#{count} `op` attempt#{'s' unless count == 1} timed out during this run; " \
+    "`bin/op-reads` lists them. The failure above may be that, not what it says.)"
+end
+
+# `bin/release prepare|ship --wait-for-1password[=MINUTES]`: run the step as a
+# child and, when it fails on a hung 1Password, wait for it and run it again.
+def supervise_for_1password!(step)
+  unless %w[prepare ship].include?(step)
+    abort!("#{OnePasswordWait::FLAG} applies to `bin/release prepare` and `bin/release ship` only. Nothing ran.")
+  end
+
+  child = RELEASE_ARGV.reject { |a| a == OnePasswordWait::FLAG || a.start_with?("#{OnePasswordWait::FLAG}=") }
+  say("#{OnePasswordWait::FLAG}: running `bin/release #{child.join(' ')}`; if 1Password stops answering, " \
+      "waiting up to #{WAIT_FOR_1PASSWORD} minutes for it and resuming.")
+  OnePasswordWait.supervise(step: step, minutes: WAIT_FOR_1PASSWORD, run_step: -> { run_release_child(child) })
+end
+
+# The step, as a child on this terminal (same process group, so a ship's confirm
+# prompt and Ctrl-C both reach it). Its exit status, or 128+signal.
+def run_release_child(argv)
+  pid = Process.spawn(RbConfig.ruby, File.expand_path(__FILE__), *argv)
+  _, status = Process.wait2(pid)
+  status.exitstatus || (128 + status.termsig.to_i)
+rescue Interrupt
+  # The child shares the terminal's group and took the same Ctrl-C: let it finish.
+  Process.wait2(pid) if pid
+  raise
+end
 def say(msg) = puts(msg)
 
 # A discrete deploy operation: printed to the release log AND — inside a role span
@@ -11402,6 +11459,9 @@ if __FILE__ == $PROGRAM_NAME
   # the floor. Unknown subcommands still fall through to the `else`.
   guard_argv!
   refuse_bad_train!
+  abort!(WAIT_FOR_1PASSWORD_ERROR) if WAIT_FOR_1PASSWORD_ERROR
+  exit(supervise_for_1password!(ARGV.first)) if WAIT_FOR_1PASSWORD
+  $release_started_at = Time.now if %w[prepare ship archive].include?(ARGV.first)
   # A long run starts with GitHub tokens that cannot expire mid-run: bin/secret
   # prewarm mints any with under 45 minutes left (docs/agents/modules/secret-cache.md).
   # Never fatal; a failure prints the contingency and the run goes on. Not under

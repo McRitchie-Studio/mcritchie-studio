@@ -211,7 +211,7 @@ class Release
             "ship [--finalize-only [<release>]]|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]} " \
             "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto|cleared] [--clearance \"<Alex McRitchie's words>\"] " \
             "[--feedback …] [--clean-only] [--expedite] " \
-            "[--worked …] [--friction …] [--followup …] [--file-tasks] [--train SLUG] [--local] [--dry-run] [--yes]"
+            "[--worked …] [--friction …] [--followup …] [--file-tasks] [--train SLUG] [--wait-for-1password[=MINUTES]] [--local] [--dry-run] [--yes]"
 
     # The line bin/release prints after a ship (or finalize) posts release notes,
     # from the conductor's { notes_delivered, notes_error, notes_messages } JSON.
@@ -238,7 +238,9 @@ class Release
     # The global flags, consumed before the dispatcher — named in every
     # per-subcommand help so the guard's silence about them is not read as
     # "unsupported".
-    GLOBAL_FLAGS = "[--dry-run] [--local] [--yes] [--skip-test-gate] [--train SLUG] (global — consumed before dispatch)"
+    GLOBAL_FLAGS = "[--dry-run] [--local] [--yes] [--skip-test-gate] [--train SLUG] " \
+                   "[--wait-for-1password[=MINUTES]] (global — consumed before dispatch; " \
+                   "--wait-for-1password with prepare and ship only)"
 
     # `--help` and a refusal both exit 1, never 0.
     #
