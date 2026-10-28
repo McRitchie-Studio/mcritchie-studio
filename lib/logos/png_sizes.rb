@@ -8,9 +8,9 @@ module Logos
   # The kinds of preset:
   #   - SIDE (the icon): N is the icon's LONG side and the other follows its true ink aspect (an icon's box is its
   #     ink), so Studio's chest (about 662 × 538) at 512 is 512 × 416 with no padding (Alex McRitchie, 2026-10-14 22:35: "the
-  #     default should be to download the true aspect ratio"). With `square: true` (the card's "1:1 square") the canvas
-  #     is N × N and the icon is fitted inside it, centred (`fit: "contain"`), for a favicon or an app icon that must
-  #     be square. An icon within SQUARE_TOLERANCE of 1:1 (Industries, 215 × 217) is square already: N × N either way.
+  #     default should be to download the true aspect ratio"). An icon within SQUARE_TOLERANCE of 1:1 (Industries,
+  #     215 × 217) is square already: N × N, fitted inside (`fit: "contain"`). The card has no 1:1 toggle (task
+  #     brand-page-split-layout): its Custom size, N × N without Keep aspect ratio, pads an icon to a square.
   #   - WIDTH or SCALE (the Navbar and Stacked Logos): the canvas keeps the drawing's aspect (`fit: "fill"`). A width
   #     preset sets the width and the height follows; a scale preset is 1x, 2x or 4x the height the brand page shows
   #     the logo at (SCREEN_HEIGHTS), the width following.
@@ -44,7 +44,8 @@ module Logos
     SQUARE_TOLERANCE = 0.01
 
     # The solid background a PNG may take instead of transparency, per tone: white behind the light logo, black behind
-    # the dark and the watermark (both drawn for a dark ground). The card's colour picker starts on it.
+    # the dark and the watermark (both drawn for a dark ground). The /logos table's JPEG links fill with it; the brand
+    # page's Download card has no Background and stays transparent.
     BACKGROUNDS = { light: "#FFFFFF", dark: "#000000", watermark: "#000000" }.freeze
 
     # The preset each type's card starts on.
@@ -95,12 +96,11 @@ module Logos
     def round(value) = [(value + 0.5).floor, 1].max
 
     # The presets for a logo of `type` whose drawing is `width` × `height`: each a hash of key, label (the size), use
-    # (what it serves), width, height and fit. A preset whose long side would pass MAX_SIDE is left out. `square` pads
-    # an icon to N × N; it means nothing for the Navbar and Stacked Logos, which are never square.
-    def presets(type, width, height, square: false)
+    # (what it serves), width, height and fit. A preset whose long side would pass MAX_SIDE is left out.
+    def presets(type, width, height)
       list = if type.to_sym == :icon
                ICON_PRESETS.filter_map do |side, use|
-                 next preset(side.to_s, side, side, use, "contain") if square || square?(width, height)
+                 next preset(side.to_s, side, side, use, "contain") if square?(width, height)
 
                  fitted(width >= height ? :width : :height, side, width, height) { |w, h| preset(side.to_s, w, h, use, "fill") }
                end
@@ -117,13 +117,13 @@ module Logos
       list.select { |entry| [entry[:width], entry[:height]].max <= MAX_SIDE }
     end
 
-    # The block's preset for a fitted size, or nil when the size passes MAX_SIDE.
     # The type's STANDARD presets, in that order, from the full list.
-    def standard(type, width, height, square: false)
-      list = presets(type, width, height, square:)
+    def standard(type, width, height)
+      list = presets(type, width, height)
       STANDARD.fetch(type.to_sym).filter_map { |key| list.find { |entry| entry[:key] == key } }
     end
 
+    # The block's preset for a fitted size, or nil when the size passes MAX_SIDE.
     def fitted(axis, value, width, height)
       yield(*fit(axis, value, width, height))
     rescue ArgumentError

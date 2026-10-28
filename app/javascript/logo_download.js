@@ -2,14 +2,14 @@
 // PNG and JPEG downloads (logos/_index_downloads, task logos-index-download-formats; at the end of this file).
 //
 // Some integrations take no SVG and want an exact pixel size, so the card can give the tab's logo as a PNG. The PNG is
-// drawn HERE, in the browser: the logo's SVG is fetched from its own URL (the one Copy SVG uses), sized to the target,
+// drawn HERE, in the browser: the logo's SVG is fetched from its own URL (the tone's data-svg), sized to the target,
 // loaded as an image, drawn onto a canvas of exactly the chosen pixels and saved with toBlob. The logo's words are
 // outlined paths, so the drawing needs no font; a guide drawing's labels are Helvetica or Arial, which every system
 // has. The SVG is same-origin, so the canvas is never tainted.
 //
 //   <section data-logo-download data-watermark-page="false">
 //     <input type="radio" name="tone" data-svg data-download-url data-filename data-natural-width data-natural-height
-//            data-presets='[{"key":"w800","label":"800 × 94","width":800,"height":94,"fit":"fill"}, …]' data-background>
+//            data-presets='[{"key":"w800","label":"800 × 94","width":800,"height":94,"fit":"fill"}, …]'>
 //     <input type="radio" name="size" value="<preset key>|custom"> (in <label data-download-size-label>)
 //     <input name="custom_width"> <input name="custom_height">
 //     <input type="checkbox" name="keep_aspect">     <a data-download-link>  <p data-download-summary>  <p data-download-error>
@@ -34,13 +34,9 @@ export function pngSize(axis, value, naturalWidth, naturalHeight) {
 }
 
 // A custom canvas from the card's Width and Height. With `keep` the side last typed (`axis`) sets the other from the
-// drawing's shape (a 1:1 square takes the width for both); without it both are as given and the drawing is fitted
-// inside ("contain"). Null when a side is not a whole number from 1 to MAX_SIDE.
-export function customSize({ width, height, keep, axis = "width", square = false }, naturalWidth, naturalHeight) {
-  if (keep && square) {
-    const side = pngSize("width", axis === "height" ? height : width, 1, 1);
-    return side && { ...side, fit: "contain" };
-  }
+// drawing's shape; without it both are as given and the drawing is fitted inside ("contain"), so N × N pads an icon
+// to a square. Null when a side is not a whole number from 1 to MAX_SIDE.
+export function customSize({ width, height, keep, axis = "width" }, naturalWidth, naturalHeight) {
   if (keep) {
     const size = pngSize(axis, axis === "height" ? height : width, naturalWidth, naturalHeight);
     return size && { ...size, fit: "fill" };
@@ -85,12 +81,8 @@ export function sizedSvg(text, width, height) {
   });
 }
 
-// A tone's presets: its true-aspect list, or its 1:1 square list when `square` (icons only).
-export function presetsFor(data, square) {
-  return JSON.parse(square && data.squarePresets ? data.squarePresets : data.presets);
-}
-
-// What the card is set to: { format, tone (its radio's dataset), size: { width, height, fit } | null, background }.
+// What the card is set to: { format, toneName, presets, tone (its radio's dataset), naturalWidth, naturalHeight,
+// size: { width, height, fit } | null }. A PNG from the card is transparent: drawSvg gets no background.
 export function readCard(card) {
   const form = card.querySelector("[data-download-form]");
   const value = (name) => { const el = form.querySelector(`[name="${name}"]:checked`) || form.elements[name]; return el ? el.value : null; };
@@ -99,9 +91,7 @@ export function readCard(card) {
   const naturalWidth = Number(data.naturalWidth);
   const naturalHeight = Number(data.naturalHeight);
   const key = form.elements.size.value;
-  // No 1:1 square toggle (task brand-page-split-layout): Custom N × N without Keep aspect ratio pads to a square.
-  const square = false;
-  const presets = presetsFor(data, square);
+  const presets = JSON.parse(data.presets);
   let size = null;
   if (key === "custom") {
     size = customSize({
@@ -109,7 +99,6 @@ export function readCard(card) {
       height: form.elements.custom_height.value,
       keep: form.elements.keep_aspect.checked,
       axis: form.dataset.customAxis || "width",
-      square,
     }, naturalWidth, naturalHeight);
   } else {
     const preset = presets.find((p) => p.key === key);
@@ -118,13 +107,11 @@ export function readCard(card) {
   return {
     format: value("format") || "svg",
     toneName: tone.value,
-    square,
     presets,
     tone: data,
     naturalWidth,
     naturalHeight,
     size,
-    background: null, // a PNG from the card is transparent (task brand-page-split-layout dropped its Background)
   };
 }
 
@@ -212,13 +199,16 @@ function wireCard(card) {
     const dark = form.querySelector('input[name="tone"][value="dark"]');
     if (dark) dark.checked = true;
   }
-  let listKey = null;
+  let toneName = null;
   let tone = null;
+  // The live summary is written only when its text changes: the ResizeObserver re-syncs on every image resize, and
+  // a screen reader would otherwise hear the same line again.
+  const say = (text) => { if (summary.textContent !== text) summary.textContent = text; };
 
   const sync = () => {
     const state = readCard(card);
-    if (`${state.toneName}:${state.square}` !== listKey) {
-      listKey = `${state.toneName}:${state.square}`;
+    if (state.toneName !== toneName) {
+      toneName = state.toneName;
       tone = state.tone;
       setSizes(form, state.presets);
       fillSize(true);
@@ -232,14 +222,14 @@ function wireCard(card) {
     error.hidden = true;
     placeOutline(png ? state : null);
     if (!png) {
-      summary.textContent = tone.filename;
+      say(tone.filename);
     } else if (state.size) {
       const shape = state.size.fit === "fill" ? "true aspect" : "fitted, centred";
-      summary.textContent = `${pngFilename(tone.filename, state.size.width, state.size.height)} · ${state.size.width} × ${state.size.height} px, ${shape}, transparent`;
+      say(`${pngFilename(tone.filename, state.size.width, state.size.height)} · ${state.size.width} × ${state.size.height} px, ${shape}, transparent`);
     } else {
       error.textContent = `A custom side is a whole number of pixels, 1 to ${MAX_SIDE}, and the other side may not pass ${MAX_SIDE}.`;
       error.hidden = false;
-      summary.textContent = error.textContent;
+      say(error.textContent);
     }
     return state;
   };
@@ -286,7 +276,8 @@ function wireCard(card) {
 
   form.addEventListener("change", (event) => { followAspect(event); sync(); });
   form.addEventListener("input", (event) => { followAspect(event); sync(); });
-  // The outline follows the logo: its image loading, the theme swapping light for dark, the window resizing.
+  // The outline follows the logo: its image loading and the theme swapping light for dark
+  // (the observer watches the images, so a window resize that leaves them their size redraws nothing).
   if (outline && typeof ResizeObserver !== "undefined") {
     const observer = new ResizeObserver(() => (card.isConnected ? sync() : observer.disconnect()));
     outline.parentElement.querySelectorAll("img").forEach((img) => observer.observe(img));
@@ -354,8 +345,8 @@ export function rasterFilename(svgFilename, width, height, ext) {
 }
 
 // What one table link would draw in `format`: { url, filename, mime, size, naturalWidth, naturalHeight, background }
-// once the SVG is read. A JPEG has no transparency, so it is always filled: with the link's data-background, the solid
-// background the brand page's Download card offers for that tone (Logos::PngSizes::BACKGROUNDS). A PNG stays
+// once the SVG is read. A JPEG has no transparency, so it is always filled: with the link's data-background, the tone's
+// solid background (Logos::PngSizes::BACKGROUNDS). A PNG stays
 // transparent, as the card's default is.
 export function rasterPlan(data, format, text) {
   const raster = RASTER_FORMATS[format];

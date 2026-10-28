@@ -6,7 +6,7 @@
     format (the table's data-download-format) app/javascript/logo_download.js takes the click and draws the file in the
     browser, as the brand page's Download card does: the logo's own SVG (data-svg) onto a canvas at the type's default
     preset (data-raster-size, Logos::PngSizes.default_size), named after the SVG (data-filename). A JPEG has no
-    transparency, so it is filled with data-background: the solid background the Download card offers for that tone
+    transparency, so it is filled with data-background: the tone's solid background
     (Logos::PngSizes::BACKGROUNDS: white behind a light logo, black behind a dark or watermark one). A type the
     library refused for this brand has no download. Locals: samples (per type, the variants by tone, or the refusal),
     kit (the brand's BrandKit, or nil). %>

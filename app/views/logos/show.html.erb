@@ -3,11 +3,12 @@
     background (no plates), in the hub theme's tone: the Context control sets
     the theme, and Watermark turns the page dark and shows the watermark logos
     (LogosController#set_context). The header holds the breadcrumb, the type tabs and
-    Context (task brand-page-split-layout); under it the page is in halves: the
-    controls beside the logo, then the words about it beside the Download card
-    (logos/_download_card: the logo as an SVG or a PNG at a preset or custom size, in
-    any tone, with Copy SVG) and the edit panel (one column on a phone; a guide
-    drawing always takes the full width). The Navbar and Stacked tabs' Words control picks the text version
+    Context (task brand-page-split-layout); under it the page is in quarters: the
+    logo beside the edit panel, then the Download card (logos/_download_card: the logo
+    as an SVG or a PNG at a standard or custom size, in any tone) beside the controls
+    (one column on a phone). With guides on, the guide drawing takes the whole first
+    row and the edit panel goes, the row keeping its height. Copy SVG is on
+    /logos/compare only. The Navbar and Stacked tabs' Words control picks the text version
     (homogeneous, first or second word leads; ?text=, the kit's by default). The Navbar Logo tab
     has a Rule control (3, 4 or 6) and shows one rule at a time; it and the Stacked
     Logo tab has a Form control (the brand's own form, and With tagline where
@@ -74,7 +75,7 @@
           </div>
         <% else %>
           <%# The dotted outline is the Download card's PNG canvas, drawn around the logo where the canvas is not the
-              logo's own shape (a custom size without its aspect, or the icon's 1:1 square). app/javascript/logo_download.js
+              logo's own shape (a Custom size with Keep aspect ratio unticked). app/javascript/logo_download.js
               places it; the frame clips it. %>
           <div class="relative overflow-hidden flex flex-1 items-center justify-center rounded-lg border border-subtle p-4 sm:p-8 min-w-0" data-test="logo-frame">
             <%= logo_themed_images(@shown, height: logo_height(variant)) %>
@@ -191,8 +192,8 @@
         <div class="flex flex-wrap items-center gap-2">
           <%# This brand's kit beside another's (task logo-compare-and-original-edits): its other version, else the next brand. %>
           <%= link_to "Compare", logo_compare_path_for(@logo.brand, type: @type), class: chosen.(false), data: { test: "compare-link" } %>
-          <%# The edit panel is below the logo; this takes the reader to it, the same on every tab (task
-              logo-compare-and-original-edits, item 2). %>
+          <%# The edit panel is beside the logo, or under it on a phone; this takes the reader to it, the same on
+              every tab (task logo-compare-and-original-edits, item 2). %>
           <%# Not with guides on, when the edit panel is put away. %>
           <%= link_to (@type == :icon ? "Edit colour" : "Edit parts"), "#edit", class: chosen.(false), data: { test: "edit-jump" } if split %>
         </div>

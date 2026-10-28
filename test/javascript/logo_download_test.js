@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  MAX_SIDE, pngSize, customSize, outlineRect, drawRect, pngFilename, sizedSvg, rasterise, presetsFor,
+  MAX_SIDE, pngSize, customSize, outlineRect, drawRect, pngFilename, sizedSvg, rasterise,
   naturalSize, rasterSize, rasterFilename, rasterPlan, tableFormat, downloadTableLink, sizeWords, tableLinkLabel,
 } from "../../app/javascript/logo_download.js";
 
@@ -35,14 +35,15 @@ test("an icon preset fits the icon inside its square, centred; a wide preset fil
 });
 
 // Task brand-page-split-layout: a custom Width × Height, with Keep aspect ratio on or off.
-test("with the aspect kept, the side last typed sets the other; a square takes one side for both", () => {
+test("with the aspect kept, the side last typed sets the other", () => {
   assert.deepEqual(customSize({ width: "1000", height: "9", keep: true }, ...NAVBAR), { width: 1000, height: 117, fit: "fill" });
   assert.deepEqual(customSize({ width: "9", height: "500", keep: true, axis: "height" }, ...NAVBAR), { width: 4267, height: 500, fit: "fill" });
-  assert.deepEqual(customSize({ width: "256", height: "9", keep: true, square: true }, 662.45, 538.14), { width: 256, height: 256, fit: "contain" });
 });
 
 test("with the aspect not kept, both sides are as typed and the drawing fits inside; a bad side is refused", () => {
   assert.deepEqual(customSize({ width: "1200", height: "630", keep: false }, ...NAVBAR), { width: 1200, height: 630, fit: "contain" });
+  assert.deepEqual(customSize({ width: "256", height: "256", keep: false }, 662.45, 538.14), { width: 256, height: 256, fit: "contain" },
+    "N × N pads an icon to a square; there is no 1:1 toggle");
   for (const bad of ["", "0", "12.5", String(MAX_SIDE + 1)]) {
     assert.equal(customSize({ width: "1200", height: bad, keep: false }, ...NAVBAR), null, bad);
     assert.equal(customSize({ width: bad, height: "630", keep: false }, ...NAVBAR), null, bad);
@@ -105,15 +106,6 @@ test("rasterise leaves a transparent PNG unpainted, and refuses an answer that i
   await assert.rejects(rasterise("/x", { size: { width: 16, height: 16, fit: "fill" }, naturalWidth: 1, naturalHeight: 1 }, fakeDeps("<html>", { type: "text/html" })), /no SVG/);
 });
 
-test("an icon's presets are its true aspect, or its 1:1 square list when the toggle asks", () => {
-  const data = {
-    presets: JSON.stringify([{ key: "512", width: 512, height: 416, fit: "fill" }]),
-    squarePresets: JSON.stringify([{ key: "512", width: 512, height: 512, fit: "contain" }]),
-  };
-  assert.deepEqual(presetsFor(data, false), [{ key: "512", width: 512, height: 416, fit: "fill" }]);
-  assert.deepEqual(presetsFor(data, true), [{ key: "512", width: 512, height: 512, fit: "contain" }]);
-  assert.deepEqual(presetsFor({ presets: data.presets }, true), presetsFor(data, false), "a wide logo has no square list");
-});
 
 // [unit] The /logos table's one-click downloads (task logos-index-download-formats): the format comes from the table,
 // the size is the type's default preset read against the SVG's own viewBox, a JPEG is filled with the tone's

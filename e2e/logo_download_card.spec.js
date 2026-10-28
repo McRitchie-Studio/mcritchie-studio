@@ -143,6 +143,35 @@ test("without Keep aspect ratio both sides are free, a dotted outline shows the 
   await expect(card(page).locator("[data-test='download-custom-width']")).not.toHaveValue("1200");
 });
 
+// Task logos-docs-and-rollout-cleanup: the card re-syncs whenever a logo image resizes (its ResizeObserver: the image
+// loading, the theme swapping light for dark), but the screen-reader summary is rewritten only when its text changes,
+// so a theme swap does not re-announce it.
+test("a theme swap re-syncs the outline but leaves the unchanged summary alone", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto("/logos/studio?type=stacked&context=light");
+  await pickSize(page, "custom");
+  await card(page).locator("[data-test='download-keep-aspect']").uncheck();
+  await card(page).locator("[data-test='download-custom-width']").fill("1200");
+  await card(page).locator("[data-test='download-custom-height']").fill("630");
+  const outline = page.locator("[data-test='download-canvas-outline']");
+  await expect(outline).toBeVisible();
+  await card(page).locator("[data-download-summary]").evaluate((summary) => {
+    window.summaryWrites = 0;
+    new MutationObserver((records) => { window.summaryWrites += records.length; })
+      .observe(summary, { childList: true, characterData: true, subtree: true });
+  });
+  await page.evaluate(() => document.documentElement.classList.add("dark")); // the dark image appears: the observer fires
+  const logo = await page.locator("[data-test='logo-frame'] img:visible").first().boundingBox();
+  const box = await outline.boundingBox();
+  expect(box.x).toBeLessThanOrEqual(logo.x + 1); // still around the logo now shown
+  expect(box.x + box.width).toBeGreaterThanOrEqual(logo.x + logo.width - 1);
+  await page.waitForTimeout(500);
+  expect(await page.evaluate(() => window.summaryWrites)).toBe(0);
+  await card(page).locator("[data-test='download-custom-height']").fill("600"); // a real change is still written
+  await expect.poll(() => page.evaluate(() => window.summaryWrites)).toBeGreaterThan(0);
+});
+
 // Task brand-page-split-layout: at desktop width the logo sits beside the edit panel, the two one height, then the
 // Download card beside the controls; guides give the drawing the top row and put the edit panel in Download's place; a
 // phone is one column.

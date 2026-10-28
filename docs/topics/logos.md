@@ -530,7 +530,7 @@ admin sidebar as **Logos**.
 |-------|-------|
 | `/logos` | One row per brand in `config/logo_brands.yml`. Its **Logos** cell is one tight cluster (`logos/_cluster`): the **Stacked** Logo as a square on the left, the **Navbar** Logo beside it (each the brand's saved kit choice, its badge marked **Saved**, else its default: the Stacked Logo in its own form with the first word leading, the Navbar Logo on the rule of 4 with the second word leading), and the **Icon** as a small square under the Navbar Logo (with a saved kit icon all three draw it; without one each draws exactly what its brand page draws, so a saved choice keeps the icon it was saved with), each a tile with a badge naming its type and linking to its tab of the brand page. The brand cell says when its kit was saved, and under that holds the row's **Download Navbar**, **Download Stacked** and **Download Icon**, each the logo as shown ([below](#the-tables-downloads)). The header's **Download** control (PNG, SVG or JPEG; PNG unless `?download_format=` asks) sets every row's links. Then its **Typeface** hierarchy and its **Colours** (below). |
 | `/logos/compare` | **Two brands' kits side by side** ([below](#comparing-two-kits)): `?left=` and `?right=` (Commercial Welding v1 and v2 unless asked), `?type=`, and the shared `?rule=`, `?form=`, `?colouring=`, `?context=` and `?grid=1`. |
-| `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows ONE logo, with the **Download card** beside it ([below](#the-download-card)): SVG or PNG at preset or custom sizes, any tone, and **Copy SVG**. Under the tabs: the edit panel and **Kit choice** (on the Icon tab, the icon's colour and the kit icon), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**. |
+| `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows ONE logo beside the edit panel, then the **Download card** ([below](#the-download-card)) beside the controls: PNG or SVG at six standard sizes or a custom Width × Height, any tone (Copy SVG is on `/logos/compare` only). Under them: **Kit choice** (on the Icon tab, the kit icon), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**. |
 | `/logos/:brand/icon` | The icon as `image/svg+xml`. Params: `tone`, `colouring` (`original`, `alt`), `icon_colour`. Named `<brand>-icon-<tone>[-original].svg`. |
 | `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`, `6`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4|6>-<text>-<tone>[-guides].svg`. |
 | `/logos/:brand/stacked` | One Stacked Logo. Params: `form` (`two_line`, `one_line`, `tagline`: only those the brand draws; absent is its own), `proportion` (`three_two_one`, the default, or `rule_of_three`), `text`, `tone`, `guides`. Named `<brand>-stacked-<two-line|one-line|tagline>[-rule-of-three]-<text>-<tone>[-guides].svg`. |
@@ -631,8 +631,8 @@ class and `localStorage` `theme`):
   the class before anything paints. A Turbo visit is synced by `logo_gallery.js`
   (`data-logo-theme`). Only `watermark` is carried in the page's links; light and
   dark are the hub's, which every page keeps.
-- Downloads and Copy SVG give the version shown: each logo has a pair per tone,
-  and the theme shows the matching pair. **Copy SVG** carries only its logo's URL
+- Downloads, and Compare's Copy SVG, give the version shown: each logo has a pair per tone,
+  and the theme shows the matching pair. **Copy SVG** (on `/logos/compare`; the brand page has none) carries only its logo's URL
   (`data-copy-svg`, the Download's without `download=1`) and fetches the SVG on
   click (`logo_gallery.js`), so the page carries no SVG of its own (`/logos/turf`
   went from about 1.5 MB to about 0.26 MB). The clipboard write starts inside the
@@ -692,7 +692,7 @@ gives the file; the brand page has no Copy SVG (Compare keeps its own).
 - The tabs are links in a `nav` (`aria-label="Logo type"`); the current one
   carries `aria-current="page"`. The Rule control is a `role="group"` of three
   links; the current one carries `aria-current="true"`. All are `.btn` links.
-  They, and Download and Copy SVG, have a focus ring fixed per hub theme,
+  They, and Download (and Compare's Copy SVG), have a focus ring fixed per hub theme,
   because the engine's own ring (`--color-cta` at 70%) is too faint on the
   light theme's white card. A chosen control carries a transparent border, so
   it is the same size as the others.
@@ -720,8 +720,8 @@ gives the file; the brand page has no Copy SVG (Compare keeps its own).
   removes the attribute when the drawing fits and restores it when it does
   not, and checks again when the theme swaps the drawing. With JavaScript off
   it stays a tab stop.
-- Download and Copy SVG give the logo as shown, in the tone the Download card
-  picks (the page's tone first: the watermark in the watermark context).
+- Download gives the logo as shown, in the tone the Download card picks (the
+  page's tone first: the watermark in the watermark context).
 - Every image's accessible name states its type, its text version (and rule)
   and its context (and a Stacked Logo's form): "McRitchie Industries stacked
   logo, with tagline, first word leads, dark".
@@ -756,25 +756,28 @@ gives the file; the brand page has no Copy SVG (Compare keeps its own).
 Alex McRitchie, 2026-10-14: "some integrations have very specific size requirements and don't accept SVGs". Every tab has
 one **Download** card (`logos/_download_card`, `app/javascript/logo_download.js`):
 
-- **Format**: SVG or PNG. **Tone**: Light, Dark or Watermark (every tone, on every page; it starts on the
-  page's). **Download** and **Copy SVG** follow both.
-- **PNG sizes** are `Logos::PngSizes`, each named by what it serves. The Icon's presets set its long side
-  (16, 32, 48, 64, 180 Apple touch, 192 Android and PWA, 256 the app favicon `script/brand_png.cjs` installs, 512, 1024) and keep its **true aspect** by default:
-  Studio's chest at 512 is 512 × 416. **1:1 square** pads it, centred, to N × N for favicons and app icons
-  (Alex McRitchie, 22:35: "we can have access to both"); an icon within 1% of square (Industries) is square either way and
-  shows no toggle. The Navbar and Stacked Logos offer widths 400, 800, 1200 and 2400, and 1x, 2x and 4x of the
-  height the page draws them at (60 and 240 px); they are never square. **Custom** sets a width or a height,
-  the other side following the aspect (with 1:1 square, one side). The other side rounds to the nearest pixel,
-  halves up, never below 1, in Ruby and JavaScript alike; no side passes 8192.
-- **Background**: transparent, or a solid colour (white behind light, black behind dark and the watermark; a
-  colour picker changes it).
+- **Format** | **Tone**, a half each and centred (task brand-page-split-layout): PNG (the default) or SVG; Dark,
+  Light or Watermark (every tone, on every page; it starts on the page's). One full-width **Download** button
+  follows both. The brand page has no Copy SVG; `/logos/compare` keeps it.
+- **Size** (PNG): the type's six standard sizes, `Logos::PngSizes::STANDARD`, each named by its long side (its use
+  in the title), then **Custom**. The Icon's are 32, 64, 180 (Apple touch), 256, 512 (the default) and 1024, each
+  setting its long side in its **true aspect** (Studio's chest at 512 is 512 × 416); an icon within 1% of square
+  (Industries) is N × N. The Navbar and Stacked Logos' are widths 200, 400, 800 (the default), 1200, 2400 and
+  4800, the height following; they are never square. The full list (`Logos::PngSizes.presets`) still feeds the
+  /logos table.
+- **Width × Height**, centred under Size, always shows the PNG's size; typing in it picks Custom. **Keep aspect
+  ratio** sits beside it, enabled only for Custom: on, the side last typed sets the other; off, both sides are as
+  typed and the logo is fitted, centred, inside that canvas, and a dotted outline on the page's logo shows the
+  canvas. There is no 1:1 toggle: Custom N × N with Keep aspect ratio off pads an icon to a square. A side
+  rounds to the nearest pixel, halves up, never below 1, in Ruby and JavaScript alike; no side passes 8192.
+- **No Background**: the card's PNG is transparent. A JPEG, filled white or black, is the /logos table's.
 - **The PNG is drawn in the browser**: the SVG from its own URL, its root sized to the target, loaded as an
   image, drawn on a canvas of exactly the chosen pixels, saved with `toBlob` as the SVG's name plus
   `-<w>x<h>.png`. The logo's words are outlined paths, so no font is needed, and the SVG is same-origin, so
   the canvas is never tainted. No server route and no native dependency.
-- Without JavaScript the card is one Download SVG link and Copy SVG for the page's tone.
+- Without JavaScript the card is the Tone row and one Download SVG link.
 - Every SVG the gallery and the kit export serve is already the icon's true ink box; only this card makes a PNG
-  at a chosen size, so the 1:1 option lives here alone.
+  at a chosen size, so a padded square is made here alone (Custom, aspect not kept).
 
 ### The table's downloads
 
@@ -791,8 +794,8 @@ table opens on it again.
   its size read from its `viewBox`, drawn at the type's **default preset** (`Logos::PngSizes.default_size`: 800 px
   wide for the Navbar and Stacked Logos; the icon's long side 512, its true aspect, or 512 × 512 when it is
   square), and saved as the SVG's name plus `-<w>x<h>.png` or `.jpg`.
-- A PNG is transparent. A JPEG has no transparency, so it is filled with the solid background the Download card
-  offers for that tone (`Logos::PngSizes::BACKGROUNDS`: white behind the light logo, black behind the dark one and
+- A PNG is transparent. A JPEG has no transparency, so it is filled with the tone's solid background
+  (`Logos::PngSizes::BACKGROUNDS`: white behind the light logo, black behind the dark one and
   the watermark).
 - Each link's accessible name is the server's (`Download: <logo>`, with `, kit choice` for a saved choice), and the
   script puts the format in front of it (`Download PNG, 800 px wide: <logo>, kit choice`), so the saved cue is kept.
