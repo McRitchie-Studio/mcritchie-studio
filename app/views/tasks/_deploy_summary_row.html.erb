@@ -21,7 +21,7 @@
     scope and keeps working — the same inheritance the board's task cards rely on.
 
     Locals: current_release, last_release, release_duration_dashboard, wip_task_count,
-            wip_by_stage, release_flow, app_ladder_cards %>
+            wip_by_stage, release_flow, release_estimate, app_ladder_cards %>
 <% cards = local_assigns.fetch(:app_ladder_cards, []) %>
 <% flow = local_assigns.fetch(:release_flow, nil) %>
 <%= render "components/copy_text_script" %>
@@ -113,7 +113,8 @@ function soulCarousel(count, ms) {
     <%= render "tasks/app_ladder_row", cards: cards %>
     <%= render "tasks/release_summary_card", current_release: current_release, last_release: last_release, cards: cards %>
     <%= render "tasks/heartbeats_card", variant: :summary %>
-    <%= render "tasks/devops_summary_card", flow: flow, wip_count: wip_task_count, wip_by_stage: local_assigns[:wip_by_stage] %>
+    <%= render "tasks/devops_summary_card", flow: flow, estimate: local_assigns[:release_estimate],
+               wip_count: wip_task_count, wip_by_stage: local_assigns[:wip_by_stage] %>
   </div>
 
   <%# THE FOUR SIDEBARS. The engine's shared shell (components/_sidebar_panel): fixed

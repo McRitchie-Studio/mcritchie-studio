@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ANY_MINUTE, countdownClock, tick } from "../../app/javascript/devops_countdown.js";
+import { ANY_MINUTE, countdownClock, overLabel, tick } from "../../app/javascript/devops_countdown.js";
 
 test("MM:SS under an hour, H:MM:SS from an hour up, seconds floored", () => {
   assert.equal(countdownClock(348), "05:48");
@@ -39,4 +39,38 @@ test("tick counts each span down from its deadline, then holds at Any minute now
   tick(root, deadline + 90 * 1000);
   assert.equal(span.textContent, ANY_MINUTE, "past the deadline it never counts up or goes negative");
   assert.equal(bad.textContent, "keep", "a span with no deadline is left alone");
+});
+
+// The /deployments DevOps hero (task devops-card-counts-down-to-ship): counts down to
+// the estimated landing, then counts the overrun UP rather than holding at zero.
+test("overLabel speaks the stage vocabulary: <1m, 12m, 1h, 1h 5m", () => {
+  assert.equal(overLabel(0), "<1m");
+  assert.equal(overLabel(59), "<1m");
+  assert.equal(overLabel(12 * 60 + 30), "12m");
+  assert.equal(overLabel(3600), "1h");
+  assert.equal(overLabel(3600 + 5 * 60), "1h 5m");
+});
+
+test("a data-countdown-over span counts down, then reads +Xm over and is marked over", () => {
+  const deadline = Date.parse("2026-10-28T20:45:00Z");
+  const hero = { dataset: { deadline: "2026-10-28T20:45:00Z", etaKind: "left", countdownOver: "" }, textContent: "" };
+  const root = { querySelectorAll: () => [ hero ] };
+
+  tick(root, deadline - 3723 * 1000);
+  assert.equal(hero.textContent, "1:02:03");
+  assert.equal(hero.dataset.etaKind, "left");
+
+  tick(root, deadline + 12 * 60 * 1000);
+  assert.equal(hero.textContent, "+12m over", "past the estimate it says how far over");
+  assert.equal(hero.dataset.etaKind, "over");
+});
+
+test("a data-countdown-over span's kind follows the clock both ways: the warning ink never outlives the overrun", () => {
+  const deadline = Date.parse("2026-10-28T20:45:00Z");
+  const hero = { dataset: { deadline: "2026-10-28T20:45:00Z", etaKind: "over", countdownOver: "" }, textContent: "+12m over" };
+  const root = { querySelectorAll: () => [ hero ] };
+
+  tick(root, deadline - 60 * 1000);
+  assert.equal(hero.textContent, "01:00");
+  assert.equal(hero.dataset.etaKind, "left", "painted over by the server, back to left once time is left");
 });
