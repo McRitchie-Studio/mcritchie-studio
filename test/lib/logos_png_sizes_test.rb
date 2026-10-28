@@ -53,8 +53,10 @@ class LogosPngSizesTest < Minitest::Test
 
   def test_the_navbar_presets_keep_the_aspect_in_whole_pixels
     presets = PngSizes.presets(:navbar, *NAVBAR).to_h { |preset| [preset[:key], preset.values_at(:width, :height)] }
-    # 400 × 300 / 2560.42 = 46.87 → 47; 800 → 93.73 → 94; 1200 → 140.60 → 141; 2400 → 281.20 → 281.
-    assert_equal({ "w400" => [400, 47], "w800" => [800, 94], "w1200" => [1200, 141], "w2400" => [2400, 281],
+    # 200 × 300 / 2560.42 = 23.43 → 23; 400 → 46.87 → 47; 800 → 93.73 → 94; 1200 → 140.60 → 141; 2400 → 281.20 → 281;
+    # 4800 → 562.41 → 562.
+    assert_equal({ "w200" => [200, 23], "w400" => [400, 47], "w800" => [800, 94], "w1200" => [1200, 141], "w2400" => [2400, 281],
+                   "w4800" => [4800, 562],
                    "1x" => [512, 60], "2x" => [1024, 120], "4x" => [2048, 240] }, presets)
   end
 
@@ -100,6 +102,18 @@ class LogosPngSizesTest < Minitest::Test
       assert_includes PngSizes.presets(type, *size).map { |preset| preset[:key] }, PngSizes::DEFAULTS.fetch(type)
     end
     assert_equal %i[light dark watermark], PngSizes::BACKGROUNDS.keys
+  end
+
+  # Task brand-page-split-layout: the brand page's card offers six standard sizes per type, its default among them.
+  def test_the_standard_sizes_are_six_per_type_in_order_and_hold_the_default
+    { icon: ICON, navbar: NAVBAR, stacked: STACKED }.each do |type, size|
+      standard = PngSizes.standard(type, *size)
+      assert_equal PngSizes::STANDARD.fetch(type), standard.map { |preset| preset[:key] }, type
+      assert_includes standard.map { |preset| preset[:key] }, PngSizes::DEFAULTS.fetch(type), type
+      assert_equal PngSizes.presets(type, *size).select { |preset| standard.include?(preset) }.sort_by { |p| standard.index(p) }, standard
+    end
+    assert_equal %w[32 64 180 256 512 1024], PngSizes.standard(:icon, *ICON, square: true).map { |preset| preset[:key] }
+    assert(PngSizes.standard(:icon, *ICON, square: true).all? { |preset| preset[:width] == preset[:height] })
   end
 
   # The /logos table's one-click raster size is each type's default preset, in the form logo_download.js reads.

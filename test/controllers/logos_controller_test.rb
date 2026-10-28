@@ -299,18 +299,14 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
   # What a brand page's ONE logo (task logo-download-card) must be for its variants in page order (its light version
   # then its dark one; a watermark page has one): the images, and the Download card, whose Download link starts on the
-  # first tone shown and whose tone radios carry every tone's SVG and download URL. A guide drawing has no Download card
-  # (task brand-page-split-layout: the drawing takes the row), and the card has no Copy SVG.
+  # first tone shown and whose tone radios carry every tone's SVG and download URL. The card has no Copy SVG (task
+  # brand-page-split-layout).
   def assert_examples(variants, examples: 1)
     assert_select "[data-test='logo-example']", examples
     assert_equal variants.map(&:label), css_select("img[data-test='logo-image']").map { |img| img["alt"] }, "each image names its type, text and context"
     assert_equal variants.map { |v| logo_route(v) }, css_select("img[data-test='logo-image']").map { |img| img["src"] }
     first = variants.first
     assert_select "button[data-test='logo-copy']", 0
-    if first.guides
-      assert_select "[data-test='download-card']", 0, "the guide drawing takes the row"
-      return
-    end
     assert_equal [logo_route(first, download: 1)], css_select("a[data-test='logo-download']").map { |link| link["href"] }
     assert_equal ["Download: #{first.label}"], css_select("a[data-test='logo-download']").map { |link| link["aria-label"] }
     variants.each do |v|
@@ -342,9 +338,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
   end
 
   # Task brand-page-split-layout: the header holds the brand (a crumb, not a big title), the type tabs and Context;
-  # under it the Download card sits beside the logo, then the controls beside the edit panel. The words about the logo
-  # fold under it. Guides take the Download card away so the drawing has the row.
-  test "a brand page is a header, then Download beside the logo, then the controls beside the edit panel" do
+  # under it the logo sits beside the edit panel, then the Download card beside the controls. Guides give the drawing
+  # the top row and take the Download card away, the edit panel taking its place.
+  test "a brand page is a header, then the logo beside the edit panel, then Download beside the controls" do
     log_in_as(@admin)
     %w[navbar stacked icon].each do |type|
       get logo_brand_path("studio", type:)
@@ -356,10 +352,10 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
         assert_select "[data-test='kit-status']", 1
       end
       assert_select "[data-test='logo-type'][data-layout='split']", 1, type
-      assert_select "[data-test='logo-top'].lg\\:grid-cols-2 > [data-test='download-card'] + [data-test='logo-example']", 1, type
-      assert_select "[data-test='logo-bottom'].lg\\:grid-cols-2 > [data-test='logo-control-card'] + [data-test='edit-panel']", 1, type
-      assert_select "[data-test='logo-text-card']", 0, "no card of words"
-      assert_select "[data-test='logo-example'] details[data-test='logo-about']:not([open]) [data-test='type-sentence']", 1
+      assert_select "[data-test='logo-top'].lg\\:grid-cols-2 > [data-test='logo-example'] + [data-test='edit-panel']", 1, type
+      assert_select "[data-test='logo-bottom'].lg\\:grid-cols-2 > [data-test='download-card'] + [data-test='logo-control-card']", 1, type
+      assert_select "[data-test='logo-text-card'], [data-test='logo-about'], [data-test='type-sentence'], [data-test='transparent-note'], [data-test='brand-note']", 0,
+                    "no words about the logo (Alex McRitchie 2026-10-27: drop the text)"
       # One line per control: its name on the left, its options on the right.
       css_select("[data-test='logo-controls'] > [role='group']").each do |group|
         assert_includes group["class"], "justify-between"
@@ -373,6 +369,19 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_equal "dark", css_select("input[data-test='download-tone-option']").first["value"]
       assert_select "a[data-test='logo-download']", { count: 1, text: "Download" }
       assert_select "[data-test='logo-copy']", 0
+      assert_select "[data-test='download-format-tone'].sm\\:grid-cols-2 > [data-test='download-format'] + [data-test='download-tone']", 1, "Format and Tone in halves"
+      sizes = css_select("input[data-test='download-size-option']").map { |input| input["value"] }
+      assert_equal Logos::PngSizes::STANDARD.fetch(type.to_sym) + ["custom"], sizes, "six standard sizes and Custom"
+      # Each named by its long side alone; Width × Height gives both.
+      names = css_select("[data-download-size-label] [data-size-text]").map { |span| span.text }
+      assert(names.all? { |name| name.match?(/\A\d+\z/) }, names.inspect)
+      assert_select "[data-test='download-format'].text-center > div.justify-center, [data-test='download-tone'].text-center > div.justify-center, [data-test='download-size'].text-center > div.justify-center", 3
+      assert_select "[data-test='download-custom'] > div.justify-center", 1, "Width × Height centred"
+      assert_select "[data-test='download-custom'] input[data-test='download-keep-aspect'][disabled]", 1, "live only on Custom"
+      assert_select "[data-test='edit-panel'] p", { text: /Pick (each part's|the icon's) colour/, count: 0 }
+      assert_equal [Logos::PngSizes::DEFAULTS.fetch(type.to_sym)], css_select("input[data-test='download-size-option'][checked]").map { |input| input["value"] }
+      assert_select "[data-test='download-background'], [name='background']", 0, "a PNG is transparent"
+      assert_select "a[data-test='logo-download'].w-full", 1
       assert_select "input[data-test='download-custom-width'][name='custom_width']", 1
       assert_select "input[data-test='download-custom-height'][name='custom_height']", 1
       assert_select "input[data-test='download-keep-aspect'][type='checkbox'][checked]", 1
@@ -381,11 +390,16 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
 
     get logo_brand_path("studio", type: "stacked", guides: 1)
     assert_select "[data-test='logo-type'][data-layout='row']", 1
-    assert_select "[data-test='download-card']", 0, "the guide drawing takes the row"
-    assert_select "[data-test='logo-top'].lg\\:grid-cols-2", 0
-    assert_select "[data-test='logo-example'] [data-test='guides-sentence']", 1
+    assert_select "[data-test='guides-sentence']", 0, "no words under the drawing"
+    assert_select "[data-test='logo-frame'] img[style^='max-height: 280px']", 2, "no taller than the card it replaces"
+    assert_select "[data-test='logo-top'] > [data-test='logo-example'].lg\\:col-span-2", 1, "the guide drawing takes the row"
+    assert_select "[data-test='logo-top'] > [data-test='edit-ghost'].invisible.hidden.lg\\:block[inert][aria-hidden='true'] [data-test='edit-panel']", 1,
+                  "the edit panel put away, keeping the row's height"
+    assert_select "[data-test='logo-top'] > [data-test='edit-panel']", 0
+    assert_select "[data-test='edit-jump']", 0
+    assert_select "[data-test='logo-bottom'] > [data-test='download-card'] + [data-test='logo-control-card']", 1, "Download stays"
     get logo_brand_path("studio", type: "icon", guides: 1)
-    assert_select "[data-test='download-card']", 1, "the icon has no guide drawing, so it keeps its card"
+    assert_select "[data-test='logo-top'] > [data-test='edit-panel']", 1, "the icon has no guide drawing, so it keeps its edit panel"
   end
 
   # Task logo-download-card: ONE logo per tab, in the kit's text version (here the default, second word leads), with
@@ -412,9 +426,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='logo-plate'], [data-test='logo-example'] [style*='background']", 0, "no plate: each logo sits on the page's own background"
     assert_select "[data-test='logo-frame']", 1
     assert_select "[data-logo-theme]", 0, "with no context the page leaves the hub theme as it is"
-    assert_select "[data-test='type-sentence']", { count: 1, text: /\AThe icon is four rows tall.*the middle two rows\.\z/ }
     assert_select "[data-test='guides-sentence']", 0
-    assert_select "[data-test='transparent-note']", /Every logo file has a transparent background/
     assert_select "[data-test='watermark-note']", 0
     assert_includes response.body, "window.copyText"
     # Every control on the page has the page's own focus ring: the tabs, the Rule options, the guides toggle, Download and Copy SVG.
@@ -422,7 +434,6 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal %w[logo-tab logo-tab logo-tab logo-download colouring-option colouring-option rule-option rule-option rule-option] +
                  %w[text-option] * 3 + %w[guides-toggle kit-save-default compare-link edit-jump kit-save kit-download] +
                  %w[kit-pick-open kit-pick-download kit-pick-download] * 3 + %w[kit-notes-save kit-original-upload], ringed.map { |control| control["data-test"] }
-    assert_select "[data-test='brand-note']", /Original is the marketing kit's own light and dark icon, with its steel gradient and ruler ticks.*Alt draws the icon flat/
   end
 
   test "the tabs are links by logo type, and the current one says so" do
@@ -455,7 +466,6 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_select "a[data-test='rule-option'][aria-current='true'].btn-primary.border.border-transparent", 1
       assert_examples themed("studio", :navbar, rule:)
       assert_select "img[data-test='logo-image'][alt*='rule of #{rule}']", 2
-      assert_select "[data-test='type-sentence']", { count: 1, text: Logos::Variant::RULE_SENTENCES.fetch(rule) }
     end
     %w[icon stacked].each do |type|
       get logo_brand_path("studio", type:, rule: 3)
@@ -472,16 +482,13 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_equal %w[first], css_select("[data-test='logo-example']").map { |example| example["data-text"] }
       assert_examples themed(brand, :stacked)
       assert_select "img[data-test='logo-image'][alt*=' stacked logo, '][src^=?]", stacked_logo_path(brand), 2
-      assert_select "[data-test='type-sentence']", { count: 1, text: /\AThe 3-2-1 method: .*3 units tall, every gap is 2 units.*1 unit tall.*60% of the big word's width/ }
-      assert_select "[data-test='type-sentence']", form
-      assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path(brand, type: "stacked", guides: 1), text: "Show guides"
+      assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path(brand, type: "stacked", guides: 1), text: "Show"
 
       get logo_brand_path(brand, type: "stacked", guides: 1)
       assert_response :success
       assert_examples themed(brand, :stacked, guides: true)
       assert_select "img[data-test='logo-image'][alt$='construction guides'][src*='guides=1']", 2
-      assert_select "[data-test='guides-sentence']", brand == "turf" ? /faint copies of the name at a third of its size, spaced exactly as the logo spaces it: one copy per unit.*and the name at 60% of its size turned on end beside the icon, bracketed, reading up from its foot to its top/ : /faint copies of the small word, spaced exactly as the logo spaces it: one copy per unit.*and one copy turned on end beside the icon, bracketed, reading up from its foot to its top, so the icon is as tall as that line is long/
-      assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path(brand, type: "stacked"), text: "Hide guides"
+      assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path(brand, type: "stacked"), text: "Hide"
     end
   end
 
@@ -504,7 +511,6 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='guides-toggle'], [data-test='rule-control'], [data-test='guides-sentence']", 0
       assert_equal %w[colouring-option colouring-option kit-save-default], css_select("[data-test='logo-controls'] .btn").map { |control| control["data-test"] }
       assert_select "[data-test='logo-control-card'] [data-test='edit-jump']", 1
-      assert_select "[data-test='type-sentence']", /\AThe icon alone: the kit's atomic unit\./
       assert_select "[data-test='watermark-text-note']", 0, "an icon has no text versions to compare"
     end
   end
@@ -520,7 +526,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_equal [%w[type stacked], %w[rule 3], %w[guides 1]], css_select("form[data-test='context-form'] input[type='hidden']").map { |i| [i["name"], i["value"]] }
       assert_select "select#logo-context option[selected][value='watermark']", 1
     end
-    assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("turf", type: "stacked", context: "watermark", rule: 3), text: "Hide guides"
+    assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("turf", type: "stacked", context: "watermark", rule: 3), text: "Hide"
     assert_select "a[data-test='logos-crumb'][href=?]", logos_path(context: "watermark"), text: "Logos"
 
     # Light and dark are the hub's theme, which every page keeps already: a link never carries them.
@@ -529,13 +535,13 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
                  css_select("a[data-test='rule-option']").map { |option| option["href"] }
     assert_equal [%w[guides 1]], css_select("form[data-test='context-form'] input[type='hidden']").map { |i| [i["name"], i["value"]] }
     assert_select "a[data-test='logos-crumb'][href=?]", logos_path
-    assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("turf"), text: "Hide guides"
+    assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("turf"), text: "Hide"
 
     # The defaults (Navbar Logo, the theme's logos, rule of 4, guides off) are left out, even when named.
     get logo_brand_path("turf", type: "navbar", context: "light", rule: 4, guides: 0)
     assert_response :success
     assert_select "a[data-test='logo-tab'][data-type='navbar'][href=?]", logo_brand_path("turf")
-    assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("turf", guides: 1), text: "Show guides"
+    assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("turf", guides: 1), text: "Show"
     assert_select "form[data-test='context-form'] input[type='hidden']", 0
     assert_select "a[data-test='logos-crumb'][href=?]", logos_path
   end
@@ -548,19 +554,14 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='brand-note']", 0
   end
 
-  test "each added brand's page says how its art was derived on every tab" do
+  # The brand's note on how its art was derived went with the page's words (task brand-page-split-layout).
+  test "each added brand's page names it on every tab" do
     log_in_as(@admin)
-    notes = {
-      "turf" => ["Turf Monster", "The head is auto-traced from the 880 px picture. The Original flattens its grass texture to three solid colours; Alt is the head's linework in the brand green alone."],
-      "welding" => ["Commercial Welding v1", "The helmet and the lettering are auto-traced from the current PNG files. The name is the kit's whole " \
-                                             "name, COMMERCIAL WELDING LLC, drawn without the service mark. The Original is the kit's square logo, traced in its three colours; its helmet's right half is filled white, so it holds on a dark page. The kit has no lettering for dark pages, so the Original's name is white there, with the accent orange. In Alt on a dark page the helmet is the single-colour version."],
-      "welding_v2" => ["Commercial Welding v2", Logos::NavbarLogo.styles.fetch("welding_v2").fetch("note")]
-    }
-    notes.to_a.product(%w[icon navbar stacked]).each do |(brand, (name, note)), type|
+    names = { "turf" => "Turf Monster", "welding" => "Commercial Welding v1", "welding_v2" => "Commercial Welding v2" }
+    names.to_a.product(%w[icon navbar stacked]).each do |(brand, name), type|
       get logo_brand_path(brand, type:)
       assert_response :success
       assert_select "h1", name
-      assert_equal [note], css_select("[data-test='brand-note']").map { |p| p.text.strip }
       alts = css_select("[data-test='logo-image']").map { |img| img["alt"] }
       assert_equal 2, alts.uniq.size, "the one logo in light and in dark"
       assert alts.all? { |alt| alt.start_with?("#{name} #{Logos::Variant::TYPES.fetch(type.to_sym).downcase}, ") }, alts.inspect
@@ -602,16 +603,14 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the watermark context says what a watermark is, and that a colour-led brand's texts look the same" do
+  # The watermark's explanation went with the page's words (task brand-page-split-layout); the page still draws it.
+  test "the watermark context draws one logo per tab, with no notes" do
     log_in_as(@admin)
-    { "turf" => 1, "welding" => 1, "studio" => 0, "industries" => 0 }.each do |brand, same|
+    %w[turf welding studio industries].each do |brand|
       %w[navbar stacked].each do |type|
         get logo_brand_path(brand, type:, context: "watermark")
         assert_response :success
-        assert_select "[data-test='watermark-note']", /whole logo in one colour, slightly transparent/
-        assert_select "[data-test='watermark-text-note']", same
         assert_select "[data-test='logo-example']", 1, "one logo per tab (task logo-download-card)"
-        assert_select "[data-test='transparent-note']", 1
       end
 
       get logo_brand_path(brand, context: "dark")
@@ -646,8 +645,6 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
           end
         end
       end
-      assert_select "[data-test='transparent-note']", 1
-      assert_select "[data-test='watermark-note']", context == "watermark" ? 1 : 0
       assert_select "[data-test='watermark-text-note']", 0
     end
   end
@@ -687,16 +684,16 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
   test "the guides toggle swaps every logo for its guide drawing and back" do
     log_in_as(@admin)
     get logo_brand_path("industries")
-    assert_select "a[data-test='guides-toggle'].btn-neutral[href=?]", logo_brand_path("industries", guides: 1), text: "Show guides"
+    assert_select "a[data-test='guides-toggle'].btn-neutral[href=?]", logo_brand_path("industries", guides: 1), text: "Show"
     assert_select "img[data-test='logo-image'][src*='guides=1']", 0
 
     get logo_brand_path("industries", guides: 1, rule: 3)
     assert_response :success
-    assert_select "a[data-test='guides-toggle'].btn-primary[href=?]", logo_brand_path("industries", rule: 3), text: "Hide guides"
+    assert_select "a[data-test='guides-toggle'].btn-primary[href=?]", logo_brand_path("industries", rule: 3), text: "Hide"
     assert_examples themed("industries", :navbar, rule: 3, guides: true)
     assert_select "img[data-test='logo-image'][src*='guides=1'][alt$='construction guides']", 2
-    assert_select "[data-test='download-card']", 0, "with guides on the drawing takes the row (task brand-page-split-layout)"
-    assert_select "[data-test='guides-sentence']", /the numbered rows, filled with faint copies of the name one row tall, so the rows can be counted against the icon; the icon's right edge and where the name starts; and a bracket marked ½ over each of the two equal gaps, after the icon and between the words, each half a cap height\.\s+They are for looking at, never for shipping\. A drawing never shrinks below a readable size: where one is wider than its frame, scroll it sideways\./
+    assert_select "a[data-test='logo-download'][href*='guides=1']", 1
+    assert_equal 3, download_urls.count { |url| url.include?("guides=1") }, "every tone's download is the guide drawing as shown"
 
     # A guide drawing fits its frame (max-width) down to a least width of its own, where its frame starts to scroll.
     # One frame holds both tones' drawings; its name is the drawing's, without the tone.
@@ -710,8 +707,15 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal 2, styles.size
     styles.each { |style| assert_match(/\Amax-height: 132px; min-width: [5-6]\d\dpx\z/, style) }
     get logo_brand_path("industries", type: "stacked", guides: 1)
-    assert_equal ["max-height: 540px; min-width: 483px"],
+    assert_equal ["max-height: 280px; min-width: 483px"],
                  css_select("[data-test='logo-frame'].overflow-x-auto [data-tone='light'] img.max-w-full").map { |img| img["style"] }
+    # Capped near the normal card's height, unless the labels would fall below their least size: the tagline form's
+    # drawing then takes the height its least width gives it, not more.
+    get logo_brand_path("welding", type: "stacked", form: "tagline", guides: 1)
+    style = css_select("[data-test='logo-frame'] [data-tone='light'] img").first["style"]
+    height = style[/max-height: (\d+)px/, 1].to_i
+    assert_operator height, :>, 280
+    assert_operator height, :<, 540
     get logo_brand_path("industries", type: "stacked")
     assert_select "[data-test='logo-frame'].overflow-x-auto, [data-test='logo-frame'][tabindex]", 0
     assert_select "[data-test='logo-frame'] img[style='max-height: 240px'].max-w-full", 2
@@ -863,7 +867,6 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_equal [forms.first], css_select("a[data-test='form-option'][aria-current='true']").map { |option| option["data-form"] }, "#{brand}: its own form"
       assert_equal logo_brand_path(brand, type: "stacked"), options.first["href"], "#{brand}: its own form is the default, left out"
       if brand == "turf"
-        assert_select "[data-test='no-tagline']", { count: 1, text: "Turf Monster has no tagline, so there is no tagline form." }
       else
         assert_equal logo_brand_path(brand, type: "stacked", form: "tagline"), options.last["href"]
         assert_select "[data-test='no-tagline']", 0
@@ -885,8 +888,6 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal %w[welding-stacked-tagline-first-light-original-guides.svg],
                  variants("welding", :stacked, form: :tagline, guides: true).map(&:filename), "the file the Download link above serves"
     assert_select "img[data-test='logo-image'][alt^='Commercial Welding v1 stacked logo, with tagline, ']", 2
-    assert_select "[data-test='type-sentence']", /With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall/
-    assert_select "[data-test='guides-sentence']", /faint copies of the tagline, spaced exactly as the logo spaces it: one copy per unit/
 
     get stacked_logo_path("welding", form: "tagline", text: "first", tone: "light", download: 1)
     assert_response :success
@@ -902,7 +903,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal [logo_brand_path("studio", kept.merge(type: "icon")), logo_brand_path("studio", kept), logo_brand_path("studio", kept.merge(type: "stacked"))],
                  css_select("a[data-test='logo-tab']").map { |tab| tab["href"] }
     assert_equal [%w[type stacked], %w[form tagline], %w[guides 1]], css_select("form[data-test='context-form'] input[type='hidden']").map { |i| [i["name"], i["value"]] }
-    assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("studio", type: "stacked", context: "watermark", form: "tagline"), text: "Hide guides"
+    assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("studio", type: "stacked", context: "watermark", form: "tagline"), text: "Hide"
     assert_equal [logo_brand_path("studio", type: "stacked", context: "watermark", guides: 1), logo_brand_path("studio", type: "stacked", context: "watermark", form: "tagline", guides: 1)],
                  css_select("a[data-test='form-option']").map { |option| option["href"] }
 
@@ -985,11 +986,6 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_examples themed("welding_v2", :stacked, form: :tagline, proportion: :rule_of_three, guides: true)
     assert_equal ["rule_of_three"], css_select("a[data-test='proportion-option'][aria-current='true']").map { |option| option["data-proportion"] }
     assert_select "img[data-test='logo-image'][alt*=', with tagline, rule of three, ']", 2
-    assert_select "[data-test='type-sentence']", /The rule of three: three copies of the icon side by side are exactly as wide as the name/
-    assert_select "[data-test='type-sentence']", /every gap is 2 units, as in 3-2-1\. With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline/
-    assert_select "[data-test='guides-sentence']", /two faint copies of the icon either side of the real one, numbered 1 2 3/
-    assert_select "[data-test='guides-sentence']", /every gap is 2 units, as in 3-2-1/
-    refute_match(/3 units, one capital|every gap is 3/, css_select("[data-test='type-sentence'], [data-test='guides-sentence']").map(&:text).join)
     kept = { type: "stacked", form: "tagline", proportion: "rule_of_three", guides: 1 }
     assert_equal logo_brand_path("welding_v2", kept.except(:form)), css_select("a[data-test='form-option'][data-form='two_line']").first["href"], "the form keeps the proportion"
     assert_equal logo_brand_path("welding_v2", kept.except(:type)), css_select("a[data-test='logo-tab'][data-type='navbar']").first["href"], "the other tabs carry it back"

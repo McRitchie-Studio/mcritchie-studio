@@ -30,7 +30,6 @@ test("welding_v2 stacked: Rule of three draws a narrower icon, a third of the na
   await page.locator("a[data-test='proportion-option'][data-proportion='rule_of_three']").click();
   await expect(page).toHaveURL(/proportion=rule_of_three/);
   await expect(current).toHaveText("Rule of three");
-  await expect(page.locator("[data-test='type-sentence']")).toContainText("The rule of three");
 
   const after = await drawing(page);
   expect(after.src).toContain("proportion=rule_of_three");

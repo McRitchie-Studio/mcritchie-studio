@@ -10,7 +10,8 @@
 //   <section data-logo-download data-watermark-page="false">
 //     <input type="radio" name="tone" data-svg data-download-url data-filename data-natural-width data-natural-height
 //            data-presets='[{"key":"w800","label":"800 × 94","width":800,"height":94,"fit":"fill"}, …]' data-background>
-//     <select name="size"> … <option value="custom">     <input name="custom_width"> <input name="custom_height">
+//     <input type="radio" name="size" value="<preset key>|custom"> (in <label data-download-size-label>)
+//     <input name="custom_width"> <input name="custom_height">
 //     <input type="checkbox" name="keep_aspect">     <a data-download-link>  <p data-download-summary>  <p data-download-error>
 //   and, on the page's logo frame, <div data-download-outline hidden>: the canvas, dotted, when it is not the logo's shape.
 //
@@ -98,9 +99,8 @@ export function readCard(card) {
   const naturalWidth = Number(data.naturalWidth);
   const naturalHeight = Number(data.naturalHeight);
   const key = form.elements.size.value;
-  // The icon's 1:1 square (padded) instead of its true aspect; an icon already square is square either way.
-  const toggle = form.elements.square;
-  const square = Boolean(toggle && toggle.checked && data.squarePresets && data.square !== "true");
+  // No 1:1 square toggle (task brand-page-split-layout): Custom N × N without Keep aspect ratio pads to a square.
+  const square = false;
   const presets = presetsFor(data, square);
   let size = null;
   if (key === "custom") {
@@ -124,21 +124,20 @@ export function readCard(card) {
     naturalWidth,
     naturalHeight,
     size,
-    background: value("background") === "solid" ? form.elements.background_colour.value : null,
+    background: null, // a PNG from the card is transparent (task brand-page-split-layout dropped its Background)
   };
 }
 
-function setOptions(select, presets) {
-  const was = select.value;
-  const custom = select.querySelector('option[value="custom"]');
-  [...select.options].forEach((option) => { if (option !== custom) option.remove(); });
-  presets.forEach((preset) => {
-    const option = document.createElement("option");
-    option.value = preset.key;
-    option.textContent = `${preset.label} · ${preset.use}`;
-    select.insertBefore(option, custom);
+// Names the size buttons for a tone's presets (each tone's drawing, so its sizes, can differ slightly): a key the tone
+// lacks hides its button, and a hidden choice falls back to the first preset.
+function setSizes(form, presets) {
+  form.querySelectorAll("[data-download-size-label]").forEach((label) => {
+    const preset = presets.find((p) => p.key === label.dataset.downloadSizeLabel);
+    label.hidden = !preset;
+    if (preset) label.querySelector("[data-size-text]").textContent = String(Math.max(preset.width, preset.height)); // its long side
   });
-  select.value = [...select.options].some((o) => o.value === was) ? was : (presets[0] ? presets[0].key : "custom");
+  const chosen = form.querySelector('input[name="size"]:checked');
+  if (chosen && chosen.closest("label").hidden && presets[0]) form.elements.size.value = presets[0].key;
 }
 
 // The logo's SVG, as text, from its own URL; refused unless the answer is an SVG.
@@ -204,10 +203,7 @@ function wireCard(card) {
   const link = card.querySelector("[data-download-link]");
   const summary = card.querySelector("[data-download-summary]");
   const error = card.querySelector("[data-download-error]");
-  const custom = card.querySelector("[data-download-custom]");
-  const colour = card.querySelector("[data-download-colour]");
   const pngOnly = card.querySelector("[data-png-only]");
-  const squareToggle = card.querySelector("[data-download-square-toggle]");
   const outline = document.querySelector("[data-download-outline]");
   card.querySelectorAll("[data-download-js]").forEach((el) => { el.hidden = false; });
 
@@ -222,18 +218,15 @@ function wireCard(card) {
   const sync = () => {
     const state = readCard(card);
     if (`${state.toneName}:${state.square}` !== listKey) {
-      const toneChanged = !listKey || !listKey.startsWith(`${state.toneName}:`);
       listKey = `${state.toneName}:${state.square}`;
       tone = state.tone;
-      setOptions(form.elements.size, state.presets);
-      if (toneChanged) colour.value = tone.background;
+      setSizes(form, state.presets);
+      fillSize(true);
       return sync();
     }
     const png = state.format === "png";
     pngOnly.hidden = !png;
-    custom.hidden = form.elements.size.value !== "custom";
-    if (squareToggle) squareToggle.hidden = tone.square === "true";
-    colour.hidden = state.background === null;
+    form.elements.keep_aspect.disabled = form.elements.size.value !== "custom"; // a standard size keeps the logo's shape
     link.href = tone.downloadUrl;
     link.setAttribute("aria-label", `Download ${png ? "PNG" : "SVG"}: ${tone.label}`);
     error.hidden = true;
@@ -241,8 +234,8 @@ function wireCard(card) {
     if (!png) {
       summary.textContent = tone.filename;
     } else if (state.size) {
-      const shape = state.size.fit === "fill" ? "true aspect" : state.square ? "1:1 square, padded" : "fitted, centred";
-      summary.textContent = `${pngFilename(tone.filename, state.size.width, state.size.height)} · ${state.size.width} × ${state.size.height} px, ${shape}, ${state.background ? `on ${state.background}` : "transparent"}`;
+      const shape = state.size.fit === "fill" ? "true aspect" : "fitted, centred";
+      summary.textContent = `${pngFilename(tone.filename, state.size.width, state.size.height)} · ${state.size.width} × ${state.size.height} px, ${shape}, transparent`;
     } else {
       error.textContent = `A custom side is a whole number of pixels, 1 to ${MAX_SIDE}, and the other side may not pass ${MAX_SIDE}.`;
       error.hidden = false;
@@ -265,11 +258,25 @@ function wireCard(card) {
     outline.hidden = false;
   };
 
-  // Keep aspect ratio: the side typed sets the other, in the inputs themselves, so they always show the PNG's size.
+  // A standard size writes its Width × Height into the inputs, and keeps the aspect, so they always show the PNG's size.
+  const fillSize = (picked) => {
+    if (form.elements.size.value === "custom") return;
+    const state = readCard(card);
+    if (!state.size) return;
+    form.elements.custom_width.value = state.size.width;
+    form.elements.custom_height.value = state.size.height;
+    if (picked) form.elements.keep_aspect.checked = true;
+  };
+
+  // Typing a side picks Custom. Keep aspect ratio: the side typed sets the other, in the inputs themselves.
   const followAspect = (event) => {
     const width = form.elements.custom_width;
     const height = form.elements.custom_height;
-    if (event && (event.target === width || event.target === height)) form.dataset.customAxis = event.target === height ? "height" : "width";
+    if (event && (event.target === width || event.target === height)) {
+      form.dataset.customAxis = event.target === height ? "height" : "width";
+      form.elements.size.value = "custom";
+    }
+    if (event && event.target.name === "size") return fillSize(true);
     if (!form.elements.keep_aspect.checked || form.elements.size.value !== "custom") return;
     const state = readCard(card);
     if (!state.size) return;

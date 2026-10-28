@@ -72,7 +72,6 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
     css_select("input[data-test='download-tone-option']").each { |input| assert_equal input["value"] == "watermark" ? nil : "original", query(input["data-download-url"])["colouring"] }
     css_select("a[data-test='logo-download']").each { |link| assert_equal "original", query(link["href"])["colouring"] }
     assert_select "img[data-test='logo-image'][alt$='original colouring']", 2
-    assert_select "[data-test='colouring-note']", /Original is the brand's own art/
   end
 
   test "Alt draws today's logos, and the colouring is kept across every other control" do
@@ -126,7 +125,6 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
     [{}, { type: "icon" }, { type: "stacked" }, { colouring: "original" }].each do |params|
       get logo_brand_path("studio", params)
       assert_response :success, params.inspect
-      assert_select "[data-test='no-original']", { count: 1, text: "McRitchie Studio's logo is solid colour, so it has no separate original." }, params.inspect
       assert_select "[data-test='colouring-option'][data-colouring='original'][aria-disabled='true']", 1
       assert_select "a[data-test='colouring-option'][data-colouring='original']", 0
       assert_select "a[data-test='colouring-option'][data-colouring='alt'][aria-current='true']", 1

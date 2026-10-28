@@ -44,7 +44,6 @@ test("industries rule of 6 guides: the Rule control offers 3, 4 and 6, and every
 test("industries tagline guides: every plate fits its tracked ruler at 1280", async ({ page }) => {
   await open(page, "/logos/industries?type=stacked&form=tagline&guides=1", 1280);
   await expect(page.locator("a[data-test='form-option'][aria-current='true']")).toHaveText("With tagline");
-  await expect(page.locator("[data-test='guides-sentence']")).toContainText("one copy turned on end beside the icon");
   await everyPlateFits(page);
 });
 

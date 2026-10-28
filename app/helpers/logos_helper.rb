@@ -232,9 +232,10 @@ module LogosHelper
   LOGO_BADGES = { stacked: "Stacked", navbar: "Navbar", icon: "Icon" }.freeze
   # The most a logo may be tall on its brand page, in px, and the most its guide drawing may be.
   LOGO_HEIGHTS = { icon: 160, navbar: 60, stacked: 240 }.freeze
-  # A stacked guide drawing carries its ruler beside it, so it is wider than the logo and needs more height to keep
-  # its numbers readable (the tagline form's tallest least-width height is 465 px).
-  LOGO_GUIDE_HEIGHTS = { navbar: 132, stacked: 540 }.freeze
+  # A guide drawing's height, kept near the card it replaces (Alex McRitchie 2026-10-27: guides "shouldn't open a card
+  # that is taller than the normal card"). A drawing whose labels would fall below LOGO_GUIDE_LABEL_PX at that height
+  # takes the least height that keeps them readable instead (two lines about 290 px; the tagline form up to 467): logo_height.
+  LOGO_GUIDE_HEIGHTS = { navbar: 132, stacked: 280 }.freeze
   # A guide drawing FITS its plate first, like any logo. It only stops shrinking at the width where its labels
   # would render below this many px, and from there the plate scrolls sideways inside itself. The widest plate on
   # a 1280 px page is LOGO_PLATE_WIDTH px, and every drawing's minimum is under it, so nothing scrolls there
@@ -245,20 +246,11 @@ module LogosHelper
   # The narrowest a guide drawing may be shown, in px: where its labels are LOGO_GUIDE_LABEL_PX tall.
   def logo_guide_min_width(variant) = (LOGO_GUIDE_LABEL_PX * variant.guide_width / variant.guide_font).ceil
 
-  def logo_height(variant) = (variant.guides ? LOGO_GUIDE_HEIGHTS : LOGO_HEIGHTS).fetch(variant.type)
+  def logo_height(variant)
+    return LOGO_HEIGHTS.fetch(variant.type) unless variant.guides
 
-  # A brand page's one-line account of the type being shown (a Stacked Logo's in the form and proportion shown).
-  def logo_type_sentence(logo, type, rule, form = nil, proportion = nil)
-    case type
-    when :icon then "The icon alone: the kit's atomic unit. Save it as default here and every Navbar and Stacked Logo draws it."
-    when :navbar then Logos::Variant::RULE_SENTENCES.fetch(rule)
-    when :stacked
-      if proportion == :rule_of_three
-        "#{Logos::Variant::RULE_OF_THREE_SENTENCE} #{Logos::Variant::RULE_OF_THREE_FORM_SENTENCES.fetch(form || logo.form)}"
-      else
-        "#{Logos::Variant::METHOD_SENTENCE} #{Logos::Variant::FORM_SENTENCES.fetch(form || logo.form)}"
-      end
-    end
+    width, height = Logos::PngSizes.natural(variant.svg)
+    [LOGO_GUIDE_HEIGHTS.fetch(variant.type), (logo_guide_min_width(variant) * height / width).ceil].max
   end
 
   # A logo's own SVG route: /logos/:brand/icon, /navbar or /stacked, with the type's own params.

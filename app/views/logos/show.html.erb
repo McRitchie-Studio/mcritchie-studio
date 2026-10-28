@@ -52,24 +52,23 @@
     <p class="text-2xs text-muted" data-test="kit-status"><%= link_to logo_kit_status(@kit_record, @savers), "#kit", class: "hover:text-primary", title: logo_kit_status(@kit_record, @savers, full: true) %></p>
   </header>
 
-  <%# THE PAGE IN HALVES (task brand-page-split-layout): the Download card beside the one logo, then the controls
-      beside the edit panel. A guide drawing needs the full width, so with guides on the Download card goes and the
-      drawing takes the row, its sentence under it. On a phone everything is one column. %>
+  <%# THE PAGE IN QUARTERS (task brand-page-split-layout): the one logo beside the edit panel, then the Download card
+      beside the controls. A guide drawing needs the full width, so with guides on it takes the top row alone and the
+      edit panel goes (Alex McRitchie 2026-10-27), the row keeping the height it had. On a phone everything is one column. %>
   <% variant = @shown.values.first %>
-  <%# The Icon tab has no guide drawing, so it keeps its Download card with ?guides=1 in the URL. %>
+  <%# The Icon tab has no guide drawing, so it keeps its edit panel with ?guides=1 in the URL. %>
   <% split = !variant.guides %>
   <section class="space-y-5 min-w-0" data-test="logo-type" data-type="<%= @type %>" data-layout="<%= split ? 'split' : 'row' %>" aria-label="<%= Logos::Variant::TYPES.fetch(@type) %>">
-    <%# The two halves share a height: the logo's card stretches to the Download card's, and its frame fills it. %>
-    <div class="grid gap-5 min-w-0 <%= 'lg:grid-cols-2' if split %>" data-test="logo-top">
-      <%= render "logos/download_card", downloads: @downloads if split %>
-      <div class="card p-4 sm:p-5 min-w-0 flex flex-col" data-test="logo-example" data-tones="<%= @shown.keys.join(' ') %>" data-text="<%= variant.text %>">
+    <%# The two halves share a height: the logo's card stretches to the edit panel's, and its frame fills it. %>
+    <div class="grid gap-5 min-w-0 lg:grid-cols-2" data-test="logo-top">
+      <div class="card p-4 sm:p-5 min-w-0 flex flex-col <%= 'lg:col-span-2 lg:col-start-1 lg:row-start-1' unless split %>" data-test="logo-example" data-tones="<%= @shown.keys.join(' ') %>" data-text="<%= variant.text %>">
         <% if variant.guides %>
           <%# A guide drawing fits its frame until its labels would be too small to read; from there it keeps its width
               and the frame scrolls sideways inside itself. The frame is a tab stop only while it scrolls:
               app/javascript/scroll_tab_stop.js takes the tabindex away when the drawing fits and puts it back when
               it does not (and checks again when the theme swaps the drawing). With JavaScript off it stays a tab
               stop, which costs one extra Tab. No plate: the frame has no background of its own. %>
-          <div class="overflow-x-auto rounded-lg border border-subtle p-4 sm:p-6 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          <div class="flex flex-1 flex-col justify-center overflow-x-auto rounded-lg border border-subtle p-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                data-test="logo-frame" tabindex="0" data-scroll-tab-stop role="group" aria-label="Guide drawing: <%= variant.label.sub(", #{variant.tone}", '') %>">
             <%= logo_themed_images(@shown, height: logo_height(variant)) %>
           </div>
@@ -82,39 +81,23 @@
             <div class="pointer-events-none absolute rounded-sm border-2 border-dashed border-primary" data-test="download-canvas-outline" data-download-outline aria-hidden="true" hidden></div>
           </div>
         <% end %>
-        <% if @guides && @type != :icon %>
-          <p class="text-sm text-secondary mt-3" data-test="guides-sentence">
-            <% if @type == :navbar %>
-              The guide drawings: the numbered rows, filled with faint copies of the name one row tall, so the rows can be counted against the icon; the icon's right edge and where the name starts; and a bracket marked ½ over each of the two equal gaps, after the icon and between the words, each half a cap height.
-            <% elsif @proportion == :rule_of_three %>
-              The guide drawings prove the rule of three: two faint copies of the icon either side of the real one, numbered 1 2 3, span the name exactly, with a line at each third, so the icon is a third of the name's width. Beside the logo, faint copies of the small line, one per unit, stacked and numbered, count each band: every gap is 2 units, as in 3-2-1. A line marks each boundary.
-            <% else %>
-              <% small = { two_line: "the small word", one_line: "the name at a third of its size", tagline: "the tagline" }.fetch(@form) %>
-              <% turned = @form == :one_line ? "the name at 60% of its size turned on end" : "one copy turned on end" %>
-              The guide drawings prove each measurement with faint copies of <%= small %>, spaced exactly as the logo spaces it: one copy per unit, stacked beside the logo and numbered, so each band can be counted, and <%= turned %> beside the icon, bracketed, reading up from its foot to its top, so the icon is as tall as that line is long. A line marks each boundary.
-            <% end %>
-            They are for looking at, never for shipping. A drawing never shrinks below a readable size: where one is wider than its frame, scroll it sideways.
-          </p>
-        <% end %>
-        <%# The words about the logo (its method, the page's context and colouring, the brand's note): no card of their
-            own (Alex McRitchie 2026-10-27), folded under the logo, closed. %>
-        <details class="mt-3 text-sm text-secondary" data-test="logo-about">
-          <summary class="cursor-pointer text-2xs font-semibold text-muted hover:text-primary">About this logo</summary>
-          <div class="mt-2 space-y-2">
-            <p data-test="type-sentence"><%= logo_type_sentence(@logo, @type, @rule, (@form if @type == :stacked), @proportion) %></p>
-            <% if @type == :stacked && @logo.tagline.nil? %>
-              <p data-test="no-tagline"><%= name %> has no tagline, so there is no tagline form.</p>
-            <% end %>
-            <%= render "logos/context_notes", logo: (@logo unless @type == :icon), brand_logo: @logo %>
-            <% if @logo.note.present? %>
-              <p class="text-2xs text-muted" data-test="brand-note"><%= @logo.note %></p>
-            <% end %>
-          </div>
-        </details>
       </div>
+      <%# The edit panel (logos/_edit_panel): the Navbar and Stacked tabs' per-part colour, weight and tagline edits; the
+          Icon tab's icon colour. %>
+      <% if split %>
+        <%= render "logos/edit_panel", kit: @kit %>
+      <% else %>
+        <%# Guides on: the edit panel goes, but the row keeps the height it gives the logo's card, so Show and Hide never
+            move the page. At desktop width the panel is drawn here invisible, inert and hidden from assistive tech, in
+            the half it would fill, under the drawing's card; on a phone, where the row is one column, it is not drawn. %>
+        <div class="hidden lg:block invisible lg:col-start-1 lg:row-start-1 min-w-0" aria-hidden="true" inert data-test="edit-ghost">
+          <%= render "logos/edit_panel", kit: @kit %>
+        </div>
+      <% end %>
     </div>
 
-    <div class="grid gap-5 min-w-0 lg:grid-cols-2 lg:items-start" data-test="logo-bottom">
+    <div class="grid gap-5 min-w-0 lg:grid-cols-2" data-test="logo-bottom">
+      <%= render "logos/download_card", downloads: @downloads %>
       <div class="card p-4 sm:p-5 space-y-3 min-w-0" data-test="logo-control-card">
         <%# One control group per line, its name on the left and its options on the right: Colouring, then the tab's
             Rule or Form and Proportion, then Words. %>
@@ -166,11 +149,18 @@
               </div>
             </div>
           <% end %>
+          <%# Guidelines: a line like the others, its name on the left and a Show / Hide toggle on the right. %>
+          <% unless @type == :icon %>
+            <div class="flex flex-wrap items-center justify-between gap-2" role="group" aria-label="Guidelines" data-test="guides-control">
+              <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Guidelines</span>
+              <div class="flex flex-wrap justify-end gap-2">
+                <%= link_to (@guides ? "Hide" : "Show"), logo_brand_path(@logo.brand, logo_page_params(guides: (1 unless @guides))),
+                            class: chosen.(@guides), aria: { label: (@guides ? "Hide guidelines" : "Show guidelines"), pressed: @guides.to_s },
+                            data: { test: "guides-toggle" } %>
+              </div>
+            </div>
+          <% end %>
           <div class="flex flex-wrap items-center gap-2">
-            <% unless @type == :icon %>
-              <%= link_to (@guides ? "Hide guides" : "Show guides"), logo_brand_path(@logo.brand, logo_page_params(guides: (1 unless @guides))),
-                          class: chosen.(@guides), data: { test: "guides-toggle" } %>
-            <% end %>
             <%# Save as default (task logo-original-and-alt, item 9): the tab's rule or form, text version, colouring and edits become the
                 brand's kit choice, which this tab then opens on. On the Icon tab, its colouring and colour become the kit's
                 icon, which every Navbar and Stacked Logo draws (task kit-icon-atomic-unit). A plain form, no JavaScript. %>
@@ -203,12 +193,10 @@
           <%= link_to "Compare", logo_compare_path_for(@logo.brand, type: @type), class: chosen.(false), data: { test: "compare-link" } %>
           <%# The edit panel is below the logo; this takes the reader to it, the same on every tab (task
               logo-compare-and-original-edits, item 2). %>
-          <%= link_to (@type == :icon ? "Edit colour" : "Edit parts"), "#edit", class: chosen.(false), data: { test: "edit-jump" } %>
+          <%# Not with guides on, when the edit panel is put away. %>
+          <%= link_to (@type == :icon ? "Edit colour" : "Edit parts"), "#edit", class: chosen.(false), data: { test: "edit-jump" } if split %>
         </div>
       </div>
-      <%# The edit panel (logos/_edit_panel): the Navbar and Stacked tabs' per-part colour, weight and tagline edits; the
-          Icon tab's icon colour. %>
-      <%= render "logos/edit_panel", kit: @kit %>
     </div>
   </section>
 

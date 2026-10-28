@@ -32,10 +32,10 @@ module Logos
     ].freeze
 
     WIDTH_PRESETS = {
-      navbar: [[400, "Email signature"], [800, "Website header, retina"], [1200, "Banners and web heroes"],
-               [2400, "Print and slides"]],
-      stacked: [[400, "Profile and directory listings"], [800, "Documents and slides"], [1200, "Social posts"],
-                [2400, "Print"]]
+      navbar: [[200, "Footers and small badges"], [400, "Email signature"], [800, "Website header, retina"],
+               [1200, "Banners and web heroes"], [2400, "Print and slides"], [4800, "Large print and signage"]],
+      stacked: [[200, "Avatars and thumbnails"], [400, "Profile and directory listings"], [800, "Documents and slides"],
+                [1200, "Social posts"], [2400, "Print"], [4800, "Large print and signage"]]
     }.freeze
 
     SCALES = [1, 2, 4].freeze
@@ -49,6 +49,12 @@ module Logos
 
     # The preset each type's card starts on.
     DEFAULTS = { icon: "512", navbar: "w800", stacked: "w800" }.freeze
+
+    # The six sizes the brand page's Download card offers as buttons, beside Custom (task brand-page-split-layout,
+    # Alex McRitchie 2026-10-27: "standard sizes, 3 best guess", then "add 3 more sizes"), smallest to largest. Each
+    # type's default is one of them.
+    STANDARD = { icon: %w[32 64 180 256 512 1024], navbar: %w[w200 w400 w800 w1200 w2400 w4800],
+                 stacked: %w[w200 w400 w800 w1200 w2400 w4800] }.freeze
 
     module_function
 
@@ -112,6 +118,12 @@ module Logos
     end
 
     # The block's preset for a fitted size, or nil when the size passes MAX_SIDE.
+    # The type's STANDARD presets, in that order, from the full list.
+    def standard(type, width, height, square: false)
+      list = presets(type, width, height, square:)
+      STANDARD.fetch(type.to_sym).filter_map { |key| list.find { |entry| entry[:key] == key } }
+    end
+
     def fitted(axis, value, width, height)
       yield(*fit(axis, value, width, height))
     rescue ArgumentError
