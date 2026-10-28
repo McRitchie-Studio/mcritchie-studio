@@ -33,6 +33,15 @@ async function clearCard(page, n) {
   await expect(recast(page, n)).toHaveAttribute("data-state", "none");
 }
 
+// Person 2 un-named, for the same reason: the first test names him and gives him the swap
+// it offers, and without this a retry, or a --repeat-each run, starts at "1 of 2" swaps.
+async function clearNaming(page, n) {
+  if ((await card(page, n).getAttribute("data-named")) !== "true") return;
+  await card(page, n).locator("[data-test='performer-artist-clear']").click();
+  await expect(card(page, n).locator("[data-test='naming-saved']")).toBeVisible();
+  await expect(card(page, n).locator("[data-test='performer-artist']")).toBeHidden();
+}
+
 async function pick(page, n, query, name) {
   await search(page, n).fill(query);
   await recast(page, n).locator("[data-test='recast-option']").filter({ hasText: name }).first().click();
@@ -42,6 +51,8 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto(VIDEO);
   await clearCard(page, 1);
+  await clearCard(page, 2);
+  await clearNaming(page, 2);
 
   await expect(page.locator("[data-test='video-kind']")).toHaveText("Cinematic · Cast");
   await expect(page.locator("[data-test='cast-confirmed']")).toBeVisible();
@@ -53,12 +64,22 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(recast(page, 1).locator("input[type='checkbox']")).toHaveCount(0);
   // Replace with is at the top, above the sightings (folded behind the title, so open them); the bottom
   // block (swap toggle, then naming) is under them.
-  const top = async (sel) => (await card(page, 1).locator(sel).first().boundingBox()).y;
+  // Opening reflows the card for two frames: cardFitRow shows EVERY clear chip, waits two
+  // frames, measures, then trims to one row, so everything under the sightings jumps up.
+  // Four separate boundingBox round-trips straddled that trim (CI, 2026-10-27: card-bottom
+  // read at 688.86 before it, performer-resolution, which sits INSIDE card-bottom, at 605.86
+  // after). So all four tops are read in one evaluate, from one layout, and retried until
+  // the fit has settled.
+  const tops = (...names) => card(page, 1).evaluate((el, ts) => Object.fromEntries(
+    ts.map((t) => [t, el.querySelector(`[data-test='${t}']`).getBoundingClientRect().top])), names);
   await card(page, 1).locator("[data-test='performer-title']").click();
   await expect(card(page, 1).locator("[data-test='card-details']")).toBeVisible();
-  expect(await top("[data-test='replace-with']")).toBeLessThan(await top("[data-test='card-details']"));
-  expect(await top("[data-test='card-details']")).toBeLessThan(await top("[data-test='card-bottom']"));
-  expect(await top("[data-test='card-bottom']")).toBeLessThan(await top("[data-test='performer-resolution']"));
+  await expect(async () => {
+    const t = await tops("replace-with", "card-details", "card-bottom", "performer-resolution");
+    expect(t["replace-with"]).toBeLessThan(t["card-details"]);
+    expect(t["card-details"]).toBeLessThan(t["card-bottom"]);
+    expect(t["card-bottom"]).toBeLessThan(t["performer-resolution"]);
+  }).toPass();
   await card(page, 1).locator("[data-test='performer-title']").click();
   await expect(card(page, 1).locator("[data-test='card-details']")).toBeHidden();
   await expect(recast(page, 1).locator("[data-test='swap-athlete']")).toBeHidden();
@@ -144,7 +165,8 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   // Both states settle at the same distance: the h-10 button and the space-y-3 gap above the naming.
   const keepAt = 40 + 12;
   await expect.poll(() => fromBottom(keepButton(page, 1))).toBe(keepAt);
-  expect(await top("[data-test='keep-original']")).toBeLessThan(await top("[data-test='performer-resolution']"));
+  const kept = await tops("keep-original", "performer-resolution");
+  expect(kept["keep-original"]).toBeLessThan(kept["performer-resolution"]);
   await keepButton(page, 1).click();
   await expect(recast(page, 1)).toHaveAttribute("data-state", "kept");
   await expect(recast(page, 1).locator("[data-test='swap-saved']")).toBeVisible();

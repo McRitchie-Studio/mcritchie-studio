@@ -11,7 +11,13 @@ class AnswerersAppOwnerTest < ActiveSupport::TestCase
   include ActiveJob::TestHelper
   include ClientCtoFixtures
 
+  # Mid-month, so a row dated 1.minute.ago never falls into the month before the
+  # owner meter's (AgentUsage.month_range) and leaves the cap tests under their cap
+  # in the first minute of a month. TimeHelpers travels back after each test.
+  NOW = Time.zone.parse("2026-10-16 12:00 MDT")
+
   setup do
+    travel_to NOW
     AgentMessages::Answerers.current = AgentMessages::Answerers.load
     @answerers = AgentMessages::Answerers.current
     @alex = AgentPerson.seed_owner!

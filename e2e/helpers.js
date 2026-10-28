@@ -418,21 +418,36 @@ async function openDeploySidebar(page, panel) {
   // A transition Alpine cancels as it swaps its classes REJECTS `finished` with an
   // AbortError — it has still ended, so a cancel counts as done. Then the box must hold
   // still across two frames, which is the property the callers actually rely on.
+  //
+  // STILL IS NOT SETTLED. Alpine's x-transition shows the panel at its enter-start class
+  // (translate-x-full, wholly off-screen right) and only swaps to enter-end two frames
+  // later (its nextFrame is a double requestAnimationFrame), which is when the CSS
+  // transition starts. A check run in that gap found no animation to await and two
+  // identical frames at the OFF-SCREEN start, called it settled, and returned a panel
+  // about to slide: release_seal read the seal at x=1596 and the state badge at 1412 a
+  // frame later (CI run 40544326015, 2026-10-27). So the panel must also be ON SCREEN
+  // (its box wholly inside the viewport) before two equal frames count, and
+  // any animation that started meanwhile is awaited on each pass.
   await sidebar.evaluate(async (el) => {
     // Only time-based animations finish. A scroll-driven one (studio-engine 0.111.1 puts
     // `animation-timeline: scroll()` on a sidebar panel's [data-pin-edge]) never does, so
     // awaiting it hangs until the test times out.
-    const timed = el.getAnimations().filter((a) => a.timeline === document.timeline);
-    await Promise.all(timed.map((a) => a.finished.catch(() => {})));
+    const settleTimed = () => Promise.all(el.getAnimations()
+      .filter((a) => a.timeline === document.timeline)
+      .map((a) => a.finished.catch(() => {})));
     const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+    // The box includes the translate, so a panel anywhere in its slide pokes past the edge.
+    const inPlace = (r) => r.left >= -0.5 && r.right <= window.innerWidth + 0.5;
     let last = "";
-    for (let i = 0; i < 60; i += 1) {
+    for (let i = 0; i < 120; i += 1) {
+      await settleTimed();
       await frame();
       const r = el.getBoundingClientRect();
       const now = `${Math.round(r.left)},${Math.round(r.width)}`;
-      if (now === last) return;
+      if (now === last && inPlace(r)) return;
       last = now;
     }
+    throw new Error(`deploy sidebar never settled on screen: ${last}`);
   });
   return sidebar;
 }
