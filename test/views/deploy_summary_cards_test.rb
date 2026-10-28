@@ -237,6 +237,7 @@ class DeploySummaryCardsTest < ActionView::TestCase
       assert_select "[data-test='devops-mean']", text: release_duration_label(156 * 60)
       assert_select "div", text: /running avg/
       assert_select "[data-test='devops-landing']", text: "lands ~2:45 PM MT"
+      assert_select "[data-test='devops-landing'] time[datetime='2026-10-28T20:45:00Z']", 1
       assert_select "[data-test='devops-current-phase']", text: /in QA/
       assert_select ".sr-only", text: /land in about 1h 2m,\s+around 2:45 PM MT/
     end

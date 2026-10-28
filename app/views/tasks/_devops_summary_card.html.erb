@@ -10,8 +10,9 @@
     four phases that TILE each release's time, and this card leads with the median.
 
     FOUR THINGS, top to bottom:
-      the typical release     the MEDIAN total — the hero number — with the mean
-                              beside it, small, so the gap between them is visible
+      the typical release     the MEDIAN total — the hero number while nothing is in
+                              flight — with the mean beside it, small, so the gap
+                              between them is visible (in flight: THE COUNTDOWN below)
       the last ten releases   a sparkline, oldest left, each column stacked by phase;
                               a column past the scale is clipped and marked, so eight
                               ordinary releases are not flattened to a pixel by two
@@ -32,6 +33,9 @@
     ~2:45 PM MT"). Past its estimate it counts the overrun up, "+12m over", in the
     warning ink. The line under the hero is then the RUNNING AVERAGE (the mean). With
     nothing in flight the card is exactly as it was: the median, "typical release".
+    Like the rest of the card it is read at render: a release that ships or opens
+    while the page sits open shows only on the next load (the card is not in
+    DeploymentsBroadcaster), so a shipped release can read "+Xm over" until then.
 
     Locals: flow (Release::Flow or nil), estimate (Release::Flow::Estimate or nil),
             wip_count, wip_by_stage %>

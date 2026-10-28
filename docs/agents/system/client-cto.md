@@ -165,7 +165,10 @@ left (`AppDevopsStages::Eta`). Each list row says the same for its own task.
   text). Past the deadline it reads "Any minute now", never a negative. The ticking span is
   hidden from screen readers, which hear the rounded wait once ("~6 min left"); the list row
   keeps the rounded words ("Building · ~6 min left", "taking longer than usual"). Prepping and
-  "no builder" keep their words, with no countdown.
+  "no builder" keep their words, with no countdown. The same module ticks the `/deployments` DevOps card's hero
+  (task `devops-card-counts-down-to-ship`): a span with `data-countdown-over` counts down to
+  the in-flight release's estimated landing (`Release::Flow#estimate`) and, past it, counts
+  the overrun up ("+12m over") instead of reading "Any minute now".
 - **A client build's usual time** is the launcher's own record, not the board's: the median
   `started_at → finished_at` of the last 20 `devops.client_build` runs that ended
   `preview_ready` (the builder's wall clock; a failed or released run built nothing), and
