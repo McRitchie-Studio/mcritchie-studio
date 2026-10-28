@@ -849,7 +849,8 @@ Each of these reads can fail quietly enough to look like an answer.
   `heroku ps` empty). `bin/release` kills a record op's client at
   `RELEASE_RECORD_OP_DEADLINE` (300 s) and takes the `record op failed` path. Killing
   the local client does not stop a dyno that is still running, so a re-run leans on
-  the conductor writes being idempotent, as they are.
+  the conductor writes being idempotent: a board write re-applies to the same state,
+  and release notes Discord already took are skipped rather than posted again.
 - **Every `bin/release` child is bounded** (BoundedCommand: a deadline, then SIGKILL
   to the child's whole process group; never `Timeout.timeout` or SIGALRM, which `op`
   ignores). The bounds, in seconds, each set by its variable:

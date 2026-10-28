@@ -1491,7 +1491,8 @@ def conductor(ruby, read_only: false)
   if timed_out
     abort!("record op failed: no answer within #{deadline.round}s, so the " \
            "#{PROD ? '`heroku run` client' : 'rails runner'} was killed (#{deadline_env} sets the bound). " \
-           "Whether the write landed is unknown; re-running is safe, every conductor write is idempotent.\n#{out}")
+           "Whether the write landed is unknown. Re-running is safe: a board write re-applies to the same " \
+           "state, and release notes Discord already took are skipped, never posted twice.\n#{out}")
   end
   abort!("record op failed:\n#{out}") unless ok
   line = out.lines.reverse.find { |l| l.strip.start_with?("{") }

@@ -25,6 +25,7 @@ class ReleaseSubprocessesAreBoundedTest < Minitest::Test
     bin/lib/gh_auth_retry.rb
     bin/lib/static_cloudflare.rb
     bin/lib/local_services.rb
+    bin/clean-artifacts
     app/services/gmail/credentials.rb
     app/services/workspace/credentials.rb
   ].freeze

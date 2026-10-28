@@ -286,8 +286,10 @@ be undone. In order, after production authority:
 
 **A red re-lock commit.** The refusal names the commit (`THIS IS THE RE-LOCK COMMIT …`).
 It differs from the tree QA passed only in `Gemfile` and `Gemfile.lock`, and the final
-gem was compared with the candidate, so re-run that commit's CI run first (`gh run
-rerun <id>`, all jobs), then `bin/release ship`. A red that reproduces is a defect:
+gem was compared with the candidate, so the gate has already waited for that commit's
+run to complete and re-run a first-attempt red once by itself (its `↻↻ … AUTOMATIC
+RE-RUN` line, or the reason it did not). If it did not, re-run that commit's CI run
+(`gh run rerun <id>`, all jobs), then `bin/release ship`. A red that reproduces is a defect:
 fix it through a task on `accepted` and have Avi re-run `prepare`. The final stays
 published; consumers then lock it directly and QA runs again.
 
