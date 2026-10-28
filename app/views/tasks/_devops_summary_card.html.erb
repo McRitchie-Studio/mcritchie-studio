@@ -24,8 +24,19 @@
     Not a broadcast slot: like the card it replaced, it reads shipped history and a
     WIP count at render time.
 
-    Locals: flow (Release::Flow or nil), wip_count, wip_by_stage %>
+    THE COUNTDOWN. While a release is in flight (estimate, a Release::Flow::Estimate)
+    the hero is no longer history but a clock: the time left until that release
+    should land in production — what it has spent, plus the rest of the median of
+    the phase it is in, plus the medians of the phases after it — ticked each second
+    by devops_countdown.js off data-deadline, with the clock time under it ("lands
+    ~2:45 PM MT"). Past its estimate it counts the overrun up, "+12m over", in the
+    warning ink. The line under the hero is then the RUNNING AVERAGE (the mean). With
+    nothing in flight the card is exactly as it was: the median, "typical release".
+
+    Locals: flow (Release::Flow or nil), estimate (Release::Flow::Estimate or nil),
+            wip_count, wip_by_stage %>
 <% flow = local_assigns[:flow] %>
+<% estimate = local_assigns[:estimate] %>
 <% wip_count = local_assigns[:wip_count] %>
 <%= tag.div(**deploy_summary_card_options("devops", test: "devops-summary-card", id: "devops-summary-card")) do %>
   <%= render "tasks/summary_card_header", panel: "devops", title: "DevOps",
@@ -37,13 +48,39 @@
     <% outliers = flow.outliers %>
     <% scale = flow.scale_seconds %>
     <div class="mt-3 flex items-end justify-between gap-3">
-      <div class="min-w-0">
-        <div class="font-mono text-2xl font-bold leading-none tabular-nums text-heading" data-test="devops-typical"
-             data-seconds="<%= median %>"><%= release_flow_duration(median) %></div>
-        <div class="mt-1 text-2xs leading-tight text-muted">
-          typical release <span class="whitespace-nowrap">· avg <span class="tabular-nums" data-test="devops-mean"><%= release_flow_duration(mean) %></span></span>
+      <% if estimate %>
+        <%# The ticking clock is hidden from screen readers, which hear the estimate once
+            in the sr-only line, never each tick. Text only: it updates under reduced
+            motion too. %>
+        <div class="min-w-0" data-test="devops-countdown" data-phase="<%= estimate.phase %>"
+             data-gem-history="<%= estimate.gem_history %>">
+          <div class="whitespace-nowrap font-mono text-2xl font-bold leading-none tabular-nums text-heading data-[eta-kind=over]:text-warning-ink"
+               data-test="devops-eta" aria-hidden="true"
+               data-devops-countdown data-countdown-over
+               data-deadline="<%= estimate.eta.utc.iso8601 %>"
+               data-eta-kind="<%= estimate.over? ? "over" : "left" %>"
+               data-remaining="<%= estimate.remaining %>"><%= release_countdown_text(estimate) %></div>
+          <span class="sr-only">
+            <%= estimate.over? ? "The release is #{release_flow_duration(estimate.overrun)} past its estimate" : "The release should land in about #{release_flow_duration(estimate.remaining)}" %>,
+            around <%= release_landing_clock(estimate.eta) %>.
+          </span>
+          <div class="mt-1 text-2xs leading-tight text-muted">
+            running avg <span class="tabular-nums text-secondary" data-test="devops-mean"><%= release_flow_duration(mean) %></span>
+          </div>
+          <div class="text-2xs leading-tight text-muted">
+            <span class="whitespace-nowrap" data-test="devops-landing"><%= estimate.over? ? "due" : "lands" %> ~<time datetime="<%= estimate.eta.utc.iso8601 %>"><%= release_landing_clock(estimate.eta) %></time></span>
+            <span class="whitespace-nowrap" data-test="devops-current-phase">· in <%= estimate.phase_label %></span>
+          </div>
         </div>
-      </div>
+      <% else %>
+        <div class="min-w-0">
+          <div class="font-mono text-2xl font-bold leading-none tabular-nums text-heading" data-test="devops-typical"
+               data-seconds="<%= median %>"><%= release_flow_duration(median) %></div>
+          <div class="mt-1 text-2xs leading-tight text-muted">
+            typical release <span class="whitespace-nowrap">· avg <span class="tabular-nums" data-test="devops-mean"><%= release_flow_duration(mean) %></span></span>
+          </div>
+        </div>
+      <% end %>
 
       <%# THE SPARKLINE. Oldest left, newest right. Each column is one release, its height
           its total against the tallest ORDINARY release (Flow#scale_seconds); a column

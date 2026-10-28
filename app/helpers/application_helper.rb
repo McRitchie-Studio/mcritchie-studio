@@ -1563,6 +1563,21 @@ module ApplicationHelper
   # A release-flow duration in the page's stage vocabulary ("16m", "1h 24m"), or "—".
   def release_flow_duration(seconds) = release_duration_label(seconds)
 
+  # The DevOps hero's first paint for an in-flight release (Release::Flow::Estimate):
+  # the clock to its landing ("1:02:03"), or "+12m over" once it is past due.
+  # devops_countdown.js ticks it from there; the two must agree.
+  def release_countdown_text(estimate)
+    return "+#{precise_stage_duration(estimate.overrun)} over" if estimate.over?
+
+    AppDevopsStages::Eta.clock(estimate.remaining)
+  end
+
+  # "2:45 PM MT" — when the release should land, on Alex McRitchie's clock. The
+  # operator reads the board in Denver whatever the server's zone is.
+  RELEASE_LANDING_ZONE = "America/Denver"
+
+  def release_landing_clock(time) = time.in_time_zone(RELEASE_LANDING_ZONE).strftime("%-I:%M %p MT")
+
   # "acc" / "rel" / "main" — the branch a summary row's suite ran on, in the width a
   # one-line row can spare. The full name rides the row's title.
   APP_SUMMARY_BRANCH_ABBREVIATIONS = { "accepted" => "acc", "release" => "rel", "main" => "main" }.freeze

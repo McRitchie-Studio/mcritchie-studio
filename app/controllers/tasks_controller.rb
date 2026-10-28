@@ -33,6 +33,9 @@ class TasksController < ApplicationController
     # Where release time goes — the DevOps summary card's four phases and its median
     # (Release::Flow). The six stage averages above stay for the sidebar.
     @release_flow = Release::Flow.recent
+    # The card's countdown: where the in-flight release is and when it should land,
+    # against the same medians (gem-release history for a release carrying a gem).
+    @release_estimate = Release::Flow.estimate_for(@current_release, default: @release_flow)
     # The app-ladder row: where each application sits on accepted → release → main,
     # which the Next Release card cannot show (it is decoupled — work parks on
     # `accepted` between releases). Pipeline-wide for the same reason as WIP above:

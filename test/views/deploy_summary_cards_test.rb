@@ -219,6 +219,56 @@ class DeploySummaryCardsTest < ActionView::TestCase
     assert_select "[data-test='devops-outlier-note']", text: /1 slow release.*most of it in Batch/m
   end
 
+  # THE COUNTDOWN (task devops-card-counts-down-to-ship): while a release is in flight
+  # the hero is a clock to its landing, the line under it the running average, and the
+  # landing time on the operator's Mountain clock.
+  test "[component] DevOps counts down to an in-flight release's landing, the running average under it" do
+    flow = Release::Flow.new([30, 40, 50, 60, 600].each_with_index.map { |minutes, i| entry("rel-#{i}", minutes) })
+    eta = Time.utc(2026, 10, 28, 20, 45)
+    estimate = Release::Flow::Estimate.new(phase: "qa", phase_started_at: eta - 1.hour, elapsed: 600,
+                                           remaining: 3723, overrun: 0, eta: eta, gem_history: false)
+
+    render partial: "tasks/devops_summary_card", locals: { flow: flow, estimate: estimate, wip_count: 3 }
+
+    assert_select "[data-test='devops-typical']", 0, "the median hero gives way to the clock"
+    assert_select "[data-test='devops-countdown'][data-phase='qa']" do
+      assert_select "[data-test='devops-eta'][data-devops-countdown][data-countdown-over][data-deadline='2026-10-28T20:45:00Z'][data-eta-kind='left'][aria-hidden='true']",
+                    text: "1:02:03"
+      assert_select "[data-test='devops-mean']", text: release_duration_label(156 * 60)
+      assert_select "div", text: /running avg/
+      assert_select "[data-test='devops-landing']", text: "lands ~2:45 PM MT"
+      assert_select "[data-test='devops-current-phase']", text: /in QA/
+      assert_select ".sr-only", text: /land in about 1h 2m,\s+around 2:45 PM MT/
+    end
+    assert_select "[data-test='devops-sparkline']", 1, "the history below the hero stays"
+  end
+
+  test "[component] DevOps past its estimate reads +Xm over in the warning ink, never a zero" do
+    flow = Release::Flow.new([30, 40, 50].each_with_index.map { |minutes, i| entry("rel-#{i}", minutes) })
+    due = Time.utc(2026, 10, 28, 20, 0)
+    estimate = Release::Flow::Estimate.new(phase: "ship", phase_started_at: due - 7.minutes, elapsed: 3600,
+                                           remaining: 0, overrun: 12 * 60, eta: due, gem_history: false)
+
+    render partial: "tasks/devops_summary_card", locals: { flow: flow, estimate: estimate, wip_count: 1 }
+
+    hero = css_select("[data-test='devops-eta']").first
+    assert_equal "+12m over", hero.text
+    assert_equal "over", hero["data-eta-kind"]
+    assert_includes hero["class"], "data-[eta-kind=over]:text-warning-ink"
+    assert_select "[data-test='devops-landing']", text: "due ~2:00 PM MT"
+  end
+
+  test "[component] DevOps with no release in flight is the card it always was" do
+    flow = Release::Flow.new([30, 40, 50, 60, 600].each_with_index.map { |minutes, i| entry("rel-#{i}", minutes) })
+
+    render partial: "tasks/devops_summary_card", locals: { flow: flow, estimate: nil, wip_count: 0 }
+
+    assert_select "[data-test='devops-countdown']", 0
+    assert_select "[data-devops-countdown]", 0
+    assert_select "[data-test='devops-typical']", text: "50m"
+    assert_select "div", text: /typical release/
+  end
+
   test "[component] DevOps with nothing shipped says so instead of drawing empty charts" do
     render partial: "tasks/devops_summary_card", locals: { flow: Release::Flow.new([]), wip_count: 0 }
 
