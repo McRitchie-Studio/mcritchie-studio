@@ -44,7 +44,8 @@ module Logos
     SQUARE_TOLERANCE = 0.01
 
     # The solid background a PNG may take instead of transparency, per tone: white behind the light logo, black behind
-    # the dark and the watermark (both drawn for a dark ground). The card's colour picker starts on it.
+    # the dark and the watermark (both drawn for a dark ground). The /logos table's JPEG links fill with it; the brand
+    # page's Download card has no Background and stays transparent.
     BACKGROUNDS = { light: "#FFFFFF", dark: "#000000", watermark: "#000000" }.freeze
 
     # The preset each type's card starts on.

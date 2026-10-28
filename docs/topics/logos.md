@@ -794,8 +794,8 @@ table opens on it again.
   its size read from its `viewBox`, drawn at the type's **default preset** (`Logos::PngSizes.default_size`: 800 px
   wide for the Navbar and Stacked Logos; the icon's long side 512, its true aspect, or 512 × 512 when it is
   square), and saved as the SVG's name plus `-<w>x<h>.png` or `.jpg`.
-- A PNG is transparent. A JPEG has no transparency, so it is filled with the solid background the Download card
-  offers for that tone (`Logos::PngSizes::BACKGROUNDS`: white behind the light logo, black behind the dark one and
+- A PNG is transparent. A JPEG has no transparency, so it is filled with the tone's solid background
+  (`Logos::PngSizes::BACKGROUNDS`: white behind the light logo, black behind the dark one and
   the watermark).
 - Each link's accessible name is the server's (`Download: <logo>`, with `, kit choice` for a saved choice), and the
   script puts the format in front of it (`Download PNG, 800 px wide: <logo>, kit choice`), so the saved cue is kept.

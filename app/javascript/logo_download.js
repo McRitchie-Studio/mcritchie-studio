@@ -276,7 +276,8 @@ function wireCard(card) {
 
   form.addEventListener("change", (event) => { followAspect(event); sync(); });
   form.addEventListener("input", (event) => { followAspect(event); sync(); });
-  // The outline follows the logo: its image loading, the theme swapping light for dark, the window resizing.
+  // The outline follows the logo: its image loading and the theme swapping light for dark
+  // (the observer watches the images, so a window resize that leaves them their size redraws nothing).
   if (outline && typeof ResizeObserver !== "undefined") {
     const observer = new ResizeObserver(() => (card.isConnected ? sync() : observer.disconnect()));
     outline.parentElement.querySelectorAll("img").forEach((img) => observer.observe(img));
@@ -344,8 +345,8 @@ export function rasterFilename(svgFilename, width, height, ext) {
 }
 
 // What one table link would draw in `format`: { url, filename, mime, size, naturalWidth, naturalHeight, background }
-// once the SVG is read. A JPEG has no transparency, so it is always filled: with the link's data-background, the solid
-// background the brand page's Download card offers for that tone (Logos::PngSizes::BACKGROUNDS). A PNG stays
+// once the SVG is read. A JPEG has no transparency, so it is always filled: with the link's data-background, the tone's
+// solid background (Logos::PngSizes::BACKGROUNDS). A PNG stays
 // transparent, as the card's default is.
 export function rasterPlan(data, format, text) {
   const raster = RASTER_FORMATS[format];

@@ -75,7 +75,7 @@
           </div>
         <% else %>
           <%# The dotted outline is the Download card's PNG canvas, drawn around the logo where the canvas is not the
-              logo's own shape (a custom size without its aspect, or the icon's 1:1 square). app/javascript/logo_download.js
+              logo's own shape (a Custom size with Keep aspect ratio unticked). app/javascript/logo_download.js
               places it; the frame clips it. %>
           <div class="relative overflow-hidden flex flex-1 items-center justify-center rounded-lg border border-subtle p-4 sm:p-8 min-w-0" data-test="logo-frame">
             <%= logo_themed_images(@shown, height: logo_height(variant)) %>
