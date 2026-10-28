@@ -14,7 +14,8 @@ module BuildIntake
   # never claimable: it is born `completed`. Two sends racing at the edge may let
   # one extra answer through; the caps are a budget, not a lock.
   #
-  # An ANSWER here is any row of a build thread the soul was asked to answer:
+  # An ANSWER here is any row of a build thread (or, for the :ip and :daily caps,
+  # a satellite chat thread) the soul was asked to answer:
   # not held (a bot-shield or unanswered row) and not itself a cap reply.
   class Caps
     ZONE = "America/Denver".freeze
@@ -42,6 +43,15 @@ module BuildIntake
       limit = signed_in ? @policy.signed_in_turns_per_request : @policy.turns_per_request
       return :request if answered.where(thread_key: BuildIntake.thread_key(token)).count >= limit
       return nil if signed_in
+
+      public_cap(ip_hash)
+    end
+
+    # The caps every signed-out answer shares, /build and the satellite chat
+    # (AgentChat::Caps) alike: :ip, :daily, or nil. One budget: a visitor's IP
+    # and the day's total count answers on either.
+    def public_cap(ip_hash)
+      return nil unless @policy
       return :ip if ip_hash.present? && answered.where("agent_messages.envelope->>'ip_hash' = ?", ip_hash)
                                                 .where("agent_messages.created_at > ?", @now - 1.hour).count >= @policy.per_ip_per_hour
       return :daily if answered.where("agent_messages.envelope->>'signed_in' = 'false'")
@@ -61,9 +71,13 @@ module BuildIntake
 
     private
 
+    # The public-intake answers: /build's threads and the satellite chat's
+    # (AgentChat::THREAD_PREFIX), so the IP and daily caps are one budget.
     def answered
       AgentMessage.where(channel: "web")
-                  .where("left(agent_messages.thread_key, ?) = ?", BuildIntake::THREAD_PREFIX.length, BuildIntake::THREAD_PREFIX)
+                  .where("left(agent_messages.thread_key, ?) = ? OR left(agent_messages.thread_key, ?) = ?",
+                         BuildIntake::THREAD_PREFIX.length, BuildIntake::THREAD_PREFIX,
+                         AgentChat::THREAD_PREFIX.length, AgentChat::THREAD_PREFIX)
                   .where.not(status: "held")
                   .where("agent_messages.action_summary IS DISTINCT FROM ?", CAP_SUMMARY)
     end

@@ -18,9 +18,11 @@ module AgentMessages
   #
   # PUBLIC INTAKE is the one exception (`public_intake:` in the same file;
   # BuildIntake): its soul (Alex) answers ANY person, the public included, on a
-  # `web` row whose thread key starts with web:build:, and nowhere else. The
-  # prefix is pinned to BuildIntake::THREAD_PREFIX at load, so a config typo can
-  # never open a wider set of threads. The caps are BuildIntake::Caps, enforced
+  # `web` row whose thread key starts with web:build:, or with its own satellite
+  # chat prefix (chat:<soul>:, AgentChat; Api::V1::AgentChatsController), and
+  # nowhere else. The /build prefix is pinned to BuildIntake::THREAD_PREFIX at
+  # load and the chat prefix is built in code, so a config typo can never open a
+  # wider set of threads. The caps are BuildIntake::Caps, enforced
   # where those rows are written (BuildIntake::Ingest).
   #
   # APP OWNERS are the second exception (`app_owners:` in the same file; Alex McRitchie,
@@ -175,9 +177,18 @@ module AgentMessages
     # build thread. Nothing else, so the public is answered nowhere else.
     def intake?(message)
       return false unless public_intake
+      return false unless message.channel.to_s == "web" && message.soul_slug.to_s == public_intake.soul
 
-      message.channel.to_s == "web" && message.soul_slug.to_s == public_intake.soul &&
-        message.thread_key.to_s.start_with?(public_intake.thread_prefix)
+      intake_prefixes.any? { |prefix| message.thread_key.to_s.start_with?(prefix) }
+    end
+
+    # The thread prefixes public intake answers on: /build's (pinned at load) and
+    # the intake soul's satellite chat threads (AgentChat.soul_prefix: "chat:alex:"),
+    # both built in code, never read from the message.
+    def intake_prefixes
+      return [] unless public_intake
+
+      [ public_intake.thread_prefix, AgentChat.soul_prefix(public_intake.soul) ]
     end
 
     # The answered AgentPerson ids, read now: a role changed since is seen at once.
@@ -208,10 +219,10 @@ module AgentMessages
                  "(SELECT agent_people.id FROM agent_people WHERE agent_people.role IN (#{list}))"
         clause += " OR #{app_owner_sql(table)}" if app_owners
         if intake
-          prefix = intake.thread_prefix
+          prefixes = intake_prefixes.map { |prefix| "left(#{table}.thread_key, #{prefix.length}) = #{conn.quote(prefix)}" }
           clause += " OR (#{table}.person_id IS NOT NULL AND #{table}.channel = 'web' " \
                     "AND #{table}.soul_slug = #{conn.quote(intake.soul)} " \
-                    "AND left(#{table}.thread_key, #{prefix.length}) = #{conn.quote(prefix)})"
+                    "AND (#{prefixes.join(' OR ')}))"
         end
         "(#{clause})"
       end
