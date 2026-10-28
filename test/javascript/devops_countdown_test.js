@@ -64,3 +64,13 @@ test("a data-countdown-over span counts down, then reads +Xm over and is marked 
   assert.equal(hero.textContent, "+12m over", "past the estimate it says how far over");
   assert.equal(hero.dataset.etaKind, "over");
 });
+
+test("a data-countdown-over span's kind follows the clock both ways: the warning ink never outlives the overrun", () => {
+  const deadline = Date.parse("2026-10-28T20:45:00Z");
+  const hero = { dataset: { deadline: "2026-10-28T20:45:00Z", etaKind: "over", countdownOver: "" }, textContent: "+12m over" };
+  const root = { querySelectorAll: () => [ hero ] };
+
+  tick(root, deadline - 60 * 1000);
+  assert.equal(hero.textContent, "01:00");
+  assert.equal(hero.dataset.etaKind, "left", "painted over by the server, back to left once time is left");
+});

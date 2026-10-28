@@ -47,8 +47,11 @@ export function tick(root, nowMs) {
     const counting = el.dataset.countdownOver !== undefined;
     const text = late && counting ? "+" + overLabel(-left) + " over" : countdownClock(left);
     if (el.textContent !== text) el.textContent = text;
-    const kind = counting ? "over" : "long";
-    if (late && el.dataset.etaKind !== kind) el.dataset.etaKind = kind;
+    // A hero span's kind follows its clock BOTH ways — "left" while time is left,
+    // "over" past it — so the warning ink never outlives the overrun (a clock moved
+    // back, a tab woken). The pill keeps its one-way "long" mark.
+    const kind = counting ? (late ? "over" : "left") : (late ? "long" : null);
+    if (kind && el.dataset.etaKind !== kind) el.dataset.etaKind = kind;
   });
 }
 
