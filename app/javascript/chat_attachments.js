@@ -116,7 +116,12 @@ function chipFor(file) {
   return chip;
 }
 
+// The composer a chip is in NOW: a redraw of the composer while a file uploads
+// moves its chip into the new form (agent_chat.js), and the upload settles there.
+function homeOf(chip, root) { return chip.closest?.(ROOT) || root; }
+
 function fail(root, chip, text) {
+  root = homeOf(chip, root);
   chip.dataset.state = "failed";
   // Swap, not add: with both on the chip the stylesheet's order would decide.
   chip.classList.remove("border-subtle");
@@ -131,6 +136,7 @@ function fail(root, chip, text) {
 }
 
 function done(root, chip, token) {
+  root = homeOf(chip, root);
   chip.dataset.state = "done";
   chip.querySelector("progress")?.remove();
   const field = document.createElement("input");

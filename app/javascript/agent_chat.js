@@ -17,14 +17,21 @@
 //   - Enter sends, Shift+Enter is a new line, and the composer keeps focus;
 //   - while a send posts, its status line reads "Sending…" for a screen reader;
 //   - a send spends the composer the moment Turbo has read it (startSend): a
-//     fresh client id, the box emptied, its files' tokens set aside. The sent
+//     fresh client id, the box emptied, its files' chips taken off. The sent
 //     turn is broadcast as well as answered, and the broadcast can land first,
 //     so the owner may write again while the OLD composer is still on the page.
 //     That message once rode the last one's client id and AgentMessages::WebIngest
 //     kept it as a double submit: it vanished (task shell-growth-spec-stops-flaking).
-//     When the answer's fresh composer lands, a draft typed meanwhile is carried
-//     into it (carriedDraft); a send that never reached the server puts its text
-//     back. One empty send while a send posts is a double submit, and is dropped.
+//     When the answer's fresh composer lands, what the owner had going in the
+//     old one is carried into it: a draft typed meanwhile (carriedDraft, beside
+//     a refused send's echo, never under it), files attached meanwhile, the
+//     caret. A send that never reached the server puts its text and its own
+//     files back; a file another send carried never comes back. An ask
+//     (build_status.js) sets the visitor's draft aside and the send puts it
+//     straight back. The composer stays aria-busy until the LAST send in flight
+//     settles (trackSend). One empty send while a send posts is a double submit,
+//     and is dropped; one that carries files is a message (emptyRepeat). Task
+//     composer-edge-cases.
 //
 // Its hooks keep their cto-chat names (data-cto-chat-*, #cto-chat-typing, the
 // AgentMessages::WebChat targets) for every agent, so the CTO page is unchanged.
@@ -82,29 +89,73 @@ export function freshClientId(random = () => globalThis.crypto?.randomUUID?.()) 
   return random() || "";
 }
 
+const CHIP = "[data-chat-attachment-chip]";
+const CHIPS = "[data-chat-attachments-chips]";
+const TOKEN = "input[name$='[attachments][]']";
+
+function tokenOf(chip) {
+  return chip.querySelector?.(TOKEN)?.value || "";
+}
+
+// The text box is required only while no file rides the message (chat_attachments.js
+// keeps the same rule as files come and go).
+function syncRequired(form) {
+  const field = form.querySelector("textarea");
+  if (field) field.required = form.querySelectorAll(CHIP).length === 0;
+}
+
 // The send Turbo has just read out of `form` is on its way: give the form a fresh
-// client id, empty its box, and set its files' tokens aside, so a second send from
-// this same form is a message of its own, never the first again. Returns the text
-// that was sent, for restoreSend.
+// client id, empty its box, and take its sent files' chips off the form (Turbo has
+// already read their tokens), so a second send from this same form is a message of
+// its own, never the first again, and no sent file can ride a later one. A draft
+// an ask set aside (build_status.js#askAgent: data-ask-draft) goes back in the box
+// at once: the ask is what was sent, and the visitor's own words are theirs again.
+// Returns what was sent, { text, files }, for restoreSend.
 export function startSend(form, random) {
   const field = form.querySelector("textarea");
   const text = field?.value || "";
   const id = form.querySelector("input[name$='[client_id]']");
   if (id) id.value = freshClientId(random);
   if (field) field.value = "";
-  form.querySelectorAll("input[name$='[attachments][]']").forEach((token) => { token.disabled = true; });
-  return text;
+  const files = Array.from(form.querySelectorAll(CHIP)).filter((chip) => tokenOf(chip) !== "");
+  files.forEach((chip) => chip.remove());
+  const draft = form.dataset?.askDraft;
+  if (draft !== undefined) {
+    delete form.dataset.askDraft;
+    if (field) field.value = draft;
+  }
+  syncRequired(form);
+  return { text, files };
 }
 
-// A send that failed (sendFailed): its text, files and client id go back in,
-// unless something new was typed meanwhile. The id
-// matters: the server may have stored the send before the answer was lost, and a
-// retry on the same id is then kept once (WebIngest), not stored twice.
-export function restoreSend(form, text, clientId) {
+// Puts `chips` into `form`'s file list, skipping a file it already holds (a
+// refused send's files come back drawn by the server). Returns how many went in.
+export function addChips(form, chips) {
+  const holder = form?.querySelector(CHIPS);
+  if (!holder) return 0;
+  const held = new Set(Array.from(form.querySelectorAll(TOKEN)).map((token) => token.value));
+  let added = 0;
+  chips.forEach((chip) => {
+    const token = tokenOf(chip);
+    if (token !== "" && held.has(token)) return;
+    holder.append(chip);
+    if (token !== "") held.add(token);
+    added += 1;
+  });
+  syncRequired(form);
+  return added;
+}
+
+// A send that failed (sendFailed): its files, and its text and client id unless
+// something new was typed meanwhile, go back in. Only that send's own files: a
+// file another send carried stays sent. The id matters: the server may have
+// stored the send before the answer was lost, and a retry on the same id is then
+// kept once (WebIngest), not stored twice. True when the text went back.
+export function restoreSend(form, sent, clientId) {
+  addChips(form, sent?.files || []);
   const field = form.querySelector("textarea");
-  form.querySelectorAll("input[name$='[attachments][]']").forEach((token) => { token.disabled = false; });
-  if (!field || field.value.trim() !== "" || !text) return false;
-  field.value = text;
+  if (!field || field.value.trim() !== "" || !sent?.text) return false;
+  field.value = sent.text;
   const id = form.querySelector("input[name$='[client_id]']");
   if (id && clientId) id.value = clientId;
   return true;
@@ -117,11 +168,53 @@ export function sendFailed(detail) {
   return Boolean(detail?.error) || Boolean(detail?.fetchResponse && !detail.success);
 }
 
-// What a composer redrawn by the server holds: what the server drew there (a
-// refused send's text, echoed back with its reason), else what was being typed
-// while the send posted.
+// What a composer redrawn by the server holds, losing nothing the owner wrote:
+// what the server drew there (a refused send's text, echoed back with its reason)
+// and what was being typed while the send posted (a draft, or an ask's set-aside
+// draft). Both, the echo first, unless one already holds the other.
 export function carriedDraft(drawn, typed) {
-  return (drawn || "").trim() !== "" ? drawn : (typed || "");
+  const shown = drawn || "";
+  const kept = typed || "";
+  if (kept.trim() === "" || kept.trim() === shown.trim()) return shown;
+  if (shown.trim() === "" || kept.trim().startsWith(shown.trim())) return kept;
+  return `${shown}\n${kept}`;
+}
+
+// Whether an empty send is the same send twice (a second Enter, a second tap while
+// one posts), to be dropped: only while a send posts, and only with no file on it.
+// A files-only message is a message.
+export function emptyRepeat(form) {
+  if (form.getAttribute("aria-busy") !== "true") return false;
+  if ((form.querySelector("textarea")?.value || "").trim() !== "") return false;
+  return form.querySelectorAll(CHIP).length === 0;
+}
+
+// The sends in flight, per composer id. Turbo marks a form busy at each send's
+// start and clears it at each one's end, so when sends overlap (the second aborts
+// the first, whose end lands after the second's start) the first one's end left
+// the composer "not busy" while the second still posted. Counted here instead:
+// busy until the LAST send in flight settles. Returns the count left.
+export function trackSend(inflight, formId, submission, started) {
+  const sends = inflight.get(formId) || new Set();
+  if (started) sends.add(submission); else sends.delete(submission);
+  if (sends.size === 0) inflight.delete(formId); else inflight.set(formId, sends);
+  return sends.size;
+}
+
+export function markBusy(form, count) {
+  if (!form) return;
+  if (count > 0) form.setAttribute("aria-busy", "true");
+  else form.removeAttribute("aria-busy");
+}
+
+// Puts the caret at the end of the composer's box.
+export function focusComposer(form) {
+  const field = form?.querySelector("textarea");
+  if (!field) return false;
+  field.focus();
+  const end = field.value.length;
+  field.setSelectionRange?.(end, end);
+  return true;
 }
 
 // A stream that redraws a chat composer: the composer it replaces, or null.
@@ -169,6 +262,16 @@ function afterRender() {
 }
 
 if (typeof document !== "undefined") {
+  // The sends in flight, per composer id (trackSend).
+  const inflight = new Map();
+  const sending = new WeakMap();
+
+  // A composer redraw (the send's answer) builds a fresh form, so what the owner
+  // had going in the old one is carried across: the draft (carriedDraft), files
+  // attached while the send posted, uploading or ready (their chips move, so an
+  // upload still running lands in the new form; a send held for them stays
+  // held), the busy mark of a send still in flight, and the caret, when it was in
+  // the box the redraw took away.
   document.addEventListener("turbo:before-stream-render", (event) => {
     const original = event.detail.render;
     event.detail.render = async (stream) => {
@@ -176,13 +279,21 @@ if (typeof document !== "undefined") {
       const composer = composerTarget(stream);
       const typed = composer?.querySelector("textarea")?.value || "";
       const formId = composer?.id;
+      const files = composer ? Array.from(composer.querySelectorAll(CHIP)) : [];
+      const heldForFiles = composer?.dataset.chatAttachmentsHeld;
+      const focused = Boolean(composer?.contains(document.activeElement));
       await original(stream);
-      if (formId && typed.trim() !== "") {
-        const field = document.getElementById(formId)?.querySelector("textarea");
-        if (field && field.value !== carriedDraft(field.value, typed)) {
+      const fresh = formId ? document.getElementById(formId) : null;
+      if (fresh) {
+        const field = fresh.querySelector("textarea");
+        if (field && typed.trim() !== "" && field.value !== carriedDraft(field.value, typed)) {
           field.value = carriedDraft(field.value, typed);
           field.dispatchEvent(new Event("input", { bubbles: true }));
         }
+        addChips(fresh, files);
+        if (heldForFiles) fresh.dataset.chatAttachmentsHeld = heldForFiles;
+        markBusy(fresh, inflight.get(formId)?.size || 0);
+        if (focused) focusComposer(fresh);
       }
       settleIndicators(before);
       afterRender();
@@ -190,11 +301,11 @@ if (typeof document !== "undefined") {
   });
 
   // Capture phase, before Turbo reads the form: an empty send while one posts is
-  // the same send twice (a second Enter, a second tap), so it is dropped.
+  // the same send twice (a second Enter, a second tap), so it is dropped. One
+  // that carries files is a message, and goes (emptyRepeat).
   document.addEventListener("submit", (event) => {
     const form = event.target.closest?.(FORM);
-    if (!form || form.getAttribute("aria-busy") !== "true") return;
-    if ((form.querySelector("textarea")?.value || "").trim() !== "") return;
+    if (!form || !emptyRepeat(form)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
   }, true);
@@ -214,24 +325,31 @@ if (typeof document !== "undefined") {
     if (status) status.textContent = text;
   }
 
-  const sending = new WeakMap();
-
   document.addEventListener("turbo:submit-start", (event) => {
     const form = event.target.closest?.(FORM);
+    const submission = event.detail?.formSubmission;
+    if (!form) return;
     announce(form, "Sending…");
+    if (!submission) return;
+    markBusy(form, trackSend(inflight, form.id, submission, true));
     // Keyed by the submission: a send aborted by the next one ends after it starts.
-    const clientId = form?.querySelector("input[name$='[client_id]']")?.value;
-    if (form && event.detail?.formSubmission) sending.set(event.detail.formSubmission, { text: startSend(form), clientId });
+    const clientId = form.querySelector("input[name$='[client_id]']")?.value;
+    sending.set(submission, { ...startSend(form), clientId });
   });
 
   document.addEventListener("turbo:submit-end", (event) => {
-    if (!event.target.closest?.(FORM) && !event.target.matches?.(FORM)) return;
-    const form = event.target.closest(FORM);
+    const ended = event.target.closest?.(FORM) || (event.target.matches?.(FORM) ? event.target : null);
+    if (!ended) return;
+    // A send from a composer since redrawn ends on the detached old form: what it
+    // puts back goes into the composer on the page.
+    const form = (ended.id && document.getElementById(ended.id)) || ended;
     const submission = event.detail?.formSubmission;
     const sent = submission && sending.get(submission);
-    if (sent && sendFailed(event.detail)) restoreSend(form, sent.text, sent.clientId);
+    if (sent && sendFailed(event.detail)) restoreSend(form, sent, sent.clientId);
     if (submission) sending.delete(submission);
-    announce(form, "");
+    const left = submission ? trackSend(inflight, ended.id, submission, false) : 0;
+    markBusy(form, left);
+    if (left === 0) announce(form, "");
     requestAnimationFrame(() => document.querySelector(`${FORM} textarea`)?.focus());
   });
 
