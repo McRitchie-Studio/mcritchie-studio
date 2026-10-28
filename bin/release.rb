@@ -635,10 +635,12 @@ def sh(*cmd, capture: false, chdir: nil, env: nil, deadline: nil, deadline_env: 
     out, result = bounded_capture2e(*cmd, deadline: deadline, deadline_env: deadline_env, env: env, **opts)
     [out, result.success?]
   else
-    # stdin stays inherited, as system() had it: a child that must read it still can.
+    # stdin is /dev/null, as in capture2e: the child runs in its own process group,
+    # so a read of a terminal stops it on SIGTTIN until the deadline kill. A prompt
+    # (an OTP, a credential) now fails at once instead of hanging silently.
     begin
       result = BoundedCommand.run(env || {}, cmd, deadline: deadline, pgroup: true, stream: $stdout,
-                                                  err: [:child, :out], **opts)
+                                                  err: [:child, :out], in: File::NULL, **opts)
     rescue SystemCallError => e
       say("  could not run #{cmd.first}: #{e.message}")
       return ["", false]

@@ -50,6 +50,20 @@ class ReleaseShDeadlineTest < ReleaseCliHarness
     assert_includes out, "(RELEASE_COMMAND_DEADLINE sets the bound)", out
   end
 
+  # A streamed child's stdin is /dev/null: a prompt reads EOF at once rather than
+  # waiting on the caller's stdin (a terminal it cannot read from its own group).
+  def test_a_streamed_sh_child_reads_eof_not_the_callers_stdin
+    out = run_with({ "RELEASE_COMMAND_DEADLINE" => "5" }, <<~CALL)
+      r, _w = IO.pipe
+      $stdin.reopen(r)
+      _, ok = sh("sh", "-c", "if read x; then echo GOT; else echo STDIN-EOF; fi")
+      puts "OK=\#{ok.inspect}"
+    CALL
+
+    assert_includes out, "STDIN-EOF", out
+    assert_includes out, "OK=true", out
+  end
+
   def test_a_streamed_sh_that_cannot_start_is_a_failure_not_a_raise
     out = run_with({}, %(_, ok = sh("/nonexistent/tool"); puts "OK=\#{ok.inspect}"))
 
