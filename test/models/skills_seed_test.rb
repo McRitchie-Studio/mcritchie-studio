@@ -63,4 +63,28 @@ class AgentsSeedTaskTest < ActiveSupport::TestCase
     out, = run_task("agents:verify_skills")
     assert_match(/mason .*task-orchestration/, out)
   end
+
+  # Mack became the CFO on 2026-10-28 (config/accountability_chart.yml); a deployed
+  # row still holding his scraping skills is the drift the post_deploy_cmd must clear.
+  test "agents:seed moves Mack from scraping to the books, and verify_skills proves it" do
+    capture_io do
+      load Rails.root.join("db/seeds/02_agents.rb").to_s
+      load Rails.root.join("db/seeds/03_skills.rb").to_s
+    end
+    SkillAssignment.where(agent_slug: "mack").delete_all
+    %w[web-scraping data-processing api-integration database-management].each do |skill|
+      Skill.find_or_create_by!(slug: skill) { |s| s.name = skill.titleize }
+      SkillAssignment.create!(agent_slug: "mack", skill_slug: skill)
+    end
+
+    error = assert_raises(SystemExit) { run_task("agents:verify_skills") }
+    refute error.success?, "the pre-chart Mack fails the verify"
+
+    run_task("agents:seed")
+
+    assert_equal %w[bookkeeping data-processing financial-reporting],
+                 SkillAssignment.where(agent_slug: "mack").pluck(:skill_slug).sort
+    out, = run_task("agents:verify_skills")
+    assert_match(/mack .*bookkeeping/, out)
+  end
 end

@@ -1,0 +1,180 @@
+# THE ACCOUNTABILITY CHART: the seats the business needs, one owner in each.
+#
+# EOS (Gino Wickman, *Traction* and *Rocket Fuel*): draw the seats first, then put
+# one name in each. A seat has exactly one owner and about five roles, its top
+# responsibilities. One owner may sit in several seats (the Pokémon wears both the
+# Integrator and Build); a seat never has two owners. Plan and rulings:
+# /Users/alex/projects/.agents/epics/accountability-chart.md, "Rulings (Alex
+# McRitchie, 2026-10-28)".
+#
+# Read by AccountabilityChart (app/models/accountability_chart.rb), which checks the
+# shape: one owner per seat, every soul owner on config/souls.yml, roles present,
+# every parent a seat on this chart.
+#
+# Fields:
+#   slug, name    the seat
+#   parent        the seat above it; null only for the Visionary
+#   owner         a soul slug from config/souls.yml, or a key under `humans:` when
+#                 owner_kind is human
+#   owner_kind    soul (default) | human | session. A session seat is worn by the
+#                 orchestrating LLM session, which acts as the named soul.
+#   title         the owner's title in this seat, when it has one
+#   group         a caption that gathers sibling seats (the app operators)
+#   lights        souls who review in this seat's domain, never owners
+#   page          the doc that holds the seat, when the soul's role.md does not
+#   roles         about five; the seat's top responsibilities
+#
+# Off the chart on purpose: Rex (ruling 3 folds him into Alex; card
+# rex-folds-into-alex) and Hank (Commercial Welding's agent: another company's chart).
+humans:
+  alex-mcritchie: Alex McRitchie
+
+seats:
+- slug: visionary
+  name: Visionary
+  parent:
+  owner: alex-mcritchie
+  owner_kind: human
+  title: CEO
+  roles:
+  - New ideas and bets
+  - The 10- and 3-year picture
+  - Big relationships (clients, lenders, partners)
+  - Culture and core values
+  - Production clearance and owner-only rulings
+
+- slug: integrator
+  name: Integrator
+  parent: visionary
+  owner: pokemon
+  owner_kind: session
+  page: docs/agents/agents/pokemon/integrator.md
+  roles:
+  - Turn the Visionary's ideas into Rocks and cards
+  - Run the weekly cadence across the three heads
+  - Hold each head to their Rocks and Scorecard
+  - Break ties between functions and remove obstacles
+  - Report back in the Same Page format, and log every idea so nothing lives in one chat
+
+- slug: sales-marketing
+  name: Sales/Marketing
+  parent: integrator
+  owner: alex
+  title: Sales and Marketing
+  roles:
+  - Demand and leads, and the marketing strategy behind them
+  - The client conversation (/build intake, the alex.build chat, client threads)
+  - Hold an epic with the Visionary (focus-session)
+  - Brand and voice across the apps, landing pages and comms
+  - Lead client launches and their comms, while Pokémon and Steffon deliver
+
+- slug: operations
+  name: Operations
+  parent: integrator
+  owner: mason
+  title: COO
+  roles:
+  - The factory, build to review to release to deploy (full-cycle, clean-up)
+  - DevOps speed, measured prompt to production (ship-clock)
+  - Quality (grades, the learning loop, dreams)
+  - The documentation seat (docs review and merge)
+  - Admin with Steffon (production, security, the app operators' uptime)
+
+- slug: product
+  name: Product
+  parent: operations
+  owner: avi
+  title: Product Owner
+  roles:
+  - Brief each card's intent (intent-scout) and refine and size tickets
+  - Assemble the release and run QA (qa-release)
+  - Expedite one task when asked (deploy-with-task)
+  - Arbitrate contested blocks
+  - Keep the product coherent across the apps
+
+- slug: architecture-review
+  name: Architecture and review
+  parent: operations
+  owner: carl
+  title: Lead Architect
+  lights:
+  - shannon
+  - jasper
+  roles:
+  - Primary review of every code PR
+  - Summon a domain light (Shannon for UI, Jasper for on-chain)
+  - Merge approved work into accepted
+  - Architecture decisions (data models, the engine's internals)
+  - Hold the build checklist's standards
+
+- slug: build
+  name: Build
+  parent: operations
+  owner: pokemon
+  title: General Builder
+  roles:
+  - Build every task whole, on any surface
+  - Test as it goes, unit-first
+  - Prove a change locally when Alex McRitchie would know it on sight
+  - Stop at submitted; never merge or deploy
+  - Data work (scraping, processing, API pulls), taken from Mack
+
+- slug: infrastructure
+  name: Infrastructure
+  parent: operations
+  owner: steffon
+  title: Platform Engineer
+  roles:
+  - Ship QA-green releases to production (production-deploy)
+  - Credentials, and a vault per lane of business
+  - Desks and the machine (clean-infra)
+  - Domains, DNS and workspace launches
+  - Squad vault operations and program upgrades
+
+- slug: turf-monster-operator
+  name: Turf Monster operator
+  group: App operators
+  parent: operations
+  owner: turf-monster
+  roles:
+  - Watch live scores and record every one
+  - Run and rehearse contests
+  - Keep markets and rosters fresh
+  - Post results to X and draft TikToks
+  - Collect the vault's revenue
+
+- slug: cyvasse-operator
+  name: Cyvasse operator
+  group: App operators
+  parent: operations
+  owner: tywin
+  roles:
+  - Know the app, and keep its map true
+  - Admin the community
+  - Guard the record and the leaderboard
+  - Turn what he learns into tasks
+  - Hold the app's keys
+
+- slug: cyvasse-house-player
+  name: Cyvasse house player
+  group: App operators
+  parent: operations
+  owner: tyrion
+  roles:
+  - Take every game offered
+  - Keep the opponent company in the match chat
+  - Teach a rule in one sentence
+  - Welcome back the legacy players
+  - Hold no credential beyond his own game token
+
+- slug: finance-admin
+  name: Finance/Admin
+  parent: integrator
+  owner: mack
+  title: CFO
+  roles:
+  - Books and the month close (close-the-month, on the 5th)
+  - Monitor the financials (cash, P&L, equity, agent spend)
+  - Build the reports (the lender package from bin/books)
+  - The financial watchdog (flag what does not add up to the Visionary)
+  - Entity facts and filings records (business-data/FACTS.md)
