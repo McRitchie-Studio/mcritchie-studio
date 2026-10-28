@@ -677,6 +677,8 @@ module SecretCache
       - Read through `bin/secret` (status, get, refresh, forget) or bin/gh-token, never
         by opening the files. `bin/secret status` shows time left and never a value.
       - Environment secrets (~/.zprofile, Heroku config) are stable and do NOT live here.
+      - Nothing from an admin vault is ever written here (the deployer token included).
+      - Every file must be a regular file this user owns; a symlink is refused.
       - Production dynos cannot read this folder; it exists only on this Mac.
       - A rotated key: run `bin/secret forget <name>` (credential-rotation SOP) so the
         old value never lingers here.
