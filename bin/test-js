@@ -5,7 +5,8 @@
 # hook (test/javascript/support/register.mjs) maps the importmap's "board/*"
 # specifiers onto app/javascript/board so the modules run unchanged. The hook ships
 # in the gem, so this links it first (`bin/rails node_tooling:link`, ~2s, which
-# needs the bundle and refuses a node_modules shared with another checkout). CI
+# needs the bundle and refuses a whole node_modules linked to another checkout; the
+# link farm bin/agent-worktree builds keeps .studio-engine the desk's own). CI
 # runs this in the `javascript` job (.github/workflows/reusable-ci.yml).
 set -euo pipefail
 cd "$(dirname "$0")/.."
