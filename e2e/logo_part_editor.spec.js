@@ -65,8 +65,8 @@ test("hiding the tagline and changing a weight keep the other edits, and Reset c
   expect(page.url()).toContain("first_colour=635BB2");
   expect(page.url()).toContain("tagline_visible=0");
 
-  // Copy SVG fetches its logo from its own URL (task logo-gallery-polish-pass): read what it would copy.
-  const copyUrl = await page.locator("button[data-test='logo-copy']:visible").first().getAttribute("data-copy-svg");
+  // The Download card draws its PNG from the logo's own URL (task logo-gallery-polish-pass): read what it would draw.
+  const copyUrl = await page.locator("input[data-test='download-tone-option']:checked").getAttribute("data-svg");
   const copy = await (await page.request.get(copyUrl)).text();
   expect(copy).toContain('fill="#635BB2"');
   expect(copy).not.toContain("BUILD");

@@ -1,3 +1,5 @@
+# The bin/ deadline primitive: pure Ruby, no gems, safe to load in the app.
+require_relative "../../../bin/lib/bounded_command"
 require "json"
 
 module Gmail
@@ -71,6 +73,10 @@ module Gmail
       # library.
       attr_writer :op_reader
 
+      # Injected in tests that drive the real `op` read against a hung fake, so
+      # the bound is proved in a second rather than in OP_TIMEOUT_SECONDS.
+      attr_writer :op_timeout_seconds
+
       def op_reader
         @op_reader ||= method(:shell_read_from_op)
       end
@@ -122,28 +128,24 @@ module Gmail
                          "— re-copy the object from bin/gmail-oauth-mint; a pasted line break inside a value is the usual cause"
       end
 
-      # Bounded on purpose — Open3.capture3 has no timeout of its own, so the
-      # deadline is enforced here by killing the process. OP_TIMEOUT_SECONDS is
-      # a real bound, not a comment.
+      # Bounded on purpose, and by SIGKILL to op's whole process group
+      # (BoundedCommand, the bound under every bin/ 1Password read). A
+      # SIGALRM-based bound (Timeout.timeout, `alarm`) is none: `op` ignores
+      # SIGALRM (observed 2026-10-27). A kill of the pid alone left anything op
+      # started holding the pipes. OP_CACHE=false skips the cache daemon, whose
+      # hang after a reboot made every read wait fifteen minutes (2026-10-21).
       def shell_read_from_op(item)
-        require "open3"
-        out = nil
-        Open3.popen3("op", "read", item) do |stdin, stdout, stderr, thread|
-          stdin.close
-          if thread.join(OP_TIMEOUT_SECONDS).nil?
-            Process.kill("KILL", thread.pid) rescue nil
-            thread.join
-            return nil
-          end
-          out = stdout.read
-          stderr.read
-          return nil unless thread.value.success?
-        end
+        out, _err, status = BoundedCommand.capture3({ "OP_CACHE" => "false" }, "op", "read", item,
+                                                    deadline: op_timeout_seconds)
+        return nil unless status.success?
+
         out.to_s.strip.presence
-      rescue Errno::ENOENT, Errno::ESRCH, SystemCallError, IOError
+      rescue SystemCallError, IOError
         # `op` absent or unreachable — not an error, just an unconfigured desk.
         nil
       end
+
+      def op_timeout_seconds = @op_timeout_seconds || OP_TIMEOUT_SECONDS
     end
   end
 end

@@ -7,6 +7,7 @@ require "open3"
 require "time"
 require "uri"
 require_relative "domain_cutover"
+require_relative "bounded_command"
 
 # StaticCloudflare — an app served as plain files from Cloudflare R2, with no
 # Heroku dyno. The runbook is docs/agents/modules/static-cloudflare.md.
@@ -245,6 +246,8 @@ module StaticCloudflare
   # put-object per key so each carries its own Content-Type and Cache-Control.
   # The keys ride in the child's environment only; nothing prints them.
   class S3Uploader
+    # Seconds one `aws s3api put-object` may take.
+    UPLOAD_DEADLINE = 300
     def initialize(credentials, runner: method(:run))
       @credentials = credentials
       @runner = runner
@@ -263,7 +266,9 @@ module StaticCloudflare
     end
 
     def run(argv, env)
-      out, status = Open3.capture2e(env, *argv)
+      # One object upload: bounded, so a stalled aws CLI fails the deploy loudly.
+      out, status = BoundedCommand.capture2e(env, *argv, deadline: UPLOAD_DEADLINE)
+      out = "#{out}\nthe aws CLI gave no answer within #{UPLOAD_DEADLINE}s and was killed" if status.timed_out?
       [out, status.success?]
     rescue Errno::ENOENT
       ["the aws CLI is not on PATH", false]

@@ -70,8 +70,8 @@ class ReleaseArchivePruneTest < Minitest::Test
   def test_a_pruner_that_cannot_run_warns_and_the_archive_completes
     # The real seam, with the tool missing from the cwd: run_pruner rescues the raise.
     broken = <<~RUBY
-      module Open3
-        def self.capture2e(*cmd, **) = raise(Errno::ENOENT, cmd.first.to_s)
+      module BoundedCommand
+        def self.capture2e(_env, *cmd, **) = raise(Errno::ENOENT, cmd.first.to_s)
       end
       def prune_session_markers(apply:)
         run_pruner(["bin/prune-session-markers", "--yes"]) { |out| MarkerPrune.parse_summary(out) }

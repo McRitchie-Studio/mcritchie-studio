@@ -9,6 +9,9 @@ class App < ApplicationRecord
 
   # A desk record names its app by slug (no association here).
   has_slug_children "desk_records" => :app_slug
+  # A satellite's hub API credential (AppCredential) has no key to apps (SlugCensus::UNCONSTRAINED),
+  # so a rename rewrites it here.
+  has_slug_children "app_credentials" => :app_slug
 
   # Who owns the app (AppMembership, docs/agents/system/app-owners.md).
   has_many :memberships, class_name: "AppMembership", foreign_key: :app_slug, primary_key: :slug,

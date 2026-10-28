@@ -6,10 +6,31 @@
 //
 // NOT @qa-readonly: it writes agent messages (Cyvasse's owner, answered by the
 // app-owner rule; their rows wait for tyrion, which no spec claims).
+const fs = require("fs");
+const path = require("path");
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
 
 test.use({ storageState: VISITOR });
+
+const PNG = { name: "probe.png", mimeType: "image/png",
+  buffer: fs.readFileSync(path.join(__dirname, "..", "test", "fixtures", "files", "chat", "probe.png")) };
+
+// Holds each chat POST's answer (after the server has stored the turn) until the
+// test lets it go. `posts` counts the sends that reached the network.
+async function holdSends(page) {
+  const gates = [];
+  await page.route("**/applications/cyvasse/chat", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    gates.push(release);
+    const response = await route.fetch();
+    await gate;
+    await route.fulfill({ response }).catch(() => {}); // an aborted submission has no one to answer
+  });
+  return { get posts() { return gates.length; }, releaseAll: () => gates.forEach((release) => release()) };
+}
 
 test("the shared chat script: Shift+Enter is a new line, Enter sends, focus stays, the log follows", async ({ page }) => {
   const { pageErrors, report } = watchPageErrors(page);
@@ -97,4 +118,119 @@ test("a message sent before the last send's answer lands is kept, and so is a dr
   await expect(sent(draft), "a draft is not sent").toHaveCount(0);
 
   expect(pageErrors, report()).toEqual([]);
+});
+
+// Task composer-edge-cases. A files-only message sent while a send posts is a
+// message, not a repeated tap: it posts. Its send aborts the one before (Turbo
+// runs one form submission at a time), and that earlier send's end lands while
+// this one still posts: the composer stays aria-busy until the LAST settles.
+test("a files-only send while one posts is sent, and the composer stays busy until the last send settles", async ({ page }) => {
+  const { pageErrors, report } = watchPageErrors(page);
+  await loginWithMagicLink(page, "owner@cyvasse.test");
+  await page.goto("/applications/cyvasse/chat");
+  const held = await holdSends(page);
+
+  const form = page.locator("[data-test='cto-chat-form']");
+  const input = page.locator("[data-test='cto-chat-input']");
+  const pictures = page.locator("[data-test='cto-chat-sent-file']");
+  const picturesBefore = await pictures.count();
+  const first = `Before the picture ${Date.now()}`;
+  await input.fill(first);
+  await input.press("Enter");
+  await expect.poll(() => held.posts).toBe(1);
+  await expect(form).toHaveAttribute("aria-busy", "true");
+
+  await page.locator("[data-test='cto-chat-file-input']").setInputFiles(PNG);
+  await expect(page.locator("[data-test='cto-chat-chip'][data-state='done']")).toHaveCount(1);
+  await input.press("Enter"); // no text: the file is the message
+  await expect.poll(() => held.posts, { message: "the files-only send reached the server" }).toBe(2);
+
+  await page.waitForTimeout(500); // the aborted first send's end has landed by now
+  await expect(form, "the second send still posts").toHaveAttribute("aria-busy", "true");
+
+  held.releaseAll();
+  await expect(pictures, "the files-only turn is in the log").toHaveCount(picturesBefore + 1);
+  await expect(page.locator("[data-test='cto-chat-form']")).not.toHaveAttribute("aria-busy");
+  await expect(page.locator("[data-test='cto-chat-chip']"), "a sent file does not come back").toHaveCount(0);
+
+  expect(pageErrors, report()).toEqual([]);
+});
+
+// Task composer-edge-cases. A file attached while a send posts belongs to the NEXT
+// message: the send's answer redraws the composer, and the file (and the caret)
+// is carried into the new one, not wiped; an upload still running when the
+// answer lands finishes there.
+test("a file attached while a send posts survives the composer swap, and the caret stays in the box", async ({ page }) => {
+  const { pageErrors, report } = watchPageErrors(page);
+  await loginWithMagicLink(page, "owner@cyvasse.test");
+  await page.goto("/applications/cyvasse/chat");
+  const held = await holdSends(page);
+
+  const input = page.locator("[data-test='cto-chat-input']");
+  const stamp = Date.now();
+  const first = `While this posts ${stamp}`;
+  await input.fill(first);
+  await input.press("Enter");
+  await expect.poll(() => held.posts).toBe(1);
+
+  // The upload is still running when the answer lands.
+  let finishUpload;
+  const uploadGate = new Promise((resolve) => { finishUpload = resolve; });
+  await page.route("**/applications/cyvasse/chat/attachments", async (route) => {
+    const response = await route.fetch();
+    await uploadGate;
+    await route.fulfill({ response });
+  });
+  await page.locator("[data-test='cto-chat-file-input']").setInputFiles(PNG);
+  await expect(page.locator("[data-test='cto-chat-chip'][data-state='uploading']")).toHaveCount(1);
+  const draft = `About this picture ${stamp}`;
+  await input.fill(draft);
+  await input.focus();
+  const before = await page.locator("[data-test='cto-chat-form'] [data-test='cto-chat-input']").elementHandle();
+
+  held.releaseAll();
+  await expect.poll(() => before.evaluate((el) => el.isConnected), { message: "the answer redrew the composer" }).toBe(false);
+  await expect(page.locator("[data-test='cto-chat-form'] [data-test='cto-chat-chip'][data-state='uploading']"),
+    "the file is still attached, still uploading").toHaveCount(1);
+  finishUpload();
+  await expect(page.locator("[data-test='cto-chat-form'] [data-test='cto-chat-chip'][data-state='done']"),
+    "its upload finishes in the new composer").toHaveCount(1);
+  await expect(page.locator("[data-test='cto-chat-input']")).toHaveValue(draft);
+  await expect(page.locator("[data-test='cto-chat-input']"), "the caret is back in the new box").toBeFocused();
+
+  await page.locator("[data-test='cto-chat-input']").press("Enter");
+  await expect.poll(() => held.posts).toBe(2);
+  held.releaseAll();
+  const turn = page.locator("[data-test='cto-chat-turn']", { hasText: draft });
+  await expect(turn.locator("[data-test='cto-chat-sent-file']"), "the next message carries it").toHaveCount(1);
+
+  expect(pageErrors, report()).toEqual([]);
+});
+
+// Carl's block on PR #2285. A refused send (422) is redrawn by the server with only
+// the files it still holds (AgentMessages::Attachments.held): a dead token (expired,
+// forged, already used) is dropped there, and the client must not put its chip
+// back over that answer, or it shows ready and refuses every later send.
+test("a send refused for a dead file comes back without that file's chip", async ({ page }) => {
+  const { pageErrors, report } = watchPageErrors(page);
+  await loginWithMagicLink(page, "owner@cyvasse.test");
+  await page.goto("/applications/cyvasse/chat");
+
+  const input = page.locator("[data-test='cto-chat-input']");
+  await page.locator("[data-test='cto-chat-file-input']").setInputFiles(PNG);
+  await expect(page.locator("[data-test='cto-chat-chip'][data-state='done']")).toHaveCount(1);
+  // The token dies before the send (as one past Attachments::TOKEN_TTL does).
+  await page.locator("[data-test='cto-chat-chip'] input[type='hidden']").evaluate((field) => { field.value = "dead-token"; });
+  const text = `With a dead file ${Date.now()}`;
+  await input.fill(text);
+  await input.press("Enter");
+
+  await expect(page.locator("[data-test='cto-chat-error']"), "the server says why").toBeVisible();
+  await expect(page.locator("[data-test='cto-chat-input']"), "the refused text is echoed back").toHaveValue(text);
+  await page.waitForTimeout(500); // past the redraw's carry
+  await expect(page.locator("[data-test='cto-chat-chip']"), "the dead file does not come back looking ready").toHaveCount(0);
+
+  // The refusal's own 422 is the answer under test; anything else is a failure.
+  const unexpected = pageErrors.filter((line) => !/status of 422/.test(line));
+  expect(unexpected, report()).toEqual([]);
 });

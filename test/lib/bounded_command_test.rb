@@ -80,4 +80,59 @@ class BoundedCommandTest < Minitest::Test
   def test_unit_a_missing_binary_raises_like_io_popen
     assert_raises(Errno::ENOENT) { BoundedCommand.run({}, ["/nonexistent/op", "read"], deadline: 1) }
   end
+
+  # `op` ignores SIGALRM (2026-10-27: a perl `alarm` wrapper failed to kill a hung
+  # `op read`), so a bound that rests on SIGALRM — Timeout.timeout, `alarm` — does
+  # not bound it. SIGKILL cannot be trapped.
+  def test_unit_a_hung_child_that_ignores_sigalrm_is_killed_within_its_deadline
+    Dir.mktmpdir do |dir|
+      marker = File.join(dir, "outlived")
+      script = "trap '' ALRM TERM INT HUP; (trap '' ALRM TERM; sleep 2; touch #{marker}) & " \
+               "kill -ALRM $$; printf ignored; sleep 600"
+      result, seconds = elapsed { BoundedCommand.capture2e({}, "sh", "-c", script, deadline: 0.5) }
+      sleep 2.5
+
+      assert result.last.timed_out?
+      refute result.last.success?
+      assert_equal "ignored", result.first, "the child shrugged off its own SIGALRM and kept running"
+      assert_equal 9, result.last.termsig
+      assert_operator seconds, :<, 3
+      refute File.exist?(marker), "the whole group goes: a grandchild that also ignores SIGALRM dies with it"
+    end
+  end
+
+  def test_unit_capture2e_merges_both_streams_and_answers_like_a_status
+    out, status = BoundedCommand.capture2e({}, "sh", "-c", "printf out; printf err >&2; exit 4", deadline: 5)
+
+    assert_equal "outerr", out
+    refute status.success?
+    assert_equal 4, status.exitstatus
+    assert_nil status.termsig
+  end
+
+  def test_unit_capture3_keeps_stderr_apart
+    out, err, status = BoundedCommand.capture3({ "W" => "x" }, "sh", "-c", "printf \"$W\"; printf oops >&2", deadline: 5)
+
+    assert_equal "x", out
+    assert_equal "oops", err
+    assert status.success?
+  end
+
+  def test_unit_capture_helpers_give_the_child_no_terminal_to_read
+    out, status = BoundedCommand.capture2e({}, "sh", "-c", "read line; printf \"[$line]\"", deadline: 5)
+
+    assert_equal "[]", out, "stdin is /dev/null: a read answers EOF at once instead of stopping on SIGTTIN"
+    refute status.timed_out?
+  end
+
+  def test_unit_stream_copies_each_chunk_as_it_arrives
+    reader, writer = IO.pipe
+    result = BoundedCommand.run({}, ["sh", "-c", "printf a; sleep 0.2; printf b"], deadline: 5, stream: writer)
+    writer.close
+
+    assert_equal "ab", result.out
+    assert_equal "ab", reader.read
+  ensure
+    reader&.close
+  end
 end

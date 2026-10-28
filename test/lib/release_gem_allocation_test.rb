@@ -519,6 +519,33 @@ class ReleaseGemAllocationTest < Minitest::Test
     end
   end
 
+  # [unit] A VERSION COMMIT WITH NOTHING TO COMMIT SAYS SO. origin/accepted already
+  # carries the version (here: the seed's own 0.4.0, no changelog, a lock already at
+  # it), so `git commit` has nothing to take. The log names that, nothing is pushed,
+  # and it is not reported as a failure.
+  def test_a_version_commit_with_nothing_to_commit_says_so
+    with_root do |root|
+      origin, = build_projects_root(root)
+      before = git(origin, "rev-parse", "accepted").strip
+      stub_bin = install_bundle_stub(root, mode: :real)
+      script = <<~RUBY
+        ENV["PROJECTS_DIR"] = #{root.inspect}
+        load #{BIN.inspect}
+        failures = []
+        tip = `git -C #{File.join(root, 'studio-engine').inspect} rev-parse origin/accepted`.strip
+        decision = Release::GemVersion::Decision.new(action: Release::GemVersion::ALLOCATE, version: "0.4.0", reason: "test")
+        commit_gem_version!("studio-engine", tip, decision, failures)
+        puts "FAILURES=\#{failures.inspect}"
+      RUBY
+      out, = Open3.capture2e(child_env(root, stub_bin), RbConfig.ruby, "-W0", "-e", script)
+
+      assert_includes out, "0.4.0 — nothing to commit: origin/accepted already carries", out
+      assert_includes out, "no version commit was made and nothing was pushed", out
+      assert_includes out, "FAILURES=[]", out
+      assert_equal before, git(origin, "rev-parse", "accepted").strip, "nothing was pushed"
+    end
+  end
+
   # --- idempotency: the self-healing re-run ------------------------------------
 
   def test_a_second_run_allocates_nothing

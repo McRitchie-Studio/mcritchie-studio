@@ -38,6 +38,41 @@ class Release::NotesDeliveryTest < ActiveSupport::TestCase
     assert rel.release_notes_delivered?
   end
 
+  # A ship or finalize RE-RUN calls post_release_notes again on the same release
+  # (2026-10-27: the notes went to Discord twice). The second call posts nothing,
+  # leaves the delivery record alone, and says it skipped.
+  test "[unit] a re-run posts no second Discord message" do
+    rel = shipped_release
+    first = nil
+    calls = delivering { first = Release::Conductor.post_release_notes(release: rel) }
+    assert_equal 1, calls.size
+    assert first[:delivered]
+    assert_not first[:already_delivered]
+    delivered_at = completed_notes_event(rel).metadata["delivered_at"]
+
+    second = nil
+    calls = delivering { second = Release::Conductor.post_release_notes(release: rel.reload) }
+    assert_empty calls, "the re-run posts no second Discord message"
+    assert second[:already_delivered], "the result says the notes were already out"
+    assert_not second[:delivered], "nothing was delivered by THIS call"
+    assert_nil second[:error]
+    assert_equal delivered_at, completed_notes_event(rel).metadata["delivered_at"], "the first delivery's record stands"
+    assert_equal 1, rel.release_events.for_step("release_notes").completed.count
+  end
+
+  test "[unit] a re-run after a FAILED delivery does post: only a delivery skips" do
+    rel = shipped_release
+    ReleaseNotes::DiscordClient.stub(:deliver, ->(**) { raise ReleaseNotes::DiscordClient::MissingWebhook, "no webhook" }) do
+      Release::Conductor.post_release_notes(release: rel)
+    end
+
+    result = nil
+    calls = delivering { result = Release::Conductor.post_release_notes(release: rel.reload) }
+    assert_equal 1, calls.size
+    assert result[:delivered]
+    assert_not result[:already_delivered]
+  end
+
   test "[unit] a failed delivery records delivered: false, so a repost is not refused" do
     rel = shipped_release
     ReleaseNotes::DiscordClient.stub(:deliver, ->(**) { raise ReleaseNotes::DiscordClient::MissingWebhook, "no webhook" }) do

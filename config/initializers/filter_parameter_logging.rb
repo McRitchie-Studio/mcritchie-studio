@@ -36,6 +36,15 @@ Rails.application.config.filter_parameters += [
 
     value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google admin/fathom].include?(params["controller"].to_s)
   end,
+  # The satellite visitor's IP the agent chat API takes for its per-IP cap
+  # (Api::V1::AgentChatsController): hashed there, never stored, and kept out of
+  # the request log here. Scoped to that controller: a bare :ip would partial-match
+  # "zip", "recipient" and "description".
+  lambda do |key, value, params = nil|
+    next unless key.to_s == "ip" && value.is_a?(String)
+
+    value.replace("[FILTERED]") if params.is_a?(Hash) && params["controller"].to_s == "api/v1/agent_chats"
+  end,
   lambda do |key, value, params = nil|
     next unless key.to_s == "value" && value.is_a?(String)
 

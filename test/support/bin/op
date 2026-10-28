@@ -8,8 +8,19 @@
 # looking like a successful read.
 #
 #   FAKE_OP_LOG   file each call appends "<pid> <argv>" to (test_helper sets it)
-#   FAKE_OP_MODE  "hang" never answers, so a caller's timeout has to fire
+#   FAKE_OP_MODE  "hang" never answers, so a caller's timeout has to fire;
+#                 "hang-ignoring-alarm" ignores SIGALRM and SIGTERM, as the real
+#                 op did on 2026-10-27, and starts a grandchild that touches
+#                 $FAKE_OP_MARKER if it outlives the caller's kill
 echo "$$ $*" >> "${FAKE_OP_LOG:-/dev/null}"
+
+if [ "$FAKE_OP_MODE" = "hang-ignoring-alarm" ]; then
+  trap '' ALRM TERM HUP INT
+  (trap '' ALRM TERM HUP INT; sleep 2; touch "${FAKE_OP_MARKER:-/dev/null}") &
+  kill -ALRM $$
+  sleep 20
+  exit 0
+fi
 
 if [ "$FAKE_OP_MODE" = "hang" ]; then
   # exec, so the pid the caller kills IS the sleep; a plain child would

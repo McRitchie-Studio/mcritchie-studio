@@ -26,12 +26,11 @@
 
 require "fileutils"
 require "json"
-require "open3"
-require "timeout"
 require_relative "lib/artifact_sweep"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/projects_root"
 require_relative "lib/toolchain_env"
+require_relative "lib/bounded_command"
 
 USAGE = <<~TXT
   usage: bin/clean-artifacts [--root <path>] [--audit-envs <list>] [--dry-run] [--skip-audit] [--verbose] [--json]
@@ -136,11 +135,11 @@ def audit_app(repo, env)
     "DISABLE_SPRING" => "1"
   )
 
-  output = nil
-  status = nil
-  Timeout.timeout(AUDIT_TIMEOUT) do
-    output, status = Open3.capture2e(child_env, rails, "runner", ArtifactSweep::AUDIT_SNIPPET, chdir: repo)
-  end
+  # BoundedCommand, not Timeout.timeout: Timeout raised here and left the booting
+  # app running; this kills the app's whole process group at AUDIT_TIMEOUT.
+  output, status = BoundedCommand.capture2e(child_env, rails, "runner", ArtifactSweep::AUDIT_SNIPPET,
+                                            deadline: AUDIT_TIMEOUT, chdir: repo)
+  return { verdict: :unknown, reason: "boot timed out after #{AUDIT_TIMEOUT}s" } if status.timed_out?
 
   unless status&.success?
     return { verdict: :unknown, reason: boot_failure_reason(output, status) }
@@ -154,8 +153,6 @@ def audit_app(repo, env)
     cap: payload[:cap],
     shift_age: payload[:shift_age]
   }
-rescue Timeout::Error
-  { verdict: :unknown, reason: "boot timed out after #{AUDIT_TIMEOUT}s" }
 rescue StandardError => e
   { verdict: :unknown, reason: "#{e.class}: #{e.message}" }
 end
@@ -276,7 +273,7 @@ strays.each { |stray| say("     stray root file: #{stray.sub("#{ROOT}/", '')}") 
 
 if VERBOSE
   plan[:repos].each do |repo|
-    untracked, = Open3.capture2e("git", "-C", repo, "ls-files", "--others", "--exclude-standard")
+    untracked, = BoundedCommand.capture2e({}, "git", "-C", repo, "ls-files", "--others", "--exclude-standard", deadline: 120)
     next if untracked.strip.empty?
 
     say("     [#{File.basename(repo)}] untracked:")

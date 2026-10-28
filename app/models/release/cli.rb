@@ -220,6 +220,10 @@ class Release
     # command that re-posts.
     def release_notes_line(result, release_slug)
       result ||= {}
+      if result["notes_already"]
+        return "  release notes: already posted to Discord by an earlier run — not posted again " \
+               "(to post a second copy on purpose: bin/release notes #{release_slug} --post --force)"
+      end
       if result["notes_delivered"]
         count = result["notes_messages"].to_i
         return "  release notes: posted#{count > 1 ? " (#{count} messages)" : ''}"

@@ -159,5 +159,13 @@ email:
 # It reads no guild and has no email route. Listing it here is what makes
 # bin/dispatcher serve it (a running dispatcher restarts itself when this file
 # changes: AgentMailbox::CodeFingerprint).
+#
+# `apps:` is the satellite allow-list for the hub's agent chat API
+# (Api::V1::AgentChatsController, POST /api/v1/agent_chat/messages; epic
+# .agents/epics/agent-chat-primitive.md): `<app slug>: [souls]`, the souls that
+# app's own bearer credential (AppCredential, purpose agent-chat) may address. A
+# soul listed here must also be in `souls:`, or the app gets a 404.
 web:
   souls: [avi, turf_monster, tyrion, alex, client_cto]
+  apps:
+    alex-build: [alex]

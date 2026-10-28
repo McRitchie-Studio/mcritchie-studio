@@ -13,13 +13,15 @@
 # and the /build intake chat (BuildIntake): intake_card (a checked card stored on
 # the row), intake_refused (a card code refused), intake_capped (answered in code
 # at a cap) and bot_shield (a first message without the browser proof; held), and attached
-# (a web chat message's files, by count, bytes and kind: AgentMessages::Attachments).
+# (a web chat message's files, by count, bytes and kind: AgentMessages::Attachments),
+# and thread_folded (a satellite chat's anon row moved to the person's thread on
+# their first signed-in post: AgentChat::Ingest#fold!).
 class AgentMessageEvent < ApplicationRecord
   KINDS = %w[received routed unrouted claimed lease_renewed lease_expired released dead_lettered
              completed reply_posted reply_skipped reply_failed reply_bot_refused typing_bot_refused held hold_released
              proposed proposal_refused confirmed confirm_refused proposal_rejected proposal_expired proposal_closed
              proposal_executed proposal_failed usage_warned usage_capped rate_limited
-             intake_card intake_refused intake_capped bot_shield attached].freeze
+             intake_card intake_refused intake_capped bot_shield attached thread_folded].freeze
 
   belongs_to :agent_message
 

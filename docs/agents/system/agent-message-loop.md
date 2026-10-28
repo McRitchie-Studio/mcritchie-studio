@@ -1031,8 +1031,9 @@ bin/dispatcher (every channel) ─▶ claim ─▶ typing pulse ─▶ AgentMess
 
 **Nothing in the request picks the soul.** The CTO is the app's, from
 `config/cto_reports.yml` (else, for a client app, its `AppCto` row: soul `client_cto`), and only when the `web:` block lists it; a CTO not listed
-has no chat and the page says so. The thread is `web:<app slug>:<user id>`, so
-history persists per user per app, and the THREAD layer and the proposal scope
+has no chat and the page says so. The thread is `web:<app slug>:<user id>` (a
+satellite app's chat is `chat:<soul>:<user id>` instead, one thread across apps:
+"Satellite chat" below), so history persists per user per app, and the THREAD layer and the proposal scope
 never cross users or apps. `channel_ref` is the app slug and `guild_id` is nil.
 
 **The person and the audience.** The session vouches for the hub USER, the way
@@ -1076,7 +1077,15 @@ empties the box the moment Turbo has read a send: the sent turn is broadcast
 as well as answered, and the broadcast can land before the answer redraws the
 composer, so a second message written in that moment must not ride the first's
 id (it was once stored as a double submit and vanished). A draft typed while a
-send posts is carried into the redrawn composer.
+send posts is carried into the redrawn composer, beside a refused send's echo,
+never under it; so are files attached meanwhile (uploading or ready) and the
+caret. A send takes its own files' chips off the form, and a failed send puts
+back only those, so a sent file never rides a later message. The composer stays
+`aria-busy` until the last send in flight settles (a new send aborts the one
+before, whose end lands later). An empty send while one posts is dropped as a
+repeated tap, unless it carries files. An ask on /build (`build_status.js`) sets
+the visitor's draft aside on the form, and the send puts it straight back in the
+box (task composer-edge-cases).
 
 **Real time.** The page subscribes with `turbo_stream_from <stream>, channel:
 CtoChatChannel`, one stream per user per app (`cto_chat:<app slug>:<user id>`).
@@ -1250,6 +1259,10 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
 - **A failed upload holds the send.** A send waiting on uploads does not go
   when one fails, and a send with a failed chip on it is stopped: the chip stays,
   red, with its reason, and the composer says to remove it or attach it again.
+- **Files attached while a send posts survive its answer.** The answer redraws
+  the composer; the chips move into the new form, and an upload still running
+  finishes there (`chat_attachments.js`). A files-only message sent while
+  another posts is sent, not dropped as a repeated tap.
 - **A refused send keeps its files.** The re-rendered form draws the send's
   still-valid tokens as ready chips (`Attachments.held`), so the owner fixes the
   text or removes a file and sends again.
@@ -1409,6 +1422,66 @@ Turbo hover prefetch gets a 204 and spends nothing.
 - **Delivery.** A signed-out visitor has no `/cable` socket, so the page polls
   (`GET /build/:token/turns`, `app/javascript/build_chat.js`) while a turn is pending;
   `WebChat.deliver!` marks a build-thread answer posted without a broadcast.
+
+## Satellite chat: every app talks to the same thread
+
+Alex McRitchie, 2026-10-27: "I want to make agent chat shared in all apps." One thread
+per (person, soul), held by the hub, whichever app the person chats from (epic
+`.agents/epics/agent-chat-primitive.md`; its Contract section is fixed). A satellite's
+SERVER calls the hub; its browser talks only to its own app, which polls.
+
+| Piece | Where |
+|-------|-------|
+| The two endpoints | `Api::V1::AgentChatsController`: `POST /api/v1/agent_chat/messages` (`soul`, `text`, `person`, `ip`; `201 {turn}`, `422`, `429` capped, `404` no web chat) and `GET /api/v1/agent_chat/turns` (`soul`, `person`, `after`, `limit` ≤ 50; `200 {turns, pending}`) |
+| The app's credential | `AppCredential` (purpose `agent-chat`): the hub keeps the SHA-256 digest only, one live row per app and purpose (a partial unique index). `bin/rails app_credentials:mint APP=<slug>` prints the secret once, for 1Password `apps.<slug>.agent-chat` and the app's `AGENT_CHAT_TOKEN`; minting again revokes the old one. No credential, a wrong one or a revoked one: 401 |
+| Which app reaches which soul | `config/agent_routes.yml` `web: apps: <slug>: [souls]` (`alex-build: [alex]`), and the soul must be in `web: souls:`; else 404 |
+| The person and the thread | `AgentChat::Visitor`: `person.email` that is a hub User is their web person, thread `chat:<soul>:<user id>`; an email with no User is the person its `email` identity names, else a new public one (`AgentPerson.resolve!`), thread `chat:<soul>:person:<id>`; `person.anon_token` is a public Visitor (web identity `chat-anon:<HMAC digest>`), thread `chat:<soul>:anon:<digest>` (the token itself is never stored) |
+| Inbound | `AgentChat::Ingest`: a `web` row, `channel_ref` `chat`, the app in `envelope.app` (never in the key), the visitor's IP hashed as /build's |
+| Turns | `AgentChat::Turns`: a row is a user turn and, once answered, an agent turn, both carrying the row's id (`after` is a message id; key a turn by id and role). Status `pending` (received), `typing` (claimed), `answered`, `failed` (held, dead, or no words) |
+
+- **Who answers.** The person's role, as everywhere, and the public on the public-intake
+  soul's chat threads: `Answerers#intake?` and its SQL guard answer `chat:alex:` as they
+  answer `web:build:`, a prefix built in code. Another soul's public row is `held`.
+- **Answered as the public, always.** The app's ONE credential names the person by email,
+  so the hub cannot know who reads the answer: every `chat:` row is answered at the public
+  audience whoever sent it, the owner's email included (`MemoryBundle#audience_person`,
+  as on /build). No read action, internal context or owner audience; `private_channel?`
+  is false, so no Google layer; and the person layer and notes read only what came from
+  satellite chats, never the person's Discord, email or hub-chat history. The THREAD stays
+  the person's, shared across apps.
+- **The fold.** A signed-in post that also carries the visitor's `anon_token` moves that
+  soul's anon thread into the person's thread first (`AgentChat::Ingest#fold!`): each row
+  gets a `thread_folded` event, and the anon identity, the rows it wrote and their notes
+  move to the person (`AgentPerson#link_identity!`, reassign). Once moved, the anon
+  thread is empty, so the fold runs once.
+- **Caps** (`AgentChat::Caps`, /build's numbers from `config/agent_answerers.yml`): signed
+  out, `turns_per_request` per anon thread; signed in, `WebIngest::RATE_LIMIT` per
+  thread per hour; and on EVERY post, the per-IP hourly and daily totals shared with
+  /build (`BuildIntake::Caps#public_cap`). An email with no hub User counts toward the
+  daily total as a signed-out visitor does, so made-up emails buy nothing. At a cap the
+  hub answers 429 with the line to show and stores nothing.
+- **The request log** never holds the visitor: `ip` (this controller only), `person.email`
+  and `person.anon_token` are filtered (`config/initializers/filter_parameter_logging.rb`).
+- **Delivery.** `WebChat.polled?` covers these threads as /build's: the answer is marked
+  posted with no broadcast and the typing phase is kept on the row for the poll.
+- **Minting without a terminal or `ps` showing the secret.** `SECRET_ONLY=1` writes the
+  secret alone to stdout. Capture it in a shell variable and hand it on over stdin only,
+  as the `credential-rotation` SOP does (never `op item edit field=…` or
+  `heroku config:set NAME=…`, which put it on argv). The 1Password item must already
+  exist (the agent makes it empty, per the `credential-filing` SOP):
+
+  ```bash
+  NEW=$(heroku run --no-tty -a mcritchie-studio -- \
+          bin/rails app_credentials:mint APP=alex-build SECRET_ONLY=1 2>/dev/null | tail -n 1 | tr -d '\r') &&
+  : "${NEW:?refusing: the mint printed nothing}" &&
+  { printf '%s\n' "$NEW"; op item get "apps.alex-build.agent-chat" --vault <vault> --format json; } |
+    ruby -rjson -e 'value = STDIN.readline.chomp; item = JSON.parse(STDIN.read)
+      field = item.fetch("fields").find { |f| f["label"] == ARGV[0] } or abort "refusing: no field #{ARGV[0]}"
+      field["value"] = value; print JSON.generate(item)' "<field>" |
+    op item edit "apps.alex-build.agent-chat" --vault <vault> > /dev/null &&
+  printf '%s' "$NEW" | bin/heroku-secret-set alex-build AGENT_CHAT_TOKEN
+  unset NEW
+  ```
 
 ## Viewing a run
 

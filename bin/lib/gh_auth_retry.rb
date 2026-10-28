@@ -29,6 +29,7 @@
 # operator's 1Password CLI exactly as docs/agents/modules/credentials.md prescribes.
 require "open3"
 require_relative "gh_identity"
+require_relative "bounded_command"
 
 module GhAuthRetry
   # The identity is NOT hardcoded here. It used to be (`ITEM = "github.mcritchie-agent"`,
@@ -50,6 +51,10 @@ module GhAuthRetry
   AUTH_FAILURE = /resource not accessible|bad credentials|authentication failed|gh auth login|requires authentication/i
 
   module_function
+
+  # Seconds one forced mint may take: the broker's own 1Password read is bounded
+  # inside it (OpMeter), and this bounds the broker.
+  MINT_DEADLINE = 120
 
   # TRUE when `output` is gh refusing on credentials rather than failing on the work.
   # A non-auth failure (merge conflict, missing branch, red required check) must NOT
@@ -106,7 +111,11 @@ module GhAuthRetry
     # fresh token lands in the inactive slot and wins the newest-by-created_at read
     # for every later process. The cost is one mint on a recovery that would have
     # been served from cache — seconds, by the broker's own stated economics.
-    out, err, status = Open3.capture3(env.to_h, bin, "--identity", resolved, "--force", chdir: (root || Dir.pwd))
+    # The broker reads 1Password, and `op` can hang (2026-10-21, 2026-10-27):
+    # bounded, with the broker's whole process group killed at the deadline.
+    out, err, status = BoundedCommand.capture3(env.to_h, bin, "--identity", resolved, "--force",
+                                               deadline: MINT_DEADLINE, chdir: (root || Dir.pwd))
+    err = "#{err}\n#{bin} gave no answer within #{MINT_DEADLINE}s and was killed" if status.timed_out?
     token = out.to_s.strip
     unless status.success? && !token.empty?
       # DO NOT swallow this. A misconfigured PEM or a lapsed 1Password session

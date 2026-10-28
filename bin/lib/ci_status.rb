@@ -6,6 +6,7 @@ require "time"
 require "shellwords"
 require_relative "gh_auth_retry"
 require_relative "remedy"
+require_relative "bounded_command"
 
 # The REAL GitHub CI state of a PR, reduced to one verdict so bin/dor-check's merge
 # gate can refuse to hand a red PR to review — the #1 blocker class (a PR green
@@ -826,9 +827,20 @@ module CiStatus
   # its status line on STDERR, and unreadable_cause classifies against the pair.
   # Handing back stdout alone would leave a 403 unclassifiable, turning a named
   # credential fault back into an anonymous :unverified.
+  GH_READ_DEADLINE_ENV = "CI_STATUS_GH_DEADLINE"
+  GH_READ_DEFAULT_DEADLINE = 120
+
+  def self.gh_read_deadline
+    value = Float(ENV[GH_READ_DEADLINE_ENV].to_s, exception: false)
+    value && value.positive? ? value : GH_READ_DEFAULT_DEADLINE
+  end
+
   def self.gh_capture(args)
     env = @gh_token ? { "GH_TOKEN" => @gh_token } : {}
-    out, err, status = Open3.capture3(env, gh_bin, *args)
+    # Bounded (process group, SIGKILL): a gh that hangs on a dead socket or a
+    # stuck credential read is a failed read after GH_READ_DEADLINE, never a wedge.
+    out, err, status = BoundedCommand.capture3(env, gh_bin, *args, deadline: gh_read_deadline)
+    err = "#{err}\ngh gave no answer within #{gh_read_deadline.round}s and was killed (#{GH_READ_DEADLINE_ENV} sets the bound)" if status.timed_out?
     [[out, err].map(&:to_s).reject { |s| s.strip.empty? }.join("\n").strip, status.success?]
   rescue StandardError => e
     # gh missing or not executable. NOT an auth failure, and it must not be made to

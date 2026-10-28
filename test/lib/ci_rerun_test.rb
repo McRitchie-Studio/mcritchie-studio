@@ -119,4 +119,52 @@ class CiRerunTest < Minitest::Test
     refute CiRerun.settled?([], [1]), "an unreadable run is not settled"
     assert CiRerun.settled?([run_row(1, attempt: 2, conclusion: "failure")], [1])
   end
+
+  # --- the re-lock rule (relock_only:) --------------------------------------
+
+  # [unit] THE RE-LOCK GATE: the commit differs from the QA-green tree in the lock
+  # alone, so a first-attempt red in ANY job (here lint, with no resolution error in
+  # its log) earns the one re-run, and its second red is refused.
+  def test_the_relock_only_gate_reruns_a_failed_job_once_and_refuses_a_second_time
+    first = CiRerun.plan(runs: [run_row(5)], jobs_by_run: { 5 => ["lint"] },
+                         log_for: ->(_id) { "Offenses: 1" }, relock_only: true)
+    assert_equal :rerun, first[:action]
+    assert_equal [5], first[:run_ids]
+    assert_includes first[:reason], "re-lock commit"
+
+    second = CiRerun.plan(runs: [run_row(5, attempt: 2)], jobs_by_run: { 5 => ["lint"] }, relock_only: true)
+    assert_equal :none, second[:action], "a re-lock red after the re-run is real"
+    assert_includes second[:reason], "a second red is real"
+
+    ordinary = CiRerun.plan(runs: [run_row(5)], jobs_by_run: { 5 => ["lint"] }, log_for: ->(_id) { "Offenses: 1" })
+    assert_equal :none, ordinary[:action], "off a re-lock commit, a lint red stays a finding"
+  end
+
+  def test_the_relock_rule_still_never_reruns_a_cancelled_or_dispatched_run
+    assert_equal :none, CiRerun.plan(runs: [run_row(1, conclusion: "cancelled")], jobs_by_run: { 1 => ["x"] },
+                                     relock_only: true)[:action]
+    assert_equal :none, CiRerun.plan(runs: [run_row(2, event: "workflow_dispatch")], jobs_by_run: { 2 => ["x"] },
+                                     relock_only: true)[:action]
+  end
+
+  def test_relock_only_diff_is_gemfile_and_gemfile_lock_alone
+    assert CiRerun.relock_only_diff?(["Gemfile.lock\n"])
+    assert CiRerun.relock_only_diff?(%w[Gemfile Gemfile.lock])
+    refute CiRerun.relock_only_diff?(%w[Gemfile.lock app/models/task.rb]), "code rode along"
+    refute CiRerun.relock_only_diff?([]), "no diff vouches for nothing"
+    refute CiRerun.relock_only_diff?(["engine/Gemfile.lock"])
+  end
+
+  # --- in_progress? -----------------------------------------------------------
+
+  # [unit] 2026-10-27: one job red, its run still going. The red is early, not final.
+  def test_an_unfinished_commit_run_on_the_sha_is_in_progress
+    assert CiRerun.in_progress?([run_row(1, status: "in_progress", conclusion: nil)], SHA)
+    assert CiRerun.in_progress?([run_row(1), run_row(2, status: "queued", conclusion: nil)], SHA)
+    refute CiRerun.in_progress?([run_row(1)], SHA)
+    refute CiRerun.in_progress?([run_row(1, status: "in_progress", sha: "b" * 40)], SHA), "another SHA's run"
+    refute CiRerun.in_progress?([run_row(1, status: "in_progress", event: "schedule")], SHA),
+           "a nightly does not test the commit and must not hold the gate"
+    refute CiRerun.in_progress?([], SHA)
+  end
 end

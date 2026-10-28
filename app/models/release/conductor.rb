@@ -930,7 +930,21 @@ class Release
     # "webhook unset?" for what was a 400 on a 2790-char message).
     # Returns { message:, delivered:, error:, messages: } — message is the text
     # render, kept for preview; messages is the planned split (see #release_notes_plan).
+    #
+    # ONCE PER RELEASE. A ship or finalize re-run reaches this again on the same
+    # release, and it used to post the notes a second time (2026-10-27). Notes
+    # Discord already took are SKIPPED: nothing is posted, the delivery record is
+    # left as it is, and the result says so (already_delivered: true, delivered:
+    # false, because this call delivered nothing). A FAILED delivery is not a
+    # delivery, so a re-run after one still posts. A deliberate second post is
+    # `bin/release notes <release> --post --force` (repost_release_notes).
     def post_release_notes(release:, app: "mcritchie-studio", environment: "production", dry_run: false)
+      if release.release_notes_delivered?
+        formatter = release_notes_formatter(release: release, app: app, environment: environment)
+        return { message: formatter.message, delivered: false, already_delivered: true, error: nil,
+                 messages: release_notes_plan(formatter) }
+      end
+
       unless release.event_started?("release_notes")
         record_event!(
           release: release,
@@ -955,7 +969,7 @@ class Release
       # delivery still has to land on it.
       record_notes_delivery!(release, result)
 
-      result
+      result.merge(already_delivered: false)
     end
 
     # Re-post a release's notes on demand (`bin/release notes <release> --post`),

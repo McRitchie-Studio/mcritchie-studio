@@ -8,11 +8,13 @@
 //     already showing flips to the other;
 //   - "Pick three new themes" ([data-build-ask]) writes its line into the chat
 //     box and sends it through the composer's own submit, so it travels the
-//     same path as a typed message. A draft the visitor had half typed is held
-//     and put back in the box once the send's stream redraws the composer
-//     (BuildController#replace_form), so the link never eats it.
+//     same path as a typed message. A draft the visitor had half typed is set
+//     aside on the form (data-ask-draft) and goes back in the box the moment the
+//     ask leaves (agent_chat.js#startSend); from there it is the composer's own
+//     draft, which every later redraw carries (agent_chat.js#carriedDraft), so
+//     neither the link nor a swap ever eats it (task composer-edge-cases).
 //
-// Pure where it can be (nextThemeMode, askAgent, restoreDraft take stand-ins),
+// Pure where it can be (nextThemeMode, askAgent take stand-ins),
 // so test/javascript/build_status_test.js runs it without a browser.
 
 export const POP_CLASS = "build-status-pop";
@@ -37,55 +39,24 @@ export function popStatusCard(root = document) {
   return true;
 }
 
-// The visitor's half-typed message while an ask posts: { formId, text }, or null.
-let heldDraft = null;
-
-export function heldDraftFor() {
-  return heldDraft;
-}
-
 // Sends `text` through the chat box: fills its field and submits the form the
 // way Enter does, so the composer's own send runs. A draft already in the box is
-// held for restoreDraft. False with no chat box, or while one send is already
-// posting.
+// set aside on the form (data-ask-draft) for the send to put back. False with no
+// chat box, or while one send is already posting.
 export function askAgent(text, root = document) {
   const form = root.querySelector?.("form[data-cto-chat-form]");
   const field = form?.querySelector("textarea");
   if (!form || !field || !text) return false;
   if (form.getAttribute("aria-busy") === "true" || form.dataset.sending === "true") return false;
   const draft = field.value || "";
-  heldDraft = draft.trim() === "" ? null : { formId: form.id, text: draft };
+  if (draft.trim() === "") delete form.dataset.askDraft; else form.dataset.askDraft = draft;
   field.value = text;
   field.dispatchEvent?.(new Event("input", { bubbles: true }));
   if (typeof form.requestSubmit === "function") form.requestSubmit(); else form.submit();
   return true;
 }
 
-// Puts a held draft back into the redrawn composer's box (with or without an
-// error line: the visitor's own words outrank a canned ask they can tap again).
-// True when it restored one.
-export function restoreDraft(root = document) {
-  if (!heldDraft) return false;
-  const field = root.querySelector?.("form[data-cto-chat-form]")?.querySelector("textarea");
-  if (!field) return false;
-  field.value = heldDraft.text;
-  heldDraft = null;
-  field.dispatchEvent?.(new Event("input", { bubbles: true }));
-  return true;
-}
-
 if (typeof document !== "undefined") {
-  // The send's stream replaces the composer (an empty box, or the ask echoed
-  // back with an error): the held draft goes back in after it renders.
-  document.addEventListener("turbo:before-stream-render", (event) => {
-    if (!heldDraft || event.target.getAttribute("target") !== heldDraft.formId) return;
-    const original = event.detail.render;
-    event.detail.render = async (element) => {
-      await original(element);
-      restoreDraft();
-    };
-  });
-
   document.addEventListener("click", (event) => {
     const ask = event.target.closest?.("[data-build-ask]");
     if (!ask) return;

@@ -133,6 +133,8 @@ Parallel surface to the X workflow above; entry points create TikTok-flavored Co
 - `POST /api/v1/tasks/:slug/intent` — Record an intended next stage or reviewer assignment
 - `POST /api/v1/tasks/:slug/review_events` — Record an idempotent primary/light reviewer check-in checkpoint. The UI displays `primary` as the heavy swimlane. Canonical moments are primary: `started context diff tests risk findings completed failed`; light: `started context diff smoke handoff completed failed`.
 - `POST /api/v1/release_notes` — Format and send canonical Discord Release Notes for deployed task slugs
+- `POST /api/v1/agent_chat/messages` — A satellite app's visitor message to an agent (`soul`, `text`, `person`, `ip`); the app's own bearer credential (`AppCredential`), not an agent session. See `docs/agents/system/agent-message-loop.md`, "Satellite chat"
+- `GET /api/v1/agent_chat/turns` — The visitor's (person, soul) thread as turns, `after` a message id, `limit` ≤ 50, and whether an answer is pending
 - `GET/PATCH /api/v1/agents/:slug` — Read/update agent
 - `GET/POST /api/v1/activities` — List/create activities
 - `GET/POST /api/v1/usages` — List/create usage records

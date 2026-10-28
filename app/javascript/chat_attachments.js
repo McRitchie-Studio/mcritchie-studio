@@ -13,6 +13,10 @@
 // stopped the same way. A message may be files with no text, so the text box is
 // required only while a file is attached or uploading.
 //
+// A send takes its files' chips off the form (agent_chat.js#startSend), and when
+// a send's answer redraws the composer, chips attached meanwhile move into the
+// new form, so an upload still running settles where its chip now is (homeOf).
+//
 // Imported by application.js on every page, once per load; every listener is
 // delegated on document and does nothing where there is no composer.
 const ROOT = "[data-chat-attachments]";
@@ -116,7 +120,12 @@ function chipFor(file) {
   return chip;
 }
 
+// The composer a chip is in NOW: a redraw of the composer while a file uploads
+// moves its chip into the new form (agent_chat.js), and the upload settles there.
+function homeOf(chip, root) { return chip.closest?.(ROOT) || root; }
+
 function fail(root, chip, text) {
+  root = homeOf(chip, root);
   chip.dataset.state = "failed";
   // Swap, not add: with both on the chip the stylesheet's order would decide.
   chip.classList.remove("border-subtle");
@@ -131,6 +140,7 @@ function fail(root, chip, text) {
 }
 
 function done(root, chip, token) {
+  root = homeOf(chip, root);
   chip.dataset.state = "done";
   chip.querySelector("progress")?.remove();
   const field = document.createElement("input");
