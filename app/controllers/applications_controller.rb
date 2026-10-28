@@ -5,11 +5,13 @@
 # viewer owns that app or is an admin: an app a viewer does not own does not
 # exist for them, so an unannounced app's slug never leaks.
 #
-#   index   the visible apps; 404 for a viewer who owns none
+#   index   the visible apps, split by ApplicationsWatchList into live apps
+#           (left) and apps pending launch (right); 404 for a viewer who owns none
 #   show    name, emoji and colour, a lazy health frame, the CTO card, and the
 #           brand kits it takes with their status (BrandKitApp; Applied, Kit
 #           changed or Not applied), the brand linked to /logos for an admin
-#   health  the frame: the app's health for the last morning window, cached
+#   health  the frame: the app's health for the last morning window, cached;
+#           `?compact=1` is the one-badge cell the index lazy-loads per live app
 #   usage   JSON: this month's CTO usage meter and today's totals (AgentUsage,
 #           docs/agents/system/agent-usage.md); owner or admin, like the page.
 #           Dollars are an admin's: an owner reads tokens and the meter only
@@ -27,6 +29,8 @@ class ApplicationsController < ApplicationController
     @apps = AppOwnership.visible_apps(current_user).to_a
     raise ActiveRecord::RecordNotFound, "no visible apps" if @apps.empty?
 
+    @admin = AppOwnership.admin?(current_user)
+    @list = ApplicationsWatchList.build(@apps, admin: @admin)
     ctos = AppOwnership.ctos
     client_ctos = AppCto.for_apps(@apps.map(&:slug))
     @ctos = @apps.to_h { |app| [ app.slug, AppOwnership.cto_for_app(app.slug, ctos: ctos, client_ctos: client_ctos) ] }
@@ -90,7 +94,7 @@ class ApplicationsController < ApplicationController
         DailyAppReport.health_for(@catalog_entry, @ending, fetcher: DailyAppReport::Fetcher.new, env: ENV)
       end
     end
-    render layout: false
+    render params[:compact].present? ? "health_compact" : "health", layout: false
   end
 
   private

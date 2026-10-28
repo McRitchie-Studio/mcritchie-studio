@@ -1,27 +1,135 @@
-<%# /applications: the apps this viewer owns (every app for an admin), each with its CTO. docs/agents/system/app-owners.md %>
-<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="applications-page">
+<%# /applications: live apps on the left, apps pending launch on the right (ApplicationsWatchList). An admin sees every app; an owner only theirs. docs/agents/system/app-owners.md %>
+<section class="max-w-6xl mx-auto px-4 py-10 space-y-6" data-test="applications-page">
   <div>
     <h1 class="text-3xl font-bold text-heading">Applications</h1>
     <p class="text-secondary mt-2">
-      <%= AppOwnership.admin?(current_user) ? "Every app on the platform. Owners see only their own." : "The apps you own. Open one to see its health and its CTO." %>
+      <%= @admin ? "Every app on the platform: live on the left, waiting to launch on the right. Owners see only their own." : "The apps you own. Open one to see its health and its CTO." %>
     </p>
   </div>
 
-  <div class="grid gap-3">
-    <% @apps.each do |app| %>
-      <% cto = @ctos[app.slug] %>
-      <div class="card p-4 flex items-center gap-3 min-w-0" data-test="application-row" data-app="<%= app.slug %>">
-        <%= render "applications/app_badge", app: app %>
-        <div class="min-w-0 flex-1">
-          <%= link_to app.name, application_path(app.slug), class: "font-semibold text-heading hover:underline break-words", data: { test: "application-link" } %>
-          <% if app.description.present? %><p class="text-secondary text-sm truncate"><%= app.description %></p><% end %>
+  <div class="grid gap-6 lg:grid-cols-5 items-start">
+    <%# LEFT: the main list, apps running for someone today. %>
+    <div class="lg:col-span-3 space-y-2 min-w-0" data-test="applications-live">
+      <h2 class="text-lg font-semibold text-heading">Live <span class="text-muted font-normal">(<%= @list.live.size %>)</span></h2>
+      <% if @list.live.any? %>
+        <div class="card overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-muted border-b border-subtle">
+                <th class="py-2 px-3">App</th>
+                <th class="hidden md:table-cell py-2 px-3">Production</th>
+                <th class="py-2 px-3">Health</th>
+                <th class="hidden sm:table-cell py-2 px-3">Mail</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% @list.live.each do |row| %>
+                <tr class="border-b border-subtle/60 align-top" data-test="application-row" data-list="live" data-app="<%= row.slug %>">
+                  <td class="py-2 px-3">
+                    <div class="flex items-start gap-2 min-w-0">
+                      <%= render "applications/app_badge", app: row.app %>
+                      <div class="min-w-0">
+                        <%= link_to row.app.name, application_path(row.slug), class: "font-semibold text-heading hover:underline break-words", data: { test: "application-link" } %>
+                        <% row.warnings.each do |warning| %>
+                          <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40 ml-1" data-test="application-warning"><%= warning %></span>
+                        <% end %>
+                        <% if @admin && row.unannounced? %>
+                          <span class="badge text-xs ml-1" data-test="application-unannounced">Unannounced</span>
+                        <% end %>
+                        <div class="md:hidden text-xs text-muted break-all"><%= row.production_url.delete_prefix("https://") %></div>
+                        <div><%= render "applications/cto_link", app: row.app, cto: @ctos[row.slug] %></div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="hidden md:table-cell py-2 px-3 break-all">
+                    <%= link_to row.production_url.delete_prefix("https://"), row.production_url, class: "text-primary hover:underline", target: "_blank", rel: "noopener", data: { test: "application-url" } %>
+                  </td>
+                  <td class="py-2 px-3 whitespace-nowrap">
+                    <% if row.health_reported? %>
+                      <%= turbo_frame_tag "application-health-#{row.slug}", src: health_application_path(row.slug, compact: 1), loading: :lazy do %>
+                        <span class="text-muted text-xs">Reading…</span>
+                      <% end %>
+                    <% else %>
+                      <span class="text-muted text-xs" data-test="application-health-compact" data-state="not_reported">Not reported</span>
+                    <% end %>
+                  </td>
+                  <td class="hidden sm:table-cell py-2 px-3 whitespace-nowrap" data-test="application-mail">
+                    <% if row.mail %>
+                      <span class="badge text-xs <%= row.mail == "active" ? "bg-success/10 text-success-ink border-success/40" : "bg-warning/10 text-warning-ink border-warning/40" %>">Workspace <%= row.mail %></span>
+                    <% else %>
+                      <span class="text-muted text-xs">—</span>
+                    <% end %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
         </div>
-        <% if cto&.settings? %>
-          <%= link_to "CTO: #{cto.display_name}", settings_agent_path(cto.slug), class: "btn btn-secondary btn-sm shrink-0", data: { test: "application-cto-link" } %>
-        <% elsif cto %>
-          <%= link_to "CTO: #{cto.display_name}", chat_application_path(app.slug), class: "btn btn-secondary btn-sm shrink-0", data: { test: "application-cto-link" } %>
-        <% end %>
-      </div>
-    <% end %>
+        <p class="text-muted text-xs">Health is the 07:00 Denver daily report. Mail is the Google Workspace the hub holds on the app's own domain.</p>
+      <% else %>
+        <p class="card p-4 text-secondary text-sm" data-test="applications-live-empty">No live apps yet.</p>
+      <% end %>
+    </div>
+
+    <%# RIGHT: the watch list, apps not launched yet and what stands between them and launch. %>
+    <div class="lg:col-span-2 space-y-2 min-w-0" data-test="applications-pending">
+      <h2 class="text-lg font-semibold text-heading">Pending launch <span class="text-muted font-normal">(<%= @list.pending.size %>)</span></h2>
+      <% if @list.pending.any? %>
+        <div class="card overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-muted border-b border-subtle">
+                <th class="py-2 px-3">App</th>
+                <th class="py-2 px-3">Why / next</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% @list.pending.each do |row| %>
+                <tr class="border-b border-subtle/60 align-top" data-test="application-row" data-list="pending" data-app="<%= row.slug %>">
+                  <td class="py-2 px-3">
+                    <div class="flex items-start gap-2 min-w-0">
+                      <%= render "applications/app_badge", app: row.app %>
+                      <div class="min-w-0">
+                        <%= link_to row.app.name, application_path(row.slug), class: "font-semibold text-heading hover:underline break-words", data: { test: "application-link" } %>
+                        <div><%= render "applications/cto_link", app: row.app, cto: @ctos[row.slug] %></div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="py-2 px-3 space-y-1" data-test="application-why">
+                    <p class="text-secondary"><%= row.why %></p>
+                    <% if row.stage_summary %>
+                      <p class="text-xs text-muted" data-test="application-open-tasks">
+                        <%= pluralize(row.open_tasks.size, "open task") %>: <%= row.stage_summary %>
+                      </p>
+                      <% if @admin && (task = row.next_task)&.title %>
+                        <p class="text-xs">Next: <%= link_to task.title, task_path(task.slug), class: "text-primary hover:underline", data: { test: "application-next-task" } %></p>
+                      <% end %>
+                    <% else %>
+                      <p class="text-xs text-muted" data-test="application-open-tasks">No open tasks</p>
+                    <% end %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      <% else %>
+        <p class="card p-4 text-secondary text-sm" data-test="applications-pending-empty">Nothing waiting to launch.</p>
+      <% end %>
+
+      <% if @list.other.any? %>
+        <details class="card p-3 text-sm" data-test="applications-other">
+          <summary class="cursor-pointer text-secondary">Libraries and archived (<%= @list.other.size %>)</summary>
+          <ul class="mt-2 space-y-1">
+            <% @list.other.each do |row| %>
+              <li data-test="application-row" data-list="other" data-app="<%= row.slug %>">
+                <%= link_to row.app.name, application_path(row.slug), class: "text-heading hover:underline", data: { test: "application-link" } %>
+                <span class="text-muted text-xs"><%= row.entry&.archived? ? "archived" : "library" %></span>
+              </li>
+            <% end %>
+          </ul>
+        </details>
+      <% end %>
+    </div>
   </div>
 </section>
