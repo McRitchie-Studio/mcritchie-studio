@@ -198,6 +198,14 @@ class Release
       # Re-post a shipped release's notes to Discord. A DRY RUN unless --post: it
       # prints the notes and the planned message split, and sends nothing. Notes
       # already delivered need --force to post again.
+      # The whole release, resumable (bin/lib/release_cycle.rb). --clearance is
+      # mandatory: the cycle ends in a production ship, cleared only by Alex
+      # McRitchie's own words. --yes and --wait-for-1password are global.
+      "cycle" => {
+        synopsis: "bin/release cycle --clearance \"<Alex McRitchie's words>\" [--yes] [--wait-for-1password[=MINUTES]]",
+        consequence: "NOTHING was prepared, deployed, shipped, or archived",
+        bool: [], value: ["--clearance"], allow_positional: false
+      },
       "notes" => {
         synopsis: "bin/release notes <release> [--post] [--force]",
         consequence: "nothing was posted to Discord",
@@ -208,7 +216,7 @@ class Release
     # The whole-CLI usage line — printed for a bare `bin/release`, an unknown
     # subcommand, and appended to every per-subcommand `--help`.
     USAGE = "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|" \
-            "ship [--finalize-only [<release>]]|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]} " \
+            "ship [--finalize-only [<release>]]|cycle --clearance \"<words>\"|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]} " \
             "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto|cleared] [--clearance \"<Alex McRitchie's words>\"] " \
             "[--feedback …] [--clean-only] [--expedite] " \
             "[--worked …] [--friction …] [--followup …] [--file-tasks] [--train SLUG] [--wait-for-1password[=MINUTES]] [--local] [--dry-run] [--yes]"
@@ -240,7 +248,7 @@ class Release
     # "unsupported".
     GLOBAL_FLAGS = "[--dry-run] [--local] [--yes] [--skip-test-gate] [--train SLUG] " \
                    "[--wait-for-1password[=MINUTES]] (global — consumed before dispatch; " \
-                   "--wait-for-1password with prepare and ship only)"
+                   "--wait-for-1password with prepare, ship and cycle only)"
 
     # `--help` and a refusal both exit 1, never 0.
     #
