@@ -27,9 +27,11 @@
                 <tr class="border-b border-subtle/60 align-top" data-test="application-row" data-list="live" data-app="<%= row.slug %>">
                   <td class="py-2 px-3">
                     <div class="flex items-start gap-2 min-w-0">
-                      <%= render "applications/app_badge", app: row.app %>
+                      <%= link_to app_todos_path(row.app, admin: @admin), class: "shrink-0", tabindex: -1, aria: { hidden: true } do %>
+                        <%= render "applications/app_avatar_pair", app: row.app, cto: @ctos[row.slug] %>
+                      <% end %>
                       <div class="min-w-0">
-                        <%= link_to row.app.name, application_path(row.slug), class: "font-semibold text-heading hover:underline break-words", data: { test: "application-link" } %>
+                        <%= link_to row.app.name, app_todos_path(row.app, admin: @admin), class: "font-semibold text-heading hover:underline break-words", data: { test: "application-link" } %>
                         <% row.warnings.each do |warning| %>
                           <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40 ml-1" data-test="application-warning"><%= warning %></span>
                         <% end %>
@@ -88,9 +90,11 @@
                 <tr class="border-b border-subtle/60 align-top" data-test="application-row" data-list="pending" data-app="<%= row.slug %>">
                   <td class="py-2 px-3">
                     <div class="flex items-start gap-2 min-w-0">
-                      <%= render "applications/app_badge", app: row.app %>
+                      <%= link_to app_todos_path(row.app, admin: @admin), class: "shrink-0", tabindex: -1, aria: { hidden: true } do %>
+                        <%= render "applications/app_avatar_pair", app: row.app, cto: @ctos[row.slug] %>
+                      <% end %>
                       <div class="min-w-0">
-                        <%= link_to row.app.name, application_path(row.slug), class: "font-semibold text-heading hover:underline break-words", data: { test: "application-link" } %>
+                        <%= link_to row.app.name, app_todos_path(row.app, admin: @admin), class: "font-semibold text-heading hover:underline break-words", data: { test: "application-link" } %>
                         <div><%= render "applications/cto_link", app: row.app, cto: @ctos[row.slug] %></div>
                       </div>
                     </div>
@@ -123,7 +127,7 @@
           <ul class="mt-2 space-y-1">
             <% @list.other.each do |row| %>
               <li data-test="application-row" data-list="other" data-app="<%= row.slug %>">
-                <%= link_to row.app.name, application_path(row.slug), class: "text-heading hover:underline", data: { test: "application-link" } %>
+                <%= link_to row.app.name, app_todos_path(row.app, admin: @admin), class: "text-heading hover:underline", data: { test: "application-link" } %>
                 <span class="text-muted text-xs"><%= row.entry&.archived? ? "archived" : "library" %></span>
               </li>
             <% end %>

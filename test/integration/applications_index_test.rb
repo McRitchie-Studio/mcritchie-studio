@@ -34,6 +34,24 @@ class ApplicationsIndexTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='applications-live'] [data-app='pawsome']", count: 0
   end
 
+  test "[component] each app shows its emoji with its CTO on top, or the emoji alone, and clicks through to its todos" do
+    Agent.create!(slug: "turf-monster", name: "Turf Monster", status: "active", agent_type: "specialist")
+    log_in_as(users(:alex))
+    get applications_path
+
+    assert_select "[data-app='turf-monster'] [data-test='app-avatar-pair'][data-agent='yes']" do
+      assert_select "[data-test='app-badge']", 1
+      assert_select "[data-test='app-avatar-agent'].z-10[title='Turf']", 1
+    end
+    assert_select "[data-app='pawsome'] [data-test='app-avatar-pair'][data-agent='no']" do
+      assert_select "[data-test='app-badge']", 1
+      assert_select "[data-test='app-avatar-agent']", 0
+    end
+    assert_select "[data-app='turf-monster'] a[data-test='application-link'][href=?]", pipeline_application_path("turf-monster")
+    assert_select "[data-app='pawsome'] a[data-test='application-link'][href=?]", pipeline_application_path("pawsome")
+    assert_select "[data-app='pawsome'] a[data-test='application-next-task'][href=?]", task_path(Task.find_by!(title: "Pawsome signup").slug)
+  end
+
   test "[component] the compact health cell answers in its own frame" do
     log_in_as(users(:alex))
     with_env("HEALTH_TOKEN_TURF_MONSTER", nil) { get health_application_path("turf-monster", compact: 1) }
