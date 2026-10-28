@@ -548,6 +548,64 @@ def warn_local!
   say("⚠ --local: record ops run against the STALE local DB — the board won't reflect production; use the default for real releases.")
 end
 
+# THE COMMAND DEADLINES. Every subprocess on the release path runs through
+# BoundedCommand: a deadline, then SIGKILL to the child's whole process group.
+# Open3 and system() have no deadline, Timeout.timeout raises into this thread
+# and leaves the child running, and an `alarm`/SIGALRM bound is no bound at all
+# for `op`, which ignores SIGALRM (observed 2026-10-27). Three bounds, each a
+# positive number of seconds from the environment or its default:
+#
+#   RELEASE_COMMAND_DEADLINE     (3600) a working step: a push, a bundle, a suite,
+#                                a gem build or push, a deploy script.
+#   RELEASE_READ_DEADLINE        (300)  a read: git_capture, a gh view or list, a
+#                                git show, a heroku releases list.
+#   RELEASE_POST_DEPLOY_DEADLINE (1800) one post_deploy `heroku run` (a backfill
+#                                can run long; a hung client must not run forever).
+#
+# RELEASE_RECORD_OP_DEADLINE (300, run_record_op) bounds a board record op, and
+# RELEASE_ARCHIVE_STEP_DEADLINE (archive_step_deadline) the archive's steps.
+COMMAND_DEADLINE_ENV = "RELEASE_COMMAND_DEADLINE"
+COMMAND_DEFAULT_DEADLINE = 3600
+READ_DEADLINE_ENV = "RELEASE_READ_DEADLINE"
+READ_DEFAULT_DEADLINE = 300
+POST_DEPLOY_DEADLINE_ENV = "RELEASE_POST_DEPLOY_DEADLINE"
+POST_DEPLOY_DEFAULT_DEADLINE = 1800
+
+# Seconds from ENV[name] when it is a positive number, else the default.
+def env_deadline(name, default)
+  value = Float(ENV[name].to_s, exception: false)
+  value&.positive? ? value : default
+end
+
+def command_deadline = env_deadline(COMMAND_DEADLINE_ENV, COMMAND_DEFAULT_DEADLINE)
+def read_deadline = env_deadline(READ_DEADLINE_ENV, READ_DEFAULT_DEADLINE)
+def post_deploy_deadline = env_deadline(POST_DEPLOY_DEADLINE_ENV, POST_DEPLOY_DEFAULT_DEADLINE)
+
+# The line a killed command leaves behind: it names the command, the bound and
+# the variable that sets it, so a kill never reads as the command's own failure.
+def deadline_kill_line(argv, deadline, env_name)
+  name = Array(argv).reject { |a| a.is_a?(Hash) }.first(3).join(" ")
+  "✗ `#{name}` gave no answer within #{deadline.round}s and was killed with its process group " \
+    "(#{env_name} sets the bound)"
+end
+
+# Open3.capture2e, bounded: [stdout+stderr, BoundedCommand::Result]. The result
+# answers success?/exitstatus like the Process::Status it replaces. `env:` is the
+# child's overlay (a nil value unsets the key). Raises SystemCallError when the
+# binary cannot start, exactly as Open3 did.
+def bounded_capture2e(*argv, deadline: read_deadline, deadline_env: READ_DEADLINE_ENV, env: nil, **opts)
+  out, result = BoundedCommand.capture2e(env || {}, *argv, deadline: deadline, **opts)
+  out = "#{out}#{out.end_with?("\n") || out.empty? ? '' : "\n"}#{deadline_kill_line(argv, deadline, deadline_env)}\n" if result.timed_out?
+  [out, result]
+end
+
+# Open3.capture3, bounded: [stdout, stderr, BoundedCommand::Result].
+def bounded_capture3(*argv, deadline: read_deadline, deadline_env: READ_DEADLINE_ENV, env: nil, **opts)
+  out, err, result = BoundedCommand.capture3(env || {}, *argv, deadline: deadline, **opts)
+  err = "#{err}#{deadline_kill_line(argv, deadline, deadline_env)}\n" if result.timed_out?
+  [out, err, result]
+end
+
 # Run a shell command. In dry-run, print it and skip. `chdir:` runs it in
 # another directory (used for gem-repo builds/tags). `env:` is an optional
 # environment overlay merged into the child — the ship workspace passes it so the
@@ -557,41 +615,37 @@ end
 # VALUE in that overlay UNSETS the key in the child (Process.spawn semantics) —
 # that is how the session scrub reaches every grandchild the suite spawns. A
 # blank/nil overlay leaves the argv exactly as-is. Returns [stdout, ok?].
-def sh(*cmd, capture: false, chdir: nil, env: nil)
+#
+# BOUNDED. The child runs under BoundedCommand with `deadline:` (default
+# command_deadline) and is killed with its whole process group when it passes,
+# which reads as a failure (ok false) with a line saying so. An uncaptured child
+# streams stdout+stderr through $stdout as it arrives: inside a parallel deploy
+# that is the prefixing writer (Release::ParallelDeploy), which line-buffers per
+# thread, so a satellite's lines still arrive whole and tagged.
+def sh(*cmd, capture: false, chdir: nil, env: nil, deadline: nil, deadline_env: nil)
   printable = "#{chdir ? "(cd #{chdir}) " : ''}#{cmd.join(' ')}"
   if DRY
     puts "  [dry-run] #{printable}"
     return ["", true]
   end
   opts = chdir ? { chdir: chdir } : {}
-  # A leading env Hash sets the child's environment WITHOUT touching argv, so a
-  # command stub keying on argv[0] still matches (env lands in the trailing opts).
-  argv = env && !env.empty? ? [env, *cmd] : cmd
+  deadline_env ||= COMMAND_DEADLINE_ENV
+  deadline ||= command_deadline
   if capture
-    out, status = Open3.capture2e(*argv, opts)
-    [out, status.success?]
-  elsif Release::ParallelDeploy.current_repo
-    # A satellite deploying beside others: its child's output is read line by line
-    # and printed through $stdout, which prefixes each line with the repo and copies
-    # it to the app's log. An inherited stdout would print it unprefixed, mid-line.
-    ["", stream_through_stdout(argv, opts)]
+    out, result = bounded_capture2e(*cmd, deadline: deadline, deadline_env: deadline_env, env: env, **opts)
+    [out, result.success?]
   else
-    ok = system(*argv, opts)
-    ["", ok]
+    # stdin stays inherited, as system() had it: a child that must read it still can.
+    begin
+      result = BoundedCommand.run(env || {}, cmd, deadline: deadline, pgroup: true, stream: $stdout,
+                                                  err: [:child, :out], **opts)
+    rescue SystemCallError => e
+      say("  could not run #{cmd.first}: #{e.message}")
+      return ["", false]
+    end
+    say("  #{deadline_kill_line(cmd, deadline, deadline_env)}") if result.timed_out?
+    ["", result.success?]
   end
-end
-
-# Run argv with stdout+stderr merged and echoed through $stdout; true iff it exited 0.
-# A command that cannot start is a failure, as system() would report it.
-def stream_through_stdout(argv, opts)
-  Open3.popen2e(*argv, opts) do |stdin, out, wait|
-    stdin.close
-    out.each_line { |line| $stdout.write(line) }
-    wait.value.success?
-  end
-rescue SystemCallError => e
-  say("  could not run #{Array(argv).reject { |a| a.is_a?(Hash) }.first}: #{e.message}")
-  false
 end
 
 # Dispatch a GitHub Actions workflow (`gh workflow run`) and WATCH it to
@@ -1027,10 +1081,14 @@ def agent_activity(*args)
   return if DRY
   return unless conductor_session_id # no session → nothing to narrate
 
-  system(AGENT_ACTIVITY, *args, out: File::NULL, err: File::NULL)
+  BoundedCommand.run(nil, [AGENT_ACTIVITY, *args], deadline: AGENT_ACTIVITY_DEADLINE, pgroup: true,
+                                                   in: File::NULL, err: File::NULL)
 rescue StandardError
   nil
 end
+
+# Narration is best-effort: one post, never worth holding a release step for.
+AGENT_ACTIVITY_DEADLINE = 30
 
 # Self-report ONE off-box action into the open role span, so the Remote deploy
 # span carries real rows for work the PostToolUse hook can't see (git / gh /
@@ -1083,7 +1141,7 @@ RELEASE_CLAIM_CLI = File.expand_path("lib/release_claim_cli.rb", __dir__)
 def conductor_claim(*args)
   return nil if DRY
 
-  out, err, status = Open3.capture3(RbConfig.ruby, RELEASE_CLAIM_CLI, *args)
+  out, err, status = bounded_capture3(RbConfig.ruby, RELEASE_CLAIM_CLI, *args)
   msg = [out, err].map(&:to_s).join.strip
   say(msg.gsub(/^/, "  ")) unless msg.empty?
   status&.exitstatus
@@ -1229,6 +1287,8 @@ end
 # scope key, result_slug=pass|fail, duration_ms=the wall-clock. These ride the same
 # best-effort self-report path; a bare START stays untagged so the pipeline's
 # `kind:"test_scope" AND result_slug present` filter never surfaces it.
+POST_DEPLOY_SCOPES = %w[qa_post_deploy prod_post_deploy].freeze
+
 def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil, env: nil, &block)
   meta  = scope_meta(key)
   where = repo.to_s.empty? ? meta["host"].to_s : repo.to_s
@@ -1241,6 +1301,12 @@ def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil,
     # stub (or any caller that predates env:) is untouched.
     kw = { capture: capture, chdir: chdir }
     kw[:env] = env if env && !env.empty?
+    # A post_deploy hook is one `heroku run` that may run a long backfill: it gets
+    # its own bound (RELEASE_POST_DEPLOY_DEADLINE), not the working-step one.
+    if POST_DEPLOY_SCOPES.include?(key.to_s)
+      kw[:deadline] = post_deploy_deadline
+      kw[:deadline_env] = POST_DEPLOY_DEADLINE_ENV
+    end
     # THE WORKING PHASE, published locally for this scope's exact duration, AT THE COST
     # THE REGISTRY DECLARES. This is the choke point every conductor-run test scope
     # passes through — the G3 pre-QA gate and the ship's frozen-SHA test gate alike — so
@@ -1398,7 +1464,7 @@ rescue HerokuToken::Unresolved => e
   abort!("no Heroku token for the PROD board: #{e.message} Nothing was done.")
 end
 
-def conductor(ruby, read_only: false)
+def conductor(ruby, read_only: false, deadline: nil, deadline_env: RECORD_OP_DEADLINE_ENV)
   ruby = train_guarded(ruby)
   payload = conductor_payload(with_conductor_session(ruby))
   cmd = PROD ? ["heroku", "run", "-a", APP, "--no-tty", "rails", "runner", payload]
@@ -1408,10 +1474,11 @@ def conductor(ruby, read_only: false)
     return {}
   end
   ensure_heroku_token! if PROD
-  out, ok, timed_out = run_record_op(cmd)
+  deadline ||= record_op_deadline
+  out, ok, timed_out = run_record_op(cmd, deadline: deadline)
   if timed_out
-    abort!("record op failed: no answer within #{record_op_deadline.round}s, so the " \
-           "#{PROD ? '`heroku run` client' : 'rails runner'} was killed (#{RECORD_OP_DEADLINE_ENV} sets the bound). " \
+    abort!("record op failed: no answer within #{deadline.round}s, so the " \
+           "#{PROD ? '`heroku run` client' : 'rails runner'} was killed (#{deadline_env} sets the bound). " \
            "Whether the write landed is unknown; re-running is safe, every conductor write is idempotent.\n#{out}")
   end
   abort!("record op failed:\n#{out}") unless ok
@@ -2011,7 +2078,7 @@ end
 # merged, carry on" from a genuine merge failure. Read-only; goes straight to
 # Open3 (runs even in --dry-run).
 def pr_merged?(pr_url)
-  out, status = Open3.capture2e("gh", "pr", "view", pr_url, "--json", "state", "-q", ".state")
+  out, status = bounded_capture2e("gh", "pr", "view", pr_url, "--json", "state", "-q", ".state")
   status.success? && out.strip == "MERGED"
 end
 
@@ -3481,7 +3548,7 @@ def called_workflow_text(uses)
   return nil if ref.to_s.empty? || file.to_s.empty? || !Dir.exist?(clone)
 
   ["origin/#{ref}", ref].each do |rev|
-    text, read = Open3.capture2("git", "-C", clone, "show", "#{rev}:#{file}", err: File::NULL)
+    text, _err, read = bounded_capture3("git", "-C", clone, "show", "#{rev}:#{file}")
     return text if read.success?
   end
   nil
@@ -5227,7 +5294,7 @@ def short(sha) = sha.to_s.empty? ? "(frozen)" : sha.to_s[0, SHORT]
 # A git read that runs EVEN in dry-run (a read mutates nothing) — mirrors how
 # `conductor(read_only:)` lets a dry-run preview real state. Returns [out, ok?].
 def git_capture(*args)
-  out, status = Open3.capture2e("git", *args)
+  out, status = bounded_capture2e("git", *args)
   [out, status.success?]
 end
 
@@ -5331,7 +5398,7 @@ end
 # `yanked` field). 404 (never published) or any error → [] (publish needed). A
 # live-only read.
 def rubygems_versions(gem_name)
-  out, status = Open3.capture2e("/usr/bin/curl", "-sf",
+  out, status = Open3.capture2e("/usr/bin/curl", "-sf", "--max-time", GEM_CURL_MAX_TIME.to_s,
                                 "https://rubygems.org/api/v1/versions/#{gem_name}.json")
   return [] unless status.success? && !out.strip.empty?
 
@@ -6674,6 +6741,7 @@ def commit_gem_version!(repo, tip, decision, failures)
 end
 
 CHANGELOG_FILE = "CHANGELOG.md"
+SECRET_PREWARM_DEADLINE = 120
 
 # THE ROLL — the step that was missing, and the whole point of this change.
 #
@@ -8623,7 +8691,7 @@ def prod_up_ok?(base_url)
   url = base_url.to_s.strip
   return false if url.empty?
 
-  out, status = Open3.capture2e("/usr/bin/curl", "-s", "-o", "/dev/null",
+  out, status = Open3.capture2e("/usr/bin/curl", "-s", "--max-time", GEM_CURL_MAX_TIME.to_s, "-o", "/dev/null",
                                 "-w", "%{http_code}", "#{url}/up")
   status.success? && out.strip == "200"
 end
@@ -8632,8 +8700,8 @@ def deploy_workflow_runs(workflow, path)
   wf = workflow.to_s.strip
   return [] if wf.empty?
 
-  out, status = Open3.capture2e("gh", "run", "list", "--workflow", wf, "--limit", "20",
-                                "--json", "databaseId,headSha,status,conclusion", chdir: path)
+  out, status = bounded_capture2e("gh", "run", "list", "--workflow", wf, "--limit", "20",
+                                  "--json", "databaseId,headSha,status,conclusion", chdir: path)
   return [] unless status.success?
 
   JSON.parse(out)
@@ -8737,7 +8805,7 @@ def heroku_releases(app, limit: 5)
   name = app.to_s.strip
   return [] if DRY || name.empty?
 
-  out, _err, status = Open3.capture3("heroku", "releases", "--app", name, "--json", "-n", limit.to_s)
+  out, _err, status = bounded_capture3("heroku", "releases", "--app", name, "--json", "-n", limit.to_s)
   return [] unless status.success?
 
   JSON.parse(out)
@@ -9597,8 +9665,8 @@ def ship
   # a ship workspace checked out at that commit, so the frozen tree is the FACT
   # and the primary — whatever branch a session left it on — is only a proxy.
   bad_targets = Release::ShipSequence.missing_deploy_commands(app_groups) do |repo, command|
-    _out, status = Open3.capture2e("git", "-C", repo_path(repo), "cat-file", "-e",
-                                   "#{ship_sha[repo]}:#{command}")
+    _out, status = bounded_capture2e("git", "-C", repo_path(repo), "cat-file", "-e",
+                                     "#{ship_sha[repo]}:#{command}")
     status.success?
   end
   if bad_targets.any?
@@ -10034,7 +10102,8 @@ def restore_primaries(app_groups)
   step("restore primaries: return each app checkout to a clean `main` for the next session")
   Array(app_groups).each do |group|
     repo = group["repo"]
-    out, status = Open3.capture2e("bin/agent-worktree", "restore-primary", repo)
+    out, status = bounded_capture2e("bin/agent-worktree", "restore-primary", repo,
+                                    deadline: command_deadline, deadline_env: COMMAND_DEADLINE_ENV)
     print(out)
     say("  ⚠ #{repo}: primary left as-is (uncommitted/unpushed work) — restore by hand") unless status.success?
   end
@@ -10156,6 +10225,30 @@ rescue StandardError => e
 end
 
 # --- archive (the DevOps loop's conclusion) --------------------------------
+# THE ARCHIVE'S OWN DEADLINES. The archive is not a ship: its board write flips
+# every archivable task one BOARD_FLIP_CADENCE beat apart, and a backlog of a few
+# hundred tasks outlasts the 300 s record-op bound (RELEASE_RECORD_OP_DEADLINE),
+# which then killed a write that was working. So every archive step, its board
+# reads and writes and each sweep tool, carries RELEASE_ARCHIVE_STEP_DEADLINE
+# (default 1800 s), and the archive write grows past that with its task count.
+ARCHIVE_STEP_DEADLINE_ENV = "RELEASE_ARCHIVE_STEP_DEADLINE"
+ARCHIVE_STEP_DEFAULT_DEADLINE = 1800
+# Seconds a single flip may take, cadence included, before the write's bound grows.
+ARCHIVE_SECONDS_PER_FLIP = 3
+
+def archive_step_deadline = env_deadline(ARCHIVE_STEP_DEADLINE_ENV, ARCHIVE_STEP_DEFAULT_DEADLINE)
+
+# The bound on Conductor.archive_completed! for +count+ tasks: the step bound, or
+# a dyno boot plus a generous beat per flip when that is longer.
+def archive_write_deadline(count)
+  [archive_step_deadline, record_op_deadline + count.to_i * [ARCHIVE_SECONDS_PER_FLIP, BOARD_FLIP_CADENCE * 2].max].max
+end
+
+# One archive step's child, bounded by the archive step deadline.
+def archive_capture2e(*cmd)
+  bounded_capture2e(*cmd, deadline: archive_step_deadline, deadline_env: ARCHIVE_STEP_DEADLINE_ENV)
+end
+
 # Run the worktree-reclaim batch. PREVIEW (apply: false) runs the reclaim tool's
 # OWN dry-run (no --yes) — it only LISTS reclaimable worktrees, mutating nothing —
 # so it runs for real even under bin/release --dry-run (a read, like
@@ -10167,7 +10260,7 @@ end
 def reclaim_worktrees(apply:)
   cmd = ["bin/agent-worktree", "cleanup", "--reclaim"]
   cmd << "--yes" if apply
-  out, status = Open3.capture2e(*cmd)
+  out, status = archive_capture2e(*cmd)
   print(out)
   [out, status.success?]
 end
@@ -10250,7 +10343,7 @@ end
 def sweep_artifacts(apply:)
   cmd = ["bin/clean-artifacts"]
   cmd << "--dry-run" unless apply
-  out, status = Open3.capture2e(*cmd)
+  out, status = archive_capture2e(*cmd)
   print(out)
   [out, status.success?]
 end
@@ -10281,7 +10374,7 @@ def prune_branches(apply:)
 end
 
 def run_pruner(cmd)
-  out, = Open3.capture2e(*cmd)
+  out, = archive_capture2e(*cmd)
   print(out)
   yield(out) || {}
 rescue StandardError => e
@@ -10346,7 +10439,7 @@ def sweep_docs(apply:)
   # capture3, not capture2e: the failure report quotes STDERR specifically, and a
   # merged stream cannot say which lines were the complaint. Both are still printed,
   # on their own streams, so a passing run reads exactly as it always did.
-  out, err, status = Open3.capture3(*cmd)
+  out, err, status = bounded_capture3(*cmd, deadline: archive_step_deadline, deadline_env: ARCHIVE_STEP_DEADLINE_ENV)
   print(out)
   warn(err) unless err.to_s.empty?
   DocsSweep.new(repo: repo, command: cmd.join(" "), out: out, err: err, status: status)
@@ -10401,7 +10494,7 @@ def archive
     "puts({ archivable: Release::Conductor.archivable_completed_slugs, " \
     "kept: (Release::Conductor.respond_to?(:last_shipped_member_slugs) ? Release::Conductor.last_shipped_member_slugs : " \
     "(Release.last_shipped&.tasks&.pluck(:slug) || [])) }.to_json)",
-    read_only: true
+    read_only: true, deadline: archive_step_deadline, deadline_env: ARCHIVE_STEP_DEADLINE_ENV
   )
   archivable = plan["archivable"] || []
   kept       = plan["kept"] || []
@@ -10484,7 +10577,8 @@ def archive
   # Shipped column down, so /deployments plays the sweep instead of blinking it.
   result = conductor(
     "r = Release::Conductor.archive_completed!(pause: #{BOARD_FLIP_CADENCE}); " \
-    "puts({ archived: r[:archived], kept: r[:kept], count: r[:count] }.to_json)"
+    "puts({ archived: r[:archived], kept: r[:kept], count: r[:count] }.to_json)",
+    deadline: archive_write_deadline(archivable.size), deadline_env: ARCHIVE_STEP_DEADLINE_ENV
   )
   archived_count = result["count"] || (result["archived"] || []).size
   kept_count     = (result["kept"] || kept).size
@@ -11240,7 +11334,15 @@ if __FILE__ == $PROGRAM_NAME
   # Never fatal; a failure prints the contingency and the run goes on. Not under
   # the test suite, which must never reach a real mint.
   if %w[prepare ship].include?(ARGV.first) && ENV["RAILS_ENV"] != "test"
-    system(File.join(__dir__, "secret"), "prewarm", out: $stderr)
+    # Bounded like every other child: the prewarm reads 1Password, and a hung
+    # `op` must cost this run a minute, not the run.
+    begin
+      BoundedCommand.run(nil, [File.join(__dir__, "secret"), "prewarm"], deadline: SECRET_PREWARM_DEADLINE,
+                                                                        pgroup: true, stream: $stderr,
+                                                                        err: [:child, :out], in: File::NULL)
+    rescue SystemCallError
+      nil
+    end
   end
   case ARGV.shift
   when "init"    then init

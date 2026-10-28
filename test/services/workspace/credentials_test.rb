@@ -1,4 +1,5 @@
 require "test_helper"
+require "tmpdir"
 
 # [unit] Workspace::Credentials — source precedence, the absent/malformed split,
 # the frozen scope set, and the one thing about domain-wide delegation that
@@ -312,6 +313,28 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
   test "the op read is bounded" do
     assert_operator Workspace::Credentials::OP_TIMEOUT_SECONDS, :<=, 30,
       "op blocks for biometric unlock on a cold session; an unbounded read hangs a cron dyno"
+  end
+
+  test "a hung op that ignores SIGALRM is killed with its process group at the deadline" do
+    Dir.mktmpdir do |dir|
+      marker = File.join(dir, "grandchild-outlived")
+      ENV["FAKE_OP_MODE"] = "hang-ignoring-alarm"
+      ENV["FAKE_OP_MARKER"] = marker
+      Workspace::Credentials.op_timeout_seconds = 0.5
+      value = nil
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      calls = reaching_fake_op { value = Workspace::Credentials.send(:shell_read_from_op, Workspace::Credentials::ITEM) }
+      seconds = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+      sleep 2.5
+
+      assert_nil value, "a killed read is no credential"
+      assert_equal 1, calls.size, "the real read path reached the fake op"
+      assert_operator seconds, :<, 3, "SIGKILL lands at the deadline; SIGALRM would have been ignored"
+      refute File.exist?(marker), "op's grandchild died with its group"
+    ensure
+      ENV.delete("FAKE_OP_MARKER")
+      Workspace::Credentials.op_timeout_seconds = nil
+    end
   end
 
   test "probe REFUSES a credential in self-signed-JWT mode, which ignores the subject" do
