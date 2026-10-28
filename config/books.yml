@@ -1,7 +1,7 @@
 # The books the month close keeps (Books::Config; SOP docs/agents/agents/mack/sops/close-the-month.md).
 #
-# One entry per entity. Adding McRitchie Industries or East 49th later is another
-# entry here, not new code. Commercial Welding keeps its own books.
+# One entry per entity. Adding East 49th later is another entry here, not new
+# code. Commercial Welding keeps its own books.
 #
 #   <entity>:
 #     name:          legal name, printed on every artifact
@@ -74,5 +74,46 @@ entities:
         purpose: Acquisition costs
       # Wires and transfers carry no counterparty on the statement: someone must say
       # what each one was.
+      - name: wire-needs-answer
+        match: FEDWIRETRANSFER|TRANSFERDEBIT
+
+  # McRitchie Industries LLC: the holding company buying Commercial Welding. Its own
+  # books folder in its own domain's Drive (team@mcritchie.industries), shared with
+  # the same Alex McRitchie address as Studio's, so the two folders sit side by side.
+  industries:
+    name: McRitchie Industries LLC
+    drive_subject: team@mcritchie.industries
+    share_with: alex@mcritchie.studio
+    drive_root: McRitchie Industries Books
+    accounts:
+      money_market:
+        bank: huntington
+        product: Huntington Business Premier Plus MMA
+        last4: "8773"
+        opened_on: 2026-08-26
+      checking:
+        bank: huntington
+        product: Huntington Unlimited Checking
+        last4: "8760"
+        opened_on: 2026-08-26
+    rules:
+      - name: interest
+        match: INTERESTPAYMENT
+        category: interest_income
+      - name: bank-fee
+        match: SERVICEFEE|SERVICECHARGE|WIRETRANSFERFEES
+        category: bank_fees
+      - name: own-account-transfer
+        match: INTERNETTFR(TO|FRM)CHECKING.*X+(8773|8760)
+        category: internal_transfer
+      # A Huntington "Transfer Credit" names no sender. Alex McRitchie 2026-10-28: the
+      # two on 2026-09-02 ($400,000 to the money market, $30,000 to checking) came from
+      # Studio's money market and are member contributions; Studio books them as
+      # distributions. They are one-offs, so they are classified at run time
+      # (bin/books classify industries <ids> --category member_contribution), not by
+      # rule: a later Transfer Credit could be a loan or an affiliate's payment.
+      - name: transfer-credit-needs-answer
+        match: TRANSFERCREDIT
+        sign: in
       - name: wire-needs-answer
         match: FEDWIRETRANSFER|TRANSFERDEBIT
