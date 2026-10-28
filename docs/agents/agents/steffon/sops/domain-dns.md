@@ -253,12 +253,20 @@ A domain already on Google's single `smtp.google.com` MX is left alone.
 ### 6. DNSSEC back on, from Cloudflare — Steffon; the DS step depends on the registrar
 
 After the move has settled (a day of green `verify`), sign the zone at
-Cloudflare, and see its DS published at the registry. No outage this time: the
-DS goes up only after the zone is already signing. The command does not do this
-step; the zone id is in `tmp/domain-cutover/<domain>.json`.
+Cloudflare, and see its DS published at the registry. A domain bought on
+Cloudflare Registrar ([`domain-purchase`](./domain-purchase.md) Path A) never
+moved its nameservers, so it owes no wait: sign it once its zone is active.
+No outage this time: the DS goes up only after the zone is already signing.
+The command does not do this step. A moved domain's zone id is in
+`tmp/domain-cutover/<domain>.json`; a bought one's is in the Cloudflare zone
+listing (`GET /zones?name=<domain>`).
 
 **First read the registrar.** Who publishes the DS depends on it, so read the
-whois `Registrar:` line before you enable anything or hand anyone a step:
+whois `Registrar:` line before you enable anything or hand anyone a step.
+whois asks the registry over port 43, so the laptop's port-53 intercept cannot
+answer it wrongly. For a moved domain, `bin/domain-cutover <app> <domain> status`
+also prints the registrar `plan` read over RDAP; a domain bought on Cloudflare
+has no cutover state, so whois is the one source that serves both paths:
 
 ```bash
 whois <domain> | grep -iE "^ *(registrar|dnssec):" | head -3
@@ -276,13 +284,14 @@ curl -s -X PATCH https://api.cloudflare.com/client/v4/zones/<zone-id>/dnssec \
   | jq '.result | {status, key_tag, algorithm, digest_type, digest}'
 ```
 
-Keep the `key_tag` and `digest` it prints: the green check compares them.
+Keep the four values it prints: the green check compares them.
 
 **Path A: `Registrar: Cloudflare, Inc.`** Cloudflare Registrar publishes the DS
 at the registry itself when zone DNSSEC turns on. No owner step is owed: do not
 hand Alex McRitchie (or a client) a DS card. Wait a few minutes, then run the
 green check. Worked example, alex.build on 2026-10-28: enabling DNSSEC returned
-key tag 2371, algorithm 13, digest type 2; minutes later whois read
+key tag 2371, algorithm 13, digest type 2, digest
+`DD1AC653CA0415D90162F0357D53DF0B88B9F6AF8A3DD76D0BCA49955B838110`; minutes later whois read
 `DNSSEC: signedDelegation`, the `dns.google` DS answer carried that same key tag
 and digest, and the apex and `www` A answers read `"AD": true`, with nobody
 clicking anything. (The SOP then sent a Squarespace card that was never owed;
@@ -313,10 +322,11 @@ curl -s "https://dns.google/resolve?name=<domain>&type=A"  | jq '{Status, AD}'
 ```
 
 - whois reads `DNSSEC: signedDelegation` (RDAP: `secureDNS.delegationSigned: true`);
-- the DS at the TLD carries the key tag and digest Cloudflare printed (the zone's
+- the DS at the TLD, read over DoH and never with a local `dig DS`, carries the
+  key tag, algorithm, digest type and digest Cloudflare printed (the zone's
   DNSSEC status then reads `active`);
 - `dns.google/resolve` answers `Status` 0 with `"AD": true` for the apex and `www`.
 
-A Path A domain still unsigned after an hour, or a Path B domain after his
-"done", is a blocker to raise, not a card to resend.
+A domain still unsigned an hour after the PATCH (Path A) or after his "done"
+(Path B) is a blocker to raise, not a card to resend.
 
