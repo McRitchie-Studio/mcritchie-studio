@@ -430,11 +430,6 @@ class BinHelpFlagClassTest < Minitest::Test
     # shifted first, then OptionParser owns the rest, so `desk 5 --help` prints
     # help and exits before any run; an unknown flag raises unrescued.
     "mail"                   => :optparse,
-    # Writes (intake, classify, close) through one `heroku run`. The verb is shifted
-    # first, then OptionParser owns the rest, so `close studio 2026-10 --help` prints
-    # help and exits before any run; an unknown flag raises unrescued, and
-    # BooksCli.build_request refuses a stray positional for every verb.
-    "books"                  => :optparse,
     # --- subcommand dispatch that falls through to usage (BARE form) ----------
     #
     # Read the legend above before trusting this bucket: it says what the BARE

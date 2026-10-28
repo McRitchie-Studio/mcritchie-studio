@@ -12,9 +12,6 @@ reports:
   daily_app_report:
     label: Daily application report
     description: Morning CTO summary
-  books_reminder:
-    label: Books month-close reminder
-    description: On the 5th, which bank statements are in and which are missing for last month's close (Books::Reminder)
   # The per-app CTO morning reports (CtoReport, config/cto_reports.yml): one
   # key per app, so each can post to its own channel.
   cto_report:mcritchie_studio:
