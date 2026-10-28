@@ -115,7 +115,9 @@ changes code. Paths are in the `turf-monster` repo.
   is read by that script only and needs Alex McRitchie's approval.
 - **A test that reads the day of the week passes on weekdays and fails on weekend
   deploys.** Freeze the clock in any test near a lock rule.
-- **Browser specs in a desk:** run `npm ci` first (a desk has no `node_modules`),
-  then `E2E_BASE_PORT=<port> bin/e2e-parallel 1 -- <spec.js>`. `reseed` clears
+- **Browser specs in a desk:** `new` links the primary's `node_modules` when
+  `package-lock.json` matches and runs `npm ci` in the desk when it does not (the
+  turf primary has no install yet, so today every turf desk installs its own).
+  Then `E2E_BASE_PORT=<port> bin/e2e-parallel 1 -- <spec.js>`. `reseed` clears
   caches and mocks, not rows, so a spec that changes a game must put it back. A
   fresh desk database is empty until `bin/rails db:seed`.

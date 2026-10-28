@@ -7,8 +7,9 @@ require "pathname"
 # `node_modules/.studio-engine` -> the gem's directory; this wraps it with the
 # two places in this ecosystem where that write lands somewhere it should not:
 #
-# 1. A SHARED node_modules. Some desks symlink node_modules to the primary
-#    checkout's, so a link written "here" is written into the primary, pointing
+# 1. A SHARED node_modules. A hand-made desk may symlink node_modules to the primary
+#    checkout's (bin/agent-worktree builds a link farm instead, whose .studio-engine is
+#    the desk's own: bin/lib/desk_node_modules.rb), so a link written "here" is written into the primary, pointing
 #    at whatever gem the desk resolved. When the shared directory already holds a
 #    link to the gem this checkout bundles, there is nothing to do. When it does
 #    not, refuse and name the checkout that owns the directory: link there, or

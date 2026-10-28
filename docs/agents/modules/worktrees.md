@@ -14,8 +14,10 @@ resume with `bin/task begin <task-slug>`). Steps 4-9 apply either way.
    from the base ref (`accepted`, else `release`, else `main`), copies the primary's `.env`
    and `.env.development` (with a freshly generated dev `SECRET_KEY_BASE`, never the
    primary's: [`credentials.md`](credentials.md#local-env-files-hold-development-keys)),
-   writes `.env.agent-stack`, provisions the isolated test DB, and builds
-   `app/assets/builds/tailwind.css`.
+   writes `.env.agent-stack`, gives a repo with a `package.json` its `node_modules`
+   (borrowed from the primary when the lock matches, else `npm ci`:
+   [below](#a-desk-borrows-the-primarys-node_modules)), provisions the isolated test DB,
+   and builds `app/assets/builds/tailwind.css`.
 2. **Bind the task immediately** — `bin/agent-worktree bind-task <app> <task-slug>
    <task-record-slug-or-url>`; `new` does NOT auto-bind.
 3. **Preflight the desk** — `bin/session-preflight <task-slug> --root <desk>` (the hub's
