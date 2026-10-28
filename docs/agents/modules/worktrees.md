@@ -153,8 +153,10 @@ that each of these runs an install script inside the primary's package directory
 Both are deliberate acts, not accidents of a normal install; until the desk has run
 `npm ci`, do neither. Three states the guard does not repair on its own:
 
-- **A desk cut before PR #2297** holds links with no guard. It stays unguarded until it
-  is reclaimed, or until `npm ci` in it replaces the links.
+- **A desk cut before PR #2297** holds links with no guard: its git dir
+  (`git rev-parse --git-dir`) has no `desk-npm-script-shell`, and it has no `.npmrc`
+  whose first line is `NPMRC_MARK`. It stays unguarded until it is reclaimed, or until
+  `npm ci` in it replaces the links.
 - **A moved desk** (`git worktree move`): the guard names the desk's old real path, so it
   refuses every script in the desk, its own packages included. The message still names
   `npm ci`, which does not fix it.
@@ -162,7 +164,11 @@ Both are deliberate acts, not accidents of a normal install; until the desk has 
   any script in the desk.
 
 The repair for the last two is deleting the desk's `.npmrc` (the one `new` wrote, marked
-on its first line), then `npm ci` if the desk still holds links.
+on its first line) and then, before any other npm command, `npm ci` in the desk. The two
+go together: a linked desk without its `.npmrc` is unguarded, and `npm rebuild` there
+writes the primary (the control test in `test/lib/desk_node_modules_test.rb`). A resume
+(`new` on the existing desk) does not rewrite the guard, because the desk already has a
+`node_modules`.
 
 The links are a **snapshot of the primary when the desk was cut**. A later install in the
 primary changes what the desk sees, and the desk's lock is not re-checked. `npm ci` in
@@ -170,7 +176,7 @@ the desk is always the repair: it replaces the links with the desk's own install
 write in the desk (`install`, an add, an upgrade, `uninstall`) acts on the desk's links,
 never on the primary. A lifecycle script is the exception npm itself does not prevent: it
 runs in the package's real directory, which is the primary's, so the script guard above
-refuses it until `npm ci`. `test/lib/desk_node_modules_test.rb` runs each of these for real,
+refuses it until `npm ci`, within the limits named there. `test/lib/desk_node_modules_test.rb` runs each of these for real,
 `npm rebuild` included, and checks that the primary is byte-unchanged.
 
 Every teardown (`remove`, `cleanup --reclaim --yes`, an unwind) unlinks those links, one
