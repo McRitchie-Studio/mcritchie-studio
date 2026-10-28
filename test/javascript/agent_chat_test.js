@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { BEAT_MS, addChips, carriedDraft, carryPhase, emptyRepeat, focusComposer, freshClientId, indicatorKey, markBusy, phasesIn, restoreSend, sendFailed, startSend, syncDelay, trackSend } from "../../app/javascript/agent_chat.js";
+import { BEAT_MS, addChips, carriedDraft, carryPhase, emptyRepeat, focusComposer, formOfEvent, freshClientId, indicatorKey, markBusy, phasesIn, putBack, restoreSend, sendFailed, startSend, syncDelay, trackSend } from "../../app/javascript/agent_chat.js";
 
 function indicator(phase, slotId = "cto-chat-typing") {
   const slot = { id: slotId, closest: () => slot };
@@ -229,4 +229,39 @@ test("files-only send: an empty send while one posts is a repeat only when it ca
   assert.equal(emptyRepeat(composer({ busy: true, chips: [chip(null, "uploading")] })), false, "files still uploading are held, not dropped");
   assert.equal(emptyRepeat(composer({ busy: true, text: "hi" })), false);
   assert.equal(emptyRepeat(composer()), false, "nothing posting: the browser and the server answer it");
+});
+
+// [unit] Carl's block on PR #2285: a refusal answered with a Turbo Stream redraws the
+// composer with only the files the server still holds (Attachments.held), so the
+// client puts nothing back over it; a dead file (an expired token) stays gone.
+test("putBack: a refusal the server redraws is the server's to restore; only a failure that draws nothing is the client's", () => {
+  const stream = { header: "text/vnd.turbo-stream.html; charset=utf-8" };
+  assert.equal(putBack({ success: false, fetchResponse: { statusCode: 422, contentType: stream.header } }), false,
+    "the 422's redraw holds the still-valid files only");
+  assert.equal(putBack({ error: new Error("offline") }), true, "a network error draws nothing");
+  assert.equal(putBack({ success: false, fetchResponse: { statusCode: 429, contentType: "text/html" } }), true, "an empty 429 draws nothing");
+  assert.equal(putBack({ success: false, fetchResponse: { statusCode: 429 } }), true);
+  assert.equal(putBack({ success: true, fetchResponse: { statusCode: 200, contentType: stream.header } }), false);
+  assert.equal(putBack({ formSubmission: {} }), false, "an abort is not a failure");
+});
+
+test("a refused send with an expired file: the redraw shows only what the server drew, the dead chip never comes back", () => {
+  const old = composer({ text: "see the file", tokens: ["tok-expired"] });
+  const sent = startSend(old, () => "fresh-uuid-0008");
+  const detail = { success: false, fetchResponse: { statusCode: 422, contentType: "text/vnd.turbo-stream.html" } };
+  if (putBack(detail)) restoreSend(old, sent, "old-client-id-1"); // submit-end, before the redraw
+  const fresh = composer({ text: "see the file" }); // the server drew no chip: the token expired
+  addChips(fresh, old.querySelectorAll(CHIP)); // the redraw's carry
+  assert.deepEqual(tokensIn(fresh), [], "the expired file is not drawn as ready");
+});
+
+test("formOfEvent reads the form from the submission when Turbo dispatched on the document element", () => {
+  const form = { matches: (sel) => sel === "[data-cto-chat-form]" };
+  const html = { closest: () => null };
+  assert.equal(formOfEvent({ target: html, detail: { formSubmission: { formElement: form } } }), form,
+    "a send that ends after its composer was redrawn still settles its busy count");
+  assert.equal(formOfEvent({ target: { closest: () => form }, detail: {} }), form);
+  assert.equal(formOfEvent({ target: html, detail: {} }), null);
+  const other = { matches: () => false };
+  assert.equal(formOfEvent({ target: html, detail: { formSubmission: { formElement: other } } }), null, "not a chat composer");
 });

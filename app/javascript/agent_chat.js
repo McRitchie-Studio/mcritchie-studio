@@ -26,7 +26,8 @@
 //     old one is carried into it: a draft typed meanwhile (carriedDraft, beside
 //     a refused send's echo, never under it), files attached meanwhile, the
 //     caret. A send that never reached the server puts its text and its own
-//     files back; a file another send carried never comes back. An ask
+//     files back (putBack); a refusal the server redraws shows only what the
+//     server kept; a file another send carried never comes back. An ask
 //     (build_status.js) sets the visitor's draft aside and the send puts it
 //     straight back. The composer stays aria-busy until the LAST send in flight
 //     settles (trackSend). One empty send while a send posts is a double submit,
@@ -166,6 +167,28 @@ export function restoreSend(form, sent, clientId) {
 // aborted by the next one carries neither, and is not put back.
 export function sendFailed(detail) {
   return Boolean(detail?.error) || Boolean(detail?.fetchResponse && !detail.success);
+}
+
+// Whether a failed send is put back by the client (restoreSend). Not when the
+// server's answer is a Turbo Stream: that answer redraws the composer with what
+// the server kept (the refused text, and only the still-valid files,
+// AgentMessages::Attachments.held), and the server's set wins. Putting the
+// send's own chips back would bring a dead file (expired, already used) back
+// looking ready. Only a failure that draws nothing (a network error, an empty
+// 429) is put back by the client.
+export function putBack(detail) {
+  if (!sendFailed(detail)) return false;
+  return !/turbo-stream/.test(detail?.fetchResponse?.contentType || "");
+}
+
+// The composer a submit event belongs to. Turbo sends turbo:submit-end to
+// document.documentElement once the form has left the page (its dispatch falls
+// back when the target is detached), so the form is read from the submission.
+export function formOfEvent(event, selector = FORM) {
+  const own = event?.detail?.formSubmission?.formElement;
+  if (own?.matches?.(selector)) return own;
+  const target = event?.target;
+  return target?.closest?.(selector) || null;
 }
 
 // What a composer redrawn by the server holds, losing nothing the owner wrote:
@@ -338,14 +361,16 @@ if (typeof document !== "undefined") {
   });
 
   document.addEventListener("turbo:submit-end", (event) => {
-    const ended = event.target.closest?.(FORM) || (event.target.matches?.(FORM) ? event.target : null);
+    const ended = formOfEvent(event);
     if (!ended) return;
-    // A send from a composer since redrawn ends on the detached old form: what it
-    // puts back goes into the composer on the page.
+    // A send from a composer since redrawn ends on the detached old form (Turbo
+    // then dispatches on the document element; formOfEvent reads the form from
+    // the submission): what it puts back, and its busy count, go to the
+    // composer on the page.
     const form = (ended.id && document.getElementById(ended.id)) || ended;
     const submission = event.detail?.formSubmission;
     const sent = submission && sending.get(submission);
-    if (sent && sendFailed(event.detail)) restoreSend(form, sent, sent.clientId);
+    if (sent && putBack(event.detail)) restoreSend(form, sent, sent.clientId);
     if (submission) sending.delete(submission);
     const left = submission ? trackSend(inflight, ended.id, submission, false) : 0;
     markBusy(form, left);
