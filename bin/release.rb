@@ -4219,7 +4219,7 @@ def prepare
   expedite = Release::Cli.take_flag(ARGV, "--expedite")
   # `--skip-gauntlet`: prepare runs no devnet gauntlet on a Turf release. It records
   # nothing, so `ship` still refuses until one is recorded (Release::DevnetGauntlet).
-  skip_gauntlet = Release::Cli.take_flag(ARGV, GAUNTLET_SKIP_FLAG)
+  skip_gauntlet = Release::Cli.take_flag(ARGV, "--skip-gauntlet") # GAUNTLET_SKIP_FLAG
   gauntlet_red = false
   if expedite && task_slugs.size != 1
     abort!("--expedite guards a SINGLE expedited task — pass exactly one `--task <slug>` " \

@@ -200,7 +200,7 @@ class Release::CliTest < ActiveSupport::TestCase
     args = Release::Cli.guard_args("prepare")
 
     assert_equal "bin/release prepare", args[:program]
-    assert_equal ["--expedite"], args[:bool]
+    assert_equal ["--expedite", "--skip-gauntlet"], args[:bool]
     assert_equal ["--task", "--slug"], args[:value]
     assert_equal false, args[:allow_positional]
     assert_equal 1, args[:help_exit]
