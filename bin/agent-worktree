@@ -1243,16 +1243,23 @@ end
 
 # Give a desk its node_modules (DeskNodeModules.plan): borrow the primary's entries
 # when package-lock.json matches byte for byte, else run the desk's own `npm ci`.
-# Never on Heroku or CI. Best-effort: a failure warns and leaves the desk whole,
-# because node_modules is regenerable and `npm ci` in the desk is always the repair.
+# Never on Heroku or CI. The install is bounded (DeskNodeModules::NPM_CI_DEADLINE, or
+# AGENT_WORKTREE_NPM_CI_DEADLINE seconds; its process group is killed at the deadline)
+# so a hung npm cannot hang `new` or `bin/task begin` behind it. Best-effort: a failure
+# warns and leaves the desk whole, because node_modules is regenerable and `npm ci` in
+# the desk is always the repair.
 def provision_node_modules(app, dir, env: ENV)
   plan = DeskNodeModules.plan(desk: dir, primary: app.fetch("repo"), env: env)
   if plan.link?
     linked = DeskNodeModules.link!(desk: dir, source: plan.source)
     puts "node_modules:   linked #{linked.size} entries to #{plan.source} (#{plan.reason})"
   elsif plan.install?
-    puts "node_modules:   npm ci (#{plan.reason})"
-    unless sh(*DeskNodeModules::NPM_CI, chdir: dir, allow_fail: true)
+    deadline = integer_env("AGENT_WORKTREE_NPM_CI_DEADLINE", DeskNodeModules::NPM_CI_DEADLINE)
+    puts "node_modules:   npm ci (#{plan.reason}; #{deadline}s limit)"
+    result = DeskNodeModules.npm_ci!(dir, deadline: deadline)
+    if result.timed_out?
+      warn "agent-worktree: npm ci passed its #{deadline}s limit in #{dir} and was killed; run `npm ci` there by hand"
+    elsif !result.success?
       warn "agent-worktree: npm ci failed in #{dir}; run it there by hand before bin/test-js or Playwright"
     end
   else

@@ -111,17 +111,27 @@ nothing. Free one of those by hand, once you know its work is safe on `accepted`
 `new` gives a repo with a `package.json` its `node_modules` (`bin/lib/desk_node_modules.rb`):
 
 - **Lock matches.** When the desk's `package-lock.json` is byte-for-byte the primary's and
-  the primary has a real install, the desk gets a **link farm**: a real `node_modules`
-  directory whose top-level entries link to the primary's. `.studio-engine` stays the
-  desk's own, so `bin/rails node_tooling:link` links the engine this desk bundles and never
-  writes the primary.
-- **Lock differs** (or the primary has no install): `npm ci` in the desk.
-- **Never on Heroku or CI** (`DYNO`/`STACK`, `CI`), and never over an existing `node_modules`.
+  the primary's install is finished (it holds `node_modules/.package-lock.json`, which npm
+  writes last), the desk gets a **link farm**: a real `node_modules` directory in which
+  only *packages* are links. Each `@scope` and `.bin` is a real directory in the desk,
+  with a link per package or bin entry inside it. `.package-lock.json`, `.cache` and
+  `.studio-engine` are never linked, so `bin/rails node_tooling:link` links the engine this
+  desk bundles and never writes the primary.
+- **Lock differs** (or the primary has no finished install): `npm ci` in the desk, killed
+  with its process group after 600 seconds (`AGENT_WORKTREE_NPM_CI_DEADLINE`).
+- **Never on Heroku or CI** (`DYNO`/`STACK`, `CI`, `GITHUB_ACTIONS`), and never over an
+  existing `node_modules`.
 
-Every teardown (`remove`, `cleanup --reclaim --yes`, an unwind) unlinks those links
-before git deletes anything, so nothing deletes through one into the primary. To give a
-linked desk its own install, run `npm ci` in the desk: it unlinks the entries and never
-follows them. Never run `rm -rf node_modules/` with a trailing slash on a link.
+The links are a **snapshot of the primary when the desk was cut**. A later install in the
+primary changes what the desk sees, and the desk's lock is not re-checked. `npm ci` in
+the desk is always the repair: it replaces the links with the desk's own install. Any npm
+command in the desk (`install`, an add, an upgrade, `uninstall`) acts on the desk's links,
+never on the primary; `test/lib/desk_node_modules_test.rb` runs each one for real and checks
+that the primary is byte-unchanged.
+
+Every teardown (`remove`, `cleanup --reclaim --yes`, an unwind) unlinks those links, one
+level down inside `@scope` and `.bin` as well, before git deletes anything. Never run
+`rm -rf node_modules/` with a trailing slash on a link.
 
 ## Lifecycle
 

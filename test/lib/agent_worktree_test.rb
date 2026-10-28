@@ -2254,6 +2254,7 @@ class AgentWorktreeTest < Minitest::Test
     desk = File.join(root, "desk")
     FileUtils.mkdir_p([File.join(primary, "node_modules", "playwright"), desk])
     File.write(File.join(primary, "node_modules", "playwright", "index.js"), "primary\n")
+    File.write(File.join(primary, "node_modules", ".package-lock.json"), "{}\n")
     File.write(File.join(primary, "package-lock.json"), "{}\n")
     File.write(File.join(desk, "package.json"), "{}\n")
     File.write(File.join(desk, "package-lock.json"), desk_lock)
@@ -2265,20 +2266,28 @@ class AgentWorktreeTest < Minitest::Test
       primary, desk = node_trees(root)
       out = run_in_script(<<~RUBY)
         def sh(*cmd, **_kw); puts "SH \#{cmd.join(" ")}"; true; end
+        module DeskNodeModules
+          def self.npm_ci!(*); puts "NPM_CI"; end
+        end
         provision_node_modules({ "repo" => #{primary.inspect} }, #{desk.inspect}, env: {})
       RUBY
       assert_match(/node_modules:   linked 1 entries/, out)
-      refute_match(/SH npm ci/, out, "a matching lock never installs")
+      refute_match(/NPM_CI|SH npm/, out, "a matching lock never installs")
       assert File.symlink?(File.join(desk, "node_modules", "playwright"))
     end
 
     Dir.mktmpdir do |root|
       primary, desk = node_trees(root, desk_lock: "{\"changed\":1}\n")
       out = run_in_script(<<~RUBY)
-        def sh(*cmd, **kw); puts "SH \#{cmd.join(" ")} in \#{kw[:chdir]}"; true; end
+        module DeskNodeModules
+          def self.npm_ci!(dir, deadline:, **_kw)
+            puts "NPM_CI in \#{dir} within \#{deadline}s"
+            Struct.new(:timed_out?, :success?).new(false, true)
+          end
+        end
         provision_node_modules({ "repo" => #{primary.inspect} }, #{desk.inspect}, env: {})
       RUBY
-      assert_includes out, "SH npm ci --no-audit --no-fund in #{desk}", "a differing lock installs in the DESK"
+      assert_includes out, "NPM_CI in #{desk} within 600s", "a differing lock installs in the DESK, bounded"
       refute File.exist?(File.join(desk, "node_modules")), "and links nothing"
     end
   end
