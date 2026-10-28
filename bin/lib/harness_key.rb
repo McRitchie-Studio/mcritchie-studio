@@ -109,9 +109,9 @@ module HarnessKey
   # <projects>/.agents, and aborting there used to leave the folder's key in place.
   def clear(projects_dir, env: ENV)
     SecretCache.delete(FILE, env: cache_env(projects_dir, env))
-    legacy = path(projects_dir)
-    return nil if TaskUsageSandbox.violation(legacy, store: STORE, env: TaskUsageSandbox.guard_env(env))
+    return nil unless legacy_pinned(env)
 
+    legacy = guarded_path(projects_dir, env)
     File.delete(legacy) if File.file?(legacy) || File.symlink?(legacy)
   rescue Errno::ENOENT
     nil
@@ -222,6 +222,17 @@ module HarnessKey
   # prove its destination aborts here.
   def guarded_path(projects_dir, env)
     TaskUsageSandbox.enforce!(path(projects_dir), store: STORE, env: TaskUsageSandbox.guard_env(env))
+  end
+
+  # May this process touch the legacy file at all? False only in a sandboxed run
+  # that pinned none of the harness-key store's variables (MCR_SECRET_CACHE_DIR
+  # alone pins the folder, not <projects>/.agents). Asks about the pins, never
+  # about a path, so it holds nothing raw; guarded_path still enforce!s the rest.
+  def legacy_pinned(env)
+    guard = TaskUsageSandbox.guard_env(env)
+    return true unless TaskUsageSandbox.active?(guard)
+
+    TaskUsageSandbox::STORES.fetch(STORE).any? { |pin| !guard[pin].to_s.strip.empty? }
   end
 
   # The raw path. Private: a caller gets the contents (read) or a guarded path
