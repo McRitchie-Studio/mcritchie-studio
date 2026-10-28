@@ -70,9 +70,9 @@ module MarketingKit
 
     def root_name = drive[:root_name] || "#{name} — Marketing Kit"
     # The brand's key on /logos (config/logo_brands.yml), if it has one: a publish prints the command that records
-    # the kit there (BrandMarketingKit, task marketing-kit-on-logos). The workspace is drive.subject's domain.
+    # the kit there (BrandMarketingKit, task marketing-kit-on-logos), owned by drive.subject.
     def logo_brand = data[:brand].presence&.to_s
-    def workspace = drive[:subject].to_s.split("@", 2).last
+    def owner = drive[:subject].to_s.downcase
 
     def palette = data.fetch(:palette)
 

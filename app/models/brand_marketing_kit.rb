@@ -7,7 +7,7 @@
 #   brand               the kit's brand key (config/logo_brands.yml; brand_kits.brand). Not a foreign key: a brand's
 #                       kit row is created on its first save, and a Google kit may come first.
 #   drive_url           the kit's root folder (https://drive.google.com/…)
-#   workspace           the Google Workspace domain that owns it (the spec's drive.subject domain)
+#   owner               the Google account that owns it (the spec's drive.subject, e.g. team@mcritchie.studio)
 #   published_at, _by   when and by whom it was last published (`bin/rails logos:marketing_kit`)
 #   published_saved_at  the brand kit's saved_at that publish carried
 #
@@ -28,19 +28,19 @@ class BrandMarketingKit < ApplicationRecord
 
   validates :brand, presence: true, uniqueness: true
   validates :drive_url, format: { with: DRIVE_URL, message: "must be a https://drive.google.com/ link" }
-  validates :workspace, format: { with: /\A[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/, allow_blank: true }
+  validates :owner, format: { with: /\A[a-z0-9._%+-]+@[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+\z/, allow_blank: true }
   validates :published_by, length: { maximum: 200 }
   validate :brand_has_a_style
 
   # Every brand's Google kit for these brands, by brand: the /logos table reads them in one query.
   def self.by_brand(brands) = where(brand: brands).index_by(&:brand)
 
-  # Records that `brand`'s Google kit was published to `drive_url`: at `at` (now unless given), by `by`, carrying
+  # Records that `brand`'s Google kit, owned by `owner`, was published to `drive_url`: at `at` (now unless given), by `by`, carrying
   # `saved_at` (the brand kit's saved_at unless given). Creates the row if needed.
-  def self.record_published!(brand:, drive_url:, by:, workspace: nil, at: nil, saved_at: nil)
+  def self.record_published!(brand:, drive_url:, by:, owner: nil, at: nil, saved_at: nil)
     kit = find_or_initialize_by(brand: brand.to_s)
     saved_at ||= BrandKit.find_by(brand: brand.to_s)&.saved_at
-    kit.update!(drive_url:, workspace: workspace.presence&.downcase || kit.workspace, published_at: at || Time.current,
+    kit.update!(drive_url:, owner: owner.presence&.downcase || kit.owner, published_at: at || Time.current,
                 published_by: by, published_saved_at: saved_at)
     kit
   end

@@ -27,11 +27,11 @@ class MarketingKitSpecTest < ActiveSupport::TestCase
     end
   end
 
-  test "a brand key names the /logos brand, and the workspace is drive.subject's domain" do
+  test "a brand key names the /logos brand, and the owner is drive.subject" do
     load_kit { |spec| assert_nil spec.logo_brand }
     load_kit(edit: ->(d) { d["brand"] = "welding_v2" }) do |spec|
       assert_equal "welding_v2", spec.logo_brand
-      assert_equal "mcritchie.studio", spec.workspace
+      assert_equal "team@mcritchie.studio", spec.owner
     end
   end
 

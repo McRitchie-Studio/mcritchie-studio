@@ -143,10 +143,11 @@ kit on the hub's production database. Run it as printed, with your name in `BY`:
 
 ```bash
 heroku run -a mcritchie-studio --no-tty --exit-code -- bin/rails logos:marketing_kit \
-  BRAND=<brand> URL=https://drive.google.com/drive/folders/<root id> WORKSPACE=<domain> BY=<you>
+  BRAND=<brand> URL=https://drive.google.com/drive/folders/<root id> OWNER=<team@domain> BY=<you>
 ```
 
-`/logos` then shows the brand's Google kit with an Open link. It reads **Up to
+`/logos` then shows the brand's Google kit: the Google Drive mark, the account
+that owns it (the spec's `drive.subject`) and an Open link. It reads **Up to
 date** until someone saves the brand's logos again, then **Kit changed**, the
 same convention as each app's kit line. A brand with no record reads **No
 Google kit**. Only the logos are watched: a change to the spec's colours or words

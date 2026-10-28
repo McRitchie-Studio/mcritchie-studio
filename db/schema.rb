@@ -932,11 +932,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_190000) do
     t.string "brand", null: false
     t.datetime "created_at", null: false
     t.string "drive_url", null: false
+    t.string "owner"
     t.datetime "published_at"
     t.string "published_by"
     t.datetime "published_saved_at"
     t.datetime "updated_at", null: false
-    t.string "workspace"
     t.index ["brand"], name: "index_brand_marketing_kits_on_brand", unique: true
   end
 

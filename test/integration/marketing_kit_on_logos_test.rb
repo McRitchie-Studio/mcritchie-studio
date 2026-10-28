@@ -8,7 +8,7 @@ require "rake"
 # date with its Open link; a later logo save flips it to Kit changed. Bad input is refused with nothing written.
 class MarketingKitOnLogosTest < ActionDispatch::IntegrationTest
   URL = "https://drive.google.com/drive/folders/cw123"
-  KEYS = %w[BRAND URL WORKSPACE AT BY SAVED_AT].freeze
+  KEYS = %w[BRAND URL OWNER AT BY SAVED_AT].freeze
 
   setup do
     Rails.application.load_tasks unless Rake::Task.task_defined?("logos:marketing_kit")
@@ -17,13 +17,14 @@ class MarketingKitOnLogosTest < ActionDispatch::IntegrationTest
 
   test "the stamp records the kit, /logos shows it, and a later logo save marks it changed" do
     kit = BrandKit.create!(brand: "welding_v2", saved_at: Time.utc(2026, 10, 7))
-    out = run_task("BRAND" => "welding_v2", "URL" => URL, "WORKSPACE" => "commercialwelding.llc",
+    out = run_task("BRAND" => "welding_v2", "URL" => URL, "OWNER" => "team@commercialwelding.llc",
                    "AT" => "2026-10-08T01:02:03Z", "BY" => "alex")
-    assert_match "welding_v2 Google kit: Up to date (published 2026-10-08T01:02:03Z by alex, kit saved 2026-10-07T00:00:00Z)", out
+    assert_match "welding_v2 Google kit (team@commercialwelding.llc): Up to date (published 2026-10-08T01:02:03Z by alex, kit saved 2026-10-07T00:00:00Z)", out
 
     log_in_as(users(:alex))
     get logos_path
     assert_select "[data-test='marketing-kit-status'][data-brand='welding_v2'][data-status='current'] a[href=?]", URL
+    assert_select "[data-test='marketing-kit-status'][data-brand='welding_v2'] [data-test='marketing-kit-owner']", "team@commercialwelding.llc"
 
     kit.update!(saved_at: Time.utc(2026, 10, 9))
     get logos_path

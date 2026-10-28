@@ -70,11 +70,11 @@ namespace :logos do
 
   # Task marketing-kit-on-logos: the marketing-kit SOP's last step, run on the hub's PRODUCTION database after a real
   # `bin/marketing-kit publish`, which prints this command. SAVED_AT is the brand kit's saved_at (default: its own).
-  desc "Record a brand's Google marketing kit: BRAND=welding_v2 URL=<drive folder url> [WORKSPACE=<domain>] [AT=<time>] [BY=<who>] [SAVED_AT=<time>]"
+  desc "Record a brand's Google marketing kit: BRAND=welding_v2 URL=<drive folder url> [OWNER=<team@domain>] [AT=<time>] [BY=<who>] [SAVED_AT=<time>]"
   task marketing_kit: :environment do
     brand = ENV["BRAND"].to_s
     url = ENV["URL"].to_s
-    usage = "usage: bin/rails logos:marketing_kit BRAND=<brand> URL=<drive folder url> [WORKSPACE=<domain>] [AT=<time>] [BY=<who>] " \
+    usage = "usage: bin/rails logos:marketing_kit BRAND=<brand> URL=<drive folder url> [OWNER=<team@domain>] [AT=<time>] [BY=<who>] " \
             "[SAVED_AT=<time>] — brands: #{Logos::NavbarLogo.brands.join(', ')}"
     abort usage unless Logos::NavbarLogo.brands.include?(brand) && url.present?
 
@@ -85,9 +85,9 @@ namespace :logos do
       abort "logos:marketing_kit: #{name}=#{value.inspect} is not a time"
     end
     by = ENV["BY"].presence || ENV["USER"].presence || "unknown"
-    kit = BrandMarketingKit.record_published!(brand:, drive_url: url, workspace: ENV["WORKSPACE"], by:, at: time.call("AT"),
+    kit = BrandMarketingKit.record_published!(brand:, drive_url: url, owner: ENV["OWNER"], by:, at: time.call("AT"),
                                               saved_at: time.call("SAVED_AT"))
-    puts "#{brand} Google kit: #{kit.status_label} (published #{kit.published_at.utc.iso8601} by #{kit.published_by}, " \
+    puts "#{brand} Google kit#{" (#{kit.owner})" if kit.owner}: #{kit.status_label} (published #{kit.published_at.utc.iso8601} by #{kit.published_by}, " \
          "kit saved #{kit.published_saved_at&.utc&.iso8601 || 'never'})"
   rescue ActiveRecord::RecordInvalid => e
     abort "logos:marketing_kit: #{e.record.errors.full_messages.join('; ')}"

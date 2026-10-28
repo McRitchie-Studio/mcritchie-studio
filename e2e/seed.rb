@@ -1912,5 +1912,5 @@ puts "Seeded: kit-demo, a client app on the Studio template"
 # saves turf's logos, so its kit is never newer than this publish); every other brand reads No Google kit.
 BrandMarketingKit.delete_all
 BrandMarketingKit.create!(brand: "turf", drive_url: "https://drive.google.com/drive/folders/e2e-turf-kit",
-                          workspace: "mcritchie.studio", published_at: Time.utc(2026, 10, 28), published_by: "e2e-seed")
+                          owner: "team@mcritchie.studio", published_at: Time.utc(2026, 10, 28), published_by: "e2e-seed")
 puts "Seeded: turf's Google marketing kit"

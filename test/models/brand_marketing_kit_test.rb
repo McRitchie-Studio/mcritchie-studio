@@ -38,25 +38,25 @@ class BrandMarketingKitTest < ActiveSupport::TestCase
   test "record_published! creates or updates the brand's one row, carrying the kit's saved_at unless given" do
     BrandKit.create!(brand: "welding_v2", saved_at: Time.utc(2026, 10, 7))
     row = travel_to(Time.utc(2026, 10, 8)) do
-      BrandMarketingKit.record_published!(brand: "welding_v2", drive_url: URL, workspace: "CommercialWelding.llc", by: "alex")
+      BrandMarketingKit.record_published!(brand: "welding_v2", drive_url: URL, owner: "Team@CommercialWelding.llc", by: "alex")
     end
-    assert_equal [Time.utc(2026, 10, 8), "alex", Time.utc(2026, 10, 7), "commercialwelding.llc"],
-                 [row.published_at, row.published_by, row.published_saved_at, row.workspace]
+    assert_equal [Time.utc(2026, 10, 8), "alex", Time.utc(2026, 10, 7), "team@commercialwelding.llc"],
+                 [row.published_at, row.published_by, row.published_saved_at, row.owner]
 
     again = BrandMarketingKit.record_published!(brand: "welding_v2", drive_url: "#{URL}x", by: "steffon",
                                                 at: Time.utc(2026, 10, 9), saved_at: Time.utc(2026, 10, 6))
     assert_equal row.id, again.id
-    assert_equal ["#{URL}x", "commercialwelding.llc"], [again.drive_url, again.workspace], "a blank workspace keeps the old one"
+    assert_equal ["#{URL}x", "team@commercialwelding.llc"], [again.drive_url, again.owner], "a blank owner keeps the old one"
     assert_equal :changed, again.status
     assert_equal({ "welding_v2" => again }, BrandMarketingKit.by_brand(%w[welding_v2 studio]))
     assert_equal again, BrandKit.find_by!(brand: "welding_v2").marketing_kit
   end
 
-  test "refuses a brand not on /logos, a link that is not Drive, a second row per brand and a bad workspace" do
+  test "refuses a brand not on /logos, a link that is not Drive, a second row per brand and an owner that is not an email" do
     refute BrandMarketingKit.new(brand: "nike", drive_url: URL).valid?
     refute BrandMarketingKit.new(brand: "studio", drive_url: "https://evil.example/drive.google.com/x").valid?
     refute BrandMarketingKit.new(brand: "studio", drive_url: "javascript:alert(1)").valid?
-    refute BrandMarketingKit.new(brand: "studio", drive_url: URL, workspace: "not a domain").valid?
+    refute BrandMarketingKit.new(brand: "studio", drive_url: URL, owner: "commercialwelding.llc").valid?
     gkit
     refute BrandMarketingKit.new(brand: "welding_v2", drive_url: URL).valid?
   end

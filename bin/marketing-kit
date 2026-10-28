@@ -74,7 +74,7 @@ begin
     if pub.root_id && !options[:dry_run]
       if spec.logo_brand
         puts "record it on /logos (production):\n  heroku run -a mcritchie-studio --no-tty --exit-code -- bin/rails logos:marketing_kit " \
-             "BRAND=#{spec.logo_brand} URL=https://drive.google.com/drive/folders/#{pub.root_id} WORKSPACE=#{spec.workspace} BY=<you>"
+             "BRAND=#{spec.logo_brand} URL=https://drive.google.com/drive/folders/#{pub.root_id} OWNER=#{spec.owner} BY=<you>"
       else
         puts "no brand: in the spec, so nothing to record on /logos"
       end

@@ -1142,7 +1142,7 @@ Task marketing-kit-on-logos (Alex McRitchie 2026-10-28). `BrandMarketingKit` (ta
 a brand's Google marketing kit, the Drive folder `bin/marketing-kit publish` builds (Alex's
 [`marketing-kit`](../agents/agents/alex/sops/marketing-kit.md) SOP), the same way `BrandKitApp` records an app. One
 row per brand; `brand` is the brand key, not a foreign key. `drive_url` is the kit's root folder (only a
-`https://drive.google.com/` link is accepted), `workspace` the Google Workspace domain that owns it,
+`https://drive.google.com/` link is accepted), `owner` the Google account that owns it (`team@<domain>`, the spec's `drive.subject`),
 `published_at` and `published_by` the last publish, and `published_saved_at` the kit `saved_at` it carried.
 `BrandMarketingKit#status`:
 
@@ -1152,12 +1152,13 @@ row per brand; `brand` is the brand key, not a foreign key. `drive_url` is the k
 | **Kit changed** | the brand's logos were saved after the last publish |
 | **No Google kit** | the brand has no row |
 
-The /logos brand column shows it on every brand, under the app lines, with an **Open** link to the folder. Only the
+The /logos brand column shows it on every brand, under the app lines: the Google Drive mark, the owner, the status
+and an **Open** link to the folder. Only the
 logos are watched: the kit's colours, words and photos live in its private spec, which the hub never sees. A real
 publish of a spec with a `brand:` key prints the command; run it on the hub's production database:
 
 ```bash
-bin/rails logos:marketing_kit BRAND=<brand> URL=<drive folder url> [WORKSPACE=<domain>] [AT=<time>] [BY=<who>] [SAVED_AT=<time>]
+bin/rails logos:marketing_kit BRAND=<brand> URL=<drive folder url> [OWNER=<team@domain>] [AT=<time>] [BY=<who>] [SAVED_AT=<time>]
 ```
 
 It creates the row if needed. Nothing is seeded: a kit's folder id is client data, and this repo is public.

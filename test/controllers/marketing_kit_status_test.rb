@@ -3,8 +3,8 @@
 require "test_helper"
 
 # [component] Each brand's Google marketing kit on /logos (task marketing-kit-on-logos): under the app lines, every
-# brand shows "📁 Google kit", Up to date (green) or Kit changed (amber) and an Open link to its Drive folder, or a muted
-# "No Google kit"; the title gives the workspace and dates. One query reads every brand's.
+# brand shows the Google Drive mark and the account that owns the kit, Up to date (green) or Kit changed (amber) and an
+# Open link to its Drive folder, or a muted "No Google kit"; the title gives the owner and dates. One query reads every brand's.
 class MarketingKitStatusTest < ActionDispatch::IntegrationTest
   URL = "https://drive.google.com/drive/folders/cw123"
 
@@ -15,23 +15,24 @@ class MarketingKitStatusTest < ActionDispatch::IntegrationTest
   test "every brand shows its Google kit line: Up to date, Kit changed or No Google kit" do
     BrandKit.create!(brand: "welding_v2", saved_at: Time.utc(2026, 10, 20))
     BrandKit.create!(brand: "studio", saved_at: Time.utc(2026, 10, 22))
-    BrandMarketingKit.create!(brand: "welding_v2", drive_url: URL, workspace: "commercialwelding.llc",
+    BrandMarketingKit.create!(brand: "welding_v2", drive_url: URL, owner: "team@commercialwelding.llc",
                               published_at: Time.utc(2026, 10, 21), published_saved_at: Time.utc(2026, 10, 20))
     BrandMarketingKit.create!(brand: "studio", drive_url: "#{URL}s", published_at: Time.utc(2026, 10, 21))
     get logos_path
     assert_response :success
 
     cw = line("welding_v2")
-    assert_equal "📁 Google kit Up to date Open", cw.text.squish
+    assert_equal "team@commercialwelding.llc Up to date Open", cw.text.squish
+    assert_equal "Google Drive", cw.css("svg[data-test='google-drive-icon']").first["aria-label"]
     assert_equal "current", cw["data-status"]
-    assert_includes cw.css("span")[1]["class"].split, "text-success-ink"
-    assert_equal "Google kit in commercialwelding.llc: Kit saved Oct 20, 2026; published Oct 21, 2026 (kit of Oct 20, 2026)", cw["title"]
+    assert_includes cw.css("span").detect { |n| n.text == "Up to date" }["class"].split, "text-success-ink"
+    assert_equal "Google kit owned by team@commercialwelding.llc: Kit saved Oct 20, 2026; published Oct 21, 2026 (kit of Oct 20, 2026)", cw["title"]
     open_link = cw.css("a[data-test='marketing-kit-link']").first
     assert_equal [URL, "_blank", "noopener"], [open_link["href"], open_link["target"], open_link["rel"]]
 
     studio = line("studio")
-    assert_equal "📁 Google kit Kit changed Open", studio.text.squish
-    assert_includes studio.css("span")[1]["class"].split, "text-warning-ink", "Kit changed is amber"
+    assert_equal "Google kit Kit changed Open", studio.text.squish, "no owner recorded: the line says Google kit"
+    assert_includes studio.css("span").detect { |n| n.text == "Kit changed" }["class"].split, "text-warning-ink", "Kit changed is amber"
 
     none = line("turf")
     assert_equal "No Google kit", none.text.squish
