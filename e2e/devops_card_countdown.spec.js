@@ -25,6 +25,17 @@ test("the DevOps hero counts down to the release's landing, then counts the over
   await expect(page.locator("#devops-summary-card [data-test='devops-landing']")).toHaveText(/^(lands|due) ~\d{1,2}:\d{2} (AM|PM) MT$/);
   await expect(page.locator("#devops-summary-card [data-test='devops-mean']")).toBeVisible();
 
+  // The QA-green clock on the right: the seeded release has not reached QA green, so
+  // it is there, due no later than the landing, and ticked by the same module.
+  const qa = page.locator("#devops-summary-card [data-test='devops-qa-countdown'] [data-test='devops-qa-eta'][data-devops-countdown]");
+  const qaDeadline = Date.parse(await qa.getAttribute("data-deadline"));
+  // The seed's history holds Hold and Ship for minutes, so QA green is well before the
+  // landing — which also keeps the two clock jumps below in order.
+  expect(deadline - qaDeadline, "QA green comes minutes before the landing").toBeGreaterThan(60_000);
+  await page.clock.pauseAt(qaDeadline - 30_000);
+  await page.clock.runFor(1_000);
+  await expect(qa).toHaveText("00:29");
+
   await page.clock.pauseAt(deadline - 90_000);
   await page.clock.runFor(1_000);
   await expect(hero).toHaveText("01:29");
