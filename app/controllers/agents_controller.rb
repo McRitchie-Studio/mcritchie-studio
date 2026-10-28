@@ -15,6 +15,9 @@ class AgentsController < ApplicationController
   # Page size for the cross-session activity feed, matched to the heartbeat's.
   ACTIVITIES_PER_PAGE = 25
 
+  # The finished setups the Pending agents column keeps under its fold.
+  FINISHED_SETUPS_SHOWN = 10
+
   # The reimagined cross-session activity feed — every narrated AgentActivity across
   # all sessions, newest-first, with its drilled-down raw actions (also newest-first)
   # and inline Mason/McRitchie grade cells on BOTH. An optional ?sessions= (comma list
@@ -81,6 +84,12 @@ class AgentsController < ApplicationController
   def index
     @agents = Agent.includes(:tasks).order(:position)
     @agent_docs_by_slug = agent_docs_by_slug(@agents.map(&:slug))
+    # The Pending agents column (AgentSetup; SOP agent-onboarding): admin only,
+    # nil for anyone else so the view renders the page as it was.
+    return unless admin?
+
+    @pending_setups = AgentSetup.open_setups.includes(:steps, :agent).order(:created_at).to_a
+    @finished_setups = AgentSetup.finished.includes(:agent).order(updated_at: :desc).limit(FINISHED_SETUPS_SHOWN).to_a
   end
 
   def show

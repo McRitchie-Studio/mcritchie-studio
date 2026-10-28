@@ -1,3 +1,9 @@
+<%# /agents: the agents on one half, the Pending agents column on the other (Alex McRitchie 2026-10-28: "an
+    agents page with the main table of agents on one half and pending agents on the other"; task pending-agents-page).
+    The split follows the brand page's (task brand-page-split-layout): two columns from lg, one column below. On a
+    phone the pending column comes FIRST, because the agents grid is long (a card per soul) and a card that waits on
+    Alex McRitchie's hands would otherwise sit a dozen screens down. The column renders only for an admin. %>
+<% show_pending = !@pending_setups.nil? %>
 <section>
   <div class="flex items-center justify-between gap-3 mb-6">
     <h2 class="text-2xl font-bold text-heading">Agents</h2>
@@ -10,7 +16,11 @@
       <% end %>
     </div>
   </div>
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+  <div class="<%= show_pending ? 'grid gap-6 min-w-0 lg:grid-cols-2 lg:items-start' : '' %>" data-test="agents-split" data-layout="<%= show_pending ? 'split' : 'single' %>">
+  <% if show_pending %>
+    <%= render "agent_setups/column", setups: @pending_setups, finished: @finished_setups %>
+  <% end %>
+  <div class="grid grid-cols-1 sm:grid-cols-2 <%= show_pending ? 'gap-4 min-w-0 lg:order-first' : 'lg:grid-cols-3 xl:grid-cols-4 gap-6' %>" data-test="agents-grid">
     <% @agents.each do |agent| %>
       <% docs = @agent_docs_by_slug.fetch(agent.slug, []) %>
       <article class="card overflow-hidden hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition" data-test="agent-card" data-agent="<%= agent.slug %>">
@@ -62,5 +72,6 @@
         </div>
       </article>
     <% end %>
+  </div>
   </div>
 </section>

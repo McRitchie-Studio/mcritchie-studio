@@ -1,0 +1,77 @@
+<%# One step of the Discord bot kit (AgentSetups::DiscordBotKit), by key. Every link that leaves the hub opens a new
+    tab. The token is never asked for here: step 3 opens Steffon's empty 1Password item, and the paste happens there. %>
+<% kit = AgentSetups::DiscordBotKit %>
+<% name = setup.detail(:bot_name) %>
+<% app_id = kit.application_id(setup) %>
+<% open_now = setup.submittable? %>
+<% external = "btn btn-primary btn-sm" %>
+<% case step.key %>
+<% when "create_app" %>
+  <h5 class="font-semibold text-heading">Create the application</h5>
+  <p class="text-secondary">New Application, named exactly as below, then upload the avatar as its App Icon. Copy the Application ID from General Information and save it here.</p>
+  <div class="flex flex-wrap gap-2">
+    <%= link_to "Open the Developer Portal", kit::PORTAL_URL, target: "_blank", rel: "noopener noreferrer", class: external, data: { test: "discord-portal-link" } %>
+    <% if (avatar = kit.avatar_path(setup)) %>
+      <%# The href is the hub's own WebP; the click saves it as a 1024 px PNG (agent_setups/_avatar_png_script). %>
+      <a href="<%= safe_image_src(avatar) %>" download="<%= setup.agent_slug %>.png" data-filename="<%= setup.agent_slug %>.png"
+         class="btn btn-neutral btn-sm" data-test="discord-avatar-download"
+         x-data @click="if (window.agentSetupAvatarPng) { $event.preventDefault(); window.agentSetupAvatarPng($el) }">Download the avatar</a>
+    <% end %>
+  </div>
+  <div class="flex items-stretch gap-2 min-w-0" x-data="{ copied: false }">
+    <label class="sr-only" for="agent-setup-<%= setup.id %>-name">Bot name</label>
+    <input id="agent-setup-<%= setup.id %>-name" type="text" readonly value="<%= name %>" class="input-field w-full min-w-0 font-mono text-sm" data-test="discord-bot-name">
+    <button type="button" class="btn btn-neutral btn-sm shrink-0" data-clip="<%= name %>" data-test="discord-bot-name-copy"
+            @click="window.copyText($el.dataset.clip); copied = true; setTimeout(() => copied = false, 1400)">
+      <span x-text="copied ? 'Copied' : 'Copy name'">Copy name</span>
+    </button>
+  </div>
+  <% if open_now %>
+    <%= form_with url: agent_setup_path(setup), method: :patch, scope: :agent_setup, class: "flex items-stretch gap-2 min-w-0", data: { test: "discord-app-id-form" } do |f| %>
+      <%= f.label :application_id, "Application ID", class: "sr-only", for: "agent-setup-#{setup.id}-app-id" %>
+      <%= f.text_field :application_id, value: app_id, id: "agent-setup-#{setup.id}-app-id", inputmode: "numeric", autocomplete: "off",
+                       placeholder: "Application ID (17 to 20 digits)", pattern: "[0-9]{17,20}",
+                       class: "input-field w-full min-w-0 font-mono text-sm" %>
+      <%= f.submit app_id ? "Update" : "Save", class: "btn btn-neutral btn-sm shrink-0" %>
+    <% end %>
+  <% elsif app_id %>
+    <p class="text-xs text-secondary">Application ID <span class="font-mono text-body"><%= app_id %></span></p>
+  <% end %>
+<% when "reset_token" %>
+  <h5 class="font-semibold text-heading">Reset the bot's token</h5>
+  <p class="text-secondary">In the portal's sidebar, open <strong class="text-body">Bot</strong>: upload the same avatar, turn on <strong class="text-body">Message Content Intent</strong> and save, then press <strong class="text-body">Reset Token</strong> and copy it once. Paste it nowhere but the next step: not here, not a chat.</p>
+<% when "paste_token" %>
+  <h5 class="font-semibold text-heading">Paste the token into 1Password</h5>
+  <% if (link = kit.op_link(setup)) %>
+    <%= link_to "Open #{setup.detail(:op_item)} in 1Password", link, target: "_blank", rel: "noopener noreferrer", class: external, data: { test: "op-item-link" } %>
+  <% else %>
+    <p class="text-warning-ink" data-test="op-item-missing">Steffon has not linked the 1Password item yet (<span class="font-mono"><%= setup.detail(:op_item) %></span> in <span class="font-mono"><%= setup.detail(:op_vault) %></span>).</p>
+  <% end %>
+  <p class="text-secondary">Paste the token into the field <span class="font-mono text-body"><%= setup.detail(:op_field) %></span> and save. The item is empty until you do; Steffon made it for this.</p>
+<% when "invite" %>
+  <h5 class="font-semibold text-heading">Invite the bot to <%= setup.detail(:guild_name) || "the server" %></h5>
+  <% if (invite = kit.invite_url(setup)) %>
+    <%= link_to "Add #{name} to #{setup.detail(:guild_name) || 'the server'}", invite, target: "_blank", rel: "noopener noreferrer", class: external, data: { test: "discord-invite-link" } %>
+  <% else %>
+    <p class="text-warning-ink" data-test="discord-invite-waiting">Save the Application ID in step 1 first; the invite is built from it.</p>
+  <% end %>
+  <p class="text-secondary">Its permissions are the <%= setup.detail(:permission_set) %> set for this seat (<span class="font-mono text-body"><%= setup.detail(:permissions) %></span>). Authorize on Discord's screen.</p>
+<% when "done" %>
+  <h5 class="font-semibold text-heading">Done</h5>
+  <% if open_now %>
+    <% blocker = setup.submit_blocker %>
+    <p class="text-secondary">The hub checks the bot is in the server; then Steffon verifies the token with Discord and installs it as <span class="font-mono text-body"><%= setup.detail(:secret_env) %></span>. This card says when.</p>
+    <% if blocker %>
+      <p class="text-warning-ink" data-test="agent-setup-blocker"><%= blocker %></p>
+    <% else %>
+      <%= button_to "Done", agent_setup_done_path(setup), method: :post, class: "btn btn-primary btn-sm", data: { test: "agent-setup-done" } %>
+    <% end %>
+  <% elsif setup.status == "checking" %>
+    <p class="text-secondary" data-test="agent-setup-waiting">The hub is checking the bot now. Reload in a moment.</p>
+  <% elsif setup.status == "verifying" %>
+    <p class="text-secondary" data-test="agent-setup-waiting">Nothing more for you: Steffon verifies the token and installs it as <span class="font-mono text-body"><%= setup.detail(:secret_env) %></span>.</p>
+  <% end %>
+  <% if setup.submitted_at %>
+    <p class="text-xs text-secondary">Done pressed by <%= setup.submitted_by %> · <%= agent_setup_stamp(setup.submitted_at) %></p>
+  <% end %>
+<% end %>

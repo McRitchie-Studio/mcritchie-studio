@@ -1,0 +1,35 @@
+<%# The avatar download on a Discord card. The hub keeps souls' avatars as WebP (public/agents/), and the Developer
+    Portal's App Icon takes PNG, JPG or GIF, so the button draws the hub's own image into a 1024 px square (cover crop,
+    centred) and saves it as a PNG. Same-origin, so the canvas is never tainted. If the browser cannot (no canvas, a
+    failed load), it falls back to the button's href: the WebP itself. Idempotent, like copy_text_script. %>
+<script nonce="<%= content_security_policy_nonce %>">
+  window.agentSetupAvatarPng = window.agentSetupAvatarPng || function (link) {
+    var url = link.getAttribute('href');
+    var name = link.dataset.filename || 'avatar.png';
+    var img = new Image();
+    img.onload = function () {
+      try {
+        var size = 1024;
+        var canvas = document.createElement('canvas');
+        canvas.width = size; canvas.height = size;
+        var scale = Math.max(size / img.naturalWidth, size / img.naturalHeight);
+        var w = img.naturalWidth * scale, h = img.naturalHeight * scale;
+        canvas.getContext('2d').drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        canvas.toBlob(function (blob) {
+          if (!blob) { window.location.href = url; return; }
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = name;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+        }, 'image/png');
+      } catch (e) {
+        window.location.href = url;
+      }
+    };
+    img.onerror = function () { window.location.href = url; };
+    img.src = url;
+  };
+</script>

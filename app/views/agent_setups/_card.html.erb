@@ -1,0 +1,55 @@
+<%# One pending setup as a checklist card: the agent, the kind, whose turn it is, the reason when a check failed, then
+    the kit's steps in order, each with who ticked it and when. The step bodies are the kit's
+    (agent_setups/kits/_<kind>_step). No secret is ever rendered: the card links to where the token is made and kept. %>
+<% current = setup.current_step %>
+<article id="agent-setup-<%= setup.id %>" class="card p-4 space-y-4 text-sm scroll-mt-24" data-test="agent-setup-card"
+         data-agent="<%= setup.agent_slug %>" data-kind="<%= setup.kind %>" data-status="<%= setup.status %>"
+         aria-labelledby="agent-setup-<%= setup.id %>-title">
+  <header class="flex items-start gap-3">
+    <% if (avatar = setup.agent&.avatar.presence) %>
+      <img src="<%= safe_image_src(avatar) %>" alt="" class="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy">
+    <% end %>
+    <div class="min-w-0 flex-1">
+      <h4 id="agent-setup-<%= setup.id %>-title" class="text-base font-bold text-heading leading-tight">
+        <%= setup.agent&.name || setup.agent_slug %> <span class="font-normal text-secondary">· <%= agent_setup_kind_label(setup) %></span>
+      </h4>
+      <p class="text-xs text-secondary mt-0.5">Opened by <%= setup.opened_by %> · <%= agent_setup_stamp(setup.created_at) %></p>
+    </div>
+    <%= agent_setup_badge(setup) %>
+  </header>
+
+  <% if setup.status_reason.present? %>
+    <p class="rounded-lg border px-3 py-2 <%= setup.status == 'needs_attention' ? 'border-danger/40 bg-danger/10 text-danger-ink' : 'border-strong bg-surface-alt text-body' %>"
+       role="status" data-test="agent-setup-reason"><%= setup.status_reason %></p>
+  <% end %>
+
+  <ol class="space-y-4" aria-label="Steps">
+    <% setup.steps.each do |step| %>
+      <% state = step.done? ? "done" : (step == current ? "current" : "upcoming") %>
+      <li class="flex gap-3" data-test="agent-setup-step" data-key="<%= step.key %>" data-state="<%= state %>"
+          <%= 'aria-current="step"'.html_safe if state == "current" %>>
+        <span class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs font-bold
+                     <%= state == 'done' ? 'border-success bg-success/10 text-success-ink' : (state == 'current' ? 'border-primary bg-primary/10 text-primary-ink' : 'border-strong text-secondary') %>"
+              aria-hidden="true"><%= step.done? ? "✓" : step.position %></span>
+        <div class="min-w-0 flex-1 space-y-2">
+          <%= render "agent_setups/kits/#{setup.kind}_step", setup: setup, step: step %>
+          <% unless step.key == "done" %>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              <% if step.done? %>
+                <span class="text-success-ink" data-test="agent-setup-step-done">Done by <%= step.done_by %> · <%= agent_setup_stamp(step.done_at) %></span>
+                <% if setup.submittable? %>
+                  <%= button_to "Undo", agent_setup_step_path(setup, step.key, done: 0), method: :post,
+                                class: "text-secondary underline hover:text-heading rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
+                                form: { class: "inline" }, data: { test: "agent-setup-step-undo" } %>
+                <% end %>
+              <% elsif setup.submittable? %>
+                <%= button_to "Mark step #{step.position} done", agent_setup_step_path(setup, step.key), method: :post,
+                              class: "btn btn-neutral btn-sm", form: { class: "inline" }, data: { test: "agent-setup-step-tick" } %>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
+      </li>
+    <% end %>
+  </ol>
+</article>

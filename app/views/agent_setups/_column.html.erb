@@ -1,0 +1,42 @@
+<%# The Pending agents column of /agents: one checklist card per agent per kind (AgentSetup), the finished ones folded
+    under a disclosure, and an empty state that says how a card is opened. Admin only (AgentsController#index sets the
+    locals only for an admin). SOP: docs/agents/agents/steffon/sops/agent-onboarding.md. %>
+<%= render "components/copy_text_script" %>
+<%= render "agent_setups/avatar_png_script" %>
+<aside class="min-w-0 space-y-4" aria-labelledby="pending-agents-heading" data-test="pending-agents">
+  <div class="flex items-baseline justify-between gap-3">
+    <h3 id="pending-agents-heading" class="text-lg font-bold text-heading">Pending agents</h3>
+    <span class="text-sm text-secondary" data-test="pending-agents-count"><%= pluralize(setups.size, "card") %> open</span>
+  </div>
+
+  <% if setups.empty? %>
+    <div class="card p-4 text-sm space-y-2" data-test="pending-agents-empty">
+      <p class="text-body font-semibold">No agent is waiting on you.</p>
+      <p class="text-secondary">
+        When an agent needs your hands (a Discord bot, say), Steffon makes its empty 1Password item and opens a card here with
+        <code class="font-mono text-xs break-all text-body">bin/agent-setup open discord --soul &lt;soul&gt; --by steffon</code>.
+        The card walks you through each click.
+      </p>
+    </div>
+  <% else %>
+    <% setups.each do |setup| %>
+      <%= render "agent_setups/card", setup: setup %>
+    <% end %>
+  <% end %>
+
+  <% if finished.any? %>
+    <details class="card p-4 text-sm group" data-test="pending-agents-finished">
+      <summary class="cursor-pointer font-semibold text-heading rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+        Done (<%= finished.size %>)
+      </summary>
+      <ul class="mt-3 space-y-2">
+        <% finished.each do |setup| %>
+          <li class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1" data-test="finished-setup" data-status="<%= setup.status %>">
+            <span class="text-body min-w-0"><span class="font-semibold"><%= setup.agent&.name || setup.agent_slug %></span> · <%= agent_setup_kind_label(setup) %></span>
+            <span class="text-secondary text-xs"><%= agent_setup_status_label(setup) %><%= " · #{agent_setup_stamp(setup.ready_at || setup.closed_at)}" if setup.ready_at || setup.closed_at %></span>
+          </li>
+        <% end %>
+      </ul>
+    </details>
+  <% end %>
+</aside>
