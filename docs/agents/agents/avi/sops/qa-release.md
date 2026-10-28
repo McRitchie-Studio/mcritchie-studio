@@ -36,6 +36,14 @@ export GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | \
   sed -n 's/^password=//p')
 ```
 
+**The one-command path: `bin/release cycle`.** When Alex McRitchie has cleared the
+whole release in chat, run `bin/release cycle --clearance "<his words>" --yes
+--wait-for-1password` from the primary instead of this SOP's steps by hand. It runs
+this sweep (`prepare`, then QA verify, the ship and the archive) as one act of a resumable state machine and sets up the credentials above
+itself (GH_APP_ITEM unset and a freshly minted agent `GH_TOKEN`), so none of the exports here are needed for it. Re-running it resumes
+from the board's stage. The full description and exit codes are in
+[`full-cycle.md`](../../mason/sops/full-cycle.md#procedure).
+
 **Do not export `GH_APP_ITEM` here**: a leftover ship-lane export
 (`github.mcritchie-admin`) mints the **ship App**, which has **no `pull_requests` grant**. On `Resource not accessible by
 integration`: `unset GH_APP_ITEM`, re-run the export, re-run `bin/release prepare`.

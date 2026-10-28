@@ -11871,20 +11871,12 @@ class ReleaseCycleDeps
       end
       puts("  ⚠ no GitHub token minted for #{name}; running it with gh's own login and --wait-for-1password")
     end
-    heroku_token!(env)
+    # No Heroku token here: the snapshot's board op ran ensure_heroku_token!, which
+    # exported HEROKU_API_KEY into this process, and every child inherits it.
     stream_child(env, argv)
   end
 
   private
-
-  def heroku_token!(env)
-    return unless ENV["HEROKU_API_KEY"].to_s.strip.empty?
-
-    require_relative "lib/heroku_token"
-    env["HEROKU_API_KEY"] = HerokuToken.resolve(:agents)
-  rescue StandardError => e
-    puts("  ⚠ no Heroku token resolved up front (#{e.class}); the step resolves its own")
-  end
 
   def mint(identity, env)
     out, _err, status = BoundedCommand.capture3(env, File.join(__dir__, "gh-token"), "--identity", identity,
