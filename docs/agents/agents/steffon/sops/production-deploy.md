@@ -286,8 +286,10 @@ be undone. In order, after production authority:
 
 **A red re-lock commit.** The refusal names the commit (`THIS IS THE RE-LOCK COMMIT …`).
 It differs from the tree QA passed only in `Gemfile` and `Gemfile.lock`, and the final
-gem was compared with the candidate, so re-run that commit's CI run first (`gh run
-rerun <id>`, all jobs), then `bin/release ship`. A red that reproduces is a defect:
+gem was compared with the candidate, so the gate has already waited for that commit's
+run to complete and re-run a first-attempt red once by itself (its `↻↻ … AUTOMATIC
+RE-RUN` line, or the reason it did not). If it did not, re-run that commit's CI run
+(`gh run rerun <id>`, all jobs), then `bin/release ship`. A red that reproduces is a defect:
 fix it through a task on `accepted` and have Avi re-run `prepare`. The final stays
 published; consumers then lock it directly and QA runs again.
 
@@ -441,6 +443,15 @@ real and fails the gate (`CI is RED again … a second red is real`); a red lint
 scan is never re-run. The same rule runs in `prepare`'s gates (G3, the gem CI gate).
 `RELEASE_CI_RERUN=off` disarms it. Code: `bin/lib/ci_rerun.rb`,
 `bin/release.rb#poll_ci_verdict`.
+
+The decision waits for the run to finish. A check-run goes red as soon as one job
+fails, while the rest of the run is still going, and GitHub cannot re-run a run in
+progress; the gate prints `CI RED … while a workflow run on it is still in progress —
+holding for the run to complete` and decides once it is done (2026-10-27 it printed
+`no failed workflow run found` instead and spent its one chance). On the **re-lock
+commit**, which the gate measures to differ from the QA-green tree in `Gemfile` and
+`Gemfile.lock` alone, a first-attempt red in ANY job earns the one re-run, a lint
+included; a red after it is still real and is never re-run.
 
 Every check-run on the SHA counts except a run proven **schedule-triggered** (a nightly
 such as UI Budget or r2-backup attaches to `main`'s head but tests production, not the

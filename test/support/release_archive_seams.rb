@@ -95,6 +95,11 @@ module ReleaseArchiveSeams
       def self.capture2e(*cmd, **) = raise("SHELL ESCAPE: Open3.capture2e \#{cmd.inspect}")
       def self.capture3(*cmd, **)  = raise("SHELL ESCAPE: Open3.capture3 \#{cmd.inspect}")
     end
+    module BoundedCommand
+      def self.run(_env, cmd, **)        = raise("SHELL ESCAPE: BoundedCommand.run \#{cmd.inspect}")
+      def self.capture2e(_env, *cmd, **) = raise("SHELL ESCAPE: BoundedCommand.capture2e \#{cmd.inspect}")
+      def self.capture3(_env, *cmd, **)  = raise("SHELL ESCAPE: BoundedCommand.capture3 \#{cmd.inspect}")
+    end
     def sh(*cmd, **) = raise("SHELL ESCAPE: sh \#{cmd.inspect}")
   RUBY
 end

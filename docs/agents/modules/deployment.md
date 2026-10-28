@@ -756,6 +756,9 @@ bin/release notes <release-slug> --post --force   # send them again, over a deli
 The ship records whether Discord took the notes on the release's `release_notes`
 event (`metadata.delivered`, plus the message count). A `--post` over notes already
 delivered posts nothing, says so, and exits 1; `--force` is the deliberate second post.
+A re-run of `ship` or `finalize` over a release whose notes Discord already took
+posts nothing either: it prints `release notes: already posted to Discord by an
+earlier run — not posted again`. A re-run after a FAILED delivery posts them.
 
 Current intended QA apps:
 
@@ -846,7 +849,19 @@ Each of these reads can fail quietly enough to look like an answer.
   `heroku ps` empty). `bin/release` kills a record op's client at
   `RELEASE_RECORD_OP_DEADLINE` (300 s) and takes the `record op failed` path. Killing
   the local client does not stop a dyno that is still running, so a re-run leans on
-  the conductor writes being idempotent, as they are.
+  the conductor writes being idempotent: a board write re-applies to the same state,
+  and release notes Discord already took are skipped rather than posted again.
+- **Every `bin/release` child is bounded** (BoundedCommand: a deadline, then SIGKILL
+  to the child's whole process group; never `Timeout.timeout` or SIGALRM, which `op`
+  ignores). The bounds, in seconds, each set by its variable:
+  `RELEASE_COMMAND_DEADLINE` (3600: a push, bundle, suite, gem push or deploy
+  script), `RELEASE_READ_DEADLINE` (300: a git, gh or heroku read),
+  `RELEASE_POST_DEPLOY_DEADLINE` (1800: one post_deploy `heroku run`),
+  `RELEASE_RECORD_OP_DEADLINE` (300: a board record op) and
+  `RELEASE_ARCHIVE_STEP_DEADLINE` (1800: each `bin/release archive` step; its board
+  write grows past that with the number of tasks it flips). A killed child prints
+  ``✗ `<cmd>` gave no answer within Ns and was killed with its process group
+  (<VARIABLE> sets the bound)`` and reads as that step's failure.
   A run hung on its first read-only step is usually the laptop's network: kill the
   heroku child and re-run.
 - **`heroku releases` lists newest first.** Read it whole; `| tail` shows older rows.

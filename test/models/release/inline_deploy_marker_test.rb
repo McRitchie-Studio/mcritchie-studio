@@ -313,7 +313,8 @@ class Release::InlineDeployMarkerTest < ActiveSupport::TestCase
       "a non-200 probe from a probe that never ran"
     assert_includes body, "smoke_url = group_smoke_url(group)",
       "and resolved ONCE, so the probe and the diagnosis cannot disagree"
-    assert_match(/Open3\.capture3\("heroku", "releases"/, Rails.root.join("bin", "release.rb").read,
+    # bounded_capture3: Open3.capture3's shape (stderr apart), under a deadline.
+    assert_match(/bounded_capture3\("heroku", "releases"/, Rails.root.join("bin", "release.rb").read,
       "the Heroku read keeps stderr OUT of the JSON — the CLI prints an update warning there")
     assert_no_match(/capture2e\("heroku"/, Rails.root.join("bin", "release.rb").read)
   end

@@ -318,10 +318,15 @@ the candidate lock. It stamps the release with the flow and the candidates; this
 gate refuses a candidate the stamp does not name, and act 7 refuses a prerelease
 lock whatever produced it.
 
-**A red re-lock commit refuses the ship before any deploy, with the final already
-published.** The refusal says so, and names the two ways forward: re-run that
-commit's CI run and re-run `bin/release ship` (it resumes), or, for a red that
-reproduces, fix through a task on `accepted` and re-run `bin/release prepare`.
+**A red re-lock commit gets one automatic re-run first.** The read measures that the
+commit differs from the QA-green tree in `Gemfile` and `Gemfile.lock` alone, waits
+for its workflow run to complete, and re-runs a first-attempt red in any job once
+(`gh run rerun <id>`, every job, as every automatic re-run is). A red after that
+re-run is real and is never re-run again. **It then refuses the ship before any
+deploy, with the final already published.** The refusal says so, and names the two
+ways forward: re-run that commit's CI run by hand if the gate could not, and re-run
+`bin/release ship` (it resumes), or, for a red that reproduces, fix through a task
+on `accepted` and re-run `bin/release prepare`.
 The interruption table is in
 [`production-deploy.md`](../../agents/steffon/sops/production-deploy.md).
 

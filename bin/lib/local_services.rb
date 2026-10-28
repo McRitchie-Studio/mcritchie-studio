@@ -8,6 +8,7 @@ require "yaml"
 require_relative "agent_mailbox"
 require_relative "op_vaults"
 require_relative "projects_root"
+require_relative "bounded_command"
 
 # The always-on local services a rebuilt Mac must be running, restored from one
 # registry (config/local_services.yml) by the services phase of
@@ -131,6 +132,8 @@ module LocalServices
   # met and not running → install then re-check; unmet → skip and owe a
   # checklist item. Never raises on a failed command; returns the items.
   class Restorer
+    # Seconds one service refresh command may take.
+    REFRESH_DEADLINE = 600
     attr_reader :items
 
     def initialize(services:, hub:, runner: Restorer.default_runner, which: Restorer.default_which,
@@ -146,7 +149,11 @@ module LocalServices
     end
 
     def self.default_runner
-      ->(argv, chdir) { chdir ? Open3.capture2e(*argv, chdir: chdir) : Open3.capture2e(*argv) }
+      # Bounded: a refresh that hangs must not hold the end of a ship that already landed.
+      lambda do |argv, chdir|
+        opts = chdir ? { chdir: chdir } : {}
+        BoundedCommand.capture2e({}, *argv, deadline: REFRESH_DEADLINE, **opts)
+      end
     end
 
     def self.default_which
