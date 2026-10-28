@@ -859,8 +859,8 @@ Each of these reads can fail quietly enough to look like an answer.
   `RELEASE_RECORD_OP_DEADLINE` (300: a board record op) and
   `RELEASE_ARCHIVE_STEP_DEADLINE` (1800: each `bin/release archive` step; its board
   write grows past that with the number of tasks it flips). A killed child prints
-  `✗ `<cmd>` gave no answer within Ns and was killed with its process group
-  (<VARIABLE> sets the bound)` and reads as that step's failure.
+  ``✗ `<cmd>` gave no answer within Ns and was killed with its process group
+  (<VARIABLE> sets the bound)`` and reads as that step's failure.
   A run hung on its first read-only step is usually the laptop's network: kill the
   heroku child and re-run.
 - **`heroku releases` lists newest first.** Read it whole; `| tail` shows older rows.
