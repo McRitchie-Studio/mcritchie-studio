@@ -442,6 +442,15 @@ scan is never re-run. The same rule runs in `prepare`'s gates (G3, the gem CI ga
 `RELEASE_CI_RERUN=off` disarms it. Code: `bin/lib/ci_rerun.rb`,
 `bin/release.rb#poll_ci_verdict`.
 
+The decision waits for the run to finish. A check-run goes red as soon as one job
+fails, while the rest of the run is still going, and GitHub cannot re-run a run in
+progress; the gate prints `CI RED … while a workflow run on it is still in progress —
+holding for the run to complete` and decides once it is done (2026-10-27 it printed
+`no failed workflow run found` instead and spent its one chance). On the **re-lock
+commit**, which the gate measures to differ from the QA-green tree in `Gemfile` and
+`Gemfile.lock` alone, a first-attempt red in ANY job earns the one re-run, a lint
+included; a red after it is still real and is never re-run.
+
 Every check-run on the SHA counts except a run proven **schedule-triggered** (a nightly
 such as UI Budget or r2-backup attaches to `main`'s head but tests production, not the
 commit); an unprovable one still counts. Detail:
