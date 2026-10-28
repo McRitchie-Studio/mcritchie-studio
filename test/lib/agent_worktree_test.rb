@@ -2329,7 +2329,9 @@ class AgentWorktreeTest < Minitest::Test
               Struct.new(:timed_out?, :success?).new(false, false)
             end
           end
-          provision_node_modules({ "repo" => #{primary.inspect} }, #{desk.inspect}, env: ENV)
+          # Only the deadline variable: a runner's CI=true in ENV would plan a skip.
+          provision_node_modules({ "repo" => #{primary.inspect} }, #{desk.inspect},
+                                 env: ENV.slice("AGENT_WORKTREE_NPM_CI_DEADLINE"))
         RUBY
         assert_includes out, "agent-worktree: DeskNodeModules::InvalidDeadline: AGENT_WORKTREE_NPM_CI_DEADLINE " \
                              "must be a positive whole number of seconds, got #{raw.inspect}; using the default 600s"
