@@ -253,6 +253,24 @@ class Dev::BoardControllerTest < ActionDispatch::IntegrationTest
     assert_response :no_content
   end
 
+  test "[integration] qa_green_release assembles the active release, and undo reopens it" do
+    rel = Release.open!
+    post dev_board_qa_green_release_path
+    assert_response :no_content
+    assert_equal "assembled", rel.reload.state
+    assert rel.assembled_at, "QA green stamps the end of the QA phase"
+
+    post dev_board_qa_green_release_path, params: { undo: 1 }
+    assert_response :no_content
+    assert_equal "assembling", rel.reload.state
+    assert_nil rel.assembled_at, "the reopen clears it, so the QA clock comes back"
+  end
+
+  test "[integration] qa_green_release answers 422 with nothing in flight" do
+    post dev_board_qa_green_release_path
+    assert_response :unprocessable_entity
+  end
+
   # --- deployment-step toys (open / advance / reset a fixture RELEASE) ---------
 
   def fixture_releases
