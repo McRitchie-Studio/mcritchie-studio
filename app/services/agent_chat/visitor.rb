@@ -6,10 +6,12 @@ module AgentChat
   #
   #   email that is a hub User   the user's web person (WebIngest.person_for),
   #                              thread chat:<soul>:<user id>
-  #   email with no hub User     its own public AgentPerson (web identity
-  #                              "email:<address>"), thread chat:<soul>:person:<id>
+  #   email with no hub User     the person its `email` identity names, else a
+  #                              new public one (AgentPerson.resolve!, as email
+  #                              ingest), thread chat:<soul>:person:<id>
   #   anon_token                 a public "Visitor" person (web identity
-  #                              "chat-anon:<digest>"), thread chat:<soul>:anon:<digest>
+  #                              ANON_PLATFORM_PREFIX + digest, also the rows'
+  #                              author_ref), thread chat:<soul>:anon:<digest>
   #
   # Never matched by name, and never a role higher than the person already has:
   # a new person is public. The app's credential vouches for the email, as the
@@ -18,6 +20,7 @@ module AgentChat
     class Invalid < StandardError; end
 
     EMAIL_MAX = 254
+    ANON_REF_PREFIX = "chat-anon:".freeze
 
     attr_reader :soul, :email, :anon_digest, :user
 
@@ -66,15 +69,22 @@ module AgentChat
     # The AgentPerson this visitor's messages are from, made on first use.
     def person!
       return AgentMessages::WebIngest.person_for(user) if user
-      return identity_person!("email:#{email}", email.split("@").first.to_s[0, 100].presence || "Visitor") if signed_in?
+      if signed_in?
+        return AgentPerson.resolve!(platform: "email", external_id: email, display_name: email.split("@").first.to_s[0, 100])
+      end
 
-      identity_person!("chat-anon:#{anon_digest}", "Visitor")
+      AgentPerson.resolve!(platform: "web", external_id: anon_ref, display_name: "Visitor")
     end
 
-    # The author_ref a row carries: the user id, as every web chat, else the key's tail.
+    # The anon visitor's web identity and their rows' author_ref, so the fold's
+    # AgentPerson#link_identity! finds every row and note the visitor wrote.
+    def anon_ref = anon_digest && "#{ANON_REF_PREFIX}#{anon_digest}"
+
+    # The author_ref a row carries: the user id, as every web chat, else
+    # person:<id> for an email, else the anon ref.
     def author_ref
       return user.id.to_s if user
-      return "anon:#{anon_digest}" unless signed_in?
+      return anon_ref unless signed_in?
 
       thread_key!.delete_prefix(AgentChat.soul_prefix(soul))
     end
@@ -92,22 +102,7 @@ module AgentChat
     end
 
     def existing_email_person
-      AgentPersonIdentity.find_by(platform: "web", external_id: "email:#{email}")&.person
-    end
-
-    def identity_person!(external_id, name, attempt: 1)
-      identity = AgentPersonIdentity.find_by(platform: "web", external_id: external_id)
-      return identity.person if identity
-
-      AgentPerson.transaction(requires_new: true) do
-        person = AgentPerson.create!(display_name: name)
-        person.identities.create!(platform: "web", external_id: external_id, display_name: name)
-        person
-      end
-    rescue ActiveRecord::RecordNotUnique
-      raise if attempt > 1
-
-      identity_person!(external_id, name, attempt: attempt + 1)
+      AgentPersonIdentity.find_by(platform: "email", external_id: email)&.person
     end
   end
 end

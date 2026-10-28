@@ -83,11 +83,26 @@ class AgentChatIngestTest < ActiveSupport::TestCase
     assert_equal 2, AgentMessageEvent.where(kind: "thread_folded", agent_message_id: [ first.id, second.id ]).count
     assert_equal "chat:alex:anon:#{AgentChat.anon_digest(ANON)}", first.events.find_by(kind: "thread_folded").detail["from"]
     refute AgentMessage.exists?(thread_key: "chat:alex:anon:#{AgentChat.anon_digest(ANON)}")
-    assert_equal first.person_id, first.reload.person_id, "a folded row keeps the person who wrote it"
 
     assert_no_difference -> { AgentMessageEvent.where(kind: "thread_folded").count } do
       ingest("again", email: user.email, anon_token: ANON)
     end
+  end
+
+  test "the fold moves the anon visitor's identity, rows and notes to the person, orphaning nothing" do
+    user = User.create!(email: "notes@example.com", name: "Notes", role: "viewer")
+    anon_row = ingest("I run a bakery", anon_token: ANON)
+    anon_person = anon_row.person
+    AgentPersonNote.record_from!(anon_row, [ "Runs a bakery." ])
+
+    signed = ingest("signed in", email: user.email, anon_token: ANON)
+
+    person = signed.person
+    assert_equal person, anon_row.reload.person, "the row is restamped to the person"
+    assert_equal [ "Runs a bakery." ], person.notes.reload.map(&:body)
+    assert_empty anon_person.notes.reload
+    assert_equal person.id, AgentPersonIdentity.find_by(platform: "web", external_id: "chat-anon:#{AgentChat.anon_digest(ANON)}").agent_person_id
+    assert_equal person, AgentChat::Visitor.new("alex", anon_token: ANON).person!, "the same browser signed out is still them"
   end
 
   test "a fold reaches only the visitor's own anon thread for that soul" do

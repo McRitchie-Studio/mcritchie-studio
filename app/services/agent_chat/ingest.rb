@@ -66,8 +66,10 @@ module AgentChat
     # THE FOLD. A visitor who chatted signed out and then signs in carries their
     # anon token on the first signed-in post; that anon thread's rows move to the
     # person's thread, each with a `thread_folded` event, so the conversation
-    # carries on. The rows keep the person who wrote them. Idempotent: once
-    # moved, the anon thread is empty.
+    # carries on. The anon visitor IS this person, so their anon identity, the
+    # rows they wrote and the notes those rows produced move to the person too
+    # (AgentPerson#link_identity!, reassign): nothing is orphaned. Idempotent:
+    # once moved, the anon thread is empty.
     def fold!(thread_key)
       anon_key = @visitor.anon_thread_key
       return 0 if anon_key.nil? || anon_key == thread_key
@@ -77,6 +79,9 @@ module AgentChat
 
       AgentMessage.transaction(requires_new: true) do
         AgentMessage.where(id: ids).update_all(thread_key: thread_key, updated_at: @now)
+        if AgentPersonIdentity.exists?(platform: "web", external_id: @visitor.anon_ref)
+          @visitor.person!.link_identity!(platform: "web", external_id: @visitor.anon_ref, reassign: true)
+        end
         AgentMessage.where(id: ids).find_each do |row|
           row.record!("thread_folded", actor: "agent-chat", detail: { "from" => anon_key, "to" => thread_key, "app" => @app })
         end

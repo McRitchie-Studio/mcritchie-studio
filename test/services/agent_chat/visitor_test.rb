@@ -30,9 +30,17 @@ class AgentChatVisitorTest < ActiveSupport::TestCase
 
     person = visitor.person!
     assert_equal "public", person.role
-    assert AgentPersonIdentity.exists?(platform: "web", external_id: "email:stranger@example.com", agent_person_id: person.id)
+    assert AgentPersonIdentity.exists?(platform: "email", external_id: "stranger@example.com", agent_person_id: person.id)
     assert_equal "chat:alex:person:#{person.id}", visitor.thread_key!
     assert_equal person, AgentChat::Visitor.new("alex", email: "STRANGER@example.com").person!, "found again, never twice"
+  end
+
+  test "an email with no hub user that already wrote to team@ is that same person" do
+    person = AgentPerson.resolve!(platform: "email", external_id: "known@example.com", display_name: "Known")
+
+    visitor = AgentChat::Visitor.new("alex", email: "Known@example.com")
+    assert_equal person, visitor.person!
+    assert_equal "chat:alex:person:#{person.id}", visitor.thread_key
   end
 
   test "an anon token is a public visitor on a digest-keyed thread that never carries the token" do
@@ -44,6 +52,8 @@ class AgentChatVisitorTest < ActiveSupport::TestCase
     assert_equal "chat:alex:anon:#{digest}", visitor.thread_key
     refute_includes visitor.thread_key, ANON
     assert_equal "public", visitor.person!.role
+    assert AgentPersonIdentity.exists?(platform: "web", external_id: "chat-anon:#{digest}", agent_person_id: visitor.person!.id)
+    assert_equal "chat-anon:#{digest}", visitor.author_ref
     assert_equal visitor.person!, AgentChat::Visitor.new("alex", anon_token: ANON).person!
     assert_nil visitor.anon_thread_key, "a signed-out visitor folds nothing"
   end
