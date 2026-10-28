@@ -44,8 +44,8 @@ module Books
         "**#{entity.name} books: #{finish.strftime('%B %Y')} is not closed yet.**",
         *lines,
         ("• #{waiting} line(s) waiting for an answer" if waiting.positive?),
-        "Download the missing statements and drop them in #{inbox}, then ask an agent to run close-the-month " \
-        "(docs/agents/modules/close-the-month.md)."
+        "Download the missing statements and drop them in #{inbox}, then ask Mack, the CFO, to run close-the-month " \
+        "(docs/agents/agents/mack/sops/close-the-month.md)."
       ].compact.join("\n")
     end
   end

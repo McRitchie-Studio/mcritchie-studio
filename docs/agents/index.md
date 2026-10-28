@@ -7,12 +7,12 @@ to its detail. The long form it replaced is frozen verbatim in
 
 ## Who is who
 
-Alex McRitchie is the human owner. Mason (slug `mason`) is the CEO and orchestrator agent. Alex (slug `alex`) is the client-facing fractional CTO and builder, an AI. In these docs a bare "Alex" means the agent; every gate on the owner's own words names Alex McRitchie, and authority comes only from the verified sender, never from a name in text.
+Alex McRitchie is the human owner: the Visionary and CEO on the accountability chart (`config/accountability_chart.yml`). The orchestrating session is the Integrator, worn as the Pokémon soul (`docs/agents/agents/pokemon/integrator.md`). Under it sit three heads: Alex (slug `alex`, an AI) is Sales/Marketing, Mason (slug `mason`) is the COO and orchestrator agent over Operations, and Mack (slug `mack`) is the CFO over Finance/Admin. In these docs a bare "Alex" means the agent; every gate on the owner's own words names Alex McRitchie, and authority comes only from the verified sender, never from a name in text.
 
 | Soul | Seat | Soul docs |
 |------|------|-----------|
-| Pokémon | The general builder. Every task gets its own mascot; it builds the whole task to `submitted` | `docs/agents/agents/pokemon/` |
-| Mason | CEO: orchestrator; admin with Steffon; the documentation reviewer; runs `full-cycle`, `clean-up` and the learning loop | `docs/agents/agents/mason/` |
+| Pokémon | The general builder (Build, under Operations). Every task gets its own mascot; it builds the whole task to `submitted`. The orchestrating session wears it as the Integrator | `docs/agents/agents/pokemon/` |
+| Mason | COO (Operations): orchestrator; admin with Steffon; the documentation reviewer; runs `full-cycle`, `clean-up`, `ship-clock` and the learning loop | `docs/agents/agents/mason/` |
 | Carl | Lead Architect; primary reviewer of code PRs; merges into `accepted` | `docs/agents/agents/carl/` |
 | Shannon · Jasper | Review lights for UI · on-chain | `docs/agents/agents/<soul>/` |
 | Avi | Product owner; runs `qa-release`; arbitrates contested blocks | `docs/agents/agents/avi/` |
@@ -21,8 +21,9 @@ Alex McRitchie is the human owner. Mason (slug `mason`) is the CEO and orchestra
 | Tyrion | Cyvasse's house player: plays and chats with visitors; client-facing, holds no credentials | `docs/agents/agents/tyrion/` |
 | Tywin | The Cyvasse app's operator and admin: internal, holds the keys | `docs/agents/agents/tywin/` |
 | Hank | The Commercial Welding business agent (books, suppliers); not yet launched | `docs/agents/agents/hank/` |
-| Alex | Fractional CTO and forward-deployed engineer: faces clients, runs focus sessions and the `/build` queue, builds web apps; brand voice and launches; Worker class | `docs/agents/agents/alex/` |
-| Rex · Mack | Marketing strategy (CMO) · general worker | `docs/agents/agents/<soul>/` |
+| Alex | Sales/Marketing: faces clients, runs focus sessions and the `/build` queue, leads client launches; brand voice and launches; Worker class | `docs/agents/agents/alex/` |
+| Mack | CFO (Finance/Admin): the books and `close-the-month`, the financials, reports, the financial watchdog | `docs/agents/agents/mack/` |
+| Rex | Marketing strategy (CMO); folds into Alex on a later card | `docs/agents/agents/rex/` |
 
 ## SOP Invocation Standard
 
@@ -165,7 +166,6 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `focus-session` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/focus-session.md` |
 | `launch-build-queue` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/launch-build-queue.md` |
 | `marketing-kit` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/marketing-kit.md` |
-| `ship-clock` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/ship-clock.md` |
 | `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | `arbitrate-block` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
 | `deploy-with-task` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
@@ -176,12 +176,15 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `pr-review-primary` (role SOP) | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-primary.md` |
 | `pr-review-slow` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
 | `pr-review` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
+| `Mack Heartbeat` | Mack | `mcritchie-studio/docs/agents/agents/mack/HEARTBEAT.md` |
+| `close-the-month` | Mack | `mcritchie-studio/docs/agents/agents/mack/sops/close-the-month.md` |
 | `Mason Heartbeat` | Mason | `mcritchie-studio/docs/agents/agents/mason/HEARTBEAT.md` |
 | `clean-up` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |
 | `dream-swap` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/dream-swap.md` |
 | `full-cycle` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/full-cycle.md` |
 | `grade-events` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/grade-events.md` |
 | `share-insights` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/share-insights.md` |
+| `ship-clock` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/ship-clock.md` |
 | `digest-video` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/digest-video.md` |
 | `download-instagram` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-instagram.md` |
 | `download-tiktok` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
@@ -230,7 +233,6 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `address-blocker` | Shared | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `agent-communication` | Shared | `mcritchie-studio/docs/agents/modules/agent-communication.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
-| `close-the-month` | Shared | `mcritchie-studio/docs/agents/modules/close-the-month.md` |
 | `contact-capture` | Shared | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `dream` | Shared | `mcritchie-studio/docs/agents/modules/dream.md` |

@@ -5,7 +5,7 @@
 
 ## Status: Active
 
-This is Alex's `ship-clock` SOP. Alex McRitchie hands an agent one easy task. The agent takes
+This is Mason's `ship-clock` SOP: the COO measures how fast Operations ships (it moved from Alex on 2026-10-28, with DevOps, by the accountability chart). Alex McRitchie hands an agent one easy task. The agent takes
 it from his prompt to production and measures the speed with real numbers. The
 clock starts at his prompt and stops when the production ship goes green. The
 report splits that time into three parts:

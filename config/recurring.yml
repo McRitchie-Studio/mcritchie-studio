@@ -31,7 +31,7 @@ production:
     args: []
   # The bookkeeping nudge (Books::Reminder): on the 5th, each entity whose last
   # month is not closed FINAL hears which statements are in and which are missing.
-  # Posts to the books_reminder report destination; SOP close-the-month.
+  # Posts to the books_reminder report destination; SOP close-the-month (Mack's, docs/agents/agents/mack/sops/close-the-month.md).
   books_reminder:
     class: BooksReminderJob
     schedule: "0 8 5 * * America/Denver"

@@ -76,17 +76,19 @@ class AgentHeartbeatSectionTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='agent-heartbeat-section'][data-agent='alex']", count: 1
     assert_select "[data-test='heartbeat-name'][data-clip='Alex Heartbeat']"
     assert_select "[data-test='action']", count: 1
-    assert_select "[data-test='action'][data-action='ship-clock'][data-clip='ship-clock']"
+    assert_select "[data-test='action'][data-action='focus-session'][data-clip='focus-session']"
+    assert_select "[data-test='action'][data-action='ship-clock']", { count: 0 }, "ship-clock moved to Mason (2026-10-28)"
     assert_select "[data-test='action'][data-action='full-cycle']", count: 0
   end
 
-  test "Mason's heartbeat soul renders the CEO acts + descriptions" do
+  test "Mason's heartbeat soul renders the COO acts + descriptions" do
     get agent_path("mason")
     assert_response :success
 
     assert_select "[data-test='agent-heartbeat-section'][data-agent='mason']", count: 1
     assert_select "[data-test='heartbeat-name'][data-clip='Mason Heartbeat']"
-    assert_select "[data-test='action']", count: 3
+    assert_select "[data-test='action']", count: 4
+    assert_select "[data-test='action'][data-action='ship-clock'][data-clip='ship-clock']"
     assert_select "[data-test='action'][data-action='grade-events'][data-clip='grade-events']"
     assert_select "[data-test='action'][data-action='share-insights'][data-clip='share-insights']"
     assert_select "[data-test='action'][data-action='full-cycle'][data-clip='full-cycle']"

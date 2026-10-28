@@ -21,7 +21,7 @@
 # (2026-10-13T08:15:00-06:00 or 2026-10-13T14:15:00Z). Every gh call is bounded by
 # SHIP_CLOCK_GH_TIMEOUT seconds (default 60); a timeout fails like a failed read.
 #
-# The SOP is docs/agents/agents/alex/sops/ship-clock.md; the logic is bin/lib/ship_clock.rb.
+# The SOP is docs/agents/agents/mason/sops/ship-clock.md; the logic is bin/lib/ship_clock.rb.
 
 require "optparse"
 require "fileutils"

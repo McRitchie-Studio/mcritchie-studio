@@ -33,7 +33,9 @@ skills_data = [
   { name: "Copywriting",         category: "marketing",      description: "Author marketing, transactional, and product copy" },
   { name: "Content Strategy",    category: "marketing",      description: "Plan launches, narratives, and content calendars" },
   { name: "Funnel Analytics",    category: "marketing",      description: "Measure landing-page conversion and referral attribution" },
-  { name: "Sports Analytics",    category: "domain",         description: "Sports data analysis, odds, and prop generation" }
+  { name: "Sports Analytics",    category: "domain",         description: "Sports data analysis, odds, and prop generation" },
+  { name: "Bookkeeping",         category: "finance",        description: "Keep the books and run the month close" },
+  { name: "Financial Reporting", category: "finance",        description: "Build financial reports and watch the numbers" }
 ]
 
 skills_data.each do |data|
@@ -53,7 +55,7 @@ assignments = {
   "jasper"       => ["solana-development", "anchor-rust", "ruby-solana-client", "wallet-integration", "smart-contract-security"],
   "steffon"      => ["deployment", "devops", "heroku-administration", "ci-cd", "monitoring"],
   "turf-monster" => ["sports-analytics", "data-processing", "rails-development"],
-  "mack"         => ["web-scraping", "data-processing", "api-integration", "database-management"],
+  "mack"         => ["bookkeeping", "financial-reporting", "data-processing"],
   "alex"         => ["brand-voice", "social-media", "copywriting", "content-strategy", "funnel-analytics"]
 }
 

@@ -104,12 +104,24 @@ class AgentsSeedTest < ActiveSupport::TestCase
     end
     assert docs, "a documentation-domain reviewer must resolve from the seed"
     assert_equal "mason", docs.slug, "Mason holds the documentation seat (no separate persona)"
-    assert_equal "CEO", docs.title, "the CEO is the orchestrator identity"
+    assert_equal "COO", docs.title, "the COO (Operations, accountability chart 2026-10-28) is the orchestrator identity"
     alex = Agent.find_by!(slug: "alex")
     refute alex.metadata["reviewer"], "the alex soul left the review pool on 2026-10-25"
     assert_empty Array(alex.metadata["domains"]), "and keeps none of its old review domains"
     assert_equal "worker", alex.agent_type, "the alex soul is in the Worker class"
     refute Agent.exists?(slug: "alex-docs"), "the separate alex-docs persona is retired (folded into alex)"
+  end
+
+  # The accountability chart (config/accountability_chart.yml, rulings 2026-10-28)
+  # names the three heads by their seat titles, and every seat owner is a seeded soul.
+  test "the seed carries the accountability chart's titles and every seat owner" do
+    run_seed
+    assert_equal "COO", Agent.find_by!(slug: "mason").title
+    assert_equal "CFO", Agent.find_by!(slug: "mack").title
+    assert_equal "Head of Sales and Marketing", Agent.find_by!(slug: "alex").title
+    AccountabilityChart.load.seats.reject(&:human?).each do |seat|
+      assert Agent.exists?(slug: seat.owner), "#{seat.slug}'s owner #{seat.owner} is a seeded Agent"
+    end
   end
 
   # EVERY SOUL RENDERS A FACE — the property the board actually needs, which is not

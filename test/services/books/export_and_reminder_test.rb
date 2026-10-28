@@ -65,6 +65,11 @@ class BooksExportAndReminderTest < ActiveSupport::TestCase
     assert_includes content, "Savings ···1234: statement in"
     refute_includes content, "Checking", "an account opened after the month is not asked for"
     assert_includes content, "1 line(s) waiting"
+    # The SOP the post cites is Mack's since 2026-10-28, and the path must resolve.
+    sop = content[%r{docs/agents/\S+?\.md}]
+    assert_equal "docs/agents/agents/mack/sops/close-the-month.md", sop
+    assert File.file?(Rails.root.join(sop)), "the reminder cites a file that exists"
+    assert_includes content, "ask Mack, the CFO"
   end
 
   test "a month already closed FINAL posts nothing" do

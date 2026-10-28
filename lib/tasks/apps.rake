@@ -25,7 +25,7 @@ namespace :agents do
   # The orchestrator's skill belongs to the orchestrator. Exits non-zero naming the
   # drift, so a post_deploy_cmd of `agents:seed agents:verify_skills` proves the
   # seed landed rather than that a process exited 0.
-  desc "Fail unless mason holds the orchestration skill and alex holds the persona's brand skills, not it"
+  desc "Fail unless mason holds the orchestration skill, alex the persona's brand skills (not it), and mack the CFO's books"
   task verify_skills: :environment do
     orchestration = "task-orchestration"
     held = ->(slug) { SkillAssignment.where(agent_slug: slug).pluck(:skill_slug).sort }
@@ -35,8 +35,13 @@ namespace :agents do
     drift << "mason lacks #{orchestration} (holds #{mason.inspect})" unless mason.include?(orchestration)
     drift << "alex still holds #{orchestration} (holds #{alex.inspect})" if alex.include?(orchestration)
     drift << "alex lacks brand-voice (holds #{alex.inspect})" unless alex.include?("brand-voice")
+    # Mack is the CFO since 2026-10-28 (the accountability chart); his scraping went
+    # to the Pokémon legion.
+    mack = held.call("mack")
+    drift << "mack lacks bookkeeping (holds #{mack.inspect})" unless mack.include?("bookkeeping")
+    drift << "mack still holds web-scraping (holds #{mack.inspect})" if mack.include?("web-scraping")
     abort("agents:verify_skills: #{drift.join('; ')}") if drift.any?
 
-    puts "agents:verify_skills: mason #{mason.inspect}; alex #{alex.inspect}"
+    puts "agents:verify_skills: mason #{mason.inspect}; alex #{alex.inspect}; mack #{mack.inspect}"
   end
 end

@@ -155,8 +155,8 @@ When finishing a meaningful feature:
 2. Update the canonical doc.
 3. While editing active docs, fix nearby ambiguous owner/orchestrator language:
    use **Alex McRitchie** (or "the owner") for Alexander Ray McRitchie, the
-   owner/operator, **Mason** for the CEO and orchestrator agent, and **Alex** for
-   the client-facing agent. A bare "Alex" means the agent.
+   owner/operator, **Mason** for the COO and orchestrator agent, and **Alex** for
+   the client-facing Sales/Marketing agent. A bare "Alex" means the agent.
 4. If an old doc is superseded but not safe to delete yet, add it to [`../maintenance/delete-later.md`](../maintenance/delete-later.md).
 5. Prefer deleting stale docs over preserving contradictory context.
 

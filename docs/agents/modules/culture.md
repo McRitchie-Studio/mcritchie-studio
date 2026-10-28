@@ -8,8 +8,10 @@ and make product calls, not to operate the terminal on behalf of the agent.
 - **Alex McRitchie** (or "the owner") means Alexander Ray McRitchie, the human
   owner/operator. Every fact about the human, and every gate that turns on his
   own words, names him so.
-- **Mason** means the CEO and orchestrator agent (slug `mason`; he took the seat
-  from the persona soul on 2026-10-25).
+- **Mason** means the COO and orchestrator agent (slug `mason`; he took the
+  orchestrator seat from the persona soul on 2026-10-25, and the accountability
+  chart made him COO, head of Operations, on 2026-10-28). Alex McRitchie is the
+  Visionary and CEO (`config/accountability_chart.yml`).
 - **Alex** means the client-facing agent, an AI (slug `alex` since
   ritch-renamed-alex, 2026-10-25; displayed Ritch from 2026-10-20 and Ray from
   2026-10-18 under slug `ray`, slugged `xan` from 2026-09-24, and `alex` before
