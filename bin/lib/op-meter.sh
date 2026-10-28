@@ -128,44 +128,64 @@ op_meter_record() {
   return 0
 }
 
-# THE BOUND (2026-10-24). On 2026-10-21 the Mac rebooted, the 1Password cache
-# daemon never became ready, and every `op read` waited about fifteen minutes:
-# bin/gh-app-git-credential runs on every fetch and push, so git hung with it.
-# Each attempt now gets MCR_OP_DEADLINE seconds (default 20, the Ruby half's
-# OpMeter::DEFAULT_DEADLINE), then SIGKILL; a timed-out attempt is recorded as
-# `timeout` and retried ONCE with OP_CACHE=false, which skips the daemon.
+# THE BOUND (2026-10-24, tightened 2026-10-28). On 2026-10-21 the Mac rebooted,
+# the 1Password cache daemon never became ready, and every `op read` waited about
+# fifteen minutes: bin/gh-app-git-credential runs on every fetch and push, so git
+# hung with it. Each attempt now gets MCR_OP_DEADLINE seconds (default 14, the
+# Ruby half's OpMeter::DEFAULT_DEADLINE, so an attempt and its retry stay under
+# thirty seconds), then SIGKILL; a timed-out attempt is recorded as `timeout` and
+# retried ONCE with OP_CACHE=false, which skips the daemon.
 #
 # The watchdog is perl because `timeout` is not installed on this Mac and perl
-# is on every macOS and Linux box. It FORKS and kills the child from the parent
-# rather than `alarm N; exec op`: op is a Go binary, and the Go runtime catches
-# SIGALRM and ignores it, so an alarm inherited across exec would never fire.
-# perl's alarm takes whole seconds and alarm 0 means NONE, so the deadline is
-# rounded up, and anything not a positive number falls back to 20.
+# is on every macOS and Linux box. It uses NO alarm at all: op is a Go binary
+# that ignores SIGALRM, and an alarm is the wrong shape for a bound anyway. The
+# parent forks, the child starts its own process group and execs op, and the
+# parent polls waitpid(WNOHANG) every 50 ms until the child exits or the
+# deadline passes, then SIGKILLs the whole GROUP (anything op forked dies with
+# it, so no helper is left holding the caller's `$(...)` pipe open).
+# The child keeps the caller's process group only when stdin is a terminal (an
+# interactive `op signin` must stay in the foreground group to read it); then
+# the kill reaches op alone, which SIGKILL still ends.
 # Exit 124 is the watchdog's timeout (GNU timeout's code); 127 and 126 are the
 # shell's not-found and not-executable, so the log keeps one vocabulary.
 OP_METER_TIMEOUT_RC=124
+# The exit a caller uses after a hung read (EX_TEMPFAIL); OpMeter::HUNG_EXIT.
+OP_METER_HUNG_RC=75
 # shellcheck disable=SC2016
 OP_METER_WATCHDOG='use POSIX ();
+use Time::HiRes ();
 my $t = shift @ARGV;
-$t = ($t =~ /^[0-9]*[.]?[0-9]+$/ && $t > 0) ? POSIX::ceil($t) : 20;
+$t = ($t =~ /^[0-9]*[.]?[0-9]+$/ && $t > 0) ? $t : 14;
+my $own = !(-t STDIN);
 my $pid = fork;
 exit 126 unless defined $pid;
-if ($pid == 0) { exec { $ARGV[0] } @ARGV; POSIX::_exit($!{ENOENT} ? 127 : 126); }
-$SIG{ALRM} = sub { kill "KILL", $pid; waitpid $pid, 0; exit 124 };
-alarm $t;
-waitpid $pid, 0;
-alarm 0;
-my $s = $?;
-exit(($s & 127) ? 128 + ($s & 127) : $s >> 8);'
+if ($pid == 0) { POSIX::setpgid(0, 0) if $own; exec { $ARGV[0] } @ARGV; POSIX::_exit($!{ENOENT} ? 127 : 126); }
+POSIX::setpgid($pid, $pid) if $own;
+$SIG{INT} = $SIG{TERM} = $SIG{HUP} = sub { kill "KILL", ($own ? -$pid : $pid); waitpid $pid, 0; exit 130; };
+my $limit = Time::HiRes::time() + $t;
+while (1) {
+  my $r = waitpid($pid, POSIX::WNOHANG());
+  if ($r == $pid) { my $s = $?; exit(($s & 127) ? 128 + ($s & 127) : $s >> 8); }
+  exit 126 if $r < 0;
+  if (Time::HiRes::time() >= $limit) { kill "KILL", ($own ? -$pid : $pid); waitpid $pid, 0; exit 124; }
+  Time::HiRes::sleep(0.05);
+}'
 
 # op_meter_bounded <op-binary> <args...> — one attempt under the deadline. With
 # no perl the attempt runs unbounded, as every caller did before the bound.
 op_meter_bounded() {
   if command -v perl >/dev/null 2>&1; then
-    perl -e "$OP_METER_WATCHDOG" "${MCR_OP_DEADLINE:-20}" "$@"
+    perl -e "$OP_METER_WATCHDOG" "${MCR_OP_DEADLINE:-14}" "$@"
   else
     "$@"
   fi
+}
+
+# op_meter_hung_line — the one loud line for a hung read, on stderr. The same
+# words as OpMeter::HUNG_LINE. op_metered prints it itself when both attempts
+# run out; a caller that sent op_metered's stderr to /dev/null prints it again.
+op_meter_hung_line() {
+  echo "✗ 1Password is not answering: an \`op\` read was killed after two bounded attempts. Quit and reopen the 1Password app; reboot if that fails. Then re-run (bin/release prepare and ship can wait for it: --wait-for-1password)." >&2
 }
 
 # op_metered <op-binary> <args...> — run `op` and record it.
@@ -203,6 +223,11 @@ op_metered() {
 
   if [ "$op_meter_rc" = "$OP_METER_TIMEOUT_RC" ]; then
     op_meter_record "$op_meter_action" timeout "${OP_METER_VIA:--}"
+    # Once per shell: a second hung read in the same run adds nothing.
+    if [ -z "${OP_METER_HUNG_SAID:-}" ]; then
+      OP_METER_HUNG_SAID=1
+      op_meter_hung_line
+    fi
   else
     op_meter_record "$op_meter_action" "$op_meter_rc" "${OP_METER_VIA:--}"
   fi

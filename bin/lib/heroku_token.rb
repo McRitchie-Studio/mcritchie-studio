@@ -160,6 +160,9 @@ module HerokuToken
       end
     value = value.to_s.strip
     return value unless value.empty?
+    # Hung, not refused: OpMeter has printed the line with the fix; point at it
+    # rather than list causes that did not happen (release-survives-1password-hang).
+    raise Unresolved, "#{spec[:item]}/#{FIELD}: 1Password is not answering (the line above names the fix)." if OpMeter.last_hung?
 
     raise Unresolved, "#{spec[:item]}/#{FIELD} read empty: 1Password timed out, refused (rate limit, " \
                       "vault grant) or the field is blank. Try again, or check `op-reads`."

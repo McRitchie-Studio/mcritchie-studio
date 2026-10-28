@@ -108,10 +108,24 @@ module OpMeter
   STORE = "op-reads"
 
   # The bound on one `op` attempt, and the bypass its single retry uses. See #popen.
-  DEFAULT_DEADLINE = 20
+  # Fourteen, so a hung read and its one retry together stay under thirty seconds
+  # (release-survives-1password-hang); a healthy read takes a few hundred
+  # milliseconds, and a cold one a few seconds.
+  DEFAULT_DEADLINE = 14
   DEADLINE_ENV = "MCR_OP_DEADLINE"
   CACHE_BYPASS = { "OP_CACHE" => "false" }.freeze
   TIMEOUT = "timeout"
+
+  # THE HANG, NAMED (release-survives-1password-hang). Three times on 2026-10-27/28
+  # every `op` call hung and the release reported it as a GitHub 401 or an exit 9,
+  # because each caller turned an empty read into its own unrelated error. When a
+  # read and its uncached retry both run out, this one line says what happened and
+  # what fixes it, and the process exits HUNG_EXIT (EX_TEMPFAIL) where the caller
+  # knows to. bin/lib/op-meter.sh prints the same words.
+  HUNG_LINE = "1Password is not answering: an `op` read was killed after two bounded attempts. " \
+              "Quit and reopen the 1Password app; reboot if that fails. Then re-run " \
+              "(bin/release prepare and ship can wait for it: --wait-for-1password)."
+  HUNG_EXIT = 75
 
   # The env vars that can LOCATE this log — mirrored in TaskUsageSandbox::STORES.
   # Either one is enough to steer the path off the operator's real root, which is
@@ -169,15 +183,29 @@ module OpMeter
   # task_board, agent_api, chrome_profiles, x-post) picks this up unchanged:
   # `$?` after the call is the last attempt's status, a killed one on a double
   # timeout, which no caller reads as success.
-  def popen(op_env, argv, via:, env: ENV, **opts)
+  #
+  # A PROCESS-GROUP KILL (2026-10-28). `op` is a Go binary that ignores SIGALRM,
+  # so nothing short of SIGKILL ends it, and a helper it forked can hold stdout
+  # open after it dies. Each attempt runs in its own process group with stdin on
+  # /dev/null (a background group that read the terminal would stop on SIGTTIN),
+  # and the deadline kills the whole group. Two attempts of DEFAULT_DEADLINE stay
+  # under thirty seconds.
+  #
+  # When both attempts run out, HUNG_LINE goes to stderr once per process (pass
+  # announce: false to say it yourself) and #hung? turns true, so a caller can
+  # exit HUNG_EXIT rather than report its own misleading error.
+  def popen(op_env, argv, via:, env: ENV, announce: true, **opts)
     action = action_for(argv)
     limit = deadline(env)
-    result = BoundedCommand.run(op_env, argv, deadline: limit, **opts)
+    opts = { in: File::NULL }.merge(opts)
+    @last_hung = false
+    result = BoundedCommand.run(op_env, argv, deadline: limit, pgroup: true, **opts)
     if result.timed_out?
       record(action: action, outcome: TIMEOUT, via: via, env: env)
-      result = BoundedCommand.run((op_env || {}).merge(CACHE_BYPASS), argv, deadline: limit, **opts)
+      result = BoundedCommand.run((op_env || {}).merge(CACHE_BYPASS), argv, deadline: limit, pgroup: true, **opts)
     end
     record(action: action, outcome: result.timed_out? ? TIMEOUT : outcome_for(result.status), via: via, env: env)
+    note_hang(announce) if result.timed_out?
     result.out.to_s
   rescue SystemCallError => e
     # `op` is ABSENT or unexecutable, so NO quota was spent — but the ATTEMPT is
@@ -188,6 +216,59 @@ module OpMeter
     # log with two vocabularies is a log nobody can total.
     record(action: action_for(argv), outcome: spawn_failure(e), via: via, env: env)
     raise
+  end
+
+  # True once any read in this process has hung through both attempts.
+  def hung?
+    @hung == true
+  end
+
+  # True when the most recent #popen hung through both attempts.
+  def last_hung?
+    @last_hung == true
+  end
+
+  # Tests only: forget the hang, so the next one announces again.
+  def reset_hang!
+    @hung = false
+    @last_hung = false
+    @hung_announced = false
+  end
+
+  # Records the hang; prints HUNG_LINE once per process. Writing to $stderr
+  # spawns nothing, so `$?` is still the killed attempt's status afterwards.
+  def note_hang(announce)
+    @hung = true
+    @last_hung = true
+    return unless announce && !@hung_announced
+
+    @hung_announced = true
+    $stderr.puts("✗ #{HUNG_LINE}")
+  rescue IOError, SystemCallError
+    nil
+  end
+
+  # How many `op` attempts any process logged as timed out at or after +since+
+  # (a Time): the evidence a release reads, at an abort, that the failure it is
+  # about to report was 1Password hanging in a child (a credential helper, gh)
+  # rather than what the child said. Reads only the log's tail, never raises,
+  # and is 0 when nothing is logged.
+  TAIL_BYTES = 65_536
+  def timeouts_since(since, env: ENV)
+    path = log_path(env)
+    return 0 unless File.file?(path)
+
+    tail = File.open(path) do |f|
+      f.seek([f.size - TAIL_BYTES, 0].max)
+      f.read.to_s
+    end
+    stamp = since.utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    tail.lines.count do |line|
+      row = line.chomp.split("\t")
+      row.length >= FIELDS.length && row[3] == TIMEOUT && row[0] >= stamp
+    end
+  rescue StandardError
+    0
   end
 
   # Seconds per attempt: MCR_OP_DEADLINE when it is a positive number (the tests
