@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "time"
+require "stringio"
 
 # ReleaseCycle — `bin/release cycle --clearance "<Alex McRitchie's words>"`: the whole
 # release, prepare to archive, as one resumable command.

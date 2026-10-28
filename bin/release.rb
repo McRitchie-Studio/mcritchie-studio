@@ -11820,9 +11820,9 @@ class ReleaseCycleDeps
   end
 
   # ONE read-only board call: the active release (state, repos, gauntlet), the last
-  # shipped one and how many tasks the archive owes, every conductor claim on the
-  # active release and the forming sentinel (the read `bin/release status` makes
-  # through Release::LaneLease), and the DevOps estimate. nil when unreadable.
+  # shipped one and how many tasks the archive owes, and the DevOps estimate; then
+  # every conductor claim on the active release and the forming sentinel, over the
+  # claim API (claim_holders). nil when either is unreadable.
   def snapshot
     forming = forming_slug
     ruby = <<~RUBY.lines.map(&:strip).join(" ")
@@ -11830,17 +11830,31 @@ class ReleaseCycleDeps
       repos = ->(rel) { rel ? rel.tasks.flat_map(&:release_repos).uniq : [] };
       turf = repos.call(r) & #{Release::DevnetGauntlet::REPOS.inspect};
       g = r && r.release_events.where(step: '#{Release::DevnetGauntlet::STEP}', status: %w[completed failed]).order(:occurred_at, :id).last;
-      holders = [r&.slug, #{forming.inspect}].compact.product(%w[assembler deployer]).filter_map { |s, role| ReleaseConductorClaim.status_for(s, role) };
       est = begin; e = r && Release::Flow.estimate_for(r, default: Release::Flow.recent); e && { eta: e.eta.utc.iso8601, remaining: e.remaining, phase: e.phase }; rescue StandardError; nil; end;
       puts({ current: (r && { slug: r.slug, state: r.state, repos: repos.call(r), gauntlet_required: turf.any?, gauntlet_status: g&.status }),
              last_shipped: (l && { slug: l.slug, repos: repos.call(l) }),
              archivable: Release::Conductor.archivable_completed_slugs.size,
-             holders: holders, estimate: est }.to_json)
+             estimate: est }.to_json)
     RUBY
-    conductor(ruby, read_only: true)
+    board = conductor(ruby, read_only: true)
+    holders = claim_holders([board.dig("current", "slug"), forming].compact)
+    return nil if holders == :unreadable
+
+    board.merge("holders" => holders)
   rescue SystemExit, StandardError => e
     warn("  board read failed: #{e.message}")
     nil
+  end
+
+  # Every conductor claim on these slugs, both roles, read over the claim API the way
+  # `release-claim status` reads it. :unreadable when any read failed: a lane the
+  # cycle cannot see is not a free lane.
+  def claim_holders(slugs)
+    cli = ReleaseClaimCli.new(out: StringIO.new, err: StringIO.new)
+    found = slugs.product(ReleaseClaimCli::ROLES).map { |slug, role| cli.holder(slug, role) }
+    return :unreadable if found.include?(:unreadable)
+
+    found.compact
   end
 
   def verify_targets(repos, target)

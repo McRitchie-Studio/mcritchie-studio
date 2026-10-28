@@ -669,4 +669,14 @@ class ReleaseClaimCliTest < Minitest::Test
     end
   end
 
+  # `bin/release cycle` reads each claim's holder (its session decides own vs foreign).
+  def test_unit_holder_returns_the_board_holder_nil_without_a_row_unreadable_on_error
+    Dir.mktmpdir do |dir|
+      held = { "holder" => { "session" => "s-other", "live" => true, "role" => "deployer" } }
+      assert_equal held["holder"], cli(data: held, projects_dir: dir).holder(SLUG, "deployer")
+      assert_nil cli(data: { "holder" => nil }, projects_dir: dir).holder(SLUG, "deployer")
+      assert_equal :unreadable, cli(code: 500, projects_dir: dir).holder(SLUG, "deployer")
+    end
+  end
+
 end

@@ -363,6 +363,17 @@ class ReleaseClaimCli
     OK
   end
 
+  # The holder descriptor for (slug, role) as the board serves it (the same GET
+  # `status` prints), or nil when no claim row exists. :unreadable when the board did
+  # not answer. For `bin/release cycle`, which decides on the holder's session.
+  def holder(slug, role)
+    res = get("#{base(slug)}/conductor_claim?role=#{role}")
+    return :unreadable unless ok?(res)
+
+    h = parse_data(res)["holder"]
+    h.is_a?(Hash) ? h : nil
+  end
+
   # Is ANY claim for the role live (a ship in progress)? The CROSS-RELEASE liveness read
   # (no slug), for bin/agent-worktree's `_ship`/`_gate` reclaim guard. Exit 0 = live
   # (withhold the workspaces), NOT_LIVE = the board says none (free to reclaim), CANT_RUN
