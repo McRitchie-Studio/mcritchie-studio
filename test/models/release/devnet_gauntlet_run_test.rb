@@ -4,11 +4,14 @@
 # prepare runs on a Turf release. Every effect is a fake (the driver, the manifest,
 # the devnet getTransaction), so nothing here reaches QA, devnet or 1Password.
 #
-#   ruby -Itest test/lib/release_devnet_gauntlet_run_test.rb
-require "minitest/autorun"
-require_relative "../../app/models/release/devnet_gauntlet_run"
+#   bin/rails test test/models/release/devnet_gauntlet_run_test.rb
+#
+# A Rails test, not a bare test/lib one: requiring the file directly would define
+# `class Release` before the model autoloads, and every Release test after it in
+# the same process would find a plain class.
+require "test_helper"
 
-class ReleaseDevnetGauntletRunTest < Minitest::Test
+class Release::DevnetGauntletRunTest < ActiveSupport::TestCase
   Run = Release::DevnetGauntletRun
 
   SETTLE = "5settleSig111"
