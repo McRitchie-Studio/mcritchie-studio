@@ -51,7 +51,7 @@ class Release
       end
     end
 
-    def initialize(driver:, manifest:, transaction:, say: ->(_line) {})
+    def initialize(driver:, manifest:, transaction:, say: ->(_line) { })
       @driver = driver
       @manifest = manifest
       @transaction = transaction

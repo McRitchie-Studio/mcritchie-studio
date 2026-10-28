@@ -140,7 +140,7 @@ class ReleaseDevnetGauntletRunTest < Minitest::Test
 
   def test_a_raising_effect_is_red_not_an_exception
     driver = ->(_argv) { raise IOError, "pipe closed" }
-    result = Run.new(driver: driver, manifest: -> { {} }, transaction: ->(_) {}).call
+    result = Run.new(driver: driver, manifest: -> { {} }, transaction: ->(_) { }).call
     refute result.ok?
     assert_equal "seed", result.step
     assert_includes result.reason, "IOError: pipe closed"
