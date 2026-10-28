@@ -193,7 +193,6 @@ module ReleaseCycle
       @assume_yes = assume_yes
       @wait = wait_for_1password
       @extra = Array(extra_args)
-      @gauntlet_recovered = false
     end
 
     def run
@@ -282,8 +281,8 @@ module ReleaseCycle
 
     def stage_ship(snapshot, fresh:)
       status, output = run_step_with_output("ship", ship_argv)
-      if !status.zero? && ReleaseCycle.gauntlet_refusal?(output) && !@gauntlet_recovered
-        @gauntlet_recovered = true
+      # ONE recovery, by construction: the second ship's verdict is final.
+      if !status.zero? && ReleaseCycle.gauntlet_refusal?(output)
         say("  ship refused for the devnet gauntlet; re-running prepare (it runs the gauntlet), then the ship once")
         status = run_step("prepare", prepare_argv)
         return [status, snapshot] unless status.zero?
