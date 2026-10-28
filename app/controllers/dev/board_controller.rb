@@ -118,6 +118,23 @@ module Dev
       head :no_content
     end
 
+    # QA green on the active release, for real: assemble! stamps assembled_at, the end
+    # of Release::Flow's QA phase, and Release#after_commit re-renders the DevOps card
+    # over the deployments stream, so the open board's QA clock drops with no reload.
+    # `undo=1` reopens it (reopen! clears assembled_at) and the clock comes back — the
+    # e2e runs both so the seeded release is left assembling, as it found it.
+    def qa_green_release
+      release = Release.current
+      return head :unprocessable_entity unless release
+
+      if params[:undo].present?
+        release.reopen! if release.state == "assembled"
+      elsif release.state == "assembling"
+        release.assemble!
+      end
+      head :no_content
+    end
+
     # Open a fresh throwaway release with an untouched stage timeline (every
     # tracker node dark) — clears any prior fixture release first so the tracker
     # starts clean.

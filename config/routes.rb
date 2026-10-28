@@ -171,6 +171,9 @@ Rails.application.routes.draw do
       # The SPURIOUS redraw, on demand: re-broadcast the release modules with nothing
       # changed. The exact shape .ci_progress used to send on every CI upsert, and the
       # negative case the ReleaseFx router must answer with silence.
+      # QA green (or, with undo=1, a reopen) on the active release: the real
+      # assemble! write the DevOps card's live re-estimate rides on.
+      post "board/qa_green_release", to: "board#qa_green_release", as: :board_qa_green_release
       post "board/rebroadcast_release_modules", to: "board#rebroadcast_release_modules",
                                                 as: :board_rebroadcast_release_modules
     end

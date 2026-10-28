@@ -16,7 +16,7 @@ class AdminWallPublicSetTest < ActionDispatch::IntegrationTest
     contracts#index
     depth_charts#show
     dev/board#advance_release dev/board#delete dev/board#generate dev/board#move
-    dev/board#open_release dev/board#rebroadcast_release_modules dev/board#reset_release
+    dev/board#open_release dev/board#qa_green_release dev/board#rebroadcast_release_modules dev/board#reset_release
     dev/board#ship_release
     email_tracking#click email_tracking#goal email_tracking#open
     games#season games#show games#week
