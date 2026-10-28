@@ -177,6 +177,7 @@ require_relative "../app/models/release/lock_drift"
 require_relative "../app/models/release/ship_sequence"
 require_relative "../app/models/release/parallel_deploy"
 require_relative "../app/models/release/devnet_gauntlet"
+require_relative "../app/models/release/devnet_gauntlet_run"
 require_relative "../app/models/release/engine_migration_install"
 require_relative "../app/models/release/engine_consumers"
 require_relative "../lib/app_catalog"
@@ -1647,6 +1648,169 @@ def record_release_event(release_slug, step_name, status, attrs = {})
   )
 rescue SystemExit, StandardError => e
   say("  ⚠ release event #{step_name}:#{status} not recorded (#{e.message}); deploy continues")
+end
+
+# --- the devnet gauntlet, run by prepare (Release::DevnetGauntletRun) ----------
+# A release carrying turf-monster or turf-vault ships only with a completed
+# `devnet_gauntlet` event on it (Release::DevnetGauntlet, read by `ship`). That
+# rehearsal used to be a manual step after prepare, and on 2026-10-28 `ship` refused
+# rel-20261028-6b946d for want of it. Prepare now runs it once QA is green: every
+# step of turf-monster's `bin/qa-contest-rehearsal` unattended (--cosign agent), the
+# payout arithmetic from the settle transaction, then the event, complete or fail.
+#
+#   RELEASE_GAUNTLET_STEP_DEADLINE (1200) bounds one rehearsal step (play runs ~4 min).
+#   RELEASE_DEVNET_RPC_URL                the devnet RPC getTransaction reads.
+GAUNTLET_SKIP_FLAG = "--skip-gauntlet"
+GAUNTLET_STEP_DEADLINE_ENV = "RELEASE_GAUNTLET_STEP_DEADLINE"
+GAUNTLET_STEP_DEFAULT_DEADLINE = 1200
+DEVNET_RPC_ENV = "RELEASE_DEVNET_RPC_URL"
+DEVNET_RPC_DEFAULT = "https://api.devnet.solana.com"
+GAUNTLET_DRIVER = "bin/qa-contest-rehearsal"
+GAUNTLET_MANIFEST = "tmp/qa-rehearsal/current.json"
+# EventUsage::FIELDS, as the string keys capture_move_usage answers with.
+GAUNTLET_USAGE_FIELDS = %w[model tokens_in tokens_out cost].freeze
+# The hub's Bundler and Ruby load-path settings must not leak into turf-monster's
+# own boot (a nil value unsets the key in the child).
+GAUNTLET_ENV_SCRUB = %w[BUNDLE_GEMFILE BUNDLE_BIN_PATH BUNDLER_SETUP BUNDLER_VERSION RUBYOPT RUBYLIB]
+                     .to_h { |k| [k, nil] }.freeze
+
+def gauntlet_step_deadline = env_deadline(GAUNTLET_STEP_DEADLINE_ENV, GAUNTLET_STEP_DEFAULT_DEADLINE)
+
+# The steps of prepare, after QA green: run the gauntlet when the release owes one.
+# Returns :not_required, :skipped, :dry, :recorded (one is already on the release)
+# or :completed; a red run records `fail` and aborts naming the step.
+def prepare_devnet_gauntlet!(rel_slug, repos, skip: false)
+  turf = Array(repos).map { |g| g["repo"].to_s } & Release::DevnetGauntlet::REPOS
+  return :not_required if turf.empty?
+
+  say("")
+  if skip
+    say("⚠ #{GAUNTLET_SKIP_FLAG}: no devnet gauntlet ran for #{turf.join(', ')}. `bin/release ship` still refuses " \
+        "this release until one is recorded (or Alex McRitchie's words ride #{Release::DevnetGauntlet::SKIP_FLAG}).")
+    return :skipped
+  end
+  if DRY
+    say("  [dry-run] devnet gauntlet for #{turf.join(', ')}: (cd #{repo_path('turf-monster')}) " \
+        "#{Release::DevnetGauntletRun::STEPS.map { |_, argv| "#{GAUNTLET_DRIVER} #{argv.join(' ')}" }.join(' → ')}")
+    return :dry
+  end
+  if devnet_gauntlet_recorded?(rel_slug)
+    say("✓ devnet gauntlet already recorded on #{rel_slug}; not running a second contest")
+    return :recorded
+  end
+
+  step("devnet gauntlet: Turf Monster contest-rehearsal on QA (devnet), unattended, for #{turf.join(', ')}")
+  usage_key = "release:#{rel_slug}:#{Release::DevnetGauntlet::STEP}"
+  seed_gauntlet_usage(usage_key)
+  started = Time.now
+  result = devnet_gauntlet_runner.call
+  metadata = result.metadata.merge("repos" => turf, "seconds" => (Time.now - started).round)
+  attrs = gauntlet_event_attrs(capture_move_usage(usage_key), metadata, result)
+
+  if result.ok?
+    record_release_event(rel_slug, Release::DevnetGauntlet::STEP, "completed", attrs)
+    say("✓ devnet gauntlet green: contest #{metadata['contest']} · settle #{metadata['settle_signature']} · " \
+        "close #{metadata['close_signature']}")
+    return :completed
+  end
+
+  record_release_event(rel_slug, Release::DevnetGauntlet::STEP, "failed", attrs)
+  abort!("devnet gauntlet RED at step `#{result.step}`: #{result.reason}. Recorded devnet_gauntlet fail on " \
+         "#{rel_slug}; `bin/release ship` refuses it until a green gauntlet is recorded. Fix forward or eject the " \
+         "Turf task (`bin/release eject <task> --feedback \"…\"`), then re-run prepare.")
+end
+
+# Has the release a completed gauntlet already? A re-run of prepare must not run a
+# second contest. An unreadable board answers false: running one more devnet
+# contest is cheaper than a ship refused for the lack of one.
+def devnet_gauntlet_recorded?(rel_slug)
+  out = conductor(
+    "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
+    "puts({ recorded: r.release_events.where(step: '#{Release::DevnetGauntlet::STEP}', status: 'completed').exists? }.to_json)",
+    read_only: true
+  )
+  out.is_a?(Hash) && out["recorded"] == true
+rescue SystemExit, StandardError => e
+  say("  ⚠ could not read whether #{rel_slug} has a devnet gauntlet (#{e.message}); running one")
+  false
+end
+
+# The event's attrs. Usage comes from this session's transcript across the run
+# (seeded before it, captured after), never typed: with all four fields it is an
+# agent event (EventUsage), without them the conductor's own, like every other
+# event bin/release writes. The key carries the contest, so a later green run is a
+# new row, not a replay of an earlier red one.
+def gauntlet_event_attrs(usage, metadata, result)
+  attrs = { actor: "turf_monster", metadata: metadata,
+            message: result.ok? ? "contest-rehearsal green on QA (devnet)" : "red at #{result.step}: #{result.reason}",
+            idempotency_key: ["devnet_gauntlet", result.ok? ? "completed" : "failed",
+                              metadata["contest"] || metadata["failed_step"], metadata["seconds"]].compact.join(":") }
+  usage = usage.is_a?(Hash) ? usage : {}
+  full = GAUNTLET_USAGE_FIELDS.all? { |f| !usage[f].to_s.strip.empty? }
+  attrs[:source] = full ? "agent" : "conductor"
+  GAUNTLET_USAGE_FIELDS.each { |f| attrs[f.to_sym] = usage[f] unless usage[f].to_s.strip.empty? }
+  attrs
+end
+
+def seed_gauntlet_usage(key)
+  session, provider = conductor_session_identity
+  return if session.to_s.empty?
+
+  TaskUsageBaseline.new(session: session, provider: provider, dir: release_usage_dir).seed(key)
+rescue StandardError
+  nil
+end
+
+def devnet_gauntlet_runner
+  root = repo_path("turf-monster")
+  Release::DevnetGauntletRun.new(
+    driver: ->(argv) { run_gauntlet_step(root, argv) },
+    manifest: -> { JSON.parse(File.read(File.join(root, GAUNTLET_MANIFEST))) },
+    transaction: ->(signature) { devnet_transaction(signature) },
+    say: ->(line) { say(line) }
+  )
+end
+
+# One rehearsal step from the turf-monster checkout, streamed to this log and
+# captured for the check. Bounded like every child on the release path. The
+# Heroku token prepare exported (ensure_heroku_token!) reaches the driver's
+# `heroku run` through the inherited environment.
+def run_gauntlet_step(root, argv)
+  ensure_heroku_token! if PROD
+  cmd = [File.join(root, GAUNTLET_DRIVER), *argv]
+  deadline = gauntlet_step_deadline
+  result = BoundedCommand.run(GAUNTLET_ENV_SCRUB, cmd, deadline: deadline, pgroup: true, stream: $stdout,
+                                                       err: [:child, :out], in: File::NULL, chdir: root)
+  out = result.out.to_s
+  out += "\n#{deadline_kill_line([GAUNTLET_DRIVER, *argv], deadline, GAUNTLET_STEP_DEADLINE_ENV)}\n" if result.timed_out?
+  [out, result.success?]
+rescue SystemCallError => e
+  ["could not run #{GAUNTLET_DRIVER}: #{e.message}", false]
+end
+
+# devnet getTransaction's `result` for the settle signature. Retries a few times:
+# a just-confirmed transaction can take a moment to be served, and the public RPC
+# rate-limits.
+def devnet_transaction(signature, attempts: 4)
+  require "net/http"
+  uri = URI(ENV[DEVNET_RPC_ENV].to_s.strip.empty? ? DEVNET_RPC_DEFAULT : ENV[DEVNET_RPC_ENV].strip)
+  body = { jsonrpc: "2.0", id: 1, method: "getTransaction",
+           params: [signature, { encoding: "json", commitment: "confirmed", maxSupportedTransactionVersion: 0 }] }
+  last = nil
+  attempts.times do |i|
+    sleep(3 * i) if i.positive?
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = uri.scheme == "https"
+    http.open_timeout = 15
+    http.read_timeout = 30
+    res = http.post(uri.request_uri, JSON.generate(body), "Content-Type" => "application/json")
+    data = JSON.parse(res.body.to_s) rescue nil
+    last = data.is_a?(Hash) ? (data["error"] || "HTTP #{res.code}") : "HTTP #{res.code}"
+    return data["result"] if data.is_a?(Hash) && data["result"]
+  rescue StandardError => e
+    last = e.message
+  end
+  raise "devnet getTransaction(#{signature}) gave no transaction after #{attempts} tries: #{last.inspect}"
 end
 
 # --- deploy-side usage capture (best-effort) --------------------------------
@@ -4021,6 +4185,9 @@ def prepare
   # full-queue sweep, where promoting all of `accepted` is exactly the intent) is
   # completely unaffected.
   expedite = Release::Cli.take_flag(ARGV, "--expedite")
+  # `--skip-gauntlet`: prepare runs no devnet gauntlet on a Turf release. It records
+  # nothing, so `ship` still refuses until one is recorded (Release::DevnetGauntlet).
+  skip_gauntlet = Release::Cli.take_flag(ARGV, GAUNTLET_SKIP_FLAG)
   if expedite && task_slugs.size != 1
     abort!("--expedite guards a SINGLE expedited task — pass exactly one `--task <slug>` " \
            "(got #{task_slugs.size}). Nothing was merged or deployed.")
@@ -4666,6 +4833,12 @@ def prepare
     # qa_post_deploy). Best-effort, like every gate write.
     record_gate_close(rel_slug, "g3_candidate", true)
     g3_gate = :closed
+
+    # 8c. THE DEVNET GAUNTLET — a Turf release's QA-green is not the end of this act
+    #     (qa-release.md, "The devnet gauntlet"). Runs the contest-rehearsal
+    #     unattended and records devnet_gauntlet on the release, which `ship` reads;
+    #     a red step records the fail and aborts here, naming the step.
+    prepare_devnet_gauntlet!(rel_slug, repos, skip: skip_gauntlet)
   end
 
   # 9. Per-repo summary of what was swept + QA'd.

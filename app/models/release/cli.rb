@@ -135,9 +135,9 @@ class Release
         bool: ["--override"], value: [], allow_positional: true
       },
       "prepare" => {
-        synopsis: "bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--expedite]",
+        synopsis: "bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--expedite] [--skip-gauntlet]",
         consequence: "NOTHING was promoted onto `release`, merged, recorded on the board, or deployed to QA",
-        bool: ["--expedite"], value: ["--task", "--slug"], allow_positional: false
+        bool: ["--expedite", "--skip-gauntlet"], value: ["--task", "--slug"], allow_positional: false
       },
       "eject" => {
         synopsis: "bin/release eject <task-slug> [--feedback \"…\"]",
