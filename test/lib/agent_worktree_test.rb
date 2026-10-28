@@ -2258,6 +2258,11 @@ class AgentWorktreeTest < Minitest::Test
     File.write(File.join(primary, "package-lock.json"), "{}\n")
     File.write(File.join(desk, "package.json"), "{}\n")
     File.write(File.join(desk, "package-lock.json"), desk_lock)
+    # A git checkout that ignores .npmrc, as the hub does: the npm script guard is
+    # written into the desk's git dir and named by an ignored .npmrc.
+    _out, status = Open3.capture2e("git", "init", "-q", desk)
+    assert status.success?
+    File.write(File.join(desk, ".gitignore"), "node_modules\n/.npmrc\n")
     [primary, desk]
   end
 
@@ -2289,6 +2294,32 @@ class AgentWorktreeTest < Minitest::Test
       RUBY
       assert_includes out, "NPM_CI in #{desk} within 600s", "a differing lock installs in the DESK, bounded"
       refute File.exist?(File.join(desk, "node_modules")), "and links nothing"
+    end
+  end
+
+  # A failed install removes its partial node_modules (so a resume retries), and a bad
+  # AGENT_WORKTREE_NPM_CI_DEADLINE warns by name and runs with the default.
+  def test_new_discards_a_failed_install_and_rejects_a_bad_deadline
+    ["0", "-30", "soon"].each do |raw|
+      Dir.mktmpdir do |root|
+        primary, desk = node_trees(root, desk_lock: "{\"changed\":1}\n")
+        out = run_in_script(<<~RUBY, env: { "AGENT_WORKTREE_NPM_CI_DEADLINE" => raw })
+          $stderr = $stdout
+          module DeskNodeModules
+            def self.npm_ci!(dir, deadline:, **_kw)
+              puts "NPM_CI within \#{deadline}s"
+              FileUtils.mkdir_p(File.join(dir, "node_modules", "half-installed"))
+              Struct.new(:timed_out?, :success?).new(false, false)
+            end
+          end
+          provision_node_modules({ "repo" => #{primary.inspect} }, #{desk.inspect}, env: ENV)
+        RUBY
+        assert_includes out, "agent-worktree: DeskNodeModules::InvalidDeadline: AGENT_WORKTREE_NPM_CI_DEADLINE " \
+                             "must be a positive whole number of seconds, got #{raw.inspect}; using the default 600s"
+        assert_includes out, "NPM_CI within 600s", "#{raw.inspect} never reaches npm ci"
+        assert_match(/npm ci failed in .*partial node_modules was removed/, out)
+        refute File.exist?(File.join(desk, "node_modules")), "the partial install is gone, so the next `new` retries"
+      end
     end
   end
 
