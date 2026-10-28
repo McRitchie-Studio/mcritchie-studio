@@ -38,7 +38,7 @@ class LogosCompareTest < ActionDispatch::IntegrationTest
     assert_equal "Kit: not saved yet", left.at_css("[data-test='compare-kit-status']").text.strip
     assert_match(/Kit: saved \w{3} \d+, \d{4}/, right.at_css("[data-test='compare-kit-status']").text)
     assert_equal "false", left.at_css("[data-test='compare-source']")["data-saved"]
-    assert_match(/\ABrand style \(no Stacked Logo saved\): two lines, first word leads, original colouring/, left.at_css("[data-test='compare-source']").text.strip)
+    assert_match(/\ABrand style \(no Stacked Logo saved\): two lines, homogeneous, original colouring/, left.at_css("[data-test='compare-source']").text.strip)
     assert_match(/\AKit default: with tagline, second word leads, original colouring, first word Spark Orange/, right.at_css("[data-test='compare-source']").text.strip)
     right_srcs = side_images(right).map { |img| query(img["src"]) }
     assert_equal 2, right_srcs.size, "a light and a dark version"
@@ -52,8 +52,9 @@ class LogosCompareTest < ActionDispatch::IntegrationTest
 
   test "the shared controls change both sides, and every control keeps the others" do
     get logos_compare_path(left: "welding", right: "welding_v2", rule: 3, colouring: "alt")
-    sides.each do |side|
-      side_images(side).each { |img| assert_equal %w[3 second], query(img["src"]).values_at("rule", "text") }
+    # v1's kit draws the whole name in one colour (`kit_text: homogeneous`); v2 keeps the second word leading.
+    sides.zip(%w[homogeneous second]).each do |side, text|
+      side_images(side).each { |img| assert_equal ["3", text], query(img["src"]).values_at("rule", "text") }
       assert_match(/rule and colouring from the controls above/, side.at_css("[data-test='compare-source']").text)
     end
     tab = css_select("[data-test='logo-tab'][data-type='stacked']").first["href"]

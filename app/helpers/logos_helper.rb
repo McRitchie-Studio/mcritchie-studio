@@ -108,7 +108,7 @@ module LogosHelper
 
   # What the icon's colour edit recolours in `tone`, in one line, read from the icon that tone draws: the whole icon,
   # or its one main layer of several (an icon with no primary layer, such as Turf Monster's three-colour head, its first). Commercial Welding's
-  # dark tone draws a one-layer helmet, so there the edit recolours all of it.
+  # dark tone draws its two-colour helmet, so there the edit recolours the blue half.
   def logo_icon_edit_note(logo, tone = :light)
     roles = logo.icon_roles(tone)
     return "Recolours the whole icon." if roles.size == 1
