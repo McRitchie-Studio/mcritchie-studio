@@ -330,8 +330,11 @@ so it is the one worth leaving open.
 
 When the rehearsal runs for a release candidate (a release carrying turf-monster or
 turf-vault work, [`qa-release`](../../avi/sops/qa-release.md), "The devnet gauntlet"),
-its green close is recorded on the release as a completed `devnet_gauntlet` event,
-naming the contest slug. Production waits for that record:
+`bin/release prepare` runs it, unattended, once QA is green: every step above with
+`--cosign agent`, the check at each STOP block, the arithmetic from the settle
+transaction's token balances, and then a completed `devnet_gauntlet` event on the
+release naming the contest slug and both signatures (or a `fail` naming the step,
+with prepare exiting 4). Production waits for that record:
 [`production-deploy`](../../steffon/sops/production-deploy.md) and `bin/release ship`
 refuse a Turf release without it.
 

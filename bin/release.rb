@@ -46,7 +46,7 @@
 #     hatch: it sweeps the task anyway AND records a `review_bypassed` event on the
 #     task's audit spine (the same spine `bin/task move` writes) — never silent.
 #
-#   bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--prod] [--dry-run]
+#   bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--skip-gauntlet] [--prod] [--dry-run]
 #     Avi's SELF-HEALING qa-release — the whole middle of the pipeline:
 #       1. DETECT the work: every `reviewed` task + any `assembled` straggler not
 #          riding the current RC (nothing + no active release → idempotent no-op).
@@ -84,6 +84,11 @@
 #       7. QA-GREEN → flip the swept members `reviewed → assembled`
 #          (Release::Conductor.qa_green!; merged stays "release") + assemble the
 #          RC. A QA failure leaves them `reviewed` — the next run self-heals.
+#       8. DEVNET GAUNTLET (a release carrying turf-monster or turf-vault): run
+#          Turf Monster's contest-rehearsal on QA unattended, check the settle's
+#          token deltas, record devnet_gauntlet complete or fail (which `ship`
+#          reads). A red run exits 4 with no Steffon handoff; a release that
+#          already has one runs no second contest; `--skip-gauntlet` runs none.
 #     `--task` narrows the sweep to the named slugs (operator curation).
 #
 #   bin/release eject <task-slug> [--feedback "…"] [--prod] [--dry-run]

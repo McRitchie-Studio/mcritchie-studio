@@ -96,9 +96,10 @@ The active release is `assembled` with `qa_deployed_at` stamped and members `ass
 `assembling`, or `qa_deployed_at` is blank, report "nothing to ship" and stop.
 
 **A release carrying turf-monster or turf-vault work also needs its devnet gauntlet:**
-a completed `devnet_gauntlet` event on the release, recorded by `qa-release` after a
-green [`contest-rehearsal`](../../turf_monster/sops/contest-rehearsal.md) on QA. Without
-it, do not ship: hand back to `qa-release` and ask Alex McRitchie for the rehearsal.
+a completed `devnet_gauntlet` event on the release, recorded by `bin/release prepare`
+after a green [`contest-rehearsal`](../../turf_monster/sops/contest-rehearsal.md) on QA.
+Without it, do not ship: hand back to `qa-release`, whose re-run of `bin/release prepare`
+runs the gauntlet.
 `bin/release ship` reads the record in its decision snapshot and refuses before
 anything is published or pushed (`Release::DevnetGauntlet`). Only Alex McRitchie's words waive
 it: `bin/release ship --skip-devnet-gauntlet "<his words>"`, which ships with a loud

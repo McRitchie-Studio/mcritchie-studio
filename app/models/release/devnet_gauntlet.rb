@@ -6,7 +6,8 @@ class Release
   # When a release carries turf-monster or turf-vault work, qa-release's exit seam
   # includes Turf Monster's `contest-rehearsal` on QA (devnet: create, enter, play,
   # settle with a real on-chain payout, close), recorded on the release as a
-  # completed `devnet_gauntlet` ReleaseEvent. Alex McRitchie, 2026-10-11: "it just feels right
+  # completed `devnet_gauntlet` ReleaseEvent. `bin/release prepare` runs it and
+  # records it once QA is green (Release::DevnetGauntletRun). Alex McRitchie, 2026-10-11: "it just feels right
   # to run a devnet gauntlet on the package before giving production the green light."
   # `bin/release ship` reads the record in its decision snapshot and refuses a Turf
   # release without it (docs/agents/agents/steffon/sops/production-deploy.md).
@@ -61,9 +62,10 @@ class Release
     end
 
     def refusal(turf)
-      "this release carries #{turf.join(' and ')} and has NO devnet gauntlet recorded. Run Turf Monster's " \
-        "contest-rehearsal on QA (docs/agents/agents/turf_monster/sops/contest-rehearsal.md) to a green close, " \
-        "record it on the release (POST /api/v1/releases/current/events/#{STEP}/complete), then re-run the ship. " \
+      "this release carries #{turf.join(' and ')} and has NO devnet gauntlet recorded. Re-run `bin/release prepare`, " \
+        "which runs Turf Monster's contest-rehearsal on QA (docs/agents/agents/turf_monster/sops/contest-rehearsal.md) " \
+        "to a green close and records it (or, for a hand-run rehearsal, POST " \
+        "/api/v1/releases/current/events/#{STEP}/complete), then re-run the ship. " \
         "Only on Alex McRitchie's words: #{SKIP_FLAG} \"<his words>\"."
     end
   end
