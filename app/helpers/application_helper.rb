@@ -1572,6 +1572,14 @@ module ApplicationHelper
     AppDevopsStages::Eta.clock(estimate.remaining)
   end
 
+  # The QA clock's first paint: the clock to QA green, or "+Xm over" once QA has run
+  # past its median with nothing left.
+  def release_qa_countdown_text(estimate)
+    return "+#{precise_stage_duration(estimate.overrun)} over" if estimate.qa_over?
+
+    AppDevopsStages::Eta.clock(estimate.qa_remaining)
+  end
+
   # "2:45 PM MT" — when the release should land, on Alex McRitchie's clock. The
   # operator reads the board in Denver whatever the server's zone is.
   RELEASE_LANDING_ZONE = "America/Denver"

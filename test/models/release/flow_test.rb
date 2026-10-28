@@ -165,6 +165,30 @@ class Release
       assert_equal @t0 + 37.minutes, late_ship.eta, "due when Ship's 7m median ran out"
     end
 
+    # QA GREEN, the second clock: the same estimator stopped at the end of QA, present
+    # only until the release reaches QA green.
+    test "[unit] the QA clock: Batch and QA count to QA green; past QA there is none" do
+      flow = medians_flow(batch: 10, qa: 18, hold: 4, ship: 7)
+
+      batch = flow.estimate(active(created: 0), now: @t0 + 3.minutes)
+      assert batch.qa_pending?
+      assert_equal (7 + 18) * 60, batch.qa_remaining
+      assert_equal @t0 + 28.minutes, batch.qa_eta
+
+      qa = flow.estimate(active(created: 0, g3: 20), now: @t0 + 25.minutes)
+      assert_equal 13 * 60, qa.qa_remaining
+
+      late = flow.estimate(active(created: 0, g3: 5), now: @t0 + 35.minutes)
+      assert_equal 0, late.qa_remaining
+      assert late.qa_over?
+      assert_equal @t0 + 23.minutes, late.qa_eta, "due when QA's 18m median ran out"
+
+      hold = flow.estimate(active(created: 0, g3: 5, assembled: 20), now: @t0 + 21.minutes)
+      refute hold.qa_pending?, "QA is green: the QA clock is gone"
+      assert_nil hold.qa_remaining
+      assert_nil hold.qa_eta
+    end
+
     test "[unit] no active release or no history means no estimate" do
       flow = medians_flow(batch: 10, qa: 18, hold: 4, ship: 7)
 

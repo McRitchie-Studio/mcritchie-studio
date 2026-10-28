@@ -31,7 +31,9 @@
     the phase it is in, plus the medians of the phases after it — ticked each second
     by devops_countdown.js off data-deadline, with the clock time under it ("lands
     ~2:45 PM MT"). Past its estimate it counts the overrun up, "+12m over", in the
-    warning ink. The line under the hero is then the RUNNING AVERAGE (the mean). With
+    warning ink. On the right, over the sparkline, a smaller QA clock counts to QA
+    green (the end of the QA phase) and disappears once QA is green. The line under
+    the hero is then the RUNNING AVERAGE (the mean). With
     nothing in flight the card is exactly as it was: the median, "typical release".
     Like the rest of the card it is read at render: a release that ships or opens
     while the page sits open shows only on the next load (the card is not in
@@ -86,32 +88,51 @@
         </div>
       <% end %>
 
-      <%# THE SPARKLINE. Oldest left, newest right. Each column is one release, its height
-          its total against the tallest ORDINARY release (Flow#scale_seconds); a column
-          past that scale is drawn full height with a 2px surface break near its top —
-          the axis-break mark — so its length is admitted, not implied. %>
-      <div class="flex h-10 shrink-0 items-end gap-[2px]" role="img"
-           aria-label="Last <%= flow.size %> releases, oldest first: <%= flow.chronological.map { |e| release_flow_duration(e.total) }.join(", ") %>"
-           data-test="devops-sparkline">
-        <% flow.chronological.each do |entry| %>
-          <% clipped = outliers.include?(entry) %>
-          <% height = clipped ? 100 : [(entry.total.to_f / scale * 100).round, 6].max %>
-          <div class="relative flex w-2 flex-col-reverse gap-px overflow-hidden rounded-t-sm"
-               style="height: <%= height %>%"
-               data-test="devops-spark-column"
-               data-release="<%= entry.slug %>"
-               data-clipped="<%= clipped %>"
-               title="<%= entry.slug %> · <%= release_flow_duration(entry.total) %><%= " — off the scale" if clipped %>">
-            <% Release::Flow::PHASE_KEYS.each do |key| %>
-              <% seconds = entry.phase(key) %>
-              <% next if seconds.zero? || entry.total.zero? %>
-              <div class="<%= release_flow_phase_class(key) %> w-full" style="flex: <%= seconds %> 1 0px; min-height: 1px"></div>
-            <% end %>
-            <% if clipped %>
-              <div class="absolute inset-x-0 top-1.5 h-0.5 bg-surface" aria-hidden="true"></div>
-            <% end %>
+      <%# THE RIGHT COLUMN: the QA-green clock over the sparkline while the in-flight
+          release has not reached QA green; then the sparkline alone, as always. %>
+      <div class="flex shrink-0 flex-col items-end gap-1.5">
+        <% if estimate&.qa_pending? %>
+          <%# THE QA CLOCK — the same estimator stopped at the end of QA (assembled_at):
+              when the release should be QA-green. Smaller than the hero; gone once QA
+              is green. Ticked by devops_countdown.js like the hero, "+Xm over" past it. %>
+          <div class="text-right leading-none" data-test="devops-qa-countdown">
+            <span class="text-3xs font-medium uppercase tracking-wider text-muted">QA in</span>
+            <span class="font-mono text-sm font-bold tabular-nums text-heading data-[eta-kind=over]:text-warning-ink"
+                  data-test="devops-qa-eta" aria-hidden="true"
+                  data-devops-countdown data-countdown-over
+                  data-deadline="<%= estimate.qa_eta.utc.iso8601 %>"
+                  data-eta-kind="<%= estimate.qa_over? ? "over" : "left" %>"
+                  data-remaining="<%= estimate.qa_remaining %>"><%= release_qa_countdown_text(estimate) %></span>
+            <span class="sr-only">QA should be green around <%= release_landing_clock(estimate.qa_eta) %>.</span>
           </div>
         <% end %>
+        <%# THE SPARKLINE. Oldest left, newest right. Each column is one release, its height
+            its total against the tallest ORDINARY release (Flow#scale_seconds); a column
+            past that scale is drawn full height with a 2px surface break near its top —
+            the axis-break mark — so its length is admitted, not implied. %>
+        <div class="flex h-10 shrink-0 items-end gap-[2px]" role="img"
+             aria-label="Last <%= flow.size %> releases, oldest first: <%= flow.chronological.map { |e| release_flow_duration(e.total) }.join(", ") %>"
+             data-test="devops-sparkline">
+          <% flow.chronological.each do |entry| %>
+            <% clipped = outliers.include?(entry) %>
+            <% height = clipped ? 100 : [(entry.total.to_f / scale * 100).round, 6].max %>
+            <div class="relative flex w-2 flex-col-reverse gap-px overflow-hidden rounded-t-sm"
+                 style="height: <%= height %>%"
+                 data-test="devops-spark-column"
+                 data-release="<%= entry.slug %>"
+                 data-clipped="<%= clipped %>"
+                 title="<%= entry.slug %> · <%= release_flow_duration(entry.total) %><%= " — off the scale" if clipped %>">
+              <% Release::Flow::PHASE_KEYS.each do |key| %>
+                <% seconds = entry.phase(key) %>
+                <% next if seconds.zero? || entry.total.zero? %>
+                <div class="<%= release_flow_phase_class(key) %> w-full" style="flex: <%= seconds %> 1 0px; min-height: 1px"></div>
+              <% end %>
+              <% if clipped %>
+                <div class="absolute inset-x-0 top-1.5 h-0.5 bg-surface" aria-hidden="true"></div>
+              <% end %>
+            </div>
+          <% end %>
+        </div>
       </div>
     </div>
 

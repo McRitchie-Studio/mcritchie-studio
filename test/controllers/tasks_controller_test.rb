@@ -838,7 +838,14 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       end
       assert_select "[data-test='devops-landing']", text: /lands ~\d{1,2}:\d{2} (AM|PM) MT/
     end
+    assert_select "#devops-summary-card [data-test='devops-qa-countdown'] [data-test='devops-qa-eta'][data-deadline]", 1,
+                  "a release still in Batch has a QA clock"
     assert_select "[data-test='devops-typical']", 0
+
+    active.update!(assembled_at: Time.current)
+    get deployments_path
+    assert_select "#devops-summary-card [data-test='devops-countdown'][data-phase='hold']", 1
+    assert_select "[data-test='devops-qa-countdown']", 0, "QA is green: the QA clock is gone"
   end
 
   # ONE ROW OF FOUR SUMMARY CARDS, each opening a sidebar that holds the full card it

@@ -74,9 +74,18 @@ class Release
     #                    the moment the release was DUE, so the clock counts the overrun
     #                    up from it ("+12m over") instead of sitting at zero
     #   gem_history      true when the medians came from gem releases only
+    #   qa_remaining     seconds until QA GREEN (the end of the QA phase, assembled_at),
+    #   qa_eta           the same estimator stopped at QA: the rest of the current
+    #                    phase's median plus the medians up to and including QA. Both
+    #                    nil once QA is green (Hold or Ship); qa_eta is the moment QA was
+    #                    due when an overrun in QA leaves nothing, as eta is for landing
     Estimate = Struct.new(:phase, :phase_started_at, :elapsed, :remaining, :overrun, :eta, :gem_history,
-                          keyword_init: true) do
+                          :qa_remaining, :qa_eta, keyword_init: true) do
       def over? = remaining.zero? && overrun.positive?
+
+      def qa_pending? = !qa_eta.nil?
+
+      def qa_over? = qa_pending? && qa_remaining.zero? && overrun.positive?
 
       def phase_label = PHASES.find { |p| p[:key] == phase }&.dig(:label)
     end
@@ -213,13 +222,26 @@ class Release
       in_phase = (now - phase_started_at).to_i
       median = phase_median(phase).to_i
       later = PHASE_KEYS.drop(index + 1).sum { |key| phase_median(key).to_i }
-      remaining = [median - in_phase, 0].max + later
+      left_in_phase = [median - in_phase, 0].max
+      remaining = left_in_phase + later
       overrun = [in_phase - median, 0].max
       eta = remaining.positive? ? now + remaining : phase_started_at + median
 
       Estimate.new(phase: phase, phase_started_at: phase_started_at,
                    elapsed: [(now - release.created_at).to_i, 0].max,
-                   remaining: remaining, overrun: overrun, eta: eta, gem_history: gem_history)
+                   remaining: remaining, overrun: overrun, eta: eta, gem_history: gem_history,
+                   **qa_estimate(index, left_in_phase, phase_started_at + median, now))
+    end
+
+    QA_INDEX = PHASE_KEYS.index("qa")
+
+    # QA GREEN: the landing estimator stopped at the end of the QA phase. Nothing once
+    # the release is past QA.
+    def qa_estimate(index, left_in_phase, phase_due_at, now)
+      return { qa_remaining: nil, qa_eta: nil } if index > QA_INDEX
+
+      qa_remaining = left_in_phase + PHASE_KEYS[(index + 1)..QA_INDEX].sum { |key| phase_median(key).to_i }
+      { qa_remaining: qa_remaining, qa_eta: qa_remaining.positive? ? now + qa_remaining : phase_due_at }
     end
 
     # Where the window's time went in aggregate, as a fraction of the summed total —
