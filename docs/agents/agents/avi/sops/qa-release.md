@@ -385,7 +385,9 @@ the same verdict from either command.
 ### INTERRUPTION — re-run `bin/release prepare --yes`. That is the whole fix.
 
 Do not hand-merge or hand-flip stages; a re-run skips promoted work and resumes the same
-candidate. It REFUSES only on a stale tree (step 3b): take the **STALE TREE** row.
+candidate. When the interruption printed `1Password is not answering`, re-run with
+`--wait-for-1password` instead: it waits for 1Password (a read every two minutes, up
+to an hour) and resumes prepare itself. It REFUSES only on a stale tree (step 3b): take the **STALE TREE** row.
 
 ### ABORT — fix the cause, THEN re-run
 
