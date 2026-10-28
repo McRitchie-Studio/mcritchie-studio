@@ -23,6 +23,7 @@ pin "gmail_admin_modal"
 pin "drive_picker"
 pin "logo_editor"
 pin "logo_download"
+pin "agent_setups"
 # The chat composer's files (app/views/agent_chats/_attachments.html.erb).
 pin "chat_attachments"
 # The CTO chat usage meter's reset countdown (app/views/agent_chats/_tokens_bar.html.erb).

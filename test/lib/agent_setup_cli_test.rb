@@ -170,5 +170,8 @@ class AgentSetupCliTest < Minitest::Test
     assert_match(/say who is running this/, @err.string)
     assert_equal 2, run_cli("open", %w[slack], by: "steffon")
     assert_equal 2, run_cli("frob", [])
+    assert_equal 2, run_cli("verify", %w[7 8], by: "steffon")
+    assert_match(/unexpected argument/, @err.string)
+    assert_empty @requests, "a stray positional is refused before any hub call"
   end
 end

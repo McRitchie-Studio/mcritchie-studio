@@ -27,7 +27,7 @@
   <%= render "agents/heartbeat_section", agent: @agent %>
 
   <% if @agent_doc_tree.any? %>
-    <section class="card p-6 mb-6" data-test="agent-file-tree" data-agent="<%= @agent.slug %>">
+    <section id="agent-files" class="card p-6 mb-6 scroll-mt-24" data-test="agent-file-tree" data-agent="<%= @agent.slug %>">
       <div class="mb-4">
         <h3 class="text-lg font-bold text-heading">Files</h3>
       </div>

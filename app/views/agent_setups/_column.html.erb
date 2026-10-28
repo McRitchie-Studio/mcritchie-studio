@@ -1,31 +1,85 @@
-<%# The Pending agents column of /agents: one checklist card per agent per kind (AgentSetup), the finished ones folded
-    under a disclosure, and an empty state that says how a card is opened. Admin only (AgentsController#index sets the
-    locals only for an admin). SOP: docs/agents/agents/steffon/sops/agent-onboarding.md. %>
+<%# The Pending agents table on /agents (Alex McRitchie 2026-10-28: "two tables so we can see more"): one row per
+    open setup (AgentSetup) with the agent, the kind, who opened it, how far it has come and whose turn it is. Each row's
+    disclosure opens its step checklist (agent_setups/_steps) in the row under it, collapsed by default and one at a
+    time (app/javascript/agent_setups.js); the setup the last action came back to (?open=<id>) is served open. Finished
+    setups fold under Done; with none open, the empty state says how a card is opened. Admin only (AgentsController#index
+    sets the locals only for an admin). SOP: docs/agents/agents/steffon/sops/agent-onboarding.md. %>
 <%= render "components/copy_text_script" %>
-<%= render "agent_setups/avatar_png_script" %>
-<aside class="min-w-0 space-y-4" aria-labelledby="pending-agents-heading" data-test="pending-agents">
+<% open_id = params[:open].to_s %>
+<section class="min-w-0 space-y-3" aria-labelledby="pending-agents-heading" data-test="pending-agents">
   <div class="flex items-baseline justify-between gap-3">
     <h3 id="pending-agents-heading" class="text-lg font-bold text-heading">Pending agents</h3>
-    <span class="text-sm text-secondary" data-test="pending-agents-count"><%= pluralize(setups.size, "card") %> open</span>
+    <span class="text-sm text-secondary" data-test="pending-agents-count"><%= setups.size %> open</span>
   </div>
 
   <% if setups.empty? %>
-    <div class="card p-4 text-sm space-y-2" data-test="pending-agents-empty">
+    <div class="rounded-lg border border-subtle bg-surface p-4 text-sm space-y-2" data-test="pending-agents-empty">
       <p class="text-body font-semibold">No agent is waiting on you.</p>
       <p class="text-secondary">
         When an agent needs your hands (a Discord bot, say), Steffon makes its empty 1Password item and opens a card here with
         <code class="font-mono text-xs break-all text-body">bin/agent-setup open discord --soul &lt;soul&gt; --by steffon</code>.
-        The card walks you through each click.
+        Its row walks you through each click.
       </p>
     </div>
   <% else %>
-    <% setups.each do |setup| %>
-      <%= render "agent_setups/card", setup: setup %>
-    <% end %>
+    <div class="overflow-x-auto rounded-lg border border-subtle bg-surface">
+      <table class="w-full text-sm" data-test="pending-agents-table">
+        <thead class="bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
+          <tr>
+            <th scope="col" class="px-3 py-2 font-semibold">Agent</th>
+            <th scope="col" class="hidden sm:table-cell px-3 py-2 font-semibold">Opened</th>
+            <th scope="col" class="px-3 py-2 font-semibold">Progress</th>
+            <th scope="col" class="px-3 py-2 font-semibold"><span class="sr-only">Steps</span></th>
+          </tr>
+        </thead>
+        <% setups.each do |setup| %>
+          <% done = setup.steps.count(&:done?) %>
+          <% total = setup.steps.size %>
+          <% current = setup.current_step %>
+          <% expanded = open_id == setup.id.to_s %>
+          <tbody id="agent-setup-<%= setup.id %>" class="border-t border-subtle scroll-mt-24" data-test="agent-setup-card"
+                 data-agent="<%= setup.agent_slug %>" data-kind="<%= setup.kind %>" data-status="<%= setup.status %>">
+            <tr class="align-top hover:bg-surface-alt/60" data-test="agent-setup-row">
+              <td class="px-3 py-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <% if (avatar = setup.agent&.avatar.presence) %>
+                    <img src="<%= safe_image_src(avatar) %>" alt="" class="h-8 w-8 shrink-0 rounded-full object-cover" loading="lazy">
+                  <% end %>
+                  <div class="min-w-0">
+                    <p class="font-semibold text-heading leading-tight"><%= setup.agent&.name || setup.agent_slug %></p>
+                    <p class="text-xs text-secondary"><%= agent_setup_kind_label(setup) %></p>
+                  </div>
+                </div>
+              </td>
+              <td class="hidden sm:table-cell px-3 py-2 text-xs text-secondary">
+                <span class="block text-body"><%= setup.opened_by %></span><%= agent_setup_stamp(setup.created_at) %>
+              </td>
+              <td class="px-3 py-2">
+                <span class="block text-xs text-body whitespace-nowrap" data-test="agent-setup-progress">
+                  <%= current ? "Step #{current.position} of #{total}" : "#{done} of #{total} done" %>
+                </span>
+                <span class="mt-1 inline-block"><%= agent_setup_badge(setup) %></span>
+              </td>
+              <td class="px-3 py-2 text-right">
+                <button type="button" class="btn btn-neutral btn-sm whitespace-nowrap" data-agent-setup-toggle
+                        aria-expanded="<%= expanded %>" aria-controls="agent-setup-<%= setup.id %>-steps" data-test="agent-setup-toggle">
+                  <span data-toggle-label><%= expanded ? "Hide" : "Steps" %></span><span class="sr-only"> for <%= setup.agent&.name || setup.agent_slug %></span>
+                </button>
+              </td>
+            </tr>
+            <tr id="agent-setup-<%= setup.id %>-steps" data-test="agent-setup-steps" <%= "hidden" unless expanded %>>
+              <td colspan="4" class="px-3 pb-4 pt-1 bg-surface">
+                <%= render "agent_setups/steps", setup: setup %>
+              </td>
+            </tr>
+          </tbody>
+        <% end %>
+      </table>
+    </div>
   <% end %>
 
   <% if finished.any? %>
-    <details class="card p-4 text-sm group" data-test="pending-agents-finished">
+    <details class="rounded-lg border border-subtle bg-surface p-3 text-sm" data-test="pending-agents-finished">
       <summary class="cursor-pointer font-semibold text-heading rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
         Done (<%= finished.size %>)
       </summary>
@@ -39,4 +93,4 @@
       </ul>
     </details>
   <% end %>
-</aside>
+</section>

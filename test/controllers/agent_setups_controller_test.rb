@@ -23,10 +23,14 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
     get agents_path
     assert_response :success
     assert_select "[data-test='agents-split'][data-layout='split']" do
-      assert_select "[data-test='agents-grid'] [data-test='agent-card']", minimum: 1
+      assert_select "[data-test='agents-grid'] [data-test='agent-row'][data-agent='mason']" do
+        assert_select "[data-test='agent-row-title']", "COO"
+      end
       assert_select "[data-test='pending-agents'] [data-test='agent-setup-card'][data-agent='mason'][data-status='pending']#agent-setup-#{setup.id}" do
         assert_select "[data-test='agent-setup-badge']", "Your turn"
-        assert_select "[data-test='agent-setup-step']", 5
+        assert_select "[data-test='agent-setup-progress']", "Step 1 of 5"
+        assert_select "button[data-test='agent-setup-toggle'][aria-expanded='false'][aria-controls='agent-setup-#{setup.id}-steps']"
+        assert_select "tr#agent-setup-#{setup.id}-steps[hidden] [data-test='agent-setup-step']", 5
       end
     end
   end
@@ -39,8 +43,8 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-key='create_app'][data-state='current']" do
         assert_select "a[data-test='discord-portal-link'][href='https://discord.com/developers/applications'][target='_blank']"
         assert_select "input[data-test='discord-bot-name'][value='Mason'][readonly]"
-        assert_select "button[data-test='discord-bot-name-copy'][data-clip='Mason']"
-        assert_select "a[data-test='discord-avatar-download'][href='/agents/mason.webp'][download='mason.png']", 0
+        assert_select "button[data-test='discord-bot-name-copy'][data-copy-clip='Mason']"
+        assert_select "a[data-test='discord-avatar-download']", 0
         assert_select "form[data-test='discord-app-id-form'] input[value='#{APP_ID}']"
       end
       assert_select "[data-key='reset_token']", /Reset Token/
@@ -57,7 +61,7 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
     log_in_as(admin)
     get agents_path
     assert_select "#agent-setup-#{setup.id}" do
-      assert_select "a[data-test='discord-avatar-download'][href='/agents/alex.webp'][download='alex.png']"
+      assert_select "a[data-test='discord-avatar-download'][data-agent-avatar-png][href='/agents/alex.webp'][download='alex.png']"
       assert_select "[data-test='op-item-missing']", /agents\.discord\.alex/
       assert_select "[data-test='discord-invite-waiting']"
       assert_select "[data-test='agent-setup-blocker']", /Application ID/
@@ -80,7 +84,7 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
     log_in_as(admin)
 
     patch agent_setup_path(setup), params: { agent_setup: { application_id: "nope" } }
-    assert_redirected_to agents_path(anchor: "agent-setup-#{setup.id}")
+    assert_redirected_to agents_path(open: setup.id, anchor: "agent-setup-#{setup.id}")
     assert_match(/not an Application ID/, flash[:alert])
     assert_nil setup.reload.detail(:application_id)
 
@@ -100,6 +104,16 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
     get agents_path
     assert_select "#agent-setup-#{setup.id}[data-status='checking'] [data-test='agent-setup-badge']", "Checking"
     assert_select "#agent-setup-#{setup.id} [data-test='agent-setup-done']", 0
+  end
+
+  test "[integration] the row an action came back to is served open; the others stay collapsed" do
+    first = open_setup
+    second = open_setup("mack")
+    log_in_as(admin)
+    get agents_path(open: second.id)
+    assert_select "tr#agent-setup-#{second.id}-steps:not([hidden])"
+    assert_select "#agent-setup-#{second.id} [data-test='agent-setup-toggle'][aria-expanded='true']", "Hide for Mack"
+    assert_select "tr#agent-setup-#{first.id}-steps[hidden]"
   end
 
   test "[integration] waiting for Steffon is shown honestly, with nothing left to press" do

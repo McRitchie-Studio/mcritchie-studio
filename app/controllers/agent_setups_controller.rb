@@ -59,6 +59,6 @@ class AgentSetupsController < ApplicationController
   def actor = current_user.name.presence || current_user.email
 
   def back_to_card(**flash_message)
-    redirect_to agents_path(anchor: "agent-setup-#{@setup.id}"), **flash_message
+    redirect_to agents_path(open: @setup.id, anchor: "agent-setup-#{@setup.id}"), **flash_message
   end
 end

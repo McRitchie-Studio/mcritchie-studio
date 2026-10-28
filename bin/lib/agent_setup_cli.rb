@@ -97,6 +97,9 @@ module AgentSetupCli
   def run(verb, args, opts, runner: nil, op: nil, http: nil, installer: nil, out: $stdout, err: $stderr,
           token: SecureRandom.hex(8))
     runner ||= MailCli.heroku_runner(app: opts[:app], local: opts[:local])
+    stray = args.drop(%w[open verify close].include?(verb) ? 1 : 0)
+    raise Error, "unexpected argument(s): #{stray.join(' ')}" unless stray.empty?
+
     call = ->(request) { remote(runner, request, token) }
     case verb
     when "open" then open(args, opts, call, op || default_op, out)
@@ -107,7 +110,7 @@ module AgentSetupCli
     end
   rescue Error => e
     err.puts "agent-setup: #{e.message}"
-    usage = e.message.start_with?("unknown verb", "name", "say who")
+    usage = e.message.start_with?("unknown verb", "name", "say who", "unexpected")
     err.puts USAGE if usage
     usage ? 2 : 1
   end

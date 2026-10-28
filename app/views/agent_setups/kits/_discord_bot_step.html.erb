@@ -12,19 +12,15 @@
   <div class="flex flex-wrap gap-2">
     <%= link_to "Open the Developer Portal", kit::PORTAL_URL, target: "_blank", rel: "noopener noreferrer", class: external, data: { test: "discord-portal-link" } %>
     <% if (avatar = kit.avatar_path(setup)) %>
-      <%# The href is the hub's own WebP; the click saves it as a 1024 px PNG (agent_setups/_avatar_png_script). %>
+      <%# The href is the hub's own WebP; the click saves it as a 1024px PNG (app/javascript/agent_setups.js). %>
       <a href="<%= safe_image_src(avatar) %>" download="<%= setup.agent_slug %>.png" data-filename="<%= setup.agent_slug %>.png"
-         class="btn btn-neutral btn-sm" data-test="discord-avatar-download"
-         x-data @click="if (window.agentSetupAvatarPng) { $event.preventDefault(); window.agentSetupAvatarPng($el) }">Download the avatar</a>
+         class="btn btn-neutral btn-sm" data-test="discord-avatar-download" data-agent-avatar-png>Download the avatar</a>
     <% end %>
   </div>
-  <div class="flex items-stretch gap-2 min-w-0" x-data="{ copied: false }">
+  <div class="flex items-stretch gap-2 min-w-0">
     <label class="sr-only" for="agent-setup-<%= setup.id %>-name">Bot name</label>
     <input id="agent-setup-<%= setup.id %>-name" type="text" readonly value="<%= name %>" class="input-field w-full min-w-0 font-mono text-sm" data-test="discord-bot-name">
-    <button type="button" class="btn btn-neutral btn-sm shrink-0" data-clip="<%= name %>" data-test="discord-bot-name-copy"
-            @click="window.copyText($el.dataset.clip); copied = true; setTimeout(() => copied = false, 1400)">
-      <span x-text="copied ? 'Copied' : 'Copy name'">Copy name</span>
-    </button>
+    <button type="button" class="btn btn-neutral btn-sm shrink-0" data-copy-clip="<%= name %>" data-test="discord-bot-name-copy">Copy name</button>
   </div>
   <% if open_now %>
     <%= form_with url: agent_setup_path(setup), method: :patch, scope: :agent_setup, class: "flex items-stretch gap-2 min-w-0", data: { test: "discord-app-id-form" } do |f| %>
@@ -60,7 +56,7 @@
   <h5 class="font-semibold text-heading">Done</h5>
   <% if open_now %>
     <% blocker = setup.submit_blocker %>
-    <p class="text-secondary">The hub checks the bot is in the server; then Steffon verifies the token with Discord and installs it as <span class="font-mono text-body"><%= setup.detail(:secret_env) %></span>. This card says when.</p>
+    <p class="text-secondary">The hub checks the bot is in the server; then Steffon verifies the token with Discord and installs it as <span class="font-mono text-body"><%= setup.detail(:secret_env) %></span>. This row says when.</p>
     <% if blocker %>
       <p class="text-warning-ink" data-test="agent-setup-blocker"><%= blocker %></p>
     <% else %>

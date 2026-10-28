@@ -1,6 +1,6 @@
 // [e2e] The Pending agents column of /agents (task pending-agents-page), walked
 // the way Alex McRitchie meets it: the seeded Discord bot card (e2e/seed.rb) beside
-// the agents, its steps as buttons and copy fields, the Application ID saved, the
+// the agents table, its row opened to its steps (buttons and copy fields), the Application ID saved, the
 // invite built from it, and Done handing the card to the hub's check and Steffon.
 //
 // [component] At 390px and 1280px, in light and dark, nothing runs off the side,
@@ -30,6 +30,14 @@ test("the Pending agents column walks a Discord bot card to Done, readable at bo
   await expect(column).toBeVisible();
   await expect(page.locator("[data-test='agents-split']")).toHaveAttribute("data-layout", "split");
   await expect(card).toBeVisible();
+
+  // The row is collapsed until its disclosure opens it; opening one closes any other.
+  const toggle = card.locator("[data-test='agent-setup-toggle']");
+  await expect(card.locator("[data-test='agent-setup-progress']")).toHaveText("Step 1 of 5");
+  await expect(card.locator("[data-test='agent-setup-steps']")).toBeHidden();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(card.locator("[data-test='agent-setup-steps']")).toBeVisible();
 
   for (const [label, size] of [["390", PHONE], ["1280", DESKTOP]]) {
     await page.setViewportSize(size);

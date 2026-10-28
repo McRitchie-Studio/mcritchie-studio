@@ -1,29 +1,14 @@
-<%# One pending setup as a checklist card: the agent, the kind, whose turn it is, the reason when a check failed, then
-    the kit's steps in order, each with who ticked it and when. The step bodies are the kit's
-    (agent_setups/kits/_<kind>_step). No secret is ever rendered: the card links to where the token is made and kept. %>
+<%# A pending setup's checklist, shown when its row in the Pending agents table is opened: the reason when a check
+    failed, then the kit's steps in order, each with who ticked it and when. The step bodies are the kit's
+    (agent_setups/kits/_<kind>_step). No secret is ever rendered: the steps link to where the token is made and kept. %>
 <% current = setup.current_step %>
-<article id="agent-setup-<%= setup.id %>" class="card p-4 space-y-4 text-sm scroll-mt-24" data-test="agent-setup-card"
-         data-agent="<%= setup.agent_slug %>" data-kind="<%= setup.kind %>" data-status="<%= setup.status %>"
-         aria-labelledby="agent-setup-<%= setup.id %>-title">
-  <header class="flex items-start gap-3">
-    <% if (avatar = setup.agent&.avatar.presence) %>
-      <img src="<%= safe_image_src(avatar) %>" alt="" class="h-10 w-10 shrink-0 rounded-full object-cover" loading="lazy">
-    <% end %>
-    <div class="min-w-0 flex-1">
-      <h4 id="agent-setup-<%= setup.id %>-title" class="text-base font-bold text-heading leading-tight">
-        <%= setup.agent&.name || setup.agent_slug %> <span class="font-normal text-secondary">· <%= agent_setup_kind_label(setup) %></span>
-      </h4>
-      <p class="text-xs text-secondary mt-0.5">Opened by <%= setup.opened_by %> · <%= agent_setup_stamp(setup.created_at) %></p>
-    </div>
-    <%= agent_setup_badge(setup) %>
-  </header>
-
+<div class="space-y-4 text-sm">
+  <p class="text-xs text-secondary">Opened by <%= setup.opened_by %> · <%= agent_setup_stamp(setup.created_at) %></p>
   <% if setup.status_reason.present? %>
     <p class="rounded-lg border px-3 py-2 <%= setup.status == 'needs_attention' ? 'border-danger/40 bg-danger/10 text-danger-ink' : 'border-strong bg-surface-alt text-body' %>"
        role="status" data-test="agent-setup-reason"><%= setup.status_reason %></p>
   <% end %>
-
-  <ol class="space-y-4" aria-label="Steps">
+  <ol class="space-y-4" aria-label="Steps for <%= setup.agent&.name || setup.agent_slug %>">
     <% setup.steps.each do |step| %>
       <% state = step.done? ? "done" : (step == current ? "current" : "upcoming") %>
       <li class="flex gap-3" data-test="agent-setup-step" data-key="<%= step.key %>" data-state="<%= state %>"
@@ -52,4 +37,4 @@
       </li>
     <% end %>
   </ol>
-</article>
+</div>
