@@ -165,7 +165,7 @@ module ReleaseCycle
   # refuse every call, where an absent one falls back to its own login.
   #
   # Returns [env, minted?]. A nil value in env UNSETS that variable in the child.
-  def step_env(step, mint:, admin_token: -> {}, base_env: ENV)
+  def step_env(step, mint:, admin_token: -> { }, base_env: ENV)
     env = { "OP_CACHE" => "false" }
     poll = base_env["RELEASE_CI_POLL_TIMEOUT"].to_s.strip
     env["RELEASE_CI_POLL_TIMEOUT"] = poll.empty? ? "3600" : poll

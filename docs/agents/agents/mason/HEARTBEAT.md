@@ -78,8 +78,9 @@ not run `bin/agent-activity heartbeat mason` themselves.
 Run Mason's acts in the launched scope:
 
 1. [`share-insights`](sops/share-insights.md) - publish the banked insights.
-2. [`full-cycle`](sops/full-cycle.md) - run review -> QA -> production with
-   explicit ship authority.
+2. [`full-cycle`](sops/full-cycle.md) - run review, then `bin/release cycle
+   --clearance "<his words>"` (QA -> production -> archive) with explicit ship
+   authority.
 
 When Alex McRitchie launches `Mason Heartbeat`, run `share-insights` first. Run
 `full-cycle` only when the launched act or prompt explicitly includes it, or when
