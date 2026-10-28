@@ -323,7 +323,7 @@ class SecretCacheTest < Minitest::Test
     state = File.join(dir, "expires_at")
     File.write(state, (Time.now.utc + 26 * 60).iso8601)
     bin = File.join(dir, "gh-token-stub")
-    mint = fallback ? "echo 'gh-token: refresh failed (1Password unreadable); serving the cached agent token that is still valid' >&2" : "date -u -v+60M +%Y-%m-%dT%H:%M:%SZ > #{state}"
+    mint = fallback ? "echo 'gh-token: refresh failed (1Password unreadable); serving the cached agent token that is still valid' >&2" : "echo #{(Time.now.utc + 3600).iso8601} > #{state}"
     File.write(bin, <<~SH)
       #!/bin/sh
       case "$*" in
