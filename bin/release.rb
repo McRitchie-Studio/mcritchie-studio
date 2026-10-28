@@ -7992,17 +7992,21 @@ end
 # version on its origin/main, the last one shipped.
 def unshipped_final_findings(app_groups, wanted, &ref_for)
   registered = RELEASE_REPOS.fetch("gems", {}).keys
-  # A stale origin/main reads an older shipped version and would refuse a sound
-  # lock, so read the remote first. Best-effort: an unfetchable repo reads as it is.
-  registered.each do |gem_name|
-    path = repo_path(gem_name)
-    sh("git", "-C", path, "fetch", "origin", "main", "--quiet", capture: true) if Dir.exist?(path)
-  end
-  shipped = registered.to_h { |gem_name| [gem_name, gem_version_from_ref(gem_name, "origin/main")] }
   locks = app_groups.to_h do |group|
     repo = group["repo"]
     lock, ok = Dir.exist?(repo_path(repo)) ? git_capture("-C", repo_path(repo), "show", "#{ref_for.call(repo)}:Gemfile.lock") : ["", false]
     [repo, ok ? registered.to_h { |g| [g, Release::ShipSequence.locked_version(lock, g)] } : {}]
+  end
+  # Only a gem some consumer locks at a version this release does not carry needs
+  # its main read. A stale origin/main reads an older shipped version and would
+  # refuse a sound lock, so fetch it first; an unfetchable repo reads as it is.
+  suspects = locks.values.flat_map(&:to_a).filter_map do |gem_name, locked|
+    gem_name unless locked.to_s.empty? || locked.to_s == wanted.to_h[gem_name].to_s
+  end.uniq
+  shipped = suspects.to_h do |gem_name|
+    path = repo_path(gem_name)
+    sh("git", "-C", path, "fetch", "origin", "main", "--quiet", capture: true) if Dir.exist?(path)
+    [gem_name, gem_version_from_ref(gem_name, "origin/main")]
   end
   Release::GemFlow.unshipped_final_findings(locks: locks, shipped: shipped, wanted: wanted)
 end
