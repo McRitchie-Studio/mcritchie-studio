@@ -1,0 +1,35 @@
+# The step kits behind the Pending agents column of /agents (AgentSetups::Kits;
+# docs/agents/agents/steffon/sops/agent-onboarding.md). Public values only: no
+# secret belongs in this file, and none is read from it.
+#
+# discord_bot   one Discord application per soul, whose token is installed as
+#               DISCORD_BOT_TOKEN_<SOUL> on `install_app`.
+#   guild_id, guild_name   the server the invite button adds the bot to
+#   install_app            the Heroku app whose config takes the token
+#   op_vault, op_field     where Steffon's empty 1Password item lives, and the
+#                          field Alex McRitchie pastes into; the item is
+#                          agents.discord.<soul> unless the card names another
+#   scopes                 the OAuth2 scopes of the invite
+#   permission_sets        named sets of Discord permission flags; the invite
+#                          carries their sum (AgentSetups::DiscordPermissions)
+#   seats                  the set a soul's seat needs. A soul not listed takes
+#                          `cto` when config/cto_reports.yml names it a CTO
+#                          (its morning report carries an embed), else `reply`.
+discord_bot:
+  guild_id: "1332466565203103744"
+  guild_name: McRitchie Studio
+  install_app: mcritchie-studio
+  op_vault: studio-agents
+  op_field: bot-token
+  scopes: [bot, applications.commands]
+  permission_sets:
+    # The four the public guide names: 274877975552 (discord-bot-setup.md Part 1).
+    reply: [view_channel, send_messages, read_message_history, send_messages_in_threads]
+    # A CTO posts its app's morning report, which carries an embed (Part 1b).
+    cto: [view_channel, send_messages, read_message_history, send_messages_in_threads, embed_links]
+    # Steffon's server-admin bot builds channels, roles, permissions and webhooks
+    # (epic agent-onboarding), so it holds those three Manage flags, not Administrator.
+    server_admin: [view_channel, send_messages, read_message_history, send_messages_in_threads, embed_links,
+                   manage_channels, manage_roles, manage_webhooks]
+  seats:
+    steffon: server_admin

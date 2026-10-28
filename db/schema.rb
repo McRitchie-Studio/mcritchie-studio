@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -407,6 +407,41 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_210000) do
     t.index ["slug"], name: "index_agent_sessions_on_slug", unique: true
     t.index ["soul", "tier"], name: "index_agent_sessions_on_soul_and_tier"
     t.index ["task_slug", "revoked_at"], name: "index_agent_sessions_on_task_slug_and_revoked_at"
+  end
+
+  create_table "agent_setup_steps", force: :cascade do |t|
+    t.bigint "agent_setup_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "done_at"
+    t.string "done_by"
+    t.string "key", null: false
+    t.integer "position", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_setup_id", "key"], name: "index_agent_setup_steps_on_agent_setup_id_and_key", unique: true
+    t.index ["agent_setup_id"], name: "index_agent_setup_steps_on_agent_setup_id"
+  end
+
+  create_table "agent_setups", force: :cascade do |t|
+    t.string "agent_slug", null: false
+    t.datetime "closed_at"
+    t.string "closed_by"
+    t.datetime "created_at", null: false
+    t.jsonb "details", default: {}, null: false
+    t.string "kind", null: false
+    t.string "opened_by", null: false
+    t.datetime "ready_at"
+    t.string "status", default: "pending", null: false
+    t.text "status_reason"
+    t.datetime "submitted_at"
+    t.string "submitted_by"
+    t.string "target", null: false
+    t.datetime "updated_at", null: false
+    t.datetime "verified_at"
+    t.string "verified_by"
+    t.index ["agent_slug", "kind", "target"], name: "index_agent_setups_one_live_per_target", unique: true, where: "(closed_at IS NULL)"
+    t.index ["status"], name: "index_agent_setups_on_status"
+    t.check_constraint "kind::text = 'discord_bot'::text", name: "agent_setups_kind_known"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'checking'::character varying, 'verifying'::character varying, 'needs_attention'::character varying, 'ready'::character varying, 'closed'::character varying]::text[])", name: "agent_setups_status_known"
   end
 
   create_table "agents", force: :cascade do |t|
@@ -3075,6 +3110,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_210000) do
   add_foreign_key "agent_proposals", "agent_messages", column: "source_message_id", on_delete: :nullify
   add_foreign_key "agent_proposals", "agent_people", column: "person_id", on_delete: :nullify
   add_foreign_key "agent_sessions", "tasks", column: "task_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
+  add_foreign_key "agent_setup_steps", "agent_setups", on_delete: :cascade
+  add_foreign_key "agent_setups", "agents", column: "agent_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "alt_video_clip_versions", "alt_video_clips"
   add_foreign_key "alt_video_clips", "alt_videos", column: "alt_video_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "alt_videos", "videos", column: "video_slug", primary_key: "slug", on_update: :cascade
