@@ -19,6 +19,7 @@ ActiveRecord::Base.connection.disable_referential_integrity do
   AgentActivity.delete_all # narrated spans; actions nullify their FK on delete
   Activity.delete_all
   SkillAssignment.delete_all
+  AgentSetup.delete_all # the Pending agents column (e2e/agents_pending_column.spec.js); steps cascade
   Task.delete_all
   Skill.delete_all
   Agent.delete_all
@@ -97,6 +98,12 @@ Agent.create!(name: "Carl", slug: "carl", status: "active", agent_type: "special
 Agent.create!(name: "Shannon", slug: "shannon", status: "active", agent_type: "specialist", title: "UI Expert")
 Agent.create!(name: "Steffon", slug: "steffon", status: "active", agent_type: "specialist", title: "Platform Engineer")
 Agent.create!(name: "Avi", slug: "avi", status: "active", agent_type: "product", title: "Product Owner")
+
+# One pending Discord bot card for the Pending agents column of /agents
+# (e2e/agents_pending_column.spec.js). Public values only: fake 1Password ids,
+# no token. The spec saves the Application ID and presses Done itself.
+AgentSetup.open!(agent_slug: "mason", kind: "discord_bot", target: "mcritchie-studio", opened_by: "steffon",
+                 details: { op_account_id: "a" * 26, op_vault_id: "b" * 26, op_item_id: "c" * 26, op_host: "my.1password.com" })
 
 # Skills
 scraping = Skill.create!(name: "Web Scraping", slug: "web-scraping", category: "data", description: "Extract data from websites")
