@@ -1452,16 +1452,23 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   and `person.anon_token` are filtered (`config/initializers/filter_parameter_logging.rb`).
 - **Delivery.** `WebChat.polled?` covers these threads as /build's: the answer is marked
   posted with no broadcast and the typing phase is kept on the row for the poll.
-- **Minting without a terminal showing the secret.** `SECRET_ONLY=1` writes the secret
-  alone to stdout; capture it in a variable and hand it on, never echo it. The 1Password
-  item must already exist (the agent makes it empty, the credential-filing SOP):
+- **Minting without a terminal or `ps` showing the secret.** `SECRET_ONLY=1` writes the
+  secret alone to stdout. Capture it in a shell variable and hand it on over stdin only,
+  as the `credential-rotation` SOP does (never `op item edit field=…` or
+  `heroku config:set NAME=…`, which put it on argv). The 1Password item must already
+  exist (the agent makes it empty, per the `credential-filing` SOP):
 
   ```bash
-  secret=$(heroku run --no-tty -a mcritchie-studio -- \
-             bin/rails app_credentials:mint APP=alex-build SECRET_ONLY=1 2>/dev/null | tail -n 1 | tr -d '\r')
-  op item edit "apps.alex-build.agent-chat" "credential=$secret" >/dev/null
-  heroku config:set -a alex-build AGENT_CHAT_TOKEN="$secret" >/dev/null
-  unset secret
+  NEW=$(heroku run --no-tty -a mcritchie-studio -- \
+          bin/rails app_credentials:mint APP=alex-build SECRET_ONLY=1 2>/dev/null | tail -n 1 | tr -d '\r') &&
+  : "${NEW:?refusing: the mint printed nothing}" &&
+  { printf '%s\n' "$NEW"; op item get "apps.alex-build.agent-chat" --vault <vault> --format json; } |
+    ruby -rjson -e 'value = STDIN.readline.chomp; item = JSON.parse(STDIN.read)
+      field = item.fetch("fields").find { |f| f["label"] == ARGV[0] } or abort "refusing: no field #{ARGV[0]}"
+      field["value"] = value; print JSON.generate(item)' "<field>" |
+    op item edit "apps.alex-build.agent-chat" --vault <vault> > /dev/null &&
+  printf '%s' "$NEW" | bin/heroku-secret-set alex-build AGENT_CHAT_TOKEN
+  unset NEW
   ```
 
 ## Viewing a run
