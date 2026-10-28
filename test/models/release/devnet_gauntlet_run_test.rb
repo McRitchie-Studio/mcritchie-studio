@@ -100,6 +100,14 @@ class Release::DevnetGauntletRunTest < ActiveSupport::TestCase
     assert_includes result.reason, "VaultState cannot be read"
   end
 
+  def test_a_non_zero_exit_names_the_real_error_not_the_trailing_elapsed_line
+    result, = gauntlet(outputs: { "enter" => "RuntimeError: wallet session refused\n  elapsed: 3s (enter)\n" },
+                       codes: { "enter" => false })
+    assert_equal "enter", result.step
+    assert_includes result.reason, "RuntimeError: wallet session refused"
+    refute_includes result.reason, "elapsed"
+  end
+
   def test_a_non_zero_exit_is_red_without_a_stop_line
     result, = gauntlet(codes: { "seed" => false })
     assert_equal "seed", result.step

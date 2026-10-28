@@ -331,5 +331,12 @@ module OutboundSeams
     # an un-seamed test refuses instead of reaching the network; a test of the
     # comparison points this at a directory of gems it built.
     ENV["RELEASE_GEM_FETCH"] = "none"
+
+    # THE DEVNET GAUNTLET, process-wide as well as in `env`: a child of a harness
+    # that never adopted OutboundSeams still runs the sealed driver and an
+    # unroutable devnet RPC, never turf-monster's real rehearsal. Only bin/release
+    # reads either name, so both are inert in-process.
+    ENV["RELEASE_GAUNTLET_DRIVER"] = stub("qa-contest-rehearsal")
+    ENV["RELEASE_DEVNET_RPC_URL"] = UNROUTABLE
   end
 end

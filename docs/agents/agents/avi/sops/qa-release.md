@@ -378,6 +378,7 @@ The exit status is the verdict (`app/models/release/cli.rb`):
 | **1** | **ABORT**: a refusal with a verdict (also `--help`, `Release::Cli::HELP_EXIT`) | read the abort; take its row below |
 | **2** | **ARGUMENT REFUSAL**: a flag `prepare` does not accept; nothing ran | fix the command line, then re-run |
 | **3** | **NOT GREEN**: `✓ Prepared (NOT assembled — QA not green)` (`PREPARE_QA_NOT_GREEN_EXIT`) | fix the boot, then re-run (the **QA deploy / boot FAILED** row) |
+| **4** | **GAUNTLET RED**: assembled on QA, but the Turf devnet gauntlet went red or its record did not land (`PREPARE_GAUNTLET_RED_EXIT`); no Steffon handoff | read the `✗ devnet gauntlet` line; eject or fix forward, then re-run ([The devnet gauntlet](#the-devnet-gauntlet--a-turf-release-only)) |
 
 `bin/conductor qa --run` exits with `prepare`'s status unchanged, so a wrapper reads
 the same verdict from either command.
@@ -478,8 +479,11 @@ winner rose by exactly its rank's payout, and then records `devnet_gauntlet`:
   task (`bin/release eject <task> --feedback "<what the rehearsal showed>"`) or fix it
   forward, then re-run prepare.
 
-A re-run of prepare on a release that already has a completed gauntlet runs no second
-contest. `--skip-gauntlet` runs none and records nothing, so `bin/release ship` still
+Each record carries the QA SHA of every Turf repo it tested (`metadata.shas`), and it
+counts only for that code: a re-run of prepare whose QA runs the same Turf SHAs runs no
+second contest, and one that deployed new Turf code runs a new gauntlet. `bin/release
+ship` reads the NEWEST gauntlet event and refuses unless it is green and tested exactly
+the Turf SHAs being shipped. `--skip-gauntlet` runs none and records nothing, so `bin/release ship` still
 refuses (`Release::DevnetGauntlet`); only Alex McRitchie's words waive it there, with
 `--skip-devnet-gauntlet "<his words>"`. Run the rehearsal by hand, watched (`--cosign link`,
 his Phantom co-sign at step 4), only when Alex McRitchie asks to watch, and record it
@@ -489,7 +493,8 @@ yourself:
 # api() helper + TOKEN per task-board-api.md "Worked example"
 api POST /api/v1/releases/current/events/devnet_gauntlet/complete \
   '{"event": {"actor": "turf_monster", "source": "agent", "model": "<model>", "tokens_in": <n>,
-    "tokens_out": <n>, "cost": <usd>, "metadata": {"contest": "<rehearsal contest slug>"}}}'
+    "tokens_out": <n>, "cost": <usd>, "metadata": {"contest": "<rehearsal contest slug>",
+    "shas": {"turf-monster": "<its QA SHA>"}}}}'
 ```
 
 A release with no Turf work skips this section.

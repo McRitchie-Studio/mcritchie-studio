@@ -212,8 +212,10 @@ class Release
 
     def elapsed(output) = output[/^\s*elapsed: (\d+)s/, 1]&.to_i
 
+    # The driver's own last word, never its trailing `elapsed:` line (it prints that
+    # in an ensure, after the error that ended the step).
     def last_line(output)
-      line = output.lines.map(&:strip).reject(&:empty?).last
+      line = output.lines.map(&:strip).reject { |l| l.empty? || l.match?(/\Aelapsed: \d+s/) }.last
       line ? ": #{line}" : ""
     end
 

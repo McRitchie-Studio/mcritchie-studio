@@ -9,7 +9,9 @@
 require_relative "release_cli_harness"
 
 class ReleaseShipDevnetGauntletTest < ReleaseCliHarness
-  RECORD = { "occurred_at" => "2026-10-11T15:00:00Z", "actor" => "turf_monster", "metadata" => {} }.freeze
+  # frozen_sha_for is stubbed to "abc123" below: the SHA every repo ships.
+  RECORD = { "occurred_at" => "2026-10-11T15:00:00Z", "actor" => "turf_monster", "status" => "completed",
+             "metadata" => { "shas" => { "turf-vault" => "abc123", "turf-monster" => "abc123" } } }.freeze
 
   # The snapshot names `repos`; `gauntlet: :absent` omits the key entirely.
   def ship_with(repos:, gauntlet:, argv: ["--yes"])
@@ -41,8 +43,23 @@ class ReleaseShipDevnetGauntletTest < ReleaseCliHarness
   def test_a_recorded_gauntlet_lets_the_ship_proceed
     out = ship_with(repos: %w[turf-vault], gauntlet: RECORD)
 
-    assert_includes out, "devnet gauntlet recorded 2026-10-11T15:00:00Z by turf_monster for turf-vault"
+    assert_includes out, "devnet gauntlet recorded 2026-10-11T15:00:00Z by turf_monster for turf-vault@abc123"
     assert_includes out, "PREFLIGHT-REACHED"
+  end
+
+  def test_a_green_gauntlet_for_other_turf_code_is_refused
+    stale = RECORD.merge("metadata" => { "shas" => { "turf-monster" => "0ld5ha0" } })
+    out = ship_with(repos: %w[turf-monster], gauntlet: stale)
+
+    assert_includes out, "ABORT: this release carries turf-monster and has NO devnet gauntlet recorded for the Turf code it ships"
+    refute_includes out, "PREFLIGHT-REACHED"
+  end
+
+  def test_a_red_gauntlet_newer_than_a_green_one_is_refused
+    out = ship_with(repos: %w[turf-monster], gauntlet: RECORD.merge("status" => "failed"))
+
+    assert_includes out, "ABORT: this release carries turf-monster and its newest devnet gauntlet is RED"
+    refute_includes out, "PREFLIGHT-REACHED"
   end
 
   def test_a_release_with_no_turf_work_is_not_asked

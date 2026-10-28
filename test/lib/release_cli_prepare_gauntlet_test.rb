@@ -16,7 +16,12 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
 
   # `result:` is what the fake runner answers (nil: no runner may be built);
   # `recorded:` is the board's answer; `usage:` what the session capture yields.
-  def gauntlet(repos:, result: nil, recorded: false, usage: {}, skip: false, record_lands: true)
+  QA_SHAS = { "mcritchie-studio" => "hub111", "turf-monster" => "turf222" }.freeze
+  GREEN_RECORD = { "status" => "completed", "occurred_at" => "2026-10-28T20:00:00Z",
+                   "metadata" => { "shas" => { "turf-monster" => "turf222" } } }.freeze
+
+  # `recorded:` is the newest terminal gauntlet event the board answers (nil: none).
+  def gauntlet(repos:, result: nil, recorded: nil, usage: {}, skip: false, record_lands: true, shas: QA_SHAS)
     runner = if result
                "Release::DevnetGauntletRun::Result.new(**#{result.inspect})"
              else
@@ -25,7 +30,7 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
     setup = <<~RUBY
       def conductor(ruby, read_only: false)
         $stdout.puts("BOARD-READ read_only=" + read_only.to_s) if ruby.include?("devnet_gauntlet")
-        { "recorded" => #{recorded} }
+        { "devnet_gauntlet" => JSON.parse(#{JSON.generate(recorded).inspect}) }
       end
       def devnet_gauntlet_runner
         o = Object.new
@@ -40,7 +45,7 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
       end
       def abort!(msg) = ($stdout.puts("ABORT: " + msg); raise(SystemExit))
     RUBY
-    call = "begin; puts('OUTCOME ' + prepare_devnet_gauntlet!('rel-g', #{repos.inspect}, skip: #{skip}).to_s); " \
+    call = "begin; puts('OUTCOME ' + prepare_devnet_gauntlet!('rel-g', #{repos.inspect}, skip: #{skip}, shas: #{shas.inspect}).to_s); " \
            "rescue SystemExit; puts('EXITED'); end"
     run_cli([], setup: setup, call: call)
   end
@@ -68,13 +73,30 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
     assert_nil event(out), "a skip records nothing"
   end
 
-  def test_an_already_gauntleted_release_runs_no_second_contest
-    out = gauntlet(repos: TURF, recorded: true)
+  def test_a_green_gauntlet_for_the_turf_code_on_qa_runs_no_second_contest
+    out = gauntlet(repos: TURF, recorded: GREEN_RECORD)
 
     assert_includes out, "BOARD-READ read_only=true"
     assert_includes out, "OUTCOME recorded"
-    assert_includes out, "not running a second contest"
+    assert_includes out, "already recorded on rel-g for turf-monster@turf222; not running a second contest"
     refute_includes out, "RUNNER-CALLED"
+  end
+
+  # The blocker this binding closes: a green gauntlet, then a new Turf task joins the
+  # release and QA redeploys new code. The old record must not stand in for it.
+  def test_a_green_gauntlet_for_older_turf_code_runs_a_new_one
+    stale = GREEN_RECORD.merge("metadata" => { "shas" => { "turf-monster" => "old0001" } })
+    out = gauntlet(repos: TURF, recorded: stale, result: { ok: true, step: nil, reason: nil, metadata: GREEN_META })
+
+    assert_includes out, "RUNNER-CALLED", "new Turf code on QA earns its own gauntlet"
+    assert_equal({ "turf-monster" => "turf222" }, event(out).last.dig("metadata", "shas"),
+                 "the new record names the Turf SHAs it tested")
+  end
+
+  def test_a_red_newest_gauntlet_runs_again
+    red = GREEN_RECORD.merge("status" => "failed")
+    out = gauntlet(repos: TURF, recorded: red, result: { ok: true, step: nil, reason: nil, metadata: GREEN_META })
+    assert_includes out, "RUNNER-CALLED"
   end
 
   def test_a_green_run_records_complete_with_the_contest_and_signatures_and_the_runs_usage

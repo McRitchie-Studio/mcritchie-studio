@@ -1694,9 +1694,15 @@ def gauntlet_step_deadline = env_deadline(GAUNTLET_STEP_DEADLINE_ENV, GAUNTLET_S
 # record did not land). The last two make prepare exit PREPARE_GAUNTLET_RED_EXIT.
 # It never aborts: the release has already assembled on QA, and an abort here would
 # report the run as failing before QA green.
-def prepare_devnet_gauntlet!(rel_slug, repos, skip: false)
-  turf = Array(repos).map { |g| g["repo"].to_s } & Release::DevnetGauntlet::REPOS
+#
+# `shas` is { repo => sha } QA runs now (prepare's qa_shas). The record carries the
+# Turf repos' SHAs, and only a green record for exactly those counts as done: new
+# Turf code on QA earns a new gauntlet (Release::DevnetGauntlet.covers?).
+def prepare_devnet_gauntlet!(rel_slug, repos, skip: false, shas: {})
+  turf = Release::DevnetGauntlet.turf_repos(Array(repos).map { |g| g["repo"] })
   return :not_required if turf.empty?
+
+  turf_shas = turf.to_h { |r| [r, shas.to_h[r].to_s] }
 
   say("")
   if skip
@@ -1709,17 +1715,20 @@ def prepare_devnet_gauntlet!(rel_slug, repos, skip: false)
         "#{Release::DevnetGauntletRun::STEPS.map { |_, argv| "#{GAUNTLET_DRIVER} #{argv.join(' ')}" }.join(' → ')}")
     return :dry
   end
-  if devnet_gauntlet_recorded?(rel_slug)
-    say("✓ devnet gauntlet already recorded on #{rel_slug}; not running a second contest")
+  if devnet_gauntlet_recorded?(rel_slug, turf, turf_shas)
+    say("✓ devnet gauntlet already recorded on #{rel_slug} for #{turf_shas.map { |r, sha| "#{r}@#{sha[0, 7]}" }.join(', ')}; " \
+        "not running a second contest")
     return :recorded
   end
+  blank = turf_shas.select { |_, sha| sha.empty? }.keys
+  say("  ⚠ no QA SHA for #{blank.join(', ')}: this gauntlet cannot be bound to that code, so ship will refuse it") if blank.any?
 
   step("devnet gauntlet: Turf Monster contest-rehearsal on QA (devnet), unattended, for #{turf.join(', ')}")
   usage_key = "release:#{rel_slug}:#{Release::DevnetGauntlet::STEP}"
   seed_gauntlet_usage(usage_key)
   started = Time.now
   result = devnet_gauntlet_runner.call
-  metadata = result.metadata.merge("repos" => turf, "seconds" => (Time.now - started).round)
+  metadata = result.metadata.merge("repos" => turf, "shas" => turf_shas, "seconds" => (Time.now - started).round)
   attrs = gauntlet_event_attrs(capture_move_usage(usage_key), metadata, result)
 
   if result.ok?
@@ -1751,16 +1760,17 @@ rescue SystemExit, StandardError => e
   false
 end
 
-# Has the release a completed gauntlet already? A re-run of prepare must not run a
-# second contest. An unreadable board answers false: running one more devnet
-# contest is cheaper than a ship refused for the lack of one.
-def devnet_gauntlet_recorded?(rel_slug)
+# Has the release a green gauntlet for the Turf code QA runs now? A re-run of
+# prepare must not run a second contest for the same code, and must run one for new
+# code. It reads the same newest-terminal-event fragment the ship reads, and the
+# same rule (Release::DevnetGauntlet.covers?). An unreadable board answers false:
+# one more devnet contest is cheaper than a ship refused for the lack of one.
+def devnet_gauntlet_recorded?(rel_slug, turf, shas)
   out = conductor(
-    "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
-    "puts({ recorded: r.release_events.where(step: '#{Release::DevnetGauntlet::STEP}', status: 'completed').exists? }.to_json)",
+    "r = Release.find_by!(slug: #{rel_slug.inspect}); puts({ #{Release::DevnetGauntlet::SNAPSHOT_RUBY} }.to_json)",
     read_only: true
   )
-  out.is_a?(Hash) && out["recorded"] == true
+  out.is_a?(Hash) && Release::DevnetGauntlet.covers?(out[Release::DevnetGauntlet::STEP], turf: turf, shas: shas)
 rescue SystemExit, StandardError => e
   say("  ⚠ could not read whether #{rel_slug} has a devnet gauntlet (#{e.message}); running one")
   false
@@ -4871,7 +4881,7 @@ def prepare
     #     (qa-release.md, "The devnet gauntlet"). Runs the contest-rehearsal
     #     unattended and records devnet_gauntlet on the release, which `ship` reads;
     #     a red step records the fail and aborts here, naming the step.
-    gauntlet_red = %i[red unrecorded].include?(prepare_devnet_gauntlet!(rel_slug, repos, skip: skip_gauntlet))
+    gauntlet_red = %i[red unrecorded].include?(prepare_devnet_gauntlet!(rel_slug, repos, skip: skip_gauntlet, shas: qa_shas))
   end
 
   # 9. Per-repo summary of what was swept + QA'd.
@@ -9938,7 +9948,9 @@ def ship
   # resumed member flip has already deployed, so it is not asked again.
   unless resuming_member_ship
     gauntlet, gauntlet_note = Release::DevnetGauntlet.verdict(
-      repos: repos.map { |g| g["repo"] }, snapshot: result, waiver: opt_value("--skip-devnet-gauntlet")
+      repos: repos.map { |g| g["repo"] }, snapshot: result, waiver: opt_value("--skip-devnet-gauntlet"),
+      # The SHAs this ship ships, per Turf repo: a green record covers only those.
+      shas: Release::DevnetGauntlet.turf_repos(repos.map { |g| g["repo"] }).to_h { |r| [r, frozen_sha_for(r, qa_shas)] }
     )
     case gauntlet
     when :refused then DRY ? say("  [dry-run] the ship would refuse: #{gauntlet_note}") : abort!(gauntlet_note)
