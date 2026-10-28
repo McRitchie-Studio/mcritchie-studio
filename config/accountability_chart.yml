@@ -24,8 +24,9 @@
 #   page          the doc that holds the seat, when the soul's role.md does not
 #   roles         about five; the seat's top responsibilities
 #
-# Off the chart on purpose: Rex (ruling 3 folds him into Alex; card
-# rex-folds-into-alex) and Hank (Commercial Welding's agent: another company's chart).
+# Off the chart on purpose: Hank (Commercial Welding's agent: another company's
+# chart). Rex is no longer a soul: ruling 3 folded him into Alex on 2026-10-28
+# (rex-folds-into-alex), and `rex` is an alias of `alex`.
 humans:
   alex-mcritchie: Alex McRitchie
 
@@ -62,7 +63,7 @@ seats:
   owner: alex
   title: Head of Sales and Marketing
   roles:
-  - Demand and leads, and the marketing strategy behind them
+  - Demand: the constraint call, offer, channels, volume and measurement (constraint-diagnosis, content-sprint, launch-warmup)
   - The client conversation (/build intake, the alex.build chat, client threads)
   - Hold an epic with the Visionary (focus-session)
   - Brand and voice across the apps, landing pages and comms

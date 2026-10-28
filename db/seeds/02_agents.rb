@@ -10,7 +10,9 @@
 # rename back to `alex` (ritch-renamed-alex). It held the orchestrator seat until
 # 2026-10-25, when Mason took it; `alex` is the client-facing persona now. The
 # rename-in-place block below keeps the row's id and history;
-# Task::SOUL_ALIASES reads `ray` and `xan` as `alex`.
+# Task::SOUL_ALIASES reads `ray` and `xan` as `alex`. `rex` joined them on
+# 2026-10-28, when Rex, the CMO, folded into Alex (rex-folds-into-alex): his seat
+# left config/souls.yml, and MergeRexSoulIntoAlex moved his rows onto `alex`.
 agents_data = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls")
 
 # `ray` / `xan` → `alex`, IN PLACE. A deployed database had the row and every
@@ -20,8 +22,9 @@ agents_data = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("so
 # tree — so the upsert below FINDS `alex` instead of creating a second persona.
 # Never `destroy` the old row: Agent has_many :activities dependent: :destroy, and
 # the seat's history hangs off it. Runs before the roster loop on purpose. `xan`
-# goes first: on a tree that predates 2026-10-18 it is the live row.
-%w[xan ray].each do |retired_slug|
+# goes first: on a tree that predates 2026-10-18 it is the live row. `rex` goes
+# last: it is a merge, so it only ever finds `alex` already present (or becomes it).
+%w[xan ray rex].each do |retired_slug|
   legacy = Agent.find_by(slug: retired_slug)
   next unless legacy
 
@@ -32,7 +35,8 @@ agents_data = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("so
       legacy.delete
       puts "Agent: retired the duplicate #{retired_slug} row (alex already seeded)"
     else
-      puts "Agent: #{retired_slug} row still has children — db:migrate (RenameRaySoulToAlex) retires it"
+      migration = retired_slug == "rex" ? "MergeRexSoulIntoAlex" : "RenameRaySoulToAlex"
+      puts "Agent: #{retired_slug} row still has children — db:migrate (#{migration}) retires it"
     end
   else
     # rename_slug! moves every child with the row (the agent_slug keys cascade too).

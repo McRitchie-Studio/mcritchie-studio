@@ -490,6 +490,10 @@ Rails.application.routes.draw do
   # since 2026-10-25, so the bare page 301s to /agents/mason. Declared above
   # `resources :agents` so #show never sees the slug; nothing deeper is shimmed.
   get "agents/:slug", to: redirect("/agents/mason"), constraints: { slug: /ray|xan/ }
+  # LEGACY /agents/rex — Rex, the CMO, folded into Alex on 2026-10-28
+  # (rex-folds-into-alex); his page 301s to the seat that holds his method. Retire
+  # alongside the `rex` entry in Task::SOUL_ALIASES.
+  get "agents/:slug", to: redirect("/agents/alex"), constraints: { slug: /rex/ }
 
   resources :agents, only: [:index, :show], param: :slug do
     member do

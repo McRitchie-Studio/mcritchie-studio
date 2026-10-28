@@ -49,7 +49,7 @@ module DreamBank
     %w[qa-release prepare] => "bin/release prepare"
   }.freeze
   TAG_VALUE = /\A[a-z0-9][a-z0-9+-]*\z/
-  SOUL_ALIASES = { "ray" => "alex", "xan" => "alex" }.freeze
+  SOUL_ALIASES = { "ray" => "alex", "xan" => "alex", "rex" => "alex" }.freeze
   # The most characters one claim's dream block takes.
   CALL_BUDGET = 6_000
 
