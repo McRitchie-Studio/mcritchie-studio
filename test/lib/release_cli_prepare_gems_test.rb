@@ -33,9 +33,9 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
     assert_operator publish, :<, bump,   "gems publish before any consumer lock bump (producer-first)"
     assert_operator bump, :<, gate,      "the lock bump commits BEFORE the pre-QA gate reads origin/release"
     assert_operator gate, :<, deploy,    "the gate still precedes the QA deploy"
-    assert_includes out, "BUNDLE-LOCK studio-engine conservative=true expect=1.0.0.rc1",
-                    "a single-gem bump uses conservative lock semantics, and locks the candidate"
-    assert_includes out, "committed studio-engine 1.0.0.rc1",
+    assert_includes out, "BUNDLE-LOCK studio-engine conservative=true expect=1.0.0",
+                    "a single-gem bump uses conservative lock semantics, and locks the final (the default flow)"
+    assert_includes out, "committed studio-engine 1.0.0 onto",
                     "the bump commit narrates what landed on origin/release"
   end
 
@@ -44,13 +44,13 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
   # that escapes it.
   def test_prepare_rewrites_the_consumer_pin_only_when_the_published_version_escapes_it
     escaped = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub(version: "1.0.0"))
-    assert_includes escaped, %(GEMFILE-AFTER gem "studio-engine", ">= 1.0.0.rc1", "< 2"),
-                    "a major bump escapes `~> 0.10` — the line takes the candidate as its floor"
+    assert_includes escaped, %(GEMFILE-AFTER gem "studio-engine", "~> 1.0"\n),
+                    "a major bump escapes `~> 0.10` — the line takes the final's pessimistic pin"
 
     held = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub(version: "0.11.0"))
     assert_includes held, %(GEMFILE-AFTER gem "studio-engine", "~> 0.10"\n),
                     "a minor bump is WITHIN `~> 0.10` — the committed Gemfile does not change"
-    assert_includes held, "BUNDLE-LOCK studio-engine conservative=true expect=0.11.0.rc1"
+    assert_includes held, "BUNDLE-LOCK studio-engine conservative=true expect=0.11.0"
   end
 
   # [integration] The STRANDED-WORK guard: origin/release ahead of the last

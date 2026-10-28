@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# THE CANDIDATE FLOW (RELEASE_GEM_FLOW=candidate, kept for one release as a rollback
+# lever; the default is the final flow, test/lib/release_gem_final_at_prepare_test.rb).
 # `bin/release prepare` publishes a gem's RELEASE CANDIDATE (x.y.z.rcN) and never its
 # final version; `bin/release ship` publishes the final after QA. This file holds the
 # prepare half. Standalone:
@@ -10,6 +12,18 @@
 require_relative "release_cli_harness"
 
 class ReleaseGemsAfterQaTest < ReleaseCliHarness
+  # The subprocess inherits this; every case here specifies the candidate flow.
+  def setup
+    super
+    @gem_flow_was = ENV["RELEASE_GEM_FLOW"]
+    ENV["RELEASE_GEM_FLOW"] = "candidate"
+  end
+
+  def teardown
+    @gem_flow_was.nil? ? ENV.delete("RELEASE_GEM_FLOW") : ENV["RELEASE_GEM_FLOW"] = @gem_flow_was
+    super
+  end
+
   # Names what each `gem push` and tag push carried, and answers the two `rc-` tag
   # reads. Prepended, so the harness stub underneath still does the rest.
   def candidate_world(tip_tags: [], all_tags: [])

@@ -28,7 +28,10 @@ run inside it rides the close:
 - **Gems ride G3 as a release candidate.** Before the window opens, prepare
   publishes `x.y.z.rcN` of each swept gem and commits each consumer's lock onto it
   (qa-release step 4d). So the tree G3 reads CI for, and the tree QA deploys, bundle
-  a published artifact of the gem's release tip. G3 never sees the final `x.y.z`:
+  a published artifact of the gem's release tip. Under the default flow that artifact IS the final `x.y.z`
+  ([`gem-release-flow.md`](../../system/gem-release-flow.md)), so a red G3 that changes
+  the gem burns that version and the next sweep takes the next patch. Under the
+  candidate flow G3 never sees the final `x.y.z`:
   [G4 Ship](g4-ship.md) publishes it, proves it carries the candidate's contents,
   re-locks consumers to it and reads CI for that re-lock commit. A red G3 therefore
   strands a prerelease and no version.

@@ -386,6 +386,7 @@ class ReleaseCliHarness < Minitest::Test
           ["", true]
         end
         def with_ship_workspace(_repo) = yield
+        def confirm_published_checksum!(repo, version, sha) = $stdout.puts("CHECKSUM-CONFIRMED #{repo} #{version} #{!sha.to_s.empty?}")
         # A Gemfile.lock on the OLD version, and the gem's version file at the final.
         def gem_artifact_version(artifact) = File.basename(artifact, ".gem").split("-").last
         def release_entry_points = {} # the machine's other checkouts are not this fixture's
@@ -405,16 +406,14 @@ class ReleaseCliHarness < Minitest::Test
           LOCK
           dir
         end
-        # Model bundler's REAL effect on the lockfile, not just its exit status:
-        # it rewrites the resolved version when it can see the gem, and silently
-        # leaves the old one when the index has not propagated. Both exit 0.
+        # Model bundler's REAL effect on the lockfile, not just its exit status: it rewrites
+        # the version when it sees the gem, else silently keeps the old one. Both exit 0.
         #
         # This stands in for the `bundle` INVOCATION, so it keeps bundle_lock's
         # full signature (including `expect:`); the LADDER itself is driven for
         # real in the tests that stub `sh` instead of this.
-        # Stubbed for the same reason bundle_lock is: these tests are about the
-        # BUMP flow, and the install does real bundler/rails work in a workspace
-        # that is a bare tmpdir here. Its own behaviour — the bundle-first order,
+        # Stubbed for the same reason bundle_lock is: these tests are about the BUMP flow, and
+        # the install does real bundler/rails work in a bare tmpdir. Its own behaviour — the bundle-first order,
         # the discriminating probe, the abort on an unbootable app — is driven
         # against the live implementation in the three tests that stub `sh`.
         def install_engine_migrations!(_workspace, repo, gem_names)
@@ -431,6 +430,7 @@ class ReleaseCliHarness < Minitest::Test
           return g if g
           if a[0] == "gem" && a[1] == "build"
             $stdout.puts("GEM-BUILD")
+            File.write(a[a.index("--output") + 1], "fixture gem") if a.include?("--output")
             return ["", true]
           end
           if a[0] == "gem" && a[1] == "push"

@@ -15,6 +15,7 @@ its invocation exactly.
 | Fresh-machine rebuild | `mcritchie-studio/docs/agents/system/house-burn-down.md` |
 | DevOps v3 design (ratified 2026-09-24, landing in phases) | `mcritchie-studio/docs/agents/system/devops-v3-design.md` |
 | Agent sessions and capability APIs design (decided; phase two in progress; tiers, grants, capability matrix) | `mcritchie-studio/docs/agents/system/agent-sessions-design.md` |
+| Gem release flow (decided 2026-10-28: publish the final at prepare, no ship re-lock; the measured saving and the burned-version story) | `mcritchie-studio/docs/agents/system/gem-release-flow.md` |
 | Guard catalog (decided, with deviations awaiting Alex McRitchie's call; every refusal with delete, by construction or keep, and a mark per row) | `mcritchie-studio/docs/agents/system/guard-catalog.md` |
 | Knowledge layer design (proposed, awaiting Alex McRitchie's review; five tiers, the Drive shelf, the walker, who reads what) | `mcritchie-studio/docs/agents/system/knowledge-layer-design.md` |
 | Context layers design (proposed; general, situational and specific context, when to re-pull, must-do is mechanical and judgment is a dream, SOP-step moment cards next) | `mcritchie-studio/docs/agents/system/context-layers-design.md` |
