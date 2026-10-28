@@ -14,8 +14,9 @@ const HERO = "#devops-summary-card [data-test='devops-countdown'] [data-test='de
 
 test("the DevOps hero counts down to the release's landing, then counts the overrun up in the warning ink", async ({ page }) => {
   const { pageErrors, report } = watchPageErrors(page);
-  // An hour behind the real clock, so every deadline the server stamps is ahead of it.
-  await page.clock.install({ time: Date.now() - 3_600_000 });
+  // A day behind the real clock, so whatever deadline the server stamps — even a past
+  // one, for a release already over — lies ahead of the installed time.
+  await page.clock.install({ time: Date.now() - 86_400_000 });
   await page.goto("/deployments");
 
   const hero = page.locator(HERO);
@@ -32,7 +33,11 @@ test("the DevOps hero counts down to the release's landing, then counts the over
   await expect(hero).toHaveCSS("font-variant-numeric", "tabular-nums");
   const counting = await hero.evaluate((el) => getComputedStyle(el).color);
 
-  await page.clock.runFor(60_000 + 12 * 60_000);
+  // fastForward, not runFor: runFor fires every one-second interval on the board for
+  // thirteen minutes of ticks and outruns the test clock on CI; fastForward jumps,
+  // then one real tick repaints.
+  await page.clock.fastForward(60_000 + 12 * 60_000);
+  await page.clock.runFor(1_000);
   await expect(hero, "past the estimate it says how far over, never a zero").toHaveText("+12m over");
   await expect(hero).toHaveAttribute("data-eta-kind", "over");
   const late = await hero.evaluate((el) => getComputedStyle(el).color);
