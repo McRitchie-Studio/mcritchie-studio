@@ -1,6 +1,6 @@
 require "test_helper"
 
-# [unit] ApplicationsWatchList: the /applications split. Live is config/apps.yml's
+# [unit] ApplicationsWatchList: the /applications split. Live is AppCatalog's
 # word (a live status plus a production URL); everything else that is not a
 # library or archived is pending, with a reason and its open tasks.
 class ApplicationsWatchListTest < ActiveSupport::TestCase
@@ -62,7 +62,7 @@ class ApplicationsWatchListTest < ActiveSupport::TestCase
 
   test "[unit] a watched backup that is missing is a warning; a fresh one is not" do
     hub = apps(:mcritchie_studio)
-    assert AppCatalog.app("mcritchie-studio").backups_watched?, "the hub is a watched backup (config/apps.yml)"
+    assert AppCatalog.app("mcritchie-studio").backups_watched?, "the hub is a watched backup (AppCatalog)"
 
     hub.update!(backup_status: { "checked_at" => Time.current.iso8601, "state" => "missing" })
     assert_includes ApplicationsWatchList.build([ hub ], admin: true).live.first.warnings, "Backup MISSING"
