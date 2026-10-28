@@ -5,19 +5,23 @@
     page's default (Original, or a brand's saved kit colouring) drops the param. A brand page whose brand has no
     original (Studio) shows Original disabled and says why. Locals: path (a
     lambda from page params to a URL), chosen (the colouring shown), default
-    (the colouring with no param), logo (optional: the brand page's logo). %>
+    (the colouring with no param), logo (optional: the brand page's logo), spread (optional: the name on the left
+    and the options on the right, as the brand page's controls card lines them up). %>
 <% logo = local_assigns[:logo] %>
+<% spread = local_assigns[:spread] %>
 <% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
 <% look = ->(on) { "btn btn-sm #{on ? 'btn-primary border border-transparent' : 'btn-neutral'} #{ring}" } %>
-<div class="flex flex-wrap items-center gap-2" role="group" aria-label="Colouring" data-test="colouring-control">
+<div class="flex flex-wrap items-center gap-2 <%= 'justify-between' if spread %>" role="group" aria-label="Colouring" data-test="colouring-control">
   <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Colouring</span>
-  <% Logos::Variant::COLOURINGS.each do |colouring, label| %>
-    <% if logo && !logo.colourings.include?(colouring) %>
-      <span class="btn btn-sm btn-neutral opacity-50 cursor-not-allowed" aria-disabled="true" data-test="colouring-option" data-colouring="<%= colouring %>" data-disabled="true"><%= label %></span>
-    <% else %>
-      <%= link_to label, path.(logo_page_params(colouring: (colouring unless colouring == default))),
-                  class: look.(colouring == chosen), aria: { current: ("true" if colouring == chosen) },
-                  data: { test: "colouring-option", colouring: colouring } %>
+  <div class="flex flex-wrap gap-2 <%= 'justify-end' if spread %>">
+    <% Logos::Variant::COLOURINGS.each do |colouring, label| %>
+      <% if logo && !logo.colourings.include?(colouring) %>
+        <span class="btn btn-sm btn-neutral opacity-50 cursor-not-allowed" aria-disabled="true" data-test="colouring-option" data-colouring="<%= colouring %>" data-disabled="true"><%= label %></span>
+      <% else %>
+        <%= link_to label, path.(logo_page_params(colouring: (colouring unless colouring == default))),
+                    class: look.(colouring == chosen), aria: { current: ("true" if colouring == chosen) },
+                    data: { test: "colouring-option", colouring: colouring } %>
+      <% end %>
     <% end %>
-  <% end %>
+  </div>
 </div>

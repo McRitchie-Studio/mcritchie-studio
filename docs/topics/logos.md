@@ -667,13 +667,19 @@ and weight read from it. `?text=` is the tab's own: a link to another tab drops 
 kit's. **Save as default** and the **Kit choice** card save the Words pick (the card's own Text select is gone).
 
 **Layout: a header, then the page in halves** (task brand-page-split-layout, Alex McRitchie 2026-10-27). The header
-holds the breadcrumb with the brand's name as the page heading, the type tabs, and Context at the far right, with the
-kit's save line under it. Under it, on every tab, the controls card (Colouring, then the tab's Rule or Form and
-Proportion, then Words, Show guides and Save as default, the kit-default line, Compare and Edit parts) sits beside the
-logo, the two halves one height. The second row puts the words about the logo (the tab's method sentence, the guides
-sentence and the context notes) beside the Download card and the edit panel, which stack. With guides on, the
-controls and the drawing each take the full width, since a guide drawing needs it. On a phone everything is one
-column.
+holds the breadcrumb (the brand's name, the page heading, at crumb size), the type tabs, and Context at the far right,
+with the kit's save line under it. Under it, on every tab, the Download card sits beside the logo, the two one height;
+then the controls card (one line per control, its name on the left and its options on the right: Colouring, the tab's
+Rule or Form and Proportion, Words; then Show guides, Save as default, the kit-default line, Compare and Edit parts)
+sits beside the edit panel. The words about the logo (the tab's method sentence and the context notes) fold under it,
+closed, as "About this logo". With guides on, the Download card goes and the drawing takes the row, its guides
+sentence under it; the Icon tab, which has no guide drawing, keeps its card. On a phone everything is one column.
+
+**The Download card** opens on PNG, listed first, with the tones Dark first. One Download button gives the file; the
+brand page has no Copy SVG (Compare keeps its own). A PNG's size is a preset or a custom Width × Height: with **Keep
+aspect ratio** on, the side last typed sets the other; off, both are free, the logo is fitted inside that canvas,
+centred, and a dotted outline on the page's logo shows the canvas (`app/javascript/logo_download.js`, `customSize` and
+`outlineRect`). The icon's 1:1 square shows the same outline.
 
 - The tabs are links in a `nav` (`aria-label="Logo type"`); the current one
   carries `aria-current="page"`. The Rule control is a `role="group"` of three

@@ -1,16 +1,17 @@
-<%# THE DOWNLOAD CARD (task logo-download-card), the same on all three tabs: the tab's one logo as an SVG or a PNG,
-    in any tone, with Copy SVG. Some integrations take no SVG and want an exact pixel size, so PNG offers the type's
-    presets (Logos::PngSizes, each named by what it serves) and a custom width or height whose other side follows
-    the drawing's aspect. The PNG is drawn in the browser (app/javascript/logo_download.js): the logo's own SVG,
+<%# THE DOWNLOAD CARD (task logo-download-card), the same on all three tabs: the tab's one logo as a PNG (the
+    default) or an SVG, in any tone, from one Download button (task brand-page-split-layout). Some integrations take no
+    SVG and want an exact pixel size, so PNG offers the type's presets (Logos::PngSizes, each named by what it serves)
+    and a custom width × height: with Keep aspect ratio on, either side sets the other; off, both are free and the
+    logo is fitted, centred, inside that canvas, which a dotted outline on the page's logo shows. The PNG is drawn in the browser (app/javascript/logo_download.js): the logo's own SVG,
     from its own URL, onto a canvas at the chosen size, then saved as <the SVG's name>-<w>x<h>.png. The logo's words
     are outlined paths, so no font is needed.
 
-    Without JavaScript the card is one Download SVG link and a Copy SVG button for the tone shown first: the Format,
-    Size and Background rows are served hidden, and logo_download.js shows them.
+    Without JavaScript the card is the Tone row and one Download link, for the SVG: the Format, Size and Background
+    rows are served hidden, and logo_download.js shows them.
 
     Every tone's choice is on its radio: its SVG URL, its download URL and filename, its drawing's own width and
-    height, its presets and its solid background. Locals: downloads ({ light:, dark:, watermark: } Logos::Variants
-    of the tab's logo, as shown). %>
+    height, its presets and its solid background. The tones are listed Dark first. Locals: downloads ({ light:, dark:,
+    watermark: } Logos::Variants of the tab's logo, as shown). %>
 <% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
 <% field = "rounded-lg border border-subtle bg-surface-alt px-2 py-1.5 text-xs text-heading" %>
 <%# A chosen option is outlined, as the edit panel's swatches are (logos/_edit_panel): indigo on light, white on dark,
@@ -24,6 +25,8 @@
 <% square_presets = (downloads.to_h { |tone, _| [tone, Logos::PngSizes.presets(@type, *sizes.fetch(tone), square: true)] } if @type == :icon) %>
 <% default_key = Logos::PngSizes::DEFAULTS.fetch(@type) %>
 <% shown = downloads.fetch(first_tone) %>
+<% ordered = downloads.sort_by { |tone, _| %i[dark light watermark].index(tone) || 3 } %>
+<% natural_width, natural_height = sizes.fetch(first_tone) %>
 <section class="card p-4 sm:p-5 space-y-4 min-w-0 scroll-mt-28" id="download" data-test="download-card" data-type="<%= @type %>"
          data-logo-download data-watermark-page="<%= @context == :watermark %>" aria-labelledby="download-title">
   <h2 id="download-title" class="text-sm font-bold text-heading">Download</h2>
@@ -31,15 +34,15 @@
     <fieldset class="min-w-0" data-test="download-format" data-download-js hidden>
       <legend class="<%= legend %>">Format</legend>
       <div class="flex flex-wrap gap-2">
-        <% { svg: "SVG", png: "PNG" }.each do |format, label| %>
-          <label class="<%= pill %>"><%= radio_button_tag :format, format, format == :svg, id: nil, class: "sr-only", data: { test: "download-format-option" } %><%= label %></label>
+        <% { png: "PNG", svg: "SVG" }.each do |format, label| %>
+          <label class="<%= pill %>"><%= radio_button_tag :format, format, format == :png, id: nil, class: "sr-only", data: { test: "download-format-option" } %><%= label %></label>
         <% end %>
       </div>
     </fieldset>
     <fieldset class="min-w-0" data-test="download-tone">
       <legend class="<%= legend %>">Tone</legend>
       <div class="flex flex-wrap gap-2">
-        <% downloads.each do |tone, variant| %>
+        <% ordered.each do |tone, variant| %>
           <% width, height = sizes.fetch(tone) %>
           <label class="<%= pill %>">
             <%= radio_button_tag :tone, tone, tone == first_tone, id: nil, class: "sr-only",
@@ -70,18 +73,27 @@
           <span><span class="font-semibold">1:1 square</span> <span class="text-muted">· pads the icon, centred, to a square canvas (favicons, app icons)</span></span>
         </label>
       <% end %>
-      <div class="flex flex-wrap items-end gap-2" data-test="download-custom" data-download-custom hidden>
-        <label class="inline-flex flex-col gap-1 <%= legend %> mb-0">
-          Set the
-          <select name="custom_axis" class="<%= field %> normal-case tracking-normal font-normal" data-test="download-custom-axis">
-            <option value="width">Width</option>
-            <option value="height">Height</option>
-          </select>
-        </label>
-        <label class="inline-flex flex-col gap-1 <%= legend %> mb-0">
-          Pixels
-          <input type="number" name="custom_value" min="1" max="<%= Logos::PngSizes::MAX_SIDE %>" step="1" inputmode="numeric" value="1000"
-                 class="<%= field %> w-28 normal-case tracking-normal font-normal" data-test="download-custom-value">
+      <%# A custom canvas: Width × Height, with Keep aspect ratio on (either side sets the other, from the drawing's own
+          shape) or off (both free; the logo fits inside, centred, and the page's logo shows the canvas dotted). %>
+      <div class="space-y-2" data-test="download-custom" data-download-custom hidden>
+        <div class="flex flex-wrap items-end gap-2">
+          <label class="inline-flex flex-col gap-1 <%= legend %> mb-0">
+            Width
+            <input type="number" name="custom_width" min="1" max="<%= Logos::PngSizes::MAX_SIDE %>" step="1" inputmode="numeric" value="1000"
+                   class="<%= field %> w-28 normal-case tracking-normal font-normal" data-test="download-custom-width">
+          </label>
+          <span class="pb-1.5 text-xs text-muted" aria-hidden="true">×</span>
+          <label class="inline-flex flex-col gap-1 <%= legend %> mb-0">
+            Height
+            <input type="number" name="custom_height" min="1" max="<%= Logos::PngSizes::MAX_SIDE %>" step="1" inputmode="numeric"
+                   value="<%= [1, (1000.0 * natural_height / natural_width).round].max %>"
+                   class="<%= field %> w-28 normal-case tracking-normal font-normal" data-test="download-custom-height">
+          </label>
+          <span class="pb-1.5 text-xs text-muted">px</span>
+        </div>
+        <label class="flex items-center gap-2 text-xs text-heading cursor-pointer" data-test="download-keep-aspect-toggle">
+          <input type="checkbox" name="keep_aspect" value="1" checked data-test="download-keep-aspect">
+          <span class="font-semibold">Keep aspect ratio</span>
         </label>
       </div>
       <fieldset class="min-w-0" data-test="download-background">
@@ -95,15 +107,9 @@
       </fieldset>
     </div>
   </form>
-  <p class="text-2xs text-muted break-words" data-test="download-summary" data-download-summary><%= shown.filename %></p>
-  <div class="flex flex-wrap items-center gap-2">
-    <%= link_to "Download SVG", logo_asset_path(shown, download: 1), class: "btn btn-sm btn-primary border border-transparent #{ring}",
-                data: { test: "logo-download", turbo: false, download_link: true }, aria: { label: "Download: #{shown.label}" } %>
-    <%# Copy SVG fetches the logo from its own URL on click (app/javascript/logo_gallery.js); logo_download.js points it
-        at the tone picked. %>
-    <button type="button" class="btn btn-sm btn-neutral <%= ring %>" data-test="logo-copy" data-copy-svg="<%= logo_asset_path(shown) %>"
-            aria-label="Copy SVG: <%= shown.label %>"><span data-copy-svg-label>Copy SVG</span></button>
-    <span class="sr-only" role="status" data-copy-svg-status></span>
-  </div>
+  <%# The size in words, for a screen reader and the tests; the controls above already show it. %>
+  <p class="sr-only" role="status" data-test="download-summary" data-download-summary><%= shown.filename %></p>
+  <%= link_to "Download", logo_asset_path(shown, download: 1), class: "btn btn-sm btn-primary border border-transparent #{ring}",
+              data: { test: "logo-download", turbo: false, download_link: true }, aria: { label: "Download: #{shown.label}" } %>
   <p class="text-2xs font-semibold text-warning-ink" role="status" data-test="download-error" data-download-error hidden></p>
 </section>

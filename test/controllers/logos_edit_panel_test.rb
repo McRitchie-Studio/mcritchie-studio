@@ -168,14 +168,17 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # Task logo-download-card: the Download card's Download and Copy SVG start on the first tone, and each light and dark
+  # Task logo-download-card: the Download card's Download starts on the first tone shown, and each light and dark
   # tone radio carries its edited logo's URLs (a watermark is one colour, so it takes no edits).
   test "every download and copy on the tab honours the edits, and an edited file is named -custom" do
     get page("industries", rule: 4, ending_weight: 300, ending_colour: "C8661F")
+    # The card lists Dark first (task brand-page-split-layout); compare them in the logo's own light, dark order.
     tones = css_select("input[data-test='download-tone-option']").select { |input| %w[light dark].include?(input["value"]) }
+                                                               .sort_by { |input| %w[light dark].index(input["value"]) }
     assert_equal 2, tones.size
-    assert_match(/, edited\z/, css_select("button[data-test='logo-copy']").first["aria-label"])
-    assert_equal [tones.first["data-download-url"]], css_select("a[data-test='logo-download']").map { |link| link["href"] }
+    assert_match(/, edited\z/, css_select("a[data-test='logo-download']").first["aria-label"])
+    chosen = tones.find { |input| input["checked"] }
+    assert_equal [chosen["data-download-url"]], css_select("a[data-test='logo-download']").map { |link| link["href"] }
     logo = Logos::NavbarLogo.new("industries")
     edits = { ending: { weight: 300, colour: "#C8661F" } }
     expected = Logos::NavbarLogo::BAKED.map { |tone| logo.svg(rule: 4, text: :second, tone:, edits:) }

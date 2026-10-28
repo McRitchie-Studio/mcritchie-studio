@@ -1,8 +1,8 @@
 // [e2e] The brand page's Download card (task logo-download-card; Alex McRitchie 2026-10-14 22:05: "allow for png downloading
 // and some preset sizes. There are some integrations that have very specific size requirements and don't accept
 // SVGs"). Each tab draws ONE logo with a Download card; a PNG at a preset size is a file of exactly that many pixels,
-// read from the PNG's own header, on every type; a custom width keeps the aspect; and the Navbar tab is a row (the
-// logo over the cards) while the Stacked tab is a column (the logo beside them).
+// read from the PNG's own header, on every type; a custom Width × Height keeps the aspect or, unticked, sets the canvas
+// (shown dotted on the logo); and the card sits beside the logo, the controls beside the edit panel.
 const fs = require("fs");
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
@@ -17,7 +17,7 @@ function pngHeader(path) {
 
 const card = (page) => page.locator("[data-test='download-card']");
 
-// Picks PNG and a size on the card, clicks Download PNG, and answers the file's header and its suggested name.
+// Picks PNG and a size on the card, clicks Download, and answers the file's header and its suggested name.
 async function downloadPng(page, size) {
   await card(page).locator("label", { hasText: "PNG" }).click();
   await card(page).locator("[data-test='download-size']").selectOption(size);
@@ -83,57 +83,84 @@ test("the Stacked tab's 400 wide preset downloads a PNG of exactly the preset's 
   expect([png.width, png.height]).toEqual([400, expected.height]);
 });
 
-test("a custom width keeps the drawing's aspect, and the card says the size before the download", async ({ page }) => {
+// Task brand-page-split-layout (Alex McRitchie 2026-10-27: "a px aspect ratio setter … a checkbox for keep aspect ratio
+// … a dotted line should appear to show the visual aspect ratio"): Width × Height, kept or free.
+test("with Keep aspect ratio a typed width sets the height, and the PNG is that size", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/logos/studio");
-  await card(page).locator("label", { hasText: "PNG" }).click();
+  await expect(card(page).locator("input[data-test='download-format-option'][value='png']")).toBeChecked(); // PNG is the default
   await card(page).locator("[data-test='download-size']").selectOption("custom");
   await expect(card(page).locator("[data-test='download-custom']")).toBeVisible();
-  await card(page).locator("[data-test='download-custom-axis']").selectOption("width");
-  await card(page).locator("[data-test='download-custom-value']").fill("1000");
+  await expect(card(page).locator("[data-test='download-keep-aspect']")).toBeChecked();
+  await card(page).locator("[data-test='download-custom-width']").fill("1000");
   const natural = await card(page).locator("input[data-test='download-tone-option']:checked")
     .evaluate((input) => [Number(input.dataset.naturalWidth), Number(input.dataset.naturalHeight)]);
   const height = Math.max(1, Math.floor((1000 * natural[1]) / natural[0] + 0.5));
-  await expect(card(page).locator("[data-test='download-summary']")).toContainText(`1000 × ${height} px`);
+  await expect(card(page).locator("[data-test='download-custom-height']")).toHaveValue(String(height));
+  await expect(page.locator("[data-test='download-canvas-outline']")).toBeHidden(); // the canvas is the logo's own shape
   const [download] = await Promise.all([page.waitForEvent("download"), card(page).locator("[data-test='logo-download']").click()]);
   const png = pngHeader(await download.path());
   expect([png.width, png.height]).toEqual([1000, height]);
 });
 
-// Task brand-page-split-layout: every tab is in halves at desktop width, the controls beside the logo and the words
-// beside the Download card and edit panel; guides give the drawing the full width; a phone is one column.
-test("every tab puts the controls beside the logo and the words beside the cards; one column on a phone", async ({ page }) => {
+test("without Keep aspect ratio both sides are free, a dotted outline shows the canvas, and the PNG is exactly that size", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto("/logos/studio?type=stacked");
+  await card(page).locator("[data-test='download-size']").selectOption("custom");
+  await card(page).locator("[data-test='download-keep-aspect']").uncheck();
+  await card(page).locator("[data-test='download-custom-width']").fill("1200");
+  await card(page).locator("[data-test='download-custom-height']").fill("630");
+  const outline = page.locator("[data-test='download-canvas-outline']");
+  await expect(outline).toBeVisible();
+  const box = await outline.boundingBox();
+  expect(Math.abs(box.width / box.height - 1200 / 630)).toBeLessThan(0.02); // the canvas's own shape
+  const logo = await page.locator("[data-test='logo-frame'] img:visible").first().boundingBox();
+  expect(box.x).toBeLessThanOrEqual(logo.x + 1); // around the logo
+  expect(box.x + box.width).toBeGreaterThanOrEqual(logo.x + logo.width - 1);
+  const [download] = await Promise.all([page.waitForEvent("download"), card(page).locator("[data-test='logo-download']").click()]);
+  const png = pngHeader(await download.path());
+  expect([png.width, png.height]).toEqual([1200, 630]);
+
+  await card(page).locator("[data-test='download-keep-aspect']").check(); // kept again: the side last typed stays, the other follows
+  await expect(outline).toBeHidden();
+  await expect(card(page).locator("[data-test='download-custom-height']")).toHaveValue("630");
+  await expect(card(page).locator("[data-test='download-custom-width']")).not.toHaveValue("1200");
+});
+
+// Task brand-page-split-layout: at desktop width the Download card sits beside the logo, the two one height, and the
+// controls beside the edit panel under them; guides take the Download card away; a phone is one column.
+test("every tab puts Download beside the logo and the controls beside Edit; one column on a phone", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await loginWithMagicLink(page, "alex@test.com");
 
   for (const path of ["/logos/studio", "/logos/studio?type=stacked", "/logos/studio?type=icon"]) {
     await page.goto(path);
     await expect(page.locator("[data-test='logo-type']")).toHaveAttribute("data-layout", "split");
-    const controls = await page.locator("[data-test='logo-control-card']").boundingBox();
-    const logo = await page.locator("[data-test='logo-example']").boundingBox();
-    const text = await page.locator("[data-test='logo-text-card']").boundingBox();
     const download = await card(page).boundingBox();
+    const logo = await page.locator("[data-test='logo-example']").boundingBox();
+    const controls = await page.locator("[data-test='logo-control-card']").boundingBox();
     const edit = await page.locator("[data-test='edit-panel']").boundingBox();
-    expect(logo.x).toBeGreaterThanOrEqual(controls.x + controls.width); // the logo beside the controls
-    expect(Math.abs(logo.y - controls.y)).toBeLessThan(2);
-    expect(Math.abs(logo.width - controls.width)).toBeLessThan(2); // halves
-    expect(Math.abs(logo.height - controls.height)).toBeLessThan(2); // and of one height
-    expect(text.y).toBeGreaterThanOrEqual(Math.max(controls.y + controls.height, logo.y + logo.height));
-    expect(download.x).toBeGreaterThanOrEqual(text.x + text.width); // the words beside the cards
-    expect(edit.y).toBeGreaterThanOrEqual(download.y + download.height); // the cards stack in their column
+    expect(logo.x).toBeGreaterThanOrEqual(download.x + download.width); // the logo beside the Download card
+    expect(Math.abs(logo.y - download.y)).toBeLessThan(2);
+    expect(Math.abs(logo.width - download.width)).toBeLessThan(2); // halves
+    expect(Math.abs(logo.height - download.height)).toBeLessThan(2); // and of one height
+    expect(controls.y).toBeGreaterThanOrEqual(logo.y + logo.height);
+    expect(edit.x).toBeGreaterThanOrEqual(controls.x + controls.width); // the controls beside the edit panel
+    expect(Math.abs(edit.y - controls.y)).toBeLessThan(2);
   }
 
   await page.goto("/logos/studio?type=stacked&guides=1");
   await expect(page.locator("[data-test='logo-type']")).toHaveAttribute("data-layout", "row");
-  const controls = await page.locator("[data-test='logo-control-card']").boundingBox();
-  let logo = await page.locator("[data-test='logo-example']").boundingBox();
-  expect(logo.y).toBeGreaterThanOrEqual(controls.y + controls.height); // the drawing gets its own row
+  await expect(card(page)).toHaveCount(0); // the guide drawing takes the row
+  const logo = await page.locator("[data-test='logo-example']").boundingBox();
+  expect(logo.width).toBeGreaterThan(1000);
 
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto("/logos/studio?type=stacked");
-  logo = await page.locator("[data-test='logo-example']").boundingBox();
-  const download = await card(page).boundingBox();
-  expect(download.y).toBeGreaterThanOrEqual(logo.y + logo.height);
+  const top = await card(page).boundingBox();
+  const shown = await page.locator("[data-test='logo-example']").boundingBox();
+  expect(shown.y).toBeGreaterThanOrEqual(top.y + top.height);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });
