@@ -77,6 +77,9 @@ require_relative "lib/desk_context"
 require_relative "../lib/commit_identity"
 # Every command this script hands its reader comes through the one remedy helper.
 require_relative "lib/remedy"
+# The desk node_modules link farm and its reclaim guard (borrow the primary's install
+# when the lock matches; unlink before any teardown deletes).
+require_relative "lib/desk_node_modules"
 
 # This script, absolute, for the remedies it prints (bin/lib/remedy.rb).
 AGENT_WORKTREE_CMD = Remedy.command("agent-worktree", __dir__).freeze
@@ -1219,11 +1222,46 @@ end
 # the same verdict: a leftover branch makes the next `new` for this slug fail on an
 # existing branch name, so it is not cosmetic.
 def remove_worktree_and_branch(repo, dir, branch)
+  release_node_modules(dir)
   sh("git", "-C", repo, "worktree", "remove", "--force", dir, allow_fail: true)
   FileUtils.rm_rf(dir)
   sh("git", "-C", repo, "worktree", "prune", allow_fail: true)
   branch_gone = branch.to_s.empty? || sh("git", "-C", repo, "branch", "-D", branch, allow_fail: true)
   !Dir.exist?(dir) && branch_gone
+end
+
+# THE RECLAIM GUARD, called by every teardown before its first delete: unlink each link
+# the desk holds into the primary's node_modules (DeskNodeModules.release!), so no
+# deleter can walk through one. Best-effort: a link it cannot unlink is reported, and
+# the deleters behind it still unlink entries without following them.
+def release_node_modules(dir)
+  DeskNodeModules.release!(dir)
+rescue SystemCallError => e
+  warn "agent-worktree: could not unlink #{dir}/node_modules links (#{e.message}); the teardown unlinks, never follows"
+  []
+end
+
+# Give a desk its node_modules (DeskNodeModules.plan): borrow the primary's entries
+# when package-lock.json matches byte for byte, else run the desk's own `npm ci`.
+# Never on Heroku or CI. Best-effort: a failure warns and leaves the desk whole,
+# because node_modules is regenerable and `npm ci` in the desk is always the repair.
+def provision_node_modules(app, dir, env: ENV)
+  plan = DeskNodeModules.plan(desk: dir, primary: app.fetch("repo"), env: env)
+  if plan.link?
+    linked = DeskNodeModules.link!(desk: dir, source: plan.source)
+    puts "node_modules:   linked #{linked.size} entries to #{plan.source} (#{plan.reason})"
+  elsif plan.install?
+    puts "node_modules:   npm ci (#{plan.reason})"
+    unless sh(*DeskNodeModules::NPM_CI, chdir: dir, allow_fail: true)
+      warn "agent-worktree: npm ci failed in #{dir}; run it there by hand before bin/test-js or Playwright"
+    end
+  else
+    puts "node_modules:   none (#{plan.reason})"
+  end
+  plan
+rescue SystemCallError => e
+  warn "agent-worktree: could not link node_modules (#{e.message}); run `npm ci` in #{dir}"
+  plan
 end
 
 # Refuse BEFORE the first side effect. Harvested from PR #550.
@@ -3907,6 +3945,9 @@ def teardown_worktree(app, dir, record)
   stop_stack_for_removal(app, dir, record, spared: spared)
   flush_redis_db(record)
   drop_desk_databases(record)
+  # The reclaim guard: unlink the desk's links into the primary's node_modules before
+  # git deletes anything (bin/lib/desk_node_modules.rb).
+  release_node_modules(dir)
   sh("git", "-C", app.fetch("repo"), "worktree", "remove", dir)
   delete_local_branch_if_safe(app, record[:branch])
   close_teardown_record(record, spared) if closes
@@ -6002,6 +6043,9 @@ if $PROGRAM_NAME == __FILE__
     # a desk that is otherwise whole. Runs on a resume too, which is what lets
     # `bin/task begin <slug> --agent <soul> --steal` re-point an existing desk.
     report_desk_identity(app, task, dir, soul)
+    # OUTSIDE the atomic region too: node_modules is regenerable, so a failed link or
+    # install warns rather than unwinding a desk that is otherwise whole.
+    provision_node_modules(app, dir)
     if gem
       # A gem desk stops here: no test database to provision, no assets to build and
       # no server for --start to boot. Its suite is the registry's release_check.
