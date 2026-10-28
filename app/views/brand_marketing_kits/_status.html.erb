@@ -11,7 +11,7 @@
   <p class="flex items-baseline gap-1 min-w-0" data-test="marketing-kit-status" data-brand="<%= brand %>" data-status="<%= status %>" title="<%= title %>">
     <span class="truncate text-secondary">📁 Google kit</span>
     <span class="shrink-0 font-semibold <%= { current: 'text-success-ink', changed: 'text-warning-ink' }.fetch(status) %>"><%= BrandMarketingKit::STATUSES.fetch(status) %></span>
-    <%= link_to "Open", marketing_kit.drive_url, target: "_blank", rel: "noopener", class: "shrink-0 text-primary hover:underline", data: { test: "marketing-kit-link" } %>
+    <%= safe_link_to "Open", marketing_kit.drive_url, target: "_blank", rel: "noopener", class: "shrink-0 text-primary hover:underline", data: { test: "marketing-kit-link" } %>
   </p>
 <% else %>
   <p class="flex items-baseline gap-1 min-w-0" data-test="marketing-kit-status" data-brand="<%= brand %>" data-status="none">
