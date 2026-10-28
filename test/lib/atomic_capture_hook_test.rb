@@ -825,6 +825,21 @@ class AtomicCaptureHookTest < Minitest::Test
     end
   end
 
+  # bin/secret's metadata subcommands print names and times, never a value: their
+  # output stays legible (layer-2 pattern redaction still runs on it).
+  def test_unit_bin_secret_metadata_subcommands_are_not_suppressed
+    ["bin/secret status", "bin/secret refresh github.agent", "bin/secret prewarm"].each do |command|
+      payload = payload_for(tool_name: "Bash",
+                            tool_input: { "command" => command },
+                            tool_response: "github.agent: served cached fallback — expires in 26 min\n")
+      assert_includes payload["output"].to_s, "served cached fallback", command
+    end
+    payload = payload_for(tool_name: "Bash",
+                          tool_input: { "command" => "bin/secret get github.agent" },
+                          tool_response: "#{SECRET}\n")
+    refute_includes payload["output"].to_s, SECRET, "get still prints a value and stays suppressed"
+  end
+
   def test_unit_redact_suppresses_reads_of_secret_files
     [
       { "file_path" => "/Users/alex/projects/mcritchie-studio/.env" },

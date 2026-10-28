@@ -5,6 +5,7 @@ require "time"
 require "fileutils"
 require "securerandom"
 require_relative "projects_root"
+require_relative "op_vaults"
 require_relative "../../lib/task_usage_sandbox"
 
 # SecretCache — the shared local cache for credentials that EXPIRE or ROTATE.
@@ -71,11 +72,11 @@ module SecretCache
   # that already stops on an unsafe folder stops here too.
   class AdminVaultRefused < Unsafe; end
 
-  # The admin vault's default name (bin/lib/op_vaults.rb, the deployer lane), and
-  # the variable that renames it. Named here rather than required from op_vaults
-  # so bin/gh-token can keep loading this file under /usr/bin/ruby.
-  ADMIN_VAULT_DEFAULT = "studio-agents-admin"
-  ADMIN_VAULT_ENV = "MCR_OP_VAULT_ADMIN"
+  # The admin vault's default name and the variable that renames it, from the
+  # deployer lane (bin/lib/op_vaults.rb). Both count: the default stays admin even
+  # when the variable points elsewhere.
+  ADMIN_VAULT_DEFAULT = OpVaults::LANES.fetch(:deployer).fetch(:default_vault)
+  ADMIN_VAULT_ENV = OpVaults::LANES.fetch(:deployer).fetch(:vault_env)
 
   CONTINGENCY = [
     "Use the other GitHub identity's cached token if it is still valid and its scope covers the job " \
@@ -214,7 +215,7 @@ module SecretCache
   # symlink is refused (it could point a read or a later rename anywhere), and so
   # is a file another account owns (it could have been planted to be served).
   # +uid+ is a seam for the test: nothing else passes it.
-  def check_file!(path, uid: Process.uid)
+  def check_file!(path, uid: Process.euid)
     return path unless File.exist?(path) || File.symlink?(path)
 
     stat = File.lstat(path)
@@ -523,6 +524,8 @@ module SecretCache
   # [value, expires_at] for an op-item entry when still outside its refresh window.
   def cached_item(name, env: ENV, now: Time.now)
     meta = entry(name, env) || {}
+    # A file planted for an admin-fed entry is never served.
+    refuse_admin!(name, meta, env)
     data = read_json(value_file(name), env: env)
     return nil unless data && !data["value"].to_s.empty?
 

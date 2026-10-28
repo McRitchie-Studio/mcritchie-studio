@@ -429,8 +429,8 @@ class SecretCacheTest < Minitest::Test
       seed_github(env, Time.now)
       path = File.join(home, SecretCache::GITHUB_FILE)
 
-      error = assert_raises(SecretCache::Unsafe) { SecretCache.check_file!(path, uid: Process.uid + 1) }
-      assert_includes error.message, "owned by uid #{Process.uid}"
+      error = assert_raises(SecretCache::Unsafe) { SecretCache.check_file!(path, uid: Process.euid + 1) }
+      assert_includes error.message, "owned by uid #{Process.euid}"
       assert_equal path, SecretCache.check_file!(path), "the owner's 0600 file passes"
 
       elsewhere = File.join(root, "planted.json")
@@ -457,6 +457,9 @@ class SecretCacheTest < Minitest::Test
       error = assert_raises(SecretCache::AdminVaultRefused) { SecretCache.store_item("deploy.key", "VALUE", env: env) }
       assert_includes error.message, "deploy.key"
       refute File.exist?(File.join(home, SecretCache.value_file("deploy.key")))
+      File.write(File.join(home, SecretCache.value_file("deploy.key")),
+                 JSON.generate("value" => "PLANTED", "expires_at" => (Time.now + 3600).utc.iso8601), perm: 0o600)
+      assert_raises(SecretCache::AdminVaultRefused) { SecretCache.cached_item("deploy.key", env: env) }
 
       deployer = { "deployer" => { "active" => "a", "a" => { "token" => TOKEN } } }
       error = assert_raises(SecretCache::AdminVaultRefused) do

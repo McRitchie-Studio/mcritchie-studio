@@ -735,8 +735,9 @@ class AtomicCaptureHook
   # stored (and never leaves the box: we redact HERE, before the POST). Two layers:
   #   1. WHOLE-FIELD suppression when the tool touches secret MATERIAL — a Bash
   #      command that prints a secret, or a read/write of a secret FILE. A bare
-  #      value (e.g. `bin/secret` output) has no key to pattern-match, so the whole
-  #      field is dropped to REDACTED_FIELD.
+  #      value (e.g. `bin/secret get` output) has no key to pattern-match, so the
+  #      whole field is dropped to REDACTED_FIELD. `bin/secret`'s metadata
+  #      subcommands print no value and fall through to layer 2.
   #   2. PATTERN redaction on whatever survives — KEY=VALUE pairs whose key names a
   #      secret, plus known credential value formats. The KEY is kept and only the
   #      VALUE masked, so the trajectory stays legible.
