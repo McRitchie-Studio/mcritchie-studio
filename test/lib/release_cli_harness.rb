@@ -386,6 +386,8 @@ class ReleaseCliHarness < Minitest::Test
           ["", true]
         end
         def with_ship_workspace(_repo) = yield
+        # The served-checksum read downloads from the CDN, which no test reaches.
+        def confirm_published_checksum!(repo, version, sha) = $stdout.puts("CHECKSUM-CONFIRMED #{repo} #{version} #{!sha.to_s.empty?}")
         # A Gemfile.lock on the OLD version, and the gem's version file at the final.
         def gem_artifact_version(artifact) = File.basename(artifact, ".gem").split("-").last
         def release_entry_points = {} # the machine's other checkouts are not this fixture's
@@ -431,6 +433,8 @@ class ReleaseCliHarness < Minitest::Test
           return g if g
           if a[0] == "gem" && a[1] == "build"
             $stdout.puts("GEM-BUILD")
+            # An artifact on disk, so the final flow's pre-push checksum has bytes to read.
+            File.write(a[a.index("--output") + 1], "fixture gem") if a.include?("--output")
             return ["", true]
           end
           if a[0] == "gem" && a[1] == "push"

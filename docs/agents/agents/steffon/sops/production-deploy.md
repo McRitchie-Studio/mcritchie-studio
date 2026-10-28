@@ -234,6 +234,14 @@ command carries on; it never fails `status` or `prepare`, which make the same re
 
 ### Gems: the final publish, the re-lock, and its CI read
 
+**The default flow publishes the final at `prepare`**
+([`gem-release-flow.md`](../../../system/gem-release-flow.md)). The ship then finds
+each gem live and every consumer already locking it: it skips the push, makes no
+re-lock commit, reads no re-lock CI, and deploys the SHAs QA gated. Before any deploy
+it also refuses a tree that locks a published version past a gem's `main` that this
+release does not ship. The steps below run only for a release prepared under
+`RELEASE_GEM_FLOW=candidate`.
+
 `prepare` published a **release candidate** (`x.y.z.rcN`) and QA ran consumers on it.
 The ship publishes the final `x.y.z`, and it is the only step of a release that cannot
 be undone. In order, after production authority:

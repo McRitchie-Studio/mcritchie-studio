@@ -5,10 +5,13 @@
 This is Avi's `qa-release` SOP: the self-healing release prepare sweep. It detects
 reviewed work and release stragglers, promotes `accepted → release` per repo (a
 fast-forward when `release` is contained in `accepted`, the batch PR only when it has
-diverged), allocates each gem member's version, publishes a **release candidate** of it
-(`x.y.z.rcN`) and locks consumers to that candidate (producer-first, before anything
-tests or deploys), runs the pre-QA gate, deploys QA, and flips members to `assembled`
-only on QA-green. The final `x.y.z` is published by `production-deploy`, after QA.
+diverged), allocates each gem member's version, publishes the **final** `x.y.z` and
+locks consumers to it (producer-first, before anything tests or deploys), runs the
+pre-QA gate, deploys QA, and flips members to `assembled` only on QA-green. The ship
+then deploys those gated SHAs with no re-lock. A red QA that changes the gem burns
+`x.y.z`: leave it published (never yank it), and the next sweep allocates the next
+patch. Why, and the older candidate flow (`RELEASE_GEM_FLOW=candidate`):
+[`gem-release-flow.md`](../../../system/gem-release-flow.md).
 History and rationale cut from this page live in
 [`../../../archive/qa-release-2026-09-25.md`](../../../archive/qa-release-2026-09-25.md).
 
