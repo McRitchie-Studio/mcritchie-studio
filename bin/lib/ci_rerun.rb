@@ -37,6 +37,19 @@
 # SHA per process, says so loudly, and reads the re-run to a conclusion. A second
 # red is real and fails the gate exactly as the first would have.
 #
+# THE RUN MUST FINISH FIRST. A check-run goes red the moment one job fails, while
+# the rest of its workflow run is still going, and GitHub cannot re-run a run that
+# is in progress. On 2026-10-27 the ship's gate read that early red, found no
+# COMPLETED failed run, printed "no failed workflow run found on the SHA to re-run"
+# and spent its one chance on nothing. So while any commit-triggered run on the SHA
+# is unfinished (in_progress?) the caller holds, and decides only once it is done.
+#
+# THE RE-LOCK RULE (relock_only: true). The ship's re-lock commit differs from the
+# QA-green tree in Gemfile and Gemfile.lock alone (relock_only_diff?), so the code
+# under test already went green and a red there is the gem index, not a finding.
+# Its gate re-runs a first-attempt failure in ANY job, test lane or not; rules 1-3
+# still hold, so a second red is still real and is never re-run.
+#
 # PURE: facts in, a decision out. The gh reads and the re-run live in bin/release.
 module CiRerun
   module_function
@@ -66,6 +79,26 @@ module CiRerun
   # error; re-running it would re-dispatch a deploy from inside a gate.
   RERUN_EVENTS = %w[push pull_request].freeze
 
+  # The only paths a re-lock commit may touch for the re-lock rule to apply.
+  RELOCK_PATHS = %w[Gemfile Gemfile.lock].freeze
+
+  # Does a diff of +paths+ touch nothing but Gemfile and Gemfile.lock? An empty
+  # diff is not a re-lock (there is nothing to vouch for), so it answers false.
+  def relock_only_diff?(paths)
+    list = Array(paths).map { |p| p.to_s.strip }.reject(&:empty?)
+    !list.empty? && list.all? { |p| RELOCK_PATHS.include?(p) }
+  end
+
+  # Is any commit-triggered workflow run on the SHA still unfinished? While one
+  # is, a red check-run is an early read of a run that cannot yet be re-run.
+  def in_progress?(workflow_runs, sha)
+    commit = sha.to_s.strip.downcase
+    Array(workflow_runs).any? do |run|
+      run.is_a?(Hash) && RERUN_EVENTS.include?(run["event"].to_s) && run["status"].to_s != "completed" &&
+        (commit.empty? || run["head_sha"].to_s.strip.downcase == commit)
+    end
+  end
+
   def test_lane?(name)
     text = name.to_s
     return false if text.strip.empty?
@@ -94,7 +127,9 @@ module CiRerun
   # a pure test-lane flake costs no log read). Returns
   #   { action: :rerun, run_ids: [...], reason: "..." }  or
   #   { action: :none,  reason: "..." }
-  def plan(runs:, jobs_by_run:, log_for: ->(_id) { "" })
+  # +relock_only+: the SHA differs from the QA-green tree in Gemfile/Gemfile.lock
+  # alone (see THE RE-LOCK RULE above), so any failing job qualifies.
+  def plan(runs:, jobs_by_run:, log_for: ->(_id) { "" }, relock_only: false)
     runs = Array(runs)
     return { action: :none, reason: "no failed workflow run found on the SHA to re-run" } if runs.empty?
 
@@ -111,6 +146,12 @@ module CiRerun
 
       jobs = Array(jobs_by_run[id]).map(&:to_s)
       return { action: :none, reason: "#{label} names no failing job to judge" } if jobs.empty?
+
+      if relock_only
+        reasons << "#{label}: #{jobs.join(', ')} failed on attempt 1 on a re-lock commit (Gemfile/Gemfile.lock only " \
+                   "past the QA-green tree)"
+        next
+      end
 
       lanes, others = jobs.partition { |job| test_lane?(job) }
       if others.any?

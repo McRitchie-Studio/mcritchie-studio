@@ -3577,6 +3577,7 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
   refreshes = CiStatus.gh_auth_summary[:refreshes]
   ci = nil
   rerun = nil # the run ids this poll re-ran, once one is spent
+  holding_red = false # said once: a red read while its run is still in progress
   loop do
     ci = ci_verdict(repo, sha)
     refreshes = say_ci_token_refresh(repo, refreshes)
@@ -3590,7 +3591,16 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
           return ci
         end
         action = :wait
-      elsif (rerun = ci_rerun_once!(repo, sha))
+      elsif (decision = ci_rerun_once!(repo, sha)) == :pending
+        # One job is red but its workflow run is still going: GitHub cannot re-run it
+        # yet, so hold until it completes and decide then (the one re-run is unspent).
+        unless holding_red
+          say("  #{repo}: CI RED for #{short(sha)} while a workflow run on it is still in progress — holding for " \
+              "the run to complete before deciding the one automatic re-run")
+        end
+        holding_red = true
+        action = :wait
+      elsif (rerun = decision)
         # A fresh window for the re-run: it is a new run of the lanes, not the tail of the old one.
         deadline = [deadline, monotonic_s + budget].max
         action = :wait
@@ -3603,7 +3613,7 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
       say("  #{repo}: CI still #{ci[:state]} for #{short(sha)} after ~#{timeout}s — poll timed out, failing closed")
       return ci
     end
-    if ci[:state] != last_state
+    if ci[:state] != last_state && !(holding_red && ci[:state] == :red)
       say("  #{repo}: CI #{ci[:state].to_s.upcase} for #{short(sha)} — holding for it to conclude " \
           "(re-reading every #{interval}s, up to ~#{timeout}s; set RELEASE_CI_POLL_TIMEOUT to widen)")
     end
@@ -3627,19 +3637,27 @@ def ci_rerun_disarmed?
   ENV["RELEASE_CI_RERUN"].to_s.strip.downcase == "off" || !ENV["RELEASE_CI_STATUS"].to_s.empty?
 end
 
-# Spend the one re-run when the rule allows it. Returns the re-run ids, or nil.
+# Spend the one re-run when the rule allows it. Returns the re-run ids, nil, or
+# :pending — a commit-triggered run on the SHA is still unfinished, so nothing can
+# be re-run or judged yet and the one re-run is NOT spent (the caller holds).
 def ci_rerun_once!(repo, sha)
   @ci_reruns ||= {}
   key = [repo, sha.to_s]
   return nil if @ci_reruns.key?(key) || ci_rerun_disarmed? || DRY
 
-  @ci_reruns[key] = nil
   nwo = repo_name_with_owner(repo)
-  return nil if nwo.empty?
+  if nwo.empty?
+    @ci_reruns[key] = nil
+    return nil
+  end
 
-  runs = CiRerun.failed_runs(ci_workflow_runs(nwo, sha), sha)
+  all_runs = ci_workflow_runs(nwo, sha)
+  return :pending if CiRerun.in_progress?(all_runs, sha)
+
+  @ci_reruns[key] = nil
+  runs = CiRerun.failed_runs(all_runs, sha)
   plan = CiRerun.plan(runs: runs, jobs_by_run: runs.to_h { |r| [r["id"], ci_failed_job_names(nwo, r["id"])] },
-                      log_for: ->(id) { ci_failed_log(nwo, id) })
+                      log_for: ->(id) { ci_failed_log(nwo, id) }, relock_only: ci_rerun_relock_shas.key?(key))
   if plan[:action] != :rerun
     say("  #{repo}: CI RED for #{short(sha)} — no automatic re-run (#{plan[:reason]})")
     return nil
@@ -3658,6 +3676,25 @@ def ci_rerun_once!(repo, sha)
   end
   gate_sop("ci_rerun", "↻ AUTOMATIC RE-RUN of #{repo}@#{short(sha)} run(s) #{plan[:run_ids].join(', ')}: #{plan[:reason]}", true)
   @ci_reruns[key] = plan[:run_ids]
+end
+
+# { [repo, sha] => true } for each re-lock commit whose diff past the QA-green tree
+# was MEASURED to touch Gemfile and Gemfile.lock alone (test_gate marks it). Its
+# gate re-runs a first-attempt red in any job (CiRerun's re-lock rule).
+def ci_rerun_relock_shas
+  @ci_rerun_relock_shas ||= {}
+end
+
+# Mark +sha+ for the re-lock rule when `git diff --name-only from..sha` names only
+# Gemfile and Gemfile.lock. Any read fault leaves it unmarked: the ordinary rule.
+def mark_relock_only!(repo, relock, sha)
+  from = relock.is_a?(Hash) ? relock["from"].to_s : ""
+  return false if from.empty? || sha.to_s.empty?
+
+  names, ok = git_capture("-C", repo_path(repo), "diff", "--name-only", from, sha.to_s)
+  return false unless ok && CiRerun.relock_only_diff?(names.lines)
+
+  ci_rerun_relock_shas[[repo, sha.to_s]] = true
 end
 
 # Has every re-run been picked up and concluded? A failed read is "not yet".
@@ -6225,6 +6262,7 @@ def test_gate(repo, frozen_sha:, relock: nil)
   # for the workflow-sized budget (turf's suite outlasts the flat 1200 s window).
   # The frozen SHA is normally credited from the accepted head and keeps the flat one.
   budget = relock ? ci_poll_budget_for(repo, frozen_sha) : ci_poll_timeout
+  mark_relock_only!(repo, relock, frozen_sha) if relock
   verdict = resolve_release_ci_verdict(repo, repo_path(repo), frozen_sha, budget: budget)
   kind = Release::ShipSequence.ship_gate_kind(verdict[:ci], credited: verdict[:credited],
                                                             diverged: verdict[:diverged])
@@ -8561,9 +8599,11 @@ def relock_gate_recovery(repo, relock)
     "#{Array(relock['pins']).join(', ')}). ALREADY DONE and not undone: the final gem version is published and " \
     "tagged, the gem repo's main is advanced, and origin/#{RELEASE_BRANCH} in #{repo} carries the re-lock. NOT " \
     "done: no app's main has moved and NOTHING is deployed. The commit differs from the tree QA passed only in " \
-    "Gemfile and Gemfile.lock, and the final gem was verified to carry the candidate's contents, so first " \
-    "re-run the CI run for that commit (`gh run rerun <id>`, all jobs), then `#{RELEASE_SELF_CMD} ship`: the " \
-    "gem skips as live, the re-lock is reused, and this gate reads again. If the red reproduces it is a real " \
+    "Gemfile and Gemfile.lock, and the final gem was verified to carry the candidate's contents, so this gate " \
+    "waited for the run to complete and re-ran a first-attempt red ONCE by itself (its lines above say whether " \
+    "it did, and why not if it did not). If it did not, re-run the CI run for that commit (`gh run rerun <id>`, " \
+    "all jobs), then `#{RELEASE_SELF_CMD} ship`: the gem skips as live, the re-lock is reused, and this gate " \
+    "reads again. A red after a re-run is not re-run again. If the red reproduces it is a real " \
     "defect: fix it through a task on `#{ACCEPTED_BRANCH}` and re-run `#{RELEASE_SELF_CMD} prepare` (the final " \
     "stays published; consumers lock it directly and QA runs again)."
 end
