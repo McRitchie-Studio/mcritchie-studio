@@ -144,6 +144,24 @@ class AgentChatIngestTest < ActiveSupport::TestCase
     assert_equal :daily, assert_raises(AgentChat::Ingest::Capped) { ingest("second", anon_token: "fresh-anon-token-0003", ip: nil, policy: policy) }.code
   end
 
+  test "caps: made-up emails with no hub user cannot get around the per-IP or daily caps" do
+    policy = BuildIntake.policy.dup.tap { |p| p.per_ip_per_hour = 2 }
+    2.times { |i| ingest("q#{i}", email: "fake#{i}@example.com", ip: "203.0.113.9", policy: policy) }
+    assert_equal :ip, assert_raises(AgentChat::Ingest::Capped) { ingest("q", email: "fake9@example.com", ip: "203.0.113.9", policy: policy) }.code
+
+    policy = BuildIntake.policy.dup.tap { |p| p.daily_total = 2 }
+    assert_equal :daily, assert_raises(AgentChat::Ingest::Capped) { ingest("q", email: "fake10@example.com", ip: "198.51.100.7", policy: policy) }.code,
+                 "the two made-up emails count toward the signed-out daily total"
+  end
+
+  test "caps: a hub user's chat spends the per-IP budget too (every chat answer is public)" do
+    user = User.create!(email: "real@example.com", name: "Real", role: "viewer")
+    policy = BuildIntake.policy.dup.tap { |p| p.per_ip_per_hour = 1 }
+    ingest("anon first", anon_token: ANON, ip: "203.0.113.9", policy: policy)
+
+    assert_equal :ip, assert_raises(AgentChat::Ingest::Capped) { ingest("hi", email: user.email, ip: "203.0.113.9", policy: policy) }.code
+  end
+
   test "caps: a signed-in thread takes WebIngest's rolling rate, not a lifetime count" do
     user = User.create!(email: "rate@example.com", name: "Rate", role: "viewer")
     stub_const(AgentMessages::WebIngest, :RATE_LIMIT, 2) do

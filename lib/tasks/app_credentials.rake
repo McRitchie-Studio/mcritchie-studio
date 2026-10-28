@@ -9,7 +9,10 @@
 # (the credential-filing SOP) and set it as the app's AGENT_CHAT_TOKEN. The hub
 # keeps only its digest, so a lost secret is re-minted, never recovered; minting
 # again revokes the old one. Never paste the printed secret into a chat, a card
-# or a commit.
+# or a commit. SECRET_ONLY=1 writes the secret alone to stdout (everything else
+# to stderr), so a pipe can carry it straight into 1Password and the app's
+# config without a terminal ever showing it: the recipe is in
+# docs/agents/system/agent-message-loop.md, "Satellite chat".
 namespace :app_credentials do
   desc "Mint an app's agent-chat credential (APP=<slug>, PURPOSE=agent-chat); prints the secret once"
   task mint: :environment do
@@ -23,8 +26,9 @@ namespace :app_credentials do
 
     row, secret = AppCredential.issue!(app_slug: app, purpose: purpose, label: ENV["LABEL"],
                                        issued_by: ENV["BY"].presence || ENV["USER"].presence || "rake")
-    puts "Minted #{purpose} credential ##{row.id} for #{app} (older live ones revoked)."
-    puts "File it in 1Password as apps.#{app}.#{purpose} and set the app's AGENT_CHAT_TOKEN. It is not shown again:"
+    note = ENV["SECRET_ONLY"] == "1" ? $stderr : $stdout
+    note.puts "Minted #{purpose} credential ##{row.id} for #{app} (older live ones revoked)."
+    note.puts "File it in 1Password as apps.#{app}.#{purpose} and set the app's AGENT_CHAT_TOKEN. It is not shown again:"
     puts secret
   end
 

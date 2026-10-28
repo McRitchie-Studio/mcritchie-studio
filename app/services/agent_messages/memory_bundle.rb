@@ -77,7 +77,7 @@ module AgentMessages
   #     verified email, a Discord DM; never a guild channel members read): the
   #     household's connections (GoogleConnection.household, the set
   #     /admin/google reads).
-  # FAIL CLOSED: no person, no hub user, a /build thread, a public, team or
+  # FAIL CLOSED: no person, no hub user, a /build or satellite chat thread, a public, team or
   # client sender, another app's owner, a mismatched audience, or any error
   # while deciding all mean no google_context. Its text (subjects, snippets,
   # titles, file names) is written by strangers, so the worker prints it
@@ -153,7 +153,14 @@ module AgentMessages
     # Whose role the answer is held to. A /build thread is read by whoever holds
     # the request's token (BuildIntake), so every turn there is answered as the
     # public, whoever sent it: no read action, internal context or owner notes.
-    def audience_person = BuildIntake.thread?(@message.thread_key) ? nil : person
+    # A satellite chat thread (AgentChat) likewise: its person is whoever an
+    # app's ONE bearer credential names by email, so the hub cannot know who
+    # reads the answer, and an owner's email over the API is the public too.
+    def audience_person = public_thread? ? nil : person
+
+    # Whether this thread is answered as the public whoever sent it: /build and
+    # the satellite chat.
+    def public_thread? = BuildIntake.thread?(@message.thread_key) || AgentChat.thread?(@message.thread_key)
 
     # A /build thread's intake state (BuildIntake::Context): what Alex asks next.
     # No key at all on any other thread.
@@ -182,9 +189,15 @@ module AgentMessages
       return [] unless person
 
       role = audience["role"]
-      AgentPersonNote.visible_for(person, soul: @message.soul_slug, role: role)
-                     .includes(:source_message).order(:noted_at, :id).to_a
-                     .select { |note| AgentPersonNote.admissible?(note.body) }.uniq(&:fingerprint)
+      notes = AgentPersonNote.visible_for(person, soul: @message.soul_slug, role: role)
+                             .includes(:source_message).order(:noted_at, :id).to_a
+                             .select { |note| AgentPersonNote.admissible?(note.body) }.uniq(&:fingerprint)
+      # A satellite chat reads only what was learned in satellite chats, as its
+      # person layer does (#person_scope): a note from the person's Discord, email
+      # or hub chat is not shown to whoever an app's credential names by email.
+      return notes unless AgentChat.thread?(@message.thread_key)
+
+      notes.select { |note| AgentChat.thread?(note.source_message&.thread_key) }
     end
 
     # What this soul may propose to THIS sender (config/agent_domains.yml through
@@ -212,6 +225,13 @@ module AgentMessages
       scope = AgentMessage.where(soul_slug: @message.soul_slug, person_id: @message.person_id)
                           .where("agent_messages.id < ?", @message.id)
                           .where.not(status: UNSEEN_STATUSES)
+      # A satellite chat's person layer reads only the person's satellite chats:
+      # their Discord, email and hub-chat history with this soul is not shown to
+      # whoever an app's credential names by email.
+      if AgentChat.thread?(@message.thread_key)
+        prefix = AgentChat::THREAD_PREFIX
+        scope = scope.where("left(agent_messages.thread_key, ?) = ?", prefix.length, prefix)
+      end
       client_cto? ? scope.where(channel_ref: @message.channel_ref) : scope
     end
 
@@ -264,7 +284,9 @@ module AgentMessages
     # which every member reads, never is.
     def private_channel?
       case @message.channel.to_s
-      when "web" then @message.guild_id.blank?
+      # A satellite chat (AgentChat) is never private: the hub cannot know who
+      # reads it.
+      when "web" then @message.guild_id.blank? && !AgentChat.thread?(@message.thread_key)
       when "email" then (@message.envelope || {}).dig("trust", "verified") == true
       when "discord" then @message.guild_id.blank?
       else false

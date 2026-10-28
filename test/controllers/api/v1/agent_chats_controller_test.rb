@@ -150,6 +150,18 @@ module Api
         assert_equal 0, AgentMessage.count
       end
 
+      test "the visitor's ip, email and anon token stay out of the request log" do
+        filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
+        logged = filter.filter("controller" => "api/v1/agent_chats", "ip" => "203.0.113.4",
+                               "person" => { "email" => "a@example.com", "anon_token" => ANON })
+
+        assert_equal "[FILTERED]", logged["ip"]
+        assert_equal "[FILTERED]", logged["person"]["email"]
+        assert_equal "[FILTERED]", logged["person"]["anon_token"]
+        assert_equal "203.0.113.4", filter.filter("controller" => "admin/other", "ip" => "203.0.113.4")["ip"],
+                     "scoped to the agent chat API"
+      end
+
       test "429 at a cap, with the line the app shows, and nothing stored" do
         BuildIntake.policy = BuildIntake.policy.dup.tap { |p| p.turns_per_request = 1 }
         post_message

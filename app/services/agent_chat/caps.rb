@@ -10,6 +10,11 @@ module AgentChat
   #                :daily   signed-out answers across all public intake per Denver day
   #   signed in    :rate    WebIngest::RATE_LIMIT messages in a thread per
   #                         WebIngest::RATE_WINDOW, as the hub's own web chat
+  #   every post   :ip, :daily as above: every satellite answer is answered as
+  #                the public (MemoryBundle#audience_person), so it spends the
+  #                public budget. A made-up email with no hub User counts toward
+  #                the daily total as a signed-out visitor does
+  #                (BuildIntake::Caps#public_cap), so minting emails buys nothing.
   #
   # A signed-in thread is the person's for good, so it takes a rolling rate, not a
   # lifetime count. Two posts racing at the edge may let one extra through; the
@@ -22,9 +27,12 @@ module AgentChat
 
     # nil when the message may be stored, else the cap's code.
     def check(thread_key:, signed_in:, ip_hash: nil)
-      return rate(thread_key) if signed_in
+      if signed_in
+        limited = rate(thread_key)
+        return limited if limited
+      end
       return nil unless @policy
-      return :thread if thread_key && answered(thread_key).count >= @policy.turns_per_request
+      return :thread if !signed_in && thread_key && answered(thread_key).count >= @policy.turns_per_request
 
       BuildIntake::Caps.new(policy: @policy, now: @now).public_cap(ip_hash)
     end

@@ -22,7 +22,10 @@ class CreateAppCredentials < ActiveRecord::Migration[8.1]
       t.timestamps
     end
     add_index :app_credentials, :token_digest, unique: true
-    add_index :app_credentials, %i[app_slug purpose]
+    # One LIVE credential per app per purpose: AppCredential.issue! revokes the old
+    # one first, and two mints racing cannot both stand.
+    add_index :app_credentials, %i[app_slug purpose], unique: true, where: "revoked_at IS NULL",
+                                                      name: "index_app_credentials_one_live_per_app_purpose"
     add_check_constraint :app_credentials, "purpose IN ('agent-chat')", name: "app_credentials_purpose_known"
   end
 end

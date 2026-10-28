@@ -41,6 +41,16 @@ class AppCredentialTest < ActiveSupport::TestCase
     assert_in_delta now, row.reload.last_used_at, 1, "a poll a minute later writes nothing"
   end
 
+  test "the database holds one live credential per app and purpose" do
+    AppCredential.issue!(app_slug: "alex-build", purpose: "agent-chat")
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      AppCredential.create!(app_slug: "alex-build", purpose: "agent-chat", token_digest: AppCredential.digest("second"))
+    end
+    AppCredential.issue!(app_slug: "alex-build", purpose: "agent-chat")
+    assert_equal 1, AppCredential.live.where(app_slug: "alex-build").count
+    assert_equal 2, AppCredential.where(app_slug: "alex-build").count, "revoked rows stay as the record"
+  end
+
   test "the database refuses an unknown purpose" do
     assert_raises(ActiveRecord::StatementInvalid) do
       AppCredential.insert_all!([ { app_slug: "x", purpose: "other", token_digest: "d", created_at: Time.current, updated_at: Time.current } ])

@@ -1421,7 +1421,7 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
 | Piece | Where |
 |-------|-------|
 | The two endpoints | `Api::V1::AgentChatsController`: `POST /api/v1/agent_chat/messages` (`soul`, `text`, `person`, `ip`; `201 {turn}`, `422`, `429` capped, `404` no web chat) and `GET /api/v1/agent_chat/turns` (`soul`, `person`, `after`, `limit` ≤ 50; `200 {turns, pending}`) |
-| The app's credential | `AppCredential` (purpose `agent-chat`): the hub keeps the SHA-256 digest only. `bin/rails app_credentials:mint APP=<slug>` prints the secret once, for 1Password `apps.<slug>.agent-chat` and the app's `AGENT_CHAT_TOKEN`; minting again revokes the old one. No credential, a wrong one or a revoked one: 401 |
+| The app's credential | `AppCredential` (purpose `agent-chat`): the hub keeps the SHA-256 digest only, one live row per app and purpose (a partial unique index). `bin/rails app_credentials:mint APP=<slug>` prints the secret once, for 1Password `apps.<slug>.agent-chat` and the app's `AGENT_CHAT_TOKEN`; minting again revokes the old one. No credential, a wrong one or a revoked one: 401 |
 | Which app reaches which soul | `config/agent_routes.yml` `web: apps: <slug>: [souls]` (`alex-build: [alex]`), and the soul must be in `web: souls:`; else 404 |
 | The person and the thread | `AgentChat::Visitor`: `person.email` that is a hub User is their web person, thread `chat:<soul>:<user id>`; an email with no User is the person its `email` identity names, else a new public one (`AgentPerson.resolve!`), thread `chat:<soul>:person:<id>`; `person.anon_token` is a public Visitor (web identity `chat-anon:<HMAC digest>`), thread `chat:<soul>:anon:<digest>` (the token itself is never stored) |
 | Inbound | `AgentChat::Ingest`: a `web` row, `channel_ref` `chat`, the app in `envelope.app` (never in the key), the visitor's IP hashed as /build's |
@@ -1430,17 +1430,39 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
 - **Who answers.** The person's role, as everywhere, and the public on the public-intake
   soul's chat threads: `Answerers#intake?` and its SQL guard answer `chat:alex:` as they
   answer `web:build:`, a prefix built in code. Another soul's public row is `held`.
+- **Answered as the public, always.** The app's ONE credential names the person by email,
+  so the hub cannot know who reads the answer: every `chat:` row is answered at the public
+  audience whoever sent it, the owner's email included (`MemoryBundle#audience_person`,
+  as on /build). No read action, internal context or owner audience; `private_channel?`
+  is false, so no Google layer; and the person layer and notes read only what came from
+  satellite chats, never the person's Discord, email or hub-chat history. The THREAD stays
+  the person's, shared across apps.
 - **The fold.** A signed-in post that also carries the visitor's `anon_token` moves that
   soul's anon thread into the person's thread first (`AgentChat::Ingest#fold!`): each row
   gets a `thread_folded` event, and the anon identity, the rows it wrote and their notes
   move to the person (`AgentPerson#link_identity!`, reassign). Once moved, the anon
   thread is empty, so the fold runs once.
 - **Caps** (`AgentChat::Caps`, /build's numbers from `config/agent_answerers.yml`): signed
-  out, `turns_per_request` per anon thread, and the per-IP hourly and daily totals shared
-  with /build (`BuildIntake::Caps#public_cap`); signed in, `WebIngest::RATE_LIMIT` per
-  thread per hour. At a cap the hub answers 429 with the line to show and stores nothing.
+  out, `turns_per_request` per anon thread; signed in, `WebIngest::RATE_LIMIT` per
+  thread per hour; and on EVERY post, the per-IP hourly and daily totals shared with
+  /build (`BuildIntake::Caps#public_cap`). An email with no hub User counts toward the
+  daily total as a signed-out visitor does, so made-up emails buy nothing. At a cap the
+  hub answers 429 with the line to show and stores nothing.
+- **The request log** never holds the visitor: `ip` (this controller only), `person.email`
+  and `person.anon_token` are filtered (`config/initializers/filter_parameter_logging.rb`).
 - **Delivery.** `WebChat.polled?` covers these threads as /build's: the answer is marked
   posted with no broadcast and the typing phase is kept on the row for the poll.
+- **Minting without a terminal showing the secret.** `SECRET_ONLY=1` writes the secret
+  alone to stdout; capture it in a variable and hand it on, never echo it. The 1Password
+  item must already exist (the agent makes it empty, the credential-filing SOP):
+
+  ```bash
+  secret=$(heroku run --no-tty -a mcritchie-studio -- \
+             bin/rails app_credentials:mint APP=alex-build SECRET_ONLY=1 2>/dev/null | tail -n 1 | tr -d '\r')
+  op item edit "apps.alex-build.agent-chat" "credential=$secret" >/dev/null
+  heroku config:set -a alex-build AGENT_CHAT_TOKEN="$secret" >/dev/null
+  unset secret
+  ```
 
 ## Viewing a run
 

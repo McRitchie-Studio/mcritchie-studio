@@ -14,6 +14,8 @@ module AgentChat
   #   the person   AgentChat::Visitor#person!
   #   answered?    AgentMessages::Answerers: a person's role, as everywhere, and
   #                the public on the intake soul's chat threads (Answerers#intake?)
+  #   the audience always the public, whoever sent it: the person is whoever
+  #                an app's credential names by email (MemoryBundle#audience_person)
   #   the app      envelope.app, recorded, never part of the key
   #
   # IN ORDER: the text (trimmed, WebIngest::MAX_LENGTH), the soul, the fold (a

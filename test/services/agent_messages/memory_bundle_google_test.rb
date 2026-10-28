@@ -179,6 +179,19 @@ module AgentMessages
       assert_empty read_requests
     end
 
+    test "the admin owner's email over a satellite chat (the agent chat API) gets nothing: one app token is not the owner" do
+      AgentPerson.seed_owner!
+      connect!(users(:alex), email: "alex@mcritchie.studio")
+      routes = Routes.new("web" => { "souls" => %w[alex], "apps" => { "alex-build" => %w[alex] } })
+      visitor = AgentChat::Visitor.new("alex", email: "alex@mcritchie.studio")
+      chat = AgentChat::Ingest.new(app: "alex-build", visitor: visitor, routes: routes).call("what's on my calendar?")
+
+      assert_equal "owner", chat.person.role
+      assert_equal "public", MemoryBundle.new(chat).audience["role"]
+      assert_nil google(chat)
+      assert_empty read_requests
+    end
+
     test "an admin owner on a hub soul in a private channel (DM, verified email, web chat) gets the household snapshot" do
       alex = AgentPerson.seed_owner!
       connect!(users(:alex), email: "alex@mcritchie.studio")

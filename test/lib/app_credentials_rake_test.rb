@@ -39,6 +39,15 @@ class AppCredentialsRakeTest < ActiveSupport::TestCase
     assert_nil AppCredential.authenticate(secret, purpose: "agent-chat")
   end
 
+  test "SECRET_ONLY=1 writes the secret alone to stdout, for a pipe" do
+    out = run_task("app_credentials:mint", { "APP" => "alex-build", "SECRET_ONLY" => "1" })
+
+    assert_equal 1, out.lines.size
+    assert AppCredential.authenticate(out.strip, purpose: "agent-chat")
+  ensure
+    ENV.delete("SECRET_ONLY")
+  end
+
   test "mint refuses an app the allow-list does not name" do
     assert_raises(SystemExit) { run_task("app_credentials:mint", { "APP" => "not-listed" }) }
     assert_equal 0, AppCredential.count

@@ -476,7 +476,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_210000) do
     t.string "revoked_by"
     t.string "token_digest", null: false
     t.datetime "updated_at", null: false
-    t.index ["app_slug", "purpose"], name: "index_app_credentials_on_app_slug_and_purpose"
+    t.index ["app_slug", "purpose"], name: "index_app_credentials_one_live_per_app_purpose", unique: true, where: "(revoked_at IS NULL)"
     t.index ["token_digest"], name: "index_app_credentials_on_token_digest", unique: true
     t.check_constraint "purpose::text = 'agent-chat'::text", name: "app_credentials_purpose_known"
   end

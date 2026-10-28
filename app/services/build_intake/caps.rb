@@ -20,6 +20,11 @@ module BuildIntake
   class Caps
     ZONE = "America/Denver".freeze
     CAP_SUMMARY = "intake cap".freeze
+    # The answers the daily total counts: a signed-out visitor's, and a satellite
+    # chat's from an email that is no hub User (AgentChat::Visitor), which costs
+    # nothing to make up.
+    UNVERIFIED_SQL = "agent_messages.envelope->>'signed_in' = 'false' OR " \
+                     "(left(agent_messages.thread_key, ?) = ? AND agent_messages.envelope->>'user_id' IS NULL)".freeze
 
     REPLIES = {
       request_signed_out: "We've covered a lot, and I'd love to keep going. Sign in to continue: everything " \
@@ -54,7 +59,7 @@ module BuildIntake
       return nil unless @policy
       return :ip if ip_hash.present? && answered.where("agent_messages.envelope->>'ip_hash' = ?", ip_hash)
                                                 .where("agent_messages.created_at > ?", @now - 1.hour).count >= @policy.per_ip_per_hour
-      return :daily if answered.where("agent_messages.envelope->>'signed_in' = 'false'")
+      return :daily if answered.where(UNVERIFIED_SQL, AgentChat::THREAD_PREFIX.length, AgentChat::THREAD_PREFIX)
                                .where("agent_messages.created_at >= ?", @now.in_time_zone(ZONE).beginning_of_day)
                                .count >= @policy.daily_total
 
