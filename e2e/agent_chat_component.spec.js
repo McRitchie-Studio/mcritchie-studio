@@ -206,3 +206,31 @@ test("a file attached while a send posts survives the composer swap, and the car
 
   expect(pageErrors, report()).toEqual([]);
 });
+
+// Carl's block on PR #2285. A refused send (422) is redrawn by the server with only
+// the files it still holds (AgentMessages::Attachments.held): a dead token (expired,
+// forged, already used) is dropped there, and the client must not put its chip
+// back over that answer, or it shows ready and refuses every later send.
+test("a send refused for a dead file comes back without that file's chip", async ({ page }) => {
+  const { pageErrors, report } = watchPageErrors(page);
+  await loginWithMagicLink(page, "owner@cyvasse.test");
+  await page.goto("/applications/cyvasse/chat");
+
+  const input = page.locator("[data-test='cto-chat-input']");
+  await page.locator("[data-test='cto-chat-file-input']").setInputFiles(PNG);
+  await expect(page.locator("[data-test='cto-chat-chip'][data-state='done']")).toHaveCount(1);
+  // The token dies before the send (as one past Attachments::TOKEN_TTL does).
+  await page.locator("[data-test='cto-chat-chip'] input[type='hidden']").evaluate((field) => { field.value = "dead-token"; });
+  const text = `With a dead file ${Date.now()}`;
+  await input.fill(text);
+  await input.press("Enter");
+
+  await expect(page.locator("[data-test='cto-chat-error']"), "the server says why").toBeVisible();
+  await expect(page.locator("[data-test='cto-chat-input']"), "the refused text is echoed back").toHaveValue(text);
+  await page.waitForTimeout(500); // past the redraw's carry
+  await expect(page.locator("[data-test='cto-chat-chip']"), "the dead file does not come back looking ready").toHaveCount(0);
+
+  // The refusal's own 422 is the answer under test; anything else is a failure.
+  const unexpected = pageErrors.filter((line) => !/status of 422/.test(line));
+  expect(unexpected, report()).toEqual([]);
+});
