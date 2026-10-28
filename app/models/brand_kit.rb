@@ -23,6 +23,7 @@
 #                   this, because no app installs them (task brand-kit-applied-status).
 #
 # The apps a kit feeds are its app_links (BrandKitApp), each Applied, Kit changed or Not applied against saved_at.
+# Its Google marketing kit, if it has one, is its marketing_kit (BrandMarketingKit), Up to date or Kit changed the same way.
 #
 # A choice's `edits` are the gallery's own URL params (Logos::Variant::EDIT_PARAMS: first_colour, ending_weight, …),
 # and a choice is read through the same parser the URL is (Logos::Variant.parse, then the logo's own refusal), so a
@@ -58,6 +59,7 @@ class BrandKit < ApplicationRecord
 
   has_many_attached :originals
   has_many :app_links, class_name: "BrandKitApp", foreign_key: :brand, primary_key: :brand, inverse_of: :brand_kit
+  has_one :marketing_kit, class_name: "BrandMarketingKit", foreign_key: :brand, primary_key: :brand, inverse_of: :brand_kit
 
   validates :brand, presence: true, uniqueness: true
   validates :notes, length: { maximum: MAX_NOTES }

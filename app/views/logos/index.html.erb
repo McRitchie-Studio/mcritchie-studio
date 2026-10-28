@@ -8,7 +8,8 @@
     read in one query; their badges say Saved) or its defaults, and the brand
     cell holds the row's downloads (Navbar, Stacked and Icon, as shown, in the
     header's Download format) and, under them, each app the kit feeds with its
-    status: Applied, Kit changed or Not applied (BrandKitApp). With a saved kit
+    status: Applied, Kit changed or Not applied (BrandKitApp), then its Google
+    marketing kit: Up to date, Kit changed or No Google kit (BrandMarketingKit). With a saved kit
     icon all three tiles draw it (task kit-icon-atomic-unit); without one a
     saved choice keeps the icon it was saved with, as its brand page draws it.
     Below the xl breakpoint a row is a stack of labelled cells; the wrapper
@@ -65,6 +66,11 @@
                     <% end %>
                   </div>
                 <% end %>
+                <%# Its Google marketing kit, on every brand so a brand without one says so (BrandMarketingKit; task
+                    marketing-kit-on-logos). %>
+                <div class="pt-1 text-3xs font-normal xl:max-w-44" data-test="logo-marketing-kit">
+                  <%= render "brand_marketing_kits/status", marketing_kit: @marketing_kits[logo.brand], kit: @kits[logo.brand], brand: logo.brand %>
+                </div>
               </th>
               <%# At least as wide as the widest brand's cluster on one line (Industries and Commercial Welding, about
                   432 px with the cell's padding), so the table never squeezes a brand's Navbar tile under its square. %>

@@ -1,0 +1,24 @@
+<%# ONE BRAND'S GOOGLE MARKETING KIT LINE (BrandMarketingKit#status; task marketing-kit-on-logos), the same shape as a
+    kit-to-app line (brand_kit_apps/_status): the Google Drive mark and the account that owns the kit (team@<domain>),
+    then "Up to date" or "Kit changed" (amber: the logos were saved after the last publish) and an Open link to the
+    kit's Drive folder; with no Google kit, "No Google kit". The title gives the owner and the dates. Locals: marketing_kit (BrandMarketingKit, or nil: none), kit (the brand's
+    BrandKit, or nil: never saved), brand. %>
+<% day = ->(time) { time&.strftime("%b %-d, %Y") } %>
+<% if marketing_kit %>
+  <% status = marketing_kit.status(kit) %>
+  <% title = ["Google kit#{" owned by #{marketing_kit.owner}" if marketing_kit.owner}: Kit #{kit&.saved_at ? "saved #{day.(kit.saved_at)}" : 'never saved'}",
+              "published #{marketing_kit.published_at ? day.(marketing_kit.published_at) : 'at an unknown time'}#{" (kit of #{day.(marketing_kit.published_saved_at)})" if marketing_kit.published_saved_at}"].join("; ") %>
+  <%# The owner is the point of the line, so it is never cut: it wraps, and the status and Open move under it. %>
+  <p class="flex flex-wrap items-baseline gap-x-1 min-w-0" data-test="marketing-kit-status" data-brand="<%= brand %>" data-status="<%= status %>" title="<%= title %>">
+    <span class="flex items-baseline gap-1 min-w-0">
+      <%= render "brand_marketing_kits/drive_icon" %>
+      <span class="break-all text-secondary" data-test="marketing-kit-owner"><%= marketing_kit.owner.presence || "Google kit" %></span>
+    </span>
+    <span class="shrink-0 font-semibold <%= { current: 'text-success-ink', changed: 'text-warning-ink' }.fetch(status) %>"><%= BrandMarketingKit::STATUSES.fetch(status) %></span>
+    <%= safe_link_to "Open", marketing_kit.drive_url, target: "_blank", rel: "noopener", class: "shrink-0 text-primary hover:underline", data: { test: "marketing-kit-link" } %>
+  </p>
+<% else %>
+  <p class="flex items-baseline gap-1 min-w-0" data-test="marketing-kit-status" data-brand="<%= brand %>" data-status="none">
+    <span class="truncate text-muted"><%= BrandMarketingKit::NONE_LABEL %></span>
+  </p>
+<% end %>

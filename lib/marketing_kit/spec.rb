@@ -69,6 +69,10 @@ module MarketingKit
     def brand_guide = data[:brand_guide] || {}
 
     def root_name = drive[:root_name] || "#{name} — Marketing Kit"
+    # The brand's key on /logos (config/logo_brands.yml), if it has one: a publish prints the command that records
+    # the kit there (BrandMarketingKit, task marketing-kit-on-logos), owned by drive.subject.
+    def logo_brand = data[:brand].presence&.to_s
+    def owner = drive[:subject].to_s.downcase
 
     def palette = data.fetch(:palette)
 
@@ -120,6 +124,9 @@ module MarketingKit
       raise Error, "#{label}: missing #{missing.join(', ')}" if missing.any?
       raise Error, "#{label}: short must be 1-6 letters or digits" unless short.to_s.match?(/\A[A-Za-z0-9]{1,6}\z/)
       raise Error, "#{label}: drive.subject is required" if drive[:subject].blank?
+      if logo_brand && !Logos::NavbarLogo.brands.include?(logo_brand)
+        raise Error, "#{label}: brand #{logo_brand} is not a /logos brand (#{Logos::NavbarLogo.brands.join(', ')})"
+      end
 
       validate_palette!
       validate_logos!

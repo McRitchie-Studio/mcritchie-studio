@@ -8,6 +8,8 @@
 name: Ridgeline Fabrication            # in copy
 legal_name: Ridgeline Fabrication LLC  # contracts and formal documents (defaults to name)
 short: RF                              # file prefix: RF_logo_…, RF Template — Slides
+# brand: welding_v2                    # its /logos brand key, if it has one: a publish prints the command that
+#                                      # shows the kit on /logos (bin/rails logos:marketing_kit)
 tagline: Built to last.                # with its full stop; shown in capitals beside the logo
 owner: Jordan Example                  # owner of the kit in 00 Start Here and the tracker
 updated: 2026-10-27
