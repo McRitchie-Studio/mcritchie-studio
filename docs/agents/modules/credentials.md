@@ -484,8 +484,8 @@ profiles kept the revoked value, and `bin/heroku-secret-set` 401'd on it.
   `heroku git:credentials` helper too.
 - Reads happen only at use, never at shell start: background agents open many
   shells, and the op cache daemon can hang a read for fifteen minutes. Each read
-  runs with `OP_CACHE=false` under a deadline (`MCR_OP_DEADLINE`, 20 s), so a hang
-  costs one command 20 seconds, not the machine its morning.
+  runs with `OP_CACHE=false` under a deadline (`MCR_OP_DEADLINE`, 14 s), so a hang
+  costs one command 14 seconds, not the machine its morning.
 - A caller that sets `HEROKU_API_KEY` (CI, a test, an override) is used as given.
 - A long run reads once: `bin/release` (at its first PROD board op) and
   `bin/qa-server` resolve the token before their first write and export it, so their many `heroku` calls cost one
@@ -591,7 +591,8 @@ the child's exit status, and never costs a read of its own, so a consumer's
 fallback for an absent or rate-limited `op` is untouched.
 
 **Every `op` read is bounded.** Each attempt through either half of the wrapper
-gets 20 seconds (`MCR_OP_DEADLINE` overrides it), then the child is killed. A
+gets 14 seconds (`MCR_OP_DEADLINE` overrides it), then the child's whole process
+group is killed, so an attempt and its retry stay under thirty seconds. A
 timed-out attempt is logged `timeout` and retried ONCE with `OP_CACHE=false`, which
 skips the 1Password cache daemon; the retry logs its own row (`ok`, `fail:<n>`, or
 a second `timeout`). `bin/op-reads` counts timeouts in their own column. Callers
@@ -601,8 +602,23 @@ bare readers under `bin/`: `DomainCutover::Credentials.op_read` (the release's
 static-site deploy), `bin/r2-backup --op`, `bin/lib/dev_google_client.rb` and
 `DomainRegister::Credentials.op_read`. `test/lib/op_reads_are_bounded_test.rb`
 refuses a new Ruby call under `bin/` that spawns `op` outside the wrapper. The shell half's watchdog is perl
-(`timeout` is not installed on the Mac), and it forks and kills from the parent,
-because `op` is a Go binary and ignores an inherited SIGALRM. Why: from 2026-10-21
+(`timeout` is not installed on the Mac); it uses no alarm at all, because `op` is a
+Go binary that ignores SIGALRM: it forks, puts `op` in its own process group, polls
+for the exit, and kills the group at the deadline.
+
+**A hung read is named, once.** When a read and its retry both run out, the wrapper
+prints one line, `1Password is not answering ... Quit and reopen the 1Password app;
+reboot if that fails`, and the release-path callers stop there instead of reporting
+their own error: `bin/gh-token`, `bin/secret` and `bin/gh-app-git-credential` exit
+75 (the helper spends no further read after a hung `gh-token`), `HerokuToken` says
+"not answering", and a `bin/release prepare|ship|archive` abort adds the line when
+`.agents/op-reads.log` shows timeouts during the run, so a GitHub 401 caused by a
+hang no longer reads as an auth fault. `bin/release prepare|ship
+--wait-for-1password[=MINUTES]` (default 60) goes further: when the step fails and a
+bounded probe read hangs, it tries a read every two minutes and re-runs the step once
+1Password answers (both resume on a re-run), or gives up at the deadline with exit 75.
+Why: 1Password hung three times on 2026-10-27/28 and each release surfaced it as a
+401 or an exit 9 after a silent wait. Why: from 2026-10-21
 to 2026-10-24 the daemon never became ready after a reboot, every read waited about
 fifteen minutes, and GitHub work stopped for three days.
 

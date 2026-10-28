@@ -217,8 +217,12 @@ half that repairs **this shell**.
 
 **A hang is not an outage.** When every `op` call waits minutes before it
 answers, the 1Password CLI's cache daemon is wedged and the service is fine:
-`export OP_CACHE=false` in this shell and run step 1 again (bound a probe with
-`perl -e 'alarm 20; exec @ARGV' op whoami`). The daemon clears on its own.
+`export OP_CACHE=false` in this shell and run step 1 again. Probe with
+`bin/secret studio-agents github.mcritchie-agent app-id` (not a secret; bounded
+under thirty seconds, exit 75 on a hang), never `perl -e 'alarm N; exec'`: `op`
+ignores SIGALRM, so that bounds nothing. When the uncached read hangs too, quit
+and reopen the 1Password app, and reboot if that fails. A release can wait it out:
+`bin/release prepare --wait-for-1password` (or `ship`).
 
 Steps 1-4 all end at `op`. **This is the last rung, not the first.** Run step 1a
 before you come here: a 403 that reads like a dead account is usually a stale
