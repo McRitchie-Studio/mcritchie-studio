@@ -75,7 +75,10 @@ module BooksCli
 
   def render(verb, answer)
     case verb
-    when "setup" then answer["folders"].map { |k, v| "#{k.ljust(10)} #{v}" }.join("\n")
+    when "setup"
+      lines = answer["folders"].map { |k, v| "#{k.ljust(10)} #{v}" }
+      lines << "in #{answer['owner']}'s Drive#{", shared with #{answer['shared_with']}" if answer['shared_with']}" if answer["owner"]
+      lines.join("\n")
     when "status" then render_status(answer)
     when "intake" then render_intake(answer)
     when "unclassified" then render_lines(answer["lines"], empty: "(no lines waiting)")
@@ -141,7 +144,7 @@ module BooksCli
     runner ||= MailCli.heroku_runner(app: opts[:app], local: opts[:local])
     stdout, stderr = runner.call(MailCli.runner_script(request, token, service: SERVICE, tag: TAG))
     answer = begin
-      MailCli.extract(stdout, token, tag: TAG)
+      MailCli.extract(stdout, token, tag: TAG, service: SERVICE)
     rescue MailCli::Error => e
       err.puts "books: #{e.message}"
       err.puts((stdout.to_s + stderr.to_s).lines.last(15).join)

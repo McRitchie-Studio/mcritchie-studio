@@ -26,7 +26,7 @@ module Books
       end
     end
 
-    Entity = Struct.new(:key, :name, :drive_subject, :drive_root, :accounts, :rules, keyword_init: true) do
+    Entity = Struct.new(:key, :name, :drive_subject, :share_with, :drive_root, :accounts, :rules, keyword_init: true) do
       def account(key) = accounts.fetch(key.to_s) { raise Error, "#{self.key} has no account #{key.inspect}" }
 
       def account_for_last4(last4) = accounts.values.find { |a| a.last4 == last4.to_s }
@@ -77,7 +77,7 @@ module Books
         Rule.new(name: r.fetch("name"), pattern: Regexp.new(r.fetch("match"), Regexp::IGNORECASE),
                  sign: r["sign"], category: r["category"], purpose: r["purpose"])
       end
-      Entity.new(key: key, name: e.fetch("name"), drive_subject: e.fetch("drive_subject"),
+      Entity.new(key: key, name: e.fetch("name"), drive_subject: e.fetch("drive_subject"), share_with: e["share_with"],
                  drive_root: e.fetch("drive_root"), accounts: accounts, rules: rules)
     end
   end

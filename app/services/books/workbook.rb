@@ -271,7 +271,11 @@ module Books
       entry.purpose.presence || "Unspecified"
     end
 
-    def distribution_purposes = @entries.select { |e| kind_of(e) == "distribution" }.map { |e| purpose_of(e) }.uniq.sort
+    # SUMIFS matches text case-insensitively, so purposes that differ only in
+    # case are one row (the first spelling seen), never two rows that each sum both.
+    def distribution_purposes
+      @entries.select { |e| kind_of(e) == "distribution" }.map { |e| purpose_of(e) }.uniq(&:downcase).sort_by(&:downcase)
+    end
 
     def account_label(key) = @entity.account(key).label
 

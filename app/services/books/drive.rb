@@ -15,7 +15,15 @@ module Books
   #
   # Inbox files stay where Alex put them: the hub cannot move a file it did not
   # create. Intake records each one's id, so a second run skips it.
+  #
+  # WHOSE DRIVE. The tree lives in the drive_subject's Drive (the domain's team@
+  # workspace subject, the only address the hub may act as there) and its root is
+  # shared with `share_with` as a writer, so Alex McRitchie sees it in his own
+  # Drive and can drop statements into the Inbox. A subject that is not an ACTIVE
+  # workspace_account is refused here, by name, before any Google call.
   class Drive
+    Error = Class.new(StandardError)
+
     FOLDER_MIME = "application/vnd.google-apps.folder"
     SHEET_MIME = "application/vnd.google-apps.spreadsheet"
     PDF_MIME = "application/pdf"
@@ -29,7 +37,15 @@ module Books
       @folders = {}
     end
 
-    def client = @client ||= Workspace::DriveClient.new(subject: entity.drive_subject)
+    def client
+      @client ||= begin
+        unless WorkspaceAccount.impersonatable?(entity.drive_subject)
+          raise Error, "#{entity.key}'s drive_subject #{entity.drive_subject} is not an ACTIVE workspace_account; " \
+                       "the hub reaches Drive only as a domain's registered subject (team@<domain>). Fix config/books.yml"
+        end
+        Workspace::DriveClient.new(subject: entity.drive_subject)
+      end
+    end
 
     def root = folder(entity.drive_root, "root")
 
@@ -39,9 +55,20 @@ module Books
 
     def closes_folder(month) = folder(month, folder("Closes", root))
 
-    # The tree's top folders, created if missing: what `setup` prints.
+    # The tree's top folders, created if missing, and the root shared with
+    # `share_with` unless it already is: what `setup` prints. Safe to re-run.
     def ensure_tree
-      { "root" => root, "inbox" => inbox, "statements" => folder("Statements", root), "closes" => folder("Closes", root) }
+      tree = { "root" => root, "inbox" => inbox, "statements" => folder("Statements", root), "closes" => folder("Closes", root) }
+      share_root
+      tree
+    end
+
+    def share_root
+      email = entity.share_with.to_s.strip.downcase
+      return if email.empty?
+
+      shared = Array(client.permissions_list(root).permissions).any? { |p| p.email_address.to_s.downcase == email }
+      client.permissions_create(root, email: email, role: "writer") unless shared
     end
 
     # PDFs in the Inbox, oldest first: [{id, name}].

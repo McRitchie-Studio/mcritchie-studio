@@ -49,6 +49,9 @@ class BooksClassifyTest < ActiveSupport::TestCase
     assert_raises(Books::Classify::Error) { call.(category: "not_a_category") }
     assert_raises(Books::Classify::Error) { call.(category: "member_distribution", purpose: "=HYPERLINK(1)") }
     assert_raises(Books::Classify::Error) { call.(category: "member_distribution", purpose: 'say "hi"') }
+    [ "Owner*", "draws?", "~x", "<500", "a>b", "=x" ].each do |wild|
+      assert_raises(Books::Classify::Error, wild) { call.(category: "member_distribution", purpose: wild) }
+    end
     assert_raises(Books::Classify::Error) do
       Books::Classify.call(books_entity, ids: [ entry.id + 1000 ], category: "bank_fees", by: "x", config: books_config)
     end

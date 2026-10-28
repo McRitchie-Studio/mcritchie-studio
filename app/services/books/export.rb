@@ -21,7 +21,8 @@ module Books
       entity = config.entity(request.fetch("entity"))
       drive ||= Books::Drive.new(entity)
       case request["verb"]
-      when "setup" then { "folders" => drive.ensure_tree.transform_values { |id| Books::Drive.link(id) } }
+      when "setup" then { "folders" => drive.ensure_tree.transform_values { |id| Books::Drive.link(id) },
+                          "owner" => entity.drive_subject, "shared_with" => entity.share_with }
       when "status" then status(entity, drive)
       when "intake" then intake(entity, drive, request)
       when "unclassified" then { "lines" => BookEntry.for_entity(entity.key).unclassified.chronological.map { |e| line(e) } }
@@ -30,7 +31,7 @@ module Books
                                     .call(generated_by: by(request)).to_h
       else { "error" => "unknown verb #{request['verb'].inspect}" }
       end
-    rescue Books::Config::Error, Books::Classify::Error, ArgumentError, KeyError => e
+    rescue Books::Config::Error, Books::Classify::Error, Books::Drive::Error, ArgumentError, KeyError => e
       { "error" => e.message }
     rescue StandardError => e
       # Anything else is a fault, not a mistyped argument: leave a receipt in

@@ -80,6 +80,21 @@ class BooksWorkbookTest < ActiveSupport::TestCase
     assert_in_delta 0, cell(eval, "Equity", "Member contributions"), 0.001 # this year's only
   end
 
+  test "purposes differing only in case are one balance sheet row, so it still balances" do
+    BookStatement.last.entries.create!(entity: "example", account_key: "checking", position: 50, posted_on: Date.new(2026, 2, 20),
+                                       amount_cents: -500_00, section: "debit", description: "WIRE", category: "member_distribution",
+                                       purpose: "owner draws", classified_by: "test")
+    eval = BooksFormulaEval.new(build.package)
+    labels = eval_labels(build, "Balance Sheet")
+
+    assert_equal 1, labels.count { |l| l.to_s.casecmp?("Member distributions: Owner draws") }
+    assert_in_delta(-2_000.00, cell(eval, "Balance Sheet", "Member distributions: Owner draws"), 0.001)
+    assert_in_delta 0, cell(eval, "Balance Sheet", "Check: assets − liabilities − equity (must be 0)"), 0.001
+    assert_in_delta 0, cell(eval, "Equity", "Check: rollforward − balance sheet (must be 0)"), 0.001
+  end
+
+  def eval_labels(book, sheet) = book.package.workbook.worksheets.find { |w| CGI.unescapeHTML(w.name) == sheet }.rows.map { |r| r.cells.first&.value }
+
   test "an earlier month's close leaves later lines out" do
     book = build("2026-01")
     eval = BooksFormulaEval.new(book.package)

@@ -16,9 +16,10 @@ module Books
 
       config.category(category) if category
       # A purpose becomes a row label and a quoted SUMIFS criterion on the
-      # workbook, so it may not start a formula or close the quote.
-      if purpose.to_s.match?(/\A\s*[=+\-@]|"/)
-        raise Error, "a purpose may not start with = + - @ or contain a double quote: #{purpose.inspect}"
+      # workbook, so it may not start a formula, close the quote, or carry a
+      # character SUMIFS reads as a wildcard (* ? ~) or a comparison (< > =).
+      if purpose.to_s.match?(/\A\s*[=+\-@]|["*?~<>=]/)
+        raise Error, "a purpose may not start with + - @ or contain \" * ? ~ < > =: #{purpose.inspect}"
       end
       ids = Array(ids).map { |i| Integer(i) }
       entries = BookEntry.for_entity(entity.key).where(id: ids).to_a

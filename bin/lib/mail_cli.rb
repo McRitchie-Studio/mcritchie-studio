@@ -58,11 +58,11 @@ module MailCli
   end
 
   # Pull the answer out of everything the run printed.
-  def extract(output, token, tag: "mail")
+  def extract(output, token, tag: "mail", service: "MailExport")
     prefix = "@@#{tag}:#{token}@@ "
     chunks = output.to_s.each_line.map { |l| l.delete_suffix("\n").delete_suffix("\r") }
                    .select { |l| l.start_with?(prefix) }.map { |l| l.delete_prefix(prefix) }
-    raise Error, "no answer in the run's output (did the dyno boot? is MailExport deployed?)" if chunks.empty?
+    raise Error, "no answer in the run's output (did the dyno boot? is #{service} deployed?)" if chunks.empty?
     raise Error, "the answer was cut off before its END line" unless chunks.last == "END"
 
     JSON.parse(Base64.strict_decode64(chunks[0...-1].join))

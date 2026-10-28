@@ -5,7 +5,11 @@
 #
 #   <entity>:
 #     name:          legal name, printed on every artifact
-#     drive_subject: the Workspace user whose Drive holds the books (an ACTIVE workspace_account)
+#     drive_subject: whose Drive holds the books: the domain's ACTIVE workspace_account subject
+#                    (team@<domain>). It is the only address the hub may act as in Drive; a
+#                    mailbox such as alex@ opens mail, never Drive (WorkspaceAccount::PURPOSES)
+#     share_with:    who the books folder is shared with as a writer, so it appears in their
+#                    Drive under "Shared with me" and they can drop statements in its Inbox
 #     drive_root:    the folder `bin/books setup` creates in that Drive's root. Let setup create
 #                    it: under drive.file the hub can only write into folders it made itself
 #     accounts:      key → bank, the statement's product line, the last four digits the
@@ -36,7 +40,8 @@ categories:
 entities:
   studio:
     name: McRitchie Studio LLC
-    drive_subject: alex@mcritchie.studio
+    drive_subject: team@mcritchie.studio
+    share_with: alex@mcritchie.studio
     drive_root: McRitchie Studio Books
     accounts:
       money_market:

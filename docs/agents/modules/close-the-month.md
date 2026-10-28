@@ -24,11 +24,21 @@ was revenue. **The agent never guesses a classification.**
 
 ## Where things live
 
-- **Drive.** `alex@mcritchie.studio` → `McRitchie Studio Books/`: `Inbox/` (he drops
-  PDFs here), `Statements/<year>/` (the hub's filed copies), and `Closes/<YYYY-MM>/`
-  (a Sheet and a PDF). `bin/books setup studio` creates the tree and prints the
-  links. **Never create these folders by hand.** Under the `drive.file` scope, the
-  hub can write only into folders it made itself.
+- **Drive.** The books folder, `McRitchie Studio Books/`, holds:
+  - `Inbox/`: where he drops PDFs;
+  - `Statements/<year>/`: the hub's filed copies;
+  - `Closes/<YYYY-MM>/`: a Sheet and a PDF.
+
+  The folder lives in `team@mcritchie.studio`'s Drive. That is the domain's workspace
+  subject, the only address the hub may act as in Drive. The root is shared with
+  `alex@mcritchie.studio` as a writer, so it appears in his Drive under "Shared with
+  me". `bin/books setup studio` creates the tree, shares it, and prints the links.
+  It is safe to re-run.
+
+  **Never create these folders by hand.** Under the `drive.file` scope, the hub can
+  write only into folders it made itself. **Never point `drive_subject` at a
+  mailbox** such as `alex@`: a mailbox opens mail, never Drive, and every
+  `bin/books` call would be refused.
 - **The ledger.** Hub production tables `book_statements`, `book_entries` and
   `book_closes`. The Sheet is generated from them. An edit made in the Sheet is
   lost on the next run, so record every change with `classify`.
