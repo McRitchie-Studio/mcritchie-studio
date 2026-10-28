@@ -338,6 +338,36 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='logo-themed'][data-tone='dark'].hidden.dark\\:contents img[data-test='logo-image'][src*='tone=dark']", count
   end
 
+  # Task brand-page-split-layout: the header holds the brand, the type tabs and Context; under it the controls sit beside
+  # the logo, and the words about it beside the Download card and edit panel. Guides give the drawing its own row.
+  test "a brand page is a header, then the controls beside the logo, then the words beside Download and Edit" do
+    log_in_as(@admin)
+    %w[navbar stacked icon].each do |type|
+      get logo_brand_path("studio", type:)
+      assert_response :success
+      assert_select "header[data-test='logo-header']" do
+        assert_select "nav[aria-label='Breadcrumb'] h1", "McRitchie Studio"
+        assert_select "[data-test='logo-tabs'] [data-test='logo-tab']", 3
+        assert_select "[data-test='context-form']", 1
+        assert_select "[data-test='kit-status']", 1
+      end
+      assert_select "[data-test='logo-type'][data-layout='split']", 1, type
+      assert_select "[data-test='logo-top'].lg\\:grid-cols-2 > [data-test='logo-control-card'] + [data-test='logo-example']", 1, type
+      assert_select "[data-test='logo-control-card'] [data-test='colouring-control']", 1
+      assert_select "[data-test='logo-control-card'] [data-test='compare-link']", 1
+      assert_select "[data-test='logo-control-card'] [data-test='kit-default-state']", 1
+      assert_select "[data-test='logo-bottom'].lg\\:grid-cols-2 > [data-test='logo-text-card'] + [data-test='logo-cards']", 1, type
+      assert_select "[data-test='logo-text-card'] [data-test='type-sentence']", 1
+      assert_select "[data-test='logo-text-card'] [data-test='transparent-note']", 1
+      assert_select "[data-test='logo-cards'] [data-test='download-card'], [data-test='logo-cards'] [data-test='edit-panel']", 2
+    end
+
+    get logo_brand_path("studio", type: "stacked", guides: 1)
+    assert_select "[data-test='logo-type'][data-layout='row']", 1
+    assert_select "[data-test='logo-top'].lg\\:grid-cols-2", 0, "a guide drawing takes the full width"
+    assert_select "[data-test='logo-text-card'] [data-test='guides-sentence']", 1
+  end
+
   # Task logo-download-card: ONE logo per tab, in the kit's text version (here the default, second word leads), with
   # one Download card; the Words control picks another. It was three text versions, each with its own download and copy.
   test "a brand page opens on the Navbar Logo tab at the rule of 4: one logo, in the kit's text version, with a Download card" do
@@ -369,8 +399,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "window.copyText"
     # Every control on the page has the page's own focus ring: the tabs, the Rule options, the guides toggle, Download and Copy SVG.
     ringed = css_select(".btn").select { |control| control["class"].include?("focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!") }
-    assert_equal %w[colouring-option colouring-option compare-link logo-tab logo-tab logo-tab rule-option rule-option rule-option] +
-                 %w[text-option] * 3 + %w[edit-jump guides-toggle kit-save-default logo-download logo-copy kit-save kit-download] +
+    assert_equal %w[logo-tab logo-tab logo-tab colouring-option colouring-option rule-option rule-option rule-option] +
+                 %w[text-option] * 3 + %w[guides-toggle kit-save-default compare-link edit-jump logo-download logo-copy kit-save kit-download] +
                  %w[kit-pick-open kit-pick-download kit-pick-download] * 3 + %w[kit-notes-save kit-original-upload], ringed.map { |control| control["data-test"] }
     assert_select "[data-test='brand-note']", /Original is the marketing kit's own light and dark icon, with its steel gradient and ruler ticks.*Alt draws the icon flat/
   end
@@ -453,7 +483,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='logo-plate']", 0
       assert_select "[data-test='logo-example'] h2", 0
       assert_select "[data-test='guides-toggle'], [data-test='rule-control'], [data-test='guides-sentence']", 0
-      assert_equal %w[edit-jump kit-save-default], css_select("[data-test='logo-controls'] .btn").map { |control| control["data-test"] }
+      assert_equal %w[colouring-option colouring-option kit-save-default], css_select("[data-test='logo-controls'] .btn").map { |control| control["data-test"] }
+      assert_select "[data-test='logo-control-card'] [data-test='edit-jump']", 1
       assert_select "[data-test='type-sentence']", /\AThe icon alone: the kit's atomic unit\./
       assert_select "[data-test='watermark-text-note']", 0, "an icon has no text versions to compare"
     end

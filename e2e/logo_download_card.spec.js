@@ -101,32 +101,39 @@ test("a custom width keeps the drawing's aspect, and the card says the size befo
   expect([png.width, png.height]).toEqual([1000, height]);
 });
 
-test("the Navbar tab is a row and the Stacked tab a column at desktop width; both one column on a phone", async ({ page }) => {
+// Task brand-page-split-layout: every tab is in halves at desktop width, the controls beside the logo and the words
+// beside the Download card and edit panel; guides give the drawing the full width; a phone is one column.
+test("every tab puts the controls beside the logo and the words beside the cards; one column on a phone", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await loginWithMagicLink(page, "alex@test.com");
 
-  await page.goto("/logos/studio");
-  await expect(page.locator("[data-test='logo-type']")).toHaveAttribute("data-layout", "row");
-  let logo = await page.locator("[data-test='logo-example']").boundingBox();
-  let download = await card(page).boundingBox();
-  let edit = await page.locator("[data-test='edit-panel']").boundingBox();
-  expect(download.y).toBeGreaterThanOrEqual(logo.y + logo.height); // the logo spans the page, the cards under it
-  expect(edit.x).toBeGreaterThanOrEqual(download.x + download.width); // the Download card and the edit panel side by side
-  expect(logo.width).toBeGreaterThan(download.width + edit.width);
+  for (const path of ["/logos/studio", "/logos/studio?type=stacked", "/logos/studio?type=icon"]) {
+    await page.goto(path);
+    await expect(page.locator("[data-test='logo-type']")).toHaveAttribute("data-layout", "split");
+    const controls = await page.locator("[data-test='logo-control-card']").boundingBox();
+    const logo = await page.locator("[data-test='logo-example']").boundingBox();
+    const text = await page.locator("[data-test='logo-text-card']").boundingBox();
+    const download = await card(page).boundingBox();
+    const edit = await page.locator("[data-test='edit-panel']").boundingBox();
+    expect(logo.x).toBeGreaterThanOrEqual(controls.x + controls.width); // the logo beside the controls
+    expect(Math.abs(logo.y - controls.y)).toBeLessThan(2);
+    expect(Math.abs(logo.width - controls.width)).toBeLessThan(2); // halves
+    expect(Math.abs(logo.height - controls.height)).toBeLessThan(2); // and of one height
+    expect(text.y).toBeGreaterThanOrEqual(Math.max(controls.y + controls.height, logo.y + logo.height));
+    expect(download.x).toBeGreaterThanOrEqual(text.x + text.width); // the words beside the cards
+    expect(edit.y).toBeGreaterThanOrEqual(download.y + download.height); // the cards stack in their column
+  }
 
-  await page.goto("/logos/studio?type=stacked");
-  await expect(page.locator("[data-test='logo-type']")).toHaveAttribute("data-layout", "column");
-  logo = await page.locator("[data-test='logo-example']").boundingBox();
-  download = await card(page).boundingBox();
-  edit = await page.locator("[data-test='edit-panel']").boundingBox();
-  expect(download.x).toBeGreaterThanOrEqual(logo.x + logo.width); // the logo on the left, the cards on the right
-  expect(Math.abs(download.y - logo.y)).toBeLessThan(2);
-  expect(edit.y).toBeGreaterThanOrEqual(download.y + download.height); // the cards stack in their column
+  await page.goto("/logos/studio?type=stacked&guides=1");
+  await expect(page.locator("[data-test='logo-type']")).toHaveAttribute("data-layout", "row");
+  const controls = await page.locator("[data-test='logo-control-card']").boundingBox();
+  let logo = await page.locator("[data-test='logo-example']").boundingBox();
+  expect(logo.y).toBeGreaterThanOrEqual(controls.y + controls.height); // the drawing gets its own row
 
   await page.setViewportSize({ width: 375, height: 800 });
   await page.goto("/logos/studio?type=stacked");
   logo = await page.locator("[data-test='logo-example']").boundingBox();
-  download = await card(page).boundingBox();
+  const download = await card(page).boundingBox();
   expect(download.y).toBeGreaterThanOrEqual(logo.y + logo.height);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
 });

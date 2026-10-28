@@ -61,10 +61,10 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
   def srcs = css_select("img[data-test='logo-image']").map { |img| img["src"] }
   def options = css_select("[data-test='colouring-option']")
 
-  test "a brand page opens on the brand's Original, with a Colouring control beside Context" do
+  test "a brand page opens on the brand's Original, with a Colouring control first among the controls" do
     get logo_brand_path("welding", type: "stacked")
     assert_response :success
-    assert_select "[data-test='context-form'] ~ [data-test='colouring-control']", 1, "beside Context"
+    assert_select "[data-test='logo-controls'] > [data-test='colouring-control']:first-child", 1, "first in the controls card (task brand-page-split-layout)"
     assert_equal %w[original alt], options.map { |option| option["data-colouring"] }
     assert_equal ["original"], css_select("[data-test='colouring-option'][aria-current='true']").map { |option| option["data-colouring"] }
     assert_equal 2, srcs.size, "one logo, light and dark (task logo-download-card)"

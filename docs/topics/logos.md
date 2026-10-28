@@ -666,10 +666,14 @@ version, else the brand's (`BrandKit::DEFAULTS`). It stays a control because the
 and weight read from it. `?text=` is the tab's own: a link to another tab drops it, so that tab opens on its own
 kit's. **Save as default** and the **Kit choice** card save the Words pick (the card's own Text select is gone).
 
-**Layout: navbar as a row, stacked as a column.** On the Navbar tab the wide logo spans the page and the Download
-card and edit panel sit side by side under it. On the Icon and Stacked tabs the logo is in a left column and the two
-cards stack in a right one. With guides on, every tab is a row, since a guide drawing needs the full width. On a
-phone everything is one column.
+**Layout: a header, then the page in halves** (task brand-page-split-layout, Alex McRitchie 2026-10-27). The header
+holds the breadcrumb with the brand's name as the page heading, the type tabs, and Context at the far right, with the
+kit's save line under it. Under it, on every tab, the controls card (Colouring, then the tab's Rule or Form and
+Proportion, then Words, Show guides and Save as default, the kit-default line, Compare and Edit parts) sits beside the
+logo, the two halves one height. The second row puts the words about the logo (the tab's method sentence, the guides
+sentence and the context notes) beside the Download card and the edit panel, which stack. With guides on, the
+controls and the drawing each take the full width, since a guide drawing needs it. On a phone everything is one
+column.
 
 - The tabs are links in a `nav` (`aria-label="Logo type"`); the current one
   carries `aria-current="page"`. The Rule control is a `role="group"` of three
