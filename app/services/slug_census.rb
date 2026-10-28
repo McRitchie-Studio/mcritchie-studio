@@ -32,7 +32,10 @@ class SlugCensus
     "contents.rival_team_slug" => TURF_RECAP,
     "release_conductor_claims.release_slug" => "a new qa-release claims the sentinel `__forming__` " \
                                                "(`__forming__:<train>` on an app train) before its release " \
-                                               "row exists; release slugs never change"
+                                               "row exists; release slugs never change",
+    "app_credentials.app_slug" => "a satellite that calls a hub API (alex.build) need not have an App row on the " \
+                                  "board; what its credential reaches is config/agent_routes.yml `web: apps:`, " \
+                                  "keyed by the same slug (AppCredential)"
   }.freeze
 
   Row = Struct.new(:table, :column, :target_table, :target_column, :via, :total, :filled, :orphans, :samples,

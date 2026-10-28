@@ -40,7 +40,9 @@ module Api
 
       private
 
-      # Two bearers are accepted:
+      # Two bearers are accepted here. (A third, a satellite APP's own credential,
+      # AppCredential, is taken only by Api::V1::AgentChatsController, which skips
+      # this method; it is never an agent session and reaches nothing else.)
       #
       # - An agent session's token (AgentSession#token): the row is read on every
       #   call, so a revoked or expired session, a studio session whose task left

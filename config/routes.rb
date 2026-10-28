@@ -737,6 +737,11 @@ Rails.application.routes.draw do
       # Creates the Content idea a faceless recap video is built from. Idempotent:
       # 201 when this call created the recap, 200 when it already existed.
       post "game_recaps", to: "game_recaps#create"
+      # The shared agent chat's hub side (epic agent-chat-primitive): a satellite's
+      # server posts its visitor's message and polls the turns, under the app's own
+      # bearer credential (Api::V1::AgentChatsController).
+      post "agent_chat/messages", to: "agent_chats#create", as: :agent_chat_messages
+      get  "agent_chat/turns", to: "agent_chats#turns", as: :agent_chat_turns
       # Facts about a person, a company or an app (agent sessions only).
       resources :facts, only: [:index, :create], param: :slug do
         member do

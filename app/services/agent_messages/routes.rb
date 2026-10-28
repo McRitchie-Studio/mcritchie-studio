@@ -39,11 +39,21 @@ module AgentMessages
       # The CTOs the web chat may route to (the `web:` block). A soul not
       # listed has no web chat.
       @web_souls = Array((config["web"] || {})["souls"]).map { |soul| soul.to_s.strip }.reject(&:empty?).uniq
+      # The satellite apps that may address a soul over the hub's agent chat API
+      # (Api::V1::AgentChatsController): `web: apps: <app slug>: [souls]`. A soul
+      # an app names here still needs to be in `web: souls:`.
+      @web_apps = ((config["web"] || {})["apps"] || {}).to_h do |app, souls|
+        [ app.to_s.strip, Array(souls).map { |soul| soul.to_s.strip }.reject(&:empty?).uniq ]
+      end
     end
 
-    attr_reader :web_souls
+    attr_reader :web_souls, :web_apps
 
     def web_soul?(soul) = @web_souls.include?(soul.to_s)
+
+    # Whether satellite `app` may chat with `soul`: the app names the soul under
+    # `web: apps:` AND the soul has a web chat (`web: souls:`).
+    def web_app_soul?(app, soul) = web_soul?(soul) && Array(@web_apps[app.to_s]).include?(soul.to_s)
 
     # Every listed guild id, in config order.
     def guild_ids = @guilds.keys

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -463,6 +463,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_190000) do
     t.string "video_slug", null: false
     t.index ["slug"], name: "index_alt_videos_on_slug", unique: true
     t.index ["video_slug", "number"], name: "index_alt_videos_on_video_slug_and_number", unique: true
+  end
+
+  create_table "app_credentials", force: :cascade do |t|
+    t.string "app_slug", null: false
+    t.datetime "created_at", null: false
+    t.string "issued_by"
+    t.string "label"
+    t.datetime "last_used_at"
+    t.string "purpose", null: false
+    t.datetime "revoked_at"
+    t.string "revoked_by"
+    t.string "token_digest", null: false
+    t.datetime "updated_at", null: false
+    t.index ["app_slug", "purpose"], name: "index_app_credentials_one_live_per_app_purpose", unique: true, where: "(revoked_at IS NULL)"
+    t.index ["token_digest"], name: "index_app_credentials_on_token_digest", unique: true
+    t.check_constraint "purpose::text = 'agent-chat'::text", name: "app_credentials_purpose_known"
   end
 
   create_table "app_ctos", force: :cascade do |t|
