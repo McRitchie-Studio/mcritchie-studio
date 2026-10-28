@@ -15,7 +15,7 @@ The gates in order: [DoR](dor.md) → [G2 Review](g2-review.md) →
 
 Before the window opens, the ship's decision snapshot also refuses a release that
 carries turf-monster or turf-vault work with no completed `devnet_gauntlet` event: a
-green Turf contest-rehearsal on QA, recorded by `qa-release`
+green Turf contest-rehearsal on QA, run and recorded by `bin/release prepare`
 (`Release::DevnetGauntlet`; waived only by `--skip-devnet-gauntlet "<Alex McRitchie's words>"`).
 
 The gate window spans the whole irreversible half of the ship:

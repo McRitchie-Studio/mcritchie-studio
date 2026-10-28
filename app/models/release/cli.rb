@@ -135,9 +135,9 @@ class Release
         bool: ["--override"], value: [], allow_positional: true
       },
       "prepare" => {
-        synopsis: "bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--expedite]",
+        synopsis: "bin/release prepare [--task SLUG ...] [--slug rel-YYYY-MM-DD-name] [--expedite] [--skip-gauntlet]",
         consequence: "NOTHING was promoted onto `release`, merged, recorded on the board, or deployed to QA",
-        bool: ["--expedite"], value: ["--task", "--slug"], allow_positional: false
+        bool: ["--expedite", "--skip-gauntlet"], value: ["--task", "--slug"], allow_positional: false
       },
       "eject" => {
         synopsis: "bin/release eject <task-slug> [--feedback \"…\"]",
@@ -259,11 +259,20 @@ class Release
     # not come up, re-run once it boots" from a refusal.
     PREPARE_QA_NOT_GREEN_EXIT = 3
 
+    # `bin/release prepare` exits this when QA went green but the Turf release's
+    # devnet gauntlet did not (a red step, or a green run whose record did not land):
+    # the release is assembled on QA and `ship` refuses it (Release::DevnetGauntlet).
+    PREPARE_GAUNTLET_RED_EXIT = 4
+
     # The exit status for prepare's outcome: PREPARE_QA_NOT_GREEN_EXIT for
-    # :qa_not_green, 0 for anything else (assembled, or an early return with nothing
-    # to do).
+    # :qa_not_green, PREPARE_GAUNTLET_RED_EXIT for :gauntlet_red, 0 for anything else
+    # (assembled, or an early return with nothing to do).
     def prepare_exit_status(outcome)
-      outcome == :qa_not_green ? PREPARE_QA_NOT_GREEN_EXIT : 0
+      case outcome
+      when :qa_not_green then PREPARE_QA_NOT_GREEN_EXIT
+      when :gauntlet_red then PREPARE_GAUNTLET_RED_EXIT
+      else 0
+      end
     end
 
     # The full keyword set bin/release hands CliArgGuard.guard! for `command` —

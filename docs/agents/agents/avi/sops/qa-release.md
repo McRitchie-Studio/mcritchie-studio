@@ -388,6 +388,7 @@ The exit status is the verdict (`app/models/release/cli.rb`):
 | **1** | **ABORT**: a refusal with a verdict (also `--help`, `Release::Cli::HELP_EXIT`) | read the abort; take its row below |
 | **2** | **ARGUMENT REFUSAL**: a flag `prepare` does not accept; nothing ran | fix the command line, then re-run |
 | **3** | **NOT GREEN**: `✓ Prepared (NOT assembled — QA not green)` (`PREPARE_QA_NOT_GREEN_EXIT`) | fix the boot, then re-run (the **QA deploy / boot FAILED** row) |
+| **4** | **GAUNTLET RED**: assembled on QA, but the Turf devnet gauntlet went red or its record did not land (`PREPARE_GAUNTLET_RED_EXIT`); no Steffon handoff | read the `✗ devnet gauntlet` line; eject or fix forward, then re-run ([The devnet gauntlet](#the-devnet-gauntlet--a-turf-release-only)) |
 
 `bin/conductor qa --run` exits with `prepare`'s status unchanged, so a wrapper reads
 the same verdict from either command.
@@ -464,33 +465,49 @@ bin/task show <task> --json | jq '{stage, merged, release_slug}'
 ## The devnet gauntlet — a Turf release only
 
 When the candidate carries **turf-monster or turf-vault** work, QA-green is not the
-end of this act: run Turf Monster's
-[`contest-rehearsal`](../../turf_monster/sops/contest-rehearsal.md) on QA (devnet) to a
+end of this act: Turf Monster's
+[`contest-rehearsal`](../../turf_monster/sops/contest-rehearsal.md) runs on QA (devnet) to a
 green close — create, enter, play, settle with the on-chain payout co-signed and the
-arithmetic checked, close — and record it on the release. Alex McRitchie, 2026-10-11: "it just
+arithmetic checked, close — and is recorded on the release. Alex McRitchie, 2026-10-11: "it just
 feels right to run a devnet gauntlet on the package before giving production the green
-light." **You run it unattended, by default** (Alex McRitchie, 2026-10-12): every step in one
-turn with `--cosign agent`, so the QA server key and Mack co-sign the settle and no
-Phantom tap is owed. At each `── STOP ──` block, check what it names yourself (the
-per-step checks are in the SOP's "unattended" paragraph) and go on; a step that stops
-or answers otherwise ends the run red. Run it watched (`--cosign link`, his Phantom
-co-sign at step 4) only when Alex McRitchie asks to watch. Run step 3 as a bare `play` (no
-`--pace`): budget about 9 minutes for the whole gauntlet, about 4 of them step 3.
+light." It runs unattended (Alex McRitchie, 2026-10-12), with `--cosign agent`, so the QA
+server key and Mack co-sign the settle and no Phantom tap is owed.
 
-Record the green close (your own usage on the event, as every agent completion carries):
+**`bin/release prepare` runs it for you**, right after QA green and before `✓ Assembled`
+(`Release::DevnetGauntletRun`; about 9 minutes, 4 of them step 3). It runs every step of
+turf-monster's `bin/qa-contest-rehearsal` in order, makes the check each `── STOP ──`
+block names (the SOP's "unattended" paragraph), reads the settle transaction from the
+devnet RPC and checks that the prize escrow fell by exactly the sum paid and that each
+winner rose by exactly its rank's payout, and then records `devnet_gauntlet`:
+
+- **green:** `complete`, with the contest slug, the settle and close signatures, the
+  arithmetic and each step's elapsed time in its metadata, and the session's measured
+  usage for the run (never typed). A green run whose record does not land is loud and
+  exits 4.
+- **red:** `fail`, naming the step and why; prepare prints no Steffon handoff and exits 4
+  (`Release::Cli::PREPARE_GAUNTLET_RED_EXIT`). The candidate does not ship: eject the Turf
+  task (`bin/release eject <task> --feedback "<what the rehearsal showed>"`) or fix it
+  forward, then re-run prepare.
+
+Each record carries the QA SHA of every Turf repo it tested (`metadata.shas`), and it
+counts only for that code: a re-run of prepare whose QA runs the same Turf SHAs runs no
+second contest, and one that deployed new Turf code runs a new gauntlet. `bin/release
+ship` reads the NEWEST gauntlet event and refuses unless it is green and tested exactly
+the Turf SHAs being shipped. `--skip-gauntlet` runs none and records nothing, so `bin/release ship` still
+refuses (`Release::DevnetGauntlet`); only Alex McRitchie's words waive it there, with
+`--skip-devnet-gauntlet "<his words>"`. Run the rehearsal by hand, watched (`--cosign link`,
+his Phantom co-sign at step 4), only when Alex McRitchie asks to watch, and record it
+yourself:
 
 ```bash
 # api() helper + TOKEN per task-board-api.md "Worked example"
 api POST /api/v1/releases/current/events/devnet_gauntlet/complete \
   '{"event": {"actor": "turf_monster", "source": "agent", "model": "<model>", "tokens_in": <n>,
-    "tokens_out": <n>, "cost": <usd>, "metadata": {"contest": "<rehearsal contest slug>"}}}'
+    "tokens_out": <n>, "cost": <usd>, "metadata": {"contest": "<rehearsal contest slug>",
+    "shas": {"turf-monster": "<its QA SHA>"}}}}'
 ```
 
-A red rehearsal is recorded with `.../devnet_gauntlet/fail` and the candidate does
-not ship: eject the Turf task (`bin/release eject <task> --feedback "<what the
-rehearsal showed>"`) or fix it forward. `bin/release ship` refuses a Turf release with
-no completed `devnet_gauntlet` event (`Release::DevnetGauntlet`). A release with no
-Turf work skips this section.
+A release with no Turf work skips this section.
 
 ## Exit Seam
 
