@@ -99,7 +99,7 @@ module OutboundSeams
   # task-binary seam at (AGENT_WORKTREE_TASK_BIN), so a board read through the
   # hub's CLI is refused AND recorded rather than merely misrouted. `port-lsof` and
   # `port-curl` are the same kind: the port readers' named seams point at them.
-  SEALED_COMMANDS = %w[gh gh-token op heroku ssh git-askpass task-cli port-lsof port-curl].freeze
+  SEALED_COMMANDS = %w[gh gh-token op heroku ssh git-askpass task-cli port-lsof port-curl qa-contest-rehearsal].freeze
 
   module_function
 
@@ -156,6 +156,11 @@ module OutboundSeams
       "AGENT_WORKTREE_LSOF_BIN" => stub("port-lsof"),
       "AGENT_WORKTREE_CURL_BIN" => stub("port-curl"),
       "PROGRAM_DRIFT_RPC_URL" => UNROUTABLE,
+      # THE DEVNET GAUNTLET (bin/release prepare on a Turf release): its driver runs a
+      # real contest on QA and devnet, and its arithmetic reads the devnet RPC. A test
+      # child reaches neither: the driver is a recording refusal, the RPC unroutable.
+      "RELEASE_GAUNTLET_DRIVER" => stub("qa-contest-rehearsal"),
+      "RELEASE_DEVNET_RPC_URL" => UNROUTABLE,
       "OUTBOUND_SEAM_LOG" => log_path,
       # THE HANDED-DOWN BOARD BEARER, unset. bin/submit mints one token and exports it
       # to every child as AGENT_API_TOKEN, and bin/fast-check is one of those children —

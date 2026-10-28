@@ -1660,12 +1660,15 @@ end
 #
 #   RELEASE_GAUNTLET_STEP_DEADLINE (1200) bounds one rehearsal step (play runs ~4 min).
 #   RELEASE_DEVNET_RPC_URL                the devnet RPC getTransaction reads.
+#   RELEASE_GAUNTLET_DRIVER               the driver to run instead of turf-monster's
+#                                         own (test/support/outbound_seams.rb seals it).
 GAUNTLET_SKIP_FLAG = "--skip-gauntlet"
 GAUNTLET_STEP_DEADLINE_ENV = "RELEASE_GAUNTLET_STEP_DEADLINE"
 GAUNTLET_STEP_DEFAULT_DEADLINE = 1200
 DEVNET_RPC_ENV = "RELEASE_DEVNET_RPC_URL"
 DEVNET_RPC_DEFAULT = "https://api.devnet.solana.com"
 GAUNTLET_DRIVER = "bin/qa-contest-rehearsal"
+GAUNTLET_DRIVER_ENV = "RELEASE_GAUNTLET_DRIVER"
 GAUNTLET_MANIFEST = "tmp/qa-rehearsal/current.json"
 # EventUsage::FIELDS, as the string keys capture_move_usage answers with.
 GAUNTLET_USAGE_FIELDS = %w[model tokens_in tokens_out cost].freeze
@@ -1777,7 +1780,8 @@ end
 # `heroku run` through the inherited environment.
 def run_gauntlet_step(root, argv)
   ensure_heroku_token! if PROD
-  cmd = [File.join(root, GAUNTLET_DRIVER), *argv]
+  driver = ENV[GAUNTLET_DRIVER_ENV].to_s.strip
+  cmd = [driver.empty? ? File.join(root, GAUNTLET_DRIVER) : driver, *argv]
   deadline = gauntlet_step_deadline
   result = BoundedCommand.run(GAUNTLET_ENV_SCRUB, cmd, deadline: deadline, pgroup: true, stream: $stdout,
                                                        err: [:child, :out], in: File::NULL, chdir: root)
