@@ -71,6 +71,14 @@ begin
     puts "kept (existing Google files, not overwritten): #{kept.join(', ')}" if kept.any?
     puts pub.counts.map { |k, v| "#{k} #{v}" }.join(" · ") + (options[:dry_run] ? "  (dry run: nothing written)" : "")
     puts "kit: https://drive.google.com/drive/folders/#{pub.root_id}" if pub.root_id
+    if pub.root_id && !options[:dry_run]
+      if spec.logo_brand
+        puts "record it on /logos (production):\n  heroku run -a mcritchie-studio --no-tty --exit-code -- bin/rails logos:marketing_kit " \
+             "BRAND=#{spec.logo_brand} URL=https://drive.google.com/drive/folders/#{pub.root_id} WORKSPACE=#{spec.workspace} BY=<you>"
+      else
+        puts "no brand: in the spec, so nothing to record on /logos"
+      end
+    end
   end
 rescue MarketingKit::Error, Workspace::ApiRetry::Error => e
   abort "bin/marketing-kit: #{e.message}"

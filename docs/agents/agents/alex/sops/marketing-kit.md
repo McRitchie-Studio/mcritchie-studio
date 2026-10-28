@@ -137,6 +137,21 @@ The credential holds only `drive.file`, so the publisher sees only files this ap
 Fix anything through the spec, then publish again with `--replace "<file name>"`
 for the Google file you changed.
 
+**Record it on `/logos`.** Give the spec its `/logos` brand key (`brand:`, for
+example `welding_v2`). A real publish then prints the command that records the
+kit on the hub's production database. Run it as printed, with your name in `BY`:
+
+```bash
+heroku run -a mcritchie-studio --no-tty --exit-code -- bin/rails logos:marketing_kit \
+  BRAND=<brand> URL=https://drive.google.com/drive/folders/<root id> WORKSPACE=<domain> BY=<you>
+```
+
+`/logos` then shows the brand's Google kit with an Open link. It reads **Up to
+date** until someone saves the brand's logos again, then **Kit changed**, the
+same convention as each app's kit line. A brand with no record reads **No
+Google kit**. Only the logos are watched: a change to the spec's colours or words
+does not flip it, so run the stamp after every real publish, not only the first.
+
 **8. Hand back to the owner.** Lead with the link. Then give a table of what is
 where, what is a placeholder (`[brackets]` and orange `[fields]`), which claims
 are flagged, and what you need from them. Record the kit in the hub's knowledge
@@ -149,7 +164,7 @@ conversation:
 1. Download `01 Brand/Kit source` and the logos and photos into a working
    folder, keeping the layout from step 2.
 2. Edit the spec, build, and dry-run.
-3. Publish.
+3. Publish, and record it on `/logos` (step 7).
 
 What a publish does to what is already there:
 - An uploaded file (logo, photo, PDF) is replaced in place when its bytes
@@ -164,6 +179,8 @@ What a publish does to what is already there:
 ## Done when
 
 - The dry run after the last publish reports nothing to create or update.
+- `/logos` shows the brand's Google kit as Up to date (`logos:marketing_kit` ran on
+  production after the last publish).
 - Every guidelines page, every slide and every Doc has been looked at.
 - The owner has the link, the placeholder list and the questions only they can
   answer.

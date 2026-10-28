@@ -62,6 +62,7 @@ class LogosController < ApplicationController
     brands = Logos::NavbarLogo.brands
     @kits = BrandKit.by_brand(brands)
     @app_links = BrandKitApp.by_brand(brands)
+    @marketing_kits = BrandMarketingKit.by_brand(brands)
     @rows = brands.map do |brand|
       logo = Logos::NavbarLogo.new(brand)
       kit = @kits[brand] || BrandKit.new(brand:)

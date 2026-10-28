@@ -27,6 +27,14 @@ class MarketingKitSpecTest < ActiveSupport::TestCase
     end
   end
 
+  test "a brand key names the /logos brand, and the workspace is drive.subject's domain" do
+    load_kit { |spec| assert_nil spec.logo_brand }
+    load_kit(edit: ->(d) { d["brand"] = "welding_v2" }) do |spec|
+      assert_equal "welding_v2", spec.logo_brand
+      assert_equal "mcritchie.studio", spec.workspace
+    end
+  end
+
   test "a photo slot left out uses the cover" do
     load_kit { |spec| assert_equal spec.photo_path("shop-floor.jpg"), spec.slot(:slide_quote) }
   end
@@ -41,7 +49,8 @@ class MarketingKitSpecTest < ActiveSupport::TestCase
     "too many swatches" => [->(d) { d["palette"] += Array.new(3) { |i| { "name" => "X#{i}", "hex" => "#000000" } } }, /at most 8/],
     "unlisted favourite" => [->(d) { d["photos"]["favourites"] << "ghost.jpg" }, /not listed in photos.items: ghost.jpg/],
     "unknown slot" => [->(d) { d["photos"]["slots"]["hero"] = "shop-floor.jpg" }, /unknown photo slot hero/],
-    "no cover slot" => [->(d) { d["photos"]["slots"].delete("cover") }, /slots.cover is required/]
+    "no cover slot" => [->(d) { d["photos"]["slots"].delete("cover") }, /slots.cover is required/],
+    "brand not on /logos" => [->(d) { d["brand"] = "nike" }, /brand nike is not a \/logos brand/]
   }.each do |label, (edit, message)|
     test "refuses a spec with #{label}" do
       with_kit(edit: edit) do |path|
