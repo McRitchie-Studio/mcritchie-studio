@@ -1709,7 +1709,8 @@ Properties that give resilience + scale:
 - **Lease fields** (`claimed_by`, `claim_expires_at`, `last_heartbeat_at`) →
   an interrupted task is reclaimable by the next heartbeat; this is exactly the
   interruption-resilience you asked for, at the task level.
-- **Idempotent steps** → merge/deploy/notes are safe to retry.
+- **Idempotent steps** → merge/deploy/notes are safe to retry (notes Discord
+  already took are skipped on a re-run, never posted twice).
 - **Every heartbeat produces evaluation + progress** by construction — even a
   "nothing changed" tick posts a one-line status.
 

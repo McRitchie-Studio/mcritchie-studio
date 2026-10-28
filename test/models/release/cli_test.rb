@@ -232,6 +232,15 @@ class Release::CliTest < ActiveSupport::TestCase
     assert_not_includes line, "webhook unset?"
   end
 
+  test "[unit] release_notes_line says a re-run skipped notes already posted, and how to post again" do
+    line = Release::Cli.release_notes_line({ "notes_delivered" => false, "notes_already" => true }, "rel-x")
+
+    assert_includes line, "already posted to Discord"
+    assert_includes line, "not posted again"
+    assert_includes line, "bin/release notes rel-x --post --force"
+    assert_not_includes line, "NOT delivered"
+  end
+
   test "[unit] release_notes_line says no error was reported rather than inventing one" do
     line = Release::Cli.release_notes_line({ "notes_delivered" => false }, "rel-x")
 

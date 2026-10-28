@@ -756,6 +756,9 @@ bin/release notes <release-slug> --post --force   # send them again, over a deli
 The ship records whether Discord took the notes on the release's `release_notes`
 event (`metadata.delivered`, plus the message count). A `--post` over notes already
 delivered posts nothing, says so, and exits 1; `--force` is the deliberate second post.
+A re-run of `ship` or `finalize` over a release whose notes Discord already took
+posts nothing either: it prints `release notes: already posted to Discord by an
+earlier run — not posted again`. A re-run after a FAILED delivery posts them.
 
 Current intended QA apps:
 

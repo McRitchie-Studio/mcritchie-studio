@@ -9819,6 +9819,7 @@ def ship
     "Release::DurationCache.refresh_recent!(limit: 3); " \
     "notes = Release::Conductor.post_release_notes(release: r); " \
     "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7], notes_delivered: notes[:delivered], " \
+    "notes_already: notes[:already_delivered] ? true : false, " \
     "notes_error: notes[:error], notes_messages: notes[:messages].size}.to_json)"
   )
 
@@ -10065,7 +10066,8 @@ def finalize(slug = nil)
       notes = conductor(
         "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
         "n = Release::Conductor.post_release_notes(release: r); " \
-        "puts({notes_delivered: n[:delivered], notes_error: n[:error], notes_messages: n[:messages].size}.to_json)"
+        "puts({notes_delivered: n[:delivered], notes_already: n[:already_delivered] ? true : false, " \
+        "notes_error: n[:error], notes_messages: n[:messages].size}.to_json)"
       )
       say(Release::Cli.release_notes_line(notes, rel_slug))
     end
