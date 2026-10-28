@@ -21,7 +21,7 @@ class AgentSetupsController < ApplicationController
     end
     return back_to_card(alert: @setup.submit_blocker) unless @setup.submittable?
 
-    @setup.update!(details: @setup.details.merge("application_id" => app_id))
+    rescue_and_log(target: @setup) { @setup.update!(details: @setup.details.merge("application_id" => app_id)) }
     back_to_card(notice: "Application ID saved; the Invite button is ready.")
   end
 
@@ -39,8 +39,10 @@ class AgentSetupsController < ApplicationController
       return back_to_card(alert: blocker)
     end
 
-    @setup.submit!(by: actor)
-    AgentSetupCheckJob.perform_later(@setup.id)
+    rescue_and_log(target: @setup) do
+      @setup.submit!(by: actor)
+      AgentSetupCheckJob.perform_later(@setup.id)
+    end
     back_to_card(notice: "Done: the hub is checking the bot, then it waits for Steffon to verify and install it.")
   end
 

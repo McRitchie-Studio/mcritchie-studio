@@ -4,15 +4,17 @@ module AgentSetups
   # set in config/agent_setups.yml uses are listed; an unknown name raises, so
   # a typo cannot silently drop a permission from an invite.
   module DiscordPermissions
+    # The flags DiscordDirectory::Permissions already names are its constants, so
+    # the two never disagree; the rest are Discord's documented bits.
     FLAGS = {
       "manage_channels" => 1 << 4,
-      "view_channel" => 1 << 10,
-      "send_messages" => 1 << 11,
-      "embed_links" => 1 << 14,
+      "view_channel" => DiscordDirectory::Permissions::VIEW_CHANNEL,
+      "send_messages" => DiscordDirectory::Permissions::SEND_MESSAGES,
+      "embed_links" => DiscordDirectory::Permissions::EMBED_LINKS,
       "read_message_history" => 1 << 16,
       "manage_roles" => 1 << 28,
       "manage_webhooks" => 1 << 29,
-      "send_messages_in_threads" => 1 << 38
+      "send_messages_in_threads" => DiscordDirectory::Permissions::SEND_MESSAGES_IN_THREADS
     }.freeze
 
     module_function

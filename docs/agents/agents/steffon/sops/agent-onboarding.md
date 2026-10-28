@@ -66,6 +66,10 @@ The token never passes through the hub, a chat or an agent's output.
    hung) the card opens without the 1Password button and says so; fix the cause
    and re-open (close the first), or pass `--op-account-id`, `--op-vault-id`,
    `--op-item-id` and `--op-host` yourself.
+   Open a card only for a bot that should have its own token. Tyrion's item is
+   empty on purpose (OpenClaw holds his token;
+   [`credential-inventory.md`](../../../modules/credential-inventory.md)), so he
+   gets no card.
 3. **Tell Alex McRitchie it is there**, with the card's link the command prints
    (`https://mcritchie.studio/agents#agent-setup-<id>`). One live card per agent per
    kind per target: a second `open` is refused until the first is closed.
@@ -126,7 +130,11 @@ Then:
 bin/agent-setup close <id> --by steffon
 ```
 
-A closed card folds under the column's **Done** disclosure.
+In the same pass, add the soul's `DISCORD_BOT_TOKEN_<SOUL>` line to `.env.example`
+and its row to [`credential-inventory.md`](../../../modules/credential-inventory.md)
+(set by this SOP), and the soul to Part 1b's table in
+[`discord-bot-setup`](discord-bot-setup.md). A closed card folds under the
+column's **Done** disclosure.
 
 ## 5. Rotation
 
