@@ -122,7 +122,7 @@ module BoundedCommand
 
       wait = status ? DRAIN_GRACE : [ limit - now, 0.25 ].min
       eof = read_some(reader, buf, wait, stream) if !eof && wait.positive?
-      sleep 0.02 if eof && !status
+      Kernel.sleep(0.02) if eof && !status # Kernel.: a caller's own `sleep` (a test seam) must not stand in
     end
     finish(buf, status, false)
   rescue SignalException

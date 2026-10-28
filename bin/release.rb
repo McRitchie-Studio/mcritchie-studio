@@ -1464,7 +1464,19 @@ rescue HerokuToken::Unresolved => e
   abort!("no Heroku token for the PROD board: #{e.message} Nothing was done.")
 end
 
-def conductor(ruby, read_only: false, deadline: nil, deadline_env: RECORD_OP_DEADLINE_ENV)
+# A step that is not a ship (the archive) runs its record ops under its own bound:
+# inside the block, every conductor call takes +deadline+ seconds, named by
+# +env_name+ in a kill. Scoped, not a conductor keyword, so the signature every
+# test stub copies is unchanged.
+def with_record_op_deadline(deadline, env_name)
+  saved = @record_op_deadline_override
+  @record_op_deadline_override = [deadline, env_name]
+  yield
+ensure
+  @record_op_deadline_override = saved
+end
+
+def conductor(ruby, read_only: false)
   ruby = train_guarded(ruby)
   payload = conductor_payload(with_conductor_session(ruby))
   cmd = PROD ? ["heroku", "run", "-a", APP, "--no-tty", "rails", "runner", payload]
@@ -1474,7 +1486,7 @@ def conductor(ruby, read_only: false, deadline: nil, deadline_env: RECORD_OP_DEA
     return {}
   end
   ensure_heroku_token! if PROD
-  deadline ||= record_op_deadline
+  deadline, deadline_env = @record_op_deadline_override || [record_op_deadline, RECORD_OP_DEADLINE_ENV]
   out, ok, timed_out = run_record_op(cmd, deadline: deadline)
   if timed_out
     abort!("record op failed: no answer within #{deadline.round}s, so the " \
@@ -10532,12 +10544,14 @@ def archive
   # 1. Plan FIRST — a board READ (read_only:, so it runs even in --dry-run): the
   #    shipped tasks that WOULD archive + the last-release members KEPT shipped.
   step("record (read-only): plan archivable shipped tasks")
-  plan = conductor(
-    "puts({ archivable: Release::Conductor.archivable_completed_slugs, " \
-    "kept: (Release::Conductor.respond_to?(:last_shipped_member_slugs) ? Release::Conductor.last_shipped_member_slugs : " \
-    "(Release.last_shipped&.tasks&.pluck(:slug) || [])) }.to_json)",
-    read_only: true, deadline: archive_step_deadline, deadline_env: ARCHIVE_STEP_DEADLINE_ENV
-  )
+  plan = with_record_op_deadline(archive_step_deadline, ARCHIVE_STEP_DEADLINE_ENV) do
+    conductor(
+      "puts({ archivable: Release::Conductor.archivable_completed_slugs, " \
+      "kept: (Release::Conductor.respond_to?(:last_shipped_member_slugs) ? Release::Conductor.last_shipped_member_slugs : " \
+      "(Release.last_shipped&.tasks&.pluck(:slug) || [])) }.to_json)",
+      read_only: true
+    )
+  end
   archivable = plan["archivable"] || []
   kept       = plan["kept"] || []
 
@@ -10617,11 +10631,12 @@ def archive
   step("record: Release::Conductor.archive_completed!")
   # BOARD_FLIP_CADENCE: archive one task every beat, from the top of the
   # Shipped column down, so /deployments plays the sweep instead of blinking it.
-  result = conductor(
-    "r = Release::Conductor.archive_completed!(pause: #{BOARD_FLIP_CADENCE}); " \
-    "puts({ archived: r[:archived], kept: r[:kept], count: r[:count] }.to_json)",
-    deadline: archive_write_deadline(archivable.size), deadline_env: ARCHIVE_STEP_DEADLINE_ENV
-  )
+  result = with_record_op_deadline(archive_write_deadline(archivable.size), ARCHIVE_STEP_DEADLINE_ENV) do
+    conductor(
+      "r = Release::Conductor.archive_completed!(pause: #{BOARD_FLIP_CADENCE}); " \
+      "puts({ archived: r[:archived], kept: r[:kept], count: r[:count] }.to_json)"
+    )
+  end
   archived_count = result["count"] || (result["archived"] || []).size
   kept_count     = (result["kept"] || kept).size
 
