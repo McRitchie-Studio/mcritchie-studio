@@ -144,7 +144,9 @@ recorded there.
 
 The next step is [`domain-dns`](./domain-dns.md): `bin/domain-cutover <app>
 <domain> plan` finds the zone already in our account and needs no registrar
-clicks.
+clicks. Its DNSSEC is [`domain-dns` step 6, Path A](./domain-dns.md#6-dnssec-back-on-from-cloudflare--steffon-the-ds-step-depends-on-the-registrar):
+turn zone DNSSEC on and Cloudflare Registrar publishes the DS itself, with no
+wait and no owner step.
 
 ## Path B: Squarespace by hand
 

@@ -261,16 +261,26 @@ The command does not do this step. A moved domain's zone id is in
 `tmp/domain-cutover/<domain>.json`; a bought one's is in the Cloudflare zone
 listing (`GET /zones?name=<domain>`).
 
-**First read the registrar.** Who publishes the DS depends on it, so read the
-whois `Registrar:` line before you enable anything or hand anyone a step.
-whois asks the registry over port 43, so the laptop's port-53 intercept cannot
-answer it wrongly. For a moved domain, `bin/domain-cutover <app> <domain> status`
-also prints the registrar `plan` read over RDAP; a domain bought on Cloudflare
-has no cutover state, so whois is the one source that serves both paths:
+**First read the registrar.** Who publishes the DS depends on it, so read it
+before you enable anything or hand anyone a step. RDAP is the source: it
+answers every TLD we hold, while whois returns nothing for our Squarespace
+TLDs (`mcritchie.studio`, `turfmonster.media`, `mcritchie.industries` print no
+`Registrar:` line). It goes over HTTPS, so the laptop's port-53 intercept
+cannot answer it wrongly:
 
 ```bash
-whois <domain> | grep -iE "^ *(registrar|dnssec):" | head -3
+curl -sL "https://rdap.org/domain/<domain>" | jq -c '{
+  registrar: ([.entities[]? | select(.roles | index("registrar"))
+               | .vcardArray[1][]? | select(.[0] == "fn") | .[3]][0]),
+  signed: .secureDNS.delegationSigned,
+  ds: [.secureDNS.dsData[]? | {keyTag, algorithm, digestType, digest}] }'
+whois <domain> | grep -iE "^ *(registrar|dnssec):" | head -3   # cross-check, where it answers
 ```
+
+`Cloudflare, Inc.` is Path A; `Squarespace Domains II LLC` (or the upstream
+registrar Squarespace may show; see [`domain-purchase`](./domain-purchase.md))
+is Path B. For a moved domain `bin/domain-cutover <app> <domain> status` prints
+the same registrar, read over RDAP at `plan`.
 
 **Then sign the zone** (both paths):
 
@@ -291,14 +301,13 @@ at the registry itself when zone DNSSEC turns on. No owner step is owed: do not
 hand Alex McRitchie (or a client) a DS card. Wait a few minutes, then run the
 green check. Worked example, alex.build on 2026-10-28: enabling DNSSEC returned
 key tag 2371, algorithm 13, digest type 2, digest
-`DD1AC653CA0415D90162F0357D53DF0B88B9F6AF8A3DD76D0BCA49955B838110`; minutes later whois read
-`DNSSEC: signedDelegation`, the `dns.google` DS answer carried that same key tag
-and digest, and the apex and `www` A answers read `"AD": true`, with nobody
+`DD1AC653CA0415D90162F0357D53DF0B88B9F6AF8A3DD76D0BCA49955B838110`; minutes
+later RDAP read `delegationSigned: true` (whois: `DNSSEC: signedDelegation`),
+the `dns.google` DS answer carried that same key tag and digest, and the apex and `www` A answers read `"AD": true`, with nobody
 clicking anything. (The SOP then sent a Squarespace card that was never owed;
 this path is the fix.)
 
-**Path B: a Squarespace registrar line** (Squarespace Domains, or the upstream
-registrar it may show; see [`domain-purchase`](./domain-purchase.md)). The DS is
+**Path B: a Squarespace registrar.** The DS is
 Alex McRitchie's paste. Hand him the card with the values the PATCH printed:
 
 ```not-pasteable
@@ -316,12 +325,14 @@ client's own registrar page, by the client's hand.
 **Green, either path**, when all three hold:
 
 ```bash
-whois <domain> | grep -i "dnssec:"            # signedDelegation
-curl -s "https://dns.google/resolve?name=<domain>&type=DS" | jq '.Answer[].data'
-curl -s "https://dns.google/resolve?name=<domain>&type=A"  | jq '{Status, AD}'
+curl -sL "https://rdap.org/domain/<domain>" | jq '.secureDNS.delegationSigned'   # true
+curl -s "https://dns.google/resolve?name=<domain>&type=DS"    | jq '.Answer[].data'
+curl -s "https://dns.google/resolve?name=<domain>&type=A"     | jq '{Status, AD}'
+curl -s "https://dns.google/resolve?name=www.<domain>&type=A" | jq '{Status, AD}'
 ```
 
-- whois reads `DNSSEC: signedDelegation` (RDAP: `secureDNS.delegationSigned: true`);
+- RDAP reads `secureDNS.delegationSigned: true` (whois, where it answers:
+  `DNSSEC: signedDelegation`);
 - the DS at the TLD, read over DoH and never with a local `dig DS`, carries the
   key tag, algorithm, digest type and digest Cloudflare printed (the zone's
   DNSSEC status then reads `active`);
