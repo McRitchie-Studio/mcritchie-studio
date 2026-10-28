@@ -1244,23 +1244,27 @@ end
 # Give a desk its node_modules (DeskNodeModules.plan): borrow the primary's entries
 # when package-lock.json matches byte for byte, else run the desk's own `npm ci`.
 # Never on Heroku or CI. The install is bounded (DeskNodeModules::NPM_CI_DEADLINE, or
-# AGENT_WORKTREE_NPM_CI_DEADLINE seconds; its process group is killed at the deadline)
-# so a hung npm cannot hang `new` or `bin/task begin` behind it. Best-effort: a failure
-# warns and leaves the desk whole, because node_modules is regenerable and `npm ci` in
-# the desk is always the repair.
+# AGENT_WORKTREE_NPM_CI_DEADLINE seconds, a positive whole number: anything else warns
+# and gets the default; its process group is killed at the deadline) so a hung npm
+# cannot hang `new` or `bin/task begin` behind it. Best-effort: a failure warns, removes
+# the partial node_modules (so a resume retries) and leaves the desk otherwise whole,
+# because node_modules is regenerable and `npm ci` in the desk is always the repair.
+# `env` is read for the plan and the deadline alike.
 def provision_node_modules(app, dir, env: ENV)
   plan = DeskNodeModules.plan(desk: dir, primary: app.fetch("repo"), env: env)
   if plan.link?
     linked = DeskNodeModules.link!(desk: dir, source: plan.source)
     puts "node_modules:   linked #{linked.size} entries to #{plan.source} (#{plan.reason})"
   elsif plan.install?
-    deadline = integer_env("AGENT_WORKTREE_NPM_CI_DEADLINE", DeskNodeModules::NPM_CI_DEADLINE)
+    deadline = DeskNodeModules.npm_ci_deadline(env, warn: ->(message) { warn "agent-worktree: #{message}" })
     puts "node_modules:   npm ci (#{plan.reason}; #{deadline}s limit)"
-    result = DeskNodeModules.npm_ci!(dir, deadline: deadline)
+    result = DeskNodeModules.install!(dir, deadline: deadline)
     if result.timed_out?
-      warn "agent-worktree: npm ci passed its #{deadline}s limit in #{dir} and was killed; run `npm ci` there by hand"
+      warn "agent-worktree: npm ci passed its #{deadline}s limit in #{dir} and was killed; its partial node_modules " \
+           "was removed, so the next `new` retries; or run `npm ci` there by hand"
     elsif !result.success?
-      warn "agent-worktree: npm ci failed in #{dir}; run it there by hand before bin/test-js or Playwright"
+      warn "agent-worktree: npm ci failed in #{dir}; its partial node_modules was removed, so the next `new` " \
+           "retries; or run it there by hand before bin/test-js or Playwright"
     end
   else
     puts "node_modules:   none (#{plan.reason})"
@@ -2747,6 +2751,9 @@ def ignored_work_paths(dir)
   out.lines.map(&:chomp).reject(&:empty?).reject do |path|
     bare = path.chomp("/")
     IGNORED_TOOL_FILES.include?(bare) ||
+      # The npm script guard's .npmrc, which `new` writes when it links node_modules
+      # (a resume can write it after the cut); a .npmrc of the builder's own still holds.
+      (bare == DeskNodeModules::NPMRC && DeskNodeModules.own_npmrc?(File.join(dir, bare))) ||
       IGNORED_REGENERABLE_FILES.include?(File.basename(bare)) ||
       IGNORED_REGENERABLE_DIRS.any? { |root| bare == root || bare.start_with?("#{root}/") } ||
       File.basename(bare) == ".DS_Store"
@@ -3953,7 +3960,9 @@ def teardown_worktree(app, dir, record)
   flush_redis_db(record)
   drop_desk_databases(record)
   # The reclaim guard: unlink the desk's links into the primary's node_modules before
-  # git deletes anything (bin/lib/desk_node_modules.rb).
+  # git deletes anything (bin/lib/desk_node_modules.rb). When git then refuses (a dirty
+  # desk), the desk keeps a husk of empty @scope/.bin dirs, and the next `new` on it
+  # links again (DeskNodeModules.husk?).
   release_node_modules(dir)
   sh("git", "-C", app.fetch("repo"), "worktree", "remove", dir)
   delete_local_branch_if_safe(app, record[:branch])

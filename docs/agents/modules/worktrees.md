@@ -118,16 +118,35 @@ nothing. Free one of those by hand, once you know its work is safe on `accepted`
   `.studio-engine` are never linked, so `bin/rails node_tooling:link` links the engine this
   desk bundles and never writes the primary.
 - **Lock differs** (or the primary has no finished install): `npm ci` in the desk, killed
-  with its process group after 600 seconds (`AGENT_WORKTREE_NPM_CI_DEADLINE`).
+  with its process group after 600 seconds (`AGENT_WORKTREE_NPM_CI_DEADLINE`, a positive
+  whole number; zero, a negative or a non-number warns `InvalidDeadline` and gets 600).
+  A failed or killed install removes its partial `node_modules`, so the next `new` retries.
+- **The desk cannot hold the script guard** (below): it has its own `.npmrc`, or git does
+  not ignore `.npmrc` there. Then `npm ci` too, never a farm without its guard. The hub
+  ignores `/.npmrc`; a repo that does not gets `npm ci` desks until it does.
 - **Never on Heroku or CI** (`DYNO`/`STACK`, `CI`, `GITHUB_ACTIONS`), and never over an
-  existing `node_modules`.
+  existing `node_modules`, except a husk: the empty `@scope` and `.bin` directories a
+  teardown leaves when `git worktree remove` refuses a dirty desk. A husk holds no
+  package, so the next `new` on that desk links (or installs) again.
+
+**The script guard.** npm does not write through a package link, but it runs scripts
+through one: `npm rebuild` runs each package's install scripts with the package's real
+directory as its working directory, which in a farm is the primary's. So before linking,
+`new` writes the desk's `.npmrc` with `script-shell` set to a guard kept in the desk's own
+git dir. Every lifecycle script npm starts in the desk (`rebuild`, an install's scripts,
+`npm run`) goes through the guard: it runs when its working directory is inside the desk,
+and is refused with `desk-node-modules: refused an npm lifecycle script in <dir>` when it
+is the primary's package. The remedy the message names is `npm ci` in the desk; after it
+every package is the desk's own and the guard never refuses again.
 
 The links are a **snapshot of the primary when the desk was cut**. A later install in the
 primary changes what the desk sees, and the desk's lock is not re-checked. `npm ci` in
-the desk is always the repair: it replaces the links with the desk's own install. Any npm
-command in the desk (`install`, an add, an upgrade, `uninstall`) acts on the desk's links,
-never on the primary; `test/lib/desk_node_modules_test.rb` runs each one for real and checks
-that the primary is byte-unchanged.
+the desk is always the repair: it replaces the links with the desk's own install. An npm
+write in the desk (`install`, an add, an upgrade, `uninstall`) acts on the desk's links,
+never on the primary. A lifecycle script is the exception npm itself does not prevent: it
+runs in the package's real directory, which is the primary's, so the script guard above
+refuses it until `npm ci`. `test/lib/desk_node_modules_test.rb` runs each of these for real,
+`npm rebuild` included, and checks that the primary is byte-unchanged.
 
 Every teardown (`remove`, `cleanup --reclaim --yes`, an unwind) unlinks those links, one
 level down inside `@scope` and `.bin` as well, before git deletes anything. Never run
