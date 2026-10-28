@@ -61,11 +61,11 @@ class NavigationTest < ActiveSupport::TestCase
     assert_includes Navigation.public_actions.fetch("landing"), "index", "control: the shipped registry opens the landing page"
   end
 
-  test "[unit] an audience other than public or admin does not load" do
-    [ nil, "", "Public", "everyone", "signed_in", true ].each do |audience|
+  test "[unit] an audience other than public, admin or signed_in does not load" do
+    [ nil, "", "Public", "everyone", "signed-in", "owner", true ].each do |audience|
       data = minimal(pages: { "tasks" => { "page" => "tasks#index", "audience" => audience, "label" => "Tasks" } })
       error = assert_raises(Navigation::Invalid, "audience #{audience.inspect} must be refused") { Navigation.new(data) }
-      assert_match "audience must be public or admin", error.message
+      assert_match "audience must be public, admin or signed_in", error.message
     end
   end
 

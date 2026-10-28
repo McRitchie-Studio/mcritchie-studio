@@ -73,4 +73,21 @@ class ApplicationsIndexTest < ActionDispatch::IntegrationTest
     get applications_path
     assert_response :not_found
   end
+
+  test "[component] the admin sidebar links Applications once, even for an admin who owns apps; a non-admin owner's comes only from their own links" do
+    alex = users(:alex)
+    alex.save!
+    AppMembership.create!(app: apps(:turf_monster), user: alex)
+    AppMembership.create!(app: @pawsome, user: alex)
+    log_in_as(alex)
+    get applications_path
+    assert_select "#studio-link-sidebar a[href='/applications']", { count: 1 }, "one Applications link, not two"
+
+    owner = User.create!(email: "single@example.com", name: "Single Owner", role: "viewer")
+    AppMembership.create!(app: @pawsome, user: owner)
+    log_in_as(owner)
+    get applications_path
+    assert_response :success
+    assert_select "#studio-link-sidebar a[href='/applications']", { count: 0 }, "the registry entry is an admin's"
+  end
 end

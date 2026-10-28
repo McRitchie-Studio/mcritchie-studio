@@ -222,6 +222,18 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal ["NFL", "Directory", "Services", "Apps"], other_titles
   end
 
+  test "[unit] an admin's Studio section links Applications right after the dashboard; a signed-in non-admin's does not" do
+    self.admin_enabled = true
+    self.logged_in_enabled = true
+    studio = public_link_sections.find { |section| section.fetch(:title) == "Studio" }
+    hrefs = studio.fetch(:links).map { |link| link.fetch(:href) }
+    assert_equal [ "/dashboard", "/applications" ], hrefs.first(2)
+
+    self.admin_enabled = false
+    all_hrefs = public_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link.fetch(:href) }
+    assert_not_includes all_hrefs, "/applications", "the registry entry is an admin's; an owner's link is their own"
+  end
+
   # task public-nfl-cards-stay-public: both NFL links are public pages, so the
   # section is no longer hidden from visitors; the walled Directory still is.
   test "visitors get the public NFL section and never the Directory" do
@@ -275,6 +287,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   end
 
   def dashboard_path = "/dashboard"
+  def applications_path = "/applications"
   def logos_path = "/logos"
   def agents_path = "/agents"
   def builders_path = "/builders"
