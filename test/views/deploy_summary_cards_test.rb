@@ -274,6 +274,9 @@ class DeploySummaryCardsTest < ActionView::TestCase
     assert_equal "+12m over", hero.text
     assert_equal "over", hero["data-eta-kind"]
     assert_includes hero["class"], "data-[eta-kind=over]:text-warning-ink"
+    # An hours-long overrun ("+14h 3m over") must wrap, not run into the QA clock or
+    # sparkline at the ~290px sm/xl card width.
+    refute_includes hero["class"].split, "whitespace-nowrap"
     assert_select "[data-test='devops-landing']", text: "due ~2:00 PM MT"
   end
 
