@@ -144,7 +144,7 @@ require "zlib"
 class ReviewerSelector
   # The full senior soul pool (slugs). Carl is the standing primary (removed from
   # the specialist draw below); the other four are the LIGHT specialists.
-  # `mason` holds the Documentation seat: the CEO, who took it from the `alex` soul
+  # `mason` holds the Documentation seat: the COO (CEO until 2026-10-28), who took it from the `alex` soul
   # on 2026-10-25 (Alex McRitchie's ruling, .agents/epics/alex-build.md). The `alex` soul is
   # client-facing now and reviews nothing, so it is out of the pool.
   POOL = %w[shannon carl jasper steffon mason].freeze

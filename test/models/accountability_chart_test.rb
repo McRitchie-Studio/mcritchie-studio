@@ -36,6 +36,15 @@ class AccountabilityChartTest < ActiveSupport::TestCase
     end
   end
 
+  test "a titled soul seat carries the soul's souls.yml title, so the two cannot drift" do
+    titles = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls").to_h { |s| [s["slug"], s["title"]] }
+    titled = AccountabilityChart.load.seats.select { |s| s.title && !s.human? }
+    assert_operator titled.size, :>=, 3, "the three heads at least carry titles"
+    titled.each do |seat|
+      assert_equal titles.fetch(seat.owner), seat.title, "#{seat.slug}: the chart and souls.yml disagree on #{seat.owner}'s title"
+    end
+  end
+
   test "every seat carries about five roles" do
     AccountabilityChart.load.seats.each do |seat|
       assert_includes 3..7, seat.roles.size, "#{seat.slug} roles"

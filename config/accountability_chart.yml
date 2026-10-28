@@ -60,7 +60,7 @@ seats:
   name: Sales/Marketing
   parent: integrator
   owner: alex
-  title: Sales and Marketing
+  title: Head of Sales and Marketing
   roles:
   - Demand and leads, and the marketing strategy behind them
   - The client conversation (/build intake, the alex.build chat, client threads)

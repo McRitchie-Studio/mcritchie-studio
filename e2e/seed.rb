@@ -72,13 +72,13 @@ alex = Agent.create!(
   slug: "alex",
   status: "active",
   agent_type: "worker",
-  title: "Fractional CTO",
-  description: "The client-facing persona: faces clients on /build and builds their apps.",
+  title: "Head of Sales and Marketing",
+  description: "The client-facing persona: faces clients on /build and launches their builds.",
   avatar: "/agents/alex.webp"
 )
 # Mason holds the orchestrator seat (and the learning heartbeat's grader key) since
 # 2026-10-25; the demo rows below that orchestrate are his.
-Agent.create!(name: "Mason", slug: "mason", status: "active", agent_type: "orchestrator", title: "CEO",
+Agent.create!(name: "Mason", slug: "mason", status: "active", agent_type: "orchestrator", title: "COO",
               description: "Coordinates all agents and manages task assignment.")
 
 mack = Agent.create!(
@@ -86,8 +86,8 @@ mack = Agent.create!(
   slug: "mack",
   status: "active",
   agent_type: "worker",
-  title: "General Worker",
-  description: "Versatile worker handling data scraping and processing."
+  title: "CFO",
+  description: "Keeps the books and runs the month close."
 )
 
 # Senior reviewers + the deploy-lane owners, so the consolidated timeline can

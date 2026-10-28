@@ -742,12 +742,13 @@ class ApplicationHelperTest < ActionView::TestCase
     # workspace-launch rides Steffon's card too: it is not a heartbeat act, but the
     # operator launches it by name and wanted it one copy away.
     assert_equal ["production-deploy", "clean-infra", "workspace-launch"], launchers[2][:actions]
-    # Mason's CEO acts (Alex McRitchie's approved sort, 2026-10-25).
-    assert_equal ["grade-events", "share-insights", "full-cycle"], launchers[3][:actions]
-    # Alex's one chip is ship-clock, the typing-to-shipping benchmark. His /build
-    # queue runs from the Alex Heartbeat row: `launch-build-queue` (18 characters)
-    # clips the carousel's act chip on CI, as sleeper-auction-watch does.
-    assert_equal ["ship-clock"], launchers[4][:actions]
+    # Mason's Operations acts. ship-clock, the typing-to-shipping benchmark, moved to
+    # him from Alex with DevOps when the accountability chart made him COO (2026-10-28).
+    assert_equal ["grade-events", "share-insights", "full-cycle", "ship-clock"], launchers[3][:actions]
+    # Alex's one chip is focus-session, the Sales/Marketing seat's epic with Alex
+    # McRitchie. His /build queue runs from the Alex Heartbeat row: `launch-build-queue`
+    # (18 characters) clips the carousel's act chip on CI, as sleeper-auction-watch does.
+    assert_equal ["focus-session"], launchers[4][:actions]
     # Turf Monster gained the rehearsal launcher after the first watched QA run —
     # an operator asked to be able to kick the whole contest cycle off from the
     # card rather than remembering a command.
@@ -886,7 +887,8 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] [data-copy-row-index='3'] button[data-clip='clean-infra']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] [data-copy-row-index='4'] button[data-clip='intent-scout']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='mason'] [data-copy-row-index='4'] button[data-clip='full-cycle']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] [data-copy-row-index='2'] button[data-clip='ship-clock']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] [data-copy-row-index='2'] button[data-clip='focus-session']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='mason'] [data-copy-row-index='5'] button[data-clip='ship-clock']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] [data-copy-row-index='2'] button[data-clip='live-score-watch']"
     # Pokémon has no heartbeat, so wrap-it-up is its FIRST row, described by what it does.
     assert_select "[data-test='heartbeat-launcher'][data-agent='pokemon'] [data-copy-row-index='1'] button[data-clip='wrap-it-up']"
@@ -910,6 +912,7 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "button[data-row='action'][data-clip='wrap-it-up'] [data-test='action-icon']", text: "🎁"
     assert_select "button[data-row='action'][data-clip='intent-scout'] [data-test='action-icon']", text: "🔭"
     assert_select "button[data-row='action'][data-clip='ship-clock'] [data-test='action-icon']", text: "⏱️"
+    assert_select "button[data-row='action'][data-clip='focus-session'] [data-test='action-icon']", text: "🎯"
     # One icon per act row. DERIVED, not counted by hand: the literal 10 here had
     # to be edited every time a soul gained an act, and an assertion whose only
     # failure mode is "someone added a launcher" teaches the next person to bump

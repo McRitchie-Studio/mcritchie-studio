@@ -61,9 +61,9 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='agent-file-link'][data-file='agents/alex/HEARTBEAT.md'][href=?]",
                     doc_path("agents/alex/HEARTBEAT.md"),
                     text: "HEARTBEAT.md"
-      assert_select "[data-test='agent-file-link'][data-file='agents/alex/sops/ship-clock.md'][href=?]",
-                    doc_path("agents/alex/sops/ship-clock.md"),
-                    text: "ship-clock.md"
+      assert_select "[data-test='agent-file-link'][data-file='agents/alex/sops/focus-session.md'][href=?]",
+                    doc_path("agents/alex/sops/focus-session.md"),
+                    text: "focus-session.md"
     end
 
     assert_select "[data-test='agent-card'][data-agent='steffon']" do

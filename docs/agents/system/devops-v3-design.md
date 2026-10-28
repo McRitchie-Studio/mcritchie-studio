@@ -43,7 +43,7 @@ The agent seat first named Alex became **Xan** on 2026-09-24 (slug `xan`), then
 **Ray** on 2026-10-18 (Alex McRitchie's middle name; display in `ray-display-rename`, slug
 `ray` in `ray-slug-rename`), then **Ritch** on 2026-10-20 (`ritch-display-rename`),
 and **Alex** again on 2026-10-25 (slug `alex`, `ritch-renamed-alex`). Until then it
-was Lead Orchestrator, holder of the Documentation review seat, owner of `full-cycle` and the learning loop. On 2026-10-25 **Mason** (slug `mason`) took those seats as CEO, and Alex became the client-facing fractional CTO and builder (`.agents/epics/alex-build.md`). The Solana signing identity
+was Lead Orchestrator, holder of the Documentation review seat, owner of `full-cycle` and the learning loop. On 2026-10-25 **Mason** (slug `mason`) took those seats as CEO, and Alex became the client-facing fractional CTO and builder (`.agents/epics/alex-build.md`). On 2026-10-28 the accountability chart made Mason the COO (Operations, with DevOps and `ship-clock`), Alex the Sales/Marketing seat and Alex McRitchie the Visionary and CEO (`.agents/epics/accountability-chart.md`). The Solana signing identity
 `agent.xan.solana` (renamed from "Alex bot" on 2026-09-15, retired 2026-10-14) is
 unrelated and keeps its name. The human is **Alex McRitchie** everywhere; "Mr. McRitchie"
 retires from active docs as they are rewritten.
