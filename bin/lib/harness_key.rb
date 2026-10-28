@@ -103,9 +103,15 @@ module HarnessKey
     SecretCache.adopt_legacy!(guarded_path(projects_dir, env), FILE, env: cache_env(projects_dir, env))
   end
 
+  # The folder's file first, wherever the cache resolves (MCR_SECRET_CACHE_DIR
+  # when it is set). Then the legacy file, only where this process may touch it: a
+  # sandboxed run pinned by MCR_SECRET_CACHE_DIR alone may not reach the real
+  # <projects>/.agents, and aborting there used to leave the folder's key in place.
   def clear(projects_dir, env: ENV)
-    legacy = guarded_path(projects_dir, env)
     SecretCache.delete(FILE, env: cache_env(projects_dir, env))
+    legacy = path(projects_dir)
+    return nil if TaskUsageSandbox.violation(legacy, store: STORE, env: TaskUsageSandbox.guard_env(env))
+
     File.delete(legacy) if File.file?(legacy) || File.symlink?(legacy)
   rescue Errno::ENOENT
     nil
