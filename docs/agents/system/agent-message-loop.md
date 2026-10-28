@@ -1076,7 +1076,15 @@ empties the box the moment Turbo has read a send: the sent turn is broadcast
 as well as answered, and the broadcast can land before the answer redraws the
 composer, so a second message written in that moment must not ride the first's
 id (it was once stored as a double submit and vanished). A draft typed while a
-send posts is carried into the redrawn composer.
+send posts is carried into the redrawn composer, beside a refused send's echo,
+never under it; so are files attached meanwhile (uploading or ready) and the
+caret. A send takes its own files' chips off the form, and a failed send puts
+back only those, so a sent file never rides a later message. The composer stays
+`aria-busy` until the last send in flight settles (a new send aborts the one
+before, whose end lands later). An empty send while one posts is dropped as a
+repeated tap, unless it carries files. An ask on /build (`build_status.js`) sets
+the visitor's draft aside on the form, and the send puts it straight back in the
+box (task composer-edge-cases).
 
 **Real time.** The page subscribes with `turbo_stream_from <stream>, channel:
 CtoChatChannel`, one stream per user per app (`cto_chat:<app slug>:<user id>`).
@@ -1250,6 +1258,10 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
 - **A failed upload holds the send.** A send waiting on uploads does not go
   when one fails, and a send with a failed chip on it is stopped: the chip stays,
   red, with its reason, and the composer says to remove it or attach it again.
+- **Files attached while a send posts survive its answer.** The answer redraws
+  the composer; the chips move into the new form, and an upload still running
+  finishes there (`chat_attachments.js`). A files-only message sent while
+  another posts is sent, not dropped as a repeated tap.
 - **A refused send keeps its files.** The re-rendered form draws the send's
   still-valid tokens as ready chips (`Attachments.held`), so the owner fixes the
   text or removes a file and sends again.

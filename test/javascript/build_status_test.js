@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { POP_CLASS, askAgent, heldDraftFor, nextThemeMode, popStatusCard, restoreDraft } from "../../app/javascript/build_status.js";
+import { POP_CLASS, askAgent, nextThemeMode, popStatusCard } from "../../app/javascript/build_status.js";
 
 test("a tap on the other side shows it; a tap on the side showing flips it", () => {
   assert.equal(nextThemeMode("dark", "light"), "light");
@@ -59,27 +59,17 @@ test("no ask while a send is posting, without a chat box, or without text", () =
   assert.equal(idle.form.submitted, 0);
 });
 
-test("a half-typed draft is held through the ask and put back in the redrawn box", () => {
+test("a half-typed draft is set aside on the form for the send to put back (agent_chat.js#startSend)", () => {
   const { root, form, field } = composer({ draft: "make it feel like a lake cabin" });
   assert.equal(askAgent("Can you give me three new theme ideas?", root), true);
   assert.equal(field.value, "Can you give me three new theme ideas?", "the ask is what posts");
   assert.equal(form.submitted, 1);
-  assert.deepEqual(heldDraftFor(), { formId: "build-chat-form", text: "make it feel like a lake cabin" });
-
-  // The send's stream replaced the composer with an empty one.
-  const redrawn = composer();
-  assert.equal(restoreDraft(redrawn.root), true);
-  assert.equal(redrawn.field.value, "make it feel like a lake cabin", "the visitor's words come back");
-  assert.deepEqual(redrawn.field.events, ["input"]);
-  assert.equal(heldDraftFor(), null, "held once, restored once");
-  assert.equal(restoreDraft(composer().root), false, "nothing more to restore");
+  assert.equal(form.dataset.askDraft, "make it feel like a lake cabin", "on the form, not in this module, so no later redraw restores it over newer words");
 });
 
-test("an empty or blank box holds nothing, so the redrawn box stays empty", () => {
-  const { root } = composer({ draft: "   " });
+test("an empty or blank box sets nothing aside, and clears a stale one", () => {
+  const { root, form } = composer({ draft: "   " });
+  form.dataset.askDraft = "stale";
   assert.equal(askAgent("Can you give me three new theme ideas?", root), true);
-  assert.equal(heldDraftFor(), null);
-  const redrawn = composer();
-  assert.equal(restoreDraft(redrawn.root), false);
-  assert.equal(redrawn.field.value, "");
+  assert.equal(form.dataset.askDraft, undefined);
 });
