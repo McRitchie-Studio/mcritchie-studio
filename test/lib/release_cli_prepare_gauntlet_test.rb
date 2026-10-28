@@ -16,7 +16,7 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
 
   # `result:` is what the fake runner answers (nil: no runner may be built);
   # `recorded:` is the board's answer; `usage:` what the session capture yields.
-  def gauntlet(repos:, result: nil, recorded: false, usage: {}, skip: false)
+  def gauntlet(repos:, result: nil, recorded: false, usage: {}, skip: false, record_lands: true)
     runner = if result
                "Release::DevnetGauntletRun::Result.new(**#{result.inspect})"
              else
@@ -34,8 +34,9 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
       end
       def seed_gauntlet_usage(key) = $stdout.puts("SEEDED " + key)
       def capture_move_usage(key) = ($stdout.puts("CAPTURED " + key); #{usage.inspect})
-      def record_release_event(slug, step, status, attrs)
-        $stdout.puts("EVENT " + JSON.generate([slug, step, status, attrs]))
+      def record_gauntlet_event!(slug, status, attrs)
+        $stdout.puts("EVENT " + JSON.generate([slug, Release::DevnetGauntlet::STEP, status, attrs]))
+        #{record_lands}
       end
       def abort!(msg) = ($stdout.puts("ABORT: " + msg); raise(SystemExit))
     RUBY
@@ -101,16 +102,30 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
     refute attrs.key?("tokens_in"), "no hand-typed numbers"
   end
 
-  def test_a_red_step_records_fail_and_aborts_naming_the_step
+  def test_a_red_step_records_fail_and_names_the_step
     meta = { "contest" => "rehearsal-abc", "failed_step" => "play", "steps" => {} }
     out = gauntlet(repos: TURF, result: { ok: false, step: "play", reason: "replay: CATCH-UP FAILED — x", metadata: meta })
 
     _, step, status, attrs = event(out)
     assert_equal %w[devnet_gauntlet failed], [step, status]
     assert_equal "play", attrs.dig("metadata", "failed_step")
-    assert_includes out, "ABORT: devnet gauntlet RED at step `play`: replay: CATCH-UP FAILED — x"
-    assert_includes out, "EXITED"
-    refute_includes out, "OUTCOME"
+    assert_includes out, "✗ devnet gauntlet RED at step `play`: replay: CATCH-UP FAILED — x"
+    assert_includes out, "Recorded devnet_gauntlet fail on rel-g"
+    assert_includes out, "OUTCOME red", "prepare turns :red into PREPARE_GAUNTLET_RED_EXIT"
+  end
+
+  def test_a_green_run_whose_record_does_not_land_is_loud_not_green
+    out = gauntlet(repos: TURF, result: { ok: true, step: nil, reason: nil, metadata: GREEN_META }, record_lands: false)
+
+    assert_includes out, "was NOT recorded on rel-g, so `bin/release ship` will refuse it"
+    assert_includes out, "/api/v1/releases/current/events/devnet_gauntlet/complete"
+    assert_includes out, "OUTCOME unrecorded"
+  end
+
+  def test_a_red_gauntlet_is_its_own_exit_status
+    out = run_cli([], call: "puts(Release::Cli.prepare_exit_status(:gauntlet_red)); " \
+                            "puts(Release::Cli.prepare_exit_status(:assembled))")
+    assert_equal %w[4 0], out.lines.map(&:strip).last(2)
   end
 
   def test_the_guard_accepts_skip_gauntlet_on_prepare

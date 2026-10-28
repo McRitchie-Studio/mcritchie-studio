@@ -1634,6 +1634,14 @@ rescue SystemExit, StandardError => e
 end
 
 def record_release_event(release_slug, step_name, status, attrs = {})
+  conductor(release_event_ruby(release_slug, step_name, status, attrs))
+rescue SystemExit, StandardError => e
+  say("  ⚠ release event #{step_name}:#{status} not recorded (#{e.message}); deploy continues")
+end
+
+# The conductor snippet that records one release event (record_release_event's,
+# shared with the gauntlet's strict record).
+def release_event_ruby(release_slug, step_name, status, attrs = {})
   attrs = attrs.dup
   attrs[:source] ||= "conductor"
   attrs[:idempotency_key] ||= [
@@ -1641,13 +1649,9 @@ def record_release_event(release_slug, step_name, status, attrs = {})
   ].compact.join(":")
 
   payload = attrs.map { |key, value| "#{key}: #{value.inspect}" }.join(", ")
-  conductor(
-    "r = Release.find_by!(slug: #{release_slug.inspect}); " \
+  "r = Release.find_by!(slug: #{release_slug.inspect}); " \
     "Release::Conductor.record_event!(release: r, step: #{step_name.inspect}, status: #{status.inspect}, #{payload}); " \
     "puts({ release_event: #{step_name.inspect}, status: #{status.inspect} }.to_json)"
-  )
-rescue SystemExit, StandardError => e
-  say("  ⚠ release event #{step_name}:#{status} not recorded (#{e.message}); deploy continues")
 end
 
 # --- the devnet gauntlet, run by prepare (Release::DevnetGauntletRun) ----------
@@ -1679,9 +1683,12 @@ GAUNTLET_ENV_SCRUB = %w[BUNDLE_GEMFILE BUNDLE_BIN_PATH BUNDLER_SETUP BUNDLER_VER
 
 def gauntlet_step_deadline = env_deadline(GAUNTLET_STEP_DEADLINE_ENV, GAUNTLET_STEP_DEFAULT_DEADLINE)
 
-# The steps of prepare, after QA green: run the gauntlet when the release owes one.
-# Returns :not_required, :skipped, :dry, :recorded (one is already on the release)
-# or :completed; a red run records `fail` and aborts naming the step.
+# The step of prepare after QA green: run the gauntlet when the release owes one.
+# Returns :not_required, :skipped, :dry, :recorded (one is already on the release),
+# :completed, :red (a red step, recorded `fail`) or :unrecorded (a green run whose
+# record did not land). The last two make prepare exit PREPARE_GAUNTLET_RED_EXIT.
+# It never aborts: the release has already assembled on QA, and an abort here would
+# report the run as failing before QA green.
 def prepare_devnet_gauntlet!(rel_slug, repos, skip: false)
   turf = Array(repos).map { |g| g["repo"].to_s } & Release::DevnetGauntlet::REPOS
   return :not_required if turf.empty?
@@ -1711,16 +1718,32 @@ def prepare_devnet_gauntlet!(rel_slug, repos, skip: false)
   attrs = gauntlet_event_attrs(capture_move_usage(usage_key), metadata, result)
 
   if result.ok?
-    record_release_event(rel_slug, Release::DevnetGauntlet::STEP, "completed", attrs)
     say("✓ devnet gauntlet green: contest #{metadata['contest']} · settle #{metadata['settle_signature']} · " \
         "close #{metadata['close_signature']}")
-    return :completed
+    return :completed if record_gauntlet_event!(rel_slug, "completed", attrs)
+
+    # Loud, not "deploy continues": a green run with no record leaves ship refusing.
+    say("✗ the green devnet gauntlet was NOT recorded on #{rel_slug}, so `bin/release ship` will refuse it. " \
+        "Record it: POST /api/v1/releases/current/events/#{Release::DevnetGauntlet::STEP}/complete with metadata " \
+        "#{metadata.slice('contest', 'settle_signature', 'close_signature').to_json} (task-board-api.md).")
+    return :unrecorded
   end
 
-  record_release_event(rel_slug, Release::DevnetGauntlet::STEP, "failed", attrs)
-  abort!("devnet gauntlet RED at step `#{result.step}`: #{result.reason}. Recorded devnet_gauntlet fail on " \
-         "#{rel_slug}; `bin/release ship` refuses it until a green gauntlet is recorded. Fix forward or eject the " \
-         "Turf task (`bin/release eject <task> --feedback \"…\"`), then re-run prepare.")
+  recorded = record_gauntlet_event!(rel_slug, "failed", attrs)
+  say("✗ devnet gauntlet RED at step `#{result.step}`: #{result.reason}")
+  say("  #{recorded ? 'Recorded' : 'Could NOT record'} devnet_gauntlet fail on #{rel_slug}. `bin/release ship` " \
+      "refuses it until a green gauntlet is recorded: fix forward, or eject the Turf task " \
+      "(`bin/release eject <task> --feedback \"…\"`), then re-run `bin/release prepare`.")
+  :red
+end
+
+# The gauntlet's record, strict: true when the board took it, false (and why) when not.
+def record_gauntlet_event!(rel_slug, status, attrs)
+  conductor(release_event_ruby(rel_slug, Release::DevnetGauntlet::STEP, status, attrs))
+  true
+rescue SystemExit, StandardError => e
+  say("  ⚠ release event #{Release::DevnetGauntlet::STEP}:#{status} not recorded (#{e.message})")
+  false
 end
 
 # Has the release a completed gauntlet already? A re-run of prepare must not run a
@@ -4192,6 +4215,7 @@ def prepare
   # `--skip-gauntlet`: prepare runs no devnet gauntlet on a Turf release. It records
   # nothing, so `ship` still refuses until one is recorded (Release::DevnetGauntlet).
   skip_gauntlet = Release::Cli.take_flag(ARGV, GAUNTLET_SKIP_FLAG)
+  gauntlet_red = false
   if expedite && task_slugs.size != 1
     abort!("--expedite guards a SINGLE expedited task — pass exactly one `--task <slug>` " \
            "(got #{task_slugs.size}). Nothing was merged or deployed.")
@@ -4842,7 +4866,7 @@ def prepare
     #     (qa-release.md, "The devnet gauntlet"). Runs the contest-rehearsal
     #     unattended and records devnet_gauntlet on the release, which `ship` reads;
     #     a red step records the fail and aborts here, naming the step.
-    prepare_devnet_gauntlet!(rel_slug, repos, skip: skip_gauntlet)
+    gauntlet_red = %i[red unrecorded].include?(prepare_devnet_gauntlet!(rel_slug, repos, skip: skip_gauntlet))
   end
 
   # 9. Per-repo summary of what was swept + QA'd.
@@ -4868,7 +4892,12 @@ def prepare
   say("  #{left_reviewed.join(', ')} left `reviewed` — see the ⚠ line for each (no code on `#{ACCEPTED_BRANCH}`: re-review to heal, or `bin/task block` them).") if left_reviewed.any?
   # The Steffon handoff exists only on QA-green — a NOT-green prepare hands off to
   # NOBODY (the step-8 warning already said: re-run prepare once QA boots).
-  if qa_green
+  if qa_green && gauntlet_red
+    # Assembled on QA, but the devnet gauntlet is not green on the record: no handoff.
+    say("")
+    say("  The devnet gauntlet is not green on the record (see the ✗ above): NO handoff to Steffon; " \
+        "prepare exits #{Release::Cli::PREPARE_GAUNTLET_RED_EXIT}.")
+  elsif qa_green
     say("")
     say("  Review the QA app(s) above, then hand off to Steffon: `bin/release ship`.")
   end
@@ -4876,8 +4905,13 @@ def prepare
   # next conductor can pick this release up immediately; a crash self-heals via the
   # lease TTL. Best-effort — see release_conductor_claim!.
   release_conductor_claim!
-  close_role_span(qa_green ? "assembled #{rel_slug} → QA" : "prepared #{rel_slug} — QA not green, members stay reviewed")
-  qa_green ? :assembled : :qa_not_green
+  close_role_span(if !qa_green then "prepared #{rel_slug} — QA not green, members stay reviewed"
+                  elsif gauntlet_red then "assembled #{rel_slug} → QA — devnet gauntlet red"
+                  else "assembled #{rel_slug} → QA"
+                  end)
+  return :qa_not_green unless qa_green
+
+  gauntlet_red ? :gauntlet_red : :assembled
 rescue SystemExit
   # G3 close-fail wrapper: an abort INSIDE the gate window (a red pre_qa_gate,
   # a QA-deploy/checkout abort, a post-deploy hook failure) IS the gate failing —
