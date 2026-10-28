@@ -2243,4 +2243,85 @@ class AgentWorktreeTest < Minitest::Test
     refute_includes code, "def write_cleanup_ledger_record"
     refute_includes code, "def ledger_path"
   end
+
+  # --- desk node_modules (bin/lib/desk_node_modules.rb) --------------------------
+  # The lib's own rules live in test/lib/desk_node_modules_test.rb; what is asserted HERE
+  # is the wiring only this script holds: `new` borrows on a matching lock and runs npm ci
+  # on a differing one, and a teardown unlinks BEFORE git deletes anything.
+
+  def node_trees(root, desk_lock: "{}\n")
+    primary = File.join(root, "primary")
+    desk = File.join(root, "desk")
+    FileUtils.mkdir_p([File.join(primary, "node_modules", "playwright"), desk])
+    File.write(File.join(primary, "node_modules", "playwright", "index.js"), "primary\n")
+    File.write(File.join(primary, "package-lock.json"), "{}\n")
+    File.write(File.join(desk, "package.json"), "{}\n")
+    File.write(File.join(desk, "package-lock.json"), desk_lock)
+    [primary, desk]
+  end
+
+  def test_new_links_a_matching_lock_and_runs_npm_ci_only_for_a_differing_one
+    Dir.mktmpdir do |root|
+      primary, desk = node_trees(root)
+      out = run_in_script(<<~RUBY)
+        def sh(*cmd, **_kw); puts "SH \#{cmd.join(" ")}"; true; end
+        provision_node_modules({ "repo" => #{primary.inspect} }, #{desk.inspect}, env: {})
+      RUBY
+      assert_match(/node_modules:   linked 1 entries/, out)
+      refute_match(/SH npm ci/, out, "a matching lock never installs")
+      assert File.symlink?(File.join(desk, "node_modules", "playwright"))
+    end
+
+    Dir.mktmpdir do |root|
+      primary, desk = node_trees(root, desk_lock: "{\"changed\":1}\n")
+      out = run_in_script(<<~RUBY)
+        def sh(*cmd, **kw); puts "SH \#{cmd.join(" ")} in \#{kw[:chdir]}"; true; end
+        provision_node_modules({ "repo" => #{primary.inspect} }, #{desk.inspect}, env: {})
+      RUBY
+      assert_includes out, "SH npm ci --no-audit --no-fund in #{desk}", "a differing lock installs in the DESK"
+      refute File.exist?(File.join(desk, "node_modules")), "and links nothing"
+    end
+  end
+
+  def test_new_never_links_on_heroku_or_ci
+    [{ "DYNO" => "web.1" }, { "CI" => "true" }].each do |env|
+      Dir.mktmpdir do |root|
+        primary, desk = node_trees(root)
+        out = run_in_script(<<~RUBY)
+          def sh(*cmd, **_kw); puts "SH \#{cmd.join(" ")}"; true; end
+          provision_node_modules({ "repo" => #{primary.inspect} }, #{desk.inspect}, env: #{env.inspect})
+        RUBY
+        assert_match(/node_modules:   none/, out)
+        refute File.exist?(File.join(desk, "node_modules")), "#{env.inspect} must never link"
+      end
+    end
+  end
+
+  # THE RECLAIM GUARD, through the real teardown: the git-remove stub records whether a
+  # link into the primary was still on disk at the moment git would delete the desk.
+  def test_teardown_unlinks_the_node_modules_farm_before_git_removes_the_desk
+    Dir.mktmpdir do |root|
+      primary, desk = node_trees(root)
+      out = run_in_script(<<~RUBY)
+        #{TEARDOWN_HARNESS}
+        LINK = File.join(#{desk.inspect}, "node_modules", "playwright")
+        module DeskLedger
+          def self.file(**_kw); Result.new(ok: true); end
+        end
+        DeskNodeModules.link!(desk: #{desk.inspect}, source: File.join(#{primary.inspect}, "node_modules"))
+        def sh(*args, **_kw)
+          STEPS << :"git-\#{args.last(2).first}"
+          STEPS << (File.symlink?(LINK) ? :link_present : :link_gone) if args.include?("worktree")
+        end
+        teardown_worktree(APP, #{desk.inspect}, RECORD.merge(dir: #{desk.inspect}))
+        print STEPS.inspect
+      RUBY
+      steps = eval(out) # rubocop:disable Security/Eval -- the child prints its own Array#inspect
+
+      assert_equal :link_gone, steps[steps.index(:"git-remove") + 1],
+                   "git must never meet a link into the primary's node_modules"
+      assert File.file?(File.join(primary, "node_modules", "playwright", "index.js")), "the primary is untouched"
+    end
+  end
+
 end

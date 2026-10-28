@@ -104,6 +104,23 @@ The reclaim withholds any desk bound to a task the board does not yet show at a 
 nothing. Free one of those by hand, once you know its work is safe on `accepted`:
 `bin/agent-worktree remove <app> <task-slug> --yes`.
 
+### A desk borrows the primary's `node_modules`
+
+`new` gives a repo with a `package.json` its `node_modules` (`bin/lib/desk_node_modules.rb`):
+
+- **Lock matches.** When the desk's `package-lock.json` is byte-for-byte the primary's and
+  the primary has a real install, the desk gets a **link farm**: a real `node_modules`
+  directory whose top-level entries link to the primary's. `.studio-engine` stays the
+  desk's own, so `bin/rails node_tooling:link` links the engine this desk bundles and never
+  writes the primary.
+- **Lock differs** (or the primary has no install): `npm ci` in the desk.
+- **Never on Heroku or CI** (`DYNO`/`STACK`, `CI`), and never over an existing `node_modules`.
+
+Every teardown (`remove`, `cleanup --reclaim --yes`, an unwind) unlinks those links
+before git deletes anything, so nothing deletes through one into the primary. To give a
+linked desk its own install, run `npm ci` in the desk: it unlinks the entries and never
+follows them. Never run `rm -rf node_modules/` with a trailing slash on a link.
+
 ## Lifecycle
 
 - `list` shows health, URL, branch, dirty/merge state, database, Redis DB and pidfile.
