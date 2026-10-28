@@ -17,6 +17,11 @@ neither is in the reviewer pool. The mascot stays the crew member. See
 Shannon, Jasper, Steffon, Mason) do not build; they review, and their standards
 are what the Pokémon builds to.
 
+The Pokémon holds two seats on the accountability chart
+(`config/accountability_chart.yml`): **Build**, under Mason's Operations, which took
+Mack's old scraping and data work on 2026-10-28; and the **Integrator**, which the
+orchestrating session wears as the Pokémon soul: [`integrator.md`](integrator.md).
+
 ## Responsibilities
 - **Build the task whole** — read the acceptance and the epic plan, design the change, implement it across every surface it touches, and update the owning docs in the same pass
 - **Test as you go, unit-first** — write the tiers the shape demands while building; for a bug, the failing regression test first

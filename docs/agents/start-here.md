@@ -97,7 +97,6 @@ its invocation exactly.
 | Alex `focus-session` SOP (hold an epic, file just-in-time, build wide, review your own PRs) | `mcritchie-studio/docs/agents/agents/alex/sops/focus-session.md` |
 | Alex `launch-build-queue` SOP (work /build app requests: claim, build, point the subdomain, mark live) | `mcritchie-studio/docs/agents/agents/alex/sops/launch-build-queue.md` |
 | Alex `marketing-kit` SOP (build a brand's marketing kit (guidelines PDF, doc and slide templates, tracker) in Drive from one spec) | `mcritchie-studio/docs/agents/agents/alex/sops/marketing-kit.md` |
-| Alex `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/alex/sops/ship-clock.md` |
 | `Avi Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | Avi `arbitrate-block` SOP (a builder contested a review block; Avi rules) | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
 | Avi `deploy-with-task` SOP | `mcritchie-studio/docs/agents/agents/avi/sops/deploy-with-task.md` |
@@ -108,12 +107,15 @@ its invocation exactly.
 | Carl `pr-review-primary` SOP (the primary reviewer's own steps) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-primary.md` |
 | Carl `pr-review-slow` SOP (the slow variant of pr-review) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
 | Carl `pr-review` SOP (the orchestrator) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
+| `Mack Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/mack/HEARTBEAT.md` |
+| Mack `close-the-month` SOP (file last month's bank statements, answer the lines no rule could classify, write the close to Drive) | `mcritchie-studio/docs/agents/agents/mack/sops/close-the-month.md` |
 | `Mason Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/mason/HEARTBEAT.md` |
 | Mason `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |
 | Mason `dream-swap` SOP (print the dream cards (adds, swaps, retires) for Alex McRitchie and record his answer with his words) | `mcritchie-studio/docs/agents/agents/mason/sops/dream-swap.md` |
 | Mason `full-cycle` SOP | `mcritchie-studio/docs/agents/agents/mason/sops/full-cycle.md` |
 | Mason `grade-events` SOP | `mcritchie-studio/docs/agents/agents/mason/sops/grade-events.md` |
 | Mason `share-insights` SOP | `mcritchie-studio/docs/agents/agents/mason/sops/share-insights.md` |
+| Mason `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/mason/sops/ship-clock.md` |
 | Pokemon `digest-video` SOP (download, store and record a music video; stage 1 of pipeline 3) | `mcritchie-studio/docs/agents/agents/pokemon/sops/digest-video.md` |
 | Pokemon `download-instagram` SOP (yt-dlp download of an Instagram reel or post; cookie path unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-instagram.md` |
 | Pokemon `download-tiktok` SOP (yt-dlp download of a TikTok video; unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
@@ -162,7 +164,6 @@ its invocation exactly.
 | `address-blocker` (recontextualize, fix, resubmit) | `mcritchie-studio/docs/agents/modules/address-blocker.md` |
 | `agent-communication` (what an agent may discuss with owner, team, client and public) | `mcritchie-studio/docs/agents/modules/agent-communication.md` |
 | `building-sop` (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
-| `close-the-month` (file last month's bank statements, answer the lines no rule could classify, write the close to Drive) | `mcritchie-studio/docs/agents/modules/close-the-month.md` |
 | `contact-capture` (offer Alex McRitchie a create or update of an Apple Contacts card from a forwarded email's signature) | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
 | `credential-issues` (log it privately, triage rotate-now vs weekly) | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `dream` (the bank of good answers, in a platform sequence, one per soul and step moment cards; capture and sign-off) | `mcritchie-studio/docs/agents/modules/dream.md` |

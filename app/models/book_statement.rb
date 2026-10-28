@@ -2,7 +2,7 @@
 
 # One bank statement in the books, as Books::Intake filed it: the bank's own
 # summary, and the Drive file it was read from. Its lines are BookEntry rows.
-# SOP: docs/agents/modules/close-the-month.md.
+# SOP: docs/agents/agents/mack/sops/close-the-month.md.
 class BookStatement < ApplicationRecord
   has_many :entries, -> { order(:position) }, class_name: "BookEntry", foreign_key: :book_statement_id,
                                               inverse_of: :statement, dependent: :delete_all

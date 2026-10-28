@@ -27,7 +27,7 @@ module BooksCli
            bin/books close <entity> <YYYY-MM>             write the month's Sheet and PDF to Drive
     common: --by WHO (required for intake, classify, close: who decided or ran it)
             --app NAME (default #{MailCli::DEFAULT_APP}) · --local (bin/rails runner here, not heroku)
-    SOP: docs/agents/modules/close-the-month.md
+    SOP: docs/agents/agents/mack/sops/close-the-month.md
   TXT
 
   module_function
