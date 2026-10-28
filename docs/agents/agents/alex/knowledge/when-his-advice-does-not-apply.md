@@ -41,7 +41,7 @@ So a limit earns a place on this card only if **he drew it himself**, or if
 **his own evidence cuts against his own rule.** Everything below meets that bar.
 Nothing below is a licence to skip the work.
 
-**One thing has changed about the trap, and Rex must hold both halves.** The
+**One thing has changed about the trap, and Alex must hold both halves.** The
 fourth row above is about the referral plays specifically — and in
 `uYds0zcAFWM` he takes the opposite side on exactly that subject, naming two
 conditions under which referrals will never appear and saying so about his own
@@ -162,7 +162,7 @@ together end it:
 | **Disincentive to share** | If you serve two similar businesses, a customer has a literal reason not to tell anyone what is helping them — they do not want a competitor to know | B2B, explicitly. He scopes this one to B2B by name |
 | **Low communication density** | There has to be frequent communication between your customers and other potential customers. Without the occasion, there is no referral even with goodwill | Any market where buyers do not talk to each other |
 
-**His worked example is a metal shop specialising in aerotech**, and Rex must
+**His worked example is a metal shop specialising in aerotech**, and Alex must
 read the roles correctly before reaching for the analogy: in his telling the
 metal shop is the **customer** — the business being advised is the software
 vendor selling *into* aerotech shops. The shop is the one who will not refer.
@@ -202,7 +202,7 @@ logo retention on purpose.
 
 That is offered as scale-invariant and unconditioned. `uYds0zcAFWM` conditions
 it. **The reconciliation is chronological — the 14-years video is him revising
-the earlier position, and he says so out loud.** Rex uses the conditioned
+the earlier position, and he says so out loud.** Alex uses the conditioned
 version and cites both.
 
 **The partial precedent he already had.** On `KhFlD54nQrY` he says the smaller
@@ -228,7 +228,7 @@ campaign you can run.
 ## 4. The scale trigger that may never fire
 
 **Sources:** `KhFlD54nQrY`, `VBoRLJimVzc`, `w7g08dVTwaE` vs `uYds0zcAFWM` ·
-**Rex's synthesis — flagged as inference**
+**Alex's synthesis — flagged as inference**
 
 This is not a limit he states. It is a structural consequence of §3 that nobody
 in the corpus joins up, and it deadlocks three separate plays.
@@ -254,11 +254,11 @@ The corpus half-notices this once: the `w7g08dVTwaE` item itself carries a
 condition pointing at the virality boundary. Nobody carries the observation to
 the other two.
 
-**Rex's substitute, and he must label it as his own.** Where §3's two tests say
+**Alex's substitute, and he must label it as his own.** Where §3's two tests say
 virality is dead, the three gates need a replacement signal — and the video that
 kills the trigger names the replacement in the same passage: **revenue
 retention.** Use a retention threshold as the readiness gate instead of a
-referral event. That the substitution is legitimate is **Rex's inference**; that
+referral event. That the substitution is legitimate is **Alex's inference**; that
 retention is the gold standard for such a business is **his statement**.
 
 ---
@@ -316,7 +316,7 @@ incremental cost. At $20 of fulfilment per $100, the real figure is $800. For
 software the two numbers converge, which is exactly why the literature never
 drew the distinction.
 
-**Rex's rule: never quote 3:1 without first scoring the three functions.** For a
+**Alex's rule: never quote 3:1 without first scoring the three functions.** For a
 manual service business it is off by a factor of five or more, and quoting it
 authorises a spend level that will not survive the first three hires.
 
@@ -351,7 +351,7 @@ than people who make $3 million, so that skill is the one to acquire.
 **He scopes even that.** The $3M→$10M prescription is aimed at high-ticket
 coaches in a niche, and he adds that there are absolutely exceptions.
 
-**The number is not stable across videos, and Rex should say so rather than
+**The number is not stable across videos, and Alex should say so rather than
 pick one.** On `VBoRLJimVzc` the same rule is a sub-$1-2M rule — *"one Avatar
 one product one channel this is the simplest formula to getting $2 million
 plus"* — with a different expiry attached: channel diversification starts
@@ -444,7 +444,7 @@ competitor who was already copying him.
 consuming competitors' *creative*, keep reading competitors' *offers*.** Nobody
 in the corpus states that boundary. **Flagged as inference.**
 
-Rex's rule until it resolves: read a competitor's offer and price as evidence
+Alex's rule until it resolves: read a competitor's offer and price as evidence
 about what buyers currently accept; do not read their creative while writing
 yours.
 
@@ -551,7 +551,7 @@ get him no new believers, and be shown to people interested in humour.
 - The funnel objection applies when content exists to source buyers. If the goal
   is reach for its own sake, it does not bite.
 
-**A third scope, from `UGEc9-7X3OQ`, that Rex keeps getting wrong.** His
+**A third scope, from `UGEc9-7X3OQ`, that Alex keeps getting wrong.** His
 give-in-content / ask-in-ads split —
 
 > "all of your content is only give and then the ads are the ask"
@@ -607,7 +607,7 @@ business with broken attribution.**
 
 **Source:** `npi7UeOE_0o`
 
-The newest and most directly applicable limit on Rex himself, because Rex's
+The newest and most directly applicable limit on Alex himself, because Alex's
 whole job involves rating creative he was never the audience for.
 
 > "making sure that we're judging appropriately based on whether we are the
@@ -640,8 +640,8 @@ And the escape from all of it, which he states plainly: test rather than argue.
 He is explicit that his own tier grades are opinion and that data would overrule
 them.
 
-**Rex's rule: when the client is the avatar and Rex is not, the client's read on
-creative outranks Rex's — and a cheap test outranks both.**
+**Alex's rule: when the client is the avatar and Alex is not, the client's read on
+creative outranks Alex's — and a cheap test outranks both.**
 
 ---
 
@@ -690,7 +690,7 @@ controversial; all are invisible to someone quoting the play.
 
 ## What is NOT on this card
 
-The gaps matter as much as the entries, because Rex must not manufacture a limit
+The gaps matter as much as the entries, because Alex must not manufacture a limit
 the man never drew. Searched for and **not found** in the corpus:
 
 - **No stated limit on the Core Four itself.** He treats the four as exhaustive
@@ -709,11 +709,11 @@ the man never drew. Searched for and **not found** in the corpus:
 - ~~No stated B2B / B2C boundary.~~ **This has changed, and it is now one of the
   sharpest lines on the card.** He scopes the virality killers to B2B by name
   (§3), scopes demonstrate-expertise-in-advance to B2B by name (§10), and says
-  virality is typically more on the consumer side. **Rex should now ask which
+  virality is typically more on the consumer side. **Alex should now ask which
   side a client sits on before prescribing referral or brand work.**
 - **Nothing on checkout or onboarding friction** — no item about the number of
   steps to purchase, wallet or account creation, or signup abandonment. Any read
-  on an onboarding step is Rex's inference, not doctrine.
+  on an onboarding step is Alex's inference, not doctrine.
 - **No limit on affiliate advice for a product with no margin to share.** He
   routes low-ticket businesses *to* affiliates (§2) and lists affiliates among
   his six channels (`neTSqOAMgao`) without ever addressing what you pay them out
@@ -723,11 +723,11 @@ the man never drew. Searched for and **not found** in the corpus:
   operating alone.
 - **No threshold for "dead" virality.** §3 gives two conditions but no test you
   can run — no number of months without a referral, no share of buyers who
-  compete. **Rex must propose a measurable test himself and label it as his.**
+  compete. **Alex must propose a measurable test himself and label it as his.**
 
 ---
 
-## How Rex uses this card
+## How Alex uses this card
 
 1. **Run §1 before anything.** If the client cannot absorb double the demand,
    say so and stop. Prescribing marketing to a supply-constrained business makes
@@ -744,8 +744,8 @@ the man never drew. Searched for and **not found** in the corpus:
 5. **Check §13 before quoting any ratio at all.** A number nobody can trust is
    not a weak input, it is not an input — and a flattering ROAS on a business
    with live word of mouth is just as untrustworthy.
-6. **Check §14 before rating anyone's creative.** If Rex is not the avatar,
-   Rex's reaction carries no information. Say so, and propose the test.
+6. **Check §14 before rating anyone's creative.** If Alex is not the avatar,
+   Alex's reaction carries no information. Say so, and propose the test.
 7. **Never use this card to excuse a client from work.** His standing answer to
    "that doesn't apply to me" is that it does — see the trap at the top. A limit
    is only live when he drew it or his own evidence contradicted him. The §3
@@ -756,7 +756,7 @@ the man never drew. Searched for and **not found** in the corpus:
 
 ---
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 ### industries — the Denver welding shop
 
@@ -767,7 +767,7 @@ foreman's referral as outperforming any ad. **§3 says that instinct needs a tes
 run before it becomes a plan** — and it is a trade B2B business, which is the
 exact shape he scopes the virality killers to.
 
-**First, the error Rex must not make.** The aerotech metal shop in
+**First, the error Alex must not make.** The aerotech metal shop in
 `uYds0zcAFWM` is *not* an analogue for this client in the way it looks. In his
 telling the metal shop is the **customer** who will not refer; the business
 being advised is the vendor selling into it. Reading "the welding shop is the
@@ -784,7 +784,7 @@ the **test**, not the character.
 
 **So the correct advice is neither "ask for referrals" nor "referrals are dead"
 — it is that the ask must be segmented**, and the segment split is a thing to
-measure rather than assume. **This is Rex's inference**, applying his stated
+measure rather than assume. **This is Alex's inference**, applying his stated
 test to a buyer mix he never discussed.
 
 **And one fact settles the bigger question decisively.** The dossier records
@@ -803,7 +803,7 @@ retention number is the one that decides everything else. **Ask it first.**
 
 **§5 is the new gate before any spend conversation, and it is severe.** This is
 a fully manual business on all three of his axes — manual outbound, one-to-one
-sales over the phone, hands-on delivery on a fabrication floor. *(Rex's
+sales over the phone, hands-on delivery on a fabrication floor. *(Alex's
 classification, from the dossier; he never scored this business.)* That puts the
 required LTGP:CAC at **20:1, floor 15:1** — not 3:1. And at a single location
 with economics anywhere near 5:1-8:1, his prescription is explicit: **do not
@@ -872,7 +872,7 @@ ask counsel, not as legal advice from a marketing card.
 
 The crypto-wallet onboarding step remains the one place with **no doctrine** —
 the corpus still contains nothing on onboarding friction, so treating that step
-as a conversion tax is **Rex's inference, to be settled by our own funnel data.**
+as a conversion tax is **Alex's inference, to be settled by our own funnel data.**
 
 ### operator-brand
 
@@ -897,10 +897,10 @@ so the rule applies in full and **the instinct to open a second channel is the
 thing to resist.** His diagnosis for a stalled single channel is a business or
 pricing problem, not a channel problem.
 
-**§14 is a standing limit on Rex advising this client at all.** When the avatar
-is a buyer Rex is not, Rex's read on creative carries no information — and he
+**§14 is a standing limit on Alex advising this client at all.** When the avatar
+is a buyer Alex is not, Alex's read on creative carries no information — and he
 applies that discipline to himself twice on camera rather than only preaching
-it. For this client that means the operator's own read outranks Rex's, and a
+it. For this client that means the operator's own read outranks Alex's, and a
 cheap test outranks both.
 
 > "you can't beat data"

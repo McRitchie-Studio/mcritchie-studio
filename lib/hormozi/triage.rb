@@ -3,12 +3,12 @@
 require "set"
 
 module Hormozi
-  # Scores one episode for how much MARKETING it teaches — the job Rex is hired
-  # for.
+  # Scores one episode for how much MARKETING it teaches — the job Alex's demand
+  # method is for (it was Rex's, the CMO's, until he folded into Alex on 2026-10-28).
   #
   # The corpus spans roughly 1,700 videos, and most of them are not about
   # marketing: hiring, firing, operations, mindset, morning routines, personal
-  # stories. A CMO distilled from all of it evenly answers "what hook should
+  # stories. An advisor distilled from all of it evenly answers "what hook should
   # this ad open with?" with an anecdote about firing a manager. Tier 1 is what
   # earns a deep extraction pass; tier 3 stays metadata we can reach for later.
   module Triage

@@ -21,9 +21,8 @@ Alex McRitchie is the human owner: the Visionary and CEO on the accountability c
 | Tyrion | Cyvasse's house player: plays and chats with visitors; client-facing, holds no credentials | `docs/agents/agents/tyrion/` |
 | Tywin | The Cyvasse app's operator and admin: internal, holds the keys | `docs/agents/agents/tywin/` |
 | Hank | The Commercial Welding business agent (books, suppliers); not yet launched | `docs/agents/agents/hank/` |
-| Alex | Sales/Marketing: faces clients, runs focus sessions and the `/build` queue, leads client launches; brand voice and launches; Worker class | `docs/agents/agents/alex/` |
+| Alex | Sales/Marketing: faces clients, runs focus sessions and the `/build` queue, leads client launches; demand (Rex's CMO method, folded in 2026-10-28; `rex` is an alias), brand voice and launches; Worker class | `docs/agents/agents/alex/` |
 | Mack | CFO (Finance/Admin): the books and `close-the-month`, the financials, reports, the financial watchdog | `docs/agents/agents/mack/` |
-| Rex | Marketing strategy (CMO); folds into Alex on a later card | `docs/agents/agents/rex/` |
 
 ## SOP Invocation Standard
 
@@ -163,8 +162,11 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 |------------|-------|------|
 | `Alex Heartbeat` | Alex | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | `brand-kit-rollout` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/brand-kit-rollout.md` |
+| `constraint-diagnosis` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/constraint-diagnosis.md` |
+| `content-sprint` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/content-sprint.md` |
 | `focus-session` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/focus-session.md` |
 | `launch-build-queue` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/launch-build-queue.md` |
+| `launch-warmup` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/launch-warmup.md` |
 | `marketing-kit` | Alex | `mcritchie-studio/docs/agents/agents/alex/sops/marketing-kit.md` |
 | `Avi Heartbeat` | Avi | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | `arbitrate-block` | Avi | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
@@ -191,10 +193,6 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `download-youtube` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
 | `email-image` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | `wrap-it-up` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
-| `Rex Heartbeat` | Rex | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
-| `constraint-diagnosis` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
-| `content-sprint` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
-| `launch-warmup` | Rex | `mcritchie-studio/docs/agents/agents/rex/sops/launch-warmup.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `agent-dispatcher` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/agent-dispatcher.md` |
 | `agent-onboarding` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/agent-onboarding.md` |

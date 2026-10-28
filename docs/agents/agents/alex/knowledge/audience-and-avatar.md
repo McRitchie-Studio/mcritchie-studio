@@ -219,7 +219,7 @@ $10-million-a-year friend.
   newer styles while the buyer he could help most had stopped watching. His
   conclusion: comments came from people who were not the who he was serving.
 
-Rex's reading: the reconcilable version is that comment **volume** is not the
+Alex's reading: the reconcilable version is that comment **volume** is not the
 signal and comment **composition** is. Both stories are solved by the
 self-segment play above — ask for the qualification alongside the preference,
 and the two lessons stop fighting.
@@ -249,7 +249,7 @@ turn into one remembered statistic.
 > "this is where you have to read between the lines of the comments rather than
 > just reading the comments themselves"
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 - **industries** — the avatar is not "anyone who needs welding." Rank last
   year's jobs by margin, find the A's, and write the call out as a flat identity

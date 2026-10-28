@@ -34,7 +34,7 @@ not a detail. Candidates:
 - Software work, sold to people who trust how it gets built
 - Nothing, deliberately — a brand that makes the other two businesses easier
 
-**Rex cannot allocate a channel until Alex McRitchie picks one.** Publishing into
+**Alex cannot allocate a channel until Alex McRitchie picks one.** Publishing into
 an undecided offer is how a year of content produces an audience that cannot be
 sold to.
 
@@ -62,7 +62,7 @@ publishing queue that nobody has published from. An operator brand whose content
 is literally the machine's own exhaust does not have a content-production
 constraint — which is the constraint almost everyone else has.
 
-## Numbers Rex needs (currently unknown)
+## Numbers Alex needs (currently unknown)
 
 | # | Question | Why |
 |---|---|---|

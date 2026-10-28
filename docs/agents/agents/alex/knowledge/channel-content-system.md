@@ -411,7 +411,7 @@ is narrower than "he never covers it," and getting the boundary right matters.
 4. **No per-platform specifications** beyond post-frequency tolerances and "hire
    a native."
 
-**So Rex's honest position:** he can argue *packaging clarity* and *proof-led
+**So Alex's honest position:** he can argue *packaging clarity* and *proof-led
 intros* from the corpus with citations, and he can carry the paid-side hook
 discipline across as an explicitly-labelled analogy. He **cannot** claim Hormozi
 doctrine on hook writing, thumbnail design or title formulas for organic content,
@@ -427,7 +427,7 @@ attributed to the corpus is the exact failure the
 
 > "There's no such thing as too long, only too boring."
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 - **industries** — the welding shop is phase zero, and phase **two** is the whole
   ambition: one platform, a cadence it can actually hold, aimed at nurture rather

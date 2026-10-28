@@ -41,8 +41,7 @@ Integrator (worn as the Pokémon soul) and three heads under it: Alex
 | Tyrion | Cyvasse's house player; client-facing, holds no credentials |
 | Tywin | The Cyvasse app's operator and admin; internal, holds the keys |
 | Hank | The Commercial Welding business agent; not yet launched |
-| Rex | Marketing strategy (CMO) |
-| Alex | Sales/Marketing: clients, focus sessions, the `/build` queue, client launches; brand voice; Worker class |
+| Alex | Sales/Marketing: clients, focus sessions, the `/build` queue, client launches; demand (Rex's CMO seat folded in 2026-10-28); brand voice; Worker class |
 | Mack | CFO (Finance/Admin): the books and the month close, reports, the financial watchdog |
 
 The light for a PR is picked by domain fit from `{shannon, jasper, steffon, mason}`

@@ -1,6 +1,6 @@
-# Rex's knowledge — what it is and how to trust it
+# Alex's knowledge — what it is and how to trust it
 
-These cards are Rex's education. Each one was **read out of a transcript**, not
+These cards are Alex's education. Each one was **read out of a transcript**, not
 recalled from a model's prior about a famous person. That distinction is the
 entire value of this directory, and it is worth a paragraph.
 
@@ -22,13 +22,13 @@ pipeline:
 
 The transcripts and extraction files live **outside the repo** at
 `~/projects/.corpus/hormozi`. They are not ours to redistribute; see
-[`../role.md`](../role.md) § What Rex is not.
+[`../role.md`](../role.md) § What Alex is not.
 
 ## The cards
 
 | Card | What it answers | Videos behind it |
 |---|---|---|
-| [`diagnostic-questions`](diagnostic-questions.md) | What he asks before advising anything. **Rex's intake — start here** | 23 |
+| [`diagnostic-questions`](diagnostic-questions.md) | What he asks before advising anything. **Alex's intake — start here** | 23 |
 | [`unit-economics`](unit-economics.md) | LTGP:CAC, the 3:1 rule and its conditions, payback, what ratios mean | 18 |
 | [`offer-construction`](offer-construction.md) | What makes an offer work, and when to raise price | 16 |
 | [`audience-and-avatar`](audience-and-avatar.md) | Who you are talking to, and how the audience tells you what to make | 16 |
@@ -48,7 +48,7 @@ The transcripts and extraction files live **outside the repo** at
 | [`channel-paid-ads`](channel-paid-ads.md) | Creative as the spend ceiling, and what paid does NOT do | 15 |
 | [`channel-email`](channel-email.md) | Campaign structure and cadence — concentrated in two videos, and the card says so | 10 |
 
-## What Rex does not know
+## What Alex does not know
 
 **Hook formulas for organic content, thumbnail craft, title templates, and
 per-platform specs are not in this corpus.** Two extraction agents looked
@@ -61,7 +61,7 @@ Proof/Promise/Plan as an intro structure. What is missing is the *craft*, and
 almost all the hook material that exists sits in the **paid** lane. The only
 bridge he states runs the wrong way: organic winners become paid hooks.
 
-So if Rex is asked for a hook formula, he says he does not have one and points at
+So if Alex is asked for a hook formula, he says he does not have one and points at
 `channel-paid-ads.md` — noting that carrying paid hook technique into organic is
 **his own analogy, not doctrine from the corpus.**
 
@@ -75,7 +75,7 @@ So if Rex is asked for a hook formula, he says he does not have one and points a
 | **When it applies** | And when it does not. Ignoring this is how a good framework becomes a bad decision |
 | **Contrarian** | Marked where it cuts against standard marketing advice, or against something he says elsewhere |
 | **Fit** | Which of the three clients it plausibly serves |
-| **In his words** | A short verbatim line, capped at 25 words, so Rex can be direct rather than so we can republish a man's work |
+| **In his words** | A short verbatim line, capped at 25 words, so Alex can be direct rather than so we can republish a man's work |
 
 ## What a high source count does and does not prove
 
@@ -84,8 +84,8 @@ foundational and a bad proxy for what is true. He is one practitioner with one
 set of businesses behind his conclusions. A card with sixteen sources is
 something he believes hard, not something physics guarantees.
 
-Rex uses the cards as a **prior**, and the client's own numbers as **evidence**.
-Where they disagree, the numbers win. A CMO who quotes doctrine at data is a
+Alex uses the cards as a **prior**, and the client's own numbers as **evidence**.
+Where they disagree, the numbers win. An advisor who quotes doctrine at data is a
 fan, not an advisor.
 
 ## Verifying the citations
@@ -94,9 +94,9 @@ A card that cites a video which does not exist is the failure this whole
 directory is built to avoid, and it is invisible to a reader. Check it:
 
 ```bash
-cd docs/agents/agents/rex
+cd docs/agents/agents/alex
 jq -r '.items[].source_id' ~/projects/.corpus/hormozi/extract/b*.json | sort -u > /tmp/corpus_ids.txt
-grep -rhoE '`[A-Za-z0-9_-]{11}`' knowledge/ briefs/ EVAL.md | tr -d '`' | sort -u > /tmp/cited_ids.txt
+grep -rhoE '`[A-Za-z0-9_-]{11}`' knowledge/ ../../archive/agents/rex/briefs/ EVAL.md | tr -d '`' | sort -u > /tmp/cited_ids.txt
 comm -23 /tmp/cited_ids.txt /tmp/corpus_ids.txt
 ```
 

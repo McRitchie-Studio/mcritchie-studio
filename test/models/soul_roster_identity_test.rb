@@ -19,7 +19,9 @@
 #
 #   REX — the CMO. A launcher, a docs directory, a HEARTBEAT and two registered SOPs,
 #     never on the register. Measured the same day: zero attributed rows, so the gap
-#     was LATENT — it fires the first time Rex authors anything.
+#     was LATENT — it fires the first time Rex authors anything. (Rex folded into
+#     Alex on 2026-10-28, rex-folds-into-alex: `rex` is now an ALIAS of `alex`, still
+#     attributable, and soul_alias_test.rb owns that half.)
 #
 # The tests below pin the two halves that must not drift back together: a soul on the
 # roster is ATTRIBUTABLE, and a soul on the roster is still not ELIGIBLE TO REVIEW.
@@ -49,9 +51,9 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
 
   # --- the register names everyone who actually works here --------------------
 
-  test "the general builder and the CMO are souls" do
+  test "the general builder is a soul, and the folded CMO still attributes" do
     assert Task.soul?("pokemon"), "pokemon authors more tasks than any other soul"
-    assert Task.soul?("rex"), "rex has a launcher, a heartbeat and two registered SOPs"
+    assert Task.soul?("rex"), "rex is an alias of alex, so a rex stamp still names somebody"
   end
 
   test "a Pokemon build claim stamps the author set" do
@@ -63,12 +65,12 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
       "a Pokemon-built task must never come back NOT STAMPED"
   end
 
-  test "a Rex build claim stamps the author set" do
+  test "a Rex build claim stamps the author set as alex" do
     task = new_task
     claim!(task, actor: "rex")
 
-    assert_equal "rex", task.reload.devops["built_by"]
-    assert_equal %w[rex], task.devops["builders"]
+    assert_equal "alex", task.reload.devops["built_by"]
+    assert_equal %w[alex], task.devops["builders"]
   end
 
   # --- what the register must NOT do ------------------------------------------
@@ -89,7 +91,7 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
   end
 
   test "being on the register does not grant a review seat" do
-    %w[pokemon rex turf-monster mack alex tyrion].each do |soul|
+    %w[pokemon turf-monster mack alex tyrion].each do |soul|
       assert Task.soul?(soul), "#{soul} is attributable"
       refute_includes ReviewerSelector::POOL, soul,
         "#{soul} builds or works; the roster answers identity, POOL answers review"
@@ -106,7 +108,7 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
     Current.soul_roster = nil
     Agent.stub(:pluck, ->(*) { raise ActiveRecord::StatementInvalid, "no such table" }) do
       assert Task.soul?("pokemon"), "pokemon is in the static floor, not only in the seed"
-      assert Task.soul?("rex"), "rex is in the static floor, not only in the seed"
+      assert Task.soul?("rex"), "rex resolves through the alias to alex, which is in the static floor"
       assert Task.soul?("tyrion"), "tyrion is in the static floor, not only in the seed"
       refute Task.soul?("stefon"), "and a typo is still nobody with the DB down"
     end
@@ -117,14 +119,14 @@ class SoulRosterIdentityTest < ActiveSupport::TestCase
   # --- the new entries are souls in their own right, not aliases --------------
   #
   # Task::SOUL_ALIASES owns the retired-slug behaviour and test/models/soul_alias_test.rb
-  # owns its assertions; this only pins that neither new name was added THROUGH it.
-  # An alias entry would make pokemon or rex stamp as somebody else — which is the
-  # `--agent mack` placeholder again, wearing a different hat.
+  # owns its assertions; this only pins that pokemon was not added THROUGH it. An
+  # alias entry would make pokemon stamp as somebody else — which is the `--agent
+  # mack` placeholder again, wearing a different hat. (Rex WAS such a soul until
+  # 2026-10-28, when Alex McRitchie ruled him folded into Alex: an alias on purpose.)
 
-  test "the new souls are their own canonical slug, not aliases of another" do
+  test "the general builder is its own canonical slug, not an alias of another" do
     assert_equal "pokemon", Task.canonical_soul("pokemon")
-    assert_equal "rex", Task.canonical_soul("rex")
-    assert_empty Task::SOUL_ALIASES.values & %w[pokemon rex],
+    assert_empty Task::SOUL_ALIASES.values & %w[pokemon],
       "nothing may be aliased ONTO a builder seat either"
   end
 

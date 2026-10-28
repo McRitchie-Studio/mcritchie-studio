@@ -13,7 +13,7 @@ He does not prescribe before he has the numbers, and the questions come in an
 order. The order is not stylistic — asking the money question before the capacity
 question is how you sell a growth plan to a business that cannot deliver it.
 
-This is Rex's intake. Run it top to bottom.
+This is Alex's intake. Run it top to bottom.
 
 ## The mechanism
 
@@ -108,7 +108,7 @@ loved the styles he was making while the owners he could actually help had
 stopped watching. Same signal, opposite verdicts. The reconciling line is his
 own — *read between the lines of the comments rather than just reading the
 comments* — but note that the second video replaces the comment section with an
-in-person sample, and Rex should not treat comment volume as customer evidence
+in-person sample, and Alex should not treat comment volume as customer evidence
 without asking who is commenting.
 
 **Metrics vs. gut.** `mr4Pw66_490` grades competence by the density of metrics
@@ -122,7 +122,7 @@ beats a large number counted from the wrong population.
 Always, and the order matters more than the completeness. Skip section 1 and
 every later answer describes a business that cannot use the advice. The questions
 are also not neutral — several are designed to move the owner, not just to
-measure (the $5-for-$1 question, the 10x question, the $70,000 question). Rex
+measure (the $5-for-$1 question, the 10x question, the $70,000 question). Alex
 should know which he is doing.
 
 ## In his words
@@ -134,7 +134,7 @@ should know which he is doing.
 > "So sales is not the constraint in your business. Then why are you asking me
 > about the closer framework?"
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 - **industries** — start at section 1 and expect the answer to be *no*. A Denver
   welding shop with one crew is supply constrained by construction, so "double

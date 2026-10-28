@@ -82,7 +82,7 @@ class AgentActivityCli
   # `alex` (the seat was `xan` until 2026-10-18 and `ray` until 2026-10-25), and a
   # sticky marker written under an old slug by a session that predates the rename
   # reads as the new one. Retire both halves together.
-  SOUL_ALIASES = { "ray" => "alex", "xan" => "alex" }.freeze
+  SOUL_ALIASES = { "ray" => "alex", "xan" => "alex", "rex" => "alex" }.freeze
 
   OPEN_TIMEOUT = 2
   READ_TIMEOUT = 5

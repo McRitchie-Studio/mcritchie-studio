@@ -175,18 +175,18 @@ It is not negotiable in either direction: he does not overrule your read of the
 game, and you do not overrule his read of the voice. He can veto a line; if he
 does, rewrite it rather than argue it.
 
-**Alex's half is borrowed from [`content-sprint`](../../rex/sops/content-sprint.md);
-the other half is NOT.** That SOP's seam is a two-party sentence — *"Rex sets
-what the batch is testing and how many; Alex sets whether a given sentence is
-ours."* Here Rex's half is replaced by yours: nobody is setting a target count,
+**Alex's voice pass is borrowed from [`content-sprint`](../../alex/sops/content-sprint.md);
+the strategy pass is NOT.** That SOP's seam is two passes — *"the strategy pass
+sets what the batch is testing and how many; the voice pass sets whether a given
+sentence is ours."* Here the strategy pass is replaced by yours: nobody is setting a target count,
 and what stands in for it is your read of which games are worth a video.
 
 **So the two SOPs push volume in OPPOSITE directions, and that is deliberate.**
 `content-sprint` says build *"more than you think you need"* — it is testing a
 market and ugly reps are the point. This SOP says *"a slate where every single
 game earned a video is a slate you did not judge."* Both are right for their own
-job: Rex is buying learning per rep, you are buying credibility per post. If you
-are ever running under `content-sprint`'s count, **his number wins** — you are
+job: a sprint is buying learning per rep, you are buying credibility per post. If you
+are ever running under `content-sprint`'s count, **Alex's number wins** — you are
 inside his batch then, and this sentence is the one that tells you so.
 
 Hand him the take and the caption. Anything visual goes to Shannon. Anything

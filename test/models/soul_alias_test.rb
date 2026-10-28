@@ -11,7 +11,46 @@ class SoulAliasTest < ActiveSupport::TestCase
     assert_includes Task::SOUL_ROSTER, "alex"
     refute_includes Task::SOUL_ROSTER, "ray", "the retired slug is an alias, not a roster entry"
     refute_includes Task::SOUL_ROSTER, "xan", "the retired slug is an alias, not a roster entry"
-    assert_equal({ "ray" => "alex", "xan" => "alex" }, Task::SOUL_ALIASES, "chain-flattened: xan never lands on ray")
+    assert_equal({ "ray" => "alex", "xan" => "alex", "rex" => "alex" }, Task::SOUL_ALIASES,
+                 "chain-flattened: xan never lands on ray")
+  end
+
+  # [unit] rex-folds-into-alex (2026-10-28): Rex, the CMO, folded into Alex. A merge,
+  # not a rename, but the read side is the same alias.
+  test "rex resolves to alex and is on no roster" do
+    assert_equal "alex", Task.canonical_soul("rex")
+    assert Task.soul?("rex"), "a board row stamped rex still names a soul"
+    refute_includes Task::SOUL_ROSTER, "rex", "the folded seat left config/souls.yml"
+    assert_equal "alex", AgentActivity.normalize_agent_value("Rex")
+    souls = YAML.safe_load_file(Rails.root.join("config/souls.yml")).fetch("souls").map { |s| s["slug"] }
+    refute_includes souls, "rex"
+    domains = YAML.safe_load_file(Rails.root.join("config/agent_domains.yml")).fetch("souls")
+    refute domains.key?("rex"), "no domain answers as rex"
+  end
+
+  test "a build claim made as rex stamps alex, and dedupes against an alex claim" do
+    task = Task.create!(title: "rex alias stamp sample", stage: "designed",
+                        metadata: { "devops" => { "shape" => "docs" } })
+    task.update_columns(metadata: { "devops" => { "shape" => "docs", "built_by" => "rex", "builders" => ["rex"] } })
+    assert_equal "alex", task.reload.devops_built_by
+    assert_equal %w[alex], task.devops_builders
+
+    Current.task_event_actor = "alex"
+    task.update!(stage: "building")
+    assert_equal %w[alex], task.reload.devops["builders"], "rex and alex are ONE author"
+  ensure
+    Current.task_event_actor = nil
+  end
+
+  # Every Rails-free mirror of the alias must carry rex too, or a bin/ CLI stamps
+  # a soul the model has retired.
+  test "the bin mirrors of SOUL_ALIASES match the model" do
+    %w[bin/atomic-event bin/task bin/lib/dream_bank.rb bin/lib/merge_permission.rb].each do |path|
+      line = File.read(Rails.root.join(path))[/SOUL_ALIASES = \{[^}]*\}/]
+      assert line, "#{path} declares SOUL_ALIASES"
+      mirror = eval(line.sub("SOUL_ALIASES = ", "")) # rubocop:disable Security/Eval -- a literal hash from our own source
+      assert_equal Task::SOUL_ALIASES, mirror, "#{path} mirrors Task::SOUL_ALIASES"
+    end
   end
 
   test "canonical_soul maps the retired slugs and passes every other value through" do

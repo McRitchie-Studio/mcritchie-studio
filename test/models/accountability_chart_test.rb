@@ -81,7 +81,7 @@ class AccountabilityChartTest < ActiveSupport::TestCase
 
   test "Rex and Hank are off the chart" do
     owners = AccountabilityChart.load.seats.flat_map { |s| [s.owner, *s.lights] }
-    refute_includes owners, "rex", "ruling 3: Rex folds into Alex on his own card"
+    refute_includes owners, "rex", "ruling 3: Rex folded into Alex (rex-folds-into-alex); alex owns Sales/Marketing"
     refute_includes owners, "hank", "Hank sits on Commercial Welding's chart"
   end
 

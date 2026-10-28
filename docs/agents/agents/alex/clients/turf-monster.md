@@ -9,7 +9,7 @@ Last reviewed: **2026-09-20**
 
 - **Positioning: "NFL pick'em."** Not a season-agnostic engine. Every headline,
   bio and the README inherit this.
-- **The goal is selling contests.** That is the number Rex moves.
+- **The goal is selling contests.** That is the number Alex moves.
 - **He knows the economics are thin**, and says so plainly: this is a passion
   project he hopes to grow into something he can pivot later.
 
@@ -33,7 +33,7 @@ video about a frozen-yogurt shop, is stated just as absolutely: at that ticket
 and the lanes that remain are **word of mouth and affiliates**.
 
 So the default CMO move here — fix the back end, then buy traffic — is the one
-move the corpus says will not pay at this price point. Rex must open that card
+move the corpus says will not pay at this price point. Alex must open that card
 before recommending any paid spend on this client.
 
 **One exception to the exception:** a business with a genuine network effect
@@ -77,7 +77,7 @@ fund an entry. The crypto rail is a real audience filter in both directions: it
 qualifies some people and disqualifies more. Nobody has measured which way that
 trades yet.
 
-## What already exists (so Rex does not prescribe what is built)
+## What already exists (so Alex does not prescribe what is built)
 
 - A working publish lane: a per-team button generates a lineup graphic and a
   short video, an agent drafts three caption variants, and a human clicks post to
@@ -98,7 +98,7 @@ table, row 1 trips before anything else. **The constraint is measurement until
 proven otherwise**, and the first prescription is almost certainly instrumentation
 plus a tracking link, not more creative.
 
-## Numbers Rex needs (currently unknown)
+## Numbers Alex needs (currently unknown)
 
 | # | Question | Why |
 |---|---|---|

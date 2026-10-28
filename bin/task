@@ -1209,7 +1209,7 @@ end
 # devops.built_by only for a soul, reviewer-select reads only that key, and a
 # dropped stamp once seated a PR's own author as its reviewer.
 SOUL_ROSTER_PATH = File.expand_path("../config/souls.yml", __dir__)
-SOUL_ALIASES = { "ray" => "alex", "xan" => "alex" }.freeze # mirrors Task::SOUL_ALIASES
+SOUL_ALIASES = { "ray" => "alex", "xan" => "alex", "rex" => "alex" }.freeze # mirrors Task::SOUL_ALIASES
 
 def soul_roster
   @soul_roster ||= YAML.safe_load_file(SOUL_ROSTER_PATH).fetch("souls").map { |soul| soul.fetch("slug").to_s }

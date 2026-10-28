@@ -1,7 +1,7 @@
 # SOP — Content Sprint
 <!-- registry: the weekly test-at-volume loop -->
 
-**Owner:** Rex · **Runs:** weekly, per client, once a constraint has been named
+**Owner:** Alex (Sales/Marketing) · **Runs:** weekly, per client, once a constraint has been named
 by [`constraint-diagnosis.md`](constraint-diagnosis.md).
 
 A sprint tests **one** thing at volume and reads the result. If you cannot say
@@ -54,15 +54,19 @@ Rules of the batch:
 - Build the whole batch before publishing any of it. Producing daily turns a
   volume test into a stamina test.
 
-## Step 4 — Voice pass: Alex
+## Step 4 — Voice pass
 
-Hand the batch to **Alex**. He owns brand voice and he can veto a line.
+Read the batch again as the voice, not the strategist: one person, two passes.
+**The strategy pass sets what the batch is testing and how many; the voice pass
+sets whether a given sentence is ours, and can veto a line.** If volume is the
+constraint, ship at the voice floor rather than its ceiling — and the floor is
+still a floor, not a suggestion. A claim the product cannot back never passes,
+even against the campaign the strategy pass wrote.
 
-The seam, so it does not get relitigated weekly: **Rex sets what the batch is
-testing and how many; Alex sets whether a given sentence is ours.** If volume is
-the constraint, Alex ships at his floor rather than his ceiling — and his floor
-is still a floor, not a suggestion. He will not pass a claim the product cannot
-back, and Rex backs him on that against his own campaign.
+The honesty floor ([`role.md`](../role.md) § What Alex is not) applies line by line:
+nothing speaks as Hormozi or borrows his name or likeness to sell; a post that
+teaches one of his named frameworks (the Grand Slam Offer, the value equation)
+says where it came from; a post that only applies the method does not mention him.
 
 Anything visual goes to **Shannon**. Anything claiming what the product does gets
 a check from **Avi** before it leaves the building.

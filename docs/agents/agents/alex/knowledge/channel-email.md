@@ -471,7 +471,7 @@ that case the work is the lead magnet and the opt-in, not the send.
 > "Do one, two or three test runs before you blow the whole list up with this new
 > promo." `OpeN4O5myIg`
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 - **industries** — the welding shop has the asset the $2.4M case is built on and
   does not know it: **a past-customer list nobody has mailed.** The play is the

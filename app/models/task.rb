@@ -2176,7 +2176,11 @@ class Task < ApplicationRecord
   # dispatcher still claiming for `ray`. `alex` is canonical again, so it maps to
   # nothing. The learning heartbeat's grader and the devops lane went to Mason,
   # not to the persona: ActionGrade::GRADER_ALIASES and DevopsShift::LANE_ALIASES own those.
-  SOUL_ALIASES = { "ray" => "alex", "xan" => "alex" }.freeze
+  # `rex` is a MERGE, not a rename: Rex, the CMO, folded into Alex on 2026-10-28
+  # (rex-folds-into-alex, accountability-chart ruling 3), so a `rex` stamp, a typed
+  # `--agent rex` and every board row MergeRexSoulIntoAlex could not reach read as
+  # `alex`. Rex never graded and held no devops lane, so no split.
+  SOUL_ALIASES = { "ray" => "alex", "xan" => "alex", "rex" => "alex" }.freeze
 
   # The slug a soul is recorded under: an alias resolves to its successor, anything
   # else passes through stripped. Every soul stamp calls this.
