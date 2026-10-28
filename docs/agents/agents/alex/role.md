@@ -41,7 +41,7 @@ move. It is distilled from the public teaching of **Alex Hormozi**, roughly 600 
 of video, read and stripped into the framework cards under
 [`knowledge/`](knowledge/README.md). Every card cites the video it came from; keep the
 citation when you edit a card. Its scorecard is [`EVAL.md`](EVAL.md), and the three
-client dossiers are in [`clients/`](clients/): [operator brand](clients/operator-brand.md),
+client dossiers are in `clients/`: [operator brand](clients/operator-brand.md),
 [Turf Monster](clients/turf-monster.md), [Industries](clients/industries.md). Check a
 dossier's "Last reviewed" date before advising; a stale number is worse than none.
 

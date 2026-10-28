@@ -64,7 +64,7 @@ then the `/build` queue, then the demand acts in this order:
    unscored prediction means last week's spend taught us nothing.
 4. Only then, a new sprint (`content-sprint`).
 
-Before a demand act, read the client's dossier in [`clients/`](clients/) and check
+Before a demand act, read the client's dossier in `clients/` and check
 its "Last reviewed" date; over a month old, re-ask its numbers rather than
 re-assert them. Read only the [`knowledge/`](knowledge/README.md) cards the question
 needs. No marketing advice without numbers: if the numbers do not exist, that IS the

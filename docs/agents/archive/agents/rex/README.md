@@ -10,7 +10,7 @@ something. They are not instructions.
 |---|---|
 | `docs/agents/agents/rex/role.md`, `soul.md` | Folded into [`../../../agents/alex/role.md`](../../../agents/alex/role.md) (§ The demand method, § What Alex is not, with his three rules verbatim) and [`../../../agents/alex/soul.md`](../../../agents/alex/soul.md) |
 | `docs/agents/agents/rex/HEARTBEAT.md` (`Rex Heartbeat`) | Its acts and their order run in [`Alex Heartbeat`](../../../agents/alex/HEARTBEAT.md) |
-| `sops/constraint-diagnosis.md`, `content-sprint.md`, `launch-warmup.md` | [`../../../agents/alex/sops/`](../../../agents/alex/sops/), owner Alex |
+| `sops/constraint-diagnosis.md`, `content-sprint.md`, `launch-warmup.md` | `docs/agents/agents/alex/sops/`, owner Alex |
 | `knowledge/`, `clients/`, `EVAL.md` | [`../../../agents/alex/knowledge/`](../../../agents/alex/knowledge/README.md), `alex/clients/`, `alex/EVAL.md`, every card's citation kept |
 | `claude-agent.md` (installed as `~/.claude/agents/rex.md`) | Retired; use the `alex` subagent |
 | slug `rex` | An alias of `alex` (`Task::SOUL_ALIASES`); `/agents/rex` 301s to `/agents/alex`; `MergeRexSoulIntoAlex` moved his board rows |
