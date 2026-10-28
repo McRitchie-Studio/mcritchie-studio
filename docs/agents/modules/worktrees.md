@@ -132,12 +132,37 @@ nothing. Free one of those by hand, once you know its work is safe on `accepted`
 **The script guard.** npm does not write through a package link, but it runs scripts
 through one: `npm rebuild` runs each package's install scripts with the package's real
 directory as its working directory, which in a farm is the primary's. So before linking,
-`new` writes the desk's `.npmrc` with `script-shell` set to a guard kept in the desk's own
-git dir. Every lifecycle script npm starts in the desk (`rebuild`, an install's scripts,
-`npm run`) goes through the guard: it runs when its working directory is inside the desk,
-and is refused with `desk-node-modules: refused an npm lifecycle script in <dir>` when it
-is the primary's package. The remedy the message names is `npm ci` in the desk; after it
+`new` writes the desk's `.npmrc` with `script-shell` set to a guard (`desk-npm-script-shell`,
+in the desk's own git dir; `write_guard!` in `bin/lib/desk_node_modules.rb`). A lifecycle
+script npm starts **from the desk root** (`rebuild`, an install's scripts, `npm run`) goes
+through the guard: it runs when its working directory (`pwd -P`) is inside the desk, and
+is refused with `desk-node-modules: refused an npm lifecycle script in <dir>` when it is
+the primary's package. The remedy the message names is `npm ci` in the desk; after it
 every package is the desk's own and the guard never refuses again.
+
+The guard covers only that case. Carl and Steffon showed on PR #2297, with npm 10.8.2,
+that each of these runs an install script inside the primary's package directory:
+
+- **A script-shell override**: `npm_config_script_shell=/bin/sh` in the environment, or
+  `--script-shell=/bin/sh` on the command line, outranks the desk's `.npmrc`.
+- **npm started inside a linked package**: `cd node_modules/<pkg> && npm run install`.
+  npm's project root is then the package, so it never reads the desk's `.npmrc`. A root
+  script that `cd`s into a linked package and writes there is the same act: the guard
+  checks only the directory npm starts the script in.
+
+Both are deliberate acts, not accidents of a normal install; until the desk has run
+`npm ci`, do neither. Three states the guard does not repair on its own:
+
+- **A desk cut before PR #2297** holds links with no guard. It stays unguarded until it
+  is reclaimed, or until `npm ci` in it replaces the links.
+- **A moved desk** (`git worktree move`): the guard names the desk's old real path, so it
+  refuses every script in the desk, its own packages included. The message still names
+  `npm ci`, which does not fix it.
+- **A missing guard file**: the `.npmrc` names a shell that is gone, so npm cannot start
+  any script in the desk.
+
+The repair for the last two is deleting the desk's `.npmrc` (the one `new` wrote, marked
+on its first line), then `npm ci` if the desk still holds links.
 
 The links are a **snapshot of the primary when the desk was cut**. A later install in the
 primary changes what the desk sees, and the desk's lock is not re-checked. `npm ci` in
