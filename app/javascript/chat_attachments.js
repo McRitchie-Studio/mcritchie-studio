@@ -13,6 +13,10 @@
 // stopped the same way. A message may be files with no text, so the text box is
 // required only while a file is attached or uploading.
 //
+// A send takes its files' chips off the form (agent_chat.js#startSend), and when
+// a send's answer redraws the composer, chips attached meanwhile move into the
+// new form, so an upload still running settles where its chip now is (homeOf).
+//
 // Imported by application.js on every page, once per load; every listener is
 // delegated on document and does nothing where there is no composer.
 const ROOT = "[data-chat-attachments]";

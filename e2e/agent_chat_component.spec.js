@@ -132,6 +132,8 @@ test("a files-only send while one posts is sent, and the composer stays busy unt
 
   const form = page.locator("[data-test='cto-chat-form']");
   const input = page.locator("[data-test='cto-chat-input']");
+  const pictures = page.locator("[data-test='cto-chat-sent-file']");
+  const picturesBefore = await pictures.count();
   const first = `Before the picture ${Date.now()}`;
   await input.fill(first);
   await input.press("Enter");
@@ -147,8 +149,7 @@ test("a files-only send while one posts is sent, and the composer stays busy unt
   await expect(form, "the second send still posts").toHaveAttribute("aria-busy", "true");
 
   held.releaseAll();
-  const picture = page.locator("[data-test='cto-chat-sent-file']");
-  await expect(picture, "the files-only turn is in the log").toHaveCount(1);
+  await expect(pictures, "the files-only turn is in the log").toHaveCount(picturesBefore + 1);
   await expect(page.locator("[data-test='cto-chat-form']")).not.toHaveAttribute("aria-busy");
   await expect(page.locator("[data-test='cto-chat-chip']"), "a sent file does not come back").toHaveCount(0);
 
@@ -157,7 +158,8 @@ test("a files-only send while one posts is sent, and the composer stays busy unt
 
 // Task composer-edge-cases. A file attached while a send posts belongs to the NEXT
 // message: the send's answer redraws the composer, and the file (and the caret)
-// is carried into the new one, not wiped.
+// is carried into the new one, not wiped; an upload still running when the
+// answer lands finishes there.
 test("a file attached while a send posts survives the composer swap, and the caret stays in the box", async ({ page }) => {
   const { pageErrors, report } = watchPageErrors(page);
   await loginWithMagicLink(page, "owner@cyvasse.test");
@@ -171,8 +173,16 @@ test("a file attached while a send posts survives the composer swap, and the car
   await input.press("Enter");
   await expect.poll(() => held.posts).toBe(1);
 
+  // The upload is still running when the answer lands.
+  let finishUpload;
+  const uploadGate = new Promise((resolve) => { finishUpload = resolve; });
+  await page.route("**/applications/cyvasse/chat/attachments", async (route) => {
+    const response = await route.fetch();
+    await uploadGate;
+    await route.fulfill({ response });
+  });
   await page.locator("[data-test='cto-chat-file-input']").setInputFiles(PNG);
-  await expect(page.locator("[data-test='cto-chat-chip'][data-state='done']")).toHaveCount(1);
+  await expect(page.locator("[data-test='cto-chat-chip'][data-state='uploading']")).toHaveCount(1);
   const draft = `About this picture ${stamp}`;
   await input.fill(draft);
   await input.focus();
@@ -180,7 +190,11 @@ test("a file attached while a send posts survives the composer swap, and the car
 
   held.releaseAll();
   await expect.poll(() => before.evaluate((el) => el.isConnected), { message: "the answer redrew the composer" }).toBe(false);
-  await expect(page.locator("[data-test='cto-chat-chip'][data-state='done']"), "the file is still attached").toHaveCount(1);
+  await expect(page.locator("[data-test='cto-chat-form'] [data-test='cto-chat-chip'][data-state='uploading']"),
+    "the file is still attached, still uploading").toHaveCount(1);
+  finishUpload();
+  await expect(page.locator("[data-test='cto-chat-form'] [data-test='cto-chat-chip'][data-state='done']"),
+    "its upload finishes in the new composer").toHaveCount(1);
   await expect(page.locator("[data-test='cto-chat-input']")).toHaveValue(draft);
   await expect(page.locator("[data-test='cto-chat-input']"), "the caret is back in the new box").toBeFocused();
 
