@@ -1,0 +1,51 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/agent-setup — Steffon's half of a pending agent's setup: open a card on
+# the Pending agents column of /agents, list them, verify a bot's token with
+# Discord and install it (read from 1Password, never printed), close a card.
+# One `heroku run` per hub call. Logic: bin/lib/agent_setup_cli.rb (the Mac)
+# and app/services/agent_setups/command.rb (the dyno).
+# SOP: docs/agents/agents/steffon/sops/agent-onboarding.md.
+#
+#   bin/agent-setup open discord --soul mason --by steffon
+#   bin/agent-setup list
+#   bin/agent-setup verify <id> --by steffon [--no-install]
+#   bin/agent-setup close <id> --by steffon
+#
+# Exit: 0 ok · 1 the run or the check failed · 2 usage.
+
+require "optparse"
+require_relative "lib/agent_setup_cli"
+
+verb = ARGV.shift
+if verb.nil? || %w[-h --help help].include?(verb)
+  puts AgentSetupCli::USAGE
+  puts "agent-setup: help only. Nothing was read or changed." unless verb.nil?
+  exit(verb.nil? ? 2 : 0)
+end
+
+opts = AgentSetupCli.default_options
+begin
+  OptionParser.new do |o|
+    o.banner = AgentSetupCli::USAGE
+    o.on("--soul SOUL", "open: the soul whose bot this is") { |v| opts[:soul] = v }
+    o.on("--by WHO", "who is running this") { |v| opts[:by] = v }
+    o.on("--op-item TITLE", "open: the 1Password item (default agents.discord.<soul>)") { |v| opts[:op_item] = v }
+    o.on("--op-vault VAULT", "open: its vault (default studio-agents)") { |v| opts[:op_vault] = v }
+    o.on("--bot-name NAME", "open: the bot's name (default the agent's)") { |v| opts[:bot_name] = v }
+    o.on("--permission-set SET", "open: reply, cto or server_admin (default by seat)") { |v| opts[:permission_set] = v }
+    %w[account vault item].each do |part|
+      o.on("--op-#{part}-id ID", "open: the 1Password #{part} id, skipping the lookup") { |v| opts[:op_ids]["op_#{part}_id"] = v }
+    end
+    o.on("--op-host HOST", "open: the 1Password sign-in host, e.g. my.1password.com") { |v| opts[:op_ids]["op_host"] = v }
+    o.on("--no-install", "verify: check the token with Discord, install nothing") { opts[:install] = false }
+    o.on("--app NAME", "Heroku app (default #{opts[:app]})") { |v| opts[:app] = v }
+    o.on("--local", "run bin/rails runner here instead of heroku") { opts[:local] = true }
+  end.parse!(ARGV)
+rescue OptionParser::ParseError => e
+  warn "agent-setup: #{e.message}\n#{AgentSetupCli::USAGE}"
+  exit 2
+end
+
+exit AgentSetupCli.run(verb, ARGV, opts)

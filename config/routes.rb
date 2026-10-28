@@ -495,6 +495,16 @@ Rails.application.routes.draw do
   # alongside the `rex` entry in Task::SOUL_ALIASES.
   get "agents/:slug", to: redirect("/agents/alex"), constraints: { slug: /rex/ }
 
+  # The Pending agents column of /agents (AgentSetupsController; SOP
+  # docs/agents/agents/steffon/sops/agent-onboarding.md): an admin's writes on a
+  # setup card. Signed-in non-admins get a 404 (AdminWall::SIGNED_IN).
+  constraints id: /\d+/ do
+    patch "agents/pending/:id", to: "agent_setups#update", as: :agent_setup
+    post "agents/pending/:id/steps/:key", to: "agent_setups#step", as: :agent_setup_step,
+                                          constraints: { key: /[a-z_]+/ }
+    post "agents/pending/:id/done", to: "agent_setups#submit", as: :agent_setup_done
+  end
+
   resources :agents, only: [:index, :show], param: :slug do
     member do
       get :settings, to: "agent_settings#show"

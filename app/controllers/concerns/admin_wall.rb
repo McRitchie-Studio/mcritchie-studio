@@ -93,6 +93,9 @@ module AdminWall
     # the Picker's token, and recording or forgetting a pick. 404 unless the
     # connection is theirs (Integrations::DrivePicksController).
     "integrations/drive_picks" => %w[token create destroy],
+    # The Pending agents column's writes (/agents/pending/:id): listed only so a
+    # signed-in non-admin gets AgentSetupsController's 404, not the wall's redirect.
+    "agent_setups" => %w[update step submit],
     "admin/google" => %w[callback]
   }.transform_values(&:freeze).freeze
 

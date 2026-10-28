@@ -35,53 +35,29 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "agent index links to each agent markdown file" do
+  # The index is a compact table (task pending-agents-page): each row counts the
+  # agent's doc files and links to its own page, where the file tree lists them.
+  # The per-file links are asserted on the agent page below.
+  test "agent index counts each agent's markdown files and links to its file tree" do
     get agents_path
     assert_response :success
 
-    assert_select "[data-test='agent-card'][data-agent='avi']" do
-      assert_select "[data-test='agent-file-link'][data-file='agents/avi/HEARTBEAT.md'][href=?]",
-                    doc_path("agents/avi/HEARTBEAT.md"),
-                    text: "HEARTBEAT.md"
-      assert_select "[data-test='agent-file-link'][data-file='agents/avi/soul.md'][href=?]",
-                    doc_path("agents/avi/soul.md"),
-                    text: "soul.md"
-      assert_select "[data-test='agent-file-link'][data-file='agents/avi/role.md'][href=?]",
-                    doc_path("agents/avi/role.md"),
-                    text: "role.md"
-      assert_select "[data-test='agent-file-link'][data-file='agents/avi/sops/qa-release.md'][href=?]",
-                    doc_path("agents/avi/sops/qa-release.md"),
-                    text: "qa-release.md"
-      assert_select "[data-test='agent-file-link'][data-file='agents/avi/sops/deploy-with-task.md'][href=?]",
-                    doc_path("agents/avi/sops/deploy-with-task.md"),
-                    text: "deploy-with-task.md"
+    { "avi" => "avi", "alex" => "alex", "steffon" => "steffon",
+      "turf-monster" => "turf_monster" }.each do |slug, dir|
+      count = Dir[Rails.root.join("docs", "agents", "agents", dir, "**", "*.md")].size
+      assert_operator count, :>, 0, "#{dir} has docs"
+      assert_select "[data-test='agent-row'][data-agent='#{slug}']" do
+        assert_select "[data-test='agent-docs-link'][data-count='#{count}'][href=?]",
+                      agent_path(slug, anchor: "agent-files"), text: "#{count} files"
+      end
     end
+  end
 
-    assert_select "[data-test='agent-card'][data-agent='alex']" do
-      assert_select "[data-test='agent-file-link'][data-file='agents/alex/HEARTBEAT.md'][href=?]",
-                    doc_path("agents/alex/HEARTBEAT.md"),
-                    text: "HEARTBEAT.md"
-      assert_select "[data-test='agent-file-link'][data-file='agents/alex/sops/focus-session.md'][href=?]",
-                    doc_path("agents/alex/sops/focus-session.md"),
-                    text: "focus-session.md"
-    end
-
-    assert_select "[data-test='agent-card'][data-agent='steffon']" do
-      assert_select "[data-test='agent-file-link'][data-file='agents/steffon/HEARTBEAT.md'][href=?]",
-                    doc_path("agents/steffon/HEARTBEAT.md"),
-                    text: "HEARTBEAT.md"
-      assert_select "[data-test='agent-file-link'][data-file='agents/steffon/sops/production-deploy.md'][href=?]",
-                    doc_path("agents/steffon/sops/production-deploy.md"),
-                    text: "production-deploy.md"
-    end
-
-    assert_select "[data-test='agent-card'][data-agent='turf-monster']" do
-      assert_select "[data-test='agent-file-link'][data-file='agents/turf_monster/soul.md'][href=?]",
-                    doc_path("agents/turf_monster/soul.md"),
-                    text: "soul.md"
-      assert_select "[data-test='agent-file-link'][data-file='agents/turf_monster/role.md'][href=?]",
-                    doc_path("agents/turf_monster/role.md"),
-                    text: "role.md"
+  test "the agent page's file tree is the index link's target" do
+    get agent_path("avi")
+    assert_select "#agent-files[data-test='agent-file-tree'][data-agent='avi']" do
+      assert_select "[data-test='agent-file-tree-link'][data-path='agents/avi/sops/qa-release.md'][href=?]",
+                    doc_path("agents/avi/sops/qa-release.md")
     end
   end
 

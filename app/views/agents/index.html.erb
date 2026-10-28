@@ -1,3 +1,10 @@
+<%# /agents: two compact tables side by side (Alex McRitchie 2026-10-28: "an agents page with the main table of
+    agents on one half and pending agents on the other", then "two tables so we can see more"; task
+    pending-agents-page). The split follows the brand page's (task brand-page-split-layout): two columns from lg, one
+    column below. On a phone the Pending agents table comes FIRST, because the agents table is long (a row per soul)
+    and a setup waiting on Alex McRitchie's hands would otherwise sit below it. Each agent's docs and SOP files are on
+    its own page (the Docs cell links there). The pending table renders only for an admin. %>
+<% show_pending = !@pending_setups.nil? %>
 <section>
   <div class="flex items-center justify-between gap-3 mb-6">
     <h2 class="text-2xl font-bold text-heading">Agents</h2>
@@ -10,57 +17,50 @@
       <% end %>
     </div>
   </div>
-  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-    <% @agents.each do |agent| %>
-      <% docs = @agent_docs_by_slug.fetch(agent.slug, []) %>
-      <article class="card overflow-hidden hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition" data-test="agent-card" data-agent="<%= agent.slug %>">
-        <%= link_to agent_path(agent.slug), class: "relative aspect-[5/3] flex items-center justify-center block",
-            style: "background-color: #{agent.avatar_color};", aria: { label: "#{agent.name} profile" } do %>
-          <span class="text-white font-bold text-5xl"><%= agent.avatar_initials %></span>
-          <% if agent.avatar.present? %>
-            <img src="<%= safe_image_src(agent.avatar) %>"
-                 alt="<%= agent.name %>"
-                 class="absolute inset-0 w-full h-full object-cover"
-                 loading="lazy"
-                 onerror="this.remove()">
+  <div class="<%= show_pending ? 'grid gap-6 min-w-0 lg:grid-cols-2 lg:items-start' : '' %>" data-test="agents-split" data-layout="<%= show_pending ? 'split' : 'single' %>">
+  <% if show_pending %>
+    <%= render "agent_setups/column", setups: @pending_setups, finished: @finished_setups %>
+  <% end %>
+  <section class="min-w-0 space-y-3 <%= 'lg:order-first' if show_pending %>" aria-labelledby="agents-table-heading">
+    <h3 id="agents-table-heading" class="<%= show_pending ? 'text-lg font-bold text-heading' : 'sr-only' %>">All agents</h3>
+    <div class="overflow-x-auto rounded-lg border border-subtle bg-surface">
+      <table class="w-full text-sm" data-test="agents-grid">
+        <thead class="bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
+          <tr>
+            <th scope="col" class="px-3 py-2 font-semibold">Agent</th>
+            <th scope="col" class="hidden sm:table-cell px-3 py-2 font-semibold">Status</th>
+            <th scope="col" class="px-3 py-2 font-semibold text-right">Tasks</th>
+            <th scope="col" class="px-3 py-2 font-semibold text-right">Docs</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-subtle">
+          <% @agents.each do |agent| %>
+            <% docs = @agent_docs_by_slug.fetch(agent.slug, []) %>
+            <tr class="hover:bg-surface-alt/60" data-test="agent-row" data-agent="<%= agent.slug %>">
+              <td class="px-3 py-2">
+                <div class="flex items-center gap-2 min-w-0">
+                  <%= render "components/agent_avatar", agent: agent, size: "xs", shiny: false %>
+                  <div class="min-w-0">
+                    <%= link_to agent.name, agent_path(agent.slug), class: "font-semibold text-heading hover:text-primary leading-tight", data: { test: "agent-row-link" } %>
+                    <p class="text-xs text-secondary truncate" data-test="agent-row-title"><%= agent.title %></p>
+                  </div>
+                </div>
+              </td>
+              <td class="hidden sm:table-cell px-3 py-2 whitespace-nowrap"><%= render "components/agent_status", agent: agent %></td>
+              <td class="px-3 py-2 text-right text-secondary tabular-nums" data-test="agent-row-tasks"><%= agent.tasks.size %></td>
+              <td class="px-3 py-2 text-right whitespace-nowrap">
+                <% if docs.any? %>
+                  <%= link_to pluralize(docs.size, "file"), agent_path(agent.slug, anchor: "agent-files"),
+                              class: "text-primary-ink hover:underline", data: { test: "agent-docs-link", count: docs.size } %>
+                <% else %>
+                  <span class="text-muted">—</span>
+                <% end %>
+              </td>
+            </tr>
           <% end %>
-        <% end %>
-        <% if docs.any? %>
-          <div class="px-4 pt-3 flex flex-wrap gap-2" data-test="agent-file-links">
-            <% docs.each do |doc| %>
-              <%= link_to doc[:label],
-                          doc_path(doc[:path]),
-                          class: "inline-flex min-h-7 items-center rounded border border-primary/30 bg-surface-alt px-2.5 text-2xs font-semibold text-body hover:border-primary/60 hover:text-heading transition",
-                          data: { test: "agent-file-link", file: doc[:path] } %>
-            <% end %>
-          </div>
-        <% end %>
-        <div class="p-4">
-          <div class="flex items-start justify-between gap-2">
-            <div class="min-w-0">
-              <h3 class="text-heading font-bold text-base leading-tight truncate">
-                <%= link_to agent.name, agent_path(agent.slug), class: "hover:text-primary transition" %>
-              </h3>
-              <p class="text-secondary text-xs mt-0.5"><%= agent.title %></p>
-            </div>
-            <div class="flex items-center gap-1.5 flex-shrink-0 mt-1">
-              <%= render "components/agent_status", agent: agent %>
-            </div>
-          </div>
-          <% if agent.description.present? %>
-            <p class="text-secondary text-xs mt-2 line-clamp-2"><%= agent.description %></p>
-          <% end %>
-          <div class="flex items-center gap-2 text-xs text-muted mt-3">
-            <span><%= agent.agent_type %></span>
-            <span aria-hidden="true">·</span>
-            <span><%= agent.tasks.size %> tasks</span>
-            <% if agent.last_active_at %>
-              <span aria-hidden="true">·</span>
-              <span><%= time_ago_in_words(agent.last_active_at) %></span>
-            <% end %>
-          </div>
-        </div>
-      </article>
-    <% end %>
+        </tbody>
+      </table>
+    </div>
+  </section>
   </div>
 </section>

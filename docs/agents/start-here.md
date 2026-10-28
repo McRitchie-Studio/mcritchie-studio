@@ -128,6 +128,7 @@ its invocation exactly.
 | Pokemon `wrap-it-up` SOP (hand a stuck session to a fresh one, then clear its board) | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
 | `Steffon Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | Steffon `agent-dispatcher` SOP (the agent mailbox's always-on worker on Alex McRitchie's Mac: install, verify, alerts, unblock) | `mcritchie-studio/docs/agents/agents/steffon/sops/agent-dispatcher.md` |
+| Steffon `agent-onboarding` SOP (open a pending agent's card, verify and install what Alex McRitchie made) | `mcritchie-studio/docs/agents/agents/steffon/sops/agent-onboarding.md` |
 | Steffon `app-deploy-standard` SOP (single-use apps: profile, contract, `bin/register-app`) | `mcritchie-studio/docs/agents/agents/steffon/sops/app-deploy-standard.md` |
 | Steffon `archive-shipped` SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | Steffon `bucket-provision` SOP (per-app R2 pair + tokens) | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |

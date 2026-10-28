@@ -50,6 +50,10 @@ class StoredUrlHrefGuardTest < ActiveSupport::TestCase
   # Generic names allowed only in the one file where they are known server-built
   # (or are not an href at all).
   SITE_ALLOWED = {
+    "app/views/agent_setups/kits/_discord_bot_step.html.erb" => {
+      "safe_image_src(avatar)" => "the avatar download's href is the agent's avatar column through safe_image_src, " \
+                                  "which admits only a site path or an http(s) url (the same gate as its <img>)"
+    },
     "app/components/task_card_component.html.erb" => {
       "local_url" => "only a presence test; the href is local_review_task_path",
       "url" => "part of local_url's presence test; the href is a route path",

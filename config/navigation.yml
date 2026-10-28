@@ -87,7 +87,7 @@ pages:
   # Owners reach /applications too (AdminWall::SIGNED_IN); their own sidebar link
   # is AppOwnership.sidebar_links, so this entry shows to an admin only.
   applications:   { page: "applications#index",   audience: signed_in, label: Applications, emoji: "📱", hover_emoji: "🚀", desc: Live apps + pending launch }
-  agents:         { page: "agents#index",         audience: admin, label: Agents, emoji: "🦞", hover_emoji: "🤝", desc: Meet the McRitchie agents }
+  agents:         { page: "agents#index",         audience: admin, label: Agents, emoji: "🦞", hover_emoji: "🤝", desc: "Agents and pending setups (Discord bots and the like)" }
   builders:       { page: "builders#index",       audience: admin, label: Builders, emoji: "🏗️", hover_emoji: "🚀", desc: Builder roster + commit pace }
   tasks:          { page: "tasks#index",          audience: admin, label: Tasks, emoji: "✅", hover_emoji: "🚦", desc: Task board }
   news_index:     { page: "news#index",           audience: admin, label: News, emoji: "📰", hover_emoji: "🔎", desc: News pipeline }
