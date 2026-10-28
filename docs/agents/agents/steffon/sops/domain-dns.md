@@ -250,12 +250,21 @@ prompt (step 2 above); rerun with the value to publish `google._domainkey`. It
 refuses to overwrite a different MX, DMARC or DKIM unless given `--replace-mail`.
 A domain already on Google's single `smtp.google.com` MX is left alone.
 
-### 6. DNSSEC back on, from Cloudflare — Steffon, then Alex McRitchie
+### 6. DNSSEC back on, from Cloudflare — Steffon; the DS step depends on the registrar
 
 After the move has settled (a day of green `verify`), sign the zone at
-Cloudflare and publish its DS at the registrar. No outage this time: the DS
-goes up only after the zone is already signing. The command does not do this
+Cloudflare, and see its DS published at the registry. No outage this time: the
+DS goes up only after the zone is already signing. The command does not do this
 step; the zone id is in `tmp/domain-cutover/<domain>.json`.
+
+**First read the registrar.** Who publishes the DS depends on it, so read the
+whois `Registrar:` line before you enable anything or hand anyone a step:
+
+```bash
+whois <domain> | grep -iE "^ *(registrar|dnssec):" | head -3
+```
+
+**Then sign the zone** (both paths):
 
 ```bash
 source ~/.zprofile.admin
@@ -267,6 +276,22 @@ curl -s -X PATCH https://api.cloudflare.com/client/v4/zones/<zone-id>/dnssec \
   | jq '.result | {status, key_tag, algorithm, digest_type, digest}'
 ```
 
+Keep the `key_tag` and `digest` it prints: the green check compares them.
+
+**Path A: `Registrar: Cloudflare, Inc.`** Cloudflare Registrar publishes the DS
+at the registry itself when zone DNSSEC turns on. No owner step is owed: do not
+hand Alex McRitchie (or a client) a DS card. Wait a few minutes, then run the
+green check. Worked example, alex.build on 2026-10-28: enabling DNSSEC returned
+key tag 2371, algorithm 13, digest type 2; minutes later whois read
+`DNSSEC: signedDelegation`, the `dns.google` DS answer carried that same key tag
+and digest, and the apex and `www` A answers read `"AD": true`, with nobody
+clicking anything. (The SOP then sent a Squarespace card that was never owed;
+this path is the fix.)
+
+**Path B: a Squarespace registrar line** (Squarespace Domains, or the upstream
+registrar it may show; see [`domain-purchase`](./domain-purchase.md)). The DS is
+Alex McRitchie's paste. Hand him the card with the values the PATCH printed:
+
 ```not-pasteable
 🙋 YOUR TURN — publish the DS record
    Where:  https://account.squarespace.com/domains → <domain> → DNS → DNSSEC
@@ -276,7 +301,22 @@ curl -s -X PATCH https://api.cloudflare.com/client/v4/zones/<zone-id>/dnssec \
    Then tell me "done".
 ```
 
-Green when RDAP reads `secureDNS.delegationSigned: true`, the zone's DNSSEC
-status reads `active`, and `dns.google/resolve` answers `Status` 0 with
-`"AD": true`.
+A client-owned domain at any other registrar takes the same four values on the
+client's own registrar page, by the client's hand.
+
+**Green, either path**, when all three hold:
+
+```bash
+whois <domain> | grep -i "dnssec:"            # signedDelegation
+curl -s "https://dns.google/resolve?name=<domain>&type=DS" | jq '.Answer[].data'
+curl -s "https://dns.google/resolve?name=<domain>&type=A"  | jq '{Status, AD}'
+```
+
+- whois reads `DNSSEC: signedDelegation` (RDAP: `secureDNS.delegationSigned: true`);
+- the DS at the TLD carries the key tag and digest Cloudflare printed (the zone's
+  DNSSEC status then reads `active`);
+- `dns.google/resolve` answers `Status` 0 with `"AD": true` for the apex and `www`.
+
+A Path A domain still unsigned after an hour, or a Path B domain after his
+"done", is a blocker to raise, not a card to resend.
 
