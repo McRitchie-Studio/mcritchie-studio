@@ -19,13 +19,16 @@
 # light      the quiet word's weight (highlight: weight only)
 # stacked    optional: the Stacked Logo's form (Logos::StackedLogo). `two_line`
 #            (default) sets the first word big and the second small beneath it;
-#            `one_line` sets the whole name on one line, for a brand whose
-#            second word is too wide to sit under its first
+#            `one_line` sets the whole name on one line; such a brand also
+#            offers two lines when its second word fits under its first,
+#            set at its own width when already wider than 60% of the first
 # tagline    optional: the brand's tagline as the logo sets it, in capitals with
 #            no full stop. The Stacked Logo's tagline form sets it under the
 #            name in Montserrat 500 (Logos::StackedLogo); every character must be
 #            in the glyph data. A brand without one has no tagline form
 # tracking   optional: extra space after every letter, in em (negative tightens)
+# kit_text   optional: the text version (homogeneous, first or second) the brand's
+#            kit draws until a choice is saved; absent, BrandKit::DEFAULTS
 # note       optional: one line the brand's page shows about where its art came from
 # tones      the ALT colouring (task logo-original-and-alt): one solid colour per
 #            part, the fills for a light and a dark background. `text` is the name's
@@ -181,7 +184,9 @@ welding:
   icon: welding
   lettering: welding
   highlight: colour
-  note: The helmet and the lettering are auto-traced from the current PNG files. The name is the kit's whole name, COMMERCIAL WELDING LLC, drawn without the service mark. The Original is the kit's square logo, traced in its three colours; its helmet's right half is filled white, so it holds on a dark page. The kit has no lettering for dark pages, so the Original's name is white there, with the accent orange. In Alt on a dark page the helmet is the single-colour version.
+  # The client's logo (Logos (1).zip, 2026-10-28, byte for byte the kit traced here) sets the whole name in Welding Blue.
+  kit_text: homogeneous
+  note: The helmet and the lettering are auto-traced from the current PNG files. The name is the kit's whole name, COMMERCIAL WELDING LLC, drawn without the service mark, in one colour as the client's logo sets it. The Original is the kit's square logo, traced in its three colours; its helmet's right half and its lens are filled white, so it holds on a dark page. The kit has no lettering for dark pages, so the name is white there. On a dark page Alt draws the Original's helmet too, so the blue half stays.
   palette:
     - { name: Welding Blue, hex: "#2D5E8E" }
     - { name: Spark Orange, hex: "#D7602E" }
@@ -190,16 +195,22 @@ welding:
   typefaces:
     - { role: Display, label: Traced lettering (face not identified) }
     - { role: Tagline, family: Montserrat, weight: 500 }
+  # The client's tagline is Spark Orange on both (Logos (1).zip's commercial-welding-logo-full.jpg: the name in Welding
+  # Blue #2D5E8E, BUILDING STRONG CONNECTIONS in Spark Orange #D7602E).
   tones:
     light:
       text: "#2D5E8E"
+      quiet: "#D7602E"
       accent: "#D7602E"
       icon: { primary: "#2D5E8E", accent: "#D7602E" }
+    # The client's helmet keeps its blue half on a dark page too (Alex McRitchie 2026-10-28): the Original's trace,
+    # blue half, white half and white lens, in the kit's colours.
     dark:
-      icon_key: welding_mono
+      icon_key: welding_original
       text: "#FFFFFF"
+      quiet: "#D7602E"
       accent: "#F08A5A"
-      icon: { primary: "#FFFFFF" }
+      icon: { blue: "#2D5E8E", white: "#FFFFFF", accent: "#D7602E" }
   # The kit's square logo (COM - Square - Large.png): the icon fills are sampled from it; the name colours are the
   # kit's blue and orange (the tagline in orange). The kit has no dark lettering: on dark the name is white.
   original:
@@ -227,7 +238,7 @@ welding_v2:
   icon: welding_v2
   lettering: welding
   highlight: colour
-  note: Commercial Welding v1's traced helmet with two tweaks. It is centred on the line where its two halves meet, so the logo's vertical guide runs through it. Its lens and frame are moved down so the lens is centred on the middle of the rule of 3's rows; the lens is a little shorter than one row. The name is drawn without “LLC” and the service mark. The Original is v1's Original (the kit's square logo) with the same two tweaks; the kit has no lettering for dark pages, so its name is white there, with the accent orange. In Alt on a dark page the helmet is the single-colour version.
+  note: Commercial Welding v1's traced helmet with two tweaks. It is centred on the line where its two halves meet, so the logo's vertical guide runs through it. Its lens and frame are moved down so the lens is centred on the middle of the rule of 3's rows; the lens is a little shorter than one row. The name is drawn without “LLC” and the service mark. The Original is v1's Original (the kit's square logo) with the same two tweaks; the kit has no lettering for dark pages, so its name is white there, with the accent orange. On a dark page Alt draws the Original's helmet too, so the blue half stays.
   palette:
     - { name: Welding Blue, hex: "#2D5E8E" }
     - { name: Spark Orange, hex: "#D7602E" }
@@ -241,11 +252,13 @@ welding_v2:
       text: "#2D5E8E"
       accent: "#D7602E"
       icon: { primary: "#2D5E8E", accent: "#D7602E" }
+    # The helmet keeps its blue half on a dark page too (Alex McRitchie 2026-10-28): v2's Original trace, blue half,
+    # white half and the clear lens, in the kit's colours.
     dark:
-      icon_key: welding_v2_mono
+      icon_key: welding_v2_original
       text: "#FFFFFF"
       accent: "#F08A5A"
-      icon: { primary: "#FFFFFF" }
+      icon: { blue: "#2D5E8E", white: "#FFFFFF", accent: "#D7602E" }
   # v1's Original with the v2 derivation applied (Logos::WeldingV2: welding_v2_original), in v1's Original colours.
   original:
     light:

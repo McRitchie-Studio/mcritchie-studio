@@ -35,18 +35,25 @@ class LogosStackedLogoTest < Minitest::Test
   # steps plus the kit's); was 56b61a90…. Studio and Industries still did not move.
   # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
   # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was 96644c91….
-  TWO_LINE_DIGEST = "d1307be40cd3785fd5518ce410b59b01f7029d4ce047c13fb24c69a6623d22d8"
+  # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue: Commercial Welding's dark drawings draw the two-colour
+  # helmet (Alex McRitchie 2026-10-28); was d1307be4…; every other drawing in it is byte for byte as before (the per-brand pins say which).
+  TWO_LINE_DIGEST = "e04bfca7081366eca8c5c1675932345db93e7cc2983e50fad271a8c2774e5268"
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green); was b21a2b80….
   # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
   # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was e2af15cd….
   ONE_LINE_DIGEST = "c87bf0cd3deff085bb7b191365ddce3fb5080dc54d014d33e5258a198a982563"
   # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
   # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was 4a47fdc7….
-  TAGLINE_DIGEST = "435ae8ae8953c53c1b64c9ab7e0103fa315df4612d35f301066cc9a44bc5dc9f"
+  # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue: Commercial Welding's dark drawings draw the two-colour
+  # helmet (Alex McRitchie 2026-10-28) and v1's tagline is Spark Orange, as the client's logo sets it; was 435ae8ae…;
+  # every other drawing in it is byte for byte as before.
+  TAGLINE_DIGEST = "190c7eda3d5a21e41a7f73fee4e995d3cefe7f6962288c53e2a5a7dc9a14b76d"
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head; was 4196eaad….
   # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
   # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was c3b29586….
-  ICON_DIGEST = "45621d6abb9fad71a712de856a562052376e6c440a85235b36f34c0b07bd7e29"
+  # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue: Commercial Welding's dark icon is its two-colour
+  # helmet (Alex McRitchie 2026-10-28); was 45621d6a…; every other icon is byte for byte as before.
+  ICON_DIGEST = "570d5e38b60db222421dacb90b0938aed4502b748248d7dc96191e74016bebf8"
   # Width / height of the tagline form, measured (task stacked-tagline-and-ghost-grid). Each equals 3n / (1.8n + 8), n the
   # name's ink width in cap heights: the tagline form is as tall as the two-line form (icon 0.6W, then 2u, 3u, 2u, 1u).
   # Re-measured when task navbar-spacing-and-rotated-guides made the word gap half a cap height (it sets the name as
@@ -62,6 +69,16 @@ class LogosStackedLogoTest < Minitest::Test
   def stacked(brand) = (@stacked ||= {})[brand] ||= Stacked.new(brand)
   def doc(svg) = Nokogiri::XML(svg) { |config| config.strict }
   def refusal(&) = assert_raises(Navbar::Error, &).message
+
+  # A word of the brand's name set at 1u with no tracking, in `text`'s weights: its own ink width, in design units. A
+  # tagline line (word 2) is never set this way.
+  def natural_width(brand, word, text)
+    logo = stacked(brand)
+    return 0 if word == 2
+
+    weight = logo.send(:edited_weights, text, Navbar::NO_EDITS)[word]
+    logo.send(:place, logo.send(:letters, logo.instance_variable_get(:@words)[word], weight), U, 0, word, 0).last
+  end
   def style(brand, **changes) = { "x" => Navbar.styles.fetch(brand).merge(changes.transform_keys(&:to_s)) }
   def glyph(char, weight) = Navbar.glyphs.fetch(weight.to_s).fetch("glyphs").fetch(char)
 
@@ -156,8 +173,8 @@ class LogosStackedLogoTest < Minitest::Test
   def test_everything_is_centred_and_the_icon_is_scaled_to_its_height
     Navbar.brands.product(Navbar::TONES).each do |brand, tone|
       box = stacked(brand).layout(text: :first, tone:)
-      key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono", %w[turf light] => "turf_mono", %w[turf dark] => "turf_mono",
-              %w[welding_v2 dark] => "welding_v2_mono", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
+      key = { %w[welding dark] => "welding_original", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono", %w[turf light] => "turf_mono", %w[turf dark] => "turf_mono",
+              %w[welding_v2 dark] => "welding_v2_original", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
       icon = Navbar.icons.fetch(key)
       icon_width = icon["w"] * box.icon_height / icon["h"]
       assert_in_delta (box.width - icon_width) / 2, box.icon_left, 1e-9, "#{brand} #{tone}"
@@ -267,7 +284,8 @@ class LogosStackedLogoTest < Minitest::Test
       where = "#{brand} #{form} #{tone}"
       real = small_line(box).reject { |l| l[:d].empty? }
       real_width = box.line_width * real.first[:cap]
-      assert_in_delta(form == :one_line ? box.width : 0.6 * box.width, real_width, 1e-6, "#{where}: the real small line's ink width")
+      small = form == :one_line ? box.width : [0.6 * box.width, natural_width(brand, real.first[:word], :second)].max
+      assert_in_delta(small, real_width, 1e-6, "#{where}: the real small line's ink width (60%, or a wider word's own)")
       ruler_rows(xml, box).each do |baseline, copy|
         assert_equal real.map { |l| l[:d] }, copy.map { |p| p["d"] }, "#{where} #{baseline}: the whole small line"
         xs = copy.map { |p| translate(p).first }
@@ -283,8 +301,8 @@ class LogosStackedLogoTest < Minitest::Test
   end
 
   def icon_box(brand, tone, box)
-    key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono", %w[turf light] => "turf_mono", %w[turf dark] => "turf_mono",
-              %w[welding_v2 dark] => "welding_v2_mono", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
+    key = { %w[welding dark] => "welding_original", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono", %w[turf light] => "turf_mono", %w[turf dark] => "turf_mono",
+              %w[welding_v2 dark] => "welding_v2_original", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
     icon = Navbar.icons.fetch(key)
     [box.icon_left, 0, box.icon_left + icon["w"] * box.icon_height / icon["h"], box.icon_height]
   end
@@ -345,7 +363,7 @@ class LogosStackedLogoTest < Minitest::Test
       label = xml.css("g.guide-lines text").last
       assert_equal ["1", format("%.2f", box.width / 2 + 10), "-10.00"], [label.text, label["x"], label["y"]], "#{where}: a 1 at the icon's top"
       _, _, width, = xml.root["viewBox"].split.map(&:to_f)
-      assert_operator xml.root["viewBox"].split.first.to_f, :<=, bracket_x - 20, "#{where}: the bracket is inside the drawing"
+      assert_operator xml.root["viewBox"].split.first.to_f, :<=, bracket_x - 20 + 0.01, "#{where}: the bracket is inside the drawing (x is read at 2 places)"
       assert_operator width, :>, box.width, where
     end
   end
@@ -371,15 +389,38 @@ class LogosStackedLogoTest < Minitest::Test
     assert_equal format("-40 -40 %.2f %.2f", box.width + 40 + right, box.height + 80), xml.root["viewBox"], "the column fits in the usual pad"
   end
 
-  def test_a_second_word_too_wide_to_track_is_refused_by_name_never_drawn_tighter
-    message = refusal { Stacked.new("x", styles: style("turf", stacked: "two_line")) }
-    assert_equal "brand x: the second word \"Monster\" cannot be tracked out to 60% of the first word's width (it is 68% already): " \
+  def test_a_second_word_wider_than_its_first_is_refused_by_name_never_drawn_tighter
+    message = refusal { Stacked.new("x", styles: style("turf", name: "Tu Monster", stacked: "two_line")) }
+    assert_equal "brand x: the second word \"Monster\" cannot sit under the first word (it is 116% already): " \
                  "set `stacked: one_line` in the brand's style", message
-    assert_match(/cannot be tracked out/, refusal { Stacked.new("x", styles: { "x" => Navbar.styles.fetch("turf").except("stacked") }) },
-                 "two lines unless the style says otherwise")
-    assert_match(/second word "A" cannot be tracked out .* \(it has one letter\): set `stacked: one_line`/,
+    assert_match(/second word "A" cannot sit under the first word \(it has one letter\): set `stacked: one_line`/,
                  refusal { Stacked.new("x", styles: style("studio", name: "McRITCHIE A")) })
     assert_equal :one_line, Stacked.new("x", styles: style("studio", name: "McRITCHIE A", stacked: "one_line")).form
+    assert_equal [:one_line], Stacked.new("x", styles: style("turf", name: "Tu Monster")).forms, "no two lines it cannot draw"
+  end
+
+  # Option A (Alex McRitchie 2026-10-28): "Monster" is 68% of "Turf", so it is set at its own width, centred under
+  # "Turf", never tracked in; the 3-2-1 icon is as tall as it is wide.
+  def test_a_second_word_already_over_60_percent_is_set_at_its_own_width_centred
+    turf = stacked("turf")
+    assert_equal :one_line, turf.form, "the brand's own form stays one line"
+    assert_equal %i[one_line two_line], turf.forms
+    box = turf.layout(text: :first, form: :two_line)
+    natural = natural_width("turf", 1, :first)
+    assert_operator natural, :>, 0.6 * box.width
+    assert_in_delta natural, box.line_width * U, 1e-6, "untracked: its own ink width"
+    assert_in_delta natural, box.icon_height, 1e-6, "3-2-1: the icon is as tall as the small word is wide"
+    small = box.letters.select { |letter| letter[:cap] == U }
+    left = small.first[:x] + box.line.first[:l] * U
+    assert_in_delta (box.width - natural) / 2, left, 1e-6, "centred under the first word"
+    assert_equal 2 + 3 + 2 + 1, (box.height - box.icon_height) / U, "icon, 2u, Turf 3u, 2u, Monster 1u"
+    assert_match(/<svg/, turf.svg(form: :two_line, proportion: :rule_of_three))
+  end
+
+  def test_a_second_word_under_60_percent_is_still_tracked_out_to_60_percent
+    box = stacked("industries").layout(text: :first)
+    assert_in_delta 0.6 * box.width / U, box.line_width, 1e-9
+    assert_in_delta 0.6 * box.width, box.icon_height, 1e-9
   end
 
   def test_other_refusals_name_what_is_wrong
@@ -514,7 +555,7 @@ class LogosStackedLogoTest < Minitest::Test
   end
 
   def test_the_tagline_is_quiet_in_light_and_dark_and_the_watermarks_one_fill
-    { "studio" => ["#1A1535", "#FFFFFF"], "industries" => ["#41464D", "#D3D6DA"], "welding" => ["#2D5E8E", "#FFFFFF"] }.each do |brand, (light, dark)|
+    { "studio" => ["#1A1535", "#FFFFFF"], "industries" => ["#41464D", "#D3D6DA"], "welding" => ["#D7602E", "#D7602E"] }.each do |brand, (light, dark)|
       line = ->(tone) { doc(stacked(brand).svg(form: :tagline, tone:, text: :first)).css("path[transform]").to_a.last(TAGLINES.fetch(brand).delete(" ").size) }
       assert_equal [light], line.(:light).map { |p| p["fill"] }.uniq, brand
       assert_equal [dark], line.(:dark).map { |p| p["fill"] }.uniq, brand
@@ -542,7 +583,7 @@ class LogosStackedLogoTest < Minitest::Test
     assert_equal "brand turf: no stacked form :tagline (it has no tagline)", refusal { stacked("turf").svg(form: :tagline) }
     assert_equal "brand studio: no stacked form :one_line (it draws two_line and tagline)", refusal { stacked("studio").layout(form: :one_line) }
     assert_equal "brand studio: no stacked form \"tagline\" (it draws two_line and tagline)", refusal { stacked("studio").svg(form: "tagline") }
-    assert_equal({ "studio" => %i[two_line tagline], "industries" => %i[two_line tagline], "turf" => %i[one_line], "welding" => %i[two_line tagline],
+    assert_equal({ "studio" => %i[two_line tagline], "industries" => %i[two_line tagline], "turf" => %i[one_line two_line], "welding" => %i[two_line tagline],
                    "welding_v2" => %i[two_line tagline] },
                  Navbar.brands.to_h { |brand| [brand, stacked(brand).forms] })
     assert_equal stacked("studio").svg, stacked("studio").svg(form: :two_line), "a brand's own form is the default"

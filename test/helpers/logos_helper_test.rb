@@ -56,7 +56,7 @@ class LogosHelperTest < ActionView::TestCase
   def view_box(variant) = Nokogiri::XML(variant.svg).root["viewBox"].split.map(&:to_f)
 
   test "no guide drawing needs more than the 1028 px plate of a 1280 px page, so nothing scrolls there" do
-    assert_equal 72, guide_drawings.size
+    assert_equal 75, guide_drawings.size, "Turf Monster's two-line form added 3"
     guide_drawings.each { |variant| assert_operator logo_guide_min_width(variant), :<=, LogosHelper::LOGO_PLATE_WIDTH, variant.label }
     widest = guide_drawings.max_by { |variant| logo_guide_min_width(variant) }
     # Task navbar-spacing-and-rotated-guides: the ruler's copies are now tracked as the real line is, so the widest
@@ -158,8 +158,9 @@ class LogosHelperTest < ActionView::TestCase
   test "the icon note is read from the icon each tone draws" do
     welding = Logos::NavbarLogo.new("welding")
     assert_equal "Recolours the icon's main layer only; its accent layer keeps its brand colour.", logo_icon_edit_note(welding, :light)
-    assert_equal "Recolours the whole icon.", logo_icon_edit_note(welding, :dark)
-    assert_equal({ light: logo_icon_edit_note(welding, :light), dark: "Recolours the whole icon." }, logo_icon_edit_notes(welding, %i[light dark]))
+    # Its dark tone draws the two-colour helmet (Alex McRitchie 2026-10-28), so the icon colour takes its blue half.
+    assert_equal "Recolours the icon's blue layer only; its white and accent layers keep their brand colours.", logo_icon_edit_note(welding, :dark)
+    assert_equal({ light: logo_icon_edit_note(welding, :light), dark: "Recolours the icon's blue layer only; its white and accent layers keep their brand colours." }, logo_icon_edit_notes(welding, %i[light dark]))
     assert_equal "Recolours the whole icon.", logo_icon_edit_notes(Logos::NavbarLogo.new("studio"), %i[light dark])
   end
 end

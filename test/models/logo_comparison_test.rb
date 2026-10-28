@@ -30,7 +30,8 @@ class LogoComparisonTest < ActiveSupport::TestCase
       assert_empty side.changed
       assert_equal TONES, side.variants.keys
       variant = side.variant
-      assert_equal [4, :second, :original], [variant.rule, variant.text, variant.colouring]
+      # v1's style names its kit's text (`kit_text: homogeneous`, the client's one-colour name); v2 takes the default.
+      assert_equal [4, BrandKit.defaults(side.brand, :navbar)[:text], :original], [variant.rule, variant.text, variant.colouring]
       assert_equal BrandKit.new(brand: side.brand).variant(:navbar).svg, variant.svg, "the same logo the table shows"
     end
   end

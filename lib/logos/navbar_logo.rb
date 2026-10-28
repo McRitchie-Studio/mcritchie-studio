@@ -137,6 +137,8 @@ module Logos
       @icons.merge!(original_looks.to_h { |look| [look, checked_icon(icon_key(look), icons)] })
       @words = name_parts
       raise Error, "brand #{@brand}: highlight must be one of #{HIGHLIGHTS.join(', ')}, got #{@style['highlight'].inspect}" unless HIGHLIGHTS.include?(@style["highlight"])
+      kit_text = @style["kit_text"]
+      raise Error, "brand #{@brand}: kit_text must be one of #{TEXTS.join(', ')}, got #{kit_text.inspect[0, 40]}" unless kit_text.nil? || TEXTS.map(&:to_s).include?(kit_text)
       @lettering = own_lettering(letterings)
       @fill_rule = @lettering ? @lettering["fill_rule"] : "nonzero"   # font contours overlap: evenodd would punch holes in them
       @tracking = tracking_in_cap_heights

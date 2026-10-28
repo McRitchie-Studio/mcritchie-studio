@@ -99,7 +99,7 @@ class LogosWeldingV2Test < Minitest::Test
     logo = Navbar.new("welding_v2")
     assert_equal %w[COMMERCIAL WELDING], logo.words
     assert_equal "Commercial Welding v2", logo.title
-    { light: "welding_v2", dark: "welding_v2_mono", watermark: "welding_v2_mono" }.each do |tone, key|
+    { light: "welding_v2", dark: "welding_v2_original", watermark: "welding_v2_mono" }.each do |tone, key|
       assert_includes logo.icon_svg(tone:), v2(key).fetch("layers").first.fetch("d"), tone
     end
     assert_in_delta 425.06 * Navbar::H / 481, logo.layout(rule: 3).icon_width, 1e-9

@@ -43,7 +43,9 @@ class LogosNavbarLogoTest < Minitest::Test
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex McRitchie, item 5); was 84708d03…. Turf Monster did not move (logos_brand_pins_test.rb).
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green) so Alt is one solid colour per part for every brand; the three-colour head is now its Original; was 3251e085….
   # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex McRitchie 2026-10-14 12:16, "the icons need to have the margins cleaned up"); was 4d95d341…. Turf Monster's head lost about 54 units of margin top and bottom.
-  ADDED_BRANDS_DIGEST = "8c05ea24de848cdfa02d714a1963e0b6e7d8fdda32fcc562db3f66e75749c65d"
+  # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue: Commercial Welding's dark drawings draw the two-colour
+  # helmet (Alex McRitchie 2026-10-28); was 8c05ea24…; every other drawing in it is byte for byte as before (the per-brand pins say which).
+  ADDED_BRANDS_DIGEST = "5a2bbb2cf6cd733060f741cccd0ac0affc666e5fb8846b54a2e5e55dd054f52a"
   # Every watermark logo of all four brands, without guides ("<key>\n<svg>" each: brand, then rule and text).
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex McRitchie, item 5); was 69c5428f….
   # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex McRitchie 2026-10-14 12:16, "the icons need to have the margins cleaned up"); was 817c912e….
@@ -52,7 +54,9 @@ class LogosNavbarLogoTest < Minitest::Test
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex McRitchie, item 5); was c16934f5….
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green) so Alt is one solid colour per part for every brand; the three-colour head is now its Original; was 2581fbeb….
   # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex McRitchie 2026-10-14 12:16, "the icons need to have the margins cleaned up"); was cb6f5e75….
-  RULE_6_DIGEST = "8a5c41b607afb41f54653893709c7f4a1503d9d4fdccb321ae667670f133205b"
+  # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue: Commercial Welding's dark drawings draw the two-colour
+  # helmet (Alex McRitchie 2026-10-28); was 8a5c41b6…; every other drawing in it is byte for byte as before (the per-brand pins say which).
+  RULE_6_DIGEST = "a2dca3ce75d889ed59fd8527c6b3aa144888f689f5ede4e9215ae6da7e2735cd"
   # The brands the combined digests below were taken over. A brand added later (welding_v2) is pinned on its own in
   # logos_brand_pins_test.rb, so it cannot move these.
   PINNED = %w[studio industries turf welding].freeze
@@ -324,9 +328,9 @@ class LogosNavbarLogoTest < Minitest::Test
   def test_the_icon_alone_is_the_navbar_logos_icon_in_its_own_box
     Logo.brands.product(Logo::TONES).each do |brand, tone|
       logo = Logo.new(brand)
-      key = { %w[welding dark] => "welding_mono", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono",
+      key = { %w[welding dark] => "welding_original", %w[welding watermark] => "welding_mono", %w[turf watermark] => "turf_mono",
               %w[turf light] => "turf_mono", %w[turf dark] => "turf_mono",
-              %w[welding_v2 dark] => "welding_v2_mono", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
+              %w[welding_v2 dark] => "welding_v2_original", %w[welding_v2 watermark] => "welding_v2_mono" }.fetch([brand, tone.to_s], brand)
       icon = Logo.icons.fetch(key)
       xml = doc(logo.icon_svg(tone:))
       where = "#{brand} #{tone}"
@@ -452,11 +456,13 @@ class LogosNavbarLogoTest < Minitest::Test
 
   def test_a_tone_may_name_its_own_icon
     mono = Logo.icons.fetch("welding_mono").fetch("layers")
+    three = Logo.icons.fetch("welding_original").fetch("layers")
     duo = Logo.icons.fetch("welding").fetch("layers")
     icon_paths = ->(tone) { doc(Logo.new("welding").svg(tone:)).css("path:not([transform])") }
     assert_equal [[duo[0]["d"], "#2D5E8E"], [duo[1]["d"], "#D7602E"]], icon_paths.(:light).map { |p| [p["d"], p["fill"]] }
-    assert_equal [[mono[0]["d"], "#FFFFFF"]], icon_paths.(:dark).map { |p| [p["d"], p["fill"]] }
-    refute_equal duo[0]["d"], mono[0]["d"]
+    # Alex McRitchie 2026-10-28: the helmet keeps its blue half on dark, so the dark tone names the Original's trace.
+    assert_equal three.map { |layer| layer["d"] }.zip(%w[#2D5E8E #FFFFFF #D7602E]), icon_paths.(:dark).map { |p| [p["d"], p["fill"]] }
+    assert_equal [[mono[0]["d"], "#FFFFFF"]], doc(Logo.new("welding").svg(tone: :watermark)).css("path:not([transform])").first(1).map { |p| [p["d"], p["fill"]] }
 
     # The tone's icon sets that tone's geometry; a tone that names none keeps the brand's.
     tones = Logo.styles.fetch("studio").fetch("tones")
@@ -558,8 +564,10 @@ class LogosNavbarLogoTest < Minitest::Test
         paths = xml.css("path")
         assert_equal ["#FFFFFF"], paths.map { |p| p["fill"] }.uniq, "#{brand} rule #{rule} #{text}: every path takes the one fill"
         assert_equal paths.size, group.first.css("path").size, "#{brand}: every path is inside the group"
-        # The dark logo's box: both draw the brand's dark icon (Commercial Welding's single-colour helmet, whose ink is
-        # half a unit narrower than its colour helmet's since every icon's box is its ink).
+        # The dark logo's box, where both draw the same icon. Commercial Welding's dark helmet is the two-colour one
+        # (Alex McRitchie 2026-10-28) and its watermark the single-colour one, whose aspect differs by a hair.
+        next unless logo.send(:icon_key, :dark) == logo.send(:icon_key, :watermark)
+
         assert_equal doc(logo.svg(rule:, text:, tone: :dark)).root["viewBox"], xml.root["viewBox"], "#{brand} rule #{rule} #{text}: the dark logo's box"
         assert_equal logo.layout(rule:, text:, tone: :dark).to_h, logo.layout(rule:, text:, tone: :watermark).to_h
       end

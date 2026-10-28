@@ -45,14 +45,14 @@ module Logos
                              "units tall, and every gap is 2 units, as in 3-2-1."
     RULE_OF_THREE_FORM_SENTENCES = {
       two_line: "This brand uses the two-line form: the small word, 1 unit tall, is spaced out to 60% of the big word's width.",
-      one_line: "This brand uses the one-line form, because its second word is too wide to sit under its first: the whole name is on " \
+      one_line: "This brand uses the one-line form: the whole name is on " \
                 "one line, 3 units tall, 2 units under the icon.",
       tagline: "With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall, set in Montserrat " \
                "and spaced out to 60% of the name's width."
     }.freeze
     FORM_SENTENCES = {
       two_line: "This brand uses the two-line form.",
-      one_line: "This brand uses the one-line form, because its second word is too wide to sit under its first: the whole name is on " \
+      one_line: "This brand uses the one-line form: the whole name is on " \
                 "one line, 3 units tall, 2 units under an icon 60% as tall as the name is wide.",
       tagline: "With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall, set in " \
                "Montserrat and spaced out to 60% of the name's width. The tagline is the small line, so the icon is as tall as it is wide."

@@ -79,7 +79,7 @@ The brands' originals:
 | `studio` | none | the chest, one colour |
 | `industries` | the kit's own `mcritchie_icon_light.svg` and `_dark.svg` (05_icon): steel gradient, flat edge, ruler ticks; the leading word in the kit wordmark's steel gradient, the other in gunmetal `#41464D` (light) or light steel `#D3D6DA` (dark), as the kit's horizontal logos set them | the set square flat, two solid layers |
 | `turf` | the three-colour head trace; ink `#1A1535` and green on light, white and green on dark | the head's linework alone (`turf_mono`) in the brand green `#4BAF50` |
-| `welding` | the kit's square logo (`COM - Square - Large.png`), traced: a blue silhouette, the opaque white right half and lens window over it, the orange spark; one icon for both tones, since the white fill holds the helmet on a dark page; the name in the kit's blue `#2D5E8E` with the orange `#D7602E` accent and tagline on light, and white with the orange on dark (the kit has no dark lettering) | the two-colour helmet on light, the single-colour one on dark |
+| `welding` | the kit's square logo (`COM - Square - Large.png`), traced: a blue silhouette, the opaque white right half and lens window over it, the orange spark; one icon for both tones, since the white fill holds the helmet on a dark page; the name in the kit's blue `#2D5E8E` with the orange `#D7602E` accent and tagline on light, and white with the orange on dark (the kit has no dark lettering) | the two-colour helmet on light; on dark the Original's trace in the kit's colours, so the blue half stays (Alex McRitchie 2026-10-28) |
 | `welding_v2` | v1's Original with the v2 derivation ([below](#commercial-welding-v2)), its lens window cut clear (see-through, not white) | v2's helmet as before |
 
 **Turf Monster's Alt changed on purpose.** Alt means one solid colour per part
@@ -142,9 +142,10 @@ placing over a photograph.
   style says otherwise.
 - The logo sits in a single `<g opacity="…">`, `0.6` by default. The opacity is
   on the group and never on a path, so overlapping layers do not compound.
-- The box is the dark logo's: same width, same height (both draw the brand's
-  dark icon; Commercial Welding's single-colour helmet is half a unit narrower
-  than its colour one, so its light logo differs from them by that much).
+- The box is the dark logo's where both draw the same icon. Commercial
+  Welding's dark tone draws its two-colour helmet and its watermark the
+  single-colour one, whose aspect differs by a hair, so its watermark box is
+  its own.
 - The text versions still apply. A brand that leads by weight keeps its two
   weights. A brand that leads by colour has only one colour here, so its three
   text versions are the same drawing.
@@ -254,12 +255,19 @@ Let **u** be the small word's cap height (40 design units).
 |------|---------------|-------|--------|
 | `two_line` (the default) | icon, 2u, the first word at 3u, 2u, the second word at 1u | the first word's ink, W | 0.6W + 8u |
 | `one_line` (`stacked: one_line` in the style) | icon, 2u, the whole name at 3u | the name's ink, W | 0.6W + 5u |
+
+A one-line brand is offered `two_line` beside its own form when the two-line form draws for it (Turf Monster:
+`[:one_line, :two_line]`).
 | `tagline` (a brand with a `tagline`, beside its own form) | icon, 2u, the whole name at 3u, 2u, the tagline at 1u | the name's ink, W | 0.6W + 8u |
 
 - **Two lines.** The second word is tracked out until its ink is exactly 60% of
   the first word's ink width. The tracking is computed, added between letters
   only, and never after the last. The brand's own `tracking` is not added to it.
-- **The icon** is as tall as the small word is wide, 0.6W, and scaled to that.
+  A second word already wider than 60% is set at its own width, centred, and
+  never tracked in (Turf Monster's "Monster" is 68% of "Turf"; Alex McRitchie
+  2026-10-28 chose this over spreading it to the first word's width).
+- **The icon** is as tall as the small word is wide, 0.6W (or the wider word's
+  own width), and scaled to that.
 - **Centring.** The icon and the small word are centred on the big line.
 - **One line.** The name is set exactly as the Navbar Logo sets it, with the
   brand's tracking and word gap, and the icon is 60% of its width tall. Turf
@@ -307,7 +315,7 @@ on the first build's 3u gaps: "space of 2 vertically between".
   exactly as wide as the big line's ink, so the real icon is the middle one.
 - **The icon's height** comes from its own aspect, so a tall icon is taller
   than it is wide, and each tone's icon (Commercial Welding v2's dark Alt
-  helmet is its single-colour one) is a third of W wide in its own aspect.
+  helmet is the Original's trace) is a third of W wide in its own aspect.
   Commercial Welding v2's helmet drops from about 553 to 348 design units wide
   (two lines, light). The icon's box is its ink ([below](#an-icons-box-is-its-ink)),
   so the third is the hood's own width, edge to edge.
@@ -325,7 +333,7 @@ on the first build's 3u gaps: "space of 2 vertically between".
 
 `Logos::StackedLogo.new` refuses, with `Logos::NavbarLogo::Error`:
 
-- a two-line brand whose second word is wider than 60% of its first, or has one
+- a two-line brand whose second word is wider than its first, or has one
   letter. The message names the brand and says to set `stacked: one_line`.
   Negative tracking is never drawn.
 - a `stacked` value other than `two_line` or `one_line`;
@@ -419,8 +427,18 @@ Three things a style may ask for beyond an icon and two Montserrat weights:
   pair with no space in the data is refused.
 - **Tracking** (`tracking: -0.025`), above. Montserrat brands only.
 - **An icon per tone** (`icon_key:` inside a tone). Commercial Welding's dark
-  tone draws `welding_mono`, the helmet in one colour (half of it filled, half
-  drawn in outline), because the two-colour helmet's white half is transparent. A tone that names none draws the brand's `icon`.
+  tone draws `welding_original` (v2: `welding_v2_original`), the Original's
+  trace in the kit's colours: blue half, opaque white half, orange spark,
+  because the Alt helmet's white half is transparent and the client's helmet
+  keeps its blue half on a dark page too (Alex McRitchie 2026-10-28: "Lets add
+  the blue to both"; until then it drew the single-colour `welding_mono`, which
+  is now the watermark's alone). A tone that names none draws the brand's `icon`.
+- **A kit's default text version** (`kit_text:`, optional): the text version
+  (`homogeneous`, `first` or `second`) the brand's kit draws until a choice is
+  saved, in place of `BrandKit::DEFAULTS`. Commercial Welding v1 is
+  `homogeneous`, the whole name in Welding Blue as the client's own logo sets
+  it (`Logos (1).zip`, `commercial-welding-logo-full.jpg`, 2026-10-28, byte for
+  byte the kit traced here; its tagline is Spark Orange, the tones' `quiet`).
   The tone's icon sets that tone's geometry, so `layout` takes `tone:` too.
 
 A style's optional `note` is the line its brand page shows about where the art
@@ -430,7 +448,7 @@ came from.
 
 Alex McRitchie's item 5 (task welding-llc-and-v2-helmet): a second Commercial Welding
 brand to compare his tweaks with the original, listed in the row after v1. Its
-helmet (`welding_v2`, and `welding_v2_mono` on dark and as the watermark) is
+helmet (`welding_v2`; `welding_v2_original` on dark, and `welding_v2_mono` as the watermark) is
 derived from v1's traced helmet by `Logos::WeldingV2`
 (`lib/logos/welding_v2.rb`); `bin/rails logos:welding_v2` writes it to
 `lib/logos/data/brand_icons_welding_v2.json`, and a test fails if the file is

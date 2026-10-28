@@ -36,6 +36,11 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
   # Original where it has one (task logo-original-and-alt), except in a watermark, which has no colouring.
   def sample(brand, name, type, context)
     params, words = SAMPLES.fetch(type)
+    # A brand whose style names its kit's text version (`kit_text`: Commercial Welding v1 is homogeneous) shows that.
+    if type != "icon" && (text = BrandKit.defaults(brand, type)[:text].to_s) != params[:text]
+      words = words.sub(Logos::Variant::TEXTS.fetch(params[:text].to_sym).downcase, Logos::Variant::TEXTS.fetch(text.to_sym).downcase)
+      params = params.merge(text:)
+    end
     guides = type == "icon" ? {} : { guides: 0 }
     if type == "stacked"
       params = params.merge(form: OWN_FORMS.fetch(brand))
@@ -324,7 +329,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
   # default text version (BrandKit::DEFAULTS) unless asked. One variant: the tab draws one logo.
   def variants(brand, type, **choices)
     logo = Logos::Variant.logo(brand, type)
-    defaults = type == :icon ? {} : { text: BrandKit::DEFAULTS.fetch(type).fetch(:text), rule: 4 }
+    defaults = type == :icon ? {} : { text: BrandKit.defaults(brand, type).fetch(:text), rule: 4 }
     [Logos::Variant.new(logo, type:, colouring: logo.colourings.first, **defaults.merge(choices))]
   end
 
@@ -473,13 +478,32 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # Option A (Alex McRitchie 2026-10-28): Turf Monster's own form stays one line, and Two lines is offered beside it.
+  test "Turf Monster's Stacked tab offers One line and Two lines, and draws the two-line logo when asked" do
+    log_in_as(@admin)
+    get logo_brand_path("turf", type: "stacked")
+    assert_response :success
+    assert_equal [%w[one_line One\ line true], %w[two_line Two\ lines]],
+                 css_select("[data-test='form-option']").map { |a| [a["data-form"], a.text.strip, a["aria-current"]].compact }
+    assert_select "a[data-test='form-option'][data-form='two_line'][href=?]", logo_brand_path("turf", type: "stacked", form: "two_line")
+
+    get logo_brand_path("turf", type: "stacked", form: "two_line")
+    assert_response :success
+    assert_select "a[data-test='form-option'][data-form='two_line'][aria-current='true']"
+    assert_select "img[data-test='logo-image'][src*='form=two_line']", 2
+    get stacked_logo_path("turf", form: "two_line", tone: "dark")
+    assert_response :success
+    two_line = Logos::StackedLogo.new("turf").layout(form: :two_line, tone: :dark, text: :first)
+    assert_match(/viewBox="0 0 #{format('%.2f', two_line.width)} #{format('%.2f', two_line.height)}"/, response.body, "the two-line drawing's box")
+  end
+
   test "the Stacked Logo tab shows one logo in the kit's text version, states the 3-2-1 method, and names the brand's form" do
     log_in_as(@admin)
     { "industries" => /This brand uses the two-line form\.\z/, "welding" => /two-line form/,
-      "turf" => /This brand uses the one-line form, because its second word is too wide to sit under its first/ }.each do |brand, form|
+      "turf" => /This brand uses the one-line form: the whole name/ }.each do |brand, form|
       get logo_brand_path(brand, type: "stacked")
       assert_response :success
-      assert_equal %w[first], css_select("[data-test='logo-example']").map { |example| example["data-text"] }
+      assert_equal [BrandKit.defaults(brand, :stacked)[:text].to_s], css_select("[data-test='logo-example']").map { |example| example["data-text"] }
       assert_examples themed(brand, :stacked)
       assert_select "img[data-test='logo-image'][alt*=' stacked logo, '][src^=?]", stacked_logo_path(brand), 2
       assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path(brand, type: "stacked", guides: 1), text: "Show"
@@ -664,11 +688,11 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
                  xml.css("path:not([transform])").map { |path| path["d"] }, "the linework head, not the three solid layers"
   end
 
-  test "Commercial Welding is served in its own lettering, with the single-colour helmet on dark" do
+  test "Commercial Welding is served in its own lettering, with the two-colour helmet on dark" do
     log_in_as(@admin)
     lettering = Logos::NavbarLogo.letterings.fetch("welding").fetch("words").values.flatten.map { |letter| letter["d"] }
     icons = Logos::NavbarLogo.icons
-    { "light" => "welding", "dark" => "welding_mono" }.each do |tone, icon|
+    { "light" => "welding", "watermark" => "welding_mono", "dark" => "welding_original" }.each do |tone, icon|
       get navbar_logo_path("welding", rule: 4, text: "second", tone:)
       assert_response :success
       assert_equal "image/svg+xml", response.media_type
@@ -857,7 +881,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
   test "the Stacked tab offers each brand's own form and With tagline where the brand has a tagline" do
     log_in_as(@admin)
     { "studio" => [%w[two_line tagline], ["Two lines", "With tagline"]], "industries" => [%w[two_line tagline], ["Two lines", "With tagline"]],
-      "welding" => [%w[two_line tagline], ["Two lines", "With tagline"]], "turf" => [%w[one_line], ["One line"]] }.each do |brand, (forms, words)|
+      "welding" => [%w[two_line tagline], ["Two lines", "With tagline"]], "turf" => [%w[one_line two_line], ["One line", "Two lines"]] }.each do |brand, (forms, words)|
       get logo_brand_path(brand, type: "stacked")
       assert_response :success
       assert_select "[data-test='form-control'][role='group'][aria-label='Form']", 1
@@ -885,7 +909,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_examples themed("welding", :stacked, form: :tagline, guides: true)
     assert_equal ["tagline"], css_select("a[data-test='form-option'][aria-current='true']").map { |option| option["data-form"] }
-    assert_equal %w[welding-stacked-tagline-first-light-original-guides.svg],
+    assert_equal %w[welding-stacked-tagline-homogeneous-light-original-guides.svg],
                  variants("welding", :stacked, form: :tagline, guides: true).map(&:filename), "the file the Download link above serves"
     assert_select "img[data-test='logo-image'][alt^='Commercial Welding v1 stacked logo, with tagline, ']", 2
 
