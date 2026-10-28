@@ -756,9 +756,10 @@ class AtomicCaptureHook
   # never a value (bin/lib/secret_cache_cli.rb); blanking those hid the very lines
   # an operator reads to see a failed refresh. `get` and the classic
   # `<vault> <item>` read stay suppressed, and a compound command that also runs
-  # one of those is still caught at that occurrence.
+  # one of those is still caught at that occurrence, including inside `$(...)`,
+  # backticks or a `( ... )` subshell, which the `(` and backtick openers cover.
   SECRET_READER = %r{
-    (?:\A|[|&;]|\s)\s*
+    (?:\A|[|&;(`]|\s)\s*
     (?:
       (?:\S*/)?bin/secret\b(?!\s+(?:status|refresh|forget|contingency|migrate|prewarm|help|-h|--help)(?:\s|\z|[|&;)]))
       | op\s+read\b | op\s+item\s+get\b |
