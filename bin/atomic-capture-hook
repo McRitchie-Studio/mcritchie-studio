@@ -735,8 +735,9 @@ class AtomicCaptureHook
   # stored (and never leaves the box: we redact HERE, before the POST). Two layers:
   #   1. WHOLE-FIELD suppression when the tool touches secret MATERIAL — a Bash
   #      command that prints a secret, or a read/write of a secret FILE. A bare
-  #      value (e.g. `bin/secret` output) has no key to pattern-match, so the whole
-  #      field is dropped to REDACTED_FIELD.
+  #      value (e.g. `bin/secret get` output) has no key to pattern-match, so the
+  #      whole field is dropped to REDACTED_FIELD. `bin/secret`'s metadata
+  #      subcommands print no value and fall through to layer 2.
   #   2. PATTERN redaction on whatever survives — KEY=VALUE pairs whose key names a
   #      secret, plus known credential value formats. The KEY is kept and only the
   #      VALUE masked, so the trajectory stays legible.
@@ -750,10 +751,18 @@ class AtomicCaptureHook
   /xi.freeze
 
   # A command whose STDOUT is secret material — its output is suppressed wholesale.
+  # `bin/secret` is a reader EXCEPT for its metadata subcommands (status, refresh,
+  # forget, contingency, migrate, prewarm, help), which print names and times and
+  # never a value (bin/lib/secret_cache_cli.rb); blanking those hid the very lines
+  # an operator reads to see a failed refresh. `get` and the classic
+  # `<vault> <item>` read stay suppressed, and a compound command that also runs
+  # one of those is still caught at that occurrence, including inside `$(...)`,
+  # backticks or a `( ... )` subshell, which the `(` and backtick openers cover.
   SECRET_READER = %r{
-    (?:\A|[|&;]|\s)\s*
+    (?:\A|[|&;(`]|\s)\s*
     (?:
-      (?:\S*/)?bin/secret\b | op\s+read\b | op\s+item\s+get\b |
+      (?:\S*/)?bin/secret\b(?!\s+(?:status|refresh|forget|contingency|migrate|prewarm|help|-h|--help)(?:\s|\z|[|&;)]))
+      | op\s+read\b | op\s+item\s+get\b |
       printenv\b | env\s*\z | gh\s+auth\s+token\b | heroku\s+config(?::get)?\b |
       aws\s+configure\s+get\b | security\s+find-generic-password\b
     )

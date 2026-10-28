@@ -64,11 +64,13 @@ on the **public** `/mason/heartbeat` surface — so the hook redacts **at the so
 before the POST, so a secret never leaves the machine. Two layers:
 
 - **Whole-field suppression** when the call touches secret **material** — a Bash
-  command that prints a secret (`bin/secret`, `op read`, `printenv`, `gh auth
-  token`, `heroku config`, `cat`/`head` of a `.env` / `credentials` / `*.pem` /
-  `*.key` / `id_rsa`), or a Read/Write/Edit of a secret **file path**. A bare value
-  (e.g. `bin/secret` output) has no key to pattern-match, so the whole field
-  becomes `[redacted: secret material]`.
+  command that prints a secret (`bin/secret get`, the classic `bin/secret <vault>
+  <item>`, `op read`, `printenv`, `gh auth token`, `heroku config`, `cat`/`head` of
+  a `.env` / `credentials` / `*.pem` / `*.key` / `id_rsa`), or a Read/Write/Edit of a
+  secret **file path**. A bare value (e.g. `bin/secret get` output) has no key to
+  pattern-match, so the whole field becomes `[redacted: secret material]`.
+  `bin/secret status`, `refresh`, `forget`, `contingency`, `migrate`, `prewarm` and
+  `help` print names and times only, so they skip this layer and stay legible.
 - **Pattern redaction** on whatever survives — `KEY=VALUE` / `KEY: VALUE` /
   `"KEY":"VALUE"` pairs whose key names a secret (`*SECRET*`, `*TOKEN*`,
   `*PASSWORD*`, `*_KEY`, `*CREDENTIAL*`, `*WEBHOOK*`, `*MNEMONIC*`, …) have the
