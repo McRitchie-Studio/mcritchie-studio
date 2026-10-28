@@ -10,11 +10,14 @@
 //   <section data-logo-download data-watermark-page="false">
 //     <input type="radio" name="tone" data-svg data-download-url data-filename data-natural-width data-natural-height
 //            data-presets='[{"key":"w800","label":"800 × 94","width":800,"height":94,"fit":"fill"}, …]' data-background>
-//     <select name="size"> … <option value="custom">     <input name="custom_value"> <select name="custom_axis">
-//     <a data-download-link>  <button data-copy-svg>  <p data-download-summary>  <p data-download-error>
+//     <input type="radio" name="size" value="<preset key>|custom"> (in <label data-download-size-label>)
+//     <input name="custom_width"> <input name="custom_height">
+//     <input type="checkbox" name="keep_aspect">     <a data-download-link>  <p data-download-summary>  <p data-download-error>
+//   and, on the page's logo frame, <div data-download-outline hidden>: the canvas, dotted, when it is not the logo's shape.
 //
-// A preset's sizes come from the server (Logos::PngSizes); a custom size is rounded here by the same rule: the set side
-// as given, the other side rounded to the nearest pixel, halves up, never below 1.
+// A preset's sizes come from the server (Logos::PngSizes); a custom size with its aspect kept is rounded here by the
+// same rule: the side last typed as given, the other rounded to the nearest pixel, halves up, never below 1. With the
+// aspect not kept (task brand-page-split-layout) both sides are as typed and the logo is fitted inside, centred.
 
 export const MAX_SIDE = 8192;
 
@@ -28,6 +31,32 @@ export function pngSize(axis, value, naturalWidth, naturalHeight) {
     ? { width: round((side * naturalWidth) / naturalHeight), height: side }
     : { width: side, height: round((side * naturalHeight) / naturalWidth) };
   return size.width > MAX_SIDE || size.height > MAX_SIDE ? null : size;
+}
+
+// A custom canvas from the card's Width and Height. With `keep` the side last typed (`axis`) sets the other from the
+// drawing's shape (a 1:1 square takes the width for both); without it both are as given and the drawing is fitted
+// inside ("contain"). Null when a side is not a whole number from 1 to MAX_SIDE.
+export function customSize({ width, height, keep, axis = "width", square = false }, naturalWidth, naturalHeight) {
+  if (keep && square) {
+    const side = pngSize("width", axis === "height" ? height : width, 1, 1);
+    return side && { ...side, fit: "contain" };
+  }
+  if (keep) {
+    const size = pngSize(axis, axis === "height" ? height : width, naturalWidth, naturalHeight);
+    return size && { ...size, fit: "fill" };
+  }
+  const w = pngSize("width", width, 1, 1);
+  const h = pngSize("width", height, 1, 1);
+  return w && h ? { width: w.width, height: h.width, fit: "contain" } : null;
+}
+
+// Where the canvas outline sits around the logo as the page shows it: the drawing's box on the page (`shown`, in px)
+// scaled out to the whole canvas, by where drawRect puts the drawing on it. Returns { left, top, width, height } in
+// the same px, relative to the same origin as `shown`.
+export function outlineRect(shown, size, naturalWidth, naturalHeight) {
+  const rect = drawRect(size.fit, size.width, size.height, naturalWidth, naturalHeight);
+  const k = shown.width / rect.width;
+  return { left: shown.left - rect.x * k, top: shown.top - rect.y * k, width: size.width * k, height: size.height * k };
 }
 
 // Where the drawing goes on a canvas of width × height: the whole canvas ("fill"), or fitted inside it and centred
@@ -70,19 +99,18 @@ export function readCard(card) {
   const naturalWidth = Number(data.naturalWidth);
   const naturalHeight = Number(data.naturalHeight);
   const key = form.elements.size.value;
-  // The icon's 1:1 square (padded) instead of its true aspect; an icon already square is square either way.
-  const toggle = form.elements.square;
-  const square = Boolean(toggle && toggle.checked && data.squarePresets && data.square !== "true");
+  // No 1:1 square toggle (task brand-page-split-layout): Custom N × N without Keep aspect ratio pads to a square.
+  const square = false;
   const presets = presetsFor(data, square);
   let size = null;
   if (key === "custom") {
-    if (square) {
-      const side = pngSize("width", form.elements.custom_value.value, 1, 1);
-      size = side && { ...side, fit: "contain" };
-    } else {
-      const custom = pngSize(form.elements.custom_axis.value, form.elements.custom_value.value, naturalWidth, naturalHeight);
-      size = custom && { ...custom, fit: "fill" };
-    }
+    size = customSize({
+      width: form.elements.custom_width.value,
+      height: form.elements.custom_height.value,
+      keep: form.elements.keep_aspect.checked,
+      axis: form.dataset.customAxis || "width",
+      square,
+    }, naturalWidth, naturalHeight);
   } else {
     const preset = presets.find((p) => p.key === key);
     size = preset ? { width: preset.width, height: preset.height, fit: preset.fit } : null;
@@ -96,21 +124,20 @@ export function readCard(card) {
     naturalWidth,
     naturalHeight,
     size,
-    background: value("background") === "solid" ? form.elements.background_colour.value : null,
+    background: null, // a PNG from the card is transparent (task brand-page-split-layout dropped its Background)
   };
 }
 
-function setOptions(select, presets) {
-  const was = select.value;
-  const custom = select.querySelector('option[value="custom"]');
-  [...select.options].forEach((option) => { if (option !== custom) option.remove(); });
-  presets.forEach((preset) => {
-    const option = document.createElement("option");
-    option.value = preset.key;
-    option.textContent = `${preset.label} · ${preset.use}`;
-    select.insertBefore(option, custom);
+// Names the size buttons for a tone's presets (each tone's drawing, so its sizes, can differ slightly): a key the tone
+// lacks hides its button, and a hidden choice falls back to the first preset.
+function setSizes(form, presets) {
+  form.querySelectorAll("[data-download-size-label]").forEach((label) => {
+    const preset = presets.find((p) => p.key === label.dataset.downloadSizeLabel);
+    label.hidden = !preset;
+    if (preset) label.querySelector("[data-size-text]").textContent = String(Math.max(preset.width, preset.height)); // its long side
   });
-  select.value = [...select.options].some((o) => o.value === was) ? was : (presets[0] ? presets[0].key : "custom");
+  const chosen = form.querySelector('input[name="size"]:checked');
+  if (chosen && chosen.closest("label").hidden && presets[0]) form.elements.size.value = presets[0].key;
 }
 
 // The logo's SVG, as text, from its own URL; refused unless the answer is an SVG.
@@ -174,14 +201,10 @@ function wireCard(card) {
   card.dataset.logoDownloadWired = "1";
   const form = card.querySelector("[data-download-form]");
   const link = card.querySelector("[data-download-link]");
-  const copy = card.querySelector("[data-copy-svg]");
   const summary = card.querySelector("[data-download-summary]");
   const error = card.querySelector("[data-download-error]");
-  const custom = card.querySelector("[data-download-custom]");
-  const colour = card.querySelector("[data-download-colour]");
   const pngOnly = card.querySelector("[data-png-only]");
-  const squareToggle = card.querySelector("[data-download-square-toggle]");
-  const axis = form.elements.custom_axis && form.elements.custom_axis.closest("label");
+  const outline = document.querySelector("[data-download-outline]");
   card.querySelectorAll("[data-download-js]").forEach((el) => { el.hidden = false; });
 
   // The tone the theme shows, unless this is a watermark page.
@@ -195,38 +218,79 @@ function wireCard(card) {
   const sync = () => {
     const state = readCard(card);
     if (`${state.toneName}:${state.square}` !== listKey) {
-      const toneChanged = !listKey || !listKey.startsWith(`${state.toneName}:`);
       listKey = `${state.toneName}:${state.square}`;
       tone = state.tone;
-      setOptions(form.elements.size, state.presets);
-      if (toneChanged) colour.value = tone.background;
+      setSizes(form, state.presets);
+      fillSize(true);
       return sync();
     }
     const png = state.format === "png";
     pngOnly.hidden = !png;
-    custom.hidden = form.elements.size.value !== "custom";
-    if (squareToggle) squareToggle.hidden = tone.square === "true";
-    if (axis) axis.hidden = state.square; // a square has one side
-    colour.hidden = state.background === null;
-    copy.dataset.copySvg = tone.svg;
-    copy.setAttribute("aria-label", `Copy SVG: ${tone.label}`);
-    link.textContent = png ? "Download PNG" : "Download SVG";
+    form.elements.keep_aspect.disabled = form.elements.size.value !== "custom"; // a standard size keeps the logo's shape
     link.href = tone.downloadUrl;
     link.setAttribute("aria-label", `Download ${png ? "PNG" : "SVG"}: ${tone.label}`);
     error.hidden = true;
+    placeOutline(png ? state : null);
     if (!png) {
       summary.textContent = tone.filename;
     } else if (state.size) {
-      const shape = state.square ? "1:1 square, padded" : "true aspect";
-      summary.textContent = `${pngFilename(tone.filename, state.size.width, state.size.height)} · ${state.size.width} × ${state.size.height} px, ${shape}, ${state.background ? `on ${state.background}` : "transparent"}`;
+      const shape = state.size.fit === "fill" ? "true aspect" : "fitted, centred";
+      summary.textContent = `${pngFilename(tone.filename, state.size.width, state.size.height)} · ${state.size.width} × ${state.size.height} px, ${shape}, transparent`;
     } else {
-      summary.textContent = `A custom side is a whole number of pixels, 1 to ${MAX_SIDE}, and the other side may not pass ${MAX_SIDE}.`;
+      error.textContent = `A custom side is a whole number of pixels, 1 to ${MAX_SIDE}, and the other side may not pass ${MAX_SIDE}.`;
+      error.hidden = false;
+      summary.textContent = error.textContent;
     }
     return state;
   };
 
-  form.addEventListener("change", sync);
-  form.addEventListener("input", sync);
+  // The dotted canvas on the page's logo, when the PNG's canvas is not the logo's own shape.
+  const placeOutline = (state) => {
+    if (!outline) return;
+    const frame = outline.parentElement;
+    const image = [...frame.querySelectorAll("img")].find((img) => img.getBoundingClientRect().width > 0);
+    if (!state || !state.size || state.size.fit !== "contain" || !image) { outline.hidden = true; return; }
+    const box = image.getBoundingClientRect();
+    const origin = frame.getBoundingClientRect();
+    const shown = { left: box.left - origin.left - frame.clientLeft, top: box.top - origin.top - frame.clientTop, width: box.width, height: box.height };
+    const rect = outlineRect(shown, state.size, state.naturalWidth, state.naturalHeight);
+    Object.assign(outline.style, { left: `${rect.left}px`, top: `${rect.top}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+    outline.hidden = false;
+  };
+
+  // A standard size writes its Width × Height into the inputs, and keeps the aspect, so they always show the PNG's size.
+  const fillSize = (picked) => {
+    if (form.elements.size.value === "custom") return;
+    const state = readCard(card);
+    if (!state.size) return;
+    form.elements.custom_width.value = state.size.width;
+    form.elements.custom_height.value = state.size.height;
+    if (picked) form.elements.keep_aspect.checked = true;
+  };
+
+  // Typing a side picks Custom. Keep aspect ratio: the side typed sets the other, in the inputs themselves.
+  const followAspect = (event) => {
+    const width = form.elements.custom_width;
+    const height = form.elements.custom_height;
+    if (event && (event.target === width || event.target === height)) {
+      form.dataset.customAxis = event.target === height ? "height" : "width";
+      form.elements.size.value = "custom";
+    }
+    if (event && event.target.name === "size") return fillSize(true);
+    if (!form.elements.keep_aspect.checked || form.elements.size.value !== "custom") return;
+    const state = readCard(card);
+    if (!state.size) return;
+    if (form.dataset.customAxis === "height") width.value = state.size.width;
+    else height.value = state.size.height;
+  };
+
+  form.addEventListener("change", (event) => { followAspect(event); sync(); });
+  form.addEventListener("input", (event) => { followAspect(event); sync(); });
+  // The outline follows the logo: its image loading, the theme swapping light for dark, the window resizing.
+  if (outline && typeof ResizeObserver !== "undefined") {
+    const observer = new ResizeObserver(() => (card.isConnected ? sync() : observer.disconnect()));
+    outline.parentElement.querySelectorAll("img").forEach((img) => observer.observe(img));
+  }
   form.addEventListener("submit", (event) => event.preventDefault());
   link.addEventListener("click", (event) => {
     const state = sync();

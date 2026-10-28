@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  MAX_SIDE, pngSize, drawRect, pngFilename, sizedSvg, rasterise, presetsFor,
+  MAX_SIDE, pngSize, customSize, outlineRect, drawRect, pngFilename, sizedSvg, rasterise, presetsFor,
   naturalSize, rasterSize, rasterFilename, rasterPlan, tableFormat, downloadTableLink, sizeWords, tableLinkLabel,
 } from "../../app/javascript/logo_download.js";
 
@@ -32,6 +32,30 @@ test("an icon preset fits the icon inside its square, centred; a wide preset fil
   assert.equal(rect.x, 0);
   assert.ok(Math.abs(rect.y - (512 - rect.height) / 2) < 1e-9);
   assert.deepEqual(drawRect("fill", 800, 94, ...NAVBAR), { x: 0, y: 0, width: 800, height: 94 });
+});
+
+// Task brand-page-split-layout: a custom Width × Height, with Keep aspect ratio on or off.
+test("with the aspect kept, the side last typed sets the other; a square takes one side for both", () => {
+  assert.deepEqual(customSize({ width: "1000", height: "9", keep: true }, ...NAVBAR), { width: 1000, height: 117, fit: "fill" });
+  assert.deepEqual(customSize({ width: "9", height: "500", keep: true, axis: "height" }, ...NAVBAR), { width: 4267, height: 500, fit: "fill" });
+  assert.deepEqual(customSize({ width: "256", height: "9", keep: true, square: true }, 662.45, 538.14), { width: 256, height: 256, fit: "contain" });
+});
+
+test("with the aspect not kept, both sides are as typed and the drawing fits inside; a bad side is refused", () => {
+  assert.deepEqual(customSize({ width: "1200", height: "630", keep: false }, ...NAVBAR), { width: 1200, height: 630, fit: "contain" });
+  for (const bad of ["", "0", "12.5", String(MAX_SIDE + 1)]) {
+    assert.equal(customSize({ width: "1200", height: bad, keep: false }, ...NAVBAR), null, bad);
+    assert.equal(customSize({ width: bad, height: "630", keep: false }, ...NAVBAR), null, bad);
+  }
+});
+
+test("the canvas outline scales out from the logo as the page shows it", () => {
+  // A 2:1 drawing shown 200 × 100 at (50, 40), on a 1000 × 1000 canvas: drawn 1000 × 500 at y 250, so k = 0.2.
+  const rect = outlineRect({ left: 50, top: 40, width: 200, height: 100 }, { width: 1000, height: 1000, fit: "contain" }, 2, 1);
+  assert.deepEqual(rect, { left: 50, top: -10, width: 200, height: 200 });
+  // A canvas wider than the drawing puts the room at the sides.
+  const wide = outlineRect({ left: 0, top: 0, width: 100, height: 100 }, { width: 300, height: 100, fit: "contain" }, 1, 1);
+  assert.deepEqual(wide, { left: -100, top: 0, width: 300, height: 100 });
 });
 
 test("the PNG is named after the SVG with its size", () => {

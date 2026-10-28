@@ -45,11 +45,10 @@ test("switching to Original changes every logo and its download, and Alt changes
   for (const src of await attrs(images(page), "src")) expect(src).not.toContain("colouring=");
 });
 
-test("Studio offers Alt only and says it has no original", async ({ page }) => {
+test("Studio offers Alt only: Original is disabled", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 800 });
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/logos/studio");
-  await expect(page.locator("[data-test='no-original']")).toHaveText("McRitchie Studio's logo is solid colour, so it has no separate original.");
   await expect(page.locator("[data-test='colouring-option'][data-colouring='original']")).toHaveAttribute("aria-disabled", "true");
   const bodyFits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
   expect(bodyFits, "the page body does not scroll sideways at 375").toBe(true);

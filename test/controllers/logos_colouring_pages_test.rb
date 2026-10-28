@@ -61,10 +61,10 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
   def srcs = css_select("img[data-test='logo-image']").map { |img| img["src"] }
   def options = css_select("[data-test='colouring-option']")
 
-  test "a brand page opens on the brand's Original, with a Colouring control beside Context" do
+  test "a brand page opens on the brand's Original, with a Colouring control first among the controls" do
     get logo_brand_path("welding", type: "stacked")
     assert_response :success
-    assert_select "[data-test='context-form'] ~ [data-test='colouring-control']", 1, "beside Context"
+    assert_select "[data-test='logo-controls'] > [data-test='colouring-control']:first-child", 1, "first in the controls card (task brand-page-split-layout)"
     assert_equal %w[original alt], options.map { |option| option["data-colouring"] }
     assert_equal ["original"], css_select("[data-test='colouring-option'][aria-current='true']").map { |option| option["data-colouring"] }
     assert_equal 2, srcs.size, "one logo, light and dark (task logo-download-card)"
@@ -72,7 +72,6 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
     css_select("input[data-test='download-tone-option']").each { |input| assert_equal input["value"] == "watermark" ? nil : "original", query(input["data-download-url"])["colouring"] }
     css_select("a[data-test='logo-download']").each { |link| assert_equal "original", query(link["href"])["colouring"] }
     assert_select "img[data-test='logo-image'][alt$='original colouring']", 2
-    assert_select "[data-test='colouring-note']", /Original is the brand's own art/
   end
 
   test "Alt draws today's logos, and the colouring is kept across every other control" do
@@ -126,7 +125,6 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
     [{}, { type: "icon" }, { type: "stacked" }, { colouring: "original" }].each do |params|
       get logo_brand_path("studio", params)
       assert_response :success, params.inspect
-      assert_select "[data-test='no-original']", { count: 1, text: "McRitchie Studio's logo is solid colour, so it has no separate original." }, params.inspect
       assert_select "[data-test='colouring-option'][data-colouring='original'][aria-disabled='true']", 1
       assert_select "a[data-test='colouring-option'][data-colouring='original']", 0
       assert_select "a[data-test='colouring-option'][data-colouring='alt'][aria-current='true']", 1

@@ -101,7 +101,8 @@ test("at 1280 the Kit card's button rows line up", async ({ page }) => {
 
 test("Copy SVG fetches the logo from its own URL on click, puts it on the clipboard and says Copied", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await open(page, "/logos/turf");
+  // The brand page's Copy SVG went with task brand-page-split-layout; Compare keeps one per logo.
+  await open(page, "/logos/compare?left=turf&right=studio");
   const copy = page.locator("[data-test='logo-copy']:visible").first();
   const url = await copy.getAttribute("data-copy-svg");
   expect(url).toMatch(/^\/logos\/turf\/navbar\?/);
@@ -121,7 +122,7 @@ test("Copy SVG fetches the logo from its own URL on click, puts it on the clipbo
 
 test("Copy SVG says Copy failed when the logo cannot be fetched", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await open(page, "/logos/studio");
+  await open(page, "/logos/compare?left=studio&right=turf");
   await page.route(/\/logos\/studio\/navbar\?/, (route) => (route.request().resourceType() === "fetch" ? route.fulfill({ status: 500, body: "no" }) : route.continue()));
   const copy = page.locator("[data-test='logo-copy']:visible").first();
   await copy.click();

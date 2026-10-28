@@ -666,10 +666,28 @@ version, else the brand's (`BrandKit::DEFAULTS`). It stays a control because the
 and weight read from it. `?text=` is the tab's own: a link to another tab drops it, so that tab opens on its own
 kit's. **Save as default** and the **Kit choice** card save the Words pick (the card's own Text select is gone).
 
-**Layout: navbar as a row, stacked as a column.** On the Navbar tab the wide logo spans the page and the Download
-card and edit panel sit side by side under it. On the Icon and Stacked tabs the logo is in a left column and the two
-cards stack in a right one. With guides on, every tab is a row, since a guide drawing needs the full width. On a
-phone everything is one column.
+**Layout: a header, then the page in quarters** (task brand-page-split-layout, Alex McRitchie 2026-10-27). The
+header holds the breadcrumb (the brand's name, the page heading, at crumb size), the type tabs, and Context at the far
+right, with the kit's save line under it. Under it, on every tab, the logo sits beside the edit panel, the two one
+height; then the Download card beside the controls card (one line per control, its name on the left and its options on
+the right: Colouring, the tab's Rule or Form and Proportion, Words, Guidelines (Show or Hide); then Save as default, the
+kit-default line, Compare and Edit parts). The page carries no words about the logo, and the edit panel no intro: the
+method, guides and context sentences, the brand's note and the panel's paragraph were dropped. With guidelines shown,
+the drawing takes the top row and the edit panel is put away (and Edit parts with it); the panel stays in the row
+invisible, inert and hidden from assistive tech, so the row keeps its height and Show and Hide never move the page.
+A drawing is drawn up to 280 px tall (`LOGO_GUIDE_HEIGHTS`), or taller where its labels would otherwise fall below 9 px:
+the tagline form takes up to about 467 px (`logo_height`). The Icon tab has no guide drawing. On a phone everything is
+one column.
+
+**The Download card**: Format and Tone side by side, each centred in its half, PNG first and chosen, the tones Dark
+first. Size, centred, is six standard sizes per type (`Logos::PngSizes::STANDARD`: the icon's 32, 64, 180, 256, 512
+and 1024; the Navbar and Stacked Logos' 200 to 4800 wide), each named by its long side, and Custom. Width × Height,
+centred, always shows the PNG's size: a standard size fills it, and typing a side picks Custom. **Keep aspect ratio**
+sits beside it and is live only on Custom: on, the side last typed sets the other; off, both are free, the logo is
+fitted inside that canvas, centred, and a dotted outline on the page's logo shows the canvas (`app/javascript/
+logo_download.js`, `customSize` and `outlineRect`). There is no 1:1 square toggle: Custom N × N without Keep aspect
+ratio pads the icon to a square. A PNG is transparent (the card has no Background). One full-width Download button
+gives the file; the brand page has no Copy SVG (Compare keeps its own).
 
 - The tabs are links in a `nav` (`aria-label="Logo type"`); the current one
   carries `aria-current="page"`. The Rule control is a `role="group"` of three
