@@ -20,8 +20,8 @@ reviewers. You stop at `reviewed`: work sits on `accepted` and Alex McRitchie la
 `qa-release` and `production-deploy` with written authority, as always. You
 never promote `accepted → release`, never touch `main`, never deploy.
 
-**Who runs it.** Alex's SOP: he holds the epic with Alex McRitchie as the fractional CTO
-(since 2026-10-25). Any session may run it, under its own Pokémon identity. The builders you
+**Who runs it.** Alex's SOP: he holds the epic with Alex McRitchie from the
+Sales/Marketing seat (the accountability chart, 2026-10-28; his since 2026-10-25). Any session may run it, under its own Pokémon identity. The builders you
 spawn are Pokémon too ([`../agents/pokemon/role.md`](../../pokemon/role.md)):
 one general builder soul, legion. The reviewers you spawn are the specialists:
 Carl, Shannon, Jasper, Steffon, or Mason for prose.

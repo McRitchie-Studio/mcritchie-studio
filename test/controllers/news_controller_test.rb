@@ -81,6 +81,15 @@ class NewsControllerTest < ActionDispatch::IntegrationTest
     assert_select "h2", "News Workflow"
   end
 
+  # Mack is the CFO since 2026-10-28 (the accountability chart); the slug-linking
+  # stage is the Pokémon legion's work, and no seat label predates the chart.
+  test "workflow names the seats the accountability chart gives them" do
+    get workflow_news_index_path
+    assert_select "h3", text: "Pokémon"
+    assert_select "h3", text: "Mack", count: 0
+    refute_match(/General Worker|Infrastructure Specialist|Lead Orchestrator/, response.body)
+  end
+
   # === Kanban stage moves via JSON PATCH ===
 
   test "move news to any stage via PATCH JSON" do
