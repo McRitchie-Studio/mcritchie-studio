@@ -83,8 +83,8 @@ bin/agent-activity heartbeat steffon
 | 10 | File storage bucket | [`bucket-provision`](./bucket-provision.md) | Steffon | pro |
 | 11 | Close out: report, record, close the task | this file | Steffon | pro |
 
-A `team` launch runs all of them (Team's marketing rows run from Rex's SOPs after
-the launch). A `pro` launch skips rows 8 and 9: the drafting agent and its
+A `team` launch runs all of them (Team's marketing rows run from Alex's demand SOPs,
+which came from Rex, after the launch). A `pro` launch skips rows 8 and 9: the drafting agent and its
 knowledge base are Team and up (`config/workspace_packages.yml`). `enterprise` runs the same steps, and its custom
 connectors are scoped per client on their own task.
 

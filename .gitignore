@@ -71,7 +71,7 @@ config/chrome_profiles.yml
 # caption-derived text of someone else's copyrighted talks, and not ours to
 # redistribute. bin/hormozi-prep and bin/hormozi-bundle take a free-form --root,
 # so `--root .` from a checkout would write these four into this PUBLIC repo.
-# See docs/agents/agents/rex/knowledge/README.md § Provenance.
+# See docs/agents/agents/alex/knowledge/README.md § Provenance.
 /captions/
 /transcripts/
 /extract/

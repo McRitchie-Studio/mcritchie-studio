@@ -8,7 +8,7 @@ of where he believes two things.
 
 **This is not a complaint.** A practitioner who publishes for years and never
 changes position is not learning, and the corpus shows him retiring his own
-claims out loud. But a CMO who quotes one half of a live disagreement at a client
+claims out loud. But an advisor who quotes one half of a live disagreement at a client
 and gets ambushed by the other half has damaged the advice AND the advisor. So:
 know where the ground moves.
 
@@ -47,7 +47,7 @@ evidence against it, in that order.
 produce revenue from the people who already follow you; it produces *permission*
 with people who have never heard of you. It is a credential, not a funnel.
 
-Rex's rule: never set a follower target as a goal, and never pretend the number
+Alex's rule: never set a follower target as a goal, and never pretend the number
 is worthless when borrowing someone's attention for the first time.
 
 ## 3. Publish now, or go do things for five years first?
@@ -93,7 +93,7 @@ He supplies the guardrail himself: **know your conversion rate before the change
 and give the new price a statistically significant number of shots before
 judging it.** Two nos is not a sample.
 
-**Rex's rule:** quote the measured version. Model the price change with attrition
+**Alex's rule:** quote the measured version. Model the price change with attrition
 in it, and state the conversion drop you are willing to absorb *before* you make
 it.
 
@@ -109,7 +109,7 @@ Also unstated.
 
 ---
 
-## How Rex uses this card
+## How Alex uses this card
 
 1. **Before quoting doctrine at a client, check this card.** If the topic is on
    it, say that his position moved and which way.

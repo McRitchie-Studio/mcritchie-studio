@@ -39,7 +39,7 @@ note under the table):
 | Agent | Email | Purpose |
 |-------|-------|---------|
 | Mason | `mason@mcritchie.studio`, and the super-admin seat `admin@mcritchie.studio` | COO (Operations) and orchestrator, admin notifications (CEO 2026-10-25 to 2026-10-28; marketing until 2026-10-25; Infrastructure before 2026-05-23, see `mission.md`) |
-| Alex | `ray@mcritchie.studio` | Fractional CTO and client builder, brand voice and launches; Worker class (no admin seat) since 2026-10-25 |
+| Alex | `ray@mcritchie.studio` | Sales/Marketing (the accountability chart, 2026-10-28): the client conversation, demand and brand voice, client launches (Operations delivers); Rex's CMO seat folded in 2026-10-28; Worker class (no admin seat) since 2026-10-25 |
 | Avi | `avi@mcritchie.studio` | Product Owner — PR review, release sign-off, ticket grooming |
 | Carl | `carl@mcritchie.studio` | Dev Backend Expert — Rails, ActiveRecord, jobs |
 | Shannon | `shannon@mcritchie.studio` | Dev UI Expert — frontend, Tailwind, Alpine, theme |

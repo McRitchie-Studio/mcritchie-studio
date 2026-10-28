@@ -126,6 +126,17 @@ class AlexSeatTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # rex-folds-into-alex (2026-10-28): Rex, the CMO, folded into Alex, so his page
+  # forwards to the seat that holds his method, not to Mason. Anchored: a slug that
+  # only starts with "rex" is not shimmed.
+  test "the retired /agents/rex page forwards to /agents/alex" do
+    get "/agents/rex"
+    assert_response :moved_permanently
+    assert_equal "http://www.example.com/agents/alex", response.location
+    get "/agents/rexx"
+    refute_equal 301, response.status, "only the exact retired slug forwards"
+  end
+
   test "the persona and the orchestrator keep their own agent pages" do
     get "/agents/mason"
     refute_equal 301, response.status

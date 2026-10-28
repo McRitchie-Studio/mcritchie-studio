@@ -186,7 +186,7 @@ complained*.
   is filtering correctly. His own product went from $99 to a tier 11 times
   cheaper at $9, because hobbyists genuinely were the ideal early user.
 
-Rex's reading: both hold, and the question to ask first is *is the complainer
+Alex's reading: both hold, and the question to ask first is *is the complainer
 the person we want*.
 
 **Does cutting price do anything?** `BYpTRiRqS1Y` measured a 20% cut and got
@@ -221,7 +221,7 @@ target — but do not carry $270 or $80 into a client model.
 > "If we don't meet any of these qualifications, I'll give you all my profit
 > back."
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 - **industries** — a welding shop is the exact case `0EqJD2o-Mnk` describes:
   quote the result and the standard, not the hour, then attach the on-time,

@@ -31,7 +31,7 @@ module MergePermission
   STANDING_PRIMARY = "carl"
 
   # Retired slugs that still resolve (Task::SOUL_ALIASES; this file runs without Rails).
-  SOUL_ALIASES = { "ray" => "alex", "xan" => "alex" }.freeze
+  SOUL_ALIASES = { "ray" => "alex", "xan" => "alex", "rex" => "alex" }.freeze
 
   # The souls whose merge-ready verdict can authorise a merge: the review pool
   # (ReviewerSelector::POOL, pinned by test/lib/merge_permission_test.rb).

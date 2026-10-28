@@ -94,8 +94,11 @@ its invocation exactly.
 |------------------|------|
 | `Alex Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/alex/HEARTBEAT.md` |
 | Alex `brand-kit-rollout` SOP (apply a saved brand kit to one or more apps and record it applied) | `mcritchie-studio/docs/agents/agents/alex/sops/brand-kit-rollout.md` |
+| Alex `constraint-diagnosis` SOP (find the one thing limiting demand) | `mcritchie-studio/docs/agents/agents/alex/sops/constraint-diagnosis.md` |
+| Alex `content-sprint` SOP (the weekly test-at-volume loop) | `mcritchie-studio/docs/agents/agents/alex/sops/content-sprint.md` |
 | Alex `focus-session` SOP (hold an epic, file just-in-time, build wide, review your own PRs) | `mcritchie-studio/docs/agents/agents/alex/sops/focus-session.md` |
 | Alex `launch-build-queue` SOP (work /build app requests: claim, build, point the subdomain, mark live) | `mcritchie-studio/docs/agents/agents/alex/sops/launch-build-queue.md` |
+| Alex `launch-warmup` SOP (gated rollout of a new app, domain or email list) | `mcritchie-studio/docs/agents/agents/alex/sops/launch-warmup.md` |
 | Alex `marketing-kit` SOP (build a brand's marketing kit (guidelines PDF, doc and slide templates, tracker) in Drive from one spec) | `mcritchie-studio/docs/agents/agents/alex/sops/marketing-kit.md` |
 | `Avi Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/avi/HEARTBEAT.md` |
 | Avi `arbitrate-block` SOP (a builder contested a review block; Avi rules) | `mcritchie-studio/docs/agents/agents/avi/sops/arbitrate-block.md` |
@@ -122,10 +125,6 @@ its invocation exactly.
 | Pokemon `download-youtube` SOP (yt-dlp H.264 download of a YouTube video or section) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
 | Pokemon `email-image` SOP (make an email header with Alex McRitchie in a Claude Code session: show base assets, generate, iterate, approve on his word, export) | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | Pokemon `wrap-it-up` SOP (hand a stuck session to a fresh one, then clear its board) | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
-| `Rex Heartbeat` launcher (CMO) | `mcritchie-studio/docs/agents/agents/rex/HEARTBEAT.md` |
-| Rex `constraint-diagnosis` SOP (find the one thing limiting demand) | `mcritchie-studio/docs/agents/agents/rex/sops/constraint-diagnosis.md` |
-| Rex `content-sprint` SOP (the weekly test-at-volume loop) | `mcritchie-studio/docs/agents/agents/rex/sops/content-sprint.md` |
-| Rex `launch-warmup` SOP (gated rollout of a new app, domain or email list) | `mcritchie-studio/docs/agents/agents/rex/sops/launch-warmup.md` |
 | `Steffon Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | Steffon `agent-dispatcher` SOP (the agent mailbox's always-on worker on Alex McRitchie's Mac: install, verify, alerts, unblock) | `mcritchie-studio/docs/agents/agents/steffon/sops/agent-dispatcher.md` |
 | Steffon `app-deploy-standard` SOP (single-use apps: profile, contract, `bin/register-app`) | `mcritchie-studio/docs/agents/agents/steffon/sops/app-deploy-standard.md` |

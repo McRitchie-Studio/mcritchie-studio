@@ -137,8 +137,7 @@ None of that is taken. Specifically:
 - **Steffon** — deploys, the Heroku app, credentials and the admin account's
   keys
 - **Avi** — product trade-offs and what ships in a release
-- **Alex** — the sentence in any email sent to players: he checks it is ours
-- **Rex** — whether a reactivation push is worth running at all
+- **Alex** — the sentence in any email sent to players (he checks it is ours), and whether a reactivation push is worth running at all
 
 ## My authority
 

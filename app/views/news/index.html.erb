@@ -9,7 +9,7 @@
     to it and no bespoke wrapper carries that state. Cards render INSIDE the studioBoard
     scope but resolve archiveNews / deleteNews from THIS parent scope (Alpine nests). %>
 <% stages = %w[new reviewed processed refined concluded archived] %>
-<% stage_agents = { "new" => "Intake", "reviewed" => "Mason", "processed" => "Mack", "refined" => "Alex", "concluded" => "Turf Monster", "archived" => "Alex" } %>
+<% stage_agents = { "new" => "Intake", "reviewed" => "Mason", "processed" => "Pokémon", "refined" => "Alex", "concluded" => "Turf Monster", "archived" => "Alex" } %>
 <%# gap 2 — per-column count-chip colours (was an inline `case stage`). %>
 <% count_colors = {
      "new" => "bg-primary/10 text-primary",

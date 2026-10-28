@@ -48,7 +48,7 @@ channel.
 **Neither is wrong; they answer different questions.** The four-way cut is an
 AUDIT — two axes, no gaps, use it to find the empty box. The six-way cut is an
 INVENTORY — more granular, better for allocating effort across sources you
-already run. Rex should reach for four when asking *what are we not doing*, and
+already run. Alex should reach for four when asking *what are we not doing*, and
 six when asking *where should the next hour go*.
 
 What he never does is reconcile them, so do not present either as the canonical
@@ -67,7 +67,7 @@ is empty, not which box is right for you.
 > "You tell people about your stuff and then other people tell people about your
 > stuff. That's the game."
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 - **industries** — the empty boxes are obvious and the cheapest one is warm
   outreach: a welding shop's past customers are a list nobody has called. One to

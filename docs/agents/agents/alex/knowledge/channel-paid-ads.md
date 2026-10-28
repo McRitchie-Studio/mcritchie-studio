@@ -453,7 +453,7 @@ month in the same market `reisEL_D7xc`.
 > "the paid side is going to give you call it like a one time 3 to 5x off of a
 > baseline" `BYpTRiRqS1Y`
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 - **industries** — the welding shop is the one client where paid is probably
   *wrong first*, and the corpus says so twice. It has a hard delivery ceiling, so

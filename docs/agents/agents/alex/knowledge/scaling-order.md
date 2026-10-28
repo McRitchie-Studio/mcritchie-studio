@@ -234,7 +234,7 @@ Treat as order-of-magnitude sizing for **prioritization**, not as a forecast.
   that your food's mediocre*. The trigger to pour gasoline is word of mouth —
   when people cannot help telling everybody they talked to.
 
-Rex's reading: the boundary is **whether the thing that works is the channel or
+Alex's reading: the boundary is **whether the thing that works is the channel or
 the product**. Saturate a proven channel; throttle a mediocre product. His own
 proof for the second is a company that grew every day with zero marketing before
 he would co-own it.
@@ -262,7 +262,7 @@ first.
 
 > "We just know the company that we're buying's customers better than they do."
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 - **industries** — ask the supply question first and expect a *no*: a welding
   shop's constraint is usually the floor, not the phone, which puts us in the

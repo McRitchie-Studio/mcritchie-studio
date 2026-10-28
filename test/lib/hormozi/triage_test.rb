@@ -8,12 +8,12 @@ require_relative "../../../lib/hormozi/triage"
 #
 # THE SHAPE OF THE DEFECT. The corpus is roughly 1,700 videos and most of them
 # are not about marketing — hiring, operations, mindset, morning routines,
-# personal stories. Rex is hired for one job: demand. Extracting evenly across
+# personal stories. The method is for one job: demand. Extracting evenly across
 # the archive buys a general-purpose life coach at four times the price of the
 # specialist we asked for.
 #
 # WHAT THIS PROTECTS. Tier 1 is what earns a deep extraction pass, so these
-# assertions are the actual boundary of Rex's education. The negative cases
+# assertions are the actual boundary of the demand method's education (Rex's, folded into Alex 2026-10-28). The negative cases
 # matter most: a title can carry a commercial word like "sales" and still be an
 # operations lesson, and it must not buy its way into tier 1 on that alone.
 class TriageTest < Minitest::Test

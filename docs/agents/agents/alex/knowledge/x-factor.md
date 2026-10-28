@@ -91,9 +91,9 @@ republishing your best content unchanged and keeping a fixed repeated intro.
 
 The boundary is probably repetition *within one campaign* versus republishing
 *across time* — but he does not state it, so this is inference, not doctrine.
-Flagged so Rex does not quote one at a client and get ambushed by the other.
+Flagged so Alex does not quote one at a client and get ambushed by the other.
 
-## Rex's read for our three clients
+## Alex's read for our three clients
 
 - **operator-brand** — this card is the whole strategy, and the fit is almost
   uncomfortable. A documented operating model for running a company on agents is

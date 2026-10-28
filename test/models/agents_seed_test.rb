@@ -128,7 +128,8 @@ class AgentsSeedTest < ActiveSupport::TestCase
   # quite "every soul declares an avatar path". components/_agent_avatar always draws
   # the deterministic initials bubble and lays the <img> over it only when `avatar` is
   # present, removing it on a 404. So a soul with NO portrait renders exactly as one
-  # whose file is missing, and rex ships without a portrait on purpose —
+  # whose file is missing, and a soul with no artwork yet (tyrion; rex, until it
+  # folded into alex on 2026-10-28) ships without a portrait on purpose —
   # there is no artwork for it yet, and a path to a file that does not exist is a
   # dead request on every board render plus a claim the next reader has to disprove.
   #
@@ -216,5 +217,22 @@ class AgentsSeedTest < ActiveSupport::TestCase
     refute Agent.exists?(slug: "xan")
     assert_equal legacy.id, Agent.find_by!(slug: "alex").id
     assert_equal 1, Activity.where(agent_slug: "alex").count
+  end
+
+  # [integration] rex-folds-into-alex: Rex left config/souls.yml on 2026-10-28. A
+  # database still holding an EMPTY rex row (seeded from an older tree, or one the
+  # migration already emptied) loses it on the next seed; one with children keeps
+  # it for MergeRexSoulIntoAlex, so the seed never orphans a row.
+  test "the seed retires an empty rex row and keeps one that still has children" do
+    Agent.create!(name: "Rex", slug: "rex", status: "active", agent_type: "specialist")
+    run_seed
+    refute Agent.exists?(slug: "rex"), "an empty rex shell goes"
+    assert Agent.exists?(slug: "alex")
+
+    held = Agent.create!(name: "Rex", slug: "rex", status: "active", agent_type: "specialist")
+    Activity.insert_all([{ agent_slug: "rex", activity_type: "comment", description: "rex row", created_at: Time.current, updated_at: Time.current }])
+    run_seed
+    assert Agent.exists?(id: held.id), "a rex row with children waits for the migration"
+    assert_equal 1, Activity.where(agent_slug: "rex").count
   end
 end
