@@ -135,6 +135,38 @@ class SecretCliTest < Minitest::Test
     refute_match TOKEN_SHAPED, err
   end
 
+  # The 2026-10-27 report: refresh said "refreshed" right after gh-token served
+  # the cached token because 1Password was unreadable.
+  def test_integration_refresh_and_prewarm_with_a_hung_op_say_served_cached_fallback
+    seed(55 * 60)
+    hung = env(op_body: "sleep 30", extra: { "MCR_OP_DEADLINE" => "1", "SECRET_PREWARM_IN_SANDBOX" => "1" })
+
+    out, err, status = secret("refresh", "github.agent", env: hung)
+    refute status.success?, "a refresh that served the old token is not a success"
+    assert_includes out, "github.agent: served cached fallback"
+    refute_includes out, "refreshed"
+    refute_match TOKEN_SHAPED, out + err
+
+    out, err, status = secret("prewarm", env: hung)
+    assert status.success?, "prewarm never fails the run: #{err}"
+    assert_includes out, "github.agent: served cached fallback"
+    refute_includes out, "refreshed"
+  end
+
+  def test_integration_forget_harness_key_honours_mcr_secret_cache_dir
+    pinned = File.join(@root, "pinned-cache")
+    FileUtils.mkdir_p(pinned, mode: 0o700)
+    File.chmod(0o700, pinned)
+    key = File.join(pinned, "harness-key.json")
+    File.write(key, JSON.generate("token" => "HARNESSVALUE"), perm: 0o600)
+    only_pinned = env(extra: { "MCR_SECRET_CACHE_DIR" => pinned, "CLAUDE_PROJECTS_DIR" => nil })
+
+    out, err, status = secret("forget", "harness-key", env: only_pinned)
+    assert status.success?, err
+    assert_includes out, "harness-key: forgotten"
+    refute File.exist?(key)
+  end
+
   # ── forget, refresh, status ────────────────────────────────────────────────
 
   def test_integration_forget_clears_the_entry_and_the_next_read_fetches_fresh

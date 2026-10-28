@@ -17,6 +17,8 @@ token that lives one hour.
 |---|---|
 | Folder | `/Users/alex/projects/.secret-cache/` (`<projects>/.secret-cache`), top-level, **not** inside `.agents/`, because local apps, desks and workflows on this Mac read it too |
 | Modes | folder `0700`, files `0600`. The tooling **refuses** a wider mode, on read and on write, and names the `chmod` fix |
+| Files | each cache file must be a regular file this user owns. The tooling **refuses** a symlink or a file owned by another account. Writes go to a new temp file opened `O_EXCL \| O_NOFOLLOW` under a random name, then a rename |
+| Admin vault | **nothing from an admin vault is ever written here.** An `op-item` entry whose vault is `studio-agents-admin` (or `MCR_OP_VAULT_ADMIN`), or a GitHub slot for an admin-fed identity (`github.deployer`), is refused with `SecretCache::AdminVaultRefused`. The classic `bin/secret <vault> <item>` read of such an entry runs uncached |
 | Git | never inside a repository; the tooling refuses a folder with a real repository at or above it (a `.git` file, or a `.git` folder holding a HEAD; a stray `.git` folder such as `~/.git` here does not count) |
 | Backup | Time Machine may back it up; it is not excluded |
 | Production | **Heroku dynos cannot read it.** It is a file on this Mac. An app in production keeps its credentials in its config vars |
@@ -36,7 +38,7 @@ Heroku config) are meant to be stable. They stay where they are
 | Name | What | Lifetime · refresh window | On disk |
 |---|---|---|---|
 | `github.agent` | GitHub App installation token, `github.mcritchie-agent` | 60 min · the last 10 min | `github-tokens.json` (two slots, toggled) |
-| `github.deployer` | GitHub App installation token, `github.mcritchie-admin` | 60 min · the last 10 min | **never**: minted per call, so a build lane cannot lift it off disk (`bin/gh-token` `CACHEABLE_IDENTITIES`) |
+| `github.deployer` | GitHub App installation token, `github.mcritchie-admin` | 60 min · the last 10 min | **never**: minted per call, so a build lane cannot lift it off disk (`bin/gh-token` `CACHEABLE_IDENTITIES`; a write is refused as `AdminVaultRefused`) |
 | `harness-key` | this machine's harness key (`bin/harness-key`) | until revoked on the board | `harness-key.json` |
 
 Each manifest entry carries `lifetime`, `expires_at` (stamped on mint),
@@ -57,13 +59,18 @@ named by default. To choose one, read the data first: since 2026-10-27 every
 bin/secret status                        # each entry's time left in plain words; never a value
 bin/secret get github.agent              # the value on stdout: cache, else a bounded op read and write-back
 bin/secret refresh github.agent [--if-under 45]   # mint now, or only when under 45 min is left
-bin/secret forget github.agent           # drop one entry; the next read fetches it fresh
+bin/secret forget github.agent           # drop one entry; the next read fetches it fresh (MCR_SECRET_CACHE_DIR is honoured)
 bin/secret forget --source <1Password item>       # drop every entry that item feeds (rotation)
 bin/secret contingency github.agent      # the ordered steps for when op fails or hangs
 bin/secret migrate                       # adopt the legacy .agents caches (idempotent)
 bin/secret prewarm                       # before a long run: refresh tokens with under 45 min left
 bin/secret <vault> <item> [field]        # the classic 1Password read
 ```
+
+The narration hook (`bin/atomic-capture-hook`) blanks the output of `bin/secret
+get` and the classic read, which print a value. It keeps the output of `status`,
+`refresh`, `forget`, `contingency`, `migrate`, `prewarm` and `help`, which print
+names and times only.
 
 `status` speaks in time left: `expires in 42 min`, `expires in 6 min — inside the
 refresh window, the next read refreshes`, `expired 3 min ago — refreshes on next
@@ -97,7 +104,10 @@ a hung `op` reaches the contingency in seconds.
 
 **A still-valid token survives a failed refresh.** When the refresh fails but the
 cached token still has more than a minute left, `bin/gh-token` serves it and warns
-on stderr.
+on stderr. `bin/secret refresh` and `bin/secret prewarm` then say `served cached
+fallback`, never `refreshed`, and `refresh` exits 1 because it did not get a fresh
+token (`prewarm` still never fails). They tell the two apart by that warning, or by
+an expiry that did not move forward.
 
 **The contingency**, printed on stderr by any failed refresh, in order:
 
@@ -143,8 +153,11 @@ the tooling), the links can be deleted.
 ## Tests
 
 - `test/lib/secret_cache_test.rb` [unit]: refresh-window wording, expiry, the
-  manifest, mode and git guards, the sandbox, legacy adoption, and the session
-  block.
+  manifest, mode and git guards, the sandbox, legacy adoption, the session
+  block, and the hardening: `served cached fallback` wording, `O_EXCL | O_NOFOLLOW`
+  temp files, the owner and symlink check, the admin-vault refusal, `forget
+  harness-key` under `MCR_SECRET_CACHE_DIR`, and the narration hook keeping
+  metadata output.
 - `test/commands/secret_cli_test.rb` [integration]: a read inside the window
   refreshes; a read after expiry refreshes; a hung `op` reaches the contingency in
   seconds; a still-valid token survives; `forget` clears; no value appears in any

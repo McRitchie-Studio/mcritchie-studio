@@ -42,6 +42,10 @@ module AgentMessages
 
     def stream_for(message) = stream_name(message.channel_ref, message.author_ref)
 
+    # Whether the thread's page polls for its turns instead of listening on a
+    # stream: /build (BuildIntake) and the satellite chat (AgentChat).
+    def polled?(thread_key) = BuildIntake.thread?(thread_key) || AgentChat.thread?(thread_key)
+
     # The thread's newest HISTORY turns, oldest first.
     def history(app_slug, user_id)
       AgentMessage.where(channel: "web", thread_key: thread_key(app_slug, user_id))
@@ -64,9 +68,10 @@ module AgentMessages
     # already allow-listed it, and it is allow-listed again here).
     def broadcast_typing(message, phase: "typing", now: Time.current)
       phase = AgentMessage.typing_phase(phase)
-      # A /build thread's page shows typing from the poll instead (deliver! below),
-      # so the phase is kept on the row for the poll's next render.
-      if BuildIntake.thread?(message.thread_key)
+      # A /build thread's page, and a satellite chat (AgentChat), show typing
+      # from the poll instead (deliver! below), so the phase is kept on the row
+      # for the poll's next read.
+      if polled?(message.thread_key)
         record_phase(message, phase)
         return false
       end
@@ -110,8 +115,9 @@ module AgentMessages
       # A /build thread (BuildIntake) is delivered by the mark alone: its page
       # POLLS (BuildController#turns, app/javascript/build_chat.js) because a
       # signed-out visitor has no /cable socket (ApplicationCable::Connection
-      # admits signed-in users only), so a broadcast would reach nobody.
-      return true if BuildIntake.thread?(message.thread_key)
+      # admits signed-in users only), so a broadcast would reach nobody. A
+      # satellite chat (AgentChat) polls through its app's server the same way.
+      return true if polled?(message.thread_key)
 
       broadcast_turn(message)
       clear_typing(message)

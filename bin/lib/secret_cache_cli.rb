@@ -34,6 +34,8 @@ module SecretCacheCli
   TXT
 
   NOT_MANAGED = 3
+  # What bin/gh-token prints when it serves the cached token after a failed mint.
+  FALLBACK_MARKER = "serving the cached"
 
   module_function
 
@@ -158,18 +160,34 @@ module SecretCacheCli
       return 1
     end
 
-    if under
-      expires = github_expires_at(meta["identity"], env)
-      if expires && expires - Time.now >= under * 60
-        out.puts("#{name}: fresh enough — expires in #{SecretCache.duration_words(expires - Time.now)}")
-        return 0
-      end
+    before = github_expires_at(meta["identity"], env)
+    if under && before && before - Time.now >= under * 60
+      out.puts("#{name}: fresh enough — expires in #{SecretCache.duration_words(before - Time.now)}")
+      return 0
     end
-    _stdout, ok = gh_token(env, err, "--identity", meta["identity"], "--force")
+    _stdout, ok, stderr = gh_token(env, err, "--identity", meta["identity"], "--force")
     return 1 unless ok
 
     expires = github_expires_at(meta["identity"], env)
-    report(out, name, expires ? "refreshed — expires in #{SecretCache.duration_words(expires - Time.now)}" : "refreshed")
+    left = expires ? " — expires in #{SecretCache.duration_words(expires - Time.now)}" : ""
+    # bin/gh-token exits 0 when 1Password failed but a still-valid cached token
+    # could be served. That is NOT a refresh: say so, and exit 1 so a caller that
+    # asked for a fresh token knows it did not get one (prewarm ignores the code).
+    if served_fallback?(stderr, before, expires)
+      out.puts("#{name}: served cached fallback — the refresh failed (1Password unreadable)#{left}; " \
+               "run `bin/secret contingency #{name}`")
+      return 1
+    end
+    report(out, name, "refreshed#{left}")
+  end
+
+  # The refresh fell back to the cached token: bin/gh-token said so, or the
+  # expiry did not move forward (a real mint always lands a later expiry).
+  def served_fallback?(stderr, before, after)
+    return true if stderr.to_s.include?(FALLBACK_MARKER)
+    return false if before.nil?
+
+    after.nil? || after <= before
   end
 
   def forget(argv, env, out, err)
@@ -194,7 +212,7 @@ module SecretCacheCli
         return 1 unless ok
       when "harness-key"
         require_relative "harness_key"
-        HarnessKey.clear(File.dirname(SecretCache.dir(env)), env: env)
+        HarnessKey.clear(HarnessKey.projects_dir(env), env: env)
       else
         SecretCache.delete(SecretCache.value_file(name), env: env)
       end
@@ -243,6 +261,11 @@ module SecretCacheCli
     vault, item, field = argv
     found = SecretCache.item_entry(vault.to_s, item.to_s, (field || "password").to_s, env)
     return NOT_MANAGED unless found
+    # An admin-vault entry is never cached: the classic, uncached read answers it.
+    if SecretCache.admin_entry?(found.last, env)
+      err.puts("secret: #{found.first} is fed from an admin vault and is never cached; reading it per call")
+      return NOT_MANAGED
+    end
 
     value = item_value(found.first, found.last, env, err)
     return 1 unless value
@@ -252,6 +275,7 @@ module SecretCacheCli
   end
 
   def item_value(name, meta, env, err)
+    SecretCache.refuse_admin!(name, meta, env)
     cached = SecretCache.cached_item(name, env: env)
     if cached
       # Recorded beside the op reads with its own action, so bin/op-reads separates
@@ -285,10 +309,10 @@ module SecretCacheCli
   def gh_token(env, err, *args)
     stdout, stderr, status = Open3.capture3(env.to_h, gh_token_bin(env), *args)
     err.print(stderr) unless stderr.empty?
-    [stdout, status.success?]
+    [stdout, status.success?, stderr]
   rescue SystemCallError => e
     err.puts("secret: cannot run bin/gh-token (#{e.class})")
-    ["", false]
+    ["", false, ""]
   end
 
   def report(out, name, words)

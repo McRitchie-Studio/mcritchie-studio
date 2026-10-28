@@ -13,7 +13,12 @@ require "json"
 require "tmpdir"
 require "fileutils"
 require "time"
+require "securerandom"
+require "stringio"
 require_relative "../../bin/lib/secret_cache"
+require_relative "../../bin/lib/secret_cache_cli"
+# The narration hook, loaded for its pure redaction predicate (main is guarded).
+load File.expand_path("../../bin/atomic-capture-hook", __dir__) unless defined?(AtomicCaptureHook)
 
 class SecretCacheTest < Minitest::Test
   TOKEN = "ghs_UNITSECRETVALUE0123456789"
@@ -291,6 +296,18 @@ class SecretCacheTest < Minitest::Test
     end
   end
 
+  def test_unit_adoption_drops_a_legacy_deployer_slot
+    with_home do |root, env, home|
+      legacy = File.join(root, ".agents", "github-tokens.json")
+      FileUtils.mkdir_p(File.dirname(legacy))
+      File.write(legacy, JSON.generate("agent" => {}, "deployer" => { "a" => { "token" => TOKEN } }))
+      SecretCache.adopt_legacy!(legacy, SecretCache::GITHUB_FILE, env: env)
+      adopted = File.read(File.join(home, SecretCache::GITHUB_FILE))
+      assert_includes adopted, "agent"
+      refute_includes adopted, TOKEN, "the deployer slot never reaches the folder"
+    end
+  end
+
   # ── op-item values (none by default) ──────────────────────────────────────
 
   def test_unit_an_op_item_value_is_served_until_its_refresh_window
@@ -307,6 +324,200 @@ class SecretCacheTest < Minitest::Test
       assert_nil SecretCache.cached_item("agent.heroku", env: env, now: now + 3100), "inside the window: refetch"
       assert_equal "agent.heroku", SecretCache.item_entry("v", "agent.heroku", "password", env).first
       assert_nil SecretCache.item_entry("v", "other", "password", env)
+    end
+  end
+  # ── hardening (secret-cache-hardening) ────────────────────────────────────
+
+  # A stand-in bin/gh-token: --expires-at prints the expiry in +state+; --force
+  # either mints (moves the expiry an hour out) or, with +fallback+, prints the
+  # real script's fallback warning and leaves the expiry where it was.
+  def stub_gh_token(dir, fallback:)
+    state = File.join(dir, "expires_at")
+    File.write(state, (Time.now.utc + 26 * 60).iso8601)
+    bin = File.join(dir, "gh-token-stub")
+    mint = fallback ? "echo 'gh-token: refresh failed (1Password unreadable); serving the cached agent token that is still valid' >&2" : "echo #{(Time.now.utc + 3600).iso8601} > #{state}"
+    File.write(bin, <<~SH)
+      #!/bin/sh
+      case "$*" in
+        *--expires-at*) cat #{state} ;;
+        *--force*) #{mint}; echo ghs_STUBTOKEN ;;
+      esac
+    SH
+    File.chmod(0o755, bin)
+    bin
+  end
+
+  # SecureRandom.hex answers +value+ inside the block (minitest 6 has no stub).
+  def with_fixed_hex(value)
+    original = SecureRandom.method(:hex)
+    SecureRandom.define_singleton_method(:hex) { |*_args| value }
+    yield
+  ensure
+    SecureRandom.define_singleton_method(:hex, original)
+  end
+
+  def cli(argv, env)
+    out = StringIO.new
+    err = StringIO.new
+    code = SecretCacheCli.run(argv, env: env, out: out, err: err)
+    [code, out.string, err.string]
+  end
+
+  # Item 1. The 2026-10-27 report: "refreshed — expires in 26 min" right after
+  # "refresh failed (1Password unreadable); serving the cached agent token".
+  def test_unit_refresh_and_prewarm_say_served_cached_fallback_when_1password_failed
+    with_home do |root, env, _home|
+      env = env.merge("SECRET_GH_TOKEN_BIN" => stub_gh_token(root, fallback: true),
+                      "SECRET_PREWARM_IN_SANDBOX" => "1")
+
+      code, out, = cli(%w[refresh github.agent], env)
+      assert_equal 1, code, "a refresh that did not refresh is not a success"
+      assert_includes out, "github.agent: served cached fallback"
+      refute_includes out, "refreshed"
+      refute_includes out, "ghs_STUBTOKEN"
+
+      code, out, = cli(%w[prewarm], env)
+      assert_equal 0, code, "prewarm is never fatal"
+      assert_includes out, "github.agent: served cached fallback"
+      refute_includes out, "refreshed"
+    end
+  end
+
+  # The control: a real mint still says refreshed.
+  def test_unit_refresh_says_refreshed_when_the_mint_succeeded
+    with_home do |root, env, _home|
+      env = env.merge("SECRET_GH_TOKEN_BIN" => stub_gh_token(root, fallback: false))
+
+      code, out, = cli(%w[refresh github.agent], env)
+      assert_equal 0, code
+      assert_includes out, "github.agent: refreshed — expires in"
+      refute_includes out, "fallback"
+    end
+  end
+
+  # The expiry that did not move is caught even when the warning wording changes.
+  def test_unit_an_expiry_that_did_not_advance_is_a_fallback
+    at = Time.now
+    assert SecretCacheCli.served_fallback?("", at, at)
+    assert SecretCacheCli.served_fallback?("", at, nil)
+    refute SecretCacheCli.served_fallback?("", at, at + 3600)
+    refute SecretCacheCli.served_fallback?("", nil, at + 3600)
+  end
+
+  # Item 2.
+  def test_unit_atomic_write_opens_its_temp_file_o_excl_and_o_nofollow
+    flags = SecretCache.atomic_write_flags
+    assert_equal File::EXCL, flags & File::EXCL
+    assert_equal File::NOFOLLOW, flags & File::NOFOLLOW
+
+    with_home do |root, env, home|
+      SecretCache.ensure_home!(env)
+      target = File.join(home, "x.json")
+      outside = File.join(root, "outside.txt")
+      File.write(outside, "untouched")
+      with_fixed_hex("fixedfixedfixed0") do
+        tmp = "#{target}.#{Process.pid}.fixedfixedfixed0.tmp"
+        File.symlink(outside, tmp)
+        assert_raises(Errno::EEXIST) { SecretCache.atomic_write(target, TOKEN) }
+        assert_equal "untouched", File.read(outside), "a planted symlink never receives the secret"
+        assert File.symlink?(tmp), "a temp name this call did not create is not deleted"
+        File.delete(tmp)
+
+        File.write(tmp, "planted")
+        assert_raises(Errno::EEXIST) { SecretCache.atomic_write(target, TOKEN) }
+        assert_equal "planted", File.read(tmp)
+        File.delete(tmp)
+      end
+      refute File.exist?(target)
+      SecretCache.atomic_write(target, "{}")
+      assert_equal 0o600, File.stat(target).mode & 0o777
+      assert_empty Dir.glob("#{target}.*.tmp"), "no temp file is left behind"
+    end
+  end
+
+  # Item 3.
+  def test_unit_check_file_refuses_a_symlink_and_a_file_another_user_owns
+    with_home do |root, env, home|
+      seed_github(env, Time.now)
+      path = File.join(home, SecretCache::GITHUB_FILE)
+
+      error = assert_raises(SecretCache::Unsafe) { SecretCache.check_file!(path, uid: Process.euid + 1) }
+      assert_includes error.message, "owned by uid #{Process.euid}"
+      assert_equal path, SecretCache.check_file!(path), "the owner's 0600 file passes"
+
+      elsewhere = File.join(root, "planted.json")
+      File.write(elsewhere, JSON.generate("agent" => {}), perm: 0o600)
+      File.delete(path)
+      File.symlink(elsewhere, path)
+      error = assert_raises(SecretCache::Unsafe) { SecretCache.read_json(SecretCache::GITHUB_FILE, env: env) }
+      assert_includes error.message, "symlink"
+      File.delete(path)
+      File.symlink(File.join(root, "missing.json"), path)
+      assert_raises(SecretCache::Unsafe) { SecretCache.check_file!(path) }
+    end
+  end
+
+  # Item 4.
+  def test_unit_an_admin_vault_item_is_never_written_to_disk
+    with_home do |_root, env, home|
+      SecretCache.ensure_home!(env)
+      manifest = JSON.parse(File.read(File.join(home, "manifest.json")))
+      manifest["entries"]["deploy.key"] = { "kind" => "op-item", "vault" => "studio-agents-admin",
+                                            "item" => "deploy.key", "lifetime_seconds" => 3600 }
+      File.write(File.join(home, "manifest.json"), JSON.generate(manifest))
+
+      error = assert_raises(SecretCache::AdminVaultRefused) { SecretCache.store_item("deploy.key", "VALUE", env: env) }
+      assert_includes error.message, "deploy.key"
+      refute File.exist?(File.join(home, SecretCache.value_file("deploy.key")))
+      File.write(File.join(home, SecretCache.value_file("deploy.key")),
+                 JSON.generate("value" => "PLANTED", "expires_at" => (Time.now + 3600).utc.iso8601), perm: 0o600)
+      assert_raises(SecretCache::AdminVaultRefused) { SecretCache.cached_item("deploy.key", env: env) }
+
+      deployer = { "deployer" => { "active" => "a", "a" => { "token" => TOKEN } } }
+      error = assert_raises(SecretCache::AdminVaultRefused) do
+        SecretCache.write_json(SecretCache::GITHUB_FILE, deployer, env: env)
+      end
+      assert_includes error.message, "github.deployer"
+      refute_includes error.message, TOKEN
+      refute File.exist?(File.join(home, SecretCache::GITHUB_FILE))
+
+      renamed = env.merge("MCR_OP_VAULT_ADMIN" => "ops-admin")
+      assert SecretCache.admin_entry?({ "vault" => "ops-admin" }, renamed), "a renamed admin vault is refused too"
+      refute SecretCache.admin_entry?({ "vault" => "studio-agents" }, env)
+      SecretCache.write_json(SecretCache::GITHUB_FILE, { "agent" => {} }, env: env)
+      assert File.exist?(File.join(home, SecretCache::GITHUB_FILE)), "the agent identity still persists"
+    end
+  end
+
+  # Item 5. Pinned by MCR_SECRET_CACHE_DIR alone (no CLAUDE_PROJECTS_DIR), the
+  # forget used to abort on the legacy path and leave the folder's key in place.
+  def test_unit_forget_harness_key_removes_the_file_under_mcr_secret_cache_dir
+    Dir.mktmpdir("secret-cache-forget") do |root|
+      home = File.join(root, "pinned-cache")
+      env = { "MCR_SECRET_CACHE_DIR" => home, "TASK_USAGE_SANDBOX" => "1" }
+      SecretCache.write_json(SecretCache::HARNESS_FILE, { "token" => "HARNESSVALUE" }, env: env)
+      assert File.exist?(File.join(home, SecretCache::HARNESS_FILE))
+
+      code, out, err = cli(%w[forget harness-key], env)
+      assert_equal 0, code, err
+      assert_includes out, "harness-key: forgotten"
+      refute File.exist?(File.join(home, SecretCache::HARNESS_FILE))
+    end
+  end
+
+  # Item 6. The narration hook blanked every `bin/secret` line; the metadata
+  # subcommands print no value and must stay legible. Readers stay suppressed.
+  def test_unit_the_narration_hook_keeps_bin_secret_metadata_output
+    hook = AtomicCaptureHook.new(env: { "CLAUDE_PROJECTS_DIR" => "/nonexistent-secret-cache" })
+    bash = ->(command) { { "tool_name" => "Bash", "tool_input" => { "command" => command } } }
+
+    ["bin/secret status", "/Users/alex/projects/.agents/bin/secret refresh github.agent --if-under 45",
+     "bin/secret prewarm 2>&1 | tail -3", "bin/secret forget harness-key", "bin/secret contingency github.agent"].each do |cmd|
+      refute hook.reads_secret_material?(bash.call(cmd)), cmd
+    end
+    ["bin/secret get github.agent", "bin/secret agents agent.heroku 'api key'",
+     "bin/secret status; bin/secret get github.agent"].each do |cmd|
+      assert hook.reads_secret_material?(bash.call(cmd)), cmd
     end
   end
 end

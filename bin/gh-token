@@ -216,6 +216,10 @@ def write_store(store)
   # the secret lands in it (SecretCache.write_json). Then point the legacy path at
   # the folder again, so an older reader shares this session.
   store_path
+  # Only cacheable identities reach disk. SecretCache.write_json also REFUSES an
+  # admin-fed identity (AdminVaultRefused); dropping it here keeps a stale slot an
+  # older version left from turning every agent refresh into that refusal.
+  store = store.select { |identity, _entry| cacheable?(identity) }
   SecretCache.write_json(SecretCache::GITHUB_FILE, store)
   SecretCache.adopt_legacy!(legacy_store_path, SecretCache::GITHUB_FILE, relink: true)
 rescue SecretCache::Unsafe => e
