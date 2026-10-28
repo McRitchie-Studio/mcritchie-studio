@@ -46,9 +46,11 @@ test("the Workflows sidebar lists seven soul launchers with their acts", async (
   // Mason's third act is visible here — nothing in the sidebar hides behind a toggle.
   const mason = card.locator("[data-test='heartbeat-launcher'][data-agent='mason']");
   await expect(mason.locator("button[data-clip='full-cycle']")).toBeVisible();
-  // Alex's chip: ship-clock, the typing-to-shipping benchmark.
+  // ship-clock, the typing-to-shipping benchmark, is Mason's since 2026-10-28.
+  await expect(mason.locator("button[data-clip='ship-clock']")).toBeVisible();
+  // Alex's chip: focus-session, the Sales/Marketing seat's epic with Alex McRitchie.
   const alex = card.locator("[data-test='heartbeat-launcher'][data-agent='alex']");
-  await expect(alex.locator("button[data-clip='ship-clock']")).toBeVisible();
+  await expect(alex.locator("button[data-clip='focus-session']")).toBeVisible();
 
   // Turf Monster owns the live score watch.
   const turf = card.locator("[data-test='heartbeat-launcher'][data-agent='turf-monster']");

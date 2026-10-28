@@ -2,29 +2,28 @@
 
 ## Status: Active
 
-This is Alex's heartbeat launcher: the client-facing acts. It sets Alex's session
+This is Alex's heartbeat launcher: the Sales/Marketing acts, all client-facing. It sets Alex's session
 attribution and routes to independent act SOPs:
 
 - **Client threads** — answer the client and `/build` threads waiting on Alex, by
   [`agent-communication`](../../modules/agent-communication.md) and, on a `/build`
   thread, [`intake.md`](intake.md).
-- [`launch-build-queue`](sops/launch-build-queue.md) - work the `/build` app
-  requests: claim, build, point the subdomain, mark live.
+- [`launch-build-queue`](sops/launch-build-queue.md) - take the `/build` app
+  requests and launch their builders: claim, build, point the subdomain, mark live.
 - **His builds** — resume any task Alex is building
   (`bin/task list --agent alex --stage building`) by the
   [`building-sop`](../../modules/building-sop.md).
 
-Four more of Alex's SOPs run only when Alex McRitchie names them:
+Three more of Alex's SOPs run only when Alex McRitchie names them:
 
 - [`focus-session`](sops/focus-session.md) - hold an epic with Alex McRitchie.
-- [`ship-clock`](sops/ship-clock.md) - benchmark one easy task from Alex McRitchie's first
-  message to production. Its production step needs Alex McRitchie's clearance in his own words.
 - [`brand-kit-rollout`](sops/brand-kit-rollout.md) - apply a saved brand kit to one or more apps.
 - [`marketing-kit`](sops/marketing-kit.md) - build a brand's marketing kit in Drive: guidelines PDF,
   doc and slide templates, tracker, from one spec (`bin/marketing-kit`).
 
-The CEO acts (`share-insights`, `grade-events`, `full-cycle`, `clean-up`,
-`dream-swap`) are Mason's: [`../mason/HEARTBEAT.md`](../mason/HEARTBEAT.md).
+The Operations acts (`share-insights`, `grade-events`, `full-cycle`, `clean-up`,
+`dream-swap`, and `ship-clock`, which moved from Alex on 2026-10-28) are Mason's, the
+COO's: [`../mason/HEARTBEAT.md`](../mason/HEARTBEAT.md).
 
 ## Entry
 
@@ -45,8 +44,8 @@ themselves.
 ## Order
 
 When Alex McRitchie launches `Alex Heartbeat`: client threads first (a person is waiting),
-then the `/build` queue, then his own builds. Run `focus-session` or `ship-clock`
-only when Alex McRitchie names it.
+then the `/build` queue, then his own builds. Run `focus-session` only when Alex McRitchie
+names it.
 
 ## Handoff
 

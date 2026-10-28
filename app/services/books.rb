@@ -3,7 +3,7 @@
 # The month-close bookkeeping (task studio-books-month-close). Statements go in
 # through Books::Intake, the ledger lives in book_entries, and Books::Close
 # writes each month's Sheet and PDF to the entity's Drive.
-# SOP: docs/agents/modules/close-the-month.md. Operator CLI: bin/books.
+# SOP: docs/agents/agents/mack/sops/close-the-month.md. Operator CLI: bin/books.
 module Books
   module_function
 

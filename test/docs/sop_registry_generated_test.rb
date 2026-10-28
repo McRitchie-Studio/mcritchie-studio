@@ -35,6 +35,31 @@ class SopRegistryGeneratedTest < ActiveSupport::TestCase
                     "| `clean-up` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |"
   end
 
+  # [integration] The accountability chart (rulings 2026-10-28) moved two SOPs: the
+  # month close to Mack, the CFO, and ship-clock to Mason, the COO. The generator, the
+  # committed table (installed as AGENTS.md) and each seat's chart owner agree.
+  test "[integration] the registry names mack for close-the-month and mason for ship-clock, as the chart does" do
+    rows = SopRegistry.entries(ROOT).to_h { |e| [e.invocation, e] }
+    table = Rails.root.join(SopRegistry::REGISTRY_PATH).read
+    chart = AccountabilityChart.load
+
+    {
+      "close-the-month" => ["Mack", "docs/agents/agents/mack/sops/close-the-month.md", "finance-admin", "mack"],
+      "ship-clock" => ["Mason", "docs/agents/agents/mason/sops/ship-clock.md", "operations", "mason"],
+      "Mack Heartbeat" => ["Mack", "docs/agents/agents/mack/HEARTBEAT.md", "finance-admin", "mack"]
+    }.each do |invocation, (owner, path, seat, soul)|
+      row = rows.fetch(invocation) { flunk "`#{invocation}` is not in the SOP registry" }
+      assert_equal [owner, path], [row.owner, row.path]
+      assert_path_exists Rails.root.join(path)
+      assert_includes table, "| `#{invocation}` | #{owner} | `mcritchie-studio/#{path}` |"
+      assert_equal soul, chart.seat(seat).owner, "the #{seat} seat's owner holds #{invocation}"
+    end
+    refute_includes table, "docs/agents/modules/close-the-month.md", "the shared copy is gone"
+    refute_includes table, "docs/agents/agents/alex/sops/ship-clock.md", "ship-clock left Alex"
+    assert_match(/close-the-month.*\bon the 5th\b/m, Rails.root.join("docs/agents/agents/mack/HEARTBEAT.md").read,
+                 "Mack's heartbeat runs the monthly close on the 5th")
+  end
+
   test "[unit] a soul's files register by location, a module only by its marker" do
     with_tree(
       "agents/turf_monster/HEARTBEAT.md" => "# Turf Monster Heartbeat\n",

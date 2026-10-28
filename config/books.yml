@@ -1,4 +1,4 @@
-# The books the month close keeps (Books::Config; SOP docs/agents/modules/close-the-month.md).
+# The books the month close keeps (Books::Config; SOP docs/agents/agents/mack/sops/close-the-month.md).
 #
 # One entry per entity. Adding East 49th later is another entry here, not new
 # code. Commercial Welding keeps its own books.

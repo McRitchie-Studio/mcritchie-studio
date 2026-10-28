@@ -5,7 +5,7 @@
 # entity's Drive Inbox, answer the lines no rule could classify, and write each
 # month's Sheet and PDF to Drive. One `heroku run` per call. The logic is in
 # bin/lib/books_cli.rb (local half) and app/services/books/export.rb (the dyno
-# half). SOP: docs/agents/modules/close-the-month.md.
+# half). SOP: docs/agents/agents/mack/sops/close-the-month.md.
 #
 #   bin/books setup|status|unclassified <entity>
 #   bin/books intake <entity> [--file PDF ...] --by WHO

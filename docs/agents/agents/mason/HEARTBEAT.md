@@ -2,7 +2,7 @@
 
 ## Status: Active
 
-This is Mason's heartbeat launcher: the CEO acts. It sets Mason's session
+This is Mason's heartbeat launcher: the COO acts (Operations). It sets Mason's session
 attribution and routes to independent act SOPs:
 
 - [`share-insights`](sops/share-insights.md) - publish the banked insight bank to
@@ -10,13 +10,16 @@ attribution and routes to independent act SOPs:
 - [`full-cycle`](sops/full-cycle.md) - run review, QA deploy, and production
   deploy with explicit ship authority.
 
-Two more of Mason's SOPs run only when Alex McRitchie names them:
-[`clean-up`](sops/clean-up.md) (drive the whole pipeline to zero open tasks) and
+Three more of Mason's SOPs run only when Alex McRitchie names them:
+[`clean-up`](sops/clean-up.md) (drive the whole pipeline to zero open tasks),
 [`dream-swap`](sops/dream-swap.md) (print the dream cards and record Alex McRitchie's
-sign-offs for every soul).
+sign-offs for every soul) and [`ship-clock`](sops/ship-clock.md) (benchmark one easy
+task from Alex McRitchie's first message to production; its production step needs
+his clearance in his own words). `ship-clock` moved to Mason from Alex on 2026-10-28,
+with DevOps, when the accountability chart made Mason the COO.
 
-The client-facing acts (client threads, the `/build` queue, `focus-session`,
-`ship-clock`) are Alex's: [`../alex/HEARTBEAT.md`](../alex/HEARTBEAT.md).
+The client-facing acts (client threads, the `/build` queue, `focus-session`) are
+Alex's, the Sales/Marketing seat: [`../alex/HEARTBEAT.md`](../alex/HEARTBEAT.md).
 
 Grading is no longer a heartbeat act. Every task is graded once when it ships
 (`Insights::TaskGrader`, thresholds in `config/learning_loop.yml`), and a

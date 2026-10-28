@@ -23,12 +23,15 @@ excluding the author set the board derives from GitHub.
 ## Who does what
 
 Souls live at `docs/agents/agents/<slug>/` (`role.md`, `soul.md`, SOPs). Alex McRitchie is
-the human owner.
+the human owner: the Visionary and CEO on the accountability chart
+(`config/accountability_chart.yml`), with the orchestrating session as the
+Integrator (worn as the Pokémon soul) and three heads under it: Alex
+(Sales/Marketing), Mason (Operations, COO) and Mack (Finance/Admin, CFO).
 
 | Soul | Seat |
 |------|------|
 | Pokémon | The general builder. Every task gets its own mascot; it builds the whole task to `submitted` |
-| Mason | CEO: orchestrator; admin with Steffon; the documentation review light; grades activities |
+| Mason | COO (Operations): orchestrator; admin with Steffon; the documentation review light; grades activities |
 | Carl | Lead Architect; the standing primary reviewer on every code PR; merges into `accepted` |
 | Shannon | UI review light |
 | Jasper | On-chain review light |
@@ -39,8 +42,8 @@ the human owner.
 | Tywin | The Cyvasse app's operator and admin; internal, holds the keys |
 | Hank | The Commercial Welding business agent; not yet launched |
 | Rex | Marketing strategy (CMO) |
-| Alex | Fractional CTO and client builder: focus sessions, the `/build` queue, `ship-clock`; brand voice and launches; Worker class |
-| Mack | General worker |
+| Alex | Sales/Marketing: clients, focus sessions, the `/build` queue, client launches; brand voice; Worker class |
+| Mack | CFO (Finance/Admin): the books and the month close, reports, the financial watchdog |
 
 The light for a PR is picked by domain fit from `{shannon, jasper, steffon, mason}`
 with a per-task seeded tiebreak (`app/services/reviewer_selector.rb`); the QA owner

@@ -12,7 +12,7 @@ folder in its own domain's Drive: `studio` (McRitchie Studio LLC, in
 `team@mcritchie.industries`'s Drive, added 2026-10-28). The command runs on demand,
 with a reminder on the 5th.
 
-This SOP stands alone; every command is inline. Any agent may run it. Alex McRitchie
+This SOP stands alone; every command is inline. It is Mack's, the CFO (moved from the shared modules on 2026-10-28 by the accountability chart), and his heartbeat runs it on the 5th; any agent may still run it. Alex McRitchie
 answers what the bank statement cannot: what a wire was for, or whether a deposit
 was revenue. **The agent never guesses a classification.**
 
