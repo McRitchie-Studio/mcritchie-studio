@@ -182,6 +182,23 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "true", out, "a desk's copied .env.development must not hold its teardown"
   end
 
+  # The npm script guard's .npmrc is written by `new` (on a resume, after the cut), so it
+  # never holds a teardown; a .npmrc the builder wrote does.
+  def test_the_script_guard_npmrc_is_not_held_as_work_but_a_hand_written_one_is
+    Dir.mktmpdir do |root|
+      _primary, desk = node_trees(root)
+      out = run_in_script(<<~RUBY)
+        File.write(File.join(#{desk.inspect}, ".npmrc"), DeskNodeModules::NPMRC_MARK + "\\nscript-shell=/x\\n")
+        own = ignored_work_paths(#{desk.inspect})
+        File.write(File.join(#{desk.inspect}, ".npmrc"), "registry=https://example.invalid/\\n")
+        print [own, ignored_work_paths(#{desk.inspect})].inspect
+      RUBY
+      own, hand = eval(out) # rubocop:disable Security/Eval -- the child prints its own Array#inspect
+      refute_includes own, ".npmrc"
+      assert_includes hand, ".npmrc"
+    end
+  end
+
   # --- allocate_port: reserved_ports are skipped, not just live listeners ------
 
   def test_allocate_port_skips_reserved_ports

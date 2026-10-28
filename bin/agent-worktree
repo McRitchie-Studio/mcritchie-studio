@@ -2751,6 +2751,9 @@ def ignored_work_paths(dir)
   out.lines.map(&:chomp).reject(&:empty?).reject do |path|
     bare = path.chomp("/")
     IGNORED_TOOL_FILES.include?(bare) ||
+      # The npm script guard's .npmrc, which `new` writes when it links node_modules
+      # (a resume can write it after the cut); a .npmrc of the builder's own still holds.
+      (bare == DeskNodeModules::NPMRC && DeskNodeModules.own_npmrc?(File.join(dir, bare))) ||
       IGNORED_REGENERABLE_FILES.include?(File.basename(bare)) ||
       IGNORED_REGENERABLE_DIRS.any? { |root| bare == root || bare.start_with?("#{root}/") } ||
       File.basename(bare) == ".DS_Store"
