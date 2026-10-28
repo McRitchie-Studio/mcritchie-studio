@@ -82,7 +82,7 @@ pages:
   # Two dashboards, two names: /dashboard is the studio overview, /admin/dashboard
   # is the site's users and request logs.
   dashboard:      { page: "dashboard#index",      audience: admin, label: Studio dashboard, emoji: "📊", hover_emoji: "📈", desc: Overview + activity }
-  agents:         { page: "agents#index",         audience: admin, label: Agents, emoji: "🦞", hover_emoji: "🤝", desc: Meet the McRitchie agents }
+  agents:         { page: "agents#index",         audience: admin, label: Agents, emoji: "🦞", hover_emoji: "🤝", desc: "Agents and pending setups (Discord bots and the like)" }
   builders:       { page: "builders#index",       audience: admin, label: Builders, emoji: "🏗️", hover_emoji: "🚀", desc: Builder roster + commit pace }
   tasks:          { page: "tasks#index",          audience: admin, label: Tasks, emoji: "✅", hover_emoji: "🚦", desc: Task board }
   news_index:     { page: "news#index",           audience: admin, label: News, emoji: "📰", hover_emoji: "🔎", desc: News pipeline }

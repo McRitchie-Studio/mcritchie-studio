@@ -160,4 +160,13 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
     assert_response :redirect
     assert_equal "pending", setup.reload.status
   end
+
+  # Alex McRitchie 2026-10-28: "is a link in the admin sidebar? That's important so I can find this page".
+  test "[integration] the admin sidebar links the agents page and names its pending setups" do
+    page = Navigation.registry.page(:agents)
+    assert_equal "agents#index", page.action_id
+    assert_match(/pending setups/, page.desc)
+    assert(Navigation.registry.sidebar("general").any? { |section| section.pages.map(&:key).include?("agents") },
+           "the Studio section lists the agents page")
+  end
 end
