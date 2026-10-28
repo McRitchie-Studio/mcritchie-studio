@@ -30,7 +30,7 @@
     <%= form_with url: agent_setup_path(setup), method: :patch, scope: :agent_setup, class: "flex items-stretch gap-2 min-w-0", data: { test: "discord-app-id-form" } do |f| %>
       <%= f.label :application_id, "Application ID", class: "sr-only", for: "agent-setup-#{setup.id}-app-id" %>
       <%= f.text_field :application_id, value: app_id, id: "agent-setup-#{setup.id}-app-id", inputmode: "numeric", autocomplete: "off",
-                       placeholder: "Application ID (17 to 20 digits)", pattern: "[0-9]{17,20}",
+                       placeholder: "Application ID", pattern: "[0-9]{17,20}",
                        class: "input-field w-full min-w-0 font-mono text-sm" %>
       <%= f.submit app_id ? "Update" : "Save", class: "btn btn-neutral btn-sm shrink-0" %>
     <% end %>
