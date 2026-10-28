@@ -38,6 +38,10 @@ was revenue. **The agent never guesses a classification.**
   me". `bin/books setup studio` creates the tree, shares it, and prints the links.
   It is safe to re-run.
 
+  Each entity has its own folder of the same shape. McRitchie Industries' is
+  `McRitchie Industries Books/`, in `team@mcritchie.industries`'s Drive, shared with
+  the same `alex@mcritchie.studio`; `bin/books setup industries` creates it.
+
   **Never create these folders by hand.** Under the `drive.file` scope, the hub can
   write only into folders it made itself. **Never point `drive_subject` at a
   mailbox** such as `alex@`: a mailbox opens mail, never Drive, and every
