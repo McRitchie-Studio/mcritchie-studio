@@ -82,4 +82,10 @@ class AgentSetupTest < ActiveSupport::TestCase
     setup.status = "lost"
     refute setup.valid?
   end
+
+  test "[unit] the status CHECK holds exactly AgentSetup::STATUSES, so a write that skips validations is refused" do
+    setup = open_setup
+    AgentSetup::STATUSES.each { |status| setup.update_column(:status, status) }
+    assert_raises(ActiveRecord::StatementInvalid) { setup.update_column(:status, "lost") }
+  end
 end

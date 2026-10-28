@@ -10,7 +10,7 @@
   <h5 class="font-semibold text-heading">Create the application</h5>
   <p class="text-secondary">New Application, named exactly as below, then upload the avatar as its App Icon. Copy the Application ID from General Information and save it here.</p>
   <div class="flex flex-wrap gap-2">
-    <%= link_to "Open the Developer Portal", kit::PORTAL_URL, target: "_blank", rel: "noopener noreferrer", class: external, data: { test: "discord-portal-link" } %>
+    <%= safe_link_to "Open the Developer Portal", kit::PORTAL_URL, target: "_blank", rel: "noopener noreferrer", class: external, data: { test: "discord-portal-link" } %>
     <% if (avatar = kit.avatar_path(setup)) %>
       <%# The href is the hub's own WebP; the click saves it as a 1024px PNG (app/javascript/agent_setups.js). %>
       <a href="<%= safe_image_src(avatar) %>" download="<%= setup.agent_slug %>.png" data-filename="<%= setup.agent_slug %>.png"
