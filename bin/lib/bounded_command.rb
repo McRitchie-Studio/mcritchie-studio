@@ -42,6 +42,21 @@ module BoundedCommand
     def success?
       !timed_out? && !status.nil? && status.success?
     end
+
+    # Process::Status's readers, so a Result stands in for the status an Open3
+    # caller used to read (`status.exitstatus`, `status.termsig`).
+    def exitstatus
+      status && status.exitstatus
+    end
+    def termsig
+      status && status.termsig
+    end
+    def signaled?
+      !status.nil? && status.signaled?
+    end
+    def pid
+      status && status.pid
+    end
   end
 
   module_function
@@ -49,7 +64,9 @@ module BoundedCommand
   # +env+ is merged into the child's environment, as IO.popen's first argument.
   # +argv+ is the command and its arguments; never run through a shell.
   # Remaining options go to Process.spawn (err:, chdir:, ...).
-  def run(env, argv, deadline: DEFAULT_DEADLINE, pgroup: false, **spawn_opts)
+  # +stream+ is an IO each chunk of stdout is also written to as it arrives, so
+  # a long command (a deploy, a suite) still prints live while it is bounded.
+  def run(env, argv, deadline: DEFAULT_DEADLINE, pgroup: false, stream: nil, **spawn_opts)
     argv = Array(argv).map(&:to_s)
     reader, writer = IO.pipe
     opts = spawn_opts.merge(out: writer)
@@ -63,10 +80,33 @@ module BoundedCommand
     ensure
       writer.close unless writer.closed?
     end
-    collect(pid, reader, deadline.to_f, pgroup)
+    collect(pid, reader, deadline.to_f, pgroup, stream)
   end
 
-  def collect(pid, reader, deadline, pgroup)
+  # Open3.capture2e's shape, bounded: [stdout+stderr, Result]. The Result
+  # answers success?/exitstatus like the Process::Status it replaces. The child
+  # runs in its own process group (killed whole at the deadline) with stdin on
+  # /dev/null: a child in a background group that read the terminal would stop
+  # on SIGTTIN, and a release step has nothing to type into it.
+  def capture2e(env, *argv, deadline:, pgroup: true, **spawn_opts)
+    spawn_opts = { in: File::NULL }.merge(spawn_opts)
+    result = run(env, argv, deadline: deadline, pgroup: pgroup, err: [ :child, :out ], **spawn_opts)
+    [ result.out, result ]
+  end
+
+  # Open3.capture3's shape, bounded: [stdout, stderr, Result]. stderr goes to a
+  # temporary file rather than a second pipe, so one non-blocking reader serves.
+  def capture3(env, *argv, deadline:, pgroup: true, **spawn_opts)
+    require "tempfile"
+    Tempfile.create("bounded-stderr") do |err|
+      spawn_opts = { in: File::NULL }.merge(spawn_opts)
+      result = run(env, argv, deadline: deadline, pgroup: pgroup, err: err, **spawn_opts)
+      err.rewind
+      [ result.out, err.read.to_s.force_encoding(Encoding.default_external), result ]
+    end
+  end
+
+  def collect(pid, reader, deadline, pgroup, stream = nil)
     buf = +""
     limit = now + deadline
     status = nil
@@ -81,7 +121,7 @@ module BoundedCommand
       return finish(buf, kill(pid, pgroup), true) if now >= limit
 
       wait = status ? DRAIN_GRACE : [ limit - now, 0.25 ].min
-      eof = read_some(reader, buf, wait) if !eof && wait.positive?
+      eof = read_some(reader, buf, wait, stream) if !eof && wait.positive?
       sleep 0.02 if eof && !status
     end
     finish(buf, status, false)
@@ -95,14 +135,26 @@ module BoundedCommand
   end
 
   # true at end of file.
-  def read_some(reader, buf, wait)
+  def read_some(reader, buf, wait, stream = nil)
     return false unless reader.wait_readable(wait)
 
     chunk = reader.read_nonblock(CHUNK, exception: false)
     return true if chunk.nil?
+    return false if chunk == :wait_readable
 
-    buf << chunk unless chunk == :wait_readable
+    buf << chunk
+    copy(stream, chunk)
     false
+  end
+
+  # A stream that cannot take the copy (a closed pipe) never costs the read.
+  def copy(stream, chunk)
+    return unless stream
+
+    stream.write(chunk.dup.force_encoding(Encoding.default_external))
+    stream.flush if stream.respond_to?(:flush)
+  rescue IOError, SystemCallError
+    nil
   end
 
   def kill(pid, pgroup)
