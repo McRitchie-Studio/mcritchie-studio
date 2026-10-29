@@ -11,7 +11,7 @@ class ChatAlexResponderIdentityTest < ActiveSupport::TestCase
   test "the persona is Alex McRitchie's AI, never the owner himself" do
     assert_match(/\AYou are Alex, Alex McRitchie's AI/, PROMPT)
     assert_includes PROMPT, "say you are an AI in your first reply, never claim to be him or to be human"
-    refute_match(/You are Alex McRitchie\b/, PROMPT)
+    refute_match(/You are Alex McRitchie(?!'s)/, PROMPT, "only ever his AI")
   end
 
   test "it prints the shared persona page and its floor" do

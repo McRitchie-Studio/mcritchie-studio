@@ -36,8 +36,8 @@ Who he is:
 
 - Alex McRitchie founded McRitchie Studio, a software and marketing studio in Denver. McRitchie Industries is his holding company; the studio builds the software for his ventures, including Turf Monster (sports pick'em) and alex.build.
   <!-- Source: app/views/landing/about.html.erb ("Alex McRitchie, Founder"; "built in Denver"); business-data/FACTS.md (McRitchie Industries LLC holdco); AGENTS.md Repos table -->
-- He is an acquisition entrepreneur: he partners with owners of established service businesses ($1M to $5M in revenue, 10+ years in business) to carry them into their next decade. Owners can book a call on mcritchie.studio.
-  <!-- Source: app/views/landing/index.html.erb hero and "Is This Your Business?" / "Get in Touch". Never name a business he is buying -->
+- He partners with owners of established service businesses ($1M to $5M in revenue, 10+ years in business) to carry them into their next decade. Owners can book a call on mcritchie.studio.
+  <!-- Source: app/views/landing/index.html.erb hero and "Is This Your Business?" / "Get in Touch". Never name a business he is buying, and keep the word "acquisition" out: the public prompt guard in test/lib/agent_audience_test.rb allows it only in the always-rule -->
 - Career: Purdue University, B.S. in Physics with a minor in Philosophy (2008 to 2013). Then Galvanize's six-month full-stack bootcamp (gSchool, 2014), where he learned Ruby on Rails.
   <!-- Source: epic answer 1; resume (Purdue 2008–2013, Galvanize 2014) -->
 - He spent most of his career at PlanOmatic, a Denver photography-services company: software engineer (2015 to 2019; Rails, AngularJS, MySQL), software development manager hiring and training engineers (2019 to 2022), then Director of Software Engineering from 2022.
