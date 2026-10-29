@@ -103,7 +103,32 @@ and weakens nothing.
   guard refuses that at prepare and again before any deploy: a consumer may lock a
   registered gem's version above the one on that gem's `main` only when this release
   carries the gem at exactly that version (`Release::GemFlow.unshipped_final_findings`).
-  This replaces, for finals, what the prerelease refusal did for candidates.
+  This replaces, for finals, what the prerelease refusal did for candidates. An
+  ejected gem burns nothing yet: the next release may carry the same tree and reuse
+  `X`.
+
+**Recording a burn.** The above-main read stops working once `X+1` ships: `X` then
+sits below `main` and passes. So a burn is recorded while it is still visible. When
+prepare carries a gem at `N` and the gem's `v*` tags hold a version above the one on
+its `main` and below `N`, that version can never ship (versions only move forward), and
+prepare tags it `burned-v<version>` in the gem repo, on the commit its `v` tag names,
+before anything publishes (`Release::GemFlow.newly_burned`, `record_burned_finals!`).
+The prefix never matches the `v*` reads of allocation and the stranded-work guard.
+Every later prepare and every pre-deploy check fetches the tags and refuses any lock
+naming a burned version, wherever it sits against `main`. A tag that cannot be pushed
+stops prepare with nothing published.
+
+**The RubyGems listing cannot be read.** `rubygems_versions` fails closed: a 200 is
+the live list, a 404 is a gem never published, and anything else (a timeout, a 5xx, a
+body that is not a list) stops the run with `RubyGems listing unreadable`
+(`Release::GemFlow.listing`). Before this, an unreadable listing read as empty, prepare
+tried to publish a version RubyGems already held, and RubyGems' refusal was reported as
+a yank with "advance the version file", which burned a number for a network blip.
+
+**The re-run that reuses a live `X`** builds this tree's artifact (never pushed),
+compares its contents with the served `.gem` file by file, and refuses on any
+difference; then it pushes the `vX` tag if a stopped run never did
+(`verify_reused_final!`, `ensure_release_tag!`).
 
 **Yank `X`, or leave it? Leave it.**
 
@@ -128,15 +153,23 @@ is the same tree `accepted` already locks, so it adds no new exposure.
 ## What changed in the code
 
 - `Release::GemFlow` (new, pure): which flow runs (`RELEASE_GEM_FLOW=candidate`
-  restores A for one release as a rollback lever), prepare's action for one gem, and
-  the unshipped-final findings.
-- `bin/release prepare`: phase 2 publishes the final through `publish_gem` (the same
-  build, push, `vX` tag and served-checksum read the ship used), then the consumer
-  lock bump commits `X`. The candidate entry-point check does not run, because no
-  candidate is published.
-- `bin/release ship`: unchanged code. With `X` live and every consumer locking it,
-  `ship_gem` skips the push, `repin_consumers` finds nothing to re-lock, and the
-  re-lock gate gates nothing. A release prepared under A still ships under A.
+  restores A for one release as a rollback lever), prepare's action for one gem, the
+  unshipped-final and burned-version findings, the burn record, and the fail-closed
+  read of the RubyGems listing.
+- `bin/release prepare`: the stray-lock refusal (a prerelease nobody is testing, a
+  final nobody is shipping, a burned version) runs on `origin/release` BEFORE any
+  publish, so a refusal publishes nothing; a lock on a gem this release carries, in a
+  consumer whose `Gemfile` declares it, is left to the consumer lock bump. Then the
+  burn record, then phase 2 publishes the final through `publish_gem` (the same build,
+  push, `vX` tag and served-checksum read the ship used), then the consumer lock bump
+  commits `X`, and the same refusal runs again over every lock. The candidate
+  entry-point check does not run, because no candidate is published.
+- `bin/release ship`: with `X` live and every consumer locking it, `ship_gem` skips
+  the push, `repin_consumers` finds nothing to re-lock, and the re-lock gate gates
+  nothing. A release prepared under A still ships under A. Two reads changed under it
+  (task `gem-flow-hardening`): the pre-deploy check also refuses a lock naming a
+  burned version, and an unreadable RubyGems listing stops the ship (in its
+  what's-live line and in `ship_gem`) instead of reading as "not published".
 - Where the shorter ship shows: no surface carried a gem-release estimate that
   assumed the re-lock. `bin/release status` prints the ladder verdict and program
   drift only. The board's release summary (`app/views/tasks/_release_summary.html.erb`)
