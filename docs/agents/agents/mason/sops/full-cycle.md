@@ -46,13 +46,41 @@ Refresh intake:
 bin/qa-intake --refresh --apps mcritchie-studio,turf-monster,rolio
 ```
 
-Run the three atoms in sequence:
+Review first, then hand the rest of the release to ONE command:
 
 ```bash
 # pr-review atom: review submitted PRs to reviewed or blocked
-bin/release prepare --yes
-bin/release ship --yes
+bin/release cycle --clearance "<Alex McRitchie's words>" --yes --wait-for-1password
 ```
+
+`bin/release cycle` is the procedure for steps 2 to 4 below. It runs `prepare` →
+QA verify (each QA app the release carries answers 200 on `/up` and `/`; a Turf
+release has a green devnet gauntlet on the record, or prepare runs one) → `ship
+--mode cleared` with his words → prod verify (`/up` and `/` again) → `archive`,
+one line per act with its elapsed time and the DevOps estimate's ETA. It owns the
+plumbing the hand-rolled scratch scripts carried: OP_CACHE=false, the AGENT GitHub
+token for prepare and archive, the admin 1Password token and DEPLOYER token for
+ship (minted fresh for every act, never left empty), a one-hour CI poll budget, and
+`caffeinate` tied to its own pid. It re-runs a step ONCE on a transient GitHub
+network failure (`Failed to connect to github.com`, `Timeout was reached`, `Could
+not resolve host`) or on prepare's stale-tree refusal (a newcomer landed on
+`accepted`), and re-runs prepare once when ship refuses for a missing gauntlet.
+
+It enters at the board's own stage, so **re-running it is the recovery** for an
+interruption: none or `assembling` → prepare; `assembled` → QA verify; shipped
+with an archive owed → prod verify. It refuses without `--clearance` (exit 2) and
+stands down when another session holds the release claim (exit 10). Otherwise its
+exit is the stopped act's: 3 QA not green, 4 gauntlet red, 5 a URL did not answer
+200, 9 a token could not be minted. On 3 or 4, the per-atom recovery below applies.
+The atoms remain callable one by one (`bin/release prepare --yes`, `bin/release
+ship --mode cleared --clearance "…" --yes`, `bin/release archive --yes`) when you
+need to stop between them.
+
+**The cycle's prepare is always bare: it sweeps EVERY reviewed task, and takes no
+`--task`.** Its retries and gauntlet re-runs are bare too, so work that reaches
+`reviewed` mid-run rides under the same clearance; the cycle names the release and
+its repos on the line before the ship. When Alex McRitchie scoped the release ("ship
+the two"), run the atoms with `--task` instead.
 
 **Posture per atom — delegate the READS, direct-drive the MUTATIONS.** Any op that
 MUTATES shared state across many minutes is DIRECT-DRIVEN by this orchestrating

@@ -26,7 +26,8 @@ on `/logos/<brand>`, in the same task.
 - **The kit is saved on production.** Its Icon, Navbar and Stacked choices are
   what Alex McRitchie wants (the Kit card on `/logos/<brand>` shows them). The
   kit's version is its `saved_at`; a later save turns every app's link to Kit
-  changed.
+  changed. A redraw without a save (a logo-library or brand-style change) does
+  not; see Redistributing below.
 - **The link exists, or the rollout will create it.** `/logos` lists the apps a
   kit feeds. A new kit-to-app pairing is created by step 7.
 - **The app has its hub row.** `logos:applied` links a kit to an app by its
@@ -119,6 +120,12 @@ second `logos:install` rewrites only the files that changed, so the diff is the
 change itself; the rasters of step 5 are drawn from the SVGs and must be redrawn
 too, even when only a colour moved. An app is Applied again only once its live
 `kit.json` names the new `saved_at`.
+
+A change to the logo library or a brand's style (new drawings, the same saved
+choices) moves no `saved_at`, so no app turns Kit changed: task
+turf-two-lines-and-welding-blue redrew Commercial Welding's dark helmet and v1's
+name, and its apps still read Applied. After such a change, save the kit again
+on `/logos/<brand>` to flag its apps, or run this SOP for them by hand.
 
 ## Done when
 

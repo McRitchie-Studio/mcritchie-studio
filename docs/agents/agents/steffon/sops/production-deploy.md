@@ -38,6 +38,14 @@ You are **expected to hold both**; an absent one is this machine's setup gap. Re
 **`source ~/.zprofile.admin`** (yours), or, on a machine that never had one,
 **`bin/setup-1pass-token --admin`** once (Alex McRitchie's: it reads his clipboard).
 
+**The one-command path: `bin/release cycle`.** When Alex McRitchie has cleared the
+whole release in chat, run `bin/release cycle --clearance "<his words>" --yes
+--wait-for-1password` from the primary instead of this SOP's steps by hand. It runs
+this ship (`--mode cleared`, after QA verify, then prod verify and the archive) as one act of a resumable state machine and sets up the credentials above
+itself (the admin 1Password token from `~/.zprofile.admin`, `GH_APP_ITEM=github.mcritchie-admin`, a freshly minted deployer `GH_TOKEN`), so none of the exports here are needed for it. Re-running it resumes
+from the board's stage. The full description and exit codes are in
+[`full-cycle.md`](../../mason/sops/full-cycle.md#procedure).
+
 Run from the McRitchie Studio primary checkout, **under the deployer identity**:
 
 ```bash
@@ -579,6 +587,14 @@ and hand it off. An INTERRUPTION has none: **re-run `bin/release ship --yes`**.
 ## Exit Seam
 
 The release is `shipped` (members `merged: main`), or a no-op ("nothing to ship").
+A member whose own commit is not in the `main` the ship pushed for its repo is the
+exception: the ship prints `⚠ containment hold: <note>`, leaves it at its stage and
+comments the missing commit on its task. Ship it on a release whose `main` contains
+that commit; an unreadable check clears with `bin/release finalize <release>`.
+A hold that names a PR read failing on a stale or wrong PR URL: fix the URL
+(`bin/task update <slug> --pr-url-for <repo>=<url>`), then run `bin/release finalize
+<release>`. A held member's `merged` column can read `main` (stamped per repo at the
+fast-forward); its stage is the truth.
 Report slug, production SHA and URL, smoke result, and **the archive result,
 separately** ("nothing to archive" is a clean answer).
 

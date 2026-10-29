@@ -145,7 +145,27 @@ test("without Keep aspect ratio both sides are free, a dotted outline shows the 
 
 // Task logos-docs-and-rollout-cleanup: the card re-syncs whenever a logo image resizes (its ResizeObserver: the image
 // loading, the theme swapping light for dark), but the screen-reader summary is rewritten only when its text changes,
-// so a theme swap does not re-announce it.
+// so a theme swap does not re-announce it. Task logos-wrap-up-cleanup: the outline is knocked off the logo first, so
+// its return proves the re-sync ran, and the summary is read only after it.
+// An invalid custom side: the always-present status summary carries the error (a screen reader reads it), the visible
+// error line shows it without a second status role, and a valid side brings both back (task logos-wrap-up-cleanup).
+test("an invalid custom side is announced once in the summary, shown in the error line, and both recover", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto("/logos/studio");
+  const summary = card(page).locator("[data-test='download-summary']");
+  const error = card(page).locator("[data-test='download-error']");
+  await expect(summary).toHaveAttribute("role", "status");
+  await expect(error).not.toHaveAttribute("role", "status");
+  await card(page).locator("[data-test='download-custom-width']").fill("0");
+  await expect(error).toBeVisible();
+  await expect(error).toContainText("A custom side is a whole number of pixels");
+  await expect(summary).toHaveText(await error.textContent());
+  await card(page).locator("[data-test='download-custom-width']").fill("1000");
+  await expect(error).toBeHidden();
+  await expect(summary).toContainText("1000 ×");
+});
+
 test("a theme swap re-syncs the outline but leaves the unchanged summary alone", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await loginWithMagicLink(page, "alex@test.com");
@@ -161,12 +181,13 @@ test("a theme swap re-syncs the outline but leaves the unchanged summary alone",
     new MutationObserver((records) => { window.summaryWrites += records.length; })
       .observe(summary, { childList: true, characterData: true, subtree: true });
   });
+  await outline.evaluate((el) => { el.style.left = "-5000px"; }); // off the logo: only a re-sync puts it back
   await page.evaluate(() => document.documentElement.classList.add("dark")); // the dark image appears: the observer fires
   const logo = await page.locator("[data-test='logo-frame'] img:visible").first().boundingBox();
+  await expect.poll(async () => (await outline.boundingBox()).x).toBeGreaterThan(logo.x - 400); // the re-sync ran
   const box = await outline.boundingBox();
-  expect(box.x).toBeLessThanOrEqual(logo.x + 1); // still around the logo now shown
+  expect(box.x).toBeLessThanOrEqual(logo.x + 1); // around the logo now shown
   expect(box.x + box.width).toBeGreaterThanOrEqual(logo.x + logo.width - 1);
-  await page.waitForTimeout(500);
   expect(await page.evaluate(() => window.summaryWrites)).toBe(0);
   await card(page).locator("[data-test='download-custom-height']").fill("600"); // a real change is still written
   await expect.poll(() => page.evaluate(() => window.summaryWrites)).toBeGreaterThan(0);

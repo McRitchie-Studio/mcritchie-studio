@@ -183,6 +183,13 @@ function save(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
+// Writes a live status line only when its text changes (and, with hideWhenEmpty, shows or hides it only then): the
+// ResizeObserver re-syncs the card on every image resize, and a screen reader would otherwise hear the same line again.
+export function announce(el, text, { hideWhenEmpty = false } = {}) {
+  if (el.textContent !== text) el.textContent = text;
+  if (hideWhenEmpty && el.hidden !== (text === "")) el.hidden = text === "";
+}
+
 function wireCard(card) {
   if (card.dataset.logoDownloadWired) return;
   card.dataset.logoDownloadWired = "1";
@@ -201,9 +208,8 @@ function wireCard(card) {
   }
   let toneName = null;
   let tone = null;
-  // The live summary is written only when its text changes: the ResizeObserver re-syncs on every image resize, and
-  // a screen reader would otherwise hear the same line again.
-  const say = (text) => { if (summary.textContent !== text) summary.textContent = text; };
+  const say = (text) => announce(summary, text);
+  const warn = (text) => announce(error, text, { hideWhenEmpty: true });
 
   const sync = () => {
     const state = readCard(card);
@@ -219,17 +225,19 @@ function wireCard(card) {
     form.elements.keep_aspect.disabled = form.elements.size.value !== "custom"; // a standard size keeps the logo's shape
     link.href = tone.downloadUrl;
     link.setAttribute("aria-label", `Download ${png ? "PNG" : "SVG"}: ${tone.label}`);
-    error.hidden = true;
     placeOutline(png ? state : null);
     if (!png) {
+      warn("");
       say(tone.filename);
     } else if (state.size) {
       const shape = state.size.fit === "fill" ? "true aspect" : "fitted, centred";
+      warn("");
       say(`${pngFilename(tone.filename, state.size.width, state.size.height)} · ${state.size.width} × ${state.size.height} px, ${shape}, transparent`);
     } else {
-      error.textContent = `A custom side is a whole number of pixels, 1 to ${MAX_SIDE}, and the other side may not pass ${MAX_SIDE}.`;
-      error.hidden = false;
-      say(error.textContent);
+      // The summary is the one announcement (always present, so a screen reader reads it); the error line shows it.
+      const message = `A custom side is a whole number of pixels, 1 to ${MAX_SIDE}, and the other side may not pass ${MAX_SIDE}.`;
+      say(message);
+      warn(message);
     }
     return state;
   };
@@ -291,10 +299,7 @@ function wireCard(card) {
     link.setAttribute("aria-busy", "true");
     rasterise(state.tone.svg, state, browserDeps())
       .then((blob) => save(blob, pngFilename(state.tone.filename, state.size.width, state.size.height)))
-      .catch((failure) => {
-        error.textContent = `The PNG could not be drawn: ${failure.message}`;
-        error.hidden = false;
-      })
+      .catch((failure) => warn(`The PNG could not be drawn: ${failure.message}`))
       .finally(() => link.removeAttribute("aria-busy"));
   });
   sync();
@@ -346,8 +351,7 @@ export function rasterFilename(svgFilename, width, height, ext) {
 
 // What one table link would draw in `format`: { url, filename, mime, size, naturalWidth, naturalHeight, background }
 // once the SVG is read. A JPEG has no transparency, so it is always filled: with the link's data-background, the tone's
-// solid background (Logos::PngSizes::BACKGROUNDS). A PNG stays
-// transparent, as the card's default is.
+// solid background (Logos::PngSizes::BACKGROUNDS). A PNG stays transparent, as the brand page's card always is.
 export function rasterPlan(data, format, text) {
   const raster = RASTER_FORMATS[format];
   if (!raster) return null;

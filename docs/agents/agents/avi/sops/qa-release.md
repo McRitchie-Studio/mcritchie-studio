@@ -36,6 +36,14 @@ export GH_TOKEN=$(printf 'protocol=https\nhost=github.com\n\n' | \
   sed -n 's/^password=//p')
 ```
 
+**The one-command path: `bin/release cycle`.** When Alex McRitchie has cleared the
+whole release in chat, run `bin/release cycle --clearance "<his words>" --yes
+--wait-for-1password` from the primary instead of this SOP's steps by hand. It runs
+this sweep (`prepare`, then QA verify, the ship and the archive) as one act of a resumable state machine and sets up the credentials above
+itself (GH_APP_ITEM unset and a freshly minted agent `GH_TOKEN`), so none of the exports here are needed for it. Re-running it resumes
+from the board's stage. The full description and exit codes are in
+[`full-cycle.md`](../../mason/sops/full-cycle.md#procedure).
+
 **Do not export `GH_APP_ITEM` here**: a leftover ship-lane export
 (`github.mcritchie-admin`) mints the **ship App**, which has **no `pull_requests` grant**. On `Resource not accessible by
 integration`: `unset GH_APP_ITEM`, re-run the export, re-run `bin/release prepare`.
@@ -441,7 +449,15 @@ An abort leaves the same board state as an interruption. Each abort names its ca
 QA evidence for **every** repo it names (gems and the `qa_evidence: exempt` repos, turf-vault,
 cyvasse, dads-app, prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5 and search-position, excepted), logged as `[release-evidence] … landed nothing for <repo>`. The ship guards
 `shipped_shas` the same way, though `merged: "main"` still lands per repo. Get the
-missing repo onto the candidate, or drop it from the task.
+missing repo onto the candidate, or drop it from the task. The ship also checks each
+member's OWN commit: a member whose merge commit (or PR head) is not an ancestor of
+the `main` SHA the ship pushed for its repo keeps its stage (it is never stamped
+`shipped`) and gets a task comment naming the missing commit
+(`Release::MemberContainment`, recorded as the release's `ship_holds`). Its
+`merged` column may still read `main`: the ship stamps that per repo as each
+fast-forward lands, before the check runs, so read the stage, not `merged`. A member
+swept onto the release after the ship read its plan is held the same way, as
+unchecked, until `bin/release finalize <release>` checks it.
 
 ### Detecting an UNFINISHED release candidate
 

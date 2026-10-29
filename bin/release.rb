@@ -124,6 +124,16 @@
 #     Moves no ref: main keeps the release's code. Records a `rollback` release
 #     event and a red seal. Gems stay published. See `rollback` below.
 #
+#   bin/release cycle --clearance "<Alex McRitchie's words>" [--yes] [--wait-for-1password[=MINUTES]]
+#     The whole release as ONE resumable command (bin/lib/release_cycle.rb): prepare →
+#     QA verify (each QA app /up and / answer 200; a Turf release's devnet gauntlet on
+#     the record) → ship --mode cleared → prod verify → archive. Enters at the board's
+#     current stage, so a re-run resumes. Mints the agent token for prepare/archive and
+#     the deployer token for ship (fresh per act), keeps the Mac awake, re-runs a step
+#     once on a transient GitHub network failure or a stale-tree refusal, and re-runs
+#     prepare once when ship refuses for a missing gauntlet. Refuses without
+#     --clearance, and stands down (exit 10) when another session holds the claim.
+#
 #   bin/release archive [--prod] [--dry-run] [--yes]
 #     The DevOps loop's CONCLUSION (shipped → archived): archive every shipped
 #     task that ISN'T a member of the last shipped release (those members stay
@@ -187,6 +197,7 @@ require_relative "../app/models/release/gem_candidate"
 require_relative "../app/models/release/gem_flow"
 require_relative "../app/models/release/lock_drift"
 require_relative "../app/models/release/ship_sequence"
+require_relative "../app/models/release/member_containment"
 require_relative "../app/models/release/parallel_deploy"
 require_relative "../app/models/release/devnet_gauntlet"
 require_relative "../app/models/release/devnet_gauntlet_run"
@@ -336,6 +347,7 @@ require_relative "lib/cli_arg_guard"
 # machine saturated" LOCALLY, and only the second decides whether a peer may launch a
 # suite. Slice 4 of docs/agents/system/agent-presence.md.
 require_relative "lib/release_presence"
+require_relative "lib/release_cycle" # `bin/release cycle`: the whole release, resumable
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
@@ -6146,6 +6158,76 @@ def ship_evidence
   @ship_evidence ||= {}
 end
 
+# { slug => note } for every app-repo member whose OWN commit is not an ancestor of
+# what ship_evidence says that repo's `main` now is (Release::MemberContainment).
+# Written onto the release (record_ship_holds) in the same conductor call as the
+# shipped_shas, and Release#ship! leaves each one at its stage with a note naming
+# the commit. 2026-10-28: a concurrent ship pushed moms-app main to eb7655f, which
+# lacked moms-app-mail-from-team's merge d80098f, and stamped the member shipped.
+#
+# Gem groups are not asked: a gem publishes by version, and its consumers' code is
+# checked in their own app groups. A DRY run reads nothing and holds nothing.
+def ship_containment_holds(app_groups)
+  return {} if DRY
+
+  holds = Release::MemberContainment.holds(
+    groups: app_groups, main_shas: ship_evidence,
+    code_shas: ->(repo, member) { member_code_shas(repo, member) },
+    contains: lambda { |repo, sha, main_sha|
+      Release::MemberContainment.git_verdict(path: repo_path(repo), sha: sha, main_sha: main_sha, deadline: read_deadline)
+    }
+  )
+  holds.each_value { |note| say("  ⚠ containment hold: #{note}") }
+  say("  ✓ containment: every member's commit is in the main it shipped to") if holds.empty?
+  holds
+rescue StandardError => e
+  # Production is already deployed: a bug in the check must not abort the record
+  # step, and it must not wave members through either. Every app member is held
+  # as unproven, naming the error; `bin/release finalize` re-asks.
+  say("  ⚠ containment check FAILED (#{e.class}: #{e.message.to_s[0, 160]}) — holding every app member unstamped")
+  ship_checked_slugs(app_groups).to_h do |slug|
+    [slug, "#{slug}: the ship's containment check failed (#{e.class}: #{e.message.to_s[0, 120]}), so nothing " \
+           "proves its code is in the main this release shipped. Left unstamped; re-run `bin/release finalize`."]
+  end
+end
+
+# Every member slug the ship's plan snapshot covered, gem groups included: the
+# members the containment check gave a verdict (a gem member's verdict is its
+# exemption). Recorded as metadata["ship_checked"]; Release#ship! holds any live
+# member outside it, because it joined after this snapshot (Release#add reopens an
+# assembled release mid-ship — the 2026-10-28 incident's path).
+def ship_checked_slugs(groups)
+  Array(groups).flat_map { |g| Array(g["members"]).map { |m| m["slug"].to_s } }.reject(&:empty?).uniq
+end
+
+# The member's merge commit and PR head in `repo`, read from GitHub: the recorded
+# PR for that repo, else the merged PR whose head is the member's branch. Raises on
+# an unreadable gh call so MemberContainment records an honest "could not prove".
+# Bounded by the read deadline, and retried once with a fresh token on an auth
+# failure: a long ship outlives its ~1h token, and an expired one must not hold
+# every member as unknown.
+def member_code_shas(repo, member)
+  url = member.dig("pr_urls", repo).to_s
+  argv =
+    if url.empty?
+      branch = member["branch"].to_s.empty? ? "feat/#{member['slug']}" : member["branch"].to_s
+      nwo = repo_name_with_owner(repo)
+      ["gh", "pr", "list", *(nwo.empty? ? [] : ["--repo", nwo]), "--head", branch,
+       "--state", "merged", "--json", "mergeCommit,headRefOid", "--limit", "1"]
+    else
+      ["gh", "pr", "view", url, "--json", "mergeCommit,headRefOid"]
+    end
+  out, status = bounded_capture2e(*argv)
+  if !status.success? && GhAuthRetry.auth_failure?(out)
+    token = GhAuthRetry.mint
+    out, status = bounded_capture2e(*argv, env: gh_token_env(token)) if token
+  end
+  raise "#{argv[0, 3].join(' ')} #{url.empty? ? repo : url}: #{out.to_s.strip[0, 120]}" unless status.success?
+
+  json = JSON.parse(out)
+  Release::MemberContainment.shas_from_pr(url.empty? ? Array(json).first : json)
+end
+
 # After push_frozen_main advances a repo's `main`, re-baseline that repo's
 # persistent `accepted` integration branch onto the same frozen SHA. This retires
 # the manual post-ship chore the conductor has run by hand after every ship —
@@ -10275,6 +10357,11 @@ def ship
   # Best-effort per-member usage for the assembled→shipped flips, captured from
   # the conductor's LOCAL transcript (the flips run on prod, transcript-less).
   ship_usage = move_usage_map(repos.flat_map { |g| Array(g["members"]).map { |m| m["slug"] } }.compact.uniq)
+  # Commit-level evidence: which members' own commits are NOT in the main this run
+  # pushed (Release::MemberContainment). Read from git + GitHub here, recorded on
+  # the release beside shipped_shas, honoured by Release#ship!.
+  ship_holds = ship_containment_holds(app_groups)
+  ship_checked = ship_checked_slugs(repos)
   step("record: Release::Conductor.ship! + post_release_notes")
   # record_shipped_shas FIRST, in the same call: it is what each repo's `main`
   # actually landed, and Release#ship! refuses to stamp a member spanning a repo
@@ -10283,6 +10370,7 @@ def ship
   shipped = conductor(
     "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
     "Release::Conductor.record_shipped_shas(release: r, shas: #{ship_evidence.inspect}); " \
+    "Release::Conductor.record_ship_holds(release: r, holds: #{ship_holds.inspect}, checked: #{ship_checked.inspect}); " \
     "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: #{ship_usage.inspect}, member_pause: #{BOARD_FLIP_CADENCE}); " \
     "Release::DurationCache.refresh_recent!(limit: 3); " \
     "notes = Release::Conductor.post_release_notes(release: r); " \
@@ -10517,12 +10605,16 @@ def finalize(slug = nil)
     if pending.include?(:ship)
       deployed_sha = ship_sha[APP].to_s
       deployed_sha = git_capture("-C", repo_path(APP), "rev-parse", "origin/main").first.strip if deployed_sha.empty?
+      # The same commit-level check a live ship makes, against the main proven live.
+      ship_holds = ship_containment_holds(app_groups - not_live)
+      ship_checked = ship_checked_slugs(repos)
       step("record: Release::Conductor.ship! + DurationCache.refresh_recent!")
       # The live-on-prod verdict above IS this run's per-repo ship evidence — record
       # it before the member stamps read it (see the guard block).
       conductor(
         "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
         "Release::Conductor.record_shipped_shas(release: r, shas: #{ship_evidence.inspect}); " \
+        "Release::Conductor.record_ship_holds(release: r, holds: #{ship_holds.inspect}, checked: #{ship_checked.inspect}); " \
         "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: {}, member_pause: #{BOARD_FLIP_CADENCE}); " \
         "Release::DurationCache.refresh_recent!(limit: 3); " \
         "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7]}.to_json)"
@@ -11784,6 +11876,181 @@ def notes
   end
 end
 
+# --- bin/release cycle (bin/lib/release_cycle.rb) ----------------------------------
+# The whole release as one resumable command: prepare → QA verify → ship (--mode
+# cleared) → prod verify → archive. The state machine is ReleaseCycle::Runner, pure
+# and unit-tested with fake steps; this is its live wiring: one board read for the
+# stage, the claims and the ETA; each act as a `bin/release <step>` child with the
+# lane's credentials; and `curl` for the URLs.
+class ReleaseCycleDeps
+  MINT_DEADLINE = 120
+  ADMIN_PROFILE_DEADLINE = 30
+  # Lines of a step's output kept for classifying its failure.
+  TAIL_LINES = 400
+
+  def initialize(wait_for_1password: nil)
+    @wait = wait_for_1password
+  end
+
+  def now = Time.now
+
+  # The session the release claim is keyed by: ReleaseClaimCli#session_id's rule.
+  def session_id
+    explicit = ENV["RELEASE_CONDUCTOR_CLAIM_SESSION"].to_s.strip
+    explicit.empty? ? SessionIdentity.id(ENV).to_s : explicit
+  end
+
+  # ONE read-only board call: the active release (state, repos, gauntlet), the last
+  # shipped one and how many tasks the archive owes, and the DevOps estimate; then
+  # every conductor claim on the active release and the forming sentinel, over the
+  # claim API (claim_holders). nil when either is unreadable.
+  def snapshot
+    forming = forming_slug
+    ruby = <<~RUBY.lines.map(&:strip).join(" ")
+      r = #{rel_current}; l = #{rel_last_shipped};
+      repos = ->(rel) { rel ? rel.tasks.flat_map(&:release_repos).uniq : [] };
+      turf = repos.call(r) & #{Release::DevnetGauntlet::REPOS.inspect};
+      g = r && r.release_events.where(step: '#{Release::DevnetGauntlet::STEP}', status: %w[completed failed]).order(:occurred_at, :id).last;
+      est = begin; e = r && Release::Flow.estimate_for(r, default: Release::Flow.recent); e && { eta: e.eta.utc.iso8601, remaining: e.remaining, phase: e.phase }; rescue StandardError; nil; end;
+      puts({ current: (r && { slug: r.slug, state: r.state, repos: repos.call(r), gauntlet_required: turf.any?, gauntlet_status: g&.status }),
+             last_shipped: (l && { slug: l.slug, repos: repos.call(l) }),
+             archivable: Release::Conductor.archivable_completed_slugs.size,
+             estimate: est }.to_json)
+    RUBY
+    board = conductor(ruby, read_only: true)
+    holders = claim_holders([board.dig("current", "slug"), forming].compact)
+    return nil if holders == :unreadable
+
+    board.merge("holders" => holders)
+  rescue SystemExit, StandardError => e
+    warn("  board read failed: #{e.message}")
+    nil
+  end
+
+  # Every conductor claim on these slugs, both roles, read over the claim API the way
+  # `release-claim status` reads it. :unreadable when any read failed: a lane the
+  # cycle cannot see is not a free lane.
+  def claim_holders(slugs)
+    cli = ReleaseClaimCli.new(out: StringIO.new, err: StringIO.new)
+    found = slugs.product(ReleaseClaimCli::ROLES).map { |slug, role| cli.holder(slug, role) }
+    return :unreadable if found.include?(:unreadable)
+
+    found.compact
+  end
+
+  def verify_targets(repos, target)
+    ReleaseCycle.verify_targets(repos, target, app_repos: RELEASE_REPOS.fetch("apps", {}) || {},
+                                               qa_environments: QA_ENVIRONMENTS, hub: APP)
+  end
+
+  # The HTTP status code as a string, or nil when nothing answered.
+  def http_status(url)
+    out, status = Open3.capture2e("/usr/bin/curl", "-s", "-L", "--max-time", "20", "-o", "/dev/null",
+                                  "-w", "%{http_code}", url)
+    code = out.to_s.strip
+    status.success? && !code.empty? && code != "000" ? code : nil
+  end
+
+  # Runs `bin/release <argv>` as a child on this terminal with the lane's
+  # credentials, streaming its output and keeping the tail for the failure
+  # classifier. [exit status, tail].
+  def run_step(name, argv)
+    env, minted = ReleaseCycle.step_env(name, mint: method(:mint), admin_token: method(:admin_token))
+    unless minted
+      lane = name == "ship" ? :deployer : :agent
+      if @wait.nil?
+        msg = "✗ could not mint the #{name == 'ship' ? 'DEPLOYER' : 'agent'} GitHub token for #{name}: " \
+              "#{OpVaults.diagnose(lane)}\n  (pass --wait-for-1password if 1Password is hanging). Nothing ran."
+        puts(msg)
+        return [ReleaseCycle::CREDENTIAL_MISSING, msg]
+      end
+      puts("  ⚠ no GitHub token minted for #{name}; running it with gh's own login and --wait-for-1password")
+    end
+    # No Heroku token here: the snapshot's board op ran ensure_heroku_token!, which
+    # exported HEROKU_API_KEY into this process, and every child inherits it.
+    stream_child(env, argv)
+  end
+
+  private
+
+  def mint(identity, env)
+    out, _err, status = BoundedCommand.capture3(env, File.join(__dir__, "gh-token"), "--identity", identity,
+                                                deadline: MINT_DEADLINE, in: File::NULL)
+    status&.success? ? out.to_s.strip : ""
+  rescue StandardError
+    ""
+  end
+
+  # The admin 1Password token, as `source ~/.zprofile.admin` would export it. The
+  # value goes into the ship child's env only and is never printed.
+  def admin_token
+    path = OpVaults.profile_path(:deployer)
+    return "" unless path && File.exist?(path)
+
+    script = "source #{Shellwords.escape(path)} >/dev/null 2>&1; printf %s \"$OP_ADMIN_SERVICE_ACCOUNT_TOKEN\""
+    out, _err, status = BoundedCommand.capture3({}, "/bin/zsh", "-c", script, deadline: ADMIN_PROFILE_DEADLINE, in: File::NULL)
+    status&.success? ? out.to_s : ""
+  rescue StandardError
+    ""
+  end
+
+  def stream_child(env, argv)
+    reader, writer = IO.pipe
+    pid = Process.spawn(env, RbConfig.ruby, File.expand_path(__FILE__), *argv, in: :in, out: writer, err: writer)
+    writer.close
+    tail = []
+    buffer = +""
+    begin
+      while (chunk = reader.readpartial(4096))
+        $stdout.write(chunk)
+        $stdout.flush
+        buffer << chunk
+        *lines, buffer = buffer.split("\n", -1)
+        tail.concat(lines)
+        tail.shift(tail.size - TAIL_LINES) if tail.size > TAIL_LINES
+      end
+    rescue EOFError
+      nil
+    end
+    tail << buffer unless buffer.empty?
+    _, status = Process.wait2(pid)
+    [status.exitstatus || (128 + status.termsig.to_i), tail.join("\n")]
+  rescue Interrupt
+    Process.wait2(pid) if pid
+    raise
+  ensure
+    reader&.close unless reader&.closed?
+  end
+end
+
+# `caffeinate -is -w <this pid>`: the Mac stays awake exactly as long as the cycle
+# runs. Never under the test suite, a dry run, or a machine without it.
+def keep_awake!
+  return if DRY || ENV["RAILS_ENV"] == "test"
+
+  bin = "/usr/bin/caffeinate"
+  return unless File.executable?(bin)
+
+  Process.detach(Process.spawn(bin, "-is", "-w", Process.pid.to_s, out: File::NULL, err: File::NULL))
+rescue SystemCallError
+  nil
+end
+
+def cycle
+  clearance = opt_value("--clearance")
+  extra = hub_train? ? [] : ["--train", TRAIN.to_s]
+  extra << "--local" unless PROD
+  if DRY
+    say("bin/release cycle --dry-run: runs, from the board's current stage, `bin/release prepare` → QA verify " \
+        "(each QA app /up and / answer 200) → `bin/release ship --mode cleared --clearance …` → prod verify → " \
+        "`bin/release archive`. A dry run starts none of them; preview each act with its own --dry-run.")
+    return 0
+  end
+  keep_awake!
+  ReleaseCycle::Runner.new(clearance: clearance, deps: ReleaseCycleDeps.new(wait_for_1password: WAIT_FOR_1PASSWORD),
+                           assume_yes: ASSUME_YES, wait_for_1password: WAIT_FOR_1PASSWORD, extra_args: extra).run
+end
+
 # prepare's outcome as the process exit status: a NOT-green QA exits
 # Release::Cli::PREPARE_QA_NOT_GREEN_EXIT, anything else returns normally (exit 0).
 # Outside prepare on purpose: an exit inside it would land in prepare's own
@@ -11803,7 +12070,8 @@ if __FILE__ == $PROGRAM_NAME
   guard_argv!
   refuse_bad_train!
   abort!(WAIT_FOR_1PASSWORD_ERROR) if WAIT_FOR_1PASSWORD_ERROR
-  exit(supervise_for_1password!(ARGV.first)) if WAIT_FOR_1PASSWORD
+  # `cycle` carries the flag to its own prepare and ship children instead.
+  exit(supervise_for_1password!(ARGV.first)) if WAIT_FOR_1PASSWORD && ARGV.first != "cycle"
   $release_started_at = Time.now if %w[prepare ship archive].include?(ARGV.first)
   # A long run starts with GitHub tokens that cannot expire mid-run: bin/secret
   # prewarm mints any with under 45 minutes left (docs/agents/modules/secret-cache.md).
@@ -11835,6 +12103,7 @@ if __FILE__ == $PROGRAM_NAME
   when "archive"  then archive
   when "retro"    then retro
   when "notes"    then notes
+  when "cycle"    then exit(cycle)
   else
     # The usage string moved to Release::Cli::USAGE so the guard's per-subcommand
     # help and this fall-through print the SAME text from one place.

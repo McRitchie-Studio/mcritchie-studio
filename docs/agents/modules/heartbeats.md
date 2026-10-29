@@ -235,7 +235,9 @@ SOP: [`../agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/prod
   2. Run the **full e2e on the FROZEN ship SHA**, then `bin/release ship --yes`:
      fast-forward each repo's `release → main` (stamping `merged: "main"` as each
      ff lands) and deploy production.
-  3. Prod-smoke, green seal, and post release notes (`ship!` flips members `shipped`).
+  3. Prod-smoke, green seal, and post release notes (`ship!` flips members `shipped`,
+     except a member whose own commit is not in the pushed `main`: it keeps its
+     stage with a comment naming the commit).
   4. Restore the primary checkouts.
   5. Post-ship agent-docs sync — ship auto-runs `bin/install-agent-docs` from the
      tree that shipped (`bin/release.rb#sync_agent_docs` picks it; non-fatal, never
@@ -293,8 +295,10 @@ row) through the docs so every next agent starts with the curated lessons.
 ### Act 3 — `full-cycle`
 
 SOP: [`../agents/mason/sops/full-cycle.md`](../agents/mason/sops/full-cycle.md). Run
-`pr-review` → `qa-release` (`bin/release prepare --yes`) → `production-deploy`
-(`bin/release ship`). **Precondition:** `submitted` PRs and/or an `assembled`
+`pr-review`, then `bin/release cycle --clearance "<Alex McRitchie's words>" --yes
+--wait-for-1password`, which runs `qa-release`'s prepare → QA verify →
+`production-deploy`'s ship → prod verify → archive and resumes when re-run.
+**Precondition:** `submitted` PRs and/or an `assembled`
 release; nothing anywhere → report and stop. **Exit seam:** the release `shipped`.
 
 > ⚠️ **Full ship authority.** Run `full-cycle` only when the operator launched it
