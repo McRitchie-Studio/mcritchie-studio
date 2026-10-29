@@ -87,6 +87,7 @@ class BooksReviewPageTest < ActionDispatch::IntegrationTest
     patch book_entry_path(entity: "studio", id: @fee.id), params: { category: "bank_fees", purpose: "Owner draws" }
     assert_redirected_to books_path(entity: "studio", anchor: "line-#{@fee.id}")
     assert_match(/not saved: a purpose is for a distribution only/, flash[:alert])
+    assert_equal 0, ErrorLog.where("message LIKE ?", "%distribution only%").count, "a refusal is an answer, not a fault"
     assert_equal [ nil, nil ], [ @fee.reload.category, @fee.purpose ], "nothing is recorded"
 
     patch book_entry_path(entity: "studio", id: @fee.id), params: { category: "bank_fees", purpose: "  " }
@@ -110,8 +111,8 @@ class BooksReviewPageTest < ActionDispatch::IntegrationTest
     # inline-flex drops whitespace between sibling items, so the label is one span.
     assert_select "[data-test='books-entity-studio'] > span", count: 1
     assert_select "[data-test='books-entity-studio'] > span", /McRitchie Studio LLC · \d+ waiting/
-    assert_select "[data-test='books-entity-industries'].btn-outline"
-    assert_select "[data-test='books-recent-undo'] [type=submit].btn-outline"
+    assert_select "[data-test='books-entity-industries'].btn-neutral"
+    assert_select "[data-test='books-recent-undo'] [type=submit].btn-neutral"
     assert_select "[data-test='books-recent-undo'] .btn-secondary", count: 0
   end
 

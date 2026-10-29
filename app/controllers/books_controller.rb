@@ -5,7 +5,7 @@
 # audience: admin in config/navigation.yml).
 #
 # index     the lines no rule could classify, each with a category picker, a
-#           purpose (for distributions) and a note; the latest close; and the
+#           purpose (shown only while a distribution is picked) and a note; the latest close; and the
 #           answers recorded most recently, each with an undo
 # classify  records one line's answer (PATCH /books/:entity/entries/:id)
 #           through Books::Classify, the same write path as `bin/books classify`,
@@ -38,16 +38,11 @@ class BooksController < ApplicationController
                          alert: "Line ##{params[:id]} not saved: pick a category.", status: :see_other)
     end
 
-    # A purpose belongs to a distribution only. The form shows the field only
-    # for a distribution; one that still arrives beside another category (or
-    # the undo) is refused out loud, never dropped silently.
+    # The form shows the purpose only for a distribution; one that still
+    # arrives beside another category is refused by Books::Classify, as the
+    # CLI's is, never dropped silently.
     category = nil if category == "none"
     purpose = params[:purpose].to_s.strip.presence
-    if purpose && @config.categories[category]&.kind != "distribution"
-      return redirect_to(books_path(entity: @entity.key, anchor: "line-#{params[:id]}"),
-                         alert: "Line ##{params[:id]} not saved: a purpose is for a distribution only. " \
-                                "Clear the purpose, or pick a distribution.", status: :see_other)
-    end
     refusal = nil
     entries = rescue_and_log do
       Books::Classify.call(@entity, ids: [ params[:id] ], category: category,

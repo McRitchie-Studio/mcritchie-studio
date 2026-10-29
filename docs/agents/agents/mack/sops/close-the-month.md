@@ -69,6 +69,9 @@ was revenue. **The agent never guesses a classification.**
   neither the P&L nor equity.
 - **A purpose groups distributions on the balance sheet.** Reuse the existing
   purposes: `Owner draws`, `Acquisition costs`, `Equity injection to Industries`.
+  A purpose is for a distribution only: `classify` (and the `/books` page)
+  refuses one given beside any other category, and the page shows the purpose
+  field only while a distribution is picked.
 - **Unanswered lines stay unclassified.** The close is then a DRAFT. Its balance
   sheet still balances, because they sit in equity as "Unclassified lines (to confirm)".
 
@@ -126,7 +129,9 @@ The categories are the keys under `categories:` in `config/books.yml`. Use
 **Alex McRitchie can answer on the page instead:** `/books` on the hub (admin
 only; Finance in the sidebar) lists each entity's waiting lines with a category,
 purpose and note, and records his answer through the same code as `classify`,
-with his address as `by`. Recent answers show who and when, with an Undo. Point
+with his address as `by`. Recent answers show who and when, with an Undo. Bank
+text shows any account or card number by its last four digits only, however
+the bank spaced or dashed it. Point
 him there when the batch is long.
 
 **A reclass is a re-classify.** A line already booked (say as
