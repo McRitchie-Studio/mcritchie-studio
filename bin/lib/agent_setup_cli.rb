@@ -159,7 +159,7 @@ module AgentSetupCli
     0
   end
 
-  # The item's and vault's ids from `op item list --vault V` matched on the
+  # The item's and vault's ids from `op item list` of the vault, matched on the
   # exact title, and the account's from `op whoami`. A LISTING, never
   # `op item get`: get answers with every field's value, so a rotation card,
   # whose item already holds a token, would pull the live token into this
