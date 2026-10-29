@@ -179,8 +179,8 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    for one release) the older flow below runs instead: prepare publishes the
    prerelease `x.y.z.rcN` and `bin/release ship` publishes `x.y.z`.
 
-   **Each candidate is gated on GitHub's CLEAN-ENV verdict for the exact tip it is
-   built from**, and fails closed. The gem's own `bin/release-check --build` runs first
+   **Each gem tip is gated on GitHub's CLEAN-ENV verdict before its final publishes**
+   (under the candidate rollback, before its candidate publishes), and fails closed. The gem's own `bin/release-check --build` runs first
    and aborts first when red. Pending and not-yet-started both WAIT; a terminal
    non-green or a poll timeout aborts with **nothing published**: fix or re-run the
    named run, then re-run `prepare`.
@@ -210,9 +210,14 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
      `<current> already advanced past <reference> — allocated already` (the
      `version_file` on `origin/accepted` against the last `v*` tag on `origin/release`).
      The last is reached by (1) a version set by hand — the STRANDED GEM WORK row —
-     which rolls NOTHING, so roll the changelog by hand in that same commit; (2) any
-     re-run of `prepare` before the ship has published the final and pushed its `v*`
-     tag, a QA bounce included; (3) a later sweep absorbing more work into a version
+     which rolls NOTHING, so roll the changelog by hand in that same commit; (2) a
+     re-run of `prepare` after the version commit and before the final published and
+     its `v*` tag reached origin (an interrupted sweep, or one refused before the
+     publish). Once the final is published and tagged, a re-run reads the new tag: an
+     unchanged gem SKIPs as `nothing to publish` and reuses the live final, and a
+     changed one allocates the next patch. Under the `RELEASE_GEM_FLOW=candidate`
+     rollback, where the ship publishes the final, (2) covers any re-run before the
+     ship, a QA bounce included; (3) a later sweep absorbing more work into a version
      that has not shipped.
    - **RE-ALLOCATE** — cases (2) and (3) are re-derived first, because a version that
      has not published is still the release's to change. When the current members earn
@@ -245,8 +250,9 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    after an ALLOCATE report a `bin/release` defect; after a SKIP, land a docs PR on the
    gem's `accepted` adding the hand-set version's heading (any other heading is AHEAD).
 
-   **A candidate is published only when the ship that follows can finalize it.** A
-   ship from tooling without the candidate flow publishes the final and deploys
+   **Under the candidate rollback only: a candidate is published only when the ship
+   that follows can finalize it.** The default flow publishes no candidate and skips
+   this read. A ship from tooling without the candidate flow publishes the final and deploys
    consumers still locked to the candidate. Two places on this machine start a ship:
    the fixed-path install (`/Users/alex/projects/.agents/bin/release.rb`) and the
    hub primary (its working tree and its `origin/main`). Phase 1 reads all three
@@ -266,8 +272,15 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    **unless the gem is self-gated** (a `release_check` in `config/release_repos.yml`;
    such a gem may ship gem-only). ANY failure aborts with **zero gems published**.
 
-   Phase 2 publishes each gem's candidate, built from `origin/release` in the gem's
-   ship workspace with the version literal written to `x.y.z.rcN` for the build only
+   Phase 2, under the default flow, publishes each gem's FINAL `x.y.z`, built from the
+   `origin/release` tip in the gem's primary checkout (detached there, then restored),
+   tags it `v<x.y.z>` at that tip and confirms the served checksum. When `x.y.z` is already live from this tree (a re-run),
+   it compares the served gem with the tree, pushes any missing tag and publishes
+   nothing. Before any publish it records each final this release supersedes as
+   `burned-v<x.y.z>` (`bin/release status` lists them).
+
+   Under the candidate rollback, Phase 2 publishes each gem's candidate instead, built
+   from `origin/release` in the gem's ship workspace with the version literal written to `x.y.z.rcN` for the build only
    (the tree keeps `x.y.z`), then tags it `rc-x.y.z.rcN` at that tip. **Which
    candidate:** a live candidate tagged at the current tip is reused; any other tip
    gets the next free number; when `x.y.z` itself is already live, consumers lock it
@@ -275,7 +288,10 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
 
    Then it commits each consumer's bump onto the consumer's `origin/accepted` FIRST
    and fast-forwards `origin/release` to the same commit, so `release` never carries a
-   commit `accepted` lacks. **The bump is normally `Gemfile.lock` alone.** Bundler
+   commit `accepted` lacks. **The bump is normally `Gemfile.lock` alone**: under the
+   default flow, `bundle lock --update <gem> --conservative` to the final, read back,
+   and the line changes only when the final escapes the pin or the line is a branch or
+   path source. Under the candidate rollback, Bundler
    resolves a prerelease only when a requirement names one, and then keeps it in the
    lock for as long as the Gemfile admits it. So prepare writes the exact candidate
    onto the gem's line (`gem "studio-engine", "~> 0.95", "0.96.0.rc1"`), runs `bundle
@@ -296,7 +312,8 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    A gem repo's own lock (studio-engine locks solana-studio) is not touched here: the
    ship bumps it, to the final.
 
-   **The order, and what a re-run does at each stop:**
+   **The order under the candidate rollback, and what a re-run does at each stop**
+   (under the default flow a re-run reuses the live final, as Phase 2 says):
 
    | The sweep stops | The world | A re-run |
    |---|---|---|
@@ -311,7 +328,8 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    A candidate QA bounced is never locked again once the gem's tip moves, and nothing
    here can publish `x.y.z`.
 
-   **What a locked candidate changes for a consumer, and the guards that read it.**
+   **What a locked candidate changes for a consumer (candidate rollback only), and the
+   guards that read it.**
    - The gem reports its version as `x.y.z.rcN` (`Studio::VERSION`, the gemspec),
      which orders below `x.y.z`. A consumer test asserting a floor of exactly `x.y.z`
      on the RESOLVED gem is red on the candidate tree: raise such a floor in the
@@ -357,9 +375,11 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
 6. Deploy QA and wait for boot, then record each repo's frozen SHA (`qa_shas`), the
    commit the ship will deploy. A repo with no QA environment (`qa_evidence: exempt`:
    rantly, moms-app) is not deployed but IS frozen, at its `origin/release` head with
-   this sweep's candidate lock: without it a resumed ship would freeze that repo at the
-   ship's own final re-lock and refuse at the gem candidate preflight ("some consumers
-   lock X and others a candidate of it"). Gem members are QA'd as their candidate, through the consumer's bumped lock;
+   this sweep's gem lock (the final; under the candidate rollback, the candidate):
+   without it a resumed candidate-flow ship would freeze that repo at the ship's own
+   final re-lock and refuse at the gem candidate preflight ("some consumers lock X and
+   others a candidate of it"). Gem members are QA'd as their final (under the
+   candidate rollback, their candidate), through the consumer's bumped lock;
    a **gem-only release has no app QA deploy** and assembles on its G3 CI verdict
    (/deployments shows a **GEM-ONLY** badge and `💎 <gem> <version>`).
 7. Flip members from `reviewed` to `assembled` only after QA is green.
@@ -437,13 +457,13 @@ An abort leaves the same board state as an interruption. Each abort names its ca
 | **MULTI-REPO PR RECORD INCOMPLETE** (step 3a — "multi-repo task(s) with an incomplete PR record") | Record the missing PR — `bin/task update <slug> --pr-url-for <repo>=<pr-url>` — or drop the repo with no work (`bin/task update <slug> --repo …`). Nothing was promoted | re-run `prepare`; the member sweeps with every repo it names |
 | **ACCEPTED NOT COVERED BY THE PROMOTE** (step 4a-bis — "`accepted` carries commits for X, a repo this release's members NAME, but this sweep would promote only Y") | Usually a PARTIAL earlier promote. Land it (`bin/release merge <slug>`, fanning out over every repo the task names) or drop X from the task; `bin/release status` shows git and board side by side. A repo NO member names is out of scope. When a gem repo's only ahead commit is the last ship's producer lock bump, `bin/release merge` skips it (`merged: release`); a hand `--base release --head accepted` PR lands it, prepare reuses an open one, and the release that carries it allocates ANOTHER gem version: say so before promoting | re-run `prepare` once every member-named ahead repo rides |
 | **A REPO CANNOT CERTIFY `accepted`** (inside the promote — "promote refused — <repo> (suite workflow "CI") cannot certify `accepted`") | Add `accepted` to that repo's suite workflow `on.push.branches` (reference: `mcritchie-studio/.github/workflows/ci.yml`, deliberately no `concurrency:` block) and land it on the repo's `accepted`. Do **not** drop the repo from the sweep. Exempt only by declaration (`Release::AcceptedCertification::GEM_SUITE_WORKFLOWS` nil; none today) | re-run `prepare`; it resumes |
-| **PUBLISHED GEM NOT READY** (step 4d — "the RubyGems CDN is still not serving it" or "`gem install <gem> -v <version>` still fails on this machine") | **Nothing was bumped.** After each candidate publish, and for an already-live candidate or final on a re-run, prepare waits up to `RELEASE_GEM_POLL_TIMEOUT` (300s of wall time, each index read capped by `RELEASE_GEM_CURL_MAX_TIME`) for the compact index line and the `.gem` file, then installs the version into the shell ruby and mise's pinned ruby. A CDN timeout is propagation: wait. An install failure prints the installer's own output: run the two `gem install` commands the refusal prints | re-run `prepare`; the candidate is reused and the wait starts a fresh budget |
-| **CANDIDATE NOT BUILT OR NOT PUSHED** (step 4d — "does not declare exactly `<version>` — refusing to build candidate", "the candidate build carries version …", "gem push failed for `<repo>` candidate") | Nothing was bumped and no final version exists. The first two mean the gem's `version_file` at the release tip is not the allocated version: read phase 0's output and the STRANDED GEM WORK row. A failed push is `gem signin` or RubyGems itself | re-run `prepare`; it publishes the next free candidate number |
+| **PUBLISHED GEM NOT READY** (step 4d — "the RubyGems CDN is still not serving it" or "`gem install <gem> -v <version>` still fails on this machine") | **Nothing was bumped.** After each final publish (under the candidate rollback, each candidate publish), and for an already-live final or candidate on a re-run, prepare waits up to `RELEASE_GEM_POLL_TIMEOUT` (300s of wall time, each index read capped by `RELEASE_GEM_CURL_MAX_TIME`) for the compact index line and the `.gem` file, then installs the version into the shell ruby and mise's pinned ruby. A CDN timeout is propagation: wait. An install failure prints the installer's own output: run the two `gem install` commands the refusal prints | re-run `prepare`; the published final (or candidate) is reused and the wait starts a fresh budget |
+| **CANDIDATE NOT BUILT OR NOT PUSHED** (candidate rollback only; step 4d — "does not declare exactly `<version>` — refusing to build candidate", "the candidate build carries version …", "gem push failed for `<repo>` candidate") | Nothing was bumped and no final version exists. The first two mean the gem's `version_file` at the release tip is not the allocated version: read phase 0's output and the STRANDED GEM WORK row. A failed push is `gem signin` or RubyGems itself | re-run `prepare`; it publishes the next free candidate number |
 | **STRAY CANDIDATE** (step 4d, before any gem publishes, and again after the lock bump — "a consumer is locked to a release candidate this sweep is not testing") | A consumer's `release` locks `x.y.z.rcN` of a gem this release does not carry (its task was ejected, or an earlier candidate never shipped). Bundler keeps such a lock, so it would deploy. Put the gem's task back on the release, or land a consumer task on `accepted` that runs `bundle lock --update <gem> --conservative` back to the last released version (and, where the `Gemfile` line carries a candidate floor, restores its pin first) | re-run `prepare` |
 | **UNSHIPPED OR BURNED FINAL** (step 4d, before any gem publishes, and again after the lock bump; the ship refuses the same tree before any deploy — "a consumer is locked to a published gem version no release has shipped", "a BURNED version") | A consumer locks a final above the gem's `main` that this release does not carry, or a version tagged `burned-v<x.y.z>`. Never yank it. Put the gem's task back on the release (for an above-`main` final), or land a consumer task on `accepted` that runs `bundle lock --update <gem> --conservative` to the version on the gem's `main` | re-run `prepare` |
 | **RUBYGEMS LISTING UNREADABLE** (step 4d phase 0 or the publish plan; the ship's what's-live line and gem publish — "RubyGems listing unreadable for <gem>") | **Nothing was published.** RubyGems' versions API did not answer with a list (a timeout, a 5xx, a rate limit). Do not advance the version file: nothing is yanked. Wait until `curl -sf https://rubygems.org/api/v1/versions/<gem>.json` answers | re-run `prepare` (or `ship`) |
-| **CANDIDATE FLOW NOT ON EVERY SHIP ENTRY POINT** (step 4d — "does not carry the candidate flow", "carries candidate flow N, not M" or "could not be read … a ship started there would publish the final and deploy consumers still locked to the candidate") | **Nothing was published.** The abort names each entry point and its fix. The fixed-path install: run `bin/install-agent-docs` from a hub primary on `main`. The hub primary's working tree: `git checkout main && git pull --ff-only` there (never stash or discard a live session's work to do it: rescue it to a branch). The hub primary's `origin/main`: the release that carries the flow has not shipped yet, so this sweep cannot publish a candidate from this tooling | re-run `prepare` once every entry point carries the flow |
-| **CONSUMER LOCK BUMP did not land** (`bundle lock … did not land in <repo> … resolves <old>, wanted <new>`) | **WAIT — nothing to fix.** Watch the compact index bundler reads: `curl -sS https://index.rubygems.org/info/<gem> \| tail -5`, not the API or HTML page. Do **not** bump the version. If sibling consumers already resolved the candidate, it is not propagation but a dependency cap in that consumer: land a consumer task running `bundle lock --update <gem> <capped-dep> --conservative` | re-run `prepare`; the candidate is reused and the bump lands |
+| **CANDIDATE FLOW NOT ON EVERY SHIP ENTRY POINT** (candidate rollback only; step 4d — "does not carry the candidate flow", "carries candidate flow N, not M" or "could not be read … a ship started there would publish the final and deploy consumers still locked to the candidate") | **Nothing was published.** The abort names each entry point and its fix. The fixed-path install: run `bin/install-agent-docs` from a hub primary on `main`. The hub primary's working tree: `git checkout main && git pull --ff-only` there (never stash or discard a live session's work to do it: rescue it to a branch). The hub primary's `origin/main`: the release that carries the flow has not shipped yet, so this sweep cannot publish a candidate from this tooling | re-run `prepare` once every entry point carries the flow |
+| **CONSUMER LOCK BUMP did not land** (`bundle lock … did not land in <repo> … resolves <old>, wanted <new>`) | **WAIT — nothing to fix.** Watch the compact index bundler reads: `curl -sS https://index.rubygems.org/info/<gem> \| tail -5`, not the API or HTML page. Do **not** bump the version. If sibling consumers already resolved the published version, it is not propagation but a dependency cap in that consumer: land a consumer task running `bundle lock --update <gem> <capped-dep> --conservative` | re-run `prepare`; the published version is reused and the bump lands |
 | **`record op failed: no answer within 300s`** (any conductor write) | The `heroku run` client hung (on 2026-10-27 its dyno was already gone) and was killed at the deadline (`RELEASE_RECORD_OP_DEADLINE`, seconds). A best-effort write (release event, gate, crew ticker) warns and the run continues; a deploy-critical write aborts. Whether the write landed is unknown. A re-run is safe: a board write re-applies to the same state, and release notes Discord already took are skipped, never posted twice. An archive step has its own bound (`RELEASE_ARCHIVE_STEP_DEADLINE`) | re-run the same command; it resumes |
 | **`record op returned no JSON`** (prepare's record step) | The record step runs `Release::Conductor` on PRODUCTION via `heroku run`, against production's deployed `config/release_repos.yml` and guards. A repo registered in this same release is unknown there. Ship the hub registry change first: hold the new repo's tasks (`included_in_release: false`) and sweep the hub tasks with `--task`. A conductor guard fix likewise takes effect only once it is live on `main` | re-run `prepare` for the new repo in the next cycle |
 | **SWEEP LOOKS HUNG, or a QA lane is red** (not an abort) | A sweep at 0% CPU with no sockets is waiting in a `gh` child: check `pgrep -P <pid>`, the child's age and the run it watches. On a red, ask whether a test actually ran and failed: a runner setup step, an API 5xx, or a `Bundler::GemNotFound` naming the version this sweep just published ("the author has removed it") is a re-run, never an eject. The gate already spent its one automatic re-run on a first-attempt test-lane red or a gem-resolution red (look for `↻↻ … AUTOMATIC RE-RUN`); a red it did not re-run says why on its `no automatic re-run (…)` line. Re-run by hand only for a cause the rule does not cover, ALL jobs (`gh run rerun <id>`, not `--failed`): the `*_executed_set` guards re-read receipts. A still-open G3 attempt may be a peer's live sweep, and its candidate may absorb your task: read your task's stage once `bin/release status` reads `none active` | let the sweep finish, or re-run `prepare` (it stands down before anything irreversible) |
@@ -553,6 +573,12 @@ No-op: "nothing to prepare."
 into the report verbatim, with the upgrade card it names; a line that says "NO
 upgrade card" gets one filed per [`program-upgrade`](../../steffon/sops/program-upgrade.md).
 A `cannot confirm` line is reported as unknown. Drift never blocks the candidate.
+
+**Burned gem versions.** `bin/release status` also lists each registered gem's
+`burned-v<x.y.z>` tags under `Burned gem versions`: finals a prepare published that no
+release shipped. Carry any `BURNED` line into the report; prepare and the ship refuse a
+consumer lock naming one. The read asks origin with `git ls-remote` and, when origin
+does not answer, prints the clone's own tags labelled `local tags`.
 
 ## Related
 

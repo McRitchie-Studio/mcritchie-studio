@@ -123,11 +123,16 @@ warning and records nothing.
 
 **Direct-drive this act — do NOT wrap it in a subagent**: a subagent that dies
 mid-ship leaves a partial `release → main` state. **Recovery from an INTERRUPTED ship:
-re-run the command that was running** — `bin/release cycle --clearance "<his words>" --yes`
-when this act ran inside the full lane (it resumes from the board), else
-`bin/release ship --yes` (add `--wait-for-1password` when it stopped on
-`1Password is not answering`: it waits for 1Password and resumes the ship itself); `merged: "main"` repos skip re-ff, a published gem
-skips its push, and a pushed re-lock is reused (see **Gems: the final publish**).
+re-run the command that was running, with the same flags.** Prefer
+`bin/release cycle --clearance "<his words>" --yes`: it enters at the board's current
+stage, so it resumes the ship and then runs prod verify and archive. Only when the ship
+ran on its own, re-run it as it ran: after a cleared ship that is
+`bin/release ship --mode cleared --clearance "<his words>" --yes`. A bare
+`bin/release ship --yes` resolves to `--mode auto` and records no clearance on the
+release. Add `--wait-for-1password` to either when it stopped on
+`1Password is not answering`: it waits for 1Password and resumes the run itself.
+`merged: "main"` repos skip re-ff and a gem already live skips its publish. Every
+"re-run `bin/release ship`" below means this same command, flags included.
 
 **Gate before confirming the ship.** The Avi → Steffon handoff exists only when
 `Release.current.state == "assembled"` and `qa_deployed_at` is present:
@@ -243,9 +248,11 @@ command carries on; it never fails `status` or `prepare`, which make the same re
 
 - **The hub deploys through GitHub Actions** (`gh workflow run prod-deploy.yml -f
   sha=<frozen>`), which pushes to Heroku and hard-gates a `/up` smoke.
-- **A GEM-ONLY release ships too**: the final is published and the gem repos
-  fast-forward; the RubyGems publish IS the deploy (a **GEM-ONLY** badge). Its
-  candidate is the `rc-<version>.rc<n>` tag at the frozen SHA.
+- **A GEM-ONLY release ships too**: under the default flow `prepare` already published
+  the final and tagged it `v<x.y.z>`, so the ship finds it live and fast-forwards the
+  gem repos; the RubyGems publish IS the deploy (a **GEM-ONLY** badge). Under the
+  `RELEASE_GEM_FLOW=candidate` rollback the ship publishes the final, and the
+  candidate QA ran is the `rc-<version>.rc<n>` tag at the frozen SHA.
 - **A dirty app primary does NOT block the ship** (it deploys from `.worktrees/_ship`).
   To clean one, use the printed `rescue/<repo>-<timestamp>` branch. **Never stash it
   and never discard it.** A gem repo with modified TRACKED files DOES abort (before
@@ -262,7 +269,8 @@ it also refuses a tree that locks a published version past a gem's `main` that t
 release does not ship. The steps below run only for a release prepared under
 `RELEASE_GEM_FLOW=candidate`.
 
-`prepare` published a **release candidate** (`x.y.z.rcN`) and QA ran consumers on it.
+**Under the candidate rollback only**, `prepare` published a **release candidate**
+(`x.y.z.rcN`) and QA ran consumers on it.
 The ship publishes the final `x.y.z`, and it is the only step of a release that cannot
 be undone. In order, after production authority:
 
@@ -331,8 +339,9 @@ a ship from any other checkout of the hub.
 
 ### App deploys: the hub first, then the satellites at once
 
-After the gem phase (every final published, every consumer re-locked and its CI
-read), the ship deploys the **hub first and alone**: it is the SSO and
+After the gem phase (under the default flow nothing to do, since every final is
+already live and locked; under the candidate rollback, every final published and every
+consumer re-locked and its CI read), the ship deploys the **hub first and alone**: it is the SSO and
 source-of-truth app, so no satellite goes live against a hub that has not caught
 up. A hub failure aborts the ship before any satellite moves.
 
@@ -354,14 +363,16 @@ satellite runs to its end; the ship then records the live ones on the release
 (`metadata.deployed_apps`, with the hub) and aborts with `N of M satellite deploys
 FAILED (<repos>); LIVE on production: <repos>`, **before** the post-deploy hooks, the
 seal and the shipped record. It is an ABORT: fix what the failed deploy names, then
-re-run `bin/release ship --yes`. The re-run skips every app already live
+re-run the ship with the flags it ran with (after a cleared ship,
+`bin/release ship --mode cleared --clearance "<his words>" --yes`), or re-run
+`bin/release cycle --clearance "<his words>" --yes`. The re-run skips every app already live
 (`deploy_already_succeeded?` proves it from production) and deploys only the
 unfinished ones. One satellite, or `--dry-run`, deploys in the old fixed order.
 
 **turf-monster is gated by CI, not by its own suite.** Its registry row carries
 `test_cmd` (CI's `test` job) and `prod_deploy.ci_verified_arg: --ci-verified`. When
 the ship read GitHub CI **green** for the exact SHA it deploys (the frozen-SHA gate,
-or the re-lock gate for its re-lock commit), it runs `bin/deploy --yes
+or, under the candidate rollback, the re-lock gate for its re-lock commit), it runs `bin/deploy --yes
 --ci-verified=<sha>`, and `bin/deploy` skips its local `bin/rails test` (about 20
 minutes) after checking that the SHA is its `HEAD`; any other SHA refuses before
 anything changes. Its IDL hash pin, Stripe live-mode and signing-wallet checks, its
@@ -419,7 +430,7 @@ A refused **`accepted`** advance (non-fatal):
 | Outcome | What it means | What you do |
 |---|---|---|
 | **AHEAD** | `accepted` carries everything that shipped and more | **Nothing.** |
-| **DIVERGED** | `accepted` is missing shipped content. After a gem release that includes the re-lock commit: that `accepted` still locks the candidate QA ran while `release` and `main` lock the final | Reconcile with a **merge** — recipe below. Left alone, the next sweep's promote merges it and the final's lock wins |
+| **DIVERGED** | `accepted` is missing shipped content. Under the candidate rollback, after a gem release that includes the re-lock commit: that `accepted` still locks the candidate QA ran while `release` and `main` lock the final | Reconcile with a **merge** — recipe below. Left alone, the next sweep's promote merges it and the final's lock wins |
 | **UNDETERMINED** | the relation could not be read | `git -C <path> fetch origin && git -C <path> diff origin/accepted origin/main`: any addition or modification → reconcile; when in doubt, reconcile |
 
 **Never** reconcile with a bare `git push origin <sha>:refs/heads/accepted` (it destroys
@@ -453,9 +464,11 @@ For each app with a registry `test_cmd`, `ship` reads **GitHub CI's settled verd
 the frozen ship SHA's tree** (the SHA's own run polled to a conclusion, or a same-SHA /
 same-tree green credited from the accepted head) and records a `ship_test_gate` SOP
 naming the source. Nothing runs locally, and it does not self-gate on G3's record.
-It reads twice for a consumer of a shipped gem: the frozen SHA before authority, and
-the re-lock commit after the final is published and before any deploy. Both reads use
-the rows below; the second adds the re-lock recovery text. Every app with a
+Under the default flow it reads the frozen SHA once, before authority: consumers
+already lock the live final there. Under the candidate rollback it reads twice for a
+consumer of a shipped gem: the frozen SHA before authority, and the re-lock commit
+after the final is published and before any deploy. Both reads use the rows below;
+the second adds the re-lock recovery text. Every app with a
 `test_cmd` is read, turf-monster included; an app with none self-gates and is read by
 neither. A green read is also what lets turf's `bin/deploy` skip its local suite
 (**App deploys** above).
@@ -477,8 +490,8 @@ The decision waits for the run to finish. A check-run goes red as soon as one jo
 fails, while the rest of the run is still going, and GitHub cannot re-run a run in
 progress; the gate prints `CI RED … while a workflow run on it is still in progress —
 holding for the run to complete` and decides once it is done (2026-10-27 it printed
-`no failed workflow run found` instead and spent its one chance). On the **re-lock
-commit**, which the gate measures to differ from the QA-green tree in `Gemfile` and
+`no failed workflow run found` instead and spent its one chance). On a **re-lock
+commit** (candidate rollback only), which the gate measures to differ from the QA-green tree in `Gemfile` and
 `Gemfile.lock` alone, a first-attempt red in ANY job earns the one re-run, a lint
 included; a red after it is still real and is never re-run.
 
@@ -535,7 +548,9 @@ production authority, exactly as `ship` is: Alex McRitchie in the session.** The
   `failed` and can be re-run.
 - **Gems stay published.** A published gem cannot be unpublished; each app runs the
   version its previous SHA's `Gemfile.lock` pins. A rollback never lands on a
-  candidate: a release's shipped SHA is its re-lock commit, which pins the final.
+  candidate: under the default flow a release's shipped SHA is the QA-gated SHA, which
+  already locks the final; under the candidate rollback it is the re-lock commit,
+  which pins the final.
 - **The board record:** a `rollback` release event with both SHAs per app, a red seal
   naming the rollback, and G4's seal re-stamped red. The release and its members stay
   `shipped`, because their code is still on `main`.
@@ -594,8 +609,10 @@ bin/release archive --yes         # apply
 **An ABORT and an INTERRUPTION need OPPOSITE responses.** An ABORT (red suite, failed
 preflight, deploy or smoke) is a verdict: **do not force past it**; record the blocker
 and hand it off. An INTERRUPTION has none: **re-run the command that was running**
-(`bin/release cycle --clearance "<his words>" --yes` inside the full lane, else
-`bin/release ship --yes`).
+with the same flags: prefer `bin/release cycle --clearance "<his words>" --yes`, and
+re-run a ship that ran on its own as `bin/release ship --mode cleared --clearance
+"<his words>" --yes` after a cleared ship (a bare `ship --yes` is `--mode auto` and
+drops the clearance record).
 
 ## Exit Seam
 
