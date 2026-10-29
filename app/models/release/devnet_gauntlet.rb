@@ -1,29 +1,48 @@
 # frozen_string_literal: true
 
 class Release
-  # THE DEVNET GAUNTLET: a green contest-rehearsal on QA before a Turf release ships.
+  # THE DEVNET GAUNTLET: a green contest-rehearsal on QA, on the Turf code being
+  # shipped, before a Turf release ships.
   #
   # When a release carries turf-monster or turf-vault work, qa-release's exit seam
   # includes Turf Monster's `contest-rehearsal` on QA (devnet: create, enter, play,
   # settle with a real on-chain payout, close), recorded on the release as a
-  # completed `devnet_gauntlet` ReleaseEvent. `bin/release prepare` runs it and
-  # records it once QA is green (Release::DevnetGauntletRun). Alex McRitchie, 2026-10-11: "it just feels right
-  # to run a devnet gauntlet on the package before giving production the green light."
-  # `bin/release ship` reads the record in its decision snapshot and refuses a Turf
-  # release without it (docs/agents/agents/steffon/sops/production-deploy.md).
+  # `devnet_gauntlet` ReleaseEvent whose metadata["shas"] names the QA-deployed SHA
+  # of each Turf repo it ran against. `bin/release prepare` runs it and records it,
+  # completed or failed, once QA is green (Release::DevnetGauntletRun), unless a
+  # completed record already covers the Turf SHAs on QA. Alex McRitchie, 2026-10-11:
+  # "it just feels right to run a devnet gauntlet on the package before giving
+  # production the green light."
+  #
+  # THREE READERS, ONE RULE (covers? below): `bin/release ship` (verdict, against the
+  # SHAs it is about to ship), prepare (against the SHAs on QA, so it neither repeats
+  # a covered contest nor skips new code) and `bin/release cycle`'s QA verify
+  # (ReleaseCycle.gauntlet_owed). Each reads the newest terminal event, and a green
+  # one counts only while it tested exactly the Turf SHAs in question: a red newest
+  # event, a record with no SHAs, or a green one on older Turf code covers nothing.
+  # Refused ship: docs/agents/agents/steffon/sops/production-deploy.md.
+  #
+  # TWO FLAGS, for Alex McRitchie's words only:
+  #   prepare --skip-gauntlet               runs no contest (bin/release.rb
+  #                                         GAUNTLET_SKIP_FLAG); the ship still refuses
+  #   ship --skip-devnet-gauntlet "<words>" ships without a covering record (SKIP_FLAG
+  #                                         below); it records nothing, the ship prints it
   #
   # IO-free, like Release::ShipSequence: bin/release requires this file directly.
   module DevnetGauntlet
     STEP = "devnet_gauntlet"
     # The repos whose work moves contest money, on devnet as on mainnet.
     REPOS = %w[turf-monster turf-vault].freeze
-    # The override, for Alex McRitchie's words only (a broken devnet, a release whose Turf
-    # change cannot touch a contest). It records nothing; the ship prints it.
+    # The SHIP's override (prepare's own is --skip-gauntlet), for Alex McRitchie's
+    # words only (a broken devnet, a release whose Turf change cannot touch a
+    # contest). It records nothing; the ship prints it.
     SKIP_FLAG = "--skip-devnet-gauntlet"
 
     # The fragment of the ship's production snapshot read (inside its `{…}.to_json`):
-    # the NEWEST terminal gauntlet event (completed or failed), or nil. A completed
-    # record followed by a failed one is a red gauntlet, so the newest decides.
+    # the NEWEST terminal gauntlet event (completed or failed), or nil, with its
+    # metadata (the Turf SHAs it tested). The newest is the candidate; covers? then
+    # decides whether it counts, so a completed record followed by a failed one is
+    # red, and a completed one on other Turf code is not this release's.
     # Plain `where`, so it reads on a production board that predates this file.
     SNAPSHOT_RUBY = "devnet_gauntlet: r.release_events.where(step: '#{STEP}', status: %w[completed failed])" \
                     ".order(:occurred_at, :id).last&.slice('occurred_at', 'actor', 'metadata', 'status')".freeze
