@@ -27,7 +27,7 @@ class BrandKitInstallTest < ActiveSupport::TestCase
     BrandKitExport::FILES.each_key do |name|
       assert_equal export.svg(name).b, @dir.join(name).binread, name
     end
-    assert_equal({ "brand" => "studio", "icon" => nil, "navbar" => STUDIO_NAVBAR, "stacked" => STUDIO_STACKED, "saved_at" => nil,
+    assert_equal({ "brand" => "studio", "icon" => nil, "navbar" => STUDIO_NAVBAR, "stacked" => STUDIO_STACKED, "motion" => nil, "saved_at" => nil,
                    "type_scale" => { "type_base" => 16, "type_dense_base" => 14, "type_display_weight" => 800, "type_text_weight" => 300 } },
                  JSON.parse(@dir.join("kit.json").read))
   end
@@ -39,6 +39,24 @@ class BrandKitInstallTest < ActiveSupport::TestCase
     kit.update!(saved_at: Time.utc(2026, 10, 27, 18, 4, 5, 123_456))
     BrandKitInstall.new(kit, dest: @dir).call
     assert_equal "2026-10-27T18:04:05Z", JSON.parse(@dir.join("kit.json").read)["saved_at"]
+  end
+
+  # Task logo-motion-presets: kit.json carries the kit's motion choice, and a kit read back from it carries it too.
+  test "the manifest carries the motion choice, and kit_from_manifest round-trips and checks it" do
+    kit = studio_kit
+    kit.update!(motion_choice: { "preset" => "weight_flick", "logo" => "stacked" })
+    BrandKitInstall.new(kit, dest: @dir).call
+    json = @dir.join("kit.json").read
+    assert_equal({ "preset" => "weight_flick", "logo" => "stacked" }, JSON.parse(json)["motion"])
+
+    again = BrandKitInstall.kit_from_manifest(json, brand: "studio")
+    assert_equal kit.motion_choice, again.motion_choice
+    assert_equal BrandKitInstall.manifest_for(kit), BrandKitInstall.manifest_for(again)
+
+    bad = JSON.parse(json).merge("motion" => { "preset" => "spin", "logo" => "stacked" }).to_json
+    assert_match(/unknown motion preset/, assert_raises(ArgumentError) { BrandKitInstall.kit_from_manifest(bad, brand: "studio") }.message)
+    none = JSON.parse(json).except("motion").to_json
+    assert_nil BrandKitInstall.kit_from_manifest(none, brand: "studio").motion_choice, "a kit.json from before motion reads as no motion"
   end
 
   test "the saved choices reach the files: the navbar is the saved one, not the default" do

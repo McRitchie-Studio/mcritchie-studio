@@ -281,4 +281,51 @@ class BrandKitTest < ActiveSupport::TestCase
     assert_equal 'unknown proportion "golden": expected one of three_two_one, rule_of_three', error.message
     refute kit.persisted?
   end
+  # Task logo-motion-presets: the kit's motion choice, the preset and the logo it plays on.
+  test "a motion choice is saved in one spelling, moves saved_at, and makes the kit saved" do
+    kit = BrandKit.for("turf")
+    refute kit.anything_saved?
+    choice = travel_to(Time.utc(2026, 10, 28, 22, 0)) { kit.save_motion(params(preset: "weight_flick", logo: "navbar"), by: BY) }
+    kit.reload
+    assert_equal({ "preset" => "weight_flick", "logo" => "navbar" }, choice)
+    assert_equal choice, kit.motion_choice
+    assert_equal choice, kit.saved_motion
+    assert_equal Time.utc(2026, 10, 28, 22, 0), kit.saved_at
+    assert_equal BY, kit.updated_by
+    assert kit.anything_saved?
+    refute BrandKit::CHOICE_TYPES.any? { |type| kit.saved?(type) }, "a motion is no logo choice: the logos still draw their defaults"
+  end
+
+  test "saving a motion refuses an unknown preset or logo, and a weight preset on traced lettering, storing nothing" do
+    kit = BrandKit.for("welding")
+    { { preset: "spin", logo: "stacked" } => /unknown motion preset/, { preset: "pop_slide", logo: "icon" } => /plays on navbar or stacked/,
+      { preset: "weight_flick", logo: "stacked" } => /needs lettering with weights/ }.each do |given, message|
+      assert_match message, assert_raises(BrandKit::Error) { kit.save_motion(params(**given), by: BY) }.message
+    end
+    refute kit.persisted?
+    assert_nil kit.motion_choice
+  end
+
+  test "a motion choice written around save_motion is refused by validation; one gone stale reads as none" do
+    kit = BrandKit.for("studio")
+    kit.motion_choice = { "preset" => "spin", "logo" => "stacked" }
+    refute kit.valid?
+    assert_match(/unknown motion preset/, kit.errors[:motion_choice].first)
+
+    kit.save!(validate: false)
+    kit.reload
+    assert_nil kit.saved_motion, "a preset since retired is no motion"
+    assert kit.update(notes: "still saves"), "a stale motion does not refuse a save of anything else"
+  end
+
+  test "clearing the motion keeps the record and moves saved_at" do
+    kit = BrandKit.for("industries")
+    kit.save_motion(params(preset: "match_cut", logo: "stacked"), by: BY)
+    travel_to(1.hour.from_now) { kit.clear_motion(by: "someone@test.com") }
+    kit.reload
+    assert_nil kit.motion_choice
+    assert_nil kit.saved_motion
+    assert_equal "someone@test.com", kit.updated_by
+    assert_in_delta 1.hour.from_now, kit.saved_at, 5
+  end
 end
