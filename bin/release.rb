@@ -1695,15 +1695,25 @@ end
 #                                         own (test/support/outbound_seams.rb seals it);
 #                                         set, no turf-monster tree is cut for it.
 #
-# The driver is the RELEASE's: it runs from a temporary detached worktree of
-# turf-monster at the SHA prepare deployed to QA (with_gauntlet_tree), never the
-# primary checkout on main, so a release that changes the driver is tested by its
-# own driver. The worktree is a throwaway in a temp dir, removed when the run
-# ends, green or red. On a red (or a raise) the driver's state file
-# (GAUNTLET_MANIFEST: the contest, its cast, how far it got) is copied out to the
-# primary's tmp/qa-rehearsal first, so a devnet contest left open can be resumed or
-# closed by hand. A tree a killed run left behind (it holds copies of the primary's
-# .env files) is swept, state kept, when the next run cuts its own.
+# The driver is the RELEASE's: it runs from a detached worktree of turf-monster at
+# the SHA prepare deployed to QA (with_gauntlet_tree), never the primary checkout
+# on main, so a release that changes the driver is tested by its own driver.
+#
+# That worktree is WARM: one persistent tree at gauntlet_warm_tree_path, kept
+# between releases. Each run flocks it, moves it with `git checkout --detach
+# --force <sha>`, wipes every untracked and ignored file except the caches
+# (GAUNTLET_WARM_KEEP: the bundle, node_modules, bootsnap's compile cache), and
+# refuses to run unless HEAD is exactly the QA SHA and `git status` is empty. The
+# run ends with the .env copies deleted and the tree wiped again, caches kept. A
+# warm tree that cannot be readied (missing, corrupt, another run holding its lock)
+# falls back to the COLD cut: a throwaway in a fresh temp dir, removed when the run
+# ends. RELEASE_GAUNTLET_WARM_TREE=off forces the cold cut.
+#
+# Either way, on a red (or a raise) the driver's state file (GAUNTLET_MANIFEST: the
+# contest, its cast, how far it got) is copied out to the primary's tmp/qa-rehearsal
+# first, so a devnet contest left open can be resumed or closed by hand. A cold tree
+# a killed run left behind (it holds copies of the primary's .env files) is swept,
+# state kept, when the next run starts; the sweep never touches the warm tree.
 #
 # The overall deadline starts BEFORE the tree is cut: the cut's fetch and
 # `bundle install` spend the same budget the rehearsal steps do.
@@ -1720,6 +1730,15 @@ GAUNTLET_TREE_PREFIX = "gauntlet-turf-monster-"
 # so the release tree boots with the primary's env (bin/agent-worktree copies the
 # same pair into every desk).
 GAUNTLET_TREE_ENV_FILES = %w[.env .env.development .env.local .env.development.local].freeze
+# The warm tree. Its path is never under turf-monster/.worktrees/ (DeskRoot) and
+# never carries GAUNTLET_TREE_PREFIX (the cold sweep's glob).
+GAUNTLET_WARM_TREE_ENV = "RELEASE_GAUNTLET_WARM_TREE"
+GAUNTLET_WARM_TREE_OFF = %w[off 0 false cold no].freeze
+GAUNTLET_WARM_TREE_DEFAULT = File.join(Dir.home, ".cache", "mcritchie-release", "turf-monster-gauntlet").freeze
+# The only untracked paths `git clean -ffdx` spares in the warm tree: caches that
+# make the next run cheaper and cannot change what code runs. Anchored at the
+# tree's root. Never tmp/ as a whole: tmp/qa-rehearsal is the last run's state.
+GAUNTLET_WARM_KEEP = %w[/vendor/bundle/ /.bundle/ /node_modules/ /tmp/cache/bootsnap/].freeze
 DEVNET_RPC_ENV = "RELEASE_DEVNET_RPC_URL"
 DEVNET_RPC_DEFAULT = "https://api.devnet.solana.com"
 GAUNTLET_DRIVER = "bin/qa-contest-rehearsal"
@@ -1743,6 +1762,13 @@ def gauntlet_tmp_root = Dir.tmpdir
 # A leftover tree older than this is a killed run's: a live one ends inside its
 # deadline (the cut included), so twice the deadline cannot be a run in flight.
 def gauntlet_tree_stale_after = gauntlet_deadline * 2
+# The persistent turf-monster tree the gauntlet reuses, or nil for the cold cut.
+def gauntlet_warm_tree_path
+  raw = ENV[GAUNTLET_WARM_TREE_ENV].to_s.strip
+  return nil if GAUNTLET_WARM_TREE_OFF.include?(raw.downcase)
+
+  File.expand_path(raw.empty? ? GAUNTLET_WARM_TREE_DEFAULT : raw)
+end
 
 # The step of prepare after QA green: run the gauntlet when the release owes one.
 # Returns :not_required, :skipped, :dry, :recorded (one is already on the release),
@@ -1875,8 +1901,9 @@ def devnet_gauntlet_runner(root, started_at: nil)
   )
 end
 
-# Yields the turf-monster tree the driver runs from: a temporary detached worktree
-# at the turf-monster SHA prepare deployed to QA, removed when the block returns
+# Yields the turf-monster tree the driver runs from: a detached worktree at the
+# turf-monster SHA prepare deployed to QA. The warm tree when it can be readied
+# (claim_warm_gauntlet_tree), else a cold throwaway removed when the block returns
 # (or raises). Answers the block's Result, or a red one at step `tree` when the
 # release's tree cannot be cut: a gauntlet run by another tree's driver would be
 # recorded as this release's, which is the defect this exists to close.
@@ -1898,18 +1925,22 @@ def with_gauntlet_tree(turf, shas)
   return gauntlet_tree_red("no QA SHA for turf-monster, so there is no release tree to run the driver from") if sha.empty?
 
   sweep_stale_gauntlet_trees(primary)
-  path = Dir.mktmpdir(GAUNTLET_TREE_PREFIX, gauntlet_tmp_root)
+  warm = claim_warm_gauntlet_tree(primary, sha)
+  path = warm ? warm[:path] : Dir.mktmpdir(GAUNTLET_TREE_PREFIX, gauntlet_tmp_root)
   result = nil
   begin
-    error = cut_gauntlet_tree(primary, path, sha)
-    return gauntlet_tree_red(error) if error
+    unless warm
+      error = cut_gauntlet_tree(primary, path, sha)
+      return gauntlet_tree_red(error) if error
+    end
 
-    say("  gauntlet driver: turf-monster@#{sha[0, 7]} (#{path}), the tree prepare deployed to QA")
+    say("  gauntlet driver: turf-monster@#{sha[0, 7]} (#{path}), the tree prepare deployed to QA" \
+        "#{warm ? ' (warm tree, reused)' : ' (cold cut)'}")
     result = yield(path)
   ensure
     # A red, or a raise (result still nil): the contest may be open on devnet.
     keep_gauntlet_state(primary, path, sha[0, 7]) unless result.respond_to?(:ok?) && result.ok?
-    remove_gauntlet_tree(primary, path)
+    warm ? release_warm_gauntlet_tree(warm) : remove_gauntlet_tree(primary, path)
   end
 end
 
@@ -1934,14 +1965,17 @@ rescue SystemCallError => e
   nil
 end
 
-# Removes the trees a killed run left in gauntlet_tmp_root (a SIGKILL skips the
-# ensure): each holds copies of the primary's .env files, and may hold the state
-# of a contest left open. State kept first, then the tree removed. A tree younger
-# than gauntlet_tree_stale_after may be a run in flight, and is left alone.
+# Removes the cold trees a killed run left in gauntlet_tmp_root (a SIGKILL skips
+# the ensure): each holds copies of the primary's .env files, and may hold the
+# state of a contest left open. State kept first, then the tree removed. A tree
+# younger than gauntlet_tree_stale_after may be a run in flight, and is left
+# alone. The warm tree is never swept, wherever it lives: it is kept on purpose.
 def sweep_stale_gauntlet_trees(primary)
   cutoff = Time.now - gauntlet_tree_stale_after
+  warm = gauntlet_warm_tree_path
   Dir.glob(File.join(gauntlet_tmp_root, "#{GAUNTLET_TREE_PREFIX}*")).each do |stale|
     next unless File.directory?(stale) && File.mtime(stale) < cutoff
+    next if warm && same_gauntlet_path?(stale, warm)
 
     say("  sweeping a stale gauntlet tree a killed run left behind: #{stale}")
     keep_gauntlet_state(primary, stale, "stale")
@@ -1951,20 +1985,177 @@ rescue SystemCallError => e
   say("  ⚠ could not sweep stale gauntlet trees (#{e.message})")
 end
 
+def same_gauntlet_path?(a, b)
+  real = ->(p) { File.exist?(p) ? File.realpath(p) : File.expand_path(p) }
+  real.call(a) == real.call(b)
+end
+
 # Cuts `path` as a detached worktree of `primary` at `sha` and readies it for the
 # driver. Answers nil, or why it could not.
 def cut_gauntlet_tree(primary, path, sha)
-  sh("git", "-C", primary, "worktree", "prune", capture: true) # a killed run's leftover registration
-  _, present = sh("git", "-C", primary, "cat-file", "-e", "#{sha}^{commit}", capture: true)
-  sh("git", "-C", primary, "fetch", "--quiet", "origin", sha, capture: true) unless present
-  out, ok = sh("git", "-C", primary, "worktree", "add", "--detach", path, sha, capture: true)
+  full = gauntlet_commit(primary, sha)
+  out, ok = sh("git", "-C", primary, "worktree", "add", "--detach", path, full || sha, capture: true)
   return "could not cut a turf-monster worktree at #{sha[0, 7]} (`git worktree add --detach`): #{out.to_s.strip}" unless ok
 
+  verify_gauntlet_tree(path, full) || ready_gauntlet_tree(primary, path)
+end
+
+# The full commit `sha` names in `primary`, fetched from origin when the primary
+# lacks it; nil when it cannot be found. Prunes a killed run's leftover
+# registration first.
+def gauntlet_commit(primary, sha)
+  sh("git", "-C", primary, "worktree", "prune", capture: true)
+  _, present = sh("git", "-C", primary, "cat-file", "-e", "#{sha}^{commit}", capture: true)
+  sh("git", "-C", primary, "fetch", "--quiet", "origin", sha, capture: true) unless present
+  out, ok = sh("git", "-C", primary, "rev-parse", "--verify", "--quiet", "#{sha}^{commit}", capture: true)
+  full = out.to_s.strip
+  ok && full.match?(/\A\h{40,64}\z/) ? full : nil
+end
+
+# Refuses a tree whose HEAD is not exactly the release's commit, or whose tracked
+# files differ from it. Answers nil, or why.
+def verify_gauntlet_tree(path, full)
+  return "turf-monster has no commit for the release's SHA" if full.nil?
+
+  head, ok = sh("git", "-C", path, "rev-parse", "HEAD", capture: true)
+  return "the tree's HEAD is #{head.to_s.strip[0, 12].inspect}, not #{full[0, 7]}" unless ok && head.to_s.strip == full
+
+  status, ok = sh("git", "-C", path, "status", "--porcelain", "--untracked-files=no", capture: true)
+  return "the tree's tracked files differ from #{full[0, 7]}: #{status.to_s.lines.first.to_s.strip}" unless ok && status.to_s.strip.empty?
+
+  nil
+end
+
+# The primary's env files into the tree, each written 0600 from the start (never
+# a copy that inherits a looser mode), so the tree boots with the primary's env.
+# Their contents are never printed.
+def copy_gauntlet_env(primary, path)
   GAUNTLET_TREE_ENV_FILES.each do |name|
     source = File.join(primary, name)
-    FileUtils.cp(source, File.join(path, name)) if File.file?(source)
+    next unless File.file?(source)
+
+    dest = File.join(path, name)
+    FileUtils.rm_f(dest)
+    File.open(dest, File::WRONLY | File::CREAT | File::EXCL, 0o600) { |f| f.write(File.binread(source)) }
+    File.chmod(0o600, dest)
   end
+end
+
+def ready_gauntlet_tree(primary, path)
+  copy_gauntlet_env(primary, path)
   bundle_gauntlet_tree(path)
+end
+
+# The warm tree, readied for this run at `sha`: { path:, lock:, primary: }, or nil
+# (and why, said) for the cold cut. Holds the tree's flock until
+# release_warm_gauntlet_tree, so two runs never share it.
+def claim_warm_gauntlet_tree(primary, sha)
+  path = gauntlet_warm_tree_path
+  return nil unless path
+
+  primary_real = File.exist?(primary) ? File.realpath(primary) : File.expand_path(primary)
+  if path.include?("/.worktrees/") || same_gauntlet_path?(path, primary) || path.start_with?("#{primary_real}/") ||
+     path.start_with?("#{File.expand_path(primary)}/")
+    say("  ⚠ #{GAUNTLET_WARM_TREE_ENV} #{path} is inside a turf-monster checkout or a managed desk root; cold cut instead")
+    return nil
+  end
+
+  FileUtils.mkdir_p(File.dirname(path), mode: 0o700)
+  lock = File.open("#{path}.lock", File::RDWR | File::CREAT, 0o600)
+  unless lock.flock(File::LOCK_EX | File::LOCK_NB)
+    lock.close
+    say("  ⚠ the warm gauntlet tree #{path} is held by another run; cold cut instead")
+    return nil
+  end
+
+  error = sync_warm_gauntlet_tree(primary, path, sha)
+  if error
+    lock.close
+    say("  ⚠ the warm gauntlet tree #{path} is unusable (#{error}); cold cut instead")
+    return nil
+  end
+  { path: path, lock: lock, primary: primary }
+rescue SystemCallError, IOError => e
+  lock&.close unless lock&.closed?
+  say("  ⚠ the warm gauntlet tree could not be claimed (#{e.message}); cold cut instead")
+  nil
+end
+
+# Moves the warm tree to `sha` and wipes it to exactly that commit plus the caches.
+# A tree that is ours but cannot be moved or wiped is discarded and cut afresh,
+# once. A path that holds anything not ours is never touched. Answers nil, or why.
+def sync_warm_gauntlet_tree(primary, path, sha)
+  full = gauntlet_commit(primary, sha)
+  return "turf-monster has no commit #{sha[0, 7]}" unless full
+
+  ours = warm_gauntlet_tree_ours?(primary, path)
+  if File.exist?(path) && !ours && !(File.directory?(path) && Dir.empty?(path))
+    return "#{path} holds something that is not a turf-monster gauntlet worktree; left alone"
+  end
+
+  error = (move_warm_gauntlet_tree(path, full) if ours)
+  if !ours || error
+    say("  warm gauntlet tree: #{ours ? "discarding a broken one (#{error})" : 'cutting it'} at #{path}")
+    discard_warm_gauntlet_tree(primary, path) if ours
+    out, ok = sh("git", "-C", primary, "worktree", "add", "--detach", path, full, capture: true)
+    return "`git worktree add --detach` failed: #{out.to_s.strip}" unless ok
+
+    error = move_warm_gauntlet_tree(path, full)
+  end
+  error || ready_gauntlet_tree(primary, path)
+end
+
+def move_warm_gauntlet_tree(path, full)
+  out, ok = sh("git", "-C", path, "checkout", "--quiet", "--detach", "--force", full, capture: true)
+  return "`git checkout --detach` failed: #{out.to_s.strip}" unless ok
+
+  wipe_warm_gauntlet_tree(path) || verify_gauntlet_tree(path, full)
+end
+
+# Every untracked and ignored file goes (the last run's .env copies, its state,
+# logs, anything a step wrote) except GAUNTLET_WARM_KEEP's caches.
+def wipe_warm_gauntlet_tree(path)
+  keep = GAUNTLET_WARM_KEEP.flat_map { |pattern| ["-e", pattern] }
+  out, ok = sh("git", "-C", path, "clean", "-ffdxq", *keep, capture: true)
+  ok ? nil : "`git clean` failed: #{out.to_s.strip}"
+end
+
+# True when `path` is a linked worktree of `primary` (its .git is a file pointing
+# into the primary's worktrees/), never the primary itself or another repo.
+def warm_gauntlet_tree_ours?(primary, path)
+  dotgit = File.join(path, ".git")
+  return false unless File.file?(dotgit)
+
+  gitdir = File.read(dotgit)[/\Agitdir:\s*(.+)$/, 1].to_s.strip
+  return false if gitdir.empty?
+
+  common, ok = sh("git", "-C", primary, "rev-parse", "--path-format=absolute", "--git-common-dir", capture: true)
+  return false unless ok
+
+  worktrees = File.join(common.to_s.strip, "worktrees")
+  parent = File.dirname(File.expand_path(gitdir, path))
+  File.directory?(worktrees) && File.directory?(parent) && File.realpath(parent) == File.realpath(worktrees)
+rescue SystemCallError
+  false
+end
+
+def discard_warm_gauntlet_tree(primary, path)
+  sh("git", "-C", primary, "worktree", "remove", "--force", path, capture: true)
+  FileUtils.rm_rf(path)
+  sh("git", "-C", primary, "worktree", "prune", capture: true)
+end
+
+# The run is over: the .env copies go at once, then the tree is wiped back to its
+# commit plus the caches, and the lock is let go. The tree itself stays.
+def release_warm_gauntlet_tree(warm)
+  path = warm[:path]
+  GAUNTLET_TREE_ENV_FILES.each { |name| FileUtils.rm_f(File.join(path, name)) }
+  error = wipe_warm_gauntlet_tree(path)
+  say("  ⚠ could not wipe the warm gauntlet tree #{path} (#{error}); the next run wipes it") if error
+rescue SystemCallError => e
+  say("  ⚠ could not tidy the warm gauntlet tree #{path} (#{e.message}); the next run wipes it")
+ensure
+  warm[:lock]&.close
 end
 
 # The release may change turf-monster's Gemfile.lock: install what it pins. Answers

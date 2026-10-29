@@ -162,6 +162,9 @@ module OutboundSeams
       # and with the driver set bin/release cuts no worktree in turf-monster's checkout.
       "RELEASE_GAUNTLET_DRIVER" => stub("qa-contest-rehearsal"),
       "RELEASE_DEVNET_RPC_URL" => UNROUTABLE,
+      # The warm gauntlet tree lives in the home dir: a test that unsets the driver
+      # still never reaches it, and one testing it names a temp path of its own.
+      "RELEASE_GAUNTLET_WARM_TREE" => "off",
       "OUTBOUND_SEAM_LOG" => log_path,
       # THE HANDED-DOWN BOARD BEARER, unset. bin/submit mints one token and exports it
       # to every child as AGENT_API_TOKEN, and bin/fast-check is one of those children —
@@ -346,5 +349,6 @@ module OutboundSeams
     # does. Nothing in the test process itself (app/, lib/) reads either name.
     ENV["RELEASE_GAUNTLET_DRIVER"] = stub("qa-contest-rehearsal")
     ENV["RELEASE_DEVNET_RPC_URL"] = UNROUTABLE
+    ENV["RELEASE_GAUNTLET_WARM_TREE"] = "off" # never the home dir's warm tree; see above
   end
 end
