@@ -41,7 +41,7 @@ You are **expected to hold both**; an absent one is this machine's setup gap. Re
 **The one-command path: `bin/release cycle`.** When Alex McRitchie has cleared the
 whole release in chat, run `bin/release cycle --clearance "<his words>" --yes
 --wait-for-1password` from the primary instead of this SOP's steps by hand. It runs
-this ship (`--mode cleared`, after QA verify, then prod verify and the archive; prod verify checks that each app answers 200 and runs the release's frozen SHA, read live the way `finalize` proves it, and stops with exit 5 when one does not) as one act of a resumable state machine and sets up the credentials above
+this ship (`--mode cleared`, after QA verify, then prod verify and the archive; prod verify checks that each app answers 200 and that each app with a prod deploy runs the SHA the ship pushed, a config-var set after the deploy still counting and a rollback not, and stops with exit 5 when one is not proven after three reads) as one act of a resumable state machine and sets up the credentials above
 itself (the admin 1Password token from `~/.zprofile.admin`, `GH_APP_ITEM=github.mcritchie-admin`, a freshly minted deployer `GH_TOKEN`), so none of the exports here are needed for it. Re-running it resumes
 from the board's stage. The full description and exit codes are in
 [`full-cycle.md`](../../mason/sops/full-cycle.md#procedure).

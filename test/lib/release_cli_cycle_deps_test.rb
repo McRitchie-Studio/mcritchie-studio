@@ -14,9 +14,14 @@ class ReleaseCliCycleDepsTest < ReleaseCliHarness
     "repos" => [
       { "repo" => "studio-engine", "kind" => "gem" },
       { "repo" => "mcritchie-studio", "kind" => "app", "prod_deploy" => { "strategy" => "git_push_heroku" } },
-      { "repo" => "turf-monster", "kind" => "app", "prod_deploy" => { "strategy" => "git_push_heroku" } }
+      { "repo" => "turf-monster", "kind" => "app", "prod_deploy" => { "strategy" => "git_push_heroku" } },
+      # config/release_repos.yml: turf-vault and chain-ops are apps with NO prod_deploy.
+      { "repo" => "turf-vault", "kind" => "app" },
+      { "repo" => "chain-ops", "kind" => "app", "prod_deploy" => {} }
     ],
-    "qa_shas" => { "mcritchie-studio" => "hub1111aaaa", "turf-monster" => "turf222bbbb", "studio-engine" => "gem0" }
+    "qa_shas" => { "mcritchie-studio" => "hub1111aaaa", "turf-monster" => "turf222bbbb", "studio-engine" => "gem0",
+                   "turf-vault" => "vault333" },
+    "shipped_shas" => { "turf-monster" => "repin444cccc" }
   }.freeze
 
   def sha_call(plan:, live_turf: true)
@@ -25,12 +30,17 @@ class ReleaseCliCycleDepsTest < ReleaseCliHarness
         $stdout.puts("BOARD-READ read_only=" + read_only.to_s + " " + ruby[/find_by!\\(slug: "([^"]+)"/, 1].to_s)
         #{plan.nil? ? 'raise("board down")' : "JSON.parse(#{JSON.generate(plan).inspect})"}
       end
-      def deploy_live_verdict(group, frozen)
-        $stdout.puts("PROBE " + group["repo"] + "@" + frozen)
+      class ReleaseCycleDeps
+        private def mint(identity, _env) = "fake-#{'#'}{identity}-token"
+      end
+      ENV["GH_TOKEN"] = "outer-login"
+      def deploy_live_verdict(group, frozen, post_ship: false)
+        $stdout.puts("PROBE " + group["repo"] + "@" + frozen + " post_ship=" + post_ship.to_s + " gh=" + ENV["GH_TOKEN"].to_s)
         group["repo"] == "turf-monster" && !#{live_turf} ? [false, "current Heroku release is not at the frozen SHA"] : [true, ""]
       end
     RUBY
-    run_cli([], setup: setup, call: 'puts("VERDICTS " + ReleaseCycleDeps.new.deployed_sha_verdicts("rel-s").to_json)')
+    run_cli([], setup: setup, call: 'puts("VERDICTS " + ReleaseCycleDeps.new.deployed_sha_verdicts("rel-s").to_json); ' \
+                                    'puts("GH-AFTER " + ENV["GH_TOKEN"].to_s)')
   end
 
   def verdicts(out) = JSON.parse(out[/^VERDICTS (.*)$/, 1])
@@ -40,11 +50,29 @@ class ReleaseCliCycleDepsTest < ReleaseCliHarness
 
     assert_includes out, "BOARD-READ read_only=true rel-s"
     assert_includes out, "PROBE mcritchie-studio@hub1111aaaa"
-    assert_includes out, "PROBE turf-monster@turf222bbbb"
+    assert_includes out, "PROBE turf-monster@repin444cccc", "shipped_shas (what the ship pushed) before qa_shas"
     refute_includes out, "PROBE studio-engine", "a gem has no deployed app to probe"
     got = verdicts(out).to_h { |v| [v["repo"], [v["ok"], v["reason"]]] }
     assert_equal [true, ""], got["mcritchie-studio"]
     assert_equal [false, "current Heroku release is not at the frozen SHA"], got["turf-monster"]
+  end
+
+  # Carl's blocker: turf-vault and chain-ops have no prod_deploy, so a release
+  # carrying either exited 5 on a healthy ship. Only deploy targets are asked.
+  def test_apps_with_no_prod_deploy_are_not_probed
+    out = sha_call(plan: PLAN)
+
+    refute_includes out, "PROBE turf-vault"
+    refute_includes out, "PROBE chain-ops"
+    assert_equal %w[mcritchie-studio turf-monster], verdicts(out).map { |v| v["repo"] }.sort
+  end
+
+  def test_the_probe_is_the_post_ship_form_under_a_minted_agent_token_restored_after
+    out = sha_call(plan: PLAN)
+
+    assert_includes out, "PROBE turf-monster@repin444cccc post_ship=true gh=fake-agent-token",
+                    "gh run list reads under the cycle's own agent token, never the shell's login"
+    assert_includes out, "GH-AFTER outer-login", "the process env is restored after the read"
   end
 
   def test_an_unreadable_release_answers_nil_so_prod_verify_fails_closed
@@ -52,6 +80,31 @@ class ReleaseCliCycleDepsTest < ReleaseCliHarness
 
     assert_includes out, "VERDICTS null"
     refute_includes out, "PROBE"
+  end
+
+  # The post-ship read walks past a config-only release (turf-monster's
+  # EXPECTED_IDL_HASH set) to the frozen deploy; finalize keeps the strict read.
+  def test_deploy_live_verdict_post_ship_accepts_a_config_set_after_the_deploy_and_finalize_does_not
+    frozen = "0988886c1f2e3d4c5b6a798877665544332211aa"
+    setup = <<~RUBY
+      def heroku_releases(app, limit: 5)
+        $stdout.puts("RELEASES " + app + " limit=" + limit.to_s)
+        [{ "version" => 286, "description" => "Set EXPECTED_IDL_HASH config vars", "status" => "succeeded", "current" => true },
+         { "version" => 285, "description" => "Deploy 0988886c", "status" => "succeeded", "current" => false }]
+      end
+      def prod_up_ok?(_url) = true
+      def origin_main_sha(_repo) = #{frozen.inspect}
+      def group_smoke_url(_group) = "https://turf.example"
+    RUBY
+    group = { "repo" => "turf-monster", "kind" => "app",
+              "prod_deploy" => { "strategy" => "repo_script", "heroku_app" => "turf-monster-mainnet" } }
+    call = "puts('POST ' + deploy_live_verdict(#{group.inspect}, #{frozen.inspect}, post_ship: true).inspect); " \
+           "puts('FINALIZE ' + deploy_live_verdict(#{group.inspect}, #{frozen.inspect}).inspect)"
+    out = run_cli([], setup: setup, call: call)
+
+    assert_includes out, "RELEASES turf-monster-mainnet limit=20"
+    assert_includes out, 'POST [true, ""]'
+    assert_match(/FINALIZE \[false, /, out)
   end
 
   def test_the_snapshot_carries_the_gauntlet_record_and_qa_shas_for_the_sha_bound_check

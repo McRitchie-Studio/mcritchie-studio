@@ -27,13 +27,14 @@ class ReleaseCycleTest < Minitest::Test
   # last one repeats); `steps` maps a step name to a list of [status, output]
   # answers consumed in order (the last repeats).
   class FakeDeps
-    attr_reader :calls, :reads, :checked, :sha_reads
+    attr_reader :calls, :reads, :checked, :sha_reads, :pauses
 
     # `shas` answers deployed_sha_verdicts: a list of verdict hashes, nil (unreadable),
     # or a lambda of the release slug. Default: every app runs its frozen SHA.
     def initialize(snapshots:, steps: {}, http: {}, session: OWN, targets: nil, shas: :all_live)
       @shas = shas
       @sha_reads = []
+      @pauses = []
       @snapshots = snapshots
       @steps = steps.transform_values(&:dup)
       @http = http
@@ -69,6 +70,8 @@ class ReleaseCycleTest < Minitest::Test
       @checked << url
       @http.fetch(url, "200")
     end
+
+    def pause(seconds) = @pauses << seconds
 
     def deployed_sha_verdicts(slug)
       @sha_reads << slug
@@ -332,10 +335,12 @@ class ReleaseCycleTest < Minitest::Test
     status, out = run_cycle(deps)
 
     assert_equal ReleaseCycle::VERIFY_FAILED, status, out
-    assert_equal ["rel-s"], deps.sha_reads, "the SHAs are read for the release that shipped"
+    assert_equal ["rel-s"] * 3, deps.sha_reads, "the SHAs are read for the release that shipped, three times"
+    assert_equal [20, 20], deps.pauses, "~20s between reads, none after the last"
     assert_empty step_names(deps), "no archive while production is unproven"
-    assert_includes out, "✗ turf-monster runs turf222 — the current Heroku release is not at the frozen SHA"
-    assert_includes out, "✓ mcritchie-studio runs hub1111 (the frozen SHA)"
+    assert_includes out, "✗ turf-monster not proven at turf222 — the current Heroku release is not at the frozen SHA"
+    refute_includes out, "turf-monster runs turf222", "an unproven app is never said to run the SHA"
+    assert_includes out, "✓ mcritchie-studio runs hub1111 (the shipped SHA)"
   end
 
   test "[unit] prod verify fails closed when the deployed SHAs cannot be read" do
@@ -343,6 +348,7 @@ class ReleaseCycleTest < Minitest::Test
     status, out = run_cycle(deps)
 
     assert_equal ReleaseCycle::VERIFY_FAILED, status
+    assert_equal 3, deps.sha_reads.size, "read three times before it fails"
     assert_empty step_names(deps)
     assert_includes out, "could not read rel-s's frozen SHAs"
   end
@@ -365,20 +371,43 @@ class ReleaseCycleTest < Minitest::Test
     assert_equal ["rel-x"], deps.sha_reads, "never the board's lagging last_shipped"
   end
 
-  test "[unit] sha_verdicts compares each app with its frozen SHA; a missing one is not proven" do
+  test "[unit] sha_verdicts compares each app with its shipped SHA; a missing one is not proven" do
     groups = [{ "repo" => "mcritchie-studio" }, { "repo" => "turf-monster" }, { "repo" => "moms-app" }]
     asked = []
     live = lambda do |group, sha|
       asked << [group["repo"], sha]
       group["repo"] == "turf-monster" ? [false, "Heroku runs v12 at 9999999, not the frozen SHA"] : [true, ""]
     end
-    verdicts = ReleaseCycle.sha_verdicts(groups, { "mcritchie-studio" => "aaa", "turf-monster" => "bbb" },
-                                         frozen: ->(qa, repo) { qa[repo] }, live: live)
+    verdicts = ReleaseCycle.sha_verdicts(groups, { "mcritchie-studio" => "aaa", "turf-monster" => "bbb" }, live: live)
 
-    assert_equal [%w[mcritchie-studio aaa], %w[turf-monster bbb]], asked, "no probe without a frozen SHA"
+    assert_equal [%w[mcritchie-studio aaa], %w[turf-monster bbb]], asked, "no probe without a recorded SHA"
     assert_equal [true, false, false], verdicts.map { |v| v["ok"] }
     assert_equal "Heroku runs v12 at 9999999, not the frozen SHA", verdicts[1]["reason"]
-    assert_equal "no frozen SHA recorded on the release", verdicts[2]["reason"]
+    assert_equal "no shipped or frozen SHA recorded on the release", verdicts[2]["reason"]
+  end
+
+  # A candidate-gem release ships a re-pin commit NEWER than qa_shas: the ship's
+  # own record of what it pushed (shipped_shas) is what production must run.
+  test "[unit] sha_verdicts holds each app to shipped_shas first, falling back to qa_shas" do
+    asked = []
+    live = ->(group, sha) { asked << [group["repo"], sha]; [true, ""] }
+    ReleaseCycle.sha_verdicts([{ "repo" => "turf-monster" }, { "repo" => "mcritchie-studio" }],
+                              { "turf-monster" => "qa00001", "mcritchie-studio" => "qahub01" },
+                              shipped_shas: { "turf-monster" => "repin02" }, live: live)
+
+    assert_equal [%w[turf-monster repin02], %w[mcritchie-studio qahub01]], asked
+  end
+
+  test "[unit] an unproven read that turns green on a re-read passes prod verify" do
+    answers = [nil, [{ "repo" => "turf-monster", "sha" => "turf222", "ok" => false, "reason" => "release phase running" }],
+               [{ "repo" => "turf-monster", "sha" => "turf222", "ok" => true, "reason" => "" }]]
+    deps = FakeDeps.new(snapshots: [shipped_snap], shas: ->(_slug) { answers.shift })
+    status, out = run_cycle(deps)
+
+    assert_equal 0, status, out
+    assert_equal [20, 20], deps.pauses
+    assert_equal %w[archive], step_names(deps)
+    assert_includes out, "reading again in 20s"
   end
 
   test "[unit] a URL that fails prod verify stops before the SHA read" do

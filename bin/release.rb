@@ -9617,7 +9617,14 @@ end
 # live. So a DRY finalize preview shows an inline app as unconfirmed — its
 # deployed_at_sha is false by construction — where the real run reads the release and
 # confirms it. Read a DRY refusal here as "not evaluated", never as the verdict.
-def deploy_live_verdict(group, frozen)
+# post_ship: true is `bin/release cycle`'s prod verify, right after a ship: a Heroku
+# app counts as live when its newest Deploy is the frozen SHA and only config-only
+# releases (an EXPECTED_IDL_HASH set, a rotation) came after it
+# (ShipSequence.heroku_live_at_sha_through_config?). The finalize guard calls it
+# without, and keeps the strict "the CURRENT release is our deploy" rule.
+POST_SHIP_HEROKU_RELEASES = 20
+
+def deploy_live_verdict(group, frozen, post_ship: false)
   frozen = frozen.to_s.strip
   return [false, "no frozen SHA recorded for this repo"] if frozen.empty?
 
@@ -9647,7 +9654,14 @@ def deploy_live_verdict(group, frozen)
     case strategy
     when "github_actions" then nil
     when "static_cloudflare" then static_release_sha(group_smoke_url(group)) == frozen
-    else Release::ShipSequence.heroku_release_at_sha?(heroku_releases(heroku_app), frozen)
+    else
+      if post_ship
+        Release::ShipSequence.heroku_live_at_sha_through_config?(
+          heroku_releases(heroku_app, limit: POST_SHIP_HEROKU_RELEASES), frozen
+        )
+      else
+        Release::ShipSequence.heroku_release_at_sha?(heroku_releases(heroku_app), frozen)
+      end
     end
 
   # RESOLVED ONCE AND CARRIED, because `up_ok == false` has two causes and only the
@@ -12274,27 +12288,38 @@ class ReleaseCycleDeps
                                                qa_environments: QA_ENVIRONMENTS, hub: APP)
   end
 
-  # Prod verify's SHA leg: for each app the release ships, does production run the
-  # SHA the release froze (release.metadata["qa_shas"], the SHA `ship` pushes)?
+  # Prod verify's SHA leg: for each app the release DEPLOYS (a prod_deploy strategy,
+  # Release::ShipSequence.deploy_target?, as the URL check and the ship read it; a
+  # turf-vault or chain-ops group has none), does production run the SHA the release
+  # shipped? That SHA is release.metadata["shipped_shas"] (what the ship pushed: a
+  # candidate-gem re-pin commit is newer than qa_shas), else qa_shas.
   # [{ "repo", "sha", "ok", "reason" }], or nil when the release cannot be read.
-  # The answer is the finalize guard's (deploy_live_verdict): per strategy, the
-  # current Heroku release's commit, the deploy workflow's run, or the static
-  # marker, plus /up and origin/main. All READS: nothing deploys, nothing prints a
-  # credential (the board op exported the Heroku token into this process).
+  # The answer is deploy_live_verdict(post_ship: true): per strategy, the Heroku
+  # release history, the deploy workflow's run, or the static marker, plus /up and
+  # origin/main. All READS. The workflow-run read is `gh run list`, run under a
+  # freshly minted AGENT GitHub token (the cycle's own lane, never whatever `gh`
+  # login the shell holds); nothing prints a credential.
   def deployed_sha_verdicts(slug)
     plan = conductor("r = Release.find_by!(slug: #{slug.to_s.inspect}); " \
-                     "puts({ repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {}) }.to_json)",
+                     "puts({ repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {}), " \
+                     "shipped_shas: (r.metadata['shipped_shas'] || {}) }.to_json)",
                      read_only: true)
     return nil unless plan.is_a?(Hash)
 
-    apps = Array(plan["repos"]).select { |g| g.is_a?(Hash) && g["kind"] == "app" }
-    ReleaseCycle.sha_verdicts(Release::ShipSequence.ordered_app_groups(apps), plan["qa_shas"],
-                              frozen: ->(qa, repo) { Release::ShipSequence.frozen_sha(qa, repo).to_s },
-                              live: ->(group, sha) { deploy_live_verdict(group, sha) })
+    apps = Array(plan["repos"]).select do |g|
+      g.is_a?(Hash) && g["kind"] == "app" && Release::ShipSequence.deploy_target?(g["prod_deploy"])
+    end
+    with_agent_gh_token do
+      ReleaseCycle.sha_verdicts(Release::ShipSequence.ordered_app_groups(apps), plan["qa_shas"],
+                                shipped_shas: plan["shipped_shas"],
+                                live: ->(group, sha) { deploy_live_verdict(group, sha, post_ship: true) })
+    end
   rescue SystemExit, StandardError => e
     warn("  deployed-SHA read failed: #{e.message}")
     nil
   end
+
+  def pause(seconds) = sleep(seconds)
 
   # The HTTP status code as a string, or nil when nothing answered.
   def http_status(url)
@@ -12325,6 +12350,20 @@ class ReleaseCycleDeps
   end
 
   private
+
+  # Runs the block with the agent lane's env (ReleaseCycle.step_env, as prepare
+  # gets it: a fresh GH_TOKEN, GH_APP_ITEM and the admin-only secrets unset) in
+  # THIS process, restoring every key after. A failed mint leaves GH_TOKEN unset
+  # (gh's own login), and says so; the read then fails closed if gh cannot answer.
+  def with_agent_gh_token
+    env, minted = ReleaseCycle.step_env("prepare", mint: method(:mint))
+    warn("  ⚠ no agent GitHub token minted for the deployed-SHA read; gh uses its own login") unless minted
+    saved = env.keys.to_h { |key| [key, ENV.fetch(key, nil)] }
+    env.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+    yield
+  ensure
+    saved&.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+  end
 
   def mint(identity, env)
     out, _err, status = BoundedCommand.capture3(env, File.join(__dir__, "gh-token"), "--identity", identity,

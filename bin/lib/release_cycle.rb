@@ -35,7 +35,7 @@ require "stringio"
 # its elapsed time and the DevOps estimate's ETA when the board has one.
 #
 # PURE. Every collaborator is a method on +deps+ (snapshot, run_step, http_status,
-# deployed_sha_verdicts, session_id, now), so the machine is proven with fake steps and a fake board; no
+# deployed_sha_verdicts, pause, session_id, now), so the machine is proven with fake steps and a fake board; no
 # test ever runs a real prepare or ship. bin/release.rb supplies the live deps.
 module ReleaseCycle
   STAGES = %w[prepare qa_verify ship prod_verify archive].freeze
@@ -48,6 +48,10 @@ module ReleaseCycle
   }.freeze
 
   OK = 0
+  # Prod verify's deployed-SHA read: attempts, and the seconds between them.
+  SHA_READ_ATTEMPTS = 3
+  SHA_READ_PAUSE = 20
+
   # The step's own refusal (no clearance, a bad flag): nothing ran.
   REFUSED = 2
   # A QA or production URL did not answer 200, or a production app does not run the
@@ -132,16 +136,25 @@ module ReleaseCycle
     repos.map { |r| "#{r}@#{shas[r].to_s.empty? ? '?' : shas[r].to_s[0, 7]}" }.join(", ")
   end
 
-  # The deployed-SHA verdicts for prod verify, one per app group: frozen(qa_shas,
-  # repo) names the SHA the release froze, live(group, sha) answers [ok, reason]
-  # (bin/release.rb#deploy_live_verdict). A repo with no frozen SHA is NOT proven:
-  # there is nothing to compare production with.
-  def sha_verdicts(groups, qa_shas, frozen:, live:)
-    qa_shas = {} unless qa_shas.is_a?(Hash)
+  # The SHA prod verify holds an app to: what the ship PUSHED
+  # (release.metadata["shipped_shas"]), else what QA froze (qa_shas). A candidate
+  # gem's re-pin commit ships newer than qa_shas, so qa_shas alone false-reds it.
+  def frozen_sha(repo, shipped_shas, qa_shas)
+    [shipped_shas, qa_shas].each do |shas|
+      sha = (shas.is_a?(Hash) ? shas[repo] : nil).to_s.strip
+      return sha unless sha.empty?
+    end
+    ""
+  end
+
+  # The deployed-SHA verdicts for prod verify, one per app group; live(group, sha)
+  # answers [ok, reason] (bin/release.rb#deploy_live_verdict). A repo with no SHA
+  # recorded is NOT proven: there is nothing to compare production with.
+  def sha_verdicts(groups, qa_shas, live:, shipped_shas: {})
     Array(groups).map do |group|
       repo = group["repo"].to_s
-      sha = frozen.call(qa_shas, repo).to_s.strip
-      ok, reason = sha.empty? ? [false, "no frozen SHA recorded on the release"] : live.call(group, sha)
+      sha = frozen_sha(repo, shipped_shas, qa_shas)
+      ok, reason = sha.empty? ? [false, "no shipped or frozen SHA recorded on the release"] : live.call(group, sha)
       { "repo" => repo, "sha" => sha, "ok" => ok ? true : false, "reason" => reason.to_s }
     end
   end
@@ -432,7 +445,7 @@ module ReleaseCycle
         say("  ✗ no shipped release on the board to read its frozen SHAs from; the deployed SHAs are unproven")
         return VERIFY_FAILED
       end
-      verdicts = @deps.deployed_sha_verdicts(slug)
+      verdicts = read_sha_verdicts(slug)
       if verdicts.nil?
         say("  ✗ could not read #{slug}'s frozen SHAs or what production runs; the deployed SHAs are unproven")
         return VERIFY_FAILED
@@ -444,12 +457,29 @@ module ReleaseCycle
       bad = verdicts.reject { |v| v["ok"] }
       verdicts.each do |v|
         sha = v["sha"].to_s.empty? ? "?" : v["sha"].to_s[0, 7]
-        say("  #{v['ok'] ? '✓' : '✗'} #{v['repo']} runs #{sha}#{v['ok'] ? ' (the frozen SHA)' : " — #{v['reason']}"}")
+        say(v["ok"] ? "  ✓ #{v['repo']} runs #{sha} (the shipped SHA)" : "  ✗ #{v['repo']} not proven at #{sha} — #{v['reason']}")
       end
       return OK if bad.empty?
 
       say("  #{bad.size} app(s) not proven at #{slug}'s frozen SHA: #{bad.map { |v| v['repo'] }.join(', ')}")
       VERIFY_FAILED
+    end
+
+    # A just-shipped app can trail its deploy by a few seconds (a release phase, a
+    # dyno restart, a workflow run still concluding), and the reads are network
+    # calls. So an unreadable or not-yet-proven answer is read again, up to
+    # SHA_READ_ATTEMPTS times SHA_READ_PAUSE seconds apart, before prod verify fails.
+    def read_sha_verdicts(slug)
+      verdicts = nil
+      SHA_READ_ATTEMPTS.times do |attempt|
+        verdicts = @deps.deployed_sha_verdicts(slug)
+        return verdicts if verdicts && verdicts.all? { |v| v["ok"] }
+        break if attempt == SHA_READ_ATTEMPTS - 1
+
+        say("  ↻ deployed SHAs not proven yet (read #{attempt + 1}/#{SHA_READ_ATTEMPTS}); reading again in #{SHA_READ_PAUSE}s")
+        @deps.pause(SHA_READ_PAUSE)
+      end
+      verdicts
     end
 
     def read_snapshot
