@@ -53,6 +53,7 @@ class BooksReviewPageTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='books-line-hint']", /wire-needs-answer/
       assert_select "select[name='category'] optgroup[label='Assets (capitalized)'] option[value='deal_costs'][data-kind='asset']"
       assert_select "select[name='category'] option[value='member_distribution'][data-kind='distribution']"
+      assert_select "input[name='purpose'][list='books-purposes']"
     end
     assert_no_match(/123456789012/, response.body, "a full account number must never reach the page")
     assert_select "[data-test='books-entity-industries']"
@@ -79,6 +80,12 @@ class BooksReviewPageTest < ActionDispatch::IntegrationTest
     assert_redirected_to books_path(entity: "studio")
     @wire.reload
     assert_equal [ nil, nil, nil, nil ], [ @wire.category, @wire.purpose, @wire.classified_by, @wire.classified_at ]
+  end
+
+  test "[integration] a purpose typed beside a category that is not a distribution is dropped" do
+    log_in_as(admin)
+    patch book_entry_path(entity: "studio", id: @fee.id), params: { category: "bank_fees", purpose: "Owner draws" }
+    assert_equal [ "bank_fees", nil ], [ @fee.reload.category, @fee.purpose ]
   end
 
   test "[integration] Save refuses what bin/books classify refuses, and an empty pick, and says why" do

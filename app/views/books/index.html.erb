@@ -48,7 +48,7 @@
       <p class="card p-4 text-sm text-body" data-test="books-waiting-empty">Every line is answered.</p>
     <% end %>
     <% @waiting.each do |entry| %>
-      <div class="card p-4 space-y-3 text-sm scroll-mt-24" id="line-<%= entry.id %>" data-test="books-line" data-entry-id="<%= entry.id %>" x-data="{ kind: '' }">
+      <div class="card p-4 space-y-3 text-sm scroll-mt-24" id="line-<%= entry.id %>" data-test="books-line" data-entry-id="<%= entry.id %>">
         <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-4">
           <div class="min-w-0 space-y-1">
             <p class="text-muted text-xs">
@@ -70,11 +70,10 @@
             <span class="text-muted text-xs">Category</span>
             <%= select_tag :category, books_category_options(@config), include_blank: "Pick a category",
                            required: true, id: "category-#{entry.id}",
-                           class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-category" },
-                           "x-on:change": "kind = $event.target.selectedOptions[0]?.dataset.kind || ''" %>
+                           class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-category" } %>
           </label>
-          <label class="flex flex-col gap-1 min-w-0" x-show="kind === 'distribution'" x-cloak>
-            <span class="text-muted text-xs">Purpose (groups distributions on the balance sheet)</span>
+          <label class="flex flex-col gap-1 min-w-0">
+            <span class="text-muted text-xs">Purpose (a distribution only: groups it on the balance sheet)</span>
             <%= text_field_tag :purpose, nil, list: "books-purposes", id: "purpose-#{entry.id}", autocomplete: "off",
                                class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-purpose" } %>
           </label>

@@ -11,7 +11,7 @@ module BooksHelper
   def books_account(entity, key) = entity.account(key).label
 
   # The category picker's options, grouped by where each kind lands, each
-  # carrying its kind so the purpose field shows only for a distribution.
+  # carrying its kind (data-kind), the ledger kind it books to.
   def books_category_options(config, selected = nil)
     groups = { "income" => "Income (P&L)", "expense" => "Expenses (P&L)", "asset" => "Assets (capitalized)",
                "contribution" => "Equity", "distribution" => "Equity", "transfer" => "Transfers" }

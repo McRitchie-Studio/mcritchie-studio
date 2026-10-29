@@ -38,10 +38,14 @@ class BooksController < ApplicationController
                          alert: "Line ##{params[:id]} not saved: pick a category.", status: :see_other)
     end
 
+    # A purpose belongs to a distribution only; the form always offers the
+    # field, so one typed beside another category is dropped, not recorded.
+    category = nil if category == "none"
+    purpose = params[:purpose] if category && @config.categories[category]&.kind == "distribution"
     refusal = nil
     entries = rescue_and_log do
-      Books::Classify.call(@entity, ids: [ params[:id] ], category: (category == "none" ? nil : category),
-                                    purpose: params[:purpose], note: params[:note], by: current_user.email, config: @config)
+      Books::Classify.call(@entity, ids: [ params[:id] ], category: category,
+                                    purpose: purpose, note: params[:note], by: current_user.email, config: @config)
     rescue Books::Classify::Error => e
       refusal = e.message
       nil
