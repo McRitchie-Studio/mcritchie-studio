@@ -8,7 +8,9 @@ module Media
   #   source     which level chose it: "purpose:floor_alert", "soul:avi", "app:…", "defaults"
   #   fell_from  the media skipped on the way (fallback), oldest first
   Home = Struct.new(:medium, :channel, :spec, :source, :fell_from, keyword_init: true) do
-    def channel? = !channel.nil? && !spec.nil?
+    # Whether there is somewhere to post: a channel name whose spec gives an
+    # `id` or a `webhook_env`.
+    def channel? = !channel.nil? && (!channel_id.nil? || webhook_envs.any?)
 
     # A Discord channel snowflake (the bot posts to it), or nil.
     def channel_id = spec && spec["id"].to_s.presence

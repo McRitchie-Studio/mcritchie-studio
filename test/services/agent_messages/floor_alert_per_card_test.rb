@@ -28,8 +28,9 @@ class AgentMessages::FloorAlertPerCardTest < ActiveSupport::TestCase
   setup do
     @recorder = Recorder.new
     bot = AgentMessages::DiscordBot.new(token: "test-token", transport: @recorder)
-    routes = AgentMessages::Routes.new("discord" => { "ops_channel_id" => OPS, "guilds" => {} })
-    @floor = AgentMessages::FloorAlert.new(routes: routes, bot: bot, logger: Logger.new(nil))
+    routes = AgentMessages::Routes.new("discord" => { "guilds" => {} })
+    home = Media::Home.new(medium: "discord", channel: "ops", spec: { "id" => OPS }, source: "test")
+    @floor = AgentMessages::FloorAlert.new(routes: routes, bot: bot, logger: Logger.new(nil), home: home)
     @t0 = Time.current
   end
 

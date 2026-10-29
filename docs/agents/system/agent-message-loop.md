@@ -296,7 +296,8 @@ switch reaches Claude and it bills Alex McRitchie's claude.ai subscription. Inst
 playbook: [`agent-dispatcher`](../agents/steffon/sops/agent-dispatcher.md).
 
 **The floor alert.** `AgentDispatcherAlertJob` runs every minute on the hub and
-posts to `discord.ops_channel_id` (`lobster-tank` today), pinging nobody, ONCE per
+posts to the floor alert's home (`config/agent_media.yml` `purposes.floor_alert`:
+Discord `#ops`, `lobster-tank` today; see [Media](#media)), pinging nobody, ONCE per
 incident when no dispatcher has pinged for 5 minutes (never before the first
 ping) or a routed message has waited `received` for 10, and once more when it
 clears. Two more checks are per card: a `submitted` card with a green DoR and no

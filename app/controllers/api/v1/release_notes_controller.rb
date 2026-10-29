@@ -46,6 +46,9 @@ module Api
       rescue ReleaseNotes::DiscordClient::DeliveryError => e
         create_error_log(e)
         render_error(e.message, error_code: "DISCORD_DELIVERY_FAILED")
+      rescue Media::NoHome => e
+        create_error_log(e)
+        render_error(e.message, error_code: "MISSING_WEBHOOK")
       end
 
       private
@@ -81,7 +84,8 @@ module Api
       def deliver_release_notes(payload, formatter)
         return nil if dry_run?(payload)
 
-        ReleaseNotes::DiscordClient.deliver(**formatter.discord_payload)
+        # The release_notes home in config/agent_media.yml (discord #releases).
+        Media.post(Media.home(purpose: :release_notes), **formatter.discord_payload)
       end
 
       def dry_run?(payload)

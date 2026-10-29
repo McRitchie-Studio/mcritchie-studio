@@ -75,8 +75,8 @@ production:
     args: []
   # The floor under bin/dispatcher (Alex McRitchie's Mac): one Discord alert per incident
   # when no dispatcher has pinged for 5 minutes or a routed message has waited 10,
-  # and one recovery line. Inert (a log line) without the bot token or
-  # discord.ops_channel_id. See AgentDispatcherAlertJob and Steffon's
+  # and one recovery line. Inert (a log line) without the bot token or a
+  # floor_alert channel in config/agent_media.yml. See AgentDispatcherAlertJob and Steffon's
   # docs/agents/agents/steffon/sops/agent-dispatcher.md.
   agent_dispatcher_alert:
     class: AgentDispatcherAlertJob
