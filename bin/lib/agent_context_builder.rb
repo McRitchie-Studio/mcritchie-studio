@@ -5,6 +5,7 @@ require "yaml"
 require_relative "agent_note_block"
 require_relative "agent_proposal_block"
 require_relative "agent_audience"
+require_relative "agent_alex_persona"
 require_relative "agent_warm_session"
 
 module AgentMailbox
@@ -140,7 +141,7 @@ module AgentMailbox
           reply is posted. Leave it out when there is nothing new to remember.
         #{proposal_block}
         #{intake_block}
-        #{about_alex_block}
+        #{persona_block}
         #{action_block}
         == USER: what you know about the sender, from every channel ==
         #{user_layer}#{google_block}
@@ -323,38 +324,17 @@ module AgentMailbox
       TEXT
     end
 
-    # Alex McRitchie's interactive resume on /build (Alex McRitchie, 2026-10-20): the profile below
-    # the rule of docs/agents/agents/alex/about-alex.md (Alex McRitchie edits it; its
-    # citations are HTML comments, stripped), capped at ABOUT_ALEX_BUDGET, and the
-    # rules for using it, from code: Alex speaks as himself, an AI, and ABOUT Alex McRitchie, never as him; family stops
-    # at what the profile says; a question about him never starts a card. Only
-    # on a /build thread (the intake bundle), so no other chat carries it.
-    ABOUT_ALEX_DOC = "docs/agents/agents/alex/about-alex.md"
-    ABOUT_ALEX_BUDGET = 2500
-    ABOUT_ALEX_RULES = <<~TEXT.rstrip
-      - ABOUT ALEX. Alex McRitchie founded McRitchie Studio, and you are Alex, his AI, named after
-        him. Visitors may ask about him: who he is, what he builds, and his views on code, philosophy
-        and building. Answer from the profile below, briefly, then offer to help with their app.
-        - Speak as yourself in the first person ("I'm Alex, Alex McRitchie's AI"), and say you are an AI.
-        - Speak ABOUT Alex McRitchie, in the third person ("Alex McRitchie thinks ..."). You are not Alex McRitchie: never claim to
-          be him, write as him, or speak for him beyond the profile.
-        - Advice is Alex McRitchie's view, framed as his ("Alex McRitchie's take is ..."), and only the views the profile
-          gives. When it has nothing on a topic, say Alex McRitchie hasn't shared that here; never guess.
-        - Family: say only what the profile says. Politely decline anything more about his family
-          (names it does not give, ages, schools, where they live, photos, anything else).
-        - Never share his home address, phone number, money, or any business he is buying.
-        - A question about Alex McRitchie is not an app request: answer it with NO intake card, and it sets no
-          step. When the visitor wants an app, follow the playbook above.
-    TEXT
+    # Alex's persona (AgentMailbox::AlexPersona): on EVERY answer the soul `alex`
+    # gives, on every channel and audience, and on no other soul's; the /build rule
+    # (no intake card for a question about him) only on a /build thread.
+    ALEX_SOUL = AlexPersona::SOUL
+    ALEX_PERSONA_DOC = AlexPersona::DOC
+    PERSONA_BUDGET = AlexPersona::BUDGET
 
-    def about_alex_block
-      return "" unless @context["intake"].is_a?(Hash)
+    def persona_block
+      return "" unless @soul == ALEX_SOUL
 
-      doc = doc_text(File.join(@repo_root, ABOUT_ALEX_DOC)).to_s
-      profile = doc.include?("\n---\n") ? doc.split("\n---\n", 2).last.gsub(/^[ \t]+\n/, "").strip : ""
-      profile = "Alex McRitchie has not written his profile yet: say only that he founded McRitchie Studio." if profile.empty?
-      "#{ABOUT_ALEX_RULES}\n  The profile (Alex McRitchie's own, written for visitors):\n" \
-        "#{cap(profile, ABOUT_ALEX_BUDGET).gsub(/^/, '  ')}"
+      AlexPersona.block(repo_root: @repo_root, build: @context["intake"].is_a?(Hash))
     end
 
     def ask_rule
