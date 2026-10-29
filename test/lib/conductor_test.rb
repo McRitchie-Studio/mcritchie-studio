@@ -258,6 +258,8 @@ class ConductorTest < Minitest::Test
     assert status.success?
     assert_includes out, "bin/release ship --by conductor"
     assert_includes out, "dry"
+    assert_includes out, "the full-cycle lane runs `bin/release cycle --clearance",
+      "the dry hand-off names the full lane's real procedure (bin/release cycle), not conductor ship --run"
     assert_empty release_log, "plain conductor ship must not execute production deploy"
   end
 
