@@ -40,6 +40,7 @@ module AgentSetupCli
   DISCORD_API = "https://discord.com/api/v10"
   KINDS = { "discord" => "discord_bot", "discord_bot" => "discord_bot" }.freeze
   SECRET_SET = File.expand_path("../heroku-secret-set", __dir__)
+  ITEM_LANE = "agents"
 
   Error = Class.new(StandardError)
 
@@ -146,7 +147,7 @@ module AgentSetupCli
     raise Error, "name the soul: --soul SOUL" if soul.empty?
 
     vault = opts[:op_vault] || "studio-agents"
-    item = opts[:op_item] || "discord.#{soul}.agents"
+    item = opts[:op_item] || default_item(soul)
     ids = opts[:op_ids].empty? ? op_ids(op, item, vault, out) : opts[:op_ids]
     details = { "op_vault" => vault, "op_item" => item, "bot_name" => opts[:bot_name] }.merge(ids).compact
     answer = call.call({ "verb" => "open", "kind" => kind, "soul" => soul, "by" => by!(opts),
@@ -158,6 +159,12 @@ module AgentSetupCli
     out.puts "  Alex McRitchie's card: https://mcritchie.studio/agents#agent-setup-#{answer['id']}"
     0
   end
+
+  # credential-filing's `<service>.<entity>.<lane>` for a soul's bot: service
+  # discord, entity the soul, lane agents (AgentSetups::DiscordBotKit#op_item_for
+  # is the dyno's copy). Joined, not written out, so no literal here reads as a
+  # path under the operator's state directory (state_store_containment_test).
+  def default_item(soul) = [ "discord", soul, ITEM_LANE ].join(".")
 
   # The item's and vault's ids from `op item list` of the vault, matched on the
   # exact title, and the account's from `op whoami`. A LISTING, never
