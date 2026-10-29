@@ -65,21 +65,20 @@
           <p class="font-mono font-semibold text-base shrink-0 <%= amount_class.(entry.amount_cents) %>" data-test="books-line-amount"><%= Books.money(entry.amount_cents) %></p>
         </div>
 
-        <%# The purpose field shows (and submits) only while a distribution is picked; the server refuses a stray one. %>
+        <%# The purpose field shows (and submits) only while a distribution is picked (app/javascript/books_purpose.js); Books::Classify refuses a stray one. %>
         <%= form_with url: book_entry_path(entity: @entity.key, id: entry.id), method: :patch,
                       class: "grid grid-cols-1 sm:grid-cols-2 gap-3",
-                      data: { test: "books-line-form" }, html: { "x-data": "{ kind: '' }" } do %>
+                      data: { test: "books-line-form", books_line: "" } do %>
           <label class="flex flex-col gap-1 min-w-0">
             <span class="text-muted text-xs">Category</span>
             <%= select_tag :category, books_category_options(@config), include_blank: "Pick a category",
                            required: true, id: "category-#{entry.id}",
-                           "x-on:change": "kind = $event.target.selectedOptions[0]?.dataset.kind || ''",
-                           class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-category" } %>
+                           class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-category", books_category: "" } %>
           </label>
-          <label class="flex flex-col gap-1 min-w-0" x-show="kind === 'distribution'" x-cloak data-test="books-line-purpose-field">
+          <label class="flex flex-col gap-1 min-w-0" hidden data-books-purpose data-test="books-line-purpose-field">
             <span class="text-muted text-xs">Purpose (groups the distribution on the balance sheet)</span>
             <%= text_field_tag :purpose, nil, list: "books-purposes", id: "purpose-#{entry.id}", autocomplete: "off",
-                               "x-bind:disabled": "kind !== 'distribution'",
+                               disabled: true,
                                class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-purpose" } %>
           </label>
           <label class="flex flex-col gap-1 min-w-0 sm:col-span-2">

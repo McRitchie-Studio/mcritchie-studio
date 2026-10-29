@@ -100,14 +100,12 @@ class BooksReviewPageTest < ActionDispatch::IntegrationTest
     patch book_entry_path(entity: "studio", id: @wire.id), params: { category: "member_distribution", purpose: "Owner draws" }
     get books_path(entity: "studio")
 
-    form = css_select("[data-test='books-line'][data-entry-id='#{@fee.id}'] form[x-data]").first
-    assert form, "each line's form carries the Alpine state"
-    assert_match(/dataset\.kind/, form.at_css("select[name='category']")["x-on:change"].to_s)
-    field = form.at_css("[data-test='books-line-purpose-field']")
-    assert_equal "kind === 'distribution'", field["x-show"]
-    assert field.key?("x-cloak"), "hidden until Alpine decides"
-    assert_equal "kind !== 'distribution'", field.at_css("input[name='purpose']")["x-bind:disabled"],
-                 "a hidden purpose is never submitted"
+    form = css_select("[data-test='books-line'][data-entry-id='#{@fee.id}'] form[data-books-line]").first
+    assert form, "each line's form is one app/javascript/books_purpose.js reads"
+    assert form.at_css("select[name='category'][data-books-category]")
+    field = form.at_css("[data-test='books-line-purpose-field'][data-books-purpose]")
+    assert field.key?("hidden"), "the purpose is hidden until a distribution is picked, JavaScript or not"
+    assert field.at_css("input[name='purpose'][disabled]"), "a hidden purpose is never submitted"
     # inline-flex drops whitespace between sibling items, so the label is one span.
     assert_select "[data-test='books-entity-studio'] > span", count: 1
     assert_select "[data-test='books-entity-studio'] > span", /McRitchie Studio LLC · \d+ waiting/
