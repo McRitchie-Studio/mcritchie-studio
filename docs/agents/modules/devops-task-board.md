@@ -924,7 +924,7 @@ procedure lives:
 |---|---|---|---|
 | Review | Carl, one per PR, spun by a pr-review session | [`pr-review`](../agents/carl/sops/pr-review.md) (role SOPs: [primary](../agents/carl/sops/pr-review-primary.md), [light](../agents/carl/sops/pr-review-light.md)) | merge-ready: merges the feat PR into `accepted`, stamps `merged: accepted`, moves it to `reviewed`. request-changes: `bin/task block <slug> --kind rework --agent carl` back to the builder |
 | QA release | Avi | [`qa-release`](../agents/avi/sops/qa-release.md) | promotes all of `accepted` onto `release` (a fast-forward per repo, or the batch PR when diverged), deploys QA, flips members to `assembled` only on QA-green |
-| Production | Steffon | [`production-deploy`](../agents/steffon/sops/production-deploy.md) | fast-forwards `release → main`, stamps `merged: main`, moves members to `shipped` |
+| Production | Steffon | [`production-deploy`](../agents/steffon/sops/production-deploy.md) | fast-forwards `release → main`, stamps `merged: main`, moves members to `shipped`; a member whose own commit is not in that `main` keeps its stage with a comment naming the commit |
 
 Production stays gated until Alex McRitchie explicitly approves release work.
 

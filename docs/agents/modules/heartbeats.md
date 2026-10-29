@@ -235,7 +235,9 @@ SOP: [`../agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/prod
   2. Run the **full e2e on the FROZEN ship SHA**, then `bin/release ship --yes`:
      fast-forward each repo's `release → main` (stamping `merged: "main"` as each
      ff lands) and deploy production.
-  3. Prod-smoke, green seal, and post release notes (`ship!` flips members `shipped`).
+  3. Prod-smoke, green seal, and post release notes (`ship!` flips members `shipped`,
+     except a member whose own commit is not in the pushed `main`: it keeps its
+     stage with a comment naming the commit).
   4. Restore the primary checkouts.
   5. Post-ship agent-docs sync — ship auto-runs `bin/install-agent-docs` from the
      tree that shipped (`bin/release.rb#sync_agent_docs` picks it; non-fatal, never
