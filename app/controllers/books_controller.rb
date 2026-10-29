@@ -38,10 +38,16 @@ class BooksController < ApplicationController
                          alert: "Line ##{params[:id]} not saved: pick a category.", status: :see_other)
     end
 
-    # A purpose belongs to a distribution only; the form always offers the
-    # field, so one typed beside another category is dropped, not recorded.
+    # A purpose belongs to a distribution only. The form shows the field only
+    # for a distribution; one that still arrives beside another category (or
+    # the undo) is refused out loud, never dropped silently.
     category = nil if category == "none"
-    purpose = params[:purpose] if category && @config.categories[category]&.kind == "distribution"
+    purpose = params[:purpose].to_s.strip.presence
+    if purpose && @config.categories[category]&.kind != "distribution"
+      return redirect_to(books_path(entity: @entity.key, anchor: "line-#{params[:id]}"),
+                         alert: "Line ##{params[:id]} not saved: a purpose is for a distribution only. " \
+                                "Clear the purpose, or pick a distribution.", status: :see_other)
+    end
     refusal = nil
     entries = rescue_and_log do
       Books::Classify.call(@entity, ids: [ params[:id] ], category: category,
