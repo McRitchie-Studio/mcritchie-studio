@@ -10,6 +10,7 @@ module Books
   #   unclassified  the lines waiting for an answer
   #   classify      record what one or more lines were
   #   close         write a month's Sheet and PDF
+  #   lender        write the month's lender package (P&L, balance sheet, sources and uses)
   #
   # Every verb but status and unclassified writes. The answer never carries a
   # full account number: statements print only the last four digits. A fault
@@ -29,9 +30,11 @@ module Books
       when "classify" then classify(entity, request, config)
       when "close" then Books::Close.new(entity, request.fetch("month"), drive: drive, config: config)
                                     .call(generated_by: by(request)).to_h
+      when "lender" then Books::LenderPackage.new(entity, request.fetch("month"), drive: drive, config: config)
+                                             .call(generated_by: by(request)).to_h
       else { "error" => "unknown verb #{request['verb'].inspect}" }
       end
-    rescue Books::Config::Error, Books::Classify::Error, Books::Drive::Error, ArgumentError, KeyError => e
+    rescue Books::Config::Error, Books::Classify::Error, Books::Drive::Error, Books::LenderPackage::Error, ArgumentError, KeyError => e
       { "error" => e.message }
     rescue StandardError => e
       # Anything else is a fault, not a mistyped argument: leave a receipt in
@@ -51,9 +54,14 @@ module Books
         end,
         "inbox_unread" => drive.inbox_pdfs.reject { |f| read.include?(f["id"]) }.map { |f| f["name"] },
         "unclassified" => BookEntry.for_entity(entity.key).unclassified.count,
+        "oldest_waiting" => BookEntry.for_entity(entity.key).unclassified.minimum(:posted_on)&.iso8601,
+        # Each close's cash and net income, so the watchdog can read a cash drop
+        # month over month without opening a Sheet.
         "closes" => BookClose.where(entity: entity.key).order(:month).map do |c|
           { "month" => c.month, "status" => c.status, "sheet" => c.sheet_file_id && Books::Drive.link(c.sheet_file_id),
-            "generated_at" => c.generated_at&.iso8601 }
+            "generated_at" => c.generated_at&.iso8601, "cash_cents" => c.summary["cash_cents"],
+            "net_income_ytd_cents" => c.summary["net_income_ytd_cents"],
+            "lender_sheet" => c.lender_sheet_file_id && Books::Drive.link(c.lender_sheet_file_id) }
         end
       }
     end

@@ -25,7 +25,9 @@ module BooksCli
            bin/books classify <entity> <id> [<id> ...] --category KEY [--purpose TEXT] [--note TEXT]
                                                           record what lines were (--category none clears)
            bin/books close <entity> <YYYY-MM>             write the month's Sheet and PDF to Drive
-    common: --by WHO (required for intake, classify, close: who decided or ran it)
+           bin/books lender <entity> <YYYY-MM>            write the month's lender package (P&L, balance
+                                                          sheet, sources and uses) beside its close
+    common: --by WHO (required for intake, classify, close, lender: who decided or ran it)
             --app NAME (default #{MailCli::DEFAULT_APP}) · --local (bin/rails runner here, not heroku)
     SOP: docs/agents/agents/mack/sops/close-the-month.md
   TXT
@@ -58,10 +60,10 @@ module BooksCli
 
       base.merge("ids" => args.map(&:to_i), "category" => (opts[:category] == "none" ? nil : opts[:category]),
                  "purpose" => opts[:purpose], "note" => opts[:note], "by" => by!(opts))
-    when "close"
-      month = args.shift or raise Error, "close takes a month, YYYY-MM"
+    when "close", "lender"
+      month = args.shift or raise Error, "#{verb} takes a month, YYYY-MM"
       raise Error, "month must be YYYY-MM, got #{month}" unless month.match?(/\A\d{4}-(0[1-9]|1[0-2])\z/)
-      raise Error, "close takes only the entity and one month" unless args.empty?
+      raise Error, "#{verb} takes only the entity and one month" unless args.empty?
 
       base.merge("month" => month, "by" => by!(opts))
     else
@@ -84,6 +86,7 @@ module BooksCli
     when "unclassified" then render_lines(answer["lines"], empty: "(no lines waiting)")
     when "classify" then render_lines(answer["classified"], empty: "(nothing classified)")
     when "close" then render_close(answer)
+    when "lender" then render_close(answer, title: "lender package")
     end
   end
 
@@ -91,8 +94,12 @@ module BooksCli
     out = [ a["entity"] ]
     a["accounts"].each { |x| out << "  #{x['account'].ljust(24)} #{x['statements']} statement(s), through #{x['through'] || '-'}" }
     out << "  Inbox, not yet read: #{a['inbox_unread'].empty? ? 'none' : a['inbox_unread'].join(', ')}"
-    out << "  Lines waiting for an answer: #{a['unclassified']}"
-    a["closes"].each { |c| out << "  close #{c['month']} #{c['status'].upcase} #{c['sheet']}" }
+    out << "  Lines waiting for an answer: #{a['unclassified']}#{" (oldest #{a['oldest_waiting']})" if a['oldest_waiting']}"
+    a["closes"].each do |c|
+      cash = c["cash_cents"] ? " cash #{money(c['cash_cents'])}" : ""
+      out << "  close #{c['month']} #{c['status'].upcase}#{cash} #{c['sheet']}"
+      out << "    lender package #{c['lender_sheet']}" if c["lender_sheet"]
+    end
     out.join("\n")
   end
 
@@ -120,12 +127,13 @@ module BooksCli
     end.join("\n")
   end
 
-  def render_close(a)
+  def render_close(a, title: "close")
     s = a["summary"]
-    out = [ "#{a['month']} close: #{a['status'].upcase}",
+    out = [ "#{a['month']} #{title}: #{a['status'].upcase}",
             "  Sheet: #{a['sheet']}", "  PDF:   #{a['pdf']}",
             "  Net income, year to date #{money(s['net_income_ytd_cents'])} · cash #{money(s['cash_cents'])} · " \
             "equity #{money(s['equity_cents'])} · #{s['unclassified']} line(s) waiting" ]
+    out << "  Capitalized (deal costs and other assets) #{money(s['capitalized_cents'])}" if s["capitalized_cents"].to_i.nonzero?
     a["checks"].each { |c| out << "  #{c['ok'] ? 'ok  ' : 'OPEN'} #{c['label']}: #{c['detail']}" }
     a["notes"].to_a.each { |n| out << "  note: #{n}" }
     out.join("\n")

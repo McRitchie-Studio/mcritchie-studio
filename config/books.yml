@@ -25,6 +25,10 @@
 #   contribution | distribution  equity, never the P&L (a single-member LLC's draws are
 #                              not expenses, and must never be shown as ones)
 #   transfer                   between the entity's own accounts; nets to zero
+#   asset                      cash spent on something the entity keeps (capitalized): it
+#                              leaves cash for an asset on the balance sheet, never the P&L
+#                              or equity. Reclassing a line booked as an expense is a
+#                              re-classify: bin/books classify <entity> <id> --category deal_costs
 categories:
   revenue: { label: Revenue, kind: income }
   interest_income: { label: Interest income, kind: income }
@@ -33,6 +37,9 @@ categories:
   software_services: { label: Software and services, kind: expense }
   professional_fees: { label: Professional fees, kind: expense }
   other_expense: { label: Other expense, kind: expense }
+  # Costs of buying a business (broker, diligence, studies), capitalized into the
+  # deal on the buyer's books until it closes or is abandoned.
+  deal_costs: { label: Deal costs (capitalized), kind: asset }
   member_contribution: { label: Member contribution, kind: contribution }
   member_distribution: { label: Member distribution, kind: distribution }
   internal_transfer: { label: Internal transfer, kind: transfer }
