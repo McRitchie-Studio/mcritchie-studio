@@ -124,6 +124,39 @@ class Release
       end
     end
 
+    # `git ls-remote --tags origin 'refs/tags/burned-v*'` output → the burned
+    # versions. An annotated tag lists twice (the tag and its peeled `^{}` commit).
+    def burned_versions_from_ls_remote(out)
+      names = out.to_s.lines.filter_map do |line|
+        ref = line.split("\t", 2)[1].to_s.strip
+        ref.delete_prefix("refs/tags/").delete_suffix("^{}") if ref.start_with?("refs/tags/")
+      end
+      burned_versions(names.uniq.join("\n"))
+    end
+
+    # `bin/release status`: one display line per registered gem naming its burned
+    # versions. `reads` maps a gem to { versions:, source: } where source is
+    # :origin (the record itself), :local (origin unreadable; the clone's tags as
+    # of its last fetch, which can miss a newer burn) or :unreadable (neither).
+    # An unread gem never prints as "none".
+    def burned_status_lines(reads)
+      reads.to_h.sort.map do |gem_name, read|
+        read = read.to_h
+        source = read[:source]
+        next "#{gem_name}: cannot confirm its burned versions — neither origin nor the local clone answered" if source == :unreadable
+
+        versions = Array(read[:versions]).map(&:to_s).uniq
+                           .sort_by { |v| Gem::Version.correct?(v) ? Gem::Version.new(v) : Gem::Version.new("0") }
+        where = source == :local ? " (local tags; origin unreadable, may miss a newer burn)" : ""
+        if versions.empty?
+          "#{gem_name}: no burned versions#{where}"
+        else
+          "BURNED #{gem_name} #{versions.join(', ')}#{where} — published, never shipped: no consumer may lock " \
+            "#{versions.one? ? 'it' : 'them'}, and never yank"
+        end
+      end
+    end
+
     # THE RUBYGEMS LISTING, read fail-closed. /api/v1/versions/<gem>.json answers
     # 200 with the live versions (yanked ones are absent), or 404 for a gem never
     # published. Anything else (a timeout, a 5xx, a body that is not a JSON list)

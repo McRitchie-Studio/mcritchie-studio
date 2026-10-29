@@ -130,4 +130,31 @@ class Release::GemFlowTest < ActiveSupport::TestCase
     assert_raises(F::ListingUnreadable) { F.listing("200", "<html>maintenance</html>") }
     assert_raises(F::ListingUnreadable) { F.listing("200", %({"error":"rate limited"})) }
   end
+
+  # --- burned versions on `bin/release status` ---
+
+  test "ls-remote output reads as the burned set, an annotated tag counted once" do
+    out = "aaa\trefs/tags/burned-v0.117.0\nbbb\trefs/tags/burned-v0.117.0^{}\n" \
+          "ccc\trefs/tags/burned-v0.116.2\nddd\trefs/tags/v0.118.0\n"
+    assert_equal %w[0.117.0 0.116.2], F.burned_versions_from_ls_remote(out)
+    assert_empty F.burned_versions_from_ls_remote("")
+  end
+
+  test "status names each gem's burned versions oldest first, and an empty set as none" do
+    lines = F.burned_status_lines("studio-engine" => { source: :origin, versions: %w[0.117.0 0.116.2] },
+                                  "solana-studio" => { source: :origin, versions: [] })
+    assert_equal ["solana-studio: no burned versions",
+                  "BURNED studio-engine 0.116.2, 0.117.0 — published, never shipped: no consumer may lock them, " \
+                  "and never yank"], lines
+  end
+
+  test "status labels a local-tag read and never prints an unread gem as none" do
+    local = F.burned_status_lines("studio-engine" => { source: :local, versions: %w[0.117.0] }).first
+    assert_match(/\ABURNED studio-engine 0\.117\.0 \(local tags; origin unreadable/, local)
+    assert_match(/lock it,/, local)
+
+    unread = F.burned_status_lines("studio-engine" => { source: :unreadable }).first
+    assert_match(/cannot confirm/, unread)
+    assert_no_match(/no burned versions/, unread)
+  end
 end
