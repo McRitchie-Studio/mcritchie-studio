@@ -498,7 +498,7 @@ server key and Mack co-sign the settle and no Phantom tap is owed.
 (`Release::DevnetGauntletRun`; about 9 minutes, 4 of them step 3; the whole run, the
 worktree's cut and `bundle install` included, is capped at 30 minutes by
 `RELEASE_GAUNTLET_DEADLINE`, red at the step it stops). It runs every step of
-the release's own `bin/qa-contest-rehearsal`, from a throwaway turf-monster worktree at the
+the release's own `bin/qa-contest-rehearsal`, from a turf-monster worktree at the
 SHA prepare deployed to QA, in order, makes the check each `── STOP ──`
 block names (the SOP's "unattended" paragraph), reads the settle transaction from the
 devnet RPC and checks that the prize escrow fell by exactly the sum paid and that each
@@ -516,6 +516,18 @@ winner rose by exactly its rank's payout, and then records `devnet_gauntlet`:
   and prints the path, so a contest left open on devnet can be resumed or closed by hand
   (copy it to `tmp/qa-rehearsal/current.json`, then run the next step). The next run
   sweeps any worktree a killed run left in the temp dir, keeping its state the same way.
+
+The worktree is **warm**: one persistent tree at
+`~/.cache/mcritchie-release/turf-monster-gauntlet`, reused release after release, so
+bootsnap's compile cache and any installed bundle carry over. Each run takes its lock,
+moves it with `git checkout --detach --force <QA SHA>`, wipes every untracked and
+ignored file but `vendor/bundle`, `.bundle`, `node_modules` and `tmp/cache/bootsnap`,
+and refuses to run unless `HEAD` is exactly the QA SHA and no tracked file differs. The
+primary's `.env` files are copied in mode `0600` and deleted when the run ends. A warm
+tree that cannot be readied (held by another run, corrupt, or a path holding anything
+else, which is never deleted) falls back to a cold throwaway in the temp dir, removed
+after the run; the stale sweep never touches the warm tree.
+`RELEASE_GAUNTLET_WARM_TREE=<path>` moves it, `=off` forces the cold cut.
 
 Each record carries the QA SHA of every Turf repo it tested (`metadata.shas`), and it
 counts only for that code: a re-run of prepare whose QA runs the same Turf SHAs runs no
