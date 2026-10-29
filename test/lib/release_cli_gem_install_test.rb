@@ -186,7 +186,7 @@ class ReleaseCliGemInstallTest < ReleaseCliHarness
   # solana-studio, then a studio-engine candidate to publish. solana-studio must be
   # installed BEFORE studio-engine's release-check runs; and if it cannot be,
   # studio-engine must never publish.
-  PUBLISH_STUBS = <<~RUBY
+  PUBLISH_BASE = <<~RUBY
     $events = []
     def publish_gem(repo, version, **) = $events << "publish-final " + repo + " " + version
     def publish_gem_candidate(repo, _tip, _final, candidate) = $events << "publish " + repo + " " + candidate
@@ -195,6 +195,9 @@ class ReleaseCliGemInstallTest < ReleaseCliHarness
       ENV["RELEASE_GEM_INSTALLED"] != "no"
     end
   RUBY
+  # The already-live gem's reuse reads (the served-gem compare, the tag) are named,
+  # not run: this test is about the install order.
+  PUBLISH_STUBS = (PUBLISH_BASE + ReleaseCliStubs::REUSED_FINAL).freeze
 
   PLAN = %([{ "repo" => "solana-studio", "version" => "0.12.3", "already_live" => true, "tip" => "f326214" },
             { "repo" => "studio-engine", "version" => "0.92.2", "already_live" => false, "tip" => "cd37a71",
