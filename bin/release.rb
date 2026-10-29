@@ -5287,6 +5287,8 @@ end
 # Reading only the release rung is what let a reviewed-but-unswept task ride to
 # production with the guard fully green. The pure verdict + message live in
 # Release::CleanCheck; this owns only the live reads.
+# `bin/release status`: the ladder verdict, then three display-only reads that
+# never fail it: program drift, the upgrade reserve, and burned gem versions.
 def status
   clean_only = Release::Cli.take_flag(ARGV, "--clean-only")
   expedited  = opt_value("--task").to_s.strip
@@ -5298,6 +5300,7 @@ def status
   say("")
   say(verdict["message"])
   program_drift_report
+  burned_gems_report
 
   # --clean-only is the GATE: a dirty ladder aborts the expedite (non-zero exit)
   # so `deploy-with-task` refuses instead of dragging the pending work to prod.
@@ -5336,6 +5339,32 @@ def program_reserve_report(reserves: nil)
   ProgramDrift.reserve_lines(reserves).each { |line| say("  #{line}") }
 rescue StandardError => e
   say("  UPGRADE RESERVE: cannot confirm — the check failed (#{e.class}: #{e.message})")
+end
+
+# BURNED GEM VERSIONS — the finals a prepare published that no release shipped,
+# recorded as `burned-v<x.y.z>` tags (record_burned_finals!). Display only, like
+# the drift lines: it never fails status or the --clean-only gate. READ-ONLY: it
+# asks origin with `git ls-remote` (no fetch, so no local ref moves) and falls
+# back to the clone's own tags, labelled as such, when origin does not answer.
+def burned_gems_report(reads: nil)
+  reads ||= RELEASE_REPOS.fetch("gems", {}).keys.to_h { |gem_name| [gem_name, burned_gem_read(gem_name)] }
+  say("")
+  say("Burned gem versions (published at a prepare, never shipped):")
+  Release::GemFlow.burned_status_lines(reads).each { |line| say("  #{line}") }
+rescue StandardError => e
+  say("  BURNED GEM VERSIONS: cannot confirm — the check failed (#{e.class}: #{e.message})")
+end
+
+# One gem's burned set for status: origin first, then the local tags.
+def burned_gem_read(gem_name)
+  path = repo_path(gem_name)
+  return { source: :unreadable } unless Dir.exist?(path)
+
+  out, ok = git_capture("-C", path, "ls-remote", "--tags", "origin", "refs/tags/#{Release::GemFlow::BURNED_TAG_PREFIX}*")
+  return { source: :origin, versions: Release::GemFlow.burned_versions_from_ls_remote(out) } if ok
+
+  out, ok = git_capture("-C", path, "tag", "--list", "#{Release::GemFlow::BURNED_TAG_PREFIX}*")
+  ok ? { source: :local, versions: Release::GemFlow.burned_versions(out) } : { source: :unreadable }
 end
 
 # Gather BOTH clean-ladder signals on BOTH rungs and return the CleanCheck

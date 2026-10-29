@@ -35,15 +35,20 @@ The gate window spans the whole irreversible half of the ship:
   [The tree-verdict read](#the-tree-verdict-read-one-tree-one-verdict) below.
 - **Ship authority** — the explicit production confirm, after the gate and
   before any deploy.
-- **The final gem publish** — each gem member's `x.y.z`, built from its frozen SHA
-  and pushed only when its contents equal the release candidate QA ran. See
+- **The final gem publish** — under the default flow, `prepare` already published
+  each gem member's `x.y.z` and every consumer locks it, so the ship finds it live and
+  publishes nothing; it also refuses a tree locking a published version past a gem's
+  `main` that this release does not ship, or a `burned-v<x.y.z>` one. Under the
+  `RELEASE_GEM_FLOW=candidate` rollback, the ship builds `x.y.z` from its frozen SHA
+  and pushes it only when its contents equal the release candidate QA ran. See
   [The final gem publish and the re-lock read](#the-final-gem-publish-and-the-re-lock-read).
-- **The re-lock read** (a second `ship_test_gate` SOP per re-locked consumer that
-  has a registry `test_cmd`) — GitHub CI's settled verdict for the commit that moves
-  a consumer's lock from the candidate to the final, read before the first deploy.
-  turf-monster has one too: it registers `test_cmd`, and a green read of its
-  re-lock commit is what lets its `bin/deploy` skip its local suite
-  (`--ci-verified=<sha>`).
+- **The re-lock read** (candidate rollback only: a second `ship_test_gate` SOP per
+  re-locked consumer that has a registry `test_cmd`) — GitHub CI's settled verdict for
+  the commit that moves a consumer's lock from the candidate to the final, read before
+  the first deploy. turf-monster has one too: it registers `test_cmd`, and a green
+  read of its re-lock commit is what lets its `bin/deploy` skip its local suite
+  (`--ci-verified=<sha>`). Under the default flow there is no re-lock commit, and a
+  green read of the frozen SHA plays that part.
 - **The prerelease backstop** — the lock at every SHA about to deploy is read, and
   a prerelease of a registered gem refuses the ship.
 - **The prod deploys** (`deploy:<repo>` SOPs) — per-app `git push` to Heroku
@@ -198,8 +203,8 @@ actually need a checkout FOR?" has a two-line answer:
 | `git_push_heroku` deploy (mcritchie-industries, cyvasse, dads-app, prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5, search-position; rolio) | **no** | `git push <remote> <frozen>:refs/heads/main` — ships the frozen SHA *by value* |
 | `repo_script` deploy (turf-monster) | **yes** (its `bin/deploy` hashes the IDL, pushes, and runs the repo's suite unless the ship passed `--ci-verified=<sha>` for a green CI read) | the **ship workspace**: `<repo>/.worktrees/_ship`, detached at the frozen SHA, own lock, own test DB (`<app>_ship_test`) |
 | `static_cloudflare` deploy (none yet; an app after its cutover) | **yes** (`bin/static-build` renders the app at the frozen SHA) | the **ship workspace**, bundle checked, no test DB; then the R2 upload and the `/up` + `static-release.json` smoke ([`../static-cloudflare.md`](../static-cloudflare.md)) |
-| consumer re-lock commit (candidate → final, normally `Gemfile.lock` alone; a candidate floor or a branch ref on the line → `~> x.y`) | **yes** (`bundle lock` writes `Gemfile.lock`) | the ship workspace, pushed as `HEAD:refs/heads/release` |
-| final gem artifact build | **yes** (`gem build` packages what is on disk) | still the gem's **primary** — the one residual (see below). The candidate, at prepare, builds in the gem's ship workspace |
+| consumer re-lock commit (candidate rollback only: candidate → final, normally `Gemfile.lock` alone; a candidate floor or a branch ref on the line → `~> x.y`) | **yes** (`bundle lock` writes `Gemfile.lock`) | the ship workspace, pushed as `HEAD:refs/heads/release` |
+| final gem artifact build | **yes** (`gem build` packages what is on disk) | the gem's **primary**, detached at the tip — the one residual (see below). Under the default flow that build runs at `prepare` and the ship builds nothing; under the candidate rollback the ship builds the final there, and the candidate builds at prepare in the gem's ship workspace |
 
 Ref pushes keep every safety property of the old fast-forward: git refuses a
 **non-fast-forward** ref update without `--force` (which the ship never passes),
@@ -293,8 +298,8 @@ deploy are the ones QA gated. Before any deploy the ship also refuses a tree tha
 a published version past a gem's `main` that this release does not ship. The table
 below is the full sequence a candidate release (`RELEASE_GEM_FLOW=candidate`) runs.
 
-`prepare` publishes a gem's release candidate and locks consumers to it; the ship
-publishes the final. The acts, in order, after ship authority:
+Under the candidate rollback, `prepare` publishes a gem's release candidate and locks
+consumers to it; the ship publishes the final. The acts, in order, after ship authority:
 
 | # | Act | Undoable? | Refuses when |
 |---|---|---|---|
@@ -344,7 +349,8 @@ primary checkout, and `gem build` packages the files on disk — so a **modified
 tracked file** in a gem repo would be *published* to RubyGems, where a version can
 never be re-pushed. The preflight therefore still **aborts** on that (and only
 that: untracked files are invisible to the gemspec's `git ls-files`), *before*
-anything is published, printing the same labeled-branch rescue.
+anything is published, printing the same labeled-branch rescue. Under the default
+flow the build, and so this exposure, sits at `prepare`, which publishes the final.
 
 **Operator note — ship is FAST when the tree already earned its green, and a
 non-green CI HOLDS it.** The ship gate reads GitHub CI's settled verdict for the
@@ -376,7 +382,9 @@ Do not do that: it **silently disarmed** this gate while printing "already green
   suite, before anything reaches Heroku. Confirm no ship is alive
   (`pgrep -f 'ruby .*bin/release[.]rb'`, which prints PIDs only and never a command line: no output means none; a `ps | grep` once
   matched its own wrapping shell and reported a false hold), free memory if that was the cause, and re-run
-  `bin/release ship --yes`; it resumes. Run that `pgrep` check before every merge onto
+  the ship with the flags it ran with (after a cleared ship, `bin/release ship --mode
+  cleared --clearance "<his words>" --yes`; a bare `--yes` is `--mode auto` and drops the
+  clearance record), or `bin/release cycle --clearance "<his words>" --yes`; it resumes. Run that `pgrep` check before every merge onto
   `accepted` while a release is in flight, too: a running ship is easy to miss.
 - **A local-suite red with green CI on the same frozen SHA** is usually machine
   load (a ship that ran turf's suite locally: `--skip-test-gate`, or no green read
@@ -407,8 +415,12 @@ QA-green `assembled` release:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/release ship --yes
+bin/release ship --mode cleared --clearance "<Alex McRitchie's words>" --yes
 ```
+
+`--mode` picks the production authority (production-deploy's mode table); a bare
+`--yes` with no `--mode` is `auto`. Inside the full lane, `bin/release cycle` runs this
+step for you.
 
 The conductor records the gate for you:
 

@@ -4,16 +4,23 @@
 
 ## Status: Active
 
-This is Mason's `full-cycle` SOP. It runs review, QA release, and production
-deploy with explicit ship authority.
+This is Mason's `full-cycle` SOP. It runs review, QA release, production deploy
+and the close-out archive with explicit ship authority.
 
 ## Scope
 
 `full-cycle` composes existing release atoms:
 
-1. Avi-style review-only PR review.
-2. Avi's self-healing `qa-release`.
-3. Steffon's `production-deploy`.
+1. [`pr-review`](../../carl/sops/pr-review.md): a Carl primary plus a light on each
+   submitted PR, merging approved work into `accepted`.
+2. Avi's self-healing [`qa-release`](../../avi/sops/qa-release.md) (`bin/release prepare`).
+3. Steffon's [`production-deploy`](../../steffon/sops/production-deploy.md)
+   (`bin/release ship --mode cleared`).
+4. [`archive-shipped`](../../steffon/sops/archive-shipped.md) (`bin/release archive`).
+
+Atoms 2 to 4, with a QA verify after prepare and a prod verify after the ship, run
+as ONE resumable command: `bin/release cycle --clearance "<Alex McRitchie's words>"
+--yes`. Review is the only atom you run before it.
 
 This SOP crosses the production gate. Use it only when Alex McRitchie launched
 `full-cycle` or otherwise granted production ship authority in this session.
@@ -100,12 +107,13 @@ by hand only for a release Alex McRitchie scoped, carrying his `--task <slug>` f
 on every `prepare` below, or to stop between one step and the next; recovery from an
 interruption is re-running the cycle.
 
-1. **Review** — READ fan-out, so DELEGATE. Summon an **Avi** subagent via the
-   Agent tool (`subagent_type: avi`) that SUPERVISES the `pr-review` procedure.
-   Avi never reviews the code himself; he spawns the PRIMARY and LIGHT reviewers
-   in parallel as sibling children, so the two experts NEST under the Avi node as
-   a deeper branch. Review mutates nothing but a task stage — a detached reviewer
-   costs a retry.
+1. **Review** — READ fan-out, so DELEGATE, by the
+   [`pr-review`](../../carl/sops/pr-review.md) procedure. There is no Avi
+   supervisor layer: this session claims each PR and spawns one **Carl**
+   subagent (`subagent_type: carl`) per PR, labelled `review: <slug>`; Carl
+   summons his light as his own child, drives the verdict and merges. A Carl and
+   his light count as two toward the cap of five. Review mutates nothing but a
+   task stage and the `accepted` merge, and a detached reviewer costs a retry.
 2. **QA release** — MUTATION, so DIRECT-DRIVE `bin/release prepare [--task <slug> ...] --yes` from
    THIS session. Do NOT wrap it in a Steffon subagent. (Not theoretical: on
    2026-07-11 it WAS delegated, the subagent detached mid-sweep, and it stranded a
@@ -147,11 +155,18 @@ Keep the same guards each atom owns:
 - Do not deploy production unless ship authority is explicit.
 - Archive only after a green ship, and report its result separately.
 
-Review and preparation take time; new PRs may land in `submitted` meanwhile.
-After the sweep, re-check `bin/task list --stage submitted` and run one
-straggler round — review anything new, then re-run `bin/release prepare --yes`
-so the same candidate picks up the round-2 `reviewed` tasks and refreshes QA —
-before shipping.
+Review takes time; new PRs may land in `submitted` meanwhile. Before you launch
+the cycle, re-check `bin/task list --stage submitted` and run one straggler round of
+review. Then launch `bin/release cycle`: its prepare is bare and sweeps every
+`reviewed` task, the stragglers included. Once the cycle has started, a straggler
+waits for the next release; do not interleave a hand-run `prepare` with a running
+cycle.
+
+When you run the atoms by hand, a straggler round between `prepare` and `ship`
+re-runs the SAME `prepare` line you ran, flags included. On a release Alex McRitchie
+scoped, that means his `--task <slug>` flags, and a straggler joins only when his
+scope names it: a bare `bin/release prepare --yes` sweeps every `reviewed` task
+into the candidate, past his scope.
 
 Cold start note: launched bare, you are the conductor (Deploy lane), not a
 feature agent — do not follow the build gate's task/worktree flow. You
