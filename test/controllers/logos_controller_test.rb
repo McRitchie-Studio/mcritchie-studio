@@ -228,6 +228,12 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     copy_css = css_select("[data-test='logo-type-scale-copy-css']").first["data-copy-hex"]
     assert_includes copy_css, "--studio-social-text-title: 144px;"
     assert_select "[data-test='logo-type-scale-tokens'] pre", /--studio-text-body: 16px;/
+    # Task brand-kit-carries-type-scale: the dense admin base, and the app settings behind their own copy button.
+    assert_equal ["84 px", "42 px", "21 px", "14 px", "10.5 px"], px.call("dense")
+    assert_includes copy_css, "--studio-dense-text-fine-print: 10.5px;"
+    settings = "Studio.type_base = 16\nStudio.type_dense_base = 14\nStudio.type_display_weight = 800\nStudio.type_text_weight = 300\n"
+    assert_equal settings, css_select("[data-test='logo-type-scale-copy-settings']").first["data-copy-hex"]
+    assert_equal settings, css_select("[data-test='logo-type-scale-settings'] pre").first.text
   end
 
   # The typeface hierarchies Alex McRitchie asked for (at most three levels, the most prominent first), as [role, name shown].

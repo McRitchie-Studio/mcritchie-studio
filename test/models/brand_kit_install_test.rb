@@ -27,7 +27,8 @@ class BrandKitInstallTest < ActiveSupport::TestCase
     BrandKitExport::FILES.each_key do |name|
       assert_equal export.svg(name).b, @dir.join(name).binread, name
     end
-    assert_equal({ "brand" => "studio", "icon" => nil, "navbar" => STUDIO_NAVBAR, "stacked" => STUDIO_STACKED, "saved_at" => nil },
+    assert_equal({ "brand" => "studio", "icon" => nil, "navbar" => STUDIO_NAVBAR, "stacked" => STUDIO_STACKED, "saved_at" => nil,
+                   "type_scale" => { "type_base" => 16, "type_dense_base" => 14, "type_display_weight" => 800, "type_text_weight" => 300 } },
                  JSON.parse(@dir.join("kit.json").read))
   end
 
@@ -70,6 +71,9 @@ class BrandKitInstallTest < ActiveSupport::TestCase
     out = with_env("BRAND" => "studio", "DEST" => @dir.to_s) { task.reenable; capture_io { task.invoke }.first }
     assert_match %r{wrote     #{Regexp.escape(@dir.join('navbar-dark.svg').to_s)}}, out
     assert_equal BrandKitExport.new(kit, base_url: "").svg("navbar-dark.svg").b, @dir.join("navbar-dark.svg").binread
+    # Task brand-kit-carries-type-scale: it ends with the settings the app's initializer takes.
+    assert_includes out, "type scale: set these in the app's config/initializers/studio.rb"
+    assert_includes out, "  Studio.type_base = 16\n  Studio.type_dense_base = 14\n  Studio.type_display_weight = 800\n  Studio.type_text_weight = 300\n"
 
     out = with_env("BRAND" => "studio", "DEST" => @dir.to_s) { task.reenable; capture_io { task.invoke }.first }
     assert_no_match(/wrote/, out)

@@ -27,11 +27,14 @@ class BrandKitInstall
 
   def self.default_dest = Rails.root.join("public/brand")
 
-  # The manifest's content: the brand, each choice as stored (nil where the brand's default is drawn), and the kit's
-  # saved_at to the second.
+  # The manifest's content: the brand, each choice as stored (nil where the brand's default is drawn), the kit's
+  # saved_at to the second, and the brand's type scale as the four studio-engine settings an app sets from it
+  # (Logos::TypeScale#engine_settings; task brand-kit-carries-type-scale). The type scale is read from the brand's
+  # typefaces, not the saved record, so it carries no version of its own.
   def self.manifest_for(kit)
     { "brand" => kit.brand }.merge(BrandKit::CHOICE_TYPES.to_h { |type| [type.to_s, kit.choice(type)] })
-                            .merge("saved_at" => kit.saved_at&.utc&.iso8601)
+                            .merge("saved_at" => kit.saved_at&.utc&.iso8601,
+                                   "type_scale" => Logos::TypeScale.new(Logos::BrandKit.new(kit.brand)).engine_settings)
   end
 
   # An unsaved BrandKit holding what a kit.json names (its choices and saved_at), to install a kit another database

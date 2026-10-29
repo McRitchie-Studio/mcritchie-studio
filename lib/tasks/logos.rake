@@ -44,6 +44,9 @@ namespace :logos do
     result.written.each { |name| puts "wrote     #{dest.join(name)}" }
     result.unchanged.each { |name| puts "unchanged #{dest.join(name)}" }
     result.refused.each { |name, why| warn "refused   #{name}: #{why}" }
+    # Task brand-kit-carries-type-scale: the type scale rides in kit.json; the app sets it in its own initializer.
+    puts "type scale: set these in the app's config/initializers/studio.rb (kit.json type_scale):"
+    puts Logos::TypeScale.new(Logos::BrandKit.new(brand)).initializer.lines.map { |line| "  #{line}" }.join
   end
 
   # Task brand-kit-applied-status: the brand-kit-rollout SOP's last step, run on the hub's PRODUCTION database once the

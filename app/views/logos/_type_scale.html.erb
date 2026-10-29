@@ -1,9 +1,11 @@
 <%# A BRAND'S TYPE SCALE (task brand-kit-type-scale): each text role as a multiple of one base, built by
     Logos::TypeScale. Title 6x, heading 3x, subhead 1.5x, body 1x, fine print 3/4x; the base is 24 px on a
-    1080-wide social post and 16 px on the web. Each row names its role and multiple, both sizes, and a sample of
-    the role set in the brand's face at the web size. "Copy CSS tokens" copies the lot as custom properties,
-    --<brand>-text-<role> and --<brand>-social-text-<role>, the way the Spectrum card does (data-copy-hex, wired by
-    app/javascript/logo_gallery.js). Montserrat is the only face the hub serves. Locals: kit. %>
+    1080-wide social post, 16 px on an app's public pages and 14 px on its admin and ops pages. Each row names its
+    role and multiple, every size, and a sample of the role set in the brand's face at the web size. "App settings"
+    (task brand-kit-carries-type-scale) are the four Studio.type_* lines an app's config/initializers/studio.rb takes,
+    the same values kit.json carries. "Copy CSS tokens" copies the lot as custom properties, --<brand>-text-<role>,
+    --<brand>-social-text-<role> and --<brand>-dense-text-<role>. Both copy the way the Spectrum card does
+    (data-copy-hex, wired by app/javascript/logo_gallery.js). Locals: kit. %>
 <% scale = Logos::TypeScale.new(kit) %>
 <div class="space-y-4" data-test="logo-type-scale" data-brand="<%= kit.brand %>">
   <div class="overflow-x-auto">
@@ -37,9 +39,19 @@
   <ol class="min-w-0 space-y-2 overflow-hidden rounded-lg border border-subtle p-3" data-test="logo-type-scale-samples" aria-label="Type scale samples at the web size">
     <% web.sizes.each do |size| %>
       <li class="min-w-0 leading-tight text-heading break-words" data-test="logo-type-scale-sample" data-role="<%= size.role.key %>"
-          style="font-family: 'Montserrat', sans-serif; font-weight: <%= size.role.typeface.weight %>; font-size: <%= size.px %>px"><%= size.role.label %></li>
+          style="font-family: '<%= size.role.typeface.family %>', sans-serif; font-weight: <%= size.role.typeface.weight %>; font-size: <%= size.px %>px"><%= size.role.label %></li>
     <% end %>
   </ol>
+
+  <section class="space-y-2 rounded-lg border border-subtle p-3" data-test="logo-type-scale-settings" aria-labelledby="logo-type-scale-settings-title">
+    <div class="flex flex-wrap items-center gap-3">
+      <h3 id="logo-type-scale-settings-title" class="text-xs font-semibold text-heading">App settings</h3>
+      <button type="button" class="btn btn-secondary btn-sm" data-copy-hex="<%= scale.initializer %>" data-copy-name="App settings" data-test="logo-type-scale-copy-settings"><span data-copy-hex-label>Copy settings</span></button>
+      <span class="text-2xs text-muted" role="status" data-copy-hex-status></span>
+    </div>
+    <p class="text-2xs text-muted">For an app's <span class="font-mono">config/initializers/studio.rb</span>. studio-engine draws the roles as <span class="font-mono">type-title</span> to <span class="font-mono">type-fine</span>; admin and ops pages wrap their content in <span class="font-mono">type-dense</span>.</p>
+    <pre class="overflow-auto text-2xs font-mono text-body"><%= scale.initializer %></pre>
+  </section>
 
   <details class="rounded-lg border border-subtle" data-test="logo-type-scale-tokens">
     <summary class="cursor-pointer px-3 py-2 text-xs font-semibold text-heading">CSS tokens</summary>

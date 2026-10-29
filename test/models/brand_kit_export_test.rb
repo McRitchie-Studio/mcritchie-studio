@@ -56,6 +56,15 @@ class BrandKitExportTest < ActiveSupport::TestCase
     assert_equal BrandKit.for("studio").variant(:navbar, tone: :dark).svg, export("studio").svg("navbar-dark.svg")
   end
 
+  # Task brand-kit-carries-type-scale: the README carries the type scale at every base and the app settings.
+  test "the README carries the type scale and the app settings for config/initializers/studio.rb" do
+    readme = export("studio").readme
+    assert_includes readme, "## Type scale"
+    assert_includes readme, "| Title (Montserrat ExtraBold) | 6x | 144 px | 96 px | 84 px |"
+    assert_includes readme, "| Fine print (Montserrat Light) | 3/4x | 18 px | 12 px | 10.5 px |"
+    assert_includes readme, "```ruby\nStudio.type_base = 16\nStudio.type_dense_base = 14\nStudio.type_display_weight = 800\nStudio.type_text_weight = 300\n```"
+  end
+
   test "the README names every file, saved or default, the palette, the typefaces, the saver and the stable URLs" do
     kit = BrandKit.for("welding_v2")
     kit.save_choice(:navbar, { rule: "4", text: "homogeneous", colouring: "original" }, by: "alex@test.com")
