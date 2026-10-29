@@ -67,7 +67,7 @@ test("the Pending agents column walks a Discord bot card to Done, readable at bo
   await expect(card.locator("[data-test='discord-portal-link']")).toHaveAttribute("target", "_blank");
   await expect(card.locator("[data-test='discord-bot-name']")).toHaveValue("Mason");
   // Step 3: the 1Password deep link to Steffon's empty item; no secret on the page.
-  await expect(card.locator("[data-test='op-item-link']")).toHaveAttribute("href", /^https:\/\/start\.1password\.com\/open\/i\?a=a{26}&v=b{26}&i=c{26}&h=my\.1password\.com$/);
+  await expect(card.locator("[data-test='op-item-link']")).toHaveAttribute("href", /^https:\/\/start\.1password\.com\/open\/i\?a=A{26}&v=b{26}&i=c{26}&h=my\.1password\.com$/);
   // Step 4 waits for the Application ID; Done is blocked until it is in.
   await expect(card.locator("[data-test='discord-invite-waiting']")).toBeVisible();
   await expect(card.locator("[data-test='agent-setup-done']")).toHaveCount(0);

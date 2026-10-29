@@ -62,8 +62,9 @@ The token never passes through the hub, a chat or an agent's output.
    bin/agent-setup open discord --soul mason --by steffon
    ```
 
-   Options: `--op-item` and `--op-vault` when the item is not
-   `agents.discord.<soul>` in `studio-agents`; `--bot-name` when the bot is not
+   Options: `--op-item TITLE` when the item is not the default
+   `discord.<soul>.agents` (a grandfathered `agents.discord.<bot>` title, say),
+   and `--op-vault VAULT` when it is not in `studio-agents`; `--bot-name` when the bot is not
    named for the soul; `--permission-set reply|cto|server_admin` to override the
    seat's set. The seat decides by default (`config/agent_setups.yml` `seats`, else
    `cto` for a CTO in `config/cto_reports.yml`, else `reply`). The invite carries
@@ -138,8 +139,12 @@ PATCHes the config, which is a new Heroku release on `mcritchie-studio`: every
 dyno restarts (web and the worker, whose scheduler re-boots the Gateway listener
 on the new config), and the release phase runs `bin/rails db:migrate` (Procfile
 `release:`), so a migration waiting on `main` runs then. Do not install while a
-deploy is in flight, and check `heroku releases -n 1 --app mcritchie-studio`
-says "Set DISCORD_BOT_TOKEN_<SOUL> config vars" and the dynos came back `up`.
+deploy is in flight. Then check the release SUCCEEDED, not just its
+description: `heroku releases -n 1 --app mcritchie-studio --json | jq -r '.[0] | "\(.status) \(.description)"'`
+must print `succeeded Set DISCORD_BOT_TOKEN_<SOUL> config vars`. The
+description alone proves nothing: a release whose release phase fails (a
+migration waiting on `main`) keeps its description, reads `failed`, and the
+dynos stay on the old config, holding the token the reset already killed. Then check the dynos came back `up`.
 No `heroku ps:restart` is needed: the release is the restart.
 
 **The shared bot's own soul (`alex`)** installs twice in one release: the card
@@ -158,7 +163,11 @@ public), and add or update its row in
 the card reads `Steffon's verify: The 1Password field bot-token on <item> is
 empty (or 1Password did not answer): paste the token there, then Done.`): do not
 retry in a loop. Quit and reopen the 1Password app, then a reboot; then verify
-again.
+again. `bin/agent-setup` bounds its own `op` calls; an `op` call you run by hand
+(the item's creation, a read-back) takes the same bound through `op_metered`,
+because this Mac has no `timeout` and an `alarm` does not stop `op`:
+[`credential-filing`](credential-filing.md), "Bound every `op` call you run by
+hand".
 
 ## 4. Close
 

@@ -8,7 +8,8 @@
 #   install_app            the Heroku app whose config takes the token
 #   op_vault, op_field     where Steffon's empty 1Password item lives, and the
 #                          field Alex McRitchie pastes into; the item is
-#                          agents.discord.<soul> unless the card names another
+#                          discord.<soul>.agents (DiscordBotKit.op_item_for)
+#                          unless the card names another with --op-item
 #   scopes                 the OAuth2 scopes of the invite
 #   permission_sets        named sets of Discord permission flags; the invite
 #                          carries their sum (AgentSetups::DiscordPermissions)

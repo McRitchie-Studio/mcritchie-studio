@@ -135,7 +135,7 @@ Solana and Anchor, and the shell lines. It stops at Phase 4 because the
 
 ## 5. The 1Password token (Alex McRitchie)
 
-1. In 1Password (account `MWOV5OT5BRHATI4EGMN26C5DPA`): **Developer Tools >
+1. In 1Password (`alex@mcritchie.studio`, user ID `MWOV5OT5BRHATI4EGMN26C5DPA`): **Developer Tools >
    Service Accounts > Create**, name `conductor-mini`, **read on `studio-agents`
    only**. Not the admin vault. A token of its own means it can be revoked
    without touching the laptop's.
