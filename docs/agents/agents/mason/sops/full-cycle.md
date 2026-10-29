@@ -90,6 +90,10 @@ terminal to notice or finish it. Subagents stay first-class for **read** fan-out
 where a detach costs a retry. The line is **mutating vs reading**, not *parallel vs
 serial*.
 
+Steps 2 to 4 are what `bin/release cycle` runs for you, in this session. Run them
+by hand, as written below, only for a release Alex McRitchie scoped with `--task`, or
+to recover or stop between one step and the next.
+
 1. **Review** — READ fan-out, so DELEGATE. Summon an **Avi** subagent via the
    Agent tool (`subagent_type: avi`) that SUPERVISES the `pr-review` procedure.
    Avi never reviews the code himself; he spawns the PRIMARY and LIGHT reviewers
@@ -110,8 +114,8 @@ serial*.
    eject the offender FIRST**, because a bare re-run re-deploys the same member
    code and goes red again. The exit table and the full abort table are in
    [`../../avi/sops/qa-release.md`](../../avi/sops/qa-release.md).
-3. **Ship** — MUTATION, so DIRECT-DRIVE `bin/release ship --yes` from THIS
-   session. Do NOT wrap the ship in a subagent: it is the one irreversible gate,
+3. **Ship** — MUTATION, so DIRECT-DRIVE `bin/release ship --mode cleared
+   --clearance "<Alex McRitchie's words>" --yes` from THIS session. Do NOT wrap the ship in a subagent: it is the one irreversible gate,
    and a wrapper agent that dies mid-ship would orphan the `release → main` state
    with no terminal to recover it.
 4. **Close out** — MUTATION, so DIRECT-DRIVE `bin/release archive --yes` (preview

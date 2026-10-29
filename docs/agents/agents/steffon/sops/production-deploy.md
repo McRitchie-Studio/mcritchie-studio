@@ -593,7 +593,9 @@ bin/release archive --yes         # apply
 
 **An ABORT and an INTERRUPTION need OPPOSITE responses.** An ABORT (red suite, failed
 preflight, deploy or smoke) is a verdict: **do not force past it**; record the blocker
-and hand it off. An INTERRUPTION has none: **re-run `bin/release ship --yes`**.
+and hand it off. An INTERRUPTION has none: **re-run the command that was running**
+(`bin/release cycle --clearance "<his words>" --yes` inside the full lane, else
+`bin/release ship --yes`).
 
 ## Exit Seam
 

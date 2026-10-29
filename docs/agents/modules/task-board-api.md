@@ -306,8 +306,9 @@ deploy_prod prod_smoke release_notes archive_tasks devnet_gauntlet
 ```
 
 `devnet_gauntlet` stamps no stage: it records a green Turf contest-rehearsal on QA
-(`bin/release prepare` posts it after QA green), which `bin/release ship` requires of a release carrying turf-monster or turf-vault
-work (`Release::DevnetGauntlet`; `qa-release`, "The devnet gauntlet").
+(`bin/release prepare` posts it after QA green). `bin/release ship` requires it of a release carrying turf-monster or turf-vault
+work, and accepts only the NEWEST such event, completed, whose `metadata.shas` match the
+Turf SHAs being shipped (`Release::DevnetGauntlet.covers?`; `qa-release`, "The devnet gauntlet").
 
 The tracker aliases also work: `testing`, `assembling`, `qa_deploying`,
 `confirming`, and `production_deploying`.

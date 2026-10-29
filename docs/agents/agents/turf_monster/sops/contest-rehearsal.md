@@ -335,9 +335,11 @@ turf-vault work, [`qa-release`](../../avi/sops/qa-release.md), "The devnet gaunt
 transaction's token balances, and then a completed `devnet_gauntlet` event on the
 release naming the contest slug and both signatures (or a `fail` naming the step,
 with prepare exiting 4). The event's `metadata.shas` names the QA-deployed SHA of
-each Turf repo the rehearsal ran against. Nobody runs it by hand for a release:
-prepare runs it automatically, and `bin/release cycle` re-runs prepare when one is
-owed. Production waits for that record:
+each Turf repo the rehearsal ran against. Prepare runs it automatically, and
+`bin/release cycle` re-runs prepare when one is owed; a watched hand run (`--cosign
+link`) happens only when Alex McRitchie asks to watch, and records the same event by
+hand with `metadata.shas` ([`qa-release`](../../avi/sops/qa-release.md), "The devnet
+gauntlet"). Production waits for that record:
 [`production-deploy`](../../steffon/sops/production-deploy.md) and `bin/release ship`
 accept only the NEWEST `devnet_gauntlet` event on the release, only when it is
 completed, and only when its `metadata.shas` match the Turf SHAs being shipped. A
