@@ -16,8 +16,7 @@
       <%= link_to books_path(entity: entity.key),
                   class: "btn btn-sm #{current ? 'btn-primary' : 'btn-secondary'}",
                   aria: { current: (current ? "page" : nil) }, data: { test: "books-entity-#{entity.key}" } do %>
-        <%= entity.name %>
-        <span class="badge text-xs ml-1 <%= count.positive? ? 'bg-warning/10 text-warning-ink border-warning/40' : 'bg-success/10 text-success-ink border-success/40' %>"><%= count %> waiting</span>
+        <%= entity.name %> <span class="font-normal" data-test="books-entity-count">· <%= count %> waiting</span>
       <% end %>
     <% end %>
   </nav>
@@ -82,7 +81,7 @@
           <label class="flex flex-col gap-1 min-w-0 sm:col-span-2">
             <span class="text-muted text-xs">Note: who said so, and what it was</span>
             <%= text_field_tag :note, nil, id: "note-#{entry.id}", autocomplete: "off",
-                               placeholder: "Alex McRitchie #{Date.current.iso8601}: …",
+                               placeholder: "Alex McRitchie #{Time.current.in_time_zone('America/Denver').to_date.iso8601}: …",
                                class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-note" } %>
           </label>
           <div class="sm:col-span-2 flex justify-end">
