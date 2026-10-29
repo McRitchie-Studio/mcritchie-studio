@@ -443,6 +443,23 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   await expect(handover.locator("[data-test='cto-chat-reply']")).not.toContainText("building now");
   // A nameless owner is asked in the chat, and the answer sets the first name (task cto-chat-quality-pass).
   await expect(handover.locator("[data-test='cto-chat-reply']")).toContainText("what should I call you?");
+  // The send's own response is HELD until the owner has moved focus to the avatar (below). The
+  // server broadcasts the answer BEFORE it renders that response (CtoChatsController#create), so on
+  // a slow runner the reply is on screen, this test moves on, and the response lands after: CI,
+  // 2026-10-28, its submit-end pulled focus back into the chat box, Enter typed there, and the
+  // picker stayed shut. Holding it makes that interleaving happen on every run, not one in many.
+  const chatPath = `/applications/${address}/chat`;
+  let releaseSend;
+  const sendHeld = new Promise((resolve) => { releaseSend = resolve; });
+  const holdSend = async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    const response = await route.fetch();
+    await sendHeld;
+    await route.fulfill({ response });
+  };
+  const isChat = (url) => url.pathname === chatPath;
+  await page.route(isChat, holdSend);
+  const sendAnswered = page.waitForResponse((r) => new URL(r.url()).pathname === chatPath && r.request().method() === "POST");
   await page.locator("[data-test='cto-chat-input']").fill("Jordan");
   await page.locator("[data-test='cto-chat-send']").click();
   await expect(page.locator("[data-test='cto-chat-turn']", { hasText: "Jordan" }).locator("[data-test='cto-chat-reply']")).toContainText("Nice to meet you, Jordan!");
@@ -469,6 +486,13 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   const headPortrait = page.locator("[data-test='agent-portrait'] [data-test='client-cto-portrait']");
   const announce = page.locator("[data-test='cto-chat-avatar-announce']");
   await avatarHead.focus();
+  // Now the held send lands, and its end must leave the owner's focus where it is.
+  releaseSend();
+  await sendAnswered;
+  await page.unroute(isChat, holdSend);
+  await expect(page.locator("[data-test='cto-chat-form']")).not.toHaveAttribute("aria-busy", "true");
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(avatarHead, "the send's end pulled focus back into the chat box").toBeFocused();
   await page.keyboard.press("Enter");
   await expect(avatarPicker).toBeVisible();
   const startPick = avatarPicker.locator("input[name='portrait']:checked");

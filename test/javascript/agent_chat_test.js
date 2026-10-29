@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { BEAT_MS, addChips, carriedDraft, carryPhase, emptyRepeat, focusComposer, formOfEvent, freshClientId, indicatorKey, markBusy, phasesIn, putBack, restoreSend, sendFailed, startSend, syncDelay, trackSend } from "../../app/javascript/agent_chat.js";
+import { BEAT_MS, addChips, carriedDraft, carryPhase, emptyRepeat, focusComposer, focusMovedAway, formOfEvent, freshClientId, indicatorKey, markBusy, phasesIn, putBack, restoreSend, sendFailed, startSend, syncDelay, trackSend } from "../../app/javascript/agent_chat.js";
 
 function indicator(phase, slotId = "cto-chat-typing") {
   const slot = { id: slotId, closest: () => slot };
@@ -159,6 +159,20 @@ test("focus: focusComposer puts the caret back in the redrawn box, at the end of
   assert.equal(fresh.field.focused, true);
   assert.deepEqual(fresh.field.caret, [13, 13]);
   assert.equal(focusComposer(null), false);
+});
+
+// [unit] hub-flaky-tests-steady: the answer's broadcast lands before the send's own
+// response, so a person can be on another control when submit-end tries to refocus.
+test("focus: a send's end leaves focus where the person moved it, and only reclaims an idle or detached caret", () => {
+  const body = { isConnected: true, closest: () => null };
+  const inComposer = { isConnected: true, closest: (sel) => (sel === "[data-cto-chat-form]" ? {} : null) };
+  const avatar = { isConnected: true, closest: () => null };
+  const detached = { isConnected: false, closest: () => null };
+  assert.equal(focusMovedAway(avatar, body), true, "the avatar the person focused keeps focus");
+  assert.equal(focusMovedAway(inComposer, body), false, "still in the box: refocus is a no-op move");
+  assert.equal(focusMovedAway(body, body), false, "nothing focused: the box takes it back");
+  assert.equal(focusMovedAway(null, body), false);
+  assert.equal(focusMovedAway(detached, body), false, "the send button the redraw replaced is not a move");
 });
 
 test("ask draft: the set-aside draft goes back in the box as the ask leaves, and no later step overwrites it", () => {
