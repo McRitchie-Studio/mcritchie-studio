@@ -234,9 +234,11 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
 
   def tree_path(out) = out[/gauntlet driver: turf-monster@\h{7} \((\S+)\)/, 1] || flunk("no tree named: #{out}")
 
-  def tree_call(primary, sha, body, rescue_it: false, tmp_root: nil)
+  # `warm:` is the warm tree's path; nil runs the cold cut, as OutboundSeams seals it.
+  def tree_call(primary, sha, body, rescue_it: false, tmp_root: nil, warm: nil)
     setup = <<~RUBY
       ENV.delete("RELEASE_GAUNTLET_DRIVER")
+      ENV["RELEASE_GAUNTLET_WARM_TREE"] = #{(warm || "off").inspect}
       def repo_path(_repo) = #{primary.inspect}
       def bundle_gauntlet_tree(_path) = nil
       #{"def gauntlet_tmp_root = #{tmp_root.inspect}" if tmp_root}
@@ -410,4 +412,199 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
       assert_includes out, "(RELEASE_GAUNTLET_DEADLINE sets the bound)"
     end
   end
+
+  # --- the warm tree: one persistent turf-monster worktree, reused --------------------
+
+  # A body that reports what the driver's tree holds, then plants a stray, the caches
+  # and a state file for the next run to find (or not).
+  WARM_BODY = 'out, ok = run_gauntlet_step(root, ["seed"]); ' \
+              'puts("STEP " + out.strip + " ok=" + ok.to_s); ' \
+              'puts("HEAD " + `git -C #{root} rev-parse HEAD`.strip); ' \
+              "%w[STRAY vendor/bundle/gem.rb node_modules/pkg.js tmp/cache/bootsnap/c tmp/qa-rehearsal/current.json tmp/log.txt]" \
+              '.each { |f| puts("SAW " + f + "=" + File.exist?(File.join(root, f)).to_s) }; ' \
+              'puts("ENV-MODE " + format("%o", File.stat(File.join(root, ".env")).mode & 0o777)); ' \
+              "%w[STRAY vendor/bundle/gem.rb node_modules/pkg.js tmp/cache/bootsnap/c tmp/qa-rehearsal/current.json tmp/log.txt]" \
+              '.each { |f| FileUtils.mkdir_p(File.dirname(File.join(root, f))); File.write(File.join(root, f), "x") }; :ran'
+
+  def saw(out, file) = out[/^SAW #{Regexp.escape(file)}=(\w+)$/, 1]
+
+  def with_warm_root
+    Dir.mktmpdir("gauntlet-warm") { |dir| yield File.join(dir, "cache", "turf-monster-gauntlet") }
+  end
+
+  def test_the_warm_tree_is_reused_across_runs_at_each_release_sha_and_wiped_but_its_caches
+    with_scratch_turf do |primary, main_sha, release_sha|
+      with_warm_root do |warm|
+        first = tree_call(primary, release_sha, WARM_BODY, warm: warm)
+        assert_includes first, "(#{warm}), the tree prepare deployed to QA (warm tree, reused)"
+        assert_match(/STEP driver B seed in \S*turf-monster-gauntlet ok=true/, first, "B's driver, from the warm tree")
+        assert_includes first, "HEAD #{release_sha}"
+        assert File.directory?(warm), "the warm tree stays after the run"
+        assert_equal 2, `git -C #{primary} worktree list`.lines.size, "the warm tree stays registered"
+        assert File.exist?(File.join(warm, "vendor/bundle/gem.rb")), "caches survive the end-of-run wipe"
+        refute File.exist?(File.join(warm, "STRAY")), "strays go at the end of the run"
+
+        second = tree_call(primary, main_sha, WARM_BODY, warm: warm)
+        assert_includes second, "(#{warm}), the tree prepare deployed to QA (warm tree, reused)", "the same tree: #{second}"
+        assert_match(/STEP driver A seed in \S*turf-monster-gauntlet ok=true/, second, "moved to the next release's SHA")
+        assert_includes second, "HEAD #{main_sha}"
+        %w[vendor/bundle/gem.rb node_modules/pkg.js tmp/cache/bootsnap/c].each do |cache|
+          assert_equal "true", saw(second, cache), "#{cache} is a cache the warm tree keeps"
+        end
+        %w[STRAY tmp/qa-rehearsal/current.json tmp/log.txt].each do |stray|
+          assert_equal "false", saw(second, stray), "#{stray} from the last run is gone before this one"
+        end
+        assert_equal 2, `git -C #{primary} worktree list`.lines.size, "still one warm registration, not two"
+        assert_equal "A", `git -C #{primary} log -1 --format=%s`.strip, "the primary checkout is untouched"
+      end
+    end
+  end
+
+  def test_a_stray_left_by_a_killed_run_is_wiped_before_the_next_run
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      with_warm_root do |warm|
+        tree_call(primary, release_sha, ":ran", warm: warm)
+        File.write(File.join(warm, "STRAY"), "x") # a SIGKILL skipped the end-of-run wipe
+        FileUtils.mkdir_p(File.join(warm, "tmp/qa-rehearsal"))
+        File.write(File.join(warm, "tmp/qa-rehearsal/current.json"), STATE)
+        File.write(File.join(warm, "bin/qa-contest-rehearsal"), "#!/bin/sh\necho tampered\n") # tracked, edited
+
+        out = tree_call(primary, release_sha, WARM_BODY, warm: warm)
+        assert_equal "false", saw(out, "STRAY")
+        assert_equal "false", saw(out, "tmp/qa-rehearsal/current.json")
+        assert_match(/STEP driver B seed/, out, "a tracked file edited in the tree is reset to the commit")
+      end
+    end
+  end
+
+  def test_env_copies_are_0600_never_printed_and_gone_after_a_warm_run
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      File.chmod(0o644, File.join(primary, ".env"))
+      with_warm_root do |warm|
+        out = tree_call(primary, release_sha, WARM_BODY, warm: warm)
+        assert_includes out, "ENV-MODE 600", "the copy is the owner's alone, whatever the primary's mode"
+        refute_includes out, "FROM_PRIMARY", "an env file's contents are never printed"
+        refute File.exist?(File.join(warm, ".env")), "the warm tree keeps no .env copy between runs"
+      end
+    end
+  end
+
+  def test_the_cold_cut_writes_its_env_copies_0600_too
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      File.chmod(0o644, File.join(primary, ".env"))
+      out = tree_call(primary, release_sha, 'puts("ENV-MODE " + format("%o", File.stat(File.join(root, ".env")).mode & 0o777)); :ran')
+      assert_includes out, "(cold cut)"
+      assert_includes out, "ENV-MODE 600"
+    end
+  end
+
+  def test_a_tree_whose_head_is_not_the_release_sha_is_refused
+    with_scratch_turf do |primary, main_sha, release_sha|
+      call = "puts('VERIFY ' + verify_gauntlet_tree(#{primary.inspect}, #{release_sha.inspect}).inspect); " \
+             "puts('MATCH ' + verify_gauntlet_tree(#{primary.inspect}, #{main_sha.inspect}).inspect)"
+      out = run_cli([], call: call)
+      assert_match(/VERIFY ".*HEAD is .*not #{release_sha[0, 7]}"/, out)
+      assert_includes out, "MATCH nil"
+    end
+  end
+
+  def test_a_warm_tree_git_cannot_move_is_discarded_and_cut_afresh
+    with_scratch_turf do |primary, main_sha, release_sha|
+      with_warm_root do |warm|
+        tree_call(primary, release_sha, ":ran", warm: warm)
+        gitdir = File.read(File.join(warm, ".git"))[/gitdir: (.+)/, 1].strip
+        File.write(File.join(gitdir, "index.lock"), "") # a killed git left its lock: checkout fails
+
+        out = tree_call(primary, main_sha, WARM_BODY, warm: warm)
+        assert_includes out, "discarding a broken one"
+        assert_includes out, "(warm tree, reused)"
+        assert_includes out, "HEAD #{main_sha}"
+        assert_equal 2, `git -C #{primary} worktree list`.lines.size
+      end
+    end
+  end
+
+  def test_a_warm_path_holding_something_else_is_left_alone_and_the_run_falls_back_to_the_cold_cut
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      with_warm_root do |warm|
+        FileUtils.mkdir_p(warm)
+        File.write(File.join(warm, "precious.txt"), "not ours")
+
+        out = tree_call(primary, release_sha, WARM_BODY, warm: warm)
+        assert_includes out, "is unusable"
+        assert_includes out, "(cold cut)"
+        assert_match(/STEP driver B seed in \S*gauntlet-turf-monster-\S+ ok=true/, out)
+        assert_equal "not ours", File.read(File.join(warm, "precious.txt")), "never deleted"
+        refute File.exist?(tree_path(out)), "the cold tree still goes"
+        assert_equal 1, `git -C #{primary} worktree list`.lines.size
+      end
+    end
+  end
+
+  def test_a_warm_tree_another_run_holds_is_not_shared
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      with_warm_root do |warm|
+        FileUtils.mkdir_p(File.dirname(warm))
+        File.open("#{warm}.lock", File::RDWR | File::CREAT) do |lock|
+          lock.flock(File::LOCK_EX)
+          out = tree_call(primary, release_sha, ":ran", warm: warm)
+          assert_includes out, "held by another run; cold cut instead"
+          assert_includes out, "(cold cut)"
+          refute File.exist?(warm), "the held tree is not touched"
+        end
+      end
+    end
+  end
+
+  def test_a_warm_path_inside_turf_monster_is_refused
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      out = tree_call(primary, release_sha, ":ran", warm: File.join(primary, "tmp", "warm"))
+      assert_includes out, "is inside a turf-monster checkout or a managed desk root; cold cut instead"
+      assert_includes out, "(cold cut)"
+      out = tree_call(primary, release_sha, ":ran", warm: primary)
+      assert_includes out, "(cold cut)", "never the primary itself: #{out}"
+      assert_equal "A", `git -C #{primary} log -1 --format=%s`.strip
+    end
+  end
+
+  def test_the_stale_sweep_never_deletes_the_warm_tree
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      Dir.mktmpdir("gauntlet-root") do |root|
+        # The worst case: a warm tree whose name the cold sweep's glob matches.
+        warm = File.join(root, "gauntlet-turf-monster-warm")
+        tree_call(primary, release_sha, ":ran", tmp_root: root, warm: warm)
+        File.utime(Time.now - 86_400, Time.now - 86_400, warm)
+
+        out = tree_call(primary, release_sha, ":ran", tmp_root: root, warm: warm)
+        refute_includes out, "sweeping a stale gauntlet tree"
+        assert_includes out, "(#{warm}), the tree prepare deployed to QA (warm tree, reused)"
+        assert File.directory?(warm)
+      end
+    end
+  end
+
+  def test_an_unknown_release_sha_with_a_warm_tree_is_red_at_tree_and_keeps_the_warm_tree
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      with_warm_root do |warm|
+        tree_call(primary, release_sha, ":ran", warm: warm)
+        out = tree_call(primary, "f" * 40, ":ran", warm: warm)
+        assert_match(/RESULT .*step="tree".*could not cut a turf-monster worktree/m, out)
+        assert File.directory?(warm), "a bad SHA is the release's fault, not the tree's"
+      end
+    end
+  end
+
+  def test_a_red_warm_run_keeps_its_state_before_the_wipe
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      with_warm_root do |warm|
+        red = 'Release::DevnetGauntletRun::Result.new(ok: false, step: "settle", reason: "x", metadata: {})'
+        out = tree_call(primary, release_sha, write_state_body(red), warm: warm)
+        assert_includes out, "(warm tree, reused)"
+        assert_equal [STATE], kept_states(primary).map { |f| File.read(f) }
+        refute File.exist?(File.join(warm, GAUNTLET_STATE)), "the warm tree holds no state once kept"
+      end
+    end
+  end
+
+  GAUNTLET_STATE = "tmp/qa-rehearsal/current.json"
 end
