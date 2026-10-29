@@ -2,16 +2,16 @@ require "test_helper"
 require_relative "../support/agent_mailbox_in_process_api"
 require Rails.root.join("bin/lib/agent_dispatcher").to_s
 
-# [integration] ritch-answers-about-alex: a visitor asks a /build chat about
+# [integration] alex-has-my-personality (was ritch-answers-about-alex): a visitor asks a /build chat about
 # Alex McRitchie. bin/dispatcher's loop claims the row through the REAL mailbox API in
-# process, prompts a STUBBED Claude (which receives Alex McRitchie's profile and its
+# process, prompts a STUBBED Claude (which receives Alex's persona and its
 # rules), and completes it with an answer about Alex McRitchie: the row stores no intake
 # card and records no intake_card event, and the request's steps stay unset.
 # Nothing reaches Discord, Claude or production.
-class BuildAboutAlexTest < ActionDispatch::IntegrationTest
+class BuildPersonaTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
 
-  REPLY = "Alex McRitchie founded McRitchie Studio. Alex McRitchie's take is that time is the metric that matters. " \
+  REPLY = "I'm Alex, Alex McRitchie's AI. He founded McRitchie Studio, and I think time is the metric that matters. " \
           "What would you like to build?".freeze
 
   class StubClaude
@@ -40,7 +40,7 @@ class BuildAboutAlexTest < ActionDispatch::IntegrationTest
     BuildIntake.reset_policy!
   end
 
-  test "a question about Alex McRitchie is answered from his profile with no intake card" do
+  test "a question about Alex McRitchie is answered from the persona with no intake card" do
     proof = BrowserProof.new(BuildController::PROOF_PURPOSE).issue(5.seconds.ago).reverse
     post build_path, params: { app_request: { prompt: "Who is Alex McRitchie, and what does he think about building?",
                                               client_id: "alex-0001", form_proof: proof } }
@@ -60,9 +60,9 @@ class BuildAboutAlexTest < ActionDispatch::IntegrationTest
     assert_equal "completed", message.reload.status, "never answered; log:\n#{@out.string}"
 
     sent = runner.prompts.pop
-    assert_includes sent, "- ABOUT ALEX.", "the model is given the about-Alex McRitchie rules"
-    assert_includes sent, "Alex McRitchie is the founder of McRitchie Studio", "and Alex McRitchie's profile"
-    assert_includes sent, "Politely decline anything more about his family"
+    assert_includes sent, "- PERSONA. You are Alex, Alex McRitchie's AI", "the model is given the persona rules"
+    assert_includes sent, "I'm Alex, Alex McRitchie's AI. I think like him", "and the persona, first person"
+    assert_includes sent, "answer it with NO intake card"
 
     assert_equal REPLY, message.response_text
     assert_nil message.intake_card, "an answer about Alex McRitchie shows no card"

@@ -19,8 +19,8 @@ Narrate as yourself: `bin/agent-activity … --agent alex`.
   under `mcritchie-studio/docs/agents/agents/alex/`.
 - On a marketing question: the client's dossier in `clients/` (check its "Last
   reviewed" date) and only the `knowledge/` cards the question needs.
-- `intake.md` for a `/build` conversation, and `about-alex.md` for anything you
-  say about Alex McRitchie.
+- `intake.md` for a `/build` conversation, and `persona.md` (who you are in public, and
+  the only facts you share about Alex McRitchie).
 - `/Users/alex/projects/AGENTS.md`: the operating model.
 
 ## What you may do

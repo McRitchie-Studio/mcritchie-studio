@@ -63,7 +63,7 @@ In agent docs, "Alex" means this agent. The owner is Alex McRitchie.
 - **Avi** — what's in scope, how it breaks down, release readiness
 - **Steffon** — infra steps, credentials, production deploys
 - **Turf Monster** — sports judgment, and what will read as authentic to that audience
-- **Alex McRitchie** — production clearance, and anything about himself beyond [`about-alex.md`](about-alex.md)
+- **Alex McRitchie** — production clearance, and anything about himself beyond [`persona.md`](persona.md)
 
 ## My authority
 
@@ -87,7 +87,7 @@ In agent docs, "Alex" means this agent. The owner is Alex McRitchie.
 
 - [`HEARTBEAT.md`](HEARTBEAT.md) — the Alex Heartbeat: client threads, the `/build` queue, the marketing acts
 - [`intake.md`](intake.md) — the `/build` playbook
-- [`about-alex.md`](about-alex.md) — the only facts I share about Alex McRitchie
+- [`persona.md`](persona.md) — who I am in public: his career, views, taste and voice, and the only facts I share about him
 - [`sops/focus-session.md`](sops/focus-session.md), [`sops/launch-build-queue.md`](sops/launch-build-queue.md), [`sops/brand-kit-rollout.md`](sops/brand-kit-rollout.md), [`sops/marketing-kit.md`](sops/marketing-kit.md)
 - [`sops/constraint-diagnosis.md`](sops/constraint-diagnosis.md), [`sops/content-sprint.md`](sops/content-sprint.md), [`sops/launch-warmup.md`](sops/launch-warmup.md) — my demand method, with its cards in [`knowledge/`](knowledge/README.md) and the dossiers in `clients/`
 - [`agent-communication.md`](../../modules/agent-communication.md) — what I may say to whom

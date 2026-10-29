@@ -1402,15 +1402,12 @@ Turbo hover prefetch gets a 204 and spends nothing.
   dark) are checked, unknown fields refuse the card, and the checked copy is stored on
   `agent_messages.intake_card` (`intake_card` / `intake_refused` events). A catalog
   proposal on a build thread is refused.
-- **About Alex McRitchie** (Alex McRitchie, 2026-10-20: his interactive resume). After the INTAKE section Alex's
-  prompt on a build thread carries ABOUT ALEX (`ContextBuilder#about_alex_block`): Alex McRitchie's
-  profile, the part of `docs/agents/agents/alex/about-alex.md` below its rule (he edits
-  it; its source citations and TODOs are HTML comments, stripped), capped at 2,500
-  characters, under rules written in CODE so an edit cannot drop them: speak about Alex McRitchie
-  in the third person and never as him; give advice only as the views the profile
-  records, and say "Alex McRitchie hasn't shared that here" otherwise; family stops at what the
-  profile says (married, a daughter), and anything more is politely declined; and a
-  question about him offers no intake card. No other thread carries it.
+- **Alex's persona** (Alex McRitchie, 2026-10-28: "80% of me in agent form"; it replaced the
+  2026-10-20 third-person profile). After the INTAKE section Alex's prompt on a build thread
+  carries PERSONA (`ContextBuilder#persona_block`), as every answer the soul `alex` gives does
+  ("Alex's persona" under Satellite chat): the part of `docs/agents/agents/alex/persona.md`
+  below its rule, capped at 4,000 characters, under rules written in CODE. On a build thread
+  alone it adds one rule: a question about Alex McRitchie offers no intake card and sets no step.
 - **Taps** (`BuildIntake::Choice`, `PATCH /build/:token/intake`) are the only writes to
   `app_requests.cto_name`, `cto_avatar` (an `animal:<id>` from `BuildIntake::Animals`, or an older
   `BuildIntake::Portraits` key), `palette` and
@@ -1441,6 +1438,18 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
 | Inbound | `AgentChat::Ingest`: a `web` row, `channel_ref` `chat`, the app in `envelope.app` (never in the key), the visitor's IP hashed as /build's |
 | Turns | `AgentChat::Turns`: a row is a user turn and, once answered, an agent turn, both carrying the row's id (`after` is a message id; key a turn by id and role). Status `pending` (received), `typing` (claimed), `answered`, `failed` (held, dead, or no words) |
 
+- **Alex's persona.** Every answer the soul `alex` gives, on every channel (these `chat:alex:`
+  threads, /build, Discord, the hub web chat, email), carries PERSONA
+  (`ContextBuilder#persona_block`; no other soul's does): `docs/agents/agents/alex/persona.md`
+  below its rule (Alex McRitchie's career, views, taste, family line and voice, first person as
+  his AI; citations are HTML comments, stripped), capped at 4,000 characters, under rules
+  written in CODE so an edit cannot drop them: never claim to be human; his views in the
+  first person, his life as his; a fact the page lacks is "I haven't shared that here", and
+  an opinion only when the page clearly implies it; no deals in progress, finances, lenders,
+  addresses, phone numbers or personal email; family only as written (Lauren, Margot, their
+  birthday months); no commitment of his time, prices or contracts beyond what is published;
+  the Hormozi floor. The page is public by construction, so these threads stay answered at
+  the public audience. The hub's public `/chat` (`Chat::AlexResponder`) prints the same block.
 - **Who answers.** The person's role, as everywhere, and the public on the public-intake
   soul's chat threads: `Answerers#intake?` and its SQL guard answer `chat:alex:` as they
   answer `web:build:`, a prefix built in code. Another soul's public row is `held`.
