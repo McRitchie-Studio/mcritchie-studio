@@ -40,6 +40,8 @@ class BooksIntakeAndCloseTest < ActiveSupport::TestCase
 
   def close(month = "2026-12") = Books::Close.new(entity, month, drive: @drive, config: books_config).call(generated_by: "test")
 
+  def lender(month = "2026-12") = Books::LenderPackage.new(entity, month, drive: @drive, config: books_config).call(generated_by: "test")
+
   test "the Inbox is filed once: statements, lines, rules applied, and a copy in Statements/<year>" do
     results = intake
 
@@ -106,6 +108,36 @@ class BooksIntakeAndCloseTest < ActiveSupport::TestCase
     assert_equal 2, @drive.files.fetch(final.sheet_id)[:revisions]
     assert_equal 1, BookClose.count
     assert_in_delta 50.40 - 60.00, final.summary["net_income_ytd_cents"] / 100.0, 0.001
+  end
+
+  test "the lender package needs the close, sits beside it in Drive, matches its figures, and updates its own files" do
+    intake
+    error = assert_raises(Books::LenderPackage::Error) { lender }
+    assert_match(/run bin\/books close example 2026-12 first/, error.message)
+
+    closed = close
+    package = lender
+
+    assert_equal "Example Studio LLC: lender package 2026-12 (DRAFT)", @drive.files.fetch(package.sheet_id)[:name]
+    assert_equal "closes/2026-12", @drive.files.fetch(package.sheet_id)[:parent]
+    assert_equal "closes/2026-12", @drive.files.fetch(package.pdf_id)[:parent]
+    refute_includes [ closed.sheet_id, closed.pdf_id ], package.sheet_id, "the package is its own file, not the close's"
+    assert_equal [ package.sheet_id, package.pdf_id ], closed.record.reload.values_at(:lender_sheet_file_id, :lender_pdf_file_id)
+    Books::LenderPackage::FIGURES.each { |k| assert_equal closed.summary[k], package.summary[k], k }
+    assert_empty package.notes
+    assert_equal "draft", package.to_h["status"]
+
+    wire = BookEntry.unclassified.sole
+    Books::Classify.call(entity, ids: [ wire.id ], category: "member_contribution", by: "alex-mcritchie", config: books_config)
+    drifted = lender
+    assert_equal [ package.sheet_id, package.pdf_id ], [ drifted.sheet_id, drifted.pdf_id ], "a re-run updates the same files"
+    assert_match(/ledger changed since the 2026-12 close ran .*re-run bin\/books close example 2026-12/, drifted.notes.join)
+
+    close
+    settled = lender
+    assert_empty settled.notes
+    assert_equal "final", settled.to_h["status"]
+    assert_equal "Example Studio LLC: lender package 2026-12", @drive.files.fetch(settled.sheet_id)[:name]
   end
 
   test "a missing statement keeps the close a DRAFT and names the account" do

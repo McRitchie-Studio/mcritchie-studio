@@ -32,6 +32,19 @@ class BooksExportAndReminderTest < ActiveSupport::TestCase
     assert_match %r{\Ahttps://drive.google.com/open\?id=}, closed["sheet"]
   end
 
+  test "lender answers an error before the close exists, then its links; status shows each close's cash and lender package" do
+    assert_no_difference -> { ErrorLog.count } do
+      assert_match(/run bin\/books close example 2026-01 first/, export("verb" => "lender", "month" => "2026-01", "by" => "mack")["error"])
+    end
+    export("verb" => "close", "month" => "2026-01", "by" => "mack")
+    package = export("verb" => "lender", "month" => "2026-01", "by" => "mack")
+    assert_match %r{\Ahttps://drive.google.com/open\?id=}, package["pdf"]
+
+    status = export("verb" => "status")
+    assert_equal "2026-01-05", status["oldest_waiting"]
+    assert_equal [ 5_012_00, package["sheet"] ], status["closes"].sole.values_at("cash_cents", "lender_sheet")
+  end
+
   test "a write without a who, or an unknown entity, is an error answer, not a raise" do
     assert_match(/--by/, export("verb" => "close", "month" => "2026-01")["error"])
     assert_match(/no entity/, Books::Export.call({ "entity" => "nope", "verb" => "status" }, config: books_config, drive: @drive)["error"])

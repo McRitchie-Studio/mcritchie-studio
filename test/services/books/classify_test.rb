@@ -36,9 +36,10 @@ class BooksClassifyTest < ActiveSupport::TestCase
 
     assert_equal %w[member_distribution Owner\ draws alex-mcritchie personal],
                  entry.reload.attributes.values_at("category", "purpose", "classified_by", "note")
+    assert_in_delta Time.current, entry.classified_at, 5, "when the answer was given is recorded"
 
     Books::Classify.call(books_entity, ids: [ entry.id ], category: nil, by: "alex-mcritchie", config: books_config)
-    assert_equal [ nil, nil, nil ], entry.reload.attributes.values_at("category", "purpose", "classified_by")
+    assert_equal [ nil, nil, nil, nil ], entry.reload.attributes.values_at("category", "purpose", "classified_by", "classified_at")
   end
 
   test "classify refuses an unknown category, another entity's line, or a formula-shaped purpose" do
