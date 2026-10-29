@@ -76,6 +76,7 @@ class BrandKitExport
     lines += ["", "\"saved\" is the operator's saved kit choice; \"default\" is the brand's default, shown while nothing is saved for that logo.",
               "", "## Palette", ""] + style.palette.map { |swatch| "- #{swatch.name} #{swatch.hex}" }
     lines += ["", "## Typefaces", ""] + style.typefaces.map { |face| "- #{face.role}: #{face.name}" }
+    lines += type_scale_lines(Logos::TypeScale.new(style))
     lines += ["", "## Stable URLs", "", "Each always serves the current kit choice (admin sign-in required):", ""]
     lines += FILES.keys.map { |name| "- #{@base_url}/logos/#{brand}/kit/#{name}" }
     lines += ["- #{@base_url}/logos/#{brand}/kit.zip (this whole kit)", ""]
@@ -83,6 +84,18 @@ class BrandKitExport
   end
 
   private
+
+  # The brand's type scale (task brand-kit-carries-type-scale): every role at each base, then the four settings an
+  # app's config/initializers/studio.rb takes from it.
+  def type_scale_lines(scale)
+    head = ["", "## Type scale", "", "| Role | Multiple | #{scale.surfaces.map { |surface| "#{surface.label} (#{surface.base} px)" }.join(' | ')} |",
+            "|------|----------|#{scale.surfaces.map { '------' }.join('|')}|"]
+    rows = scale.roles.each_with_index.map do |role, index|
+      "| #{role.label} (#{role.typeface.name}) | #{role.multiple_label} | #{scale.surfaces.map { |surface| "#{surface.sizes[index].px} px" }.join(' | ')} |"
+    end
+    head + rows + ["", "App settings, for config/initializers/studio.rb (studio-engine draws the roles as type-title to type-fine;",
+                   "admin and ops pages wrap their content in type-dense):", "", "```ruby", *scale.initializer.lines(chomp: true), "```"]
+  end
 
   def saved_line
     saved = kit.persisted? && BrandKit::CHOICE_TYPES.any? { |type| kit.saved?(type) }

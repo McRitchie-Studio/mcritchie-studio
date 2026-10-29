@@ -14,10 +14,13 @@ show every link as **Applied**, **Kit changed** (amber: the kit was saved after
 the app last applied it) or **Not applied**. Design and status rules:
 `docs/topics/logos.md` § Which apps have the kit.
 
-**What a kit carries.** The logos (nine SVGs and `kit.json`) and the raster icons
-drawn from them (favicon, `icon.png`, `og.png`). Nothing else: an app's theme
-colours (the engine's `theme_*` settings in `config/initializers/studio.rb`) and
-its fonts are set by hand today. For a new app on an existing brand, copy them
+**What a kit carries.** The logos (nine SVGs and `kit.json`), the raster icons
+drawn from them (favicon, `icon.png`, `og.png`), and the brand's **type scale**:
+`kit.json`'s `type_scale` holds the four studio-engine settings (`type_base`,
+`type_dense_base`, `type_display_weight`, `type_text_weight`) that every app
+sets in `config/initializers/studio.rb` (step 4a). The type scale is the
+standard for every app (Alex McRitchie, 2026-10-28). An app's theme colours (the
+engine's `theme_*` settings) and its fonts are still set by hand. For a new app on an existing brand, copy them
 from an app already on that brand, or from the brand's Colours and Spectrum cards
 on `/logos/<brand>`, in the same task.
 
@@ -76,6 +79,17 @@ kit's `saved_at`). A second kit for the same app goes in its own folder
 other. Then make the app draw the files as they are: the navbar and footer
 read `navbar-*.svg` and `stacked-*.svg` by tone; never hand-edit a copy.
 
+**4a. Set the type scale.** `logos:install` ends by printing the four
+`Studio.type_*` lines from `kit.json`'s `type_scale` (the same lines as the
+Type Scale card's **App settings** on `/logos/<brand>`). Put them in each app's
+`config/initializers/studio.rb`, beside its `theme_*` settings, replacing any
+earlier values. They need the studio-engine release that ships the `type-*`
+roles (task `engine-type-scale-roles`; engine README "Type scale" and its
+CHANGELOG name the version); an app on an older engine bumps it in the same task,
+because an older engine has no `Studio.type_base=` and the app fails to boot. On an app that already draws the roles, open a public page and an
+admin page in the local review and check the sizes: 16 px body on the public
+page, 14 px inside `type-dense`.
+
 **5. Regenerate the raster icons** the app serves, exactly as
 `docs/topics/logos.md` § Installing a kit into an app describes for the hub:
 the favicon's small-size mark (`logos:favicon_mark`, then `node
@@ -130,6 +144,8 @@ on `/logos/<brand>` to flag its apps, or run this SOP for them by hand.
 ## Done when
 
 - Every target app's live `/brand/kit.json` names the kit's `saved_at`.
+- Every target app's `config/initializers/studio.rb` sets the four
+  `Studio.type_*` values its `kit.json` `type_scale` names.
 - `logos:applied` recorded each link on production, and `/logos` shows each
   target app as **Applied**.
 - The task shipped through `production-deploy`, with the local review offered.

@@ -47,6 +47,32 @@ class LogosTypeScaleTest < Minitest::Test
     css = scale("welding_v2").css
     assert_includes css, "  --welding-v2-social-text-title: 144px;\n"
     assert_includes css, "  --welding-v2-text-fine-print: 12px;\n"
-    assert_equal 10, css.scan(/^  --/).size
+    assert_includes css, "  --welding-v2-dense-text-fine-print: 10.5px;\n"
+    assert_equal 15, css.scan(/^  --/).size
+  end
+
+  # Task brand-kit-carries-type-scale: option B's dense base for admin and ops pages, 14 px, keeps the ratios.
+  def test_the_dense_admin_base
+    assert_equal [84, 42, 21, 14, 10.5], sizes("studio", "dense")
+  end
+
+  def test_engine_settings_are_the_public_and_dense_bases_and_the_title_and_body_weights
+    assert_equal({ "type_base" => 16, "type_dense_base" => 14, "type_display_weight" => 800, "type_text_weight" => 300 },
+                 scale("studio").engine_settings)
+    assert_equal 700, scale("industries").engine_settings["type_display_weight"]
+    assert_equal [500, 500], scale("welding").engine_settings.values_at("type_display_weight", "type_text_weight")
+  end
+
+  def test_initializer_lines_name_each_studio_setting
+    assert_equal "Studio.type_base = 16\nStudio.type_dense_base = 14\nStudio.type_display_weight = 800\nStudio.type_text_weight = 500\n",
+                 scale("turf").initializer
+  end
+
+  # A brand whose every level is traced lettering has no font, so each role takes the engine's Montserrat Regular.
+  def test_a_brand_with_no_font_takes_the_fallback
+    kit = Logos::BrandKit.new("traced", styles: { "traced" => { "palette" => [{ "name" => "Ink", "hex" => "#000000" }],
+                                                               "typefaces" => [{ "role" => "Display", "label" => "Traced lettering" }] } })
+    assert_equal [TypeScale::FALLBACK], TypeScale.new(kit).roles.map(&:typeface).uniq
+    assert_equal 400, TypeScale.new(kit).engine_settings["type_text_weight"]
   end
 end

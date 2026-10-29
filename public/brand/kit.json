@@ -21,5 +21,12 @@
       "ending_weight": "800"
     },
     "colouring": "alt"
+  },
+  "saved_at": null,
+  "type_scale": {
+    "type_base": 16,
+    "type_dense_base": 14,
+    "type_display_weight": 800,
+    "type_text_weight": 300
   }
 }

@@ -632,25 +632,36 @@ a multiple of one body size, built by `Logos::TypeScale`
 font-sizing reel Alex McRitchie sent on 2026-10-28
 (instagram.com/reel/DeovSkExOpE). Nothing is stored.
 
-| Role | Multiple | Social post, 1080 wide (24 px base) | Web (16 px base) |
-|---|---|---|---|
-| Title | 6x | 144 px | 96 px |
-| Heading | 3x | 72 px | 48 px |
-| Subhead | 1.5x | 36 px | 24 px |
-| Body | 1x | 24 px | 16 px |
-| Fine print | 3/4x | 18 px | 12 px |
+| Role | Multiple | Social post, 1080 wide (24 px base) | Web: public pages (16 px base) | Admin & ops (14 px base) |
+|---|---|---|---|---|
+| Title | 6x | 144 px | 96 px | 84 px |
+| Heading | 3x | 72 px | 48 px | 42 px |
+| Subhead | 1.5x | 36 px | 24 px | 21 px |
+| Body | 1x | 24 px | 16 px | 14 px |
+| Fine print | 3/4x | 18 px | 12 px | 10.5 px |
 
 - The multiples belong to the kit; the base belongs to the surface. 24 px is
   the reel's minimum body size on a 1080-wide post, so a social post never
-  sets text below 18 px.
+  sets text below 18 px. An app's public pages use 16 px and its admin and ops
+  pages 14 px (Alex McRitchie's option B, 2026-10-28).
+- **It is the standard for every app.** studio-engine draws the same roles as
+  `type-title` to `type-fine`, on `Studio.type_base`, with `type-dense` for the
+  admin base (engine README "Type scale"). The card's **App settings** are the
+  four `Studio.type_*` lines an app's `config/initializers/studio.rb` takes;
+  `kit.json` carries the same values as `type_scale` (`BrandKitInstall`), the
+  kit.zip README lists them, `logos:install` prints them, and the
+  [brand-kit-rollout](../agents/agents/alex/sops/brand-kit-rollout.md) SOP sets
+  them in each app (step 4a).
 - The title and heading are set in the brand's first typeface level that has a
   font; subhead, body and fine print in its **Text** level, else its last level
   with a font. Commercial Welding's display level is traced lettering, so every
-  role there is Montserrat Medium.
+  role there is Montserrat Medium. A brand with no font at all takes
+  Montserrat Regular. The weights the app settings carry are the title's face
+  and the body's.
 - **Copy CSS tokens** copies the scale as custom properties,
-  `--<brand>-text-<role>` for the web and `--<brand>-social-text-<role>`
-  (`--welding-v2-social-text-fine-print: 18px;`), with the brand slugged as the
-  spectrum slugs it.
+  `--<brand>-text-<role>` for the web, `--<brand>-social-text-<role>` and
+  `--<brand>-dense-text-<role>` (`--welding-v2-dense-text-fine-print: 10.5px;`),
+  with the brand slugged as the spectrum slugs it.
 
 ### Context is the hub theme
 
@@ -1100,7 +1111,9 @@ the brand's kit, as THIS database holds it, into `DEST` (default this app's
 `public/brand/`): every file `BrandKitExport::FILES` names, byte-equal to what
 `/logos/<brand>/kit/<file>` serves, plus `kit.json`, the brand and the three
 choices the files were drawn from (`null` for a default), and the kit's
-`saved_at` (ISO 8601 UTC seconds, `null` for a kit never saved). A file already right
+`saved_at` (ISO 8601 UTC seconds, `null` for a kit never saved), and the brand's
+`type_scale`: the four `Studio.type_*` settings the app's initializer takes
+([Type Scale](#type-scale)), which the task also prints. A file already right
 is not rewritten, so a second run changes nothing. Point `DEST` at another
 app's `public/brand/` to roll a kit out there.
 
