@@ -1722,9 +1722,14 @@ GAUNTLET_STEP_DEADLINE_ENV = "RELEASE_GAUNTLET_STEP_DEADLINE"
 GAUNTLET_STEP_DEFAULT_DEADLINE = 1200
 GAUNTLET_DEADLINE_ENV = "RELEASE_GAUNTLET_DEADLINE"
 GAUNTLET_DEFAULT_DEADLINE = 1800
-# The release's turf-monster tree is a throwaway, so it is cut in a fresh temp dir
-# with this prefix, never under turf-monster/.worktrees/: DeskRoot reads anything
-# there as a managed desk (test/docs/throwaway_worktrees_outside_managed_root_docs_test.rb).
+# The COLD cut is a throwaway, so it is cut in a fresh temp dir with this prefix,
+# never under turf-monster/.worktrees/: DeskRoot reads anything there as a managed
+# desk (test/docs/throwaway_worktrees_outside_managed_root_docs_test.rb). The warm
+# tree lives outside both for the same reasons (GAUNTLET_WARM_TREE_DEFAULT).
+#
+# Not Release::GateWorkspace (gate_workspace!): that tree aborts the release when it
+# cannot be readied and keeps every ignored file (`clean -fd`), where the gauntlet
+# must fall back to the cold cut and must not keep the last run's state file.
 GAUNTLET_TREE_PREFIX = "gauntlet-turf-monster-"
 # The gitignored env files the driver's Rails boot reads, copied from the primary
 # so the release tree boots with the primary's env (bin/agent-worktree copies the
