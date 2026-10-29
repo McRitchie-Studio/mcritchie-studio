@@ -124,6 +124,16 @@
 #     Moves no ref: main keeps the release's code. Records a `rollback` release
 #     event and a red seal. Gems stay published. See `rollback` below.
 #
+#   bin/release cycle --clearance "<Alex McRitchie's words>" [--yes] [--wait-for-1password[=MINUTES]]
+#     The whole release as ONE resumable command (bin/lib/release_cycle.rb): prepare →
+#     QA verify (each QA app /up and / answer 200; a Turf release's devnet gauntlet on
+#     the record) → ship --mode cleared → prod verify → archive. Enters at the board's
+#     current stage, so a re-run resumes. Mints the agent token for prepare/archive and
+#     the deployer token for ship (fresh per act), keeps the Mac awake, re-runs a step
+#     once on a transient GitHub network failure or a stale-tree refusal, and re-runs
+#     prepare once when ship refuses for a missing gauntlet. Refuses without
+#     --clearance, and stands down (exit 10) when another session holds the claim.
+#
 #   bin/release archive [--prod] [--dry-run] [--yes]
 #     The DevOps loop's CONCLUSION (shipped → archived): archive every shipped
 #     task that ISN'T a member of the last shipped release (those members stay
@@ -336,6 +346,7 @@ require_relative "lib/cli_arg_guard"
 # machine saturated" LOCALLY, and only the second decides whether a peer may launch a
 # suite. Slice 4 of docs/agents/system/agent-presence.md.
 require_relative "lib/release_presence"
+require_relative "lib/release_cycle" # `bin/release cycle`: the whole release, resumable
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
@@ -11784,6 +11795,181 @@ def notes
   end
 end
 
+# --- bin/release cycle (bin/lib/release_cycle.rb) ----------------------------------
+# The whole release as one resumable command: prepare → QA verify → ship (--mode
+# cleared) → prod verify → archive. The state machine is ReleaseCycle::Runner, pure
+# and unit-tested with fake steps; this is its live wiring: one board read for the
+# stage, the claims and the ETA; each act as a `bin/release <step>` child with the
+# lane's credentials; and `curl` for the URLs.
+class ReleaseCycleDeps
+  MINT_DEADLINE = 120
+  ADMIN_PROFILE_DEADLINE = 30
+  # Lines of a step's output kept for classifying its failure.
+  TAIL_LINES = 400
+
+  def initialize(wait_for_1password: nil)
+    @wait = wait_for_1password
+  end
+
+  def now = Time.now
+
+  # The session the release claim is keyed by: ReleaseClaimCli#session_id's rule.
+  def session_id
+    explicit = ENV["RELEASE_CONDUCTOR_CLAIM_SESSION"].to_s.strip
+    explicit.empty? ? SessionIdentity.id(ENV).to_s : explicit
+  end
+
+  # ONE read-only board call: the active release (state, repos, gauntlet), the last
+  # shipped one and how many tasks the archive owes, and the DevOps estimate; then
+  # every conductor claim on the active release and the forming sentinel, over the
+  # claim API (claim_holders). nil when either is unreadable.
+  def snapshot
+    forming = forming_slug
+    ruby = <<~RUBY.lines.map(&:strip).join(" ")
+      r = #{rel_current}; l = #{rel_last_shipped};
+      repos = ->(rel) { rel ? rel.tasks.flat_map(&:release_repos).uniq : [] };
+      turf = repos.call(r) & #{Release::DevnetGauntlet::REPOS.inspect};
+      g = r && r.release_events.where(step: '#{Release::DevnetGauntlet::STEP}', status: %w[completed failed]).order(:occurred_at, :id).last;
+      est = begin; e = r && Release::Flow.estimate_for(r, default: Release::Flow.recent); e && { eta: e.eta.utc.iso8601, remaining: e.remaining, phase: e.phase }; rescue StandardError; nil; end;
+      puts({ current: (r && { slug: r.slug, state: r.state, repos: repos.call(r), gauntlet_required: turf.any?, gauntlet_status: g&.status }),
+             last_shipped: (l && { slug: l.slug, repos: repos.call(l) }),
+             archivable: Release::Conductor.archivable_completed_slugs.size,
+             estimate: est }.to_json)
+    RUBY
+    board = conductor(ruby, read_only: true)
+    holders = claim_holders([board.dig("current", "slug"), forming].compact)
+    return nil if holders == :unreadable
+
+    board.merge("holders" => holders)
+  rescue SystemExit, StandardError => e
+    warn("  board read failed: #{e.message}")
+    nil
+  end
+
+  # Every conductor claim on these slugs, both roles, read over the claim API the way
+  # `release-claim status` reads it. :unreadable when any read failed: a lane the
+  # cycle cannot see is not a free lane.
+  def claim_holders(slugs)
+    cli = ReleaseClaimCli.new(out: StringIO.new, err: StringIO.new)
+    found = slugs.product(ReleaseClaimCli::ROLES).map { |slug, role| cli.holder(slug, role) }
+    return :unreadable if found.include?(:unreadable)
+
+    found.compact
+  end
+
+  def verify_targets(repos, target)
+    ReleaseCycle.verify_targets(repos, target, app_repos: RELEASE_REPOS.fetch("apps", {}) || {},
+                                               qa_environments: QA_ENVIRONMENTS, hub: APP)
+  end
+
+  # The HTTP status code as a string, or nil when nothing answered.
+  def http_status(url)
+    out, status = Open3.capture2e("/usr/bin/curl", "-s", "-L", "--max-time", "20", "-o", "/dev/null",
+                                  "-w", "%{http_code}", url)
+    code = out.to_s.strip
+    status.success? && !code.empty? && code != "000" ? code : nil
+  end
+
+  # Runs `bin/release <argv>` as a child on this terminal with the lane's
+  # credentials, streaming its output and keeping the tail for the failure
+  # classifier. [exit status, tail].
+  def run_step(name, argv)
+    env, minted = ReleaseCycle.step_env(name, mint: method(:mint), admin_token: method(:admin_token))
+    unless minted
+      lane = name == "ship" ? :deployer : :agent
+      if @wait.nil?
+        msg = "✗ could not mint the #{name == 'ship' ? 'DEPLOYER' : 'agent'} GitHub token for #{name}: " \
+              "#{OpVaults.diagnose(lane)}\n  (pass --wait-for-1password if 1Password is hanging). Nothing ran."
+        puts(msg)
+        return [ReleaseCycle::CREDENTIAL_MISSING, msg]
+      end
+      puts("  ⚠ no GitHub token minted for #{name}; running it with gh's own login and --wait-for-1password")
+    end
+    # No Heroku token here: the snapshot's board op ran ensure_heroku_token!, which
+    # exported HEROKU_API_KEY into this process, and every child inherits it.
+    stream_child(env, argv)
+  end
+
+  private
+
+  def mint(identity, env)
+    out, _err, status = BoundedCommand.capture3(env, File.join(__dir__, "gh-token"), "--identity", identity,
+                                                deadline: MINT_DEADLINE, in: File::NULL)
+    status&.success? ? out.to_s.strip : ""
+  rescue StandardError
+    ""
+  end
+
+  # The admin 1Password token, as `source ~/.zprofile.admin` would export it. The
+  # value goes into the ship child's env only and is never printed.
+  def admin_token
+    path = OpVaults.profile_path(:deployer)
+    return "" unless path && File.exist?(path)
+
+    script = "source #{Shellwords.escape(path)} >/dev/null 2>&1; printf %s \"$OP_ADMIN_SERVICE_ACCOUNT_TOKEN\""
+    out, _err, status = BoundedCommand.capture3({}, "/bin/zsh", "-c", script, deadline: ADMIN_PROFILE_DEADLINE, in: File::NULL)
+    status&.success? ? out.to_s : ""
+  rescue StandardError
+    ""
+  end
+
+  def stream_child(env, argv)
+    reader, writer = IO.pipe
+    pid = Process.spawn(env, RbConfig.ruby, File.expand_path(__FILE__), *argv, in: :in, out: writer, err: writer)
+    writer.close
+    tail = []
+    buffer = +""
+    begin
+      while (chunk = reader.readpartial(4096))
+        $stdout.write(chunk)
+        $stdout.flush
+        buffer << chunk
+        *lines, buffer = buffer.split("\n", -1)
+        tail.concat(lines)
+        tail.shift(tail.size - TAIL_LINES) if tail.size > TAIL_LINES
+      end
+    rescue EOFError
+      nil
+    end
+    tail << buffer unless buffer.empty?
+    _, status = Process.wait2(pid)
+    [status.exitstatus || (128 + status.termsig.to_i), tail.join("\n")]
+  rescue Interrupt
+    Process.wait2(pid) if pid
+    raise
+  ensure
+    reader&.close unless reader&.closed?
+  end
+end
+
+# `caffeinate -is -w <this pid>`: the Mac stays awake exactly as long as the cycle
+# runs. Never under the test suite, a dry run, or a machine without it.
+def keep_awake!
+  return if DRY || ENV["RAILS_ENV"] == "test"
+
+  bin = "/usr/bin/caffeinate"
+  return unless File.executable?(bin)
+
+  Process.detach(Process.spawn(bin, "-is", "-w", Process.pid.to_s, out: File::NULL, err: File::NULL))
+rescue SystemCallError
+  nil
+end
+
+def cycle
+  clearance = opt_value("--clearance")
+  extra = hub_train? ? [] : ["--train", TRAIN.to_s]
+  extra << "--local" unless PROD
+  if DRY
+    say("bin/release cycle --dry-run: runs, from the board's current stage, `bin/release prepare` → QA verify " \
+        "(each QA app /up and / answer 200) → `bin/release ship --mode cleared --clearance …` → prod verify → " \
+        "`bin/release archive`. A dry run starts none of them; preview each act with its own --dry-run.")
+    return 0
+  end
+  keep_awake!
+  ReleaseCycle::Runner.new(clearance: clearance, deps: ReleaseCycleDeps.new(wait_for_1password: WAIT_FOR_1PASSWORD),
+                           assume_yes: ASSUME_YES, wait_for_1password: WAIT_FOR_1PASSWORD, extra_args: extra).run
+end
+
 # prepare's outcome as the process exit status: a NOT-green QA exits
 # Release::Cli::PREPARE_QA_NOT_GREEN_EXIT, anything else returns normally (exit 0).
 # Outside prepare on purpose: an exit inside it would land in prepare's own
@@ -11803,7 +11989,8 @@ if __FILE__ == $PROGRAM_NAME
   guard_argv!
   refuse_bad_train!
   abort!(WAIT_FOR_1PASSWORD_ERROR) if WAIT_FOR_1PASSWORD_ERROR
-  exit(supervise_for_1password!(ARGV.first)) if WAIT_FOR_1PASSWORD
+  # `cycle` carries the flag to its own prepare and ship children instead.
+  exit(supervise_for_1password!(ARGV.first)) if WAIT_FOR_1PASSWORD && ARGV.first != "cycle"
   $release_started_at = Time.now if %w[prepare ship archive].include?(ARGV.first)
   # A long run starts with GitHub tokens that cannot expire mid-run: bin/secret
   # prewarm mints any with under 45 minutes left (docs/agents/modules/secret-cache.md).
@@ -11835,6 +12022,7 @@ if __FILE__ == $PROGRAM_NAME
   when "archive"  then archive
   when "retro"    then retro
   when "notes"    then notes
+  when "cycle"    then exit(cycle)
   else
     # The usage string moved to Release::Cli::USAGE so the guard's per-subcommand
     # help and this fall-through print the SAME text from one place.

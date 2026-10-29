@@ -293,8 +293,10 @@ row) through the docs so every next agent starts with the curated lessons.
 ### Act 3 — `full-cycle`
 
 SOP: [`../agents/mason/sops/full-cycle.md`](../agents/mason/sops/full-cycle.md). Run
-`pr-review` → `qa-release` (`bin/release prepare --yes`) → `production-deploy`
-(`bin/release ship`). **Precondition:** `submitted` PRs and/or an `assembled`
+`pr-review`, then `bin/release cycle --clearance "<Alex McRitchie's words>" --yes
+--wait-for-1password`, which runs `qa-release`'s prepare → QA verify →
+`production-deploy`'s ship → prod verify → archive and resumes when re-run.
+**Precondition:** `submitted` PRs and/or an `assembled`
 release; nothing anywhere → report and stop. **Exit seam:** the release `shipped`.
 
 > ⚠️ **Full ship authority.** Run `full-cycle` only when the operator launched it
