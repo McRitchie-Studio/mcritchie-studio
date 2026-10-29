@@ -119,7 +119,9 @@ an expiry that did not move forward.
 3. Ask Alex McRitchie to quit and reopen the 1Password app. That cleared the
    2026-10-27 hang. A hung read now says so in one line (`1Password is not
    answering`) and exits 75; a release can wait it out with
-   `bin/release prepare|ship --wait-for-1password[=MINUTES]`.
+   `bin/release cycle --wait-for-1password[=MINUTES]` for the whole lane (it passes the
+   flag to its prepare and ship), or `bin/release prepare|ship --wait-for-1password`
+   for one act.
 4. Report it as a blocker: name the entry, the failing `op` read, and the steps
    you tried.
 

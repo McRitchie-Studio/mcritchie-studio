@@ -90,28 +90,33 @@ terminal to notice or finish it. Subagents stay first-class for **read** fan-out
 where a detach costs a retry. The line is **mutating vs reading**, not *parallel vs
 serial*.
 
+Steps 2 to 4 are what `bin/release cycle` runs for you, in this session. Run them
+by hand only for a release Alex McRitchie scoped, carrying his `--task <slug>` flags
+on every `prepare` below, or to stop between one step and the next; recovery from an
+interruption is re-running the cycle.
+
 1. **Review** — READ fan-out, so DELEGATE. Summon an **Avi** subagent via the
    Agent tool (`subagent_type: avi`) that SUPERVISES the `pr-review` procedure.
    Avi never reviews the code himself; he spawns the PRIMARY and LIGHT reviewers
    in parallel as sibling children, so the two experts NEST under the Avi node as
    a deeper branch. Review mutates nothing but a task stage — a detached reviewer
    costs a retry.
-2. **QA release** — MUTATION, so DIRECT-DRIVE `bin/release prepare --yes` from
+2. **QA release** — MUTATION, so DIRECT-DRIVE `bin/release prepare [--task <slug> ...] --yes` from
    THIS session. Do NOT wrap it in a Steffon subagent. (Not theoretical: on
    2026-07-11 it WAS delegated, the subagent detached mid-sweep, and it stranded a
    partial release candidate — merged onto `release`, but never gated, deployed, or
    assembled. It sat there unnoticed.)
 
    **Recovery — diagnose before you re-run.** If the sweep was **INTERRUPTED** (no
-   verdict — it detached, crashed, timed out): **re-run `bin/release prepare
-   --yes`**; it is self-healing, and only a live terminal can run it. If it
+   verdict — it detached, crashed, timed out): **re-run the same `bin/release
+   prepare` line, `--task` flags included**; it is self-healing, and only a live terminal can run it. If it
    **ABORTED** (exit 1 — a verdict such as a red pre-QA gate) or came back **NOT
    GREEN** (exit 3 — a QA app never booted, members stay `reviewed`): **fix or
    eject the offender FIRST**, because a bare re-run re-deploys the same member
    code and goes red again. The exit table and the full abort table are in
    [`../../avi/sops/qa-release.md`](../../avi/sops/qa-release.md).
-3. **Ship** — MUTATION, so DIRECT-DRIVE `bin/release ship --yes` from THIS
-   session. Do NOT wrap the ship in a subagent: it is the one irreversible gate,
+3. **Ship** — MUTATION, so DIRECT-DRIVE `bin/release ship --mode cleared
+   --clearance "<Alex McRitchie's words>" --yes` from THIS session. Do NOT wrap the ship in a subagent: it is the one irreversible gate,
    and a wrapper agent that dies mid-ship would orphan the `release → main` state
    with no terminal to recover it.
 4. **Close out** — MUTATION, so DIRECT-DRIVE `bin/release archive --yes` (preview

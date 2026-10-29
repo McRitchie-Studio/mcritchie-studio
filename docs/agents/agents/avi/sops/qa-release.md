@@ -535,8 +535,9 @@ A release with no Turf work skips this section.
 ## Exit Seam
 
 Candidate and members `assembled` (`merged: release`), latest **G3 Candidate** closed
-`success`, and, for a release carrying turf-monster or turf-vault work, a completed
-`devnet_gauntlet` event on the release (above); /deployments shows **three greens with
+`success`, and, for a release carrying turf-monster or turf-vault work, a
+`devnet_gauntlet` event on the release (above) that is the NEWEST such event, completed,
+with `metadata.shas` matching the Turf SHAs on QA; /deployments shows **three greens with
 Confirming deliberately DARK** — do NOT stamp `confirming` (Steffon does, in
 `production-deploy`). Report: release slug, QA URL, members, any ejected task with
 evidence, the devnet gauntlet's contest slug (or "no Turf work"), and "deployed to QA".

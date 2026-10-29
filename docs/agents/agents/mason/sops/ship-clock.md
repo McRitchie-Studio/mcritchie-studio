@@ -60,22 +60,28 @@ held T0 on the board:
 **3. Review.** Run [`pr-review`](../../carl/sops/pr-review.md) on the task. The
 builder never reviews its own PR.
 
-**4. QA.** Run [`qa-release`](../../avi/sops/qa-release.md): `bin/release prepare --yes`.
-
-**5. Production.** Run [`production-deploy`](../../steffon/sops/production-deploy.md)
-with Alex McRitchie's words from the prompt:
+**4–6. QA, production, archive.** Run the release lane as one command, with Alex
+McRitchie's words from the prompt:
 
 ```bash
-bin/release ship --mode cleared --clearance "<Alex McRitchie's words>" --yes
+bin/release cycle --clearance "<Alex McRitchie's words>" --yes --wait-for-1password
 ```
 
-Keep every ship log (`ship-*.log`, `prepare-*.log`) in the scratchpad. They are
-the only record of a refused pre-check, and the report reads failure causes from
-them.
+It runs [`qa-release`](../../avi/sops/qa-release.md)'s `prepare` → QA verify →
+[`production-deploy`](../../steffon/sops/production-deploy.md)'s `ship --mode
+cleared` → prod verify → [`archive-shipped`](../../steffon/sops/archive-shipped.md)'s
+`archive`, and a re-run resumes from the board
+([`full-cycle`](full-cycle.md) has the detail). Its prepare is always bare, so
+when Alex McRitchie scoped the release to this task, run the atoms by hand instead:
+`bin/release prepare --task <slug> --yes`, then `bin/release ship --mode cleared
+--clearance "<his words>" --yes`, then `bin/release archive --yes`.
 
-**6. Archive.** Run [`archive-shipped`](../../steffon/sops/archive-shipped.md):
-`bin/release archive --yes`. The archive runs after production and is not counted
-on the clock. If it hangs or refuses, record that in the ledger note.
+Keep every log (`cycle-*.log`, or `ship-*.log` and `prepare-*.log` when you ran the
+atoms) in the scratchpad. They are the only record of a refused pre-check, and the
+report reads failure causes from them.
+
+The archive runs after production and is not counted on the clock. If it hangs or
+refuses, record that in the ledger note.
 
 **7. Report and record.** From a hub desk, run:
 

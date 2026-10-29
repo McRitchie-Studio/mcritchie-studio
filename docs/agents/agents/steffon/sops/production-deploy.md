@@ -104,10 +104,13 @@ The active release is `assembled` with `qa_deployed_at` stamped and members `ass
 `assembling`, or `qa_deployed_at` is blank, report "nothing to ship" and stop.
 
 **A release carrying turf-monster or turf-vault work also needs its devnet gauntlet:**
-a completed `devnet_gauntlet` event on the release, recorded by `bin/release prepare`
-after a green [`contest-rehearsal`](../../turf_monster/sops/contest-rehearsal.md) on QA.
-Without it, do not ship: hand back to `qa-release`, whose re-run of `bin/release prepare`
-runs the gauntlet.
+a `devnet_gauntlet` event on the release, which `bin/release prepare` runs and records
+automatically after a green [`contest-rehearsal`](../../turf_monster/sops/contest-rehearsal.md)
+on QA. The ship accepts only the NEWEST such event, only when it is completed, and only
+when its `metadata.shas` match the Turf SHAs being shipped: a failed run newer than a
+green one, or a green one for other Turf code, is a refusal. Without a covering record,
+do not ship: re-run `bin/release prepare` (or `bin/release cycle`, which does it for
+you), which runs the gauntlet again.
 `bin/release ship` reads the record in its decision snapshot and refuses before
 anything is published or pushed (`Release::DevnetGauntlet`). Only Alex McRitchie's words waive
 it: `bin/release ship --skip-devnet-gauntlet "<his words>"`, which ships with a loud
@@ -120,7 +123,9 @@ warning and records nothing.
 
 **Direct-drive this act — do NOT wrap it in a subagent**: a subagent that dies
 mid-ship leaves a partial `release → main` state. **Recovery from an INTERRUPTED ship:
-re-run `bin/release ship --yes`** (add `--wait-for-1password` when it stopped on
+re-run the command that was running** — `bin/release cycle --clearance "<his words>" --yes`
+when this act ran inside the full lane (it resumes from the board), else
+`bin/release ship --yes` (add `--wait-for-1password` when it stopped on
 `1Password is not answering`: it waits for 1Password and resumes the ship itself); `merged: "main"` repos skip re-ff, a published gem
 skips its push, and a pushed re-lock is reused (see **Gems: the final publish**).
 
@@ -164,6 +169,12 @@ clearance is the grant:
 ```bash
 bin/release ship --mode cleared --clearance "<Alex McRitchie's words>" --yes
 ```
+
+When this act runs as part of the whole lane ([`full-cycle`](../../mason/sops/full-cycle.md)),
+`bin/release cycle --clearance "<Alex McRitchie's words>" --yes` runs this ship for you
+between QA verify and prod verify, so do not run it by hand as well. A release Alex
+McRitchie scoped with `--task` keeps the manual `prepare --task` → ship → archive steps,
+because the cycle's prepare is always bare.
 
 When nobody cleared it (a heartbeat, a scheduled run), ask through the window:
 
@@ -582,7 +593,9 @@ bin/release archive --yes         # apply
 
 **An ABORT and an INTERRUPTION need OPPOSITE responses.** An ABORT (red suite, failed
 preflight, deploy or smoke) is a verdict: **do not force past it**; record the blocker
-and hand it off. An INTERRUPTION has none: **re-run `bin/release ship --yes`**.
+and hand it off. An INTERRUPTION has none: **re-run the command that was running**
+(`bin/release cycle --clearance "<his words>" --yes` inside the full lane, else
+`bin/release ship --yes`).
 
 ## Exit Seam
 
