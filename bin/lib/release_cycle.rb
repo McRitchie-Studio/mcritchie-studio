@@ -165,6 +165,11 @@ module ReleaseCycle
   # GH_APP_ITEM names. GH_TOKEN is never set EMPTY: an empty GH_TOKEN makes `gh`
   # refuse every call, where an absent one falls back to its own login.
   #
+  # The admin lane's secrets (OpVaults :deployer, HerokuToken :admin/:applications).
+  # A child inherits the parent's env, so an operator who sourced ~/.zprofile.admin
+  # would hand them to prepare and archive: those acts UNSET them.
+  ADMIN_ONLY_ENV = %w[OP_ADMIN_SERVICE_ACCOUNT_TOKEN HEROKU_STUDIO_ADMIN_API_KEY HEROKU_STUDIO_APPLICATIONS_API_KEY].freeze
+
   # Returns [env, minted?]. A nil value in env UNSETS that variable in the child.
   def step_env(step, mint:, admin_token: -> { }, base_env: ENV)
     env = { "OP_CACHE" => "false" }
@@ -179,6 +184,7 @@ module ReleaseCycle
       end
     else
       env["GH_APP_ITEM"] = nil
+      ADMIN_ONLY_ENV.each { |name| env[name] = nil }
     end
     token = mint.call(identity, env).to_s.strip
     env["GH_TOKEN"] = token.empty? ? nil : token

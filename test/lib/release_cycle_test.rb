@@ -340,12 +340,19 @@ class ReleaseCycleTest < Minitest::Test
 
   test "[unit] prepare and archive mint the agent token with GH_APP_ITEM unset" do
     minted = []
-    env, ok = ReleaseCycle.step_env("prepare", mint: ->(id, _env) { minted << id; "tok-agent" }, base_env: {})
+    env, ok = ReleaseCycle.step_env("prepare", mint: ->(id, _env) { minted << id; "tok-agent" },
+                                               base_env: { "OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => "sourced-admin" })
 
     assert ok
     assert_equal ["agent"], minted
     assert_equal({ "OP_CACHE" => "false", "RELEASE_CI_POLL_TIMEOUT" => "3600", "GH_APP_ITEM" => nil,
-                   "GH_TOKEN" => "tok-agent" }, env)
+                   "GH_TOKEN" => "tok-agent" }, env.except(*ReleaseCycle::ADMIN_ONLY_ENV))
+    ReleaseCycle::ADMIN_ONLY_ENV.each { |name| assert(env.key?(name) && env[name].nil?, "#{name} must be UNSET") }
+    # Pinned to the lanes that own them, so a renamed variable cannot slip past.
+    require_relative "../../bin/lib/op_vaults"
+    require_relative "../../bin/lib/heroku_token"
+    owned = [OpVaults.token_env(:deployer)] + HerokuToken::LANES.values_at(:admin, :applications).flat_map { |l| l[:env] }
+    assert_equal owned.sort, ReleaseCycle::ADMIN_ONLY_ENV.sort
   end
 
   test "[unit] ship mints the deployer token in the admin lane, loading the admin 1Password token" do
