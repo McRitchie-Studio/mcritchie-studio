@@ -117,7 +117,7 @@ cd ~/projects/turf-monster && bin/setup-cdp-key   # no args → reads the key fr
 
 **Prerequisites**: Install `brew install 1password-cli`, then enable "Integrate with 1Password CLI" in 1Password desktop app (Settings > Developer).
 
-**Account ID**: `MWOV5OT5BRHATI4EGMN26C5DPA`
+**User ID** (what `--account` takes below; it accepts a user ID, a sign-in address or an account ID): `MWOV5OT5BRHATI4EGMN26C5DPA`. This is not the **account ID**: that is the `PCAILQ…` one `op account get` prints (26 uppercase characters), the `a=` of a 1Password deep link.
 
 **Vault layout**:
 - `studio-agents` — All agent wallet credentials (renamed from "🦞 Bots" 2026-05-03, and from `agents` 2026-08-28)

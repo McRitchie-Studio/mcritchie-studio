@@ -191,6 +191,26 @@ the one step that needs his hands:
 Then apply it where it is used from the item itself
 (`op read 'op://<vault>/<item>/<field>' | …`), never from a copy.
 
+**Bound every `op` call you run by hand** (`op item create`, a read-back, an
+`op read` piped into a provider): the 1Password cache daemon can hang one for
+fifteen minutes. This Mac has no `timeout` or `gtimeout`, and
+`perl -e 'alarm N; exec @ARGV' -- op …` does NOT bound it: `op` is a Go binary
+and ignores SIGALRM (measured 2026-10-29: the alarm ended `cat` at 2 seconds and
+`op` ran on to 8). Use the repo's own bound, `op_metered` from
+`bin/lib/op-meter.sh` (14 seconds an attempt, `MCR_OP_DEADLINE` to change it,
+one retry with `OP_CACHE=false`, a SIGKILL of the process group, and a row in
+`bin/op-reads`), from bash or zsh:
+
+```bash
+. /Users/alex/projects/.agents/bin/lib/op-meter.sh
+op_metered op whoami --format json >/dev/null && echo "1Password answers"
+op_metered op read 'op://<vault>/<item>/<field>' | <the provider call>
+```
+
+Exit 124 means both attempts ran out: quit and reopen the 1Password app, not a
+retry loop ([`credentials`](../../../modules/credentials.md), "Every `op` read
+is bounded").
+
 **Fallback, only when the app is out of reach** (the value must go straight into
 a command on his machine), hand him this two-step for HIS terminal:
 

@@ -338,9 +338,10 @@ database); the local [secret cache](../../../modules/secret-cache.md); a desk
 host, which is outside this SOP. `heroku config --json | jq 'has("DISCORD_BOT_TOKEN_<SOUL>")'`,
 never `heroku config`, which prints every value.
 
-**The overlap window: the new token is verified before the old one stops.**
-Discord keeps one token per application, and Reset Token kills the old one the
-moment it is clicked. So:
+**The overlap window: none on the same application.** Discord keeps one token
+per application, and Reset Token kills the old one the moment it is clicked, so
+the new token cannot be verified before the old one stops; only a second
+application gives an overlap. So:
 
 - **Same application (the usual case, and every leak).** There is no overlap:
   the gap runs from the reset to the verify's release. Keep it to minutes:
@@ -360,7 +361,12 @@ moment it is clicked. So:
 `mcritchie-studio`, which restarts every dyno: the worker's scheduler re-boots
 `AgentMessages::DiscordGateway` on the new token (a listener that stopped on a
 4004 during the gap does not come back without it). No separate
-`heroku ps:restart`; check `heroku ps --app mcritchie-studio` shows the worker
+`heroku ps:restart`. First check the release SUCCEEDED, not just its
+description: `heroku releases -n 1 --app mcritchie-studio --json | jq -r '.[0] | "\(.status) \(.description)"'`
+must print `succeeded Set DISCORD_BOT_TOKEN_<SOUL> config vars`. The
+description alone proves nothing: a release whose release phase fails (a
+migration waiting on `main`) keeps its description, reads `failed`, and the
+dynos stay on the old config, holding the token the reset already killed. Then check `heroku ps --app mcritchie-studio` shows the worker
 `up` since the release. Each restart is one IDENTIFY against the token's daily
 budget of about 1,000 ([`agent-message-loop`](../../../system/agent-message-loop.md)), so
 never restart in a loop. The release phase also runs `bin/rails db:migrate`.

@@ -60,7 +60,9 @@ The developer portal is Alex McRitchie's account, so the portal clicks are his. 
 1Password item is not: Steffon makes it first, and Alex McRitchie pastes only the token
 ([`credential-filing`](./credential-filing.md) section 5).
 
-**Steffon, first:** create the item `agents.discord.<bot>` in `studio-agents`
+**Steffon, first:** create the item `discord.<soul>.agents` in `studio-agents`
+(the title `bin/agent-setup open` looks up by default; the older
+`agents.discord.<bot>` titles are grandfathered)
 with the `bot-token` field present and **empty**, the `application-id` and
 `bot-user-id` fields ready, the Discord logo URL and the permission-matrix note
 (`credential-filing` sections 2 to 4). Then hand Alex McRitchie his turn:
@@ -73,7 +75,7 @@ with the `bot-token` field present and **empty**, the `application-id` and
       Without it the gateway refuses the connection (close 4014) and the
       backstop poll reads every message with empty content.
    3. Reset Token, copy it once, and paste it into the bot-token field of the
-      1Password item agents.discord.<bot> (vault studio-agents) that I made.
+      1Password item discord.<soul>.agents (vault studio-agents) that I made.
       Save. Paste it nowhere else, this chat included.
    4. Send me the Application ID (General Information) and the bot's user ID
       (Developer Mode on, right-click the bot in any server, Copy User ID).

@@ -137,7 +137,7 @@ You need these *already installed* before this protocol can start:
 - `git` (ships with Xcode CLT)
 - The GitHub repos accessible to your account (HTTPS clone works)
 - TWO 1Password service account tokens: one with read on the AGENT vault
-  (`studio-agents`), one with read on the ADMIN vault (`studio-agents-admin`) — see 5a (account `alex@mcritchie.studio` / `MWOV5OT5BRHATI4EGMN26C5DPA`)
+  (`studio-agents`), one with read on the ADMIN vault (`studio-agents-admin`) — see 5a (account `alex@mcritchie.studio`, user ID `MWOV5OT5BRHATI4EGMN26C5DPA`)
 
 `bin/ecosystem-build` handles everything else.
 
@@ -296,7 +296,7 @@ Two layers:
 
 Use a **service account token** rather than the desktop app integration — it avoids Touch ID prompts per call and works headlessly. One-time setup:
 
-1. Sign into https://start.1password.com as `alex@mcritchie.studio` (account `MWOV5OT5BRHATI4EGMN26C5DPA`)
+1. Sign into https://start.1password.com as `alex@mcritchie.studio` (user ID `MWOV5OT5BRHATI4EGMN26C5DPA`; the account ID is the `PCAILQ…` one `op account get` prints)
 **TWO TOKENS, TWO VAULTS — and the split is a security boundary, not bookkeeping.**
 The build lanes and the ship lane authenticate as different GitHub App identities
 (`github.mcritchie-agent` builds and merges; `github.mcritchie-admin` pushes
