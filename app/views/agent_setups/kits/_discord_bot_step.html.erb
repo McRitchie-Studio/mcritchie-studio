@@ -56,7 +56,7 @@
   <h5 class="font-semibold text-heading">Done</h5>
   <% if open_now %>
     <% blocker = setup.submit_blocker %>
-    <p class="text-secondary">The hub checks the bot is in the server; then Steffon verifies the token with Discord and installs it as <span class="font-mono text-body"><%= setup.detail(:secret_env) %></span>. This row says when.</p>
+    <p class="text-secondary">The hub checks the bot is in the server; then Steffon verifies the token with Discord and installs it as <span class="font-mono text-body"><%= [ setup.detail(:secret_env), setup.detail(:also_env) ].compact.join(" and ") %></span>. This row says when.</p>
     <% if blocker %>
       <p class="text-warning-ink" data-test="agent-setup-blocker"><%= blocker %></p>
     <% else %>
@@ -65,7 +65,7 @@
   <% elsif setup.status == "checking" %>
     <p class="text-secondary" data-test="agent-setup-waiting">The hub is checking the bot now. Reload in a moment.</p>
   <% elsif setup.status == "verifying" %>
-    <p class="text-secondary" data-test="agent-setup-waiting">Nothing more for you: Steffon verifies the token and installs it as <span class="font-mono text-body"><%= setup.detail(:secret_env) %></span>.</p>
+    <p class="text-secondary" data-test="agent-setup-waiting">Nothing more for you: Steffon verifies the token and installs it as <span class="font-mono text-body"><%= [ setup.detail(:secret_env), setup.detail(:also_env) ].compact.join(" and ") %></span>.</p>
   <% end %>
   <% if setup.submitted_at %>
     <p class="text-xs text-secondary">Done pressed by <%= setup.submitted_by %> · <%= agent_setup_stamp(setup.submitted_at) %></p>
