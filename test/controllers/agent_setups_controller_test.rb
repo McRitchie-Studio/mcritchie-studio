@@ -48,8 +48,8 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
         assert_select "form[data-test='discord-app-id-form'] input[value='#{APP_ID}']"
       end
       assert_select "[data-key='reset_token']", /Reset Token/
-      assert_select "[data-key='paste_token'] a[data-test='op-item-link'][href^='https://start.1password.com/open/i']", "Open agents.discord.mason in 1Password"
-      assert_select "[data-key='invite'] a[data-test='discord-invite-link'][href*='client_id=#{APP_ID}'][href*='permissions=274877975552']"
+      assert_select "[data-key='paste_token'] a[data-test='op-item-link'][href^='https://start.1password.com/open/i']", "Open discord.mason.agents in 1Password"
+      assert_select "[data-key='invite'] a[data-test='discord-invite-link'][href*='client_id=#{APP_ID}'][href*='permissions=274877991936']"
       assert_select "[data-key='done'] form button[data-test='agent-setup-done']", "Done"
     end
     refute_match(/bot-token"?\s*[:=]\s*\S{20,}/, response.body)
@@ -62,7 +62,7 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
     get agents_path
     assert_select "#agent-setup-#{setup.id}" do
       assert_select "a[data-test='discord-avatar-download'][data-agent-avatar-png][href='/agents/alex.webp'][download='alex.png']"
-      assert_select "[data-test='op-item-missing']", /agents\.discord\.alex/
+      assert_select "[data-test='op-item-missing']", /discord\.alex\.agents/
       assert_select "[data-test='discord-invite-waiting']"
       assert_select "[data-test='agent-setup-blocker']", /Application ID/
       assert_select "[data-test='agent-setup-done']", 0
@@ -104,6 +104,39 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
     get agents_path
     assert_select "#agent-setup-#{setup.id}[data-status='checking'] [data-test='agent-setup-badge']", "Checking"
     assert_select "#agent-setup-#{setup.id} [data-test='agent-setup-done']", 0
+  end
+
+  # Regression (Carl, pending-agents-page): the step write was the one write
+  # here with no rescue_and_log, so a failed tick left no ErrorLog on the card.
+  test "[integration] a failed step write is logged against the card" do
+    setup = open_setup
+    log_in_as(admin)
+    AgentSetup.alias_method :__real_mark_step!, :mark_step!
+    AgentSetup.define_method(:mark_step!) { |*, **| raise ActiveRecord::StatementInvalid, "simulated write failure" }
+    begin
+      assert_difference -> { ErrorLog.where(target_type: "AgentSetup", target_id: setup.id).count }, 1 do
+        post agent_setup_step_path(setup, "create_app")
+      rescue ActiveRecord::StatementInvalid
+        nil # re-raised by rescue_and_log after it logs; how the app answers is the global handler's
+      end
+    ensure
+      AgentSetup.alias_method :mark_step!, :__real_mark_step!
+      AgentSetup.remove_method :__real_mark_step!
+    end
+    assert_nil setup.reload.steps.first.done_at
+  end
+
+  test "[integration] a step on a card past Alex McRitchie's turn is refused with its status and logs nothing" do
+    setup = open_setup(application_id: APP_ID)
+    setup.submit!(by: "Alex McRitchie")
+    setup.await_verify!("Waiting for Steffon.")
+    log_in_as(admin)
+    assert_no_difference -> { ErrorLog.count } do
+      post agent_setup_step_path(setup, "create_app"), params: { done: "0" }
+    end
+    assert_redirected_to agents_path(open: setup.id, anchor: "agent-setup-#{setup.id}")
+    assert_equal "This setup is verifying.", flash[:alert]
+    assert setup.reload.steps.first.done?, "the tick stands"
   end
 
   test "[integration] the row an action came back to is served open; the others stay collapsed" do

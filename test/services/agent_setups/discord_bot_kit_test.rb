@@ -17,7 +17,8 @@ class AgentSetups::DiscordBotKitTest < ActiveSupport::TestCase
     assert_equal 274_877_991_936, KIT.permissions_for("cto")
     assert_equal "server_admin", KIT.permission_set_for("steffon")
     assert_equal "cto", KIT.permission_set_for("avi"), "config/cto_reports.yml names Avi a CTO"
-    assert_equal "reply", KIT.permission_set_for("mason")
+    assert_equal "reply", KIT.permission_set_for("mack")
+    assert_equal "reply", KIT.permission_set_for("ray"), "a soul with no seat and no CTO report replies"
 
     url = KIT.invite_url(setup_for("steffon", application_id: APP_ID))
     query = Rack::Utils.parse_query(URI(url).query)
@@ -26,6 +27,32 @@ class AgentSetups::DiscordBotKitTest < ActiveSupport::TestCase
     assert_equal APP_ID, query["client_id"]
     assert_equal (274_877_991_936 + 16 + (1 << 28) + (1 << 29)).to_s, query["permissions"]
     assert_equal "1332466565203103744", query["guild_id"]
+  end
+
+  # The integers the SOP quotes (agent-onboarding.md, discord-bot-setup.md):
+  # a drift in config/agent_setups.yml fails here, not on Alex McRitchie's invite.
+  test "[unit] the five bots' seats and the integers the SOP quotes" do
+    assert_equal 274_877_975_552, KIT.permissions_for("reply")
+    assert_equal 274_877_991_936, KIT.permissions_for("cto")
+    assert_equal 275_683_298_320, KIT.permissions_for("server_admin")
+    assert_equal({ "alex" => "cto", "mason" => "cto", "mack" => "reply", "steffon" => "server_admin", "turf_monster" => "cto" },
+                 %w[alex mason mack steffon turf_monster].index_with { |soul| KIT.permission_set_for(soul) })
+    refute KIT.config.fetch("seats").key?("tyrion"), "Tyrion's token lives in OpenClaw: no seat, no card"
+  end
+
+  test "[unit] a new card points at discord.<soul>.agents, and only the shared bot's soul installs DISCORD_AGENT_BOT_TOKEN too" do
+    alex = KIT.default_details("alex")
+    assert_equal "discord.alex.agents", alex["op_item"]
+    assert_equal "DISCORD_BOT_TOKEN_ALEX", alex["secret_env"]
+    assert_equal "DISCORD_AGENT_BOT_TOKEN", alex["also_env"]
+    assert_equal AgentMessages::DiscordBot::TOKEN_ENV, alex["also_env"], "the var the shared reader actually reads"
+
+    %w[mason mack steffon turf_monster].each do |soul|
+      details = KIT.default_details(soul)
+      assert_equal "discord.#{soul}.agents", details["op_item"]
+      assert_equal AgentMessages::DiscordBot.soul_token_env(soul), details["secret_env"]
+      refute details.key?("also_env"), "#{soul} is not the shared bot"
+    end
   end
 
   test "[unit] no invite until the application id is a snowflake" do

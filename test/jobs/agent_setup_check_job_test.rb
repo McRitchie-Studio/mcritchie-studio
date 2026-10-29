@@ -32,11 +32,25 @@ class AgentSetupCheckJobTest < ActiveJob::TestCase
   test "[unit] a Discord fault is recorded and the card says to press Done again" do
     setup = checking_setup
     AgentMessages::DiscordBot.transport = ->(*) { [ 502, "bad gateway" ] }
-    assert_difference -> { ErrorLog.count }, 1 do
+    assert_difference -> { ErrorLog.where(target_type: "AgentSetup", target_id: setup.id).count }, 1 do
       with_shared_token { AgentSetupCheckJob.perform_now(setup.id) }
     end
     assert_equal "needs_attention", setup.reload.status
     assert_match(/Press Done to try again/, setup.status_reason)
+  end
+
+  # Regression (Carl, pending-agents-page): only a Discord error was rescued,
+  # so any other fault in the check left the card on checking, which has no
+  # Done button: stuck until someone edited the row.
+  test "[unit] a non-Discord fault moves the card to needs_attention with a reason, logged against it" do
+    setup = checking_setup
+    AgentMessages::DiscordBot.transport = ->(*) { raise KeyError, "key not found: \"guild_id\"" }
+    assert_difference -> { ErrorLog.where(target_type: "AgentSetup", target_id: setup.id).count }, 1 do
+      with_shared_token { AgentSetupCheckJob.perform_now(setup.id) }
+    end
+    assert_equal "needs_attention", setup.reload.status
+    assert_match(/The hub's check failed \(KeyError, recorded in \/error_logs\)\. Press Done to try again/, setup.status_reason)
+    assert setup.submittable?, "Done can be pressed again"
   end
 
   test "[unit] a setup no longer checking is left alone" do
