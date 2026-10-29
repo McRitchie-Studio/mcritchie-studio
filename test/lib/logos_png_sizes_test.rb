@@ -31,6 +31,7 @@ class LogosPngSizesTest < Minitest::Test
     assert(presets.all? { |preset| preset[:fit] == "fill" }, "no padding")
     assert_equal "512 × 416", presets.find { |preset| preset[:key] == "512" }[:label]
     assert_equal "Apple touch icon", presets.find { |preset| preset[:key] == "180" }[:use]
+    assert_equal "Android and PWA icon", presets.find { |preset| preset[:key] == "192" }[:use]
     tall = PngSizes.presets(:icon, 425.06, 481.0)
     assert_equal [452, 512], tall.find { |preset| preset[:key] == "512" }.values_at(:width, :height), "a tall icon: the height is the long side"
   end

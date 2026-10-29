@@ -253,12 +253,12 @@ Let **u** be the small word's cap height (40 design units).
 
 | Form | Top to bottom | Width | Height |
 |------|---------------|-------|--------|
-| `two_line` (the default) | icon, 2u, the first word at 3u, 2u, the second word at 1u | the first word's ink, W | 0.6W + 8u |
+| `two_line` (the default) | icon, 2u, the first word at 3u, 2u, the second word at 1u | the first word's ink, W | max(0.6W, the second word's width) + 8u |
 | `one_line` (`stacked: one_line` in the style) | icon, 2u, the whole name at 3u | the name's ink, W | 0.6W + 5u |
+| `tagline` (a brand with a `tagline`, beside its own form) | icon, 2u, the whole name at 3u, 2u, the tagline at 1u | the name's ink, W | 0.6W + 8u |
 
 A one-line brand is offered `two_line` beside its own form when the two-line form draws for it (Turf Monster:
-`[:one_line, :two_line]`).
-| `tagline` (a brand with a `tagline`, beside its own form) | icon, 2u, the whole name at 3u, 2u, the tagline at 1u | the name's ink, W | 0.6W + 8u |
+`[:one_line, :two_line]`). The heights are the 3-2-1 proportion's; the rule of three's are [below](#the-rule-of-three-proportion).
 
 - **Two lines.** The second word is tracked out until its ink is exactly 60% of
   the first word's ink width. The tracking is computed, added between letters
@@ -308,7 +308,7 @@ on the first build's 3u gaps: "space of 2 vertically between".
 
 | Proportion | Icon | Every gap | Height (two lines, tagline) | Height (one line) |
 |------------|------|-----------|-----------------------------|-------------------|
-| `three_two_one` (default) | 0.6W tall; its width follows its aspect | 2u | 0.6W + 8u | 0.6W + 5u |
+| `three_two_one` (default) | as tall as the small line is wide (0.6W, or a wider second word's own width); its width follows its aspect | 2u | 0.6W + 8u (two lines: max(0.6W, the second word's width) + 8u) | 0.6W + 5u |
 | `rule_of_three` | W/3 wide, centred; its height `a`·W/3 follows its aspect `a` (h/w) | 2u | `a`·W/3 + 8u | `a`·W/3 + 5u |
 
 - **Three icons span the name.** Three copies of the icon side by side are
@@ -1153,6 +1153,10 @@ with no row. Only the hub's link was stamped, and only where its committed `publ
 kit's saved choices; every other app reads Not applied until it is rolled out. The whole procedure is Alex's
 [`brand-kit-rollout`](../agents/agents/alex/sops/brand-kit-rollout.md). Nothing polls an app's `kit.json` yet;
 the SOP reads it by hand.
+
+The status reads only `saved_at`, so a change to the logo library or a brand's style that redraws a kit without a save
+(task turf-two-lines-and-welding-blue redrew Commercial Welding's dark helmet and v1's name) leaves every app Applied.
+Save the kit again to flag its apps, or run the rollout for them by hand.
 
 ### Which brands have a Google kit
 

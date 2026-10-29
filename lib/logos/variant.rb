@@ -24,39 +24,12 @@ module Logos
     CHOICES = { icon: %i[tone colouring], navbar: %i[rule text tone colouring icon_colouring guides],
                 stacked: %i[form proportion text tone colouring icon_colouring guides] }.freeze
     COLOURINGS = { original: "Original", alt: "Alt" }.freeze
-    # The Stacked Logo's forms, as the Form control names them; a brand offers only its own (StackedLogo#forms).
+    # The Stacked Logo's forms, as the Form control names them; a brand offers only those it draws (StackedLogo#forms).
     FORMS = { two_line: "Two lines", one_line: "One line", tagline: "With tagline" }.freeze
     # The Stacked Logo's proportions (StackedLogo::PROPORTIONS), as the Proportion control names them; every brand draws
     # both, in every form, and the first is the default.
     PROPORTIONS = { three_two_one: "3-2-1", rule_of_three: "Rule of three" }.freeze
     RULES = { 3 => "Rule of 3", 4 => "Rule of 4", 6 => "Rule of 6" }.freeze
-    RULE_SENTENCES = {
-      3 => "The icon is three rows tall. The capitals are one row, a third of the icon, and the name sits in the middle row.",
-      4 => "The icon is four rows tall. The capitals are two rows, half the icon, and the name fills the middle two rows.",
-      6 => "The icon is six rows tall. The capitals are four rows, two thirds of the icon, and the name fills the middle four rows."
-    }.freeze
-    # The Stacked Logo's 3-2-1 method in plain words, then which form the brand uses.
-    METHOD_SENTENCE = "The 3-2-1 method: take the small word's capitals as one unit. The big word's capitals are 3 units tall, " \
-                      "every gap is 2 units, and the small word, 1 unit tall, is spaced out to 60% of the big word's width. " \
-                      "The icon is as tall as the small word is wide."
-    # The rule of three in plain words (task stacked-rule-of-three), and its forms: the lines are set as in 3-2-1.
-    RULE_OF_THREE_SENTENCE = "The rule of three: three copies of the icon side by side are exactly as wide as the name, so the icon is a " \
-                             "third of the name's width, centred. Take the small line's capitals as one unit: the name's capitals are 3 " \
-                             "units tall, and every gap is 2 units, as in 3-2-1."
-    RULE_OF_THREE_FORM_SENTENCES = {
-      two_line: "This brand uses the two-line form: the small word, 1 unit tall, is spaced out to 60% of the big word's width.",
-      one_line: "This brand uses the one-line form: the whole name is on " \
-                "one line, 3 units tall, 2 units under the icon.",
-      tagline: "With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall, set in Montserrat " \
-               "and spaced out to 60% of the name's width."
-    }.freeze
-    FORM_SENTENCES = {
-      two_line: "This brand uses the two-line form.",
-      one_line: "This brand uses the one-line form: the whole name is on " \
-                "one line, 3 units tall, 2 units under an icon 60% as tall as the name is wide.",
-      tagline: "With tagline: the whole name on one line, 3 units tall, then 2 units, then the tagline, 1 unit tall, set in " \
-               "Montserrat and spaced out to 60% of the name's width. The tagline is the small line, so the icon is as tall as it is wide."
-    }.freeze
     TEXTS = { homogeneous: "Homogeneous", first: "First word leads", second: "Second word leads" }.freeze
     TONES = NavbarLogo::TONES
     CONTEXTS = { light: "Light", dark: "Dark", watermark: "Watermark" }.freeze

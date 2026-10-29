@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  MAX_SIDE, pngSize, customSize, outlineRect, drawRect, pngFilename, sizedSvg, rasterise,
+  MAX_SIDE, announce, pngSize, customSize, outlineRect, drawRect, pngFilename, sizedSvg, rasterise,
   naturalSize, rasterSize, rasterFilename, rasterPlan, tableFormat, downloadTableLink, sizeWords, tableLinkLabel,
 } from "../../app/javascript/logo_download.js";
 
@@ -186,4 +186,27 @@ test("a table link's name keeps the server's label, kit choice included, in each
   assert.equal(tableLinkLabel(served, "png", "width:800"), "Download PNG, 800 px wide: Studio navbar logo, rule of 4, light, kit choice");
   assert.equal(tableLinkLabel(served, "jpeg", "long:512"), "Download JPEG, 512 px on its long side: Studio navbar logo, rule of 4, light, kit choice");
   assert.equal(tableLinkLabel("", "svg", "width:800", "Studio icon"), "Download SVG: Studio icon", "no served label: the logo's own");
+});
+
+test("a live status line is written, and shown or hidden, only when its text changes", () => {
+  const writes = [];
+  const line = { _text: "", _hidden: true };
+  Object.defineProperty(line, "textContent", { get() { return this._text; }, set(v) { writes.push(["text", v]); this._text = v; } });
+  Object.defineProperty(line, "hidden", { get() { return this._hidden; }, set(v) { writes.push(["hidden", v]); this._hidden = v; } });
+
+  announce(line, "", { hideWhenEmpty: true });
+  assert.deepEqual(writes, [], "already empty and hidden: nothing written");
+  announce(line, "Too big", { hideWhenEmpty: true });
+  assert.deepEqual(writes, [["text", "Too big"], ["hidden", false]]);
+  announce(line, "Too big", { hideWhenEmpty: true });
+  assert.equal(writes.length, 2, "the same text again is not re-announced");
+  announce(line, "", { hideWhenEmpty: true });
+  assert.deepEqual(writes.slice(2), [["text", ""], ["hidden", true]]);
+
+  const summary = { _text: "a.png", _hidden: false };
+  Object.defineProperty(summary, "textContent", { get() { return this._text; }, set(v) { writes.push(["summary", v]); this._text = v; } });
+  announce(summary, "a.png");
+  announce(summary, "");
+  assert.deepEqual(writes.slice(4), [["summary", ""]], "without hideWhenEmpty the line is never hidden");
+  assert.equal(summary._hidden, false);
 });

@@ -120,6 +120,12 @@ change itself; the rasters of step 5 are drawn from the SVGs and must be redrawn
 too, even when only a colour moved. An app is Applied again only once its live
 `kit.json` names the new `saved_at`.
 
+A change to the logo library or a brand's style (new drawings, the same saved
+choices) moves no `saved_at`, so no app turns Kit changed: task
+turf-two-lines-and-welding-blue redrew Commercial Welding's dark helmet and v1's
+name, and its apps still read Applied. After such a change, save the kit again
+on `/logos/<brand>` to flag its apps, or run this SOP for them by hand.
+
 ## Done when
 
 - Every target app's live `/brand/kit.json` names the kit's `saved_at`.
