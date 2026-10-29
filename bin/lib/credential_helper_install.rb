@@ -50,7 +50,10 @@ require_relative "projects_root"
 #     not a missing file, and it is bounded to the instant of a deliberate
 #     re-install rather than to every checkout of the hub primary.)
 #     Old version directories are KEPT for the same reason: a helper process
-#     already running out of one keeps its files.
+#     already running out of one keeps its files. On Linux rename alone is not
+#     enough: `current` is a hard link to the snapshot's kept `current.<id>`
+#     symlink, so the swap never frees the inode a walker is following
+#     (point_current_at!).
 #
 # WHAT SURVIVES RELOCATION, AND WHY THIS IS SAFE. The one thing that could have
 # broken is the SHARED SESSION: bin/gh-token holds the hour-long installation
@@ -392,14 +395,63 @@ module CredentialHelperInstall
   # one — never a hole. Using `rm` + `symlink` here would rebuild the exact
   # window this module exists to close: measured, it returns ENOENT — the
   # defect's own signature — to 58% of concurrent reads. See NEVER ABSENT above.
+  #
+  # AND THE OLD SYMLINK MUST OUTLIVE THE SWAP, which rename alone does not give on
+  # Linux. The name `current` is swapped atomically there too (an lstat of it never
+  # missed: 0 ENOENT in 500k reads), but a walker already FOLLOWING the old symlink
+  # when the rename drops that inode's last link reads a body that is no longer
+  # there and gets ENOENT through the stable path. Measured 2026-10-28 on ext4
+  # (kernel 6.12, Docker): 5 to 13 ENOENT per ~280k reads across ~130k swaps, with
+  # short and long targets alike; CI hit it as 1/2843 (CredentialHelperSurvivesTree
+  # MoveTest, run 40789793402). So each snapshot's symlink is created ONCE, kept as
+  # `current.<id>`, and `current` becomes a hard link to it: the rename then drops
+  # one of two links and the inode a walker holds is never freed. Same ext4 hammer
+  # with the pin: 0 ENOENT in 500k reads across 247k swaps.
+  #
+  # macOS link(2) follows a symlink instead of linking it (a directory there, so
+  # EPERM), so on APFS this falls back to a fresh symlink, which is what it always
+  # did and measured 0 ENOENT there (NEVER ABSENT above).
   def point_current_at!(root, id)
     link = current_link(root)
+    target = File.join("versions", id)
     tmp = "#{link}.tmp.#{Process.pid}"
     FileUtils.mkdir_p(root)
+    pinned = pin_snapshot_link!(root, id, target)
     FileUtils.rm_f(tmp)
-    File.symlink(File.join("versions", id), tmp)
+    unless hard_link_symlink(pinned, tmp, target)
+      FileUtils.rm_f(tmp)
+      File.symlink(target, tmp)
+    end
     File.rename(tmp, link)
   end
+
+  # `<root>/current.<id>`: the snapshot's own symlink, beside `current` so its
+  # relative target resolves the same through either name. Created once and NEVER
+  # replaced while it is right: renaming over it could free the inode `current`
+  # shares with it, the very event the pin exists to prevent.
+  def pinned_link(root, id) = "#{current_link(root)}.#{id}"
+
+  def pin_snapshot_link!(root, id, target)
+    pinned = pinned_link(root, id)
+    return pinned if File.symlink?(pinned) && File.readlink(pinned) == target
+
+    tmp = "#{pinned}.tmp.#{Process.pid}"
+    FileUtils.rm_f(tmp)
+    File.symlink(target, tmp)
+    File.rename(tmp, pinned)
+    pinned
+  end
+  private_class_method :pin_snapshot_link!
+
+  # A hard link to the symlink ITSELF (Linux link(2)), or false where link(2)
+  # follows it (macOS) or the filesystem refuses.
+  def hard_link_symlink(pinned, tmp, target)
+    File.link(pinned, tmp)
+    File.symlink?(tmp) && File.readlink(tmp) == target
+  rescue SystemCallError
+    false
+  end
+  private_class_method :hard_link_symlink
 
   # The in-tree path this install replaces — the value a real ~/.gitconfig holds
   # today, and the one the wiring command below must target.

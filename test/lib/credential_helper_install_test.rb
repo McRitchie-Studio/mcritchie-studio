@@ -218,6 +218,45 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
     assert_nil CredentialHelperInstall.installed_digest(File.join(@root, "empty"))
   end
 
+  # [unit] hub-flaky-tests-steady: on Linux the rename that repoints `current` dropped the
+  # old symlink inode's LAST link, and a walker mid-follow got ENOENT through the stable path
+  # (CI run 40789793402, 1/2843; 5-13 per 280k reads on ext4). The pin keeps that inode
+  # linked. Deterministic: it reads the link counts the race depends on, not the race.
+  test "repointing current keeps the outgoing snapshot's symlink inode linked, where link(2) can link a symlink" do
+    %w[aaaaaaaaaaaa bbbbbbbbbbbb].each { |id| FileUtils.mkdir_p(File.join(CredentialHelperInstall.versions_dir(@root), id, "bin")) }
+    current = CredentialHelperInstall.current_link(@root)
+    pinned_a = CredentialHelperInstall.pinned_link(@root, "aaaaaaaaaaaa")
+    pinned_b = CredentialHelperInstall.pinned_link(@root, "bbbbbbbbbbbb")
+
+    CredentialHelperInstall.point_current_at!(@root, "aaaaaaaaaaaa")
+    inode_a = File.lstat(current).ino
+    CredentialHelperInstall.point_current_at!(@root, "bbbbbbbbbbbb")
+
+    assert_equal "versions/bbbbbbbbbbbb", File.readlink(current)
+    assert_equal "versions/aaaaaaaaaaaa", File.readlink(pinned_a), "the outgoing snapshot's pin was not kept"
+    assert_equal "versions/bbbbbbbbbbbb", File.readlink(pinned_b)
+    assert_empty Dir.glob("#{current}*.tmp.*"), "a repoint left its temporary link behind"
+
+    if link_links_a_symlink?
+      assert_equal inode_a, File.lstat(pinned_a).ino,
+                   "the inode `current` held before the swap is gone: the rename freed it, which is the ENOENT window"
+      assert_equal File.lstat(pinned_b).ino, File.lstat(current).ino, "`current` is not a hard link to its snapshot's pin"
+      assert_equal 2, File.lstat(current).nlink
+    else
+      assert File.symlink?(current), "where link(2) follows a symlink (macOS), `current` is a fresh symlink as before"
+    end
+  end
+
+  def link_links_a_symlink?
+    Dir.mktmpdir("link-probe") do |dir|
+      File.symlink("nowhere", File.join(dir, "a"))
+      File.link(File.join(dir, "a"), File.join(dir, "b"))
+      File.symlink?(File.join(dir, "b"))
+    rescue SystemCallError
+      false
+    end
+  end
+
   test "reinstalling an unchanged tree is idempotent and keeps the older snapshot" do
     first = CredentialHelperInstall.install!(source_root: SOURCE, root: @root)
     second = CredentialHelperInstall.install!(source_root: SOURCE, root: @root)

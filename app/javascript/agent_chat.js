@@ -230,6 +230,18 @@ export function markBusy(form, count) {
   else form.removeAttribute("aria-busy");
 }
 
+// Has the person moved focus to another control since the send? Then the send's
+// end must not pull it back into the box. The answer's broadcast reaches the page
+// BEFORE the send's own response (CtoChatsController#create broadcasts the turn,
+// then renders), so the person can already be on the avatar, a link or the picker
+// when submit-end lands; yanking the caret back made Enter there type into the box
+// (task hub-flaky-tests-steady: e2e/build_funnel.spec.js's avatar picker stayed
+// shut on CI). The body, nothing, or a node the redraw detached is not a move.
+export function focusMovedAway(active, body, formSelector = FORM) {
+  if (!active || active === body || active.isConnected === false) return false;
+  return !active.closest?.(formSelector);
+}
+
 // Puts the caret at the end of the composer's box.
 export function focusComposer(form) {
   const field = form?.querySelector("textarea");
@@ -375,7 +387,10 @@ if (typeof document !== "undefined") {
     const left = submission ? trackSend(inflight, ended.id, submission, false) : 0;
     markBusy(form, left);
     if (left === 0) announce(form, "");
-    requestAnimationFrame(() => document.querySelector(`${FORM} textarea`)?.focus());
+    requestAnimationFrame(() => {
+      if (focusMovedAway(document.activeElement, document.body)) return;
+      document.querySelector(`${FORM} textarea`)?.focus();
+    });
   });
 
   function init() {

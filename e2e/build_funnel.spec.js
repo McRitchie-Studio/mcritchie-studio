@@ -468,7 +468,16 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   const avatarPicker = page.locator("[data-test='cto-chat-avatar-form'] [data-test='build-portrait-dialog']");
   const headPortrait = page.locator("[data-test='agent-portrait'] [data-test='client-cto-portrait']");
   const announce = page.locator("[data-test='cto-chat-avatar-announce']");
+  // The send is over before the owner moves on: its submit-end puts the caret back in the chat box
+  // a frame after the answer renders. CI, 2026-10-28: that refocus landed AFTER this focus, Enter
+  // typed into the box, and the picker stayed shut. agent_chat.js no longer pulls focus back from a
+  // control the owner moved to (focusMovedAway); waiting for the box to hold the caret here makes the
+  // order the same on every run, and the toBeFocused below fails if anything still steals it.
+  await expect(page.locator("[data-test='cto-chat-form']")).not.toHaveAttribute("aria-busy", "true");
+  await expect(page.locator("[data-test='cto-chat-input']")).toBeFocused();
   await avatarHead.focus();
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(avatarHead, "something pulled focus back into the chat box").toBeFocused();
   await page.keyboard.press("Enter");
   await expect(avatarPicker).toBeVisible();
   const startPick = avatarPicker.locator("input[name='portrait']:checked");
