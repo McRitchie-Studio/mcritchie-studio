@@ -67,9 +67,10 @@ module Logos
     THIRDS = 3                                 # rule_of_three: this many icons side by side are as wide as the big line
     SMALL_LINES = %i[three_two_one match].freeze   # the first is the default
     LETTER_SPACINGS = %i[as_styled open].freeze    # the first is the default
-    # Open's least ink-to-ink gap between adjacent letters of the big line, in cap heights. Montserrat untracked sets
-    # its own tightest pairs in these brands' names about this far apart (A to L in COMMERCIAL: 0.040; C to H in
-    # McRITCHIE: 0.054), so Open never sets a pair tighter than the typeface sets one by itself. Turf Monster's
+    # Open's least ink-to-ink gap between adjacent letters of the big line, in cap heights: the tightest pair any
+    # brand here already draws as styled with no letter touching (A to L of COMMERCIAL in Commercial Welding's own
+    # lettering: 0.040; Montserrat's tightest untracked, C to H of McRITCHIE, is 0.054). So Open sets no pair tighter
+    # than a brand here already accepts, and lifts a word no further than that pair needs. Turf Monster's
     # -0.025 em puts r and f of "Turf" 0.002 cap heights INTO each other; Open lifts the whole word by the one amount
     # that brings that, its tightest pair, to 0.040 (from -0.036 to +0.007 cap heights of tracking).
     OPEN_GAP = 0.04

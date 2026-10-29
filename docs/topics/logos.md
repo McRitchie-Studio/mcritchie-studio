@@ -343,7 +343,7 @@ with today's drawing as its default (byte-identical):
 | Setting | Values | What it does |
 |---------|--------|--------------|
 | `small_line:` (`StackedLogo::SMALL_LINES`) | `three_two_one` (default), `match` | Match tracks the small line (the second word, or the tagline) out until its ink spans exactly the big line's ink width. |
-| `letter_spacing:` (`StackedLogo::LETTER_SPACINGS`) | `as_styled` (default), `open` | Open tracks the big line out by the least amount that leaves every adjacent pair of letters at least `OPEN_GAP` (0.04 cap heights, Montserrat's own tightest untracked pair in these names) apart, ink box to ink box. A brand already that open draws as styled. |
+| `letter_spacing:` (`StackedLogo::LETTER_SPACINGS`) | `as_styled` (default), `open` | Open tracks the big line out by the least amount that leaves every adjacent pair of letters at least `OPEN_GAP` (0.04 cap heights: the tightest pair any brand here draws as styled, A to L of COMMERCIAL in Commercial Welding's lettering) apart, ink box to ink box. A brand already that open draws as styled. |
 
 - **Match never grows the icon.** The 3-2-1 icon stays as tall as the 3-2-1 small
   line is wide; the guide drawing turns that 3-2-1 line on end beside it. The rule
