@@ -100,7 +100,7 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
   # test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_compact_index.)
   def test_prepare_passes_the_published_version_to_bundle_lock_as_expect
     out = run_cli(["--yes"], call: "prepare",
-                  setup: gem_publish_stub(version: "1.0.0", live: ["1.0.0"], lock_dirty: false, tag: "v1.0.0", ahead: ""))
+                  setup: gem_publish_stub(version: "1.0.0", live: ["1.0.0"], lock_dirty: false, tag: "v1.0.0", ahead: "") + ReleaseCliStubs::REUSED_FINAL)
 
     assert_includes out, "BUNDLE-LOCK studio-engine conservative=true expect=1.0.0",
                     "prepare must tell bundle_lock which version has to land: #{out}"
@@ -203,11 +203,11 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
   # bumped → publish and commit both skip, and the QA half still runs.
   def test_prepare_gem_publish_and_lock_bump_are_idempotent_on_a_re_run
     out = run_cli(["--yes"], call: "prepare",
-                  setup: gem_publish_stub(version: "1.0.0", live: [{ "number" => "1.0.0" }], lock_dirty: false, tag: "v1.0.0", ahead: ""))
+                  setup: gem_publish_stub(version: "1.0.0", live: [{ "number" => "1.0.0" }], lock_dirty: false, tag: "v1.0.0", ahead: "") + ReleaseCliStubs::REUSED_FINAL)
 
     assert_includes out, "already live on RubyGems — consumers lock the final", "a live final publishes nothing"
     assert_includes out, "nothing to commit (idempotent re-run)", "an already-bumped lock commits nothing"
-    refute_includes out, "GEM-BUILD"
+    assert_includes out, "REUSE-VERIFIED studio-engine 1.0.0", "the re-run still checks the served gem is this tree"
     refute_includes out, "GEM-PUSH"
     refute_includes out, "LOCK-PUSH"
     assert_includes out, "QA-DEPLOY", "the re-run still deploys QA (self-healing resumes the deploy half)"

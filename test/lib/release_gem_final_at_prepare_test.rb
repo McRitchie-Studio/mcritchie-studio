@@ -60,13 +60,9 @@ class ReleaseGemFinalAtPrepareTest < ReleaseCliHarness
   # The reuse path still checks what RubyGems serves against this tree, and puts
   # back the tag a stopped run never pushed.
   def test_a_rerun_at_the_same_tip_reuses_the_live_final
-    reuse = <<~'RUBY'
-      def verify_reused_final!(repo, tip, final) = $stdout.puts("REUSE-VERIFIED #{repo} #{final}")
-      def ensure_release_tag!(repo, version, frozen) = $stdout.puts("TAG-ENSURED #{repo} v#{version}")
-    RUBY
     out = run_cli(["--yes"], call: "prepare",
                   setup: gem_publish_stub(version: "1.0.0", live: [{ "number" => "1.0.0" }], lock_dirty: false,
-                                          tag: "v1.0.0", ahead: "") + PUSH_LEDGER + reuse)
+                                          tag: "v1.0.0", ahead: "") + PUSH_LEDGER + ReleaseCliStubs::REUSED_FINAL)
 
     assert_includes out, "1.0.0 is already live on RubyGems — consumers lock the final", out
     assert_empty out.lines.grep(/^(PUSHED|TAG-PUSHED) /), "a re-run publishes nothing"
@@ -80,9 +76,7 @@ class ReleaseGemFinalAtPrepareTest < ReleaseCliHarness
   # nothing, rather than reading it as empty and pushing a version RubyGems holds.
   def test_an_unreadable_listing_stops_prepare_before_any_publish
     unreadable = <<~'RUBY'
-      def rubygems_versions(gem_name, strict: true)
-        abort!("#{Release::GemFlow::LISTING_UNREADABLE} for #{gem_name} (HTTP 503)") if strict
-      end
+      def rubygems_versions(gem_name) = abort!("#{Release::GemFlow::LISTING_UNREADABLE} for #{gem_name} (HTTP 503)")
     RUBY
     out = run_cli(["--yes"], call: guarded("prepare"), setup: gem_publish_stub(version: "1.0.0") + PUSH_LEDGER + unreadable)
 
@@ -213,12 +207,6 @@ class ReleaseGemFinalAtPrepareTest < ReleaseCliHarness
       assert_includes out, "NOTHING was published"
       refute_includes out, "PASSES"
     end
-  end
-
-  def test_the_informational_read_answers_nil_and_does_not_abort
-    out = run_cli(["--yes"], setup: listing_world(body: "", code: "000", exit_ok: false),
-                  call: %(puts rubygems_versions("studio-engine", strict: false).inspect))
-    assert_includes out, "nil", out
   end
 
   # ── burned versions ────────────────────────────────────────────────────────

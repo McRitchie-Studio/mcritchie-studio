@@ -62,4 +62,13 @@ module ReleaseCliStubs
       def git_capture(*args) = args.join(" ").include?("tag --points-at") ? ["rc-0.11.0.rc1\n", true] : super
     end)
   RUBY
+
+  # Prepare's reuse path (a final already live at a re-run) with its two reads
+  # named instead of run: the served gem compared with this tree, and the tag a
+  # stopped run never pushed. Their real behaviour is driven in
+  # release_gem_final_at_prepare_test.rb.
+  REUSED_FINAL = <<~'RUBY'
+    def verify_reused_final!(repo, _tip, final) = $stdout.puts("REUSE-VERIFIED " + repo + " " + final)
+    def ensure_release_tag!(repo, version, _frozen) = $stdout.puts("TAG-ENSURED " + repo + " v" + version)
+  RUBY
 end

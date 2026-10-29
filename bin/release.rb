@@ -5792,9 +5792,9 @@ end
 # FAIL CLOSED (Release::GemFlow.listing). Any other answer is UNREADABLE, never
 # empty: an empty read sent prepare to publish a version RubyGems already held,
 # RubyGems refused the push, and the abort then advised "it was yanked, advance
-# the version file", burning a number for a network blip. `strict: false` is for
-# an informational line that decides nothing; it answers nil.
-def rubygems_versions(gem_name, strict: true)
+# the version file", burning a number for a network blip. Every caller (phase 0
+# allocation, the prepare plan, the ship's publish, its what's-live line) stops.
+def rubygems_versions(gem_name)
   url = "https://rubygems.org/api/v1/versions/#{gem_name}.json"
   out, status = Open3.capture2e("/usr/bin/curl", "-s", "--max-time", GEM_CURL_MAX_TIME.to_s,
                                 "-w", "\n%{http_code}", url)
@@ -5802,8 +5802,6 @@ def rubygems_versions(gem_name, strict: true)
   code = "" unless status.success?
   Release::GemFlow.listing(code, body)
 rescue Release::GemFlow::ListingUnreadable => e
-  return nil unless strict
-
   abort!("#{Release::GemFlow::LISTING_UNREADABLE} for #{gem_name} (#{e.message}) — not treated as empty, because " \
          "an empty listing would send this run to publish a version RubyGems may already hold. NOTHING was " \
          "published by this read. Re-run once `curl -sf #{url}` answers with the versions list.")
@@ -9285,13 +9283,9 @@ def whats_live(repos, qa_shas)
     repo = group["repo"]
     if group["kind"] == "gem"
       version = gem_version_for(repo, group, frozen_sha_for(repo, qa_shas))
-      listing = rubygems_versions(repo, strict: false)
-      if listing.nil?
-        say("    gem #{repo} #{version}: #{Release::GemFlow::LISTING_UNREADABLE} — the publish step reads it again " \
-            "and stops if it is still unreadable")
-        next
-      end
-      live = !Release::ShipSequence.publish_needed?(version, listing)
+      # An unreadable listing aborts here, before the confirm: the publish step
+      # would refuse on the same read, and nothing has moved yet.
+      live    = !Release::ShipSequence.publish_needed?(version, rubygems_versions(repo))
       say("    gem #{repo} #{version}: #{live ? 'LIVE on RubyGems — will skip' : 'not published — will publish'}")
     else
       # The LAST-KNOWN origin/main — the ref the ship actually advances
