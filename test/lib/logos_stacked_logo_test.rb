@@ -743,6 +743,20 @@ class LogosStackedLogoTest < Minitest::Test
     refute_equal stacked("turf").svg(form: :two_line), stacked("turf").svg(form: :two_line, letter_spacing: :open)
   end
 
+  # Match and Open draw their guide drawings in both proportions, and the ruler's copies are the Match line itself.
+  def test_match_and_open_draw_their_guides_in_both_proportions
+    Navbar.brands.product(Stacked::PROPORTIONS).each do |brand, proportion|
+      logo = stacked(brand)
+      logo.forms.each do |form|
+        svg = logo.svg(form:, proportion:, small_line: :match, letter_spacing: :open, guides: true)
+        xml = doc(svg)
+        assert_equal 1, xml.css("g.guide-ghosts").size, "#{brand} #{form} #{proportion}"
+        box = logo.layout(form:, proportion:, small_line: :match, letter_spacing: :open)
+        assert_operator xml.root["viewBox"].split[2].to_f, :>=, box.width + Stacked::RULER_X + box.line_width * U, "the ruler copies are the matched line"
+      end
+    end
+  end
+
   def test_an_unknown_small_line_or_letter_spacing_is_refused
     assert_equal "unknown small line :wide: expected one of three_two_one, match", refusal { stacked("studio").svg(small_line: :wide) }
     assert_equal 'unknown letter spacing "open": expected one of as_styled, open', refusal { stacked("studio").layout(letter_spacing: "open") }

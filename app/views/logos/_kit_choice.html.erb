@@ -45,7 +45,7 @@
     <% if icon %>
       <p class="text-2xs text-muted">Saves this tab's colouring and icon colour as the brand's Icon: every Navbar and Stacked Logo draws it, in the table and on their tabs.</p>
     <% else %>
-      <p class="text-2xs text-muted">Saves this tab's <%= @type == :stacked ? "form, proportion" : "rule" %>, words, colouring and edits as the brand's <%= type_name %>: its default. The table shows it, and this tab opens on it.</p>
+      <p class="text-2xs text-muted">Saves this tab's <%= @type == :stacked ? "form, proportion, small line, letter spacing" : "rule" %>, words, colouring and edits as the brand's <%= type_name %>: its default. The table shows it, and this tab opens on it.</p>
     <% end %>
   <% end %>
   <% if kit_record.saved?(@type) %>
