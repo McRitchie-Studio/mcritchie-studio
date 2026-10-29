@@ -48,15 +48,21 @@ class Release::DevnetGauntletRunTest < ActiveSupport::TestCase
                                           balance(TURF, turf_rise)] } }
   end
 
-  def gauntlet(outputs: {}, codes: {}, winners: WINNERS, tx: settle_tx)
+  # `step_seconds` is how long each step takes on the fake clock; `budgets` collects
+  # what the run hands the driver as the overall deadline's remaining seconds.
+  def gauntlet(outputs: {}, codes: {}, winners: WINNERS, tx: settle_tx, deadline: nil, step_seconds: {}, budgets: [])
     calls = []
-    driver = lambda do |argv|
+    now = 0.0
+    driver = lambda do |argv, budget|
       calls << argv
+      budgets << budget
       label = argv.first
+      now += step_seconds.fetch(label, 0)
       [outputs.fetch(label, GREEN.fetch(label)), codes.fetch(label, true)]
     end
     result = Run.new(driver: driver, manifest: -> { { "contest_slug" => "rehearsal-abc", "winners" => winners } },
-                     transaction: ->(sig) { sig == SETTLE ? tx : nil }).call
+                     transaction: ->(sig) { sig == SETTLE ? tx : nil }, deadline: deadline,
+                     deadline_env: "RELEASE_GAUNTLET_DEADLINE", clock: -> { now }).call
     [result, calls]
   end
 
@@ -150,10 +156,56 @@ class Release::DevnetGauntletRunTest < ActiveSupport::TestCase
   end
 
   def test_a_raising_effect_is_red_not_an_exception
-    driver = ->(_argv) { raise IOError, "pipe closed" }
+    driver = ->(_argv, _budget) { raise IOError, "pipe closed" }
     result = Run.new(driver: driver, manifest: -> { {} }, transaction: ->(_) { }).call
     refute result.ok?
     assert_equal "seed", result.step
     assert_includes result.reason, "IOError: pipe closed"
+  end
+
+  # --- the overall deadline: six steps at a 1200s step bound must not hold prepare
+  # for two hours ---------------------------------------------------------------
+
+  def test_without_an_overall_deadline_the_driver_gets_no_budget
+    budgets = []
+    result, = gauntlet(budgets: budgets)
+    assert result.ok?
+    assert_equal [nil] * 6, budgets
+  end
+
+  def test_each_step_is_handed_what_the_overall_deadline_leaves
+    budgets = []
+    result, = gauntlet(deadline: 1800, step_seconds: { "seed" => 30, "create" => 50, "play" => 240 }, budgets: budgets)
+    assert result.ok?, result.reason
+    assert_equal [1800, 1770, 1720, 1720, 1480, 1480], budgets.map(&:round)
+  end
+
+  def test_the_deadline_running_out_between_steps_is_red_naming_the_next_step
+    result, calls = gauntlet(deadline: 1800, step_seconds: { "play" => 1800 })
+
+    refute result.ok?
+    assert_equal "conclude", result.step, "the step that could not start is the one named"
+    assert_includes result.reason, "overall deadline of 1800s ran out before step `conclude` started"
+    assert_includes result.reason, "RELEASE_GAUNTLET_DEADLINE sets it"
+    assert_equal "conclude", result.metadata["failed_step"]
+    refute_includes calls, %w[conclude --cosign agent], "no step starts once the deadline has passed"
+  end
+
+  def test_a_step_killed_by_the_overall_deadline_is_the_deadlines_red_not_the_steps
+    result, = gauntlet(deadline: 600, step_seconds: { "play" => 600 },
+                       outputs: { "play" => "replay: polling\n✗ `bin/qa-contest-rehearsal play` gave no answer within 600s\n" },
+                       codes: { "play" => false })
+
+    assert_equal "play", result.step
+    assert_includes result.reason, "overall deadline of 600s ran out during step `play`"
+  end
+
+  def test_a_step_that_fails_inside_the_deadline_keeps_its_own_reason
+    result, = gauntlet(deadline: 1800, step_seconds: { "enter" => 10 }, codes: { "enter" => false },
+                       outputs: { "enter" => "RuntimeError: wallet session refused\n" })
+
+    assert_equal "enter", result.step
+    assert_includes result.reason, "wallet session refused"
+    refute_includes result.reason, "deadline"
   end
 end
