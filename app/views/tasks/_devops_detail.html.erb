@@ -12,6 +12,9 @@
                       on one scale the two slow releases flatten the other eight to
                       slivers, and composition is the question this list answers.
 
+    Rendered inside the #devops-sidebar-detail broadcast slot
+    (tasks/_devops_sidebar_detail), so it re-renders live with the summary card.
+
     Locals: flow (Release::Flow or nil), wip_count, wip_by_stage %>
 <% flow = local_assigns[:flow] %>
 <% wip_by_stage = local_assigns[:wip_by_stage] || {} %>

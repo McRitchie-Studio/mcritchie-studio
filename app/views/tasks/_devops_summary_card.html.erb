@@ -25,8 +25,10 @@
     A BROADCAST SLOT (#devops-summary-card): DeploymentsBroadcaster.devops_card
     re-renders it over the "deployments" stream whenever the in-flight release changes
     phase — prepare (a release opens), QA green (assembled), ship start, shipped,
-    abandoned — so the clocks below are re-estimated live. Its WIP count is read at
-    that render too, so a task move alone does not refresh it.
+    abandoned — so the clocks below are re-estimated live. The same push replaces the
+    sidebar's body (#devops-sidebar-detail), both from one Devops::Snapshot, so card
+    and sidebar agree. The WIP count is read at that render too, so a task move alone
+    does not refresh either.
 
     THE COUNTDOWN. While a release is in flight (estimate, a Release::Flow::Estimate)
     the hero is no longer history but a clock: the time left until that release

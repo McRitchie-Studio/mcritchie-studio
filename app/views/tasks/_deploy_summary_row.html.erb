@@ -13,7 +13,9 @@
     THE SIDEBARS HOLD THE ORIGINAL CARDS, ids intact. #current-release, #last-release,
     #app-ladder-detail and #heartbeats-card still exist in the DOM with the same ids, so
     every DeploymentsBroadcaster push and every ReleaseFx animation keeps landing on
-    them. A closed sidebar is display:none, not unrendered.
+    them. The DevOps sidebar's body is its own slot, #devops-sidebar-detail, pushed with
+    #devops-summary-card from one Devops::Snapshot. A closed sidebar is display:none,
+    not unrendered.
 
     ONE ALPINE OWNER for which sidebar is open (`panel`). The summary cards and the
     sidebars all read it, so opening one closes the rest, and a broadcast that REPLACES
@@ -153,9 +155,9 @@ function soulCarousel(count, ms) {
     </div>
   <% end %>
   <% devops_body = capture do %>
-    <div class="flex-1 space-y-4 overflow-y-auto p-4" data-test="deploy-sidebar-body">
-      <%= render "tasks/devops_detail", flow: flow, wip_count: wip_task_count, wip_by_stage: local_assigns[:wip_by_stage] %>
-      <%= render "tasks/release_duration_card", dashboard: release_duration_dashboard, wip_count: wip_task_count, card_class: "min-w-0" %>
+    <div class="flex-1 overflow-y-auto p-4" data-test="deploy-sidebar-body">
+      <%= render "tasks/devops_sidebar_detail", flow: flow, wip_count: wip_task_count,
+                 wip_by_stage: local_assigns[:wip_by_stage], dashboard: release_duration_dashboard %>
     </div>
   <% end %>
   <%= render "components/sidebar_panel", **sidebar, id: "deploy-sidebar-apps", title: "Applications",

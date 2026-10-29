@@ -280,6 +280,28 @@ class DeploySummaryCardsTest < ActionView::TestCase
     end
   end
 
+  # THE SIDEBAR SLOT (task devops-card-live-sidebar): the same push replaces
+  # #devops-sidebar-detail, so every render, with history or without, carries the id
+  # and both of the sidebar's cards, and no inline script.
+  test "[component] DevOps sidebar body keeps its broadcast id, both cards, and no inline script" do
+    flow = Release::Flow.new([30, 40, 50].each_with_index.map { |minutes, i| entry("rel-#{i}", minutes) })
+    wip_by_stage = (Task::STAGES - %w[shipped archived]).index_with(0).merge("building" => 2)
+
+    [flow, nil].each do |state|
+      html = Nokogiri::HTML.fragment(render(partial: "tasks/devops_sidebar_detail",
+                                            locals: { flow: state, wip_count: 2, wip_by_stage: wip_by_stage, dashboard: nil }))
+      label = state ? "with history" : "no history"
+      slot = html.css("#devops-sidebar-detail")
+      assert_equal 1, slot.size, "the slot id, #{label}"
+      assert_includes slot.first["class"].split, "space-y-4", "the slot spaces its two cards, as the sidebar body did"
+      assert_equal 1, slot.css("[data-test='devops-detail-wip']").size, "the In flight section, #{label}"
+      assert_equal "2", slot.at_css("[data-test='devops-wip-stage'][data-stage='building']")["data-count"]
+      assert_equal 1, slot.css("#release-duration-card").size, "the stage averages, #{label}"
+      assert_equal (state ? 3 : 0), slot.css("[data-test='devops-release-row']").size
+      assert_empty html.css("script")
+    end
+  end
+
   test "[component] DevOps past its estimate reads +Xm over in the warning ink, never a zero" do
     flow = Release::Flow.new([30, 40, 50].each_with_index.map { |minutes, i| entry("rel-#{i}", minutes) })
     due = Time.utc(2026, 10, 28, 20, 0)

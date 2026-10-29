@@ -1,0 +1,19 @@
+<%# THE DEVOPS SIDEBAR BODY — a BROADCAST SLOT (#devops-sidebar-detail). It holds the
+    sidebar's two cards, the detail (tasks/_devops_detail) and the six stage averages
+    (tasks/_release_duration_card), and DeploymentsBroadcaster.devops_card replaces it
+    in the same push as #devops-summary-card, both rendered from one Devops::Snapshot.
+    So the card and the open sidebar can never disagree after a phase change.
+
+    Every render must carry the id (a replace that dropped it would land once and
+    never again) and no inline script (the broadcast render has no request nonce).
+    space-y-4 here, not on the sidebar body: the body's spacing reaches only its
+    direct children, and this wrapper is now that child.
+
+    Locals: flow (Release::Flow or nil), wip_count, wip_by_stage, dashboard (the stage
+            averages hash or nil) %>
+<div id="devops-sidebar-detail" class="space-y-4" data-test="devops-sidebar-detail">
+  <%= render "tasks/devops_detail", flow: local_assigns[:flow], wip_count: local_assigns[:wip_count],
+             wip_by_stage: local_assigns[:wip_by_stage] %>
+  <%= render "tasks/release_duration_card", dashboard: local_assigns[:dashboard],
+             wip_count: local_assigns[:wip_count], card_class: "min-w-0" %>
+</div>
