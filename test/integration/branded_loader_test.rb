@@ -5,7 +5,7 @@ require "test_helper"
 # the page-load overlay in the layout, and the pending state in /build's send
 # button.
 #
-# GUARDED, like the navbar settings in config/initializers/studio.rb: the
+# GUARDED, like the hub's other engine settings: the
 # initializer and the views switch on only once the release relocks an engine
 # that has the loader. Each test asserts the adopted shape on such an engine,
 # and the guard (nothing renders, nothing raises) on an older one.
@@ -21,7 +21,9 @@ class BrandedLoaderTest < ActionDispatch::IntegrationTest
       assert art, "the art file parses and carries spark layers"
       assert_equal 5, art[:layers].size, "the kit icon has five sparkles"
     else
-      assert_includes Rails.root.join("config/initializers/studio.rb").read, "if Studio.respond_to?(:loader=)"
+      # An engine without the loader: the guarded setting stays inert, and the
+      # art it will name is already in place.
+      assert ART.file?, "the art the setting names ships with the hub"
     end
   end
 
