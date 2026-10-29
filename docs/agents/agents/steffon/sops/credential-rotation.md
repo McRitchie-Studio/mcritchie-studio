@@ -321,6 +321,82 @@ Only after Phase 5 passed everywhere (after a migration, 24 to 48 hours later); 
 | Signer, Squads member | already evicted in 4.3 |
 | Managed-wallet old key | `heroku config:unset MANAGED_WALLET_ENCRYPTION_KEY_PREVIOUS --app <app>`, then the verifier; keep the 1Password field while an old backup could return |
 
+## Discord bot tokens
+
+A Discord bot token follows Phases 1 to 7 with these differences. The mint and
+the Heroku write are a card: [`agent-onboarding`](agent-onboarding.md) (Alex
+McRitchie resets the token in the portal and pastes it into 1Password;
+`bin/agent-setup verify` reads, checks and installs it). The rest is here.
+
+**Phase 1, the stores.** The 1Password item in `studio-agents`
+(`discord.<soul>.agents`, or a grandfathered `agents.discord.<bot>`); Heroku config
+on `mcritchie-studio` only, `DISCORD_BOT_TOKEN_<SOUL>`, plus
+`DISCORD_AGENT_BOT_TOKEN` when the bot is the shared one (never on
+`mcritchie-studio-qa`, whose listener would store the guild into a second
+database); the local [secret cache](../../../modules/secret-cache.md); a desk
+`.env` only if someone set it (they should be blank); for Tyrion, the OpenClaw
+host, which is outside this SOP. `heroku config --json | jq 'has("DISCORD_BOT_TOKEN_<SOUL>")'`,
+never `heroku config`, which prints every value.
+
+**The overlap window: the new token is verified before the old one stops.**
+Discord keeps one token per application, and Reset Token kills the old one the
+moment it is clicked. So:
+
+- **Same application (the usual case, and every leak).** There is no overlap:
+  the gap runs from the reset to the verify's release. Keep it to minutes:
+  Steffon is at the keyboard when Alex McRitchie resets, verifies the moment the
+  card reads waiting, and the card goes in that order. While the gap is open a
+  soul bot's replies fall back to the shared bot (a 401, logged, then the shared
+  bot posts, signed); the shared bot's own gap stops the listener, the poll and
+  every shared reply. For a leak, speed beats overlap: reset now.
+- **A new application (an overlap, when downtime matters and nothing leaked).**
+  Make the new bot through a card, invite it, install it and prove it live
+  (below) while the old one still runs; only then reset or delete the old
+  application's token. A new application is a new bot user id, so
+  `config/agent_routes.yml` (`users`, or `bot_user_id` for the shared bot) moves
+  in the same pass.
+
+**Phase 4.4, the listener restart.** The config write is a new release on
+`mcritchie-studio`, which restarts every dyno: the worker's scheduler re-boots
+`AgentMessages::DiscordGateway` on the new token (a listener that stopped on a
+4004 during the gap does not come back without it). No separate
+`heroku ps:restart`; check `heroku ps --app mcritchie-studio` shows the worker
+`up` since the release. Each restart is one IDENTIFY against the token's daily
+budget of about 1,000 ([`agent-message-loop`](../../../system/agent-message-loop.md)), so
+never restart in a loop. The release phase also runs `bin/rails db:migrate`.
+
+**Phase 5, the live proof.** `verify`'s Discord check (`GET /users/@me` from the
+Mac, then from the dyno's own environment) proves the token, not the bot's work.
+Then, in the McRitchie Studio guild: an @mention of the bot answered by that bot,
+unsigned, with `reply_posted` `via: soul_bot` on `/admin/agent_messages`. For the
+shared bot, a new message stored within a minute of being posted (the
+listener's push, not the 10-minute poll), and a signed reply from it. A green
+release, a Ready card or a non-blank var is not a proof.
+
+**Phase 6, retiring the old.** The old token is already dead (same
+application) or is reset now (a new application). Archive the old 1Password item
+only after the live proof, and repoint every reference to the new item in one
+docs PR (`grep -rn "<old item>"`).
+
+**Transcript hygiene.** The token is never on screen, in a chat, in a log or in
+an argument:
+
+- Never `op read` or `op item get` a token to the terminal. `op item get
+  --format json` prints every field's value; look ids up with `op item list
+  --vault <vault> --format json` (ids and titles only), as `bin/agent-setup open`
+  does. A value goes from `op read` straight into a pipe to its consumer
+  (`bin/heroku-secret-set`, which prints only a status).
+- **zsh MULTIOS.** zsh turns MULTIOS on by default, and redirect order differs
+  from bash: Steffon found `2>&1 >/dev/null` still printing a command's stdout
+  to the terminal. To silence a command write `>/dev/null 2>&1` (stdout first),
+  and never rely on a redirect to hide a secret: do not produce it on stdout at
+  all.
+- Never `echo`, `printf` or interpolate the token into a message, a commit, a
+  card or a reason; `DiscordBot` and `bin/agent-setup` redact it from every
+  error, and a hand-rolled curl does not.
+- Alex McRitchie pastes the token into the 1Password item, never into a chat.
+  A token that reached a transcript is leaked: rotate it here, now.
+
 ## Rollback
 
 Before Phase 6: put the old value back in the runtime stores, revert every registration, restore

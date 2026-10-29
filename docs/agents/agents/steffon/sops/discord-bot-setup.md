@@ -14,7 +14,7 @@ How the bot reads and answers once it is set up:
 [`agent-message-loop.md`](../../../system/agent-message-loop.md).
 
 **Where it stands (2026-10-16).** Each bot is its own Discord application, filed
-as `agents.discord.<bot>` in the `studio-agents` vault
+as `agents.discord.<bot>` (a new one as `discord.<soul>.agents`) in the `studio-agents` vault
 ([`credential-inventory.md`](../../../modules/credential-inventory.md)):
 
 | Item | Bot user | Role |
@@ -24,6 +24,15 @@ as `agents.discord.<bot>` in the `studio-agents` vault
 | `agents.discord.turf` | `1405042649479647293` | Turf, Turf Monster's front door: a mention routes to `turf_monster`; replies as this bot once `DISCORD_BOT_TOKEN_TURF_MONSTER` is set |
 | `agents.discord.tyrion` | none filed | Token field empty on purpose (his bot answers through OpenClaw); not routed. With no `DISCORD_BOT_TOKEN_TYRION` his replies, once routed, fall back to the shared bot |
 | `agents.discord.mack` | `1479979322461913222` | Read by nothing yet |
+
+**Scheduled (2026-10-28, [`agent-onboarding`](agent-onboarding.md) section 6).**
+Five cards file new items under credential-filing's `<service>.<entity>.<lane>`:
+`discord.steffon.agents` (new, server admin), `discord.alex.agents` (rotates the
+leaked shared token; installs `DISCORD_BOT_TOKEN_ALEX` and
+`DISCORD_AGENT_BOT_TOKEN`), `discord.mason.agents` (new),
+`discord.mack.agents` and `discord.turf_monster.agents`. `agents.discord.xan`,
+`agents.discord.mack` and `agents.discord.turf` retire once their card is Ready
+and its live proof passed.
 
 Reading stays on the one shared token, so one connection reads each guild.
 Only replies and CTO reports switch: a soul with `DISCORD_BOT_TOKEN_<SOUL>` set
@@ -91,7 +100,10 @@ Then Steffon:
 3. Build the invite URL. Scope `bot`, and exactly the four permissions the public
    guide names: View Channels (1024), Send Messages (2048), Read Message History
    (65536) and Send Messages in Threads (274877906944), which sum to
-   `274877975552`:
+   `274877975552` (the `reply` set). A card's invite carries its seat's set
+   instead: `cto` `274877991936` (+ Embed Links) or `server_admin`
+   `275683298320` (+ Manage Channels, Roles and Webhooks); the table is in
+   [`agent-onboarding`](agent-onboarding.md) section 1:
 
    ```text
    https://discord.com/oauth2/authorize?client_id=<Application ID>&scope=bot&permissions=274877975552
@@ -130,6 +142,8 @@ lane, and nobody else sets it):
    | `avi` | `DISCORD_BOT_TOKEN_AVI` | `agents.discord.avi` |
    | `turf_monster` | `DISCORD_BOT_TOKEN_TURF_MONSTER` | `agents.discord.turf` |
    | `tyrion` | `DISCORD_BOT_TOKEN_TYRION` | `agents.discord.tyrion` (empty: leave unset) |
+   | `alex` | `DISCORD_BOT_TOKEN_ALEX` + `DISCORD_AGENT_BOT_TOKEN` | `discord.alex.agents` (by card; replaces `agents.discord.xan`) |
+   | `mason` · `mack` · `steffon` | `DISCORD_BOT_TOKEN_MASON` · `_MACK` · `_STEFFON` | `discord.<soul>.agents` (by card) |
 
    ```bash
    op read 'op://studio-agents/agents.discord.avi/bot-token' |

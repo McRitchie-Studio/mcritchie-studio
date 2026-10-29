@@ -2,7 +2,8 @@
 
 require "test_helper"
 
-# The shared Discord bot (user 1481150857809760399, 1Password `agents.discord.xan`)
+# The shared Discord bot (user 1481150857809760399, 1Password `agents.discord.xan`,
+# retiring to `discord.alex.agents` after Alex's rotation card)
 # was renamed Alex on 2026-10-27 (task discord-bot-becomes-alex, on Alex McRitchie's
 # ruling of 2026-10-26). A live doc, comment or test step that still says to post
 # `@Ritch`, or that the bot is "still Ritch", sends the next operator to mention a

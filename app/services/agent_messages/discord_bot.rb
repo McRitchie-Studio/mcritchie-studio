@@ -9,10 +9,12 @@ module AgentMessages
   # (docs/agents/system/agent-message-loop.md).
   #
   # The token is DISCORD_AGENT_BOT_TOKEN (1Password `agents.discord.xan`, field
-  # `bot-token`): the SHARED bot, the one reader and the default writer. A soul
+  # `bot-token`, which retires to `discord.alex.agents` after Alex's rotation
+  # card): the SHARED bot, the one reader and the default writer. A soul
   # with its own Discord app replies through it instead when
   # DISCORD_BOT_TOKEN_<SOUL> is set (`soul_token`, e.g. DISCORD_BOT_TOKEN_AVI,
-  # DISCORD_BOT_TOKEN_TURF_MONSTER, DISCORD_BOT_TOKEN_TYRION). A token is sent
+  # DISCORD_BOT_TOKEN_TURF_MONSTER, DISCORD_BOT_TOKEN_ALEX, _MASON, _MACK,
+  # _STEFFON), installed by a card (AgentSetups, Steffon's agent-onboarding SOP). A token is sent
   # only in the Authorization header: never logged, never in an exception
   # message, and `inspect` redacts it.
   #
