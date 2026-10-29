@@ -50,9 +50,11 @@
       </div>
 
       <div class="card p-4 sm:p-5 space-y-4 min-w-0" data-test="logo-control-card">
-        <div class="space-y-2" role="group" aria-labelledby="motion-presets-title" data-test="motion-presets">
-          <h2 id="motion-presets-title" class="text-3xs font-semibold uppercase tracking-wide text-muted">Preset</h2>
-          <div class="grid gap-2 sm:grid-cols-2">
+        <%# One control group per line, its name on the left and its options on the right, as on the other tabs. No
+            explanatory text on the brand page (task brand-page-split-layout). %>
+        <div class="flex flex-wrap items-start justify-between gap-2" role="group" aria-label="Preset" data-test="motion-presets">
+          <span class="pt-1.5 text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Preset</span>
+          <div class="grid w-full gap-2 sm:w-auto sm:flex-1 sm:max-w-md sm:grid-cols-2">
             <% @presets.each do |preset| %>
               <% on = preset.key == @preset.key %>
               <%= link_to logo_brand_path(@logo.brand, motion_params.(preset: preset.key)), class: "#{chosen.(on)} justify-between! w-full",
@@ -61,10 +63,6 @@
               <% end %>
             <% end %>
           </div>
-          <p class="text-xs text-muted" data-test="motion-preset-note"><%= @preset.note %></p>
-          <% unless @presets.any?(&:needs_weights?) %>
-            <p class="text-2xs text-muted" data-test="motion-weights-note">Weight flick is not offered: this brand's name is traced lettering, which has one weight.</p>
-          <% end %>
         </div>
 
         <div class="flex flex-wrap items-center justify-between gap-2" role="group" aria-label="Logo" data-test="motion-logo-control">
@@ -76,7 +74,6 @@
             <% end %>
           </div>
         </div>
-        <p class="text-2xs text-muted">It plays the kit's <%= Logos::MotionPreset::LOGOS.fetch(@motion_logo) %> as saved on its tab, with the kit's icon.</p>
 
         <div class="flex flex-wrap items-center gap-2">
           <%# Save as default: this preset and logo become the kit's motion choice (BrandKit#save_motion), which an app

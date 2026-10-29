@@ -27,6 +27,12 @@ class LogosMotionTest < ActionDispatch::IntegrationTest
     assert_select "a[data-test='motion-logo-option'][data-logo='stacked'][aria-current='true']"
     assert_select "[data-test='motion-default-state'][data-state='none']"
     assert_select "[data-test='motion-still'] img", minimum: 1
+    # No explanatory text on the brand page (task brand-page-split-layout): only the kit-default line.
+    assert_select "[data-test='motion-preset-note']", 0
+    assert_select "[data-test='logo-control-card'] p", 1
+    assert_select "[data-test='logo-control-card'] p[data-test='motion-default-state']", 1
+    refute_includes response.body, "It plays the kit's"
+    assert_select "[data-test='motion-presets'] > span", "Preset"
   end
 
   test "the stage plays the kit's own logo: each tone's SVG route, and the brand's accent" do
@@ -55,7 +61,7 @@ class LogosMotionTest < ActionDispatch::IntegrationTest
     get logo_brand_path("welding", type: "motion")
     assert_select "a[data-test='motion-preset']", 7
     assert_select "a[data-test='motion-preset'][data-preset='weight_flick']", 0
-    assert_select "[data-test='motion-weights-note']", /traced lettering/
+    assert_select "[data-test='motion-weights-note']", 0, "no explanatory text on the brand page"
     get logo_brand_path("welding", type: "motion", preset: "weight_flick")
     assert_response :unprocessable_content
     assert_match(/needs lettering with weights/, response.body)
