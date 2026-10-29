@@ -42,6 +42,20 @@ class AgentContextBuilderPersonaTest < ActiveSupport::TestCase
       assert_includes text, "married to Lauren (birthday in May)"
       assert_equal 1, text.scan("- PERSONA.").size
     end
+
+    # [integration] alex-persona-polish: the Buy Then Build floor reaches the whole
+    # prompt on every channel, and the word the public guard reserves for the
+    # always-rule appears nowhere else.
+    test "alex's #{label} carries the Buy Then Build floor and names no deal" do
+      text = prompt(context, channel: channel)
+      approved = "Never discuss acquisitions, mergers, deals, or legal matters."
+
+      assert_includes text, "- BUY THEN BUILD. His philosophy of buying a business is public and yours to discuss"
+      assert_includes text, "A specific deal never is: no business, counterparty, lender, price or"
+      assert_includes text, "wholly give my development cycle to AI"
+      refute_match(/acquisition/i, text.sub(approved, ""))
+      refute_match(/welding/i, text)
+    end
   end
 
   test "another soul never carries the persona, on any channel" do
