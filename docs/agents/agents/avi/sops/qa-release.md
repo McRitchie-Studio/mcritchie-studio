@@ -495,8 +495,9 @@ light." It runs unattended (Alex McRitchie, 2026-10-12), with `--cosign agent`, 
 server key and Mack co-sign the settle and no Phantom tap is owed.
 
 **`bin/release prepare` runs it for you**, right after QA green and before `✓ Assembled`
-(`Release::DevnetGauntletRun`; about 9 minutes, 4 of them step 3; the whole run is capped at
-30 minutes by `RELEASE_GAUNTLET_DEADLINE`, red at the step it stops). It runs every step of
+(`Release::DevnetGauntletRun`; about 9 minutes, 4 of them step 3; the whole run, the
+worktree's cut and `bundle install` included, is capped at 30 minutes by
+`RELEASE_GAUNTLET_DEADLINE`, red at the step it stops). It runs every step of
 the release's own `bin/qa-contest-rehearsal`, from a throwaway turf-monster worktree at the
 SHA prepare deployed to QA, in order, makes the check each `── STOP ──`
 block names (the SOP's "unattended" paragraph), reads the settle transaction from the
@@ -510,7 +511,11 @@ winner rose by exactly its rank's payout, and then records `devnet_gauntlet`:
 - **red:** `fail`, naming the step and why; prepare prints no Steffon handoff and exits 4
   (`Release::Cli::PREPARE_GAUNTLET_RED_EXIT`). The candidate does not ship: eject the Turf
   task (`bin/release eject <task> --feedback "<what the rehearsal showed>"`) or fix it
-  forward, then re-run prepare.
+  forward, then re-run prepare. The worktree goes, but its devnet state file does not:
+  prepare copies it to turf-monster's `tmp/qa-rehearsal/release-gauntlet-<sha>-<time>.json`
+  and prints the path, so a contest left open on devnet can be resumed or closed by hand
+  (copy it to `tmp/qa-rehearsal/current.json`, then run the next step). The next run
+  sweeps any worktree a killed run left in the temp dir, keeping its state the same way.
 
 Each record carries the QA SHA of every Turf repo it tested (`metadata.shas`), and it
 counts only for that code: a re-run of prepare whose QA runs the same Turf SHAs runs no

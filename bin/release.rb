@@ -128,7 +128,8 @@
 #   bin/release cycle --clearance "<Alex McRitchie's words>" [--yes] [--wait-for-1password[=MINUTES]]
 #     The whole release as ONE resumable command (bin/lib/release_cycle.rb): prepare →
 #     QA verify (each QA app /up and / answer 200; a Turf release's devnet gauntlet on
-#     the record) → ship --mode cleared → prod verify → archive. Enters at the board's
+#     the record for the Turf SHAs on QA) → ship --mode cleared → prod verify (/up and /,
+#     and each app runs its frozen SHA) → archive. Enters at the board's
 #     current stage, so a re-run resumes. Mints the agent token for prepare/archive and
 #     the deployer token for ship (fresh per act), keeps the Mac awake, re-runs a step
 #     once on a transient GitHub network failure or a stale-tree refusal, and re-runs
@@ -12394,7 +12395,8 @@ def cycle
   extra << "--local" unless PROD
   if DRY
     say("bin/release cycle --dry-run: runs, from the board's current stage, `bin/release prepare` → QA verify " \
-        "(each QA app /up and / answer 200) → `bin/release ship --mode cleared --clearance …` → prod verify → " \
+        "(each QA app /up and / answer 200) → `bin/release ship --mode cleared --clearance …` → prod verify " \
+        "(/up and / answer 200, each app runs its frozen SHA) → " \
         "`bin/release archive`. A dry run starts none of them; preview each act with its own --dry-run.")
     return 0
   end
