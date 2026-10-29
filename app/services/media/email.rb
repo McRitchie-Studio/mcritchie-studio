@@ -7,6 +7,7 @@ module Media
     def capabilities = %i[reply]
     def inbound_mode = :webhook
     def configured? = true
+    def actor = "email"
 
     def deliver_reply(message) = AgentMessages::EmailReply.deliver!(message)
   end

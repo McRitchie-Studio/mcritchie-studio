@@ -2,7 +2,7 @@ module BuildIntake
   # Turns ONE message a visitor typed into the /build chat into an AgentMessage
   # for Alex on the request's thread, `web:build:<token>` (the CTO chat's twin is
   # AgentMessages::WebIngest). From there it is the same loop: the dispatcher
-  # claims it, answers with no tools, and AgentMessages::WebChat.deliver! marks
+  # claims it, answers with no tools, and the web medium (Media::Web, AgentMessages::WebChat.deliver!) marks
   # the answer posted; the page polls for it (a signed-out visitor has no
   # /cable socket).
   #
@@ -63,7 +63,7 @@ module BuildIntake
                 envelope: { "via" => "build_chat", "request" => @request.token, "user_id" => @user&.id,
                             "signed_in" => @user.present?, "ip_hash" => @ip_hash }.compact }
       message = store(attrs, person, bot_reason)
-      AgentMessages::WebChat.deliver!(message) if message.status == "completed"
+      Media.adapter(message.channel).deliver_reply(message) if message.status == "completed"
       message
     rescue ActiveRecord::RecordNotUnique
       AgentMessage.find_by!(channel: "web", external_id: external_id)

@@ -39,6 +39,7 @@ class AgentMessageTypingJob < ApplicationJob
     message = AgentMessage.find_by(id: message_id)
     return if message.nil? || message.typing_refusal(worker: worker)
     return unless Media.registered?(message.channel)
+    return unless Media.adapter(message.channel).supports?(:typing) # Media::Teams: not built
 
     Media.adapter(message.channel).typing(message, phase: AgentMessage.typing_phase(phase))
   rescue Media::Error => e

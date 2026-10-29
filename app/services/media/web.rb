@@ -8,6 +8,7 @@ module Media
     def capabilities = %i[reply typing]
     def inbound_mode = :http
     def configured? = true
+    def actor = "web-chat"
 
     def deliver_reply(message) = AgentMessages::WebChat.deliver!(message)
 

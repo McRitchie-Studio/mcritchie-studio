@@ -19,12 +19,17 @@ module Media
   # Media.adapter was asked for a medium the registry does not name.
   class UnknownMedium < Error; end
 
+  # Media.post was handed no home: every medium on the walk was unusable.
+  class NoHome < Error; end
+
   # Medium key => adapter class name, resolved lazily so the autoloader (and a
-  # code reload) owns the constants.
+  # code reload) owns the constants. Teams is registered but disabled: every
+  # method raises NotImplementedError (Media::Teams).
   REGISTRY = {
     "discord" => "Media::Discord",
     "email" => "Media::Email",
-    "web" => "Media::Web"
+    "web" => "Media::Web",
+    "teams" => "Media::Teams"
   }.freeze
 
   module_function
@@ -40,6 +45,68 @@ module Media
     name = REGISTRY.fetch(key.to_s) { raise UnknownMedium, "unknown medium #{key.inspect} (known: #{keys.join(', ')})" }
     name.constantize.new
   end
+
+  # The HOME a standalone post goes to (config/agent_media.yml): the first of
+  # purpose → soul → app → defaults with an entry gives the medium and channel;
+  # a medium that is not usable (block missing or disabled, no adapter, or an
+  # adapter that cannot :post) is skipped for its `fallback`, keeping the same
+  # channel name, and the walk is logged once per process. nil only when every
+  # medium on the walk is unusable.
+  #
+  #   Media.home(purpose: :floor_alert)                 # => discord #ops
+  #   Media.home(purpose: :reports, app: "turf_monster") # => discord, no channel
+  #
+  # Never used for a reply: a reply goes back on the message's own medium.
+  def home(purpose:, app: nil, soul: nil, config: Config.current)
+    source, entry = home_entry(config, purpose: purpose, soul: soul, app: app)
+    medium = (entry["medium"].to_s.presence || config.default_medium).to_s
+    channel = entry.key?("channel") ? entry["channel"]&.to_s.presence : config.defaults["channel"].to_s.presence
+    fell_from = []
+    until usable_medium?(config, medium)
+      fell_from << medium
+      medium = config.fallback(medium).to_s
+      next unless medium.empty? || fell_from.include?(medium)
+
+      note_fallback!(source, fell_from, nil)
+      return nil
+    end
+    note_fallback!(source, fell_from, medium) if fell_from.any?
+    Home.new(medium: medium, channel: channel, spec: config.channel(medium, channel), source: source, fell_from: fell_from)
+  end
+
+  # A standalone post to `home` on its medium (Media::Adapter#post). Raises
+  # NoHome for a nil home.
+  def post(home, **payload)
+    raise NoHome, "no usable medium for this post (config/agent_media.yml)" if home.nil?
+
+    adapter(home.medium).post(home, **payload)
+  end
+
+  def usable_medium?(config, key)
+    !key.to_s.empty? && registered?(key) && config.enabled?(key) && adapter(key).supports?(:post)
+  end
+
+  def home_entry(config, purpose:, soul:, app:)
+    [ [ "purposes", "purpose", purpose ], [ "souls", "soul", soul ], [ "apps", "app", app ] ].each do |level, label, name|
+      entry = config.entry(level, name)
+      return [ "#{label}:#{name}", entry ] if entry
+    end
+    [ "defaults", {} ]
+  end
+
+  # One log line per (source, walk) per process: a misconfigured medium must
+  # not write a line on every floor-alert minute.
+  def note_fallback!(source, fell_from, landed)
+    @fallbacks_noted ||= Set.new
+    return unless @fallbacks_noted.add?([ source, fell_from, landed ])
+
+    where = landed ? "falling back to #{landed}" : "and nothing to fall back to; nothing is posted"
+    Rails.logger.warn("[media] #{source}: #{fell_from.join(' → ')} is not usable (config/agent_media.yml), #{where}")
+  end
+
+  def reset_fallback_notes! = @fallbacks_noted = nil
+
+  private_class_method :home_entry, :note_fallback!
 
   # How a soul signs on every medium: a domain's front door as its registry
   # `reply_name` (Turf, not "Turf Monster"), else the Agent's name.
