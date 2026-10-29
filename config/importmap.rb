@@ -50,8 +50,9 @@ pin "gallery_motion"
 # The brand page's Motion tab (task logo-motion-presets; app/javascript/logo_motion.js). GSAP 3.13.0 with
 # MorphSVGPlugin and CustomEase, free under GSAP's standard licence: the UMD builds from
 # cdn.jsdelivr.net/npm/gsap@3.13.0/dist, vendored byte for byte (self-hosted, so the CSP's script-src 'self' covers
-# them), each setting window.gsap / window.<Plugin> when imported. Not preloaded: logo_motion.js imports them, and
-# the presets, only when a Motion tab is on the page.
+# them). They are pinned for their digested URLs only: logo_motion.js reads them from the import map and loads each
+# as a classic <script> (a UMD build assigns window.window, a TypeError in a module), and only when a Motion tab is
+# on the page, so none is preloaded.
 pin "logo_motion"
 pin "logo_motion_parts"
 pin "logo_motion_presets", preload: false

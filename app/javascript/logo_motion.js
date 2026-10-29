@@ -2,7 +2,7 @@
 // SVG for the tone the hub theme shows, mounts it inline in the stage, splits it into parts (logo_motion_parts.js),
 // and plays the chosen preset (logo_motion_presets.js) on a GSAP timeline, with Play / Pause, a scrubber, Replay
 // and a speed control. GSAP and its plugins (vendor/javascript, pinned in config/importmap.rb with no preload) load
-// only when a Motion tab is on the page.
+// only when a Motion tab is on the page, as classic scripts (loadGsap).
 //
 // Usage: <div data-logo-motion data-preset="pop_slide" data-sources='{"light": {"url": …, "thin_url": …,
 //        "accent": "#…"}, …}'> with [data-motion-stage], [data-motion-still], [data-motion-toggle],
@@ -19,11 +19,32 @@ const ROOT = "[data-logo-motion]";
 
 let gsapReady = null;
 
-// GSAP 3.13 with MorphSVGPlugin and CustomEase: UMD builds that set window.gsap and window.<Plugin> when imported.
+// GSAP 3.13 with MorphSVGPlugin and CustomEase. They are UMD builds, which assign window.window as they start: legal
+// in a classic script, a TypeError in a module (strict mode). So each is loaded as a classic <script>, from the URL
+// the page's import map gives its pin (its digested asset path, so the CSP's script-src 'self' covers it).
+export function pinnedUrl(name, doc = document) {
+  const map = doc.querySelector("script[type='importmap']");
+  const url = map && JSON.parse(map.textContent).imports[name];
+  if (!url) throw new Error(`no import map pin for ${name}`);
+  return url;
+}
+
+function classicScript(url) {
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[data-motion-lib][src="${url}"]`);
+    if (existing && existing.dataset.loaded) { resolve(); return; }
+    const script = existing || Object.assign(document.createElement("script"), { src: url, async: false });
+    script.dataset.motionLib = "true";
+    script.addEventListener("load", () => { script.dataset.loaded = "true"; resolve(); }, { once: true });
+    script.addEventListener("error", () => reject(new Error(`${url} did not load`)), { once: true });
+    if (!existing) document.head.appendChild(script);
+  });
+}
+
 function loadGsap() {
   gsapReady ||= (async () => {
-    await import("gsap");
-    await Promise.all([import("gsap_morph_svg"), import("gsap_custom_ease")]);
+    if (!window.gsap) await classicScript(pinnedUrl("gsap"));
+    await Promise.all([window.MorphSVGPlugin || classicScript(pinnedUrl("gsap_morph_svg")), window.CustomEase || classicScript(pinnedUrl("gsap_custom_ease"))]);
     const { gsap, MorphSVGPlugin, CustomEase } = window;
     gsap.registerPlugin(MorphSVGPlugin, CustomEase);
     CustomEase.create("house", "M0,0 C0.12,0.82 0.24,1 1,1");        // fast out, long settle
@@ -31,7 +52,7 @@ function loadGsap() {
     CustomEase.create("houseInOut", "M0,0 C0.76,0 0.12,1 1,1");      // snap between two holds
     const { PRESETS } = await import("logo_motion_presets");
     return { gsap, PRESETS };
-  })();
+  })().catch((error) => { gsapReady = null; throw error; });
   return gsapReady;
 }
 
