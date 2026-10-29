@@ -26,8 +26,12 @@ class AgentSetupsController < ApplicationController
   end
 
   # POST /agents/pending/:id/steps/:key — tick (or, with done=0, untick) one step.
+  # A card past Alex McRitchie's turn is refused with its status before the
+  # write; the write itself is logged against the card if it fails.
   def step
-    @setup.mark_step!(params[:key], by: actor, done: params[:done] != "0")
+    return back_to_card(alert: "This setup is #{@setup.status.humanize.downcase}.") unless @setup.submittable?
+
+    rescue_and_log(target: @setup) { @setup.mark_step!(params[:key], by: actor, done: params[:done] != "0") }
     back_to_card
   rescue ArgumentError => e
     back_to_card(alert: e.message)

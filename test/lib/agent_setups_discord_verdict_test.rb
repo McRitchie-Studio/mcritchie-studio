@@ -49,6 +49,21 @@ class AgentSetupsDiscordVerdictTest < Minitest::Test
     assert_match(/belongs to bot 1405042649479647293, not the application #{APP}/, result.reason)
   end
 
+  # Regression (Carl, pending-agents-page): a blank expected id SKIPPED the id
+  # check, so any bot's token verified on a card with no Application ID.
+  def test_a_blank_expected_id_fails_and_never_passes_any_bot
+    [ nil, "", "   " ].each do |blank|
+      result = verdict(expected_id: blank)
+      refute result.ok?, "expected_id #{blank.inspect} must fail, not skip the id check"
+      assert_match(/no Application ID to check the token against/, result.reason)
+      assert_equal APP, result.bot_user_id, "the bot's id is still reported for the card"
+    end
+  end
+
+  def test_a_padded_expected_id_still_matches
+    assert verdict(expected_id: " #{APP} ").ok?
+  end
+
   def test_a_wrong_name_is_named
     assert_match(/named "Masonbot", not "Mason"/, verdict(me: ME.merge("username" => "Masonbot")).reason)
   end

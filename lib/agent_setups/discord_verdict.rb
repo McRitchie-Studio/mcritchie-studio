@@ -11,7 +11,8 @@ module AgentSetups
   #   me_status, me          GET /users/@me: the status and the parsed body
   #   guilds_status, guilds  GET /users/@me/guilds: the bot's servers (optional)
   #   expected_id            the application id Alex McRitchie pasted; a bot's
-  #                          user id is its application's id
+  #                          user id is its application's id. Required: blank
+  #                          fails, so no token verifies against nothing
   #   expected_name          the bot's name on the card
   #   guild_id               the server the invite adds it to (optional)
   #
@@ -32,7 +33,12 @@ module AgentSetups
       unless me["bot"] == true
         return fail_with("That token is not a bot's: paste the token from Bot → Reset Token.", id)
       end
-      if expected_id.to_s.strip != "" && id != expected_id.to_s
+      # No expected id is a failure, never a pass: without it any bot's token
+      # would verify, and the card would install a stranger's bot.
+      if expected_id.to_s.strip.empty?
+        return fail_with("The card has no Application ID to check the token against: paste it in step 1, then Done.", id)
+      end
+      if id != expected_id.to_s.strip
         return fail_with("The token belongs to bot #{id}, not the application #{expected_id} on the card: reset the token in the right application, or fix the Application ID.", id)
       end
 

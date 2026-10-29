@@ -30,7 +30,8 @@
 # not ingested at all, so the agents' own replies never come back as inbound.
 #
 discord:
-  # The shared bot is Alex's own app (1Password `agents.discord.xan`, a legacy title): it reads the
+  # The shared bot is Alex's own app (1Password `agents.discord.xan`, a legacy title, which
+  # retires to `discord.alex.agents` after Alex's rotation card): it reads the
   # guild and posts every reply.
   bot_user_id: "1481150857809760399"   # Alex's bot user, named "Alex" in Discord (renamed 2026-10-27)
   # Where the floor alert (AgentDispatcherAlertJob) posts, as the same bot: a

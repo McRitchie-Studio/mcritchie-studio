@@ -12,9 +12,10 @@ module AgentSetups
   #
   # The token never passes through the hub: the card only links to where it is
   # made and where it is kept. Details (all public): bot_name, application_id,
-  # guild_id, guild_name, permissions, secret_env, install_app, op_vault,
-  # op_item, op_field, and op_account_id/op_vault_id/op_item_id/op_host, which
-  # build the item's deep link.
+  # guild_id, guild_name, permissions, secret_env, also_env (the shared bot's
+  # var, on the shared bot's own soul only), install_app, op_vault, op_item,
+  # op_field, and op_account_id/op_vault_id/op_item_id/op_host, which build the
+  # item's deep link.
   module DiscordBotKit
     CONFIG_PATH = Rails.root.join("config/agent_setups.yml")
     STEP_KEYS = %w[create_app reset_token paste_token invite done].freeze
@@ -56,9 +57,22 @@ module AgentSetups
         "secret_env" => AgentMessages::DiscordBot.soul_token_env(soul),
         "install_app" => config["install_app"],
         "op_vault" => config["op_vault"],
-        "op_item" => "agents.discord.#{soul}",
-        "op_field" => config["op_field"]
-      }
+        "op_item" => op_item_for(soul),
+        "op_field" => config["op_field"],
+        "also_env" => also_env_for(soul)
+      }.compact
+    end
+
+    # The item a new card points at, per credential-filing's
+    # `<service>.<entity>.<lane>`: discord.<soul>.agents. The older
+    # agents.discord.<bot> items are grandfathered; a card names one with
+    # `bin/agent-setup open --op-item`.
+    def op_item_for(soul) = "discord.#{soul}.agents"
+
+    # DISCORD_AGENT_BOT_TOKEN for the soul whose app is the shared bot, else nil.
+    def also_env_for(soul)
+      shared = config["shared_bot"].to_h
+      shared["soul"].to_s == soul.to_s && shared["env"].present? ? shared["env"].to_s : nil
     end
 
     def application_id(setup)

@@ -90,6 +90,68 @@ class AgentSetups::CommandTest < ActiveSupport::TestCase
     assert_match(/The installed DISCORD_BOT_TOKEN_MASON: Discord refused the token \(401\)/, answer["status_reason"])
   end
 
+  # Regression (Carl, pending-agents-page): only a 401 was mapped; a 429, a 5xx
+  # or an unreachable Discord fell to the outer rescue, which answered {error}
+  # and left the card on verifying with no reason.
+  test "[unit] a rate-limited, 5xx or unreachable re-check moves the card to needs_attention with a reason and a log" do
+    { [ 429, '{"retry_after": 1.5}' ] => /rate-limited, 429/,
+      [ 503, "upstream" ] => /HTTP 503/,
+      :unreachable => /unreachable/ }.each do |answer_from_discord, reason|
+      setup = waiting_setup
+      ENV["DISCORD_BOT_TOKEN_MASON"] = TOKEN
+      AgentMessages::DiscordBot.transport =
+        if answer_from_discord == :unreachable
+          ->(*) { raise AgentMessages::DiscordBot::Error, "Discord unreachable: SocketError" }
+        else
+          ->(*) { answer_from_discord }
+        end
+      answer = nil
+      assert_difference -> { ErrorLog.where(target_type: "AgentSetup", target_id: setup.id).count }, 1 do
+        answer = call("verb" => "report", "id" => setup.id, "by" => "steffon", "ok" => true, "installed" => true)
+      end
+      assert_nil answer["error"], "the card moves; the CLI is not handed a bare error"
+      assert_equal "needs_attention", answer["status"]
+      assert_match reason, answer["status_reason"]
+      assert_match(/could not re-check the installed DISCORD_BOT_TOKEN_MASON.*verify #{setup.id} again/, answer["status_reason"])
+      refute_includes JSON.generate(answer), TOKEN
+      setup.close!(by: "steffon")
+    end
+  end
+
+  test "[unit] a blank Application ID never lets the installed token turn the card ready" do
+    setup = waiting_setup
+    setup.update_columns(details: setup.details.except("application_id"))
+    ENV["DISCORD_BOT_TOKEN_MASON"] = TOKEN
+    AgentMessages::DiscordBot.transport = ->(*) { [ 200, JSON.generate("id" => APP_ID, "bot" => true, "username" => "Mason") ] }
+    answer = call("verb" => "report", "id" => setup.id, "by" => "steffon", "ok" => true, "installed" => true)
+    assert_equal "needs_attention", answer["status"]
+    assert_match(/no Application ID/, answer["status_reason"])
+  end
+
+  test "[unit] the shared bot's soul installs both vars, and the card is ready only when they hold one token" do
+    setup = AgentSetup.find(call("verb" => "open", "kind" => "discord_bot", "soul" => "alex", "by" => "steffon")["id"])
+    assert_equal "DISCORD_AGENT_BOT_TOKEN", setup.detail(:also_env)
+    setup.update!(details: setup.details.merge("application_id" => APP_ID))
+    setup.submit!(by: "Alex McRitchie")
+    setup.await_verify!("Waiting for Steffon.")
+    AgentMessages::DiscordBot.transport = ->(*) { [ 200, JSON.generate("id" => APP_ID, "bot" => true, "username" => setup.detail(:bot_name)) ] }
+    report = -> { call("verb" => "report", "id" => setup.id, "by" => "steffon", "ok" => true, "installed" => true) }
+
+    with_env("DISCORD_BOT_TOKEN_ALEX", TOKEN) do
+      with_env("DISCORD_AGENT_BOT_TOKEN", "the-old-leaked-token") do
+        answer = report.call
+        assert_equal "needs_attention", answer["status"]
+        assert_match(/DISCORD_AGENT_BOT_TOKEN holds a different token/, answer["status_reason"])
+        refute_includes answer["status_reason"], "the-old-leaked-token"
+      end
+      with_env("DISCORD_AGENT_BOT_TOKEN", TOKEN) { assert_equal "ready", report.call["status"] }
+    end
+  end
+
+  test "[unit] a soul that is not the shared bot carries no also_env" do
+    assert_nil AgentSetup.find(open_mason["id"]).detail(:also_env)
+  end
+
   test "[unit] report refuses a card still on Alex McRitchie's turn; close finishes one" do
     id = open_mason["id"]
     assert_match(/is pending/, call("verb" => "report", "id" => id, "by" => "steffon", "ok" => true)["error"])

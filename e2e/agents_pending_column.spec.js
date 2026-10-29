@@ -75,7 +75,7 @@ test("the Pending agents column walks a Discord bot card to Done, readable at bo
   await card.locator("form[data-test='discord-app-id-form'] input[type='text']").fill(APP_ID);
   await card.locator("form[data-test='discord-app-id-form'] [type='submit']").click();
   const invite = page.locator(`${CARD} [data-test='discord-invite-link']`);
-  await expect(invite).toHaveAttribute("href", new RegExp(`client_id=${APP_ID}.*permissions=274877975552`));
+  await expect(invite).toHaveAttribute("href", new RegExp(`client_id=${APP_ID}.*permissions=274877991936`));
 
   await page.locator(`${CARD} [data-key='create_app'] [data-test='agent-setup-step-tick']`).click();
   await expect(page.locator(`${CARD} [data-key='create_app']`)).toHaveAttribute("data-state", "done");

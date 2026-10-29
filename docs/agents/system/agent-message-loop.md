@@ -219,7 +219,9 @@ parse no mentions; a reply through the shared bot leads with the soul's name
 (`DISCORD_AGENT_BOT_TOKEN`). Replies switch per soul: when
 `DISCORD_BOT_TOKEN_<SOUL>` is set (the soul's slug upcased, non-alphanumerics as
 `_`: `DISCORD_BOT_TOKEN_AVI`, `DISCORD_BOT_TOKEN_TURF_MONSTER`,
-`DISCORD_BOT_TOKEN_TYRION`), the reply posts as that soul's own bot, with no
+`DISCORD_BOT_TOKEN_ALEX`, `DISCORD_BOT_TOKEN_MASON`, `DISCORD_BOT_TOKEN_MACK`,
+`DISCORD_BOT_TOKEN_STEFFON`; the selection is by slug, so any soul works with no
+code change), the reply posts as that soul's own bot, with no
 prefix, since the bot's name already says who answered. Absent or blank, the
 shared bot posts it, prefixed, as before. When Discord refuses the soul's bot
 with a 401 or 403 (a bad token, a bot not in the guild, a missing channel

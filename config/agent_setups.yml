@@ -15,6 +15,18 @@
 #   seats                  the set a soul's seat needs. A soul not listed takes
 #                          `cto` when config/cto_reports.yml names it a CTO
 #                          (its morning report carries an embed), else `reply`.
+#   shared_bot             the soul whose own Discord application IS the shared
+#                          bot (DISCORD_AGENT_BOT_TOKEN, the reader and default
+#                          writer). Its card installs the token as BOTH vars in
+#                          one release: a portal reset kills the old token at
+#                          once, so the shared reader must move with it.
+#
+# The integers, for the SOP and a reviewer (AgentSetups::DiscordPermissions sums
+# them; test/services/agent_setups/discord_bot_kit_test.rb pins each):
+#   reply         274877975552
+#   cto           274877991936   reply + Embed Links (16384)
+#   server_admin  275683298320   cto + Manage Channels (16), Roles (268435456)
+#                                and Webhooks (536870912)
 discord_bot:
   guild_id: "1332466565203103744"
   guild_name: McRitchie Studio
@@ -31,5 +43,20 @@ discord_bot:
     # (epic agent-onboarding), so it holds those three Manage flags, not Administrator.
     server_admin: [view_channel, send_messages, read_message_history, send_messages_in_threads, embed_links,
                    manage_channels, manage_roles, manage_webhooks]
+  shared_bot:
+    soul: alex
+    env: DISCORD_AGENT_BOT_TOKEN
+  # The five souls with their own bot (epic agent-onboarding, discord-house-cleaning).
+  # Tyrion is not here and gets no card: his token lives in OpenClaw.
   seats:
+    # The shared bot: it posts every report a soul's bot does not, embeds included.
+    alex: cto
+    # Ops alerts and the floor's summaries, which may carry an embed.
+    mason: cto
+    # Plain-text reminders (the books); nothing with an embed.
+    mack: reply
+    # Builds channels, roles, permissions and webhooks.
     steffon: server_admin
+    # Turf Monster's CTO: its morning report carries an embed (also its
+    # config/cto_reports.yml default, named here so the five read in one place).
+    turf_monster: cto
