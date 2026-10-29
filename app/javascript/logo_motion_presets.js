@@ -75,14 +75,13 @@ function popSlide(ctx, tl) {
   gsap.set(dot, { transformOrigin: "50% 50%" });
 
   // The words wait behind the icon's edge, clipped there, and come out of it as the icon slides home.
-  const words_ = words.length ? ctx.box(words) : null;
-  let name = null;
-  if (words_) {
+  const wordsBox = words.length ? ctx.box(words) : null;
+  if (wordsBox) {
     const pad = vb.width + vb.height;
     const edge = across ? icon.x + icon.width : icon.y + icon.height;
     const box = across ? { x: edge, y: vb.y - pad, width: pad * 2, height: pad * 2 } : { x: vb.x - pad, y: edge, width: pad * 2, height: pad * 2 };
-    name = clipGroup(ctx, words, box);
-    const hidden = across ? -(words_.x + words_.width - edge) : -(words_.y + words_.height - edge);
+    const name = clipGroup(ctx, words, box);
+    const hidden = across ? -(wordsBox.x + wordsBox.width - edge) : -(wordsBox.y + wordsBox.height - edge);
     const axis = across ? "x" : "y";
     tl.fromTo(name.inner, { [axis]: hidden }, { [axis]: hidden, duration: 0.01 }, 0)
       .fromTo(name.rect, { attr: { [axis]: edge + off[axis] } }, { attr: { [axis]: edge + off[axis] }, duration: 0.01 }, 0)

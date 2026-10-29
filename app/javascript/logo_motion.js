@@ -136,6 +136,17 @@ class MotionPlayer {
       if (this.tone !== this.wantedTone()) this.mount({ at: this.tl ? this.tl.time() : 0, playing: this.tl && !this.tl.paused() });
     });
     this.themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    // The logo is sized to the stage in px when it mounts, so a stage that changes size (a rotated phone, a resized
+    // window) mounts it again at the same point.
+    this.sizeWatch = new ResizeObserver(() => {
+      const width = Math.round(this.stage.parentElement.getBoundingClientRect().width);
+      if (this.width && Math.abs(width - this.width) > 2) {
+        clearTimeout(this.resizeTimer);
+        this.resizeTimer = setTimeout(() => this.mount({ at: this.tl ? this.tl.time() : 0, playing: this.tl && !this.tl.paused() }), 150);
+      }
+      this.width ||= width;
+    });
+    this.sizeWatch.observe(this.stage.parentElement);
     this.mount({ at: 0, playing: !reducedMotion() });
   }
 
@@ -196,6 +207,8 @@ class MotionPlayer {
 
   destroy() {
     this.themeWatch.disconnect();
+    this.sizeWatch.disconnect();
+    clearTimeout(this.resizeTimer);
     this.teardown();
     if (this.stage) this.stage.hidden = true;
     if (this.still) this.still.hidden = false;
@@ -230,6 +243,7 @@ class MotionPlayer {
     this.tone = tone;
     this.stage.hidden = false;
     const box = this.stage.getBoundingClientRect();
+    this.width = Math.round(this.stage.parentElement.getBoundingClientRect().width);
     const thin = thinText ? measureThin(thinText, this.stage, gsap) : null;
 
     const bg = document.createElement("div");
