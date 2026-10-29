@@ -155,7 +155,8 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
     assert_select "input[data-test='kit-save-default'][disabled]", 1, "already the default"
     # Links leave the defaults out, so the next tab reads its own saved choice.
     tabs = css_select("[data-test='logo-tab']").map { |a| a["href"] }
-    assert_equal [logo_brand_path("welding", type: "icon"), logo_brand_path("welding"), logo_brand_path("welding", type: "stacked")], tabs
+    assert_equal [logo_brand_path("welding", type: "icon"), logo_brand_path("welding"), logo_brand_path("welding", type: "stacked"),
+                  logo_brand_path("welding", type: "motion")], tabs
   end
 
   test "a param overrides the kit default, the page says so, and Back to kit default is the bare tab" do

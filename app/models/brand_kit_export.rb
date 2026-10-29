@@ -66,7 +66,7 @@ class BrandKitExport
   def readme
     style = Logos::BrandKit.new(brand)
     title = Logos::Variant.brand_name(Logos::NavbarLogo.new(brand))
-    lines = ["# #{title}: logo kit", "", saved_line, "", "Brand page: #{@base_url}/logos/#{brand}", "", "## Files", "",
+    lines = ["# #{title}: logo kit", "", saved_line, *motion_line, "", "Brand page: #{@base_url}/logos/#{brand}", "", "## Files", "",
              "| File | Kit | What it is |", "|------|-----|------------|"]
     drawings[:drawn].each do |name, variant|
       type, tone = FILES.fetch(name)
@@ -95,6 +95,14 @@ class BrandKitExport
     end
     head + rows + ["", "App settings, for config/initializers/studio.rb (studio-engine draws the roles as type-title to type-fine;",
                    "admin and ops pages wrap their content in type-dense):", "", "```ruby", *scale.initializer.lines(chomp: true), "```"]
+  end
+
+  # The kit's motion (task logo-motion-presets), which kit.json carries for an app to play: nothing when none is saved.
+  def motion_line
+    motion = kit.saved_motion or return []
+    preset = Logos::MotionPreset.find(motion["preset"])
+    ["", "Motion: #{preset.title} (#{preset.idea}) on the #{Logos::MotionPreset::LOGOS.fetch(motion['logo'].to_sym)}, played on the brand page's Motion tab: " \
+         "#{@base_url}/logos/#{brand}?type=motion"]
   end
 
   def saved_line

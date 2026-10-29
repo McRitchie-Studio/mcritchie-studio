@@ -3,8 +3,9 @@
 # THE BRAND KIT RECORD's writes (epic brand-studio, piece 3; task brand-kit-record), all from the logo gallery's
 # brand page (/logos/:brand, LogosController#show):
 #
-#   PATCH  /logos/:brand/kit/choice              save the tab's current Icon, Navbar or Stacked choice (?type=)
-#   DELETE /logos/:brand/kit/choice              clear it: the brand shows its default again
+#   PATCH  /logos/:brand/kit/choice              save the tab's current Icon, Navbar or Stacked choice (?type=), or with
+#                                                type=motion the Motion tab's preset and logo (task logo-motion-presets)
+#   DELETE /logos/:brand/kit/choice              clear it: the brand shows its default again (or plays no saved motion)
 #   PATCH  /logos/:brand/kit                     the kit's notes
 #   POST   /logos/:brand/kit/originals           upload one or more original artwork files
 #   GET    /logos/:brand/kit/originals/:id       one original, inline (a picture) or as a download (?download=1)
@@ -38,6 +39,8 @@ class BrandKitsController < ApplicationController
   end
 
   def save_choice
+    return save_motion if params[:type].to_s == "motion"
+
     type = choice_type
     variant = logged { @kit.save_choice(type, params, by: who) }
     # The saved choice is the tab's default now (task logo-original-and-alt, item 9): back to the bare tab, which opens
@@ -47,6 +50,8 @@ class BrandKitsController < ApplicationController
   end
 
   def clear_choice
+    return clear_motion if params[:type].to_s == "motion"
+
     type = choice_type
     logged { @kit.clear_choice(type, by: who) } if @kit.persisted?
     redirect_to back_to_page(anchor: "kit-choice"), notice: "Cleared the #{Logos::Variant::TYPES.fetch(type)} kit choice. #{type == :icon ? 'Each logo draws its own icon again.' : 'The brand shows its default again.'}"
@@ -83,6 +88,18 @@ class BrandKitsController < ApplicationController
   end
 
   private
+
+  # The Motion tab's Save as default: the preset and logo it plays become the kit's motion choice, and the tab opens on it.
+  def save_motion
+    choice = logged { @kit.save_motion(params, by: who) }
+    redirect_to back_to_page(anchor: "motion", keep: %i[type context]),
+                notice: "Saved the kit's motion: #{helpers.logo_motion_summary(choice)}."
+  end
+
+  def clear_motion
+    logged { @kit.clear_motion(by: who) } if @kit.persisted?
+    redirect_to back_to_page(anchor: "motion", keep: %i[type context]), notice: "Cleared the kit's motion."
+  end
 
   # A kit write, with its failure logged against the kit (Studio::ErrorHandling#rescue_and_log, which re-raises: a
   # refusal still reaches the rescue_from above, or create_original's own rescue). Only a saved kit is named as the

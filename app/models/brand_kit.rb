@@ -14,11 +14,14 @@
 #                   read as "alt", which is what it showed when it was saved. No migration: the JSON reads it so.
 #                   `proportion` (task stacked-rule-of-three) is stored only for the rule of three ("rule_of_three"):
 #                   absent is 3-2-1, so every choice saved before it reloads unchanged.
+#   motion_choice   the MOTION the brand's logo plays (task logo-motion-presets): {"preset" => "pop_slide", "logo" => "stacked"},
+#                   a Logos::MotionPreset key and the logo it plays on (navbar or stacked). Saved and cleared from the brand
+#                   page's Motion tab; it moves saved_at like a logo choice, because an app installs it (kit.json).
 #   originals       the ORIGINAL artwork, unedited (Active Storage, the hub's R2 service): SVG, PNG, JPEG, PDF or ZIP,
 #                   25 MB each. Alex McRitchie: every kit keeps its original, so anyone can see where a derivation came from.
 #   notes           the operator's own words on the kit
 #   updated_by      who changed it last (the admin's email)
-#   saved_at        when a logo choice (icon, navbar or stacked) was last saved or cleared: the kit's VERSION, which an
+#   saved_at        when a logo choice (icon, navbar or stacked) or the motion choice was last saved or cleared: the kit's VERSION, which an
 #                   app's installed kit.json carries (BrandKitInstall). Notes and originals move updated_at, never
 #                   this, because no app installs them (task brand-kit-applied-status).
 #
@@ -73,6 +76,7 @@ class BrandKit < ApplicationRecord
   validates :updated_by, length: { maximum: 200 }
   validate :brand_has_a_style
   validate :choices_drawable
+  validate :motion_playable
   validate :originals_allowed
 
   # The brand's record, or a new unsaved one: a brand's first save creates it.
@@ -258,6 +262,35 @@ class BrandKit < ApplicationRecord
     save!
   end
 
+  # True when anything an app installs is saved: a logo choice or the motion choice (the kit status says "saved").
+  def anything_saved? = CHOICE_TYPES.any? { |type| saved?(type) } || motion_choice.present?
+
+  # The saved motion choice, checked ({ "preset" => "pop_slide", "logo" => "stacked" }), or nil when none is saved or
+  # it can no longer be played (a preset since retired, or one the brand's lettering cannot play).
+  def saved_motion
+    Logos::MotionPreset.check_choice(brand, motion_choice) if motion_choice.present?
+  rescue Error
+    nil
+  end
+
+  # Reads `params` (preset and logo, as a request gives them) and stores the motion choice they name, in one spelling.
+  # An Error says what was refused; nothing is stored then.
+  def save_motion(params, by:)
+    choice = Logos::MotionPreset.check(brand, preset: params[:preset].to_s, logo: params[:logo].to_s)
+    self.motion_choice = choice
+    self.updated_by = by
+    self.saved_at = Time.current
+    save!
+    choice
+  end
+
+  def clear_motion(by:)
+    self.motion_choice = nil
+    self.updated_by = by
+    self.saved_at = Time.current
+    save!
+  end
+
   # Adds uploaded files (ActionDispatch::Http::UploadedFile) as originals, each checked first: its type read from its
   # bytes, its size under the cap. One bad file refuses them all, with an Error that names it.
   def add_originals(files, by:)
@@ -353,6 +386,16 @@ class BrandKit < ApplicationRecord
     rescue Error => e
       errors.add(:"#{type}_choice", e.message)
     end
+  end
+
+  # Only a motion choice being written is checked, as with the logo choices: one saved earlier that has gone stale is
+  # read as none (#saved_motion) and must not refuse a save of anything else.
+  def motion_playable
+    return unless motion_choice.present? && will_save_change_to_motion_choice? && Logos::NavbarLogo.brands.include?(brand)
+
+    Logos::MotionPreset.check_choice(brand, motion_choice)
+  rescue Error => e
+    errors.add(:motion_choice, e.message)
   end
 
   def originals_allowed

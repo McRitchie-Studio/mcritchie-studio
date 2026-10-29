@@ -1,0 +1,109 @@
+<%# THE MOTION TAB (task logo-motion-presets; epic logo-motion, phase 1): the brand's kit logo, its saved Navbar or
+    Stacked Logo exactly as the Kit card draws it, played in one of the motion presets Alex McRitchie picked on Logo
+    Motion Lab II (Logos::MotionPreset). Laid out like the other tabs: the header and tabs, the logo top left (here
+    the stage, with Play / Pause, a scrubber, Replay and a speed control under it), the controls card beside it (the
+    preset, the logo it plays on, Save as default). Every control is a plain link or a form; the stage is
+    app/javascript/logo_motion.js, which fetches the logo's SVG and plays the preset on it. Until it has (and with
+    JavaScript off) the frame shows the finished logo as a picture. Under prefers-reduced-motion the stage holds the
+    finished logo and Play runs the motion once. LogoBrandPage#load_motion_page reads the page. Admin only. %>
+<% name = Logos::Variant.brand_name(@logo) %>
+<% ring = "focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!" %>
+<% chosen = ->(on) { "btn btn-sm #{on ? 'btn-primary border border-transparent' : 'btn-neutral'} #{ring}" } %>
+<% motion_params = ->(**changes) { logo_page_keeps.merge(type: :motion, preset: @preset.key, logo: @motion_logo).merge(changes).compact } %>
+<% sources = @motion_logos.to_h do |tone, variant|
+     [tone, { url: logo_asset_path(variant), thin_url: (logo_asset_path(@motion_thin.fetch(tone)) if @motion_thin), accent: @accents.fetch(tone) }.compact]
+   end %>
+<% content_for :html_theme, @theme.to_s if @theme %>
+<%= tag.div class: "max-w-6xl mx-auto px-4 py-6 space-y-5", data: { logo_theme: @theme } do %>
+  <%= render "logos/page_header", name:, chosen:, keep: motion_params.call.except(:context), status_href: "#motion" %>
+
+  <section id="motion" class="space-y-5 min-w-0 scroll-mt-4" data-test="logo-type" data-type="motion" data-layout="split" aria-label="Motion">
+    <div class="grid gap-5 min-w-0 lg:grid-cols-2" data-test="logo-top">
+      <%# The stage: the logo, played. A Navbar Logo plays in a wide frame and a Stacked Logo in a square one. %>
+      <div class="card p-4 sm:p-5 min-w-0 flex flex-col gap-3" data-test="logo-example" data-tones="<%= @motion_logos.keys.join(' ') %>">
+        <%= tag.div class: "flex flex-col gap-3", data: { logo_motion: true, preset: @preset.key, logo: @motion_logo, sources: sources.to_json, test: "motion-player" } do %>
+          <div class="relative overflow-hidden rounded-lg border border-subtle <%= @motion_logo == :navbar ? 'aspect-video' : 'aspect-square' %>" data-test="logo-frame">
+            <div class="absolute inset-0 flex items-center justify-center p-6 sm:p-10" data-motion-still data-test="motion-still">
+              <%= logo_themed_images(@motion_logos, height: @motion_logo == :navbar ? 90 : 260) %>
+            </div>
+            <div class="absolute inset-0" data-motion-stage data-test="motion-stage" hidden></div>
+          </div>
+          <div class="flex items-center gap-2 min-w-0" role="group" aria-label="Playback" data-test="motion-controls">
+            <button type="button" class="<%= chosen.(false) %>" data-motion-toggle data-test="motion-toggle" aria-pressed="false">Play</button>
+            <input type="range" min="0" max="1000" value="0" step="1" class="min-w-0 flex-1 accent-primary" data-motion-scrub
+                   data-test="motion-scrub" aria-label="Scrub through <%= @preset.title %>">
+            <span class="w-12 shrink-0 text-right font-mono text-2xs text-muted tabular-nums" data-motion-clock data-test="motion-clock" aria-hidden="true">0.00s</span>
+            <button type="button" class="<%= chosen.(false) %>" data-motion-replay data-test="motion-replay">Replay</button>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-2" role="group" aria-label="Speed" data-test="motion-speed">
+            <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Speed</span>
+            <div class="flex flex-wrap justify-end gap-2">
+              <% { "1" => "1×", "0.5" => "½×", "0.25" => "¼×" }.each do |speed, label| %>
+                <button type="button" class="<%= chosen.(speed == '1') %>" data-motion-speed="<%= speed %>" aria-pressed="<%= speed == '1' %>"
+                        aria-label="Speed <%= label %>"><%= label %></button>
+              <% end %>
+            </div>
+          </div>
+          <p class="text-2xs text-danger" data-motion-error data-test="motion-error" hidden></p>
+          <p class="text-2xs text-muted motion-safe:hidden" data-test="motion-reduced-note">Reduced motion is on: the stage shows the finished logo. Play runs the motion once.</p>
+        <% end %>
+      </div>
+
+      <div class="card p-4 sm:p-5 space-y-4 min-w-0" data-test="logo-control-card">
+        <%# One control group per line, its name on the left and its options on the right, as on the other tabs. No
+            explanatory text on the brand page (task brand-page-split-layout). %>
+        <div class="flex flex-wrap items-start justify-between gap-2" role="group" aria-label="Preset" data-test="motion-presets">
+          <span class="pt-1.5 text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Preset</span>
+          <div class="grid w-full gap-2 sm:w-auto sm:flex-1 sm:max-w-md sm:grid-cols-2">
+            <% @presets.each do |preset| %>
+              <% on = preset.key == @preset.key %>
+              <%= link_to logo_brand_path(@logo.brand, motion_params.(preset: preset.key)), class: "#{chosen.(on)} justify-between! w-full",
+                          aria: { current: ("true" if on) }, data: { test: "motion-preset", preset: preset.key } do %>
+                <span><%= preset.title %></span><span class="font-mono text-3xs opacity-70"><%= preset.idea %></span>
+              <% end %>
+            <% end %>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-2" role="group" aria-label="Logo" data-test="motion-logo-control">
+          <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Logo</span>
+          <div class="flex flex-wrap justify-end gap-2">
+            <% Logos::MotionPreset::LOGOS.each do |type, label| %>
+              <%= link_to label, logo_brand_path(@logo.brand, motion_params.(logo: type)), class: chosen.(type == @motion_logo),
+                          aria: { current: ("true" if type == @motion_logo) }, data: { test: "motion-logo-option", logo: type } %>
+            <% end %>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <%# Save as default: this preset and logo become the kit's motion choice (BrandKit#save_motion), which an app
+              installs with the kit (kit.json) and this tab opens on. A plain form, no JavaScript. %>
+          <%= form_with url: brand_kit_choice_path(@logo.brand), method: :patch, class: "contents", data: { test: "motion-save-form", turbo: false } do %>
+            <%= hidden_field_tag :type, "motion", id: nil %>
+            <%= hidden_field_tag :preset, @preset.key, id: nil %>
+            <%= hidden_field_tag :logo, @motion_logo, id: nil %>
+            <% if @context == :watermark %><%= hidden_field_tag :context, @context, id: nil %><% end %>
+            <%= submit_tag "Save as default", name: nil, class: chosen.(false), disabled: @motion_default_shown,
+                           data: { test: "motion-save", disable_with: false }, title: ("This is the kit's motion already" if @motion_default_shown) %>
+          <% end %>
+          <% if @motion_default %>
+            <%= form_with url: brand_kit_choice_path(@logo.brand), method: :delete, class: "contents", data: { test: "motion-clear-form", turbo: false } do %>
+              <%= hidden_field_tag :type, "motion", id: nil %>
+              <% if @context == :watermark %><%= hidden_field_tag :context, @context, id: nil %><% end %>
+              <%= submit_tag "Clear saved motion", name: nil, class: chosen.(false), data: { test: "motion-clear", disable_with: false } %>
+            <% end %>
+          <% end %>
+        </div>
+        <p class="text-2xs text-muted" data-test="motion-default-state" data-state="<%= @motion_default ? (@motion_default_shown ? 'shown' : 'changed') : 'none' %>">
+          <% if @motion_default_shown %>
+            Showing the kit's motion.
+          <% elsif @motion_default %>
+            The kit's motion is <%= logo_motion_summary(@motion_default) %> · <%= link_to "Back to the kit's motion", logo_brand_path(@logo.brand, logo_page_keeps.merge(type: :motion)), class: "font-semibold text-primary hover:underline", data: { test: "motion-default-back" } %>
+          <% else %>
+            No motion saved for this kit. Save as default to make this its motion.
+          <% end %>
+        </p>
+      </div>
+    </div>
+  </section>
+<% end %>

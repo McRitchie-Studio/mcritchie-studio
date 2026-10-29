@@ -22,6 +22,7 @@
     },
     "colouring": "alt"
   },
+  "motion": null,
   "saved_at": null,
   "type_scale": {
     "type_base": 16,

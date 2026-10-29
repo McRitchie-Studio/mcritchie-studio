@@ -73,8 +73,8 @@ bin/rails logos:install BRAND=<brand> FROM=<scratchpad>/kit-<brand>.json \
   DEST=/Users/alex/projects/<app>/.worktrees/<task-slug>/public/brand
 ```
 
-It writes the nine SVGs and `kit.json` (the brand, the three choices and the
-kit's `saved_at`). A second kit for the same app goes in its own folder
+It writes the nine SVGs and `kit.json` (the brand, the three choices, the kit's
+`motion` choice and the kit's `saved_at`). A second kit for the same app goes in its own folder
 (`public/brand/<brand>/`) so the two `kit.json` files never overwrite each
 other. Then make the app draw the files as they are: the navbar and footer
 read `navbar-*.svg` and `stacked-*.svg` by tone; never hand-edit a copy.

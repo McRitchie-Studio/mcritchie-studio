@@ -73,8 +73,12 @@ class LogosController < ApplicationController
   end
 
   # The page is read from its params (LogoBrandPage#load_brand_page), which BrandKitsController shares to draw it again.
+  # The Motion tab (?type=motion) is its own page (LogoBrandPage#load_motion_page, logos/motion).
   def show
-    load_brand_page
+    return load_brand_page unless @type == :motion
+
+    load_motion_page
+    render :motion
   end
 
   # Two brands' kits side by side: ?left= and ?right= (Commercial Welding v1 and v2 unless asked; an unknown brand is a

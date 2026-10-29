@@ -122,7 +122,8 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
   test "every other control carries the edits, the edit form carries every other setting, and Reset drops only the edits" do
     get page("industries", rule: 6, guides: 1, ending_weight: 300, icon_colour: "E07B2E")
     edits = { "ending_weight" => "300", "icon_colour" => "E07B2E" }
-    links = css_select("[data-test='logo-tab'], [data-test='rule-option'], [data-test='guides-toggle']").map { |a| a["href"] }
+    # The Motion tab carries no edits (task logo-motion-presets): it plays the kit's own logo.
+    links = css_select("[data-test='logo-tab']:not([data-type='motion']), [data-test='rule-option'], [data-test='guides-toggle']").map { |a| a["href"] }
     links.each { |href| assert_equal edits, query(href).slice(*edits.keys), href }
     context_hidden = css_select("[data-test='context-form'] input[type=hidden]").to_h { |i| [i["name"], i["value"]] }
     assert_equal edits, context_hidden.slice(*edits.keys)

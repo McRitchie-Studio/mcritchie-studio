@@ -715,6 +715,7 @@ is, and that a watermark has none.
 | Icon | the icon, once | none |
 | Navbar Logo | one logo on one rule, and one sentence stating that rule | **Rule** (`?rule=3`, `4` or `6`; the page shows the rule of 4 unless asked), **Words** and **Show guides** |
 | Stacked Logo | one logo in one form and proportion, and a short paragraph stating the proportion's method and that form | **Form** (`?form=`: "Two lines" or "One line", the brand's own and the default, and "With tagline" (`tagline`) where the brand has one; a brand without one says so in one line), **Proportion** (`?proportion=`: "3-2-1" or "Rule of three"; the kit's saved one is the default, else 3-2-1), **Words** and **Show guides** |
+| Motion | the kit's Navbar or Stacked Logo played in a motion preset ([The Motion tab](#the-motion-tab)) | **Preset**, **Logo** (Navbar or Stacked), Play / Pause, a scrubber, Replay and **Speed** |
 
 **One logo, not three** (task logo-download-card, Alex McRitchie 2026-10-14: the three text versions add little now the
 edit panel sets each word's colour and weight). The Navbar and Stacked tabs draw the tab's one logo in one text
@@ -807,6 +808,46 @@ gives the file; the brand page has no Copy SVG (Compare keeps its own).
   kit's steel gradient and tick marks. Turf Monster's head and Commercial
   Welding's helmet and lettering are auto-traced from pictures. Each brand's
   `note` says so on its page.
+
+### The Motion tab
+
+`/logos/<brand>?type=motion` (task logo-motion-presets; epic logo-motion, phase 1) plays the brand's own kit logo in
+one of the motion presets Alex McRitchie picked on Logo Motion Lab II (2026-10-28). The list is
+`Logos::MotionPreset` (`lib/logos/motion_preset.rb`); each preset is a builder in
+`app/javascript/logo_motion_presets.js`, ported from the Lab's one-brand sketches
+(`.agents/epics/logo-motion-ideas/mock-2/films`) to measure the parts at runtime, so none has per-brand code:
+
+| Preset | Idea | What it does |
+|--------|------|--------------|
+| Pop and slide | I1 | a dot opens into the icon through a circle mask at the frame's centre; the icon slides home and the name emerges from its edge |
+| Stack build | I2 | the icon drops in, the name rises out of its baseline, the small line tracks out |
+| Match-cut build | I16 | dot, line, flash (the ground cuts to the accent), seam; the icon opens from the seam |
+| Shape morph | I22 | a circle morphs into the icon's first layer; the other layers open from it |
+| Tracking breath | I23 | the name draws in from a wide spread, the small line breathes out, the icon rises last |
+| Dots to mark | I18 | an accent dot splits into six that orbit and merge; the one dot flies into the icon |
+| Particle resolve | I8 | the welding Spark resolve in the brand's accent, settling on the icon's first layer's outline |
+| Weight flick | I17 | the name rises at weight 300 and flicks to the kit's weights; only where the lettering has weights (not Commercial Welding's traced name) |
+
+**The logo is the kit's.** The tab plays the kit's saved Navbar or Stacked Logo exactly as the Kit card draws it
+(`BrandKit#variant`, with the kit's icon), fetched as SVG from its `/navbar` or `/stacked` route in the tone the hub
+theme shows, and mounted inline. `app/javascript/logo_motion.js` splits it the Lab's way: the first child that is not
+`<defs>` is the icon (each of its paths a layer), a letter drawn at scale 90 or more is the name, the rest the small
+line. A preset's "last layer" (a spark, a highlight) is the icon's last path where it has more than one. Particles and
+dots use the brand's accent (`Logos::MotionPreset.accent`: the tone's `accent`, else the palette's most saturated
+colour). Weight flick also fetches the same logo with both words at weight 300 and morphs each letter to the kit's.
+
+**GSAP** 3.13.0 with MorphSVGPlugin and CustomEase is vendored in `vendor/javascript` and pinned in
+`config/importmap.rb` with no preload. They are UMD builds, which assign `window.window`: a TypeError inside an ES
+module, so `logo_motion.js` loads each as a classic `<script>` from the URL its pin resolves to, and only on a page
+with a Motion tab. The CSP's `script-src 'self'` covers them.
+
+**Controls.** Preset and Logo are links (`?preset=`, `?logo=`; the kit's saved motion, else Pop and slide on the
+Stacked Logo). Under the stage: Play / Pause, a scrubber (it pauses and seeks), Replay and Speed (1×, ½×, ¼×). The
+motion plays once and holds the finished logo. Under `prefers-reduced-motion` the stage shows the finished logo and Play
+runs it once. Until the stage mounts, and with JavaScript off, the frame shows the finished logo as a picture. **Save as
+default** stores `{"preset", "logo"}` as the kit's `motion_choice` (`BrandKit#save_motion`, through `PATCH
+/logos/<brand>/kit/choice` with `type=motion`), which moves `saved_at`, shows on the kit status line ("motion: Pop and
+slide on the Stacked Logo") and rides `kit.json`; **Clear saved motion** takes it away.
 
 ### The Download card
 
@@ -973,10 +1014,11 @@ YAML and stores nothing; those stay in the YAML for now.
 | `brand` | the style key (`studio`, `welding_v2`), unique |
 | `icon_choice` | `{"colouring" => "original", "edits" => {}}` or `{"colouring" => "alt", "edits" => {"icon_colour" => "D7602E"}}`: the icon every logo draws ([the atomic unit](#the-icon-is-the-atomic-unit)), or null |
 | `navbar_choice` | `{"rule" => 4, "text" => "second", "colouring" => "alt", "edits" => {"first_colour" => "635BB2"}}`, or null for the default |
+| `motion_choice` | `{"preset" => "pop_slide", "logo" => "stacked"}`: the motion preset the brand's logo plays and the logo it plays on ([The Motion tab](#the-motion-tab)), or null |
 | `stacked_choice` | `{"form" => "tagline", "proportion" => "rule_of_three", "text" => "first", "colouring" => "original", "edits" => {}}`, or null. `proportion` is stored only for the rule of three: absent is 3-2-1, so a choice saved before it reloads unchanged |
 | `notes` | the operator's own words on the kit |
 | `updated_by` | the admin who changed it last (email) |
-| `saved_at` | when an Icon, Navbar or Stacked choice was last saved or cleared: the kit's version, which `kit.json` carries. Notes and originals move `updated_at`, never this, and neither does a logo-library or brand-style change that redraws the kit ([Which apps have the kit](#which-apps-have-the-kit)) (task brand-kit-applied-status; backfilled from `updated_at` for kits saved before it) |
+| `saved_at` | when an Icon, Navbar or Stacked choice, or the motion choice, was last saved or cleared: the kit's version, which `kit.json` carries. Notes and originals move `updated_at`, never this, and neither does a logo-library or brand-style change that redraws the kit ([Which apps have the kit](#which-apps-have-the-kit)) (task brand-kit-applied-status; backfilled from `updated_at` for kits saved before it) |
 | `originals` | Active Storage attachments: the original artwork |
 
 A choice's `colouring` is optional: one saved before colourings has none and
@@ -1110,7 +1152,8 @@ are the same bytes.
 the brand's kit, as THIS database holds it, into `DEST` (default this app's
 `public/brand/`): every file `BrandKitExport::FILES` names, byte-equal to what
 `/logos/<brand>/kit/<file>` serves, plus `kit.json`, the brand and the three
-choices the files were drawn from (`null` for a default), and the kit's
+choices the files were drawn from (`null` for a default), the kit's `motion` choice (`{"preset", "logo"}`, `null`
+for none), and the kit's
 `saved_at` (ISO 8601 UTC seconds, `null` for a kit never saved), and the brand's
 `type_scale`: the four `Studio.type_*` settings the app's initializer takes
 ([Type Scale](#type-scale)), which the task also prints. A file already right

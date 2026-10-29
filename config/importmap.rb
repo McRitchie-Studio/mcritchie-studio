@@ -47,3 +47,15 @@ pin "chartkick", to: "chartkick.esm.js" # @5.0.1
 # the page. The partials that need them import the *_dom entry.
 pin_all_from "app/javascript/board", under: "board"
 pin "gallery_motion"
+# The brand page's Motion tab (task logo-motion-presets; app/javascript/logo_motion.js). GSAP 3.13.0 with
+# MorphSVGPlugin and CustomEase, free under GSAP's standard licence: the UMD builds from
+# cdn.jsdelivr.net/npm/gsap@3.13.0/dist, vendored byte for byte (self-hosted, so the CSP's script-src 'self' covers
+# them). They are pinned for their digested URLs only: logo_motion.js reads them from the import map and loads each
+# as a classic <script> (a UMD build assigns window.window, a TypeError in a module), and only when a Motion tab is
+# on the page, so none is preloaded.
+pin "logo_motion"
+pin "logo_motion_parts"
+pin "logo_motion_presets", preload: false
+pin "gsap", to: "gsap.min.js", preload: false # @3.13.0
+pin "gsap_morph_svg", to: "gsap-morph-svg.min.js", preload: false # @3.13.0 MorphSVGPlugin
+pin "gsap_custom_ease", to: "gsap-custom-ease.min.js", preload: false # @3.13.0 CustomEase

@@ -1,0 +1,25 @@
+<%# A BRAND PAGE'S HEADER (logos/show and logos/motion): the breadcrumb, the type tabs (Icon, Navbar Logo, Stacked Logo,
+    then Motion; task logo-motion-presets), Context at the far right, and the kit's save line under them.
+    Locals: name (the brand's name), chosen (the page's control-look lambda), keep (optional: the params the Context
+    form carries; the tab's logo_page_params unless given), status_href (optional: where the save line goes; the Kit
+    card on this page unless given). %>
+<header class="space-y-2" data-test="logo-header">
+  <div class="flex flex-wrap items-center gap-x-4 gap-y-3">
+    <nav class="flex items-center gap-1.5 text-muted flex-wrap min-w-0" aria-label="Breadcrumb">
+      <%= link_to "Logos", logos_path(logo_page_keeps), class: "text-sm hover:text-primary", data: { test: "logos-crumb" } %>
+      <span aria-hidden="true">/</span>
+      <h1 class="text-sm font-bold text-heading break-words min-w-0" aria-current="page"><%= name %></h1>
+    </nav>
+    <nav class="flex flex-wrap items-center gap-2" aria-label="Logo type" data-test="logo-tabs">
+      <% Logos::Variant::TYPES.each do |type, label| %>
+        <%= link_to label, logo_brand_path(@logo.brand, logo_page_params(type: (type unless type == :navbar))),
+                    class: chosen.(type == @type), aria: { current: ("page" if type == @type) }, data: { test: "logo-tab", type: type } %>
+      <% end %>
+      <%# The Motion tab plays the kit's own logo in a motion preset; it carries only the page's context and colouring. %>
+      <%= link_to "Motion", logo_brand_path(@logo.brand, logo_page_keeps.merge(type: :motion)),
+                  class: chosen.(@type == :motion), aria: { current: ("page" if @type == :motion) }, data: { test: "logo-tab", type: "motion" } %>
+    </nav>
+    <div class="ml-auto"><%= render "logos/context_form", url: logo_brand_path(@logo.brand), keep: local_assigns[:keep] %></div>
+  </div>
+  <p class="text-2xs text-muted" data-test="kit-status"><%= link_to logo_kit_status(@kit_record, @savers), local_assigns[:status_href] || "#kit", class: "hover:text-primary", title: logo_kit_status(@kit_record, @savers, full: true) %></p>
+</header>
