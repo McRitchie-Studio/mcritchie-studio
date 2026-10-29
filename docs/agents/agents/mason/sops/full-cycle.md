@@ -76,6 +76,12 @@ The atoms remain callable one by one (`bin/release prepare --yes`, `bin/release
 ship --mode cleared --clearance "…" --yes`, `bin/release archive --yes`) when you
 need to stop between them.
 
+**The cycle's prepare is always bare: it sweeps EVERY reviewed task, and takes no
+`--task`.** Its retries and gauntlet re-runs are bare too, so work that reaches
+`reviewed` mid-run rides under the same clearance; the cycle names the release and
+its repos on the line before the ship. When Alex McRitchie scoped the release ("ship
+the two"), run the atoms with `--task` instead.
+
 **Posture per atom — delegate the READS, direct-drive the MUTATIONS.** Any op that
 MUTATES shared state across many minutes is DIRECT-DRIVEN by this orchestrating
 session, never handed to an ephemeral subagent: a subagent that detaches (crash,
