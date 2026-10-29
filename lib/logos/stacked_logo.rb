@@ -33,6 +33,20 @@ module Logos
   #                            icon is W/3 wide (its height follows from its own aspect), centred. Top to bottom:
   #                            icon, 2u, big line(, 2u, small line).
   #
+  # Two more settings (task stacked-line-width-and-spacing), each with today's drawing as its default:
+  #
+  #   small_line      three_two_one (default)  the small line (the second word, or the tagline) as above: tracked out to
+  #                                            SPAN of the big line, or at its own width when it is already wider.
+  #                   match                    tracked out until its ink spans exactly the big line's ink width. The
+  #                                            3-2-1 icon keeps the height 3-2-1 gives it (as tall as the 3-2-1 small
+  #                                            line is wide), so Match never makes the icon grow; the guide drawing's
+  #                                            turned line is that 3-2-1 line, which is what sized the icon. The rule
+  #                                            of three sizes the icon from the name, so Match does not touch it.
+  #   letter_spacing  as_styled (default)      the big line at the brand's own `tracking`.
+  #                   open                     the big line tracked out just enough that no two adjacent letters' ink
+  #                                            comes within OPEN_GAP of each other (#open_tracking). A brand whose
+  #                                            letters are already that far apart draws exactly as styled.
+  #
   # The operator's edits (NavbarLogo#checked_edits) also reach the tagline: its
   # colour, its weight (in place of TAGLINE_WEIGHT; still tracked out to 60%,
   # so it is as wide as before), and `visible: false`, which leaves every band
@@ -51,6 +65,15 @@ module Logos
     TAGLINE_WEIGHT = 500                       # every brand's tagline is Montserrat at this weight
     PROPORTIONS = %i[three_two_one rule_of_three].freeze   # the first is the default
     THIRDS = 3                                 # rule_of_three: this many icons side by side are as wide as the big line
+    SMALL_LINES = %i[three_two_one match].freeze   # the first is the default
+    LETTER_SPACINGS = %i[as_styled open].freeze    # the first is the default
+    # Open's least ink-to-ink gap between adjacent letters of the big line, in cap heights: the tightest pair any
+    # brand here already draws as styled with no letter touching (A to L of COMMERCIAL in Commercial Welding's own
+    # lettering: 0.040; Montserrat's tightest untracked, C to H of McRITCHIE, is 0.054). So Open sets no pair tighter
+    # than a brand here already accepts, and lifts a word no further than that pair needs. Turf Monster's
+    # -0.025 em puts r and f of "Turf" 0.002 cap heights INTO each other; Open lifts the whole word by the one amount
+    # that brings that, its tightest pair, to 0.040 (from -0.036 to +0.007 cap heights of tracking).
+    OPEN_GAP = 0.04
     # The guide drawing (the reel's ghost-copy grid): a ruler of the small line's copies beside the logo, its numbers
     # between the two, and the small line itself turned on end beside the icon. Distances are in design units.
     GUIDE_PAD = { left: 40, top: 40, right: 40, bottom: 40 }.freeze   # `right` is past the ruler
@@ -66,8 +89,10 @@ module Logos
     # tracking and word gap included, at a cap of 1 with its ink from x = 0, `line_width` wide; each letter carries
     # its glyph's ink edges `l` and `r`. The ruler's ghosts and the icon-height proof are copies of it.
     # `icon_width` is the icon's drawn width, and `proportion` the proportion it was laid out in.
-    Layout = Struct.new(:form, :proportion, :width, :height, :icon_width, :icon_height, :icon_left, :edges, :letters, :line, :line_width,
-                        keyword_init: true)
+    # `proof` and `proof_width` are the line the icon-height proof turns on end: `line` itself, except under Match,
+    # where it is the small line as 3-2-1 sets it (the icon's height comes from that line's width).
+    Layout = Struct.new(:form, :proportion, :small_line, :letter_spacing, :width, :height, :icon_width, :icon_height, :icon_left, :edges,
+                        :letters, :line, :line_width, :proof, :proof_width, keyword_init: true)
 
     undef_method :examples                     # the Navbar Logo's list: its keys name a rule, which this has none of
 
@@ -97,44 +122,54 @@ module Logos
 
     # The geometry alone, in design units (x = 0 is the big line's left ink edge, y = 0 the icon's top).
     # A keyword it does not take (the Navbar Logo's `rule:` above all) is refused like any other bad choice.
-    def layout(text: :homogeneous, tone: :light, form: self.form, proportion: PROPORTIONS.first, edits: NO_EDITS, colouring: :alt,
-               icon_colouring: nil, **unknown)
-      check_keywords(unknown, "text, tone, form, proportion, edits, colouring and icon_colouring")
+    def layout(text: :homogeneous, tone: :light, form: self.form, proportion: PROPORTIONS.first, small_line: SMALL_LINES.first,
+               letter_spacing: LETTER_SPACINGS.first, edits: NO_EDITS, colouring: :alt, icon_colouring: nil, **unknown)
+      check_keywords(unknown, "text, tone, form, proportion, small_line, letter_spacing, edits, colouring and icon_colouring")
       look = look(tone, icon_colouring || colouring)   # the icon's: only the icon's size depends on the look
       check_text(text)
       check_form(form)
       check_proportion(proportion)
+      check_setting(small_line, SMALL_LINES, "small line")
+      check_setting(letter_spacing, LETTER_SPACINGS, "letter spacing")
       edits = checked_edits(edits)
       first, second = @words.zip(edited_weights(text, edits)).map { |word, weight| letters(word, weight) }
+      tracking = letter_spacing == :open ? open_tracking(form == :two_line ? [first] : [first, second]) : @tracking
       cap = BIG * U
-      big, width = place(first, cap, 0, 0)
+      big, width = place(first, cap, 0, 0, tracking)
       unless form == :two_line
-        rest, width = place(second, cap, width + GAP_CAPS * cap, 1)   # the Navbar Logo's word gap
+        rest, width = place(second, cap, width + GAP_CAPS * cap, 1, tracking)   # the Navbar Logo's word gap
         big += rest
       end
       weight = edits.dig(:tagline, :weight) || TAGLINE_WEIGHT
-      small = { tagline: -> { tagline_line(width, weight) }, two_line: -> { small_line(second, width) } }[form]&.call
+      set_small = lambda do |span|
+        { tagline: -> { tagline_line(width, weight, span) }, two_line: -> { second_line(second, width, span) } }[form]&.call
+      end
+      small = set_small.call(small_line == :match ? 1.0 : SPAN)
       icon_width, icon_height = icon_box(look, width, proportion, form == :two_line ? [SPAN * width, place(second, U, 0, 1, 0).last].max : SPAN * width)
       edges = [0, icon_height, icon_height + GAP * U, icon_height + (GAP + BIG) * U]
       placed = big.map { |letter| letter.merge(baseline: edges.last, cap:) }
       line = [big, first + second, cap]
+      proof = nil
       if small
         edges += [edges.last + GAP * U, edges.last + (GAP + 1) * U]
         placed += small.map { |letter| letter.merge(baseline: edges.last, cap: U) } unless form == :tagline && edits.dig(:tagline, :visible) == false
-        line = [small, form == :tagline ? tagline_glyphs(weight) : second, U]
+        glyphs = form == :tagline ? tagline_glyphs(weight) : second
+        line = [small, glyphs, U]
+        proof = unit_line(set_small.call(SPAN), glyphs, U) if small_line == :match
       end
       line, line_width = unit_line(*line)
-      Layout.new(form:, proportion:, width:, height: edges.last, icon_width:, icon_height:, icon_left: (width - icon_width) / 2,
-                 edges:, letters: placed, line:, line_width:)
+      proof, proof_width = proof || [line, line_width]
+      Layout.new(form:, proportion:, small_line:, letter_spacing:, width:, height: edges.last, icon_width:, icon_height:,
+                 icon_left: (width - icon_width) / 2, edges:, letters: placed, line:, line_width:, proof:, proof_width:)
     end
 
-    def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, proportion: PROPORTIONS.first, edits: NO_EDITS, colouring: :alt,
-            icon_colouring: nil, **unknown)
-      check_keywords(unknown, "text, tone, form, proportion, guides, edits, colouring and icon_colouring")
+    def svg(text: :homogeneous, tone: :light, guides: false, form: self.form, proportion: PROPORTIONS.first, small_line: SMALL_LINES.first,
+            letter_spacing: LETTER_SPACINGS.first, edits: NO_EDITS, colouring: :alt, icon_colouring: nil, **unknown)
+      check_keywords(unknown, "text, tone, form, proportion, small_line, letter_spacing, guides, edits, colouring and icon_colouring")
       look = look(tone, colouring)
       icon_look = look(tone, icon_colouring || colouring)
       edits = edits_in(look, edits, icon_look)
-      box = layout(text:, tone:, form:, proportion:, edits:, colouring:, icon_colouring:)
+      box = layout(text:, tone:, form:, proportion:, small_line:, letter_spacing:, edits:, colouring:, icon_colouring:)
       render(box, box.height, text, look, guides, edits, icon_look)
     end
 
@@ -174,6 +209,25 @@ module Logos
       raise Error, "unknown proportion #{proportion.inspect[0, 40]}: expected one of #{PROPORTIONS.join(', ')}"
     end
 
+    def check_setting(value, known, name)
+      return if known.include?(value)
+
+      raise Error, "unknown #{name} #{value.inspect[0, 40]}: expected one of #{known.join(', ')}"
+    end
+
+    # OPEN LETTER SPACING: the least tracking (in cap heights, never less than the brand's own) at which every adjacent
+    # pair of letters within each word has at least OPEN_GAP between its ink. A pair's ink gap is the first letter's
+    # advance past its right ink edge, plus the next letter's left side bearing, plus the tracking once per step
+    # (twice at a traced word gap, NavbarLogo#steps): solving that for the gap OPEN_GAP gives the pair's own least
+    # tracking, and the word takes the largest. The boxes are each letter's horizontal ink extent, so a pair whose boxes
+    # clear OPEN_GAP cannot touch however its shapes interlock.
+    def open_tracking(words)
+      needed = words.flat_map do |word|
+        word.each_cons(2).map { |left, right| (OPEN_GAP - (left["adv"] - left["r"] + right["l"])) / steps(left) }
+      end
+      [@tracking, *needed].max
+    end
+
     def check_form(form)
       return if forms.include?(form)
 
@@ -185,8 +239,9 @@ module Logos
     # A word already wider than SPAN of the first is set at its own width instead, never tracked in (Turf Monster's
     # "Monster" is 68% of "Turf"; Alex McRitchie 2026-10-28 chose this over spreading it to the first word's width). A
     # word wider than the first word itself cannot sit under it.
-    def small_line(word, width)
-      tracked(word, width, 1, natural_over: true) do |why|
+    # Under Match (`span` 1) it is tracked out to the first word's whole width instead.
+    def second_line(word, width, span = SPAN)
+      tracked(word, width, 1, span:, natural_over: true) do |why|
         "the second word #{@words[1].inspect} cannot sit under the first word (#{why}): set `stacked: one_line` in the brand's style"
       end
     end
@@ -203,18 +258,18 @@ module Logos
 
     # The tagline, set like the small word: Montserrat at TAGLINE_WEIGHT (or its edited weight), every character (a
     # space too) one glyph. Its paths are font outlines, so they keep the font's fill rule whatever the name is set in.
-    def tagline_line(width, weight = TAGLINE_WEIGHT)
-      tracked(tagline_glyphs(weight), width, 2) do |why|
-        "the tagline #{tagline.inspect} cannot be tracked out to #{(SPAN * 100).round}% of the name's width (#{why}): " \
+    def tagline_line(width, weight = TAGLINE_WEIGHT, span = SPAN)
+      tracked(tagline_glyphs(weight), width, 2, span:) do |why|
+        "the tagline #{tagline.inspect} cannot be tracked out to #{(span * 100).round}% of the name's width (#{why}): " \
           "shorten it, or leave it out of the brand's style"
       end.map { |letter| letter.merge(fill_rule: "nonzero") }
     end
 
-    # A run of glyphs at 1u, tracked out between them to SPAN of `width` and centred on it. Never tracked in: the
-    # block words the refusal when the run is already wider, or cannot be tracked at all. With `natural_over`, a run
-    # already wider than SPAN (but no wider than `width`) is set at its own width, centred.
-    def tracked(glyphs, width, index, natural_over: false)
-      target = SPAN * width
+    # A run of glyphs at 1u, tracked out between them to `span` (SPAN unless Match) of `width` and centred on it. Never
+    # tracked in: the block words the refusal when the run is already wider, or cannot be tracked at all. With
+    # `natural_over`, a run already wider than the span (but no wider than `width`) is set at its own width, centred.
+    def tracked(glyphs, width, index, span: SPAN, natural_over: false)
+      target = span * width
       natural = place(glyphs, U, 0, index, 0).last   # its ink width: `place` starts the ink at 0
       gaps = glyphs.size - 1
       steps = glyphs[0...-1].sum { |glyph| steps(glyph) }   # a word gap inside a traced ending takes two (NavbarLogo#place)
@@ -293,12 +348,13 @@ module Logos
     # the plate, never on the icon, so it reads wherever the icon is filled. In the two-line and tagline forms it is
     # the small line at its own size (1u): the icon is as tall as the small line is wide, by construction. The one-line
     # form has no small line, so it is the whole name at the size whose width is the icon's height (60% of the name).
-    def proof_cap(box) = box.icon_height / box.line_width
+    # Under Match it is the small line as 3-2-1 would set it (Layout#proof), which is what sized the icon.
+    def proof_cap(box) = box.icon_height / box.proof_width
     def proof_x(box) = box.icon_left - PROOF_GAP
 
     def proof_markup(box, fill)
       cap = proof_cap(box)
-      letters = box.line.map { |letter| letter_markup(letter.merge(x: letter[:x] * cap), 0, cap, fill) }.join
+      letters = box.proof.map { |letter| letter_markup(letter.merge(x: letter[:x] * cap), 0, cap, fill) }.join
       %(<g class="guide-proof" transform="translate(#{f(proof_x(box))},#{f(box.icon_height)}) rotate(-90)">#{letters}</g>)
     end
 

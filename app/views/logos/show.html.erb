@@ -121,6 +121,30 @@
                 <% end %>
               </div>
             </div>
+            <%# Task stacked-line-width-and-spacing: the small line's width (the one-line form has none) and the big
+                line's letter spacing. %>
+            <% unless @form == :one_line %>
+              <div class="flex flex-wrap items-center justify-between gap-2" role="group" aria-label="Small line" data-test="small-line-control">
+                <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Small line</span>
+                <div class="flex flex-wrap justify-end gap-2">
+                  <% Logos::Variant::SMALL_LINES.each do |small_line, label| %>
+                    <%= link_to label, logo_brand_path(@logo.brand, logo_page_params(small_line: (small_line unless small_line == @defaults[:small_line]))),
+                                class: chosen.(small_line == @small_line), aria: { current: ("true" if small_line == @small_line) },
+                                data: { test: "small-line-option", small_line: } %>
+                  <% end %>
+                </div>
+              </div>
+            <% end %>
+            <div class="flex flex-wrap items-center justify-between gap-2" role="group" aria-label="Letter spacing" data-test="letter-spacing-control">
+              <span class="text-3xs font-semibold uppercase tracking-wide text-muted" aria-hidden="true">Letter spacing</span>
+              <div class="flex flex-wrap justify-end gap-2">
+                <% Logos::Variant::LETTER_SPACINGS.each do |letter_spacing, label| %>
+                  <%= link_to label, logo_brand_path(@logo.brand, logo_page_params(letter_spacing: (letter_spacing unless letter_spacing == @defaults[:letter_spacing]))),
+                              class: chosen.(letter_spacing == @letter_spacing), aria: { current: ("true" if letter_spacing == @letter_spacing) },
+                              data: { test: "letter-spacing-option", letter_spacing: } %>
+                <% end %>
+              </div>
+            </div>
           <% end %>
           <%# The text version (task logo-download-card): one small control in place of the three versions the tab used to
               draw side by side. The edit panel's "As styled" weight and colour read from it, so it is still a choice. %>

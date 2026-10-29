@@ -223,7 +223,8 @@ class BrandKitTest < ActiveSupport::TestCase
   # Task logo-original-and-alt, item 9: the saved kit choice is the tab's default.
   test "a tab's defaults are its saved choice, else the built-in style" do
     kit = BrandKit.for("welding")
-    assert_equal({ rule: 4, form: :two_line, proportion: :three_two_one, colouring: nil, edits: {}, choice: nil, icon: nil }, kit.page_defaults(:stacked),
+    assert_equal({ rule: 4, form: :two_line, proportion: :three_two_one, small_line: :three_two_one, letter_spacing: :as_styled, colouring: nil, edits: {},
+                   choice: nil, icon: nil }, kit.page_defaults(:stacked),
                  "nothing saved")
     kit.save_choice(:stacked, params(form: "tagline", text: "first", colouring: "original"), by: BY)
     kit.save_choice(:navbar, params(rule: "3", text: "second", colouring: "alt", ending_colour: "D7602E"), by: BY)
@@ -273,6 +274,40 @@ class BrandKitTest < ActiveSupport::TestCase
     kit.update_column(:stacked_choice, { "form" => "two_line", "text" => "second", "edits" => {} })   # a choice saved before the proportion
     assert_equal :three_two_one, kit.reload.variant(:stacked).proportion
     assert_equal [:two_line, :three_two_one], kit.page_defaults(:stacked).values_at(:form, :proportion)
+  end
+
+  # Task stacked-line-width-and-spacing: Match and Open are stored only when chosen, carried in kit.json as stored, and
+  # a choice saved before them reads back as 3-2-1 and As styled.
+  test "a stacked choice round-trips Match and Open, and one without them reloads as 3-2-1 and as styled" do
+    kit = BrandKit.for("turf")
+    kit.save_choice(:stacked, params(form: "two_line", small_line: "match", letter_spacing: "open", text: "first", colouring: "original"), by: BY)
+    stored = { "form" => "two_line", "small_line" => "match", "letter_spacing" => "open", "text" => "first", "colouring" => "original", "edits" => {} }
+    assert_equal stored, kit.reload.stacked_choice
+    assert_equal stored, BrandKitInstall.manifest_for(kit)["stacked"], "kit.json carries them"
+    variant = kit.variant(:stacked, tone: :dark)
+    assert_equal %i[match open], [variant.small_line, variant.letter_spacing]
+    assert_equal Logos::StackedLogo.new("turf").svg(form: :two_line, small_line: :match, letter_spacing: :open, text: :first, tone: :dark,
+                                                    colouring: :original), variant.svg
+    assert_equal %i[match open], kit.page_defaults(:stacked).values_at(:small_line, :letter_spacing)
+    assert kit.default_shown?(:stacked, rule: 4, form: :two_line, small_line: :match, letter_spacing: :open, colouring: :original, edits: {})
+    refute kit.default_shown?(:stacked, rule: 4, form: :two_line, letter_spacing: :open, colouring: :original, edits: {}), "3-2-1"
+    refute kit.default_shown?(:stacked, rule: 4, form: :two_line, small_line: :match, colouring: :original, edits: {}), "as styled"
+
+    kit.save_choice(:stacked, params(form: "two_line", small_line: "three_two_one", letter_spacing: "as_styled", text: "first", colouring: "original"), by: BY)
+    assert_equal({ "form" => "two_line", "text" => "first", "colouring" => "original", "edits" => {} }, kit.reload.stacked_choice, "defaults stored as absent")
+
+    kit.update_column(:stacked_choice, { "form" => "two_line", "text" => "second", "edits" => {} })   # a choice saved before them
+    assert_equal %i[three_two_one as_styled], kit.reload.variant(:stacked).then { |v| [v.small_line, v.letter_spacing] }
+    assert_equal Logos::StackedLogo.new("turf").svg(form: :two_line, text: :second, colouring: :alt), kit.variant(:stacked).svg
+  end
+
+  test "a stacked choice with an unknown small line or letter spacing is refused" do
+    kit = BrandKit.for("studio")
+    error = assert_raises(BrandKit::Error) { kit.save_choice(:stacked, params(form: "two_line", small_line: "wide", text: "first"), by: BY) }
+    assert_equal 'unknown small_line "wide": expected one of three_two_one, match', error.message
+    error = assert_raises(BrandKit::Error) { kit.save_choice(:stacked, params(form: "two_line", letter_spacing: "loose", text: "first"), by: BY) }
+    assert_equal 'unknown letter_spacing "loose": expected one of as_styled, open', error.message
+    refute kit.persisted?
   end
 
   test "a stacked choice with an unknown proportion is refused, and stores nothing" do

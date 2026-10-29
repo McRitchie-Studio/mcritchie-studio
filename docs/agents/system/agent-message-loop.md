@@ -42,8 +42,9 @@ bin/dispatcher ──ping every minute──▶ agent_dispatchers ◀── Agen
 | Routing config | `config/agent_routes.yml`, read by `AgentMessages::Routes` and `AgentMessages::Router` |
 | Inbound, push | `AgentMessages::DiscordGateway` (a thread in the Solid Queue scheduler process on the worker dyno, `config/initializers/agent_message_gateway.rb`), protocol state in `AgentMessages::GatewaySession`, leader lock `AgentMessages::GatewayLeaderLock` → `AgentMessages::DiscordIngest` |
 | Inbound, backstop | `AgentMessageDiscordPollJob` (Solid Queue, `config/recurring.yml`, every 10 minutes) → `AgentMessages::DiscordPoll` → `AgentMessages::DiscordIngest` |
-| Outbound | `AgentMessageReplyJob` → `AgentMessages::DiscordBot#post_reply`, as the soul's own bot (`DISCORD_BOT_TOKEN_<SOUL>`) or the shared bot (below, "Which bot replies") |
-| Typing | `bin/dispatcher` → `POST /api/v1/agent_messages/:id/typing` → `AgentMessageTypingJob` → `AgentMessages::DiscordBot#trigger_typing`, as the bot that will reply (below, "Typing") |
+| Medium seam | `Media.adapter(message.channel)` (`app/services/media/`): `Media::Discord`, `Media::Email`, `Media::Web`, each a `Media::Adapter`. Both jobs below dispatch through it, so a reply always goes back on the medium the message arrived on; a medium's failure is a `Media::Error` (`AgentMessages::DiscordBot::Error` is one). Plan: `.agents/epics/omnichannel-media.md` |
+| Outbound | `AgentMessageReplyJob` → `Media::Discord#deliver_reply` → `AgentMessages::DiscordBot#post_reply`, as the soul's own bot (`DISCORD_BOT_TOKEN_<SOUL>`) or the shared bot (below, "Which bot replies") |
+| Typing | `bin/dispatcher` → `POST /api/v1/agent_messages/:id/typing` → `AgentMessageTypingJob` → `Media::Discord#typing` → `AgentMessages::DiscordBot#trigger_typing`, as the bot that will reply (below, "Typing") |
 | Worker API | `Api::V1::AgentMessagesController` (`/api/v1/agent_messages`) |
 | Worker | `bin/dispatcher` (`bin/lib/agent_dispatcher.rb`), under launchd on Alex McRitchie's Mac; `bin/heartbeat` by hand. Both answer through `AgentMailbox::Responder` (`bin/lib/agent_mailbox.rb`) |
 | Dispatcher health | `POST /api/v1/agent_dispatchers/ping` (with the Mac's op, gh and power health) → `agent_dispatchers`; `AgentDispatcherAlertJob` → `agent_mailbox_incidents`, Discord, and one email per episode state to `floor.escalation_email` |

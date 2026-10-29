@@ -31,7 +31,8 @@ module AgentMessages
     # The per-soul reply token's ENV prefix; the soul slug, upcased, completes it.
     SOUL_TOKEN_PREFIX = "DISCORD_BOT_TOKEN_".freeze
 
-    Error = Class.new(StandardError)
+    # A Media::Error, so the reply job retries it through the medium seam.
+    Error = Class.new(::Media::Error)
     # 401 or 403: a bad token, a bot not in the guild, or a missing channel
     # permission. Retrying the same bot cannot help.
     Unauthorized = Class.new(Error)
