@@ -42,9 +42,11 @@
       <span class="text-xs text-muted hidden sm:inline">Enter to send · Shift+Enter for a new line</span>
       <button type="submit" class="ml-auto inline-flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white disabled:opacity-40"
               <%= "disabled" if text.blank? %> aria-label="Send to <%= BuildController::AGENT_NAME %>" data-test="build-send" data-build-first-send>
-        <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" data-loader-idle>
           <path d="M12 19V5M5 12l7-7 7 7"/>
         </svg>
+        <%# While the message posts (Turbo marks the form aria-busy) the arrow gives way to the branded loader. %>
+        <%= studio_loader_pending(size: 20) if respond_to?(:studio_loader_pending) %>
       </button>
     </div>
   </div>

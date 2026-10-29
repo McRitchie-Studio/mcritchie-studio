@@ -79,6 +79,16 @@ Studio.configure do |config|
     { file: "brand/icon-light.svg",  title: "Navbar Logo" },
     { file: "brand/icon-dark.svg",   title: "SSO Logo" },
   ]
+  # The branded loader (studio-engine docs/LOADER.md): Sparkle, Alex McRitchie's
+  # pick for Studio from the Loader Lab (task branded-app-loader). The kit's
+  # five sparkles flare in turn over the violet icon, which reads on a light
+  # page and a dark one. loader-sparkle.svg holds only those sparkles, cut from
+  # icon-dark.svg in its own viewBox; reinstalling the kit does not touch it.
+  # Guarded the same way: inert until the release relocks an engine that has
+  # the setting.
+  if Studio.respond_to?(:loader=)
+    config.loader = { style: :sparkle, icon: "/brand/icon-dark.svg", art: "/brand/loader-sparkle.svg" }
+  end
   # The navbar's lockup (studio-engine's navbar-kit-wordmark-option): with it the
   # navbar draws the kit's Navbar Logo in place of the icon and the app name.
   # `light` is the artwork for a light page. Guarded so it switches on when the
