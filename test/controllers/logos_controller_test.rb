@@ -379,7 +379,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_response :success
       assert_select "header[data-test='logo-header']" do
         assert_select "nav[aria-label='Breadcrumb'] h1.text-sm", "McRitchie Studio"
-        assert_select "[data-test='logo-tabs'] [data-test='logo-tab']", 3
+        assert_select "[data-test='logo-tabs'] [data-test='logo-tab']", 4   # Icon, Navbar Logo, Stacked Logo and Motion
         assert_select "[data-test='context-form']", 1
         assert_select "[data-test='kit-status']", 1
       end
@@ -463,7 +463,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "window.copyText"
     # Every control on the page has the page's own focus ring: the tabs, the Rule options, the guides toggle, Download and Copy SVG.
     ringed = css_select(".btn").select { |control| control["class"].include?("focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!") }
-    assert_equal %w[logo-tab logo-tab logo-tab logo-download colouring-option colouring-option rule-option rule-option rule-option] +
+    assert_equal %w[logo-tab logo-tab logo-tab logo-tab logo-download colouring-option colouring-option rule-option rule-option rule-option] +
                  %w[text-option] * 3 + %w[guides-toggle kit-save-default compare-link edit-jump kit-save kit-download] +
                  %w[kit-pick-open kit-pick-download kit-pick-download] * 3 + %w[kit-notes-save kit-original-upload], ringed.map { |control| control["data-test"] }
   end
@@ -475,12 +475,12 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_response :success
       assert_select "nav[aria-label='Logo type'][data-test='logo-tabs']", 1 do
         assert_equal [["icon", "Icon", logo_brand_path("industries", type: "icon")], ["navbar", "Navbar Logo", logo_brand_path("industries")],
-                      ["stacked", "Stacked Logo", logo_brand_path("industries", type: "stacked")]],
+                      ["stacked", "Stacked Logo", logo_brand_path("industries", type: "stacked")], ["motion", "Motion", logo_brand_path("industries", type: "motion")]],
                      css_select("a[data-test='logo-tab']").map { |tab| [tab["data-type"], tab.text.strip, tab["href"]] }
         assert_equal [current], css_select("a[data-test='logo-tab'][aria-current='page']").map { |tab| tab["data-type"] }
-        assert_select "a[data-test='logo-tab'].btn", 3, "a .btn carries the focus ring"
+        assert_select "a[data-test='logo-tab'].btn", 4, "a .btn carries the focus ring"
         assert_select "a[data-test='logo-tab'][aria-current='page'].btn-primary.border.border-transparent", 1, "the chosen tab is the same box as the others"
-        assert_select "a[data-test='logo-tab'].btn-neutral:not(.border-transparent)", 2
+        assert_select "a[data-test='logo-tab'].btn-neutral:not(.border-transparent)", 3
       end
       assert_select "[data-test='logo-type'][data-type='#{current}']", 1
     end
@@ -570,7 +570,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     get logo_brand_path("turf", type: "stacked", context: "watermark", rule: 3, guides: 1)
     assert_response :success
     kept = { context: "watermark", rule: 3, guides: 1 }
-    assert_equal [logo_brand_path("turf", kept.merge(type: "icon")), logo_brand_path("turf", kept), logo_brand_path("turf", kept.merge(type: "stacked"))],
+    # The Motion tab (task logo-motion-presets) carries only the context: a motion plays the kit's own logo.
+    assert_equal [logo_brand_path("turf", kept.merge(type: "icon")), logo_brand_path("turf", kept), logo_brand_path("turf", kept.merge(type: "stacked")),
+                  logo_brand_path("turf", context: "watermark", type: "motion")],
                  css_select("a[data-test='logo-tab']").map { |tab| tab["href"] }
     assert_select "form[data-test='context-form'][action=?]", logo_brand_path("turf") do
       assert_equal [%w[type stacked], %w[rule 3], %w[guides 1]], css_select("form[data-test='context-form'] input[type='hidden']").map { |i| [i["name"], i["value"]] }
@@ -950,7 +952,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     get logo_brand_path("studio", type: "stacked", form: "tagline", context: "watermark", guides: 1)
     assert_response :success
     kept = { context: "watermark", form: "tagline", guides: 1 }
-    assert_equal [logo_brand_path("studio", kept.merge(type: "icon")), logo_brand_path("studio", kept), logo_brand_path("studio", kept.merge(type: "stacked"))],
+    assert_equal [logo_brand_path("studio", kept.merge(type: "icon")), logo_brand_path("studio", kept), logo_brand_path("studio", kept.merge(type: "stacked")),
+                  logo_brand_path("studio", context: "watermark", type: "motion")],
                  css_select("a[data-test='logo-tab']").map { |tab| tab["href"] }
     assert_equal [%w[type stacked], %w[form tagline], %w[guides 1]], css_select("form[data-test='context-form'] input[type='hidden']").map { |i| [i["name"], i["value"]] }
     assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("studio", type: "stacked", context: "watermark", form: "tagline"), text: "Hide"
