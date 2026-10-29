@@ -28,9 +28,13 @@ class ReleaseCycleTest < Minitest::Test
   # last one repeats); `steps` maps a step name to a list of [status, output]
   # answers consumed in order (the last repeats).
   class FakeDeps
-    attr_reader :calls, :reads, :checked
+    attr_reader :calls, :reads, :checked, :sha_reads
 
-    def initialize(snapshots:, steps: {}, http: {}, session: OWN, targets: nil)
+    # `shas` answers deployed_sha_verdicts: a list of verdict hashes, nil (unreadable),
+    # or a lambda of the release slug. Default: every app runs its frozen SHA.
+    def initialize(snapshots:, steps: {}, http: {}, session: OWN, targets: nil, shas: :all_live)
+      @shas = shas
+      @sha_reads = []
       @snapshots = snapshots
       @steps = steps.transform_values(&:dup)
       @http = http
@@ -65,6 +69,13 @@ class ReleaseCycleTest < Minitest::Test
     def http_status(url)
       @checked << url
       @http.fetch(url, "200")
+    end
+
+    def deployed_sha_verdicts(slug)
+      @sha_reads << slug
+      return [{ "repo" => "mcritchie-studio", "sha" => "abc1234def", "ok" => true, "reason" => "" }] if @shas == :all_live
+
+      @shas.respond_to?(:call) ? @shas.call(slug) : @shas
     end
   end
 
@@ -217,15 +228,59 @@ class ReleaseCycleTest < Minitest::Test
     assert_equal %w[prepare], step_names(deps)
   end
 
+  QA_TURF = { "mcritchie-studio" => "hub1111aaaa", "turf-monster" => "turf222bbbb" }.freeze
+
+  def gauntlet_record(status: "completed", turf_sha: QA_TURF["turf-monster"])
+    { "status" => status, "occurred_at" => "2026-10-29T15:00:00Z", "actor" => "turf_monster",
+      "metadata" => { "shas" => { "turf-monster" => turf_sha } } }
+  end
+
+  def turf_release(gauntlet:)
+    release("assembled", repos: %w[mcritchie-studio turf-monster], gauntlet_required: true,
+                         gauntlet_status: gauntlet && gauntlet["status"], gauntlet: gauntlet, qa_shas: QA_TURF)
+  end
+
   test "[unit] an assembled Turf release with no green gauntlet runs prepare (which runs it) before ship" do
-    turf = release("assembled", repos: ["turf-monster"], gauntlet_required: true, gauntlet_status: nil)
-    green = release("assembled", repos: ["turf-monster"], gauntlet_required: true, gauntlet_status: "completed")
+    turf = turf_release(gauntlet: nil)
+    green = turf_release(gauntlet: gauntlet_record)
     deps = FakeDeps.new(snapshots: [snap(current: turf), snap(current: green)])
     status, out = run_cycle(deps)
 
     assert_equal 0, status, out
     assert_equal %w[prepare ship archive], step_names(deps)
-    assert_includes out, "devnet gauntlet owed"
+    assert_includes out, "devnet gauntlet owed on rel-x: it has no devnet gauntlet recorded"
+  end
+
+  # The defect (rel-20261029-f328a7): the newest gauntlet was green, so the cycle
+  # counted it, though it tested Turf code QA no longer runs. Bound to the SHAs.
+  test "[unit] a green gauntlet on older Turf code is owed: QA verify re-runs prepare before ship" do
+    stale = turf_release(gauntlet: gauntlet_record(turf_sha: "old0001cccc"))
+    deps = FakeDeps.new(snapshots: [snap(current: stale), snap(current: turf_release(gauntlet: gauntlet_record))])
+    status, out = run_cycle(deps)
+
+    assert_equal 0, status, out
+    assert_equal %w[prepare ship archive], step_names(deps), "a stale green gauntlet must not reach the ship"
+    assert_includes out, "a green devnet gauntlet on other Turf code: it tested turf-monster@old0001, " \
+                         "QA runs turf-monster@turf222"
+  end
+
+  test "[unit] a green gauntlet covering the Turf SHAs on QA owes nothing: no prepare before ship" do
+    deps = FakeDeps.new(snapshots: [snap(current: turf_release(gauntlet: gauntlet_record))])
+    status, out = run_cycle(deps)
+
+    assert_equal 0, status, out
+    assert_equal %w[ship archive], step_names(deps)
+    refute_includes out, "owed"
+  end
+
+  test "[unit] a red newest gauntlet, or one recorded with no SHAs, is owed" do
+    red = turf_release(gauntlet: gauntlet_record(status: "failed"))
+    assert_match(/RED newest devnet gauntlet/, ReleaseCycle.gauntlet_owed(red))
+    unbound = turf_release(gauntlet: gauntlet_record.merge("metadata" => {}))
+    assert ReleaseCycle.gauntlet_owed(unbound), "a record naming no SHAs covers nothing"
+    no_qa_shas = turf_release(gauntlet: gauntlet_record).merge("qa_shas" => nil)
+    assert ReleaseCycle.gauntlet_owed(no_qa_shas), "with no QA SHA to bind to, nothing is covered"
+    assert_nil ReleaseCycle.gauntlet_owed(release("assembled", repos: ["mcritchie-studio"])), "no Turf repo, none owed"
   end
 
   test "[unit] ship refused for the gauntlet re-runs prepare, then ships once more" do
@@ -259,6 +314,59 @@ class ReleaseCycleTest < Minitest::Test
     assert_equal ReleaseCycle::VERIFY_FAILED, status
     assert_empty step_names(deps)
     assert_includes out, "✗ mcritchie-studio https://qa.example/ → 503"
+  end
+
+  # --- prod verify proves the deployed SHA, not only a 200 -----------------------
+
+  def shipped_snap = snap(last_shipped: { "slug" => "rel-s", "repos" => ["turf-monster"] }, archivable: 2)
+
+  test "[unit] prod verify fails VERIFY_FAILED when an app runs a SHA other than the frozen one" do
+    mismatch = [{ "repo" => "mcritchie-studio", "sha" => "hub1111aaaa", "ok" => true, "reason" => "" },
+                { "repo" => "turf-monster", "sha" => "turf222bbbb", "ok" => false,
+                  "reason" => "the current Heroku release is not at the frozen SHA" }]
+    deps = FakeDeps.new(snapshots: [shipped_snap], shas: mismatch)
+    status, out = run_cycle(deps)
+
+    assert_equal ReleaseCycle::VERIFY_FAILED, status, out
+    assert_equal ["rel-s"], deps.sha_reads, "the SHAs are read for the release that shipped"
+    assert_empty step_names(deps), "no archive while production is unproven"
+    assert_includes out, "✗ turf-monster runs turf222 — the current Heroku release is not at the frozen SHA"
+    assert_includes out, "✓ mcritchie-studio runs hub1111 (the frozen SHA)"
+  end
+
+  test "[unit] prod verify fails closed when the deployed SHAs cannot be read" do
+    deps = FakeDeps.new(snapshots: [shipped_snap], shas: nil)
+    status, out = run_cycle(deps)
+
+    assert_equal ReleaseCycle::VERIFY_FAILED, status
+    assert_empty step_names(deps)
+    assert_includes out, "could not read rel-s's frozen SHAs"
+  end
+
+  test "[unit] prod verify passes and archives when every app runs its frozen SHA" do
+    deps = FakeDeps.new(snapshots: [shipped_snap])
+    status, out = run_cycle(deps)
+
+    assert_equal 0, status, out
+    assert_equal %w[archive], step_names(deps)
+    assert_equal ["rel-s"], deps.sha_reads
+  end
+
+  test "[unit] after a ship in this cycle, prod verify reads the SHAs of the release it shipped" do
+    lagging = snap(last_shipped: { "slug" => "rel-older", "repos" => [] }, archivable: 1)
+    deps = FakeDeps.new(snapshots: [snap(current: release("assembled", slug: "rel-x")), lagging])
+    status, out = run_cycle(deps)
+
+    assert_equal 0, status, out
+    assert_equal ["rel-x"], deps.sha_reads, "never the board's lagging last_shipped"
+  end
+
+  test "[unit] a URL that fails prod verify stops before the SHA read" do
+    deps = FakeDeps.new(snapshots: [shipped_snap], http: { "https://prod.example/up" => "503" })
+    status, = run_cycle(deps)
+
+    assert_equal ReleaseCycle::VERIFY_FAILED, status
+    assert_empty deps.sha_reads
   end
 
   # --- the two refusals ----------------------------------------------------------
