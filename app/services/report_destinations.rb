@@ -64,6 +64,12 @@ module ReportDestinations
   # way: the report already signs itself.
   def soul_for(report_key) = CtoReport.soul_for(report_key)
 
+  # The app a report speaks for, for its home: `cto_report:<app>`'s app, else nil.
+  def app_for(report_key)
+    family, app = report_key.to_s.split(":", 2)
+    family == "cto_report" ? app.presence : nil
+  end
+
   # The bot `report_key` would post as now (AgentMessages::BotSelector::Choice):
   # the soul, the ENV name and whether it is set. Never the token.
   def bot_choice(report_key) = AgentMessages::BotSelector.choice(soul_for(report_key))
@@ -164,9 +170,9 @@ module ReportDestinations
 
     def attempt(receipt)
       destination = ReportDestination.for(@report_key)
-      channel = destination&.discord_channel
+      channel = destination ? destination.discord_channel : home_channel
       return skip(receipt, :not_configured, "no channel is chosen for #{@report_key}") if channel.nil?
-      return skip(receipt, :disabled, "delivery of #{@report_key} is turned off") unless destination.enabled?
+      return skip(receipt, :disabled, "delivery of #{@report_key} is turned off") if destination && !destination.enabled?
       return skip(receipt, :not_configured, "#{channel.display_name} is archived or not postable") unless channel.selectable?
 
       posted, via = post(receipt, channel)
@@ -178,6 +184,19 @@ module ReportDestinations
       finished(receipt)
     rescue AgentMessages::DiscordBot::Error => e
       failure(receipt, channel, e)
+    end
+
+    # WITH NO DESTINATION ROW, the reports home (config/agent_media.yml
+    # `purposes.reports`, asked with the CTO report's app): a Discord channel
+    # `id` the directory knows (DiscordChannel). A row chosen in admin always
+    # wins, even one with no channel. Today the home names no channel, so such
+    # a report stays not_configured, as before this file existed; a webhook
+    # channel or another medium is not a report destination yet.
+    def home_channel
+      home = Media.home(purpose: :reports, app: ReportDestinations.app_for(@report_key))
+      return nil unless home&.medium == "discord" && home.channel_id
+
+      DiscordChannel.find_by(external_id: home.channel_id)
     end
 
     # The CTO soul's own bot first (a non-CTO key has no soul, so the shared bot

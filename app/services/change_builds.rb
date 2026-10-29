@@ -213,11 +213,15 @@ module ChangeBuilds
     message
   end
 
-  def post_to_ops!(task, routes: AgentMessages::Routes.load, bot: nil)
-    return if routes.ops_channel_id.nil? || (bot.nil? && !AgentMessages::DiscordBot.configured?)
+  # The ops line goes to the floor alert's home (config/agent_media.yml
+  # `purposes.floor_alert`: discord #ops), as the shared bot.
+  def post_to_ops!(task, home: Media.home(purpose: :floor_alert), bot: nil)
+    return if home.nil? || !home.channel?
+    return if home.medium == "discord" && bot.nil? && !AgentMessages::DiscordBot.configured?
 
-    (bot || AgentMessages::DiscordBot.new).post_message(routes.ops_channel_id, content: ops_text(task)[0, 1900],
-                                                                               nonce: "chb-#{task.id}-#{run_of(task)['attempts'].to_i}")
+    payload = { content: ops_text(task)[0, 1900], nonce: "chb-#{task.id}-#{run_of(task)['attempts'].to_i}" }
+    payload[:bot] = bot if bot
+    Media.post(home, **payload)
   end
 
   def parse_time(value)

@@ -1,0 +1,105 @@
+# Where the agents and apps POST on their own: each one's HOME, a medium plus a
+# channel (docs/agents/system/agent-message-loop.md, "Media"; the plan is
+# .agents/epics/omnichannel-media.md). Read by Media::Config, asked through
+# Media.home(purpose:, app:, soul:).
+#
+# A home is NEVER where a reply goes: a reply always goes back on the medium the
+# message arrived on (AgentMessageReplyJob reads the row's own `channel`). This
+# file decides only the standalone posts: the floor alert, release notes, /build
+# app requests, and a report with no channel chosen in admin.
+#
+# RESOLUTION. Media.home walks purpose → soul → app → defaults and takes the FIRST
+# level with an entry. That entry's `medium` (else defaults.medium) and `channel`
+# (else defaults.channel) make the home; a `channel: null` written on purpose
+# means "no channel": the caller posts nothing, as before.
+#
+# FALLBACK. A medium whose block is missing, `enabled: false`, or that has no
+# adapter in Media::REGISTRY is skipped for its block's `fallback` (else
+# defaults.fallback), keeping the same channel NAME; Media logs the walk once per
+# process. So a half-set Slack never silences the floor alert.
+#
+# SWITCHING. Move an app, a soul or a purpose to another medium by editing its
+# `medium:` here (one line), once that medium's block is enabled and names the
+# channel. Nothing else changes.
+#
+# CHANNELS are logical names, per medium. A Discord channel is either an `id` (a
+# snowflake, quoted, posted to by the shared bot) or a `webhook_env` (an ENV name,
+# or a list tried in order: the URL is a secret and never lives here).
+#
+# The dispatcher (bin/dispatcher) does not read this file, so it is not in
+# AgentDispatcher::CodeFingerprint; add it there the day bin/lib reads it.
+#
+# Every entry below resolves to exactly the Discord destination each poster used
+# before this file existed (card media-homes-config: zero behaviour change).
+
+defaults:
+  medium: discord
+  channel: internal
+  fallback: discord
+
+discord:
+  enabled: true
+  guild_id: "1332466565203103744"        # McRitchie Studio (config/agent_routes.yml guilds)
+  channels:
+    # The floor alert's channel (AgentMessages::FloorAlert, ChangeBuilds): was
+    # agent_routes.yml discord.ops_channel_id. lobster-tank until an ops channel exists.
+    ops:
+      id: "1479973077021495478"
+    # Release notes (Release::Conductor, POST /api/v1/release_notes), through the
+    # release-notes webhook, else the deploy webhook (ReleaseNotes::DiscordClient).
+    releases:
+      webhook_env: [ DISCORD_RELEASE_NOTES_WEBHOOK_URL, DISCORD_DEPLOY_WEBHOOK_URL ]
+    # The two lanes of DiscordChannels: messages from the outside world, and the
+    # team talking to itself (1Password discord.webhooks).
+    external:
+      webhook_env: DISCORD_EXTERNAL_WEBHOOK_URL
+    internal:
+      webhook_env: DISCORD_INTERNAL_WEBHOOK_URL
+
+# Card 3 (slack-medium-outbound) adds the adapter and turns this on.
+slack:
+  enabled: false
+  token_env: SLACK_BOT_TOKEN
+  signing_secret_env: SLACK_SIGNING_SECRET
+  fallback: discord
+  channels: {}
+
+# A registered stub (Media::Teams): every method raises NotImplementedError.
+teams:
+  enabled: false
+  fallback: discord
+  channels: {}
+
+purposes:
+  floor_alert:
+    medium: discord
+    channel: ops
+  release_notes:
+    medium: discord
+    channel: releases
+  app_requests:
+    medium: discord
+    channel: external
+  # A report with no destination row: rows chosen at /admin/report_destinations
+  # (or an owner's /agents/:slug/settings) always win. No channel, so such a
+  # report stays `not_configured`, as before.
+  reports:
+    medium: discord
+    channel: null
+
+# Each app's and soul's main home: no poster reads one yet (purposes come first).
+apps:
+  mcritchie_studio:
+    medium: discord
+  turf_monster:
+    medium: discord
+  cyvasse:
+    medium: discord
+
+souls:
+  avi:
+    medium: discord
+  alex:
+    medium: discord
+  turf_monster:
+    medium: discord

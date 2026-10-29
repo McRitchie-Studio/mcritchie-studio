@@ -1072,7 +1072,9 @@ class Release
       return result if dry_run
 
       begin
-        ReleaseNotes::DiscordClient.deliver(**formatter.discord_payload)
+        # The release_notes home (config/agent_media.yml: discord #releases,
+        # the release-notes webhook, else the deploy webhook).
+        Media.post(Media.home(purpose: :release_notes), **formatter.discord_payload)
         result[:delivered] = true
       rescue StandardError => e
         # Defense in depth: this runs AFTER an irreversible prod deploy + ship!,

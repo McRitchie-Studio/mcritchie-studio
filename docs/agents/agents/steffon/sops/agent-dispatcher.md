@@ -85,7 +85,7 @@ The dispatcher will take it on its next poll; a hand claim only competes with it
 | The answer path | `AgentMailbox::Responder` in `bin/lib/agent_mailbox.rb`, shared with `bin/heartbeat` |
 | "typing…" while it answers | Each live run asks `POST /api/v1/agent_messages/:id/typing` at its start and every 7 seconds, up to 3 minutes; the hub's `AgentMessageTypingJob` shows typing as the bot that will reply ([loop doc](../../../system/agent-message-loop.md), "Typing"). A web-chat run streams (`stream-json`, partial messages) so its pulse says `thinking` until the answer's text starts, then `typing`, sent at once on the change ([loop doc](../../../system/agent-message-loop.md), "Web chat") |
 | Its ping and the alerts | `POST /api/v1/agent_dispatchers/ping`; `AgentDispatcherAlertJob` every minute on the worker dyno (`config/recurring.yml`) |
-| Where alerts post | `discord.ops_channel_id` in `config/agent_routes.yml` (`lobster-tank` today), as the shared bot |
+| Where alerts post | The floor alert's home in `config/agent_media.yml` (`purposes.floor_alert` → `discord.channels.ops`, `lobster-tank` today), as the shared bot ([loop doc](../../../system/agent-message-loop.md#media)) |
 | Where it escalates | `floor.escalation_email` in `config/agent_routes.yml` (alex@mcritchie.studio; that address when unset), by email through the hub's outbox (`Studio::Email.deliver`, `AgentFloorMailer`) |
 | The harness probe | `AgentMailbox::HarnessProbe` (`bin/lib/agent_harness_probe.rb`), on its own thread each beat; its answer rides the next ping and lands on the dispatcher row (`op_ok`, `gh_ok`, `power_source`, `harness_failing_beats`) |
 | What you watch | `/admin/agent_messages`: the dispatcher row (live, paused, silent) above the message list |
@@ -251,7 +251,7 @@ Discord line it quotes and take the matching row below.
 | `Change build not started: the launcher could not run bin/task begin for <slug> (<reason>). The card stays designed; attempt N of M. By hand: …` | `change_build_refused`, one per card: the build launcher could not start a chat-sourced change card ([client-build-launcher](../../../system/client-build-launcher.md#change-cards)). The launcher retries it every 10 minutes up to `max_attempts` | Read the reason (no free desk port, a preflight that could not describe the desk, a lane cap). Fix it, or run the `task begin` line it names by hand, then start the builder with the launch line that `bin/task show <slug> -v` carries in `devops.change_build` |
 | `Agent dispatcher back` / `Agent harness healthy` / `Agent mailbox clear` / `<slug> no longer waits for review` / `<slug> no longer waits for its build` | The incident is over: for a card, a review claim appeared or it left `submitted`, or its build started or it left `designed` | Nothing |
 
-With no bot token or no `ops_channel_id`, nothing is posted and the worker logs
+With no bot token or no floor-alert channel in `config/agent_media.yml`, nothing is posted and the worker logs
 `[agent-dispatcher] floor alert not posted (...)`.
 
 The inbound Gateway listener is not on this floor alert. When it stands down to

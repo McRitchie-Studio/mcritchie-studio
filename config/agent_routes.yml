@@ -23,8 +23,9 @@
 #   ignore: true        mute the channel: nothing in it is stored, mentions included
 # A thread or forum post takes its parent channel's override unless it has its own.
 #
-# `ops_channel_id` is where the dispatcher's floor alert posts
-# (docs/agents/agents/steffon/sops/agent-dispatcher.md).
+# Where the floor alert and the other standalone posts go is NOT here: it is
+# each purpose's home in config/agent_media.yml (the ops channel is
+# `discord.channels.ops`). This file is only "who answers" for inbound.
 #
 # `bot_user_id` is the shared bot's own user id. Messages written by any bot are
 # not ingested at all, so the agents' own replies never come back as inbound.
@@ -34,11 +35,6 @@ discord:
   # retires to `discord.alex.agents` after Alex's rotation card): it reads the
   # guild and posts every reply.
   bot_user_id: "1481150857809760399"   # Alex's bot user, named "Alex" in Discord (renamed 2026-10-27)
-  # Where the floor alert (AgentDispatcherAlertJob) posts, as the same bot: a
-  # silent bin/dispatcher, a routed message waiting too long, a submitted card
-  # nobody started reviewing, a change card the build launcher could not start.
-  # One alert per incident and one recovery line. lobster-tank until an ops channel exists.
-  ops_channel_id: "1479973077021495478"
   guilds:
     "1332466565203103744":             # McRitchie Studio: every channel and thread
       name: McRitchie Studio
