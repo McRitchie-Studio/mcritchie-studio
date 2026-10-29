@@ -208,4 +208,20 @@ class Release::DevnetGauntletRunTest < ActiveSupport::TestCase
     assert_includes result.reason, "wallet session refused"
     refute_includes result.reason, "deadline"
   end
+
+  # The arithmetic's getTransaction retries sit under the same clock.
+  def test_no_arithmetic_starts_once_the_deadline_has_passed
+    fetched = false
+    result = Run.new(driver: ->(argv, _budget) { [GREEN.fetch(argv.first), true] },
+                     manifest: -> { { "winners" => WINNERS } },
+                     transaction: ->(_sig) { fetched = true; settle_tx },
+                     deadline: 600, clock: (lambda do
+                       @ticks = (@ticks || -1) + 1
+                       @ticks * 90.0 # 90s per clock read: 540s at the last step, 630s at the arithmetic
+                     end)).call
+
+    assert_equal "arithmetic", result.step
+    assert_includes result.reason, "ran out before step `arithmetic` started"
+    refute fetched, "no devnet read once the deadline has passed"
+  end
 end

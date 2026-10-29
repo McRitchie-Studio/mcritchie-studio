@@ -232,6 +232,8 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
     end
   end
 
+  def tree_path(out) = out[/gauntlet driver: turf-monster@\h{7} \((\S+)\)/, 1] || flunk("no tree named: #{out}")
+
   def tree_call(primary, sha, body, rescue_it: false)
     setup = <<~RUBY
       ENV.delete("RELEASE_GAUNTLET_DRIVER")
@@ -250,11 +252,13 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
              'puts("STEP " + out.strip + " ok=" + ok.to_s); :ran'
       out = tree_call(primary, release_sha, body)
 
-      assert_match(%r{STEP driver B seed in \S*/turf-monster/\.worktrees/_gauntlet ok=true}, out,
+      assert_match(%r{STEP driver B seed in \S*/gauntlet-turf-monster-[^/\s]+ ok=true}, out,
                    "the release's driver (B), from the release tree, never the primary's (A)")
       assert_includes out, "ENV-COPIED true", "the tree boots with the primary's env"
       assert_includes out, "RESULT :ran", "the block's result is the answer"
-      refute File.exist?(File.join(primary, ".worktrees", "_gauntlet")), "the tree is removed after the run"
+      tree = tree_path(out)
+      refute tree.start_with?(primary), "a throwaway is never cut inside turf-monster (DeskRoot's managed root)"
+      refute File.exist?(tree), "the tree is removed after the run"
       assert_equal 1, `git -C #{primary} worktree list`.lines.size, "no worktree registration is left behind"
       assert_equal "A", `git -C #{primary} log -1 --format=%s`.strip, "the primary checkout is untouched"
     end
@@ -264,7 +268,8 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
     with_scratch_turf do |primary, _main_sha, release_sha|
       out = tree_call(primary, release_sha, 'File.write(File.join(root, "MARK"), "x"); raise "boom"', rescue_it: true)
       assert_includes out, "RAISED boom", "the raise reaches the caller"
-      refute File.exist?(File.join(primary, ".worktrees", "_gauntlet")), "ensure removes the tree"
+      refute File.exist?(tree_path(out)), "ensure removes the tree"
+      assert_equal 1, `git -C #{primary} worktree list`.lines.size
     end
   end
 
@@ -272,7 +277,7 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
     with_scratch_turf do |primary, _main_sha, _release_sha|
       out = tree_call(primary, "f" * 40, ":ran")
       assert_match(/RESULT .*step="tree".*could not cut a turf-monster worktree/m, out)
-      refute File.exist?(File.join(primary, ".worktrees", "_gauntlet"))
+      assert_equal 1, `git -C #{primary} worktree list`.lines.size
     end
   end
 

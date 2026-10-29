@@ -88,6 +88,8 @@ class Release
         check!(label, output, ok)
       end
       @current = "arithmetic"
+      raise Red.new("arithmetic", out_of_time("before step `arithmetic` started")) if remaining&.<=(0)
+
       check_arithmetic!
       Result.new(ok: true, step: nil, reason: nil, metadata: @facts)
     rescue Red => e

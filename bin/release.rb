@@ -1696,15 +1696,17 @@ end
 # The driver is the RELEASE's: it runs from a temporary detached worktree of
 # turf-monster at the SHA prepare deployed to QA (with_gauntlet_tree), never the
 # primary checkout on main, so a release that changes the driver is tested by its
-# own driver. The worktree is removed when the run ends, green or red.
+# own driver. The worktree is a throwaway in a temp dir, removed when the run
+# ends, green or red.
 GAUNTLET_SKIP_FLAG = "--skip-gauntlet"
 GAUNTLET_STEP_DEADLINE_ENV = "RELEASE_GAUNTLET_STEP_DEADLINE"
 GAUNTLET_STEP_DEFAULT_DEADLINE = 1200
 GAUNTLET_DEADLINE_ENV = "RELEASE_GAUNTLET_DEADLINE"
 GAUNTLET_DEFAULT_DEADLINE = 1800
-# Where the release's turf-monster tree is cut, inside the turf primary's .worktrees
-# (gitignored there, beside the gate's _gate and the ship's _ship workspaces).
-GAUNTLET_TREE_DIR = File.join(".worktrees", "_gauntlet")
+# The release's turf-monster tree is a throwaway, so it is cut in a fresh temp dir
+# with this prefix, never under turf-monster/.worktrees/: DeskRoot reads anything
+# there as a managed desk (test/docs/throwaway_worktrees_outside_managed_root_docs_test.rb).
+GAUNTLET_TREE_PREFIX = "gauntlet-turf-monster-"
 # The gitignored env files the driver's Rails boot reads, copied from the primary
 # so the release tree boots with the primary's env (bin/agent-worktree copies the
 # same pair into every desk).
@@ -1875,7 +1877,7 @@ def with_gauntlet_tree(turf, shas)
   end
   return gauntlet_tree_red("no QA SHA for turf-monster, so there is no release tree to run the driver from") if sha.empty?
 
-  path = File.join(primary, GAUNTLET_TREE_DIR)
+  path = Dir.mktmpdir(GAUNTLET_TREE_PREFIX)
   begin
     error = cut_gauntlet_tree(primary, path, sha)
     return gauntlet_tree_red(error) if error
@@ -1890,10 +1892,9 @@ end
 # Cuts `path` as a detached worktree of `primary` at `sha` and readies it for the
 # driver. Answers nil, or why it could not.
 def cut_gauntlet_tree(primary, path, sha)
-  remove_gauntlet_tree(primary, path) # a killed run's leftover
+  sh("git", "-C", primary, "worktree", "prune", capture: true) # a killed run's leftover registration
   _, present = sh("git", "-C", primary, "cat-file", "-e", "#{sha}^{commit}", capture: true)
   sh("git", "-C", primary, "fetch", "--quiet", "origin", sha, capture: true) unless present
-  FileUtils.mkdir_p(File.dirname(path))
   out, ok = sh("git", "-C", primary, "worktree", "add", "--detach", path, sha, capture: true)
   return "could not cut a turf-monster worktree at #{sha[0, 7]} (`git worktree add --detach`): #{out.to_s.strip}" unless ok
 

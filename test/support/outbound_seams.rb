@@ -158,7 +158,8 @@ module OutboundSeams
       "PROGRAM_DRIFT_RPC_URL" => UNROUTABLE,
       # THE DEVNET GAUNTLET (bin/release prepare on a Turf release): its driver runs a
       # real contest on QA and devnet, and its arithmetic reads the devnet RPC. A test
-      # child reaches neither: the driver is a recording refusal, the RPC unroutable.
+      # child reaches neither: the driver is a recording refusal, the RPC unroutable,
+      # and with the driver set bin/release cuts no worktree in turf-monster's checkout.
       "RELEASE_GAUNTLET_DRIVER" => stub("qa-contest-rehearsal"),
       "RELEASE_DEVNET_RPC_URL" => UNROUTABLE,
       "OUTBOUND_SEAM_LOG" => log_path,
