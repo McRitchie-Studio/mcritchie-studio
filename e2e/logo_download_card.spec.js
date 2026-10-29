@@ -147,6 +147,25 @@ test("without Keep aspect ratio both sides are free, a dotted outline shows the 
 // loading, the theme swapping light for dark), but the screen-reader summary is rewritten only when its text changes,
 // so a theme swap does not re-announce it. Task logos-wrap-up-cleanup: the outline is knocked off the logo first, so
 // its return proves the re-sync ran, and the summary is read only after it.
+// An invalid custom side: the always-present status summary carries the error (a screen reader reads it), the visible
+// error line shows it without a second status role, and a valid side brings both back (task logos-wrap-up-cleanup).
+test("an invalid custom side is announced once in the summary, shown in the error line, and both recover", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto("/logos/studio");
+  const summary = card(page).locator("[data-test='download-summary']");
+  const error = card(page).locator("[data-test='download-error']");
+  await expect(summary).toHaveAttribute("role", "status");
+  await expect(error).not.toHaveAttribute("role", "status");
+  await card(page).locator("[data-test='download-custom-width']").fill("0");
+  await expect(error).toBeVisible();
+  await expect(error).toContainText("A custom side is a whole number of pixels");
+  await expect(summary).toHaveText(await error.textContent());
+  await card(page).locator("[data-test='download-custom-width']").fill("1000");
+  await expect(error).toBeHidden();
+  await expect(summary).toContainText("1000 ×");
+});
+
 test("a theme swap re-syncs the outline but leaves the unchanged summary alone", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await loginWithMagicLink(page, "alex@test.com");

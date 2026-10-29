@@ -234,9 +234,10 @@ function wireCard(card) {
       warn("");
       say(`${pngFilename(tone.filename, state.size.width, state.size.height)} · ${state.size.width} × ${state.size.height} px, ${shape}, transparent`);
     } else {
-      // The error line is the one announcement; the summary empties rather than repeat it.
-      say("");
-      warn(`A custom side is a whole number of pixels, 1 to ${MAX_SIDE}, and the other side may not pass ${MAX_SIDE}.`);
+      // The summary is the one announcement (always present, so a screen reader reads it); the error line shows it.
+      const message = `A custom side is a whole number of pixels, 1 to ${MAX_SIDE}, and the other side may not pass ${MAX_SIDE}.`;
+      say(message);
+      warn(message);
     }
     return state;
   };
