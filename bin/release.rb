@@ -12176,7 +12176,8 @@ class ReleaseCycleDeps
       turf = repos.call(r) & #{Release::DevnetGauntlet::REPOS.inspect};
       g = r && r.release_events.where(step: '#{Release::DevnetGauntlet::STEP}', status: %w[completed failed]).order(:occurred_at, :id).last;
       est = begin; e = r && Release::Flow.estimate_for(r, default: Release::Flow.recent); e && { eta: e.eta.utc.iso8601, remaining: e.remaining, phase: e.phase }; rescue StandardError; nil; end;
-      puts({ current: (r && { slug: r.slug, state: r.state, repos: repos.call(r), gauntlet_required: turf.any?, gauntlet_status: g&.status }),
+      puts({ current: (r && { slug: r.slug, state: r.state, repos: repos.call(r), gauntlet_required: turf.any?, gauntlet_status: g&.status,
+                              gauntlet: g&.slice('occurred_at', 'actor', 'metadata', 'status'), qa_shas: (r.metadata['qa_shas'] || {}) }),
              last_shipped: (l && { slug: l.slug, repos: repos.call(l) }),
              archivable: Release::Conductor.archivable_completed_slugs.size,
              estimate: est }.to_json)
@@ -12205,6 +12206,28 @@ class ReleaseCycleDeps
   def verify_targets(repos, target)
     ReleaseCycle.verify_targets(repos, target, app_repos: RELEASE_REPOS.fetch("apps", {}) || {},
                                                qa_environments: QA_ENVIRONMENTS, hub: APP)
+  end
+
+  # Prod verify's SHA leg: for each app the release ships, does production run the
+  # SHA the release froze (release.metadata["qa_shas"], the SHA `ship` pushes)?
+  # [{ "repo", "sha", "ok", "reason" }], or nil when the release cannot be read.
+  # The answer is the finalize guard's (deploy_live_verdict): per strategy, the
+  # current Heroku release's commit, the deploy workflow's run, or the static
+  # marker, plus /up and origin/main. All READS: nothing deploys, nothing prints a
+  # credential (the board op exported the Heroku token into this process).
+  def deployed_sha_verdicts(slug)
+    plan = conductor("r = Release.find_by!(slug: #{slug.to_s.inspect}); " \
+                     "puts({ repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {}) }.to_json)",
+                     read_only: true)
+    return nil unless plan.is_a?(Hash)
+
+    apps = Array(plan["repos"]).select { |g| g.is_a?(Hash) && g["kind"] == "app" }
+    ReleaseCycle.sha_verdicts(Release::ShipSequence.ordered_app_groups(apps), plan["qa_shas"],
+                              frozen: ->(qa, repo) { Release::ShipSequence.frozen_sha(qa, repo).to_s },
+                              live: ->(group, sha) { deploy_live_verdict(group, sha) })
+  rescue SystemExit, StandardError => e
+    warn("  deployed-SHA read failed: #{e.message}")
+    nil
   end
 
   # The HTTP status code as a string, or nil when nothing answered.

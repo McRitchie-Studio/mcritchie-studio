@@ -361,6 +361,22 @@ class ReleaseCycleTest < Minitest::Test
     assert_equal ["rel-x"], deps.sha_reads, "never the board's lagging last_shipped"
   end
 
+  test "[unit] sha_verdicts compares each app with its frozen SHA; a missing one is not proven" do
+    groups = [{ "repo" => "mcritchie-studio" }, { "repo" => "turf-monster" }, { "repo" => "moms-app" }]
+    asked = []
+    live = lambda do |group, sha|
+      asked << [group["repo"], sha]
+      group["repo"] == "turf-monster" ? [false, "Heroku runs v12 at 9999999, not the frozen SHA"] : [true, ""]
+    end
+    verdicts = ReleaseCycle.sha_verdicts(groups, { "mcritchie-studio" => "aaa", "turf-monster" => "bbb" },
+                                         frozen: ->(qa, repo) { qa[repo] }, live: live)
+
+    assert_equal [%w[mcritchie-studio aaa], %w[turf-monster bbb]], asked, "no probe without a frozen SHA"
+    assert_equal [true, false, false], verdicts.map { |v| v["ok"] }
+    assert_equal "Heroku runs v12 at 9999999, not the frozen SHA", verdicts[1]["reason"]
+    assert_equal "no frozen SHA recorded on the release", verdicts[2]["reason"]
+  end
+
   test "[unit] a URL that fails prod verify stops before the SHA read" do
     deps = FakeDeps.new(snapshots: [shipped_snap], http: { "https://prod.example/up" => "503" })
     status, = run_cycle(deps)

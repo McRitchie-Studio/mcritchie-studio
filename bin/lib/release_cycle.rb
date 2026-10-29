@@ -122,6 +122,20 @@ module ReleaseCycle
     repos.map { |r| "#{r}@#{shas[r].to_s.empty? ? '?' : shas[r].to_s[0, 7]}" }.join(", ")
   end
 
+  # The deployed-SHA verdicts for prod verify, one per app group: frozen(qa_shas,
+  # repo) names the SHA the release froze, live(group, sha) answers [ok, reason]
+  # (bin/release.rb#deploy_live_verdict). A repo with no frozen SHA is NOT proven:
+  # there is nothing to compare production with.
+  def sha_verdicts(groups, qa_shas, frozen:, live:)
+    qa_shas = {} unless qa_shas.is_a?(Hash)
+    Array(groups).map do |group|
+      repo = group["repo"].to_s
+      sha = frozen.call(qa_shas, repo).to_s.strip
+      ok, reason = sha.empty? ? [false, "no frozen SHA recorded on the release"] : live.call(group, sha)
+      { "repo" => repo, "sha" => sha, "ok" => ok ? true : false, "reason" => reason.to_s }
+    end
+  end
+
   # The stage a cycle enters at, from the board snapshot.
   def entry_stage(snapshot)
     current = snapshot["current"]
