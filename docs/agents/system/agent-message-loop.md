@@ -341,6 +341,56 @@ The heartbeat and `bin/agent-inbox` speak to the board `ATOMIC_CAPTURE_URL`
 names (default `https://mcritchie.studio`), authenticated as the rest of the
 agent CLI is (`bin/lib/agent_api.rb`).
 
+## Media
+
+A **medium** is a messaging system the hub speaks; a **home** is a medium plus a
+channel. The plan is `.agents/epics/omnichannel-media.md`.
+
+| Medium | Adapter | Inbound | Can |
+|--------|---------|---------|-----|
+| `discord` | `Media::Discord` | Gateway (and the backstop poll) | reply, typing, post |
+| `email` | `Media::Email` | Resend webhook | reply |
+| `web` | `Media::Web` | HTTP (`/applications/:slug/chat`, `/build`, satellites) | reply, typing |
+| `teams` | `Media::Teams` | not built | nothing: registered, disabled, every method raises `NotImplementedError` |
+| `slack` | (card `slack-medium-outbound`) | not built | its `config/agent_media.yml` block is `enabled: false` |
+
+`Media.adapter(key)` returns a medium's adapter (`Media::REGISTRY`). A medium's
+failure is a `Media::Error`. Not to be confused with `AgentMailbox::Media`
+(`bin/lib/agent_media.rb`), the dispatcher's file handling: it lives only in the
+Rails-free `bin/lib` process, and inside `module AgentMailbox` the bare name
+`Media` means it, never this registry.
+
+**A reply always goes back on the medium the message arrived on.** The reply and
+typing jobs read the row's own `channel`, never a home. A medium that cannot
+reply yet (Teams) is left alone, as an unknown one is.
+
+**Homes are for standalone posts**, the ones nobody replied to. Each reads its
+home from `config/agent_media.yml` through `Media.home` and posts with
+`Media.post(home, content:, embeds:, nonce:)`:
+
+| Poster | Purpose | Home today |
+|--------|---------|------------|
+| `AgentMessages::FloorAlert`, `ChangeBuilds` ops line | `floor_alert` | discord `#ops` (`lobster-tank`), as the shared bot |
+| `Release::Conductor`, `POST /api/v1/release_notes` | `release_notes` | discord `#releases`: `DISCORD_RELEASE_NOTES_WEBHOOK_URL`, else `DISCORD_DEPLOY_WEBHOOK_URL` |
+| `AppRequestDiscordJob` | `app_requests` | discord `#external`: `DISCORD_EXTERNAL_WEBHOOK_URL` |
+| `ReportDestinations`, a key with no row | `reports` | discord, no channel: stays `:not_configured`; a row chosen in admin always wins |
+
+**Resolution.** `Media.home(purpose:, app:, soul:)` takes the first of purpose →
+soul → app → defaults that has an entry; its `medium` and `channel` (else the
+defaults') make the home. A medium whose block is missing or `enabled: false`,
+or whose adapter cannot post, is skipped for its `fallback` (else
+`defaults.fallback`) under the same channel name, and the walk is logged once per
+process, so a half-set Slack never silences the floor alert. A Discord channel is
+an `id` (the bot posts to it) or a `webhook_env` (an ENV name, or a list tried in
+order; the URL never lives in the file).
+
+**Switching an app's, a soul's or a purpose's medium is one YAML edit**: set its
+`medium:` in `config/agent_media.yml`, once that medium's block is `enabled: true`
+and names the channel. To switch everything, change `defaults.medium`. No code
+changes, and replies are unaffected. Inbound "who answers" stays in
+`config/agent_routes.yml`. The dispatcher does not read `agent_media.yml`, so a
+change there needs a hub deploy, not a dispatcher restart.
+
 ## Memory: the context layers
 
 An answer remembers the person it answers, on every channel they use. The
