@@ -55,6 +55,11 @@ class BrandKitInstallTest < ActiveSupport::TestCase
 
     bad = JSON.parse(json).merge("motion" => { "preset" => "spin", "logo" => "stacked" }).to_json
     assert_match(/unknown motion preset/, assert_raises(ArgumentError) { BrandKitInstall.kit_from_manifest(bad, brand: "studio") }.message)
+    readme = BrandKitExport.new(kit, base_url: "https://hub.test").readme
+    assert_includes readme, "Motion: Weight flick (I17) on the Stacked Logo, played on the brand page's Motion tab: https://hub.test/logos/studio?type=motion"
+    kit.update!(motion_choice: nil)
+    refute_includes BrandKitExport.new(kit, base_url: "").readme, "Motion:"
+
     none = JSON.parse(json).except("motion").to_json
     assert_nil BrandKitInstall.kit_from_manifest(none, brand: "studio").motion_choice, "a kit.json from before motion reads as no motion"
   end
