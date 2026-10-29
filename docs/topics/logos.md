@@ -937,7 +937,7 @@ YAML and stores nothing; those stay in the YAML for now.
 | `stacked_choice` | `{"form" => "tagline", "proportion" => "rule_of_three", "text" => "first", "colouring" => "original", "edits" => {}}`, or null. `proportion` is stored only for the rule of three: absent is 3-2-1, so a choice saved before it reloads unchanged |
 | `notes` | the operator's own words on the kit |
 | `updated_by` | the admin who changed it last (email) |
-| `saved_at` | when an Icon, Navbar or Stacked choice was last saved or cleared: the kit's version, which `kit.json` carries. Notes and originals move `updated_at`, never this (task brand-kit-applied-status; backfilled from `updated_at` for kits saved before it) |
+| `saved_at` | when an Icon, Navbar or Stacked choice was last saved or cleared: the kit's version, which `kit.json` carries. Notes and originals move `updated_at`, never this, and neither does a logo-library or brand-style change that redraws the kit ([Which apps have the kit](#which-apps-have-the-kit)) (task brand-kit-applied-status; backfilled from `updated_at` for kits saved before it) |
 | `originals` | Active Storage attachments: the original artwork |
 
 A choice's `colouring` is optional: one saved before colourings has none and

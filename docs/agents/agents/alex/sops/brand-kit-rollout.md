@@ -26,7 +26,8 @@ on `/logos/<brand>`, in the same task.
 - **The kit is saved on production.** Its Icon, Navbar and Stacked choices are
   what Alex McRitchie wants (the Kit card on `/logos/<brand>` shows them). The
   kit's version is its `saved_at`; a later save turns every app's link to Kit
-  changed.
+  changed. A redraw without a save (a logo-library or brand-style change) does
+  not; see Redistributing below.
 - **The link exists, or the rollout will create it.** `/logos` lists the apps a
   kit feeds. A new kit-to-app pairing is created by step 7.
 - **The app has its hub row.** `logos:applied` links a kit to an app by its
