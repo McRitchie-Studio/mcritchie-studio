@@ -25,6 +25,15 @@ class AgentMessages::GatewayLeaderLockTest < ActiveSupport::TestCase
     refute_includes first.to_s, "token-a"
   end
 
+  # The lock key is how two worker processes agree on ONE Gateway connection
+  # per token: a deploy whose old and new dynos derived different keys would
+  # both connect. NAMESPACE and the digest are frozen; this pins both to the
+  # value they produced before the Media seam (.agents/epics/omnichannel-media.md).
+  test "[unit] the key derivation is pinned: namespace, digest and mask unchanged" do
+    assert_equal "agent-messages:discord-gateway:", Lock::NAMESPACE
+    assert_equal 2_699_956_477_376_363_549, Lock.key_for("pinned-token")
+  end
+
   test "[unit] held? is false before acquire, true after, false after release" do
     lock = Lock.new(key: key, connection: dedicated_connection)
     refute lock.held?

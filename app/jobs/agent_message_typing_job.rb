@@ -19,16 +19,18 @@
 # seconds away. (Anything else takes ApplicationJob's retry, and the retry
 # re-checks the guard, so it can never type for a finished run.)
 #
-# WHICH BOT. The same one the reply will use (AgentMessages::BotSelector): the
-# soul's own bot when DISCORD_BOT_TOKEN_<SOUL> is set, else the shared bot. A
-# 401/403 from the soul's bot falls back to the shared bot in the same call and
-# records one `typing_bot_refused` event, so later pulses go straight to the
-# shared bot; a soul bot the reply job already found refused is skipped too. No
-# usable token: no typing, silently. The reply job's own choice is untouched.
+# WHICH MEDIUM. The row's `channel` picks the adapter (Media.adapter).
+# Media::Discord types as the same bot the reply will use
+# (AgentMessages::BotSelector): the soul's own bot when DISCORD_BOT_TOKEN_<SOUL>
+# is set, else the shared bot. A 401/403 from the soul's bot falls back to the
+# shared bot in the same call and records one `typing_bot_refused` event, so
+# later pulses go straight to the shared bot; a soul bot the reply job already
+# found refused is skipped too. No usable token: no typing, silently. A medium
+# error (a Media::Error) is logged by class and dropped.
 class AgentMessageTypingJob < ApplicationJob
   queue_as :default
 
-  REFUSED_EVENT = "typing_bot_refused".freeze
+  REFUSED_EVENT = Media::Discord::TYPING_REFUSED_EVENT
 
   # `phase`: the web chat's "thinking" or "typing" (AgentMessage.typing_phase
   # allow-lists it again here; a job queued before phases has none: typing).
@@ -36,28 +38,12 @@ class AgentMessageTypingJob < ApplicationJob
   def perform(message_id, worker, phase = nil)
     message = AgentMessage.find_by(id: message_id)
     return if message.nil? || message.typing_refusal(worker: worker)
-    return AgentMessages::WebChat.broadcast_typing(message, phase: AgentMessage.typing_phase(phase)) if message.web?
+    return unless Media.registered?(message.channel)
 
-    skip_soul = message.events.exists?(kind: [ REFUSED_EVENT, AgentMessageReplyJob::REFUSED_EVENT ])
-    AgentMessages::BotSelector.post(message.soul_slug, skip_soul: skip_soul,
-                                                       on_refused: ->(_error, env) { refused!(message, env) }) do |bot, _via|
-      bot.trigger_typing(message.channel_ref)
-    end
-  rescue AgentMessages::DiscordBot::Error => e
+    Media.adapter(message.channel).typing(message, phase: AgentMessage.typing_phase(phase))
+  rescue Media::Error => e
     # The class only: DiscordBot already keeps the token out of its errors, and
     # a dropped pulse needs no more than this.
     Rails.logger.info("[agent-messages] typing pulse for message #{message_id} dropped: #{e.class}")
-  end
-
-  private
-
-  # Once per message: the timeline says the soul's bot could not type, naming
-  # the ENV var, never the token or Discord's body.
-  def refused!(message, env)
-    return if message.events.exists?(kind: REFUSED_EVENT)
-
-    message.record!(REFUSED_EVENT, actor: "discord-bot", detail: { "token_env" => env })
-  rescue StandardError => e
-    Rails.logger.warn("[agent-messages] could not record a refused typing bot: #{e.class}")
   end
 end
