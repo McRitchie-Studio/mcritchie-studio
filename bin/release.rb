@@ -72,8 +72,9 @@
 #          next patch. RELEASE_GEM_FLOW=candidate restores the older flow below, in
 #          which prepare publishes a RELEASE CANDIDATE (x.y.z.rcN) and `ship` the final.
 #          Preflight EVERY swept gem (fail-closed fetch, version bumped,
-#          stranded-work guard, changelog rollable, a swept consumer declares it;
-#          ANY failure aborts with nothing published), THEN publish each
+#          stranded-work guard, changelog rollable, a swept consumer declares it,
+#          a readable RubyGems listing; then no stray, unshipped or burned lock in
+#          any consumer: ANY failure aborts with nothing published), THEN publish each
 #          candidate (reusing one tagged at the release tip) + commit each
 #          consumer's Gemfile and lock bump onto origin/accepted and fast-forward
 #          origin/release to it — BEFORE the gate and QA, so `release` never
@@ -4636,33 +4637,32 @@ def prepare
   #     aborts with ZERO gems published.
   merge_forward_release_branches(app_groups, gem_groups: gem_groups)
 
-  # 4d. GEM PUBLISH + CONSUMER LOCK BUMP. THE DEFAULT (Release::GemFlow :final)
-  #     publishes the FINAL here and the consumer bump locks it, so the ship
-  #     re-locks nothing (docs/agents/system/gem-release-flow.md). The candidate
-  #     flow (RELEASE_GEM_FLOW=candidate) is described below.
+  # 4d. GEM PUBLISH + CONSUMER LOCK BUMP — AFTER the merge-forward (4c), so every
+  #     gem is built from the post-merge release tree, and BEFORE the pre-QA gate
+  #     and any QA deploy (docs/agents/system/gem-release-flow.md).
   #
-  #     GEM CANDIDATE PUBLISH + CONSUMER LOCK BUMP — AFTER the merge-forward (4c), so
-  #     every candidate is built from the post-merge release tree, and BEFORE the
-  #     pre-QA gate and any QA deploy.
-  #
-  #     prepare publishes a RELEASE CANDIDATE (x.y.z.rcN), never the final: a
-  #     RubyGems version can never be re-pushed, so the final x.y.z waits for
-  #     `bin/release ship`, after QA is green and production is granted. A red QA
-  #     strands only a prerelease, and the next sweep reuses x.y.z.
+  #     THE DEFAULT (Release::GemFlow :final) publishes the FINAL x.y.z here, tagged
+  #     v<x.y.z>, and the consumer bump locks it, so the ship deploys the SHAs QA
+  #     gated and re-locks nothing. A red QA that moves the gem burns x.y.z; the
+  #     next prepare allocates the next patch and records the burn.
   #
   #     PHASE 0 ALLOCATES each swept gem's final version from its members and
   #     commits it (with its Gemfile.lock and its rolled CHANGELOG.md) onto
   #     origin/accepted, then promotes that onto origin/release. PHASE 1 VALIDATES
   #     every swept gem (fail-closed fetch, version parses, clean-env CI verdict,
-  #     stranded-work guard, a swept consumer declares it) and aborts on ANY failure
-  #     with nothing published. PHASE 2 publishes each candidate (or reuses the one
-  #     tagged at this tip) and commits each consumer's Gemfile + Gemfile.lock bump
-  #     onto its `accepted`, then fast-forwards its `release` to that commit. The
-  #     lock commits land BEFORE pre_qa_gate resolves origin/release, so the CI
-  #     verdict and QA both read the post-bump SHA. The ship then publishes the
-  #     final from the frozen gem SHA, re-locks each consumer to it in a commit that
-  #     changes only Gemfile and Gemfile.lock, and reads CI for THAT commit before
-  #     any deploy.
+  #     stranded-work guard, a swept consumer declares it, a READABLE RubyGems
+  #     listing) and aborts on ANY failure with nothing published. Then, still with
+  #     nothing published, the stray-lock refusal and the burn record. PHASE 2
+  #     publishes each final (or reuses one live from this tree, its served
+  #     contents compared with the tree) and commits each consumer's Gemfile +
+  #     Gemfile.lock bump onto its `accepted`, then fast-forwards its `release` to
+  #     that commit. The lock commits land BEFORE pre_qa_gate resolves
+  #     origin/release, so the CI verdict and QA both read the post-bump SHA.
+  #
+  #     RELEASE_GEM_FLOW=candidate (a rollback lever for one release) publishes a
+  #     RELEASE CANDIDATE x.y.z.rcN here instead; the ship then publishes the final
+  #     from the frozen gem SHA, re-locks each consumer to it and reads CI for that
+  #     commit before any deploy.
   allocate_gem_versions!(gem_groups, label: slug)
   gem_plan = validate_gems_for_qa(gem_groups, app_groups)
   # BIND the publish map: { gem => the version consumers lock for QA } (a candidate,
@@ -7599,7 +7599,8 @@ def publish_gems_for_qa(gem_plan)
     repo = gem["repo"]
     if gem["dry"] && Release::GemFlow.final?
       step("  gem #{repo}: release-check --build → gem build + gem push <version> (the FINAL) → tag v<version> → " \
-           "confirm the served checksum (skip when already live) — the ship re-locks nothing")
+           "confirm the served checksum (when already live: compare the served gem with this tree, then ensure " \
+           "the tag) — the ship re-locks nothing")
       published[repo] = ""
       next
     elsif gem["dry"]

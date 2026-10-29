@@ -301,10 +301,11 @@ class Release
     # caller refused that case), and the floor is the highest of the tag and the
     # live list, so a derived number is never live; the check below asserts it.
     def reallocation(current, published, live, members, pending_entries)
-      # An empty live list beside a tag is an UNREAD RubyGems (bin/release's
-      # rubygems_versions answers [] on any failed read), so the untagged-publish
-      # refusal above could not see a live `current`. Keep the skip rather than
-      # fold a section that may already have shipped.
+      # An empty live list beside a tag cannot be a gem never published, so treat
+      # it as UNREAD: the untagged-publish refusal above could not see a live
+      # `current`. Keep the skip rather than fold a section that may already have
+      # shipped. (bin/release's rubygems_versions now stops on a failed read rather
+      # than answering [], so this is the second line of defence.)
       return nil if live.empty?
 
       baseline = highest_version(published)
