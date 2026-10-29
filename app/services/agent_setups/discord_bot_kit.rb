@@ -23,8 +23,13 @@ module AgentSetups
     AUTHORIZE_URL = "https://discord.com/oauth2/authorize".freeze
     # A Discord snowflake: an application or user id.
     SNOWFLAKE = /\A\d{17,20}\z/
-    # 1Password's ids are 26 lowercase base32 characters; the host is the
+    # 1Password's ids are 26 characters, in two cases: the ACCOUNT id
+    # (`op whoami`'s account_uuid, `op account get`'s ID) is uppercase, the
+    # vault and item ids are lowercase. Each is held to the case 1Password
+    # issues it in, so a vault id in the account slot, or the reverse, refuses
+    # rather than building a link that opens nothing. The host is the
     # account's sign-in address.
+    OP_ACCOUNT_ID = /\A[A-Z0-9]{26}\z/
     OP_ID = /\A[a-z0-9]{26}\z/
     OP_HOST = /\A[a-z0-9-]+(\.[a-z0-9-]+)*\.1password\.(com|ca|eu)\z/
 
@@ -98,11 +103,11 @@ module AgentSetups
     # The 1Password deep link to Steffon's pre-created item, or nil when any id
     # is missing or malformed. It opens the item in the app; nothing is read.
     def op_link(setup)
-      ids = %w[op_account_id op_vault_id op_item_id].map { |k| setup.detail(k).to_s }
+      account, vault, item = %w[op_account_id op_vault_id op_item_id].map { |k| setup.detail(k).to_s }
       host = setup.detail(:op_host).to_s
-      return nil unless ids.all? { |id| id.match?(OP_ID) } && host.match?(OP_HOST)
+      return nil unless account.match?(OP_ACCOUNT_ID) && [ vault, item ].all? { |id| id.match?(OP_ID) } && host.match?(OP_HOST)
 
-      "https://start.1password.com/open/i?#{URI.encode_www_form(a: ids[0], v: ids[1], i: ids[2], h: host)}"
+      "https://start.1password.com/open/i?#{URI.encode_www_form(a: account, v: vault, i: item, h: host)}"
     end
 
     def avatar_path(setup) = setup.agent&.avatar.presence

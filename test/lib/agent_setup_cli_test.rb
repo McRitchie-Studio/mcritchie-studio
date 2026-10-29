@@ -62,7 +62,7 @@ class AgentSetupCliTest < Minitest::Test
       in [ "read", * ] then read
       in [ "item", "list" ] then JSON.generate(listing)
       in [ "item", "get" ] then flunk "op item get returns every field's value; open must never call it"
-      in [ "whoami", * ] then JSON.generate("url" => "https://my.1password.com", "account_uuid" => "a" * 26, "user_type" => "SERVICE_ACCOUNT")
+      in [ "whoami", * ] then JSON.generate("url" => "https://my.1password.com", "account_uuid" => "A" * 26, "user_type" => "SERVICE_ACCOUNT")
       end
     end
   end
@@ -106,7 +106,7 @@ class AgentSetupCliTest < Minitest::Test
     sent = @requests.first
     assert_equal %w[open discord_bot mason steffon], sent.values_at("verb", "kind", "soul", "by")
     assert_equal({ "op_vault" => "studio-agents", "op_item" => "discord.mason.agents", "op_item_id" => "i" * 26,
-                   "op_vault_id" => "v" * 26, "op_account_id" => "a" * 26, "op_host" => "my.1password.com" }, sent["details"])
+                   "op_vault_id" => "v" * 26, "op_account_id" => "A" * 26, "op_host" => "my.1password.com" }, sent["details"])
     assert_equal [ %w[item list --vault studio-agents --format json], %w[whoami --format json] ], @op_calls,
                  "open lists the vault (ids and titles) and asks whoami; it never gets the item or reads a field"
     assert_includes @out.string, "opened #3"
@@ -130,7 +130,7 @@ class AgentSetupCliTest < Minitest::Test
 
   def test_open_with_explicit_ids_skips_the_lookup
     @answers["open"] = { "id" => 4, "op_link" => true }
-    ids = { "op_account_id" => "a" * 26, "op_vault_id" => "v" * 26, "op_item_id" => "i" * 26, "op_host" => "my.1password.com" }
+    ids = { "op_account_id" => "A" * 26, "op_vault_id" => "v" * 26, "op_item_id" => "i" * 26, "op_host" => "my.1password.com" }
     assert_equal 0, run_cli("open", %w[discord], soul: "mason", by: "steffon", op_ids: ids)
     assert_empty @op_calls
     assert_equal ids, @requests.first["details"].slice(*ids.keys)

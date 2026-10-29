@@ -60,13 +60,38 @@ class AgentSetups::DiscordBotKitTest < ActiveSupport::TestCase
     assert_nil KIT.invite_url(setup_for("avi", application_id: "not-an-id"))
   end
 
-  test "[unit] the 1Password deep link needs every id well formed" do
-    ids = { op_account_id: "a" * 26, op_vault_id: "b" * 26, op_item_id: "c" * 26, op_host: "my.1password.com" }
-    link = KIT.op_link(setup_for("mason", **ids))
-    assert_equal "https://start.1password.com/open/i?a=#{'a' * 26}&v=#{'b' * 26}&i=#{'c' * 26}&h=my.1password.com", link
+  # The ids in the shape 1Password issues them (synthetic values): the account
+  # id uppercase, as `op whoami` answers account_uuid; vault and item lowercase.
+  OP_ACCOUNT = "QZ7XK2MNB4RTY8WVPL3HJD6CFA".freeze
+  OP_VAULT = "k3v9m2qx7tpl4wz8ndr6hyb5ce".freeze
+  OP_ITEM = "w8jn5rc2xh7bq4mt9plz3dfk6y".freeze
+  OP_IDS = { op_account_id: OP_ACCOUNT, op_vault_id: OP_VAULT, op_item_id: OP_ITEM, op_host: "my.1password.com" }.freeze
 
-    assert_nil KIT.op_link(setup_for("avi", **ids, op_item_id: "short"))
-    assert_nil KIT.op_link(setup_for("alex", **ids, op_host: "evil.example.com"))
+  test "[unit] op_link builds with an uppercase account id and lowercase vault and item ids" do
+    link = KIT.op_link(setup_for("mason", **OP_IDS))
+    assert_equal "https://start.1password.com/open/i?a=#{OP_ACCOUNT}&v=#{OP_VAULT}&i=#{OP_ITEM}&h=my.1password.com", link
+    assert KIT.op_link(setup_for("mack", **OP_IDS, op_host: "mcritchie.1password.ca")), "a team host on another region"
+  end
+
+  test "[unit] op_link refuses wrong lengths, other characters, the wrong case and a foreign host" do
+    refusals = {
+      "account one short" => { op_account_id: OP_ACCOUNT[0..-2] },
+      "account one long" => { op_account_id: "#{OP_ACCOUNT}A" },
+      "account lowercase (a vault id in the account slot)" => { op_account_id: OP_VAULT },
+      "account with a dash" => { op_account_id: "#{OP_ACCOUNT[0..-2]}-" },
+      "vault uppercase (the account id in the vault slot)" => { op_vault_id: OP_ACCOUNT },
+      "vault one short" => { op_vault_id: OP_VAULT[0..-2] },
+      "item short" => { op_item_id: "short" },
+      "item with a slash" => { op_item_id: "#{OP_ITEM[0..-2]}/" },
+      "item with a newline" => { op_item_id: "#{OP_ITEM}\n" },
+      "no account" => { op_account_id: nil },
+      "foreign host" => { op_host: "evil.example.com" },
+      "look-alike host" => { op_host: "my.1password.com.evil.example" }
+    }
+    assert KIT.op_link(AgentSetup.new(details: OP_IDS.stringify_keys)), "the unsaved control builds"
+    refusals.each do |why, bad|
+      assert_nil KIT.op_link(AgentSetup.new(details: OP_IDS.merge(bad).compact.stringify_keys)), why
+    end
   end
 
   class FakeDiscord

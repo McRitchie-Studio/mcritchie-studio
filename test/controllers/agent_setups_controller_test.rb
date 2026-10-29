@@ -7,7 +7,9 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
   include ActiveJob::TestHelper
 
   APP_ID = "1560516264378507334".freeze
-  OP_IDS = { op_account_id: "a" * 26, op_vault_id: "b" * 26, op_item_id: "c" * 26, op_host: "my.1password.com" }.freeze
+  # Synthetic ids in 1Password's real shape: the account id uppercase, vault and item lowercase.
+  OP_IDS = { op_account_id: "QZ7XK2MNB4RTY8WVPL3HJD6CFA", op_vault_id: "k3v9m2qx7tpl4wz8ndr6hyb5ce",
+             op_item_id: "w8jn5rc2xh7bq4mt9plz3dfk6y", op_host: "my.1password.com" }.freeze
 
   def admin = users(:alex)
   def member = @member ||= User.create!(email: "setups-member@example.com", name: "Member")
@@ -53,6 +55,27 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-key='done'] form button[data-test='agent-setup-done']", "Done"
     end
     refute_match(/bot-token"?\s*[:=]\s*\S{20,}/, response.body)
+  end
+
+  # Production's first live card rendered no button: the kit held the
+  # uppercase account id to the lowercase pattern of vault and item ids.
+  test "[integration] the setup card renders the Open 1Password button for real-format ids, and not for a lowercase account id" do
+    setup = open_setup
+    log_in_as(admin)
+    get agents_path
+    href = "https://start.1password.com/open/i?a=#{OP_IDS[:op_account_id]}&v=#{OP_IDS[:op_vault_id]}" \
+           "&i=#{OP_IDS[:op_item_id]}&h=my.1password.com"
+    assert_select "#agent-setup-#{setup.id} [data-key='paste_token']" do
+      assert_select "a[data-test='op-item-link'][href=?]", href, "Open discord.mason.agents in 1Password"
+      assert_select "[data-test='op-item-missing']", 0
+    end
+
+    lowered = open_setup("mack", op_account_id: OP_IDS[:op_account_id].downcase)
+    get agents_path
+    assert_select "#agent-setup-#{lowered.id} [data-key='paste_token']" do
+      assert_select "a[data-test='op-item-link']", 0
+      assert_select "[data-test='op-item-missing']", /discord\.mack\.agents/
+    end
   end
 
   test "[component] the avatar download is the hub's own image, and a card with no item or id says so" do

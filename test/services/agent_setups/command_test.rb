@@ -12,7 +12,7 @@ class AgentSetups::CommandTest < ActiveSupport::TestCase
 
   def open_mason
     call("verb" => "open", "kind" => "discord_bot", "soul" => "mason", "by" => "steffon",
-         "details" => { "op_item_id" => "c" * 26, "op_vault_id" => "b" * 26, "op_account_id" => "a" * 26,
+         "details" => { "op_item_id" => "c" * 26, "op_vault_id" => "b" * 26, "op_account_id" => "A" * 26,
                         "op_host" => "my.1password.com", "secret_env" => "IGNORED" })
   end
 
