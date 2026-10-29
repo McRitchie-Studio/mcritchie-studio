@@ -435,6 +435,61 @@ class DeploymentsBroadcasterTest < ActiveSupport::TestCase
     refute_includes html, "<script", "no inline script to need a nonce: the ticker is the delegated module"
   end
 
+  # THE SIDEBAR GOES LIVE TOO (task devops-card-live-sidebar): the same push replaces
+  # #devops-sidebar-detail, rendered from the SAME Devops::Snapshot as the card, so an
+  # open sidebar cannot keep page-load numbers while the card beside it moves on.
+  def devops_sidebar_streams(&)
+    capture_turbo_stream_broadcasts("deployments", &).select { |s| s["target"] == "devops-sidebar-detail" }
+  end
+
+  test "[unit] devops_card also REPLACES the #devops-sidebar-detail slot with the sidebar body" do
+    seed_shipped_history
+    Release.open!
+    Task.create!(title: "In flight", stage: "building")
+
+    streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.devops_card }
+    sidebar = streams.select { |s| s["target"] == "devops-sidebar-detail" }
+
+    assert_equal %w[devops-summary-card devops-sidebar-detail], streams.map { |s| s["target"] },
+                 "one push: the card, then its sidebar"
+    assert_equal "replace", sidebar.sole["action"]
+    html = Nokogiri::HTML.fragment(sidebar.sole.css("template").inner_html)
+    assert_equal 1, html.css("#devops-sidebar-detail").size, "the replacement keeps the target id, so the next push lands too"
+    assert_equal Task.wip_by_stage["building"].to_s,
+                 html.at_css("[data-test='devops-wip-stage'][data-stage='building']")["data-count"],
+                 "the WIP split is read at push time"
+    assert_equal 1, html.css("#release-duration-card").size, "the stage averages ride inside the slot"
+    assert_equal 3, html.css("[data-test='devops-release-row']").size, "the release history"
+    assert_empty html.css("script"), "no inline script to need a nonce"
+  end
+
+  test "[integration] card and sidebar in one push read one snapshot: their WIP agrees" do
+    seed_shipped_history
+    release = Release.open!
+    2.times { |i| Task.create!(title: "In flight #{i}", stage: "building") }
+
+    streams = capture_turbo_stream_broadcasts("deployments") { release.assemble! }
+    card = streams.find { |s| s["target"] == "devops-summary-card" }
+    sidebar = streams.find { |s| s["target"] == "devops-sidebar-detail" }
+
+    assert card && sidebar, "QA green pushes both slots"
+    wip = Task.wip_count
+    assert_includes card.to_html, "#{wip} in flight"
+    in_flight = Nokogiri::HTML.fragment(sidebar.css("template").inner_html).at_css("[data-test='devops-detail-wip'] .text-lg")
+    assert_equal wip.to_s, in_flight.text.strip, "the sidebar's In flight matches the card's"
+  end
+
+  test "[integration] the sidebar is pushed exactly when the card is, never on a non-phase save" do
+    seed_shipped_history
+    release = nil
+    assert_equal 1, devops_sidebar_streams { release = Release.open! }.size, "prepare"
+    assert_empty devops_sidebar_streams { release.update!(qa_url: "https://qa.example.test") },
+                 "a save that moves no phase boundary leaves the sidebar alone"
+    assert_equal 1, devops_sidebar_streams { release.assemble! }.size, "QA green"
+    run = GateRun.new(subject_type: "release", subject_slug: release.slug, key: "g4_ship")
+    assert_equal 1, devops_sidebar_streams { DeploymentsBroadcaster.gate_run(run) }.size, "a G4 gate run"
+  end
+
   test "[integration] QA green broadcasts a card replace with the QA clock gone" do
     seed_shipped_history
     release = Release.open!

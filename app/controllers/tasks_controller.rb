@@ -24,18 +24,18 @@ class TasksController < ApplicationController
     load_board
     @current_release = Release.current
     @last_release = Release.last_shipped
-    @release_duration_dashboard = Release.deployment_stage_averages
-    # The DevOps card's WIP tile. Its own query rather than a count over
-    # @tasks_by_stage: load_board narrows to the agent/stage filter params, and a
-    # filtered board must not silently shrink the pipeline-wide WIP number.
-    @wip_task_count = Task.wip_count
-    @wip_by_stage = Task.wip_by_stage
-    # Where release time goes — the DevOps summary card's four phases and its median
-    # (Release::Flow). The six stage averages above stay for the sidebar.
-    @release_flow = Release::Flow.recent
-    # The card's countdown: where the in-flight release is and when it should land,
-    # against the same medians (gem-release history for a release carrying a gem).
-    @release_estimate = Release::Flow.estimate_for(@current_release, default: @release_flow)
+    # The DevOps card and its sidebar: Release::Flow's phases and median, the in-flight
+    # countdown, the WIP count and split, and the six legacy stage averages. One
+    # Devops::Snapshot, the SAME reads DeploymentsBroadcaster.devops_card pushes, so a
+    # page load and a live push cannot drift. WIP is pipeline-wide there, not a count
+    # over @tasks_by_stage: load_board narrows to the agent/stage filter params, and a
+    # filtered board must not silently shrink the WIP number.
+    devops = Devops::Snapshot.build(current_release: @current_release)
+    @release_duration_dashboard = devops.stage_averages
+    @wip_task_count = devops.wip_count
+    @wip_by_stage = devops.wip_by_stage
+    @release_flow = devops.flow
+    @release_estimate = devops.estimate
     # The app-ladder row: where each application sits on accepted → release → main,
     # which the Next Release card cannot show (it is decoupled — work parks on
     # `accepted` between releases). Pipeline-wide for the same reason as WIP above:
