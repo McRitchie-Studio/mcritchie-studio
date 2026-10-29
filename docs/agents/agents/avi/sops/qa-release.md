@@ -490,8 +490,10 @@ light." It runs unattended (Alex McRitchie, 2026-10-12), with `--cosign agent`, 
 server key and Mack co-sign the settle and no Phantom tap is owed.
 
 **`bin/release prepare` runs it for you**, right after QA green and before `✓ Assembled`
-(`Release::DevnetGauntletRun`; about 9 minutes, 4 of them step 3). It runs every step of
-turf-monster's `bin/qa-contest-rehearsal` in order, makes the check each `── STOP ──`
+(`Release::DevnetGauntletRun`; about 9 minutes, 4 of them step 3; the whole run is capped at
+30 minutes by `RELEASE_GAUNTLET_DEADLINE`, red at the step it stops). It runs every step of
+the release's own `bin/qa-contest-rehearsal`, from a throwaway turf-monster worktree at the
+SHA prepare deployed to QA, in order, makes the check each `── STOP ──`
 block names (the SOP's "unattended" paragraph), reads the settle transaction from the
 devnet RPC and checks that the prize escrow fell by exactly the sum paid and that each
 winner rose by exactly its rank's payout, and then records `devnet_gauntlet`:
