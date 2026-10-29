@@ -19,7 +19,9 @@ class Release
   # file directly, and every effect comes in as a callable, so the tests drive it
   # with a fake driver and never touch QA or devnet.
   #
-  #   driver.call(argv)         -> [output, ok]  one `bin/qa-contest-rehearsal` step
+  #   driver.call(argv, budget) -> [output, ok]  one `bin/qa-contest-rehearsal` step;
+  #                                              budget is the seconds the overall
+  #                                              deadline leaves (nil: no overall bound)
   #   manifest.call             -> Hash          the driver's tmp/qa-rehearsal/current.json
   #   transaction.call(sig)     -> Hash | nil    devnet getTransaction's `result`
   #   say.call(line)
@@ -51,23 +53,38 @@ class Release
       end
     end
 
-    def initialize(driver:, manifest:, transaction:, say: ->(_line) { })
+    # `deadline` bounds the WHOLE run in seconds (nil: unbounded), on top of each
+    # step's own bound: six steps at a 1200s step bound could otherwise hold prepare
+    # for two hours. `deadline_env` is the name that sets it, for the red's reason.
+    # `clock` answers monotonic seconds (a fake in the tests).
+    def initialize(driver:, manifest:, transaction:, say: ->(_line) { }, deadline: nil, deadline_env: nil,
+                   clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
       @driver = driver
       @manifest = manifest
       @transaction = transaction
       @say = say
+      @deadline = deadline
+      @deadline_env = deadline_env
+      @clock = clock
       @facts = { "steps" => {} }
     end
 
     # Runs every step, stopping at the first red one. Never raises: the Result
     # names the step that went red and why, and carries what was learned so far.
     def call
+      @started = @clock.call
       STEPS.each do |label, argv|
         @current = label
+        budget = remaining
+        raise Red.new(label, out_of_time("before step `#{label}` started")) if budget && budget <= 0
+
         @say.call("  gauntlet #{label}: bin/qa-contest-rehearsal #{argv.join(' ')}")
-        output, ok = @driver.call(argv)
+        output, ok = @driver.call(argv, budget)
         output = output.to_s
         @facts["steps"][label] = { "elapsed" => elapsed(output) }.compact
+        # A step the overall bound cut short is the deadline's red, not the step's.
+        raise Red.new(label, out_of_time("during step `#{label}`")) if !ok && remaining&.<=(0)
+
         check!(label, output, ok)
       end
       @current = "arithmetic"
@@ -80,6 +97,14 @@ class Release
     end
 
     private
+
+    # Seconds the overall deadline leaves, or nil when there is none.
+    def remaining = @deadline && (@deadline - (@clock.call - @started))
+
+    def out_of_time(moment)
+      setter = @deadline_env ? " (#{@deadline_env} sets it)" : ""
+      "the gauntlet's overall deadline of #{@deadline.round}s ran out #{moment}#{setter}"
+    end
 
     def red(step, reason)
       Result.new(ok: false, step: step, reason: reason, metadata: @facts.merge("failed_step" => step, "reason" => reason))

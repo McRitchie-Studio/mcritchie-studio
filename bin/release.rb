@@ -1687,12 +1687,28 @@ end
 # payout arithmetic from the settle transaction, then the event, complete or fail.
 #
 #   RELEASE_GAUNTLET_STEP_DEADLINE (1200) bounds one rehearsal step (play runs ~4 min).
+#   RELEASE_GAUNTLET_DEADLINE (1800)      bounds the whole run (a green one takes ~10 min).
 #   RELEASE_DEVNET_RPC_URL                the devnet RPC getTransaction reads.
 #   RELEASE_GAUNTLET_DRIVER               the driver to run instead of turf-monster's
-#                                         own (test/support/outbound_seams.rb seals it).
+#                                         own (test/support/outbound_seams.rb seals it);
+#                                         set, no turf-monster tree is cut for it.
+#
+# The driver is the RELEASE's: it runs from a temporary detached worktree of
+# turf-monster at the SHA prepare deployed to QA (with_gauntlet_tree), never the
+# primary checkout on main, so a release that changes the driver is tested by its
+# own driver. The worktree is removed when the run ends, green or red.
 GAUNTLET_SKIP_FLAG = "--skip-gauntlet"
 GAUNTLET_STEP_DEADLINE_ENV = "RELEASE_GAUNTLET_STEP_DEADLINE"
 GAUNTLET_STEP_DEFAULT_DEADLINE = 1200
+GAUNTLET_DEADLINE_ENV = "RELEASE_GAUNTLET_DEADLINE"
+GAUNTLET_DEFAULT_DEADLINE = 1800
+# Where the release's turf-monster tree is cut, inside the turf primary's .worktrees
+# (gitignored there, beside the gate's _gate and the ship's _ship workspaces).
+GAUNTLET_TREE_DIR = File.join(".worktrees", "_gauntlet")
+# The gitignored env files the driver's Rails boot reads, copied from the primary
+# so the release tree boots with the primary's env (bin/agent-worktree copies the
+# same pair into every desk).
+GAUNTLET_TREE_ENV_FILES = %w[.env .env.development .env.local .env.development.local].freeze
 DEVNET_RPC_ENV = "RELEASE_DEVNET_RPC_URL"
 DEVNET_RPC_DEFAULT = "https://api.devnet.solana.com"
 GAUNTLET_DRIVER = "bin/qa-contest-rehearsal"
@@ -1706,6 +1722,7 @@ GAUNTLET_ENV_SCRUB = %w[BUNDLE_GEMFILE BUNDLE_BIN_PATH BUNDLER_SETUP BUNDLER_VER
                      .to_h { |k| [k, nil] }.freeze
 
 def gauntlet_step_deadline = env_deadline(GAUNTLET_STEP_DEADLINE_ENV, GAUNTLET_STEP_DEFAULT_DEADLINE)
+def gauntlet_deadline = env_deadline(GAUNTLET_DEADLINE_ENV, GAUNTLET_DEFAULT_DEADLINE)
 
 # The step of prepare after QA green: run the gauntlet when the release owes one.
 # Returns :not_required, :skipped, :dry, :recorded (one is already on the release),
@@ -1730,7 +1747,8 @@ def prepare_devnet_gauntlet!(rel_slug, repos, skip: false, shas: {})
     return :skipped
   end
   if DRY
-    say("  [dry-run] devnet gauntlet for #{turf.join(', ')}: (cd #{repo_path('turf-monster')}) " \
+    tree = turf_shas["turf-monster"].to_s.empty? ? repo_path("turf-monster") : "turf-monster@#{turf_shas['turf-monster'][0, 7]}"
+    say("  [dry-run] devnet gauntlet for #{turf.join(', ')}: (cd #{tree}, deadline #{gauntlet_deadline.round}s) " \
         "#{Release::DevnetGauntletRun::STEPS.map { |_, argv| "#{GAUNTLET_DRIVER} #{argv.join(' ')}" }.join(' → ')}")
     return :dry
   end
@@ -1746,7 +1764,7 @@ def prepare_devnet_gauntlet!(rel_slug, repos, skip: false, shas: {})
   usage_key = "release:#{rel_slug}:#{Release::DevnetGauntlet::STEP}"
   seed_gauntlet_usage(usage_key)
   started = Time.now
-  result = devnet_gauntlet_runner.call
+  result = with_gauntlet_tree(turf, turf_shas) { |root| devnet_gauntlet_runner(root).call }
   metadata = result.metadata.merge("repos" => turf, "shas" => turf_shas, "seconds" => (Time.now - started).round)
   attrs = gauntlet_event_attrs(capture_move_usage(usage_key), metadata, result)
 
@@ -1799,12 +1817,16 @@ end
 # (seeded before it, captured after), never typed: with all four fields it is an
 # agent event (EventUsage), without them the conductor's own, like every other
 # event bin/release writes. The key carries the contest, so a later green run is a
-# new row, not a replay of an earlier red one.
+# new row, not a replay of an earlier red one; and the Turf SHAs, so a red on NEW
+# code at the same step and duration as an earlier red is its own row, not
+# swallowed as a replay of the old one.
 def gauntlet_event_attrs(usage, metadata, result)
+  shas = metadata["shas"].to_h.sort.map { |repo, sha| "#{repo}@#{sha}" unless sha.to_s.empty? }.compact
   attrs = { actor: "turf_monster", metadata: metadata,
             message: result.ok? ? "contest-rehearsal green on QA (devnet)" : "red at #{result.step}: #{result.reason}",
             idempotency_key: ["devnet_gauntlet", result.ok? ? "completed" : "failed",
-                              metadata["contest"] || metadata["failed_step"], metadata["seconds"]].compact.join(":") }
+                              metadata["contest"] || metadata["failed_step"], metadata["seconds"], *shas]
+                             .compact.join(":") }
   usage = usage.is_a?(Hash) ? usage : {}
   full = GAUNTLET_USAGE_FIELDS.all? { |f| !usage[f].to_s.strip.empty? }
   attrs[:source] = full ? "agent" : "conductor"
@@ -1821,29 +1843,105 @@ rescue StandardError
   nil
 end
 
-def devnet_gauntlet_runner
-  root = repo_path("turf-monster")
+def devnet_gauntlet_runner(root)
   Release::DevnetGauntletRun.new(
-    driver: ->(argv) { run_gauntlet_step(root, argv) },
+    driver: ->(argv, budget) { run_gauntlet_step(root, argv, budget: budget) },
     manifest: -> { JSON.parse(File.read(File.join(root, GAUNTLET_MANIFEST))) },
     transaction: ->(signature) { devnet_transaction(signature) },
-    say: ->(line) { say(line) }
+    say: ->(line) { say(line) },
+    deadline: gauntlet_deadline, deadline_env: GAUNTLET_DEADLINE_ENV
   )
 end
 
-# One rehearsal step from the turf-monster checkout, streamed to this log and
-# captured for the check. Bounded like every child on the release path. The
-# Heroku token prepare exported (ensure_heroku_token!) reaches the driver's
+# Yields the turf-monster tree the driver runs from: a temporary detached worktree
+# at the turf-monster SHA prepare deployed to QA, removed when the block returns
+# (or raises). Answers the block's Result, or a red one at step `tree` when the
+# release's tree cannot be cut: a gauntlet run by another tree's driver would be
+# recorded as this release's, which is the defect this exists to close.
+#
+# Two cases run from the primary instead, and say so: an overridden driver
+# (GAUNTLET_DRIVER_ENV: not turf-monster's driver, so there is no tree of it to
+# pin, and a sealed test child never writes turf-monster's .git), and a release
+# without turf-monster (turf-vault alone: QA's turf-monster is not this release's
+# code, so there is no release tree of it).
+def with_gauntlet_tree(turf, shas)
+  primary = repo_path("turf-monster")
+  sha = shas.to_h["turf-monster"].to_s.strip
+  return yield(primary) unless ENV[GAUNTLET_DRIVER_ENV].to_s.strip.empty?
+
+  unless turf.include?("turf-monster")
+    say("  turf-monster is not on this release: the driver runs from the primary checkout (#{primary})")
+    return yield(primary)
+  end
+  return gauntlet_tree_red("no QA SHA for turf-monster, so there is no release tree to run the driver from") if sha.empty?
+
+  path = File.join(primary, GAUNTLET_TREE_DIR)
+  begin
+    error = cut_gauntlet_tree(primary, path, sha)
+    return gauntlet_tree_red(error) if error
+
+    say("  gauntlet driver: turf-monster@#{sha[0, 7]} (#{path}), the tree prepare deployed to QA")
+    yield(path)
+  ensure
+    remove_gauntlet_tree(primary, path)
+  end
+end
+
+# Cuts `path` as a detached worktree of `primary` at `sha` and readies it for the
+# driver. Answers nil, or why it could not.
+def cut_gauntlet_tree(primary, path, sha)
+  remove_gauntlet_tree(primary, path) # a killed run's leftover
+  _, present = sh("git", "-C", primary, "cat-file", "-e", "#{sha}^{commit}", capture: true)
+  sh("git", "-C", primary, "fetch", "--quiet", "origin", sha, capture: true) unless present
+  FileUtils.mkdir_p(File.dirname(path))
+  out, ok = sh("git", "-C", primary, "worktree", "add", "--detach", path, sha, capture: true)
+  return "could not cut a turf-monster worktree at #{sha[0, 7]} (`git worktree add --detach`): #{out.to_s.strip}" unless ok
+
+  GAUNTLET_TREE_ENV_FILES.each do |name|
+    source = File.join(primary, name)
+    FileUtils.cp(source, File.join(path, name)) if File.file?(source)
+  end
+  bundle_gauntlet_tree(path)
+end
+
+# The release may change turf-monster's Gemfile.lock: install what it pins. Answers
+# nil, or why the bundle is unsatisfied.
+def bundle_gauntlet_tree(path)
+  return nil if sh("bundle", "check", capture: true, chdir: path, env: GAUNTLET_ENV_SCRUB)[1]
+
+  out, ok = sh("bundle", "install", "--quiet", capture: true, chdir: path, env: GAUNTLET_ENV_SCRUB)
+  ok ? nil : "`bundle install` failed in the release's turf-monster tree: #{out.to_s.lines.last.to_s.strip}"
+end
+
+def remove_gauntlet_tree(primary, path)
+  sh("git", "-C", primary, "worktree", "remove", "--force", path, capture: true) if File.exist?(path)
+  FileUtils.rm_rf(path)
+  sh("git", "-C", primary, "worktree", "prune", capture: true)
+rescue SystemCallError => e
+  say("  ⚠ could not remove the gauntlet's turf-monster tree #{path} (#{e.message}); remove it by hand")
+end
+
+def gauntlet_tree_red(reason)
+  Release::DevnetGauntletRun::Result.new(ok: false, step: "tree", reason: reason,
+                                         metadata: { "steps" => {}, "failed_step" => "tree", "reason" => reason })
+end
+
+# One rehearsal step from the release's turf-monster tree, streamed to this log
+# and captured for the check. Bounded like every child on the release path, by
+# the step's own deadline or what the overall one leaves, whichever is shorter.
+# The Heroku token prepare exported (ensure_heroku_token!) reaches the driver's
 # `heroku run` through the inherited environment.
-def run_gauntlet_step(root, argv)
+def run_gauntlet_step(root, argv, budget: nil)
   ensure_heroku_token! if PROD
   driver = ENV[GAUNTLET_DRIVER_ENV].to_s.strip
   cmd = [driver.empty? ? File.join(root, GAUNTLET_DRIVER) : driver, *argv]
   deadline = gauntlet_step_deadline
+  bound_env = GAUNTLET_STEP_DEADLINE_ENV
+  deadline, bound_env = budget, GAUNTLET_DEADLINE_ENV if budget && budget < deadline
   result = BoundedCommand.run(GAUNTLET_ENV_SCRUB, cmd, deadline: deadline, pgroup: true, stream: $stdout,
                                                        err: [:child, :out], in: File::NULL, chdir: root)
   out = result.out.to_s
-  out += "\n#{deadline_kill_line([GAUNTLET_DRIVER, *argv], deadline, GAUNTLET_STEP_DEADLINE_ENV)}\n" if result.timed_out?
+  out += "\n#{deadline_kill_line([GAUNTLET_DRIVER, *argv], deadline, bound_env)}\n" if result.timed_out?
   [out, result.success?]
 rescue SystemCallError => e
   ["could not run #{GAUNTLET_DRIVER}: #{e.message}", false]
