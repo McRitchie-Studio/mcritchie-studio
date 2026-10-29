@@ -8222,12 +8222,18 @@ def record_burned_finals!(gem_plan)
     shipped = gem_version_from_ref(repo, "origin/main")
     tags, = git_capture("-C", path, "tag", "--list", "v*")
     already = burned_gem_versions(repo)
-    burns = Release::GemFlow.newly_burned(published: tags.to_s.lines, shipped: shipped, carried: gem["version"]) - already
+    # A record is a tag ON ORIGIN: a re-run after a failed push pushes the local one.
+    burns = Release::GemFlow.newly_burned(published: tags.to_s.lines, shipped: shipped, carried: gem["version"])
     burns.each do |version|
       tag = Release::GemFlow.burned_tag(version)
-      step("record: #{repo} #{version} is BURNED (published, never shipped, superseded by #{gem['version']}) → tag #{tag}")
-      sh("git", "-C", path, "tag", "-a", tag, "-m", "Burned #{repo} #{version}: superseded by #{gem['version']} " \
-         "before it shipped. No consumer may lock it.", "v#{version}^{}", capture: true)
+      _, on_origin = sh("git", "-C", path, "ls-remote", "--exit-code", "--tags", "origin", "refs/tags/#{tag}", capture: true)
+      next if on_origin
+
+      unless already.include?(version)
+        step("record: #{repo} #{version} is BURNED (published, never shipped, superseded by #{gem['version']}) → tag #{tag}")
+        sh("git", "-C", path, "tag", "-a", tag, "-m", "Burned #{repo} #{version}: superseded by #{gem['version']} " \
+           "before it shipped. No consumer may lock it.", "v#{version}^{}", capture: true)
+      end
       _, pushed = sh("git", "-C", path, "push", "origin", "refs/tags/#{tag}", capture: true)
       abort!("could not push #{tag} to #{repo}'s origin — the burn of #{version} would go unrecorded, and a lock " \
              "naming it would pass once a newer version ships. NOTHING was published. Push it " \

@@ -261,6 +261,7 @@ class ReleaseGemFinalAtPrepareTest < ReleaseCliHarness
     end
     PUSH_OK = !ENV["RECORD_PUSH_FAILS"]
     def sh(*a, **k)
+      return ["", ENV["ON_ORIGIN"].to_s.split(",").include?(a.last)] if a.include?("ls-remote")
       if a[0] == "git" && a.include?("tag") && a.include?("-a")
         puts("BURN-TAG #{a[a.index('-a') + 1]} at #{a.last}")
         return ["", true]
@@ -284,12 +285,23 @@ class ReleaseGemFinalAtPrepareTest < ReleaseCliHarness
     refute_match(/BURN-TAG burned-v(0\.9\.0|0\.10\.0|1\.0\.2)/, out, "shipped and carried versions are not burned")
   end
 
+  def test_a_local_burn_tag_origin_lacks_is_pushed_on_the_re_run
+    ENV["ON_ORIGIN"] = "refs/tags/burned-v1.0.1"
+    out = run_cli(["--yes"], setup: RECORD_WORLD,
+                  call: guarded(%(record_burned_finals!([{ "repo" => "studio-engine", "version" => "1.0.2" }]))))
+
+    assert_includes out, "BURN-PUSH refs/tags/burned-v1.0.0", out
+    refute_match(/BURN-TAG burned-v1\.0\.0|BURN-(TAG|PUSH) [^\n]*burned-v1\.0\.1/, out)
+  ensure
+    ENV.delete("ON_ORIGIN")
+  end
+
   def test_a_burn_that_cannot_be_recorded_stops_prepare
     ENV["RECORD_PUSH_FAILS"] = "1"
     out = run_cli(["--yes"], setup: RECORD_WORLD,
                   call: guarded(%(record_burned_finals!([{ "repo" => "studio-engine", "version" => "1.0.2" }]))))
 
-    assert_includes out, "REFUSED: ✗ could not push burned-v1.0.1", out
+    assert_includes out, "REFUSED: ✗ could not push burned-v1.0.0", out
     assert_includes out, "NOTHING was published"
   ensure
     ENV.delete("RECORD_PUSH_FAILS")
