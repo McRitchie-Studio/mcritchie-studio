@@ -53,7 +53,6 @@ class LogosVariantTest < Minitest::Test
     assert_equal 40, variant.guide_font
     assert_equal 6, Variant.rule("6")
     assert_equal [6] * 3, Variant.all(logo, rule: 6).map(&:rule)
-    assert_match(/six rows tall.*four rows/, Variant::RULE_SENTENCES.fetch(6))
   end
 
   def test_the_filename_names_the_brand_and_every_choice

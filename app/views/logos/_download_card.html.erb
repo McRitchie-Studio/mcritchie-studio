@@ -103,5 +103,5 @@
   <p class="sr-only" role="status" data-test="download-summary" data-download-summary><%= shown.filename %></p>
   <%= link_to "Download", logo_asset_path(shown, download: 1), class: "btn btn-sm btn-primary border border-transparent w-full justify-center #{ring}",
               data: { test: "logo-download", turbo: false, download_link: true }, aria: { label: "Download: #{shown.label}" } %>
-  <p class="text-2xs font-semibold text-warning-ink" role="status" data-test="download-error" data-download-error hidden></p>
+  <p class="text-2xs font-semibold text-warning-ink" data-test="download-error" data-download-error hidden></p>
 </section>

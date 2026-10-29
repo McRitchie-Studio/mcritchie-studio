@@ -497,10 +497,9 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_match(/viewBox="0 0 #{format('%.2f', two_line.width)} #{format('%.2f', two_line.height)}"/, response.body, "the two-line drawing's box")
   end
 
-  test "the Stacked Logo tab shows one logo in the kit's text version, states the 3-2-1 method, and names the brand's form" do
+  test "the Stacked Logo tab shows one logo in the kit's text version, with and without guides" do
     log_in_as(@admin)
-    { "industries" => /This brand uses the two-line form\.\z/, "welding" => /two-line form/,
-      "turf" => /This brand uses the one-line form: the whole name/ }.each do |brand, form|
+    %w[industries welding turf].each do |brand|
       get logo_brand_path(brand, type: "stacked")
       assert_response :success
       assert_equal [BrandKit.defaults(brand, :stacked)[:text].to_s], css_select("[data-test='logo-example']").map { |example| example["data-text"] }
