@@ -31,8 +31,7 @@ class AgentMessageReplyJob < ApplicationJob
   # The give-up event names the medium that failed (Media::Adapter#actor:
   # "discord-bot" for Discord), never a hard-coded one.
   def self.give_up_actor(message)
-    adapter = Media.registered?(message.channel) ? Media.adapter(message.channel) : nil
-    adapter&.supports?(:reply) ? adapter.actor : "#{message.channel}-bot"
+    Media.supports?(message.channel, :reply) ? Media.adapter(message.channel).actor : "#{message.channel}-bot"
   end
 
   REFUSED_EVENT = Media::Discord::REPLY_REFUSED_EVENT
@@ -40,14 +39,11 @@ class AgentMessageReplyJob < ApplicationJob
   def perform(message_id)
     message = AgentMessage.find_by(id: message_id)
     return if message.nil? || message.status != "completed" || message.reply_external_id.present?
-    return unless Media.registered?(message.channel)
+    # A medium that cannot reply (unregistered, or Media::Teams, not built) is
+    # left alone.
+    return unless Media.supports?(message.channel, :reply)
 
-    adapter = Media.adapter(message.channel)
-    # A registered medium that cannot reply yet (Media::Teams) is left alone,
-    # as an unregistered one is.
-    return unless adapter.supports?(:reply)
-
-    adapter.deliver_reply(message)
+    Media.adapter(message.channel).deliver_reply(message)
   end
 
   # Kept for their callers (AgentReplyMailer signs with display_name).

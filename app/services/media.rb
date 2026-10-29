@@ -38,6 +38,12 @@ module Media
 
   def registered?(key) = REGISTRY.key?(key.to_s)
 
+  # Whether a registered medium can do `capability` (:reply, :typing, :post)
+  # today. False for an unregistered one, and for Media::Teams on everything.
+  def supports?(key, capability)
+    registered?(key) && REGISTRY.fetch(key.to_s).constantize.new.supports?(capability)
+  end
+
   # The adapter for `key` (a message's channel). Raises UnknownMedium for a key
   # the registry does not name; a caller that must stay quiet on one asks
   # `registered?` first.
@@ -83,7 +89,7 @@ module Media
   end
 
   def usable_medium?(config, key)
-    !key.to_s.empty? && registered?(key) && config.enabled?(key) && adapter(key).supports?(:post)
+    !key.to_s.empty? && config.enabled?(key) && supports?(key, :post)
   end
 
   def home_entry(config, purpose:, soul:, app:)

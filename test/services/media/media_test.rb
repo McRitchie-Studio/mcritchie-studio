@@ -9,7 +9,7 @@ class MediaTest < ActiveSupport::TestCase
   include AgentMessageFixtures
 
   test "[unit] the registry resolves discord, email and web to their adapters, each keyed by itself" do
-    assert_equal %w[discord email web], Media.keys
+    assert_equal %w[discord email web teams], Media.keys, "teams is registered, disabled (Media::Teams)"
     { "discord" => Media::Discord, "email" => Media::Email, "web" => Media::Web }.each do |key, klass|
       adapter = Media.adapter(key)
       assert_instance_of klass, adapter
@@ -24,14 +24,15 @@ class MediaTest < ActiveSupport::TestCase
     refute Media.registered?("slack")
     error = assert_raises(Media::UnknownMedium) { Media.adapter("slack") }
     assert_kind_of Media::Error, error
-    assert_includes error.message, "discord, email, web"
+    assert_includes error.message, "discord, email, web, teams"
   end
 
   test "[unit] the registry covers every channel a message may hold, and typing matches TYPING_CHANNELS" do
-    assert_equal AgentMessage::CHANNELS.sort, Media.keys.sort
+    assert_empty AgentMessage::CHANNELS - Media.keys
     typing = Media.keys.select { |key| Media.adapter(key).supports?(:typing) }
     assert_equal AgentMessage::TYPING_CHANNELS.sort, typing.sort
-    assert(Media.keys.all? { |key| Media.adapter(key).supports?(:reply) })
+    replying = Media.keys.select { |key| Media.adapter(key).supports?(:reply) }
+    assert_equal AgentMessage::CHANNELS.sort, replying.sort, "every message channel replies; teams, not built, does not"
   end
 
   test "[unit] the error hierarchy: DiscordBot errors are Media errors, so the jobs retry and drop the same set" do
@@ -54,7 +55,7 @@ class MediaTest < ActiveSupport::TestCase
     assert_nil adapter.typing(Object.new, phase: "typing")
     assert_nil adapter.message_url(Object.new)
     assert_nil adapter.setup_kit
-    %w[discord email web].each { |key| assert_raises(NotImplementedError) { Media.adapter(key).post("home", "text") } }
+    %w[email web].each { |key| assert_raises(NotImplementedError) { Media.adapter(key).post("home", "text") } }
   end
 
   test "[unit] each adapter states its inbound mode, setup kit and configuration" do
