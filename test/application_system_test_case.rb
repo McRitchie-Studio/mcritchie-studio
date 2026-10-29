@@ -12,7 +12,45 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   # seeded admin, signed in through the same magic-link door a person uses: the confirm
   # page submits itself and lands on the home page. A named admin, so the engine's
   # first-name onboarding modal never covers the page under test.
-  setup { sign_in_through_magic_link(users(:alex)) }
+  setup do
+    self.class.warm_browser_once
+    sign_in_through_magic_link(users(:alex))
+  end
+
+  # COLD START IS PAID ONCE, BEFORE ANY TEST, ON ITS OWN BUDGET (hub-flaky-tests-steady).
+  #
+  # Every WebDriver command, the session's creation included, has Selenium's 60s HTTP
+  # read budget. The FIRST test of a run spent it on the runner's cold start instead of
+  # on its own work: CI run 40786343848 (2026-10-28), the seed's first test, failed
+  # with Net::ReadTimeout at the sign-in `visit` after 108s on a blank page, and the
+  # other 35 passed in their normal ~70s. It was not the app: traced, sign-in makes no
+  # outbound connection from the app or the browser. What the first command carries on
+  # a fresh runner and on no later one: Selenium Manager resolving (and downloading) the
+  # chromedriver CI leaves off PATH, Chrome's first launch on a new image (font cache,
+  # disk), and the app server's first render. So a throwaway browser pays all three here,
+  # with a deadline sized for a cold runner, and prints what each phase cost so a slow
+  # one is named in the log rather than inferred from a timeout.
+  COLD_START_READ_TIMEOUT = 180
+
+  def self.warm_browser_once
+    return if ApplicationSystemTestCase.instance_variable_get(:@browser_warmed)
+
+    ApplicationSystemTestCase.instance_variable_set(:@browser_warmed, true)
+    clock = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
+    started = clock.call
+    base_url = Capybara.current_session.server.base_url # boots the app server
+    booted = clock.call
+    options = Selenium::WebDriver::Chrome::Options.new
+    options.add_argument("--headless")
+    http = Selenium::WebDriver::Remote::Http::Default.new(read_timeout: COLD_START_READ_TIMEOUT)
+    driver = Selenium::WebDriver.for(:chrome, options: options, http_client: http)
+    launched = clock.call
+    driver.navigate.to("#{base_url}/") # signed out: the layout, its assets, a real render
+    warn format("system tests: cold start paid before the first test: server %.1fs, browser %.1fs, first page %.1fs",
+                booted - started, launched - booted, clock.call - launched)
+  ensure
+    driver&.quit
+  end
 
   def sign_in_through_magic_link(user)
     user.update_columns(first_name: user.name.to_s.split.first || "Admin") if user.first_name.blank?
