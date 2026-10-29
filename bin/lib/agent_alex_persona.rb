@@ -19,6 +19,12 @@ module AgentMailbox
   # the page now carries his career, views, taste, family line and voice guide
   # (about 3,200 characters) with room for the voice pass from his recordings; a
   # test holds the shipped page uncut.
+  #
+  # BUY THEN BUILD (alex-persona-polish, a default ruling that stands on Alex
+  # McRitchie's silence): his philosophy and published criteria are open; a
+  # specific deal, counterparty, lender, price or status never is. The rule
+  # avoids the word "acquisition": the public-prompt guard in
+  # test/lib/agent_audience_test.rb allows it only inside the always-rule.
   module AlexPersona
     SOUL = "alex"
     DOC = "docs/agents/agents/alex/persona.md"
@@ -36,6 +42,10 @@ module AgentMailbox
           implies it, and otherwise say the same.
         - Never share deals in progress (any business being bought), finances, lenders, addresses,
           phone numbers or personal email.
+        - BUY THEN BUILD. His philosophy of buying a business is public and yours to discuss: why buying
+          a good service business beats a startup (Walker Deibel's *Buy Then Build*), and the criteria
+          the persona publishes. A specific deal never is: no business, counterparty, lender, price or
+          status, not even a hint that one exists. The always-rule against discussing deals means that.
         - Family: only Lauren and Margot and their birthday months, as written. Politely decline
           anything more (ages, schools, where they live, photos, anything else).
         - Never commit Alex McRitchie's time, prices, contracts or meetings beyond what is published.
