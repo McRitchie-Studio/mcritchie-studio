@@ -1,4 +1,4 @@
-<%# /books: review and confirm book lines for one entity (BooksController). Each line waiting for an answer gets a category, a purpose for a distribution, and a note; Save records it through Books::Classify, the same path as bin/books classify. Recent answers carry who, when and an undo. Accounts show their last four digits only. %>
+<%# /books: review and confirm book lines for one entity (BooksController). Each line waiting for an answer gets a category, a purpose (shown only while a distribution is picked), and a note; Save records it through Books::Classify, the same path as bin/books classify. Recent answers carry who, when and an undo. Accounts show their last four digits only. %>
 <% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%b %-d, %-l:%M %p %Z") } %>
 <% amount_class = ->(cents) { cents.negative? ? "text-danger-ink" : "text-success-ink" } %>
 <section class="max-w-4xl mx-auto px-4 py-10 space-y-6" data-test="books-page" data-entity="<%= @entity.key %>">
@@ -14,9 +14,10 @@
       <% count = @waiting_counts[entity.key].to_i %>
       <% current = entity.key == @entity.key %>
       <%= link_to books_path(entity: entity.key),
-                  class: "btn btn-sm #{current ? 'btn-primary' : 'btn-secondary'}",
+                  class: "btn btn-sm #{current ? 'btn-primary' : 'btn-neutral'}",
                   aria: { current: (current ? "page" : nil) }, data: { test: "books-entity-#{entity.key}" } do %>
-        <%= entity.name %> <span class="font-normal" data-test="books-entity-count">· <%= count %> waiting</span>
+        <%# One span for the whole label: the button is inline-flex, which drops the space between sibling items. %>
+        <span><%= entity.name %> <span class="font-normal" data-test="books-entity-count">· <%= count %> waiting</span></span>
       <% end %>
     <% end %>
   </nav>
@@ -64,17 +65,20 @@
           <p class="font-mono font-semibold text-base shrink-0 <%= amount_class.(entry.amount_cents) %>" data-test="books-line-amount"><%= Books.money(entry.amount_cents) %></p>
         </div>
 
+        <%# The purpose field shows (and submits) only while a distribution is picked (app/javascript/books_purpose.js); Books::Classify refuses a stray one. %>
         <%= form_with url: book_entry_path(entity: @entity.key, id: entry.id), method: :patch,
-                      class: "grid grid-cols-1 sm:grid-cols-2 gap-3", data: { test: "books-line-form" } do %>
+                      class: "grid grid-cols-1 sm:grid-cols-2 gap-3",
+                      data: { test: "books-line-form", books_line: "" } do %>
           <label class="flex flex-col gap-1 min-w-0">
             <span class="text-muted text-xs">Category</span>
             <%= select_tag :category, books_category_options(@config), include_blank: "Pick a category",
                            required: true, id: "category-#{entry.id}",
-                           class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-category" } %>
+                           class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-category", books_category: "" } %>
           </label>
-          <label class="flex flex-col gap-1 min-w-0">
-            <span class="text-muted text-xs">Purpose (a distribution only: groups it on the balance sheet)</span>
+          <label class="flex flex-col gap-1 min-w-0" hidden data-books-purpose data-test="books-line-purpose-field">
+            <span class="text-muted text-xs">Purpose (groups the distribution on the balance sheet)</span>
             <%= text_field_tag :purpose, nil, list: "books-purposes", id: "purpose-#{entry.id}", autocomplete: "off",
+                               disabled: true,
                                class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-purpose" } %>
           </label>
           <label class="flex flex-col gap-1 min-w-0 sm:col-span-2">
@@ -111,7 +115,7 @@
               </p>
               <p class="text-heading break-words"><%= books_masked(entry.description) %></p>
               <p class="text-body">
-                <span class="font-semibold" data-test="books-recent-category"><%= @config.category(entry.category).label %></span><% if entry.purpose.present? %>: <%= entry.purpose %><% end %>
+                <span class="font-semibold" data-test="books-recent-category"><%= @config.category(entry.category).label %></span><% if entry.purpose.present? %>: <%= books_masked(entry.purpose) %><% end %>
               </p>
               <p class="text-muted text-xs" data-test="books-recent-by">
                 by <%= entry.classified_by %>, <%= stamp.(entry.classified_at) %><% if entry.note.present? %> · <%= books_masked(entry.note) %><% end %>
@@ -119,7 +123,7 @@
             </div>
             <%= button_to "Undo", book_entry_path(entity: @entity.key, id: entry.id), method: :patch,
                           params: { category: "none" },
-                          class: "btn btn-secondary btn-sm w-full sm:w-auto",
+                          class: "btn btn-neutral btn-sm w-full sm:w-auto",
                           form: { class: "shrink-0", data: { test: "books-recent-undo", turbo_confirm: "Return line ##{entry.id} to the lines waiting?" } } %>
           </li>
         <% end %>

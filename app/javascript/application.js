@@ -26,6 +26,8 @@ import "logo_motion"
 // The Pending agents table on /agents: a row's steps disclosure, copy fields, the avatar as PNG; inert elsewhere.
 import "agent_setups"
 import "dreams_filter"
+// The /books purpose field, shown and submitted only while a distribution is picked: delegated, inert elsewhere.
+import "books_purpose"
 // The /build gallery's hover loops: delegated, inert elsewhere.
 import "gallery_motion"
 // Build My App's launch panel: the three steps, then the CTO's chat (a custom element, inert elsewhere).

@@ -58,4 +58,18 @@ class BooksClassifyTest < ActiveSupport::TestCase
     end
     assert_nil entry.reload.category
   end
+
+  test "classify refuses a purpose beside a category that is not a distribution, or beside an undo" do
+    entry = book_statement!(account: "savings", from: "2026-03-01", to: "2026-03-31", opening: 0,
+                            lines: [ [ "2026-03-02", -500_00, "Transferdebit", nil, nil ] ]).entries.first
+    call = ->(**kw) { Books::Classify.call(books_entity, ids: [ entry.id ], by: "x", config: books_config, **kw) }
+
+    error = assert_raises(Books::Classify::Error) { call.(category: "bank_fees", purpose: "Owner draws") }
+    assert_match(/a purpose is for a distribution only/, error.message)
+    assert_raises(Books::Classify::Error) { call.(category: nil, purpose: "Owner draws") }
+    assert_equal [ nil, nil ], entry.reload.attributes.values_at("category", "purpose"), "nothing is stored"
+
+    call.(category: "bank_fees", purpose: " ")
+    assert_equal [ "bank_fees", nil ], entry.reload.attributes.values_at("category", "purpose"), "a blank purpose is no purpose"
+  end
 end

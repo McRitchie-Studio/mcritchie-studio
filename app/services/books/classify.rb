@@ -9,7 +9,8 @@ module Books
   #
   # The one write path for an answer: `bin/books classify` (Books::Export) and
   # the /books review page (BooksController) both call it, so both refuse the
-  # same things.
+  # same things (a purpose beside a category that is not a distribution among
+  # them).
   #
   # A reclass is a re-classify: a line already booked (say as professional_fees)
   # takes the new category, and its old one is gone from every tab on the next
@@ -22,7 +23,13 @@ module Books
     def call(entity, ids:, category:, by:, purpose: nil, note: nil, config: Books::Config.current)
       raise Error, "say who decided (by:)" if by.to_s.strip.empty?
 
-      config.category(category) if category
+      kind = config.category(category).kind if category
+      # A purpose groups distributions on the balance sheet and means nothing
+      # anywhere else, so one given beside another category (or an undo) is
+      # refused out loud rather than stored or dropped.
+      if purpose.present? && kind != "distribution"
+        raise Error, "a purpose is for a distribution only; clear the purpose or pick a distribution"
+      end
       # A purpose becomes a row label and a quoted SUMIFS criterion on the
       # workbook, so it may not start a formula, close the quote, or carry a
       # character SUMIFS reads as a wildcard (* ? ~) or a comparison (< > =).

@@ -31,6 +31,8 @@ pin "usage_countdown"
 # The app chat status card's live pill countdown (app/views/agent_chats/_devops_stages.html.erb).
 pin "devops_countdown"
 pin "dreams_filter"
+# The /books purpose field, shown only for a distribution (app/views/books/index.html.erb).
+pin "books_purpose"
 # Build My App's launch panel (app/views/build/_launch.html.erb).
 pin "build_launch"
 # Turbo Stream action that opens an engine modal (BuildController#sign_in_to_launch).

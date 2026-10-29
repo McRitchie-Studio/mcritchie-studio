@@ -82,10 +82,36 @@ class BooksReviewPageTest < ActionDispatch::IntegrationTest
     assert_equal [ nil, nil, nil, nil ], [ @wire.category, @wire.purpose, @wire.classified_by, @wire.classified_at ]
   end
 
-  test "[integration] a purpose typed beside a category that is not a distribution is dropped" do
+  test "[integration] a purpose typed beside a category that is not a distribution is refused out loud, not dropped" do
     log_in_as(admin)
     patch book_entry_path(entity: "studio", id: @fee.id), params: { category: "bank_fees", purpose: "Owner draws" }
-    assert_equal [ "bank_fees", nil ], [ @fee.reload.category, @fee.purpose ]
+    assert_redirected_to books_path(entity: "studio", anchor: "line-#{@fee.id}")
+    assert_match(/not saved: a purpose is for a distribution only/, flash[:alert])
+    assert_equal 0, ErrorLog.where("message LIKE ?", "%distribution only%").count, "a refusal is an answer, not a fault"
+    assert_equal [ nil, nil ], [ @fee.reload.category, @fee.purpose ], "nothing is recorded"
+
+    patch book_entry_path(entity: "studio", id: @fee.id), params: { category: "bank_fees", purpose: "  " }
+    assert_redirected_to books_path(entity: "studio")
+    assert_equal [ "bank_fees", nil ], [ @fee.reload.category, @fee.purpose ], "a blank purpose is no purpose"
+  end
+
+  test "[component] the purpose field is tied to a distribution pick, entity tabs keep their spacing, and Undo is neutral" do
+    log_in_as(admin)
+    patch book_entry_path(entity: "studio", id: @wire.id), params: { category: "member_distribution", purpose: "Owner draws" }
+    get books_path(entity: "studio")
+
+    form = css_select("[data-test='books-line'][data-entry-id='#{@fee.id}'] form[data-books-line]").first
+    assert form, "each line's form is one app/javascript/books_purpose.js reads"
+    assert form.at_css("select[name='category'][data-books-category]")
+    field = form.at_css("[data-test='books-line-purpose-field'][data-books-purpose]")
+    assert field.key?("hidden"), "the purpose is hidden until a distribution is picked, JavaScript or not"
+    assert field.at_css("input[name='purpose'][disabled]"), "a hidden purpose is never submitted"
+    # inline-flex drops whitespace between sibling items, so the label is one span.
+    assert_select "[data-test='books-entity-studio'] > span", count: 1
+    assert_select "[data-test='books-entity-studio'] > span", /McRitchie Studio LLC · \d+ waiting/
+    assert_select "[data-test='books-entity-industries'].btn-neutral"
+    assert_select "[data-test='books-recent-undo'] [type=submit].btn-neutral"
+    assert_select "[data-test='books-recent-undo'] .btn-secondary", count: 0
   end
 
   test "[integration] Save refuses what bin/books classify refuses, and an empty pick, and says why" do

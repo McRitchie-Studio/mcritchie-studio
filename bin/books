@@ -29,7 +29,7 @@ OptionParser.new do |o|
   o.banner = BooksCli::USAGE
   o.on("--file PDF", "intake: a statement PDF to file (repeatable)") { |v| opts[:files] << v }
   o.on("--category KEY", "classify: a category in config/books.yml, or none") { |v| opts[:category] = v }
-  o.on("--purpose TEXT", "classify: groups distributions on the balance sheet") { |v| opts[:purpose] = v }
+  o.on("--purpose TEXT", "classify: groups a distribution on the balance sheet (a distribution only)") { |v| opts[:purpose] = v }
   o.on("--note TEXT", "classify: who said so, and when") { |v| opts[:note] = v }
   o.on("--by WHO", "who decided or ran this") { |v| opts[:by] = v }
   o.on("--app NAME", "Heroku app (default #{opts[:app]})") { |v| opts[:app] = v }
