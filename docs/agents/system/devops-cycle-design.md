@@ -117,7 +117,8 @@ lifecycles that meet at one seam — `submitted`.
   + an e2e smoke), deploys it to QA, and flips members `reviewed → assembled`
   only on **QA-green**. At ship **Steffon** runs the full e2e
   on the frozen ship SHA and, with explicit ship authority, the conductor
-  fast-forwards `release → main` (stamping `merged: "main"`, then `shipped`).
+  fast-forwards `release → main` (stamping `merged: "main"`, then `shipped`;
+  a member whose own commit is not in the pushed `main` is held at its stage).
   `submitted` is the seam — the feature agent hands the PR to DevOps there.
 
 QA and production are properties of the **release**, not the individual task —
@@ -295,7 +296,8 @@ an approved PR into `release` and attaches the task to the active candidate —
 `reviewed → assembled` only on **QA-green** (`Release::Conductor.qa_green!`,
 after `prepare` deploys `origin/release` to QA and it smokes green). `ship`
 fast-forwards each repo's `release → main` (stamping members `merged: "main"`)
-and deploys prod. After a ship, `release` collapses to `main` and re-accumulates
+and deploys prod. A member is stamped only when its merge commit is an ancestor of
+the `main` SHA pushed for its repo (`Release::MemberContainment`). After a ship, `release` collapses to `main` and re-accumulates
 the next candidate.
 
 | Field | Meaning |

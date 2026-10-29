@@ -449,7 +449,11 @@ An abort leaves the same board state as an interruption. Each abort names its ca
 QA evidence for **every** repo it names (gems and the `qa_evidence: exempt` repos, turf-vault,
 cyvasse, dads-app, prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5 and search-position, excepted), logged as `[release-evidence] … landed nothing for <repo>`. The ship guards
 `shipped_shas` the same way, though `merged: "main"` still lands per repo. Get the
-missing repo onto the candidate, or drop it from the task.
+missing repo onto the candidate, or drop it from the task. The ship also checks each
+member's OWN commit: a member whose merge commit (or PR head) is not an ancestor of
+the `main` SHA the ship pushed for its repo keeps its stage, is never stamped
+`merged: "main"`, and gets a task comment naming the missing commit
+(`Release::MemberContainment`, recorded as the release's `ship_holds`).
 
 ### Detecting an UNFINISHED release candidate
 
