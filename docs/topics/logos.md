@@ -548,7 +548,7 @@ admin sidebar as **Logos**.
 |-------|-------|
 | `/logos` | One row per brand in `config/logo_brands.yml`. Its **Logos** cell is one tight cluster (`logos/_cluster`): the **Stacked** Logo as a square on the left, the **Navbar** Logo beside it (each the brand's saved kit choice, its badge marked **Saved**, else its default: the Stacked Logo in its own form with the first word leading, the Navbar Logo on the rule of 4 with the second word leading), and the **Icon** as a small square under the Navbar Logo (with a saved kit icon all three draw it; without one each draws exactly what its brand page draws, so a saved choice keeps the icon it was saved with), each a tile with a badge naming its type and linking to its tab of the brand page. The brand cell says when its kit was saved, and under that holds the row's **Download Navbar**, **Download Stacked** and **Download Icon**, each the logo as shown ([below](#the-tables-downloads)). The header's **Download** control (PNG, SVG or JPEG; PNG unless `?download_format=` asks) sets every row's links. Then its **Typeface** hierarchy and its **Colours** (below). |
 | `/logos/compare` | **Two brands' kits side by side** ([below](#comparing-two-kits)): `?left=` and `?right=` (Commercial Welding v1 and v2 unless asked), `?type=`, and the shared `?rule=`, `?form=`, `?colouring=`, `?context=` and `?grid=1`. |
-| `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows ONE logo beside the edit panel, then the **Download card** ([below](#the-download-card)) beside the controls: PNG or SVG at six standard sizes or a custom Width × Height, any tone (Copy SVG is on `/logos/compare` only). Under them: **Kit choice** (on the Icon tab, the kit icon), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**. |
+| `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows ONE logo beside the edit panel, then the **Download card** ([below](#the-download-card)) beside the controls: PNG or SVG at six standard sizes or a custom Width × Height, any tone (Copy SVG is on `/logos/compare` only). Under them: **Kit choice** (on the Icon tab, the kit icon), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**, its **Spectrum** and its **Type Scale**. |
 | `/logos/:brand/icon` | The icon as `image/svg+xml`. Params: `tone`, `colouring` (`original`, `alt`), `icon_colour`. Named `<brand>-icon-<tone>[-original].svg`. |
 | `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`, `6`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4|6>-<text>-<tone>[-guides].svg`. |
 | `/logos/:brand/stacked` | One Stacked Logo. Params: `form` (`two_line`, `one_line`, `tagline`: only those the brand draws; absent is its own), `proportion` (`three_two_one`, the default, or `rule_of_three`), `text`, `tone`, `guides`. Named `<brand>-stacked-<two-line|one-line|tagline>[-rule-of-three]-<text>-<tone>[-guides].svg`. |
@@ -623,6 +623,34 @@ at once.
   reads better on it, graded AA (4.5:1) or AA Large (3:1).
 - **Copy CSS tokens** copies every step as a custom property,
   `--<brand>-<colour>-<step>` (`--welding-v2-welding-blue-700: #2D5E8E;`).
+
+### Type Scale
+
+Under the spectrum, the brand page shows its **type scale**: every text role as
+a multiple of one body size, built by `Logos::TypeScale`
+(`lib/logos/type_scale.rb`) and drawn by `logos/_type_scale`. It follows the
+font-sizing reel Alex McRitchie sent on 2026-10-28
+(instagram.com/reel/DeovSkExOpE). Nothing is stored.
+
+| Role | Multiple | Social post, 1080 wide (24 px base) | Web (16 px base) |
+|---|---|---|---|
+| Title | 6x | 144 px | 96 px |
+| Heading | 3x | 72 px | 48 px |
+| Subhead | 1.5x | 36 px | 24 px |
+| Body | 1x | 24 px | 16 px |
+| Fine print | 3/4x | 18 px | 12 px |
+
+- The multiples belong to the kit; the base belongs to the surface. 24 px is
+  the reel's minimum body size on a 1080-wide post, so a social post never
+  sets text below 18 px.
+- The title and heading are set in the brand's first typeface level that has a
+  font; subhead, body and fine print in its **Text** level, else its last level
+  with a font. Commercial Welding's display level is traced lettering, so every
+  role there is Montserrat Medium.
+- **Copy CSS tokens** copies the scale as custom properties,
+  `--<brand>-text-<role>` for the web and `--<brand>-social-text-<role>`
+  (`--welding-v2-social-text-fine-print: 18px;`), with the brand slugged as the
+  spectrum slugs it.
 
 ### Context is the hub theme
 

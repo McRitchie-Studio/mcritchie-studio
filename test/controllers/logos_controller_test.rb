@@ -209,6 +209,27 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='logo-spectrum-tokens'] pre", /--welding-v2-ember-400: #F08A5A;/
   end
 
+  # Task brand-kit-type-scale: each text role as a multiple of one base, on a social and a web base, set in the
+  # brand's own faces, and the scale as CSS tokens behind one copy button.
+  test "a brand page shows the type scale for a social post and the web, and its CSS tokens" do
+    log_in_as(@admin)
+    get logo_brand_path("studio")
+    assert_response :success
+    assert_select "section[data-test='brand-type-scale'] h2", "Type Scale"
+    rows = css_select("[data-test='logo-type-scale-role']")
+    assert_equal %w[title heading subhead body fine-print], rows.map { |row| row["data-role"] }
+    assert_equal %w[6x 3x 1.5x 1x 3/4x], rows.map { |row| row.at_css("[data-test='logo-type-scale-multiple']").text }
+    px = ->(surface) { rows.map { |row| row.at_css("[data-test='logo-type-scale-px'][data-surface='#{surface}']").text } }
+    assert_equal ["144 px", "72 px", "36 px", "24 px", "18 px"], px.call("social")
+    assert_equal ["96 px", "48 px", "24 px", "16 px", "12 px"], px.call("web")
+    assert_equal ["Montserrat ExtraBold", "Montserrat Light"], rows.map { |row| row.at_css("[data-test='logo-type-scale-face']").text }.uniq
+    assert_select "[data-test='logo-type-scale-sample'][data-role='title'][style*='font-size: 96px'][style*='font-weight: 800']"
+    assert_select "[data-test='logo-type-scale-sample'][data-role='body'][style*='font-size: 16px'][style*='font-weight: 300']"
+    copy_css = css_select("[data-test='logo-type-scale-copy-css']").first["data-copy-hex"]
+    assert_includes copy_css, "--studio-social-text-title: 144px;"
+    assert_select "[data-test='logo-type-scale-tokens'] pre", /--studio-text-body: 16px;/
+  end
+
   # The typeface hierarchies Alex McRitchie asked for (at most three levels, the most prominent first), as [role, name shown].
   HIERARCHIES = {
     "studio" => [["Display", "Montserrat ExtraBold", 800], ["Text", "Montserrat Light", 300], ["Tagline", "Montserrat Medium", 500]],

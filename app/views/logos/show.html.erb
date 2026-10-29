@@ -20,8 +20,9 @@
     kit record (BrandKit) saves an Icon, a Navbar and a Stacked choice
     (logos/_kit_choice) and shows them on every tab (logos/_kit_card). The
     Icon is the kit's atomic unit (task kit-icon-atomic-unit): once saved, the
-    Navbar and Stacked tabs draw it, and their Colouring sets the words.
-    Admin only (LogosController, BrandKitsController). %>
+    Navbar and Stacked tabs draw it, and their Colouring sets the words. Under the
+    kit: Colours and Typefaces, the Spectrum (logos/_spectrum) and the Type Scale
+    (logos/_type_scale). Admin only (LogosController, BrandKitsController). %>
 <%= render "components/copy_text_script" %>
 <% name = Logos::Variant.brand_name(@logo) %>
 <%# A control's look, chosen or not. A chosen one gets a transparent border, because the neutral button has a 1 px
@@ -224,5 +225,14 @@
       <p class="text-xs text-muted">Each colour from 50 (lightest) to 950 (darkest). The brand's own hex sits on its nearest step, marked Brand. Click a step to copy it.</p>
     </div>
     <%= render "logos/spectrum", kit: @kit %>
+  </section>
+
+  <%# Every text role as a multiple of one base, for a social post and the web, and the lot as CSS tokens (logos/_type_scale). %>
+  <section class="card p-4 sm:p-5 space-y-3" data-test="brand-type-scale" aria-labelledby="brand-type-scale-title">
+    <div class="space-y-1">
+      <h2 id="brand-type-scale-title" class="text-sm font-bold text-heading">Type Scale</h2>
+      <p class="text-xs text-muted">Every size is a multiple of the body size: title 6x, heading 3x, subhead 1.5x, body 1x, fine print 3/4x. Body is 24 px on a 1080-wide social post and 16 px on the web.</p>
+    </div>
+    <%= render "logos/type_scale", kit: @kit %>
   </section>
 <% end %>
