@@ -4669,6 +4669,13 @@ def prepare
   # or the final when it was already live). The member-provenance line below reads
   # it rather than the primary checkout, which sits on `main` and is a release
   # behind by construction. See Release::GemVersion.reported_version.
+  #
+  # THE STRAY-LOCK REFUSAL RUNS FIRST, so a refusal publishes nothing: a final is
+  # irreversible, and a refusal after it left a burned version for a lock the
+  # operator could have fixed for free. Then the burn record (a version this
+  # release supersedes before it ships), then the publish.
+  refuse_stray_locks_before_publish!(app_groups, gem_plan)
+  record_burned_finals!(gem_plan)
   published_gems = publish_gems_for_qa(gem_plan)
   # The stamp a ship with this flow checks its candidates against. Before the
   # consumer bump: a lock on a candidate never exists without it.
@@ -4678,6 +4685,8 @@ def prepare
               "#{gem_candidate_stamp(published_gems).inspect})); puts({gem_candidates: true}.to_json)")
   end
   bump_consumer_locks_for_qa(app_groups, published_gems)
+  # Again after the bump, over every lock: it asserts the bump left nothing behind
+  # (a lock it could not rewrite, a transitive one) before the pre-QA gate.
   refuse_stray_candidates!(app_groups, published_gems)
 
   #     4e. THE DRIFT POST-CONDITION: no swept consumer may be left resolving a gem
@@ -5778,16 +5787,26 @@ end
 # The RubyGems versions listing for the idempotency check: the parsed
 # /api/v1/versions/<gem>.json — an array of { "number" => ... } entries, all LIVE
 # (RubyGems excludes yanked versions from the listing entirely; there is no
-# `yanked` field). 404 (never published) or any error → [] (publish needed). A
-# live-only read.
-def rubygems_versions(gem_name)
-  out, status = Open3.capture2e("/usr/bin/curl", "-sf", "--max-time", GEM_CURL_MAX_TIME.to_s,
-                                "https://rubygems.org/api/v1/versions/#{gem_name}.json")
-  return [] unless status.success? && !out.strip.empty?
+# `yanked` field). 404 (never published) → []. A live-only read.
+#
+# FAIL CLOSED (Release::GemFlow.listing). Any other answer is UNREADABLE, never
+# empty: an empty read sent prepare to publish a version RubyGems already held,
+# RubyGems refused the push, and the abort then advised "it was yanked, advance
+# the version file", burning a number for a network blip. `strict: false` is for
+# an informational line that decides nothing; it answers nil.
+def rubygems_versions(gem_name, strict: true)
+  url = "https://rubygems.org/api/v1/versions/#{gem_name}.json"
+  out, status = Open3.capture2e("/usr/bin/curl", "-s", "--max-time", GEM_CURL_MAX_TIME.to_s,
+                                "-w", "\n%{http_code}", url)
+  body, _, code = out.to_s.rpartition("\n")
+  code = "" unless status.success?
+  Release::GemFlow.listing(code, body)
+rescue Release::GemFlow::ListingUnreadable => e
+  return nil unless strict
 
-  JSON.parse(out)
-rescue JSON::ParserError
-  []
+  abort!("#{Release::GemFlow::LISTING_UNREADABLE} for #{gem_name} (#{e.message}) — not treated as empty, because " \
+         "an empty listing would send this run to publish a version RubyGems may already hold. NOTHING was " \
+         "published by this read. Re-run once `curl -sf #{url}` answers with the versions list.")
 end
 
 # --- THE PUBLISH → INSTALL WINDOW ---------------------------------------------
@@ -7603,6 +7622,12 @@ def publish_gems_for_qa(gem_plan)
                                 "the next prepare allocates the next patch once the gem's tree changes"
     elsif gem["already_live"]
       say("  gem #{repo} #{final} is already live on RubyGems — consumers lock the final; no candidate")
+      # The re-run's half of the publish: proof that what RubyGems serves is this
+      # tree, then the tag a stopped run never pushed.
+      if Release::GemFlow.final?
+        verify_reused_final!(repo, gem["tip"], final)
+        ensure_release_tag!(repo, final, gem["tip"])
+      end
     elsif gem["candidate_live"]
       say("  gem #{repo} candidate #{locked} is already live and tagged at #{short(gem['tip'])} — " \
           "skip publish (idempotent re-run)")
@@ -8090,7 +8115,8 @@ end
 # Bundler keeps such a lock for as long as it satisfies the Gemfile pin. `wanted` is
 # { gem => the version this run locks or finalizes }; `ref_for` names the tree read.
 # Returns the findings as sentences; an unreadable lock is not a consumer.
-def stray_candidate_findings(app_groups, wanted, &ref_for)
+# `defer` (repo, gem) → true skips a lock the caller's next step rewrites.
+def stray_candidate_findings(app_groups, wanted, defer: nil, &ref_for)
   registered = RELEASE_REPOS.fetch("gems", {}).keys
   app_groups.flat_map do |group|
     repo = group["repo"]
@@ -8107,6 +8133,7 @@ def stray_candidate_findings(app_groups, wanted, &ref_for)
       pinned   = Release::GemfileRepin.prerelease_requirement(gemfile.to_s, gem_name).to_s
       held     = [resolved, pinned].find { |v| Release::ShipSequence.prerelease_version?(v) }
       next if held.nil?
+      next if defer&.call(repo, gem_name)
 
       want = wanted[gem_name].to_s
       next if !want.empty? && [held, Release::GemCandidate.final_of(held)].include?(want)
@@ -8136,6 +8163,78 @@ def refuse_stray_candidates!(app_groups, published_gems)
 
   abort!("a consumer is locked to a release candidate this sweep is not testing — " \
          "#{findings.join('; ')}. #{STRAY_CANDIDATE_REMEDY}")
+end
+
+# { gem => the version consumers lock for QA } from the phase 1 plan, before
+# anything is published: the final, or the candidate under the candidate flow.
+def planned_locks(gem_plan)
+  gem_plan.reject { |gem| gem["dry"] }.to_h do |gem|
+    [gem["repo"], gem["candidate"].to_s.empty? ? gem["version"] : gem["candidate"]]
+  end
+end
+
+# THE STRAY-LOCK REFUSAL, BEFORE ANY PUBLISH. The same two reads as
+# refuse_stray_candidates! (a prerelease nobody is testing, a final nobody is
+# shipping or a burned one) over origin/release as it stands now, with one
+# allowance: a lock on a gem this release carries, in a consumer whose Gemfile
+# declares it, is skipped, because the consumer lock bump rewrites it to the
+# planned version. Everything else refuses here, with nothing published.
+def refuse_stray_locks_before_publish!(app_groups, gem_plan)
+  return if DRY || gem_plan.empty?
+
+  wanted = planned_locks(gem_plan)
+  ref = "origin/#{RELEASE_BRANCH}"
+  gemfiles = {}
+  defer = lambda do |repo, gem_name|
+    next false unless wanted.key?(gem_name)
+
+    text = gemfiles[repo] ||= git_capture("-C", repo_path(repo), "show", "#{ref}:Gemfile").then { |out, ok| ok ? out.to_s : "" }
+    Release::ShipSequence.consumer_bump_action(text, gem_name, wanted[gem_name]) != :absent
+  end
+
+  finals = unshipped_final_findings(app_groups, wanted, defer: defer) { |_repo| ref }
+  unless finals.empty?
+    abort!("a consumer is locked to a published gem version no release has shipped — #{finals.join('; ')}. " \
+           "NOTHING was published. #{Release::GemFlow::UNSHIPPED_FINAL_REMEDY}")
+  end
+  findings = stray_candidate_findings(app_groups, wanted, defer: defer) { |_repo| ref }
+  return if findings.empty?
+
+  abort!("a consumer is locked to a release candidate this sweep is not testing — " \
+         "#{findings.join('; ')}. NOTHING was published. #{STRAY_CANDIDATE_REMEDY}")
+end
+
+# THE BURN RECORD, before any publish (Release::GemFlow.newly_burned). A final on
+# a gem's v* tags above the version on its main and below the one this release
+# carries can never ship: record it as a `burned-v<x.y.z>` tag on the commit its
+# v tag names, so every later prepare and every pre-deploy check refuses a lock
+# naming it, even once a newer version ships and it sits below main. Fails closed:
+# a burn that cannot be recorded is the gap this record closes, and nothing has
+# been published yet.
+def record_burned_finals!(gem_plan)
+  return if DRY || !Release::GemFlow.final?
+
+  gem_plan.each do |gem|
+    next if gem["dry"]
+
+    repo = gem["repo"]
+    path = repo_path(repo)
+    sh("git", "-C", path, "fetch", "origin", "main", "--quiet", capture: true)
+    shipped = gem_version_from_ref(repo, "origin/main")
+    tags, = git_capture("-C", path, "tag", "--list", "v*")
+    already = burned_gem_versions(repo)
+    burns = Release::GemFlow.newly_burned(published: tags.to_s.lines, shipped: shipped, carried: gem["version"]) - already
+    burns.each do |version|
+      tag = Release::GemFlow.burned_tag(version)
+      step("record: #{repo} #{version} is BURNED (published, never shipped, superseded by #{gem['version']}) → tag #{tag}")
+      sh("git", "-C", path, "tag", "-a", tag, "-m", "Burned #{repo} #{version}: superseded by #{gem['version']} " \
+         "before it shipped. No consumer may lock it.", "v#{version}^{}", capture: true)
+      _, pushed = sh("git", "-C", path, "push", "origin", "refs/tags/#{tag}", capture: true)
+      abort!("could not push #{tag} to #{repo}'s origin — the burn of #{version} would go unrecorded, and a lock " \
+             "naming it would pass once a newer version ships. NOTHING was published. Push it " \
+             "(git -C #{path} push origin refs/tags/#{tag}), then re-run `bin/release prepare`.") unless pushed
+    end
+  end
 end
 
 # The ship's producer lock bump and drift read, neither of which may stop a ship
@@ -8297,26 +8396,43 @@ end
 
 # The unshipped-final read (Release::GemFlow.unshipped_final_findings) over the
 # trees `ref_for` names: each swept consumer's lock against each registered gem's
-# version on its origin/main, the last one shipped.
-def unshipped_final_findings(app_groups, wanted, &ref_for)
+# version on its origin/main, the last one shipped, and against the gem's
+# recorded burned versions (its `burned-v*` tags). `defer` (repo, gem) → true
+# skips a lock the caller's next step rewrites.
+def unshipped_final_findings(app_groups, wanted, defer: nil, &ref_for)
   registered = RELEASE_REPOS.fetch("gems", {}).keys
   locks = app_groups.to_h do |group|
     repo = group["repo"]
     lock, ok = Dir.exist?(repo_path(repo)) ? git_capture("-C", repo_path(repo), "show", "#{ref_for.call(repo)}:Gemfile.lock") : ["", false]
-    [repo, ok ? registered.to_h { |g| [g, Release::ShipSequence.locked_version(lock, g)] } : {}]
+    gems = ok ? registered.to_h { |g| [g, Release::ShipSequence.locked_version(lock, g)] } : {}
+    [repo, gems.reject { |g, _| defer&.call(repo, g) }]
   end
-  # Only a gem some consumer locks at a version this release does not carry needs
-  # its main read. A stale origin/main reads an older shipped version and would
-  # refuse a sound lock, so fetch it first; an unfetchable repo reads as it is.
-  suspects = locks.values.flat_map(&:to_a).filter_map do |gem_name, locked|
-    gem_name unless locked.to_s.empty? || locked.to_s == wanted.to_h[gem_name].to_s
+  # Any gem some consumer locks needs its burned set read; only a gem locked at a
+  # version this release does not carry needs its main read. A stale origin/main
+  # reads an older shipped version and would refuse a sound lock, and a stale tag
+  # list misses a burn, so fetch both first; an unfetchable repo reads as it is.
+  locked_gems = locks.values.flat_map(&:to_a).reject { |_, locked| locked.to_s.empty? }
+  suspects = locked_gems.filter_map do |gem_name, locked|
+    gem_name unless locked.to_s == wanted.to_h[gem_name].to_s
   end.uniq
-  shipped = suspects.to_h do |gem_name|
+  shipped = {}
+  burned = {}
+  locked_gems.map(&:first).uniq.each do |gem_name|
     path = repo_path(gem_name)
-    sh("git", "-C", path, "fetch", "origin", "main", "--quiet", capture: true) if Dir.exist?(path)
-    [gem_name, gem_version_from_ref(gem_name, "origin/main")]
+    next unless Dir.exist?(path)
+
+    sh("git", "-C", path, "fetch", "origin", "main", "--tags", "--quiet", capture: true)
+    burned[gem_name] = burned_gem_versions(gem_name)
+    shipped[gem_name] = gem_version_from_ref(gem_name, "origin/main") if suspects.include?(gem_name)
   end
-  Release::GemFlow.unshipped_final_findings(locks: locks, shipped: shipped, wanted: wanted)
+  Release::GemFlow.unshipped_final_findings(locks: locks, shipped: shipped, wanted: wanted, burned: burned)
+end
+
+# The versions recorded as burned for one gem: its local `burned-v*` tags (the
+# caller fetches tags first).
+def burned_gem_versions(gem_name)
+  out, ok = git_capture("-C", repo_path(gem_name), "tag", "--list", "#{Release::GemFlow::BURNED_TAG_PREFIX}*")
+  ok ? Release::GemFlow.burned_versions(out) : []
 end
 
 # The last read before any deploy, beside the prerelease refusal: no tree locks a
@@ -8823,6 +8939,48 @@ def verify_live_final!(repo, version, candidate)
   step("checksum: the live #{repo} #{version} carries the same contents as #{candidate}, the candidate QA ran")
 end
 
+# THE REUSE PATH'S SERVED CHECK (the final flow's prepare re-run): the final is
+# already live, so there is no pushed artifact to compare bytes with, and a gem
+# build is not byte-reproducible. So build this tree's artifact (never pushed) and
+# compare its contents with the served .gem, file by file, the way the ship
+# compares a final with its candidate. A difference means the live final was not
+# built from this tree: a hand publish, or a tip that moved past its tag.
+def verify_reused_final!(repo, tip, final)
+  return if DRY
+
+  nothing = "Nothing was published by this run."
+  served = fetch_published_gem(repo, final) ||
+           abort!("could not download #{repo} #{final} from RubyGems to confirm the live final is this tree. " \
+                  "#{nothing} Re-run `bin/release prepare` once `curl -sfI #{format(GEM_FILE_URL, repo, final)}` answers.")
+  built = build_gem_artifact(repo, tip, final)
+  found = Release::GemCandidate.differences(gem_manifest(repo, built), gem_manifest(repo, served))
+  if found.any?
+    abort!("#{repo} #{final} is LIVE on RubyGems and does NOT match the tree at #{short(tip)}: " \
+           "#{found.first(8).join('; ')}#{found.size > 8 ? " (+#{found.size - 8} more)" : ''}. #{nothing} A " \
+           "published version cannot be replaced: advance the version past #{final} (qa-release.md, the " \
+           "STRANDED GEM WORK row), then re-run `bin/release prepare`.")
+  end
+  step("checksum: the live #{repo} #{final} (SHA-256 #{Digest::SHA256.file(served).hexdigest[0, 12]}…) carries the " \
+       "same contents as #{short(tip)}")
+end
+
+# Build one gem's artifact from `tip` in its primary, for a comparison only: it is
+# never pushed. The primary goes back to main afterwards.
+def build_gem_artifact(repo, tip, version)
+  meta     = gem_meta_for(repo)
+  gemspec  = meta["gemspec"].to_s.empty? ? "#{repo}.gemspec" : meta["gemspec"]
+  artifact = File.join(Dir.tmpdir, "release-verify-#{repo}-#{version}-#{Process.pid}.gem")
+  checkout_detached(repo, tip)
+  begin
+    step("gem build (compare only, never pushed): #{repo} #{gemspec} at #{short(tip)} → #{artifact}")
+    _, built = sh("gem", "build", gemspec, "--output", artifact, chdir: repo_path(repo))
+    abort!("gem build failed for #{repo} #{version} at #{short(tip)} — nothing was published") unless built
+  ensure
+    restore_gem_primary(repo)
+  end
+  artifact
+end
+
 # AFTER THE PUSH: what RubyGems serves must be the artifact this ship built.
 def confirm_published_checksum!(repo, version, pushed_sha)
   path = fetch_published_gem(repo, version) ||
@@ -9127,7 +9285,13 @@ def whats_live(repos, qa_shas)
     repo = group["repo"]
     if group["kind"] == "gem"
       version = gem_version_for(repo, group, frozen_sha_for(repo, qa_shas))
-      live    = !Release::ShipSequence.publish_needed?(version, rubygems_versions(repo))
+      listing = rubygems_versions(repo, strict: false)
+      if listing.nil?
+        say("    gem #{repo} #{version}: #{Release::GemFlow::LISTING_UNREADABLE} — the publish step reads it again " \
+            "and stops if it is still unreadable")
+        next
+      end
+      live = !Release::ShipSequence.publish_needed?(version, listing)
       say("    gem #{repo} #{version}: #{live ? 'LIVE on RubyGems — will skip' : 'not published — will publish'}")
     else
       # The LAST-KNOWN origin/main — the ref the ship actually advances

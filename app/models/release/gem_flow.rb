@@ -1,4 +1,5 @@
 require "rubygems"
+require "json"
 
 class Release
   # WHICH GEM FLOW A RELEASE RUNS, and the decisions that differ between them.
@@ -54,18 +55,32 @@ class Release
     # version on that gem's `main` (the last one shipped) only when this release
     # carries the gem at exactly that version.
     #
+    # And it may never lock a BURNED version, wherever that sits. Once a later
+    # version ships, a burned X is below main and the "above main" read passes it,
+    # so the burn is recorded while it is still visible (newly_burned) and read
+    # back here as a set.
+    #
     #   locks   { consumer => { gem => locked version or nil } }
     #   shipped { gem => the version declared on its main, "" when unreadable }
     #   wanted  { gem => the version this release publishes or locks }
+    #   burned  { gem => [versions recorded as burned] }
     #
-    # An unreadable `main` version is no finding: that gem is not checked out here,
-    # and the prerelease refusal and the ship's own gem phase still stand.
-    def unshipped_final_findings(locks:, shipped:, wanted:)
+    # An unreadable `main` version is no finding for the above-main read: that gem
+    # is not checked out here, and the prerelease refusal and the ship's own gem
+    # phase still stand. A burned version is a finding even then.
+    def unshipped_final_findings(locks:, shipped:, wanted:, burned: {})
       locks.to_h.flat_map do |repo, gems|
         gems.to_h.filter_map do |gem_name, locked|
           locked = locked.to_s.strip
-          main   = shipped.to_h[gem_name].to_s.strip
-          next if locked.empty? || main.empty?
+          next if locked.empty?
+
+          if Array(burned.to_h[gem_name]).map { |v| v.to_s.strip }.include?(locked)
+            next "#{repo} locks #{gem_name} #{locked}, a BURNED version (published by a prepare whose release " \
+                 "never shipped it, then superseded)"
+          end
+
+          main = shipped.to_h[gem_name].to_s.strip
+          next if main.empty?
           next unless newer?(locked, main)
           next if wanted.to_h[gem_name].to_s.strip == locked
 
@@ -74,6 +89,61 @@ class Release
             "#{carried.empty? ? "this release does not carry" : "this release does not ship (it carries #{carried})"}"
         end
       end
+    end
+
+    # THE BURN RECORD. A final is burned the moment a newer version of its gem is
+    # allocated past it before it ships: versions only move forward, so it can
+    # never deploy. That moment is visible at prepare, where `published` (the v*
+    # finals on the gem's tags) holds a version above the one on main and below
+    # the one this release carries. An ejected gem burns nothing yet: the next
+    # release may carry the same tree and reuse its final.
+    #
+    # Returns the versions to record, oldest first. An unreadable main records
+    # nothing (the version window cannot be read).
+    def newly_burned(published:, shipped:, carried:)
+      shipped = shipped.to_s.strip
+      carried = carried.to_s.strip
+      return [] if shipped.empty? || carried.empty?
+
+      Array(published).map { |v| v.to_s.strip.delete_prefix("v") }.uniq
+                      .select { |v| newer?(v, shipped) && newer?(carried, v) }
+                      .sort_by { |v| Gem::Version.new(v) }
+    end
+
+    # Recorded as an annotated tag in the gem repo, so every clone reads the same
+    # set after a fetch. The prefix never matches the `v*` reads (allocation, the
+    # stranded-work guard).
+    BURNED_TAG_PREFIX = "burned-v"
+
+    def burned_tag(version) = "#{BURNED_TAG_PREFIX}#{version}"
+
+    # `git tag --list 'burned-v*'` output → the burned versions.
+    def burned_versions(tag_lines)
+      tag_lines.to_s.lines.map(&:strip).filter_map do |tag|
+        tag.delete_prefix(BURNED_TAG_PREFIX) if tag.start_with?(BURNED_TAG_PREFIX) && tag.size > BURNED_TAG_PREFIX.size
+      end
+    end
+
+    # THE RUBYGEMS LISTING, read fail-closed. /api/v1/versions/<gem>.json answers
+    # 200 with the live versions (yanked ones are absent), or 404 for a gem never
+    # published. Anything else (a timeout, a 5xx, a body that is not a JSON list)
+    # is unreadable, never empty: an empty read sends prepare to publish a version
+    # RubyGems already holds, and RubyGems' refusal then reads as a yank.
+    class ListingUnreadable < StandardError; end
+
+    LISTING_UNREADABLE = "RubyGems listing unreadable"
+
+    def listing(code, body)
+      code = code.to_s.strip
+      return [] if code == "404"
+      raise ListingUnreadable, "HTTP #{code.empty? ? "none" : code}" unless code == "200"
+
+      parsed = JSON.parse(body.to_s)
+      raise ListingUnreadable, "the body is not a list of versions" unless parsed.is_a?(Array)
+
+      parsed
+    rescue JSON::ParserError
+      raise ListingUnreadable, "the body is not JSON"
     end
 
     UNSHIPPED_FINAL_REMEDY =
