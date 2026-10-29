@@ -334,8 +334,15 @@ module OutboundSeams
 
     # THE DEVNET GAUNTLET, process-wide as well as in `env`: a child of a harness
     # that never adopted OutboundSeams still runs the sealed driver and an
-    # unroutable devnet RPC, never turf-monster's real rehearsal. Only bin/release
-    # reads either name, so both are inert in-process.
+    # unroutable devnet RPC, never turf-monster's real rehearsal.
+    #
+    # NOT inert, unlike the three above: these two are live wherever bin/release.rb
+    # is loaded, and every test that loads it does so in a child that inherits them.
+    # That is the point (a set RELEASE_GAUNTLET_DRIVER also stops bin/release cutting
+    # a worktree in the real turf-monster checkout), and also the cost: a test of
+    # the default driver path, the release-tree worktree or the default devnet RPC
+    # must unset the name in its own child, as release_cli_prepare_gauntlet_test.rb
+    # does. Nothing in the test process itself (app/, lib/) reads either name.
     ENV["RELEASE_GAUNTLET_DRIVER"] = stub("qa-contest-rehearsal")
     ENV["RELEASE_DEVNET_RPC_URL"] = UNROUTABLE
   end
