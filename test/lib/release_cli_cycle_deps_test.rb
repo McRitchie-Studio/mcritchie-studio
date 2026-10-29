@@ -15,7 +15,7 @@ class ReleaseCliCycleDepsTest < ReleaseCliHarness
       { "repo" => "studio-engine", "kind" => "gem" },
       { "repo" => "mcritchie-studio", "kind" => "app", "prod_deploy" => { "strategy" => "git_push_heroku" } },
       { "repo" => "turf-monster", "kind" => "app", "prod_deploy" => { "strategy" => "git_push_heroku" } },
-      # config/release_repos.yml: turf-vault and chain-ops are apps with NO prod_deploy.
+      # The release repo registry: turf-vault and chain-ops are apps with NO prod_deploy.
       { "repo" => "turf-vault", "kind" => "app" },
       { "repo" => "chain-ops", "kind" => "app", "prod_deploy" => {} }
     ],
