@@ -38,5 +38,5 @@ test("a slow navigation shows the Sparkle loader until the page arrives", async 
 
   await page.waitForURL("**/packages");
   await expect(overlay(page)).toBeHidden();
-  expect(errors).toEqual([]);
+  expect(errors.pageErrors, errors.report()).toHaveLength(0);
 });
