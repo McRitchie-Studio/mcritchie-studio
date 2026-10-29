@@ -173,18 +173,26 @@ module LogosHelper
     "Left out of the saved choice, because the brand can no longer draw #{stale.size == 1 ? 'it' : 'them'}: #{words.to_sentence}. Save again to keep the choice as shown."
   end
 
-  # "Kit: saved Oct 11, 2026 by Alex McRitchie" or "Kit: not saved yet", then " · originals: 2" when it holds any. A
-  # kit is saved once it holds a saved Icon, Navbar or Stacked choice: a record left with none (a cleared choice, only
+  # "Kit: saved Oct 11, 2026 by Alex McRitchie" or "Kit: not saved yet", then " · motion: Pop and slide on the Stacked
+  # Logo" when it has a motion choice, then " · originals: 2" when it holds any. A
+  # kit is saved once it holds a saved Icon, Navbar or Stacked choice or a motion choice: a record left with none (a cleared choice, only
   # originals or notes) is not saved yet (task logo-gallery-polish-pass, item 4). The saver is named by their user
   # name (`savers`, BrandKit.saver_names), else their email's local part; `full: true` adds the email in brackets,
   # for the title attribute of a status cut short. The date is the kit's saved_at (its last logo choice saved or
   # cleared; task brand-kit-applied-status), else updated_at for a kit saved before saved_at was kept. The brand page,
   # its Kit card and Compare show it; the /logos table shows each app's status instead (brand_kit_apps/_status).
   def logo_kit_status(kit, savers = {}, full: false)
-    saved = kit&.persisted? && BrandKit::CHOICE_TYPES.any? { |type| kit.saved?(type) }
+    saved = kit&.persisted? && kit.anything_saved?
     status = saved ? ["Kit: saved #{(kit.saved_at || kit.updated_at).strftime('%b %-d, %Y')}", logo_kit_saver(kit, savers, full:)].compact.join(" ") : "Kit: not saved yet"
+    motion = (kit.saved_motion if saved)
+    status = "#{status} · motion: #{logo_motion_summary(motion)}" if motion
     originals = kit&.persisted? ? kit.originals_attachments.size : 0
     originals.positive? ? "#{status} · originals: #{originals}" : status
+  end
+
+  # A motion choice in words: "Pop and slide on the Stacked Logo" (task logo-motion-presets).
+  def logo_motion_summary(choice)
+    "#{Logos::MotionPreset.find(choice['preset']).title} on the #{Logos::MotionPreset::LOGOS.fetch(choice['logo'].to_sym)}"
   end
 
   # "by Alex McRitchie", "by alex" (an email with no named user), with " (alex@…)" when `full`; nil when nobody is named.

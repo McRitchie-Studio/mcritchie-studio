@@ -21,6 +21,8 @@ import "gmail_admin_modal"
 import "drive_picker"
 import "logo_editor"
 import "logo_download"
+// The brand page's Motion tab: plays the kit's logo in a motion preset; loads GSAP only where a Motion tab is.
+import "logo_motion"
 // The Pending agents table on /agents: a row's steps disclosure, copy fields, the avatar as PNG; inert elsewhere.
 import "agent_setups"
 import "dreams_filter"

@@ -9,13 +9,43 @@ module LogoBrandPage
 
   private
 
-  # An unknown brand is a 404. The logo is the one that draws the type asked for.
+  # An unknown brand is a 404. The logo is the one that draws the type asked for. ?type=motion is the Motion tab (task
+  # logo-motion-presets), whose logo is the one its motion plays on (?logo=, the Stacked Logo unless asked; the kit's
+  # saved one is read later, in #load_motion_page).
   def set_logo
     brand = params[:brand].to_s
     raise ActiveRecord::RecordNotFound, "No logo brand #{brand.inspect}" unless Logos::NavbarLogo.brands.include?(brand)
 
-    @type = Logos::Variant.type(params[:type])
-    @logo = Logos::Variant.logo(brand, @type)
+    @type = params[:type].to_s == "motion" ? :motion : Logos::Variant.type(params[:type])
+    @logo = Logos::Variant.logo(brand, @type == :motion ? :navbar : @type)
+  end
+
+  # THE MOTION TAB (task logo-motion-presets; epic logo-motion, phase 1): the kit's own Navbar or Stacked Logo played in
+  # one of the motion presets (Logos::MotionPreset), with the tab's ?preset= and ?logo= overriding the kit's saved motion
+  # choice, else the first preset on the Stacked Logo. @motion_logos is the logo it plays, per tone the page carries,
+  # exactly as the Kit card draws it (BrandKit#variant: the saved choice, else the default, with the kit's icon);
+  # Weight flick also needs the same logo with both words at their lightest weight (@motion_thin). Needs set_logo and
+  # set_context first.
+  def load_motion_page
+    brand = @logo.brand
+    @kit_record = BrandKit.for(brand)
+    @savers = BrandKit.saver_names([@kit_record])
+    @presets = Logos::MotionPreset.for(brand)
+    @motion_default = @kit_record.saved_motion
+    @motion_logo = params.key?(:logo) ? Logos::MotionPreset.logo(params[:logo]) : (@motion_default&.fetch("logo")&.to_sym || :stacked)
+    asked = params.key?(:preset) ? params[:preset] : (@motion_default&.fetch("preset") || @presets.first.key)
+    @preset = Logos::MotionPreset.find(Logos::MotionPreset.check(brand, preset: asked, logo: @motion_logo)["preset"])
+    @motion_default_shown = @motion_default == { "preset" => @preset.key.to_s, "logo" => @motion_logo.to_s }
+    @logo = Logos::Variant.logo(brand, @motion_logo)
+    @motion_logos = @tones.to_h { |tone| [tone, @kit_record.variant(@motion_logo, tone:)] }
+    @motion_thin = (@motion_logos.transform_values { |variant| thinnest(variant) } if @preset.needs_weights?)
+    @accents = @tones.to_h { |tone| [tone, Logos::MotionPreset.accent(brand, tone == :light ? :light : :dark)] }
+  end
+
+  # `variant` with its first word and ending at the lightest weight the library draws (Weight flick's first frame).
+  def thinnest(variant)
+    light = Logos::NavbarLogo::EDIT_WEIGHTS.min.to_s
+    Logos::Variant.parse(variant.logo, variant.params.transform_values(&:to_s).merge(first_weight: light, ending_weight: light), type: variant.type)
   end
 
   # @context is nil (follow the hub theme), :light, :dark or :watermark; @theme is the theme the page sets on load
