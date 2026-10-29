@@ -82,15 +82,27 @@ module AgentSetups
 
     # The installed token, read from THIS dyno's environment (a one-off dyno
     # boots on the newest config), asked of Discord. The hub never stores it.
+    #
+    # Every answer moves the card: a refused token, a rate limit, a 5xx or an
+    # unreachable Discord all land on needs_attention with the reason (and the
+    # non-401 faults in /error_logs, targeted at the setup), so the card never
+    # sits on "verifying" after a report, and verify can run again.
     def check_installed(setup, by)
       env = setup.detail(:secret_env)
       token = AgentMessages::DiscordBot.soul_token(setup.agent_slug)
       return attention(setup, "Steffon reported #{env} installed, but this dyno does not see it.") unless token
+      if (mirror = mirror_mismatch(setup, token))
+        return attention(setup, mirror)
+      end
 
       me_status, me = begin
         [ 200, AgentMessages::DiscordBot.new(token: token).current_user ]
       rescue AgentMessages::DiscordBot::Unauthorized
         [ 401, nil ]
+      rescue AgentMessages::DiscordBot::Error => e
+        setup.log_error!(e, "re-check of the installed #{env}")
+        return attention(setup, "The hub could not re-check the installed #{env} with Discord (#{recheck_fault(e)}); " \
+                                "the token is installed. Run bin/agent-setup verify #{setup.id} again.")
       end
       verdict = DiscordVerdict.call(me_status: me_status, me: me, expected_id: DiscordBotKit.application_id(setup),
                                     expected_name: setup.detail(:bot_name))
@@ -98,6 +110,26 @@ module AgentSetups
 
       setup.ready!(by: by, note: "Verified by #{by}; installed as #{env} on #{setup.detail(:install_app)}.")
       summary(setup)
+    end
+
+    # The soul whose app IS the shared bot installs its token twice in one
+    # release (secret_env and also_env, DISCORD_AGENT_BOT_TOKEN): a portal reset
+    # kills the old token at once, so the shared reader must move with it. The
+    # two vars must hold the same token; compared here, never printed.
+    def mirror_mismatch(setup, token)
+      also = setup.detail(:also_env) or return nil
+      mirrored = ENV[also].to_s.strip
+      return nil if mirrored.present? && ActiveSupport::SecurityUtils.secure_compare(mirrored, token)
+
+      "Steffon reported #{setup.detail(:secret_env)} and #{also} installed together, but on this dyno " \
+        "#{also} #{mirrored.empty? ? 'is unset' : 'holds a different token'}: run bin/agent-setup verify #{setup.id} again."
+    end
+
+    def recheck_fault(error)
+      case error
+      when AgentMessages::DiscordBot::RateLimited then "rate-limited, 429"
+      else error.message[/HTTP \d{3}/] || error.message[/unreachable/] || error.class.name.demodulize
+      end
     end
 
     def close(setup, request)
@@ -119,7 +151,7 @@ module AgentSetups
     def summary(setup)
       kit = setup.kit
       setup.details.to_h.slice(*%w[bot_name application_id bot_user_id guild_id guild_name permission_set permissions
-                                   secret_env install_app op_vault op_item op_field op_vault_id op_item_id])
+                                   secret_env also_env install_app op_vault op_item op_field op_vault_id op_item_id])
            .merge("id" => setup.id, "soul" => setup.agent_slug, "kind" => setup.kind, "target" => setup.target,
                   "status" => setup.status, "status_reason" => setup.status_reason,
                   "op_link" => kit.respond_to?(:op_link) && kit.op_link(setup).present?,

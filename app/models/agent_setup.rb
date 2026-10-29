@@ -103,6 +103,16 @@ class AgentSetup < ApplicationRecord
     update!(status: "closed", closed_by: by, closed_at: now)
   end
 
+  # Records a fault in /error_logs targeted at this setup, so the row is
+  # reachable from the card's own history. Logging never raises: a failed log
+  # must not stop the caller moving the card to needs_attention.
+  def log_error!(exception, what)
+    ErrorLog.capture!(exception).update(target: self, target_name: "agent setup #{id} (#{agent_slug} #{kind}): #{what}")
+  rescue StandardError => e
+    Rails.logger.error("[AgentSetup#log_error!] could not log #{exception.class} for setup #{id}: #{e.class}")
+    nil
+  end
+
   private
 
   # A belt under the rule: no value that looks like a Discord bot token (three

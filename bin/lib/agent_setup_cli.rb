@@ -15,14 +15,18 @@ require_relative "../../lib/agent_setups/discord_verdict"
 # THE SPLIT. The hub dyno holds no 1Password right, so the token is read, checked
 # and installed HERE, on the Mac, in Steffon's lane:
 #
-#   open     looks up the empty 1Password item's ids (never a value), then opens
+#   open     looks up the empty 1Password item's ids with `op item list` (a
+#            listing carries ids and titles, never a field), then opens
 #            the card on the hub (AgentSetups::Command over `heroku run`, as
 #            bin/books does: no new HTTP surface)
 #   verify   reads the token with `op read` (OP_CACHE=false, bounded by OpMeter),
 #            asks Discord GET /users/@me and /users/@me/guilds, maps the answers
 #            (AgentSetups::DiscordVerdict), pipes the token on STDIN to
-#            bin/heroku-secret-set as DISCORD_BOT_TOKEN_<SOUL>, and reports the
-#            verdict to the hub, which re-checks the INSTALLED token itself
+#            bin/heroku-secret-set as DISCORD_BOT_TOKEN_<SOUL> (and, for the
+#            soul whose app is the shared bot, DISCORD_AGENT_BOT_TOKEN in the
+#            same release), and reports the verdict to the hub, which re-checks
+#            the INSTALLED token itself. It installs only on the app the hub
+#            runs on (--app), so the re-check reads the var it just wrote
 #   list     the open cards, and the last few finished
 #   close    close a card (after the soul's first reply, or for a rotation)
 #
@@ -47,7 +51,8 @@ module AgentSetupCli
            bin/agent-setup verify <id> --by WHO [--no-install]
            bin/agent-setup close <id> --by WHO
     common: --app NAME (default #{MailCli::DEFAULT_APP}) · --local (bin/rails runner here, not heroku)
-    open looks up the 1Password item's ids itself (no value is read); the --op-*-id flags skip that.
+    open looks up the 1Password item's ids with `op item list` (ids and titles only, never a field value);
+    the --op-*-id flags skip that. verify installs only on --app, which must be the card's install app.
     SOP: docs/agents/agents/steffon/sops/agent-onboarding.md
   TXT
 
@@ -85,9 +90,17 @@ module AgentSetupCli
   end
 
   # The token on STDIN to bin/heroku-secret-set, which prints only a status.
-  def default_installer
-    lambda do |app, name, token|
-      out, err, status = Open3.capture3(SECRET_SET, app, name, stdin_data: token)
+  # Two names (a soul's var and the shared bot's) go as one --json body, so
+  # one release carries both and the two never land apart.
+  def default_installer(capture: Open3.method(:capture3))
+    lambda do |app, names, token|
+      names = Array(names)
+      out, err, status =
+        if names.size == 1
+          capture.call(SECRET_SET, app, names.first, stdin_data: token)
+        else
+          capture.call(SECRET_SET, app, "--json", stdin_data: JSON.generate(names.to_h { |n| [ n, token ] }))
+        end
       [ status.success?, "#{out}#{err}".strip ]
     end
   end
@@ -133,27 +146,37 @@ module AgentSetupCli
     raise Error, "name the soul: --soul SOUL" if soul.empty?
 
     vault = opts[:op_vault] || "studio-agents"
-    item = opts[:op_item] || "agents.discord.#{soul}"
+    item = opts[:op_item] || "discord.#{soul}.agents"
     ids = opts[:op_ids].empty? ? op_ids(op, item, vault, out) : opts[:op_ids]
     details = { "op_vault" => vault, "op_item" => item, "bot_name" => opts[:bot_name] }.merge(ids).compact
     answer = call.call({ "verb" => "open", "kind" => kind, "soul" => soul, "by" => by!(opts),
                          "permission_set" => opts[:permission_set], "details" => details }.compact)
     out.puts "opened ##{answer['id']}: #{answer['bot_name']} (#{answer['soul']}) · #{answer['status']}"
     out.puts "  1Password: #{answer['op_link'] ? "linked (#{item})" : "NOT linked: the card says so; re-open with --op-*-id"}"
-    out.puts "  invite permissions: #{answer['permission_set']} (#{answer['permissions']}) · installs as #{answer['secret_env']} on #{answer['install_app']}"
+    installs = [ answer["secret_env"], answer["also_env"] ].compact.join(" + ")
+    out.puts "  invite permissions: #{answer['permission_set']} (#{answer['permissions']}) · installs as #{installs} on #{answer['install_app']}"
     out.puts "  Alex McRitchie's card: https://mcritchie.studio/agents#agent-setup-#{answer['id']}"
     0
   end
 
-  # The item's and vault's ids from `op item get` (JSON parsed here, only the
-  # two ids kept; nothing is printed), and the account's from `op whoami`.
-  # A failed lookup opens the card without a link and says so.
+  # The item's and vault's ids from `op item list --vault V` matched on the
+  # exact title, and the account's from `op whoami`. A LISTING, never
+  # `op item get`: get answers with every field's value, so a rotation card,
+  # whose item already holds a token, would pull the live token into this
+  # process. A listing carries ids, titles and the vault's name, never a field.
+  # Nothing is printed. No match, two matches, or a failed lookup opens the
+  # card without a link and says so.
   def op_ids(op, item, vault, out)
-    got = JSON.parse(op.call("item", "get", item, "--vault", vault, "--format", "json"))
+    listed = JSON.parse(op.call("item", "list", "--vault", vault, "--format", "json"))
+    matches = Array(listed).select { |row| row.is_a?(Hash) && row["title"] == item }
+    unless matches.size == 1
+      out.puts "  (#{matches.empty? ? 'no' : matches.size} item titled #{item} in #{vault}; is it filed, and is the lane on?)"
+      return {}
+    end
     who = JSON.parse(op.call("whoami", "--format", "json"))
     host = URI(who["url"].to_s).host
-    { "op_item_id" => got["id"], "op_vault_id" => got.dig("vault", "id"), "op_account_id" => who["account_uuid"],
-      "op_host" => host }.compact
+    { "op_item_id" => matches.first["id"], "op_vault_id" => matches.first.dig("vault", "id"),
+      "op_account_id" => who["account_uuid"], "op_host" => host }.compact
   rescue JSON::ParserError, URI::InvalidURIError, TypeError
     out.puts "  (could not read #{item}'s ids from 1Password; is it filed, and is the lane on?)"
     {}
@@ -180,6 +203,7 @@ module AgentSetupCli
     unless %w[verifying needs_attention].include?(setup["status"])
       raise Error, "setup ##{id} is #{setup['status']}: verify runs after Alex McRitchie's Done (verifying or needs_attention)"
     end
+    install_target!(setup, opts)
 
     ref = "op://#{setup['op_vault_id'] || setup['op_vault']}/#{setup['op_item_id'] || setup['op_item']}/#{setup['op_field']}"
     token = op.call("read", ref).to_s.strip
@@ -197,14 +221,34 @@ module AgentSetupCli
 
     installed = false
     if opts[:install]
-      ok, said = installer.call(setup["install_app"], setup["secret_env"], token)
+      names = [ setup["secret_env"], setup["also_env"] ].compact.uniq
+      ok, said = installer.call(setup["install_app"], names, token)
       unless ok
         return report(call, out, id, by, ok: false, bot_user_id: verdict.bot_user_id,
-                                         reason: "bin/heroku-secret-set refused #{setup['secret_env']} on #{setup['install_app']}: #{said.to_s.gsub(token, '[REDACTED]')[0, 200]}")
+                                         reason: "bin/heroku-secret-set refused #{names.join(' + ')} on #{setup['install_app']}: #{said.to_s.gsub(token, '[REDACTED]')[0, 200]}")
       end
       installed = true
     end
     report(call, out, id, by, ok: true, installed: installed, bot_user_id: verdict.bot_user_id)
+  end
+
+  # An install must land where the hub's re-check runs, or the re-check reads
+  # an old var (or none) and the verdict is about the wrong app: `--app QA`
+  # would install on the card's app and re-check QA. So an installing verify
+  # runs only with --app equal to the card's install app, and never with
+  # --local (a local runner cannot see a Heroku var). --no-install skips this:
+  # it writes nothing, and the hub keeps the card waiting.
+  def install_target!(setup, opts)
+    return unless opts[:install]
+
+    target = setup["install_app"].to_s
+    if opts[:local]
+      raise Error, "setup ##{setup['id']} installs on #{target}, which a --local run cannot re-check: drop --local, or pass --no-install"
+    end
+    return if opts[:app].to_s == target
+
+    raise Error, "setup ##{setup['id']} installs on #{target}, not #{opts[:app]}: the hub's re-check would read #{opts[:app]}. " \
+                 "Run with --app #{target}, or pass --no-install"
   end
 
   def report(call, out, id, by, ok:, reason: nil, installed: false, bot_user_id: nil)

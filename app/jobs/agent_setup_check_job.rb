@@ -12,8 +12,11 @@
 # installed token from the dyno's own environment before marking it ready.
 #
 # A setup no longer `checking` (closed, or checked by an earlier run) is left
-# alone. A Discord fault (timeout, 5xx, rate limit) is recorded on the card and
-# in /error_logs, and the card says so; Done retries.
+# alone. ANY fault in the check leaves the card on needs_attention, never stuck
+# on checking (which has no Done button): a Discord fault (timeout, 5xx, rate
+# limit) and any other error (a bad config, a bug in a kit) are recorded in
+# /error_logs, targeted at the setup, and the card says what happened; Done
+# retries.
 class AgentSetupCheckJob < ApplicationJob
   queue_as :default
 
@@ -24,7 +27,22 @@ class AgentSetupCheckJob < ApplicationJob
     verdict, note = setup.kit.hub_check(setup)
     verdict == :verifying ? setup.await_verify!(note) : setup.needs_attention!(note)
   rescue AgentMessages::DiscordBot::Error => e
-    ErrorLog.capture!(e)
-    setup&.needs_attention!("The hub could not reach Discord to check the bot (#{e.class.name.demodulize}). Press Done to try again.")
+    stop(setup, e, "The hub could not reach Discord to check the bot (#{e.class.name.demodulize}). Press Done to try again.")
+  rescue StandardError => e
+    stop(setup, e, "The hub's check failed (#{e.class.name.demodulize}, recorded in /error_logs). Press Done to try again; " \
+                   "if it fails the same way, ask Steffon.")
+  end
+
+  private
+
+  # Log first (a failed log never raises), then move the card, so a fault in
+  # the move itself still left its cause in /error_logs.
+  def stop(setup, error, reason)
+    if setup
+      setup.log_error!(error, "hub check after Done")
+      setup.needs_attention!(reason)
+    else
+      ErrorLog.capture!(error)
+    end
   end
 end

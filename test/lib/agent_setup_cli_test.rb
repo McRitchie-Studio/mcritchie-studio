@@ -23,7 +23,7 @@ class AgentSetupCliTest < Minitest::Test
   SHOWN = {
     "id" => 7, "soul" => "mason", "kind" => "discord_bot", "status" => "verifying", "bot_name" => "Mason",
     "application_id" => APP_ID, "guild_id" => GUILD, "secret_env" => "DISCORD_BOT_TOKEN_MASON",
-    "install_app" => "mcritchie-studio", "op_vault" => "studio-agents", "op_item" => "agents.discord.mason",
+    "install_app" => "mcritchie-studio", "op_vault" => "studio-agents", "op_item" => "discord.mason.agents",
     "op_field" => "bot-token", "op_vault_id" => "v" * 26, "op_item_id" => "i" * 26, "steps" => []
   }.freeze
 
@@ -45,15 +45,24 @@ class AgentSetupCliTest < Minitest::Test
     end
   end
 
-  def op(read: BOT_TOKEN, item_json: nil)
+  # A listing as `op item list --format json` answers: ids, titles and the
+  # vault, never a field. A neighbour shares the vault, so the match is by title.
+  LISTING = [
+    { "id" => "n" * 26, "title" => "discord.mack.agents", "vault" => { "id" => "v" * 26, "name" => "studio-agents" } },
+    { "id" => "i" * 26, "title" => "discord.mason.agents", "vault" => { "id" => "v" * 26, "name" => "studio-agents" } }
+  ].freeze
+
+  # `item get` answers with every field's VALUE, the token included, so the
+  # fake fails the test the moment anything calls it.
+  def op(read: BOT_TOKEN, listing: LISTING)
     @op_calls = []
     lambda do |*argv|
       @op_calls << argv
-      case argv.first
-      when "read" then read
-      when "item" then item_json || JSON.generate("id" => "i" * 26, "vault" => { "id" => "v" * 26 },
-                                                  "fields" => [ { "id" => "bot-token", "value" => "LEAK-ME-NOT" } ])
-      when "whoami" then JSON.generate("url" => "https://my.1password.com", "account_uuid" => "a" * 26, "user_type" => "SERVICE_ACCOUNT")
+      case argv.first(2)
+      in [ "read", * ] then read
+      in [ "item", "list" ] then JSON.generate(listing)
+      in [ "item", "get" ] then flunk "op item get returns every field's value; open must never call it"
+      in [ "whoami", * ] then JSON.generate("url" => "https://my.1password.com", "account_uuid" => "a" * 26, "user_type" => "SERVICE_ACCOUNT")
       end
     end
   end
@@ -68,8 +77,8 @@ class AgentSetupCliTest < Minitest::Test
 
   def installer(ok: true, said: "200")
     @installs = []
-    lambda do |app, name, token|
-      @installs << [ app, name, token ]
+    lambda do |app, names, token|
+      @installs << [ app, names, token ]
       [ ok, said ]
     end
   end
@@ -96,11 +105,27 @@ class AgentSetupCliTest < Minitest::Test
 
     sent = @requests.first
     assert_equal %w[open discord_bot mason steffon], sent.values_at("verb", "kind", "soul", "by")
-    assert_equal({ "op_vault" => "studio-agents", "op_item" => "agents.discord.mason", "op_item_id" => "i" * 26,
+    assert_equal({ "op_vault" => "studio-agents", "op_item" => "discord.mason.agents", "op_item_id" => "i" * 26,
                    "op_vault_id" => "v" * 26, "op_account_id" => "a" * 26, "op_host" => "my.1password.com" }, sent["details"])
-    refute_includes JSON.generate(@requests) + @out.string, "LEAK-ME-NOT", "a field value in the item's JSON is dropped, never sent or printed"
-    refute(@op_calls.any? { |argv| argv.first == "read" }, "open reads no secret")
+    assert_equal [ %w[item list --vault studio-agents --format json], %w[whoami --format json] ], @op_calls,
+                 "open lists the vault (ids and titles) and asks whoami; it never gets the item or reads a field"
     assert_includes @out.string, "opened #3"
+  end
+
+  def test_open_with_no_item_of_that_title_opens_unlinked_and_says_so
+    @answers["open"] = { "id" => 5, "op_link" => false }
+    assert_equal 0, run_cli("open", %w[discord], soul: "steffon", by: "steffon")
+    assert_nil @requests.first["details"]["op_item_id"], "no id from a neighbour's row"
+    assert_includes @out.string, "no item titled discord.steffon.agents in studio-agents"
+    assert_equal [ %w[item list --vault studio-agents --format json] ], @op_calls
+  end
+
+  def test_open_refuses_to_guess_between_two_items_of_one_title
+    @answers["open"] = { "id" => 6, "op_link" => false }
+    twins = LISTING + [ LISTING.last.merge("id" => "j" * 26) ]
+    assert_equal 0, run_cli("open", %w[discord], soul: "mason", by: "steffon", op: op(listing: twins))
+    assert_nil @requests.first["details"]["op_item_id"]
+    assert_includes @out.string, "2 item titled discord.mason.agents"
   end
 
   def test_open_with_explicit_ids_skips_the_lookup
@@ -118,7 +143,7 @@ class AgentSetupCliTest < Minitest::Test
 
     assert_equal [ "read", "op://#{'v' * 26}/#{'i' * 26}/bot-token" ], @op_calls.first
     assert_equal [ [ "/users/@me", BOT_TOKEN ], [ "/users/@me/guilds", BOT_TOKEN ] ], @http_calls
-    assert_equal [ [ "mcritchie-studio", "DISCORD_BOT_TOKEN_MASON", BOT_TOKEN ] ], @installs
+    assert_equal [ [ "mcritchie-studio", [ "DISCORD_BOT_TOKEN_MASON" ], BOT_TOKEN ] ], @installs
     assert_equal({ "verb" => "report", "id" => 7, "by" => "steffon", "ok" => true, "installed" => true, "bot_user_id" => APP_ID }, report_request)
     assert_token_never_left
   end
@@ -147,7 +172,7 @@ class AgentSetupCliTest < Minitest::Test
     @answers["report"] = { "id" => 7, "status" => "needs_attention" }
     assert_equal 1, run_cli("verify", %w[7], by: "steffon", op: op(read: ""))
     assert_empty @http_calls
-    assert_match(/bot-token on agents.discord.mason is empty/, report_request["reason"])
+    assert_match(/bot-token on discord.mason.agents is empty/, report_request["reason"])
   end
 
   def test_verify_redacts_the_token_from_an_installer_refusal
@@ -163,6 +188,54 @@ class AgentSetupCliTest < Minitest::Test
     assert_equal 1, run_cli("verify", %w[7], by: "steffon")
     assert_empty @op_calls, "no read before Done"
     assert_match(/is pending: verify runs after/, @err.string)
+  end
+
+  def test_verify_installs_the_shared_bots_var_with_the_souls_in_one_call
+    @answers["show"] = SHOWN.merge("soul" => "alex", "secret_env" => "DISCORD_BOT_TOKEN_ALEX", "also_env" => "DISCORD_AGENT_BOT_TOKEN")
+    @answers["report"] = { "id" => 7, "status" => "ready" }
+    assert_equal 0, run_cli("verify", %w[7], by: "steffon")
+    assert_equal [ [ "mcritchie-studio", %w[DISCORD_BOT_TOKEN_ALEX DISCORD_AGENT_BOT_TOKEN], BOT_TOKEN ] ], @installs
+    assert_token_never_left
+  end
+
+  # Regression (Carl, pending-agents-page): `verify --app <qa>` installed on the
+  # card's app (production) and then asked QA to re-check a var it never got.
+  def test_verify_refuses_an_app_other_than_the_install_app_before_reading
+    @answers["show"] = SHOWN
+    assert_equal 1, run_cli("verify", %w[7], by: "steffon", app: "mcritchie-studio-qa")
+    assert_match(/installs on mcritchie-studio, not mcritchie-studio-qa/, @err.string)
+    assert_empty @op_calls, "refused before the token is read"
+    assert_empty @installs
+    assert_nil report_request, "nothing is reported to the hub"
+  end
+
+  def test_verify_refuses_to_install_from_a_local_run
+    @answers["show"] = SHOWN
+    assert_equal 1, run_cli("verify", %w[7], by: "steffon", local: true)
+    assert_match(/a --local run cannot re-check/, @err.string)
+    assert_empty @op_calls
+  end
+
+  def test_verify_with_no_install_may_run_against_another_app
+    @answers["show"] = SHOWN
+    @answers["report"] = { "id" => 7, "status" => "verifying" }
+    assert_equal 0, run_cli("verify", %w[7], by: "steffon", app: "mcritchie-studio-qa", install: false)
+    assert_empty @installs
+  end
+
+  def test_default_installer_pipes_one_name_plain_and_two_as_one_json_release
+    calls = []
+    fake = lambda do |*argv, stdin_data:|
+      calls << [ argv, stdin_data ]
+      [ "200\n", "", Struct.new(:success?).new(true) ]
+    end
+    AgentSetupCli.default_installer(capture: fake).call("mcritchie-studio", [ "DISCORD_BOT_TOKEN_MASON" ], BOT_TOKEN)
+    AgentSetupCli.default_installer(capture: fake).call("mcritchie-studio", %w[DISCORD_BOT_TOKEN_ALEX DISCORD_AGENT_BOT_TOKEN], BOT_TOKEN)
+    assert_equal [ AgentSetupCli::SECRET_SET, "mcritchie-studio", "DISCORD_BOT_TOKEN_MASON" ], calls[0][0]
+    assert_equal BOT_TOKEN, calls[0][1]
+    assert_equal [ AgentSetupCli::SECRET_SET, "mcritchie-studio", "--json" ], calls[1][0]
+    assert_equal({ "DISCORD_BOT_TOKEN_ALEX" => BOT_TOKEN, "DISCORD_AGENT_BOT_TOKEN" => BOT_TOKEN }, JSON.parse(calls[1][1]))
+    refute(calls.map(&:first).flatten.any? { |a| a.to_s.include?(BOT_TOKEN) }, "the token is never an argument")
   end
 
   def test_usage_errors_exit_2
