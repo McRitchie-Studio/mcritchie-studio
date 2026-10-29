@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_28_190000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -885,6 +885,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_190000) do
     t.string "entity", null: false
     t.datetime "generated_at"
     t.string "generated_by"
+    t.datetime "lender_generated_at"
+    t.string "lender_pdf_file_id"
+    t.string "lender_sheet_file_id"
     t.string "month", null: false
     t.string "pdf_file_id"
     t.string "sheet_file_id"
@@ -901,6 +904,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_190000) do
     t.bigint "amount_cents", null: false
     t.bigint "book_statement_id", null: false
     t.string "category"
+    t.datetime "classified_at"
     t.string "classified_by"
     t.datetime "created_at", null: false
     t.string "description", null: false
@@ -914,6 +918,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_190000) do
     t.index ["book_statement_id", "position"], name: "index_book_entries_on_book_statement_id_and_position", unique: true
     t.index ["book_statement_id"], name: "index_book_entries_on_book_statement_id"
     t.index ["entity", "category"], name: "index_book_entries_on_entity_and_category"
+    t.index ["entity", "classified_at"], name: "index_book_entries_on_entity_and_classified_at"
     t.index ["entity", "posted_on"], name: "index_book_entries_on_entity_and_posted_on"
   end
 

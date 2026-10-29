@@ -61,6 +61,10 @@ Rails.application.routes.draw do
   # Credential RECORDS by client workspace, with each workspace's 1Password
   # vault icon. Admin-only; no secret is ever stored or shown.
   get "credentials", to: "credential_vaults#index", as: :credentials
+  # The books: review and confirm bank lines per entity (config/books.yml), the
+  # same answers bin/books classify records. Admin-only.
+  get "books", to: "books#index", as: :books
+  patch "books/:entity/entries/:id", to: "books#classify", as: :book_entry, constraints: { id: /\d+/ }
   # Every client's stack: its own logo (ClientLogo), tier, software (Studio chest
   # when we host it), Google users, Resend. Admin-only.
   get "stack", to: "stack#index", as: :stack

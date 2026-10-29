@@ -1,0 +1,131 @@
+<%# /books: review and confirm book lines for one entity (BooksController). Each line waiting for an answer gets a category, a purpose for a distribution, and a note; Save records it through Books::Classify, the same path as bin/books classify. Recent answers carry who, when and an undo. Accounts show their last four digits only. %>
+<% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%b %-d, %-l:%M %p %Z") } %>
+<% amount_class = ->(cents) { cents.negative? ? "text-danger-ink" : "text-success-ink" } %>
+<section class="max-w-4xl mx-auto px-4 py-10 space-y-6" data-test="books-page" data-entity="<%= @entity.key %>">
+  <div>
+    <h1 class="text-3xl font-bold text-heading">Books</h1>
+    <p class="text-secondary mt-2">
+      Review and confirm what each bank line was. A line no rule could classify waits here until someone answers it, and keeps the month's close a DRAFT until then. Every answer is recorded with who gave it and when, exactly as <span class="font-mono text-sm">bin/books classify</span> records it.
+    </p>
+  </div>
+
+  <nav class="flex flex-wrap gap-2" aria-label="Entities" data-test="books-entities">
+    <% @entities.each do |entity| %>
+      <% count = @waiting_counts[entity.key].to_i %>
+      <% current = entity.key == @entity.key %>
+      <%= link_to books_path(entity: entity.key),
+                  class: "btn btn-sm #{current ? 'btn-primary' : 'btn-secondary'}",
+                  aria: { current: (current ? "page" : nil) }, data: { test: "books-entity-#{entity.key}" } do %>
+        <%= entity.name %>
+        <span class="badge text-xs ml-1 <%= count.positive? ? 'bg-warning/10 text-warning-ink border-warning/40' : 'bg-success/10 text-success-ink border-success/40' %>"><%= count %> waiting</span>
+      <% end %>
+    <% end %>
+  </nav>
+
+  <div class="card p-4 text-sm space-y-1" data-test="books-close">
+    <h2 class="font-semibold text-heading text-base">Latest close</h2>
+    <% if @last_close %>
+      <% s = @last_close.summary %>
+      <p class="text-body">
+        <span class="font-semibold"><%= @last_close.month %>: <%= @last_close.status.upcase %></span>
+        <% if s["cash_cents"] %> · cash <%= Books.money(s["cash_cents"]) %><% end %>
+        <% if s["net_income_ytd_cents"] %> · net income, year to date <%= Books.money(s["net_income_ytd_cents"]) %><% end %>
+        <% if s["capitalized_cents"].to_i.nonzero? %> · capitalized <%= Books.money(s["capitalized_cents"]) %><% end %>
+      </p>
+      <p class="text-muted text-xs">
+        Written <%= stamp.(@last_close.generated_at || @last_close.updated_at) %> by <%= @last_close.generated_by %>.
+        <% if @last_close.sheet_file_id %><%= link_to "Open the Sheet", Books::Drive.link(@last_close.sheet_file_id), target: "_blank", rel: "noopener", class: "underline" %><% end %>
+        <% if @last_close.lender_sheet_file_id %> · <%= link_to "Lender package", Books::Drive.link(@last_close.lender_sheet_file_id), target: "_blank", rel: "noopener", class: "underline" %><% end %>
+      </p>
+      <p class="text-muted text-xs">An answer here reaches the Sheet on the next run of <span class="font-mono">bin/books close <%= @entity.key %> &lt;YYYY-MM&gt;</span>.</p>
+    <% else %>
+      <p class="text-body">No month closed yet.</p>
+    <% end %>
+  </div>
+
+  <div class="space-y-3" data-test="books-waiting">
+    <h2 class="text-xl font-semibold text-heading">Waiting for an answer <span class="text-muted font-normal">(<%= @waiting.size %>)</span></h2>
+    <% if @waiting.empty? %>
+      <p class="card p-4 text-sm text-body" data-test="books-waiting-empty">Every line is answered.</p>
+    <% end %>
+    <% @waiting.each do |entry| %>
+      <div class="card p-4 space-y-3 text-sm scroll-mt-24" id="line-<%= entry.id %>" data-test="books-line" data-entry-id="<%= entry.id %>" x-data="{ kind: '' }">
+        <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-4">
+          <div class="min-w-0 space-y-1">
+            <p class="text-muted text-xs">
+              <span class="font-mono">#<%= entry.id %></span> ·
+              <time datetime="<%= entry.posted_on.iso8601 %>"><%= entry.posted_on.strftime("%b %-d, %Y") %></time> ·
+              <span data-test="books-line-account"><%= books_account(@entity, entry.account_key) %></span>
+            </p>
+            <p class="text-heading font-medium break-words" data-test="books-line-description"><%= books_masked(entry.description) %></p>
+            <% if entry.note.present? %>
+              <p class="text-muted text-xs" data-test="books-line-hint"><%= books_masked(entry.note) %></p>
+            <% end %>
+          </div>
+          <p class="font-mono font-semibold text-base shrink-0 <%= amount_class.(entry.amount_cents) %>" data-test="books-line-amount"><%= Books.money(entry.amount_cents) %></p>
+        </div>
+
+        <%= form_with url: book_entry_path(entity: @entity.key, id: entry.id), method: :patch,
+                      class: "grid grid-cols-1 sm:grid-cols-2 gap-3", data: { test: "books-line-form" } do %>
+          <label class="flex flex-col gap-1 min-w-0">
+            <span class="text-muted text-xs">Category</span>
+            <%= select_tag :category, books_category_options(@config), include_blank: "Pick a category",
+                           required: true, id: "category-#{entry.id}",
+                           class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-category" },
+                           "x-on:change": "kind = $event.target.selectedOptions[0]?.dataset.kind || ''" %>
+          </label>
+          <label class="flex flex-col gap-1 min-w-0" x-show="kind === 'distribution'" x-cloak>
+            <span class="text-muted text-xs">Purpose (groups distributions on the balance sheet)</span>
+            <%= text_field_tag :purpose, nil, list: "books-purposes", id: "purpose-#{entry.id}", autocomplete: "off",
+                               class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-purpose" } %>
+          </label>
+          <label class="flex flex-col gap-1 min-w-0 sm:col-span-2">
+            <span class="text-muted text-xs">Note: who said so, and what it was</span>
+            <%= text_field_tag :note, nil, id: "note-#{entry.id}", autocomplete: "off",
+                               placeholder: "Alex McRitchie #{Date.current.iso8601}: …",
+                               class: "input-field w-full min-w-0 text-sm", data: { test: "books-line-note" } %>
+          </label>
+          <div class="sm:col-span-2 flex justify-end">
+            <%= submit_tag "Save", class: "btn btn-primary btn-sm w-full sm:w-auto", data: { test: "books-line-save" } %>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+    <datalist id="books-purposes">
+      <% @purposes.each do |purpose| %><option value="<%= purpose %>"></option><% end %>
+    </datalist>
+  </div>
+
+  <div class="space-y-3" data-test="books-recent">
+    <h2 class="text-xl font-semibold text-heading">Answered recently</h2>
+    <% if @recent.empty? %>
+      <p class="card p-4 text-sm text-body">No answers recorded yet.</p>
+    <% else %>
+      <ul class="card divide-y divide-subtle text-sm" role="list">
+        <% @recent.each do |entry| %>
+          <li class="p-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3" data-test="books-recent-line" data-entry-id="<%= entry.id %>">
+            <div class="min-w-0 space-y-1">
+              <p class="text-muted text-xs">
+                <span class="font-mono">#<%= entry.id %></span> ·
+                <time datetime="<%= entry.posted_on.iso8601 %>"><%= entry.posted_on.strftime("%b %-d, %Y") %></time> ·
+                <%= books_account(@entity, entry.account_key) %> ·
+                <span class="font-mono <%= amount_class.(entry.amount_cents) %>"><%= Books.money(entry.amount_cents) %></span>
+              </p>
+              <p class="text-heading break-words"><%= books_masked(entry.description) %></p>
+              <p class="text-body">
+                <span class="font-semibold" data-test="books-recent-category"><%= @config.category(entry.category).label %></span><% if entry.purpose.present? %>: <%= entry.purpose %><% end %>
+              </p>
+              <p class="text-muted text-xs" data-test="books-recent-by">
+                by <%= entry.classified_by %>, <%= stamp.(entry.classified_at) %><% if entry.note.present? %> · <%= books_masked(entry.note) %><% end %>
+              </p>
+            </div>
+            <%= button_to "Undo", book_entry_path(entity: @entity.key, id: entry.id), method: :patch,
+                          params: { category: "none" },
+                          class: "btn btn-secondary btn-sm w-full sm:w-auto",
+                          form: { class: "shrink-0", data: { test: "books-recent-undo", turbo_confirm: "Return line ##{entry.id} to the lines waiting?" } } %>
+          </li>
+        <% end %>
+      </ul>
+    <% end %>
+  </div>
+</section>
