@@ -46,7 +46,7 @@ note under the table):
 | Jasper | `jasper@mcritchie.studio` | Dev Blockchain Expert — turf-vault, solana-studio, Phantom |
 | Steffon | `steffon@mcritchie.studio` | Infrastructure Expert — Heroku, deploys, CI, OPSEC |
 | Turf Monster | `team@turfmonster.media` | Sports data, Turf Monster app notifications — **own domain, not a forwarder** |
-| Mack | `mack@mcritchie.studio` | Worker agent comms — scraping, processing, bulk ops |
+| Mack | `mack@mcritchie.studio` | CFO (Finance/Admin): the books, the month close, the lender package |
 
 > The 5 new agents (Avi/Carl/Shannon/Jasper/Steffon) were added 2026-05-23 alongside Mason's
 > pivot from Infrastructure to Marketing; persona definitions live at `docs/agents/agents/<slug>/`.
