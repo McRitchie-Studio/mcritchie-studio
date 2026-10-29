@@ -49,7 +49,8 @@ test("the same preset plays on Commercial Welding v2's Navbar Logo, and Save as 
   await open(page, "/logos/welding_v2?type=motion&preset=particle_resolve&logo=navbar");
   await ready(page);
   await expect(page.locator("[data-test='motion-preset'][data-preset='weight_flick']")).toHaveCount(0);
-  await expect(page.locator("[data-test='kit-status']")).toHaveText("Kit: not saved yet");
+  // Other specs save welding_v2's logo choices in the same database, so only the motion part of the line is this spec's.
+  await expect(page.locator("[data-test='kit-status']")).not.toContainText("motion:");
 
   await page.locator("[data-test='motion-save']").click();
   await page.waitForURL(/\/logos\/welding_v2\?type=motion#motion$/);
