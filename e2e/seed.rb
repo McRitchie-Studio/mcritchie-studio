@@ -100,10 +100,11 @@ Agent.create!(name: "Steffon", slug: "steffon", status: "active", agent_type: "s
 Agent.create!(name: "Avi", slug: "avi", status: "active", agent_type: "product", title: "Product Owner")
 
 # One pending Discord bot card for the Pending agents column of /agents
-# (e2e/agents_pending_column.spec.js). Public values only: fake 1Password ids,
+# (e2e/agents_pending_column.spec.js). Public values only: fake 1Password ids
+# in the real shape (the account id uppercase, vault and item lowercase),
 # no token. The spec saves the Application ID and presses Done itself.
 AgentSetup.open!(agent_slug: "mason", kind: "discord_bot", target: "mcritchie-studio", opened_by: "steffon",
-                 details: { op_account_id: "a" * 26, op_vault_id: "b" * 26, op_item_id: "c" * 26, op_host: "my.1password.com" })
+                 details: { op_account_id: "A" * 26, op_vault_id: "b" * 26, op_item_id: "c" * 26, op_host: "my.1password.com" })
 
 # Skills
 scraping = Skill.create!(name: "Web Scraping", slug: "web-scraping", category: "data", description: "Extract data from websites")
