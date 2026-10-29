@@ -2,7 +2,6 @@
 
 require "time"
 require "stringio"
-require_relative "../../app/models/release/devnet_gauntlet"
 
 # ReleaseCycle — `bin/release cycle --clearance "<Alex McRitchie's words>"`: the whole
 # release, prepare to archive, as one resumable command.
@@ -103,12 +102,13 @@ module ReleaseCycle
   # (Release::DevnetGauntlet.covers?): none, a red one, or a green one on other code.
   def gauntlet_owed(current)
     current = {} unless current.is_a?(Hash)
-    turf = Release::DevnetGauntlet.turf_repos(current["repos"])
+    rules = gauntlet_rules
+    turf = rules.turf_repos(current["repos"])
     return nil if turf.empty?
 
     record = current["gauntlet"]
     shas = current["qa_shas"].is_a?(Hash) ? current["qa_shas"] : {}
-    return nil if Release::DevnetGauntlet.covers?(record, turf: turf, shas: shas)
+    return nil if rules.covers?(record, turf: turf, shas: shas)
 
     return "has no devnet gauntlet recorded" unless record.is_a?(Hash)
     return "has a RED newest devnet gauntlet (#{record['occurred_at']})" if record["status"] == "failed"
@@ -116,6 +116,16 @@ module ReleaseCycle
     tested = record.dig("metadata", "shas")
     tested = {} unless tested.is_a?(Hash)
     "has a green devnet gauntlet on other Turf code: it tested #{sha_list(turf, tested)}, QA runs #{sha_list(turf, shas)}"
+  end
+
+  # Release::DevnetGauntlet, loaded on first use rather than at require time. It
+  # opens `class Release`, so a plain require that runs BEFORE Rails boots (a test
+  # file loaded ahead of test_helper) defines a bare Release, and Zeitwerk then never
+  # loads the ActiveRecord model (Release.create! undefined). bin/release requires
+  # it itself; under Rails `defined?` autoloads it; bare ruby requires it here.
+  def gauntlet_rules
+    require_relative "../../app/models/release/devnet_gauntlet" unless defined?(Release::DevnetGauntlet)
+    Release::DevnetGauntlet
   end
 
   def sha_list(repos, shas)

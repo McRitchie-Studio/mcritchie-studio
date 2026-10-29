@@ -9,7 +9,6 @@
 require "minitest/autorun"
 require "stringio"
 require_relative "../../bin/lib/release_cycle"
-require_relative "../../app/models/release/devnet_gauntlet"
 
 class ReleaseCycleTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -95,6 +94,11 @@ class ReleaseCycleTest < Minitest::Test
   end
 
   def step_names(deps) = deps.calls.map(&:first)
+
+  # Release::DevnetGauntlet, loaded lazily (ReleaseCycle.gauntlet_rules says why): a
+  # file-level require here defined a bare Release ahead of Rails in a combined
+  # `bin/rails test` run, and Release::DevnetGauntletTest lost Release.create!.
+  def gauntlet_rules = ReleaseCycle.gauntlet_rules
 
   # --- resume from each stage ----------------------------------------------------
 
@@ -284,7 +288,7 @@ class ReleaseCycleTest < Minitest::Test
   end
 
   test "[unit] ship refused for the gauntlet re-runs prepare, then ships once more" do
-    refusal = "✗ #{Release::DevnetGauntlet.refusal(['turf-monster'])}"
+    refusal = "✗ #{gauntlet_rules.refusal(['turf-monster'])}"
     deps = FakeDeps.new(snapshots: [snap(current: release("assembled"))],
                         steps: { "ship" => [[1, refusal], [0, ""]] })
     status, out = run_cycle(deps)
@@ -294,7 +298,7 @@ class ReleaseCycleTest < Minitest::Test
   end
 
   test "[unit] a second gauntlet refusal stops the cycle; prepare is re-run only once" do
-    refusal = "✗ #{Release::DevnetGauntlet.refusal(['turf-monster'])}"
+    refusal = "✗ #{gauntlet_rules.refusal(['turf-monster'])}"
     deps = FakeDeps.new(snapshots: [snap(current: release("assembled"))], steps: { "ship" => [[1, refusal]] })
     status, = run_cycle(deps)
 
@@ -303,7 +307,7 @@ class ReleaseCycleTest < Minitest::Test
   end
 
   test "[unit] the gauntlet pattern matches Release::DevnetGauntlet's real refusal" do
-    assert ReleaseCycle.gauntlet_refusal?(Release::DevnetGauntlet.refusal(["turf-monster"]))
+    assert ReleaseCycle.gauntlet_refusal?(gauntlet_rules.refusal(["turf-monster"]))
     refute ReleaseCycle.gauntlet_refusal?("✗ release is 'assembling', not assembled")
   end
 

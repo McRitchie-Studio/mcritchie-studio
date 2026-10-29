@@ -318,7 +318,7 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
 
   def test_a_green_run_keeps_nothing
     with_scratch_turf do |primary, _main_sha, release_sha|
-      green = 'Release::DevnetGauntletRun::Result.new(ok: true, step: nil, reason: nil, metadata: {})'
+      green = "Release::DevnetGauntletRun::Result.new(ok: true, step: nil, reason: nil, metadata: {})"
       tree_call(primary, release_sha, write_state_body(green))
       assert_empty kept_states(primary)
     end
