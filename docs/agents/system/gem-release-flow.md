@@ -171,8 +171,10 @@ is the same tree `accepted` already locks, so it adds no new exposure.
   burned version, and an unreadable RubyGems listing stops the ship (in its
   what's-live line and in `ship_gem`) instead of reading as "not published".
 - Where the shorter ship shows: no surface carried a gem-release estimate that
-  assumed the re-lock. `bin/release status` prints the ladder verdict and program
-  drift only. The board's release summary (`app/views/tasks/_release_summary.html.erb`)
+  assumed the re-lock. `bin/release status` prints the ladder verdict, program
+  drift and, since `release-docs-second-pass`, each registered gem's burned versions
+  (its `burned-v*` tags, read from origin with `git ls-remote`); none of it is a
+  gem-release estimate. The board's release summary (`app/views/tasks/_release_summary.html.erb`)
   shows the gem artifact, which is now the final from QA onward. `Release::Flow` and
   `bin/ship-clock` read actuals from shipped releases, so their Ship phase shortens as
   releases ship under B. The "about 12 minutes" in `building-sop.md` is a task submit,

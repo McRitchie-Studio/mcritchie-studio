@@ -382,7 +382,9 @@ Do not do that: it **silently disarmed** this gate while printing "already green
   suite, before anything reaches Heroku. Confirm no ship is alive
   (`pgrep -f 'ruby .*bin/release[.]rb'`, which prints PIDs only and never a command line: no output means none; a `ps | grep` once
   matched its own wrapping shell and reported a false hold), free memory if that was the cause, and re-run
-  `bin/release ship --yes`; it resumes. Run that `pgrep` check before every merge onto
+  the ship with the flags it ran with (after a cleared ship, `bin/release ship --mode
+  cleared --clearance "<his words>" --yes`; a bare `--yes` is `--mode auto` and drops the
+  clearance record), or `bin/release cycle --clearance "<his words>" --yes`; it resumes. Run that `pgrep` check before every merge onto
   `accepted` while a release is in flight, too: a running ship is easy to miss.
 - **A local-suite red with green CI on the same frozen SHA** is usually machine
   load (a ship that ran turf's suite locally: `--skip-test-gate`, or no green read
@@ -413,8 +415,12 @@ QA-green `assembled` release:
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
-bin/release ship --yes
+bin/release ship --mode cleared --clearance "<Alex McRitchie's words>" --yes
 ```
+
+`--mode` picks the production authority (production-deploy's mode table); a bare
+`--yes` with no `--mode` is `auto`. Inside the full lane, `bin/release cycle` runs this
+step for you.
 
 The conductor records the gate for you:
 

@@ -5287,6 +5287,8 @@ end
 # Reading only the release rung is what let a reviewed-but-unswept task ride to
 # production with the guard fully green. The pure verdict + message live in
 # Release::CleanCheck; this owns only the live reads.
+# `bin/release status`: the ladder verdict, then three display-only reads that
+# never fail it: program drift, the upgrade reserve, and burned gem versions.
 def status
   clean_only = Release::Cli.take_flag(ARGV, "--clean-only")
   expedited  = opt_value("--task").to_s.strip

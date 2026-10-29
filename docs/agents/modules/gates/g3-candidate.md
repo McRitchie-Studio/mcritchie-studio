@@ -25,13 +25,14 @@ The gates in order: [DoR](dor.md) → [G2 Review](g2-review.md) →
 The gate window spans prepare's whole test-and-deploy half, and every test SOP
 run inside it rides the close:
 
-- **Gems ride G3 as a release candidate.** Before the window opens, prepare
-  publishes `x.y.z.rcN` of each swept gem and commits each consumer's lock onto it
-  (qa-release step 4d). So the tree G3 reads CI for, and the tree QA deploys, bundle
-  a published artifact of the gem's release tip. Under the default flow that artifact IS the final `x.y.z`
-  ([`gem-release-flow.md`](../../system/gem-release-flow.md)), so a red G3 that changes
-  the gem burns that version and the next sweep takes the next patch. Under the
-  candidate flow G3 never sees the final `x.y.z`:
+- **Gems ride G3 as their final.** Before the window opens, prepare publishes the
+  final `x.y.z` of each swept gem, tags it `v<x.y.z>`, and commits each consumer's
+  lock onto it (qa-release step 4d;
+  [`gem-release-flow.md`](../../system/gem-release-flow.md)). So the tree G3 reads CI
+  for, and the tree QA deploys, bundle the artifact production runs. A red G3 that
+  changes the gem burns that version (recorded as `burned-v<x.y.z>`), and the next
+  sweep takes the next patch. Under the `RELEASE_GEM_FLOW=candidate` rollback, prepare
+  publishes `x.y.z.rcN` instead and G3 never sees the final `x.y.z`:
   [G4 Ship](g4-ship.md) publishes it, proves it carries the candidate's contents,
   re-locks consumers to it and reads CI for that re-lock commit. A red G3 therefore
   strands a prerelease and no version.

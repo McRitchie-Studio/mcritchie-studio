@@ -242,7 +242,9 @@ The line describes the record; it does not change what grants authority. A row
 with no approver named covers the release exactly as before, and its scope line
 reads `at authorization` in place of `at approval`.
 
-`bin/release status` reads the lane for display only. A failure inside that read
+`bin/release status` also lists each registered gem's burned versions (`BURNED <gem>
+<versions>`: finals a prepare published that no release shipped); the ship refuses a
+lock naming one. `bin/release status` reads the lane for display only. A failure inside that read
 prints `lane: unavailable (<error class>)` under the current release and the
 command carries on; it never fails `status` or `prepare`, which make the same read.
 
