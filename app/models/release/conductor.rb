@@ -779,6 +779,23 @@ class Release
       release
     end
 
+    # Persist the members whose own code is NOT in what this release pushed to
+    # `main` (Release::MemberContainment): { slug => note }. Written by `bin/release
+    # ship` and `finalize` in the same conductor call as record_shipped_shas, right
+    # before ship!, and read by Release#ship!, which leaves each one at its stage.
+    #
+    # REPLACED, never merged: the holds are a verdict of THIS run's git reads, so a
+    # finalize that re-asks and now finds a member contained must be able to clear
+    # it. (shipped_shas merges because a repo's main never moves backwards; a hold
+    # can be lifted.)
+    def record_ship_holds(release:, holds:)
+      meta = release.metadata.deep_dup
+      meta["ship_holds"] = holds.to_h.to_h { |slug, note| [ slug.to_s, note.to_s ] }
+                                .reject { |slug, note| slug.empty? || note.empty? }
+      release.update!(metadata: meta)
+      release
+    end
+
     # Persist WHAT THE G3 PRE-QA GATE ACTUALLY CERTIFIED, per repo:
     #   metadata["qa_gates"][repo] = { "sha" =>, "cmd" =>, "ok" => true,
     #                                  "ci" => { "state" =>, "checks" => [...],

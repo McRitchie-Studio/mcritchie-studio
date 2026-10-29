@@ -577,6 +577,32 @@ class Release < ApplicationRecord
     evidence_keys("shipped_shas")
   end
 
+  # { slug => note } for members whose code this release's `main` push did not
+  # contain (Release::Conductor.record_ship_holds). Empty on a release the CLI
+  # never checked, which is the model-driven path.
+  def ship_holds
+    holds = metadata["ship_holds"]
+    holds.is_a?(Hash) ? holds.to_h { |slug, note| [ slug.to_s, note.to_s ] } : {}
+  end
+
+  # One comment per held, unshipped member, naming the missing commit. Idempotent
+  # per (release, note): a resumed ship or finalize with the same verdict posts
+  # nothing new, and a changed verdict posts its new sentence.
+  def note_ship_holds!(held)
+    held.each do |task_slug, note|
+      task = tasks.find_by(slug: task_slug)
+      next if task.nil? || task.stage == "shipped"
+      next if Activity.where(task_slug: task_slug, activity_type: "comment")
+                      .where("metadata ->> 'kind' = ?", "ship_containment_hold")
+                      .where("metadata ->> 'release' = ?", slug)
+                      .where(description: note).exists?
+
+      Rails.logger.warn("[release-containment] #{slug}: #{note}")
+      Activity.create!(task_slug: task_slug, activity_type: "comment", description: note,
+                       metadata: { "kind" => "ship_containment_hold", "release" => slug })
+    end
+  end
+
   # The members of `tasks` that must NOT be stamped, because a repo they name has
   # no landed record on this candidate. GEM repos are exempt: they publish rather
   # than deploy, so they carry no QA sha and no ff'd `main`, and demanding one
@@ -1031,6 +1057,15 @@ class Release < ApplicationRecord
     # this loop stamped a security patch shipped+main while turf's `main` sat
     # untouched at 0d63c7ebbb.
     unshipped = unproven_members(tasks.to_a, stamp: "shipped").map(&:slug)
+    # COMMIT-LEVEL EVIDENCE (Release::MemberContainment): the repo moved, but did
+    # the member's own commit move with it? 2026-10-28: a concurrent ship pushed
+    # moms-app main to eb7655f, which lacked moms-app-mail-from-team's merge
+    # d80098f, and this loop stamped the member shipped anyway. The CLI reads git
+    # and records the misses in metadata["ship_holds"]; each one keeps its stage
+    # and gets a note naming the missing commit.
+    held = ship_holds
+    note_ship_holds!(held)
+    unshipped |= held.keys
     # Ship members in the BOARD's own order (Task.ordered — the exact ordering the
     # Assembled column renders), so a watching operator sees the batch peel off the
     # TOP of the column downward, one card every `member_pause` seconds. This used

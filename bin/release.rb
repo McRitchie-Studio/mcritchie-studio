@@ -197,6 +197,7 @@ require_relative "../app/models/release/gem_candidate"
 require_relative "../app/models/release/gem_flow"
 require_relative "../app/models/release/lock_drift"
 require_relative "../app/models/release/ship_sequence"
+require_relative "../app/models/release/member_containment"
 require_relative "../app/models/release/parallel_deploy"
 require_relative "../app/models/release/devnet_gauntlet"
 require_relative "../app/models/release/devnet_gauntlet_run"
@@ -6157,6 +6158,49 @@ def ship_evidence
   @ship_evidence ||= {}
 end
 
+# { slug => note } for every app-repo member whose OWN commit is not an ancestor of
+# what ship_evidence says that repo's `main` now is (Release::MemberContainment).
+# Written onto the release (record_ship_holds) in the same conductor call as the
+# shipped_shas, and Release#ship! leaves each one at its stage with a note naming
+# the commit. 2026-10-28: a concurrent ship pushed moms-app main to eb7655f, which
+# lacked moms-app-mail-from-team's merge d80098f, and stamped the member shipped.
+#
+# Gem groups are not asked: a gem publishes by version, and its consumers' code is
+# checked in their own app groups. A DRY run reads nothing and holds nothing.
+def ship_containment_holds(app_groups)
+  return {} if DRY
+
+  holds = Release::MemberContainment.holds(
+    groups: app_groups, main_shas: ship_evidence,
+    code_shas: ->(repo, member) { member_code_shas(repo, member) },
+    contains: ->(repo, sha, main_sha) { Release::MemberContainment.git_verdict(path: repo_path(repo), sha: sha, main_sha: main_sha) }
+  )
+  holds.each_value { |note| say("  ⚠ containment hold: #{note}") }
+  say("  ✓ containment: every member's commit is in the main it shipped to") if holds.empty?
+  holds
+end
+
+# The member's merge commit and PR head in `repo`, read from GitHub: the recorded
+# PR for that repo, else the merged PR whose head is the member's branch. Raises on
+# an unreadable gh call so MemberContainment records an honest "could not prove".
+def member_code_shas(repo, member)
+  url = member.dig("pr_urls", repo).to_s
+  if url.empty?
+    branch = member["branch"].to_s.empty? ? "feat/#{member['slug']}" : member["branch"].to_s
+    nwo = repo_name_with_owner(repo)
+    out, status = bounded_capture2e("gh", "pr", "list", *(nwo.empty? ? [] : ["--repo", nwo]), "--head", branch,
+                                    "--state", "merged", "--json", "mergeCommit,headRefOid", "--limit", "1")
+    raise "gh pr list #{repo} --head #{branch}: #{out.to_s.strip[0, 120]}" unless status.success?
+
+    return Release::MemberContainment.shas_from_pr(Array(JSON.parse(out)).first)
+  end
+
+  out, status = bounded_capture2e("gh", "pr", "view", url, "--json", "mergeCommit,headRefOid")
+  raise "gh pr view #{url}: #{out.to_s.strip[0, 120]}" unless status.success?
+
+  Release::MemberContainment.shas_from_pr(JSON.parse(out))
+end
+
 # After push_frozen_main advances a repo's `main`, re-baseline that repo's
 # persistent `accepted` integration branch onto the same frozen SHA. This retires
 # the manual post-ship chore the conductor has run by hand after every ship —
@@ -10286,6 +10330,10 @@ def ship
   # Best-effort per-member usage for the assembled→shipped flips, captured from
   # the conductor's LOCAL transcript (the flips run on prod, transcript-less).
   ship_usage = move_usage_map(repos.flat_map { |g| Array(g["members"]).map { |m| m["slug"] } }.compact.uniq)
+  # Commit-level evidence: which members' own commits are NOT in the main this run
+  # pushed (Release::MemberContainment). Read from git + GitHub here, recorded on
+  # the release beside shipped_shas, honoured by Release#ship!.
+  ship_holds = ship_containment_holds(app_groups)
   step("record: Release::Conductor.ship! + post_release_notes")
   # record_shipped_shas FIRST, in the same call: it is what each repo's `main`
   # actually landed, and Release#ship! refuses to stamp a member spanning a repo
@@ -10294,6 +10342,7 @@ def ship
   shipped = conductor(
     "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
     "Release::Conductor.record_shipped_shas(release: r, shas: #{ship_evidence.inspect}); " \
+    "Release::Conductor.record_ship_holds(release: r, holds: #{ship_holds.inspect}); " \
     "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: #{ship_usage.inspect}, member_pause: #{BOARD_FLIP_CADENCE}); " \
     "Release::DurationCache.refresh_recent!(limit: 3); " \
     "notes = Release::Conductor.post_release_notes(release: r); " \
@@ -10528,12 +10577,15 @@ def finalize(slug = nil)
     if pending.include?(:ship)
       deployed_sha = ship_sha[APP].to_s
       deployed_sha = git_capture("-C", repo_path(APP), "rev-parse", "origin/main").first.strip if deployed_sha.empty?
+      # The same commit-level check a live ship makes, against the main proven live.
+      ship_holds = ship_containment_holds(app_groups - not_live)
       step("record: Release::Conductor.ship! + DurationCache.refresh_recent!")
       # The live-on-prod verdict above IS this run's per-repo ship evidence — record
       # it before the member stamps read it (see the guard block).
       conductor(
         "r = Release.find_by!(slug: #{rel_slug.inspect}); " \
         "Release::Conductor.record_shipped_shas(release: r, shas: #{ship_evidence.inspect}); " \
+        "Release::Conductor.record_ship_holds(release: r, holds: #{ship_holds.inspect}); " \
         "Release::Conductor.ship!(release: r, deployed_sha: #{deployed_sha.inspect}, by: #{by.inspect}, production_url: #{PROD_URL.inspect}, usage_by_slug: {}, member_pause: #{BOARD_FLIP_CADENCE}); " \
         "Release::DurationCache.refresh_recent!(limit: 3); " \
         "puts({slug: r.slug, state: r.reload.state, sha: r.deployed_sha.to_s[0,7]}.to_json)"
