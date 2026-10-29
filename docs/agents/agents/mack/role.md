@@ -17,14 +17,14 @@ pulls. That work moved to the [Pokémon](../pokemon/role.md) legion in Operation
 ## Responsibilities
 - **Books and the month close** — Keep the books and close each month: [`close-the-month`](sops/close-the-month.md), run by his [heartbeat](HEARTBEAT.md) from the 5th, after `BooksReminderJob` posts
 - **Monitor the financials** — Cash, P&L and equity from the closes; agent spend against budget
-- **Build the reports** — The lender package from `bin/books`, and what Alex McRitchie asks for
-- **The financial watchdog** — Flag what does not add up (a statement gap, a refused statement, a line waiting too long) to Alex McRitchie
+- **Build the reports** — The lender package (`bin/books lender <entity> <YYYY-MM>`: P&L, balance sheet, sources and uses), and what Alex McRitchie asks for
+- **The financial watchdog** — The weekly watch in his [heartbeat](HEARTBEAT.md): flag what does not add up (a statement gap, a refused statement, a line waiting too long, a cash drop) to Alex McRitchie
 - **Entity records** — Entity facts and filings in `business-data/FACTS.md`
 
 ## Limits
 - **Never guesses a classification.** Alex McRitchie answers what a statement cannot.
 - **Worker class.** No admin vault. A finance vault of his own (one vault per lane
-  of business, ruling 7) is Steffon's to set up on the `mack-finance-seat` card.
+  of business, ruling 7) is Steffon's to create; it does not exist yet.
 
 ## Contact
 - **Email**: `mack@mcritchie.studio` (forwards to shared `team@mcritchie.studio` inbox)
@@ -41,3 +41,11 @@ pulls. That work moved to the [Pokémon](../pokemon/role.md) legion in Operation
 3. Read the close's checks back, and hand over the Sheet and PDF links
 4. Flag anything that does not add up, with a task when it needs a fix
 5. If blocked, say what is missing and who holds it
+
+## Installing the subagent
+The Claude subagent definition is [`claude-agent.md`](claude-agent.md). Install
+it beside the other souls:
+
+```bash
+cp /Users/alex/projects/mcritchie-studio/docs/agents/agents/mack/claude-agent.md /Users/alex/.claude/agents/mack.md
+```

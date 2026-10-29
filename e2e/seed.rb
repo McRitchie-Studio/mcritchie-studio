@@ -1921,3 +1921,20 @@ BrandMarketingKit.delete_all
 BrandMarketingKit.create!(brand: "turf", drive_url: "https://drive.google.com/drive/folders/e2e-turf-kit",
                           owner: "team@mcritchie.studio", published_at: Time.utc(2026, 10, 28), published_by: "e2e-seed")
 puts "Seeded: turf's Google marketing kit"
+
+# e2e/books_review.spec.js (task mack-finance-seat): synthetic Industries lines for
+# the /books review page: one wire waiting for an answer, one answered already.
+# The account is the configured checking (last four only); nothing here is real.
+BookEntry.delete_all
+BookStatement.delete_all
+books_statement = BookStatement.create!(entity: "industries", account_key: "checking", period_start: Date.new(2026, 9, 1),
+                                        period_end: Date.new(2026, 9, 30), opening_cents: 50_000_00, credits_cents: 0,
+                                        debits_cents: 8_000_00, closing_cents: 42_000_00, source_sha256: "e2e-books-#{SecureRandom.hex(8)}")
+books_statement.entries.create!(entity: "industries", account_key: "checking", position: 0, posted_on: Date.new(2026, 9, 10),
+                                amount_cents: -3_000_00, section: "debit", description: "US BANK NA PAYMENT BILL PAY ACCT 99887766554433",
+                                category: "professional_fees", classified_by: "e2e-seed", classified_at: Time.utc(2026, 10, 28, 18),
+                                note: "Seeded: a broker payment, capitalize at close")
+books_statement.entries.create!(entity: "industries", account_key: "checking", position: 1, posted_on: Date.new(2026, 9, 24),
+                                amount_cents: -5_000_00, section: "debit", description: "OUTGOING FEDWIRETRANSFER",
+                                note: "rule wire-needs-answer: needs an answer")
+puts "Seeded: books review lines (industries)"

@@ -15,23 +15,35 @@ module Books
   #   Equity         the year's rollforward, tied back to the balance sheet
   #   Ledger         every line since the books began, signed (+ in, − out)
   #
+  # The lender package (layout: :lender, `bin/books lender`) is the same book
+  # with a Sources and Uses tab in place of Equity: since the books began,
+  # what funded the entity (opening balances, contributions, income) against
+  # where it went (expenses, distributions by purpose, capitalized assets such
+  # as deal costs, and the cash still on hand), with a must-be-0 check.
+  #
   # FORMULA ESCAPING. caxlsx escapes every "=" cell by default, so bank text can
   # never run as a formula. The Notes and Ledger tabs, which carry statement
   # descriptions, keep that default; only the three statement tabs, whose text
   # is config labels and Books::Classify-checked purposes, turn it off.
   #
-  # Contributions and distributions are equity and never reach the P&L. The
-  # Ledger's Kind column (income | expense | contribution | distribution |
-  # transfer | unclassified) is what every SUMIFS keys on.
+  # Contributions and distributions are equity and never reach the P&L. An
+  # asset line (deal costs) is cash turned into something the entity keeps: it
+  # reaches neither the P&L nor equity, and sits under assets beside the cash.
+  # The Ledger's Kind column (income | expense | asset | contribution |
+  # distribution | transfer | unclassified) is what every SUMIFS keys on.
   class Workbook
     # Zero shows as a dash. Escaped, not quoted: caxlsx writes format codes into
     # the XML attribute unescaped, and a quote there corrupts styles.xml.
     MONEY = '$#,##0.00;($#,##0.00);\-'
     LEDGER = "Ledger"
+    LAYOUTS = %i[close lender].freeze
     MONTHS = %w[Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec].freeze
 
     def initialize(entity:, month:, entries:, statements:, checks:, status:, generated_at:, generated_by:,
-                   config: Books::Config.current)
+                   config: Books::Config.current, layout: :close)
+      raise ArgumentError, "layout must be one of #{LAYOUTS.join(', ')}" unless LAYOUTS.include?(layout)
+
+      @layout = layout
       @entity = entity
       @month = month
       @month_start, @month_end = Books.month_range(month)
@@ -60,11 +72,16 @@ module Books
       income = by_kind.(ytd, "income")
       expense = -by_kind.(ytd, "expense")
       cash = @entity.accounts.values.sum { |a| opening_cents(a) + @entries.select { |e| e.account_key == a.key }.sum(&:amount_cents) }
+      capitalized = -by_kind.(@entries, "asset")
+      # No liabilities are kept, so total assets are equity.
+      total_assets = cash - by_kind.(@entries, "transfer") + capitalized
       {
         "status" => @status, "month" => @month,
         "income_ytd_cents" => income, "expenses_ytd_cents" => expense, "net_income_ytd_cents" => income - expense,
-        "cash_cents" => cash, "equity_cents" => cash - by_kind.(@entries, "transfer"),
-        "unclassified" => @entries.count { |e| !e.classified? }
+        "cash_cents" => cash, "capitalized_cents" => capitalized, "total_assets_cents" => total_assets,
+        "equity_cents" => total_assets, "unclassified" => @entries.count { |e| !e.classified? },
+        # Since the books began: the Sources and Uses tab's total.
+        "sources_cents" => total_openings + by_kind.(@entries, "contribution") + by_kind.(@entries, "income")
       }
     end
 
@@ -78,7 +95,7 @@ module Books
       notes(book)
       pnl(book)
       balance_sheet(book)
-      equity(book)
+      @layout == :lender ? sources_and_uses(book) : equity(book)
       ledger(book)
       package
     end
@@ -87,10 +104,10 @@ module Books
 
     def notes(book)
       book.add_worksheet(name: "Notes") do |ws|
-        ws.add_row [ "#{@entity.name}: month close #{@month}" ], style: @styles[:title]
+        ws.add_row [ "#{@entity.name}: #{@layout == :lender ? 'lender package' : 'month close'} #{@month}" ], style: @styles[:title]
         ws.add_row [ status_line ], style: (@status == "final" ? @styles[:bold] : @styles[:warn])
         ws.add_row [ "Basis: cash. Through #{@month_end.strftime('%B %-d, %Y')}." ]
-        ws.add_row [ "Generated #{@generated_at.in_time_zone('America/Denver').strftime('%Y-%m-%d %H:%M %Z')} by #{@generated_by} with bin/books close. A re-run overwrites this Sheet; record changes with bin/books classify, not here." ]
+        ws.add_row [ "Generated #{@generated_at.in_time_zone('America/Denver').strftime('%Y-%m-%d %H:%M %Z')} by #{@generated_by} with bin/books #{@layout}. A re-run overwrites this Sheet; record changes with bin/books classify, not here." ]
         ws.add_row [ "Ledger amounts are signed: money in is positive, money out negative. Member contributions and distributions are equity and never appear on the P&L." ]
         ws.add_row []
         ws.add_row [ "Check", "Result", "Detail" ], style: @styles[:header]
@@ -176,6 +193,9 @@ module Books
                      style: [ nil, @styles[:money], @styles[:money_input], @styles[:money] ]
         end
         ws.add_row [ "Transfers in transit between own accounts", "=-#{thru.('transfer')}" ], style: [ nil, @styles[:money] ]
+        @config.categories_of("asset").each do |cat|
+          ws.add_row [ cat.label, "=-#{label_thru(cat, p)}" ], style: [ nil, @styles[:money] ]
+        end
         assets = ws.rows.size + 1
         ws.add_row [ "Total assets", "=SUM(B#{first}:B#{assets - 1})" ], style: @styles[:total]
         ws.add_row []
@@ -216,7 +236,8 @@ module Books
         ws.add_row []
         first = ws.rows.size + 1
         ws.add_row [ "Equity at the start of the year",
-                     "=#{total_openings / 100.0}+SUMIFS(#{LEDGER}!$D:$D,#{LEDGER}!$F:$F,\"<>transfer\",#{LEDGER}!$H:$H,\"<\"&$B$3)" ],
+                     "=#{total_openings / 100.0}+SUMIFS(#{LEDGER}!$D:$D,#{LEDGER}!$F:$F,\"<>transfer\",#{LEDGER}!$F:$F,\"<>asset\"," \
+                     "#{LEDGER}!$H:$H,\"<\"&$B$3)" ],
                    style: [ nil, @styles[:money] ]
         ws.add_row [ "Net income, year to date", "=#{@refs.fetch(:net_income_ytd)}" ], style: [ nil, @styles[:money] ]
         ws.add_row [ "Member contributions", "=#{ytd.('contribution')}" ], style: [ nil, @styles[:money] ]
@@ -230,6 +251,52 @@ module Books
         ws.add_row [ "Balance sheet equity", "=#{@refs.fetch(:bs_equity)}" ], style: [ nil, @styles[:money] ]
         ws.add_row [ "Check: rollforward − balance sheet (must be 0)", "=ROUND(B#{close}-B#{close + 1},2)" ],
                    style: [ @styles[:bold], @styles[:money] ]
+        ws.column_widths 52, 18
+      end
+    end
+
+    # Since the books began, through the close's month: where the money came
+    # from and where it went. Sources less uses must be 0, because every line
+    # is in exactly one row (transfers in transit and unclassified lines too).
+    def sources_and_uses(book)
+      book.add_worksheet(name: "Sources and Uses", escape_formulas: false) do |ws|
+        ws.add_row [ "#{@entity.name}: sources and uses of cash" ], style: @styles[:title]
+        ws.add_row [ "Since the books began, through #{@month_end.strftime('%B %-d, %Y')} (cash basis). #{status_line}" ]
+        ws.add_row []
+        ws.add_row [ "Period (YYYYMM)", period_key ], style: [ nil, @styles[:input] ]
+        p = "$B$4"
+        thru = ->(kind, extra = "") { "SUMIFS(#{LEDGER}!$D:$D,#{LEDGER}!$F:$F,\"#{kind}\"#{extra},#{LEDGER}!$H:$H,\"<=\"&#{p})" }
+        ws.add_row []
+        ws.add_row [ "Sources", "Amount" ], style: @styles[:header]
+        first = ws.rows.size + 1
+        ws.add_row [ "Opening balances (first statements' beginning balances)", total_openings / 100.0 ],
+                   style: [ nil, @styles[:money_input] ]
+        ws.add_row [ "Member contributions", "=#{thru.('contribution')}" ], style: [ nil, @styles[:money] ]
+        ws.add_row [ "Income", "=#{thru.('income')}" ], style: [ nil, @styles[:money] ]
+        sources = ws.rows.size + 1
+        ws.add_row [ "Total sources", "=SUM(B#{first}:B#{sources - 1})" ], style: @styles[:total]
+        ws.add_row []
+        ws.add_row [ "Uses", "Amount" ], style: @styles[:header]
+        ufirst = ws.rows.size + 1
+        ws.add_row [ "Expenses", "=-#{thru.('expense')}" ], style: [ nil, @styles[:money] ]
+        distribution_purposes.each do |purpose|
+          ws.add_row [ "Member distributions: #{purpose}", "=-#{thru.('distribution', ",#{LEDGER}!$G:$G,\"#{purpose}\"")}" ],
+                     style: [ nil, @styles[:money] ]
+        end
+        @config.categories_of("asset").each do |cat|
+          ws.add_row [ cat.label, "=-#{label_thru(cat, p)}" ], style: [ nil, @styles[:money] ]
+        end
+        ws.add_row [ "Unclassified lines (to confirm), net", "=-#{thru.('unclassified')}" ], style: [ nil, @styles[:money] ]
+        ws.add_row [ "Transfers in transit between own accounts", "=-#{thru.('transfer')}" ], style: [ nil, @styles[:money] ]
+        @entity.accounts.each_value do |a|
+          ws.add_row [ "Cash on hand: #{a.label}",
+                       "=#{opening_cents(a) / 100.0}+SUMIFS(#{LEDGER}!$D:$D,#{LEDGER}!$B:$B,\"#{a.label}\",#{LEDGER}!$H:$H,\"<=\"&#{p})" ],
+                     style: [ nil, @styles[:money] ]
+        end
+        uses = ws.rows.size + 1
+        ws.add_row [ "Total uses", "=SUM(B#{ufirst}:B#{uses - 1})" ], style: @styles[:total]
+        ws.add_row []
+        ws.add_row [ "Check: sources − uses (must be 0)", "=ROUND(B#{sources}-B#{uses},2)" ], style: [ @styles[:bold], @styles[:money] ]
         ws.column_widths 52, 18
       end
     end
@@ -250,6 +317,10 @@ module Books
     end
 
     # --- figures ------------------------------------------------------------------
+
+    # One category's lines through the period, keyed on the Ledger's Category
+    # column (the label, from config/books.yml, so it is ours, not bank text).
+    def label_thru(cat, period) = "SUMIFS(#{LEDGER}!$D:$D,#{LEDGER}!$E:$E,\"#{cat.label}\",#{LEDGER}!$H:$H,\"<=\"&#{period})"
 
     def status_line
       return "FINAL: every check passed and every line is classified." if @status == "final"

@@ -62,6 +62,11 @@ was revenue. **The agent never guesses a classification.**
   P&L: the lender reads these statements.
 - **Acquisition costs paid from Studio are distributions** (purpose `Acquisition
   costs`). The deal belongs to McRitchie Industries, not to Studio.
+- **Deal costs are an asset, not an expense** (category `deal_costs`, kind
+  `asset`): on the buyer's books (Industries), broker fees, studies and other
+  costs of buying a business are capitalized until the deal closes or is
+  abandoned. They leave cash for an asset line on the balance sheet, and reach
+  neither the P&L nor equity.
 - **A purpose groups distributions on the balance sheet.** Reuse the existing
   purposes: `Owner draws`, `Acquisition costs`, `Equity injection to Industries`.
 - **Unanswered lines stay unclassified.** The close is then a DRAFT. Its balance
@@ -116,7 +121,23 @@ bin/books classify studio 41 42 --category member_distribution --purpose "Acquis
 ```
 
 The categories are the keys under `categories:` in `config/books.yml`. Use
-`--category none` to undo an answer. When the same payee will recur every month,
+`--category none` to undo an answer.
+
+**Alex McRitchie can answer on the page instead:** `/books` on the hub (admin
+only; Finance in the sidebar) lists each entity's waiting lines with a category,
+purpose and note, and records his answer through the same code as `classify`,
+with his address as `by`. Recent answers show who and when, with an Undo. Point
+him there when the batch is long.
+
+**A reclass is a re-classify.** A line already booked (say as
+`professional_fees`, noted "capitalize at close") moves by classifying it again:
+
+```bash
+bin/books classify industries 42 46 --category deal_costs \
+  --note "Alex McRitchie 2026-10-28: broker payments, capitalized as deal costs" --by mack
+```
+
+Then re-run the close; every tab follows. When the same payee will recur every month,
 propose a rule; adding it is a `config/books.yml` diff, so it runs the DevOps cycle.
 
 ### 4. Close the month
@@ -139,14 +160,30 @@ deleted, the close makes a new one and says that its link changed.
 The Sheet's tabs:
 - **Notes:** status and reasons, the checks, waiting lines, and the statements.
 - **P&L:** by month for the year.
-- **Balance Sheet:** cash per account against the statement, and equity by source.
+- **Balance Sheet:** cash per account against the statement, capitalized assets
+  (deal costs), and equity by source.
 - **Equity:** the year's rollforward, tied to the balance sheet.
 - **Ledger:** every line since the books began.
 
 Every figure is a formula over the Ledger. The "must be 0" checks on Balance Sheet
 and Equity have to read zero.
 
-### 5. Hand back
+### 5. The lender package (when Alex McRitchie asks for one)
+
+```bash
+bin/books lender industries 2026-09 --by <you>
+```
+
+It needs that month's close first, and writes its own Sheet and PDF beside it in
+`Closes/<YYYY-MM>/`: Notes, P&L, Balance Sheet, **Sources and Uses** (since the
+books began: opening balances, contributions and income against expenses,
+distributions by purpose, deal costs, unclassified lines and cash on hand), and
+the Ledger. Every figure is a formula over the Ledger, built by the close's own
+code, so its figures are the close's. If a line was classified after the close
+ran, it says so: re-run the close, then the package, before either goes out.
+Read its must-be-0 checks first, and say DRAFT plainly when it is one.
+
+### 6. Hand back
 
 Give Alex McRitchie:
 - the status, with a DRAFT's open items as a short list;

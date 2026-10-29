@@ -11,6 +11,7 @@
 #   bin/books intake <entity> [--file PDF ...] --by WHO
 #   bin/books classify <entity> <id> [<id> ...] --category KEY [--purpose TEXT] [--note TEXT] --by WHO
 #   bin/books close <entity> <YYYY-MM> --by WHO
+#   bin/books lender <entity> <YYYY-MM> --by WHO
 #
 # Exit: 0 ok · 1 the run failed, or intake refused a statement · 2 usage.
 

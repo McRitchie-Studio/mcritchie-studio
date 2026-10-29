@@ -11,7 +11,7 @@ module Books
     Result = Struct.new(:record, :checks, :summary, :sheet_id, :pdf_id, :notes, keyword_init: true) do
       def to_h
         {
-          "month" => record.month, "status" => record.status, "summary" => summary,
+          "month" => record.month, "status" => summary["status"], "summary" => summary,
           "checks" => checks.map(&:to_h), "notes" => notes,
           "sheet" => Books::Drive.link(sheet_id), "pdf" => Books::Drive.link(pdf_id)
         }
@@ -28,21 +28,14 @@ module Books
     end
 
     def call(generated_by:)
-      checker = Checks.new(@entity, @month)
-      checks = checker.call
-      status = checks.all?(&:ok) ? "final" : "draft"
-      entries = BookEntry.for_entity(@entity.key).through(@month_end).chronological.to_a
       now = @clock.call
-      workbook = Workbook.new(entity: @entity, month: @month, entries: entries, statements: checker.statements,
-                              checks: checks, status: status, generated_at: now, generated_by: generated_by,
-                              config: @config)
+      workbook, checks, status = build(generated_by: generated_by, generated_at: now)
       record = BookClose.find_or_initialize_by(entity: @entity.key, month: @month)
       title = "#{@entity.name}: #{@month} close#{' (DRAFT)' if status == 'draft'}"
       notes = []
 
-      sheet_id = write_sheet(record, title, workbook.to_xlsx, notes)
-      pdf = @drive.export_pdf(sheet_id)
-      pdf_id = write_pdf(record, "#{title}.pdf", pdf, notes)
+      sheet_id = write_sheet(record.sheet_file_id, title, workbook.to_xlsx, notes)
+      pdf_id = write_pdf(record.pdf_file_id, "#{title}.pdf", @drive.export_pdf(sheet_id), notes)
 
       summary = workbook.summary
       record.update!(status: status, sheet_file_id: sheet_id, pdf_file_id: pdf_id, unclassified_count: summary["unclassified"],
@@ -50,15 +43,29 @@ module Books
       Result.new(record: record, checks: checks, summary: summary, sheet_id: sheet_id, pdf_id: pdf_id, notes: notes)
     end
 
+    # The checks, the status they give, and the workbook over every line through
+    # month end: shared with Books::LenderPackage, so the two can never disagree
+    # on a figure or on FINAL.
+    def build(generated_by:, generated_at:, layout: :close)
+      checker = Checks.new(@entity, @month)
+      checks = checker.call
+      status = checks.all?(&:ok) ? "final" : "draft"
+      entries = BookEntry.for_entity(@entity.key).through(@month_end).chronological.to_a
+      workbook = Workbook.new(entity: @entity, month: @month, entries: entries, statements: checker.statements,
+                              checks: checks, status: status, generated_at: generated_at, generated_by: generated_by,
+                              config: @config, layout: layout)
+      [ workbook, checks, status ]
+    end
+
     private
 
-    # Update in place when this month has a Sheet already. If Drive refuses the
+    # Update in place when this month has the file already. If Drive refuses the
     # update (the file was deleted, or moved out of reach), make a new one and
     # say that the link changed.
-    def write_sheet(record, title, xlsx, notes)
-      if record.sheet_file_id
+    def write_sheet(existing_id, title, xlsx, notes)
+      if existing_id
         begin
-          return @drive.update(record.sheet_file_id, body: xlsx, content_type: Books::Drive::XLSX_MIME, name: title)
+          return @drive.update(existing_id, body: xlsx, content_type: Books::Drive::XLSX_MIME, name: title)
         rescue Google::Apis::ClientError => e
           notes << "the previous Sheet could not be updated (#{e.message}); a new one was made, so its link changed"
         end
@@ -67,10 +74,10 @@ module Books
                     content_type: Books::Drive::XLSX_MIME, mime_type: Books::Drive::SHEET_MIME)
     end
 
-    def write_pdf(record, name, pdf, notes)
-      if record.pdf_file_id
+    def write_pdf(existing_id, name, pdf, notes)
+      if existing_id
         begin
-          return @drive.update(record.pdf_file_id, body: pdf, content_type: Books::Drive::PDF_MIME, name: name)
+          return @drive.update(existing_id, body: pdf, content_type: Books::Drive::PDF_MIME, name: name)
         rescue Google::Apis::ClientError => e
           notes << "the previous PDF could not be updated (#{e.message}); a new one was made, so its link changed"
         end

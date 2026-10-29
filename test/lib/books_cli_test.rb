@@ -84,6 +84,37 @@ class BooksCliTest < Minitest::Test
     assert_includes out, "OPEN Every line is classified: 5 line(s) need an answer"
   end
 
+  def test_lender_takes_a_month_and_a_who_and_prints_its_links_and_figures
+    assert_raises(BooksCli::Error) { BooksCli.build_request("lender", %w[industries 2026-09], BooksCli.default_options) }
+    assert_raises(BooksCli::Error) { BooksCli.build_request("lender", %w[industries], BooksCli.default_options.merge(by: "a")) }
+    request = BooksCli.build_request("lender", %w[industries 2026-09], BooksCli.default_options.merge(by: "mack"))
+    assert_equal({ "verb" => "lender", "entity" => "industries", "month" => "2026-09", "by" => "mack" }, request)
+
+    answer = { "month" => "2026-09", "status" => "draft", "sheet" => "https://drive/ls", "pdf" => "https://drive/lp",
+               "summary" => { "net_income_ytd_cents" => -70_000, "cash_cents" => 100_000, "equity_cents" => 2_200_000,
+                              "capitalized_cents" => 2_100_000, "unclassified" => 3 },
+               "checks" => [], "notes" => [ "the ledger changed since the 2026-09 close ran" ] }
+    code, out, = run_cli("lender", %w[industries 2026-09], { by: "mack" }, answer: answer)
+
+    assert_equal 0, code
+    assert_includes out, "2026-09 lender package: DRAFT"
+    assert_includes out, "Sheet: https://drive/ls"
+    assert_includes out, "Capitalized (deal costs and other assets) $21,000.00"
+    assert_includes out, "note: the ledger changed"
+  end
+
+  def test_status_prints_each_close_cash_and_the_oldest_waiting_line
+    answer = { "entity" => "X LLC", "accounts" => [], "inbox_unread" => [], "unclassified" => 3, "oldest_waiting" => "2026-09-24",
+               "closes" => [ { "month" => "2026-09", "status" => "draft", "sheet" => "https://drive/s", "cash_cents" => 2_414_354,
+                               "lender_sheet" => "https://drive/ls" } ] }
+    code, out, = run_cli("status", %w[industries], {}, answer: answer)
+
+    assert_equal 0, code
+    assert_includes out, "Lines waiting for an answer: 3 (oldest 2026-09-24)"
+    assert_includes out, "close 2026-09 DRAFT cash $24,143.54 https://drive/s"
+    assert_includes out, "lender package https://drive/ls"
+  end
+
   def test_a_refused_statement_exits_one
     answer = { "results" => [ { "name" => "x.pdf", "status" => "refused", "problems" => [ "credit lines total $1.00" ] } ], "unclassified" => [] }
     code, out, = run_cli("intake", %w[studio], { by: "alex" }, answer: answer)

@@ -7,7 +7,7 @@ module Books
   # leave lines unclassified.
   class Config
     PATH = Rails.root.join("config/books.yml")
-    KINDS = %w[income expense contribution distribution transfer].freeze
+    KINDS = %w[income expense asset contribution distribution transfer].freeze
 
     Error = Class.new(StandardError)
 

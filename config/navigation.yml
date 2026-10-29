@@ -117,6 +117,9 @@ pages:
   stack:          { page: "stack#index",             audience: admin, label: Stack, emoji: "🥞", hover_emoji: "🧭", desc: Each client's tier and software }
   credentials:    { page: "credential_vaults#index", audience: admin, label: Credentials, emoji: "🔐", hover_emoji: "🗝️", desc: "Software by entity, with vault icons" }
 
+  # ── Finance ──────────────────────────────────────────────────────────────
+  books: { page: "books#index", audience: admin, label: Books, emoji: "📒", hover_emoji: "🧾", desc: "Review and confirm bank lines, per entity" }
+
   # ── Email ────────────────────────────────────────────────────────────────
   broadcasts:          { page: "broadcasts#index",         audience: admin, label: Broadcasts, emoji: "📣", hover_emoji: "✉️", desc: "Compose, send and measure marketing email" }
   contacts:            { page: "contacts#index",           audience: admin, label: Contacts, emoji: "📇", hover_emoji: "✅", desc: "The mailing list, verified and watched live" }
@@ -160,6 +163,8 @@ sidebar:
   - { title: Clients, group: admin, pages: [build_requests, stack, credentials] }
   # The mailing list and what is sent to it.
   - { title: Email,   group: admin, pages: [broadcasts, contacts, broadcast_analytics] }
+  # Mack's seat (CFO): the books and what they report.
+  - { title: Finance, group: admin, pages: [books] }
   - { title: Ops,     group: admin, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, activities_agents, admin_agent_messages, admin_report_destinations, admin_csp_reports] }
   - { title: Data,    group: admin, pages: [admin_ai_builder_multiple, workflow_news_index, merge_people, duplicates_people] }
   # The recast pipeline: every generated version of every source video.

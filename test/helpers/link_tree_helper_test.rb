@@ -60,6 +60,16 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   end
 
   # task contacts-admin-page: the mailing list sits beside the broadcasts sent to it.
+  test "admin sidebar has a Finance section that links the books review page" do
+    self.admin_enabled = true
+
+    finance = sidebar_link_sections.find { |section| section[:title] == "Finance" }
+
+    assert finance&.fetch(:admin), "expected an admin Finance section"
+    assert_equal [ [ "Books", "/books" ] ], finance.fetch(:links).map { |link| link.values_at(:label, :href) }
+    assert_equal "/books", Rails.application.routes.url_helpers.books_path
+  end
+
   test "admin sidebar has an Email section with Broadcasts then Contacts" do
     self.admin_enabled = true
 
@@ -316,6 +326,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def build_requests_path = "/build/requests"
   def stack_path = "/stack"
   def credentials_path = "/credentials"
+  def books_path = "/books"
   def deployments_path = "/deployments"
   def admin_dashboard_path = "/admin"
   def admin_theme_path = "/admin/theme"

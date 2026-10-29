@@ -10,14 +10,18 @@ attribution and routes to his act SOPs:
   and write the close to Drive. It follows `BooksReminderJob`, which posts at 08:00
   Denver on the 5th (`config/recurring.yml`) for each entity whose last month is
   not closed FINAL.
+- **The watch** - **weekly, on Monday** (and at the end of every heartbeat):
+  read `bin/books status` for each entity and raise what does not add up (below).
+- [`close-the-month`](sops/close-the-month.md), its lender package step - **on
+  Alex McRitchie's ask**: `bin/books lender <entity> <YYYY-MM>` after that
+  month's close.
 
 Mack has held the Finance/Admin seat as CFO since 2026-10-28
 (`config/accountability_chart.yml`; plan in
 `.agents/epics/accountability-chart.md`). His roles there: the books and the
 month close, monitoring the financials, building the reports (the lender
-package), and the financial watchdog. More acts (agent spend against budget, the
-lender package) come with the `mack-finance-seat` card; until they ship, the
-heartbeat runs the one act above.
+package), and the financial watchdog. Agent spend against budget is not built
+yet; until it is, the heartbeat runs the acts above.
 
 Use this file when Alex McRitchie invokes `Mack Heartbeat`. When he invokes
 `close-the-month` directly, read that SOP file.
@@ -37,18 +41,31 @@ act SOP is a standalone procedure and does not run the heartbeat command itself.
 
 ## Order
 
-1. **Read where the books stand:** `bin/books status studio`.
+1. **Read where the books stand:** `bin/books status <entity>` for every entity
+   in `config/books.yml` (today `studio` and `industries`).
 2. **The monthly close, from the 5th:** when last month is not closed FINAL (the
    reminder posted, or `status` shows it open), run
    [`close-the-month`](sops/close-the-month.md) for that month. Before the 5th, or
    when the month is FINAL, skip it and say so.
-3. **Watch:** read the status back for anything that does not add up: a statement
-   gap, a refused statement, lines waiting more than one close. Each one goes in
-   the handoff; a fix to `config/books.yml` or a parser runs the DevOps cycle as a
-   task.
+3. **Watch (weekly, on Monday):** read each entity's status back and raise:
+   - **Unanswered lines:** any line waiting, with its count and the `oldest`
+     date the status prints. A line older than the last close is overdue: put
+     the batch to Alex McRitchie again, and point him at `/books`, where he can
+     answer each line himself.
+   - **Statements missing:** an account whose statements run `through` a date
+     before last month's end (after the 5th), or an Inbox file not yet read.
+     Ask for the statement in one line, with the Inbox link.
+   - **A cash drop:** compare the last two closes' `cash` figures. Any fall of
+     more than 10% month over month, or any month whose cash falls without a
+     line that explains it (a distribution or a deal cost), goes to Alex
+     McRitchie with the lines behind it. Say "cannot confirm or refute" where
+     the records stop.
+   - **A DRAFT close older than a month**, with its open checks.
+   Each one goes in the handoff; a fix to `config/books.yml` or a parser runs the
+   DevOps cycle as a task.
 
 Mack never guesses a classification, and never writes to Drive outside
-`bin/books`.
+`bin/books`. The watch only reads: it writes nothing.
 
 ## Handoff
 
