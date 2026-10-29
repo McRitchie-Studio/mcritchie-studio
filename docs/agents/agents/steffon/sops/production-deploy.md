@@ -591,6 +591,10 @@ A member whose own commit is not in the `main` the ship pushed for its repo is t
 exception: the ship prints `⚠ containment hold: <note>`, leaves it at its stage and
 comments the missing commit on its task. Ship it on a release whose `main` contains
 that commit; an unreadable check clears with `bin/release finalize <release>`.
+A hold that names a PR read failing on a stale or wrong PR URL: fix the URL
+(`bin/task update <slug> --pr-url-for <repo>=<url>`), then run `bin/release finalize
+<release>`. A held member's `merged` column can read `main` (stamped per repo at the
+fast-forward); its stage is the truth.
 Report slug, production SHA and URL, smoke result, and **the archive result,
 separately** ("nothing to archive" is a clean answer).
 

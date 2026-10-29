@@ -788,10 +788,19 @@ class Release
     # finalize that re-asks and now finds a member contained must be able to clear
     # it. (shipped_shas merges because a repo's main never moves backwards; a hold
     # can be lifted.)
-    def record_ship_holds(release:, holds:)
+    #
+    # `checked` is every member slug the CLI's plan snapshot covered — the members
+    # the check gave a verdict, held or not. Release#ship! FAILS CLOSED on it: a
+    # live member outside that list joined after the snapshot (Release#add reopens
+    # an assembled release mid-ship — the 2026-10-28 incident's own path, where
+    # moms-app-mail-from-team was swept in after the ship began) and is held as
+    # unchecked. Replaced each run too, so finalize's fresh snapshot covers it. A
+    # release with no recorded list (the model-driven path) holds nothing extra.
+    def record_ship_holds(release:, holds:, checked: nil)
       meta = release.metadata.deep_dup
       meta["ship_holds"] = holds.to_h.to_h { |slug, note| [ slug.to_s, note.to_s ] }
                                 .reject { |slug, note| slug.empty? || note.empty? }
+      meta["ship_checked"] = Array(checked).map(&:to_s).reject(&:empty?).uniq unless checked.nil?
       release.update!(metadata: meta)
       release
     end

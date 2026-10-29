@@ -580,9 +580,22 @@ class Release < ApplicationRecord
   # { slug => note } for members whose code this release's `main` push did not
   # contain (Release::Conductor.record_ship_holds). Empty on a release the CLI
   # never checked, which is the model-driven path.
+  #
+  # FAIL CLOSED for a member the check never saw: when the CLI recorded which
+  # slugs it covered (metadata["ship_checked"]), every live member outside that
+  # list joined after the snapshot and is held as unchecked.
   def ship_holds
     holds = metadata["ship_holds"]
-    holds.is_a?(Hash) ? holds.to_h { |slug, note| [ slug.to_s, note.to_s ] } : {}
+    holds = holds.is_a?(Hash) ? holds.to_h { |slug, note| [ slug.to_s, note.to_s ] } : {}
+    checked = metadata["ship_checked"]
+    return holds unless checked.is_a?(Array)
+
+    tasks.where.not(stage: "shipped").pluck(:slug).each do |task_slug|
+      next if checked.include?(task_slug) || holds.key?(task_slug)
+
+      holds[task_slug] = Release::MemberContainment.unchecked_note(task_slug, slug)
+    end
+    holds
   end
 
   # One comment per held, unshipped member, naming the missing commit. Idempotent
@@ -1066,6 +1079,9 @@ class Release < ApplicationRecord
     held = ship_holds
     note_ship_holds!(held)
     unshipped |= held.keys
+    # The same fail-closed list, re-read in the loop below: a member that joins
+    # between this line and its turn is not on it either.
+    checked = metadata["ship_checked"].is_a?(Array) ? metadata["ship_checked"] : nil
     # Ship members in the BOARD's own order (Task.ordered — the exact ordering the
     # Assembled column renders), so a watching operator sees the batch peel off the
     # TOP of the column downward, one card every `member_pause` seconds. This used
@@ -1086,6 +1102,7 @@ class Release < ApplicationRecord
     tasks.ordered.to_a.each do |task|
       next if task.stage == "shipped"
       next if unshipped.include?(task.slug)
+      next if checked && !checked.include?(task.slug)
 
       clock&.wait_for_beat(shipped_count) { |seconds| pause_between_member_shipments(seconds) }
       Current.with_task_event_usage(usage_by_slug[task.slug]) { task.ship! }

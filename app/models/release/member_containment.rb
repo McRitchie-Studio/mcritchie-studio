@@ -1,4 +1,4 @@
-require "open3"
+require File.expand_path("../../../bin/lib/bounded_command", __dir__)
 
 class Release
   # COMMIT-LEVEL ship evidence for a release member: is the member's own code an
@@ -45,7 +45,9 @@ class Release
 
         Array(group["members"]).each do |member|
           slug = member["slug"].to_s
-          next if slug.empty?
+          # A gem member publishes by version and has no PR in an app repo; asking
+          # would hold it as unknown on every run.
+          next if slug.empty? || member["kind"].to_s == "gem"
 
           note = member_note(repo: repo, main_sha: main_sha, member: member,
                              code_shas: code_shas, contains: contains)
@@ -79,6 +81,14 @@ class Release
         "stamped shipped. Ship it on a release whose #{repo} main contains #{short(sha)}."
     end
 
+    # The fail-closed note for a member the ship never gave a verdict: it joined the
+    # release (Release#add reopens an assembled one) after the CLI read its plan.
+    def unchecked_note(slug, release_slug)
+      "#{slug}: joined #{release_slug} after the ship's containment check read its members, so no " \
+        "verdict says its code is in the main this release shipped. Left unstamped; re-run " \
+        "`bin/release finalize #{release_slug}`, which re-reads the members and checks it."
+    end
+
     def unknown_note(slug, repo, main_sha, why)
       "#{slug}: could not prove its #{repo} code is in the #{repo} main this release shipped " \
         "(#{short(main_sha)}) — #{why}. Left unstamped; re-run `bin/release finalize` once it reads."
@@ -97,7 +107,13 @@ class Release
     # `path`? `merge-base --is-ancestor` exits 1 for "no" and 128 for a fault, so
     # both refs are resolved first and only a clean 1 answers :refuted. A sha the
     # clone lacks is fetched once by id before giving up.
-    def git_verdict(path:, sha:, main_sha:, runner: method(:git))
+    #
+    # BOUNDED. This runs AFTER production is deployed, and the fetch goes through the
+    # 1Password-backed credential helper, which has hung ~15 minutes. Every call is
+    # killed at `deadline` seconds (the CLI passes its read deadline), and a killed
+    # call answers :unknown — a hold with a note, never a wedged ship.
+    def git_verdict(path:, sha:, main_sha:, deadline: DEFAULT_DEADLINE, runner: nil)
+      runner ||= ->(dir, *args) { git(dir, *args, deadline: deadline) }
       return :unknown unless readable?(path, main_sha, runner)
       unless readable?(path, sha, runner)
         runner.call(path, "fetch", "--quiet", "origin", sha)
@@ -117,10 +133,17 @@ class Release
       status.zero?
     end
 
-    # [stdout+stderr, exitstatus]
-    def git(path, *args)
-      out, status = Open3.capture2e("git", "-C", path.to_s, *args)
-      [ out, status.exitstatus || -1 ]
+    DEFAULT_DEADLINE = 60
+
+    # [stdout+stderr, exitstatus]; -1 for a killed (timed out) or unspawnable call,
+    # which every caller reads as a fault. GIT_TERMINAL_PROMPT=0 so a credential
+    # prompt fails instead of waiting for a keyboard nobody is at.
+    def git(path, *args, deadline: DEFAULT_DEADLINE)
+      out, result = BoundedCommand.capture2e({ "GIT_TERMINAL_PROMPT" => "0" }, "git", "-C", path.to_s, *args,
+                                             deadline: deadline)
+      return [ out, -1 ] if result.timed_out?
+
+      [ out, result.exitstatus || -1 ]
     rescue SystemCallError => e
       [ e.message, -1 ]
     end

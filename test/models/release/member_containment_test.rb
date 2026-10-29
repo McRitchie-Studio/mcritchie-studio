@@ -223,8 +223,91 @@ class Release::MemberContainmentTest < ActiveSupport::TestCase
     pairs = src.scan(/record_shipped_shas\(release: r.*\n(.*)\n(.*Conductor\.ship!\(release: r)/)
     assert_equal 2, pairs.size, "each ship! record follows shipped_shas and one line between"
     pairs.each do |holds_line, _ship|
-      assert_includes holds_line, "record_ship_holds(release: r, holds: \#{ship_holds.inspect})"
+      assert_includes holds_line, "record_ship_holds(release: r, holds: \#{ship_holds.inspect}, checked: \#{ship_checked.inspect})"
     end
     assert_equal 2, src.scan("ship_holds = ship_containment_holds(").size
+  end
+
+  # THE INCIDENT'S OWN PATH (Carl, activity-21399). moms-app-mail-from-team was
+  # swept onto the release AFTER the ship read its plan: Release#add reopened it
+  # mid-ship. The check never saw the member, so it must fail closed — held as
+  # unchecked — rather than be stamped because nobody objected.
+  test "[integration] a member swept in after the holds are computed stays unshipped" do
+    early = Task.create!(title: "moms app checked fix", stage: "reviewed",
+                         metadata: { "devops" => { "shape" => "backend", "repositories" => [ MOMS ] } })
+    release = Release::Conductor.sweep!(early)
+    Release::Conductor.record_qa_shas(release: release.reload, shas: { MOMS => "frozen" })
+    Release::Conductor.qa_green!(release.reload)
+    Release::Conductor.record_shipped_shas(release: release.reload, shas: { MOMS => "relock" })
+
+    # The CLI's snapshot: one member, contained, no holds.
+    plan = Release::Conductor.repo_plan(release.reload).map(&:deep_stringify_keys)
+    holds = Release::MemberContainment.holds(groups: plan, main_shas: { MOMS => "relock" },
+                                             code_shas: ->(*) { [ "in" ] }, contains: ->(*) { :affirmed })
+    assert_empty holds
+
+    # The late sweep lands while the ship deploys.
+    late = Task.create!(title: "moms app mail from team late", stage: "reviewed",
+                        metadata: { "devops" => { "shape" => "backend", "repositories" => [ MOMS ] } })
+    Release::Conductor.sweep!(late)
+    late.reload.update!(stage: "assembled")
+    assert_equal release.slug, late.release_slug, "it joined the release being shipped"
+
+    Release::Conductor.record_ship_holds(release: release.reload, holds: holds,
+                                         checked: plan.flat_map { |g| g["members"].map { |m| m["slug"] } })
+    Release::Conductor.ship!(release: release.reload, deployed_sha: "relock")
+
+    assert_equal "shipped", early.reload.stage, "the checked member ships"
+    assert_equal "assembled", late.reload.stage, "the unchecked late joiner does NOT"
+    note = Activity.where(task_slug: late.slug, activity_type: "comment").sole
+    assert_match(/after the ship's containment check/, note.description)
+
+    # finalize's fresh snapshot covers it and, once contained, it ships.
+    Release::Conductor.record_ship_holds(release: release.reload, holds: {}, checked: [ early.slug, late.slug ])
+    Release::Conductor.ship!(release: release.reload, deployed_sha: "relock")
+    assert_equal "shipped", late.reload.stage
+  end
+
+  test "[unit] a release with no recorded checked list holds nothing extra (model-driven path)" do
+    task = Task.create!(title: "model driven member", stage: "reviewed",
+                        metadata: { "devops" => { "shape" => "backend", "repositories" => [ MOMS ] } })
+    release = Release::Conductor.sweep!(task)
+    Release::Conductor.qa_green!(release.reload)
+    Release::Conductor.ship!(release: release.reload, deployed_sha: "x")
+
+    assert_equal "shipped", task.reload.stage
+  end
+
+  test "[unit] a gem member in an app group is not asked (it would hold unknown forever)" do
+    holds = Release::MemberContainment.holds(
+      groups: [ { "repo" => MOMS, "members" => [ { "slug" => "engine-bump", "kind" => "gem" } ] } ],
+      main_shas: { MOMS => "main" },
+      code_shas: ->(*) { flunk "a gem member has no PR here" },
+      contains: ->(*) { flunk "never asked" }
+    )
+
+    assert_empty holds
+  end
+
+  test "[unit] a git call past its deadline is killed and reads unknown" do
+    Dir.mktmpdir("containment-deadline-") do |dir|
+      Open3.capture2e("git", "-C", dir, "init", "-q")
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      _out, status = Release::MemberContainment.git(dir, "-c", "alias.hang=!sleep 30", "hang", deadline: 1)
+      elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+
+      assert_equal(-1, status, "a killed call is a fault, never a clean 0 or 1")
+      assert_operator elapsed, :<, 10, "the deadline, not the hang, ended it"
+      hung = ->(_path, *args) { args.first == "merge-base" ? Release::MemberContainment.git(dir, "-c", "alias.hang=!sleep 30", "hang", deadline: 1) : [ "", 0 ] }
+      assert_equal :unknown, Release::MemberContainment.git_verdict(path: dir, sha: "a", main_sha: "b", runner: hung)
+    end
+  end
+
+  test "[unit] bin/release bounds the containment git reads and records the checked slugs" do
+    src = Rails.root.join("bin", "release.rb").read
+    assert_includes src, "main_sha: main_sha, deadline: read_deadline)"
+    assert_equal 2, src.scan("ship_checked = ship_checked_slugs(repos)").size
+    assert_equal 2, src.scan('checked: #{ship_checked.inspect}); "').size
+    assert_includes src, "GhAuthRetry.auth_failure?(out)", "an expired token is re-minted, not read as unknown"
   end
 end

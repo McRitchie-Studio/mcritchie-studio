@@ -451,9 +451,13 @@ cyvasse, dads-app, prisoners-dilemma, weekly-lock, rantly, portfolio, 10and5 and
 `shipped_shas` the same way, though `merged: "main"` still lands per repo. Get the
 missing repo onto the candidate, or drop it from the task. The ship also checks each
 member's OWN commit: a member whose merge commit (or PR head) is not an ancestor of
-the `main` SHA the ship pushed for its repo keeps its stage, is never stamped
-`merged: "main"`, and gets a task comment naming the missing commit
-(`Release::MemberContainment`, recorded as the release's `ship_holds`).
+the `main` SHA the ship pushed for its repo keeps its stage (it is never stamped
+`shipped`) and gets a task comment naming the missing commit
+(`Release::MemberContainment`, recorded as the release's `ship_holds`). Its
+`merged` column may still read `main`: the ship stamps that per repo as each
+fast-forward lands, before the check runs, so read the stage, not `merged`. A member
+swept onto the release after the ship read its plan is held the same way, as
+unchecked, until `bin/release finalize <release>` checks it.
 
 ### Detecting an UNFINISHED release candidate
 
