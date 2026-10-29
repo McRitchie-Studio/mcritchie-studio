@@ -122,8 +122,9 @@ nothing. Free one of those by hand, once you know its work is safe on `accepted`
   whole number; zero, a negative or a non-number warns `InvalidDeadline` and gets 600).
   A failed or killed install removes its partial `node_modules`, so the next `new` retries.
 - **The desk cannot hold the script guard** (below): it has its own `.npmrc`, or git does
-  not ignore `.npmrc` there. Then `npm ci` too, never a farm without its guard. The hub
-  ignores `/.npmrc`; a repo that does not gets `npm ci` desks until it does.
+  not ignore `.npmrc` there. Then `npm ci` too, never a farm without its guard. The hub,
+  turf-monster, studio-engine and solana-studio ignore `/.npmrc`; a repo that does not
+  gets `npm ci` desks until it does.
 - **Never on Heroku or CI** (`DYNO`/`STACK`, `CI`, `GITHUB_ACTIONS`), and never over an
   existing `node_modules`, except a husk: the empty `@scope` and `.bin` directories a
   teardown leaves when `git worktree remove` refuses a dirty desk. A husk holds no

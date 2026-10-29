@@ -42,7 +42,11 @@
 #                            origin/release to QA). Default prints; --run executes.
 #   bin/conductor ship [--run]  Print the production ship command by default.
 #                            With --run, execute the autonomous production ship
-#                            path: bin/release ship --by conductor --yes.
+#                            path: bin/release ship --by conductor --yes. The
+#                            full-cycle lane does not use it: it runs
+#                            bin/release cycle --clearance "<his words>" (prepare
+#                            → QA verify → ship → prod verify → archive); a
+#                            release scoped with --task runs the atoms by hand.
 #
 # GATES (load-bearing):
 #   * The 2-senior REVIEW needs AGENTS. A script can't render a verdict, so
@@ -501,7 +505,7 @@ def drive_ship(run:)
     exit(exec_bin(RELEASE_BIN, "ship", "--by", "conductor", "--yes"))
   else
     puts "#{RELEASE_CMD} ship --by conductor"
-    puts "(dry — qa-release stops here at QA; the full-cycle launcher uses `bin/conductor ship --run`)"
+    puts "(dry — qa-release stops here at QA; the full-cycle lane runs `bin/release cycle --clearance \"<his words>\"`)"
   end
 end
 

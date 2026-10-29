@@ -613,10 +613,11 @@ their own error: `bin/gh-token`, `bin/secret` and `bin/gh-app-git-credential` ex
 75 (the helper spends no further read after a hung `gh-token`), `HerokuToken` says
 "not answering", and a `bin/release prepare|ship|archive` abort adds the line when
 `.agents/op-reads.log` shows timeouts during the run, so a GitHub 401 caused by a
-hang no longer reads as an auth fault. `bin/release prepare|ship
+hang no longer reads as an auth fault. `bin/release cycle|prepare|ship
 --wait-for-1password[=MINUTES]` (default 60) goes further: when the step fails and a
 bounded probe read hangs, it tries a read every two minutes and re-runs the step once
-1Password answers (both resume on a re-run), or gives up at the deadline with exit 75.
+1Password answers (each resumes on a re-run; `cycle` passes the flag to its prepare
+and ship children), or gives up at the deadline with exit 75.
 Why: 1Password hung three times on 2026-10-27/28 and each release surfaced it as a
 401 or an exit 9 after a silent wait. Why: from 2026-10-21
 to 2026-10-24 the daemon never became ready after a reboot, every read waited about
