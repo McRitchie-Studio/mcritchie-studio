@@ -160,7 +160,7 @@ class ReleaseCycleTest < Minitest::Test
 
   test "[unit] a network failure that recurs fails the cycle after ONE re-run" do
     deps = FakeDeps.new(snapshots: [snap],
-                        steps: { "prepare" => [[1, "curl: (28) Timeout was reached"]] })
+                        steps: { "prepare" => [[1, "curl: (28) Failed to connect to github.com: Timeout was reached"]] })
     status, out = run_cycle(deps)
 
     assert_equal 1, status
@@ -177,10 +177,13 @@ class ReleaseCycleTest < Minitest::Test
   end
 
   test "[unit] each network message the brief names classifies as transient; others do not" do
-    ["Failed to connect to github.com port 443 after 75000 ms", "Timeout was reached",
+    ["Failed to connect to github.com port 443 after 75000 ms", "unable to access 'https://github.com/x': Timeout was reached",
      "Could not resolve host: github.com"].each do |line|
       assert ReleaseCycle.retryable_cause("…\n#{line}\n…"), line
     end
+    assert_nil ReleaseCycle.retryable_cause("curl: (28) Timeout was reached for https://turfmonster.media/up")
+    stale = "Failed to connect to github.com port 443\n#{"later line\n" * ReleaseCycle::NETWORK_WINDOW}✗ deploy tests red"
+    assert_nil ReleaseCycle.retryable_cause(stale), "a timeout far above the abort is not its cause"
     assert_nil ReleaseCycle.retryable_cause("HTTP 401 Bad credentials")
     assert_nil ReleaseCycle.retryable_cause("")
   end

@@ -59,9 +59,12 @@ module ReleaseCycle
   # The board could not be read, or said something the cycle cannot act on.
   BOARD_UNREADABLE = 1
 
-  # A transient GitHub network failure, by the message curl and git print. One re-run
-  # of the step: prepare and ship both resume where they stopped.
-  NETWORK_FAILURE = /Failed to connect to github\.com|Timeout was reached|Could not resolve host/
+  # A transient GitHub network failure, by the message curl and git print: one LINE
+  # naming github.com AND the failure, within the output's last NETWORK_WINDOW lines
+  # (a production /up timeout, or one a step recovered from long ago, is not it).
+  # One re-run of the step: prepare and ship both resume where they stopped.
+  NETWORK_FAILURE = /^(?=.*github\.com).*(?:Failed to connect to|Timeout was reached|Could not resolve host)/
+  NETWORK_WINDOW = 40
 
   # prepare's stale-tree refusal (bin/release.rb#verify_release_carries_accepted!):
   # `accepted` moved after the promote, almost always a newcomer reviewed mid-run.
@@ -82,7 +85,10 @@ module ReleaseCycle
   # What a failed step's output says about re-running it: the cause in words, or nil
   # when the failure is not one a re-run can heal.
   def retryable_cause(output)
-    RETRYABLE.each { |pattern, cause| return cause if pattern.match?(output.to_s) }
+    RETRYABLE.each do |pattern, cause|
+      text = pattern.equal?(NETWORK_FAILURE) ? output.to_s.lines.last(NETWORK_WINDOW).join : output.to_s
+      return cause if pattern.match?(text)
+    end
     nil
   end
 
