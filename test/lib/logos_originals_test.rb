@@ -63,9 +63,12 @@ class LogosOriginalsTest < Minitest::Test
     end
   end
 
-  def test_commercial_weldings_alt_is_untouched
+  def test_commercial_weldings_alt_keeps_the_blue_half_on_dark
     logo = Navbar.new("welding")
     assert_equal logo.svg(rule: 4, tone: :dark), logo.svg(rule: 4, tone: :dark, colouring: :alt)
-    assert_equal %w[#FFFFFF], fills(logo.icon_svg(tone: :dark)), "Alt on dark is still the single-colour helmet"
+    # Alex McRitchie 2026-10-28: "lets add the blue to both": the Original's trace in the kit's colours.
+    assert_equal %w[#2D5E8E #FFFFFF #D7602E], fills(logo.icon_svg(tone: :dark)), "Alt on dark: blue half, white half, orange spark"
+    assert_equal %w[#2D5E8E #FFFFFF #D7602E], fills(Navbar.new("welding_v2").icon_svg(tone: :dark)), "v2 too"
+    assert_equal 1, fills(logo.icon_svg(tone: :watermark)).size, "the watermark stays one colour"
   end
 end

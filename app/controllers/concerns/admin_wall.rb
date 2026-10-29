@@ -60,7 +60,7 @@ module AdminWall
     "studio/local_emails" => %w[index],
     # Local-development only (Dev::BoardController#ensure_local!): the board fixture tool.
     "dev/board" => %w[generate move delete ship_release open_release advance_release
-                      reset_release rebroadcast_release_modules]
+                      reset_release rebroadcast_release_modules qa_green_release]
   }.transform_values(&:freeze).freeze
 
   # controller_path => actions any visitor may reach: the pages plus the actions.
@@ -93,6 +93,9 @@ module AdminWall
     # the Picker's token, and recording or forgetting a pick. 404 unless the
     # connection is theirs (Integrations::DrivePicksController).
     "integrations/drive_picks" => %w[token create destroy],
+    # The Pending agents column's writes (/agents/pending/:id): listed only so a
+    # signed-in non-admin gets AgentSetupsController's 404, not the wall's redirect.
+    "agent_setups" => %w[update step submit],
     "admin/google" => %w[callback]
   }.transform_values(&:freeze).freeze
 

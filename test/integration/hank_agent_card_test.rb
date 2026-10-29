@@ -10,15 +10,15 @@ class HankAgentCardTest < ActionDispatch::IntegrationTest
     capture_io { load Rails.root.join("db/seeds/02_agents.rb").to_s }
   end
 
-  test "the agents page renders the Hank card with his badger portrait" do
+  test "the agents page renders the Hank row with his badger portrait" do
     get agents_path
     assert_response :success
 
-    assert_select "[data-test='agent-card'][data-agent='hank']" do
+    assert_select "[data-test='agent-row'][data-agent='hank']" do
       assert_select "img[src='/agents/hank.webp'][alt='Hank']"
-      assert_select "[data-test='agent-file-link'][data-file='agents/hank/soul.md']", text: "soul.md"
+      assert_select "[data-test='agent-docs-link'][href=?]", agent_path("hank", anchor: "agent-files"), text: "1 file"
     end
-    assert_select "[data-test='agent-card'][data-agent='dawn']", count: 0
+    assert_select "[data-test='agent-row'][data-agent='dawn']", count: 0
     assert Rails.public_path.join("agents/hank.webp").exist?
   end
 end

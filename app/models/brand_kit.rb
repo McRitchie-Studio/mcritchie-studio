@@ -49,6 +49,13 @@ class BrandKit < ApplicationRecord
   # Logo, in its own form, with the first word leading. The text versions are also the save form's default.
   DEFAULTS = { navbar: { rule: 4, text: :second }, stacked: { text: :first } }.freeze
 
+  # A brand's defaults for `type`: DEFAULTS, with the text version its style names (`kit_text`) where it names one.
+  # Commercial Welding v1 is homogeneous, the whole name in one colour, as the client's own logo sets it.
+  def self.defaults(brand, type)
+    text = Logos::NavbarLogo.styles.dig(brand.to_s, "kit_text")&.to_sym   # NavbarLogo checks it when the brand is loaded
+    text ? DEFAULTS.fetch(type.to_sym).merge(text:) : DEFAULTS.fetch(type.to_sym)
+  end
+
   # The types an original may be, read from its BYTES (never its name), and how the card names each.
   ORIGINAL_TYPES = { "image/svg+xml" => "SVG", "image/png" => "PNG", "image/jpeg" => "JPEG",
                      "application/pdf" => "PDF", "application/zip" => "ZIP" }.freeze
@@ -158,7 +165,7 @@ class BrandKit < ApplicationRecord
     return Logos::Variant.new(logo, type: :icon, tone:, colouring: colouring.to_sym) if type == :icon
 
     Logos::Variant.new(logo, type:, tone:, colouring: colouring.to_sym, icon_colouring: icon&.colouring,
-                             edits: icon&.edits || Logos::NavbarLogo::NO_EDITS, **DEFAULTS.fetch(type))
+                             edits: icon&.edits || Logos::NavbarLogo::NO_EDITS, **self.class.defaults(brand, type))
   end
 
   # The kit's saved icon as an icon Logos::Variant (light), or nil when none is saved or it can no longer be drawn.
@@ -214,7 +221,7 @@ class BrandKit < ApplicationRecord
   def default_text(type)
     return if type.to_sym == :icon
 
-    saved?(type) ? choice(type)["text"].to_sym : DEFAULTS.fetch(type.to_sym).fetch(:text)
+    saved?(type) ? choice(type)["text"].to_sym : self.class.defaults(brand, type).fetch(:text)
   end
 
   # Reads `params` (strings, as a request gives them: rule or form, text, and the edit params) exactly as the gallery

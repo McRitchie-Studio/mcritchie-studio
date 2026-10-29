@@ -192,7 +192,7 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
     assert_equal "none", state["data-state"]
     form = css_select("[data-test='logo-controls'] form[data-test='kit-save-default-form']").first
     fields = form.css("input[type=hidden]").to_h { |input| [input["name"], input["value"]] }
-    assert_equal({ "type" => "stacked", "form" => "tagline", "colouring" => "original", "text" => "first", "return" => "top" },
+    assert_equal({ "type" => "stacked", "form" => "tagline", "colouring" => "original", "text" => "homogeneous", "return" => "top" },
                  fields.except("_method", "authenticity_token"))
     patch form["action"], params: fields
     assert_redirected_to logo_brand_path("welding", type: "stacked")

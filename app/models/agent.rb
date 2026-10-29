@@ -5,6 +5,8 @@ class Agent < ApplicationRecord
   has_many :activities, foreign_key: :agent_slug, primary_key: :slug, dependent: :destroy
   has_many :usages, foreign_key: :agent_slug, primary_key: :slug, dependent: :destroy
   has_many :skill_assignments, foreign_key: :agent_slug, primary_key: :slug, dependent: :destroy
+  # Pending manual setups (the Pending agents table on /agents); their steps cascade.
+  has_many :agent_setups, foreign_key: :agent_slug, primary_key: :slug, dependent: :destroy, inverse_of: false
   has_many :skills, through: :skill_assignments
 
   validates :name, presence: true

@@ -435,6 +435,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # help and exits before any run; an unknown flag raises unrescued, and
     # BooksCli.build_request refuses a stray positional for every verb.
     "books"                  => :optparse,
+    # bin/agent-setup: OptionParser answers --help/-h with usage and exits before
+    # any run (no heroku, no op read); an unknown flag exits 2; and
+    # AgentSetupCli refuses a stray positional for every verb before it acts.
+    "agent-setup"            => :optparse,
     # --- subcommand dispatch that falls through to usage (BARE form) ----------
     #
     # Read the legend above before trusting this bucket: it says what the BARE

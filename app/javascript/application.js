@@ -21,6 +21,8 @@ import "gmail_admin_modal"
 import "drive_picker"
 import "logo_editor"
 import "logo_download"
+// The Pending agents table on /agents: a row's steps disclosure, copy fields, the avatar as PNG; inert elsewhere.
+import "agent_setups"
 import "dreams_filter"
 // The /build gallery's hover loops: delegated, inert elsewhere.
 import "gallery_motion"

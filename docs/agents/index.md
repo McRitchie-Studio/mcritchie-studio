@@ -195,6 +195,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `wrap-it-up` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `agent-dispatcher` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/agent-dispatcher.md` |
+| `agent-onboarding` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/agent-onboarding.md` |
 | `app-deploy-standard` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/app-deploy-standard.md` |
 | `archive-shipped` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/archive-shipped.md` |
 | `bucket-provision` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/bucket-provision.md` |

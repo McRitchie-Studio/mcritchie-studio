@@ -62,7 +62,7 @@ class LogosEditsTest < Minitest::Test
     turf = fills(three.svg(edits: { icon: { colour: "#2E7D32" } })).first(3)
     assert_equal ["#2E7D32", "#5C972A", "#F0EBCF"], turf
     assert_equal "primary", navbar("turf").icon_role(:light), "Turf's Alt head is one layer"
-    assert_equal "primary", navbar("welding").icon_role(:dark), "the single-colour helmet on dark"
+    assert_equal "blue", navbar("welding").icon_role(:dark), "the two-colour helmet on dark: its blue half is the icon colour"
   end
 
   def test_a_heavier_word_is_wider_and_the_rules_hold

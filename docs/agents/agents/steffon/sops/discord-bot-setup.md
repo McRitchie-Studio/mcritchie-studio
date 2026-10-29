@@ -39,6 +39,14 @@ or `ignore: true` to mute one).
 
 ## Part 1 — Create a bot (once per bot)
 
+**Run it as a card.** Since 2026-10-28 a new bot, or a soul's own token, is a
+card in the Pending agents column of `/agents`: Steffon opens it with
+`bin/agent-setup open discord --soul <soul>`, Alex McRitchie clicks through it, and
+`bin/agent-setup verify` checks and installs the token (Part 1b step 2) and
+reports back. The whole procedure: [`agent-onboarding`](agent-onboarding.md). The
+steps below are what the card and the CLI do, kept for reference and for the
+shared bot, which is not a soul's card.
+
 The developer portal is Alex McRitchie's account, so the portal clicks are his. The
 1Password item is not: Steffon makes it first, and Alex McRitchie pastes only the token
 ([`credential-filing`](./credential-filing.md) section 5).

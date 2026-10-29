@@ -79,6 +79,8 @@ module Logos
 
       @form = form.to_sym
       @tagline = checked_tagline
+      @forms = [@form, (:two_line if @form == :one_line), (:tagline if @tagline)].compact
+      @forms.delete(:two_line) unless @form == :two_line || two_line_draws?
       TEXTS.product(TONES, forms) { |text, tone, each| layout(text:, tone:, form: each) }
       TEXTS.product(BAKED, forms) { |text, tone, each| layout(text:, tone:, form: each, colouring: :original) } if original?
     end
@@ -89,8 +91,9 @@ module Logos
     # The brand's tagline as the logo sets it ("BUILD SMARTER"), or nil when the style names none.
     attr_reader :tagline
 
-    # Every form this brand draws, its own first: [:two_line, :tagline], or [:one_line] for a brand with no tagline.
-    def forms = [form, (:tagline if tagline)].compact
+    # Every form this brand draws, its own first: [:two_line, :tagline], or [:one_line] for a brand with no tagline. A
+    # one-line brand also draws two lines when its second word fits under its first (Turf Monster: [:one_line, :two_line]).
+    attr_reader :forms
 
     # The geometry alone, in design units (x = 0 is the big line's left ink edge, y = 0 the icon's top).
     # A keyword it does not take (the Navbar Logo's `rule:` above all) is refused like any other bad choice.
@@ -109,14 +112,14 @@ module Logos
         rest, width = place(second, cap, width + GAP_CAPS * cap, 1)   # the Navbar Logo's word gap
         big += rest
       end
-      icon_width, icon_height = icon_box(look, width, proportion)
+      weight = edits.dig(:tagline, :weight) || TAGLINE_WEIGHT
+      small = { tagline: -> { tagline_line(width, weight) }, two_line: -> { small_line(second, width) } }[form]&.call
+      icon_width, icon_height = icon_box(look, width, proportion, form == :two_line ? [SPAN * width, place(second, U, 0, 1, 0).last].max : SPAN * width)
       edges = [0, icon_height, icon_height + GAP * U, icon_height + (GAP + BIG) * U]
       placed = big.map { |letter| letter.merge(baseline: edges.last, cap:) }
       line = [big, first + second, cap]
-      unless form == :one_line
+      if small
         edges += [edges.last + GAP * U, edges.last + (GAP + 1) * U]
-        weight = edits.dig(:tagline, :weight) || TAGLINE_WEIGHT
-        small = form == :tagline ? tagline_line(width, weight) : small_line(second, width)
         placed += small.map { |letter| letter.merge(baseline: edges.last, cap: U) } unless form == :tagline && edits.dig(:tagline, :visible) == false
         line = [small, form == :tagline ? tagline_glyphs(weight) : second, U]
       end
@@ -179,11 +182,23 @@ module Logos
     end
 
     # The small word, centred, with the same computed space added between each pair of letters and none after the last.
+    # A word already wider than SPAN of the first is set at its own width instead, never tracked in (Turf Monster's
+    # "Monster" is 68% of "Turf"; Alex McRitchie 2026-10-28 chose this over spreading it to the first word's width). A
+    # word wider than the first word itself cannot sit under it.
     def small_line(word, width)
-      tracked(word, width, 1) do |why|
-        "the second word #{@words[1].inspect} cannot be tracked out to #{(SPAN * 100).round}% of the first word's width " \
-          "(#{why}): set `stacked: one_line` in the brand's style"
+      tracked(word, width, 1, natural_over: true) do |why|
+        "the second word #{@words[1].inspect} cannot sit under the first word (#{why}): set `stacked: one_line` in the brand's style"
       end
+    end
+
+    # Whether the two-line form draws for this brand: its second word fits under its first, and the icon over it, in
+    # every text and tone the constructor checks.
+    def two_line_draws?
+      TEXTS.product(TONES) { |text, tone| layout(text:, tone:, form: :two_line) }
+      TEXTS.product(BAKED) { |text, tone| layout(text:, tone:, form: :two_line, colouring: :original) } if original?
+      true
+    rescue Error
+      false
     end
 
     # The tagline, set like the small word: Montserrat at TAGLINE_WEIGHT (or its edited weight), every character (a
@@ -196,12 +211,14 @@ module Logos
     end
 
     # A run of glyphs at 1u, tracked out between them to SPAN of `width` and centred on it. Never tracked in: the
-    # block words the refusal when the run is already wider, or cannot be tracked at all.
-    def tracked(glyphs, width, index)
+    # block words the refusal when the run is already wider, or cannot be tracked at all. With `natural_over`, a run
+    # already wider than SPAN (but no wider than `width`) is set at its own width, centred.
+    def tracked(glyphs, width, index, natural_over: false)
       target = SPAN * width
       natural = place(glyphs, U, 0, index, 0).last   # its ink width: `place` starts the ink at 0
       gaps = glyphs.size - 1
       steps = glyphs[0...-1].sum { |glyph| steps(glyph) }   # a word gap inside a traced ending takes two (NavbarLogo#place)
+      return place(glyphs, U, (width - natural) / 2, index, 0).first if natural_over && natural > target && natural <= width && gaps.positive?
       if natural > target || gaps.zero?
         raise Error, "brand #{brand}: #{yield(gaps.zero? ? 'it has one letter' : "it is #{(100 * natural / width).round}% already")}"
       end
@@ -220,16 +237,17 @@ module Logos
       [icon, colours + [original_look?(look) ? gradient_ref(look, tagline) : tagline]]
     end
 
-    # [the icon's width, its height] over a big line `width` wide. 3-2-1: as tall as the small line is wide (SPAN of the
-    # width), refused when that makes it wider than the name. Rule of three: a third of the width, as tall as its aspect makes it.
-    def icon_box(look, width, proportion)
+    # [the icon's width, its height] over a big line `width` wide. 3-2-1: as tall as the small line is wide (`small`:
+    # SPAN of the width, or a small word set at its own wider width), refused when that makes it wider than the name.
+    # Rule of three: a third of the width, as tall as its aspect makes it.
+    def icon_box(look, width, proportion, small = SPAN * width)
       icon = @icons.fetch(look)
       if proportion == :rule_of_three
         wide = width / THIRDS
         return [wide, wide * icon.fetch("h") / icon.fetch("w")]
       end
 
-      height = SPAN * width
+      height = small
       wide = icon.fetch("w") * height / icon.fetch("h")
       raise Error, "brand #{brand}: the icon is too wide to stack (#{f(wide / width)} of the name's width at this height)" if wide > width
 

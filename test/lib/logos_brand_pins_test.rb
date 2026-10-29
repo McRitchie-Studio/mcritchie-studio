@@ -22,18 +22,27 @@ class LogosBrandPinsTest < Minitest::Test
     # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green) so Alt is one solid colour per part for every brand; the three-colour head is now its Original; was 2b18c47c….
     # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
     # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 0015bbd7…. Industries did not move.
-    "turf" => "c1f383a996dea92abb498241d31c68e70839ee1acb563dd999553831dbd98819",
+    # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue, when Turf Monster gained the two-line form beside its
+    # own one line (Alex McRitchie 2026-10-28, Option A); its existing drawings did not move: without the two-line ones
+    # the digest is still c1f383a9….
+    "turf" => "334788795e0f9759eadbbfca57cf8aa5722332e3c83cad7a25fe8273f09632a2",
     # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex McRitchie, item 5); was d1411cdd…. The three
     # others above did not move by a byte.
     # Re-taken by the review fix: the stacked two-line small line keeps its WELDING LLC word gap when tracked (only
     # its two-line drawings changed); was 854451d3….
     # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
     # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 5b868519…. Industries did not move.
-    "welding" => "4e2f0a553e4ece27bfc18f813457ab00a3a8264e798f8c18a5b7b0a749a35639",
+    # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue, when Alt on a dark page drew the Original's helmet,
+    # blue half kept, instead of the single-colour one (Alex McRitchie 2026-10-28), and its tagline took the client's
+    # Spark Orange (the tones' `quiet`); only the 30 dark drawings, the dark icon and the 6 light tagline drawings
+    # moved; was 4e2f0a55….
+    "welding" => "42dff7bd63f7b8d186ab18f1a5e969ebdaff49099ebd8c7ed64d7b85500a1afe",
     # Added by task welding-llc-and-v2-helmet: Commercial Welding v2 as it first shipped.
     # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
     # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 63a49eae…. Industries did not move.
-    "welding_v2" => "08ebb18f62142df49869867671346a6b18e0bbad1d86d7587e417d539891dd0e"
+    # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue, as v1 above (the dark drawings and icon only); was
+    # 08ebb18f….
+    "welding_v2" => "683dd0cf51e1ebcfe4acb9ba8ff160cba1072a7e710759f95687314763d3cf36"
   }.freeze
 
   def self.drawings(brand)
@@ -61,7 +70,10 @@ class LogosBrandPinsTest < Minitest::Test
     "industries" => "164e879afa7dfec2a5336d4113c56234cb40d0742d775479f79d4c1557e61bf3",
     # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
     # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 9ba3b7bf…. Industries did not move.
-    "turf" => "3c80db67bf12f943f0112eebb6b9112c9552901e3c92c0070f882a162fc775fc",
+    # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue, when Turf Monster gained the two-line form beside its
+    # own one line (Alex McRitchie 2026-10-28, Option A); its existing drawings did not move: without the two-line ones
+    # the digest is still 3c80db67….
+    "turf" => "7f23ccfc3622d45124f2520a32532f717c487ecda85f0f3a9bbfdad6fe13cffa",
     # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
     # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 0f1083dc…. Industries did not move.
     "welding" => "18303e01ec58165a44809c855ef481cf98f5504dcdf342c8b77f637b4a5e0b12",

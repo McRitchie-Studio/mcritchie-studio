@@ -231,6 +231,8 @@ loop; with no shared token either, the reply is `failed`, never dropped silently
 Any other error retries as before. `reply_posted` records `via: soul_bot` or
 `via: shared_bot`. No token is logged, rendered, or put in an exception message:
 `DiscordBot` redacts its token from everything it raises and from `inspect`.
+A soul's token is made and installed through a card in the Pending agents column
+of `/agents` (Steffon's [`agent-onboarding`](../agents/steffon/sops/agent-onboarding.md)).
 The pick and the one fallback live in `AgentMessages::BotSelector`, which the
 per-app CTO reports share ([`report-destinations.md`](report-destinations.md#which-bot-posts)).
 Setting a soul's var is Steffon's

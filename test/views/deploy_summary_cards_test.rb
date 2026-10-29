@@ -262,6 +262,24 @@ class DeploySummaryCardsTest < ActionView::TestCase
     assert_select "[data-test='devops-qa-countdown']", 0
   end
 
+  # THE BROADCAST SLOT (task devops-card-goes-live): DeploymentsBroadcaster.devops_card
+  # REPLACES #devops-summary-card, so every render, in flight or idle, must carry that id
+  # (a replace that dropped it would land once and never again) and no inline script
+  # (the broadcast render has no request nonce; the ticker is the delegated module).
+  test "[component] DevOps card keeps its broadcast target id and carries no inline script" do
+    flow = Release::Flow.new([30, 40, 50].each_with_index.map { |minutes, i| entry("rel-#{i}", minutes) })
+    estimate = Release::Flow::Estimate.new(phase: "qa", phase_started_at: Time.current, elapsed: 60,
+                                           remaining: 600, overrun: 0, eta: 10.minutes.from_now, gem_history: false,
+                                           qa_remaining: 300, qa_eta: 5.minutes.from_now)
+
+    [estimate, nil].each do |state|
+      html = Nokogiri::HTML.fragment(render(partial: "tasks/devops_summary_card",
+                                            locals: { flow: flow, estimate: state, wip_count: 1 }))
+      assert_equal 1, html.css("#devops-summary-card").size, "the slot id, #{state ? 'in flight' : 'idle'}"
+      assert_empty html.css("#devops-summary-card script")
+    end
+  end
+
   test "[component] DevOps past its estimate reads +Xm over in the warning ink, never a zero" do
     flow = Release::Flow.new([30, 40, 50].each_with_index.map { |minutes, i| entry("rel-#{i}", minutes) })
     due = Time.utc(2026, 10, 28, 20, 0)

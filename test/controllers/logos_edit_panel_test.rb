@@ -62,14 +62,14 @@ class LogosEditPanelTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # Task logo-gallery-polish-pass, item 1: Commercial Welding's dark tone draws the one-layer helmet, so in Dark the
-  # icon colour recolours all of it; the note follows the icon each tone draws.
-  test "the icon note follows the icon each tone draws: Commercial Welding's dark helmet is one layer" do
+  # Task logo-gallery-polish-pass, item 1: the note follows the icon each tone draws. Commercial Welding's dark tone
+  # draws the two-colour helmet (Alex McRitchie 2026-10-28), so in Dark the icon colour takes its blue half alone.
+  test "the icon note follows the icon each tone draws: Commercial Welding's dark helmet keeps its white half and spark" do
     %w[welding welding_v2].each do |brand|
       get page(brand)
       notes = css_select("[data-test='edit-icon-note'] [data-test='edit-icon-note-tone']").to_h { |span| [span["data-tone"], [span.text.strip, span["class"]]] }
       assert_equal({ "light" => ["Recolours the icon's main layer only; its accent layer keeps its brand colour.", "contents dark:hidden"],
-                     "dark" => ["Recolours the whole icon.", "hidden dark:contents"] }, notes, brand)
+                     "dark" => ["Recolours the icon's blue layer only; its white and accent layers keep their brand colours.", "hidden dark:contents"] }, notes, brand)
     end
 
     get page("industries")
