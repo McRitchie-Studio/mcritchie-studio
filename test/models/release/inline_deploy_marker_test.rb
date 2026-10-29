@@ -27,6 +27,50 @@ class Release::InlineDeployMarkerTest < ActiveSupport::TestCase
   }.freeze
   FROZEN = "0988886c1f2e3d4c5b6a798877665544332211aa".freeze
 
+  # --- heroku_live_at_sha_through_config?: the cycle's POST-SHIP read -------
+  # turf-monster's bin/deploy runs `heroku config:set EXPECTED_IDL_HASH` after the
+  # push on an IDL bump, so the CURRENT release right after a healthy ship is a
+  # config change. Wordings as Heroku prints them.
+
+  IDL_SET = { "version" => 286, "description" => "Set EXPECTED_IDL_HASH config vars",
+              "status" => "succeeded", "current" => true }.freeze
+
+  test "[unit] post-ship: a config-var set after the frozen deploy still proves it live" do
+    assert S.heroku_live_at_sha_through_config?([IDL_SET, LIVE.merge("current" => false), PRIOR], FROZEN)
+    assert_not S.heroku_release_at_sha?([IDL_SET, LIVE.merge("current" => false), PRIOR], FROZEN),
+               "the finalize guard keeps its strict current-release rule"
+  end
+
+  test "[unit] post-ship: add-on updates, attaches and multi-var sets are config-only too" do
+    newer = [
+      { "version" => 289, "description" => "Detach DATABASE (@ref:postgresql-curved-12345) resource" },
+      { "version" => 288, "description" => "Update DATABASE_URL by heroku-postgresql" },
+      { "version" => 287, "description" => "Set FOO, BAR_BAZ config vars" },
+      { "version" => 286, "description" => "Remove OLD_KEY config var" }
+    ]
+    assert S.heroku_live_at_sha_through_config?(newer + [LIVE], FROZEN)
+  end
+
+  test "[unit] post-ship: a rollback, a newer deploy or an unknown release after it is not proof" do
+    rollback = { "version" => 286, "description" => "Rollback to v284", "status" => "succeeded", "current" => true }
+    assert_not S.heroku_live_at_sha_through_config?([rollback, LIVE], FROZEN)
+    assert_not S.heroku_live_at_sha_through_config?([IDL_SET, rollback, LIVE], FROZEN)
+    assert_not S.heroku_live_at_sha_through_config?([{ "version" => 286, "description" => "Deploy 7c655eab", "status" => "succeeded" }, LIVE], FROZEN)
+    assert_not S.heroku_live_at_sha_through_config?([{ "version" => 286, "description" => "Promote from app-staging" }, LIVE], FROZEN)
+  end
+
+  test "[unit] post-ship: a failed deploy, a different SHA or no deploy in the list fails closed" do
+    assert_not S.heroku_live_at_sha_through_config?([IDL_SET, LIVE.merge("status" => "failed")], FROZEN)
+    assert_not S.heroku_live_at_sha_through_config?([IDL_SET, PRIOR], FROZEN)
+    assert_not S.heroku_live_at_sha_through_config?([IDL_SET], FROZEN)
+    assert_not S.heroku_live_at_sha_through_config?([], FROZEN)
+    assert_not S.heroku_live_at_sha_through_config?([IDL_SET, LIVE], "")
+  end
+
+  test "[unit] post-ship: newest first by version, whatever order the list arrives in" do
+    assert S.heroku_live_at_sha_through_config?([PRIOR, LIVE.merge("current" => false), IDL_SET], FROZEN)
+  end
+
   # --- heroku_app_for: WHERE the release list is read from -----------------
 
   test "[unit] a git_push_heroku adapter needs no new key — its own `remote:` names the app" do

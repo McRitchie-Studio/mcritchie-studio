@@ -128,7 +128,8 @@
 #   bin/release cycle --clearance "<Alex McRitchie's words>" [--yes] [--wait-for-1password[=MINUTES]]
 #     The whole release as ONE resumable command (bin/lib/release_cycle.rb): prepare →
 #     QA verify (each QA app /up and / answer 200; a Turf release's devnet gauntlet on
-#     the record) → ship --mode cleared → prod verify → archive. Enters at the board's
+#     the record for the Turf SHAs on QA) → ship --mode cleared → prod verify (/up and /,
+#     and each app runs its frozen SHA) → archive. Enters at the board's
 #     current stage, so a re-run resumes. Mints the agent token for prepare/archive and
 #     the deployer token for ship (fresh per act), keeps the Mac awake, re-runs a step
 #     once on a transient GitHub network failure or a stale-tree refusal, and re-runs
@@ -1698,7 +1699,14 @@ end
 # turf-monster at the SHA prepare deployed to QA (with_gauntlet_tree), never the
 # primary checkout on main, so a release that changes the driver is tested by its
 # own driver. The worktree is a throwaway in a temp dir, removed when the run
-# ends, green or red.
+# ends, green or red. On a red (or a raise) the driver's state file
+# (GAUNTLET_MANIFEST: the contest, its cast, how far it got) is copied out to the
+# primary's tmp/qa-rehearsal first, so a devnet contest left open can be resumed or
+# closed by hand. A tree a killed run left behind (it holds copies of the primary's
+# .env files) is swept, state kept, when the next run cuts its own.
+#
+# The overall deadline starts BEFORE the tree is cut: the cut's fetch and
+# `bundle install` spend the same budget the rehearsal steps do.
 GAUNTLET_SKIP_FLAG = "--skip-gauntlet"
 GAUNTLET_STEP_DEADLINE_ENV = "RELEASE_GAUNTLET_STEP_DEADLINE"
 GAUNTLET_STEP_DEFAULT_DEADLINE = 1200
@@ -1717,6 +1725,8 @@ DEVNET_RPC_DEFAULT = "https://api.devnet.solana.com"
 GAUNTLET_DRIVER = "bin/qa-contest-rehearsal"
 GAUNTLET_DRIVER_ENV = "RELEASE_GAUNTLET_DRIVER"
 GAUNTLET_MANIFEST = "tmp/qa-rehearsal/current.json"
+# Where a red run's state file is kept, in the turf-monster primary (gitignored tmp/).
+GAUNTLET_STATE_KEEP_DIR = "tmp/qa-rehearsal"
 # EventUsage::FIELDS, as the string keys capture_move_usage answers with.
 GAUNTLET_USAGE_FIELDS = %w[model tokens_in tokens_out cost].freeze
 # The hub's Bundler and Ruby load-path settings must not leak into turf-monster's
@@ -1726,6 +1736,13 @@ GAUNTLET_ENV_SCRUB = %w[BUNDLE_GEMFILE BUNDLE_BIN_PATH BUNDLER_SETUP BUNDLER_VER
 
 def gauntlet_step_deadline = env_deadline(GAUNTLET_STEP_DEADLINE_ENV, GAUNTLET_STEP_DEFAULT_DEADLINE)
 def gauntlet_deadline = env_deadline(GAUNTLET_DEADLINE_ENV, GAUNTLET_DEFAULT_DEADLINE)
+# The monotonic clock the gauntlet's overall deadline is read on (DevnetGauntletRun's).
+def gauntlet_clock = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+# Where the throwaway turf-monster trees are cut, and swept from.
+def gauntlet_tmp_root = Dir.tmpdir
+# A leftover tree older than this is a killed run's: a live one ends inside its
+# deadline (the cut included), so twice the deadline cannot be a run in flight.
+def gauntlet_tree_stale_after = gauntlet_deadline * 2
 
 # The step of prepare after QA green: run the gauntlet when the release owes one.
 # Returns :not_required, :skipped, :dry, :recorded (one is already on the release),
@@ -1767,7 +1784,8 @@ def prepare_devnet_gauntlet!(rel_slug, repos, skip: false, shas: {})
   usage_key = "release:#{rel_slug}:#{Release::DevnetGauntlet::STEP}"
   seed_gauntlet_usage(usage_key)
   started = Time.now
-  result = with_gauntlet_tree(turf, turf_shas) { |root| devnet_gauntlet_runner(root).call }
+  clock_started = gauntlet_clock # before the tree is cut: the cut spends the overall budget too
+  result = with_gauntlet_tree(turf, turf_shas) { |root| devnet_gauntlet_runner(root, started_at: clock_started).call }
   metadata = result.metadata.merge("repos" => turf, "shas" => turf_shas, "seconds" => (Time.now - started).round)
   attrs = gauntlet_event_attrs(capture_move_usage(usage_key), metadata, result)
 
@@ -1846,13 +1864,14 @@ rescue StandardError
   nil
 end
 
-def devnet_gauntlet_runner(root)
+def devnet_gauntlet_runner(root, started_at: nil)
   Release::DevnetGauntletRun.new(
     driver: ->(argv, budget) { run_gauntlet_step(root, argv, budget: budget) },
     manifest: -> { JSON.parse(File.read(File.join(root, GAUNTLET_MANIFEST))) },
     transaction: ->(signature) { devnet_transaction(signature) },
     say: ->(line) { say(line) },
-    deadline: gauntlet_deadline, deadline_env: GAUNTLET_DEADLINE_ENV
+    deadline: gauntlet_deadline, deadline_env: GAUNTLET_DEADLINE_ENV,
+    clock: -> { gauntlet_clock }, started_at: started_at
   )
 end
 
@@ -1878,16 +1897,58 @@ def with_gauntlet_tree(turf, shas)
   end
   return gauntlet_tree_red("no QA SHA for turf-monster, so there is no release tree to run the driver from") if sha.empty?
 
-  path = Dir.mktmpdir(GAUNTLET_TREE_PREFIX)
+  sweep_stale_gauntlet_trees(primary)
+  path = Dir.mktmpdir(GAUNTLET_TREE_PREFIX, gauntlet_tmp_root)
+  result = nil
   begin
     error = cut_gauntlet_tree(primary, path, sha)
     return gauntlet_tree_red(error) if error
 
     say("  gauntlet driver: turf-monster@#{sha[0, 7]} (#{path}), the tree prepare deployed to QA")
-    yield(path)
+    result = yield(path)
   ensure
+    # A red, or a raise (result still nil): the contest may be open on devnet.
+    keep_gauntlet_state(primary, path, sha[0, 7]) unless result.respond_to?(:ok?) && result.ok?
     remove_gauntlet_tree(primary, path)
   end
+end
+
+# Copies a run's state file (GAUNTLET_MANIFEST) out of its tree into the primary's
+# GAUNTLET_STATE_KEEP_DIR, under a name of its own (never over current.json, which
+# a hand-run rehearsal in the primary may be using), and says how to use it.
+# Answers the kept path, or nil when the run left no state.
+def keep_gauntlet_state(primary, path, label)
+  source = File.join(path, GAUNTLET_MANIFEST)
+  return nil unless File.file?(source)
+
+  dir = File.join(primary, GAUNTLET_STATE_KEEP_DIR)
+  FileUtils.mkdir_p(dir)
+  kept = File.join(dir, "release-gauntlet-#{label}-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}-#{Process.pid}.json")
+  FileUtils.cp(source, kept)
+  say("  kept the gauntlet's devnet state: #{kept}. To resume or close its contest by hand, copy it to " \
+      "#{File.join(dir, 'current.json')} and run the next `#{GAUNTLET_DRIVER}` step from turf-monster " \
+      "(docs/agents/agents/turf_monster/sops/contest-rehearsal.md).")
+  kept
+rescue SystemCallError => e
+  say("  ⚠ could not keep the gauntlet's state file #{source} (#{e.message}); it goes with the tree")
+  nil
+end
+
+# Removes the trees a killed run left in gauntlet_tmp_root (a SIGKILL skips the
+# ensure): each holds copies of the primary's .env files, and may hold the state
+# of a contest left open. State kept first, then the tree removed. A tree younger
+# than gauntlet_tree_stale_after may be a run in flight, and is left alone.
+def sweep_stale_gauntlet_trees(primary)
+  cutoff = Time.now - gauntlet_tree_stale_after
+  Dir.glob(File.join(gauntlet_tmp_root, "#{GAUNTLET_TREE_PREFIX}*")).each do |stale|
+    next unless File.directory?(stale) && File.mtime(stale) < cutoff
+
+    say("  sweeping a stale gauntlet tree a killed run left behind: #{stale}")
+    keep_gauntlet_state(primary, stale, "stale")
+    remove_gauntlet_tree(primary, stale)
+  end
+rescue SystemCallError => e
+  say("  ⚠ could not sweep stale gauntlet trees (#{e.message})")
 end
 
 # Cuts `path` as a detached worktree of `primary` at `sha` and readies it for the
@@ -1908,11 +1969,16 @@ end
 
 # The release may change turf-monster's Gemfile.lock: install what it pins. Answers
 # nil, or why the bundle is unsatisfied.
+# Through the tree's own bundler (suite_bundle_argv: its bin/bundle binstub when it
+# has one), as every other release tree's bundle runs; a bare `bundle` resolves to
+# whatever the conductor's PATH holds. Bounded by the gauntlet's overall deadline.
 def bundle_gauntlet_tree(path)
-  return nil if sh("bundle", "check", capture: true, chdir: path, env: GAUNTLET_ENV_SCRUB)[1]
+  bundle = suite_bundle_argv(path)
+  bound = { deadline: gauntlet_deadline, deadline_env: GAUNTLET_DEADLINE_ENV }
+  return nil if sh(*bundle, "check", capture: true, chdir: path, env: GAUNTLET_ENV_SCRUB, **bound)[1]
 
-  out, ok = sh("bundle", "install", "--quiet", capture: true, chdir: path, env: GAUNTLET_ENV_SCRUB)
-  ok ? nil : "`bundle install` failed in the release's turf-monster tree: #{out.to_s.lines.last.to_s.strip}"
+  out, ok = sh(*bundle, "install", "--quiet", capture: true, chdir: path, env: GAUNTLET_ENV_SCRUB, **bound)
+  ok ? nil : "`#{bundle.join(' ')} install` failed in the release's turf-monster tree: #{out.to_s.lines.last.to_s.strip}"
 end
 
 def remove_gauntlet_tree(primary, path)
@@ -9551,7 +9617,14 @@ end
 # live. So a DRY finalize preview shows an inline app as unconfirmed — its
 # deployed_at_sha is false by construction — where the real run reads the release and
 # confirms it. Read a DRY refusal here as "not evaluated", never as the verdict.
-def deploy_live_verdict(group, frozen)
+# post_ship: true is `bin/release cycle`'s prod verify, right after a ship: a Heroku
+# app counts as live when its newest Deploy is the frozen SHA and only config-only
+# releases (an EXPECTED_IDL_HASH set, a rotation) came after it
+# (ShipSequence.heroku_live_at_sha_through_config?). The finalize guard calls it
+# without, and keeps the strict "the CURRENT release is our deploy" rule.
+POST_SHIP_HEROKU_RELEASES = 20
+
+def deploy_live_verdict(group, frozen, post_ship: false)
   frozen = frozen.to_s.strip
   return [false, "no frozen SHA recorded for this repo"] if frozen.empty?
 
@@ -9581,7 +9654,14 @@ def deploy_live_verdict(group, frozen)
     case strategy
     when "github_actions" then nil
     when "static_cloudflare" then static_release_sha(group_smoke_url(group)) == frozen
-    else Release::ShipSequence.heroku_release_at_sha?(heroku_releases(heroku_app), frozen)
+    else
+      if post_ship
+        Release::ShipSequence.heroku_live_at_sha_through_config?(
+          heroku_releases(heroku_app, limit: POST_SHIP_HEROKU_RELEASES), frozen
+        )
+      else
+        Release::ShipSequence.heroku_release_at_sha?(heroku_releases(heroku_app), frozen)
+      end
     end
 
   # RESOLVED ONCE AND CARRIED, because `up_ok == false` has two causes and only the
@@ -12176,7 +12256,8 @@ class ReleaseCycleDeps
       turf = repos.call(r) & #{Release::DevnetGauntlet::REPOS.inspect};
       g = r && r.release_events.where(step: '#{Release::DevnetGauntlet::STEP}', status: %w[completed failed]).order(:occurred_at, :id).last;
       est = begin; e = r && Release::Flow.estimate_for(r, default: Release::Flow.recent); e && { eta: e.eta.utc.iso8601, remaining: e.remaining, phase: e.phase }; rescue StandardError; nil; end;
-      puts({ current: (r && { slug: r.slug, state: r.state, repos: repos.call(r), gauntlet_required: turf.any?, gauntlet_status: g&.status }),
+      puts({ current: (r && { slug: r.slug, state: r.state, repos: repos.call(r), gauntlet_required: turf.any?, gauntlet_status: g&.status,
+                              gauntlet: g&.slice('occurred_at', 'actor', 'metadata', 'status'), qa_shas: (r.metadata['qa_shas'] || {}) }),
              last_shipped: (l && { slug: l.slug, repos: repos.call(l) }),
              archivable: Release::Conductor.archivable_completed_slugs.size,
              estimate: est }.to_json)
@@ -12207,6 +12288,39 @@ class ReleaseCycleDeps
                                                qa_environments: QA_ENVIRONMENTS, hub: APP)
   end
 
+  # Prod verify's SHA leg: for each app the release DEPLOYS (a prod_deploy strategy,
+  # Release::ShipSequence.deploy_target?, as the URL check and the ship read it; a
+  # turf-vault or chain-ops group has none), does production run the SHA the release
+  # shipped? That SHA is release.metadata["shipped_shas"] (what the ship pushed: a
+  # candidate-gem re-pin commit is newer than qa_shas), else qa_shas.
+  # [{ "repo", "sha", "ok", "reason" }], or nil when the release cannot be read.
+  # The answer is deploy_live_verdict(post_ship: true): per strategy, the Heroku
+  # release history, the deploy workflow's run, or the static marker, plus /up and
+  # origin/main. All READS. The workflow-run read is `gh run list`, run under a
+  # freshly minted AGENT GitHub token (the cycle's own lane, never whatever `gh`
+  # login the shell holds); nothing prints a credential.
+  def deployed_sha_verdicts(slug)
+    plan = conductor("r = Release.find_by!(slug: #{slug.to_s.inspect}); " \
+                     "puts({ repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {}), " \
+                     "shipped_shas: (r.metadata['shipped_shas'] || {}) }.to_json)",
+                     read_only: true)
+    return nil unless plan.is_a?(Hash)
+
+    apps = Array(plan["repos"]).select do |g|
+      g.is_a?(Hash) && g["kind"] == "app" && Release::ShipSequence.deploy_target?(g["prod_deploy"])
+    end
+    with_agent_gh_token do
+      ReleaseCycle.sha_verdicts(Release::ShipSequence.ordered_app_groups(apps), plan["qa_shas"],
+                                shipped_shas: plan["shipped_shas"],
+                                live: ->(group, sha) { deploy_live_verdict(group, sha, post_ship: true) })
+    end
+  rescue SystemExit, StandardError => e
+    warn("  deployed-SHA read failed: #{e.message}")
+    nil
+  end
+
+  def pause(seconds) = sleep(seconds)
+
   # The HTTP status code as a string, or nil when nothing answered.
   def http_status(url)
     out, status = Open3.capture2e("/usr/bin/curl", "-s", "-L", "--max-time", "20", "-o", "/dev/null",
@@ -12236,6 +12350,20 @@ class ReleaseCycleDeps
   end
 
   private
+
+  # Runs the block with the agent lane's env (ReleaseCycle.step_env, as prepare
+  # gets it: a fresh GH_TOKEN, GH_APP_ITEM and the admin-only secrets unset) in
+  # THIS process, restoring every key after. A failed mint leaves GH_TOKEN unset
+  # (gh's own login), and says so; the read then fails closed if gh cannot answer.
+  def with_agent_gh_token
+    env, minted = ReleaseCycle.step_env("prepare", mint: method(:mint))
+    warn("  ⚠ no agent GitHub token minted for the deployed-SHA read; gh uses its own login") unless minted
+    saved = env.keys.to_h { |key| [key, ENV.fetch(key, nil)] }
+    env.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+    yield
+  ensure
+    saved&.each { |key, value| value.nil? ? ENV.delete(key) : ENV[key] = value }
+  end
 
   def mint(identity, env)
     out, _err, status = BoundedCommand.capture3(env, File.join(__dir__, "gh-token"), "--identity", identity,
@@ -12306,7 +12434,8 @@ def cycle
   extra << "--local" unless PROD
   if DRY
     say("bin/release cycle --dry-run: runs, from the board's current stage, `bin/release prepare` → QA verify " \
-        "(each QA app /up and / answer 200) → `bin/release ship --mode cleared --clearance …` → prod verify → " \
+        "(each QA app /up and / answer 200) → `bin/release ship --mode cleared --clearance …` → prod verify " \
+        "(/up and / answer 200, each app runs its frozen SHA) → " \
         "`bin/release archive`. A dry run starts none of them; preview each act with its own --dry-run.")
     return 0
   end

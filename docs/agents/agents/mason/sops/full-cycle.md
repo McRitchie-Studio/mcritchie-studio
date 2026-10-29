@@ -55,8 +55,13 @@ bin/release cycle --clearance "<Alex McRitchie's words>" --yes --wait-for-1passw
 
 `bin/release cycle` is the procedure for steps 2 to 4 below. It runs `prepare` →
 QA verify (each QA app the release carries answers 200 on `/up` and `/`; a Turf
-release has a green devnet gauntlet on the record, or prepare runs one) → `ship
---mode cleared` with his words → prod verify (`/up` and `/` again) → `archive`,
+release has a green devnet gauntlet on the record for the Turf SHAs QA runs now, or
+prepare runs one) → `ship --mode cleared` with his words → prod verify (`/up` and
+`/` again, and each app with a prod deploy runs the SHA the ship pushed, else the
+SHA QA froze: the Heroku release history, where a config-var or add-on change after
+the deploy still counts and a rollback does not, or the deploy workflow's run, read
+under the agent token; read three times 20 seconds apart, then a mismatch or an
+unreadable answer stops it, exit 5) → `archive`,
 one line per act with its elapsed time and the DevOps estimate's ETA. It owns the
 plumbing the hand-rolled scratch scripts carried: OP_CACHE=false, the AGENT GitHub
 token for prepare and archive, the admin 1Password token and DEPLOYER token for

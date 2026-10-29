@@ -50,7 +50,8 @@ class Release::DevnetGauntletRunTest < ActiveSupport::TestCase
 
   # `step_seconds` is how long each step takes on the fake clock; `budgets` collects
   # what the run hands the driver as the overall deadline's remaining seconds.
-  def gauntlet(outputs: {}, codes: {}, winners: WINNERS, tx: settle_tx, deadline: nil, step_seconds: {}, budgets: [])
+  def gauntlet(outputs: {}, codes: {}, winners: WINNERS, tx: settle_tx, deadline: nil, step_seconds: {}, budgets: [],
+               started_at: nil)
     calls = []
     now = 0.0
     driver = lambda do |argv, budget|
@@ -62,7 +63,7 @@ class Release::DevnetGauntletRunTest < ActiveSupport::TestCase
     end
     result = Run.new(driver: driver, manifest: -> { { "contest_slug" => "rehearsal-abc", "winners" => winners } },
                      transaction: ->(sig) { sig == SETTLE ? tx : nil }, deadline: deadline,
-                     deadline_env: "RELEASE_GAUNTLET_DEADLINE", clock: -> { now }).call
+                     deadline_env: "RELEASE_GAUNTLET_DEADLINE", clock: -> { now }, started_at: started_at).call
     [result, calls]
   end
 
@@ -178,6 +179,23 @@ class Release::DevnetGauntletRunTest < ActiveSupport::TestCase
     result, = gauntlet(deadline: 1800, step_seconds: { "seed" => 30, "create" => 50, "play" => 240 }, budgets: budgets)
     assert result.ok?, result.reason
     assert_equal [1800, 1770, 1720, 1720, 1480, 1480], budgets.map(&:round)
+  end
+
+  # prepare reads the clock BEFORE it cuts the release's turf-monster tree: a cut
+  # that took 1500s of an 1800s deadline leaves the steps 300s, not a fresh 1800s.
+  def test_a_clock_started_before_the_tree_cut_counts_the_cut_against_the_deadline
+    budgets = []
+    result, = gauntlet(deadline: 1800, started_at: -1500.0, budgets: budgets)
+    assert result.ok?, result.reason
+    assert_equal 300, budgets.first.round
+  end
+
+  def test_a_cut_that_spent_the_whole_deadline_runs_no_step
+    result, calls = gauntlet(deadline: 1800, started_at: -1800.0)
+    refute result.ok?
+    assert_equal "seed", result.step
+    assert_includes result.reason, "overall deadline of 1800s ran out before step `seed` started"
+    assert_empty calls
   end
 
   def test_the_deadline_running_out_between_steps_is_red_naming_the_next_step

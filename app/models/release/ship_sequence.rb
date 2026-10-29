@@ -1061,6 +1061,10 @@ class Release
     # same-SHA push that Heroku answers "up-to-date" — the trade deploy_already_
     # succeeded? already chose: a redundant re-verify beats a false green.
     #
+    # The ONE exception is `bin/release cycle`'s post-ship prod verify, which walks
+    # back past an allow-list of config-only releases and nothing else
+    # (heroku_live_at_sha_through_config? below); this guard does not.
+    #
     # FAILS CLOSED on everything else too: a blank sha, an empty or unreadable list,
     # no release flagged current, a non-succeeded status, a description that is not
     # a deploy, or a prefix that does not match.
@@ -1081,6 +1085,50 @@ class Release
 
       short = match[1].downcase
       short.length <= target.length && target.start_with?(short)
+    end
+
+    # Heroku release descriptions that change config or add-on attachments and
+    # leave the slug alone, so the deploy before them is still what serves. An
+    # ALLOW-list, anchored both ends: anything not on it (`Rollback to v283`, a
+    # `Deploy`, a pipeline `Promote`, a wording Heroku adds later) is not one.
+    CONFIG_ONLY_DESCRIPTIONS = [
+      /\A(?:Set|Remove) [A-Z0-9_]+(?:, [A-Z0-9_]+)* config vars?\z/,
+      /\AUpdate [A-Z0-9_]+(?:, [A-Z0-9_]+)* by [\w.@-]+\z/,
+      /\A(?:Attach|Detach) [A-Z0-9_]+ \(@ref:[\w.-]+\) resource\z/
+    ].freeze
+
+    def config_only_release?(description)
+      text = description.to_s.strip
+      CONFIG_ONLY_DESCRIPTIONS.any? { |pattern| pattern.match?(text) }
+    end
+
+    # The POST-SHIP form of heroku_release_at_sha?, for `bin/release cycle`'s prod
+    # verify only (the finalize guard keeps the strict current-release rule above).
+    # Right after a healthy ship the current release is often NOT the deploy:
+    # turf-monster's bin/deploy runs `heroku config:set EXPECTED_IDL_HASH` after the
+    # push on an IDL bump, and a credential or add-on rotation does the same. So,
+    # newest first: every release newer than the deploy must be a config-only change
+    # (CONFIG_ONLY_DESCRIPTIONS); the first `Deploy` row reached must be SUCCEEDED and
+    # name `sha`. A rollback, an unknown description, another deploy, or running off
+    # the end of the list answers false (fails closed, as above).
+    def heroku_live_at_sha_through_config?(releases, sha)
+      target = sha.to_s.strip.downcase
+      return false if target.length < 7
+
+      rows = Array(releases).select { |r| r.is_a?(Hash) }
+      rows = rows.sort_by { |r| -(r["version"] || r[:version]).to_i } if rows.all? { |r| (r["version"] || r[:version]).to_i.positive? }
+      rows.each do |release|
+        description = (release["description"] || release[:description]).to_s
+        match = DEPLOY_DESCRIPTION.match(description)
+        if match
+          return false unless (release["status"] || release[:status]).to_s == "succeeded"
+
+          short = match[1].downcase
+          return short.length <= target.length && target.start_with?(short)
+        end
+        return false unless config_only_release?(description)
+      end
+      false
     end
 
     # Did a prod-deploy run FOR `sha` conclude success? `runs` is the `gh run list`
