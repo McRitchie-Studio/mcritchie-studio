@@ -32,8 +32,8 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
         $stdout.puts("BOARD-READ read_only=" + read_only.to_s) if ruby.include?("devnet_gauntlet")
         { "devnet_gauntlet" => JSON.parse(#{JSON.generate(recorded).inspect}) }
       end
-      def devnet_gauntlet_runner(root)
-        $stdout.puts("RUNNER-ROOT " + root.to_s)
+      def devnet_gauntlet_runner(root, started_at: nil)
+        $stdout.puts("RUNNER-ROOT " + root.to_s + " STARTED-AT " + started_at.inspect)
         o = Object.new
         o.define_singleton_method(:call) { $stdout.puts("RUNNER-CALLED"); #{runner} }
         o
@@ -234,11 +234,12 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
 
   def tree_path(out) = out[/gauntlet driver: turf-monster@\h{7} \((\S+)\)/, 1] || flunk("no tree named: #{out}")
 
-  def tree_call(primary, sha, body, rescue_it: false)
+  def tree_call(primary, sha, body, rescue_it: false, tmp_root: nil)
     setup = <<~RUBY
       ENV.delete("RELEASE_GAUNTLET_DRIVER")
       def repo_path(_repo) = #{primary.inspect}
       def bundle_gauntlet_tree(_path) = nil
+      #{"def gauntlet_tmp_root = #{tmp_root.inspect}" if tmp_root}
     RUBY
     call = "r = with_gauntlet_tree(['turf-monster'], { 'turf-monster' => #{sha.inspect} }) { |root| #{body} }; " \
            "puts('RESULT ' + r.inspect)"
@@ -279,6 +280,117 @@ class ReleaseCliPrepareGauntletTest < ReleaseCliHarness
       assert_match(/RESULT .*step="tree".*could not cut a turf-monster worktree/m, out)
       assert_equal 1, `git -C #{primary} worktree list`.lines.size
     end
+  end
+
+  # --- a red run keeps its devnet state; a killed run's tree is swept --------------
+
+  STATE = '{"contest_slug":"rehearsal-open","step":"settle"}'
+
+  def write_state_body(result)
+    'FileUtils.mkdir_p(File.join(root, "tmp/qa-rehearsal")); ' \
+      "File.write(File.join(root, 'tmp/qa-rehearsal/current.json'), #{STATE.inspect}); #{result}"
+  end
+
+  def kept_states(primary) = Dir.glob(File.join(primary, "tmp/qa-rehearsal/release-gauntlet-*.json"))
+
+  def test_a_red_run_keeps_its_state_file_in_the_primary_before_the_tree_goes
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      red = 'Release::DevnetGauntletRun::Result.new(ok: false, step: "settle", reason: "x", metadata: {})'
+      out = tree_call(primary, release_sha, write_state_body(red))
+
+      kept = kept_states(primary)
+      assert_equal 1, kept.size, "the open contest's state survives the tree: #{out}"
+      assert_equal STATE, File.read(kept.first)
+      assert_includes File.basename(kept.first), "release-gauntlet-#{release_sha[0, 7]}-"
+      refute File.exist?(File.join(primary, "tmp/qa-rehearsal/current.json")), "never over the primary's own state"
+      assert_includes out, "kept the gauntlet's devnet state: #{kept.first}"
+      refute File.exist?(tree_path(out)), "the tree itself still goes"
+    end
+  end
+
+  def test_a_raise_keeps_the_state_file_too
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      out = tree_call(primary, release_sha, write_state_body('raise "boom"'), rescue_it: true)
+      assert_includes out, "RAISED boom"
+      assert_equal 1, kept_states(primary).size
+    end
+  end
+
+  def test_a_green_run_keeps_nothing
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      green = 'Release::DevnetGauntletRun::Result.new(ok: true, step: nil, reason: nil, metadata: {})'
+      tree_call(primary, release_sha, write_state_body(green))
+      assert_empty kept_states(primary)
+    end
+  end
+
+  def test_a_stale_tree_a_killed_run_left_is_swept_with_its_state_kept_and_a_fresh_one_is_not
+    with_scratch_turf do |primary, _main_sha, release_sha|
+      Dir.mktmpdir("gauntlet-root") do |root|
+        stale = File.join(root, "gauntlet-turf-monster-killed")
+        FileUtils.mkdir_p(File.join(stale, "tmp/qa-rehearsal"))
+        File.write(File.join(stale, ".env"), "SECRET_COPY=1\n")
+        File.write(File.join(stale, "tmp/qa-rehearsal/current.json"), STATE)
+        File.utime(Time.now - 86_400, Time.now - 86_400, stale)
+        fresh = File.join(root, "gauntlet-turf-monster-inflight")
+        FileUtils.mkdir_p(fresh)
+
+        out = tree_call(primary, release_sha, ":ran", tmp_root: root)
+
+        refute File.exist?(stale), "the killed run's tree (and its .env copy) is gone: #{out}"
+        assert File.exist?(fresh), "a tree inside the deadline may be a run in flight"
+        assert_includes out, "sweeping a stale gauntlet tree a killed run left behind: #{stale}"
+        kept = kept_states(primary)
+        assert_equal 1, kept.size
+        assert_includes File.basename(kept.first), "release-gauntlet-stale-"
+        assert tree_path(out).start_with?(root), "the new tree is cut under the same root it sweeps"
+      end
+    end
+  end
+
+  # --- the tree's bundle runs through its own bundler, bounded ---------------------
+
+  def bundle_call(binstub:)
+    Dir.mktmpdir("gauntlet-bundle") do |dir|
+      if binstub
+        FileUtils.mkdir_p(File.join(dir, "bin"))
+        File.write(File.join(dir, "bin", "bundle"), "#!/bin/sh\n")
+      end
+      setup = <<~RUBY
+        def sh(*cmd, capture: false, chdir: nil, env: nil, deadline: nil, deadline_env: nil)
+          $stdout.puts("SH " + cmd.join(" ") + " deadline_env=" + deadline_env.to_s)
+          ["", cmd.include?("install")]
+        end
+      RUBY
+      run_cli([], setup: setup, call: "puts('BUNDLE ' + bundle_gauntlet_tree(#{dir.inspect}).inspect)")
+    end
+  end
+
+  def test_the_tree_bundles_through_its_binstub_like_every_release_tree
+    out = bundle_call(binstub: true)
+
+    assert_includes out, "SH bin/bundle check deadline_env=RELEASE_GAUNTLET_DEADLINE"
+    assert_includes out, "SH bin/bundle install --quiet deadline_env=RELEASE_GAUNTLET_DEADLINE"
+    refute_match(/^SH bundle /, out, "never the conductor PATH's bare bundle")
+    assert_includes out, "BUNDLE nil"
+  end
+
+  def test_without_a_binstub_the_tree_bundles_through_ruby_s_bundle
+    out = bundle_call(binstub: false)
+    assert_includes out, "SH ruby -S bundle check"
+  end
+
+  # --- the overall deadline starts before the tree is cut --------------------------
+
+  def test_the_deadline_clock_is_read_before_the_tree_is_cut
+    extra = <<~RUBY
+      def gauntlet_clock = ($stdout.puts("CLOCK-READ"); 4242.0)
+      def with_gauntlet_tree(_turf, _shas) = ($stdout.puts("TREE-CUT"); yield("/tmp/tree"))
+    RUBY
+    out = gauntlet(repos: TURF, result: { ok: true, step: nil, reason: nil, metadata: GREEN_META }, extra: extra)
+
+    assert_operator out.index("CLOCK-READ"), :<, out.index("TREE-CUT"), "the clock starts before the cut"
+    assert_includes out, "RUNNER-ROOT /tmp/tree STARTED-AT 4242.0", "the runner counts from that reading"
   end
 
   # --- the overall deadline bounds a step it would outlast -------------------------

@@ -56,9 +56,12 @@ class Release
     # `deadline` bounds the WHOLE run in seconds (nil: unbounded), on top of each
     # step's own bound: six steps at a 1200s step bound could otherwise hold prepare
     # for two hours. `deadline_env` is the name that sets it, for the red's reason.
-    # `clock` answers monotonic seconds (a fake in the tests).
+    # `clock` answers monotonic seconds (a fake in the tests). `started_at` is the
+    # clock reading the deadline counts from (nil: when `call` starts); prepare reads
+    # it BEFORE cutting the release's turf-monster tree, so a slow cut (a fetch, a
+    # `bundle install`) spends the same overall budget instead of extending it.
     def initialize(driver:, manifest:, transaction:, say: ->(_line) { }, deadline: nil, deadline_env: nil,
-                   clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) })
+                   clock: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }, started_at: nil)
       @driver = driver
       @manifest = manifest
       @transaction = transaction
@@ -66,13 +69,14 @@ class Release
       @deadline = deadline
       @deadline_env = deadline_env
       @clock = clock
+      @started_at = started_at
       @facts = { "steps" => {} }
     end
 
     # Runs every step, stopping at the first red one. Never raises: the Result
     # names the step that went red and why, and carries what was learned so far.
     def call
-      @started = @clock.call
+      @started = @started_at || @clock.call
       STEPS.each do |label, argv|
         @current = label
         budget = remaining

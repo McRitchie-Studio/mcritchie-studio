@@ -1698,7 +1698,14 @@ end
 # turf-monster at the SHA prepare deployed to QA (with_gauntlet_tree), never the
 # primary checkout on main, so a release that changes the driver is tested by its
 # own driver. The worktree is a throwaway in a temp dir, removed when the run
-# ends, green or red.
+# ends, green or red. On a red (or a raise) the driver's state file
+# (GAUNTLET_MANIFEST: the contest, its cast, how far it got) is copied out to the
+# primary's tmp/qa-rehearsal first, so a devnet contest left open can be resumed or
+# closed by hand. A tree a killed run left behind (it holds copies of the primary's
+# .env files) is swept, state kept, when the next run cuts its own.
+#
+# The overall deadline starts BEFORE the tree is cut: the cut's fetch and
+# `bundle install` spend the same budget the rehearsal steps do.
 GAUNTLET_SKIP_FLAG = "--skip-gauntlet"
 GAUNTLET_STEP_DEADLINE_ENV = "RELEASE_GAUNTLET_STEP_DEADLINE"
 GAUNTLET_STEP_DEFAULT_DEADLINE = 1200
@@ -1717,6 +1724,8 @@ DEVNET_RPC_DEFAULT = "https://api.devnet.solana.com"
 GAUNTLET_DRIVER = "bin/qa-contest-rehearsal"
 GAUNTLET_DRIVER_ENV = "RELEASE_GAUNTLET_DRIVER"
 GAUNTLET_MANIFEST = "tmp/qa-rehearsal/current.json"
+# Where a red run's state file is kept, in the turf-monster primary (gitignored tmp/).
+GAUNTLET_STATE_KEEP_DIR = "tmp/qa-rehearsal"
 # EventUsage::FIELDS, as the string keys capture_move_usage answers with.
 GAUNTLET_USAGE_FIELDS = %w[model tokens_in tokens_out cost].freeze
 # The hub's Bundler and Ruby load-path settings must not leak into turf-monster's
@@ -1726,6 +1735,13 @@ GAUNTLET_ENV_SCRUB = %w[BUNDLE_GEMFILE BUNDLE_BIN_PATH BUNDLER_SETUP BUNDLER_VER
 
 def gauntlet_step_deadline = env_deadline(GAUNTLET_STEP_DEADLINE_ENV, GAUNTLET_STEP_DEFAULT_DEADLINE)
 def gauntlet_deadline = env_deadline(GAUNTLET_DEADLINE_ENV, GAUNTLET_DEFAULT_DEADLINE)
+# The monotonic clock the gauntlet's overall deadline is read on (DevnetGauntletRun's).
+def gauntlet_clock = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+# Where the throwaway turf-monster trees are cut, and swept from.
+def gauntlet_tmp_root = Dir.tmpdir
+# A leftover tree older than this is a killed run's: a live one ends inside its
+# deadline (the cut included), so twice the deadline cannot be a run in flight.
+def gauntlet_tree_stale_after = gauntlet_deadline * 2
 
 # The step of prepare after QA green: run the gauntlet when the release owes one.
 # Returns :not_required, :skipped, :dry, :recorded (one is already on the release),
@@ -1767,7 +1783,8 @@ def prepare_devnet_gauntlet!(rel_slug, repos, skip: false, shas: {})
   usage_key = "release:#{rel_slug}:#{Release::DevnetGauntlet::STEP}"
   seed_gauntlet_usage(usage_key)
   started = Time.now
-  result = with_gauntlet_tree(turf, turf_shas) { |root| devnet_gauntlet_runner(root).call }
+  clock_started = gauntlet_clock # before the tree is cut: the cut spends the overall budget too
+  result = with_gauntlet_tree(turf, turf_shas) { |root| devnet_gauntlet_runner(root, started_at: clock_started).call }
   metadata = result.metadata.merge("repos" => turf, "shas" => turf_shas, "seconds" => (Time.now - started).round)
   attrs = gauntlet_event_attrs(capture_move_usage(usage_key), metadata, result)
 
@@ -1846,13 +1863,14 @@ rescue StandardError
   nil
 end
 
-def devnet_gauntlet_runner(root)
+def devnet_gauntlet_runner(root, started_at: nil)
   Release::DevnetGauntletRun.new(
     driver: ->(argv, budget) { run_gauntlet_step(root, argv, budget: budget) },
     manifest: -> { JSON.parse(File.read(File.join(root, GAUNTLET_MANIFEST))) },
     transaction: ->(signature) { devnet_transaction(signature) },
     say: ->(line) { say(line) },
-    deadline: gauntlet_deadline, deadline_env: GAUNTLET_DEADLINE_ENV
+    deadline: gauntlet_deadline, deadline_env: GAUNTLET_DEADLINE_ENV,
+    clock: -> { gauntlet_clock }, started_at: started_at
   )
 end
 
@@ -1878,16 +1896,58 @@ def with_gauntlet_tree(turf, shas)
   end
   return gauntlet_tree_red("no QA SHA for turf-monster, so there is no release tree to run the driver from") if sha.empty?
 
-  path = Dir.mktmpdir(GAUNTLET_TREE_PREFIX)
+  sweep_stale_gauntlet_trees(primary)
+  path = Dir.mktmpdir(GAUNTLET_TREE_PREFIX, gauntlet_tmp_root)
+  result = nil
   begin
     error = cut_gauntlet_tree(primary, path, sha)
     return gauntlet_tree_red(error) if error
 
     say("  gauntlet driver: turf-monster@#{sha[0, 7]} (#{path}), the tree prepare deployed to QA")
-    yield(path)
+    result = yield(path)
   ensure
+    # A red, or a raise (result still nil): the contest may be open on devnet.
+    keep_gauntlet_state(primary, path, sha[0, 7]) unless result.respond_to?(:ok?) && result.ok?
     remove_gauntlet_tree(primary, path)
   end
+end
+
+# Copies a run's state file (GAUNTLET_MANIFEST) out of its tree into the primary's
+# GAUNTLET_STATE_KEEP_DIR, under a name of its own (never over current.json, which
+# a hand-run rehearsal in the primary may be using), and says how to use it.
+# Answers the kept path, or nil when the run left no state.
+def keep_gauntlet_state(primary, path, label)
+  source = File.join(path, GAUNTLET_MANIFEST)
+  return nil unless File.file?(source)
+
+  dir = File.join(primary, GAUNTLET_STATE_KEEP_DIR)
+  FileUtils.mkdir_p(dir)
+  kept = File.join(dir, "release-gauntlet-#{label}-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}-#{Process.pid}.json")
+  FileUtils.cp(source, kept)
+  say("  kept the gauntlet's devnet state: #{kept}. To resume or close its contest by hand, copy it to " \
+      "#{File.join(dir, 'current.json')} and run the next `#{GAUNTLET_DRIVER}` step from turf-monster " \
+      "(docs/agents/agents/turf_monster/sops/contest-rehearsal.md).")
+  kept
+rescue SystemCallError => e
+  say("  ⚠ could not keep the gauntlet's state file #{source} (#{e.message}); it goes with the tree")
+  nil
+end
+
+# Removes the trees a killed run left in gauntlet_tmp_root (a SIGKILL skips the
+# ensure): each holds copies of the primary's .env files, and may hold the state
+# of a contest left open. State kept first, then the tree removed. A tree younger
+# than gauntlet_tree_stale_after may be a run in flight, and is left alone.
+def sweep_stale_gauntlet_trees(primary)
+  cutoff = Time.now - gauntlet_tree_stale_after
+  Dir.glob(File.join(gauntlet_tmp_root, "#{GAUNTLET_TREE_PREFIX}*")).each do |stale|
+    next unless File.directory?(stale) && File.mtime(stale) < cutoff
+
+    say("  sweeping a stale gauntlet tree a killed run left behind: #{stale}")
+    keep_gauntlet_state(primary, stale, "stale")
+    remove_gauntlet_tree(primary, stale)
+  end
+rescue SystemCallError => e
+  say("  ⚠ could not sweep stale gauntlet trees (#{e.message})")
 end
 
 # Cuts `path` as a detached worktree of `primary` at `sha` and readies it for the
@@ -1908,11 +1968,16 @@ end
 
 # The release may change turf-monster's Gemfile.lock: install what it pins. Answers
 # nil, or why the bundle is unsatisfied.
+# Through the tree's own bundler (suite_bundle_argv: its bin/bundle binstub when it
+# has one), as every other release tree's bundle runs; a bare `bundle` resolves to
+# whatever the conductor's PATH holds. Bounded by the gauntlet's overall deadline.
 def bundle_gauntlet_tree(path)
-  return nil if sh("bundle", "check", capture: true, chdir: path, env: GAUNTLET_ENV_SCRUB)[1]
+  bundle = suite_bundle_argv(path)
+  bound = { deadline: gauntlet_deadline, deadline_env: GAUNTLET_DEADLINE_ENV }
+  return nil if sh(*bundle, "check", capture: true, chdir: path, env: GAUNTLET_ENV_SCRUB, **bound)[1]
 
-  out, ok = sh("bundle", "install", "--quiet", capture: true, chdir: path, env: GAUNTLET_ENV_SCRUB)
-  ok ? nil : "`bundle install` failed in the release's turf-monster tree: #{out.to_s.lines.last.to_s.strip}"
+  out, ok = sh(*bundle, "install", "--quiet", capture: true, chdir: path, env: GAUNTLET_ENV_SCRUB, **bound)
+  ok ? nil : "`#{bundle.join(' ')} install` failed in the release's turf-monster tree: #{out.to_s.lines.last.to_s.strip}"
 end
 
 def remove_gauntlet_tree(primary, path)
