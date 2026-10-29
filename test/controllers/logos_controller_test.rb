@@ -1050,6 +1050,43 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_equal 'unknown proportion "golden": expected one of three_two_one, rule_of_three', response.body
   end
 
+  # Task stacked-line-width-and-spacing: the Small line and Letter spacing rows, carried like Proportion.
+  test "the Stacked tab offers Small line and Letter spacing, draws Match and Open, and Save as default keeps them" do
+    log_in_as(@admin)
+    get logo_brand_path("turf", type: "stacked", form: "two_line")
+    assert_response :success
+    assert_select "[data-test='small-line-control'][role='group'][aria-label='Small line']", 1
+    assert_select "[data-test='letter-spacing-control'][role='group'][aria-label='Letter spacing']", 1
+    assert_equal ["3-2-1", "Match"], css_select("a[data-test='small-line-option']").map { |o| o.text.strip }
+    assert_equal ["As styled", "Open"], css_select("a[data-test='letter-spacing-option']").map { |o| o.text.strip }
+    assert_equal [logo_brand_path("turf", type: "stacked", form: "two_line"), logo_brand_path("turf", type: "stacked", form: "two_line", small_line: "match")],
+                 css_select("a[data-test='small-line-option']").map { |o| o["href"] }, "3-2-1 is the default, left out"
+
+    kept = { type: "stacked", form: "two_line", small_line: "match", letter_spacing: "open", guides: 1 }
+    get logo_brand_path("turf", kept)
+    assert_response :success
+    assert_examples themed("turf", :stacked, form: :two_line, small_line: :match, letter_spacing: :open, guides: true)
+    assert_equal ["match"], css_select("a[data-test='small-line-option'][aria-current='true']").map { |o| o["data-small-line"] }
+    assert_equal ["open"], css_select("a[data-test='letter-spacing-option'][aria-current='true']").map { |o| o["data-letter-spacing"] }
+    assert_equal logo_brand_path("turf", kept.except(:type)), css_select("a[data-test='logo-tab'][data-type='navbar']").first["href"], "the other tabs carry them back"
+    saved = css_select("form[data-test='kit-save-default-form'] input[type='hidden']").to_h { |i| [i["name"], i["value"]] }
+    assert_equal %w[match open], saved.values_at("small_line", "letter_spacing"), "Save as default sends them"
+
+    patch brand_kit_choice_path("turf"), params: { type: "stacked", form: "two_line", small_line: "match", letter_spacing: "open", text: "first", colouring: "original" }
+    assert_equal %w[match open], BrandKit.find_by!(brand: "turf").stacked_choice.values_at("small_line", "letter_spacing")
+    get logo_brand_path("turf", type: "stacked")
+    assert_response :success
+    assert_equal ["match"], css_select("a[data-test='small-line-option'][aria-current='true']").map { |o| o["data-small-line"] }
+    assert_select "[data-test='kit-default-state'][data-state='shown']"
+
+    get logo_brand_path("turf", type: "stacked", form: "one_line")
+    assert_select "[data-test='small-line-control']", 0, "the one-line form has no small line"
+
+    get logo_brand_path("turf", type: "stacked", small_line: "wide")
+    assert_response :unprocessable_content
+    assert_equal 'unknown small_line "wide": expected one of three_two_one, match', response.body
+  end
+
   test "a kit saved in the rule of three opens on it, and 3-2-1 is then the one the URL names" do
     log_in_as(@admin)
     patch brand_kit_choice_path("welding_v2"), params: { type: "stacked", form: "two_line", proportion: "rule_of_three", text: "first", colouring: "original" }

@@ -77,8 +77,10 @@ class LogoComparison
     proportion = side_proportion(defaults, changed)
     colouring = side_colouring(logo, defaults, notes, changed)
     edits, icon_colouring = side_edits(logo, defaults, rule, form, notes)
+    # The small line and letter spacing have no compare control: each side draws its kit's (task stacked-line-width-and-spacing).
+    settings = type == :stacked ? defaults.slice(:small_line, :letter_spacing) : {}
     variants = @tones.to_h do |tone|
-      [tone, Logos::Variant.new(logo, type:, rule:, form:, proportion:, text: kit.default_text(type) || :homogeneous, tone:, colouring:,
+      [tone, Logos::Variant.new(logo, type:, rule:, form:, proportion:, **settings, text: kit.default_text(type) || :homogeneous, tone:, colouring:,
                                       icon_colouring:, guides: grid, edits:)]
     end
     Side.new(brand:, logo:, kit:, variants:, saved: !defaults[:choice].nil?, changed:, notes:)

@@ -331,6 +331,30 @@ on the first build's 3u gaps: "space of 2 vertically between".
 - An unknown proportion is refused: "unknown proportion :golden: expected one
   of three_two_one, rule_of_three".
 
+### Small line and letter spacing
+
+Alex McRitchie, 2026-10-29, on Turf Monster's two lines with guides on: "I want to
+add a new setting where the letters on the stack match ... some extra space in the
+'Monster' would make it match the 'turf'. ... I actually would like there to be some
+extra space with the turf also so the letters aren't touching" (task
+stacked-line-width-and-spacing). Two settings, each on `layout` and `svg`, each
+with today's drawing as its default (byte-identical):
+
+| Setting | Values | What it does |
+|---------|--------|--------------|
+| `small_line:` (`StackedLogo::SMALL_LINES`) | `three_two_one` (default), `match` | Match tracks the small line (the second word, or the tagline) out until its ink spans exactly the big line's ink width. |
+| `letter_spacing:` (`StackedLogo::LETTER_SPACINGS`) | `as_styled` (default), `open` | Open tracks the big line out by the least amount that leaves every adjacent pair of letters at least `OPEN_GAP` (0.04 cap heights, Montserrat's own tightest untracked pair in these names) apart, ink box to ink box. A brand already that open draws as styled. |
+
+- **Match never grows the icon.** The 3-2-1 icon stays as tall as the 3-2-1 small
+  line is wide; the guide drawing turns that 3-2-1 line on end beside it. The rule
+  of three sizes the icon from the name, so Match leaves it alone.
+- **Open on Turf Monster:** at -0.025 em the r and f of "Turf" overlap by 0.002
+  cap heights; Open moves the word's tracking from -0.036 to +0.007 cap heights.
+- The brand page's Stacked tab has a Small line row (not in the one-line form)
+  and a Letter spacing row. The kit stores `small_line: "match"` and
+  `letter_spacing: "open"` only when chosen; a choice without them reads as 3-2-1
+  and As styled.
+
 `Logos::StackedLogo.new` refuses, with `Logos::NavbarLogo::Error`:
 
 - a two-line brand whose second word is wider than its first, or has one
@@ -344,8 +368,8 @@ on the first build's 3u gaps: "space of 2 vertically between".
   has no tagline)";
 - an icon so wide that, at its height, it would overhang the name;
 - a keyword `svg` or `layout` does not take, `rule:` above all: "a stacked
-  logo takes text, tone, form, proportion, guides, edits, colouring and
-  icon_colouring, not rule: it has no rule".
+  logo takes text, tone, form, proportion, small_line, letter_spacing, guides,
+  edits, colouring and icon_colouring, not rule: it has no rule".
 
 In 3-2-1, `guides: true` returns the construction drawing, on the method of the 3-2-1
 reel: every measurement is proved with **ghost copies** of the small line (the
@@ -551,7 +575,7 @@ admin sidebar as **Logos**.
 | `/logos/:brand` | The brand's page, **tabbed by logo type**: `?type=icon`, `navbar` (the default) or `stacked`. Each tab shows ONE logo beside the edit panel, then the **Download card** ([below](#the-download-card)) beside the controls: PNG or SVG at six standard sizes or a custom Width × Height, any tone (Copy SVG is on `/logos/compare` only). Under them: **Kit choice** (on the Icon tab, the kit icon), the **Kit** and **Kit originals** cards, then the brand's **Colours** and **Typefaces**, its **Spectrum** and its **Type Scale**. |
 | `/logos/:brand/icon` | The icon as `image/svg+xml`. Params: `tone`, `colouring` (`original`, `alt`), `icon_colour`. Named `<brand>-icon-<tone>[-original].svg`. |
 | `/logos/:brand/navbar` | One Navbar Logo. Params: `rule` (`3`, `4`, `6`), `text` (`homogeneous`, `first`, `second`), `tone` (`light`, `dark`, `watermark`), `guides` (`0`, `1`). Named `<brand>-navbar-rule<3|4|6>-<text>-<tone>[-guides].svg`. |
-| `/logos/:brand/stacked` | One Stacked Logo. Params: `form` (`two_line`, `one_line`, `tagline`: only those the brand draws; absent is its own), `proportion` (`three_two_one`, the default, or `rule_of_three`), `text`, `tone`, `guides`. Named `<brand>-stacked-<two-line|one-line|tagline>[-rule-of-three]-<text>-<tone>[-guides].svg`. |
+| `/logos/:brand/stacked` | One Stacked Logo. Params: `form` (`two_line`, `one_line`, `tagline`: only those the brand draws; absent is its own), `proportion` (`three_two_one`, the default, or `rule_of_three`), `small_line` (`three_two_one`, the default, or `match`), `letter_spacing` (`as_styled`, the default, or `open`), `text`, `tone`, `guides`. Named `<brand>-stacked-<two-line|one-line|tagline>[-rule-of-three][-match][-open]-<text>-<tone>[-guides].svg`. |
 
 On the three SVG routes a param the type does not take is not read, and
 `download=1` sends the file as an attachment. The type is the route's own: a
