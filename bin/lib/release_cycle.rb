@@ -293,6 +293,9 @@ module ReleaseCycle
     end
 
     def stage_ship(snapshot, fresh:)
+      current = snapshot["current"] || {}
+      say("  ⚠ shipping #{current['slug'] || 'the active release'} (#{Array(current['repos']).join(', ')}) to " \
+          "PRODUCTION under the clearance \"#{@clearance}\"")
       status, output = run_step_with_output("ship", ship_argv)
       # ONE recovery, by construction: the second ship's verdict is final.
       if !status.zero? && ReleaseCycle.gauntlet_refusal?(output)

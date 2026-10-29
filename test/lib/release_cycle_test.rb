@@ -300,8 +300,10 @@ class ReleaseCycleTest < Minitest::Test
 
   test "[unit] ship runs --mode cleared with the clearance verbatim; flags pass through" do
     deps = FakeDeps.new(snapshots: [snap(current: release("assembled"))])
-    run_cycle(deps, assume_yes: true, wait_for_1password: 60)
+    _, out = run_cycle(deps, assume_yes: true, wait_for_1password: 60)
     ship = deps.calls.find { |argv| argv.first == "ship" }
+
+    assert_includes out, "shipping rel-x (mcritchie-studio) to PRODUCTION under the clearance \"#{CLEARANCE}\""
 
     assert_equal ["ship", "--mode", "cleared", "--clearance", CLEARANCE, "--yes", "--wait-for-1password=60"], ship
     assert_equal ["archive", "--yes"], deps.calls.last, "archive takes no --wait-for-1password (it would refuse it)"
