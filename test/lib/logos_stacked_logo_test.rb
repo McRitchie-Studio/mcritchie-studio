@@ -430,10 +430,10 @@ class LogosStackedLogoTest < Minitest::Test
     assert_match(/unknown text :third: expected one of homogeneous, first, second/, refusal { stacked("studio").svg(text: :third) })
     assert_match(/unknown tone :sepia: expected one of light, dark, watermark/, refusal { stacked("studio").svg(tone: :sepia) })
     assert_match(/unknown brand "acme"/, refusal { Stacked.new("acme") })
-    assert_equal "a stacked logo takes text, tone, form, proportion, guides, edits, colouring and icon_colouring, not rule: it has no rule", refusal { stacked("studio").svg(rule: 4) }
-    assert_equal "a stacked logo takes text, tone, form, proportion, edits, colouring and icon_colouring, not rule: it has no rule", refusal { stacked("studio").layout(rule: 3, text: :first) }
-    assert_match(/takes text, tone, form, proportion, guides, edits, colouring and icon_colouring, not rule, weight/, refusal { stacked("studio").svg(tone: :dark, rule: 4, weight: 800) })
-    assert_match(/takes text, tone, form, proportion, edits, colouring and icon_colouring, not guides/, refusal { stacked("studio").layout(guides: true) })
+    assert_equal "a stacked logo takes text, tone, form, proportion, small_line, letter_spacing, guides, edits, colouring and icon_colouring, not rule: it has no rule", refusal { stacked("studio").svg(rule: 4) }
+    assert_equal "a stacked logo takes text, tone, form, proportion, small_line, letter_spacing, edits, colouring and icon_colouring, not rule: it has no rule", refusal { stacked("studio").layout(rule: 3, text: :first) }
+    assert_match(/takes text, tone, form, proportion, small_line, letter_spacing, guides, edits, colouring and icon_colouring, not rule, weight/, refusal { stacked("studio").svg(tone: :dark, rule: 4, weight: 800) })
+    assert_match(/takes text, tone, form, proportion, small_line, letter_spacing, edits, colouring and icon_colouring, not guides/, refusal { stacked("studio").layout(guides: true) })
 
     # Studio's icon stretched three times as wide, its box trimmed to the stretched ink (an icon's box is its ink).
     studio = Navbar.icons.fetch("studio")
@@ -657,5 +657,108 @@ class LogosStackedLogoTest < Minitest::Test
   def test_an_unknown_proportion_is_refused
     assert_equal "unknown proportion :golden: expected one of three_two_one, rule_of_three", refusal { stacked("studio").svg(proportion: :golden) }
     assert_equal 'unknown proportion "rule_of_three": expected one of three_two_one, rule_of_three', refusal { stacked("studio").layout(proportion: "rule_of_three") }
+  end
+  # TASK STACKED-LINE-WIDTH-AND-SPACING. Alex McRitchie, on Turf Monster's two lines with guides on: "I want to add a new
+  # setting where the letters on the stack match ... some extra space in the 'Monster' would make it match the 'turf'.
+  # ... I actually would like there to be some extra space with the turf also so the letters aren't touching."
+
+  # Every brand and small-line form it draws, with Match: the small line's ink spans the big line's ink exactly.
+  def test_match_tracks_the_small_line_out_to_the_big_lines_ink_width
+    Navbar.brands.product(%i[two_line tagline], %i[as_styled open]).each do |brand, form, spacing|
+      next unless stacked(brand).forms.include?(form)
+
+      box = stacked(brand).layout(form:, small_line: :match, letter_spacing: spacing, text: :first)
+      assert_in_delta box.width, box.line_width * U, 0.5, "#{brand} #{form} #{spacing}: the small line is as wide as the big line"
+      left = small_line(box).first[:x] + box.line.first[:l] * U
+      assert_in_delta 0, left, 0.5, "#{brand} #{form}: its ink starts at the big line's left ink edge"
+    end
+  end
+
+  # Turf Monster's "Monster" is 68% of "Turf" and set at its own width under 3-2-1; Match spreads it to Turf's width.
+  def test_match_spreads_monster_to_turfs_width
+    three = stacked("turf").layout(form: :two_line)
+    match = stacked("turf").layout(form: :two_line, small_line: :match)
+    assert_operator three.line_width * U, :<, 0.7 * three.width
+    assert_in_delta match.width, match.line_width * U, 0.5
+  end
+
+  # Match never makes the icon grow: the 3-2-1 icon keeps the height the 3-2-1 small line gives it, and the guide
+  # drawing turns that 3-2-1 line on end beside it. The rule of three's icon comes from the name alone.
+  def test_match_keeps_the_icon_its_3_2_1_size
+    Navbar.brands.product(%i[two_line tagline], Stacked::PROPORTIONS).each do |brand, form, proportion|
+      next unless stacked(brand).forms.include?(form)
+
+      three = stacked(brand).layout(form:, proportion:, text: :first)
+      match = stacked(brand).layout(form:, proportion:, small_line: :match, text: :first)
+      assert_equal [three.icon_width, three.icon_height, three.edges], [match.icon_width, match.icon_height, match.edges], "#{brand} #{form} #{proportion}"
+      assert_equal [three.line, three.line_width], [match.proof, match.proof_width], "#{brand} #{form}: the proof is the 3-2-1 line"
+    end
+    xml = doc(stacked("turf").svg(form: :two_line, small_line: :match, guides: true))
+    assert_equal 1, xml.css("g.guide-proof").size
+  end
+
+  # The big line's ink boxes, per word, at its cap: [left, right] for each letter.
+  def ink_boxes(brand, box, text)
+    logo = stacked(brand)
+    weights = logo.send(:edited_weights, text, Navbar::NO_EDITS)
+    words = box.form == :two_line ? [0] : [0, 1]
+    words.map do |index|
+      glyphs = logo.send(:letters, logo.words[index], weights[index])
+      placed = box.letters.select { |l| l[:word] == index && l[:cap] == Stacked::BIG * U }
+      assert_equal glyphs.size, placed.size
+      placed.zip(glyphs).map { |l, g| [l[:x] + g["l"] * l[:cap], l[:x] + g["r"] * l[:cap]] }
+    end
+  end
+
+  # Open: in every brand, form and text, no two adjacent letters' ink boxes overlap or touch; each pair keeps at least
+  # OPEN_GAP of the cap height between them.
+  def test_open_leaves_a_clear_gap_between_every_pair_of_adjacent_letters
+    Navbar.brands.each do |brand|
+      stacked(brand).forms.product(Navbar::TEXTS).each do |form, text|
+        box = stacked(brand).layout(form:, text:, letter_spacing: :open)
+        ink_boxes(brand, box, text).each do |boxes|
+          boxes.each_cons(2) do |(_, right), (left, _)|
+            assert_operator left - right, :>=, Stacked::OPEN_GAP * Stacked::BIG * U - 1e-6, "#{brand} #{form} #{text}: a pair is closer than OPEN_GAP"
+          end
+        end
+      end
+    end
+  end
+
+  # The case Alex McRitchie saw: at the brand's -0.025 em, Turf's r and f touch. Open lifts it by the least that clears
+  # that pair, so the tightest pair sits exactly OPEN_GAP apart.
+  def test_open_separates_turfs_touching_letters_by_the_least_amount
+    styled = ink_boxes("turf", stacked("turf").layout(form: :two_line), :homogeneous).first
+    open = ink_boxes("turf", stacked("turf").layout(form: :two_line, letter_spacing: :open), :homogeneous).first
+    gaps = ->(boxes) { boxes.each_cons(2).map { |(_, right), (left, _)| left - right } }
+    assert_operator gaps.(styled).min, :<=, 0, "as styled, two of Turf's letters' ink touches"
+    assert_in_delta Stacked::OPEN_GAP * Stacked::BIG * U, gaps.(open).min, 1e-6
+  end
+
+  # A brand whose letters already clear OPEN_GAP draws exactly as styled under Open.
+  def test_open_changes_nothing_where_the_letters_are_already_apart
+    %w[studio industries].each do |brand|
+      assert_equal stacked(brand).svg(text: :first), stacked(brand).svg(text: :first, letter_spacing: :open), brand
+    end
+    refute_equal stacked("turf").svg(form: :two_line), stacked("turf").svg(form: :two_line, letter_spacing: :open)
+  end
+
+  # Match and Open draw their guide drawings in both proportions, and the ruler's copies are the Match line itself.
+  def test_match_and_open_draw_their_guides_in_both_proportions
+    Navbar.brands.product(Stacked::PROPORTIONS).each do |brand, proportion|
+      logo = stacked(brand)
+      logo.forms.each do |form|
+        svg = logo.svg(form:, proportion:, small_line: :match, letter_spacing: :open, guides: true)
+        xml = doc(svg)
+        assert_equal 1, xml.css("g.guide-ghosts").size, "#{brand} #{form} #{proportion}"
+        box = logo.layout(form:, proportion:, small_line: :match, letter_spacing: :open)
+        assert_operator xml.root["viewBox"].split[2].to_f, :>=, box.width + Stacked::RULER_X + box.line_width * U, "the ruler copies are the matched line"
+      end
+    end
+  end
+
+  def test_an_unknown_small_line_or_letter_spacing_is_refused
+    assert_equal "unknown small line :wide: expected one of three_two_one, match", refusal { stacked("studio").svg(small_line: :wide) }
+    assert_equal 'unknown letter spacing "open": expected one of as_styled, open', refusal { stacked("studio").layout(letter_spacing: "open") }
   end
 end

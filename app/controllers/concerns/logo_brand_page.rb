@@ -81,7 +81,8 @@ module LogoBrandPage
   # carries it to the next. Needs set_logo and set_context first.
   #
   # THE SAVED KIT CHOICE IS THE TAB'S DEFAULT (task logo-original-and-alt, item 9): a tab whose type the brand's kit
-  # has saved opens on it (its rule, or form and proportion, colouring and edits; its text version is marked), and the URL's params
+  # has saved opens on it (its rule, or form, proportion, small line and letter spacing, colouring and edits; its text
+  # version is marked), and the URL's params
   # override it one by one for exploring. The edits override as one set: any edit param in the URL replaces the
   # saved edits. With nothing saved, the built-in defaults (BrandKit#page_defaults).
   def load_brand_page
@@ -91,6 +92,10 @@ module LogoBrandPage
     @rule = params.key?(:rule) ? Logos::Variant.rule(params[:rule]) : @defaults[:rule]
     @form = params.key?(:form) ? Logos::Variant.form(params[:form], (@logo if @type == :stacked)) : (@defaults[:form] if @type == :stacked)
     @proportion = params.key?(:proportion) ? Logos::Variant.proportion(params[:proportion]) : (@defaults[:proportion] if @type == :stacked)
+    @small_line = params.key?(:small_line) ? Logos::Variant.small_line(params[:small_line]) : (@defaults[:small_line] if @type == :stacked)
+    @letter_spacing = params.key?(:letter_spacing) ? Logos::Variant.letter_spacing(params[:letter_spacing]) : (@defaults[:letter_spacing] if @type == :stacked)
+    # The tab's shape as the library's refusal takes it: a Stacked Logo's form and settings, else the Navbar rule.
+    @shape = @type == :stacked ? { form: @form, proportion: @proportion, small_line: @small_line, letter_spacing: @letter_spacing } : { rule: @rule }
     @guides = Logos::Variant.flag(params[:guides], "guides")
     # The text version (homogeneous, first or second word leads): the URL's ?text=, else the kit's saved one, else the
     # brand's default (BrandKit#default_text). The Words control picks it; an icon has none.
@@ -105,17 +110,19 @@ module LogoBrandPage
     @default_colouring = @logo.original? ? (@defaults[:colouring] || :original) : :alt
     load_icon
     @kit_default_shown = @kit_default && !@icon_overridden &&
-                         @kit_record.default_shown?(@type, rule: @rule, form: @form, proportion: @proportion, colouring: @colouring, text: @text,
+                         @kit_record.default_shown?(@type, rule: @rule, form: @form, proportion: @proportion, small_line: @small_line,
+                                                           letter_spacing: @letter_spacing, colouring: @colouring, text: @text,
                                                            edits: @type == :icon ? @edits.slice(:icon) : @edits)
     # Edits that cannot be drawn in this rule or form (a word too heavy to sit where the rules put it) are named on
     # the page, and the logos are drawn as styled, so a change of form never loses the page. The word edits apply in
     # Original as in Alt (task logo-compare-and-original-edits); an original icon draws no colour edit (Logos::Variant).
-    @edit_refusal = (@logo.refusal(@edits, **(@type == :stacked ? { form: @form, proportion: @proportion } : { rule: @rule })) if @edits.any? && @type != :icon)
+    @edit_refusal = (@logo.refusal(@edits, **@shape) if @edits.any? && @type != :icon)
     drawn = @edit_refusal ? Logos::NavbarLogo::NO_EDITS : @edits
     drawn = drawn.except(:icon).merge(@kit_icon.edits.slice(:icon)) if @icon_from_kit
     # ONE LOGO PER TAB (task logo-download-card): the tab's logo in each tone the page carries ({ light:, dark: } or
     # { watermark: }), in the one text version @text, and the same logo in every tone for the Download card.
-    choose = ->(tone) { Logos::Variant.new(@logo, type: @type, rule: @rule, form: @form, proportion: @proportion, text: @text, tone:,
+    choose = ->(tone) { Logos::Variant.new(@logo, type: @type, rule: @rule, form: @form, proportion: @proportion, small_line: @small_line,
+                                                  letter_spacing: @letter_spacing, text: @text, tone:,
                                                   colouring: @colouring, icon_colouring: @icon_colouring, guides: @guides, edits: drawn) }
     @shown = @tones.to_h { |tone| [tone, choose.(tone)] }
     @downloads = Logos::NavbarLogo::TONES.to_h { |tone| [tone, @shown[tone] || choose.(tone)] }

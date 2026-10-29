@@ -5,8 +5,9 @@ module Logos
   # alone, the Navbar Logo or the Stacked Logo) and the rule, form, text, tone and
   # guides picked by URL params. A type takes only its own choices: an icon has
   # a tone and nothing else, only a Navbar Logo has a rule, and only a Stacked
-  # Logo has a form (two lines, one line or with tagline) and a proportion (3-2-1 or the rule of three, task
-  # stacked-rule-of-three). Every type has a
+  # Logo has a form (two lines, one line or with tagline), a proportion (3-2-1 or the rule of three, task
+  # stacked-rule-of-three), a small line (3-2-1 or Match) and a letter spacing (As styled or Open; task
+  # stacked-line-width-and-spacing). Every type has a
   # COLOURING (task logo-original-and-alt): Original, the brand's own art, or
   # Alt, one solid colour per part; a watermark has neither (it is one colour),
   # and a brand with no original draws Alt only. A page's CONTEXT
@@ -22,13 +23,17 @@ module Logos
   class Variant
     TYPES = { icon: "Icon", navbar: "Navbar Logo", stacked: "Stacked Logo" }.freeze
     CHOICES = { icon: %i[tone colouring], navbar: %i[rule text tone colouring icon_colouring guides],
-                stacked: %i[form proportion text tone colouring icon_colouring guides] }.freeze
+                stacked: %i[form proportion small_line letter_spacing text tone colouring icon_colouring guides] }.freeze
     COLOURINGS = { original: "Original", alt: "Alt" }.freeze
     # The Stacked Logo's forms, as the Form control names them; a brand offers only those it draws (StackedLogo#forms).
     FORMS = { two_line: "Two lines", one_line: "One line", tagline: "With tagline" }.freeze
     # The Stacked Logo's proportions (StackedLogo::PROPORTIONS), as the Proportion control names them; every brand draws
     # both, in every form, and the first is the default.
     PROPORTIONS = { three_two_one: "3-2-1", rule_of_three: "Rule of three" }.freeze
+    # The Stacked Logo's small-line widths (StackedLogo::SMALL_LINES) and big-line letter spacings
+    # (StackedLogo::LETTER_SPACINGS), as their controls name them; the first of each is the default, today's drawing.
+    SMALL_LINES = { three_two_one: "3-2-1", match: "Match" }.freeze
+    LETTER_SPACINGS = { as_styled: "As styled", open: "Open" }.freeze
     RULES = { 3 => "Rule of 3", 4 => "Rule of 4", 6 => "Rule of 6" }.freeze
     TEXTS = { homogeneous: "Homogeneous", first: "First word leads", second: "Second word leads" }.freeze
     TONES = NavbarLogo::TONES
@@ -44,7 +49,7 @@ module Logos
     # the tagline only in the tagline form.
     EDITED_PARTS = { icon: %i[icon], navbar: %i[icon first ending], stacked: %i[icon first ending tagline] }.freeze
 
-    attr_reader :logo, :type, :rule, :form, :proportion, :text, :tone, :colouring, :icon_colouring, :guides, :edits
+    attr_reader :logo, :type, :rule, :form, :proportion, :small_line, :letter_spacing, :text, :tone, :colouring, :icon_colouring, :guides, :edits
 
     # The library object that draws a brand's logos of one type.
     def self.logo(brand, type = :navbar) = (type == :stacked ? StackedLogo : NavbarLogo).new(brand)
@@ -52,11 +57,13 @@ module Logos
     # A brand page's logos of one type in one tone: the icon, or the three text versions (a Navbar Logo's on `rule`),
     # every one with the same edits.
     # every one with the same edits. `icon_colouring` is the icon's own colouring (nil: the words').
-    def self.all(logo, type: :navbar, rule: 4, form: nil, proportion: nil, tone: :light, colouring: :alt, icon_colouring: nil, guides: false,
-                 edits: NavbarLogo::NO_EDITS)
+    def self.all(logo, type: :navbar, rule: 4, form: nil, proportion: nil, small_line: nil, letter_spacing: nil, tone: :light, colouring: :alt,
+                 icon_colouring: nil, guides: false, edits: NavbarLogo::NO_EDITS)
       return [new(logo, type:, tone:, colouring:, edits:)] if type == :icon
 
-      TEXTS.keys.map { |text| new(logo, type:, rule:, form:, proportion:, text:, tone:, colouring:, icon_colouring:, guides:, edits:) }
+      TEXTS.keys.map do |text|
+        new(logo, type:, rule:, form:, proportion:, small_line:, letter_spacing:, text:, tone:, colouring:, icon_colouring:, guides:, edits:)
+      end
     end
 
     # The edit params (EDIT_PARAMS) as the library's edits, unchecked: the logo checks them (NavbarLogo#checked_edits).
@@ -102,6 +109,9 @@ module Logos
 
     # A ?proportion= as a stacked proportion: absent is 3-2-1, and one it does not know is refused.
     def self.proportion(value) = pick(value, PROPORTIONS.keys.to_h { |proportion| [proportion.to_s, proportion] }, PROPORTIONS.keys.first, "proportion")
+    # A ?small_line= and a ?letter_spacing= the same way: absent is 3-2-1 and As styled.
+    def self.small_line(value) = pick(value, SMALL_LINES.keys.to_h { |line| [line.to_s, line] }, SMALL_LINES.keys.first, "small_line")
+    def self.letter_spacing(value) = pick(value, LETTER_SPACINGS.keys.to_h { |spacing| [spacing.to_s, spacing] }, LETTER_SPACINGS.keys.first, "letter_spacing")
 
     # A page's ?context= as a tone, ?type= as a logo type and ?rule= as a rule: absent is light, the Navbar Logo and
     # the rule of 4, and one it does not know is refused.
@@ -126,6 +136,8 @@ module Logos
         rule: -> { pick(params[:rule], rules_by_name, 3, "rule") },
         form: -> { form(params[:form], logo) },
         proportion: -> { proportion(params[:proportion]) },
+        small_line: -> { small_line(params[:small_line]) },
+        letter_spacing: -> { letter_spacing(params[:letter_spacing]) },
         text: -> { text(params[:text]) || :homogeneous },
         tone: -> { pick(params[:tone], tones_by_name, :light, "tone") },
         colouring: -> { colouring(params[:colouring]) || :alt },
@@ -146,8 +158,8 @@ module Logos
     # edit the logo does not show (#shown_edits): every edit is checked first all the same.
     # An Original of a brand with none is refused; a watermark's colouring is always Alt (it is one colour). The icon's
     # colouring is the words' unless given (an icon's is its colouring).
-    def initialize(logo, type: :navbar, rule: 3, form: nil, proportion: nil, text: :homogeneous, tone: :light, colouring: :alt, icon_colouring: nil, guides: false,
-                   edits: NavbarLogo::NO_EDITS)
+    def initialize(logo, type: :navbar, rule: 3, form: nil, proportion: nil, small_line: nil, letter_spacing: nil, text: :homogeneous, tone: :light,
+                   colouring: :alt, icon_colouring: nil, guides: false, edits: NavbarLogo::NO_EDITS)
       choices = CHOICES.fetch(type) { raise NavbarLogo::Error, "unknown type #{type.inspect}: expected one of #{TYPES.keys.join(', ')}" }
       raise ArgumentError, "a #{type} variant of #{logo.brand} was given a #{logo.class}" unless logo.is_a?(StackedLogo) == (type == :stacked)
 
@@ -159,6 +171,8 @@ module Logos
       @rule = rule if choices.include?(:rule)
       @form = form || logo.form if choices.include?(:form)
       @proportion = checked_proportion(proportion || PROPORTIONS.keys.first) if choices.include?(:proportion)
+      @small_line = checked(small_line || SMALL_LINES.keys.first, SMALL_LINES, "small_line") if choices.include?(:small_line)
+      @letter_spacing = checked(letter_spacing || LETTER_SPACINGS.keys.first, LETTER_SPACINGS, "letter_spacing") if choices.include?(:letter_spacing)
       @text = text if choices.include?(:text)
       @guides = guides && choices.include?(:guides)
       @edits = shown_edits(logo.checked_edits(edits))
@@ -168,7 +182,7 @@ module Logos
       @svg ||= case type
                when :icon then logo.icon_svg(tone:, colouring:, edits:)
                when :navbar then logo.svg(rule:, text:, tone:, guides:, edits:, colouring:, **own_icon)
-               else logo.svg(form:, proportion:, text:, tone:, guides:, edits:, colouring:, **own_icon)
+               else logo.svg(form:, proportion:, text:, tone:, guides:, edits:, colouring:, **stacked_settings, **own_icon)
                end
     end
 
@@ -178,6 +192,9 @@ module Logos
     def own_icon? = icon_colouring != colouring
     # True for a Stacked Logo in the rule of three; false for 3-2-1, and for a type with no proportion.
     def rule_of_three? = proportion == :rule_of_three
+    # True for a Stacked Logo whose small line is Match, or whose big line is Open; false for the defaults and other types.
+    def match? = small_line == :match
+    def open? = letter_spacing == :open
 
     # A guide drawing's own measures, in its design units: how wide the drawing is and how tall its labels are.
     def guide_width = svg[/viewBox="\S+ \S+ (\S+) /, 1].to_f
@@ -189,7 +206,8 @@ module Logos
     # Alt by name. A Navbar or Stacked Logo always names its rule or form and text, so it is never read as the kit's.
     # A Stacked Logo names its proportion only when it is not the default 3-2-1, so every earlier URL still means the same.
     def params
-      { rule:, form:, proportion: (proportion unless default_proportion?), text:, tone:, colouring: (colouring if original? || type == :icon), icon_colouring: (icon_colouring if own_icon?),
+      { rule:, form:, proportion: (proportion unless default_proportion?), small_line: (small_line if match?),
+        letter_spacing: (letter_spacing if open?), text:, tone:, colouring: (colouring if original? || type == :icon), icon_colouring: (icon_colouring if own_icon?),
         guides: guides ? 1 : 0 }
         .compact.slice(*CHOICES.fetch(type))
                                                                                                   .merge(self.class.edit_params(edits))
@@ -198,7 +216,8 @@ module Logos
     # An edited logo's file says so: studio-stacked-tagline-first-light-custom.svg; an Original's says that:
     # welding-navbar-rule3-first-dark-original.svg; an icon of its own says its colouring: …-light-icon-original.svg.
     def filename
-      [logo.brand, type, ("rule#{rule}" if rule), form&.to_s&.sub("_", "-"), ("rule-of-three" if rule_of_three?), text, tone, ("original" if original?), ("icon-#{icon_colouring}" if own_icon?),
+      [logo.brand, type, ("rule#{rule}" if rule), form&.to_s&.sub("_", "-"), ("rule-of-three" if rule_of_three?), ("match" if match?),
+       ("open" if open?), text, tone, ("original" if original?), ("icon-#{icon_colouring}" if own_icon?),
        ("guides" if guides),
        ("custom" if edited?)].compact.join("-") + ".svg"
     end
@@ -220,6 +239,10 @@ module Logos
     # called exactly as before).
     def own_icon = own_icon? ? { icon_colouring: } : {}
 
+    # The small line and letter spacing as the library takes them, only when not the default (so a default drawing is
+    # called exactly as before).
+    def stacked_settings = { small_line: (small_line if match?), letter_spacing: (letter_spacing if open?) }.compact
+
     public
 
     # "McRITCHIE INDUSTRIES" as a reader says it: "McRitchie Industries"; or the style's own `title` where it gives
@@ -235,7 +258,7 @@ module Logos
     # The tagline form with its tagline hidden draws no tagline, so it says "tagline hidden", not "with tagline".
     def label
       ["#{self.class.brand_name(logo)} #{TYPES.fetch(type).downcase}", (RULES.fetch(rule).downcase if rule), form_words,
-       ("rule of three" if rule_of_three?),
+       ("rule of three" if rule_of_three?), ("small line matched" if match?), ("letters open" if open?),
        (TEXTS.fetch(text).downcase if text),
        tone.to_s, colouring_words, ("#{COLOURINGS.fetch(icon_colouring).downcase} icon" if own_icon?), ("construction guides" if guides),
        ("edited" if edited?)].compact.join(", ")
@@ -249,6 +272,12 @@ module Logos
       return proportion if PROPORTIONS.key?(proportion)
 
       raise NavbarLogo::Error, "unknown proportion #{proportion.inspect[0, 40]}: expected one of #{PROPORTIONS.keys.join(', ')}"
+    end
+
+    def checked(value, known, name)
+      return value if known.key?(value)
+
+      raise NavbarLogo::Error, "unknown #{name} #{value.inspect[0, 40]}: expected one of #{known.keys.join(', ')}"
     end
 
     def checked_colouring(colouring)

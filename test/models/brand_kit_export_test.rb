@@ -48,6 +48,16 @@ class BrandKitExportTest < ActiveSupport::TestCase
     refute_equal Logos::StackedLogo.new("welding_v2").svg(text: :first, tone: :dark, colouring: :original), files.svg("stacked-dark.svg")
   end
 
+  # Task stacked-line-width-and-spacing: the export draws the saved small line and letter spacing.
+  test "a stacked choice saved in Match and Open is exported in them" do
+    kit = BrandKit.for("turf")
+    kit.save_choice(:stacked, { form: "two_line", small_line: "match", letter_spacing: "open", text: "first", colouring: "original" }, by: "alex@test.com")
+    files = BrandKitExport.new(kit.reload, base_url: BASE)
+    assert_equal Logos::StackedLogo.new("turf").svg(form: :two_line, small_line: :match, letter_spacing: :open, text: :first, tone: :dark,
+                                                    colouring: :original), files.svg("stacked-dark.svg")
+    refute_equal Logos::StackedLogo.new("turf").svg(form: :two_line, text: :first, tone: :dark, colouring: :original), files.svg("stacked-dark.svg")
+  end
+
   test "an unsaved brand exports its defaults and says so" do
     readme = export("studio").readme
     assert_includes readme, "# McRitchie Studio: logo kit"
