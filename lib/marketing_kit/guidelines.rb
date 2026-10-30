@@ -69,7 +69,7 @@ module MarketingKit
       page(<<~HTML, 3, "Fonts · Words")
         <h2>Fonts and words</h2>
         <div class='fonts'>
-          <div><p class='big' style='font-weight:#{f[:heading]};color:#{c(:primary)}'>#{h(f[:family])} #{weight_name(f[:heading])}</p><p>Headings</p></div>
+          <div><p class='big' style='font-weight:#{f[:heading]};color:#{c(:title)}'>#{h(f[:family])} #{weight_name(f[:heading])}</p><p>Headings</p></div>
           <div><p class='big' style='font-weight:#{f[:subhead]};color:#{c(:accent)}'>#{h(f[:family].upcase)} #{weight_name(f[:subhead]).upcase}</p><p>Subheads and the tagline</p></div>
           <div><p class='big' style='font-weight:#{f[:body]}'>#{h(f[:family])} #{weight_name(f[:body])}</p><p>Everything else</p></div>
         </div>
@@ -118,7 +118,7 @@ module MarketingKit
         .page::before { content:''; position:absolute; left:0; top:0; width:100%; height:.12in; background:#{c(:primary)}; }
         .page::after { content:''; position:absolute; left:.8in; top:.12in; width:.9in; height:.06in; background:#{c(:accent)}; }
         .kicker { font-weight:700; color:#{c(:accent)}; letter-spacing:.14em; text-transform:uppercase; font-size:8.5pt; margin-bottom:.08in; }
-        h2 { font-weight:800; color:#{c(:primary)}; font-size:26pt; line-height:1.1; margin:0 0 .14in; }
+        h2 { font-weight:800; color:#{c(:title)}; font-size:26pt; line-height:1.1; margin:0 0 .14in; }
         h3 { font-weight:700; color:#{c(:accent)}; text-transform:uppercase; letter-spacing:.08em; font-size:10pt; margin:.22in 0 .08in; }
         p { margin:0 0 .06in; }
         .lede { font-size:11pt; max-width:6.6in; margin-bottom:.16in; }
@@ -154,7 +154,7 @@ module MarketingKit
         .ph { background-size:cover; background-position:center; }
         .ideas { display:grid; grid-template-columns:repeat(3,1fr); gap:.1in; }
         .ideas > div { background:#f6f7f9; border-top:3px solid #{c(:accent)}; padding:.1in .12in; }
-        .ideas b { color:#{c(:primary)}; font-weight:800; font-size:9.5pt; } .ideas p { font-size:8.5pt; margin:.03in 0 0; }
+        .ideas b { color:#{c(:title)}; font-weight:800; font-size:9.5pt; } .ideas p { font-size:8.5pt; margin:.03in 0 0; }
       CSS
     end
   end

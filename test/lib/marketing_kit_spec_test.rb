@@ -27,6 +27,18 @@ class MarketingKitSpecTest < ActiveSupport::TestCase
     end
   end
 
+  test "title is optional: it falls back to primary, and a title key is taken as given" do
+    load_kit do |spec|
+      refute(spec.palette.any? { |c| c[:key] == "title" }, "the worked example sets no title")
+      assert_equal "#2F6B4F", spec.colour(:title)
+    end
+    with_title = ->(d) { d["palette"] << { "key" => "title", "name" => "Forge", "hex" => "#c8661f", "role" => "Titles" } }
+    load_kit(edit: with_title) do |spec|
+      assert_equal "#C8661F", spec.colour(:title)
+      assert_equal "#2F6B4F", spec.colour(:primary), "primary keeps its own colour for bars and tables"
+    end
+  end
+
   test "a brand key names the /logos brand, and the owner is drive.subject" do
     load_kit { |spec| assert_nil spec.logo_brand }
     load_kit(edit: ->(d) { d["brand"] = "welding_v2" }) do |spec|

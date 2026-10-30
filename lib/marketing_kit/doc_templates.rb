@@ -35,11 +35,11 @@ module MarketingKit
       dots = "<p style='#{font};text-align:center;color:#9AA5B1;font-size:10pt;letter-spacing:3px;margin:6pt 0'>#{'•' * 60}</p>"
       byline = p("by <span style='color:#{c(:accent)};font-weight:700'>Your Name</span> on [Month D, YYYY]", "color:#{GREY};font-size:10pt;margin:2pt 0 6pt 0")
       para = ->(t) { p(t, "color:#{INK};font-size:11pt;line-height:1.4") }
-      heading = ->(t) { p(t, "font-weight:700;color:#{c(:primary)};font-size:18pt;margin:14pt 0 2pt 0") }
+      heading = ->(t) { p(t, "font-weight:700;color:#{c(:title)};font-size:18pt;margin:14pt 0 2pt 0") }
       doc(<<~HTML)
         <p style='text-align:center'><img src='#{data_uri(@spec.logo_png(:full, :light))}' width='300'></p>
         #{dots}
-        #{p('Document Title', "font-weight:700;color:#{c(:primary)};font-size:30pt;margin:6pt 0 0 0", 'center')}
+        #{p('Document Title', "font-weight:700;color:#{c(:title)};font-size:30pt;margin:6pt 0 0 0", 'center')}
         #{p('A one-line subtitle that says what this is about.', "color:#{c(:accent)};font-size:12pt;font-weight:500;margin:2pt 0 12pt 0", 'center')}
         <p style='text-align:center'><img src='#{data_uri(@spec.slot(:template_hero))}' width='624'></p>
         #{byline}
@@ -47,7 +47,7 @@ module MarketingKit
         #{para.call("Add detail in short paragraphs. Swap the photo above for one from #{Layout::PHOTOS}: right-click it, then Replace image, then Drive.")}
         #{dots}
         #{p('SECTION LABEL', "color:#{GREY};font-size:10pt;letter-spacing:2px;margin:12pt 0 0 0", 'center')}
-        #{p('SECTION TITLE', "color:#{c(:primary)};font-size:12pt;font-weight:700;letter-spacing:2px;margin:0 0 12pt 0", 'center')}
+        #{p('SECTION TITLE', "color:#{c(:title)};font-size:12pt;font-weight:700;letter-spacing:2px;margin:0 0 12pt 0", 'center')}
         <p style='text-align:center'><img src='#{data_uri(@spec.slot(:template_band))}' width='624'></p>
         #{heading.call('A heading for this item')}#{byline}
         #{para.call('A short paragraph about this item: a finished job, a new service, a milestone or a team member.')}
@@ -124,7 +124,7 @@ module MarketingKit
                p("Date: #{field('Month D, YYYY')}", "margin:0", "right"), p("Prepared by: #{field('Your name')}", "margin:0", "right")].join
       <<~HTML
         <p style='text-align:center;margin:0'><img src='#{data_uri(@spec.logo_png(:full, :light))}' width='250'></p>
-        #{p('PROPOSAL', "font-weight:700;color:#{c(:primary)};font-size:40pt;letter-spacing:6px;margin:10pt 0 6pt 0", 'center')}
+        #{p('PROPOSAL', "font-weight:700;color:#{c(:title)};font-size:40pt;letter-spacing:6px;margin:10pt 0 6pt 0", 'center')}
         <p style='text-align:center;margin:0'><img src='#{data_uri(@spec.slot(:proposal_cover))}' width='624'></p>
         #{p(h(pr[:credentials_line].to_s.upcase), "color:#{c(:primary)};font-weight:700;letter-spacing:2px;font-size:10.5pt;margin:12pt 0 14pt 0", 'center') if pr[:credentials_line]}
         <table style='border-collapse:collapse;width:100%' width='100%'><tr>

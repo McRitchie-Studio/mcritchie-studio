@@ -8,8 +8,8 @@ module MarketingKit
   # data fails here and not halfway through a Drive publish. The spec is the
   # kit's single source: every renderer reads it and nothing else. A brand's own
   # spec does not live in this (public) repo; it travels with its kit in Drive
-  # (see the marketing-kit SOP). test/fixtures/files/marketing_kit/example.yml
-  # is the worked example.
+  # (see the marketing-kit SOP). script/marketing_kit/kit.example.yml is the
+  # worked example.
   #
   #   spec = MarketingKit::Spec.load("kit.yml")
   #   spec.colour(:primary)   # => "#2D5E8E"
@@ -19,8 +19,10 @@ module MarketingKit
     # The palette keys every renderer draws with. Anything else in the palette is
     # shown in the guidelines but never drawn with.
     REQUIRED_COLOURS = %i[primary accent dark].freeze
-    # An optional colour a brand leaves out falls back to the one it deepens.
-    COLOUR_FALLBACK = { accent_on_dark: :accent, primary_deep: :primary, accent_deep: :accent }.freeze
+    # An optional colour a brand leaves out falls back to the one it stands in
+    # for: a deep shade to its base, and title (page, document and slide titles)
+    # to primary, so a spec without it renders exactly as before.
+    COLOUR_FALLBACK = { accent_on_dark: :accent, primary_deep: :primary, accent_deep: :accent, title: :primary }.freeze
     OPTIONAL_COLOURS = COLOUR_FALLBACK.keys.freeze
     MAX_SWATCHES = 8
     LOGO_TYPES = %i[full horizontal icon].freeze

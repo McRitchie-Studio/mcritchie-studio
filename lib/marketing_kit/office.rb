@@ -25,7 +25,7 @@ module MarketingKit
       name = @spec.name
       {
         font: @spec.fonts[:family],
-        colours: %i[primary accent accent_on_dark primary_deep dark].to_h { |k| [k, @spec.colour(k)] }
+        colours: %i[primary title accent accent_on_dark primary_deep dark].to_h { |k| [k, @spec.colour(k)] }
                                                                        .merge(white: "#FFFFFF", grey: "#5A6675", light: "#F3F5F8", rule: "#D9DEE5"),
         images: {
           logo_full_dark: @spec.logo_png(:full, :dark), logo_horizontal_light: @spec.logo_png(:horizontal, :light),
