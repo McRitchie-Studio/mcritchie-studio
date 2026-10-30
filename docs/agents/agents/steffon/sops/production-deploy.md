@@ -285,7 +285,10 @@ be undone. In order, after production authority:
    difference refuses with nothing published. A gem with no candidate is never
    published.
 3. **`gem push`**, then tag `v<version>`.
-4. **Wait until RubyGems serves it** (the `RELEASE_GEM_POLL_TIMEOUT` budget), then
+4. **Wait until RubyGems serves it** steadily: `/info`, the `/versions` tail and the
+   `.gem` answer on every read for `RELEASE_GEM_SETTLE_S` (60s), inside the
+   `RELEASE_GEM_POLL_TIMEOUT` budget; a timeout stops as `GEM_NOT_SERVED` with no lock
+   pushed, and a re-run resumes. Then
    confirm the served `.gem`'s SHA-256 is the built artifact's.
 5. **Advance the gem repo's `main`.**
 6. **Re-lock each consumer to `x.y.z`**: `bundle lock --update <gem> --conservative`,
