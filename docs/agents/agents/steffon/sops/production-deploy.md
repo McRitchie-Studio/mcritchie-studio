@@ -285,7 +285,10 @@ be undone. In order, after production authority:
    difference refuses with nothing published. A gem with no candidate is never
    published.
 3. **`gem push`**, then tag `v<version>`.
-4. **Wait until RubyGems serves it** (the `RELEASE_GEM_POLL_TIMEOUT` budget), then
+4. **Wait until RubyGems serves it** steadily: `/info`, the `/versions` tail and the
+   `.gem` answer on every read for `RELEASE_GEM_SETTLE_S` (60s), inside the
+   `RELEASE_GEM_POLL_TIMEOUT` budget; a timeout stops as `GEM_NOT_SERVED` with no lock
+   pushed, and a re-run resumes. Then
    confirm the served `.gem`'s SHA-256 is the built artifact's.
 5. **Advance the gem repo's `main`.**
 6. **Re-lock each consumer to `x.y.z`**: `bundle lock --update <gem> --conservative`,
@@ -315,7 +318,7 @@ be undone. In order, after production authority:
 | at the candidate preflight on a RESUMED ship, "some consumers lock `x.y.z` and others a candidate of it", one consumer being a QA-exempt repo (rantly, moms-app) | nothing moved this run; that repo had no `qa_sha`, so it froze at `origin/release`, which already carries the first attempt's final re-lock | `prepare` now freezes QA-exempt repos, and a ship records any repo it had to resolve live (`record: qa_shas backfill …`) before anything moves, so this needs tooling older than both. Record the candidate-lock SHA by hand (`Release::Conductor.record_qa_shas(release:, shas: { "<repo>" => "<sha>" })` on the board), then re-run |
 | "does NOT match `<candidate>`, the candidate QA ran" (step 2) | nothing published | do not ship this tree: re-run `prepare`, QA the new candidate, then ship |
 | after the push, before the tag | `x.y.z` live; no `v*` tag | skips the push, compares the LIVE gem with the candidate, pushes the missing tag, continues |
-| "the RubyGems CDN is still not serving it" / "`gem install` still fails" (step 4) | `x.y.z` live and tagged; nothing re-locked | skips the push, waits again with a fresh budget |
+| "`GEM_NOT_SERVED`: … has not served it steadily" / "`gem install` still fails" (step 4) | `x.y.z` live and tagged; nothing re-locked | skips the push, waits again with a fresh budget |
 | "RubyGems serves SHA-256 …" (step 4) | `x.y.z` live, and its bytes are not the artifact this ship built | skips the push and compares the LIVE gem's contents with the candidate. Equal (another build of the same tree): it proceeds. Different: it refuses (`LIVE on RubyGems and does NOT match`); then advance past the version (qa-release's STRANDED GEM WORK row) and re-run `prepare` |
 | after the gem's `main`, before a consumer's re-lock push | `x.y.z` live; consumers still lock the candidate; no app moved | skips the push, re-locks |
 | "did not land … resolves `<candidate>`, wanted `<version>`" (step 6) | the same; nothing was committed | wait for `curl -sS https://index.rubygems.org/info/<gem> \| tail -5` to show `x.y.z`, then re-run |

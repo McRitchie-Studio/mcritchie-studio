@@ -32,7 +32,7 @@ class ReleaseCliGemAwaitTest < Minitest::Test
   def run_release(call, env = {}, argv: ["--help"])
     script = %(ARGV.replace(#{argv.inspect}); begin; load #{BIN.inspect}; rescue SystemExit; end; ) +
              %(begin; #{call}; rescue SystemExit; puts "REFUSED"; end)
-    out, = Open3.capture2e({ "RELEASE_GEM_POLL_INTERVAL" => "0", "RELEASE_GEM_INSTALLED" => "yes" }.merge(env), RbConfig.ruby, "-e", script)
+    out, = Open3.capture2e({ "RELEASE_GEM_POLL_INTERVAL" => "0", "RELEASE_GEM_INSTALLED" => "yes", "RELEASE_GEM_SETTLE_S" => "0" }.merge(env), RbConfig.ruby, "-e", script)
     out
   end
 
@@ -125,6 +125,62 @@ class ReleaseCliGemAwaitTest < Minitest::Test
 
     assert_includes out, "REFUSED", "the bump must not proceed when the gem is not installable"
     refute_includes out, "COMMITTED"
+    assert_match(/GEM_NOT_SERVED: published studio-engine 0\.49\.0/, out, "the refusal must carry its name")
+    assert_match(/re-run `bin\/release prepare`/, out, "and tell the operator the re-run resumes")
+    refute_match(/bundle lock|git push/, out, "nothing reaches a lock or a push before the refusal")
+  end
+
+  # ── [integration] an already-live version from before the monthly rebuild ──
+  #
+  # Carl's bounce: the ship awaits every final, pushed this run or not, and a
+  # version older than the /versions tail sits in the rebuilt BASE line. Through the
+  # real probe: the Range read misses, ONE full read finds it, and a second probe
+  # reuses that hit instead of downloading 25 MB again.
+  def test_an_already_live_version_outside_the_tail_is_served
+    fixture = File.expand_path("../fixtures/files/rubygems_versions_rebuilt.txt", __dir__)
+    call = <<~RUBY
+      $full = 0
+      rebuilt = File.read(#{fixture.inspect})
+      status = Struct.new(:ok) { def success? = ok }
+      Open3.define_singleton_method(:capture2e) do |*cmd|
+        url = cmd.last
+        if url.include?("/info/") then ["0.82.0 a:~> 1|checksum:x\n", status.new(true)]
+        elsif url.end_with?("/versions") && cmd.include?("-r") then [rebuilt[-2000..], status.new(true)]
+        elsif url.end_with?("/versions") then ($full += 1; [rebuilt, status.new(true)])
+        else ["", status.new(true)]
+        end
+      end
+      first = gem_version_indexed?("studio-engine", "0.82.0")
+      second = gem_version_indexed?("studio-engine", "0.82.0")
+      puts "SERVED=" + first.to_s + "," + second.to_s + " FULL=" + $full.to_s
+    RUBY
+    out = run_release(call, { "RELEASE_GEM_INDEXED" => "" })
+
+    assert_includes out, "SERVED=true,true FULL=1", out
+  end
+
+  # ── [integration] the settle window, through the real wait ─────────────────
+  #
+  # rel-20261029-00560a: one served read from this edge let the bump go, and a
+  # runner's edge 62s later still lacked the version. The real await must HOLD a
+  # served answer for RELEASE_GEM_SETTLE_S before the bump runs. Fake clock: each
+  # sleep advances it, so a 10s hold at a 5s interval takes exactly three reads.
+  def test_a_served_gem_is_held_for_the_settle_window_before_the_bump
+    call = <<~RUBY
+      $clock = 0.0
+      $reads = 0
+      def monotonic_s = $clock
+      def sleep(seconds) = $clock += seconds
+      def gem_version_indexed?(_gem, _version) = ($reads += 1; true)
+      await_published_gems!({ "studio-engine" => "0.49.0" })
+      puts "READS=" + $reads.to_s + " AT=" + $clock.to_i.to_s
+      puts "PROCEEDED"
+    RUBY
+    out = run_release(call, { "RELEASE_GEM_SETTLE_S" => "10", "RELEASE_GEM_POLL_INTERVAL" => "5" })
+
+    assert_includes out, "PROCEEDED", out
+    assert_includes out, "READS=3 AT=10", "served at t=0, 5, 10: the hold must span the window: #{out}"
+    assert_match(/served it for 10s/, out)
   end
 
   def test_the_bump_proceeds_past_the_wait_when_the_gem_is_indexed
@@ -179,7 +235,8 @@ class ReleaseCliGemAwaitTest < Minitest::Test
       status = Struct.new(:ok) { def success? = ok }
       Open3.define_singleton_method(:capture2e) do |*cmd|
         $curls << cmd
-        ["0.49.0 a:~> 1|checksum:x\n", status.new(true)]
+        body = cmd.last.end_with?("/versions") ? "ine 0.1.0 cut\nstudio-engine 0.48.0,0.49.0 md5\n" : "0.49.0 a:~> 1|checksum:x\n"
+        [body, status.new(true)]
       end
       puts "SERVED=" + gem_version_indexed?("studio-engine", "0.49.0").to_s
       puts "BOUNDED=" + $curls.all? { |c| c.include?("--max-time") }.to_s + " " + $curls.size.to_s
@@ -187,6 +244,6 @@ class ReleaseCliGemAwaitTest < Minitest::Test
     out = run_release(call, { "RELEASE_GEM_INDEXED" => "" })
 
     assert_includes out, "SERVED=true", out
-    assert_includes out, "BOUNDED=true 2", out
+    assert_includes out, "BOUNDED=true 3", out
   end
 end

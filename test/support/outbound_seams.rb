@@ -327,6 +327,12 @@ module OutboundSeams
     # the same reason as above. release_cli_gem_install_test.rb sets it per case.
     ENV["RELEASE_GEM_INSTALLED"] = "yes"
 
+    # THE SETTLE WINDOW (task gem-waits-for-rubygems): the wait holds a served answer
+    # for 60s of wall time before a lock may be pushed. With the seam answering "yes"
+    # that would make every test driving the bump sleep a minute, so the default is
+    # no hold; test/lib/gem_served_wait_test.rb drives the window on a fake clock.
+    ENV["RELEASE_GEM_SETTLE_S"] = "0"
+
     # THE PUBLISHED .gem DOWNLOAD. The ship downloads a gem's candidate and its
     # final from the RubyGems CDN to compare them. "none" answers "not served", so
     # an un-seamed test refuses instead of reaching the network; a test of the
