@@ -55,6 +55,8 @@ class CyvasseReturnEmailsTest < ActionDispatch::IntegrationTest
     fresh = text(render("cyvasse_record", @fresh))
     assert_includes fresh, "Your account is still here"
     assert_includes fresh, "username and all"
+    assert_includes fresh, "your account came with it"
+    assert_not_includes fresh, "your history came with it"
     assert_not_includes fresh, "You played"
     assert_equal "Your Cyvasse account is still here", render("cyvasse_record", @guest).subject
   end
