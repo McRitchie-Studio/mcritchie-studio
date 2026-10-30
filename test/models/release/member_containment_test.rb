@@ -310,4 +310,94 @@ class Release::MemberContainmentTest < ActiveSupport::TestCase
     assert_equal 2, src.scan('checked: #{ship_checked.inspect}); "').size
     assert_includes src, "GhAuthRetry.auth_failure?(out)", "an expired token is re-minted, not read as unknown"
   end
+
+  # --- the git fallback for an unreadable PR (rel-20261029-00560a) -----------
+  # The ship's deployer token could not read voicebox/alex-build PRs ("Resource not
+  # accessible by integration") and held four members whose code WAS in main.
+
+  VOICEBOX = "voicebox"
+  INTEGRATION_REFUSAL = "gh pr view https://github.com/McRitchie-Studio/voicebox/pull/9: " \
+                        "GraphQL: Resource not accessible by integration (repository.pullRequest)"
+
+  def voicebox_holds(fallback:, contains:)
+    Release::MemberContainment.holds(
+      groups: [ group(VOICEBOX, "voicebox-takes-one-word") ],
+      main_shas: { VOICEBOX => "9f9607c000" },
+      code_shas: ->(_repo, _member) { raise INTEGRATION_REFUSAL },
+      fallback_shas: fallback, contains: contains
+    )
+  end
+
+  test "[unit] an unreadable PR whose git-read head main contains is stamped, not held" do
+    holds = voicebox_holds(fallback: ->(_repo, _member) { [ "a16331a000" ] },
+                           contains: ->(_repo, sha, main) { sha == "a16331a000" && main == "9f9607c000" ? :affirmed : :refuted })
+
+    assert_empty holds
+  end
+
+  test "[unit] an unreadable PR whose git-read head main lacks is still held as refuted" do
+    holds = voicebox_holds(fallback: ->(_repo, _member) { [ "a16331a000" ] }, contains: ->(*) { :refuted })
+
+    note = holds.fetch("voicebox-takes-one-word")
+    assert_includes note, "a16331a", "the note names the commit git read"
+    assert_match(/NOT an ancestor/, note)
+  end
+
+  test "[unit] an unreadable PR git cannot resolve either stays held, naming both reads" do
+    empty = voicebox_holds(fallback: ->(*) { [] }, contains: ->(*) { flunk "nothing to ask" })
+    raised = voicebox_holds(fallback: ->(*) { raise "ls-remote timed out" }, contains: ->(*) { flunk "nothing to ask" })
+
+    assert_match(/Resource not accessible by integration.*git found no PR head/, empty.fetch("voicebox-takes-one-word"))
+    assert_match(/git fallback failed too \(ls-remote timed out\)/, raised.fetch("voicebox-takes-one-word"))
+  end
+
+  test "[unit] a readable PR never consults the git fallback" do
+    holds = Release::MemberContainment.holds(
+      groups: [ group(MOMS, "readable") ], main_shas: { MOMS => "main" },
+      code_shas: ->(*) { [ "merge" ] }, fallback_shas: ->(*) { flunk "the GitHub read answered" },
+      contains: ->(*) { :affirmed }
+    )
+
+    assert_empty holds
+  end
+
+  test "[unit] git_fallback_shas reads the PR ref from the recorded URL, else the branch" do
+    asked = []
+    runner = lambda do |_path, *args|
+      asked << args.last
+      [ "#{'a' * 40}\t#{args.last}\n", 0 ]
+    end
+    with_url = { "slug" => "voicebox-takes-one-word",
+                 "pr_urls" => { VOICEBOX => "https://github.com/McRitchie-Studio/voicebox/pull/9" } }
+    assert_equal [ "a" * 40 ], Release::MemberContainment.git_fallback_shas(path: "/x", member: with_url, repo: VOICEBOX, runner: runner)
+    Release::MemberContainment.git_fallback_shas(path: "/x", member: { "slug" => "no-url" }, repo: VOICEBOX, runner: runner)
+    Release::MemberContainment.git_fallback_shas(path: "/x", member: { "slug" => "s", "branch" => "fix/x" }, repo: VOICEBOX, runner: runner)
+
+    assert_equal %w[refs/pull/9/head refs/heads/feat/no-url refs/heads/fix/x], asked
+    failed = ->(*) { [ "fatal: could not read from remote", 128 ] }
+    assert_empty Release::MemberContainment.git_fallback_shas(path: "/x", member: with_url, repo: VOICEBOX, runner: failed)
+  end
+
+  test "[integration] git_fallback_shas reads refs/pull/<n>/head from a real origin" do
+    with_ladder_repo do |dir, shas|
+      Dir.mktmpdir("containment-origin-") do |origin|
+        run = ->(*args) { out, st = Open3.capture2e("git", *args); assert st.success?, out; out.strip }
+        run.call("init", "-q", "--bare", origin)
+        run.call("-C", dir, "remote", "add", "origin", origin)
+        run.call("-C", dir, "push", "-q", "origin", "#{shas[:head]}:refs/pull/9/head", "release:refs/heads/main")
+        member = { "slug" => "mail", "pr_urls" => { MOMS => "https://github.com/McRitchie-Studio/moms-app/pull/9" } }
+
+        got = Release::MemberContainment.git_fallback_shas(path: dir, member: member, repo: MOMS)
+        assert_equal [ shas[:head] ], got
+        assert_equal :affirmed, Release::MemberContainment.git_verdict(path: dir, sha: got.first, main_sha: shas[:merged])
+        assert_equal :refuted, Release::MemberContainment.git_verdict(path: dir, sha: got.first, main_sha: shas[:old])
+      end
+    end
+  end
+
+  test "[unit] bin/release wires the git fallback into the ship's containment check" do
+    src = Rails.root.join("bin", "release.rb").read
+    assert_includes src, "fallback_shas: lambda { |repo, member|"
+    assert_includes src, "Release::MemberContainment.git_fallback_shas(path: repo_path(repo), member: member, repo: repo,"
+  end
 end
