@@ -50,6 +50,33 @@ class ClientApps::StudioKitTest < ActiveSupport::TestCase
     assert_raises(Kit::Drift) { Kit.kit_toggle(%(<button @click="$store.theme.flip()">x</button>)) }
   end
 
+  # Newer studio-engine renders a toggle that names itself (/tasks/engine-theme-toggle-labels).
+  # Held inline so this passes against either engine the hub locks.
+  NAMED_TOGGLE = <<~HTML.freeze
+    <button type="button" @click="$store.theme.toggle()" class="flex" title="Toggle theme" aria-label="Dark theme" :aria-pressed="$store.theme.isDark ? 'true' : 'false'">
+      <svg x-show="$store.theme.isDark" class="w-4 h-4"></svg>
+      <svg x-show="!$store.theme.isDark" x-cloak class="w-4 h-4"></svg>
+    </button>
+  HTML
+
+  test "[unit] the engine's self-naming toggle rewrites to the kit's hooks with one of each attribute" do
+    toggle = Kit.kit_toggle(NAMED_TOGGLE)
+    button = Nokogiri::HTML5.fragment(toggle).at_css("button")
+
+    assert_equal "button", button["type"]
+    assert_equal "Toggle dark mode", button["aria-label"], "the kit's own label, not the engine's"
+    assert_equal "false", button["aria-pressed"], "studio-kit.js keeps it from here"
+    assert_equal 1, toggle.scan(/\stype=/).size
+    assert_equal 1, toggle.scan(/\saria-label=/).size
+    assert_equal 1, toggle.scan(/\saria-pressed=/).size
+    assert_no_match(/:aria-pressed|x-show|@click|x-cloak/, toggle)
+  end
+
+  test "[unit] an aria-pressed binding other than the engine's still drifts" do
+    other = NAMED_TOGGLE.sub("$store.theme.isDark ? 'true' : 'false'", "$store.theme.value")
+    assert_raises(Kit::Drift) { Kit.kit_toggle(other) }
+  end
+
   test "[unit] the theme is the engine's token set per side of the palette, with the palette's own names" do
     identity = Kit::Identity.new(name: "Table Ready", light: { "primary" => "#9F1239", "accent" => "#D97706", "surface" => "#FFFBF5", "text" => "#1C1917" },
                                  dark: { "primary" => "#FB7185", "accent" => "#FBBF24", "surface" => "#1C1917", "text" => "#FAFAF9" })
