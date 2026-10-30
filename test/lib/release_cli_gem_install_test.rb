@@ -23,7 +23,8 @@ class ReleaseCliGemInstallTest < ReleaseCliHarness
   # caught in-process and printed as "REFUSED: <message>".
   def drive(call, setup: "", env: {}, argv: ["--help"])
     seams = { "RELEASE_GEM_POLL_INTERVAL" => "0", "RELEASE_GEM_POLL_TIMEOUT" => "0",
-              "RELEASE_GEM_INDEXED" => "yes", "RELEASE_GEM_INSTALLED" => "yes" }.merge(env)
+              "RELEASE_GEM_INDEXED" => "yes", "RELEASE_GEM_INSTALLED" => "yes",
+              "RELEASE_GEM_SETTLE_S" => "0" }.merge(env)
     run_ruby(<<~RUBY)
       ENV.update(#{seams.inspect})
       ARGV.replace(#{argv.inspect})
@@ -71,6 +72,8 @@ class ReleaseCliGemInstallTest < ReleaseCliHarness
         if url.include?("index.rubygems.org/info/solana-studio")
           $index_reads += 1
           [$bodies.shift || "", ok.new(true)]
+        elsif url.end_with?("index.rubygems.org/versions")
+          ["solana-studio 0.12.2,0.12.3 bbbmd5\\n", ok.new(true)]
         elsif url.end_with?("/gems/solana-studio-0.12.3.gem")
           ["", ok.new(true)]
         else
@@ -96,6 +99,8 @@ class ReleaseCliGemInstallTest < ReleaseCliHarness
       Open3.define_singleton_method(:capture2e) do |*cmd|
         if cmd.last.include?("index.rubygems.org/info/")
           ["0.12.3 ed25519:~> 1.3|checksum:bbb\\n", ok.new(true)]
+        elsif cmd.last.end_with?("index.rubygems.org/versions")
+          ["solana-studio 0.12.3 bbbmd5\\n", ok.new(true)]
         else
           ["", ok.new(false)]
         end
@@ -104,7 +109,7 @@ class ReleaseCliGemInstallTest < ReleaseCliHarness
     out = drive(%(await_published_gems!("solana-studio" => "0.12.3"); puts "PROCEEDED"),
                 setup: setup, env: { "RELEASE_GEM_INDEXED" => "" })
 
-    assert_match(/REFUSED: .*still not serving it/, out)
+    assert_match(/REFUSED: .*GEM_NOT_SERVED: published solana-studio 0\.12\.3/, out)
     refute_includes out, "PROCEEDED"
   end
 

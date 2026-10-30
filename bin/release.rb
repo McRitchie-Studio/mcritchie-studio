@@ -226,6 +226,7 @@ require_relative "lib/projects_root"
 require_relative "lib/local_services"
 require_relative "lib/bounded_command" # the record-op deadline (run_record_op)
 require_relative "lib/one_password_wait" # --wait-for-1password, and OpMeter for the hang hint
+require_relative "lib/gem_served_wait" # publish → lock-push wait (GemServedWait)
 require_relative "lib/static_cloudflare" # the static_cloudflare prod_deploy strategy
 # `status` prints PROGRAM DRIFT: on-chain programs behind their source (program_drift_report).
 require_relative "lib/program_drift"
@@ -6019,8 +6020,17 @@ end
 # the JSON API still listed 0.48.0 as newest, the .gem file for 0.49.0 already
 # answered 200. Waiting on the wrong surface would be a wait that proves nothing.
 GEM_INDEX_URL = "https://index.rubygems.org/info/%s"
+# The compact index's `/versions` file, bundler's FIRST read: it lists every gem's
+# versions and the checksum of each `/info` file. It is ~25 MB, so the probe reads
+# only its tail by Range (bundler itself reads it incrementally the same way); a
+# version published minutes ago is always in the last few hundred KB.
+GEM_VERSIONS_URL = "https://index.rubygems.org/versions"
+GEM_VERSIONS_TAIL_BYTES = 200_000
 GEM_POLL_INTERVAL = Integer(ENV.fetch("RELEASE_GEM_POLL_INTERVAL", "5"))
 GEM_POLL_TIMEOUT  = Integer(ENV.fetch("RELEASE_GEM_POLL_TIMEOUT", "300"))
+# How long every surface must KEEP answering before a consumer lock may be pushed
+# (GemServedWait: one fresh read from this edge is not proof a runner's edge has it).
+GEM_SETTLE_S = Integer(ENV.fetch("RELEASE_GEM_SETTLE_S", GemServedWait::DEFAULT_SETTLE_S.to_s))
 # One curl's ceiling. Without it a stalled read never returns and the deadline never fires.
 GEM_CURL_MAX_TIME = Integer(ENV.fetch("RELEASE_GEM_CURL_MAX_TIME", "20"))
 
@@ -6030,8 +6040,10 @@ GEM_CURL_MAX_TIME = Integer(ENV.fetch("RELEASE_GEM_CURL_MAX_TIME", "20"))
 # answering is not proof the other does.
 GEM_FILE_URL = "https://rubygems.org/gems/%s-%s.gem"
 
-# Is `version` of `gem_name` SERVED by the RubyGems CDN: listed on the compact
-# index bundler resolves from, AND its .gem artifact downloadable?
+# Is `version` of `gem_name` SERVED by the RubyGems CDN, on every surface bundler
+# reads in order: listed on the compact index's `/info/<gem>`, listed on the tail of
+# its `/versions` file, AND its .gem artifact downloadable? One read of each; the
+# settle window in await_published_gems! decides whether the answer has held.
 #
 # RELEASE_GEM_INDEXED is the test seam, mirroring RELEASE_CI_STATUS: "yes"/"no" so
 # the meta-tests never touch the network.
@@ -6045,6 +6057,12 @@ def gem_version_indexed?(gem_name, version)
   return false unless status.success?
   return false unless gem_index_lists?(out, version)
 
+  # The `/versions` tail: bundler reads it before any `/info`, so a stale copy there
+  # hides the version even when `/info` is fresh.
+  tail, read = Open3.capture2e("/usr/bin/curl", "-sf", "--max-time", GEM_CURL_MAX_TIME.to_s,
+                               "-r", "-#{GEM_VERSIONS_TAIL_BYTES}", GEM_VERSIONS_URL)
+  return false unless read.success? && GemServedWait.versions_lists?(tail, gem_name, version)
+
   _, served = Open3.capture2e("/usr/bin/curl", "-sfIL", "--max-time", GEM_CURL_MAX_TIME.to_s, "-o", "/dev/null",
                               format(GEM_FILE_URL, gem_name, version))
   served.success?
@@ -6054,7 +6072,7 @@ end
 # "<version> <deps>|<checksums>"; the version is field one, matched WHOLE, so 0.4
 # never satisfies a wait for 0.47.2.
 def gem_index_lists?(body, version)
-  body.to_s.lines.any? { |line| line.split(" ", 2).first.to_s.strip == version.to_s }
+  GemServedWait.info_lists?(body, version)
 end
 
 # PURE. Whether to keep waiting, given elapsed time and a timeout.
@@ -6127,22 +6145,24 @@ def await_published_gems!(published_gems, resume = "bin/release prepare")
   pending = published_gems.reject { |gem_name, version| @gems_ready[[gem_name, version.to_s]] }
   return if pending.empty?
 
-  step("await: each published gem must be SERVED by the RubyGems CDN and INSTALLED here before anything reads it")
+  step("await: each published gem must be SERVED by the RubyGems CDN (compact index /info + /versions + .gem, " \
+       "held #{GEM_SETTLE_S}s) and INSTALLED here before anything reads it")
   pending.each do |gem_name, version|
     # Wall time, so the curl calls and the installs count against the budget too.
     started = monotonic_s
-    until gem_version_indexed?(gem_name, version)
-      if gem_wait_expired?(monotonic_s - started)
-        abort!("published #{gem_name} #{version} but the RubyGems CDN is still not serving it (compact index + " \
-               ".gem) after #{GEM_POLL_TIMEOUT}s. NOTHING was bumped, recorded or deployed — the consumer locks " \
-               "are untouched, so `#{resume}` resumes cleanly once the index catches up. Bumping now " \
-               "would commit a lock CI cannot install (bundler exits 7 in `Set up Ruby`), redding a lane and " \
-               "aborting the release AFTER the publish became irreversible.")
-      end
-
-      sleep(GEM_POLL_INTERVAL)
+    wait = GemServedWait.await(probe: -> { gem_version_indexed?(gem_name, version) },
+                               timeout: GEM_POLL_TIMEOUT, interval: GEM_POLL_INTERVAL, settle: GEM_SETTLE_S,
+                               clock: -> { monotonic_s }, sleeper: ->(s) { sleep(s) })
+    unless wait.served?
+      abort!("#{GemServedWait::NOT_SERVED}: published #{gem_name} #{version} but the RubyGems CDN has not served it " \
+             "steadily (compact index /info + /versions + .gem, held #{GEM_SETTLE_S}s) after #{GEM_POLL_TIMEOUT}s " \
+             "(#{wait.polls} poll(s)). NOTHING was bumped, pushed, recorded or deployed — the consumer locks are " \
+             "untouched, so re-run `#{resume}` once `curl -s #{format(GEM_INDEX_URL, gem_name)} | tail -3` lists " \
+             "#{version}; the publish skips as already-live. Bumping now would push a lock CI cannot install " \
+             "(bundler exits 7 in `Set up Ruby`: \"can no longer be found in that source\"), redding a lane and " \
+             "aborting the release AFTER the publish became irreversible.")
     end
-    say("  ✓ #{gem_name} #{version} is on the index — the CDN serves it")
+    say("  ✓ #{gem_name} #{version} is on the index — the CDN has served it for #{GEM_SETTLE_S}s (#{wait.polls} poll(s))")
 
     until install_published_gem(gem_name, version)
       if gem_wait_expired?(monotonic_s - started)
