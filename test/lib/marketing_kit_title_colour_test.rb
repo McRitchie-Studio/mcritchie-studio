@@ -68,6 +68,7 @@ class MarketingKitTitleColourTest < ActiveSupport::TestCase
       assert_includes general, "background-color:#C8702E", "the button stays accent"
       proposal = t.proposal
       assert_includes proposal, "font-weight:700;color:#{TITLE};font-size:40pt" # PROPOSAL
+      assert_includes proposal, "color:#{TITLE};font-weight:700;letter-spacing:2px;font-size:10pt", "column titles"
       assert_includes proposal, "background-color:#{PRIMARY};padding:12pt 18pt", "section bands stay primary"
       refute_includes proposal, "background-color:#{TITLE}", "no bar or table takes the title colour"
     end

@@ -111,7 +111,7 @@ module MarketingKit
         border = rule && i.zero? ? "border-right:3px solid #{c(:primary)};" : ""
         pad = i.zero? ? "0 12pt 0 0" : "0 0 0 12pt"
         "<td style='border:0;#{border}width:50%;vertical-align:top;padding:#{pad}'>" \
-          "#{p(h(col[:title].upcase), "color:#{c(:primary)};font-weight:700;letter-spacing:2px;font-size:10pt")}#{p(h(col[:text]), 'font-size:10pt')}</td>"
+          "#{p(h(col[:title].upcase), "color:#{c(:title)};font-weight:700;letter-spacing:2px;font-size:10pt")}#{p(h(col[:text]), 'font-size:10pt')}</td>"
       end
       "<table style='border-collapse:collapse;width:100%' width='100%'><tr>#{tds.join}</tr></table>"
     end
