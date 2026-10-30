@@ -352,7 +352,7 @@ channel. The plan is `.agents/epics/omnichannel-media.md`.
 | `email` | `Media::Email` | Resend webhook | reply |
 | `web` | `Media::Web` | HTTP (`/applications/:slug/chat`, `/build`, satellites) | reply, typing |
 | `teams` | `Media::Teams` | not built | nothing: registered, disabled, every method raises `NotImplementedError` |
-| `slack` | (card `slack-medium-outbound`) | not built | its `config/agent_media.yml` block is `enabled: false` |
+| `slack` | `Media::Slack` | Events API webhook (`POST /webhooks/slack/events`) | reply; post while `SLACK_BOT_TOKEN` is set (see [Slack](#slack-one-app-posts-as-every-soul)) |
 
 `Media.adapter(key)` returns a medium's adapter (`Media::REGISTRY`). A medium's
 failure is a `Media::Error`. Not to be confused with `AgentMailbox::Media`
@@ -390,6 +390,103 @@ and names the channel. To switch everything, change `defaults.medium`. No code
 changes, and replies are unaffected. Inbound "who answers" stays in
 `config/agent_routes.yml`. The dispatcher does not read `agent_media.yml`, so a
 change there needs a hub deploy, not a dispatcher restart.
+
+## Slack: one app posts as every soul
+
+Plan: `.agents/epics/omnichannel-media.md` (cards 3 and 4, folded into
+`slack-medium-loop`). One Slack app, **McRitchie Agents** (`A0CDCN1Q9AS`, bot
+user `U0CE93ACBA4`), in the McRitchie Studio workspace (`T0CC9DQ9NAK`), posts
+as every soul: each message carries the soul's name and portrait
+(`chat:write.customize`). Discord keeps running beside it; every standalone
+purpose stays on Discord until the cutover (card 6).
+
+**Inbound.** Slack's Events API posts to `POST /webhooks/slack/events`
+(`Webhooks::SlackEventsController`). The request is verified first, the whole
+security story of a public endpoint: `X-Slack-Signature` must equal
+`v0=` + hex HMAC-SHA256 of `v0:<X-Slack-Request-Timestamp>:<raw body>` keyed by
+`SLACK_SIGNING_SECRET`, compared in constant time, and the timestamp must be
+within five minutes (`AgentMessages::SlackSignature`). An unsigned, mis-signed or
+stale request gets a 401 and nothing is enqueued, the `url_verification`
+handshake included. A signed `event_callback` is acked at once and handed to
+`SlackIngestJob`, because Slack retries any event it has no 2xx for within three
+seconds.
+
+`AgentMessages::SlackIngest` stores an addressed message once:
+
+| Column | Value |
+|--------|-------|
+| `channel` | `slack` |
+| `external_id` | `<channel id>:<ts>` (a ts is unique only in its channel); the `(channel, external_id)` unique index dedupes Slack's retries and the message + `app_mention` pair one mention produces |
+| `guild_id` | the team id |
+| `channel_ref` | the channel id (`C…`, `G…`, `D…`) |
+| `thread_key` | `slack:<channel>:<thread_ts or ts>`: a Slack thread is one conversation |
+| `envelope` | `channel_type` (`im` for a DM: `MemoryBundle#private_channel?`), `event_id`, `thread_ts` |
+
+Never stored: another workspace's events, anything a bot wrote (`bot_id`,
+`bot_profile`, subtype `bot_message`, or the app's own user: our own customized
+posts come back as events, as do the Steffon Admin app's), edits, deletes, joins
+and every other subtype, a muted channel, and an unaddressed message.
+
+**Routing** reads the `slack:` block of `config/agent_routes.yml`
+(`AgentMessages::SlackRoutes`); the first rule that matches wins:
+
+1. **Name.** The text, past a leading `@McRitchie Agents`, opens by addressing a
+   soul's `names`: `Avi, …`, `Avi: …`, `Hi Avi, …`, `@Avi …` (the email matcher,
+   `EmailRoutes.addressed_to?`).
+2. **Thread.** A reply in a thread the mailbox holds keeps that thread's soul.
+3. **Mention.** An `@McRitchie Agents` mention (or an `app_mention`) or a DM to
+   the app goes to `mention_soul` (`alex`).
+4. **Channel default.** The channel override's `default_soul`. `#agents` has none.
+
+The owner-only guard is Discord's: a routed message from a role
+`config/agent_answerers.yml` does not answer is stored `held`. Alex McRitchie's
+Slack user (`slack.owner_user_id`, `U0CCSMUMQJV`) is a `slack` identity of the
+owner person (`AgentPerson.seed_owner!`, migration `LinkOwnerSlackIdentity`), so
+his messages are answered. `bin/dispatcher` serves every soul the block routes
+to (`AgentMailbox.routed_souls`), and `--channel slack` narrows a run to Slack.
+
+**Replies** (`Media::Slack#deliver_reply`) post one `chat.postMessage` in the
+message's thread (`thread_ts` is the thread's root), as the soul: `username` from
+`Media.display_name`, `icon_url` an absolute PNG under
+`https://mcritchie.studio/agents/slack/` (or `agent_media.yml`
+`souls.<soul>.icon`). Markdown is converted to Slack mrkdwn
+(`Media::Slack::Format`). Slack has no typing indicator for a bot, so typing is
+off; `AgentMessage#reply_url` is the Slack permalink
+(`<workspace_url>/archives/<channel>/p<ts>`).
+
+**No nonce, so no blind retry.** `chat.postMessage` has no idempotency key. The
+adapter locks the row, records `reply_sending`, then posts:
+
+| Outcome | Meaning | What happens |
+|---------|---------|--------------|
+| posted | Slack returned `ok` and a ts | `reply_external_id` set; no job posts again |
+| `Media::Slack::NotPosted` | provably not posted: HTTP 429 (Retry-After kept), `ratelimited`, `service_unavailable`, a connection that never opened | `reply_not_posted` recorded, the error raised: the reply job's `retry_on Media::Error` tries again |
+| `Media::Slack::Refused` | provably not posted, and a retry would be refused too: `channel_not_found`, `not_in_channel`, `invalid_auth`, … | `reply_failed`, no retry |
+| `Media::Slack::Ambiguous` | it may have posted: a read timeout, a reset, an HTTP 5xx, `fatal_error`, `internal_error` | `reply_failed` with `ambiguous: true`, **never retried**: look in the channel |
+
+A `reply_sending` with no outcome after it is a live attempt (younger than two
+minutes: a second job leaves it alone) or a crashed one (older: failed as
+ambiguous, never re-posted). With `SLACK_BOT_TOKEN` unset the reply is
+`skipped` and recorded.
+
+**Standalone posts.** `config/agent_media.yml`'s `slack` block is `enabled: true`
+with three channels (`agents` `C0CD8ETBZBM`, `ops` `C0CDEG43ECS`, `releases`
+`C0CDJCN4L92`), but no purpose names Slack yet. Slack can `:post` only while
+`SLACK_BOT_TOKEN` is set; without it `Media.home` falls back to Discord. **To
+flip release notes to Slack**, change `purposes.release_notes.medium` from
+`discord` to `slack` (one line; the file marks it). Their Discord embeds become
+minimal Block Kit (sections, fields, a footer context, at most 50 blocks a
+message). The app must be a member of the channel (invite `@McRitchie Agents`)
+or Slack answers `not_in_channel`.
+
+**Not built yet:** go / no / change on a proposal is Discord's and email's
+(`AgentMessages::ProposalConfirm`); on Slack such a word in a thread is routed to
+the thread's soul as an ordinary message. Slack user groups (`@avi` handles),
+channel sync into the directory, and the setup kit are card 5.
+
+**Go-live** (Steffon, after the deploy that carries this): set the Heroku vars
+and add the event subscriptions, in
+[`discord-bot-setup.md`](../agents/steffon/sops/discord-bot-setup.md#slack-go-live-mcritchie-agents).
 
 ## Memory: the context layers
 
