@@ -124,4 +124,51 @@ class GemServedWaitTest < Minitest::Test
                                          "studio-engine", "0.119.0"), "a later yank line takes it back"
     refute GemServedWait.versions_lists?("", "studio-engine", "0.119.0")
   end
+
+  # ── [unit] Carl's bounce: the monthly rebuild puts old versions in the BASE line ──
+  #
+  # Real lines from https://index.rubygems.org/versions, 2026-10-29: the header
+  # (created_at 2026-10-01), studio-engine's rebuilt base line (ending 0.82.0) with
+  # its alphabetical neighbours, an appended block holding 0.82.1, and the file's
+  # last 40 lines. A Range tail holds only the appends.
+  REBUILT = File.read(File.expand_path("../fixtures/files/rubygems_versions_rebuilt.txt", __dir__))
+  TAIL = REBUILT[-2000..]
+
+  def test_the_fixture_has_the_version_in_the_base_line_and_not_the_tail
+    assert_includes REBUILT, ",0.82.0 6b7aab37"
+    refute_includes TAIL, "0.82.0", "the case only bites when the tail lacks the version"
+  end
+
+  def test_an_already_live_version_in_the_base_line_is_served_via_the_full_file
+    full_reads = 0
+    full = -> { full_reads += 1; REBUILT }
+
+    assert GemServedWait.versions_served?("studio-engine", "0.82.0", TAIL, full: full),
+           "a version from before the rebuild is installable; the probe must say so"
+    assert_equal 1, full_reads
+    refute GemServedWait.versions_served?("studio-engine", "0.82.0", TAIL),
+           "the tail alone cannot see it (the bounce's repro)"
+  end
+
+  def test_a_version_on_the_tail_never_reads_the_full_file
+    tail = REBUILT[REBUILT.index("studio-engine 0.82.1") - 10..]
+    full = -> { flunk "a tail hit must not download 25 MB" }
+
+    assert GemServedWait.versions_served?("studio-engine", "0.82.1", tail, full: full)
+  end
+
+  def test_a_version_on_neither_is_not_served
+    refute GemServedWait.versions_served?("studio-engine", "9.9.9", TAIL, full: -> { REBUILT })
+    refute GemServedWait.versions_served?("studio-engine", "9.9.9", TAIL, full: -> { nil })
+  end
+
+  # A Range body starts mid-line: "foo-studio-engine 0.119.0 …" cut after "foo-".
+  def test_the_cut_first_line_of_a_range_body_is_dropped
+    tail = "studio-engine 0.119.0 5ecb\nrantly 3.0.0 aaa\n"
+
+    refute GemServedWait.versions_served?("studio-engine", "0.119.0", tail),
+           "a fragment of another gem's line must not read as studio-engine"
+    assert GemServedWait.versions_served?("studio-engine", "0.119.0", "ngine 0.1 x\n" + tail)
+    assert_equal "", GemServedWait.drop_cut_line("no newline at all")
+  end
 end

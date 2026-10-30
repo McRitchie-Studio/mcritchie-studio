@@ -130,6 +130,35 @@ class ReleaseCliGemAwaitTest < Minitest::Test
     refute_match(/bundle lock|git push/, out, "nothing reaches a lock or a push before the refusal")
   end
 
+  # ── [integration] an already-live version from before the monthly rebuild ──
+  #
+  # Carl's bounce: the ship awaits every final, pushed this run or not, and a
+  # version older than the /versions tail sits in the rebuilt BASE line. Through the
+  # real probe: the Range read misses, ONE full read finds it, and a second probe
+  # reuses that hit instead of downloading 25 MB again.
+  def test_an_already_live_version_outside_the_tail_is_served
+    fixture = File.expand_path("../fixtures/files/rubygems_versions_rebuilt.txt", __dir__)
+    call = <<~RUBY
+      $full = 0
+      rebuilt = File.read(#{fixture.inspect})
+      status = Struct.new(:ok) { def success? = ok }
+      Open3.define_singleton_method(:capture2e) do |*cmd|
+        url = cmd.last
+        if url.include?("/info/") then ["0.82.0 a:~> 1|checksum:x\n", status.new(true)]
+        elsif url.end_with?("/versions") && cmd.include?("-r") then [rebuilt[-2000..], status.new(true)]
+        elsif url.end_with?("/versions") then ($full += 1; [rebuilt, status.new(true)])
+        else ["", status.new(true)]
+        end
+      end
+      first = gem_version_indexed?("studio-engine", "0.82.0")
+      second = gem_version_indexed?("studio-engine", "0.82.0")
+      puts "SERVED=" + first.to_s + "," + second.to_s + " FULL=" + $full.to_s
+    RUBY
+    out = run_release(call, { "RELEASE_GEM_INDEXED" => "" })
+
+    assert_includes out, "SERVED=true,true FULL=1", out
+  end
+
   # ── [integration] the settle window, through the real wait ─────────────────
   #
   # rel-20261029-00560a: one served read from this edge let the bump go, and a
@@ -206,7 +235,7 @@ class ReleaseCliGemAwaitTest < Minitest::Test
       status = Struct.new(:ok) { def success? = ok }
       Open3.define_singleton_method(:capture2e) do |*cmd|
         $curls << cmd
-        body = cmd.last.end_with?("/versions") ? "studio-engine 0.48.0,0.49.0 md5\n" : "0.49.0 a:~> 1|checksum:x\n"
+        body = cmd.last.end_with?("/versions") ? "ine 0.1.0 cut\nstudio-engine 0.48.0,0.49.0 md5\n" : "0.49.0 a:~> 1|checksum:x\n"
         [body, status.new(true)]
       end
       puts "SERVED=" + gem_version_indexed?("studio-engine", "0.49.0").to_s

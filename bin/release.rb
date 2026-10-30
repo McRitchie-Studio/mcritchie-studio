@@ -6026,6 +6026,12 @@ GEM_INDEX_URL = "https://index.rubygems.org/info/%s"
 # version published minutes ago is always in the last few hundred KB.
 GEM_VERSIONS_URL = "https://index.rubygems.org/versions"
 GEM_VERSIONS_TAIL_BYTES = 200_000
+# A tail miss falls back to the WHOLE file (GemServedWait.versions_served?: a version
+# from before the monthly rebuild lives in the base line, not the tail). It is ~25 MB,
+# so it gets its own ceiling, and is read at most once per GEM_VERSIONS_FULL_EVERY_S
+# per version: a just-pushed version reaches the tail anyway, and a hit is memoized.
+GEM_VERSIONS_FULL_MAX_TIME = 120
+GEM_VERSIONS_FULL_EVERY_S = 60
 GEM_POLL_INTERVAL = Integer(ENV.fetch("RELEASE_GEM_POLL_INTERVAL", "5"))
 GEM_POLL_TIMEOUT  = Integer(ENV.fetch("RELEASE_GEM_POLL_TIMEOUT", "300"))
 # How long every surface must KEEP answering before a consumer lock may be pushed
@@ -6057,15 +6063,34 @@ def gem_version_indexed?(gem_name, version)
   return false unless status.success?
   return false unless gem_index_lists?(out, version)
 
-  # The `/versions` tail: bundler reads it before any `/info`, so a stale copy there
-  # hides the version even when `/info` is fresh.
+  # `/versions`: bundler reads it before any `/info`, so a stale copy there hides the
+  # version even when `/info` is fresh. The tail first; the whole file on a miss.
   tail, read = Open3.capture2e("/usr/bin/curl", "-sf", "--max-time", GEM_CURL_MAX_TIME.to_s,
                                "-r", "-#{GEM_VERSIONS_TAIL_BYTES}", GEM_VERSIONS_URL)
-  return false unless read.success? && GemServedWait.versions_lists?(tail, gem_name, version)
+  tail = "" unless read.success?
+  full = -> { gem_versions_full_body(gem_name, version) }
+  return false unless GemServedWait.versions_served?(gem_name, version, tail, full: full)
 
   _, served = Open3.capture2e("/usr/bin/curl", "-sfIL", "--max-time", GEM_CURL_MAX_TIME.to_s, "-o", "/dev/null",
                               format(GEM_FILE_URL, gem_name, version))
   served.success?
+end
+
+# The WHOLE /versions file, for a tail miss; nil when it was read for this version
+# under GEM_VERSIONS_FULL_EVERY_S ago (and missed) or the read failed. A hit is
+# memoized as a one-line body, so an already-live version costs one 25 MB read.
+def gem_versions_full_body(gem_name, version)
+  key = [gem_name, version.to_s]
+  @gem_versions_full ||= {}
+  memo = @gem_versions_full[key]
+  return memo[:body] if memo&.dig(:body)
+  return nil if memo && monotonic_s - memo[:at] < GEM_VERSIONS_FULL_EVERY_S
+
+  out, status = Open3.capture2e("/usr/bin/curl", "-sf", "--max-time", GEM_VERSIONS_FULL_MAX_TIME.to_s,
+                                GEM_VERSIONS_URL)
+  listed = status.success? && GemServedWait.versions_lists?(out, gem_name, version)
+  @gem_versions_full[key] = { at: monotonic_s, body: listed ? "#{gem_name} #{version} full\n" : nil }
+  @gem_versions_full[key][:body]
 end
 
 # PURE. Does a compact-index body list `version`? Lines read

@@ -16,9 +16,12 @@
 # max-age=60`. An edge that cached `/info/<gem>` or `/versions` before the publish
 # can keep serving that copy until it expires. So "served" now means: every surface
 # bundler reads answered with the version on consecutive polls spanning SETTLE
-# seconds (the max-age), and a single miss inside that span starts it over. It
-# narrows the race; it cannot observe a runner's edge, so the CI re-run backstop
-# (bin/lib/ci_rerun.rb) still stands behind it.
+# seconds (the max-age), and a single miss inside that span starts it over.
+#
+# THE HOLD IS A HEURISTIC, NOT A BOUND. max-age=60 is what RubyGems asks for, not
+# what every edge does: on 2026-10-29 Fastly edges answered with copies 442s and
+# 2709s old. The hold narrows the race; it cannot observe a runner's edge, so the
+# CI re-run backstop (bin/lib/ci_rerun.rb) still stands behind it.
 #
 # PURE: the probe, the clock and the sleeper are injected, so the tests drive every
 # outcome (served at once, served after N polls, never served) with no network and
@@ -70,6 +73,34 @@ module GemServedWait
   # never satisfies a wait for 0.47.2.
   def info_lists?(body, version)
     body.to_s.lines.any? { |line| line.split(" ", 2).first.to_s.strip == version.to_s }
+  end
+
+  # PURE. Is +version+ of +gem_name+ on `/versions`? +tail_body+ is a Range read of
+  # the file's END; +full+ (-> body or nil) fetches the WHOLE file, and is called only
+  # when the tail misses.
+  #
+  # WHY THE TAIL IS NOT ENOUGH (Carl's bounce, 2026-10-29). RubyGems REBUILDS
+  # /versions monthly (header `created_at: 2026-10-01T00:00:04Z`): the rebuild folds
+  # each gem's versions into ONE alphabetical base line (studio-engine's at line
+  # 170981 of 24.6 MB, ending at 0.82.0), and only later publishes are appended at
+  # the tail. A 200 KB tail reaches back ~2.5 days. So an ALREADY-LIVE version (a
+  # ship's skipped push, a prepare re-run) is in the base line, never the tail, and
+  # a tail-only probe looped to GEM_NOT_SERVED on a gem bundler could install.
+  def versions_served?(gem_name, version, tail_body, full: nil)
+    return true if versions_lists?(drop_cut_line(tail_body), gem_name, version)
+
+    body = full&.call
+    body ? versions_lists?(body, gem_name, version) : false
+  end
+
+  # PURE. A Range read starts mid-line: its first line is a FRAGMENT, and a cut
+  # "foo-studio-engine 0.119.0 …" reads as "studio-engine 0.119.0". Drop everything
+  # up to the first newline. (A server that ignores Range sends the whole file,
+  # whose first line is the `created_at:` header, so dropping it costs nothing.)
+  def drop_cut_line(body)
+    text = body.to_s
+    cut = text.index("\n")
+    cut ? text[(cut + 1)..] : ""
   end
 
   # PURE. Does a compact-index `/versions` body list +version+ for +gem_name+? Lines

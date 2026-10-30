@@ -73,7 +73,7 @@ class ReleaseCliGemInstallTest < ReleaseCliHarness
           $index_reads += 1
           [$bodies.shift || "", ok.new(true)]
         elsif url.end_with?("index.rubygems.org/versions")
-          ["solana-studio 0.12.2,0.12.3 bbbmd5\\n", ok.new(true)]
+          ["dio 0.1 cut\\nsolana-studio 0.12.2,0.12.3 bbbmd5\\n", ok.new(true)]
         elsif url.end_with?("/gems/solana-studio-0.12.3.gem")
           ["", ok.new(true)]
         else
@@ -100,7 +100,7 @@ class ReleaseCliGemInstallTest < ReleaseCliHarness
         if cmd.last.include?("index.rubygems.org/info/")
           ["0.12.3 ed25519:~> 1.3|checksum:bbb\\n", ok.new(true)]
         elsif cmd.last.end_with?("index.rubygems.org/versions")
-          ["solana-studio 0.12.3 bbbmd5\\n", ok.new(true)]
+          ["dio 0.1 cut\\nsolana-studio 0.12.3 bbbmd5\\n", ok.new(true)]
         else
           ["", ok.new(false)]
         end
