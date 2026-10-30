@@ -57,15 +57,11 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     WIDTHS.each { |w| assert_chips_fit_at(w) }
   end
 
-  # THE CARVE-OUT'S REASON, HELD. tasks/_heartbeats_card states that
-  # `sleeper-auction-watch` cannot be a chip because its 21-character slug clips the
-  # carousel's act chip at its narrowest. That is a claim about pixels, so it is asserted
-  # against pixels — and in BOTH directions, because the two acts kept off the card are
-  # kept off for DIFFERENT reasons and conflating them is how the wrong one gets copied
-  # forward. `archive-shipped` fits fine; it is absent because production-deploy already
-  # runs it. If the carousel is ever widened enough for the auction slug to fit, this
-  # reddens and the comment must be rewritten rather than left standing as a reason that
-  # has quietly expired.
+  # THE CARVE-OUT'S REASON, HELD. tasks/_heartbeats_card keeps `archive-shipped` off
+  # the card because production-deploy already runs it, NOT for width, so it must
+  # still fit an act chip at its narrowest; if it ever clips, the acts that ARE on the
+  # card are in trouble too. (`sleeper-auction-watch` was once held here in the other
+  # direction, as too wide to fit; task hub-adopts-type-scale retired that reason.)
   #
   # 1300, NOT 1280. 1280 is EXACTLY Tailwind's `xl` — the width at which the row goes
   # four up — and one pixel of scrollbar below it the row is two up and every chip is
@@ -75,9 +71,8 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
   # assuming it.
   DESIGN_WIDTH = 1300
   OFF_CARD_FITS     = "archive-shipped".freeze        # 15 chars — absent for a NON-geometry reason
-  OFF_CARD_TOO_WIDE = "sleeper-auction-watch".freeze  # 21 chars — absent because it does not fit
 
-  test "the carousel's chip budget still explains which acts are kept off it" do
+  test "the carousel's chip budget still fits the act kept off for a non-width reason" do
     page.driver.browser.manage.window.resize_to(DESIGN_WIDTH, 1000)
     visit deployments_path
     assert_selector SUMMARY, wait: 10
@@ -92,13 +87,10 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     chip = page.all("#{SUMMARY} button[data-row='action'] code", visible: :all).first
     assert chip, "no act chip to measure the budget against"
 
-    wide = measure_in_chip(chip, OFF_CARD_TOO_WIDE)
-    assert_operator wide[:need], :>, wide[:room],
-                    "#{OFF_CARD_TOO_WIDE} now needs #{wide[:need]}px of #{wide[:room]}px and FITS. " \
-                    "The comment in tasks/_heartbeats_card keeps it off on the grounds that it " \
-                    "clips; that reason has expired, so rewrite the comment rather than leave a " \
-                    "dead rationale standing. The product decision is separate and still stands — " \
-                    "see docs/agents/agents/turf_monster/HEARTBEAT.md."
+    # sleeper-auction-watch was the other direction: absent because it clipped. Since
+    # task hub-adopts-type-scale the acts sit one to a line at xl and it measures
+    # 133px of 133px, so that reason has expired and tasks/_heartbeats_card says so;
+    # its absence rests on turf_monster/HEARTBEAT.md alone, which no pixel can test.
 
     snug = measure_in_chip(chip, OFF_CARD_FITS)
     assert_operator snug[:need], :<=, snug[:room],
