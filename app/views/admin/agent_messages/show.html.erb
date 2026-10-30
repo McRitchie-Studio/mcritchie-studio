@@ -29,7 +29,7 @@
   <dt class="opacity-60">Channel</dt>
   <dd>
     <%= @message.channel %> · <span class="font-mono text-xs break-all"><%= @message.channel_ref %></span>
-    <% if @message.discord_url %> · <%= link_to "original", @message.discord_url, target: "_blank", rel: "noopener", class: "underline" %><% end %>
+    <% if @message.message_url %> · <%= link_to "original", @message.message_url, target: "_blank", rel: "noopener", class: "underline" %><% end %>
   </dd>
   <% if @message.email? %>
     <% envelope = @message.envelope.to_h %>
@@ -53,7 +53,7 @@
   <dt class="opacity-60">Reply</dt>
   <dd id="am-reply-link">
     <% if @message.reply_url %>
-      <%= link_to "Open the reply on Discord", @message.reply_url, target: "_blank", rel: "noopener", class: "underline" %>
+      <%= link_to "Open the reply on #{@message.channel.capitalize}", @message.reply_url, target: "_blank", rel: "noopener", class: "underline" %>
     <% elsif @message.reply_status %>
       <span class="am-chip am-reply-<%= @message.reply_status %>"><%= @message.reply_status %></span>
     <% else %>—<% end %>

@@ -82,7 +82,7 @@
             <td class="py-2 pr-3 hidden sm:table-cell"><%= message.attempts %></td>
             <td class="py-2 pr-3 text-xs whitespace-nowrap">
               <% if message.reply_url %>
-                <%= link_to "on Discord", message.reply_url, target: "_blank", rel: "noopener" %>
+                <%= link_to "on #{message.channel.capitalize}", message.reply_url, target: "_blank", rel: "noopener" %>
               <% elsif message.reply_status %>
                 <span class="am-chip am-reply-<%= message.reply_status %>"><%= message.reply_status %></span>
               <% else %>—<% end %>
