@@ -399,8 +399,8 @@ queue; `bin/release merge <slugs>` stays as the per-task primitive); `assembled`
 tasks separately. **`bin/conductor` never ships implicitly** — plain
 `bin/conductor ship` prints the handoff command; the explicit autonomous path is
 `bin/conductor ship --run`, which runs `bin/release ship --by conductor --yes`
-after the same release gates. That command names no `--mode`, so it resolves to
-`auto`: it asks nobody and records no clearance. Under First Rule 5 it is not a
+after the same release gates. It names no `--mode`, so it resolves to `auto`:
+it asks nobody and records no clearance. Under First Rule 5 it is not a
 production path: ship a cleared release with `bin/release ship --mode cleared
 --clearance "<Alex McRitchie's words>" --yes` (or `bin/release cycle --clearance`)
 and an uncleared one with `--mode timed --yes`, not with `conductor ship --run`.
