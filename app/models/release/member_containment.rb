@@ -110,6 +110,11 @@ class Release
       [ [], "#{why}, and git found no PR head or branch for it either" ]
     end
 
+    # The repository name (downcased, no .git) a PR URL or a remote URL names, or nil.
+    def repo_name(url)
+      url.to_s.strip.sub(%r{/pull/\d+.*\z}, "").sub(/\.git\z/, "").sub(%r{/\z}, "")[%r{[/:]([^/:]+)\z}, 1]&.downcase
+    end
+
     # The PR number in a GitHub pull-request URL, or nil.
     def pr_number(url)
       url.to_s[%r{/pull/(\d+)\b}, 1]
@@ -123,8 +128,14 @@ class Release
     # git_verdict; a killed call reads as [].
     def git_fallback_shas(path:, member:, repo:, deadline: DEFAULT_DEADLINE, runner: nil)
       runner ||= ->(dir, *args) { git(dir, *args, deadline: deadline) }
-      number = pr_number(member.dig("pr_urls", repo))
+      url = member.dig("pr_urls", repo).to_s
+      number = pr_number(url)
       return [] unless number
+
+      # The number means nothing in another repo: a stale URL naming another repo's
+      # PR #n would read THIS origin's PR #n. Trust it only when the URL names origin.
+      origin, ok = runner.call(path, "remote", "get-url", "origin")
+      return [] unless ok.zero? && repo_name(url) && repo_name(url) == repo_name(origin)
 
       ref = "refs/pull/#{number}/head"
       out, status = runner.call(path, "ls-remote", "origin", ref)

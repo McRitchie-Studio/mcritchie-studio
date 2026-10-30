@@ -364,6 +364,8 @@ class Release::MemberContainmentTest < ActiveSupport::TestCase
   test "[unit] git_fallback_shas reads the PR ref from the recorded URL, never a bare branch" do
     asked = []
     runner = lambda do |_path, *args|
+      next [ "git@github.com:McRitchie-Studio/voicebox.git\n", 0 ] if args[0] == "remote"
+
       asked << args.last
       [ "#{'a' * 40}\t#{args.last}\n", 0 ]
     end
@@ -374,13 +376,17 @@ class Release::MemberContainmentTest < ActiveSupport::TestCase
     assert_empty Release::MemberContainment.git_fallback_shas(path: "/x", member: { "slug" => "s", "branch" => "fix/x" }, repo: VOICEBOX, runner: runner)
 
     assert_equal %w[refs/pull/9/head], asked, "a branch tip is never read: it is no proof of a merge"
+    other_repo = with_url.merge("pr_urls" => { VOICEBOX => "https://github.com/McRitchie-Studio/alex-build/pull/9" })
+    assert_empty Release::MemberContainment.git_fallback_shas(path: "/x", member: other_repo, repo: VOICEBOX, runner: runner),
+                 "a URL naming another repo's PR #9 must not read this origin's PR #9"
     failed = ->(*) { [ "fatal: could not read from remote", 128 ] }
     assert_empty Release::MemberContainment.git_fallback_shas(path: "/x", member: with_url, repo: VOICEBOX, runner: failed)
   end
 
   test "[integration] git_fallback_shas reads refs/pull/<n>/head from a real origin" do
     with_ladder_repo do |dir, shas|
-      Dir.mktmpdir("containment-origin-") do |origin|
+      Dir.mktmpdir("containment-origin-") do |parent|
+        origin = File.join(parent, "moms-app.git")
         run = ->(*args) { out, st = Open3.capture2e("git", *args); assert st.success?, out; out.strip }
         run.call("init", "-q", "--bare", origin)
         run.call("-C", dir, "remote", "add", "origin", origin)
