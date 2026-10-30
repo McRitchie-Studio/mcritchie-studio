@@ -287,6 +287,28 @@ stages or sends. **Hold the send until Cyvasse serves the survey**: the same
 gate as the first-game email, checked against
 `https://cyvasse.mcritchie.studio/surveys/play-times?ref=test`.
 
+## The Cyvasse Return Emails
+
+Three return emails (task cyvasse-three-return-emails) pitch the same legacy
+players three ways, sent to equal slices to learn which brings the most of them
+back to play. `Broadcasts::CyvasseReturn` holds all three subject resolvers.
+
+| Template | Pitch | Subject (username / none) |
+|----------|-------|---------------------------|
+| `cyvasse_record` | the reader's own games, wins and rank (5+ games), else their account waiting | "%{username}, your %{games_count} of Cyvasse are still here" (5+ games) or "%{username}, your Cyvasse account is still here" / "Your Cyvasse account is still here" |
+| `cyvasse_challenge` | short and game-forward: "Your move." | "%{username}, your move on Cyvasse" / "Your move on Cyvasse" |
+| `cyvasse_founder_note` | a plain letter from Alex, no hero image or button, asking for a reply | "%{username}, I rebuilt Cyvasse" / "I rebuilt Cyvasse" |
+
+Each has one tracked `l=play` link to `https://cyvasse.mcritchie.studio/`, which
+the click tracker carries across with `?ref=<token>`, so a game played is
+credited to the style that sent the reader. None requires a merge field, so all
+three stage the same readers; store the plain subject on each.
+
+`bin/rails broadcasts:draft_cyvasse_return_styles` (the task's post-deploy)
+creates the `cyvasse-return-record`, `cyvasse-return-challenge` and
+`cyvasse-return-founder` drafts on `cyvasse-legacy`. It is idempotent and never
+stages or sends.
+
 ## Staged Sends: Review Before Execute
 
 A personalized broadcast (a subject with `%{field}`s, or a template listed in
@@ -321,6 +343,8 @@ bin/rails "broadcasts:queue_status[<slug>]"
   is Tuesday at 7 PM Mountain" to a reader with a username and the plain line
   to one without; it requires no merge fields, so store the plain subject. Its
   links (`night`, `play`, `calendar` for `/night.ics`, `build`) are all tracked.
+  The three return emails' resolvers live in `Broadcasts::CyvasseReturn`
+  (`Record`, `Challenge`, `FounderNote`); see "The Cyvasse Return Emails".
 - After a copy change, `broadcasts:restage` re-renders every `staged` row with
   the current subject and template, keeping each row's tracking token. Approved,
   sent, cancelled and skipped rows are never touched, a row approved mid-run
