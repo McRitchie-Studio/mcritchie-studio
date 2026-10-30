@@ -111,7 +111,7 @@ async function assertMetersFitAndAreLegible(page, theme) {
 
       for (const m of meters) {
         const where = `${theme} ${width}px ${m.repo}/${m.phase}`;
-        expect(m.rowOverflows, `${where}: marks must not overflow the bar`).toBe(false);
+        expect(m.rowOverflows, `${where}: marks must not overflow the ${m.barWidth}px bar`).toBe(false);
         expect(m.stripOverflows, `${where}: the bar's content must not overflow it`).toBe(false);
         // 4.5:1 is the WCAG AA floor for text this size. The marks are the text here.
         expect(m.contrast, `${where}: contrast ${m.contrast}:1 against the fill`).toBeGreaterThanOrEqual(4.5);

@@ -43,6 +43,8 @@
 @import './build_launch.css';
 /* The CTO's animal avatar in the client's palette (BuildIntake::Animals). */
 @import './cto_animal.css';
+/* Every text-* size on the type scale's five roles (task hub-adopts-type-scale). */
+@import './type_scale.css';
 
 
 /* The layer scale now comes from the ENGINE — see engine.css `-- Layer scale`,
@@ -234,13 +236,13 @@
 @utility prose-themed {
   /* Prose styling for markdown docs viewer */
   & h1 {
-    font-size: 1.75rem;
+    font-size: calc(var(--type-base, 16px) * 3);
     font-weight: 800;
     color: var(--color-text);
     margin-bottom: 0.75rem;
   }
   & h2 {
-    font-size: 1.35rem;
+    font-size: calc(var(--type-base, 16px) * 1.5);
     font-weight: 700;
     color: var(--color-text);
     margin-top: 1.5rem;
@@ -249,7 +251,7 @@
     padding-bottom: 0.4rem;
   }
   & h3 {
-    font-size: 1.1rem;
+    font-size: calc(var(--type-base, 16px) * 1);
     font-weight: 600;
     color: var(--color-text-body);
     margin-top: 1.25rem;
@@ -350,18 +352,23 @@
   padding: 8rem 1rem;
 }
 
+/* The landing hero on the type scale (task hub-adopts-type-scale): heading on a
+   phone, title from md up; the subtitle is the subhead. */
 @utility hero-title {
-  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-size: calc(var(--type-base, 16px) * 3);
+  @media (min-width: 768px) {
+    font-size: calc(var(--type-base, 16px) * 6);
+  }
 }
 
 @utility hero-subtitle {
-  font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+  font-size: calc(var(--type-base, 16px) * 1.5);
 }
 
 @utility criterion-value {
   /* Sized to keep the longest header ("Service Business") on one line,
      including the tight md 3-column breakpoint. */
-  font-size: clamp(1rem, 2vw, 1.25rem);
+  font-size: calc(var(--type-base, 16px) * 1);
 }
 
 @utility dropping-texts {

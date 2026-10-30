@@ -676,6 +676,15 @@ font-sizing reel Alex McRitchie sent on 2026-10-28
   kit.zip README lists them, `logos:install` prints them, and the
   [brand-kit-rollout](../agents/agents/alex/sops/brand-kit-rollout.md) SOP sets
   them in each app (step 4a).
+- **The hub draws it everywhere** (task `hub-adopts-type-scale`):
+  `app/assets/tailwind/type_scale.css` folds every Tailwind `text-*` size onto
+  the five steps (`text-3xs`..`text-xs` fine print, `text-sm`/`text-base` body,
+  `text-lg`..`text-2xl` subhead, `text-3xl`/`text-4xl` heading, `text-5xl` and
+  up title), so no view spells a size of its own and none sets a pixel size.
+  The layout puts `type-dense` on `<body>` of every admin-only page (anything
+  `AdminWall` walls for everyone else), and `config/initializers/studio.rb`
+  reads the four settings from `public/brand/kit.json`, so a reinstalled kit
+  moves the app with no edit.
 - The title and heading are set in the brand's first typeface level that has a
   font; subhead, body and fine print in its **Text** level, else its last level
   with a font. Commercial Welding's display level is traced lettering, so every

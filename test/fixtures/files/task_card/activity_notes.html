@@ -21,8 +21,8 @@
 </div>
 <div class="mt-1 min-w-0 rounded-md border px-2 py-1 bg-primary/10 border border-primary/40" data-test="activity-box" data-activity-type="clarification">
 <div class="flex min-w-0 items-center gap-1.5 mb-0 leading-none">
-<span class="text-[9px] font-semibold uppercase tracking-wide text-heading" data-test="activity-type-label" title="Non-blocking question or answer">Clarification</span>
-<span class="text-[9px] text-muted normal-case tracking-normal">2 notes</span>
+<span class="text-3xs font-semibold uppercase tracking-wide text-heading" data-test="activity-type-label" title="Non-blocking question or answer">Clarification</span>
+<span class="text-3xs text-muted normal-case tracking-normal">2 notes</span>
 </div>
 <div class="mt-1 min-w-0" data-test="activity-description" title="Which default wins when both flags are set on the same task?">
 <div class="relative overflow-hidden min-w-0" data-overflow-fade x-data="{ overflowPx: 0, overflows: false, speed: 60, _ro: null, _dead: false, fadeRight: 'mask-image: linear-gradient(to right, #000 80%, transparent); -webkit-mask-image: linear-gradient(to right, #000 80%, transparent)', fadeLeft: 'mask-image: linear-gradient(to left, #000 80%, transparent); -webkit-mask-image: linear-gradient(to left, #000 80%, transparent)', init() { this.$nextTick(() => { if (this._dead) return this.measure() if (!window.ResizeObserver) return this._ro = new ResizeObserver(() => this.measure()) this._ro.observe(this.$el) this._ro.observe(this.$refs.fadeInner) }) }, destroy() { this._dead = true if (this._ro) { this._ro.disconnect(); this._ro = null } }, measure() { this.overflowPx = Math.max(0, this.$refs.fadeInner.scrollWidth - this.$el.clientWidth) this.overflows = this.overflowPx > 1 } }" :style="!overflows ? '' : ((hovered) ? fadeLeft : fadeRight)">

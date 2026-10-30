@@ -61,9 +61,9 @@
      data-signature="<%= release_meter_signature(phase) %>">
   <%= content_tag(linked ? "a" : "div", card_options) do %>
     <div class="mb-1 flex items-center justify-between gap-1">
-      <span class="truncate text-[9px] font-bold uppercase tracking-wide <%= tone[:label] %>"><%= phase[:label] %></span>
+      <span class="truncate text-3xs font-bold uppercase tracking-wide <%= tone[:label] %>"><%= phase[:label] %></span>
       <% if linked %>
-        <span aria-hidden="true" class="shrink-0 text-[8px] leading-none opacity-0 transition-opacity group-hover:opacity-100 <%= tone[:label] %>">↗</span>
+        <span aria-hidden="true" class="shrink-0 text-3xs leading-none opacity-0 transition-opacity group-hover:opacity-100 <%= tone[:label] %>">↗</span>
       <% end %>
     </div>
     <%# @container, not a media query: the meter's width is set by the lane grid INSIDE the
@@ -91,7 +91,7 @@
           <% if marks.any? %>
             <%# Decorative: the card's aria-label already says "5 of 8 checks passed", and a
                 per-glyph title= would shadow the card's own tooltip on the biggest target. %>
-            <span class="flex min-w-0 items-center gap-[2px] overflow-hidden text-[9px] leading-none @max-[99px]:hidden"
+            <span class="flex min-w-0 items-center gap-[2px] overflow-hidden mark-glyph @max-[99px]:hidden"
                   data-test="release-phase-checks" aria-hidden="true">
               <% marks.each do |mark| %>
                 <% if mark == :pending %>
@@ -111,19 +111,19 @@
             </span>
             <% if overflowed %>
               <%# Outside the clipping row on purpose — this glyph must survive. %>
-              <span class="shrink-0 text-[9px] leading-none @max-[99px]:hidden" data-test="release-phase-overflow" aria-hidden="true">…</span>
+              <span class="shrink-0 text-3xs leading-none @max-[99px]:hidden" data-test="release-phase-overflow" aria-hidden="true">…</span>
             <% end %>
             <%# Narrow bar: 8 marks need 78px and this bar has less, so the marks would clip
                 SILENTLY (a suite sitting exactly at the cap draws no overflow glyph). Below
                 99px (the compiled query is `not (min-width:99px)`) the bar shows the fraction
                 instead — the same count, in 28px. %>
-            <span class="hidden truncate text-[9px] font-bold tabular-nums @max-[99px]:inline"
+            <span class="hidden truncate text-3xs font-bold tabular-nums @max-[99px]:inline"
                   data-test="release-phase-compact-value" aria-hidden="true"><%= phase[:value] %></span>
           <% else %>
             <%# No per-check marks (the deploy/coarse/n-a phases): the bar carries the status
                 word itself, so the header stays a bare label. %>
             <% if live %><span class="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-current"></span><% end %>
-            <span class="truncate text-[9px] font-bold tabular-nums" data-test="release-phase-value" aria-hidden="true"><%= phase[:value] %></span>
+            <span class="truncate text-3xs font-bold tabular-nums" data-test="release-phase-value" aria-hidden="true"><%= phase[:value] %></span>
           <% end %>
         </div>
       </div>

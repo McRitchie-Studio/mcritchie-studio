@@ -7,7 +7,7 @@
           class="inline-flex items-center gap-1 rounded-md border border-subtle bg-inset px-1.5 py-0.5 whitespace-nowrap hover:border-primary/40 transition"
           :title="copied ? 'Copied!' : 'Copy kickoff command'">
     <% if label %>
-      <span class="text-[9px] uppercase tracking-wide text-muted"><%= label %></span>
+      <span class="text-3xs uppercase tracking-wide text-muted"><%= label %></span>
     <% end %>
     <code x-ref="cmd" class="text-3xs text-body normal-case font-normal tracking-normal"><%= command %></code>
     <span class="text-3xs" x-text="copied ? '✓' : '⧉'" :class="copied ? 'text-success-ink' : 'text-muted'"></span>

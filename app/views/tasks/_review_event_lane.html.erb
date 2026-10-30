@@ -9,7 +9,7 @@
     <% if show_task_events %>
       <% if lane.agent %>
         <div class="flex shrink-0 flex-col items-center gap-1 text-center">
-          <span class="text-[9px] font-semibold uppercase tracking-wide text-muted">This task</span>
+          <span class="text-3xs font-semibold uppercase tracking-wide text-muted">This task</span>
           <div class="rounded-full ring-2 ring-surface">
             <%= render "components/agent_avatar", agent: lane.agent, size: "sm" %>
           </div>

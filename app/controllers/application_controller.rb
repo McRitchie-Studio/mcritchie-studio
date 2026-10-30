@@ -29,9 +29,18 @@ class ApplicationController < ActionController::Base
   # Default-deny: every action needs an admin unless AdminWall lists it.
   include AdminWall
 
-  helper_method :first_name_modal?
+  helper_method :first_name_modal?, :type_dense_page?
 
   private
+
+  # Whether the page reads the type scale's 14px dense base (task
+  # hub-adopts-type-scale): the layout puts `type-dense` on <body>, not <html>,
+  # where the theme tag's unlayered :root rule would win. Dense means admin-only,
+  # the pages AdminWall walls for everyone else; a visitor's page and a signed-in
+  # customer's own pages (profile, their apps, the CTO chat) keep the 16px base.
+  def type_dense_page?
+    !AdminWall.public?(controller_path, action_name) && !AdminWall.signed_in?(controller_path, action_name)
+  end
 
   # Whether the layout arms the engine's first-name modal on this page: the
   # engine's rule (Studio.first_name_outstanding?), unless the page asks for the

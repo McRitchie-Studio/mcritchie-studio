@@ -66,8 +66,14 @@
       breakpoint (1280px viewport, four cards → a 260px content box), which leaves each
       chip 128px and its text 98px, and the longest acts (`production-deploy`,
       `contest-rehearsal`, 17 characters) render 92px at 9px mono.
-      test/system/workflows_card_chip_fit_test.rb re-measures it in a browser. %>
-  <div class="flex min-w-0 flex-col gap-2"
+      test/system/workflows_card_chip_fit_test.rb re-measures it in a browser.
+
+      ON THE TYPE SCALE the chip text is fine print, 10.5px on this dense page
+      (task hub-adopts-type-scale), and the same acts measure ~107px: two to a line
+      then needs an 18rem frame, which the 260px xl box is not. So the acts sit one
+      to a line until the frame reaches 18rem (a container query on this frame),
+      and two to a line from there. %>
+  <div class="@container flex min-w-0 flex-col gap-2"
        data-test="heartbeat-launcher"
        data-layout="slide"
        data-agent="<%= launcher[:agent_slug] %>"
@@ -79,9 +85,9 @@
         <div class="truncate text-2xs leading-tight text-muted"><%= launcher[:label] %></div>
       </div>
     </div>
-    <div class="grid min-w-0 grid-cols-2 gap-1">
+    <div class="grid min-w-0 grid-cols-1 gap-1 @[18rem]:grid-cols-2">
       <% rows.each_with_index do |(row_kind, text), row_index| %>
-        <div class="min-w-0 <%= "col-span-2" if row_kind == "heartbeat" %>"
+        <div class="min-w-0 <%= "@[18rem]:col-span-2" if row_kind == "heartbeat" %>"
              data-test="heartbeat-copy-row"
              data-copy-row-index="<%= row_index + 1 %>">
           <%= render "tasks/workflow_copy_chip", text: text, row_kind: row_kind %>

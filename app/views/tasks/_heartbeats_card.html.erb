@@ -25,13 +25,11 @@
     cleaning rides the release rather than waiting to be remembered.
     sleeper-auction-watch — the decision is settled in
     agents/turf_monster/HEARTBEAT.md (calendar-bound, operator-attended, so
-    nothing should schedule it), and the summary card could not carry it regardless:
-    the slug is 21 characters and needs 114px, while an act chip's text area on the
-    carousel — two acts to a line, at its narrowest (xl, four cards) — is 98px, so it
-    clips away its last ~3 characters. The longest acts that fit are 17
-    (production-deploy, contest-rehearsal: 92px), so the budget is ~18. Held by
-    test/system/workflows_card_chip_fit_test.rb, which FAILS if the card is ever
-    widened enough to retire this reason.
+    nothing should schedule it). That is the whole reason now. Its width used to
+    be a second one (21 characters clipped in a two-to-a-line chip), but on the
+    type scale the acts sit one to a line at xl (task hub-adopts-type-scale) and
+    the slug measures 133px of a 133px text area: it fits, with no margin, so
+    width neither keeps it off nor makes room for it.
     It is NOT that a chip implies a cadence — clean-infra, deploy-with-task and
     contest-rehearsal are all here, and all three are direct-invoke or
     off-sequence. That argument was retired 2026-09-09; do not restate it.

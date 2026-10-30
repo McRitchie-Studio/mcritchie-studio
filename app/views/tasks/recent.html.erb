@@ -88,7 +88,7 @@
                     <% if face %>
                       <span class="absolute top-1 right-1"><%= phase_face_avatar_tag(face, px: 20, title: "#{Task::TestingPhases::PHASE_DEFINITIONS.dig(key, "label")}: #{face.name}") %></span>
                     <% end %>
-                    <p class="text-[9px] uppercase tracking-wide text-muted truncate"><%= phase_short_labels[key] %></p>
+                    <p class="text-3xs uppercase tracking-wide text-muted truncate"><%= phase_short_labels[key] %></p>
                     <p class="text-2xs font-mono font-semibold tabular-nums whitespace-nowrap <%= testing_phase_status_class(span["status"]) %>">
                       <%= testing_phase_compact_label(span) %>
                     </p>
@@ -97,7 +97,7 @@
                            data-deployment-range
                            data-start="<%= range[:started_at].to_i %>"
                            <% if range[:ended_at] %>data-end="<%= range[:ended_at].to_i %>"<% end %>>
-                        <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(range) %></span>
+                        <span class="text-muted opacity-70 text-3xs leading-tight" data-range-date><%= deployment_range_date(range) %></span>
                         <span class="text-secondary text-3xs leading-tight" data-range-time><%= deployment_range_times(range) %></span>
                       </div>
                     <% end %>
@@ -120,7 +120,7 @@
                         <% if soul %>
                           <span class="absolute top-1 right-1"><%= phase_face_avatar_tag(soul, px: 20, title: "#{lane_label} review: #{soul.name}") %></span>
                         <% end %>
-                        <p class="text-[9px] uppercase tracking-wide text-muted truncate"><%= lane_label %></p>
+                        <p class="text-3xs uppercase tracking-wide text-muted truncate"><%= lane_label %></p>
                         <p class="text-2xs font-mono font-semibold tabular-nums whitespace-nowrap <%= gate_status_class(run) %>">
                           <%= release_duration_label(run.duration_seconds) %><%= "+" if run.in_flight? %>
                         </p>
@@ -128,7 +128,7 @@
                              data-deployment-range
                              data-start="<%= run.started_at.to_i %>"
                              <% if run.finished_at %>data-end="<%= run.finished_at.to_i %>"<% end %>>
-                          <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(lane_range) %></span>
+                          <span class="text-muted opacity-70 text-3xs leading-tight" data-range-date><%= deployment_range_date(lane_range) %></span>
                           <span class="text-secondary text-3xs leading-tight" data-range-time><%= deployment_range_times(lane_range) %></span>
                         </div>
                       </div>
@@ -150,11 +150,11 @@
                 <div class="rounded-lg bg-surface-alt px-2.5 py-1.5 min-w-0 text-center"
                      data-test="recent-gate-chip"
                      title="<%= run.label %> — <%= run.status.humanize %> · <%= gate_attempt_label(run) %>">
-                  <p class="text-[9px] uppercase tracking-wide text-muted truncate">
+                  <p class="text-3xs uppercase tracking-wide text-muted truncate">
                     <span class="font-bold <%= gate_status_class(run) %>"><%= gate_verdict_glyph(run) %></span>
                     <%= run.label %>
                     <% if run.attempt.to_i > 1 %>
-                      <span class="ml-0.5 rounded bg-inset border border-subtle px-1 text-[9px] font-bold <%= run.status == "failed" ? "text-danger-ink" : "text-muted" %>"
+                      <span class="ml-0.5 rounded bg-inset border border-subtle px-1 text-3xs font-bold <%= run.status == "failed" ? "text-danger-ink" : "text-muted" %>"
                             data-test="recent-gate-attempts"
                             title="<%= run.attempt %> attempts — retried gate runs are first-class signal">×<%= run.attempt %></span>
                     <% end %>
@@ -166,7 +166,7 @@
                        data-deployment-range
                        data-start="<%= run.started_at.to_i %>"
                        <% if run.finished_at %>data-end="<%= run.finished_at.to_i %>"<% end %>>
-                    <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(gate_range) %></span>
+                    <span class="text-muted opacity-70 text-3xs leading-tight" data-range-date><%= deployment_range_date(gate_range) %></span>
                     <span class="text-secondary text-3xs leading-tight" data-range-time><%= deployment_range_times(gate_range) %></span>
                   </div>
                 </div>
