@@ -21,7 +21,9 @@ class Release
   # Verdicts are TRI-STATE, like bin/release's ancestor_signal: :affirmed,
   # :refuted, :unknown. Only :affirmed lets a member through. "I could not look" is
   # not "it is there": an unreadable member is held too, with its own note, and
-  # `bin/release finalize <release>` re-asks once the read works.
+  # `bin/release finalize <release>` re-asks once the read works. "Unreadable" means
+  # neither read answered: a PR GitHub will not show the ship's token falls back to
+  # git (fallback_shas, member_shas) before it is held.
   module MemberContainment
     module_function
 
@@ -34,9 +36,13 @@ class Release
     #                returns [] when unreadable
     #   contains   — ->(repo, sha, main_sha) { :affirmed | :refuted | :unknown }
     #
+    #   fallback_shas — optional ->(repo, member) { [sha, ...] }: the member's SHAs
+    #                read from GIT (the PR's refs/pull/<n>/head) when code_shas
+    #                could not read GitHub. See member_shas.
+    #
     # A repo with no main SHA is skipped: that is Release::MemberEvidence's case
     # (no landed record at all), and it already holds the member for it.
-    def holds(groups:, main_shas:, code_shas:, contains:)
+    def holds(groups:, main_shas:, code_shas:, contains:, fallback_shas: nil)
       notes = Hash.new { |hash, key| hash[key] = [] }
       Array(groups).each do |group|
         repo = group["repo"].to_s
@@ -50,7 +56,7 @@ class Release
           next if slug.empty? || member["kind"].to_s == "gem"
 
           note = member_note(repo: repo, main_sha: main_sha, member: member,
-                             code_shas: code_shas, contains: contains)
+                             code_shas: code_shas, contains: contains, fallback_shas: fallback_shas)
           notes[slug] << note if note
         end
       end
@@ -59,20 +65,83 @@ class Release
 
     # nil when the member's code is in `main_sha`; otherwise the sentence naming
     # the missing commit.
-    def member_note(repo:, main_sha:, member:, code_shas:, contains:)
+    def member_note(repo:, main_sha:, member:, code_shas:, contains:, fallback_shas: nil)
       slug = member["slug"].to_s
-      shas = begin
-        clean(code_shas.call(repo, member))
-      rescue StandardError => e
-        return unknown_note(slug, repo, main_sha, "the PR read failed (#{e.message.to_s[0, 120]})")
-      end
-      return unknown_note(slug, repo, main_sha, "no merge commit or PR head was found for it") if shas.empty?
+      shas, why_unread = member_shas(repo, member, code_shas, fallback_shas)
+      return unknown_note(slug, repo, main_sha, why_unread) if shas.empty?
 
       verdicts = shas.map { |sha| contains.call(repo, sha, main_sha) }
       return nil if verdicts.include?(:affirmed)
       return refuted_note(slug, repo, main_sha, shas.first) if verdicts.all?(:refuted)
 
       unknown_note(slug, repo, main_sha, "git could not read #{shas.map { |s| short(s) }.join(' / ')} against it")
+    end
+
+    # [shas, why] — the member's candidate SHAs, and the reason when there are none.
+    #
+    # WHY A GIT FALLBACK — rel-20261029-00560a. The ship runs under the DEPLOYER
+    # App's token, and on voicebox and alex-build that App may push `main` but may
+    # not read pull requests: `gh pr view` answered "Resource not accessible by
+    # integration" for four members whose merge commits WERE in the main just
+    # pushed, and all four were held at `assembled`. "GitHub would not answer" is
+    # not "the code is missing", so when the PR read fails the SHAs are read from
+    # git instead (the same credential that just pushed `main`). Every PR merges
+    # with `--merge`, so a merged PR's head is an ancestor of the main it landed
+    # in: a git-read head that is NOT one is a genuine refutation and still holds.
+    def member_shas(repo, member, code_shas, fallback_shas)
+      shas = []
+      why = nil
+      begin
+        shas = clean(code_shas.call(repo, member))
+        why = "no merge commit or PR head was found for it" if shas.empty?
+      rescue StandardError => e
+        why = "the PR read failed (#{e.message.to_s[0, 120]})"
+      end
+      return [ shas, nil ] unless shas.empty?
+      return [ [], why ] unless fallback_shas
+
+      fallback = begin
+        clean(fallback_shas.call(repo, member))
+      rescue StandardError => e
+        return [ [], "#{why}, and the git fallback failed too (#{e.message.to_s[0, 80]})" ]
+      end
+      return [ fallback, nil ] unless fallback.empty?
+
+      [ [], "#{why}, and git found no PR head or branch for it either" ]
+    end
+
+    # The repository name (downcased, no .git) a PR URL or a remote URL names, or nil.
+    def repo_name(url)
+      url.to_s.strip.sub(%r{/pull/\d+.*\z}, "").sub(/\.git\z/, "").sub(%r{/\z}, "")[%r{[/:]([^/:]+)\z}, 1]&.downcase
+    end
+
+    # The PR number in a GitHub pull-request URL, or nil.
+    def pr_number(url)
+      url.to_s[%r{/pull/(\d+)\b}, 1]
+    end
+
+    # The git half of the fallback: the member's PR head (refs/pull/<n>/head, which
+    # GitHub keeps for every PR, merged or not, after its branch is deleted), read by
+    # `git ls-remote` in the clone at `path`. [] without a recorded PR URL: a bare
+    # branch tip proves nothing (a branch pushed at a commit main already holds is an
+    # ancestor with no code), and GitHub's path asked for a MERGED PR. Bounded like
+    # git_verdict; a killed call reads as [].
+    def git_fallback_shas(path:, member:, repo:, deadline: DEFAULT_DEADLINE, runner: nil)
+      runner ||= ->(dir, *args) { git(dir, *args, deadline: deadline) }
+      url = member.dig("pr_urls", repo).to_s
+      number = pr_number(url)
+      return [] unless number
+
+      # The number means nothing in another repo: a stale URL naming another repo's
+      # PR #n would read THIS origin's PR #n. Trust it only when the URL names origin.
+      origin, ok = runner.call(path, "remote", "get-url", "origin")
+      return [] unless ok.zero? && repo_name(url) && repo_name(url) == repo_name(origin)
+
+      ref = "refs/pull/#{number}/head"
+      out, status = runner.call(path, "ls-remote", "origin", ref)
+      return [] unless status.zero?
+
+      clean(out.to_s.lines.filter_map { |line| sha, name = line.split(/\s+/); sha if name == ref && sha =~ /\A\h{40}\z/ })
     end
 
     def refuted_note(slug, repo, main_sha, sha)

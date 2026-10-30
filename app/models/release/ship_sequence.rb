@@ -957,8 +957,8 @@ class Release
           "its #{strategy} adapter names no Heroku app — add `prod_deploy.heroku_app:` to " \
             "#{REGISTRY_FILE} (a git_push_heroku `remote:` is read automatically)"
         else
-          "#{heroku_app}'s CURRENT Heroku release is not a succeeded `Deploy <frozen sha>` " \
-            "(a config-var change or a rollback on top of the deploy also reads this way)"
+          "#{heroku_app}'s newest Heroku Deploy is not a succeeded `Deploy <frozen sha>`, or a " \
+            "rollback or other non-config release sits on top of it (config-only releases are tolerated)"
         end
       else
         "unknown prod_deploy strategy #{strategy.to_s.inspect} — no deploy is ever confirmed for one"
@@ -1061,9 +1061,9 @@ class Release
     # same-SHA push that Heroku answers "up-to-date" — the trade deploy_already_
     # succeeded? already chose: a redundant re-verify beats a false green.
     #
-    # The ONE exception is `bin/release cycle`'s post-ship prod verify, which walks
-    # back past an allow-list of config-only releases and nothing else
-    # (heroku_live_at_sha_through_config? below); this guard does not.
+    # The exceptions are the post-ship reads — `bin/release cycle`'s prod verify and
+    # the finalize guard — which walk back past an allow-list of config-only releases
+    # and nothing else (heroku_live_at_sha_through_config? below); this guard does not.
     #
     # FAILS CLOSED on everything else too: a blank sha, an empty or unreadable list,
     # no release flagged current, a non-succeeded status, a description that is not
@@ -1103,7 +1103,8 @@ class Release
     end
 
     # The POST-SHIP form of heroku_release_at_sha?, for `bin/release cycle`'s prod
-    # verify only (the finalize guard keeps the strict current-release rule above).
+    # verify and the finalize guard (deploy_app's re-dispatch skip keeps the strict
+    # current-release rule above).
     # Right after a healthy ship the current release is often NOT the deploy:
     # turf-monster's bin/deploy runs `heroku config:set EXPECTED_IDL_HASH` after the
     # push on an IDL bump, and a credential or add-on rotation does the same. So,
