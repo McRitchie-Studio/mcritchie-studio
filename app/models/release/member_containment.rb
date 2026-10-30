@@ -37,8 +37,8 @@ class Release
     #   contains   — ->(repo, sha, main_sha) { :affirmed | :refuted | :unknown }
     #
     #   fallback_shas — optional ->(repo, member) { [sha, ...] }: the member's SHAs
-    #                read from GIT (the PR's refs/pull/<n>/head, else its branch tip)
-    #                when code_shas could not read GitHub. See member_shas.
+    #                read from GIT (the PR's refs/pull/<n>/head) when code_shas
+    #                could not read GitHub. See member_shas.
     #
     # A repo with no main SHA is skipped: that is Release::MemberEvidence's case
     # (no landed record at all), and it already holds the member for it.
@@ -116,20 +116,17 @@ class Release
     end
 
     # The git half of the fallback: the member's PR head (refs/pull/<n>/head, which
-    # GitHub keeps for every PR, merged or not, after its branch is deleted), else
-    # its branch tip, read by `git ls-remote` in the clone at `path`. [] when
-    # neither resolves. Bounded like git_verdict; a killed call reads as [].
+    # GitHub keeps for every PR, merged or not, after its branch is deleted), read by
+    # `git ls-remote` in the clone at `path`. [] without a recorded PR URL: a bare
+    # branch tip proves nothing (a branch pushed at a commit main already holds is an
+    # ancestor with no code), and GitHub's path asked for a MERGED PR. Bounded like
+    # git_verdict; a killed call reads as [].
     def git_fallback_shas(path:, member:, repo:, deadline: DEFAULT_DEADLINE, runner: nil)
       runner ||= ->(dir, *args) { git(dir, *args, deadline: deadline) }
       number = pr_number(member.dig("pr_urls", repo))
-      ref =
-        if number
-          "refs/pull/#{number}/head"
-        else
-          branch = member["branch"].to_s.strip
-          branch = "feat/#{member['slug']}" if branch.empty?
-          "refs/heads/#{branch}"
-        end
+      return [] unless number
+
+      ref = "refs/pull/#{number}/head"
       out, status = runner.call(path, "ls-remote", "origin", ref)
       return [] unless status.zero?
 

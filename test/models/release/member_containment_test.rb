@@ -361,7 +361,7 @@ class Release::MemberContainmentTest < ActiveSupport::TestCase
     assert_empty holds
   end
 
-  test "[unit] git_fallback_shas reads the PR ref from the recorded URL, else the branch" do
+  test "[unit] git_fallback_shas reads the PR ref from the recorded URL, never a bare branch" do
     asked = []
     runner = lambda do |_path, *args|
       asked << args.last
@@ -370,10 +370,10 @@ class Release::MemberContainmentTest < ActiveSupport::TestCase
     with_url = { "slug" => "voicebox-takes-one-word",
                  "pr_urls" => { VOICEBOX => "https://github.com/McRitchie-Studio/voicebox/pull/9" } }
     assert_equal [ "a" * 40 ], Release::MemberContainment.git_fallback_shas(path: "/x", member: with_url, repo: VOICEBOX, runner: runner)
-    Release::MemberContainment.git_fallback_shas(path: "/x", member: { "slug" => "no-url" }, repo: VOICEBOX, runner: runner)
-    Release::MemberContainment.git_fallback_shas(path: "/x", member: { "slug" => "s", "branch" => "fix/x" }, repo: VOICEBOX, runner: runner)
+    assert_empty Release::MemberContainment.git_fallback_shas(path: "/x", member: { "slug" => "no-url" }, repo: VOICEBOX, runner: runner)
+    assert_empty Release::MemberContainment.git_fallback_shas(path: "/x", member: { "slug" => "s", "branch" => "fix/x" }, repo: VOICEBOX, runner: runner)
 
-    assert_equal %w[refs/pull/9/head refs/heads/feat/no-url refs/heads/fix/x], asked
+    assert_equal %w[refs/pull/9/head], asked, "a branch tip is never read: it is no proof of a merge"
     failed = ->(*) { [ "fatal: could not read from remote", 128 ] }
     assert_empty Release::MemberContainment.git_fallback_shas(path: "/x", member: with_url, repo: VOICEBOX, runner: failed)
   end
