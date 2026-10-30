@@ -102,6 +102,19 @@ Studio.configure do |config|
   if Studio.respond_to?(:navbar_signed_out_cta=)
     config.navbar_signed_out_cta = { label: "Build App", path: "/build" }
   end
+  # The voice row on /profile (studio-engine docs/VOICE_PROFILE.md): "Set up
+  # your voice", so anyone can validate their voice and their agent knows who
+  # is talking (Alex McRitchie 2026-10-29). The device makes the voice pattern;
+  # only the vectors reach us. The CSP names the model hosts
+  # (config/initializers/content_security_policy.rb) and the privacy page names
+  # them too. Tests run the "fake" embedder (window.studioFakeVoice) because a
+  # test browser's microphone cannot read phrases. Guarded the same way: inert
+  # until the release relocks an engine that has the setting, and the row also
+  # waits for the engine migration that adds the users.voice_* columns.
+  if Studio.respond_to?(:voice_profile=)
+    config.voice_profile = true
+    config.voice_embedder = "fake" if Rails.env.test?
+  end
   # ---- Site footer and booking (studio-engine docs/SITE_FOOTER.md) ----
   # The engine renders the footer, the map, the booking frame and the booking
   # popup, and serves Leaflet. This block is only the facts.

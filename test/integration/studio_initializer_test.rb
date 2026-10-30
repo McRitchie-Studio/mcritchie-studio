@@ -26,4 +26,29 @@ class StudioInitializerTest < ActiveSupport::TestCase
     assert_includes Rails.application.railties.map(&:class), Studio::Engine
     assert_equal "McRitchie Studio", Studio.app_name
   end
+
+  # [unit] voice-profile-on-every-profile: the hub turns the engine's voice row
+  # on, inside the respond_to? guard so it is inert on an engine without it, and
+  # tests run the fake embedder.
+  test "the initializer turns the voice row on, guarded, with the fake embedder in test" do
+    source = File.read(INITIALIZER)
+    block = source[/if Studio\.respond_to\?\(:voice_profile=\)\n(.*?)\n  end/m, 1]
+
+    assert block, "the voice settings sit inside a respond_to?(:voice_profile=) guard"
+    assert_includes block, "config.voice_profile = true"
+    assert_includes block, 'config.voice_embedder = "fake" if Rails.env.test?'
+  end
+
+  # [integration] On an engine that has the setting, it is on in this app.
+  test "the voice row is on when the locked engine has it" do
+    unless Studio.respond_to?(:voice_profile)
+      # Before the release relocks: the engine has no voice feature at all, so
+      # the guard is what kept this app booting.
+      assert_not defined?(Studio::VoiceMatch), "an engine with VoiceMatch must answer Studio.voice_profile"
+      return
+    end
+
+    assert Studio.voice_profile
+    assert_equal "fake", Studio.voice_embedder
+  end
 end
