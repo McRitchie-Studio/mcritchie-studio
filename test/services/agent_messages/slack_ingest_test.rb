@@ -217,8 +217,8 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
   end
 
   test "[unit] held for clearance: a soul named in a channel it is not cleared for is stored held with the reason" do
-    owner = AgentPerson.seed_owner!
     with_routes(guarded_routes) do
+      owner = AgentPerson.seed_owner! # links the test owner's Slack user
       row = ingest(guarded_routes).call(event("Tywin, how are the players?", "channel" => TURFCH), team_id: TEAM)
       assert_equal [ "tywin", "name", "held", owner.id ], [ row.soul_slug, row.routed_by, row.status, row.person_id ]
       hold = row.events.find_by!(kind: "held")
@@ -237,8 +237,8 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
   end
 
   test "[unit] held for clearance by thread: a reply that inherits an uncleared soul is held too" do
-    AgentPerson.seed_owner!
     with_routes(guarded_routes) do
+      AgentPerson.seed_owner!
       root = ingest(guarded_routes).call(event("Tywin, hi", "channel" => TURFCH), team_id: TEAM)
       reply = ingest(guarded_routes).call(event("still there?", "channel" => TURFCH, "thread_ts" => root.external_id.split(":").last),
                                           team_id: TEAM)
@@ -265,7 +265,7 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
     %w[C0CDEG43ECS C0CDJCN4L92].each { |id| assert_nil shipped.cleared_souls(id), "#{shipped.channel_name(id)} keeps today's behaviour" }
 
     by_name = %w[turf-monster cyvasse commercial-welding alex-build rolio].to_h do |name|
-      id = shipped.instance_variable_get(:@overrides).values.find { _1.name == name }&.channel_id
+      id = shipped.channel_id_named(name)
       assert id, "##{name} is configured"
       [ name, id ]
     end
@@ -277,7 +277,7 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
     assert_equal shipped.core_souls, shipped.cleared_souls(by_name["rolio"])
     refute shipped.cleared?(by_name["cyvasse"], "turf_monster")
 
-    shipped.instance_variable_get(:@overrides).each_value do |entry|
+    shipped.channels.each do |entry|
       refute_includes Array(entry.souls), "tyrion", "Tyrion is client-facing: never cleared in ##{entry.name}"
       next unless entry.default_soul
 

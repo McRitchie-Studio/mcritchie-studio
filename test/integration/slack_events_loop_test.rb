@@ -138,4 +138,29 @@ class SlackEventsLoopTest < ActionDispatch::IntegrationTest
     second = AgentMessage.find_by!(external_id: "#{AGENTS}:1761800009.000100")
     assert_equal [ "avi", "thread", row.thread_key ], [ second.soul_slug, second.routed_by, second.thread_key ]
   end
+
+  test "[integration] clearance: in #turf-monster Turf is answered and Tywin is held, never claimed" do
+    AgentMessages::Answerers.reset!
+    owner = AgentPerson.seed_owner!
+    turf_channel = AgentMessages::SlackRoutes.current.channel_id_named("turf-monster")
+
+    cleared = callback(message_event("Turf, any scores?", ts: "1761800100.000100", channel: turf_channel))
+    post "/webhooks/slack/events", params: cleared, headers: headers(cleared)
+    assert_response :ok
+    uncleared = callback(message_event("Tywin, how are the players?", ts: "1761800101.000100", channel: turf_channel))
+    post "/webhooks/slack/events", params: uncleared, headers: headers(uncleared)
+    assert_response :ok
+    perform_enqueued_jobs(only: SlackIngestJob)
+
+    turf = AgentMessage.find_by!(channel: "slack", external_id: "#{turf_channel}:1761800100.000100")
+    tywin = AgentMessage.find_by!(channel: "slack", external_id: "#{turf_channel}:1761800101.000100")
+    assert_equal [ "turf_monster", "received", owner.id ], [ turf.soul_slug, turf.status, turf.person_id ]
+    assert_equal [ "tywin", "held", owner.id ], [ tywin.soul_slug, tywin.status, tywin.person_id ]
+    assert_match(/soul not cleared for this channel/, tywin.events.find_by!(kind: "held").detail["reason"])
+
+    claimed = AgentMessage.claim!(soul: %w[turf_monster tywin], worker: "dispatcher-test")
+    assert_equal turf.id, claimed.message.id, "the cleared soul's message is answered"
+    assert_nil AgentMessage.claim!(soul: %w[turf_monster tywin], worker: "dispatcher-test").message,
+               "the uncleared soul's message is never claimed"
+  end
 end

@@ -61,6 +61,12 @@ module AgentMessages
 
     def override(channel_id) = @overrides[channel_id.to_s]
 
+    # Every configured channel override, in config order.
+    def channels = @overrides.values
+
+    # The id of the configured channel named `name` ("turf-monster"), or nil.
+    def channel_id_named(name) = channels.find { |c| c.name == name.to_s }&.channel_id
+
     def ignored?(channel_id) = override(channel_id)&.ignore? || false
 
     def default_soul(channel_id) = override(channel_id)&.default_soul
