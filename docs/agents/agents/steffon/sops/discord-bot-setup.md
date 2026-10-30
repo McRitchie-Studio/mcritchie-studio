@@ -199,6 +199,43 @@ Input: a contact submission from `/integrations/discord`
    the reply land, and only then tell the client it is live, and how quickly to
    expect answers.
 
+## Slack go-live (McRitchie Agents)
+
+The agents also speak Slack through one app, **McRitchie Agents** (App ID
+`A0CDCN1Q9AS`, bot user `U0CE93ACBA4`), in the McRitchie Studio workspace. How
+it reads and answers: [`agent-message-loop.md`](../../../system/agent-message-loop.md#slack-one-app-posts-as-every-soul).
+Run these **after** the hub deploy that carries `POST /webhooks/slack/events`
+(task `slack-medium-loop`), in this order:
+
+1. **Heroku config vars** on the hub app, from 1Password
+   `slack.mcritchie-studio.applications` (vault studio-applications):
+   `SLACK_BOT_TOKEN` ← field `credential` (the `xoxb-` bot token), and
+   `SLACK_SIGNING_SECRET` ← field `signing-secret`. Pipe each through
+   `op read` into `heroku config:set`; never echo either. Until the token is set
+   Slack replies are `skipped` and every post falls back to Discord; until the
+   secret is set the endpoint answers every request 401.
+2. **Event subscriptions**, added to the app's manifest by the Manifest API with
+   the Steffon Admin configuration token (`slack.studio.admin`
+   `config-access-token`, rotated through its refresh token first if expired:
+   write the NEW refresh token back). `apps.manifest.export` the current
+   manifest, add, and `apps.manifest.update`:
+   ```yaml
+   settings:
+     event_subscriptions:
+       request_url: https://mcritchie.studio/webhooks/slack/events
+       bot_events: [app_mention, message.channels, message.groups, message.im]
+   ```
+   Slack sends a signed `url_verification` to the URL when it is saved; the hub
+   answers it only once step 1's secret is live, so step 1 comes first. The
+   events need the `channels:history`, `groups:history` and `im:history` bot
+   scopes; if the update adds any scope, the app must be reinstalled (Alex
+   McRitchie's one Allow click).
+3. **Invite the app** (`/invite @McRitchie Agents`) to `#agents`, `#ops` and
+   `#releases`; it reads and posts only where it is a member.
+4. **Verify.** In `#agents`, Alex McRitchie writes `Avi, are you there?`; a row
+   appears on `/admin/agent_messages` (channel `slack`, status `received`, not
+   `held`) and Avi's answer posts in that thread under his name and portrait.
+
 ## If it does not answer
 
 Follow [`agent-message-loop.md`](../../../system/agent-message-loop.md#observing):

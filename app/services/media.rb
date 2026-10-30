@@ -24,12 +24,14 @@ module Media
 
   # Medium key => adapter class name, resolved lazily so the autoloader (and a
   # code reload) owns the constants. Teams is registered but disabled: every
-  # method raises NotImplementedError (Media::Teams).
+  # method raises NotImplementedError (Media::Teams). Slack (Media::Slack) can
+  # :post only while SLACK_BOT_TOKEN is set.
   REGISTRY = {
     "discord" => "Media::Discord",
     "email" => "Media::Email",
     "web" => "Media::Web",
-    "teams" => "Media::Teams"
+    "teams" => "Media::Teams",
+    "slack" => "Media::Slack"
   }.freeze
 
   module_function

@@ -38,6 +38,8 @@ module AgentMessages
       # The CTOs the web chat may route to (the `web:` block). A soul not
       # listed has no web chat.
       @web_souls = Array((config["web"] || {})["souls"]).map { |soul| soul.to_s.strip }.reject(&:empty?).uniq
+      # The souls the `slack:` block routes to (AgentMessages::SlackRoutes).
+      @slack_souls = SlackRoutes.new(config["slack"]).routed_souls
       # The satellite apps that may address a soul over the hub's agent chat API
       # (Api::V1::AgentChatsController): `web: apps: <app slug>: [souls]`. A soul
       # an app names here still needs to be in `web: souls:`.
@@ -90,10 +92,10 @@ module AgentMessages
     end
 
     # Every soul this config can route to: the guilds' souls, each override's
-    # default_soul, and the web chat's CTOs.
+    # default_soul, the web chat's CTOs, and the Slack block's souls.
     def souls
       (@guilds.values.flat_map { |g| (g["souls"] || {}).keys.map(&:to_s) } +
-        overrides.map(&:default_soul).compact + @web_souls).uniq
+        overrides.map(&:default_soul).compact + @web_souls + @slack_souls).uniq
     end
 
     # The process's routes, read once. Tests swap them with `current=` and `reset!`.

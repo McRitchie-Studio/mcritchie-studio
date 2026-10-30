@@ -8,9 +8,9 @@ require_relative "../../support/agent_message_fixtures"
 class MediaTest < ActiveSupport::TestCase
   include AgentMessageFixtures
 
-  test "[unit] the registry resolves discord, email and web to their adapters, each keyed by itself" do
-    assert_equal %w[discord email web teams], Media.keys, "teams is registered, disabled (Media::Teams)"
-    { "discord" => Media::Discord, "email" => Media::Email, "web" => Media::Web }.each do |key, klass|
+  test "[unit] the registry resolves discord, email, web and slack to their adapters, each keyed by itself" do
+    assert_equal %w[discord email web teams slack], Media.keys, "teams is registered, disabled (Media::Teams)"
+    { "discord" => Media::Discord, "email" => Media::Email, "web" => Media::Web, "slack" => Media::Slack }.each do |key, klass|
       adapter = Media.adapter(key)
       assert_instance_of klass, adapter
       assert_kind_of Media::Adapter, adapter
@@ -21,10 +21,10 @@ class MediaTest < ActiveSupport::TestCase
   end
 
   test "[unit] an unknown medium raises UnknownMedium, a Media::Error naming the known keys" do
-    refute Media.registered?("slack")
-    error = assert_raises(Media::UnknownMedium) { Media.adapter("slack") }
+    refute Media.registered?("pager")
+    error = assert_raises(Media::UnknownMedium) { Media.adapter("pager") }
     assert_kind_of Media::Error, error
-    assert_includes error.message, "discord, email, web, teams"
+    assert_includes error.message, "discord, email, web, teams, slack"
   end
 
   test "[unit] the registry covers every channel a message may hold, and typing matches TYPING_CHANNELS" do
@@ -109,7 +109,7 @@ class MediaTest < ActiveSupport::TestCase
     end
     assert_equal [ "web", message.id ], calls
 
-    message.update_column(:channel, "slack")
+    message.update_column(:channel, "pager")
     Media.stub(:adapter, ->(_key) { flunk "an unregistered medium must not resolve" }) do
       assert_nil AgentMessageReplyJob.perform_now(message.id)
     end

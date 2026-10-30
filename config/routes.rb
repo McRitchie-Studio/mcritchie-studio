@@ -397,6 +397,9 @@ Rails.application.routes.draw do
   post "webhooks/resend/inbound", to: "webhooks/resend_inbound#create"
   # Delivery, bounce, complaint and engagement events for broadcast email.
   post "webhooks/resend/events", to: "webhooks/resend_events#create"
+  # Slack Events API (v0-signed with SLACK_SIGNING_SECRET) -> SlackIngestJob ->
+  # an agent message (docs/agents/system/agent-message-loop.md, "Slack").
+  post "webhooks/slack/events", to: "webhooks/slack_events#create"
 
   namespace :admin do
     get "dashboard", to: "dashboard#show", as: :dashboard

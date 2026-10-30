@@ -43,8 +43,12 @@ module ReleaseNotes
       new(webhook_url).deliver(content: content, embeds: embeds)
     end
 
+    # The release-notes webhook, else the deploy webhook (config/agent_media.yml
+    # discord.channels.releases names the same two, in this order).
+    WEBHOOK_ENVS = %w[DISCORD_RELEASE_NOTES_WEBHOOK_URL DISCORD_DEPLOY_WEBHOOK_URL].freeze
+
     def self.webhook_url
-      ENV["DISCORD_RELEASE_NOTES_WEBHOOK_URL"].presence || ENV["DISCORD_DEPLOY_WEBHOOK_URL"].presence
+      WEBHOOK_ENVS.lazy.map { |env| ENV[env].presence }.find(&:itself)
     end
 
     # Length as Discord counts it: UTF-16 code units (it is a JS string length), so

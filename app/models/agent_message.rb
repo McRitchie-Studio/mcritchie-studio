@@ -31,7 +31,9 @@ class AgentMessage < ApplicationRecord
   # References, the trust verdict) lives in `envelope`. web: AgentMessages::WebIngest,
   # from a signed-in app owner's or admin's chat with the app's CTO on
   # /applications/:slug/chat (docs/agents/system/agent-message-loop.md, "Web chat").
-  CHANNELS = %w[discord email web].freeze
+  # slack: AgentMessages::SlackIngest, from the Slack Events API
+  # (POST /webhooks/slack/events); the DM flag (channel_type) lives in `envelope`.
+  CHANNELS = %w[discord email web slack].freeze
   # The channels whose reader shows "typing…" while an answer runs: Discord
   # through the replying bot, the web chat over its Turbo stream. Email has none.
   TYPING_CHANNELS = %w[discord web].freeze
@@ -41,7 +43,8 @@ class AgentMessage < ApplicationRecord
   OPEN_STATUSES = %w[received claimed].freeze
   # alias and name are email's (AgentMessages::EmailRoutes): a CTO's own address,
   # or a CTO named in a mail to team@. chat is the web chat's: the app's CTO.
-  ROUTED_BY = %w[user role thread default none alias name chat].freeze
+  # mention is Slack's: the app itself was @-mentioned (or DMed) with no soul named.
+  ROUTED_BY = %w[user role thread default none alias name chat mention].freeze
   REPLY_STATUSES = %w[queued posted skipped failed].freeze
 
   # How long a claim holds before another worker may take the message. A
@@ -549,7 +552,15 @@ class AgentMessage < ApplicationRecord
     "https://discord.com/channels/#{guild_id}/#{channel_ref}/#{message_id}"
   end
 
-  def reply_url = reply_external_id.present? ? discord_url(reply_external_id) : nil
+  # A link to this row's message on its medium (Discord or Slack), or nil.
+  def message_url(message_id = external_id)
+    return discord_url(message_id) if channel == "discord"
+    return Media.adapter("slack").message_url(self, message_id) if channel == "slack"
+
+    nil
+  end
+
+  def reply_url = reply_external_id.present? ? message_url(reply_external_id) : nil
 
   # The JSON the API and bin/agent-inbox read.
   def as_api_json(events: false)
@@ -560,7 +571,7 @@ class AgentMessage < ApplicationRecord
                  :created_at, :updated_at,
                  :claude_session_id, :claude_cwd, :reasoning, :run_meta, :envelope).as_json
     data["resume_command"] = resume_command
-    data["url"] = discord_url
+    data["url"] = message_url
     data["reply_url"] = reply_url
     data["person_id"] = person_id
     if events

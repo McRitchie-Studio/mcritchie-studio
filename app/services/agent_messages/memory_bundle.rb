@@ -289,6 +289,9 @@ module AgentMessages
       when "web" then @message.guild_id.blank? && !AgentChat.thread?(@message.thread_key)
       when "email" then (@message.envelope || {}).dig("trust", "verified") == true
       when "discord" then @message.guild_id.blank?
+      # A Slack DM to the app (channel_type im, stamped at ingest): only the
+      # sender and the app read it.
+      when "slack" then (@message.envelope || {})["channel_type"] == "im"
       else false
       end
     end
@@ -367,10 +370,20 @@ module AgentMessages
     def place(row)
       key = [ row.guild_id.to_s, row.channel_ref.to_s ]
       name = (@places || {})[key]
+      return slack_place(row) if row.channel == "slack"
       return "[#{row.channel}]" unless row.channel == "discord"
       return "[discord channel #{row.channel_ref.to_s.gsub(/\D/, '')[0, 25]}]" unless name
 
       "[discord #{name}]"
+    end
+
+    # A Slack row's place: the channel's name from config/agent_routes.yml (code,
+    # never a name a member chose), a DM, else the channel id.
+    def slack_place(row)
+      return "[slack dm]" if (row.envelope || {})["channel_type"] == "im"
+
+      name = AgentMessages::SlackRoutes.current.channel_name(row.channel_ref).to_s.gsub(/[^a-z0-9_-]/, "")[0, 40]
+      name.present? ? "[slack ##{name}]" : "[slack channel #{row.channel_ref.to_s.gsub(/[^A-Za-z0-9]/, '')[0, 25].downcase}]"
     end
 
     # { [guild, channel] => "#name" | "thread in #parent" } for every channel the
