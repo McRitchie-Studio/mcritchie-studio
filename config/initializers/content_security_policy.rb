@@ -40,7 +40,11 @@
 #   media-src    'self', blob:, R2's public host and presigned R2 URLs (the video
 #                pages play R2 files).
 #   connect-src  'self' and this host's websocket origin (Action Cable, Turbo
-#                Streams); every fetch the front end makes is same-origin.
+#                Streams); every fetch the front end makes is same-origin, except
+#                the voice row's model download on /profile: transformers.js's
+#                WebAssembly from its jsDelivr package path, and the speaker model
+#                from huggingface.co, which redirects to *.hf.co. script-src
+#                names that same package path for the runtime itself.
 #   frame-src    'self' (the broadcast and email-image previews), Google
 #                Calendar (the booking popup, Studio.booking_url) and
 #                docs.google.com, the Google Picker's own frame.

@@ -160,6 +160,19 @@ class ContentSecurityPolicyTest < ActionDispatch::IntegrationTest
     assert_includes directives["connect-src"], "https://*.hf.co"
   end
 
+  # [integration] voice-profile-on-every-profile: the voice row records from the
+  # microphone, so no Permissions-Policy may deny it. Rails' generated template
+  # ships `policy.microphone :none` commented out; uncommenting it would turn
+  # every setup into a silent refusal.
+  test "no permissions policy denies the microphone" do
+    get root_path
+
+    header = response.headers["Permissions-Policy"].to_s + response.headers["Feature-Policy"].to_s
+    refute_match(/microphone=\(\)|microphone 'none'/, header)
+    policy = Rails.application.config.permissions_policy
+    refute_equal [ "'none'" ], policy&.directives&.fetch("microphone", nil), "the app-wide policy denies the microphone"
+  end
+
   test "the policy is report-only with a per-request nonce on script-src only" do
     config = Rails.application.config
     assert config.content_security_policy_report_only
