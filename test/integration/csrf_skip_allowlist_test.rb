@@ -21,7 +21,9 @@ class CsrfSkipAllowlistTest < ActiveSupport::TestCase
                      "query-stripped telemetry row and is rate-limited (CspReportsController)",
     "unsubscribes" => "the one-click List-Unsubscribe POST comes from the mail client with no page; the URL's token is the credential",
     "webhooks/resend_events" => "Resend's server posts it; the svix signature is the credential (Webhooks::SvixSignature)",
-    "webhooks/resend_inbound" => "Resend's server posts it; the svix signature is the credential (Webhooks::SvixSignature)"
+    "webhooks/resend_inbound" => "Resend's server posts it; the svix signature is the credential (Webhooks::SvixSignature)",
+    "webhooks/slack_events" => "Slack's server posts it; the v0 HMAC-SHA256 signature over the raw body, five-minute window, is the " \
+                               "credential (AgentMessages::SlackSignature)"
   }.freeze
 
   EXCEPTION_STRATEGY = ActionController::RequestForgeryProtection::ProtectionMethods::Exception

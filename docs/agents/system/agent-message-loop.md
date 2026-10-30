@@ -448,7 +448,7 @@ to (`AgentMailbox.routed_souls`), and `--channel slack` narrows a run to Slack.
 **Replies** (`Media::Slack#deliver_reply`) post one `chat.postMessage` in the
 message's thread (`thread_ts` is the thread's root), as the soul: `username` from
 `Media.display_name`, `icon_url` an absolute PNG under
-`https://mcritchie.studio/agents/slack/` (or `agent_media.yml`
+`https://mcritchie.studio/slack-icons/` (or `agent_media.yml`
 `souls.<soul>.icon`). Markdown is converted to Slack mrkdwn
 (`Media::Slack::Format`). Slack has no typing indicator for a bot, so typing is
 off; `AgentMessage#reply_url` is the Slack permalink

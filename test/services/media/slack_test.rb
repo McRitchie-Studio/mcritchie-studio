@@ -58,7 +58,7 @@ class MediaSlackTest < ActiveSupport::TestCase
     assert_equal "xoxb-test", call[:token]
     params = call[:params]
     assert_equal [ CHAN, "1761800000.000100", "Avi" ], params.values_at(:channel, :thread_ts, :username)
-    assert_equal "https://mcritchie.studio/agents/slack/avi.png", params[:icon_url], "an absolute public URL"
+    assert_equal "https://mcritchie.studio/slack-icons/avi.png", params[:icon_url], "an absolute public URL"
     assert_equal "*Done.* See <https://mcritchie.studio/tasks|the board>", params[:text]
 
     message.reload
@@ -69,7 +69,7 @@ class MediaSlackTest < ActiveSupport::TestCase
 
   test "[unit] identity_for: display name from the registry, portrait from agent_media.yml or the PNG beside souls.yml's avatar" do
     slack = Media::Slack.new(client: Media::Slack::Client.new(token: ""))
-    assert_equal({ username: "Turf", icon_url: "https://mcritchie.studio/agents/slack/turf-monster.png" }, slack.identity_for("turf_monster"))
+    assert_equal({ username: "Turf", icon_url: "https://mcritchie.studio/slack-icons/turf-monster.png" }, slack.identity_for("turf_monster"))
     custom = Media::Slack.new(config: Media::Config.new("souls" => { "avi" => { "icon" => "https://cdn.example/avi.png" } }))
     assert_equal "https://cdn.example/avi.png", custom.identity_for("avi")[:icon_url]
     assert_nil slack.identity_for("nobody_at_all")[:icon_url], "no portrait: Slack shows the app's own"

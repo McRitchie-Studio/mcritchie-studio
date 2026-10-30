@@ -90,7 +90,7 @@ module Media
 
     # How a soul appears on Slack: its display name (Media.display_name) and an
     # absolute portrait URL (agent_media.yml souls.<soul>.icon, else the PNG
-    # under public/agents/slack/ named after config/souls.yml's avatar).
+    # under public/slack-icons/ named after config/souls.yml's avatar).
     def identity_for(soul)
       { username: Media.display_name(soul), icon_url: icon_url(soul) }.compact
     end
@@ -181,7 +181,7 @@ module Media
       avatar = (soul_avatars[soul.to_s] || soul_avatars[soul.to_s.tr("_", "-")]).to_s
       return nil if avatar.blank?
 
-      png = "/agents/slack/#{File.basename(avatar, '.*')}.png"
+      png = "/slack-icons/#{File.basename(avatar, '.*')}.png"
       Rails.public_path.join(png.delete_prefix("/")).file? ? png : nil
     end
 

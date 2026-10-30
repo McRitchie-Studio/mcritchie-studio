@@ -119,7 +119,7 @@ class SlackEventsLoopTest < ActionDispatch::IntegrationTest
     method, params = calls.sole
     assert_equal "chat.postMessage", method
     assert_equal [ AGENTS, "1761800000.000100", "Avi", "*Green.* QA passed." ], params.values_at(:channel, :thread_ts, :username, :text)
-    assert_match %r{\Ahttps://.+/agents/slack/avi\.png\z}, params[:icon_url]
+    assert_match %r{\Ahttps://.+/slack-icons/avi\.png\z}, params[:icon_url]
     row.reload
     assert_equal [ "posted", "1761800005.000900" ], [ row.reply_status, row.reply_external_id ]
 
