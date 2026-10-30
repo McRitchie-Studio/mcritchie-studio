@@ -6384,6 +6384,13 @@ def ship_containment_holds(app_groups)
   holds = Release::MemberContainment.holds(
     groups: app_groups, main_shas: ship_evidence,
     code_shas: ->(repo, member) { member_code_shas(repo, member) },
+    # An unreadable PR (the deployer App cannot read voicebox/alex-build PRs,
+    # rel-20261029-00560a) falls back to git: the PR's refs/pull/<n>/head read with
+    # the credential that just pushed main. A refuted head still holds.
+    fallback_shas: lambda { |repo, member|
+      Release::MemberContainment.git_fallback_shas(path: repo_path(repo), member: member, repo: repo,
+                                                   deadline: read_deadline)
+    },
     contains: lambda { |repo, sha, main_sha|
       Release::MemberContainment.git_verdict(path: repo_path(repo), sha: sha, main_sha: main_sha, deadline: read_deadline)
     }
@@ -9602,17 +9609,28 @@ def prod_up_ok?(base_url)
   status.success? && out.strip == "200"
 end
 
+# The deploy workflow's recent runs, or nil when they could not be READ (as
+# opposed to [] — read, and none). A credential refusal is retried once with a
+# freshly minted lane token (GhAuthRetry), the same recovery member_code_shas
+# makes: on rel-20261029-00560a a dry finalize reported "no successful
+# prod-deploy.yml run whose headSha is the frozen SHA" for a hub whose run at that
+# SHA had succeeded, because an unreadable list and an empty one read the same.
 def deploy_workflow_runs(workflow, path)
   wf = workflow.to_s.strip
   return [] if wf.empty?
 
-  out, status = bounded_capture2e("gh", "run", "list", "--workflow", wf, "--limit", "20",
-                                  "--json", "databaseId,headSha,status,conclusion", chdir: path)
-  return [] unless status.success?
+  argv = ["gh", "run", "list", "--workflow", wf, "--limit", "20",
+          "--json", "databaseId,headSha,status,conclusion"]
+  out, status = bounded_capture2e(*argv, chdir: path)
+  if !status.success? && GhAuthRetry.auth_failure?(out)
+    token = GhAuthRetry.mint
+    out, status = bounded_capture2e(*argv, chdir: path, env: gh_token_env(token)) if token
+  end
+  return nil unless status.success?
 
   JSON.parse(out)
-rescue JSON::ParserError
-  []
+rescue JSON::ParserError, StandardError
+  nil
 end
 
 # The prod smoke URL for a group: the adapter's smoke_url, or the hub's PROD_URL
@@ -9640,17 +9658,17 @@ end
 # finalize refusal needs when the answer is no. Splitting the two would mean a
 # second `/up` poll and a second Heroku read per refusing repo; asking both
 # questions of one set of reads costs nothing and cannot disagree with itself.
-# UNDER --dry-run THIS PREVIEWS A REFUSAL THE REAL RUN WOULD NOT GIVE, and the
-# asymmetry is deliberate rather than overlooked: `heroku_releases` short-circuits to
-# [] on DRY (it is a network read), while `prod_up_ok?` and `origin_main_sha` run
-# live. So a DRY finalize preview shows an inline app as unconfirmed — its
-# deployed_at_sha is false by construction — where the real run reads the release and
-# confirms it. Read a DRY refusal here as "not evaluated", never as the verdict.
+# UNDER --dry-run EVERY PROBE HERE READS LIVE, `heroku_releases` included. It used to
+# short-circuit to [] on DRY, so a dry finalize preview refused every inline app
+# (alex-build, voicebox, turf-monster on rel-20261029-00560a) for a reason the real
+# run would not give. A read mutates nothing; the preview now shows the real verdict.
 # post_ship: true is `bin/release cycle`'s prod verify, right after a ship: a Heroku
 # app counts as live when its newest Deploy is the frozen SHA and only config-only
 # releases (an EXPECTED_IDL_HASH set, a rotation) came after it
 # (ShipSequence.heroku_live_at_sha_through_config?). The finalize guard calls it
-# without, and keeps the strict "the CURRENT release is our deploy" rule.
+# that way too (a finalize runs after a ship by definition). Only deploy_app's
+# re-dispatch skip (deploy_already_live?) keeps the strict "the CURRENT release is
+# our deploy" rule.
 POST_SHIP_HEROKU_RELEASES = 20
 
 def deploy_live_verdict(group, frozen, post_ship: false)
@@ -9659,12 +9677,8 @@ def deploy_live_verdict(group, frozen, post_ship: false)
 
   adapter  = group["prod_deploy"] || {}
   strategy = adapter["strategy"].to_s
-  run_success =
-    if strategy == "github_actions"
-      Release::ShipSequence.prod_run_succeeded?(
-        deploy_workflow_runs(adapter["workflow"], repo_path(group["repo"])), frozen
-      )
-    end
+  runs = strategy == "github_actions" ? deploy_workflow_runs(adapter["workflow"], repo_path(group["repo"])) : []
+  run_success = (Release::ShipSequence.prod_run_succeeded?(runs, frozen) if strategy == "github_actions")
 
   # THE INLINE STRATEGIES' MARKER. git_push_heroku and repo_script deploy AFTER
   # main advances, so main_at_sha proves nothing about them and
@@ -9708,6 +9722,7 @@ def deploy_live_verdict(group, frozen, post_ship: false)
   gap = Release::ShipSequence.deploy_gap_reason(
     **signals, heroku_app: heroku_app, workflow: adapter["workflow"].to_s, smoke_url: smoke_url
   )
+  gap = "#{gap} (the `gh run list` read itself failed, so this is unproven rather than disproven)" if runs.nil? && !gap.empty?
   [gap.empty?, gap]
 end
 
@@ -9723,7 +9738,7 @@ end
 # printed. capture3 keeps the streams apart; stderr is deliberately discarded.
 def heroku_releases(app, limit: 5)
   name = app.to_s.strip
-  return [] if DRY || name.empty?
+  return [] if name.empty?
 
   out, _err, status = bounded_capture3("heroku", "releases", "--app", name, "--json", "-n", limit.to_s)
   return [] unless status.success?
@@ -10925,7 +10940,14 @@ def finalize(slug = nil)
     # thing — and the remedies diverge completely (deploy the app / add one line to
     # the registry / wait for a run). deploy_live_verdict returns the phrase from
     # the same probes the verdict came from.
-    verdicts = app_groups.to_h { |g| [g["repo"], deploy_live_verdict(g, ship_sha[g["repo"]])] }
+    # post_ship: true — the SAME tolerant proof `bin/release cycle`'s prod verify
+    # uses: a Heroku app is live when its newest Deploy is the frozen SHA and only
+    # config-only releases came after it. finalize runs after a ship by definition,
+    # and turf-monster's bin/deploy sets EXPECTED_IDL_HASH after its push, so the
+    # strict "the CURRENT release is our Deploy" read refused a healthy ship
+    # (rel-20261029-00560a). A rollback, another Deploy, or an unknown release on
+    # top still refuses.
+    verdicts = app_groups.to_h { |g| [g["repo"], deploy_live_verdict(g, ship_sha[g["repo"]], post_ship: true)] }
     not_live = app_groups.reject { |g| verdicts[g["repo"]].first }
     if not_live.any?
       names = not_live.map { |g| "#{g['repo']} @ #{short(ship_sha[g['repo']])} — #{verdicts[g['repo']].last}" }

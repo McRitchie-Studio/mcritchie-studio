@@ -395,13 +395,14 @@ It **proves the frozen SHA is live first**, then records; it never deploys:
 | Strategy | Apps | What proves it |
 |---|---|---|
 | `github_actions` | mcritchie-studio | `origin/main` at the frozen SHA, prod `/up` 200, and a `prod-deploy.yml` run whose `headSha` is that SHA concluded success |
-| `git_push_heroku` | mcritchie-industries, rolio | prod `/up` 200, and the app's **current** Heroku release is a succeeded `Deploy <frozen sha>` (app from the adapter's `remote:`) |
+| `git_push_heroku` | mcritchie-industries, rolio | prod `/up` 200, and the app's newest Heroku `Deploy` is a succeeded `Deploy <frozen sha>` with only config-only releases (a config var set, an add-on attach) after it (app from the adapter's `remote:`) |
 | `repo_script` | turf-monster | the same Heroku proof, against `prod_deploy.heroku_app:`; it also needs `prod_deploy.smoke_url:` (a bare origin: the ship appends `/up`) or the repo can never be confirmed |
 | `static_cloudflare` | none yet (an app after its cutover) | prod `/up` 200, and `<smoke_url>/static-release.json` names the frozen SHA ([`static-cloudflare.md`](../../../modules/static-cloudflare.md)) |
 
 Per-repo refusals: `prod /up did not answer 200` wants a deploy (`bin/release ship`);
-`<app>'s CURRENT Heroku release is not a succeeded Deploy …` means a config change or
-rollback landed on top; `names no Heroku app` / `declares no smoke_url …` are registry
+`<app>'s newest Heroku Deploy is not a succeeded Deploy <frozen sha> …` means another
+deploy or a rollback landed on top (a config-only release on top is tolerated);
+`names no Heroku app` / `declares no smoke_url …` are registry
 fixes. After a finalize-confirmed turf-monster IDL bump, check the tighten landed:
 
 ```bash
@@ -623,6 +624,9 @@ A member whose own commit is not in the `main` the ship pushed for its repo is t
 exception: the ship prints `⚠ containment hold: <note>`, leaves it at its stage and
 comments the missing commit on its task. Ship it on a release whose `main` contains
 that commit; an unreadable check clears with `bin/release finalize <release>`.
+A PR the ship's token cannot read (`Resource not accessible by integration`) does
+not hold on its own: the check falls back to git, reading the PR's
+`refs/pull/<n>/head` and asking whether it is an ancestor of the shipped `main`.
 A hold that names a PR read failing on a stale or wrong PR URL: fix the URL
 (`bin/task update <slug> --pr-url-for <repo>=<url>`), then run `bin/release finalize
 <release>`. A held member's `merged` column can read `main` (stamped per repo at the
