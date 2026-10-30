@@ -126,6 +126,18 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     refute_includes css_select("[data-test='google-user-data']").text.squish, "nothing we ask Google for can send, change or delete"
   end
 
+  # [component] voice-profile-on-every-profile: the voice row on /profile makes
+  # the browser download a speech model, so the policy names both download hosts,
+  # says what is stored (a pattern, never recordings) and how to delete it.
+  test "[component] /privacy names the voice model's download hosts and what is kept" do
+    get privacy_path
+
+    text = css_select("[data-test='voice-profile-privacy']").first&.text&.squish
+    assert text, "the voice profile paragraph renders"
+    [ "Hugging Face (huggingface.co)", "jsDelivr (cdn.jsdelivr.net)", "voice pattern",
+      "We never receive or keep the recordings", "delete your voice pattern from your profile" ].each { assert_includes text, _1 }
+  end
+
   # [component] /privacy doubles as the Messaging Terms and Conditions a carrier
   # reads when it reviews the SMS registration. Each line below is one they check.
   test "privacy page is the combined privacy policy and messaging terms" do
@@ -133,7 +145,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "h1", text: "Privacy Policy and Messaging Terms and Conditions"
-    assert_includes response.body, "Last updated: October 27, 2026"
+    assert_includes response.body, "Last updated: October 29, 2026"
     text = css_select("[data-test='privacy-page']").text.squish
     assert_includes text, "McRitchie Studio LLC (doing business as McRitchie Studio)"
     assert_includes text, "3000 Lawrence St, Denver, CO 80205"

@@ -71,6 +71,14 @@ module HubCsp
   # The Google Picker (/tasks/drive-files-you-pick): its loader's host, and the frame it opens.
   GOOGLE_APIS = "https://apis.google.com".freeze
   GOOGLE_PICKER_FRAME = "https://docs.google.com".freeze
+  # The voice row on /profile (studio-engine docs/VOICE_PROFILE.md): the
+  # speaker model's runtime (transformers.js) and its onnxruntime WebAssembly,
+  # both from this one jsDelivr package path (a path, not the whole CDN; keep
+  # the version equal to Studio::VoiceMatch::TRANSFORMERS_VERSION), and the
+  # model itself from Hugging Face, which redirects the file to *.hf.co.
+  TRANSFORMERS_JS = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/".freeze
+  HUGGING_FACE = "https://huggingface.co".freeze
+  HUGGING_FACE_FILES = "https://*.hf.co".freeze
 
   # Inline scripts that run on EVERY page from the layout body, allowed by their
   # SHA-256 as well as (where we control the tag) the nonce. Why a hash too: a Turbo
@@ -125,12 +133,12 @@ end
 Rails.application.configure do
   config.content_security_policy do |policy|
     policy.default_src     :self
-    policy.script_src      :self, :unsafe_eval, :report_sample, HubCsp::CROPPER_JS, HubCsp::GOOGLE_APIS, *HubCsp::PINNED_SCRIPT_HASHES.values
+    policy.script_src      :self, :unsafe_eval, :report_sample, HubCsp::CROPPER_JS, HubCsp::GOOGLE_APIS, HubCsp::TRANSFORMERS_JS, *HubCsp::PINNED_SCRIPT_HASHES.values
     policy.style_src       :self, :unsafe_inline, HubCsp::CROPPER_CSS
     policy.img_src         :self, :data, :blob, :https
     policy.media_src(*HubCsp.media_sources)
     policy.font_src        :self, :data
-    policy.connect_src     :self, HubCsp::CABLE_ORIGIN
+    policy.connect_src     :self, HubCsp::CABLE_ORIGIN, HubCsp::TRANSFORMERS_JS, HubCsp::HUGGING_FACE, HubCsp::HUGGING_FACE_FILES
     policy.frame_src       :self, HubCsp::GOOGLE_CALENDAR, HubCsp::GOOGLE_PICKER_FRAME
     policy.worker_src      :self, :blob
     policy.object_src      :none

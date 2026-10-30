@@ -21,12 +21,12 @@ class ContentSecurityPolicyTest < ActionDispatch::IntegrationTest
     hashes = HubCsp::PINNED_SCRIPT_HASHES.values.map { |hash| "'#{hash}'" }.join(" ")
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' 'report-sample' https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js https://apis.google.com #{hashes} 'nonce-#{nonce}'",
+      "script-src 'self' 'unsafe-eval' 'report-sample' https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js https://apis.google.com https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/ #{hashes} 'nonce-#{nonce}'",
       "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css",
       "img-src 'self' data: blob: https:",
       "media-src 'self' blob: https://assets.mcritchie.studio https://*.r2.cloudflarestorage.com",
       "font-src 'self' data:",
-      "connect-src 'self' ws://www.example.com",
+      "connect-src 'self' ws://www.example.com https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/ https://huggingface.co https://*.hf.co",
       "frame-src 'self' https://calendar.google.com https://docs.google.com",
       "worker-src 'self' blob:",
       "object-src 'none'",
@@ -144,6 +144,20 @@ class ContentSecurityPolicyTest < ActionDispatch::IntegrationTest
     assert_includes directives["frame-src"], "https://docs.google.com"
     refute(directives["script-src"].any? { _1.to_s.include?("*") }, "no wildcard script host")
     refute_includes directives["script-src"], "https://docs.google.com"
+  end
+
+  # [unit] voice-profile-on-every-profile: the voice row's model downloads.
+  # The runtime may run only from its own pinned package path, never the whole
+  # CDN, and the model may be fetched from Hugging Face and nowhere it may run.
+  test "the policy admits the voice model's runtime path and its download hosts only" do
+    directives = Rails.application.config.content_security_policy.directives
+    runtime = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/"
+    assert_includes directives["script-src"], runtime
+    refute_includes directives["script-src"], "https://cdn.jsdelivr.net"
+    refute_includes directives["script-src"], "https://huggingface.co"
+    assert_includes directives["connect-src"], runtime
+    assert_includes directives["connect-src"], "https://huggingface.co"
+    assert_includes directives["connect-src"], "https://*.hf.co"
   end
 
   test "the policy is report-only with a per-request nonce on script-src only" do
