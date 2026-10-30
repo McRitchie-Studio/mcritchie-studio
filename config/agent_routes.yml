@@ -79,6 +79,54 @@ discord:
   #         roles: ["444444444444444444"]   # @Alex
   #         users: []
 
+# SLACK (docs/agents/system/agent-message-loop.md, "Slack"), read by
+# AgentMessages::SlackRoutes. Slack's Events API posts every message the
+# McRitchie Agents app can see to POST /webhooks/slack/events (signed with
+# SLACK_SIGNING_SECRET); AgentMessages::SlackIngest stores the ADDRESSED ones.
+#
+# THE WORKSPACE IS THE BOUNDARY: an event from any team but `team_id` is
+# dropped. Every channel the app is a member of is read, and every DM to it.
+#
+# ONE APP POSTS AS EVERY SOUL (custom username and portrait per message), so an
+# @-mention of the app names no soul by itself. A message is routed, the first
+# rule that matches winning:
+#   1. NAME. Its text (after a leading @McRitchie Agents mention, if any) opens
+#      by addressing a soul's `names`: "Avi, …", "Avi: …", "Hi Avi, …", "@Avi …"
+#      (the email name matcher, AgentMessages::EmailRoutes.addressed_to?).
+#   2. THREAD. A reply in a thread the mailbox holds continues that thread's soul.
+#   3. MENTION. It mentions the app (<@bot_user_id>, an app_mention) or is a DM to
+#      it: `mention_soul` answers.
+#   4. The channel override's `default_soul`.
+# Anything else is dropped unstored. Anything a bot wrote is never ingested: an
+# event with a bot_id or subtype bot_message (our own posts come back, and the
+# Steffon Admin app's), or from `bot_user_id` itself. Edits and deletes are ignored.
+#
+# `owner_user_id` is Alex McRitchie's Slack user: linked to the owner person
+# (AgentPerson.seed_owner!, migration LinkOwnerSlackIdentity), so his messages
+# are answered, not held.
+slack:
+  team_id: "T0CC9DQ9NAK"              # McRitchie Studio
+  bot_user_id: "U0CE93ACBA4"          # McRitchie Agents (app A0CDCN1Q9AS, bot B0CD8EZFSPM)
+  owner_user_id: "U0CCSMUMQJV"        # Alex McRitchie
+  mention_soul: alex                  # who answers a bare @McRitchie Agents or a DM
+  souls:
+    avi:
+      names: ["Avi"]
+    alex:
+      names: ["Alex"]
+    turf_monster:
+      names: ["Turf"]
+  # Optional overrides, never an allow-list (as for Discord):
+  #   default_soul: avi   unaddressed messages in this channel go to avi
+  #   ignore: true        mute the channel, mentions included
+  channels:
+    "C0CD8ETBZBM":
+      name: agents                    # name- or mention-routed; no default soul
+    "C0CDEG43ECS":
+      name: ops                       # the floor alert's home once it moves (card 6)
+    "C0CDJCN4L92":
+      name: releases                  # release notes' home once flipped
+
 # EMAIL (docs/agents/system/agent-message-loop.md, "Email"), read by
 # AgentMessages::EmailRoutes. Mail to team@ reaches the hub through the Resend
 # inbound (DeskCaptureResendIngestJob), is captured on the desk as always, and

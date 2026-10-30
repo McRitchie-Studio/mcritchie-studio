@@ -49,6 +49,15 @@ module Api
       rescue Media::NoHome => e
         create_error_log(e)
         render_error(e.message, error_code: "MISSING_WEBHOOK")
+      rescue Psych::Exception => e
+        # A malformed config/agent_media.yml (Media::Config.load): a named
+        # refusal, not a 500.
+        create_error_log(e)
+        render_error("config/agent_media.yml could not be read: #{e.message}", error_code: "MEDIA_CONFIG_INVALID")
+      rescue Media::Error => e
+        # A Slack home's failure (Media::Slack::NotPosted, Refused, Ambiguous).
+        create_error_log(e)
+        render_error(e.message, error_code: "DELIVERY_FAILED")
       end
 
       private

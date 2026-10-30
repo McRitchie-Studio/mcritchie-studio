@@ -490,6 +490,10 @@ module AgentMailbox
       when "web"
         "someone sent you in the web chat on McRitchie Studio; your reply appears in that chat " \
           "and renders as Markdown (keep it short, as in a chat)"
+      when "slack"
+        "someone posted to you in Slack; your reply posts in that message's Slack thread under your " \
+          "own name and portrait (keep it short, as in a chat; **bold**, lists and [links](url) are " \
+          "converted to Slack's format, tables are not)"
       else
         "someone posted to you in #{@message['channel'].to_s.capitalize}"
       end

@@ -71,7 +71,7 @@ module Media
     #                the one already made). Pass `bot:` to post as another.
     #   webhook_env  ReleaseNotes::DiscordClient delivers `content` and/or
     #                `embeds` to the first set webhook, split over Discord's
-    #                limits. With none set the client raises MissingWebhook.
+    #                limits. With none set it raises MissingWebhook.
     #
     # Raises ArgumentError for a home with no channel; callers check
     # Home#channel? first.
@@ -81,10 +81,13 @@ module Media
       if home.channel_id
         (bot || AgentMessages::DiscordBot.new).post_message(home.channel_id, content: content.to_s, nonce: nonce)
       else
-        deliver = { content: content, embeds: embeds }
+        # The home's OWN webhook, never DiscordClient's release-notes default:
+        # a channel whose env vars are all unset raises, rather than posting
+        # its content into #releases.
         url = home.webhook_url
-        deliver[:webhook_url] = url if url
-        ReleaseNotes::DiscordClient.deliver(**deliver)
+        raise ReleaseNotes::DiscordClient::MissingWebhook, "#{home.label}: #{home.webhook_envs.join(', ')} unset" unless url
+
+        ReleaseNotes::DiscordClient.deliver(content: content, embeds: embeds, webhook_url: url)
       end
     end
 

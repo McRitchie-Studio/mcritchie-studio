@@ -123,15 +123,20 @@ module AgentMessages
       Result.new(soul: nil, routed_by: "none", detail: { "reason" => "not to a CTO alias and no CTO named" })
     end
 
+    # Whether `value` OPENS by addressing one of `names`: `Avi, …`, `Avi: …`,
+    # `Hi Avi, …`, `@Avi …`. A name merely appearing in a sentence is not one.
+    # Shared with Slack's name prefix (AgentMessages::SlackRoutes).
+    def self.addressed_to?(value, names)
+      Array(names).any? do |name|
+        n = Regexp.escape(name)
+        value.to_s.match?(/\A@#{n}\b/i) || value.to_s.match?(/\A#{GREETING}#{n}\s*[,:]/i)
+      end
+    end
+
     private
 
     def named(value)
-      @souls.find do |s|
-        s.names.any? do |name|
-          n = Regexp.escape(name)
-          value.match?(/\A@#{n}\b/i) || value.match?(/\A#{GREETING}#{n}\s*[,:]/i)
-        end
-      end
+      @souls.find { |s| self.class.addressed_to?(value, s.names) }
     end
   end
 end
