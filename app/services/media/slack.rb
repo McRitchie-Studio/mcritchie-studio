@@ -178,7 +178,7 @@ module Media
 
     def default_icon_path(soul)
       # The mailbox's turf_monster is config/souls.yml's turf-monster.
-      avatar = (soul_avatars[soul.to_s] || soul_avatars[soul.to_s.tr('_', '-')]).to_s
+      avatar = (soul_avatars[soul.to_s] || soul_avatars[soul.to_s.tr("_", "-")]).to_s
       return nil if avatar.blank?
 
       png = "/agents/slack/#{File.basename(avatar, '.*')}.png"
