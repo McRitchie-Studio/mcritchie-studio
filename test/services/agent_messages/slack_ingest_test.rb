@@ -166,6 +166,175 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
     shipped.routed_souls.each { |soul| assert_includes AgentMailbox.routed_souls, soul, "bin/dispatcher serves #{soul}" }
   end
 
+  # --- CLEARANCE (slack-agent-channel-guardrails) ---------------------------
+
+  GENERAL = "C0GENERAL1".freeze
+  TURFCH = "C0TURFAPP1".freeze
+  BARE = "C0BAREAPP1".freeze
+
+  def guarded_routes
+    routes(
+      "souls" => { "avi" => { "names" => [ "Avi" ] }, "alex" => { "names" => [ "Alex" ] },
+                   "turf_monster" => { "names" => [ "Turf" ] }, "mason" => { "names" => [ "Mason" ] },
+                   "steffon" => { "names" => [ "Steffon" ] }, "mack" => { "names" => [ "Mack" ] },
+                   "tywin" => { "names" => [ "Tywin" ] } },
+      "core_souls" => %w[alex steffon mason mack avi],
+      "recognized" => { "carl" => { "names" => [ "Carl" ] }, "tyrion" => { "names" => [ "Tyrion" ] },
+                        "mason" => { "names" => [ "Mase" ] } },
+      "channels" => { GENERAL => { "name" => "agents-general", "open" => true },
+                      TURFCH => { "name" => "turf-monster", "souls" => [ "turf_monster" ], "default_soul" => "turf_monster" },
+                      BARE => { "name" => "rolio", "souls" => [] },
+                      DESK => { "name" => "desk", "default_soul" => "avi" } }
+    )
+  end
+
+  test "[unit] SlackRoutes clearance: open admits all, souls: admits core plus its own, no config admits all" do
+    r = guarded_routes
+    %w[tywin turf_monster tyrion mason].each { |soul| assert r.cleared?(GENERAL, soul), "#agents-general is open to #{soul}" }
+
+    %w[turf_monster alex steffon mason mack avi].each { |soul| assert r.cleared?(TURFCH, soul), "#{soul} is cleared in #turf-monster" }
+    %w[tywin tyrion hank].each { |soul| refute r.cleared?(TURFCH, soul), "#{soul} is not cleared in #turf-monster" }
+    assert_equal %w[alex steffon mason mack avi turf_monster], r.cleared_souls(TURFCH)
+
+    assert_equal %w[alex steffon mason mack avi], r.cleared_souls(BARE), "souls: [] is the core five only"
+    refute r.cleared?(BARE, "turf_monster")
+
+    [ DESK, CHAN, "D0DIRECT01" ].each do |ch|
+      assert r.cleared?(ch, "tywin"), "#{ch}: no clearance config keeps today's behaviour"
+      assert_nil r.cleared_souls(ch)
+    end
+    assert_match(/soul not cleared for this channel: tywin may not answer in #turf-monster/, r.clearance_reason(TURFCH, "tywin"))
+  end
+
+  test "[unit] name routing: Mason, Steffon, Mack and Tywin are addressable by name" do
+    r = guarded_routes
+    { "Mason, hello" => "mason", "Steffon: rotate the key" => "steffon", "Hi Mack, the books?" => "mack",
+      "@Tywin status" => "tywin", "<@#{BOT}> Mason, you there?" => "mason" }.each do |text, soul|
+      assert_equal soul, r.named(text), text
+    end
+    assert_nil r.named("Mackenzie, hi"), "a longer word is not the name"
+
+    row = ingest(r).call(event("Mason, hello", "channel" => GENERAL), team_id: TEAM)
+    assert_equal [ "mason", "name", "received" ], [ row.soul_slug, row.routed_by, row.status ]
+  end
+
+  test "[unit] held for clearance: a soul named in a channel it is not cleared for is stored held with the reason" do
+    with_routes(guarded_routes) do
+      owner = AgentPerson.seed_owner! # links the test owner's Slack user
+      row = ingest(guarded_routes).call(event("Tywin, how are the players?", "channel" => TURFCH), team_id: TEAM)
+      assert_equal [ "tywin", "name", "held", owner.id ], [ row.soul_slug, row.routed_by, row.status, row.person_id ]
+      hold = row.events.find_by!(kind: "held")
+      assert_equal "slack-clearance", hold.actor
+      assert_match(/soul not cleared for this channel/, hold.detail["reason"])
+      refute_match(/sender's role/, hold.detail["reason"], "the owner is answered: clearance is the only cause")
+      assert_equal %w[alex steffon mason mack avi turf_monster], hold.detail["cleared"]
+      assert_equal %w[received routed held], row.events.order(:id).map(&:kind)
+      assert_nil AgentMessage.claim!(soul: %w[tywin], worker: "w1").message, "a clearance hold is never claimed"
+
+      cleared = ingest(guarded_routes).call(event("Mason, hello", "channel" => TURFCH), team_id: TEAM)
+      assert_equal [ "mason", "received" ], [ cleared.soul_slug, cleared.status ]
+      default = ingest(guarded_routes).call(event("odds are stale", "channel" => TURFCH), team_id: TEAM)
+      assert_equal [ "turf_monster", "default", "received" ], [ default.soul_slug, default.routed_by, default.status ]
+    end
+  end
+
+  test "[unit] held for clearance by thread: a reply that inherits an uncleared soul is held too" do
+    with_routes(guarded_routes) do
+      AgentPerson.seed_owner!
+      root = ingest(guarded_routes).call(event("Tywin, hi", "channel" => TURFCH), team_id: TEAM)
+      reply = ingest(guarded_routes).call(event("still there?", "channel" => TURFCH, "thread_ts" => root.external_id.split(":").last),
+                                          team_id: TEAM)
+      assert_equal [ "tywin", "thread", "held" ], [ reply.soul_slug, reply.routed_by, reply.status ]
+    end
+  end
+
+  test "[unit] a recognized-only name is routed to its soul and held as unable to answer, never left to the channel default" do
+    r = guarded_routes
+    assert_equal "carl", r.named("Carl, review this?")
+    refute r.answers?("carl")
+    refute_includes r.routed_souls, "carl", "bin/dispatcher never serves a recognized-only soul"
+    assert_nil r.named("Mase, hi"), "a served soul is never shadowed by a recognized entry"
+    with_routes(r) do
+      AgentPerson.seed_owner!
+      [ TURFCH, GENERAL, CHAN ].each do |ch|
+        row = ingest(r).call(event("Carl, review this?", "channel" => ch), team_id: TEAM)
+        assert_equal [ "carl", "name", "held" ], [ row.soul_slug, row.routed_by, row.status ], ch
+        hold = row.events.find_by!(kind: "held")
+        assert_match(/soul cannot answer yet: carl/, hold.detail["reason"])
+        refute_match(/sender's role/, hold.detail["reason"])
+      end
+    end
+  end
+
+  test "[unit] a held row for a recognized-only soul cannot be released into a thread nobody serves" do
+    with_routes(guarded_routes) do
+      AgentPerson.seed_owner!
+      row = ingest(guarded_routes).call(event("Carl, review this?", "channel" => GENERAL), team_id: TEAM)
+      error = assert_raises(AgentMessage::Refused) { row.release_hold!(actor: "admin:test") }
+      assert_equal "SOUL_UNSERVED", error.code
+      assert_equal "held", row.reload.status
+    end
+  end
+
+  test "[unit] a stranger naming an uncleared soul: one held event names both causes" do
+    AgentMessages::Answerers.reset!
+    with_routes(guarded_routes) do
+      row = ingest(guarded_routes, answerers: AgentMessages::Answerers.current)
+            .call(event("Tywin, hi", "channel" => TURFCH, "user" => STRANGER), team_id: TEAM)
+      assert_equal "held", row.status
+      hold = row.events.where(kind: "held").sole
+      assert_match(/soul not cleared.*; sender's role \(public\) is not answered/, hold.detail["reason"])
+    end
+  end
+
+  test "[unit] the shipped clearance: agents-general open, app channels guarded, ops and releases unguarded, Tyrion nowhere" do
+    shipped = AgentMessages::SlackRoutes.load
+    assert_equal %w[alex steffon mason mack avi], shipped.core_souls
+    assert shipped.override("C0CD8ETBZBM").open?, "#agents-general is open"
+    assert_equal "agents-general", shipped.channel_name("C0CD8ETBZBM")
+    %w[C0CDEG43ECS C0CDJCN4L92].each { |id| assert_nil shipped.cleared_souls(id), "#{shipped.channel_name(id)} keeps today's behaviour" }
+
+    by_name = %w[turf-monster cyvasse commercial-welding alex-build rolio].to_h do |name|
+      id = shipped.channel_id_named(name)
+      assert id, "##{name} is configured"
+      [ name, id ]
+    end
+    assert_includes shipped.cleared_souls(by_name["turf-monster"]), "turf_monster"
+    assert_equal "turf_monster", shipped.default_soul(by_name["turf-monster"])
+    assert_includes shipped.cleared_souls(by_name["cyvasse"]), "tywin"
+    assert_equal "tywin", shipped.default_soul(by_name["cyvasse"])
+    assert_includes shipped.cleared_souls(by_name["commercial-welding"]), "hank"
+    assert_equal shipped.core_souls, shipped.cleared_souls(by_name["rolio"])
+    refute shipped.cleared?(by_name["cyvasse"], "turf_monster")
+
+    %w[Carl Shannon Jasper Pokemon Tyrion Hank].each do |name|
+      soul = shipped.named("#{name}, hello")
+      assert soul, "#{name} is recognized"
+      refute shipped.answers?(soul), "#{soul} is recognized-only: held, not served"
+      refute_includes shipped.routed_souls, soul, "the slack block never serves #{soul} (Tyrion's web chat may)"
+    end
+
+    shipped.channels.each do |entry|
+      refute_includes Array(entry.souls), "tyrion", "Tyrion is client-facing: never cleared in ##{entry.name}"
+      next unless entry.default_soul
+
+      assert shipped.cleared?(entry.channel_id, entry.default_soul), "##{entry.name}'s default soul is cleared there"
+    end
+  end
+
+  test "[unit] the dispatcher can run every Slack soul: each is served and has a role doc for its owner persona" do
+    shipped = AgentMessages::SlackRoutes.load
+    %w[mason steffon mack tywin].each { |soul| assert_includes shipped.souls.keys, soul }
+    owner = AgentMailbox::Audience.new(role: "owner")
+    shipped.souls.each_key do |soul|
+      assert_includes AgentMailbox.routed_souls, soul, "bin/dispatcher serves #{soul}"
+      assert Rails.root.join("docs/agents/agents/#{soul}/role.md").file?, "#{soul} has the role doc the respond path reads"
+      layer = AgentMailbox::ContextBuilder.new(soul: soul, message: { "id" => 1, "channel" => "slack", "content" => "hi" },
+                                               context: {}, repo_root: Rails.root.to_s, audience: owner).general_layer
+      refute_includes layer, "no role doc found", soul
+    end
+  end
+
   private
 
   def with_routes(r)

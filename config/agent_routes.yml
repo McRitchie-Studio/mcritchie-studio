@@ -116,16 +116,102 @@ slack:
       names: ["Alex"]
     turf_monster:
       names: ["Turf"]
-  # Optional overrides, never an allow-list (as for Discord):
-  #   default_soul: avi   unaddressed messages in this channel go to avi
+    mason:
+      names: ["Mason"]
+    steffon:
+      names: ["Steffon"]
+    mack:
+      names: ["Mack"]
+    tywin:
+      names: ["Tywin"]
+  # Names a message may address that no dispatcher serves on Slack: routed to
+  # that soul and held ("soul cannot answer yet"), so "Carl, …" in an app channel
+  # is never answered by the channel's default soul. Move a soul to `souls:` to
+  # let it answer. Never served (not in AgentMailbox.routed_souls).
+  recognized:
+    carl:
+      names: ["Carl"]
+    shannon:
+      names: ["Shannon"]
+    jasper:
+      names: ["Jasper"]
+    pokemon:
+      names: ["Pokemon", "Pokémon"]
+    tyrion:
+      names: ["Tyrion"]
+    hank:
+      names: ["Hank"]
+  # CLEARANCE (Alex McRitchie, 2026-10-30: "some agents may not have clearance
+  # for public conversation"). Who may ANSWER in a channel, checked after routing:
+  #   open: true          every soul answers here (#agents-general)
+  #   souls: [...]        only these plus core_souls answer here (an app channel:
+  #                       its builder/operator soul)
+  #   neither             every soul answers (no clearance config: #ops, #releases)
+  # A message routed (name, thread, mention or default) to a soul not cleared in
+  # its channel is stored `held` with the reason, never answered unless an admin
+  # releases it. Tyrion is client-facing: never list him in an internal channel.
+  # core_souls are the McRitchie Studio agents, cleared on every guarded channel.
+  core_souls: [alex, steffon, mason, mack, avi]
+  # Per-channel overrides (never an allow-list of channels the app reads):
+  #   default_soul: avi   unaddressed messages in this channel go to avi (must be cleared)
   #   ignore: true        mute the channel, mentions included
   channels:
     "C0CD8ETBZBM":
-      name: agents                    # name- or mention-routed; no default soul
+      name: agents-general            # the no-holds-barred channel; name- or mention-routed
+      open: true
     "C0CDEG43ECS":
       name: ops                       # the floor alert's home once it moves (card 6)
     "C0CDJCN4L92":
       name: releases                  # release notes' home once flipped
+    # One channel per application (created by Steffon 2026-10-30): its builder
+    # soul plus core_souls; the app's operator, where one exists, is its default.
+    "C0CD66BGSSK":
+      name: "mcritchie-studio"
+      souls: []                     # core souls only: no app soul
+    "C0CDPEKDABB":
+      name: "turf-monster"
+      souls: [turf_monster]
+      default_soul: turf_monster
+    "C0CDG8ZQYTX":
+      name: "cyvasse"
+      souls: [tywin]
+      default_soul: tywin
+    "C0CD66G8Q6T":
+      name: "mcritchie-industries"
+      souls: []                     # core souls only: no app soul
+    "C0CDR8NHJ8L":
+      name: "commercial-welding"
+      souls: [hank]
+    "C0CDPELR66M":
+      name: "moms-app"
+      souls: []                     # core souls only: no app soul
+    "C0CDG90RUAH":
+      name: "dads-app"
+      souls: []                     # core souls only: no app soul
+    "C0CEFULHMJL":
+      name: "rantly"
+      souls: []                     # core souls only: no app soul
+    "C0CDKJNV8H4":
+      name: "10and5"
+      souls: []                     # core souls only: no app soul
+    "C0CDKJPMK3Q":
+      name: "portfolio"
+      souls: []                     # core souls only: no app soul
+    "C0CEFUNH6HW":
+      name: "prisoners-dilemma"
+      souls: []                     # core souls only: no app soul
+    "C0CDFAX6WAF":
+      name: "search-position"
+      souls: []                     # core souls only: no app soul
+    "C0CDPENPJ7K":
+      name: "weekly-lock"
+      souls: []                     # core souls only: no app soul
+    "C0CDFAXV9UK":
+      name: "rolio"
+      souls: []                     # core souls only: no app soul
+    "C0CD66KEPHD":
+      name: "alex-build"
+      souls: [alex]
 
 # EMAIL (docs/agents/system/agent-message-loop.md, "Email"), read by
 # AgentMessages::EmailRoutes. Mail to team@ reaches the hub through the Resend

@@ -436,7 +436,48 @@ and every other subtype, a muted channel, and an unaddressed message.
 2. **Thread.** A reply in a thread the mailbox holds keeps that thread's soul.
 3. **Mention.** An `@McRitchie Agents` mention (or an `app_mention`) or a DM to
    the app goes to `mention_soul` (`alex`).
-4. **Channel default.** The channel override's `default_soul`. `#agents` has none.
+4. **Channel default.** The channel override's `default_soul`. `#agents-general` has none.
+
+**Clearance** (Alex McRitchie, 2026-10-30: "some agents may not have clearance
+for public conversation"). Routing picks a soul; clearance decides whether that
+soul may answer in this channel (`SlackRoutes#cleared?`). A channel override may
+carry:
+
+| Config | Who may answer there |
+|--------|----------------------|
+| `open: true` | every soul (`#agents-general`) |
+| `souls: [...]` | the block's `core_souls` (alex, steffon, mason, mack, avi: the McRitchie Studio agents, who move all around) plus the souls listed |
+| neither | every soul: no clearance config is today's behaviour (`#ops`, `#releases`, a DM) |
+
+A message routed by any rule (name, thread, mention or default) to a soul not
+cleared in its channel is stored `held`, never answered. Its `held` event
+(actor `slack-clearance`) carries the reason, `soul not cleared for this
+channel: <soul> may not answer in #<channel>; cleared there: …`, and the
+`cleared` list; when the sender is also not an answered role, the one event names
+both causes. It is the same `held` status the owner-only guard uses, so the admin
+page shows the reason and an admin's **Release and answer** is the one override.
+Tyrion is client-facing: he is never listed in an internal channel.
+
+**The channel layout** (created by Steffon, 2026-10-30):
+
+| Channel | Clearance | Default soul |
+|---------|-----------|--------------|
+| `#agents-general` `C0CD8ETBZBM` | open: every agent, and where Alex McRitchie talks to all of them | none |
+| `#turf-monster` | core + `turf_monster` | `turf_monster` |
+| `#cyvasse` | core + `tywin` | `tywin` |
+| `#commercial-welding` | core + `hank` (recognized only: held, he has no role doc yet) | none |
+| `#alex-build` | core (`alex` is its builder) | none |
+| every other app channel (`#mcritchie-studio`, `#mcritchie-industries`, `#rolio`, …) | core only | none |
+| `#ops`, `#releases` | no clearance config | none |
+
+Souls routable by name on Slack: `Avi`, `Alex`, `Turf`, `Mason`, `Steffon`,
+`Mack`, `Tywin`. Each answers from its `docs/agents/agents/<soul>/role.md` on the
+dispatcher's respond path, like the others. Names under `slack.recognized`
+(`Carl`, `Shannon`, `Jasper`, `Pokémon`, `Tyrion`, `Hank`) are routed to their
+soul and held with `soul cannot answer yet`: no dispatcher serves them on Slack,
+and without the entry "Carl, …" would fall through to the channel default and be
+answered by the wrong soul. Moving a soul from `recognized:` to `souls:` lets it
+answer (and makes `bin/dispatcher` serve it).
 
 The owner-only guard is Discord's: a routed message from a role
 `config/agent_answerers.yml` does not answer is stored `held`. Alex McRitchie's
