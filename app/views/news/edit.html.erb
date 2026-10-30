@@ -29,7 +29,7 @@
             <div class="bg-surface-alt rounded-lg p-3 border border-subtle">
               <div class="flex items-center justify-between">
                 <p class="text-heading text-sm font-semibold" x-text="person.full_name"></p>
-                <span class="text-[9px] text-muted font-mono" x-text="'#' + person.id"></span>
+                <span class="text-3xs text-muted font-mono" x-text="'#' + person.id"></span>
               </div>
               <p class="text-3xs text-primary font-mono mt-0.5" x-text="person.slug"></p>
               <template x-if="person.aliases && person.aliases.length > 0">
@@ -38,7 +38,7 @@
               <template x-if="person.teams && person.teams.length > 0">
                 <div class="flex flex-wrap gap-1 mt-1.5">
                   <template x-for="team in person.teams" :key="team">
-                    <span class="px-1.5 py-0.5 rounded text-[9px] font-bold <%= status_tone(:primary) %>" x-text="team"></span>
+                    <span class="px-1.5 py-0.5 rounded text-3xs font-bold <%= status_tone(:primary) %>" x-text="team"></span>
                   </template>
                 </div>
               </template>
@@ -52,13 +52,13 @@
                 <div class="bg-surface-alt rounded-lg p-3 border border-subtle">
                   <div class="flex items-center justify-between">
                     <p class="text-heading text-sm font-semibold" x-text="person.full_name"></p>
-                    <span class="text-[9px] text-muted font-mono" x-text="'#' + person.id"></span>
+                    <span class="text-3xs text-muted font-mono" x-text="'#' + person.id"></span>
                   </div>
                   <p class="text-3xs text-primary font-mono mt-0.5" x-text="person.slug"></p>
                   <template x-if="person.teams && person.teams.length > 0">
                     <div class="flex flex-wrap gap-1 mt-1.5">
                       <template x-for="team in person.teams" :key="team">
-                        <span class="px-1.5 py-0.5 rounded text-[9px] font-bold <%= status_tone(:primary) %>" x-text="team"></span>
+                        <span class="px-1.5 py-0.5 rounded text-3xs font-bold <%= status_tone(:primary) %>" x-text="team"></span>
                       </template>
                     </div>
                   </template>

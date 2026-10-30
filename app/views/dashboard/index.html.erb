@@ -55,7 +55,7 @@
                     <img src="<%= safe_image_src(agent.avatar) %>" alt="<%= activity.agent_slug %>" class="w-5 h-5 rounded-full object-cover">
                   <% else %>
                     <div class="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center">
-                      <span class="text-primary text-[9px] font-bold"><%= activity.agent_slug.first.upcase %></span>
+                      <span class="text-primary text-3xs font-bold"><%= activity.agent_slug.first.upcase %></span>
                     </div>
                   <% end %>
                   <span class="text-xs text-muted"><%= activity.agent_slug %></span>

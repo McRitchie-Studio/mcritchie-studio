@@ -10,7 +10,7 @@
         zone: news.stage,
         class: "bg-surface rounded-lg border border-subtle p-3 cursor-grab active:cursor-grabbing hover:border-primary/30 transition group relative"
       } do %>
-  <span class="absolute top-1 right-1.5 text-[9px] text-muted font-mono"><%= news.position %></span>
+  <span class="absolute top-1 right-1.5 text-3xs text-muted font-mono"><%= news.position %></span>
 
   <div class="flex items-center justify-between mb-1.5">
     <a href="<%= news_path(news.slug) %>"

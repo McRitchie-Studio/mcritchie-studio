@@ -5,7 +5,7 @@
     <div class="w-24 h-24 flex items-center justify-center border <%= t[:classes] %> animate-pulse"
          style="clip-path: polygon(50% 4%, 96% 50%, 50% 96%, 4% 50%);">
       <div class="text-center leading-tight px-2">
-        <div class="text-[9px] uppercase tracking-wide opacity-70">Pulse</div>
+        <div class="text-3xs uppercase tracking-wide opacity-70">Pulse</div>
         <div class="text-xs font-semibold"><%= step[:label] %></div>
       </div>
     </div>
@@ -13,7 +13,7 @@
 <% else %>
   <div class="relative flex-shrink-0 w-36" data-sop-node="<%= step[:type] %>">
     <div class="rounded-xl border <%= t[:classes] %> p-3 h-24 flex flex-col justify-center">
-      <div class="flex items-center gap-1 text-[9px] uppercase tracking-wider opacity-70 mb-1">
+      <div class="flex items-center gap-1 text-3xs uppercase tracking-wider opacity-70 mb-1">
         <span><%= t[:icon] %></span><span><%= t[:kind] %></span>
       </div>
       <% if step[:type] == :stage_update && step[:stage] %>

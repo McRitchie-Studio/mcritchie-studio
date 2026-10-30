@@ -237,4 +237,13 @@ Studio.configure do |config|
   # it unset, reference_or_cache! falls straight through to cache!; a test that
   # exercises the reference path sets it and stubs the S3 client itself.
   config.s3_production_public_url = "https://assets.mcritchie.studio" unless Rails.env.test?
+
+  # The type scale (task hub-adopts-type-scale): the base sizes and weights the
+  # theme tag hands every text-* class (app/assets/tailwind/type_scale.css), read
+  # from the studio kit that `logos:install` writes, so saving the kit on
+  # /logos/studio and reinstalling it moves the app with no edit here.
+  type_scale = JSON.parse(Rails.root.join("public/brand/kit.json").read).fetch("type_scale")
+  %w[type_base type_dense_base type_display_weight type_text_weight].each do |name|
+    config.public_send("#{name}=", type_scale.fetch(name))
+  end
 end

@@ -8,7 +8,7 @@
     gap), so the three read as one block. Locals: logo, name, samples (per type,
     the variants to show by tone, or the library's refusal), saved (the types
     whose sample is the brand's saved kit choice: their badge says so). %>
-<% badge = "pointer-events-none absolute left-1.5 top-1.5 rounded-full border border-subtle bg-surface px-1.5 py-px text-[0.5625rem] font-semibold uppercase leading-tight tracking-wide text-muted" %>
+<% badge = "pointer-events-none absolute left-1.5 top-1.5 rounded-full border border-subtle bg-surface px-1.5 py-px text-3xs font-semibold uppercase leading-tight tracking-wide text-muted" %>
 <% tile = "relative flex rounded-xl border border-subtle min-w-0 hover:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" %>
 <% piece = lambda do |type, box, height| %>
   <% sample = samples.fetch(type) %>

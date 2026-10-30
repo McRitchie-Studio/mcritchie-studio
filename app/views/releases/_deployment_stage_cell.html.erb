@@ -50,7 +50,7 @@
            data-deployment-range
            data-start="<%= span[:started_at].to_i %>"
            <% if span[:ended_at] %>data-end="<%= span[:ended_at].to_i %>"<% end %>>
-        <span class="text-muted opacity-70 text-[9px] leading-tight" data-range-date><%= deployment_range_date(span) %></span>
+        <span class="text-muted opacity-70 text-3xs leading-tight" data-range-date><%= deployment_range_date(span) %></span>
         <span class="text-secondary text-3xs leading-tight" data-range-time><%= deployment_range_times(span) %></span>
       </div>
     </div>

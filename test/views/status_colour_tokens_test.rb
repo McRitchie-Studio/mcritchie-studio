@@ -87,13 +87,18 @@ class StatusColourTokensTest < ActiveSupport::TestCase
   # theme.css since studio-engine 0.114.2 (the JS preset is a deprecated shim the
   # hub no longer reads), and the hub's own build is read too, so a lost token
   # shows up as a missing rule rather than a passing text match.
-  test "[component] the engine theme defines text-3xs as 10px and text-2xs as 11px, and the build compiles them" do
+  #
+  # Task hub-adopts-type-scale: the hub's build then folds both onto the type
+  # scale's fine print (app/assets/tailwind/type_scale.css), so the build is read
+  # for the fine-print rule rather than the engine's bare sizes.
+  test "[component] the engine theme defines text-3xs as 10px and text-2xs as 11px, and the build compiles them as fine print" do
     theme = Studio::Engine.root.join("app/assets/tailwind/studio_engine/theme.css").read
     assert_match(/--text-2xs:\s*0\.6875rem;/, theme)
     assert_match(/--text-3xs:\s*0\.625rem;/, theme)
 
     build = Rails.application.assets.load_path.find("tailwind.css").compiled_content
-    assert build.include?(".text-2xs{font-size:.6875rem}"), "the hub build lost text-2xs"
-    assert build.include?(".text-3xs{font-size:.625rem}"), "the hub build lost text-3xs"
+    fine = "{font-size:calc(var(--type-base,16px) * .75);line-height:var(--tw-leading,1.4)}"
+    assert build.include?(".text-2xs#{fine}"), "the hub build lost text-2xs"
+    assert build.include?(".text-3xs#{fine}"), "the hub build lost text-3xs"
   end
 end

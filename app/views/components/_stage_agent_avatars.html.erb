@@ -59,7 +59,7 @@
                   <p class="text-sm text-heading flex items-center gap-1.5">
                     <%= entry.name %>
                     <% if entry.weight.present? %>
-                      <span class="px-1 py-px rounded text-[9px] font-bold uppercase tracking-wide
+                      <span class="px-1 py-px rounded text-3xs font-bold uppercase tracking-wide
                                    <%= entry.primary? ? 'bg-primary/15 text-primary border border-primary/30' : 'bg-surface text-muted border border-subtle' %>"
                             title="<%= entry.primary? ? 'Primary (deep) review' : 'Light review' %>">
                         <%= entry.role_label %>
@@ -182,14 +182,14 @@
                       data-test="crew-blocked" title="Blocked at this stage">✕</span>
               <% elsif cluster.live_since %>
                 <%# Live elapsed counter (s → m → h → d → w), ticking each second. %>
-                <span class="absolute -bottom-1 -left-1 z-40 px-1 py-px rounded-full text-[9px] font-semibold leading-none
+                <span class="absolute -bottom-1 -left-1 z-40 px-1 py-px rounded-full text-3xs font-semibold leading-none
                              bg-success/20 text-success-ink border border-success/40 ring-1 ring-surface tabular-nums animate-pulse"
                       data-test="crew-live"
                       x-data="{ start: <%= cluster.live_since.to_i %>, now: Math.floor(Date.now() / 1000) }"
                       x-init="setInterval(() => now = Math.floor(Date.now() / 1000), 1000)"
                       x-text="window.elapsedLabel(now - start)">…</span>
               <% elsif cluster.seconds.to_i.positive? %>
-                <span class="absolute -bottom-1 -left-1 z-40 px-1 py-px rounded-full text-[9px] font-semibold leading-none
+                <span class="absolute -bottom-1 -left-1 z-40 px-1 py-px rounded-full text-3xs font-semibold leading-none
                              bg-surface-alt text-secondary border border-subtle ring-1 ring-surface tabular-nums"
                       data-test="crew-duration"><%= compact_stage_duration(cluster.seconds) %></span>
               <% end %>

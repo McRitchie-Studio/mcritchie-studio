@@ -37,7 +37,7 @@
         viewport breakpoint): at 1280px four cards leave ~260px, and the branch token
         is what would otherwise cut "turf-monster" to "turf-mo…". The branch still
         rides the row's title there. %>
-    <span class="hidden shrink-0 text-[9px] uppercase tracking-wider text-muted @[19rem]:inline" data-test="app-summary-branch"><%= app_summary_branch(rung.branch) %></span>
+    <span class="hidden shrink-0 text-3xs uppercase tracking-wider text-muted @[19rem]:inline" data-test="app-summary-branch"><%= app_summary_branch(rung.branch) %></span>
   <% end %>
   <% if progress.present? %>
     <div class="shrink-0" data-test="app-summary-ci">
@@ -47,7 +47,7 @@
   <% else %>
     <%# Same footprint as the inline meter — 6rem rail + 0.5rem gap + 2.25rem clock —
         so every row's right edge lines up. %>
-    <span class="w-[8.75rem] shrink-0 rounded border border-dashed border-subtle px-1.5 py-[3px] text-center text-[9px] leading-none text-muted"
+    <span class="w-[8.75rem] shrink-0 rounded border border-dashed border-subtle px-1.5 py-[3px] text-center text-3xs leading-none text-muted"
           data-test="app-summary-ci-empty">no CI ingested</span>
   <% end %>
 </li>

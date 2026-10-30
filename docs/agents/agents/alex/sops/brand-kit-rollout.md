@@ -88,7 +88,9 @@ roles (task `engine-type-scale-roles`; engine README "Type scale" and its
 CHANGELOG name the version); an app on an older engine bumps it in the same task,
 because an older engine has no `Studio.type_base=` and the app fails to boot. On an app that already draws the roles, open a public page and an
 admin page in the local review and check the sizes: 16 px body on the public
-page, 14 px inside `type-dense`.
+page, 14 px inside `type-dense`. The hub reads the four values from its own
+`public/brand/kit.json` instead of spelling them, so reinstalling its kit is the
+whole step there (`docs/topics/logos.md` "Type Scale").
 
 **5. Regenerate the raster icons** the app serves, exactly as
 `docs/topics/logos.md` § Installing a kit into an app describes for the hub:

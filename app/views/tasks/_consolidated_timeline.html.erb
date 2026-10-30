@@ -146,7 +146,7 @@
                   <span class="text-sm text-heading flex flex-col items-center gap-1 min-w-0">
                     <span class="truncate max-w-[8rem]"><%= entry.name %></span>
                     <% if entry.weight.present? %>
-                      <span class="shrink-0 px-1 py-px rounded text-[9px] font-bold uppercase tracking-wide
+                      <span class="shrink-0 px-1 py-px rounded text-3xs font-bold uppercase tracking-wide
                                    <%= entry.primary? ? "bg-primary/15 text-primary border border-primary/30" : "bg-surface-alt text-muted border border-subtle" %>"
                             title="<%= entry.primary? ? "Primary (deep) review" : "Light review" %>"><%= entry.role_label %></span>
                     <% end %>
