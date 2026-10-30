@@ -29,10 +29,15 @@ run inside it rides the close:
   final `x.y.z` of each swept gem, tags it `v<x.y.z>`, and commits each consumer's
   lock onto it (qa-release step 4d;
   [`gem-release-flow.md`](../../system/gem-release-flow.md)). So the tree G3 reads CI
-  for, and the tree QA deploys, bundle the artifact production runs. A red G3 that
-  changes the gem burns that version: the next prepare takes the next patch and
-  records the burn as a `burned-v<x.y.z>` tag in the gem repo, and
-  `bin/release status` lists those tags under `Burned gem versions`. Under the `RELEASE_GEM_FLOW=candidate` rollback, prepare
+  for, and the tree QA deploys, bundle the artifact production runs. A red G3 does not
+  itself burn the version. An app fault (eject the member, re-run prepare) reuses
+  `x.y.z`, and so does an ejected gem whose tree the next release carries unchanged.
+  Only a fix that moves the gem's tree does: the next prepare allocates the next
+  patch, and because the unshipped `x.y.z` then sits between the gem's `main` and the
+  version it carries, that prepare tags it `burned-v<x.y.z>` before anything
+  publishes (`record_burned_finals!`), refuses any lock naming it from then on, and
+  `bin/release status` lists it under `Burned gem versions`
+  ([`gem-release-flow.md`](../../system/gem-release-flow.md), "The failure story"). Under the `RELEASE_GEM_FLOW=candidate` rollback, prepare
   publishes `x.y.z.rcN` instead and G3 never sees the final `x.y.z`:
   [G4 Ship](g4-ship.md) publishes it, proves it carries the candidate's contents,
   re-locks consumers to it and reads CI for that re-lock commit. A red G3 therefore
