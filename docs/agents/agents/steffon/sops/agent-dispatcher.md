@@ -347,13 +347,13 @@ the stop is deliberate.
 
 This SOP runs the service. It does not change routing (that is
 [`discord-bot-setup`](discord-bot-setup.md)), give a soul more actions, or
-answer messages itself. The service serves every channel, Discord, email and
+answer messages itself. The service serves every channel, Discord, email, Slack and
 the web chat (`bin/dispatcher run --channel all`, the default;
-`--channel discord|email|web` narrows it), so an email to a CTO on team@ and a
+`--channel discord|email|web|slack` narrows it), so an email to a CTO on team@ and a
 message in a CTO's chat on McRitchie Studio are answered by the same loop
 ([`agent-message-loop.md`](../../../system/agent-message-loop.md), "Email" and
 "Web chat"). It serves the souls `config/agent_routes.yml` routes, the `web:`
 block's included (Tyrion is served for the web chat only). A running service
 picks up a routes change by itself on the next ship; do not reinstall it for one.
-`bin/heartbeat <soul> --channel discord|email|web` stays the manual form of the same
+`bin/heartbeat <soul> --channel discord|email|web|slack` stays the manual form of the same
 answer path, for a test or a one-off.

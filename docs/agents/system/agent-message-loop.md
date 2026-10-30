@@ -1142,7 +1142,7 @@ signature with the soul's name. The prompt tells the model it is writing a
 plain-text email. The model still runs with no tools.
 
 **Serving email.** `bin/dispatcher run` serves every channel by default
-(`--channel all|discord|email|web` narrows it); `bin/heartbeat <soul> --channel email`
+(`--channel all|discord|email|web|slack` narrows it); `bin/heartbeat <soul> --channel email`
 answers one by hand. Observe with `/admin/agent_messages?channel=email` or
 `bin/agent-inbox list --channel email`.
 
