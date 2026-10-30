@@ -307,6 +307,12 @@ class AgentMessage < ApplicationRecord
       unless status == "held"
         raise Refused.new("message #{id} is #{status}; only a held message can be released", code: "NOT_HELD")
       end
+      # A Slack row for a recognized-only soul (slack.recognized) has no dispatcher:
+      # released, it would sit `received` forever and hold its whole thread back.
+      if channel == "slack" && !AgentMessages::SlackRoutes.current.answers?(soul_slug)
+        raise Refused.new("#{soul_slug} cannot answer on Slack yet (config/agent_routes.yml slack.recognized)",
+                          code: "SOUL_UNSERVED")
+      end
 
       update!(status: "received", hold_released_at: now, hold_released_by: actor[0, 100])
       record!("hold_released", actor: actor, detail: { "person_id" => person_id }.compact)

@@ -266,6 +266,16 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
     end
   end
 
+  test "[unit] a held row for a recognized-only soul cannot be released into a thread nobody serves" do
+    with_routes(guarded_routes) do
+      AgentPerson.seed_owner!
+      row = ingest(guarded_routes).call(event("Carl, review this?", "channel" => GENERAL), team_id: TEAM)
+      error = assert_raises(AgentMessage::Refused) { row.release_hold!(actor: "admin:test") }
+      assert_equal "SOUL_UNSERVED", error.code
+      assert_equal "held", row.reload.status
+    end
+  end
+
   test "[unit] a stranger naming an uncleared soul: one held event names both causes" do
     AgentMessages::Answerers.reset!
     with_routes(guarded_routes) do
