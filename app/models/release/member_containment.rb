@@ -21,7 +21,9 @@ class Release
   # Verdicts are TRI-STATE, like bin/release's ancestor_signal: :affirmed,
   # :refuted, :unknown. Only :affirmed lets a member through. "I could not look" is
   # not "it is there": an unreadable member is held too, with its own note, and
-  # `bin/release finalize <release>` re-asks once the read works.
+  # `bin/release finalize <release>` re-asks once the read works. "Unreadable" means
+  # neither read answered: a PR GitHub will not show the ship's token falls back to
+  # git (fallback_shas, member_shas) before it is held.
   module MemberContainment
     module_function
 

@@ -38,7 +38,15 @@ class Release::InlineDeployMarkerTest < ActiveSupport::TestCase
   test "[unit] post-ship: a config-var set after the frozen deploy still proves it live" do
     assert S.heroku_live_at_sha_through_config?([IDL_SET, LIVE.merge("current" => false), PRIOR], FROZEN)
     assert_not S.heroku_release_at_sha?([IDL_SET, LIVE.merge("current" => false), PRIOR], FROZEN),
-               "the finalize guard keeps its strict current-release rule"
+               "deploy_app's re-dispatch skip keeps its strict current-release rule"
+  end
+
+  # rel-20261029-00560a: finalize now asks this question too, so a newer Deploy of a
+  # different SHA on top must still refuse, with or without a config set between.
+  test "[unit] post-ship: a newer Deploy of another SHA is not the frozen SHA live" do
+    other = { "version" => 287, "description" => "Deploy deadbeef", "status" => "succeeded", "current" => true }
+    assert_not S.heroku_live_at_sha_through_config?([other, IDL_SET.merge("current" => false), LIVE.merge("current" => false)], FROZEN)
+    assert_not S.heroku_live_at_sha_through_config?([other, LIVE.merge("current" => false)], FROZEN)
   end
 
   test "[unit] post-ship: add-on updates, attaches and multi-var sets are config-only too" do
