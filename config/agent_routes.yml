@@ -124,6 +124,23 @@ slack:
       names: ["Mack"]
     tywin:
       names: ["Tywin"]
+  # Names a message may address that no dispatcher serves on Slack: routed to
+  # that soul and held ("soul cannot answer yet"), so "Carl, …" in an app channel
+  # is never answered by the channel's default soul. Move a soul to `souls:` to
+  # let it answer. Never served (not in AgentMailbox.routed_souls).
+  recognized:
+    carl:
+      names: ["Carl"]
+    shannon:
+      names: ["Shannon"]
+    jasper:
+      names: ["Jasper"]
+    pokemon:
+      names: ["Pokemon", "Pokémon"]
+    tyrion:
+      names: ["Tyrion"]
+    hank:
+      names: ["Hank"]
   # CLEARANCE (Alex McRitchie, 2026-10-30: "some agents may not have clearance
   # for public conversation"). Who may ANSWER in a channel, checked after routing:
   #   open: true          every soul answers here (#agents-general)

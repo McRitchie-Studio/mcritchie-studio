@@ -29,6 +29,9 @@ module AgentMessages
   # true`). A message routed, by any rule, to a soul not cleared there is stored
   # `held` with the reason on its `held` event, and never answered unless an
   # admin releases it. A channel with no clearance config admits every soul.
+  # A soul only RECOGNIZED by name (slack.recognized: no dispatcher serves it on
+  # Slack) is routed and held the same way, reason "soul cannot answer yet", so
+  # "Carl, …" never falls through to a channel default another soul answers.
   #
   # THE OWNER-ONLY GUARD and THE PERSON are DiscordIngest's: the Slack user id is
   # the identity (AgentPerson.resolve!, platform "slack"); a routed message from
@@ -112,9 +115,10 @@ module AgentMessages
       name = author_name(author_ref)
       AgentMessage.transaction(requires_new: true) do
         person = AgentPerson.resolve!(platform: CHANNEL, external_id: author_ref, display_name: name)
+        unserved = result.routed? && !@routes.answers?(result.soul)
         uncleared = result.routed? && !@routes.cleared?(event["channel"], result.soul)
         unanswered = result.routed? && !@answerers.allowed?(person)
-        held = uncleared || unanswered
+        held = unserved || uncleared || unanswered
         message = AgentMessage.create!(
           channel: CHANNEL, external_id: external_id, guild_id: team_id, channel_ref: event["channel"].to_s,
           thread_key: thread_key(event), author_ref: author_ref, author_name: name, person: person,
@@ -127,18 +131,22 @@ module AgentMessages
         message.record!("received", actor: "slack-events", detail: { "author" => message.author_name })
         message.record!(result.routed? ? "routed" : "unrouted", actor: "router",
                         detail: result.detail.merge("soul" => result.soul, "routed_by" => result.routed_by).compact)
-        record_held(message, event, result, person, uncleared: uncleared, unanswered: unanswered) if held
+        if held
+          record_held(message, event, result, person, unserved: unserved, uncleared: uncleared, unanswered: unanswered)
+        end
         message
       end
     end
 
-    # One `held` event naming every cause: the channel's clearance (the soul may
-    # not answer here) and/or the owner-only guard (the sender is not answered).
-    def record_held(message, event, result, person, uncleared:, unanswered:)
+    # One `held` event naming every cause: a soul no dispatcher serves on Slack,
+    # the channel's clearance (the soul may not answer here), and/or the
+    # owner-only guard (the sender is not answered).
+    def record_held(message, event, result, person, unserved:, uncleared:, unanswered:)
       reasons = []
+      reasons << @routes.unanswerable_reason(result.soul) if unserved
       reasons << @routes.clearance_reason(event["channel"], result.soul) if uncleared
       reasons << @answerers.held_reason(person) if unanswered
-      actor = uncleared ? "slack-clearance" : "answerers"
+      actor = unserved || uncleared ? "slack-clearance" : "answerers"
       detail = { "reason" => reasons.join("; "), "person_id" => person&.id }
       detail["cleared"] = @routes.cleared_souls(event["channel"]) if uncleared
       message.record!("held", actor: actor, detail: detail.compact)

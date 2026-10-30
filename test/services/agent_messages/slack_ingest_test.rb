@@ -179,6 +179,8 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
                    "steffon" => { "names" => [ "Steffon" ] }, "mack" => { "names" => [ "Mack" ] },
                    "tywin" => { "names" => [ "Tywin" ] } },
       "core_souls" => %w[alex steffon mason mack avi],
+      "recognized" => { "carl" => { "names" => [ "Carl" ] }, "tyrion" => { "names" => [ "Tyrion" ] },
+                        "mason" => { "names" => [ "Mase" ] } },
       "channels" => { GENERAL => { "name" => "agents-general", "open" => true },
                       TURFCH => { "name" => "turf-monster", "souls" => [ "turf_monster" ], "default_soul" => "turf_monster" },
                       BARE => { "name" => "rolio", "souls" => [] },
@@ -246,6 +248,24 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
     end
   end
 
+  test "[unit] a recognized-only name is routed to its soul and held as unable to answer, never left to the channel default" do
+    r = guarded_routes
+    assert_equal "carl", r.named("Carl, review this?")
+    refute r.answers?("carl")
+    refute_includes r.routed_souls, "carl", "bin/dispatcher never serves a recognized-only soul"
+    assert_nil r.named("Mase, hi"), "a served soul is never shadowed by a recognized entry"
+    with_routes(r) do
+      AgentPerson.seed_owner!
+      [ TURFCH, GENERAL, CHAN ].each do |ch|
+        row = ingest(r).call(event("Carl, review this?", "channel" => ch), team_id: TEAM)
+        assert_equal [ "carl", "name", "held" ], [ row.soul_slug, row.routed_by, row.status ], ch
+        hold = row.events.find_by!(kind: "held")
+        assert_match(/soul cannot answer yet: carl/, hold.detail["reason"])
+        refute_match(/sender's role/, hold.detail["reason"])
+      end
+    end
+  end
+
   test "[unit] a stranger naming an uncleared soul: one held event names both causes" do
     AgentMessages::Answerers.reset!
     with_routes(guarded_routes) do
@@ -276,6 +296,13 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
     assert_includes shipped.cleared_souls(by_name["commercial-welding"]), "hank"
     assert_equal shipped.core_souls, shipped.cleared_souls(by_name["rolio"])
     refute shipped.cleared?(by_name["cyvasse"], "turf_monster")
+
+    %w[Carl Shannon Jasper Pokemon Tyrion Hank].each do |name|
+      soul = shipped.named("#{name}, hello")
+      assert soul, "#{name} is recognized"
+      refute shipped.answers?(soul), "#{soul} is recognized-only: held, not served"
+      refute_includes shipped.routed_souls, soul, "the slack block never serves #{soul} (Tyrion's web chat may)"
+    end
 
     shipped.channels.each do |entry|
       refute_includes Array(entry.souls), "tyrion", "Tyrion is client-facing: never cleared in ##{entry.name}"

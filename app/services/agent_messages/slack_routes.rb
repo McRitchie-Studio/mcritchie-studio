@@ -1,7 +1,8 @@
 module AgentMessages
   # The `slack:` block of config/agent_routes.yml: which workspace is read, the
   # app's own bot user, the owner's Slack user, and which soul a Slack message
-  # is for (docs/agents/system/agent-message-loop.md, "Slack"). Pure: it reads
+  # is for, and which souls may answer in which channel (CLEARANCE, #cleared?)
+  # (docs/agents/system/agent-message-loop.md, "Slack"). Pure: it reads
   # text and ids and touches nothing. The THREAD rule needs the database, so
   # AgentMessages::SlackIngest applies it between #named and #mention_soul.
   class SlackRoutes
@@ -19,7 +20,7 @@ module AgentMessages
       def guarded? = !open? && !souls.nil?
     end
 
-    attr_reader :team_id, :bot_user_id, :owner_user_id, :mention_soul, :souls, :core_souls
+    attr_reader :team_id, :bot_user_id, :owner_user_id, :mention_soul, :souls, :core_souls, :recognized
 
     def self.load(path = PATH)
       new((YAML.safe_load_file(path, aliases: false) || {})["slack"] || {})
@@ -43,6 +44,13 @@ module AgentMessages
       @souls = (config["souls"] || {}).to_h do |soul, spec|
         [ soul.to_s, Array((spec || {})["names"]).map { |n| n.to_s.strip }.reject(&:empty?) ]
       end
+      # { soul => [names] } a name may address but no dispatcher serves on Slack:
+      # routed so the message is held ("soul cannot answer yet"), never left to
+      # fall through to a channel default another soul would answer. Never
+      # in #routed_souls.
+      @recognized = (config["recognized"] || {}).to_h do |soul, spec|
+        [ soul.to_s, Array((spec || {})["names"]).map { |n| n.to_s.strip }.reject(&:empty?) ]
+      end.except(*@souls.keys)
       # Cleared on every guarded channel (the McRitchie Studio agents, who move
       # all around), on top of each channel's own `souls:`.
       @core_souls = soul_list(config["core_souls"])
@@ -114,10 +122,20 @@ module AgentMessages
       text.to_s.strip.sub(/\A<@#{Regexp.escape(@bot_user_id)}(?:\|[^>]*)?>[\s,:]*/, "")
     end
 
-    # Rule 1: the soul the text opens by addressing, or nil.
+    # Rule 1: the soul the text opens by addressing, or nil. A served soul wins
+    # a tie with a recognized one.
     def named(text)
       line = strip_leading_bot_mention(text).lines.map(&:strip).find(&:present?).to_s
-      @souls.find { |_soul, names| EmailRoutes.addressed_to?(line, names) }&.first
+      @souls.merge(@recognized).find { |_soul, names| EmailRoutes.addressed_to?(line, names) }&.first
+    end
+
+    # Whether `soul` is served on Slack (has slack.souls names, or is the mention
+    # soul or a channel default). A recognized-only soul is not: it cannot answer yet.
+    def answers?(soul) = routed_souls.include?(soul.to_s)
+
+    def unanswerable_reason(soul)
+      "soul cannot answer yet: #{soul} is recognized by name on Slack but no dispatcher serves it " \
+        "(config/agent_routes.yml slack.recognized; add it to slack.souls to let it answer)"
     end
 
     # Every soul this block can route to: the named souls, the mention soul and

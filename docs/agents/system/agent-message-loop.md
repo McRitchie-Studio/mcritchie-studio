@@ -465,14 +465,19 @@ Tyrion is client-facing: he is never listed in an internal channel.
 | `#agents-general` `C0CD8ETBZBM` | open: every agent, and where Alex McRitchie talks to all of them | none |
 | `#turf-monster` | core + `turf_monster` | `turf_monster` |
 | `#cyvasse` | core + `tywin` | `tywin` |
-| `#commercial-welding` | core + `hank` (not routable on Slack yet: no role doc) | none |
+| `#commercial-welding` | core + `hank` (recognized only: held, he has no role doc yet) | none |
 | `#alex-build` | core (`alex` is its builder) | none |
 | every other app channel (`#mcritchie-studio`, `#mcritchie-industries`, `#rolio`, …) | core only | none |
 | `#ops`, `#releases` | no clearance config | none |
 
 Souls routable by name on Slack: `Avi`, `Alex`, `Turf`, `Mason`, `Steffon`,
 `Mack`, `Tywin`. Each answers from its `docs/agents/agents/<soul>/role.md` on the
-dispatcher's respond path, like the others.
+dispatcher's respond path, like the others. Names under `slack.recognized`
+(`Carl`, `Shannon`, `Jasper`, `Pokémon`, `Tyrion`, `Hank`) are routed to their
+soul and held with `soul cannot answer yet`: no dispatcher serves them on Slack,
+and without the entry "Carl, …" would fall through to the channel default and be
+answered by the wrong soul. Moving a soul from `recognized:` to `souls:` lets it
+answer (and makes `bin/dispatcher` serve it).
 
 The owner-only guard is Discord's: a routed message from a role
 `config/agent_answerers.yml` does not answer is stored `held`. Alex McRitchie's
