@@ -1,11 +1,13 @@
 # Announce a queued /build request to the team's Discord, on the EXTERNAL lane
 # (#external-communication: messages from the outside world), so a new app
-# request is seen without anyone watching the board. Lanes: DiscordChannels.
+# request is seen without anyone watching the board. Where it posts is the
+# app_requests home in config/agent_media.yml (discord #external, the
+# DISCORD_EXTERNAL_WEBHOOK_URL lane of DiscordChannels), through Media.post.
 #
 # Runs after the request is queued (AppRequest#queue!), in the background: a
 # Discord outage or a missing webhook must never cost a visitor their claim.
 #
-# The webhook is the external lane's (DiscordChannels). Unset, the job logs and
+# The webhook is the home's (the external lane's). Unset, the job logs and
 # does nothing — the request is still saved and still on the board and on
 # /build/requests; only the ping is skipped. `discord_notified_at` is stamped on
 # a successful post, so a retried job never announces the same request twice.
@@ -17,20 +19,22 @@ class AppRequestDiscordJob < ApplicationJob
   # /build event at a glance.
   EMBED_COLOR = 0x8E83FC
 
-  def self.webhook_url = DiscordChannels.webhook_url(LANE)
+  def self.home = Media.home(purpose: :app_requests)
+
+  def self.webhook_url = home&.webhook_url
 
   def perform(app_request_id)
     request_row = AppRequest.find_by(id: app_request_id)
     return if request_row.nil? || request_row.discord_notified_at.present?
 
-    webhook = self.class.webhook_url
-    if webhook.nil?
-      Rails.logger.info("[app_request_discord] #{DiscordChannels.lane(LANE)[:env]} is unset; " \
-                        "not announcing #{request_row.host} to #{DiscordChannels.channel_label(LANE)}")
+    home = self.class.home
+    unless home&.channel? && (home.medium != "discord" || home.webhook_url)
+      unset = home ? home.webhook_envs.join(" / ").presence || home.label : "config/agent_media.yml app_requests"
+      Rails.logger.info("[app_request_discord] #{unset} is unset; not announcing #{request_row.host} to #{home&.label}")
       return
     end
 
-    ReleaseNotes::DiscordClient.deliver(embeds: [ self.class.embed(request_row) ], webhook_url: webhook)
+    Media.post(home, embeds: [ self.class.embed(request_row) ])
     request_row.update_column(:discord_notified_at, Time.current)
   end
 

@@ -195,7 +195,7 @@ Ship from the primary checkout. **`--mode` takes production authority**
 | `cleared` | records Alex McRitchie's chat clearance as the grant: `--clearance "<his words>"` is required, and the completion carries `granted_via chat`, `cleared_by` and the words. `--cleared-by` and `--by` default to `Alex McRitchie` (never the Mac login, which is the `alex` soul slug). No window, no button, and each run records its own grant, so a re-run stores the words it was given. A blank clearance refuses before anything moves, and so does `--clearance` with any other mode. The Next Release card names it as cleared in chat and unsigned, never in the success tone a signed Approve gets. |
 | `timed` (the config default, `production_ship.mode` in `config/release_builder.yml`) | posts the `ship_authorized` request on the release, shows a 30-minute countdown with an **Approve** button on the Next Release card, and waits. A grant deploys at once. On lapse it deploys only if G3 Candidate is green and no member carries an open escalation; otherwise it refuses, names why, and deploys nothing. |
 | `ask` | the interactive `confirm("Deploy this release to production?")` prompt — holds until a human answers (needs a TTY, or `--yes`). |
-| `auto` | proceeds on green with no prompt. `bin/release ship --yes` with no `--mode` is `auto`. |
+| `auto` | proceeds on green with no prompt. `bin/release ship --yes` with no `--mode` is `auto`. It asks nobody and records no clearance, so it is not a production path under First Rule 5: a cleared ship runs `cleared` (or `bin/release cycle --clearance`), and an uncleared one runs `timed`. The code still accepts it (and `bin/conductor ship --run` still calls it). |
 
 `--yes` answers the OTHER local confirms and skips nothing else. **The authority step is
 the only human gate; in `cleared` mode that gate is Alex McRitchie's word in the chat, recorded on
@@ -285,7 +285,10 @@ be undone. In order, after production authority:
    difference refuses with nothing published. A gem with no candidate is never
    published.
 3. **`gem push`**, then tag `v<version>`.
-4. **Wait until RubyGems serves it** (the `RELEASE_GEM_POLL_TIMEOUT` budget), then
+4. **Wait until RubyGems serves it** steadily: `/info`, the `/versions` tail and the
+   `.gem` answer on every read for `RELEASE_GEM_SETTLE_S` (60s), inside the
+   `RELEASE_GEM_POLL_TIMEOUT` budget; a timeout stops as `GEM_NOT_SERVED` with no lock
+   pushed, and a re-run resumes. Then
    confirm the served `.gem`'s SHA-256 is the built artifact's.
 5. **Advance the gem repo's `main`.**
 6. **Re-lock each consumer to `x.y.z`**: `bundle lock --update <gem> --conservative`,
@@ -315,7 +318,7 @@ be undone. In order, after production authority:
 | at the candidate preflight on a RESUMED ship, "some consumers lock `x.y.z` and others a candidate of it", one consumer being a QA-exempt repo (rantly, moms-app) | nothing moved this run; that repo had no `qa_sha`, so it froze at `origin/release`, which already carries the first attempt's final re-lock | `prepare` now freezes QA-exempt repos, and a ship records any repo it had to resolve live (`record: qa_shas backfill …`) before anything moves, so this needs tooling older than both. Record the candidate-lock SHA by hand (`Release::Conductor.record_qa_shas(release:, shas: { "<repo>" => "<sha>" })` on the board), then re-run |
 | "does NOT match `<candidate>`, the candidate QA ran" (step 2) | nothing published | do not ship this tree: re-run `prepare`, QA the new candidate, then ship |
 | after the push, before the tag | `x.y.z` live; no `v*` tag | skips the push, compares the LIVE gem with the candidate, pushes the missing tag, continues |
-| "the RubyGems CDN is still not serving it" / "`gem install` still fails" (step 4) | `x.y.z` live and tagged; nothing re-locked | skips the push, waits again with a fresh budget |
+| "`GEM_NOT_SERVED`: … has not served it steadily" / "`gem install` still fails" (step 4) | `x.y.z` live and tagged; nothing re-locked | skips the push, waits again with a fresh budget |
 | "RubyGems serves SHA-256 …" (step 4) | `x.y.z` live, and its bytes are not the artifact this ship built | skips the push and compares the LIVE gem's contents with the candidate. Equal (another build of the same tree): it proceeds. Different: it refuses (`LIVE on RubyGems and does NOT match`); then advance past the version (qa-release's STRANDED GEM WORK row) and re-run `prepare` |
 | after the gem's `main`, before a consumer's re-lock push | `x.y.z` live; consumers still lock the candidate; no app moved | skips the push, re-locks |
 | "did not land … resolves `<candidate>`, wanted `<version>`" (step 6) | the same; nothing was committed | wait for `curl -sS https://index.rubygems.org/info/<gem> \| tail -5` to show `x.y.z`, then re-run |
@@ -395,13 +398,14 @@ It **proves the frozen SHA is live first**, then records; it never deploys:
 | Strategy | Apps | What proves it |
 |---|---|---|
 | `github_actions` | mcritchie-studio | `origin/main` at the frozen SHA, prod `/up` 200, and a `prod-deploy.yml` run whose `headSha` is that SHA concluded success |
-| `git_push_heroku` | mcritchie-industries, rolio | prod `/up` 200, and the app's **current** Heroku release is a succeeded `Deploy <frozen sha>` (app from the adapter's `remote:`) |
+| `git_push_heroku` | mcritchie-industries, rolio | prod `/up` 200, and the app's newest Heroku `Deploy` is a succeeded `Deploy <frozen sha>` with only config-only releases (a config var set, an add-on attach) after it (app from the adapter's `remote:`) |
 | `repo_script` | turf-monster | the same Heroku proof, against `prod_deploy.heroku_app:`; it also needs `prod_deploy.smoke_url:` (a bare origin: the ship appends `/up`) or the repo can never be confirmed |
 | `static_cloudflare` | none yet (an app after its cutover) | prod `/up` 200, and `<smoke_url>/static-release.json` names the frozen SHA ([`static-cloudflare.md`](../../../modules/static-cloudflare.md)) |
 
 Per-repo refusals: `prod /up did not answer 200` wants a deploy (`bin/release ship`);
-`<app>'s CURRENT Heroku release is not a succeeded Deploy …` means a config change or
-rollback landed on top; `names no Heroku app` / `declares no smoke_url …` are registry
+`<app>'s newest Heroku Deploy is not a succeeded Deploy <frozen sha> …` means another
+deploy or a rollback landed on top (a config-only release on top is tolerated);
+`names no Heroku app` / `declares no smoke_url …` are registry
 fixes. After a finalize-confirmed turf-monster IDL bump, check the tighten landed:
 
 ```bash
@@ -623,6 +627,9 @@ A member whose own commit is not in the `main` the ship pushed for its repo is t
 exception: the ship prints `⚠ containment hold: <note>`, leaves it at its stage and
 comments the missing commit on its task. Ship it on a release whose `main` contains
 that commit; an unreadable check clears with `bin/release finalize <release>`.
+A PR the ship's token cannot read (`Resource not accessible by integration`) does
+not hold on its own: the check falls back to git, reading the PR's
+`refs/pull/<n>/head` and asking whether it is an ancestor of the shipped `main`.
 A hold that names a PR read failing on a stale or wrong PR URL: fix the URL
 (`bin/task update <slug> --pr-url-for <repo>=<url>`), then run `bin/release finalize
 <release>`. A held member's `merged` column can read `main` (stamped per repo at the

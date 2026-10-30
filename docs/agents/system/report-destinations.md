@@ -56,6 +56,13 @@ key has a card with:
 `updated_by`). Until a channel is saved, every `deliver` for that key answers
 `:not_configured` and posts nothing.
 
+**The fallback home.** A key with NO row falls back to the `reports` home in
+`config/agent_media.yml` (`Media.home(purpose: :reports, app:)`, the app taken
+from `cto_report:<app>`): a Discord channel `id` that the channel directory
+knows. Today that home names no channel, so the answer stays `:not_configured`.
+A saved row always wins, even one whose channel was cleared
+([Media](agent-message-loop.md#media)).
+
 **App owners pick their CTO's channel too.** An app's owner sets the same row for
 their own `cto_report:<domain>` key at `/agents/:slug/settings`, from a picker
 holding only the channels that CTO's bot can post in
@@ -107,7 +114,8 @@ ReportDeliveryJob.perform_later("daily_app_report", content: "…", embeds: [], 
 ```
 
 The job retries a Discord failure (`AgentMessages::DiscordBot::Error`, a rate
-limit included) with a polynomial back-off, five tries in all, using the same
+limit included; it is a `Media::Error`, the base every medium's failure shares,
+so a later medium's report path can retry on that one class) with a polynomial back-off, five tries in all, using the same
 idempotency key. A `:not_configured` or `:disabled` answer is recorded and not
 retried, because it waits on Alex McRitchie. `ReportDestinations.deliver!` is the raising
 form the job uses.

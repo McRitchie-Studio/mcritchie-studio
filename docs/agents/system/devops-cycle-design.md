@@ -244,8 +244,10 @@ Actions-side follow-up, not a gate concern).
   `workflow_dispatch` into a `production` environment (kept for `HEROKU_API_KEY`
   secret scoping + deploy history); its required-reviewer approval was **removed
   2026-07-20** (task `remove-prod-deploy-approval`), so a dispatched run deploys
-  straight through. The human gate is the operator's act of launching `bin/release
-  ship` plus its `--yes` confirm — not a second click. It is `workflow_dispatch`,
+  straight through. The human gate is the ship's production-authority step — Alex
+  McRitchie's chat clearance recorded by `bin/release ship --mode cleared
+  --clearance "<his words>"` (or `bin/release cycle --clearance`), else the timed
+  window's Approve — not a second click on the workflow. It is `workflow_dispatch`,
   **not** `push:[main]`, so the ship's `release → main` ref-push can't self-fire a
   production deploy.
 
@@ -791,7 +793,7 @@ only the card's name changed.
 |---|---|---|---|
 | **Carl** (`Carl Heartbeat`) | `pr-review` · `pr-review-slow` | review submitted PRs — one Carl per PR, **merging each to `accepted`, never touching `release`/`main`** (waves ≤5, or serialized via `pr-review-slow`) | each PR `reviewed`/`blocked` |
 | **Avi** (`Avi Heartbeat`) | `qa-release` · `deploy-with-task` (direct-invoke only) | the **self-healing sweep** — merge the reviewed queue onto `release`, pre-QA gate, deploy QA, flip members `assembled` on QA-green (`bin/release prepare --yes`, stages 1–3) | RC **deployed to QA**, members `assembled` |
-| **Steffon** (`Steffon Heartbeat`) | `production-deploy` · `archive-shipped` | **downstream-first:** ship a QA-green release (`bin/release ship --yes`, stages 4–5, stamping `merged: "main"` at each ff) if one is ready; then archive shipped tasks (`bin/release archive --yes`) from the prior cycle | the ready release `shipped` (or no-op); then prior cycle `archived` |
+| **Steffon** (`Steffon Heartbeat`) | `production-deploy` · `archive-shipped` | **downstream-first:** ship a QA-green release (`bin/release ship --mode cleared --clearance "<his words>" --yes` when Alex McRitchie cleared it, else `--mode timed --yes`; never a bare `--yes`, which is `auto`; stages 4–5, stamping `merged: "main"` at each ff) if one is ready; then archive shipped tasks (`bin/release archive --yes`) from the prior cycle | the ready release `shipped` (or no-op); then prior cycle `archived` |
 | **Mason** (`Mason Heartbeat`) | `share-insights` · `full-cycle` · `grade-events` (optional since 2026-09-25: every task is graded once at ship) | grade the 10 most recent resolved activities at `/mason/heartbeat` only when named; share the banked insights out (regenerate the lessons doc from `ActionGrade.banked`; it installs nothing); OR run the whole cycle review→assemble→QA→prod ship (`full-cycle`, full ship authority: `pr-review`, then `bin/release cycle --clearance "<his words>"`, which runs prepare → QA verify → ship → prod verify → archive; a release scoped with `--task` runs those atoms by hand) | 10 graded + insights banked; the bank shared out; or the whole release `shipped` |
 
 **The release handoff seam.** The release stages (`Release::STAGES`, rendered on
@@ -1082,10 +1084,14 @@ ONE deterministic verb — **`bin/release prepare --yes [--task SLUG ...]
    `heroku run`; `--local` opts into the stale local DB.
 
 **`Run Deployment`**  *(assembled → shipped — promote the QA'd RC to prod)*
-Run **`bin/release ship [--by NAME] --prod`**. Without `--yes` it confirms
-before deploying; under the **`full-cycle`** launcher (or another
-explicit production rollout prompt), use
-`bin/release ship --by conductor --yes`. `--yes` skips only the confirm prompt.
+Run **`bin/release ship --mode cleared --clearance "<Alex McRitchie's words>" --yes`**
+when he cleared the release in the session (the **`full-cycle`** launcher runs it
+for you inside `bin/release cycle --clearance "<his words>" --yes`), and
+**`bin/release ship --mode timed --yes`** when nobody cleared it: that posts the
+Approve window. With no `--mode`, `--yes` alone resolves to `auto` (no prompt, no
+clearance recorded), and no flag at all takes `production_ship.mode` from
+`config/release_builder.yml` (`timed`). `--yes` otherwise answers only the local
+confirms.
 **The ship deploys from its OWN checkout — a dirty primary does NOT block it.**
 `bin/release ship` never reads an app primary's working tree: it advances `main`
 with a **ref push** (`git push origin <frozen>:refs/heads/main` — no checkout, no

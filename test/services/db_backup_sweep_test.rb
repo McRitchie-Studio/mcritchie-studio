@@ -69,8 +69,9 @@ class DbBackupSweepTest < ActiveSupport::TestCase
 
   def floor(recorder)
     bot = AgentMessages::DiscordBot.new(token: "test-token", transport: recorder)
-    routes = AgentMessages::Routes.new("discord" => { "ops_channel_id" => OPS, "guilds" => {} })
-    AgentMessages::FloorAlert.new(routes: routes, bot: bot, logger: Logger.new(nil))
+    routes = AgentMessages::Routes.new("discord" => { "guilds" => {} })
+    home = Media::Home.new(medium: "discord", channel: "ops", spec: { "id" => OPS }, source: "test")
+    AgentMessages::FloorAlert.new(routes: routes, bot: bot, logger: Logger.new(nil), home: home)
   end
 
   setup do

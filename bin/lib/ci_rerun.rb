@@ -107,8 +107,22 @@ module CiRerun
     text.match?(TEST_LANE)
   end
 
+  # `gh run view --log-failed` prefixes every line with "<job>\t<step>\t<timestamp> ",
+  # and bundler wraps its message at 80 columns, so the phrase this matches arrives
+  # split across lines: "...can no longer be" / "<job>\t<step>\t<ts> found in that
+  # source". rel-20261029-00560a (alex-build run 40938601557, voicebox 40938649188):
+  # the raw log never matched, the gate called the race "no gem-resolution error",
+  # and the ship stopped twice for a hand re-run. So the log is unwrapped first.
+  LOG_PREFIX = /^(?:[^\t\n]*\t){2}(?=\d{4}-\d\d-\d\dT)|^\d{4}-\d\d-\d\dT[\d:.]+Z ?/
+
   def resolution_error?(log)
-    log.to_s.match?(RESOLUTION_ERROR)
+    unwrap_log(log).match?(RESOLUTION_ERROR)
+  end
+
+  # PURE. The log as one line of prose: job/step/timestamp prefixes dropped, every
+  # run of whitespace (the wraps included) collapsed to one space.
+  def unwrap_log(log)
+    log.to_s.each_line.map { |line| line.sub(LOG_PREFIX, "").sub(LOG_PREFIX, "") }.join(" ").gsub(/\s+/, " ")
   end
 
   # The failed workflow runs on a SHA, from the Actions API's `workflow_runs`.

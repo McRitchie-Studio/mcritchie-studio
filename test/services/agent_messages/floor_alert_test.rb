@@ -27,13 +27,15 @@ class AgentMessages::FloorAlertTest < ActiveSupport::TestCase
     end
   end
 
-  def routes(ops: OPS)
-    AgentMessages::Routes.new("discord" => { "ops_channel_id" => ops, "guilds" => {} })
-  end
+  def routes = AgentMessages::Routes.new("discord" => { "guilds" => {} })
+
+  # The floor alert's home (config/agent_media.yml purposes.floor_alert): the
+  # ops channel, or none when `ops` is nil.
+  def ops_home(ops = OPS) = Media::Home.new(medium: "discord", channel: "ops", spec: ops && { "id" => ops }, source: "test")
 
   def alert(recorder, ops: OPS, logger: Logger.new(nil))
     bot = AgentMessages::DiscordBot.new(token: "test-token", transport: recorder)
-    AgentMessages::FloorAlert.new(routes: routes(ops: ops), bot: bot, logger: logger)
+    AgentMessages::FloorAlert.new(routes: routes, bot: bot, logger: logger, home: ops_home(ops))
   end
 
   def ping!(at)
@@ -116,12 +118,12 @@ class AgentMessages::FloorAlertTest < ActiveSupport::TestCase
     alert(recorder, ops: nil, logger: Logger.new(log)).call(now: t0)
 
     assert_empty recorder.posts
-    assert_match(/floor alert not posted \(config\/agent_routes.yml names no discord.ops_channel_id\)/, log.string)
+    assert_match(/floor alert not posted \(config\/agent_media.yml names no discord #ops channel for floor_alert\)/, log.string)
     assert AgentMailboxIncident.open_for("dispatcher_silent")
 
     with_env(AgentMessages::DiscordBot::TOKEN_ENV => nil) do
       log2 = StringIO.new
-      AgentMessages::FloorAlert.new(routes: routes, logger: Logger.new(log2)).call(now: t0 + 1.minute)
+      AgentMessages::FloorAlert.new(routes: routes, logger: Logger.new(log2), home: ops_home).call(now: t0 + 1.minute)
       assert_match(/DISCORD_AGENT_BOT_TOKEN is unset/, log2.string)
     end
   end

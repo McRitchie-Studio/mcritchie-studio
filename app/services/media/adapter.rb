@@ -14,8 +14,9 @@ module Media
   #   typing         one "typing…" pulse while an answer runs
   #   message_url    a link to a message on the medium, or nil
   #   setup_kit      the AgentSetups kit kind that installs it, or nil
-  #   post           a standalone post to a home (card 2: floor alert, release
-  #                  notes, reports)
+  #   post           a standalone post to a Media::Home (Media.post): the floor
+  #                  alert, release notes, app requests; capability :post
+  #   actor          who an event on a message's timeline names for this medium
   class Adapter
     def key = raise(NotImplementedError, "#{self.class.name}#key")
 
@@ -41,7 +42,9 @@ module Media
     def setup_kit = nil
 
     # A standalone message into a home (a channel on this medium), not a reply.
-    def post(*) = raise(NotImplementedError, "#{self.class.name}#post")
+    def post(*, **) = raise(NotImplementedError, "#{self.class.name}#post")
+
+    def actor = "#{key}-bot"
 
     def inspect = "#<#{self.class.name} key=#{key}>"
   end

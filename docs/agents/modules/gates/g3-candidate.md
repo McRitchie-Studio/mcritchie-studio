@@ -29,9 +29,15 @@ run inside it rides the close:
   final `x.y.z` of each swept gem, tags it `v<x.y.z>`, and commits each consumer's
   lock onto it (qa-release step 4d;
   [`gem-release-flow.md`](../../system/gem-release-flow.md)). So the tree G3 reads CI
-  for, and the tree QA deploys, bundle the artifact production runs. A red G3 that
-  changes the gem burns that version (recorded as `burned-v<x.y.z>`), and the next
-  sweep takes the next patch. Under the `RELEASE_GEM_FLOW=candidate` rollback, prepare
+  for, and the tree QA deploys, bundle the artifact production runs. A red G3 does not
+  itself burn the version. An app fault (eject the member, re-run prepare) reuses
+  `x.y.z`, and so does an ejected gem whose tree the next release carries unchanged.
+  Only a fix that moves the gem's tree does: the next prepare allocates the next
+  patch, and because the unshipped `x.y.z` then sits between the gem's `main` and the
+  version it carries, that prepare tags it `burned-v<x.y.z>` before anything
+  publishes (`record_burned_finals!`), refuses any lock naming it from then on, and
+  `bin/release status` lists it under `Burned gem versions`
+  ([`gem-release-flow.md`](../../system/gem-release-flow.md), "The failure story"). Under the `RELEASE_GEM_FLOW=candidate` rollback, prepare
   publishes `x.y.z.rcN` instead and G3 never sees the final `x.y.z`:
   [G4 Ship](g4-ship.md) publishes it, proves it carries the candidate's contents,
   re-locks consumers to it and reads CI for that re-lock commit. A red G3 therefore
@@ -289,7 +295,7 @@ above `RELEASE_CI_POLL_CEILING` (default 7200s); an unreadable workflow set keep
 head, but the verdict leaves it out when it can prove the run was schedule-triggered
 (the check-run's suite joined to the SHA's workflow runs, `event: "schedule"`); an
 unprovable run still counts (task `ui-budget-report-never-gates`). A hold past one hour re-mints the GitHub App read token, which lives 3600s
-(`CiStatus.gh_read_status`, task `ci-poll-refreshes-its-token`). The gem candidate publish gate uses the same budget, because studio-engine's verdict
+(`CiStatus.gh_read_status`, task `ci-poll-refreshes-its-token`). The gem publish gate (prepare's final `x.y.z` publish under the default flow; the `x.y.z.rcN` candidate under `RELEASE_GEM_FLOW=candidate`) uses the same budget, because studio-engine's verdict
 includes Consumer CI, which outlasts 1200s on a fresh tip
 (`bin/lib/ci_poll_budget.rb`, task `gem-gate-outwaits-consumer-ci`). Only the wait on a
 pending verdict widens: red and unreadable still abort on the first read.

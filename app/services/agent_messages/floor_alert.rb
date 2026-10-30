@@ -37,9 +37,13 @@ module AgentMessages
   # Dedupe is the incidents table (AgentMailboxIncident, one open row per kind):
   # an incident opens on the first failing run, resolves on the first passing
   # one, and its alert_posted_at / recovery_posted_at say what was announced. A
-  # failed post is retried on the next run; with no bot token or no
-  # ops_channel_id nothing is posted and one log line says so. A recovery is
-  # posted only for an incident whose alert was posted.
+  # failed post is retried on the next run; with no bot token or no ops
+  # channel nothing is posted and one log line says so. A recovery is posted
+  # only for an incident whose alert was posted.
+  #
+  # WHERE. The floor alert's home, Media.home(purpose: :floor_alert) from
+  # config/agent_media.yml (`purposes.floor_alert`: discord #ops), posted
+  # through Media.post as the shared bot.
   #
   # FLAPPING AND ESCALATION. Incidents of one kind (and subject) that reopen
   # within an hour form an episode (AgentMailboxIncident, "EPISODES"). Once an
@@ -73,9 +77,11 @@ module AgentMessages
 
     Check = Struct.new(:kind, :failing, :detail, :subject, keyword_init: true)
 
-    def initialize(routes: Routes.load, bot: nil, logger: Rails.logger, mailer: AgentFloorMailer)
+    def initialize(routes: Routes.load, bot: nil, logger: Rails.logger, mailer: AgentFloorMailer,
+                   home: Media.home(purpose: :floor_alert))
       @mailer = mailer
       @routes = routes
+      @home = home
       @bot = bot
       @logger = logger
     end
@@ -381,20 +387,22 @@ module AgentMessages
     end
 
     def idle_reason
-      return "#{DiscordBot::TOKEN_ENV} is unset" if @bot.nil? && !DiscordBot.configured?
-      return "config/agent_routes.yml names no discord.ops_channel_id" if @routes.ops_channel_id.nil?
+      return "config/agent_media.yml gives floor_alert no usable medium" if @home.nil?
+      return "config/agent_media.yml names no #{@home.label} channel for floor_alert" unless @home.channel?
+      return "#{DiscordBot::TOKEN_ENV} is unset" if @home.medium == "discord" && @bot.nil? && !DiscordBot.configured?
 
       nil
     end
 
     def post(incident, text, suffix)
-      bot.post_message(@routes.ops_channel_id, content: text[0, 1900], nonce: "ami-#{incident.id}-#{suffix}")
+      payload = { content: text[0, 1900], nonce: "ami-#{incident.id}-#{suffix}" }
+      payload[:bot] = @bot if @bot
+      Media.post(@home, **payload)
       true
-    rescue DiscordBot::Error => e
+    rescue Media::Error => e
       @logger.warn("#{LOG} floor alert post failed (#{e.class}); retried next run")
       false
     end
 
-    def bot = (@bot ||= DiscordBot.new)
   end
 end
