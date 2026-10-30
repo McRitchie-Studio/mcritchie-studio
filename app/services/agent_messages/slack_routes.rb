@@ -7,11 +7,19 @@ module AgentMessages
   class SlackRoutes
     PATH = Rails.root.join("config/agent_routes.yml")
 
-    Override = Struct.new(:channel_id, :name, :default_soul, :ignore, keyword_init: true) do
+    # `souls` is nil when the channel names no clearance (every soul may answer
+    # there, as before clearance existed), else the souls it lists; `open` admits
+    # every soul.
+    Override = Struct.new(:channel_id, :name, :default_soul, :ignore, :open, :souls, keyword_init: true) do
       def ignore? = ignore == true
+
+      def open? = open == true
+
+      # Whether this channel limits who may answer in it.
+      def guarded? = !open? && !souls.nil?
     end
 
-    attr_reader :team_id, :bot_user_id, :owner_user_id, :mention_soul, :souls
+    attr_reader :team_id, :bot_user_id, :owner_user_id, :mention_soul, :souls, :core_souls
 
     def self.load(path = PATH)
       new((YAML.safe_load_file(path, aliases: false) || {})["slack"] || {})
@@ -35,10 +43,15 @@ module AgentMessages
       @souls = (config["souls"] || {}).to_h do |soul, spec|
         [ soul.to_s, Array((spec || {})["names"]).map { |n| n.to_s.strip }.reject(&:empty?) ]
       end
+      # Cleared on every guarded channel (the McRitchie Studio agents, who move
+      # all around), on top of each channel's own `souls:`.
+      @core_souls = soul_list(config["core_souls"])
       @overrides = (config["channels"] || {}).to_h do |id, spec|
         spec ||= {}
+        listed = spec.key?("souls") ? soul_list(spec["souls"]) : nil
         [ id.to_s, Override.new(channel_id: id.to_s, name: spec["name"].to_s.presence,
-                                default_soul: spec["default_soul"].to_s.strip.presence, ignore: spec["ignore"] == true) ]
+                                default_soul: spec["default_soul"].to_s.strip.presence, ignore: spec["ignore"] == true,
+                                open: spec["open"] == true, souls: listed) ]
       end
     end
 
@@ -53,6 +66,34 @@ module AgentMessages
     def default_soul(channel_id) = override(channel_id)&.default_soul
 
     def channel_name(channel_id) = override(channel_id)&.name
+
+    # CLEARANCE: whether `soul` may answer in `channel_id`. A channel with no
+    # clearance config (no `souls:`, no `open: true`), a DM and an unknown
+    # channel admit every soul; `open: true` admits every soul; otherwise only
+    # core_souls plus the channel's own `souls:`. SlackIngest stores a message
+    # routed to an uncleared soul `held`, never answered.
+    def cleared?(channel_id, soul)
+      entry = override(channel_id)
+      return true unless entry&.guarded?
+
+      cleared_souls(channel_id).include?(soul.to_s)
+    end
+
+    # The souls cleared in a guarded channel (core first), or nil when the
+    # channel admits every soul.
+    def cleared_souls(channel_id)
+      entry = override(channel_id)
+      return nil unless entry&.guarded?
+
+      (@core_souls + entry.souls).uniq
+    end
+
+    # Why a message for `soul` in `channel_id` is held, for its `held` event.
+    def clearance_reason(channel_id, soul)
+      where = channel_name(channel_id).present? ? "##{channel_name(channel_id)}" : "channel #{channel_id}"
+      "soul not cleared for this channel: #{soul} may not answer in #{where}; " \
+        "cleared there: #{cleared_souls(channel_id).join(', ').presence || 'nobody'} (config/agent_routes.yml slack.channels)"
+    end
 
     # Whether `text` mentions the app's own bot user (<@U…> or <@U…|name>).
     def mentions_bot?(text)
@@ -78,5 +119,9 @@ module AgentMessages
     def routed_souls
       (@souls.keys + [ @mention_soul ] + @overrides.values.map(&:default_soul)).compact.uniq
     end
+
+    private
+
+    def soul_list(value) = Array(value).map { |s| s.to_s.strip }.reject(&:empty?).uniq
   end
 end
