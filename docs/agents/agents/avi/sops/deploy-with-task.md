@@ -198,10 +198,13 @@ them in THIS session, with a terminal attached.
 4. **Ship it.** From the primary checkout (not a worktree):
 
    ```bash
-   bin/release ship --by conductor --yes
+   bin/release ship --by conductor --mode cleared --clearance "<Alex McRitchie's launch words>" --yes
    ```
 
-   `--yes` answers only the non-interactive confirmation — the clean-main
+   Launching this SOP is his ship grant for the task, so record it: `--mode
+   cleared` with his words from the launch prompt (`deploy-with-task <task>`, or
+   his answer to "What task?"). Never a bare `--yes`: with no `--mode` it resolves
+   to `auto` and records no clearance (First Rule 5). `--yes` answers only the non-interactive confirmation — the clean-main
    preflight, frozen-SHA ship tests, gem publish ordering, deploy smoke,
    release notes, and partial-ship recovery all still run and can abort. If a
    gate aborts, do not force past it; record the blocker and hand it off.

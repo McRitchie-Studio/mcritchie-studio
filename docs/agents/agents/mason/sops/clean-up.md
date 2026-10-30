@@ -218,7 +218,9 @@ lane when the wave is done.
 
 ```bash
 bin/release prepare      # merges reviewed tasks into release, deploys QA → assembled
-bin/release ship         # fast-forwards release → main, deploys prod → shipped
+bin/release ship --mode cleared --clearance "<Alex McRitchie's words>" --yes
+                         # fast-forwards release → main, deploys prod → shipped;
+                         # nobody cleared it? --mode timed --yes (the Approve window)
 bin/devops-shift release avi
 ```
 

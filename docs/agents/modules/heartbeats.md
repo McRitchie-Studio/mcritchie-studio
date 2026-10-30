@@ -88,7 +88,7 @@ The per-soul cheat sheet:
 | **Carl** | `pr-review` → `pr-review-slow` | per `submitted` PR (waves ≤5): `bin/task claim-next-review` → spin one Carl → the [review-one primitive](pr-review-sop.md) → on a merge-ready verdict `gh pr merge` into `accepted` + `bin/task move <task> reviewed` |
 | **Avi** | `qa-release` | `bin/release prepare --yes` → smoke `https://qa.mcritchie.studio/up` (stages 1–3, members `assembled` on QA-green) |
 | **Avi** | `intent-scout` (begin launches it; the chip is the manual launch) | read the task (`bin/task show <slug> -v`) and the builder's desk, read only → post ONE brief: `bin/task note <slug> --comment "INTENT SCOUT BRIEF: …" --agent avi` ([`intent-scout`](../agents/avi/sops/intent-scout.md)) |
-| **Steffon** | `production-deploy` → `archive-shipped` | `bin/release status` → **if** QA-green: `bin/release ship --yes` (stages 4–5); then `bin/release archive --yes` (preview `--dry-run`) |
+| **Steffon** | `production-deploy` → `archive-shipped` | `bin/release status` → **if** QA-green: `bin/release ship --mode cleared --clearance "<his words>" --yes` when Alex McRitchie cleared it, else `bin/release ship --mode timed --yes` (stages 4–5); then `bin/release archive --yes` (preview `--dry-run`) |
 | **Mason** | `share-insights` · `full-cycle` · `grade-events` (optional, only when named) | `bin/agent-activity awaiting --limit 10` → `bin/agent-activity grade <id> …` → `--bank`/`--discard`; `bin/rails insights:doc`; `full-cycle` = `pr-review` → `bin/release cycle --clearance "<his words>" --yes` (prepare → QA verify → ship → prod verify → archive; a release he scoped with `--task` runs the atoms by hand, [`full-cycle`](../agents/mason/sops/full-cycle.md)) |
 | **Mason** | `ship-clock` (only when named, with Alex McRitchie's production clearance) | `bin/ship-clock start <slug>` (T0, before anything) → `building-sop` (`bin/task begin`, then `ship-clock start <slug>` again to move T0 onto the task) → `pr-review` → `bin/release cycle --clearance "<his words>" --yes` → `bin/ship-clock record <slug> --log … --note …` ([`ship-clock`](../agents/mason/sops/ship-clock.md)) |
 | **Mack** | `close-the-month` (monthly, from the 5th) | `bin/books status studio` → `bin/books intake studio --by mack` → put the unclassified lines to Alex McRitchie → `bin/books classify …` → `bin/books close studio <YYYY-MM> --by mack` ([`close-the-month`](../agents/mack/sops/close-the-month.md)) |
@@ -232,9 +232,16 @@ SOP: [`../agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/prod
 - **Steps:**
   1. Ship from a **primary checkout**, not a worktree (gems resolve as siblings);
      a pre-cutover stash may still be parked there.
-  2. Run the **full e2e on the FROZEN ship SHA**, then `bin/release ship --yes`:
-     fast-forward each repo's `release → main` (stamping `merged: "main"` as each
-     ff lands) and deploy production.
+  2. Run the **full e2e on the FROZEN ship SHA**, then ship naming the authority
+     mode: `bin/release ship --mode cleared --clearance "<Alex McRitchie's words>" --yes`
+     when he cleared this release in the session, else
+     `bin/release ship --mode timed --yes` (a heartbeat nobody cleared asks through
+     the 30-minute Approve window). Never a bare `bin/release ship --yes`: it resolves
+     to `--mode auto`, asks nobody and records no clearance. The ship fast-forwards
+     each repo's `release → main` (stamping `merged: "main"` as each ff lands) and
+     deploys production. The standing nightly-ship grant (2026-10-16) covers only the
+     planned 03:00 Denver cron, which is not built yet; until it is, an unattended
+     ship is `--mode timed`.
   3. Prod-smoke, green seal, and post release notes (`ship!` flips members `shipped`,
      except a member whose own commit is not in the pushed `main`: it keeps its
      stage with a comment naming the commit).

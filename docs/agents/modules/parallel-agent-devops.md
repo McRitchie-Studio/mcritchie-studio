@@ -399,7 +399,12 @@ queue; `bin/release merge <slugs>` stays as the per-task primitive); `assembled`
 tasks separately. **`bin/conductor` never ships implicitly** — plain
 `bin/conductor ship` prints the handoff command; the explicit autonomous path is
 `bin/conductor ship --run`, which runs `bin/release ship --by conductor --yes`
-after the same release gates. It defaults to the PROD board (like `bin/release`).
+after the same release gates. It names no `--mode`, so it resolves to `auto`:
+it asks nobody and records no clearance. Under First Rule 5 it is not a
+production path: ship a cleared release with `bin/release ship --mode cleared
+--clearance "<Alex McRitchie's words>" --yes` (or `bin/release cycle --clearance`)
+and an uncleared one with `--mode timed --yes`, not with `conductor ship --run`.
+It defaults to the PROD board (like `bin/release`).
 
 **A FAILED BOARD READ NOW REFUSES, it does not print an empty pipeline.** Until
 2026-09-22 every read here was `return [] unless ok` over a helper whose stderr
