@@ -52,3 +52,12 @@
   --text-9xl: calc(var(--type-base, 16px) * 6);
   --text-9xl--line-height: 1.05;
 }
+
+/* An icon glyph in a fixed box is not text, so it is not on the scale: the release
+   meter's ✓/✗ marks sit in 8px boxes (tasks/_release_phase_meter), and at fine print
+   (10.5px dense) each glyph is a pixel wider than its box, which clips the eighth
+   mark (e2e/release_meter_fit.spec.js). 9px is the size the boxes were measured at. */
+@utility mark-glyph {
+  font-size: 0.5625rem;
+  line-height: 1;
+}

@@ -91,7 +91,7 @@
           <% if marks.any? %>
             <%# Decorative: the card's aria-label already says "5 of 8 checks passed", and a
                 per-glyph title= would shadow the card's own tooltip on the biggest target. %>
-            <span class="flex min-w-0 items-center gap-[2px] overflow-hidden text-3xs leading-none @max-[99px]:hidden"
+            <span class="flex min-w-0 items-center gap-[2px] overflow-hidden mark-glyph @max-[99px]:hidden"
                   data-test="release-phase-checks" aria-hidden="true">
               <% marks.each do |mark| %>
                 <% if mark == :pending %>
