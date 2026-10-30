@@ -41,6 +41,32 @@ class CiRerunTest < Minitest::Test
     refute CiRerun.resolution_error?(nil)
   end
 
+  # rel-20261029-00560a, voicebox run 40938649188 attempt 1, verbatim from
+  # `gh run view --attempt 1 --log-failed`: bundler's 80-column wrap splits the
+  # phrase across lines, each behind its job/step/timestamp prefix. The joined
+  # RACE_LOG above matched; this real shape did not, and the ship stopped twice.
+  WRAPPED_LOG = <<~LOG
+    scan_ruby\tSet up Ruby\t2026-10-29T19:17:13.4991505Z Fetching gem metadata from https://rubygems.org/........
+    scan_ruby\tSet up Ruby\t2026-10-29T19:17:13.5102436Z Your bundle is locked to studio-engine (0.119.0) from rubygems repository
+    scan_ruby\tSet up Ruby\t2026-10-29T19:17:13.5103601Z https://rubygems.org/ or installed locally, but that version can no longer be
+    scan_ruby\tSet up Ruby\t2026-10-29T19:17:13.5127697Z found in that source. That means the author of studio-engine (0.119.0) has
+    scan_ruby\tSet up Ruby\t2026-10-29T19:17:13.5128870Z removed it. You'll need to update your bundle to a version other than
+  LOG
+
+  def test_the_resolution_error_matches_across_bundlers_line_wrap
+    assert CiRerun.resolution_error?(WRAPPED_LOG)
+    # The job-log API shape (no job/step columns), as the alex-build static job printed it.
+    assert CiRerun.resolution_error?(WRAPPED_LOG.gsub("scan_ruby\tSet up Ruby\t", ""))
+    refute CiRerun.resolution_error?(WRAPPED_LOG.sub("can no longer be", "is"))
+  end
+
+  def test_a_wrapped_race_in_a_static_job_earns_the_rerun
+    decision = CiRerun.plan(runs: [run_row(40_938_601_557)], jobs_by_run: { 40_938_601_557 => ["ci / static"] },
+                            log_for: ->(_id) { WRAPPED_LOG })
+
+    assert_equal :rerun, decision[:action], decision[:reason]
+  end
+
   # --- plan ------------------------------------------------------------------
 
   # [unit] THE FLAKE: a first-attempt red whose failing jobs are all test lanes is re-run.
