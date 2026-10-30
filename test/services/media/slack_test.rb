@@ -104,6 +104,7 @@ class MediaSlackTest < ActiveSupport::TestCase
       [ 200, {}, "<html>" ] => [ Media::Slack::Ambiguous, "unreadable" ],
       Net::ReadTimeout.new => [ Media::Slack::Ambiguous, "timeout" ],
       Errno::ECONNRESET.new => [ Media::Slack::Ambiguous, "timeout" ],
+      OpenSSL::SSL::SSLError.new("SSL_read: unexpected eof while reading") => [ Media::Slack::Ambiguous, "timeout" ],
       Net::OpenTimeout.new => [ Media::Slack::NotPosted, "unreachable" ],
       SocketError.new("getaddrinfo") => [ Media::Slack::NotPosted, "unreachable" ]
     }.each do |answer, (klass, code)|

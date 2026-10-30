@@ -23,7 +23,8 @@ module Media
     #               a body that is not Slack's JSON. Never blind-retried.
     #
     # A connection that never opened (DNS, refused, connect timeout) is NotPosted:
-    # no byte reached Slack.
+    # no byte reached Slack. A TLS error is Ambiguous: OpenSSL raises SSLError for
+    # a peer that drops mid-response too ("SSL_read: unexpected eof").
     class Client
       API = "https://slack.com/api/".freeze
       OPEN_TIMEOUT = 5
@@ -35,8 +36,8 @@ module Media
       AMBIGUOUS_ERRORS = %w[fatal_error internal_error].freeze
 
       NEVER_SENT = [ SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH,
-                     Net::OpenTimeout, OpenSSL::SSL::SSLError ].freeze
-      MAYBE_SENT = [ Net::ReadTimeout, Net::WriteTimeout, Timeout::Error, EOFError, IOError,
+                     Net::OpenTimeout ].freeze
+      MAYBE_SENT = [ OpenSSL::SSL::SSLError, Net::ReadTimeout, Net::WriteTimeout, Timeout::Error, EOFError, IOError,
                      Errno::ECONNRESET, Errno::EPIPE, SystemCallError ].freeze
 
       # The transport is injectable: a test hands in a lambda taking
