@@ -1,0 +1,29 @@
+<%# Return style "founder" (task cyvasse-three-return-emails): a plain letter
+    from Alex, the person who made Cyvasse. No hero image, no button: one
+    tracked text link and an ask to reply, so it reads as a note from a person
+    rather than a promotion. It names the year the reader joined and their
+    games when it has them. No merge field is required
+    (Broadcasts::CyvasseReturn). Replies reach the sender, team@. %>
+<% play_url = broadcast_link(:play, Broadcast::TEMPLATE_LINKS["cyvasse_founder_note"]["play"]) %>
+<% named = @merge_fields.nil? || Broadcasts::CyvasseReturn.username?(@merge_fields) %>
+<% games = @merge_fields.nil? ? 1 : Broadcasts::CyvasseYourGames.count(@merge_fields, "games") %>
+<% joined_year = @merge_fields ? Broadcasts::CyvasseYourGames.joined_year(@merge_fields) : "{joined_on}" %>
+<% p_style = "margin:0 0 18px 0;font-size:16px;line-height:1.65;color:#2b3440;" %>
+<% content_for :email_reason, "You&rsquo;re receiving this because you have an account on Cyvasse.".html_safe %>
+<% content_for :preheader, (@broadcast&.preview_text.presence || "It was the first app I ever made. Would you play one game and tell me what you think?") %>
+<% content_for :email_title, (@broadcast&.header.presence || "A note from Alex") %>
+<% content_for :email_subtitle, (@broadcast&.subheader.presence || "who made Cyvasse") %>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+  <tr>
+    <td style="padding:28px 32px 8px 32px;">
+      <p style="<%= p_style %>"><%= named ? "Hi #{merge_field(:username)}," : "Hi," %></p>
+      <p style="<%= p_style %>" data-block="intro">I&rsquo;m Alex. I built Cyvasse in 2014. It was the first app I ever made<% if games.positive? %>, and you played <%= merge_count(:games, "game") %> on it<%= " after joining in #{joined_year}" if joined_year.present? %><% elsif joined_year.present? %>, and you joined in <%= joined_year %><% end %>.</p>
+      <p style="<%= p_style %>" data-block="rebuilt">This fall I rebuilt it from scratch. Same board, same pieces, now with live matches, and your old account came with it.</p>
+      <p style="<%= p_style %>" data-block="ask">Would you play one game and tell me what you think? Just reply to this email.</p>
+      <p style="<%= p_style %>" data-block="link"><a href="<%= play_url %>" style="color:#6d5ff5;font-weight:700;text-decoration:underline;">Play Cyvasse &rarr;</a></p>
+      <p style="margin:0 0 4px 0;font-size:16px;line-height:1.65;color:#2b3440;">Thanks,</p>
+      <p style="margin:0 0 20px 0;font-size:16px;line-height:1.65;color:#2b3440;">Alex</p>
+    </td>
+  </tr>
+</table>

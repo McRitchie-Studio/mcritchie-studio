@@ -52,6 +52,28 @@ namespace :broadcasts do
     puts "#{broadcast.slug}: #{broadcast.status} (#{broadcast.template_label}) -> /broadcasts/#{broadcast.slug}/edit"
   end
 
+  # The three return emails (task cyvasse-three-return-emails), as DRAFTS at
+  # /broadcasts/cyvasse-return-<style>/edit, on the legacy list. Idempotent:
+  # an existing row is left as it is, so editor edits survive a re-run. It
+  # never stages or sends.
+  desc "Create the three Cyvasse return-email broadcasts as drafts (never sends)"
+  task draft_cyvasse_return_styles: :environment do
+    plain = {
+      "cyvasse_record" => Broadcasts::CyvasseReturn::Record::PLAIN_SUBJECT,
+      "cyvasse_challenge" => Broadcasts::CyvasseReturn::Challenge::PLAIN_SUBJECT,
+      "cyvasse_founder_note" => Broadcasts::CyvasseReturn::FounderNote::PLAIN_SUBJECT
+    }
+    Broadcasts::CyvasseReturn::STYLES.each do |style, template_key|
+      broadcast = Broadcast.find_or_create_by!(slug: "cyvasse-return-#{style}") do |b|
+        b.template_key = template_key
+        b.subject      = plain.fetch(template_key)
+        b.target_list  = "cyvasse-legacy"
+        b.status       = "draft"
+      end
+      puts "#{broadcast.slug}: #{broadcast.status} (#{broadcast.template_label}) -> /broadcasts/#{broadcast.slug}/edit"
+    end
+  end
+
   # Post-deploy for task cyvasse-email-live-copy: moves the existing draft to
   # the new subject. Idempotent; never touches a sent broadcast or a subject
   # someone edited in the editor, and never sends.

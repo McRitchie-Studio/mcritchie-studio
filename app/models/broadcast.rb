@@ -50,7 +50,14 @@ class Broadcast < ApplicationRecord
     # cyvasse_first_game. One link only: the note is a single ask.
     "cyvasse_play_times" => {
       "survey" => "https://cyvasse.mcritchie.studio/surveys/play-times"
-    }.freeze
+    }.freeze,
+    # The three return emails (task cyvasse-three-return-emails, see
+    # Broadcasts::CyvasseReturn): one play link each, on the email host, whose
+    # redirect carries ?ref= across to cyvasse.xyz so a game played is
+    # credited to the style that brought the reader back.
+    "cyvasse_record" => { "play" => "https://cyvasse.mcritchie.studio/" }.freeze,
+    "cyvasse_challenge" => { "play" => "https://cyvasse.mcritchie.studio/" }.freeze,
+    "cyvasse_founder_note" => { "play" => "https://cyvasse.mcritchie.studio/" }.freeze
   }.freeze
 
   # Merge fields a template's body needs (task staged-email-queue): a contact
@@ -67,7 +74,10 @@ class Broadcast < ApplicationRecord
     "cyvasse_your_games" => "Broadcasts::CyvasseYourGames",
     "cyvasse_night" => "Broadcasts::CyvasseNight",
     "cyvasse_first_game" => "Broadcasts::CyvasseFirstGame",
-    "cyvasse_play_times" => "Broadcasts::CyvassePlayTimes"
+    "cyvasse_play_times" => "Broadcasts::CyvassePlayTimes",
+    "cyvasse_record" => "Broadcasts::CyvasseReturn::Record",
+    "cyvasse_challenge" => "Broadcasts::CyvasseReturn::Challenge",
+    "cyvasse_founder_note" => "Broadcasts::CyvasseReturn::FounderNote"
   }.freeze
 
   # Registry of available copy templates: key => human label. Each key maps to
@@ -80,6 +90,9 @@ class Broadcast < ApplicationRecord
     "cyvasse_night"         => "Cyvasse Night Invite",
     "cyvasse_first_game"    => "Cyvasse: How Was Your First Game",
     "cyvasse_play_times"    => "Cyvasse: Play Times Survey",
+    "cyvasse_record"        => "Cyvasse Return: Your Record",
+    "cyvasse_challenge"     => "Cyvasse Return: Your Move",
+    "cyvasse_founder_note"  => "Cyvasse Return: Founder Note",
   }.freeze
 
   has_many :deliveries, class_name: "BroadcastDelivery", dependent: :destroy
