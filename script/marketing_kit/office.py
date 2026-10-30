@@ -16,6 +16,7 @@ def slides(d, out):
     C = lambda h: RGBColor.from_string(h.lstrip("#"))
     col = {k: C(v) for k, v in d["colours"].items()}
     BLUE, ORANGE, EMBER, NAVY, WHITE, GREY, LIGHT = (col[k] for k in ("primary", "accent", "accent_on_dark", "dark", "white", "grey", "light"))
+    TITLE = col.get("title", BLUE)  # slide titles; the payload falls back to primary when a brand sets none
     FONT, img = d["font"], d["images"]
     W, H = Inches(13.333), Inches(7.5)
     tmp = tempfile.mkdtemp(prefix="kit-slides-")
@@ -63,7 +64,7 @@ def slides(d, out):
         s.shapes.add_picture(img["logo_horizontal_light"], Inches(.7), Inches(6.95), height=Inches(.22))
         text(s, Inches(11.6), Inches(6.93), Inches(1.03), Inches(.3), f"{n:02d}", size=10, color=GREY, align=PP_ALIGN.RIGHT)
 
-    def title(s, t): text(s, Inches(.7), Inches(.85), Inches(11.9), Inches(1), t, size=36, bold=True, color=BLUE)
+    def title(s, t): text(s, Inches(.7), Inches(.85), Inches(11.9), Inches(1), t, size=36, bold=True, color=TITLE)
 
     def bullets(s, x, y, w, h, items, size=18):
         return text(s, x, y, w, h, [(f"▪  {t}", {"space": 10 if i else 0}) for i, t in enumerate(items)], size=size)
@@ -104,7 +105,7 @@ def slides(d, out):
 
     # 5 Text and photo
     s, n = new(); chrome(s, "[Section label]", n)
-    text(s, Inches(.7), Inches(.85), Inches(6), Inches(1), "[Slide title]", size=36, bold=True, color=BLUE)
+    text(s, Inches(.7), Inches(.85), Inches(6), Inches(1), "[Slide title]", size=36, bold=True, color=TITLE)
     text(s, Inches(.7), Inches(2.1), Inches(5.6), Inches(1.4), "[A short paragraph that tells the story of the photo: the job, the scope and what made it work.]", size=18)
     bullets(s, Inches(.7), Inches(3.7), Inches(5.6), Inches(2.8), ["[Detail one]", "[Detail two]", "[Detail three]"], size=18)
     s.shapes.add_picture(fit(img["half"], 5.63, 5.85), Inches(7.0), Inches(.85), Inches(5.63), Inches(5.85))
@@ -130,7 +131,7 @@ def slides(d, out):
     # 8 Project spotlight
     s, n = new(); chrome(s, "Project spotlight", n)
     s.shapes.add_picture(fit(img["spot"], 4.7, 5.75), Inches(.7), Inches(.95), Inches(4.7), Inches(5.75))
-    text(s, Inches(5.9), Inches(.95), Inches(6.7), Inches(1), "[Project name]", size=34, bold=True, color=BLUE)
+    text(s, Inches(5.9), Inches(.95), Inches(6.7), Inches(1), "[Project name]", size=34, bold=True, color=TITLE)
     for i, (k, v) in enumerate(d["spotlight"][:5]):
         y = Inches(2.2 + i * .85)
         text(s, Inches(5.9), y, Inches(1.8), Inches(.6), k.upper(), size=12, bold=True, color=ORANGE, spacing=1.5)

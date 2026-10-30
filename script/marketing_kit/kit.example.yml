@@ -15,8 +15,11 @@ owner: Jordan Example                  # owner of the kit in 00 Start Here and t
 updated: 2026-10-27
 
 palette:                               # 3 to 8 swatches, shown in this order
-  # key: what the renderers draw with. primary, accent and dark are required;
-  # accent_on_dark, primary_deep and accent_deep fall back to accent / primary / accent.
+  # key: what the renderers draw with. primary, accent and dark are required:
+  # primary draws bars, bands and table heads; accent draws buttons and kickers.
+  # Optional keys fall back: accent_on_dark, primary_deep and accent_deep to
+  # accent / primary / accent, and title (page, document and slide titles) to primary.
+  # A key may be a list, so one swatch can do two jobs: key: [accent, title] sets titles in copper.
   - { key: primary, name: Ridge Green, hex: "#2F6B4F", role: Main colour }
   - { key: accent, name: Copper, hex: "#C8702E", role: Accent }
   - { key: dark, name: Charcoal, hex: "#1B2124", role: Dark backgrounds }

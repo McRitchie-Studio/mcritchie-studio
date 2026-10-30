@@ -60,7 +60,7 @@ module MarketingKit
 
       def styles
         f = "font-family:#{family}"
-        heading = "font-family:'#{@spec.fonts[:family]} ExtraBold',#{family};font-weight:#{@spec.fonts[:heading]};color:#{c(:primary)}"
+        heading = "font-family:'#{@spec.fonts[:family]} ExtraBold',#{family};font-weight:#{@spec.fonts[:heading]};color:#{c(:title)}"
         {
           "h1" => "#{heading};font-size:24pt;margin-bottom:2pt",
           "h2" => "#{heading};font-size:15pt",

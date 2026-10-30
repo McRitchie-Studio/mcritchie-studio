@@ -8,8 +8,8 @@ module MarketingKit
   # data fails here and not halfway through a Drive publish. The spec is the
   # kit's single source: every renderer reads it and nothing else. A brand's own
   # spec does not live in this (public) repo; it travels with its kit in Drive
-  # (see the marketing-kit SOP). test/fixtures/files/marketing_kit/example.yml
-  # is the worked example.
+  # (see the marketing-kit SOP). script/marketing_kit/kit.example.yml is the
+  # worked example.
   #
   #   spec = MarketingKit::Spec.load("kit.yml")
   #   spec.colour(:primary)   # => "#2D5E8E"
@@ -19,8 +19,10 @@ module MarketingKit
     # The palette keys every renderer draws with. Anything else in the palette is
     # shown in the guidelines but never drawn with.
     REQUIRED_COLOURS = %i[primary accent dark].freeze
-    # An optional colour a brand leaves out falls back to the one it deepens.
-    COLOUR_FALLBACK = { accent_on_dark: :accent, primary_deep: :primary, accent_deep: :accent }.freeze
+    # An optional colour a brand leaves out falls back to the one it stands in
+    # for: a deep shade to its base, and title (page, document and slide titles)
+    # to primary, so a spec without it renders exactly as before.
+    COLOUR_FALLBACK = { accent_on_dark: :accent, primary_deep: :primary, accent_deep: :accent, title: :primary }.freeze
     OPTIONAL_COLOURS = COLOUR_FALLBACK.keys.freeze
     MAX_SWATCHES = 8
     LOGO_TYPES = %i[full horizontal icon].freeze
@@ -77,7 +79,7 @@ module MarketingKit
     def palette = data.fetch(:palette)
 
     def colour(key)
-      hit = palette.find { |c| c[:key]&.to_sym == key }
+      hit = palette.find { |c| swatch_keys(c).include?(key) }
       return hit[:hex].upcase if hit
 
       colour(COLOUR_FALLBACK.fetch(key) { raise Error, "no #{key} colour" })
@@ -117,6 +119,10 @@ module MarketingKit
 
     def logo_file(kind, base) = File.join(logos_dir, kind.to_s, base)
 
+    # A swatch's key may be one key or a list, so one colour can serve two jobs
+    # (key: [accent, title]) without showing twice in the palette.
+    def swatch_keys(swatch) = Array(swatch[:key]).map(&:to_sym)
+
     def absolute(p) = File.expand_path(p, root)
 
     def validate!
@@ -140,7 +146,7 @@ module MarketingKit
       palette.each do |c|
         raise Error, "#{label}: swatch #{c[:name].inspect} needs a name and a #RRGGBB hex" unless c[:name].present? && c[:hex].to_s.match?(HEX)
       end
-      keys = palette.filter_map { |c| c[:key]&.to_sym }
+      keys = palette.flat_map { |c| swatch_keys(c) }
       unknown = keys - REQUIRED_COLOURS - OPTIONAL_COLOURS
       raise Error, "#{label}: unknown palette key #{unknown.join(', ')}" if unknown.any?
       raise Error, "#{label}: palette key used twice" if keys.uniq.size != keys.size

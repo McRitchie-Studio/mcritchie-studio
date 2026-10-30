@@ -27,6 +27,31 @@ class MarketingKitSpecTest < ActiveSupport::TestCase
     end
   end
 
+  test "title is optional: it falls back to primary, and a title key is taken as given" do
+    load_kit do |spec|
+      refute(spec.palette.any? { |c| c[:key] == "title" }, "the worked example sets no title")
+      assert_equal "#2F6B4F", spec.colour(:title)
+    end
+    with_title = ->(d) { d["palette"] << { "key" => "title", "name" => "Forge", "hex" => "#c8661f", "role" => "Titles" } }
+    load_kit(edit: with_title) do |spec|
+      assert_equal "#C8661F", spec.colour(:title)
+      assert_equal "#2F6B4F", spec.colour(:primary), "primary keeps its own colour for bars and tables"
+    end
+  end
+
+  test "one swatch can carry two keys, and still counts each key once" do
+    shared = ->(d) { d["palette"].find { |c| c["key"] == "accent" }["key"] = %w[accent title] }
+    load_kit(edit: shared) do |spec|
+      assert_equal "#C8702E", spec.colour(:title)
+      assert_equal "#C8702E", spec.colour(:accent)
+      assert_equal 6, spec.palette.size, "the copper swatch is shown once"
+    end
+    twice = ->(d) { d["palette"].find { |c| c["key"] == "accent" }["key"] = %w[accent primary] }
+    with_kit(edit: twice) { |path| assert_match(/palette key used twice/, assert_raises(MarketingKit::Error) { MarketingKit::Spec.load(path) }.message) }
+    unknown = ->(d) { d["palette"].find { |c| c["key"] == "accent" }["key"] = %w[accent headline] }
+    with_kit(edit: unknown) { |path| assert_match(/unknown palette key headline/, assert_raises(MarketingKit::Error) { MarketingKit::Spec.load(path) }.message) }
+  end
+
   test "a brand key names the /logos brand, and the owner is drive.subject" do
     load_kit { |spec| assert_nil spec.logo_brand }
     load_kit(edit: ->(d) { d["brand"] = "welding_v2" }) do |spec|

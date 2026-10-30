@@ -94,7 +94,12 @@ in `photos.items` with what it shows. Pick:
   out uses the cover.
 
 **5. Write the spec.** Fill in:
-- the colours: `primary`, `accent` and `dark`, with the hexes from the hub kit;
+- the colours: `primary`, `accent` and `dark`, with the hexes from the hub kit.
+  `primary` draws bars, bands and table heads; `accent` draws buttons, kickers
+  and the tagline. Titles (page, document and slide titles) take `primary`
+  unless a swatch carries the optional `title` key. A key may be a list, so a
+  brand that wants accent-coloured titles and buttons over dark bars writes
+  `key: [accent, title]` on its accent swatch, and that swatch shows once;
 - the words: tagline, lines, one sentence, pitch, voice and contact;
 - the ideas;
 - whatever the proposal and slides should say beyond the generic placeholders.

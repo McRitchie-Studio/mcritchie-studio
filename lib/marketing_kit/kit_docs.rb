@@ -67,7 +67,7 @@ module MarketingKit
     def brand_guide_body
       bg = @spec.brand_guide
       f = @spec.fonts
-      logo_rows = [["Stacked, with tagline", "#{@spec.short}_logo_full_light / _dark", "Covers, signage, title slides"],
+      logo_rows = [["Stacked", "#{@spec.short}_logo_full_light / _dark", "Covers, signage, title slides"],
                    ["Horizontal", "#{@spec.short}_logo_horizontal_light / _dark", "Website header, letterhead, email signature, proposals"],
                    ["Icon", "#{@spec.short}_logo_icon_light / _dark; #{@spec.short}_logo_icon_512.png", "Social avatars, favicons, stickers, apparel"]]
       colour_rows = @spec.palette.map { |s| [h(s[:name]), s[:hex].upcase, rgb(s[:hex]), h(s[:role])] }
