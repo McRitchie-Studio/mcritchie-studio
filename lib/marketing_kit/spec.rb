@@ -79,7 +79,7 @@ module MarketingKit
     def palette = data.fetch(:palette)
 
     def colour(key)
-      hit = palette.find { |c| c[:key]&.to_sym == key }
+      hit = palette.find { |c| swatch_keys(c).include?(key) }
       return hit[:hex].upcase if hit
 
       colour(COLOUR_FALLBACK.fetch(key) { raise Error, "no #{key} colour" })
@@ -119,6 +119,10 @@ module MarketingKit
 
     def logo_file(kind, base) = File.join(logos_dir, kind.to_s, base)
 
+    # A swatch's key may be one key or a list, so one colour can serve two jobs
+    # (key: [accent, title]) without showing twice in the palette.
+    def swatch_keys(swatch) = Array(swatch[:key]).map(&:to_sym)
+
     def absolute(p) = File.expand_path(p, root)
 
     def validate!
@@ -142,7 +146,7 @@ module MarketingKit
       palette.each do |c|
         raise Error, "#{label}: swatch #{c[:name].inspect} needs a name and a #RRGGBB hex" unless c[:name].present? && c[:hex].to_s.match?(HEX)
       end
-      keys = palette.filter_map { |c| c[:key]&.to_sym }
+      keys = palette.flat_map { |c| swatch_keys(c) }
       unknown = keys - REQUIRED_COLOURS - OPTIONAL_COLOURS
       raise Error, "#{label}: unknown palette key #{unknown.join(', ')}" if unknown.any?
       raise Error, "#{label}: palette key used twice" if keys.uniq.size != keys.size

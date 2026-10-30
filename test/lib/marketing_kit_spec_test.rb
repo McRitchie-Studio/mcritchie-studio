@@ -39,6 +39,19 @@ class MarketingKitSpecTest < ActiveSupport::TestCase
     end
   end
 
+  test "one swatch can carry two keys, and still counts each key once" do
+    shared = ->(d) { d["palette"].find { |c| c["key"] == "accent" }["key"] = %w[accent title] }
+    load_kit(edit: shared) do |spec|
+      assert_equal "#C8702E", spec.colour(:title)
+      assert_equal "#C8702E", spec.colour(:accent)
+      assert_equal 6, spec.palette.size, "the copper swatch is shown once"
+    end
+    twice = ->(d) { d["palette"].find { |c| c["key"] == "accent" }["key"] = %w[accent primary] }
+    with_kit(edit: twice) { |path| assert_match(/palette key used twice/, assert_raises(MarketingKit::Error) { MarketingKit::Spec.load(path) }.message) }
+    unknown = ->(d) { d["palette"].find { |c| c["key"] == "accent" }["key"] = %w[accent headline] }
+    with_kit(edit: unknown) { |path| assert_match(/unknown palette key headline/, assert_raises(MarketingKit::Error) { MarketingKit::Spec.load(path) }.message) }
+  end
+
   test "a brand key names the /logos brand, and the owner is drive.subject" do
     load_kit { |spec| assert_nil spec.logo_brand }
     load_kit(edit: ->(d) { d["brand"] = "welding_v2" }) do |spec|
