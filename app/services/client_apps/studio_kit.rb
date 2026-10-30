@@ -191,9 +191,16 @@ module ClientApps
       # the kit's hooks: the click to data-studio-kit-theme-toggle (studio-kit.js),
       # each icon's x-show to data-studio-kit-when (shell.css). Raises Drift when
       # an Alpine binding is left, so an engine change is caught by the test
-      # suite rather than shipped as a dead button.
+      # suite rather than shipped as a dead button. Newer engine releases render a
+      # toggle that names itself (type, aria-label, a bound aria-pressed:
+      # /tasks/engine-theme-toggle-labels); the kit drops those three and writes
+      # its own, since studio-kit.js keeps aria-pressed. It matches the engine's
+      # exact aria-pressed binding, so any other binding still raises Drift.
+      ENGINE_TOGGLE_OWN = /\s(?:type="button"|aria-label="[^"]*"|:aria-pressed="\$store\.theme\.isDark \? 'true' : 'false'")(?=[\s>])/
+
       def kit_toggle(html)
         out = html.to_s.gsub(/<!--.*?-->/m, "")
+                  .gsub(ENGINE_TOGGLE_OWN, "")
                   .sub(/\s@click="\$store\.theme\.toggle\(\)"/,
                        ' type="button" data-studio-kit-theme-toggle data-studio-kit-icon-button aria-pressed="false" aria-label="Toggle dark mode"')
                   .gsub(/\sx-show="\$store\.theme\.isDark"/, ' data-studio-kit-when="dark" aria-hidden="true"')
