@@ -137,11 +137,25 @@ module Gmail
       def shell_read_from_op(item)
         out, _err, status = BoundedCommand.capture3({ "OP_CACHE" => "false" }, "op", "read", item,
                                                     deadline: op_timeout_seconds)
+        meter_op_read(status)
         return nil unless status.success?
 
         out.to_s.strip.presence
       rescue SystemCallError, IOError
         # `op` absent or unreachable — not an error, just an unconfigured desk.
+        nil
+      end
+
+      # Recorded in bin/op-reads like every other 1Password read on this Mac
+      # (docs/agents/modules/credential-access.md). After the read, never instead of
+      # it: this path keeps its own single bounded attempt, and OpMeter.record never
+      # raises. Required lazily so boot and eager load never pull bin/ code; on a
+      # dyno `op` is absent, the spawn raises above, and nothing is recorded.
+      def meter_op_read(status)
+        require File.expand_path("../../../bin/lib/op_meter", __dir__)
+        OpMeter.record(action: "read", via: "gmail-credentials",
+                       outcome: status.timed_out? ? OpMeter::TIMEOUT : OpMeter.outcome_for(status.status))
+      rescue StandardError, LoadError
         nil
       end
 

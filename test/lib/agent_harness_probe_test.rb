@@ -79,6 +79,23 @@ class AgentHarnessProbeTest < Minitest::Test
                    "harness_measured_at" => "2026-10-24T18:00:00Z" }, m.to_ping)
   end
 
+  # one-way-into-1password: on 2026-10-30 and 2026-10-31 this probe re-read
+  # 1Password every minute for hours while it was hung. With op down, the gh check
+  # asks for the cached session only, so the probe never spends the quota.
+  def test_unit_with_op_down_the_gh_check_never_reads_1password
+    seen = []
+    runner = lambda do |script, _deadline|
+      seen << script
+      false
+    end
+    m = Probe.new(repo_root: "/repo", runner: runner, power: -> { "ac" }, clock: -> { T0 }).call
+
+    assert_equal [Probe::OP_SCRIPT, Probe::GH_CACHED_SCRIPT], seen
+    refute m.gh_ok
+    assert_includes Probe::GH_CACHED_SCRIPT, "bin/gh-token --cached-only "
+    assert_includes Probe::GH_CACHED_SCRIPT, "gh api /rate_limit", "it still measures GitHub with the cached session"
+  end
+
   # The real runner: a login shell under BoundedCommand. A check that hangs is
   # false at its deadline, not a stalled probe.
   def test_unit_a_hung_check_is_false_at_its_deadline

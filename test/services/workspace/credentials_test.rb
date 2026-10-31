@@ -498,4 +498,18 @@ class WorkspaceCredentialsTest < ActiveSupport::TestCase
 
     assert_equal [ [ "alex@mail.test", { purpose: :mail } ], [ "team@mail.test", {} ] ], calls
   end
+  # one-way-into-1password: every 1Password read on this Mac lands in bin/op-reads,
+  # this one included, so a spend can be attributed without re-deriving it.
+  test "the op read is recorded in the 1Password meter" do
+    Dir.mktmpdir do |dir|
+      log = File.join(dir, "op-reads.log")
+      ENV["MCR_OP_READS_LOG"] = log
+      reaching_fake_op { Workspace::Credentials.send(:shell_read_from_op, Workspace::Credentials::ITEM) }
+
+      row = File.readlines(log).last.to_s.split("\t")
+      assert_equal %w[read workspace-credentials], [ row[2], row[4] ], "action and via, from the one meter"
+    ensure
+      ENV.delete("MCR_OP_READS_LOG")
+    end
+  end
 end

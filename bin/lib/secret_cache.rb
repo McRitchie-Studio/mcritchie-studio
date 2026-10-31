@@ -464,7 +464,55 @@ module SecretCache
     update_entry!(name, env) do |meta|
       meta["expires_at"] = expires_at.utc.iso8601
       meta.delete("last_refresh_failed_at")
+      BACKOFF_KEYS.each { |key| meta.delete(key) }
     end
+  end
+
+  # ── ACCOUNT-WIDE BACKOFF (one-way-into-1password, 2026-10-31) ───────────────
+  #
+  # WHY. On 2026-10-30 and 2026-10-31 the dispatcher's harness probe asked
+  # bin/gh-token for a token once a minute (bin/lib/agent_harness_probe.rb). The
+  # cache had expired and 1Password was hung, then out of quota, so every beat
+  # went back to `op`: 1,075 metered failed attempts across two windows, none of
+  # which could succeed. A failure that is ACCOUNT-WIDE (a hung daemon, the
+  # service-account rate limit) is the same answer for every process on the
+  # machine, so it is recorded here, where every sibling reads it, and a refresh
+  # inside the window skips `op` entirely.
+  #
+  # ONLY ACCOUNT-WIDE CAUSES. A failure one shell owns (its token not sourced, a
+  # wrong vault) is NOT recorded: a launchd job with no token would otherwise
+  # stall every healthy agent on the Mac. Doubling from BACKOFF_BASE, capped at
+  # BACKOFF_MAX; a successful mint clears it (record_mint!). BACKOFF_OVERRIDE in
+  # the environment skips it for one call, after the operator has fixed 1Password.
+  BACKOFF_BASE = 60
+  BACKOFF_MAX = 900
+  BACKOFF_OVERRIDE = "MCR_OP_NO_BACKOFF"
+  BACKOFF_KEYS = %w[backoff_until backoff_failures backoff_reason].freeze
+
+  def backoff_seconds(failures)
+    [BACKOFF_BASE * (2**([failures.to_i, 1].max - 1)), BACKOFF_MAX].min
+  end
+
+  # Record one account-wide failure (+reason+: "hung" or "rate-limited").
+  def record_backoff!(name, reason, env: ENV, now: Time.now)
+    update_entry!(name, env) do |meta|
+      failures = meta["backoff_failures"].to_i + 1
+      meta["backoff_failures"] = failures
+      meta["backoff_reason"] = reason.to_s
+      meta["backoff_until"] = (now + backoff_seconds(failures)).utc.iso8601
+    end
+  end
+
+  # [until, reason] while +name+ is backing off, else nil. Never raises; an
+  # override in the environment answers nil.
+  def backoff(name, env: ENV, now: Time.now)
+    return nil unless env[BACKOFF_OVERRIDE].to_s.strip.empty?
+
+    meta = entry(name, env) || {}
+    stamp = time_or_nil(meta["backoff_until"])
+    stamp && stamp > now ? [stamp, meta["backoff_reason"].to_s] : nil
+  rescue StandardError
+    nil
   end
 
   def record_failure!(name, env: ENV, now: Time.now)
@@ -615,6 +663,8 @@ module SecretCache
       line = "  #{name}: #{state[:words]}"
       failed = time_or_nil(meta["last_refresh_failed_at"])
       line += " (last refresh FAILED #{duration_words(now - failed)} ago)" if failed
+      held = backoff(name, env: env, now: now)
+      line += " (1Password #{held[1]}: no op read until #{held[0].iso8601})" if held
       lines << line
     end
     lines

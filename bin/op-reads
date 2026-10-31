@@ -27,9 +27,9 @@
 # findable, and an alarm on a solved problem is noise that trains people to
 # ignore alarms. If you are here to add one, re-read this paragraph first.
 #
-# COSTS NOTHING. Reading this log spends no quota — unlike `op service-account
-# ratelimit`, which itself costs a read, and which is how the original
-# investigation ended up measuring mostly itself.
+# COSTS NOTHING. Reading this log spends no quota. (`op service-account ratelimit`
+# was once thought to cost a read; measured 2026-10-24, it moved neither counter.
+# docs/agents/modules/credential-access.md is the procedure over both.)
 
 require "json"
 require "time"

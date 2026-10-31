@@ -22,6 +22,12 @@ provisioning/ship lanes); one consumed deterministically by software lives in
 `-applications`. The rotation runbook follows the vault: application credentials
 rotate by redeploying config, agent credentials by re-minting lanes.
 
+Which lane and soul class may read each vault, and the machine it moves to when
+permissions split, is the vault permission map in
+[`credential-access.md`](credential-access.md) (pinned to `OpVaults::VAULTS`).
+Re-measured 2026-10-31 on the agent token: Commercial Welding, family-agents,
+industries-agents, studio-agents, studio-applications.
+
 `bin/lib/op_vaults.rb` is the one place code names a vault (`MCR_OP_VAULT_AGENT` /
 `MCR_OP_VAULT_ADMIN` override it per machine). The names in this table are for
 humans; when the two disagree, fix both in the same pass.

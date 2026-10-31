@@ -3,6 +3,10 @@
 
 ## Status: Active
 
+Which lane, soul class and future machine may read each vault is the vault permission
+map in [`credential-access`](../../../modules/credential-access.md); file a credential
+where that map puts its reader.
+
 Every credential that enters the ecosystem — an API key, an OAuth lane, a
 service-account token, a wallet — is filed the same way: named by one
 convention, wearing the service's logo, carrying its permission matrix in the

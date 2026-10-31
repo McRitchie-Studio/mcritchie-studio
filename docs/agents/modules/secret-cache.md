@@ -109,6 +109,20 @@ fallback`, never `refreshed`, and `refresh` exits 1 because it did not get a fre
 token (`prewarm` still never fails). They tell the two apart by that warning, or by
 an expiry that did not move forward.
 
+**A hung or rate-limited 1Password backs every process off.** Those two failures
+are account-wide, so `bin/gh-token` records them in the manifest and no process
+reads `op` for the agent token until the window ends: one minute, doubling to
+fifteen, cleared by the next successful mint. Inside it a still-valid token is
+served; otherwise the refusal names the time and the one-call skip,
+`MCR_OP_NO_BACKOFF=1 bin/gh-token`. `status` shows `1Password hung` or
+`rate-limited` with the time. A failure one shell owns (its token not sourced)
+does not back off the others, and the deployer never backs off.
+
+**A watcher reads the cache only.** `bin/gh-token --cached-only` prints the shared
+token or exits 3, and never reads 1Password; the dispatcher's harness probe uses it
+whenever `op whoami` fails. The procedure over all of this is
+[`credential-access.md`](credential-access.md).
+
 **The contingency**, printed on stderr by any failed refresh, in order:
 
 1. Use the other GitHub identity's cached token, if it is still valid and its scope

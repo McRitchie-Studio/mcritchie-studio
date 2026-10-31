@@ -41,7 +41,11 @@ Credential docs are split into two layers:
   name only `https://api.heroku.com` or loopback (`bin/lib/heroku_api_base.rb`).
   `test/lib/launcher_child_env_test.rb` and turf's `tm_spawn_env_test.rb` /
   `e2e_parallel_env_test.rb` prove each with a control.
-- Use `/opt/homebrew/bin/op` directly for targeted reads.
+- **One way into 1Password:** env file, then the secret cache, then `op` only through
+  the metered wrapper (`OpMeter.popen`, `op_metered`, `bin/secret`). The read order,
+  rotation, the names-never-values rule and the vault permission map are the
+  [`credential-access`](credential-access.md) SOP; `test/lib/op_reads_are_bounded_test.rb`
+  fails on a raw `op` call in `bin/`, `app/` or `lib/`.
 - Prefer repo scripts that write or consume secrets without echoing them.
 - Do not scan vaults broadly unless Alex McRitchie explicitly asks.
 - Do not edit agent tool permissions or `.claude/settings*.json` to gain credential access.
@@ -566,6 +570,8 @@ OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN" \
 
 ### Who spent the quota
 
+Diagnose with [`credential-access`](credential-access.md) § Diagnosing a spend first.
+
 The daily read cap is **1,000, account-wide** — shared by every service account
 and every lane — so one careless loop stops the whole ecosystem. Every `op`
 invocation the `bin/` stack makes is therefore recorded, and the question is a
@@ -579,7 +585,7 @@ bin/op-reads --tail 40       # the raw rows
 
 | Piece | What it is |
 |---|---|
-| `bin/lib/op_meter.rb` | the Ruby half — `OpMeter.popen` wraps the call; `bin/lib/agent_api.rb`, `bin/lib/task_board.rb`, `bin/gh-token` use it |
+| `bin/lib/op_meter.rb` | the Ruby half — `OpMeter.popen` wraps the call (every Ruby caller under `bin/`); `OpMeter.record` logs a call that needs stdin or its own single bound (`bin/lib/heroku_ci_key_rotation.rb`, `Gmail::Credentials`, `Workspace::Credentials`) |
 | `bin/lib/op-meter.sh` | the shell half — `op_metered <bin> <args…>`, sourced by `bin/secret`, `bin/gh-app-git-credential`, `bin/ecosystem-build`, `bin/setup-1pass-token` |
 | `<projects>/.agents/op-reads.log` | the append-only log: timestamp, calling command, action, outcome, seam, pid, context |
 | `bin/op-reads` | the read-only query |
@@ -601,7 +607,7 @@ agent API all get the bound from the wrapper, and since 2026-10-27 so do the las
 bare readers under `bin/`: `DomainCutover::Credentials.op_read` (the release's
 static-site deploy), `bin/r2-backup --op`, `bin/lib/dev_google_client.rb` and
 `DomainRegister::Credentials.op_read`. `test/lib/op_reads_are_bounded_test.rb`
-refuses a new Ruby call under `bin/` that spawns `op` outside the wrapper. The shell half's watchdog is perl
+refuses a new call in `bin/`, `app/` or `lib/`, Ruby or shell, that runs `op` outside the wrapper. The shell half's watchdog is perl
 (`timeout` is not installed on the Mac); it uses no alarm at all, because `op` is a
 Go binary that ignores SIGALRM: it forks, puts `op` in its own process group, polls
 for the exit, and kills the group at the deadline.

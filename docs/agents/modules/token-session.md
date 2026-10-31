@@ -3,6 +3,9 @@
 
 **Invocation:** `token-session` · **Owner:** Shared · **Read this file, then run it.**
 
+The read order behind every GitHub token (cache first, 1Password on a miss, a shared
+backoff while 1Password is hung or rate-limited) is [`credential-access`](credential-access.md).
+
 Run this when a lane cannot reach GitHub: `Bad credentials`, a 401 or 403, a
 `gh auth login` prompt, `could not read Username for 'https://github.com'`, or a
 push that is refused on auth.

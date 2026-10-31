@@ -9,6 +9,7 @@
 #   bin/gh-token --reject "$token"           # retire a REJECTED session; prints nothing
 #   bin/gh-token --forget                    # drop the identity's cached tokens; prints nothing
 #   bin/gh-token --expires-at                # ISO time the token a read would return expires; no token
+#   token="$(bin/gh-token --cached-only)"    # the cached session or exit 3; NEVER reads 1Password
 #
 # The identity comes from --identity, else GH_APP_ITEM, else `agent` (see LANE
 # below). To install the result into `gh`'s own keyring, use bin/gh-auth-refresh —
@@ -259,7 +260,7 @@ def cached_entries(identity)
   [read_store[identity], read_legacy_store[identity]]
 end
 
-def read_secret(ref, lane = OpVaults::DEFAULT_LANE)
+def read_secret(ref, lane = OpVaults::DEFAULT_LANE, via: "gh-token")
   return "" unless File.executable?(OP_BIN)
 
   # op takes its credential from OP_SERVICE_ACCOUNT_TOKEN and nothing else, so a
@@ -270,7 +271,7 @@ def read_secret(ref, lane = OpVaults::DEFAULT_LANE)
   # command that caused it. OpMeter.popen spawns nothing beyond this child, so
   # `$?` below still reports op's status and not the recorder's.
   Tempfile.create("gh-token-op-err") do |err|
-    out = OpMeter.popen(OpVaults.op_env(lane), [OP_BIN, "read", ref], via: "gh-token", err: err)
+    out = OpMeter.popen(OpVaults.op_env(lane), [OP_BIN, "read", ref], via: via, err: err)
     next out if $?.success?
 
     @op_said = scrub_op_error(File.read(err.path))
@@ -293,21 +294,67 @@ def scrub_op_error(stderr)
   scrubbed[-OP_ERROR_MAX..] || scrubbed
 end
 
+# THE ACCOUNT-WIDE CAUSES (SecretCache#record_backoff!). Only these back off the
+# whole machine: a hung 1Password and the service-account rate limit answer the
+# same for every process. A shell whose own token is missing does not.
+RATE_LIMITED = /rate.?limit|too many requests|\b429\b/i
+
+def account_wide_cause(op_said)
+  return "hung" if OpMeter.hung?
+  return "rate-limited" if op_said.to_s.match?(RATE_LIMITED)
+
+  nil
+end
+
+# A still-valid cached token (inside the refresh window, not expired), or nil.
+def still_valid_fallback(identity)
+  return nil unless cacheable?(identity)
+
+  usable_token(*cached_entries(identity), max_age: LIFETIME_SECONDS - STILL_VALID_MARGIN_SECONDS)
+end
+
+# Inside a backoff window no process reads 1Password: serve a still-valid token,
+# or stop at once and say when the window ends and how to skip it.
+def backed_off!(identity, held)
+  fallback = still_valid_fallback(identity)
+  if fallback
+    warn("gh-token: 1Password #{held[1]}; serving the cached #{identity} token that is still valid")
+    return [fallback, false]
+  end
+
+  warn("gh-token: 1Password was #{held[1]} on the last refresh, so no process reads it again until " \
+       "#{held[0].iso8601} (bin/secret status). After fixing 1Password, skip the wait for one call: " \
+       "#{SecretCache::BACKOFF_OVERRIDE}=1 bin/gh-token")
+  # HUNG_EXIT, not 1: bin/gh-app-git-credential reads 75 as "do not try 1Password
+  # yourself". On exit 1 it falls through to its own three reads, on every git
+  # operation, which is the spend this window exists to stop.
+  exit(OpMeter::HUNG_EXIT)
+end
+
 def mint(identity)
   meta = IDENTITIES.fetch(identity)
   lane = meta.fetch(:lane)
   item = GhIdentity.item_for(identity)
-  app_id = read_secret(OpVaults.ref(item, "app-id", lane), lane).strip
+  # Backoff is RECORDED only for the shared identity (below), so the deployer never
+  # waits: it is minted a handful of times a day by one ship lane, and an operator
+  # who has just sourced the admin profile must not wait out another's window.
+  held = SecretCache.backoff("github.#{identity}")
+  return backed_off!(identity, held) if held
+  # The identity rides the meter's `via` column, so bin/op-reads says which App spent
+  # a read: the deployer is minted per call by design, the agent once an hour.
+  via = "gh-token:#{identity}"
+  app_id = read_secret(OpVaults.ref(item, "app-id", lane), lane, via: via).strip
   # A failed first read (op hung or signed out) is not followed by a second one:
   # each bounded attempt can cost its whole deadline, and the contingency below is
   # what the caller needs, in seconds rather than minutes.
-  pem = app_id.empty? ? "" : read_secret(OpVaults.ref(item, PEM_ATTACHMENTS.fetch(item), lane), lane)
+  pem = app_id.empty? ? "" : read_secret(OpVaults.ref(item, PEM_ATTACHMENTS.fetch(item), lane), lane, via: via)
   if app_id.empty? || pem.strip.empty?
     SecretCache.record_failure!("github.#{identity}")
+    cause = account_wide_cause(@op_said)
+    SecretCache.record_backoff!("github.#{identity}", cause) if cause && cacheable?(identity)
     # A still-valid token (inside the refresh window, not expired) beats none.
     if cacheable?(identity)
-      fallback = usable_token(*cached_entries(identity),
-                              max_age: LIFETIME_SECONDS - STILL_VALID_MARGIN_SECONDS)
+      fallback = still_valid_fallback(identity)
       if fallback
         warn("gh-token: refresh failed (1Password unreadable); serving the cached #{identity} token " \
              "that is still valid — run `bin/secret status`")
@@ -319,6 +366,13 @@ def mint(identity)
     # line that names it and its fix, so the sign-in advice below would only
     # mislead. Exit HUNG_EXIT, which bin/gh-app-git-credential reads as "do not
     # spend thirty more seconds on your own reads" (release-survives-1password-hang).
+    # The rate limit is account-wide too: say what op said, then exit HUNG_EXIT so the
+    # credential helper does not spend three more reads of its own on the same refusal.
+    if cause == "rate-limited"
+      warn("gh-token: 1Password refused the read: #{@op_said} — the account-wide quota; " \
+           "bin/op-reads names the spender (docs/agents/modules/credential-access.md)")
+      exit(OpMeter::HUNG_EXIT)
+    end
     exit(OpMeter::HUNG_EXIT) if OpMeter.hung?
     # The parenthetical goes BEFORE the diagnosis, never after. OpVaults.diagnose
     # ends on an indented, copy-pasteable command; anything appended lands on that
@@ -488,6 +542,7 @@ end
 
 identity = nil
 force = false
+cached_only = false
 reject = nil
 forget = false
 expires_at = false
@@ -496,6 +551,7 @@ while (arg = args.shift)
   case arg
   when "--identity" then identity = args.shift.to_s.strip
   when "--force" then force = true
+  when "--cached-only" then cached_only = true
   when "--reject" then reject = args.shift.to_s.strip
   when "--forget" then forget = true
   when "--migrate"
@@ -541,6 +597,16 @@ if expires_at
     stamp = SecretCache.github_expires_at(identity, [read_store, read_legacy_store])
     puts stamp.iso8601 if stamp
   end
+  exit 0
+end
+
+# --cached-only: the shared session or nothing. A watcher (the dispatcher's harness
+# probe) asks this way when 1Password is already known to be down, so a probe never
+# becomes the process that spends the quota. Exit 3, silent, on a miss.
+if cached_only
+  cached = still_valid_fallback(identity)
+  exit 3 unless cached
+  puts cached
   exit 0
 end
 

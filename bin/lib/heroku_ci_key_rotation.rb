@@ -163,20 +163,33 @@ module HerokuCiKeyRotation
     end
 
     def read(field)
-      out = @shell.call([@bin, "read", "op://#{VAULT}/#{ITEM}/#{field}"], env: @env)
+      out = metered("read") { @shell.call([@bin, "read", "op://#{VAULT}/#{ITEM}/#{field}"], env: @env) }
       out.chomp
+    end
+
+    # Every call here lands in bin/op-reads (docs/agents/modules/credential-access.md).
+    # The admin edit needs stdin, which OpMeter.popen does not carry, so the shell runs
+    # the child and OpMeter.record writes the row: "ok", or "fail" when Shell raised.
+    def metered(action)
+      require_relative "op_meter"
+      result = yield
+      OpMeter.record(action: action, outcome: "ok", via: "rotate-heroku-ci-key")
+      result
+    rescue Abort
+      OpMeter.record(action: action, outcome: "fail:1", via: "rotate-heroku-ci-key")
+      raise
     end
 
     # The value rides STDIN as the item's JSON (`op item edit` reads a piped
     # template), never argv — an assignment statement is visible to `ps`.
     def write(fields)
-      item = JSON.parse(@shell.call([@bin, "item", "get", ITEM, "--vault", VAULT, "--format", "json"], env: @env))
+      item = JSON.parse(metered("item get") { @shell.call([@bin, "item", "get", ITEM, "--vault", VAULT, "--format", "json"], env: @env) })
       fields.each do |label, value|
         field = Array(item["fields"]).find { |f| f["label"] == label } ||
                 raise(Abort, "1Password item #{ITEM} has no `#{label}` field")
         field["value"] = value
       end
-      @shell.call([@bin, "item", "edit", ITEM, "--vault", VAULT], env: @env, stdin: JSON.generate(item))
+      metered("item edit") { @shell.call([@bin, "item", "edit", ITEM, "--vault", VAULT], env: @env, stdin: JSON.generate(item)) }
       nil
     end
   end

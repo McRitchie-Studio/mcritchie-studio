@@ -59,6 +59,40 @@ module OpVaults
   # with the AGENT lane: every lane needs them, and nothing about them is admin.
   DEFAULT_LANE = :agent
 
+  # EVERY VAULT A SERVICE ACCOUNT ON THIS MAC CAN SEE, which lane's token reads
+  # it, and the machine it would move to (one-way-into-1password, 2026-10-31).
+  #
+  # Data only: nothing routes on it yet. Alex McRitchie asked for the organization
+  # first ("one day we will move the different permissions to different machines
+  # but for today we just need the organization in place"), so the split is written
+  # down where code can read it before any machine exists. The procedure that
+  # carries it, with what lives in each vault and which soul class may read it, is
+  # docs/agents/modules/credential-access.md; test/lib/credential_access_vault_map_test.rb
+  # pins that table to this hash, both ways.
+  #
+  # Measured 2026-10-31 with one `op vault list` on the agent token: Commercial
+  # Welding, family-agents, industries-agents, studio-agents, studio-applications.
+  # The deployer rows come from docs/agents/modules/credential-inventory.md (the
+  # admin token was not loaded to re-measure them). Personal vaults are visible to
+  # no service account and are not listed: no agent reads one.
+  #
+  # +readers+  the lanes whose token can read the vault today.
+  # +machine+  where it lives once permissions move off this Mac, per Alex
+  #            McRitchie's split approved 2026-10-31: :agent (the agent lane's
+  #            machine) or :admin (the deploy/admin lane's machine). Personal vaults
+  #            go on no agent machine at all.
+  # +confirm+  true when the placement is inferred from which token reads the vault
+  #            today and waits on Alex McRitchie to confirm it: the business and
+  #            client vaults, and studio-applications, which both tokens read.
+  VAULTS = {
+    "studio-agents" => { readers: %i[agent], machine: :agent },
+    "industries-agents" => { readers: %i[agent], machine: :agent, confirm: true },
+    "family-agents" => { readers: %i[agent], machine: :agent, confirm: true },
+    "Commercial Welding" => { readers: %i[agent], machine: :agent, confirm: true },
+    "studio-applications" => { readers: %i[agent deployer], machine: :admin, confirm: true },
+    "studio-agents-admin" => { readers: %i[deployer], machine: :admin }
+  }.freeze
+
   module_function
 
   def lane(name = DEFAULT_LANE)

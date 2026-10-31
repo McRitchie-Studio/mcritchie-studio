@@ -234,6 +234,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `agent-communication` | Shared | `mcritchie-studio/docs/agents/modules/agent-communication.md` |
 | `building-sop` | Shared | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `contact-capture` | Shared | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
+| `credential-access` | Shared | `mcritchie-studio/docs/agents/modules/credential-access.md` |
 | `credential-issues` | Shared | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `dream` | Shared | `mcritchie-studio/docs/agents/modules/dream.md` |
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
