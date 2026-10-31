@@ -51,6 +51,9 @@ class OpReadsAreBoundedTest < Minitest::Test
   SHELL_BIN = %r{(?:op|"?\$\{?OP(?:_BIN)?\}?"?|/opt/homebrew/bin/op)}
   SHELL_FORM = /(?:\A|[;&|(]|\$\(|\A\s+)\s*#{SHELL_BIN}\s+(?:#{SUBCOMMANDS.join('|')})\b/
   RUBY_STRING_FORM = /(?:\A\s*|[(,=]\s*|\$\()["']?(?:op)\s+(?:#{SUBCOMMANDS.join('|')})\b/
+  # A Ruby backtick or %x runs a shell too. Only where an expression starts (a line,
+  # an assignment, a return): prose quotes `op whoami` mid-sentence, and that passes.
+  RUBY_BACKTICK_FORM = /(?:\A\s*|=\s*|\breturn\s+)(?:`|%x[({\[])\s*op\s+(?:#{SUBCOMMANDS.join('|')})\b/
 
   # path => [[substring that marks the line, why it may stay, optional regex that
   # must appear within two lines of it (the meter beside an injected or stdin call)]]
@@ -123,7 +126,7 @@ class OpReadsAreBoundedTest < Minitest::Test
         next if line.lstrip.start_with?("#") || line.match?(METERED)
 
         found = line.match?(LITERAL_ARGV) || line.match?(VAR_ARGV) ||
-                (ruby ? line.match?(RUBY_STRING_FORM) : line.match?(SHELL_FORM))
+                (ruby ? line.match?(RUBY_STRING_FORM) || line.match?(RUBY_BACKTICK_FORM) : line.match?(SHELL_FORM))
         [path, i + 1, line.strip, all[[i - 2, 0].max..(i + 2)].join("\n")] if found
       end
     end
@@ -163,6 +166,8 @@ class OpReadsAreBoundedTest < Minitest::Test
         SCRIPT = 'op whoami >/dev/null'
         warn "check `op vault list` for the vault"
         OpMeter.popen({}, ["op", "read", ref], via: "ok")
+        token = `op read op://v/i/f`.strip
+        failing = ("1Password (`op whoami`)" if down)
       RUBY
       sh = File.join(dir, "raw.sh")
       File.write(sh, <<~SH)
@@ -174,8 +179,8 @@ class OpReadsAreBoundedTest < Minitest::Test
       SH
       found = with_root(dir) { hits(%w[raw.rb raw.sh]) }.map { |p, n, _l, _w| [p, n] }
 
-      assert_equal [["raw.rb", 1], ["raw.rb", 2], ["raw.rb", 3], ["raw.rb", 4], ["raw.sh", 2], ["raw.sh", 3]], found,
-                   "argv, splat, constant-binary and shell-string forms are caught; metered lines and prose are not"
+      assert_equal [["raw.rb", 1], ["raw.rb", 2], ["raw.rb", 3], ["raw.rb", 4], ["raw.rb", 7], ["raw.sh", 2], ["raw.sh", 3]], found,
+                   "argv, splat, constant-binary, shell-string and backtick forms are caught; metered lines and prose are not"
     end
   end
 
