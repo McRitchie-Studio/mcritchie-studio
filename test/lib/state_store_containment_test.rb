@@ -163,6 +163,9 @@ class StateStoreContainmentTest < Minitest::Test
     "bin/lib/op-meter.sh" => [:bash, "BASH `op` wrapper, sourced by bin/secret, bin/gh-app-git-credential, " \
                                      "bin/ecosystem-build and bin/setup-1pass-token — LAYER 2 cannot read " \
                                      "it; LAYER 3 executes it"],
+    "bin/lib/keep_awake.rb" => [:ruby, "the shared keep-the-Mac-awake hold: location is PRIVATE and dir, the " \
+                                       "one seam every state, lock, history and indicator path hangs off, " \
+                                       "enforce!s"],
     "bin/lib/credential_helper_install.rb" => [:ruby, "credential-helper snapshot: it NAMES the op-reads " \
                                                       "log to write that path as a STRING into the " \
                                                       "snapshot's env stamp, because a snapshot's __dir__ " \
@@ -255,6 +258,9 @@ class StateStoreContainmentTest < Minitest::Test
     # constant, a hash value) and launder at every seam that acts on it.
     "bin/reviewer-select" => {},
     "bin/qa-intake" => {},
+    "bin/lib/keep_awake.rb" => {
+      "location" => "BUILDER — private; dir launders it, and every other path is built from dir"
+    },
     "bin/lib/op_meter.rb" => {
       "log_path" => "BUILDER — private; append launders it at the write seam",
       "records" => "READ — parses the log for bin/op-reads; append is the only writer",

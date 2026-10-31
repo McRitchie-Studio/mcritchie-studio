@@ -439,6 +439,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # any run (no heroku, no op read); an unknown flag exits 2; and
     # AgentSetupCli refuses a stray positional for every verb before it acts.
     "agent-setup"            => :optparse,
+    # bin/keep-awake: a bare or unknown command prints usage and exits; OptionParser
+    # answers -h/--help after any subcommand before it acts, an unknown flag exits 2,
+    # and a stray positional refuses before the store is touched.
+    "keep-awake"             => :optparse,
     # --- subcommand dispatch that falls through to usage (BARE form) ----------
     #
     # Read the legend above before trusting this bucket: it says what the BARE

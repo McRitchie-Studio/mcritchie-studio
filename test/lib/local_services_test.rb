@@ -292,8 +292,9 @@ class LocalServicesTest < Minitest::Test
 
     assert_includes rules, "Bash(bin/dispatcher install)"
     assert_includes rules, "Bash(/Users/someone/code/mcritchie-studio/bin/dispatcher status)"
+    assert_includes rules, "Bash(/Users/someone/code/mcritchie-studio/bin/keep-awake:*)"
     refute(rules.any? { |r| r.include?("{{") }, "every placeholder is filled")
-    assert_equal 6, rules.size
+    assert_equal 8, rules.size
   end
 
   def test_merge_into_a_missing_file_creates_valid_json

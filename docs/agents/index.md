@@ -208,6 +208,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `discord-bot-setup` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/discord-bot-setup.md` |
 | `domain-dns` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-dns.md` |
 | `domain-purchase` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-purchase.md` |
+| `keep-awake` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/keep-awake.md` |
 | `production-deploy` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | `program-upgrade` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/program-upgrade.md` |
 | `r2-backup` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |

@@ -122,6 +122,9 @@ module TaskUsageSandbox
     # which still aborts, because a pin aimed back INSIDE the real store is a
     # misconfiguration and not a routine test condition.
     "op-reads" => %w[MCR_OP_READS_LOG CLAUDE_PROJECTS_DIR],
+    # bin/lib/keep_awake.rb — the shared keep-the-Mac-awake hold (state.json, its
+    # flock, history.log, the compiled menu-bar indicator)
+    "keep-awake" => %w[MCR_KEEP_AWAKE_DIR CLAUDE_PROJECTS_DIR],
     # bin/lib/agent_mailbox.rb — each soul's Claude folder (~/.agents/mailbox/<soul>)
     "agent-mailbox" => %w[AGENT_MAILBOX_HOME]
   }.freeze
