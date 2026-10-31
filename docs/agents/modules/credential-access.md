@@ -78,7 +78,9 @@ The 1Password item is the one source. Rotating a key is:
    [`credential-rotation`](../agents/steffon/sops/credential-rotation.md)).
 2. Drop every copy derived from it: `bin/secret forget --source <item>` for the
    cache; delete the key's line from each env file in the table above and re-run
-   the script that writes it; Heroku config through the rotation SOP.
+   the script that writes it (for the R2 pair, delete the whole
+   `<app>/.env.development`: `bin/ecosystem-build` writes only a missing or empty
+   file); Heroku config through the rotation SOP.
 3. Nothing else changes. No doc, memory note, profile or script holds the value,
    so none needs editing.
 
