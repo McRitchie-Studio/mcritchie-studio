@@ -167,6 +167,7 @@ its invocation exactly.
 | `agent-communication` (what an agent may discuss with owner, team, client and public) | `mcritchie-studio/docs/agents/modules/agent-communication.md` |
 | `building-sop` (feature-agent build flow + local-review decision) | `mcritchie-studio/docs/agents/modules/building-sop.md` |
 | `contact-capture` (offer Alex McRitchie a create or update of an Apple Contacts card from a forwarded email's signature) | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
+| `credential-access` (read order, rotation, names-never-values, the vault permission map) | `mcritchie-studio/docs/agents/modules/credential-access.md` |
 | `credential-issues` (log it privately, triage rotate-now vs weekly) | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
 | `dream` (the bank of good answers, in a platform sequence, one per soul and step moment cards; capture and sign-off) | `mcritchie-studio/docs/agents/modules/dream.md` |
 | `form-fill` (complete an application from records, ask only what they cannot answer) | `mcritchie-studio/docs/agents/modules/form-fill.md` |

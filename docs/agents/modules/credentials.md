@@ -41,7 +41,11 @@ Credential docs are split into two layers:
   name only `https://api.heroku.com` or loopback (`bin/lib/heroku_api_base.rb`).
   `test/lib/launcher_child_env_test.rb` and turf's `tm_spawn_env_test.rb` /
   `e2e_parallel_env_test.rb` prove each with a control.
-- Use `/opt/homebrew/bin/op` directly for targeted reads.
+- **One way into 1Password:** env file, then the secret cache, then `op` only through
+  the metered wrapper (`OpMeter.popen`, `op_metered`, `bin/secret`). The read order,
+  rotation, the names-never-values rule and the vault permission map are the
+  [`credential-access`](credential-access.md) SOP; `test/lib/op_call_guard_test.rb`
+  fails on a raw `op` call in `bin/`, `app/` or `lib/`.
 - Prefer repo scripts that write or consume secrets without echoing them.
 - Do not scan vaults broadly unless Alex McRitchie explicitly asks.
 - Do not edit agent tool permissions or `.claude/settings*.json` to gain credential access.
@@ -565,6 +569,8 @@ OP_SERVICE_ACCOUNT_TOKEN="$OP_ADMIN_SERVICE_ACCOUNT_TOKEN" \
 ```
 
 ### Who spent the quota
+
+Diagnose with [`credential-access`](credential-access.md) § Diagnosing a spend first.
 
 The daily read cap is **1,000, account-wide** — shared by every service account
 and every lane — so one careless loop stops the whole ecosystem. Every `op`
