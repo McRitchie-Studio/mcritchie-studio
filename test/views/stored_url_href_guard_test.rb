@@ -63,6 +63,15 @@ class StoredUrlHrefGuardTest < ActiveSupport::TestCase
     "app/views/broadcasts/_button.html.erb" => {
       "url" => "callers pass broadcast_link URLs: TEMPLATE_LINKS constants, or the admin-typed survivor/turf_totals columns already read through ApplicationHelper.http_href"
     },
+    "app/views/broadcasts/blocks/_cta.html.erb" => {
+      "url" => "callers pass broadcast_link URLs: Broadcast::TEMPLATE_LINKS constants or the tracked redirect"
+    },
+    "app/views/broadcasts/blocks/_footer.html.erb" => {
+      "unsubscribe_href" => "the mailer's unsubscribe route, or the HubSpot merge tag, as in layouts/broadcast_email"
+    },
+    "app/views/broadcasts/cyvasse_pick.html.erb" => {
+      "broadcast_link(key.to_sym, links[key])" => "Broadcast::TEMPLATE_LINKS constants or the tracked redirect"
+    },
     "app/views/contact_submissions/new.html.erb" => { "url" => "the link TEXT; the href is privacy_path" },
     "app/views/integrations/discord.html.erb" => { "[:url]" => "a constant setup-step table in the template" },
     "app/views/tasks/_release_phase_meter.html.erb" => { "[:url]" => "release_ci_run_url: GitHub's run URL" },
