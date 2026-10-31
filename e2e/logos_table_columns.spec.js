@@ -23,22 +23,29 @@ async function growPalette(page, brand, count) {
   }, [brand, count]);
 }
 
-for (const width of [375, 1280]) {
-  test(`at ${width} px thirty colours scroll inside their cell without growing the row or the page`, async ({ page }) => {
-    await open(page, width);
-    const grown = await growPalette(page, "studio", 30);
-    expect(grown.overflow).toBe("auto");
-    expect(grown.scroll).toBeGreaterThan(grown.client);
-    expect(grown.after).toBe(grown.before);
-    expect(grown.page).toBeLessThanOrEqual(width);
-    expect(grown.table).toBe(0); // the table's own wrapper does not scroll sideways either
+// Thirty colours scroll inside their cell without growing the row, the table's wrapper or the page.
+async function expectStripScrolls(page, width) {
+  await open(page, width);
+  const grown = await growPalette(page, "studio", 30);
+  expect(grown.overflow).toBe("auto");
+  expect(grown.scroll).toBeGreaterThan(grown.client);
+  expect(grown.after).toBe(grown.before);
+  expect(grown.page).toBeLessThanOrEqual(width);
+  expect(grown.table).toBe(0); // the table's own wrapper does not scroll sideways either
 
-    const strip = page.locator("[data-test='logo-palette'][data-brand='studio']");
-    await strip.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
-    expect(await strip.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
-    expect(await page.evaluate(() => window.scrollX)).toBe(0);
-  });
+  const strip = page.locator("[data-test='logo-palette'][data-brand='studio']");
+  await strip.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
+  expect(await strip.evaluate((el) => el.scrollLeft)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.scrollX)).toBe(0);
 }
+
+test("at 375 px thirty colours scroll inside their cell without growing the row or the page", async ({ page }) => {
+  await expectStripScrolls(page, 375);
+});
+
+test("at 1280 px thirty colours scroll inside their cell without growing the row or the page", async ({ page }) => {
+  await expectStripScrolls(page, 1280);
+});
 
 test("at 375 px every Apps and kits chip fits the screen", async ({ page }) => {
   await open(page, 375);
