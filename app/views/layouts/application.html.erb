@@ -17,6 +17,10 @@
 
   <body x-data class="<%= class_names("bg-page text-body min-h-screen", "type-dense" => type_dense_page?) %>" :class="{ 'dev-mode': $store.devMode }">
     <%= render "layouts/studio/flash" %>
+    <%# The branded page-load overlay (studio-engine docs/LOADER.md): hidden until a
+        Turbo visit outlasts 350ms. Guarded until the release relocks an engine
+        that has the helper. %>
+    <%= studio_loader_overlay if respond_to?(:studio_loader_overlay) %>
     <%# Link-sidebar store bridge: engine-owned since studio-engine 0.30 —
         components/_link_sidebar carries it. %>
     <%# The bar stack is the header's SIBLING, not its child (studio-engine 0.33):
