@@ -331,13 +331,11 @@ def mint(identity)
   meta = IDENTITIES.fetch(identity)
   lane = meta.fetch(:lane)
   item = GhIdentity.item_for(identity)
-  # Backoff is for the SHARED identity. The deployer is minted a handful of times a
-  # day by one ship lane, and an operator who has just sourced the admin profile
-  # must not wait out a window another process opened.
-  if cacheable?(identity)
-    held = SecretCache.backoff("github.#{identity}")
-    return backed_off!(identity, held) if held
-  end
+  # Backoff is RECORDED only for the shared identity (below), so the deployer never
+  # waits: it is minted a handful of times a day by one ship lane, and an operator
+  # who has just sourced the admin profile must not wait out another's window.
+  held = SecretCache.backoff("github.#{identity}")
+  return backed_off!(identity, held) if held
   app_id = read_secret(OpVaults.ref(item, "app-id", lane), lane).strip
   # A failed first read (op hung or signed out) is not followed by a second one:
   # each bounded attempt can cost its whole deadline, and the contingency below is
