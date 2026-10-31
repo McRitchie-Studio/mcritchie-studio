@@ -260,6 +260,12 @@ command carries on; it never fails `status` or `prepare`, which make the same re
   and never discard it.** A gem repo with modified TRACKED files DOES abort (before
   publishing): run the printed rescue, then re-run ship.
 - **The ship also advances `accepted`** to the frozen SHA (guarded, non-fatal).
+- **`accepted` ahead of the frozen SHA is normal.** `prepare` promotes the `accepted`
+  SHA it swept (the pin on `metadata.swept_shas`), and work merged onto `accepted` after
+  that waits for the next release; prepare's stale-tree gate measures `release` against
+  the pin, never the live head. So the advance above reports **AHEAD** (nothing to do),
+  and the frozen-SHA test gate's green comes from the SHA's own run when `accepted` has
+  moved (the CI that run `accepted` built for that same SHA).
 
 ### Gems: the final publish, the re-lock, and its CI read
 

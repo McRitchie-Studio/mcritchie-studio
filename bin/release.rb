@@ -51,8 +51,12 @@
 #       1. DETECT the work: every `reviewed` task + any `assembled` straggler not
 #          riding the current RC (nothing + no active release → idempotent no-op).
 #       2. Ensure a candidate exists (Release.current_or_open!).
+#       2b. PIN: read each member repo's `accepted` head once, right after detection
+#          (pin_swept_shas!). The guards, the promote, the record
+#          (metadata["swept_shas"]) and the stale-tree gate all use that SHA, so a
+#          merge onto `accepted` after it waits for the next release.
 #       3. PROMOTE + RECORD: review already merged each feat PR into `accepted`, so
-#          the sweep PROMOTES all of `accepted` onto `release`, ONE promote per repo
+#          the sweep PROMOTES the pinned `accepted` SHA onto `release`, ONE promote per repo
 #          (promote_accepted_to_release!): a FAST-FORWARD ref push when `release` is
 #          contained in `accepted`, the batch PR only when `release` has diverged (a
 #          `reviewed` member with no code on `accepted` is a HELD anomaly, warned +
@@ -85,11 +89,13 @@
 #          e2e-smoke tier) on origin/release BEFORE deploying; a regression aborts
 #          with eject guidance (`bin/release eject` the offender, keep the rest).
 #       6. Deploy origin/release to QA (qa-server deploy → wait-for-boot /up
-#          smoke → post_deploy hooks).
+#          smoke → post_deploy hooks), every app CONCURRENTLY (run_qa_deploys), each
+#          line prefixed [<repo>]; all join before the flip.
 #       7. QA-GREEN → flip the swept members `reviewed → assembled`
 #          (Release::Conductor.qa_green!; merged stays "release") + assemble the
 #          RC. A QA failure leaves them `reviewed` — the next run self-heals.
-#       8. DEVNET GAUNTLET (a release carrying turf-monster or turf-vault): run
+#       8. DEVNET GAUNTLET (a release carrying turf-monster or turf-vault): on Turf's
+#          deploy thread as soon as Turf QA boots (before the flip), run
 #          Turf Monster's contest-rehearsal on QA unattended, check the settle's
 #          token deltas, record devnet_gauntlet complete or fail (which `ship`
 #          reads). A red run exits 4 with no Steffon handoff; a release that

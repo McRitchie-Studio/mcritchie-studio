@@ -8,6 +8,14 @@ class Release
   # `accepted` lacks. While that holds, the promote is a fast-forward, so `accepted`,
   # `release` and `main` share one commit id after a ship, and the CI verdict on the
   # `accepted` head is the verdict on the SHA that QA and production run.
+  #
+  # THE PIN (task release-pins-swept-sha). prepare promotes the `accepted` SHA it
+  # swept, not the live head, so `accepted` may run AHEAD of `release` for the whole
+  # life of a release; that is the normal state now, not drift. One consequence breaks
+  # the invariant on purpose: a consumer lock bump while `accepted` is ahead lands on
+  # `release` alone (bump_rung answers :release, because the two do not share a commit),
+  # and the NEXT promote takes the batch PR once and carries it back, after which the
+  # promotes fast-forward again.
   module PromotePlan
     module_function
 

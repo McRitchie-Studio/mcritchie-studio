@@ -75,8 +75,10 @@ token for prepare and archive, the admin 1Password token and DEPLOYER token for
 ship (minted fresh for every act, never left empty), a one-hour CI poll budget, and
 `caffeinate` tied to its own pid. It re-runs a step ONCE on a transient GitHub
 network failure (`Failed to connect to github.com`, `Timeout was reached`, `Could
-not resolve host`) or on prepare's stale-tree refusal (a newcomer landed on
-`accepted`), and re-runs prepare once when ship refuses for a missing gauntlet.
+not resolve host`) or on prepare's stale-tree refusal (`release` is missing work the
+sweep took; a newcomer merged onto `accepted` mid-run no longer refuses, because prepare
+promotes the SHA it swept and the newcomer waits for the next release), and re-runs
+prepare once when ship refuses for a missing gauntlet.
 
 **A green prod verify tells the release on Slack** (`bin/release announce <release>
 --post`, which the cycle runs for you): one summary in #general as you, Mason
