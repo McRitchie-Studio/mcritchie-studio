@@ -39,6 +39,15 @@ module AgentMailbox
                 '{ [ -z "$u" ] || [ "$u" = "${TMPDIR:-}" ] || TMPDIR="$u" op whoami >/dev/null 2>&1; }'
     GH_SCRIPT = 'GH_TOKEN="$(bin/gh-token 2>/dev/null)" && [ -n "$GH_TOKEN" ] && ' \
                 'GH_TOKEN="$GH_TOKEN" gh api /rate_limit --silent >/dev/null 2>&1'
+    # THE PROBE NEVER SPENDS THE QUOTA WHILE 1PASSWORD IS DOWN (one-way-into-1password).
+    # On 2026-10-30 and 2026-10-31 GH_SCRIPT ran every minute with an expired cache and
+    # a hung, then rate-limited, 1Password: each beat went back to `op` and was killed
+    # at DEADLINE, about 1,060 metered attempts in two windows, the whole of the
+    # sessionless gh-token traffic that day. When op_ok is false the probe now asks
+    # for the cached session only, so gh_ok still says whether agents can reach
+    # GitHub, and the probe never becomes the process that reads 1Password. bin/gh-token's
+    # account-wide backoff covers the rate-limited case, where `op whoami` still answers.
+    GH_CACHED_SCRIPT = GH_SCRIPT.sub("bin/gh-token ", "bin/gh-token --cached-only ")
     PMSET = "/usr/bin/pmset"
 
     Measurement = Struct.new(:op_ok, :gh_ok, :power, :measured_at, keyword_init: true) do
@@ -71,8 +80,9 @@ module AgentMailbox
     end
 
     def call
-      Measurement.new(op_ok: @runner.call(OP_SCRIPT, @deadline), gh_ok: @runner.call(GH_SCRIPT, @deadline),
-                      power: @power.call, measured_at: @clock.call)
+      op_ok = @runner.call(OP_SCRIPT, @deadline)
+      gh_ok = @runner.call(op_ok ? GH_SCRIPT : GH_CACHED_SCRIPT, @deadline)
+      Measurement.new(op_ok: op_ok, gh_ok: gh_ok, power: @power.call, measured_at: @clock.call)
     end
 
     private
