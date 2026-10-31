@@ -25,6 +25,8 @@ class CreateSlackPosts < ActiveRecord::Migration[8.1]
     add_index :slack_posts, %i[channel_id thread_ts created_at]
     add_index :slack_posts, :idempotency_key, unique: true
     add_index :slack_posts, :release_slug
+    add_foreign_key :slack_posts, :releases, column: :release_slug, primary_key: :slug,
+                                             on_update: :cascade, on_delete: :nullify
     add_check_constraint :slack_posts, "kind IN ('post', 'reply', 'release')", name: "slack_posts_kind_known"
     add_check_constraint :slack_posts, "status IN ('sending', 'posted', 'suppressed', 'failed')",
                          name: "slack_posts_status_known"

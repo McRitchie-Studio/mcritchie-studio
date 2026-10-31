@@ -127,6 +127,7 @@ class MediaSlackLimitsTest < ActiveSupport::TestCase
   end
 
   test "[unit] post under the cap is ledgered as posted with Slack's ts; text passes a mention through untouched" do
+    Release.create!(slug: "rel-x", branch: "release", state: "shipped")
     transport = FakeTransport.new
     answer = adapter(transport).post(home, text: ":red_circle: smoke red <@U0CCSMUMQJV>", soul: "avi", kind: "release",
                                            thread_ts: ROOT, release_slug: "rel-x")

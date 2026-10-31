@@ -3240,6 +3240,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_31_040000) do
   add_foreign_key "rosters", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "skill_assignments", "agents", column: "agent_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "skill_assignments", "skills", column: "skill_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "slack_posts", "releases", column: "release_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "slates", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
