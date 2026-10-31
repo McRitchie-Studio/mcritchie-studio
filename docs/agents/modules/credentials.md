@@ -671,8 +671,10 @@ The two GitHub App items are split across the two vaults — `github.mcritchie-a
 
 The deployer's missing `pull_requests` grant bites only on PRIVATE repos: GitHub
 serves a public repo's pull requests to any token, so the ship reads PRs in the
-public repos and not in `voicebox`, `alex-build` or `rolio` (private, checked
-2026-10-30 with `gh repo list McRitchie-Studio`). The ship's containment check falls
+public repos and not in the private release repos: `voicebox`, `alex-build`,
+`rolio`, `mcritchie-industries` and `commercial-welding` (checked 2026-10-30; re-read
+with `gh repo list McRitchie-Studio --json name,visibility` against
+`config/release_repos.yml`, since the list drifts). The ship's containment check falls
 back to git ancestry there, and `bin/release ship`'s preflight prints a `PR READ
 PREFLIGHT` warning naming each repo it cannot read and the grant that closes it
 (Alex McRitchie's click: the App's Repository access plus Pull requests: Read-only).
