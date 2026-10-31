@@ -197,7 +197,7 @@ jobs:
           bundler-cache: true
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version-file: ${{ hashFiles('.tool-versions') != '' && '.tool-versions' || '' }}
           node-version: ${{ hashFiles('.tool-versions') == '' && '22' || '' }}
@@ -377,7 +377,7 @@ jobs:
 
       # Node's major from the caller's .tool-versions, else 22 (see the javascript job).
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version-file: ${{ hashFiles('.tool-versions') != '' && '.tool-versions' || '' }}
           node-version: ${{ hashFiles('.tool-versions') == '' && '22' || '' }}
@@ -930,7 +930,7 @@ jobs:
       # satellite whose JS unit tests run inside this lane gets the pinned major, not
       # whatever Node the runner image happens to ship.
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version-file: ${{ hashFiles('.tool-versions') != '' && '.tool-versions' || '' }}
           node-version: ${{ hashFiles('.tool-versions') == '' && '22' || '' }}
