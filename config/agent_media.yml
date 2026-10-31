@@ -6,7 +6,9 @@
 # A home is NEVER where a reply goes: a reply always goes back on the medium the
 # message arrived on (AgentMessageReplyJob reads the row's own `channel`). This
 # file decides only the standalone posts: the floor alert, release notes, /build
-# app requests, and a report with no channel chosen in admin.
+# app requests, a report with no channel chosen in admin, and a shipped release's
+# Slack posts (release_posts); and the Slack noise caps every agent post obeys
+# (limits).
 #
 # RESOLUTION. Media.home walks purpose → soul → app → defaults and takes the FIRST
 # level with an entry. That entry's `medium` (else defaults.medium) and `channel`
