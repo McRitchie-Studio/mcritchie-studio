@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 # `bin/release ship`'s PR-read preflight (bin/lib/ship_pr_access.rb), driven through
-# the real ship. Its own file: the release CLI suite's files are frozen at their size
-# (config/test_health.yml). Run directly:
+# the real ship. Its own file, because the release CLI suite's files are frozen at
+# their size. Run directly:
 #   ruby -Itest test/lib/release_cli_ship_pr_access_test.rb
 #
 # rel-20261029-00560a: the ship identity could not read voicebox/alex-build PRs, and
