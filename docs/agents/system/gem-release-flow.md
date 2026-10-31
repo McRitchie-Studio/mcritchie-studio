@@ -20,9 +20,11 @@ pushes a final gem version".
 Two things the old flow lacked are now in place, and they are what make B safe:
 
 1. **The propagation wait.** `await_published_gems!` holds every lock bump until
-   RubyGems' compact index (`/info` and the `/versions` tail) and the `.gem` have
-   served the version on every read for `RELEASE_GEM_SETTLE_S` (60s) and it installs
-   locally (a timeout is `GEM_NOT_SERVED`, nothing pushed), and CI runs
+   RubyGems has served the version on every surface bundler reads (the compact index
+   `/info` line; `/versions`, its tail first and, on a tail miss, the whole file under a
+   rationed read capped by `RELEASE_GEM_VERSIONS_FULL_MAX_TIME`; and the `.gem`) on
+   every read for `RELEASE_GEM_SETTLE_S` (60s), and it installs locally. A timeout is
+   `GEM_NOT_SERVED`, nothing pushed, naming the surface that missed. CI runs
    `.github/scripts/await-gem-propagation.sh` before `bundle install`. The 0.48.0
    cause cannot recur, and the wait is already paid at prepare under A, so B adds
    none.

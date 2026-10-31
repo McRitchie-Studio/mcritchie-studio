@@ -398,12 +398,13 @@ queue; `bin/release merge <slugs>` stays as the per-task primitive); `assembled`
 → QA-green already — the ship gate. It flags `blocked` + non-pipeline
 tasks separately. **`bin/conductor` never ships implicitly** — plain
 `bin/conductor ship` prints the handoff command; the explicit autonomous path is
-`bin/conductor ship --run`, which runs `bin/release ship --by conductor --yes`
-after the same release gates. It names no `--mode`, so it resolves to `auto`:
-it asks nobody and records no clearance. Under First Rule 5 it is not a
-production path: ship a cleared release with `bin/release ship --mode cleared
---clearance "<Alex McRitchie's words>" --yes` (or `bin/release cycle --clearance`)
-and an uncleared one with `--mode timed --yes`, not with `conductor ship --run`.
+`bin/conductor ship --run`, which always names its authority mode after the
+same release gates: with `--clearance "<Alex McRitchie's words>"` it runs
+`bin/release ship --by conductor --mode cleared --clearance "<his words>" --yes`,
+and without it `bin/release ship --by conductor --mode timed --yes` (the
+30-minute Approve window). It never sends a bare `--yes`, which would resolve to
+the mode that asks nobody and records no grant. The full-cycle lane still ships
+with `bin/release cycle --clearance`.
 It defaults to the PROD board (like `bin/release`).
 
 **A FAILED BOARD READ NOW REFUSES, it does not print an empty pipeline.** Until

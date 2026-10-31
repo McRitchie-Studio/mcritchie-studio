@@ -222,8 +222,10 @@ class ConductorTest < Minitest::Test
 
     assert_includes out, "assembled → QA then SHIP"
     assert_includes out, "bin/release prepare"
-    assert_match %r{QA workflow handoff: /\S*/bin/release ship --by conductor}, out
+    assert_match %r{QA workflow handoff: /\S*/bin/release ship --by conductor --mode timed}, out
     assert_match %r{autonomous workflow: /\S*/bin/conductor ship --run}, out
+    assert_includes out, "--mode cleared --clearance", "the plan names the cleared ship beside the timed one"
+    refute_match(/ship --by conductor --yes/, out, "the plan never teaches a bare --yes (it resolves to auto)")
   end
 
   def test_plan_flags_blocked_and_non_pipeline_separately
@@ -263,12 +265,39 @@ class ConductorTest < Minitest::Test
     assert_empty release_log, "plain conductor ship must not execute production deploy"
   end
 
-  def test_ship_run_invokes_autonomous_release_ship
+  # task release-gem-doc-followups: --run used to call `bin/release ship --by
+  # conductor --yes`, which names no --mode and so resolved to auto: it asked nobody
+  # and recorded no grant (First Rule 5). Uncleared, it now runs the timed window.
+  def test_ship_run_without_clearance_runs_the_timed_mode
     _out, _err, status = run_conductor("ship", "--run")
 
     assert status.success?
-    assert_includes release_log, "ship --by conductor --yes",
-      "ship --run forwards the explicit autonomous production ship command"
+    assert_equal "ship --by conductor --mode timed --yes", release_log.strip,
+      "an uncleared ship --run takes the timed Approve window, never a bare --yes"
+  end
+
+  def test_ship_run_with_clearance_runs_the_cleared_mode_with_his_words
+    _out, _err, status = run_conductor("ship", "--run", "--clearance", "ship it, go")
+
+    assert status.success?
+    assert_equal "ship --by conductor --mode cleared --clearance ship it, go --yes", release_log.strip,
+      "his chat clearance rides through as the grant"
+  end
+
+  def test_ship_dry_with_clearance_prints_the_cleared_command
+    out, _err, status = run_conductor("ship", "--clearance=ship it")
+
+    assert status.success?
+    assert_includes out, 'ship --by conductor --mode cleared --clearance "ship it"'
+    assert_empty release_log
+  end
+
+  def test_ship_refuses_a_blank_clearance_before_any_ship
+    _out, err, status = run_conductor("ship", "--run", "--clearance", "  ")
+
+    assert_equal 2, status.exitstatus
+    assert_includes err, "a blank clearance is no grant"
+    assert_empty release_log, "a blank clearance must never fall through to a ship"
   end
 
   # --- drive subcommands: dry by default, only --run executes --------------

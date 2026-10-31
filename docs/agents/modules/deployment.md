@@ -669,9 +669,11 @@ Operational notes:
   `bin/release prepare` automates it for the release candidate (preflight →
   build → push → `rc-` tag) and `bin/release ship` for the final (build →
   compare with the candidate → push → `v` tag → checksum).
-- Confirm a fresh publish with
-  `https://rubygems.org/api/v1/versions/<gem>/latest.json`; `gem list -r` and
-  `versions/<gem>.json` lag for minutes, and a version can never be pushed twice.
+- Confirm a fresh publish on the compact index bundler reads,
+  `curl -s https://index.rubygems.org/info/<gem> | tail -3` (the release wait also
+  reads `/versions` and the `.gem`); the JSON API (`api/v1/versions/<gem>.json`,
+  `latest.json`) and `gem list -r` can lag it for minutes, and a version can never be
+  pushed twice.
 - What a consumer runs is its `Gemfile.lock`, not the gem repo's branches and not
   the newest gem installed on the laptop. Before calling a cross-repo feature
   shipped, read the locked version and that version's source.

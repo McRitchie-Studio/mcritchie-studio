@@ -171,4 +171,60 @@ class GemServedWaitTest < Minitest::Test
     assert GemServedWait.versions_served?("studio-engine", "0.119.0", "ngine 0.1 x\n" + tail)
     assert_equal "", GemServedWait.drop_cut_line("no newline at all")
   end
+
+  # ── [unit] the refusal names the surface that failed ──────────────────────
+  #
+  # task release-gem-doc-followups: GEM_NOT_SERVED said "not served" and told the
+  # operator to wait for /info, even when /info already listed the version and the
+  # stale object was /versions or the .gem.
+
+  def test_a_timeout_carries_the_last_missed_surface
+    result, = run_wait([GemServedWait::SURFACE_INFO, GemServedWait::SURFACE_GEM], timeout: 10, interval: 5)
+
+    refute_predicate result, :served?
+    assert_equal GemServedWait::SURFACE_GEM, result.miss, "the LAST poll's miss is the one the refusal names"
+  end
+
+  def test_a_served_result_carries_no_miss_and_a_bare_false_names_none
+    served, = run_wait([GemServedWait::SURFACE_INFO, true], settle: 0)
+    unnamed, = run_wait([false], timeout: 0)
+
+    assert_predicate served, :served?
+    assert_nil served.miss
+    assert_nil unnamed.miss, "a probe that answers a bare false names no surface"
+  end
+
+  def test_first_miss_stops_at_the_first_failing_surface
+    asked = []
+    checks = [["/info", -> { asked << :info; true }], [".gem", -> { asked << :gem; false }],
+              ["never", -> { flunk "the probe must stop at the first miss" }]]
+
+    assert_equal ".gem", GemServedWait.first_miss(checks)
+    assert_equal %i[info gem], asked
+    assert_nil GemServedWait.first_miss([["/info", -> { true }]])
+  end
+
+  def test_versions_miss_names_tail_full_read_and_failed_read_apart
+    assert_nil GemServedWait.versions_miss("studio-engine", "0.82.0", TAIL, full: -> { REBUILT })
+    assert_equal GemServedWait::SURFACE_VERSIONS_TAIL,
+                 GemServedWait.versions_miss("studio-engine", "0.82.0", TAIL, full: -> { nil })
+    assert_equal GemServedWait::SURFACE_VERSIONS_FULL,
+                 GemServedWait.versions_miss("studio-engine", "9.9.9", TAIL, full: -> { REBUILT })
+    assert_equal GemServedWait::SURFACE_VERSIONS_FULL_FAILED,
+                 GemServedWait.versions_miss("studio-engine", "9.9.9", TAIL, full: -> { :failed })
+  end
+
+  URLS = { info: "https://index.rubygems.org/info/%s", versions: "https://index.rubygems.org/versions",
+           file: "https://rubygems.org/gems/%s-%s.gem" }.freeze
+
+  def test_the_remedy_checks_the_surface_that_missed
+    remedy = ->(miss) { GemServedWait.remedy(miss, gem_name: "studio-engine", version: "0.9.0", urls: URLS) }
+
+    assert_includes remedy.call(GemServedWait::SURFACE_INFO), "info/studio-engine | tail -3` lists 0.9.0"
+    assert_includes remedy.call(GemServedWait::SURFACE_VERSIONS_TAIL), "versions | grep '^studio-engine '"
+    assert_includes remedy.call(GemServedWait::SURFACE_VERSIONS_FULL), "versions | grep '^studio-engine '"
+    assert_includes remedy.call(GemServedWait::SURFACE_VERSIONS_FULL_FAILED), "RELEASE_GEM_VERSIONS_FULL_MAX_TIME"
+    assert_includes remedy.call(GemServedWait::SURFACE_GEM), "gems/studio-engine-0.9.0.gem` exits 0"
+    refute_includes remedy.call(GemServedWait::SURFACE_GEM), "/info/", "a .gem miss must not send the operator to /info"
+  end
 end
