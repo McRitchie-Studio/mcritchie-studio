@@ -12,8 +12,13 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     # Hero
-    assert_includes response.body, "Solutions For"
-    assert_includes response.body, "Families"
+    assert_select "h1.hero-title" do
+      assert_select "span.dropping-texts[data-spacer=Workflow][data-fit-width] > span", count: 3
+      %w[Workflow Idea Plan].each { |word| assert_select "span.dropping-texts > span", text: word }
+      assert_select "span", text: "Built Right"
+    end
+    assert_includes response.body, "Your"
+    assert_not_includes response.body, "Solutions For"
     assert_includes response.body, "An acquisition entrepreneur partnering with owners"
     # About
     assert_includes response.body, "Acquisition Entrepreneur"

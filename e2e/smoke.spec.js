@@ -8,7 +8,7 @@ const { loginWithMagicLink, VISITOR } = require("./helpers");
 test("landing page loads", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("body")).toContainText("McRitchie Studio");
-  await expect(page.locator("body")).toContainText("Solutions For");
+  await expect(page.locator("body")).toContainText("Built Right");
   await expect(page.locator("body")).toContainText("Alex McRitchie");
 });
 

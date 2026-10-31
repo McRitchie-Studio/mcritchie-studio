@@ -1,4 +1,4 @@
-<% content_for(:title, "McRitchie Studio — Solutions For Business") %>
+<% content_for(:title, "McRitchie Studio — Your Workflow Built Right") %>
 <% content_for(:full_width, true) %>
 
 <style>
@@ -43,14 +43,22 @@
       where the headline is dark text. %>
   <div class="hero-scrim absolute inset-0" data-hero-scrim style="background: linear-gradient(135deg, color-mix(in srgb, var(--color-page) var(--hero-scrim-edge), transparent) 0%, color-mix(in srgb, var(--color-page) var(--hero-scrim-mid), transparent) 50%, color-mix(in srgb, var(--color-page) var(--hero-scrim-edge), transparent) 100%);"></div>
   <div class="relative z-10 max-w-4xl mx-auto px-4 text-center section-padding-lg">
-    <h1 class="font-extrabold text-heading tracking-tight mb-6 flex items-baseline justify-center flex-wrap hero-title" style="line-height: 1.1; gap: 0.3em;">
-      Solutions For
-      <span class="dropping-texts text-primary" data-spacer="Business">
-        <span>Business</span>
-        <span>People</span>
-        <span>Agents</span>
-        <span>Families</span>
+    <%# Your ___ Built Right (Alex McRitchie, 2026-10-30). The cycling word sits in
+        the middle of a line, so its box fits each word as it drops in
+        (data-fit-width, dropping_text.js) rather than leaving "Plan" a gap the
+        width of "Workflow"; the spacer still holds the height before the script
+        runs. "Built Right" takes its own line. Below lg "Your" takes its own line
+        too: there "Your Idea" fits where "Your Workflow" wraps, so a fitted box
+        would reflow the headline, and the subtitle under it, every cycle. From lg
+        the content is 992px and "Your Workflow" (about 745px at 96px) always fits. %>
+    <h1 class="font-extrabold text-heading tracking-tight mb-6 flex items-baseline justify-center flex-wrap hero-title" style="line-height: 1.1; column-gap: 0.3em;">
+      <span class="max-lg:basis-full">Your</span>
+      <span class="dropping-texts dropping-texts-center text-primary" data-spacer="Workflow" data-fit-width>
+        <span>Workflow</span>
+        <span>Idea</span>
+        <span>Plan</span>
       </span>
+      <span class="basis-full">Built Right</span>
     </h1>
     <p class="hero-subtitle-ink max-w-2xl mx-auto mb-10 leading-relaxed hero-subtitle">
       An acquisition entrepreneur partnering with owners to carry proven

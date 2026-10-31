@@ -10,6 +10,8 @@
 //   data-spacer       — invisible text to set container width (use longest word)
 //   data-stop-on-last — if present, stops on the final word
 //   data-interval     — ms between words (default: 2500)
+//   data-fit-width    — if present, the box narrows/widens to each word as it
+//                       enters (a word mid-line, so a short one leaves no gap)
 
 var _droppingTimers = [];
 
@@ -23,10 +25,24 @@ function initDroppingTexts() {
 
     const stopOnLast = container.hasAttribute('data-stop-on-last');
     const interval = parseInt(container.dataset.interval) || 2500;
+    const fitWidth = container.hasAttribute('data-fit-width');
     let current = 0;
+
+    // The text's own width, whatever the span's box is stretched to.
+    const fit = () => {
+      if (!fitWidth) return;
+      const range = document.createRange();
+      range.selectNodeContents(spans[current]);
+      container.style.width = `${Math.ceil(range.getBoundingClientRect().width)}px`;
+    };
 
     // Show first word immediately
     spans[current].classList.add('drop-active');
+    fit();
+    if (fitWidth) {
+      container._dropFit = fit;
+      window.addEventListener('resize', fit);
+    }
 
     const timer = setInterval(() => {
       // Reset previously exited spans
@@ -44,6 +60,7 @@ function initDroppingTexts() {
       // Enter next word after exit transition clears
       setTimeout(() => {
         spans[current].classList.add('drop-active');
+        fit();
       }, 400);
 
       // Stop on last if configured
@@ -61,6 +78,11 @@ function cleanupDroppingTexts() {
   _droppingTimers = [];
   document.querySelectorAll('.dropping-texts').forEach(container => {
     delete container.dataset.initialized;
+    if (container._dropFit) {
+      window.removeEventListener('resize', container._dropFit);
+      delete container._dropFit;
+      container.style.width = '';
+    }
     container.querySelectorAll(':scope > span').forEach(s => {
       s.classList.remove('drop-active', 'drop-exit');
     });
