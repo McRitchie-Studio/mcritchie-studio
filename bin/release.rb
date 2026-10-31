@@ -10265,7 +10265,10 @@ def ship_pr_readable(repo)
     return denied.include?(repo.to_s) ? [false, "RELEASE_PR_UNREADABLE names #{repo}"] : [true, ""]
   end
 
-  nwo = repo_name_with_owner(repo)
+  # The origin read goes around `sh`, whose --dry-run arm answers "" without running
+  # it: every repo then read as "no GitHub origin" on exactly the dry run this serves.
+  origin, read = bounded_capture2e("git", "-C", repo_path(repo), "remote", "get-url", "origin")
+  nwo = read.success? ? CiStatus.name_with_owner(origin) : ""
   return [false, "no GitHub origin for #{repo}"] if nwo.empty?
 
   argv = ["gh", "pr", "list", "--repo", nwo, "--state", "merged", "--json", "number", "--limit", "1"]

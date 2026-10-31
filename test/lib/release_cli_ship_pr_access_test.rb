@@ -38,4 +38,22 @@ class ReleaseCliShipPrAccessTest < ReleaseCliHarness
     refute_includes out, "PR READ PREFLIGHT"
     assert_includes out, "reads pull requests in every app repo"
   end
+
+  # [integration] the REAL reader under --dry-run: the origin read must not go through
+  # `sh`, whose dry-run arm answers "" and named every repo "no GitHub origin".
+  def test_a_dry_run_reads_each_repos_real_origin
+    setup = %(ENV.delete("RELEASE_PR_UNREADABLE")\n) + SHIP_STUB + <<~'RUBY'
+      alias __real_bc2e bounded_capture2e
+      def bounded_capture2e(*a, **k)
+        ok = Struct.new(:success?).new(true)
+        return ["git@github.com:McRitchie-Studio/x.git\n", ok] if a[0] == "git" && a.include?("get-url")
+        return ["[]", ok] if a[0, 3] == %w[gh pr list]
+        __real_bc2e(*a, **k)
+      end
+    RUBY
+    out = run_cli(["--dry-run"], call: "ship", setup: setup)
+
+    refute_includes out, "no GitHub origin"
+    assert_includes out, "reads pull requests in every app repo"
+  end
 end
