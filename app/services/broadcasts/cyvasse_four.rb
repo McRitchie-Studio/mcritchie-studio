@@ -54,14 +54,20 @@ module Broadcasts
       played.positive? ? (wins * 100.0 / played).round : nil
     end
 
-    # Subscribed, verified legacy players who have never been sent an email and
-    # hold none in a queue, most games first.
-    def candidates
-      held = StagedEmail.where(status: %w[staged approved sent]).select(:contact_id)
+    # `contacts` without anyone already sent an email, held in any queue, or
+    # cancelled from one of the four. A cancel on an older broadcast does not
+    # count: that reader was never mailed, and a cancel here is an operator's no.
+    def untouched(contacts)
       sent = BroadcastDelivery.where.not(sent_at: nil).select(:contact_id)
-      Contact.subscribed.with_tag(AUDIENCE).verified_valid
-             .where.not(id: sent).where.not(id: held)
-             .order(Arel.sql("COALESCE((contacts.traits #>> '{cyvasse,games}')::integer, 0) DESC"), :id)
+      held = StagedEmail.where(status: %w[staged approved sent]).select(:contact_id)
+      cancelled = StagedEmail.where(status: "cancelled", broadcast_id: Broadcast.where(template_key: Broadcast::FULL_BLEED_TEMPLATES).select(:id)).select(:contact_id)
+      contacts.where.not(id: sent).where.not(id: held).where.not(id: cancelled)
+    end
+
+    # Subscribed, verified legacy players still untouched, most games first.
+    def candidates
+      untouched(Contact.subscribed.with_tag(AUDIENCE).verified_valid)
+        .order(Arel.sql("COALESCE((contacts.traits #>> '{cyvasse,games}')::integer, 0) DESC"), :id)
     end
 
     # style => contact ids. Each run of four consecutive players goes one to a

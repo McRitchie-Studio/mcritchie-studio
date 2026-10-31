@@ -56,6 +56,27 @@ class Broadcasts::CyvasseFourTest < ActiveSupport::TestCase
     assert_not_includes Four.candidates, unverified
   end
 
+  test "staging one style directly skips a reader live on another style" do
+    draft!
+    reader = player("one@example.com", 9)
+    verify!(reader)
+    Four.broadcast("poster").stage!(audience: Four::AUDIENCE)
+    result = Four.broadcast("dragon").stage!(audience: Four::AUDIENCE)
+    assert_equal 0, result.total
+    assert_equal 1, reader.staged_emails.count
+  end
+
+  test "a cancel on one of the four keeps a reader out; a cancel on an older broadcast does not" do
+    draft!
+    kept_out = player("out@example.com", 9)
+    back_in = player("in@example.com", 8)
+    verify!(kept_out, back_in)
+    Four.broadcast("poster").staged_emails.create!(contact: kept_out, status: "cancelled", staged_at: Time.current)
+    old = Broadcast.create!(slug: "stale-queue", template_key: "cyvasse_is_back", subject: "Back")
+    old.staged_emails.create!(contact: back_in, status: "cancelled", staged_at: Time.current)
+    assert_equal [ back_in ], Four.candidates.to_a
+  end
+
   test "stage holds each reader once across the four and sends nothing" do
     draft!
     verify!(*(1..8).map { |i| player("p#{i}@example.com", i) })

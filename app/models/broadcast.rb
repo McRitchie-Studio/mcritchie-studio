@@ -259,6 +259,8 @@ class Broadcast < ApplicationRecord
 
     scope = unsent_contacts(audience, verified: verified).where.not(id: staged_emails.select(:contact_id))
     scope = filter.respond_to?(:call) ? filter.call(scope) : scope.where(filter) if filter.present?
+    # One reader, one style, whichever path stages (task cyvasse-four-send-guards).
+    scope = Broadcasts::CyvasseFour.untouched(scope) if FULL_BLEED_TEMPLATES.include?(template_key)
     scope = scope.order(:id)
     scope = scope.limit(limit.to_i) if limit.present?
 
