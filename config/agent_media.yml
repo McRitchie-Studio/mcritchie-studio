@@ -96,9 +96,11 @@ release_posts:
     soul: mason
   app_soul: steffon
 
-# THE NOISE CAPS (Media::Slack::Limits), enforced at the outbound seam:
-# Media::Slack#post and #deliver_reply check them before every chat.postMessage,
-# counting from the shared SlackPost ledger. Over a cap the post is not sent: the
+# THE NOISE CAPS (Media::Limits: Media::Slack::Limits, Media::Teams::Limits),
+# enforced at each medium's outbound seam: Media::Slack's and Media::Teams'
+# #post and #deliver_reply check them before every send, counting from the
+# shared SlackPost ledger (its `medium` column keeps Slack's and Teams' counts
+# apart). Over a cap the post is not sent: the
 # ledger row is `suppressed` with the reason, a reply's message gets a
 # reply_suppressed event and reply_status skipped, and nothing retries it.
 # A soul-less post (an alert or report through a home) is never capped.
@@ -113,9 +115,19 @@ limits:
   # cap but is never suppressed by it: his own question is not noise.
   owner_replies_count_only: true
 
-# A registered stub (Media::Teams): every method raises NotImplementedError.
+# Microsoft Teams (Media::Teams): one bot posts as every soul, each message an
+# Adaptive Card headed with the soul's name and portrait. DISABLED until
+# Steffon's teams-app-kit card registers the bot and installs it in the team:
+# Teams can post only while TEAMS_BOT_APP_ID and TEAMS_BOT_APP_PASSWORD are set,
+# and a channel needs a conversation reference (TeamsConversation, stored when
+# the bot is added). A channel is an `id`: the channel's conversation id
+# (19:…@thread.tacv2). The noise caps below (limits:) apply to Teams as to
+# Slack, counted from the same ledger.
 teams:
   enabled: false
+  app_id_env: TEAMS_BOT_APP_ID
+  app_password_env: TEAMS_BOT_APP_PASSWORD
+  tenant_id_env: TEAMS_TENANT_ID
   fallback: discord
   channels: {}
 

@@ -44,6 +44,9 @@ gem "omniauth-google-oauth2"
 gem "google-apis-drive_v3", "~> 0.87"
 gem "google-apis-gmail_v1", "~> 0.53"
 gem "googleauth", "~> 1.17"
+# Microsoft Teams: verifies the Bot Framework JWT on POST /webhooks/teams/messages
+# (AgentMessages::TeamsAuth). Already locked as googleauth's and oauth2's dependency.
+gem "jwt", "~> 3.1"
 
 # Bookkeeping (Books::, task studio-books-month-close): pdf-reader pulls the text
 # out of bank statement PDFs on a dyno, where there is no poppler; caxlsx writes
