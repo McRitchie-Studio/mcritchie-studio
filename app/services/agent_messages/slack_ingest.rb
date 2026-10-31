@@ -111,7 +111,6 @@ module AgentMessages
     private
 
     def single_route(event, text)
-
       parent = thread_row(event)
       if parent&.soul_slug.present?
         return Router::Result.new(soul: parent.soul_slug, routed_by: "thread", detail: { "matched" => "thread of message #{parent.id}" })
