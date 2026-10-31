@@ -102,7 +102,7 @@ class AgentPerson < ApplicationRecord
   end
 
   # Alex McRitchie's person, his Discord identity, his email identity (alex@mcritchie.studio),
-  # his Slack user, his hub user when one carries his email, and the owner role. Idempotent (db/seeds; the migration that made the tables seeds the
+  # his Slack user, his Teams (Entra) user once configured, his hub user when one carries his email, and the owner role. Idempotent (db/seeds; the migration that made the tables seeds the
   # same rows): an existing identity keeps its person, and only a missing user
   # link is filled in.
   def self.seed_owner!
@@ -120,6 +120,13 @@ class AgentPerson < ApplicationRecord
     slack_id = AgentMessages::SlackRoutes.current.owner_user_id
     if slack_id.present? && !AgentPersonIdentity.exists?(platform: "slack", external_id: slack_id)
       person.identities.create!(platform: "slack", external_id: slack_id, display_name: OWNER[:name])
+    end
+    # His Entra object id (config/agent_routes.yml teams.owner_aad_object_id),
+    # so his Teams messages are answered as the owner. Empty until the tenant
+    # exists (teams-app-kit); set it and re-run db:seed.
+    teams_id = AgentMessages::TeamsRoutes.current.owner_aad_object_id
+    if teams_id.present? && !AgentPersonIdentity.exists?(platform: "teams", external_id: teams_id)
+      person.identities.create!(platform: "teams", external_id: teams_id, display_name: OWNER[:name])
     end
     # His hub accounts, so the CTO web chat answers him as the owner from each.
     User.where("LOWER(email) IN (?)", OWNER_HUB_EMAILS).order(:id).pluck(:id).each do |user_id|

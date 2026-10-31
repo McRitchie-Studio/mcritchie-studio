@@ -33,7 +33,10 @@ class AgentMessage < ApplicationRecord
   # /applications/:slug/chat (docs/agents/system/agent-message-loop.md, "Web chat").
   # slack: AgentMessages::SlackIngest, from the Slack Events API
   # (POST /webhooks/slack/events); the DM flag (channel_type) lives in `envelope`.
-  CHANNELS = %w[discord email web slack].freeze
+  # teams: AgentMessages::TeamsIngest, from the Bot Framework messaging endpoint
+  # (POST /webhooks/teams/messages); the conversation reference a reply needs
+  # (service_url, conversation_id, activity_id) lives in `envelope`.
+  CHANNELS = %w[discord email web slack teams].freeze
   # The channels whose reader shows "typing…" while an answer runs: Discord
   # through the replying bot, the web chat over its Turbo stream. Email has none.
   TYPING_CHANNELS = %w[discord web].freeze
@@ -325,10 +328,14 @@ class AgentMessage < ApplicationRecord
       unless status == "held"
         raise Refused.new("message #{id} is #{status}; only a held message can be released", code: "NOT_HELD")
       end
-      # A Slack row for a recognized-only soul (slack.recognized) has no dispatcher:
+      # A Slack or Teams row for a recognized-only soul (<medium>.recognized) has no dispatcher:
       # released, it would sit `received` forever and hold its whole thread back.
       if channel == "slack" && !AgentMessages::SlackRoutes.current.answers?(soul_slug)
         raise Refused.new("#{soul_slug} cannot answer on Slack yet (config/agent_routes.yml slack.recognized)",
+                          code: "SOUL_UNSERVED")
+      end
+      if channel == "teams" && !AgentMessages::TeamsRoutes.current.answers?(soul_slug)
+        raise Refused.new("#{soul_slug} cannot answer on Teams yet (config/agent_routes.yml teams.recognized)",
                           code: "SOUL_UNSERVED")
       end
 
