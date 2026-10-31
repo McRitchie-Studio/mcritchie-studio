@@ -5400,11 +5400,14 @@ def prepare
 
   # 9. Per-repo summary of what was swept + QA'd.
   say("")
-  verdict = if !qa_green then "✓ Prepared (NOT assembled — QA not green)"
-            elsif gauntlet_red then "✗ Assembled on QA but NOT shippable — the devnet gauntlet is red"
-            else "✓ Assembled"
-            end
-  say("#{verdict} #{rel_slug}#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
+  # A red gauntlet leaves the release assembled on QA (the board's word, qa-release.md
+  # exit 4) but never prints the ✓: the line says it cannot ship.
+  dry_note = DRY ? " (DRY RUN — nothing executed)" : ""
+  if qa_green && gauntlet_red
+    say("✗ Assembled #{rel_slug} on QA, but NOT shippable: the devnet gauntlet is red#{dry_note}.")
+  else
+    say("✓ #{qa_green ? 'Assembled' : 'Prepared (NOT assembled — QA not green)'} #{rel_slug}#{dry_note}.")
+  end
   gem_groups.each do |g|
     g["members"].each { |m| say("  gem #{g['repo']} (#{m['slug']}) — rides the release; published before QA (ship re-verifies idempotently).") }
   end
