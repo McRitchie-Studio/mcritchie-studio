@@ -14,7 +14,7 @@
   <span class="min-w-0 flex-1 truncate" data-test="kit-chip-name"><%= name %></span>
   <%= kit_status_mark(status) %>
 <% end %>
-<%# An app's page is the hub's own path; a Drive folder is an outside URL, checked by safe_link_to. %>
+<%# An app's page is the hub's own path; a Drive folder is an outside URL, vetted by http_href (the caller) and safe_link_to. %>
 <% if href.nil? %>
   <%= tag.span(body, **chip) %>
 <% elsif external %>

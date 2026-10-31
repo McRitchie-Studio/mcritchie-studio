@@ -17,7 +17,7 @@
       <%= render "logos/kit_chip", kind: "google", brand:, icon: render("brand_marketing_kits/drive_icon"), name: marketing_kit.owner.presence || "Google kit",
                  status:, label: "Google kit#{" #{marketing_kit.owner}" if marketing_kit.owner.present?}: #{BrandMarketingKit::STATUSES.fetch(status)}",
                  dates: marketing_kit_dates(marketing_kit, kit),
-                 href: marketing_kit.drive_url, external: true %>
+                 href: http_href(marketing_kit.drive_url), external: true %>
     <% else %>
       <%= render "logos/kit_chip", kind: "google", brand:, icon: render("brand_marketing_kits/drive_icon"), name: BrandMarketingKit::NONE_LABEL,
                  status: :none, label: BrandMarketingKit::NONE_LABEL, href: nil %>
