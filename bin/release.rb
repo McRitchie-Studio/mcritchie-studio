@@ -2853,7 +2853,10 @@ def pin_swept_shas!(repos)
       out, ok = git_capture("-C", path, "rev-parse", "--verify", "--quiet", "origin/#{ACCEPTED_BRANCH}^{commit}")
       sha = ok ? out.to_s.strip : ""
     else
-      sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--quiet", capture: true)
+      _, fetched = sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--quiet", capture: true)
+      # A failed fetch leaves a ref that can predate a member detection found, and a pin
+      # missing swept work would pass the gate. No pin: the live check stands.
+      next say("  ⚠ #{repo}: fetch failed, so no pin; the gate measures the live `#{ACCEPTED_BRANCH}`") unless fetched
       sha = ref_sha(path, "origin/#{ACCEPTED_BRANCH}")
     end
     next if sha.empty? # unreadable: the promote and the gate read the live branch and fail closed there

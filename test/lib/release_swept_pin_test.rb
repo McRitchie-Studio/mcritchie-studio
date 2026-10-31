@@ -150,6 +150,22 @@ class ReleaseSweptPinTest < ReleaseCliHarness
     end
   end
 
+  # [integration] A failed fetch pins nothing: the stale local ref can predate a
+  # member detection found, and a pin missing swept work would pass the gate.
+  def test_integration_a_failed_fetch_pins_nothing
+    with_ladder do |clone, dir|
+      land_on_accepted(clone, "swept.rb", "reviewed and swept")
+      run_git(clone, "remote", "set-url", "origin", File.join(dir, "gone.git"))
+
+      out = run_seq(clone, dir, %{
+        pin_swept_shas!([#{REPO.inspect}])
+        puts("PIN [" + swept_pin(#{REPO.inspect}) + "]")
+      })
+
+      assert_includes out, "PIN []", "a pin read after a failed fetch: #{out}"
+    end
+  end
+
   # [unit] The CI credit treats the pin as the accepted head, so a merge after the
   # sweep does not demote the fast-forwarded tip to "diverged" and lose the credit.
   def test_fast_forward_credit_holds_after_accepted_moves
