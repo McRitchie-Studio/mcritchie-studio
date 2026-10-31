@@ -31,7 +31,8 @@ class CredentialAccessVaultMapTest < Minitest::Test
     refute_nil block, "the SOP lost its vault-map markers"
     block.lines.select { |l| l.start_with?("| `") }.to_h do |line|
       vault, _holds, readers, machine = cells(line)
-      [ticked(vault).first, { readers: ticked(readers).map(&:to_sym).sort, machine: machine }]
+      [ticked(vault).first, { readers: ticked(readers).map(&:to_sym).sort, machine: machine[/\A\w+/],
+                              confirm: machine.include?("(to confirm)") }]
     end
   end
 
@@ -44,11 +45,13 @@ class CredentialAccessVaultMapTest < Minitest::Test
   end
 
   def test_every_vault_in_the_code_is_in_the_doc_and_the_reverse
-    code = OpVaults::VAULTS.transform_values { |v| { readers: v[:readers].sort, machine: v[:machine].to_s } }
+    code = OpVaults::VAULTS.transform_values do |v|
+      { readers: v[:readers].sort, machine: v[:machine].to_s, confirm: v[:confirm] == true }
+    end
 
     assert_equal code.keys.sort, doc_vaults.keys.sort, "the two vault lists differ"
     code.each do |vault, spec|
-      assert_equal spec, doc_vaults[vault], "#{vault}: readers or future machine differ between doc and OpVaults::VAULTS"
+      assert_equal spec, doc_vaults[vault], "#{vault}: readers, future machine or its to-confirm flag differ between doc and OpVaults::VAULTS"
     end
   end
 
@@ -71,6 +74,17 @@ class CredentialAccessVaultMapTest < Minitest::Test
   def test_no_worker_lane_reads_the_admin_vault
     admin = OpVaults::LANES.fetch(:deployer).fetch(:default_vault)
     assert_equal %i[deployer], OpVaults::VAULTS.fetch(admin)[:readers]
+  end
+
+  # Alex McRitchie's approved split (2026-10-31): each lane's own vault sits on that
+  # lane's machine, settled; only the inferred placements carry the flag.
+  def test_each_lane_vault_is_on_its_own_machine_and_settled
+    { agent: :agent, deployer: :admin }.each do |lane, machine|
+      spec = OpVaults::VAULTS.fetch(OpVaults::LANES.fetch(lane).fetch(:default_vault))
+      assert_equal machine, spec[:machine]
+      refute spec[:confirm], "#{lane}'s own vault is approved, not pending"
+    end
+    assert_equal %i[admin agent], OpVaults::VAULTS.values.map { |v| v[:machine] }.uniq.sort
   end
 
   def test_the_admin_class_is_agent_session_admin_souls_and_worker_names_alex_and_mack

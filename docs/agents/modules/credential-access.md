@@ -10,7 +10,10 @@ credential come from right now?** It stands alone; the background lives in
 does not repeat them; it orders them.
 
 **Why it exists.** 1Password gives the whole account **1,000 read_writes per
-rolling 24 hours**, shared by every service account and every agent. On
+rolling 24 hours**, shared by every service account and every agent. That is the
+design budget: Alex McRitchie ruled on 2026-10-31 that the plan stays at 1,000 a
+day ("We should be able to manage with 1000 today with the right credentials in
+the right places"), so a caller that needs more is the defect, not the plan. On
 2026-10-31 that quota ran out and every agent stalled for about five hours. Two
 causes, both measured: a watcher re-read `op` once a minute for hours while
 1Password was down, and a list of callers ran `op` directly, so `bin/op-reads`
@@ -106,11 +109,11 @@ Change them together.
 <!-- vault-map:start -->
 | Vault | Holds | Read by lane | Future machine |
 |-------|-------|--------------|----------------|
-| `studio-agents` | Agent credentials wielded by judgment: the board secret, the agent GitHub App, Heroku agents token, app API keys | `agent` | worker |
-| `industries-agents` | Industries-brand agent credentials (the Workspace service account) | `agent` | worker |
-| `family-agents` | Family-brand agent credentials | `agent` | worker |
-| `Commercial Welding` | The Commercial Welding initiative | `agent` | welding |
-| `studio-applications` | Credentials deployed software consumes: durable copies of Heroku config and Actions secrets | `agent`, `deployer` | admin |
+| `studio-agents` | Agent credentials wielded by judgment: the board secret, the agent GitHub App, Heroku agents token, app API keys | `agent` | agent |
+| `industries-agents` | Industries-brand agent credentials (the Workspace service account) | `agent` | agent (to confirm) |
+| `family-agents` | Family-brand agent credentials | `agent` | agent (to confirm) |
+| `Commercial Welding` | The Commercial Welding business | `agent` | agent (to confirm) |
+| `studio-applications` | Credentials deployed software consumes: durable copies of Heroku config and Actions secrets | `agent`, `deployer` | admin (to confirm) |
 | `studio-agents-admin` | Ship and provisioning credentials: the admin GitHub App, Heroku admin token, governance keys | `deployer` | admin |
 <!-- vault-map:end -->
 
@@ -126,11 +129,16 @@ Change them together.
   private or family vaults, and no agent reaches them another way: the 1Password
   browser extension in the admin Chrome profile sees all of his accounts, and an
   agent never opens, reads, searches or fills from it.
-- **Future machine.** Today every row runs on one Mac. The column says where each
-  vault's reader moves when permissions split across machines: `worker` (the
-  everyday agent token), `admin` (the deployer token, and `studio-applications`
-  with it), `welding` (the Commercial Welding agent, not yet launched). Nothing
-  routes on it yet; it is the organization, in place first.
+- **Future machine.** Today every row runs on one Mac. Alex McRitchie approved the
+  split on 2026-10-31: the **agent machine** carries the `agent` lane and
+  `studio-agents`; the **deploy/admin machine** carries the `deployer` lane and
+  `studio-agents-admin`; **personal vaults go on no agent machine at all.** Nothing
+  routes on the column yet; it is the organization, in place first.
+- **"(to confirm)" is a placement for Alex McRitchie to confirm.** The business and
+  client vaults are placed by the token that reads them today (the agent token).
+  `studio-applications` is read by both tokens and written by the deployer, so it
+  is placed with the deployer pending his word. On his answer, change
+  `OpVaults::VAULTS` and this row together and drop the flag.
 
 ### Taking the vault inventory
 

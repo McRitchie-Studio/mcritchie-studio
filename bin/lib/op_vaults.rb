@@ -77,15 +77,19 @@ module OpVaults
   # no service account and are not listed: no agent reads one.
   #
   # +readers+  the lanes whose token can read the vault today.
-  # +machine+  where its readers would run once permissions move off this Mac:
-  #            :worker (the everyday agent token), :admin (the deployer token,
-  #            opt-in today), :welding (the Commercial Welding agent, not launched).
+  # +machine+  where it lives once permissions move off this Mac, per Alex
+  #            McRitchie's split approved 2026-10-31: :agent (the agent lane's
+  #            machine) or :admin (the deploy/admin lane's machine). Personal vaults
+  #            go on no agent machine at all.
+  # +confirm+  true when the placement is inferred from which token reads the vault
+  #            today and waits on Alex McRitchie to confirm it: the business and
+  #            client vaults, and studio-applications, which both tokens read.
   VAULTS = {
-    "studio-agents" => { readers: %i[agent], machine: :worker },
-    "industries-agents" => { readers: %i[agent], machine: :worker },
-    "family-agents" => { readers: %i[agent], machine: :worker },
-    "Commercial Welding" => { readers: %i[agent], machine: :welding },
-    "studio-applications" => { readers: %i[agent deployer], machine: :admin },
+    "studio-agents" => { readers: %i[agent], machine: :agent },
+    "industries-agents" => { readers: %i[agent], machine: :agent, confirm: true },
+    "family-agents" => { readers: %i[agent], machine: :agent, confirm: true },
+    "Commercial Welding" => { readers: %i[agent], machine: :agent, confirm: true },
+    "studio-applications" => { readers: %i[agent deployer], machine: :admin, confirm: true },
     "studio-agents-admin" => { readers: %i[deployer], machine: :admin }
   }.freeze
 
