@@ -151,4 +151,18 @@ class GmailCredentialsTest < ActiveSupport::TestCase
       Gmail::Credentials.op_timeout_seconds = nil
     end
   end
+  # one-way-into-1password: every 1Password read on this Mac lands in bin/op-reads,
+  # this one included, so a spend can be attributed without re-deriving it.
+  test "the op read is recorded in the 1Password meter" do
+    Dir.mktmpdir do |dir|
+      log = File.join(dir, "op-reads.log")
+      ENV["MCR_OP_READS_LOG"] = log
+      reaching_fake_op { Gmail::Credentials.send(:shell_read_from_op, Gmail::Credentials::ITEM) }
+
+      row = File.readlines(log).last.to_s.split("\t")
+      assert_equal %w[read gmail-credentials], [ row[2], row[4] ], "action and via, from the one meter"
+    ensure
+      ENV.delete("MCR_OP_READS_LOG")
+    end
+  end
 end
