@@ -54,6 +54,11 @@ module Media
     class NotPosted < Error; end
     class Refused < Error; end
     class Ambiguous < Error; end
+    # Over a noise cap (Media::Slack::Limits): never sent, never retried. The
+    # SlackPost row (status suppressed) carries the reason.
+    class Suppressed < Error; end
+
+    SUPPRESSED_EVENT = "reply_suppressed".freeze
 
     def initialize(client: nil, config: nil)
       super()
@@ -106,6 +111,11 @@ module Media
     def deliver_reply(message)
       return skipped!(message) unless configured?
 
+      return nil if message.reply_external_id.present? || %w[failed skipped].include?(message.reply_status)
+      if (reason = reply_cap_refusal(message))
+        return suppressed!(message, reason)
+      end
+
       case claim_attempt!(message)
       when :done, :in_flight then return nil
       when :stale then return failed!(message, "an earlier post attempt ended with no outcome; it may have posted, " \
@@ -115,6 +125,8 @@ module Media
       posted = post_text(message.channel_ref, message.response_text.to_s, soul: message.soul_slug,
                                                                          thread_ts: self.class.thread_ts(message))
       message.update!(reply_external_id: posted["ts"].to_s, reply_posted_at: Time.current, reply_status: "posted")
+      SlackPost.create!(channel_id: message.channel_ref, thread_ts: self.class.thread_ts(message), ts: posted["ts"].to_s,
+                        soul_slug: message.soul_slug, kind: "reply", status: "posted", agent_message_id: message.id)
       message.record!("reply_posted", actor: actor, detail: { "reply_id" => posted["ts"].to_s, "url" => message.reply_url })
     rescue NotPosted => e
       message.record!(NOT_POSTED_EVENT, actor: actor, detail: { "error" => e.code.to_s, "retry_after" => e.retry_after }.compact)
@@ -128,14 +140,39 @@ module Media
 
     # A standalone post to a home's channel id. Answers the LAST message's
     # Slack JSON. Errors are raised for the caller (NotPosted, Refused,
-    # Ambiguous: every one a Media::Error).
-    def post(home, content: nil, embeds: nil, soul: nil, thread_ts: nil, **)
+    # Ambiguous, Suppressed: every one a Media::Error).
+    #
+    # `text:` is Slack mrkdwn already (one message, clipped, never converted:
+    # a <@U…> mention or a <url|label> link passes through); otherwise
+    # `content`/`embeds` are Discord-shaped and converted by Format.
+    #
+    # THE LEDGER AND THE CAPS. Every message writes a SlackPost row, and one
+    # posted as a soul is first checked against the noise caps (Limits): over
+    # one, the row is `suppressed` with the reason, the log says so, and
+    # Suppressed is raised; nothing is sent. `kind: "release"` is exempt from
+    # the hourly cap, still counted.
+    #
+    # ONCE, BY KEY. With `key:` the row is claimed under that idempotency key
+    # BEFORE the post: a key already posted answers that post's ts with
+    # "already_posted" => true and sends nothing; one suppressed, still
+    # `sending` (a crashed attempt) or failed ambiguously raises again and
+    # sends nothing (it may have posted: look in the channel); one Slack
+    # provably refused is tried again.
+    def post(home, content: nil, embeds: nil, soul: nil, thread_ts: nil, text: nil, kind: "post", key: nil,
+             release_slug: nil, limits: nil, **)
       raise ArgumentError, "#{home.label} has no channel in config/agent_media.yml" unless home.channel? && home.channel_id
 
-      Format.messages(content: content, embeds: embeds).reduce(nil) do |_, body|
-        client.post_message(body.merge(channel: home.channel_id, thread_ts: thread_ts).merge(soul ? identity_for(soul) : {}).compact)
+      bodies = text.nil? ? Format.messages(content: content, embeds: embeds) : [ { text: Format.clip(text.to_s, REPLY_LIMIT) } ]
+      bodies.each_with_index.reduce(nil) do |_, (body, i)|
+        row_key = key && (i.zero? ? key : "#{key}:#{i}")
+        ledgered(home.channel_id, soul: soul, thread_ts: thread_ts, kind: kind, key: row_key,
+                                  release_slug: release_slug, limits: limits) do
+          client.post_message(body.merge(channel: home.channel_id, thread_ts: thread_ts).merge(soul ? identity_for(soul) : {}).compact)
+        end
       end
     end
+
+    def limits = @limits ||= Limits.current(config: config)
 
     private
 
@@ -162,6 +199,74 @@ module Media
         message.record!(SENDING_EVENT, actor: actor, detail: { "attempt" => sending.count + 1 })
         :go
       end
+    end
+
+    # One message through the ledger: claim (or reuse) its row, check the caps,
+    # post, and stamp the outcome. Answers Slack's JSON.
+    def ledgered(channel_id, soul:, thread_ts:, kind:, key:, release_slug:, limits:)
+      row = claim_row!(channel_id, soul: soul, thread_ts: thread_ts, kind: kind, key: key, release_slug: release_slug)
+      return { "ok" => true, "ts" => row.ts, "channel" => channel_id, "already_posted" => true } if row.status == "posted"
+
+      if (reason = (limits || self.limits).refusal(channel_id: channel_id, soul: soul, kind: kind, thread_ts: thread_ts))
+        row.update!(status: "suppressed", reason: reason[0, 250])
+        Rails.logger.warn("[slack] suppressed a #{kind} post by #{soul} in #{channel_id}: #{reason}")
+        raise Suppressed.new(reason, code: "suppressed")
+      end
+
+      posted = yield
+      row.update!(status: "posted", ts: posted["ts"].to_s, reason: nil)
+      posted
+    rescue NotPosted, Refused => e
+      row&.update!(status: "failed", reason: "#{e.code}: #{e.message}"[0, 250])
+      raise
+    rescue Ambiguous => e
+      row&.update!(status: "failed", reason: "#{SlackPost::AMBIGUOUS} #{e.message}"[0, 250])
+      raise
+    end
+
+    # The row this attempt writes, `sending`. With a key: the posted row when
+    # the key was already posted; raises when it must never be posted again.
+    def claim_row!(channel_id, soul:, thread_ts:, kind:, key:, release_slug:)
+      attrs = { channel_id: channel_id.to_s, soul_slug: soul&.to_s, thread_ts: thread_ts, kind: kind.to_s,
+                release_slug: release_slug, status: "sending" }
+      return SlackPost.create!(attrs) if key.nil?
+
+      SlackPost.transaction(requires_new: true) do
+        row = SlackPost.lock.find_by(idempotency_key: key)
+        if row.nil?
+          SlackPost.create!(attrs.merge(idempotency_key: key))
+        elsif row.status == "posted"
+          row
+        elsif row.final?
+          raise (row.status == "suppressed" ? Suppressed : Ambiguous).new(
+            "#{key} was #{row.status} before (#{row.reason.presence || 'an attempt with no outcome'}); not posted again",
+            code: row.status
+          )
+        else
+          row.update!(attrs)
+          row
+        end
+      end
+    rescue ActiveRecord::RecordNotUnique
+      raise Ambiguous.new("#{key} is being posted by another attempt; not posted again", code: "in_flight")
+    end
+
+    def reply_cap_refusal(message)
+      owner = limits.owner_user_id
+      limits.refusal(channel_id: message.channel_ref, soul: message.soul_slug, kind: "reply",
+                     thread_ts: self.class.thread_ts(message),
+                     owner_reply: owner.present? && message.author_ref.to_s == owner)
+    end
+
+    # Over a cap: the row is marked (skipped, a reply_suppressed event naming the
+    # cap) so the job never retries it, and the ledger records it.
+    def suppressed!(message, reason)
+      message.update_column(:reply_status, "skipped")
+      message.record!(SUPPRESSED_EVENT, actor: actor, detail: { "reason" => reason[0, 300] })
+      SlackPost.create!(channel_id: message.channel_ref, thread_ts: self.class.thread_ts(message), soul_slug: message.soul_slug,
+                        kind: "reply", status: "suppressed", reason: reason[0, 250], agent_message_id: message.id)
+      Rails.logger.warn("[slack] suppressed #{message.soul_slug}'s reply to message #{message.id}: #{reason}")
+      nil
     end
 
     def failed!(message, error, ambiguous: false)

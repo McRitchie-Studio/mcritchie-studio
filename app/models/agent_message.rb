@@ -44,7 +44,10 @@ class AgentMessage < ApplicationRecord
   # alias and name are email's (AgentMessages::EmailRoutes): a CTO's own address,
   # or a CTO named in a mail to team@. chat is the web chat's: the app's CTO.
   # mention is Slack's: the app itself was @-mentioned (or DMed) with no soul named.
-  ROUTED_BY = %w[user role thread default none alias name chat mention].freeze
+  # release is the hub's own: a shipped release's app post, stored completed so
+  # a reply in its Slack thread routes to the soul that posted it
+  # (ReleaseNotes::SlackAnnouncement).
+  ROUTED_BY = %w[user role thread default none alias name chat mention release].freeze
   REPLY_STATUSES = %w[queued posted skipped failed].freeze
 
   # How long a claim holds before another worker may take the message. A
