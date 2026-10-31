@@ -38,6 +38,9 @@ dies stops renewing, so the Mac sleeps again on its own within 30 minutes.
   (The long-running services, `bin/dispatcher`, `bin/client-build-launcher` and the
   release cycle, keep their own `caffeinate -is -w <pid>`; that is separate and
   stays.)
+- `status` sees only keep-awake leases. A service's own `caffeinate -is -w <pid>`
+  does not show there or in the menu bar, so `status` exiting 1 means no shared
+  hold, not that nothing at all keeps the Mac awake.
 - `status` exits 0: someone holds the Mac. If your work needs it too, `start`
   joins; do not stop another agent's hold, and release only your own `--by`.
 - `status` says `STALE` (live leases, dead supervisor): the Mac is not held.

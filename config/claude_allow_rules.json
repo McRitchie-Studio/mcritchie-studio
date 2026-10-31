@@ -6,6 +6,8 @@
     "Bash(bin/dispatcher uninstall)",
     "Bash({{HUB}}/bin/dispatcher install)",
     "Bash({{HUB}}/bin/dispatcher status)",
-    "Bash({{HUB}}/bin/dispatcher uninstall)"
+    "Bash({{HUB}}/bin/dispatcher uninstall)",
+    "Bash(bin/keep-awake:*)",
+    "Bash({{HUB}}/bin/keep-awake:*)"
   ]
 }

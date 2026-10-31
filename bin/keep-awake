@@ -145,7 +145,7 @@ begin
   when "__supervise"
     KeepAwake::Supervisor.new.run
     exit 0
-  when nil, "help"
+  when nil, "help", "-h", "--help"
     puts USAGE
     exit(command.nil? ? 2 : 0)
   else
