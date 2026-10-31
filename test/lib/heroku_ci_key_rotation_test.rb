@@ -253,6 +253,29 @@ class HerokuCiKeyRotationTest < Minitest::Test
     assert_match(/still authenticates/, err.message)
   end
 
+  # one-way-into-1password: the rotation's three admin-lane op calls land in
+  # bin/op-reads, success and failure alike.
+  def test_every_vault_call_is_recorded_in_the_1password_meter
+    require "tmpdir"
+    Dir.mktmpdir do |dir|
+      log = File.join(dir, "op-reads.log")
+      prior = ENV["MCR_OP_READS_LOG"]
+      ENV["MCR_OP_READS_LOG"] = log
+      ok = ->(argv, env: {}, stdin: nil) { argv[1] == "item" && argv[2] == "get" ? '{"fields":[{"label":"f","value":"x"}]}' : "v\n" }
+      vault = HerokuCiKeyRotation::Vault.new(op_token: "t", shell: ok, bin: "op")
+      vault.read("f")
+      vault.write("f" => "y")
+      bad = ->(*_a, **_k) { raise HerokuCiKeyRotation::Abort, "op said no" }
+      assert_raises(HerokuCiKeyRotation::Abort) { HerokuCiKeyRotation::Vault.new(op_token: "t", shell: bad, bin: "op").read("f") }
+
+      rows = File.readlines(log).map { |l| l.split("\t").values_at(2, 3, 4) }
+      assert_equal [%w[read ok rotate-heroku-ci-key], ["item get", "ok", "rotate-heroku-ci-key"],
+                    ["item edit", "ok", "rotate-heroku-ci-key"], %w[read fail:1 rotate-heroku-ci-key]], rows
+    ensure
+      prior ? ENV["MCR_OP_READS_LOG"] = prior : ENV.delete("MCR_OP_READS_LOG")
+    end
+  end
+
   def test_digest_refuses_an_empty_value
     assert_raises(R::Abort) { R.digest("") }
     assert_equal R.digest("x"), R.digest("x")
