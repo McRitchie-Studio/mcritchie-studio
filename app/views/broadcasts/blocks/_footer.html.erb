@@ -1,0 +1,22 @@
+<%# Footer of the full-bleed shell: why the reader gets this, the address and
+    the unsubscribe link, resolved per render target as in broadcast_email. %>
+<%
+  address = unsubscribe_href = nil
+  if @hubspot_export
+    address          = "{{ site_settings.company_name }} &middot; {{ site_settings.company_street_address_1 }}, {{ site_settings.company_city }}, {{ site_settings.company_state }} {{ site_settings.company_zip }}".html_safe
+    unsubscribe_href = "{{ unsubscribe_link }}"
+  elsif @unsubscribe_url
+    address          = ENV["MAILER_ADDRESS"]
+    unsubscribe_href = @unsubscribe_url
+  end
+%>
+<tr>
+  <td style="background-color:#0d0a26;padding:20px 24px 26px;text-align:center;font-size:12px;line-height:1.5;color:#8a86ad;">
+    <%= content_for?(:email_reason) ? content_for(:email_reason) : "You&rsquo;re receiving this because you have an account on Cyvasse.".html_safe %>
+    <% if unsubscribe_href %>
+      <br><% if address.present? %><%= address %><br><% end %><a href="<%= unsubscribe_href %>" style="color:#8a86ad;text-decoration:underline;">Unsubscribe</a>
+    <% else %>
+      <br>[unsubscribe + address footer is added on send]
+    <% end %>
+  </td>
+</tr>

@@ -1,5 +1,6 @@
 # A marketing email composed + sent from Studio. The branded shell lives in
-# layouts/broadcast_email.html.erb; the swappable copy is a view under
+# layouts/broadcast_email.html.erb (layouts/broadcast_email_bare.html.erb for
+# FULL_BLEED_TEMPLATES); the swappable copy is a view under
 # app/views/broadcasts/ keyed by `template_key`. Studio owns the contact list and
 # the send (via BroadcastMailer); each recipient gets a BroadcastDelivery that
 # tracks opens/clicks.
@@ -57,7 +58,14 @@ class Broadcast < ApplicationRecord
     # credited to the style that brought the reader back.
     "cyvasse_record" => { "play" => "https://cyvasse.mcritchie.studio/" }.freeze,
     "cyvasse_challenge" => { "play" => "https://cyvasse.mcritchie.studio/" }.freeze,
-    "cyvasse_founder_note" => { "play" => "https://cyvasse.mcritchie.studio/" }.freeze
+    "cyvasse_founder_note" => { "play" => "https://cyvasse.mcritchie.studio/" }.freeze,
+    # The four-prong test (task cyvasse-four-prong-emails, see
+    # Broadcasts::CyvasseFour). Each answer on The Pick is its own key, so the
+    # click report shows which piece a reader chose; all land on the game.
+    "cyvasse_poster" => { "play" => "https://cyvasse.mcritchie.studio/" }.freeze,
+    "cyvasse_wrapped" => { "play" => "https://cyvasse.mcritchie.studio/" }.freeze,
+    "cyvasse_dragon" => { "play" => "https://cyvasse.mcritchie.studio/" }.freeze,
+    "cyvasse_pick" => %w[dragon elephant catapult heavyhorse].index_with { "https://cyvasse.mcritchie.studio/" }.freeze
   }.freeze
 
   # Merge fields a template's body needs (task staged-email-queue): a contact
@@ -77,7 +85,11 @@ class Broadcast < ApplicationRecord
     "cyvasse_play_times" => "Broadcasts::CyvassePlayTimes",
     "cyvasse_record" => "Broadcasts::CyvasseReturn::Record",
     "cyvasse_challenge" => "Broadcasts::CyvasseReturn::Challenge",
-    "cyvasse_founder_note" => "Broadcasts::CyvasseReturn::FounderNote"
+    "cyvasse_founder_note" => "Broadcasts::CyvasseReturn::FounderNote",
+    "cyvasse_poster" => "Broadcasts::CyvasseFour::POSTER",
+    "cyvasse_pick" => "Broadcasts::CyvasseFour::PICK",
+    "cyvasse_wrapped" => "Broadcasts::CyvasseFour::WRAPPED",
+    "cyvasse_dragon" => "Broadcasts::CyvasseFour::DRAGON"
   }.freeze
 
   # Registry of available copy templates: key => human label. Each key maps to
@@ -93,7 +105,15 @@ class Broadcast < ApplicationRecord
     "cyvasse_record"        => "Cyvasse Return: Your Record",
     "cyvasse_challenge"     => "Cyvasse Return: Your Move",
     "cyvasse_founder_note"  => "Cyvasse Return: Founder Note",
+    "cyvasse_poster"        => "Cyvasse Four: The Poster",
+    "cyvasse_pick"          => "Cyvasse Four: The Pick",
+    "cyvasse_wrapped"       => "Cyvasse Four: The Wrapped",
+    "cyvasse_dragon"        => "Cyvasse Four: The Dragon",
   }.freeze
+
+  # Templates that own the whole column (task cyvasse-four-prong-emails): they
+  # render in layouts/broadcast_email_bare, without the McRitchie Studio bands.
+  FULL_BLEED_TEMPLATES = %w[cyvasse_poster cyvasse_pick cyvasse_wrapped cyvasse_dragon].freeze
 
   has_many :deliveries, class_name: "BroadcastDelivery", dependent: :destroy
   has_many :staged_emails, dependent: :destroy
@@ -103,6 +123,11 @@ class Broadcast < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
 
   scope :recent, -> { order(updated_at: :desc) }
+
+  # The layout this broadcast's template renders in.
+  def email_layout
+    FULL_BLEED_TEMPLATES.include?(template_key) ? "broadcast_email_bare" : "broadcast_email"
+  end
 
   def template_label
     TEMPLATES[template_key] || template_key
@@ -201,9 +226,10 @@ class Broadcast < ApplicationRecord
   end
 
   # A personalized broadcast goes out only through the queue: the editor's
-  # send and a batch would mail "%{username}" as written.
+  # send and a batch would mail "%{username}" as written. A full-bleed template
+  # requires no field but its copy is personal, so it stages too.
   def requires_staging?
-    required_merge_fields.any?
+    required_merge_fields.any? || FULL_BLEED_TEMPLATES.include?(template_key)
   end
 
   # The subject for one reader: the template's resolver picks the line

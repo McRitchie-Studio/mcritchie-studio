@@ -61,7 +61,7 @@ class BroadcastsController < ApplicationController
     # what the HubSpot-bound HTML must use so images load in the inbox.
     @hubspot_export   = params[:assets] == "s3"
     @email_asset_host = @hubspot_export ? Broadcasts::Assets.base_url : request.base_url
-    render template: "broadcasts/#{@broadcast.template_key}", layout: "broadcast_email"
+    render template: "broadcasts/#{@broadcast.template_key}", layout: @broadcast.email_layout
   end
 
   private

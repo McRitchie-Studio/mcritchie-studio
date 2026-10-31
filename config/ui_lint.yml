@@ -24,7 +24,9 @@ exempt:
   # email copy and its partials are listed; broadcasts/index and edit are app pages
   # and are scanned. A new broadcast template joins this brace list.
   - app/views/layouts/broadcast_email.html.erb
+  - app/views/layouts/broadcast_email_bare.html.erb
   - app/views/broadcasts/{_button,_email_head,cyvasse_*,new_game_announcement,world_cup_kickoff}.html.erb
+  - app/views/broadcasts/blocks/*.html.erb
   - "**/*.svg"
   - "**/*.svg.erb"
 

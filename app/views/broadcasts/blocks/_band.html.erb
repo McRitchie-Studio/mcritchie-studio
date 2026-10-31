@@ -1,0 +1,7 @@
+<%# A colour band over a pinned 600px background image; a client that drops
+    the image shows `color`. Locals: image, color. The band's content yields. %>
+<tr>
+  <td background="<%= @email_asset_host %>/email/<%= image %>" bgcolor="<%= color %>" style="background:<%= color %> url(<%= @email_asset_host %>/email/<%= image %>) center top/600px auto no-repeat;padding:0 22px;text-align:center;">
+    <%= yield %>
+  </td>
+</tr>

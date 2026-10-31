@@ -1,0 +1,28 @@
+<%# Four-prong style "dragon" (task cyvasse-four-prong-emails): a patterned
+    colour fade with brand, title, visual, arrow and call to action, then a wave
+    into the reader's record. No merge field is required
+    (Broadcasts::CyvasseFour). One tracked play link. %>
+<% play_url = broadcast_link(:play, Broadcast::TEMPLATE_LINKS["cyvasse_dragon"]["play"]) %>
+<% named = @merge_fields.nil? || Broadcasts::CyvasseReturn.username?(@merge_fields) %>
+<% history = @merge_fields.nil? || Broadcasts::CyvasseReturn.history?(@merge_fields) %>
+<% rank = merge_field(:all_time_rank, fallback: "") %>
+<% stats = [ [ merge_field(:games, fallback: ""), "GAMES" ], [ merge_field(:wins, fallback: ""), "WINS" ], [ rank.present? ? "##{rank}" : "", "ALL-TIME" ] ].reject { |value, _| value.blank? } %>
+<% content_for :email_title, "The dragon is awake" %>
+<% content_for :preheader, @broadcast&.preview_text.presence || "Your board is set. 30 seconds a move." %>
+<%= render "broadcasts/blocks/strip", text: "CYVASSE IS BACK", bg: "#ffa800", color: "#16123c" %>
+<%= render layout: "broadcasts/blocks/band", locals: { image: "cyvasse_band_ember.jpg", color: "#ffa800" } do %>
+  <div style="height:30px;line-height:30px;">&nbsp;</div>
+  <img src="<%= @email_asset_host %>/email/cyvasse_wordmark.png" width="170" alt="Cyvasse" style="display:block;margin:0 auto;height:auto;border:0;">
+  <div style="font-size:48px;line-height:1.02;font-weight:900;letter-spacing:-1.5px;color:#ffffff;padding-top:6px;">The Dragon<br>Is Awake.</div>
+  <div style="font-size:18px;line-height:1.4;color:#e6e2ff;padding:14px 8px 0;">Your board is set<%= ", #{merge_field(:username)}" if named %>. 30 seconds a move.</div>
+  <div style="padding-top:18px;"><img src="<%= @email_asset_host %>/email/cyvasse_hex_dragon.png" width="320" alt="A dragon" style="display:block;margin:0 auto;height:auto;border:0;max-width:100%;"></div>
+  <div style="margin-top:-14px;"><img src="<%= @email_asset_host %>/email/cyvasse_arrow_white.png" width="96" alt="" style="display:block;margin:0 auto;height:auto;border:0;"></div>
+  <div style="padding:6px 0 40px;"><%= render "broadcasts/blocks/cta", url: play_url, label: "PLAY NOW", bg: "#16123c", color: "#ffffff" %></div>
+<% end %>
+<%= render "broadcasts/blocks/wave", file: "cyvasse_w_amber_cream.png" %>
+<%= render layout: "broadcasts/blocks/band", locals: { image: "cyvasse_band_cream.jpg", color: "#fff8ea" } do %>
+  <div style="font-size:34px;line-height:1.08;font-weight:900;letter-spacing:-.5px;color:#16123c;padding:18px 0 22px;"><%= history ? "Your record" : "Your account" %><br>survived the fire.</div>
+  <% if history && stats.any? %><%= render "broadcasts/blocks/stat_row", stats: stats, color: "#16123c" %><% end %>
+  <div style="padding:30px 0;"><%= render "broadcasts/blocks/cta", url: play_url, label: "PLAY AGAIN", bg: "#c8324b", color: "#ffffff" %></div>
+<% end %>
+<%= render "broadcasts/blocks/wave", file: "cyvasse_w_cream_ink.png" %>

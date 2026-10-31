@@ -309,6 +309,30 @@ creates the `cyvasse-return-record`, `cyvasse-return-challenge` and
 `cyvasse-return-founder` drafts on `cyvasse-legacy`. It is idempotent and never
 stages or sends.
 
+## The Cyvasse Four-Prong Test
+
+Four designed emails (task cyvasse-four-prong-emails) test four appeals on equal
+slices of the legacy players who have never had an email. They render in
+`layouts/broadcast_email_bare`, without the McRitchie Studio bands, from the
+blocks in `app/views/broadcasts/blocks/`; another app reuses those with its own
+colours and images. `Broadcast::FULL_BLEED_TEMPLATES` names the templates that
+use this layout. `Broadcasts::CyvasseFour` holds the styles and the split.
+
+| Template | Appeal | Subject (username / none) |
+|----------|--------|---------------------------|
+| `cyvasse_poster` | the game itself | "%{username}, your move on Cyvasse" / "Your move on Cyvasse" |
+| `cyvasse_pick` | a question; each answer is its own tracked link | "%{username}, one question" / "One Cyvasse question" |
+| `cyvasse_wrapped` | the reader's own numbers | "%{username}, your Cyvasse years" / "Your Cyvasse years" |
+| `cyvasse_dragon` | a feeling, on a patterned colour fade | "%{username}, the dragon is awake" / "The dragon is awake" |
+
+No template requires a merge field. `bin/rails broadcasts:publish_assets
+broadcasts:draft_cyvasse_four_styles` (the post-deploy) publishes the images and
+creates the `cyvasse-four-<style>` drafts. `LIMIT=500 bin/rails
+broadcasts:stage_cyvasse_four` then holds the top `LIMIT` never-emailed verified
+players, most games first, dealing each run of four across the styles so every
+style gets the same mix. It never approves or sends; review and approve from the
+queue as usual.
+
 ## Staged Sends: Review Before Execute
 
 A personalized broadcast (a subject with `%{field}`s, or a template listed in

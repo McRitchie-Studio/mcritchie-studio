@@ -74,6 +74,34 @@ namespace :broadcasts do
     end
   end
 
+  # The four-prong test (task cyvasse-four-prong-emails), as DRAFTS at
+  # /broadcasts/cyvasse-four-<style>/edit, on the legacy list. Idempotent: an
+  # existing row is left as it is. It never stages or sends.
+  desc "Create the four Cyvasse four-prong broadcasts as drafts (never sends)"
+  task draft_cyvasse_four_styles: :environment do
+    Broadcasts::CyvasseFour::STYLES.each do |style, (template_key, resolver)|
+      broadcast = Broadcast.find_or_create_by!(slug: "#{Broadcasts::CyvasseFour::SLUG_PREFIX}#{style}") do |b|
+        b.template_key = template_key
+        b.subject      = resolver.plain
+        b.target_list  = Broadcasts::CyvasseFour::AUDIENCE
+        b.status       = "draft"
+      end
+      puts "#{broadcast.slug}: #{broadcast.status} (#{broadcast.template_label}) -> /broadcasts/#{broadcast.slug}/edit"
+    end
+  end
+
+  # Holds LIMIT readers across the four drafts, evenly mixed. It renders them
+  # into the queue and stops: approving and executing stay separate steps.
+  desc "Stage LIMIT never-emailed legacy players across the four styles (never approves or sends)"
+  task stage_cyvasse_four: :environment do
+    limit = ENV["LIMIT"].to_i
+    abort "LIMIT is required, e.g. LIMIT=500" unless limit.positive?
+
+    Broadcasts::CyvasseFour.stage!(limit: limit).each do |style, result|
+      puts "#{style}: #{result.staged} staged, #{result.skipped} skipped"
+    end
+  end
+
   # Post-deploy for task cyvasse-email-live-copy: moves the existing draft to
   # the new subject. Idempotent; never touches a sent broadcast or a subject
   # someone edited in the editor, and never sends.
