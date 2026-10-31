@@ -2,9 +2,10 @@
 
 require "test_helper"
 
-# [component] Which apps have the brand kit (task brand-kit-applied-status): the /logos brand column lists each app a
-# kit feeds under its downloads (emoji, name, Applied / Kit changed / Not applied; Kit changed in the amber tone with the
-# kit's save date in its title), and the app's page shows the same line per kit it takes.
+# [component] Which apps have the brand kit (tasks brand-kit-applied-status, logos-table-columns-tidy): the /logos
+# Apps and kits column has a chip per app a kit feeds (name, then a check, an amber triangle or a hollow ring for
+# Applied / Kit changed / Not applied, the status in its accessible name, the dates in its title, opening the app's
+# page), and the app's page shows a line per kit it takes.
 class BrandKitAppStatusTest < ActionDispatch::IntegrationTest
   setup do
     @admin = users(:alex)

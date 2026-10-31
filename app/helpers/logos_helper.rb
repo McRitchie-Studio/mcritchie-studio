@@ -184,7 +184,7 @@ module LogosHelper
   # name (`savers`, BrandKit.saver_names), else their email's local part; `full: true` adds the email in brackets,
   # for the title attribute of a status cut short. The date is the kit's saved_at (its last logo choice saved or
   # cleared; task brand-kit-applied-status), else updated_at for a kit saved before saved_at was kept. The brand page,
-  # its Kit card and Compare show it; the /logos table shows each app's status instead (brand_kit_apps/_status).
+  # its Kit card and Compare show it; the /logos table shows each app's status instead (logos/_kit_chips).
   def logo_kit_status(kit, savers = {}, full: false)
     saved = kit&.persisted? && kit.anything_saved?
     status = saved ? ["Kit: saved #{(kit.saved_at || kit.updated_at).strftime('%b %-d, %Y')}", logo_kit_saver(kit, savers, full:)].compact.join(" ") : "Kit: not saved yet"

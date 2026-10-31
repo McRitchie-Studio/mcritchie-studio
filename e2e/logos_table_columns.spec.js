@@ -18,7 +18,8 @@ async function growPalette(page, brand, count) {
     const before = row.getBoundingClientRect().height;
     while (strip.children.length < count) strip.appendChild(strip.children[0].cloneNode(true));
     return { before, after: row.getBoundingClientRect().height, scroll: strip.scrollWidth, client: strip.clientWidth,
-             overflow: getComputedStyle(strip).overflowX, page: document.documentElement.scrollWidth };
+             overflow: getComputedStyle(strip).overflowX, page: document.documentElement.scrollWidth,
+             table: (({ scrollWidth, clientWidth }) => scrollWidth - clientWidth)(document.querySelector("[data-test='logo-table-scroll']")) };
   }, [brand, count]);
 }
 
@@ -30,6 +31,7 @@ for (const width of [375, 1280]) {
     expect(grown.scroll).toBeGreaterThan(grown.client);
     expect(grown.after).toBe(grown.before);
     expect(grown.page).toBeLessThanOrEqual(width);
+    expect(grown.table).toBe(0); // the table's own wrapper does not scroll sideways either
 
     const strip = page.locator("[data-test='logo-palette'][data-brand='studio']");
     await strip.evaluate((el) => { el.scrollLeft = el.scrollWidth; });
