@@ -2681,20 +2681,25 @@ def promote_accepted_to_release!(repos, label: nil)
            "(nothing recorded; members stay `reviewed`)") unless Dir.exist?(path)
 
     sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--quiet", capture: true)
+    # THE PIN, not the live branch (swept_ref): a merge onto `accepted` after the sweep
+    # read is not this release's, so it is neither counted nor promoted here.
+    target = swept_ref(repo)
     ahead_out, ahead_ok = sh("git", "-C", path, "rev-list", "--count",
-                             "origin/#{RELEASE_BRANCH}..origin/#{ACCEPTED_BRANCH}", capture: true)
-    abort!("could not compare origin/#{RELEASE_BRANCH}..origin/#{ACCEPTED_BRANCH} in #{repo} " \
+                             "origin/#{RELEASE_BRANCH}..#{target}", capture: true)
+    abort!("could not compare origin/#{RELEASE_BRANCH}..#{target} in #{repo} " \
            "(`git rev-list` failed) — fetch, then re-run `bin/release prepare`.") unless ahead_ok
     ahead = ahead_out.strip.to_i
     if ahead.zero?
-      step("#{repo}: `#{ACCEPTED_BRANCH}` is level with `#{RELEASE_BRANCH}` — nothing to promote " \
+      pinned = swept_pin(repo).empty? ? "" : " (as swept, #{short(swept_pin(repo))})"
+      step("#{repo}: `#{ACCEPTED_BRANCH}`#{pinned} is level with `#{RELEASE_BRANCH}` — nothing to promote " \
            "(skip the batch PR; membership still records)")
       next
     end
 
-    # FAST-FORWARD OR BATCH PR. The head is the one the changelog guard checked when it
-    # read one (a gem), so the push lands exactly the tree that guard judged.
-    head = checked_heads[repo] || ref_sha(path, "origin/#{ACCEPTED_BRANCH}")
+    # FAST-FORWARD OR BATCH PR. The head is the pinned SHA, which is also the one the
+    # changelog guard checked when it read one (a gem: it reads swept_ref too), so the
+    # push lands exactly the tree those guards judged.
+    head = checked_heads[repo] || ref_sha(path, target)
     release_sha = ref_sha(path, "origin/#{RELEASE_BRANCH}")
     merge_base = (head.empty? || release_sha.empty?) ? "" : ref_merge_base(path, release_sha, head)
     if Release::PromotePlan.promote(ahead: ahead, release_sha: release_sha, merge_base: merge_base) == :fast_forward
@@ -2706,6 +2711,13 @@ def promote_accepted_to_release!(repos, label: nil)
          "`#{ACCEPTED_BRANCH}` lacks, such as a hotfix on `#{RELEASE_BRANCH}` or `main` not yet merged forward, " \
          "or containment could not be read) — promoting by the batch PR, then carrying `#{ACCEPTED_BRANCH}` " \
          "onto its merge commit so the next promote fast-forwards")
+    # THE BATCH PR MERGES A BRANCH, NOT A SHA: GitHub lands the live `accepted` head. So
+    # the merge is pinned to that head with --match-head-commit (a push in between makes
+    # gh refuse rather than merge unread work), and when `accepted` already moved past the
+    # swept SHA the pin ADVANCES to the head it merges, said out loud, so the record and
+    # the stale-tree gate describe the tree this merge lands. This is the rare path (a
+    # `release` that diverged); the fast-forward above lands the pin exactly.
+    merge_head = batch_merge_head(repo, path, head)
     pr_url = accepted_release_pr_url(repo, label: label)
     step("gh pr merge #{pr_url} --merge — promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} in #{repo} " \
          "(#{ahead} commit#{ahead == 1 ? '' : 's'})")
@@ -2721,7 +2733,7 @@ def promote_accepted_to_release!(repos, label: nil)
     # stopped to ask now fails with a message we print, instead of hanging a
     # release on a prompt nobody is watching.
     merge_out, ok = sh("gh", "pr", "merge", pr_url, "--merge",
-                       *(checked_heads[repo] ? ["--match-head-commit", checked_heads[repo]] : []), capture: true)
+                       *(merge_head.empty? ? [] : ["--match-head-commit", merge_head]), capture: true)
     # The echo of gh's words is decided AFTER the recovery, never before it. It
     # used to sit above this branch gated on `ok` — still false while the fallback
     # was deciding — so the interrupted-run path printed NOTHING, and that is the
@@ -2752,6 +2764,25 @@ def promote_accepted_to_release!(repos, label: nil)
   end
 end
 
+# The head the batch PR will merge, pinned. `pinned` is the swept SHA. When the live
+# `accepted` head is the pin (the normal case) that is the answer. When `accepted`
+# moved after the sweep the batch PR would carry the newcomers too, so the pin
+# ADVANCES to the live head and the step says how many commits ride along. "" when
+# no head is readable (the merge then runs unpinned, as it did before pins).
+def batch_merge_head(repo, path, pinned)
+  live = ref_sha(path, "origin/#{ACCEPTED_BRANCH}")
+  return pinned.to_s if live.empty? || live == pinned.to_s
+  return live if pinned.to_s.empty?
+
+  extra = rung_ahead(path, pinned, live)
+  say("  ⚠ #{repo}: `#{ACCEPTED_BRANCH}` moved past the swept #{short(pinned)} to #{short(live)} " \
+      "(#{extra.nil? ? 'an unread number of' : extra} commit#{extra == 1 ? '' : 's'}). The batch PR merges the " \
+      "branch head, so they ride this release; the pin advances to #{short(live)} so the record and the " \
+      "stale-tree gate describe the merged tree.")
+  swept_shas[repo] = live unless swept_pin(repo).empty?
+  live
+end
+
 # A remote-tracking ref's SHA, or "" when it does not resolve. A read, so an
 # unreadable answer is "" rather than an abort: every caller treats "" as "cannot
 # prove containment" and takes the path that needs no proof.
@@ -2764,6 +2795,89 @@ end
 def ref_merge_base(path, left, right)
   out, ok = sh("git", "-C", path, "merge-base", left, right, capture: true)
   ok ? out.to_s.strip : ""
+end
+
+# --- THE SWEPT PIN (task release-pins-swept-sha) ------------------------------
+# prepare reads each member repo's `accepted` head ONCE, right after it detected
+# the work it sweeps, and that SHA is the release's: the promote lands exactly it,
+# the guards before the promote judge exactly it, the stale-tree gate asserts
+# `release` contains exactly it, and the release record carries it
+# (metadata["swept_shas"]). A merge onto `accepted` after that read waits for the
+# next release instead of aborting this one with a stale-tree refusal (2026-10-30:
+# hub PR #2327 merged a minute after `cycle` started and cost a full re-prepare).
+#
+# WHY AFTER DETECTION, NOT BEFORE. Detection reads the board's merged stamps, which
+# GitHub derives from merges that already happened; the pin is read later, from a
+# fresh fetch, so every member detection found is in the pinned tree. A merge
+# between the two reads is in the tree with no member, exactly as before this
+# change; a member missing from the tree cannot happen.
+#
+# { repo => sha } for this process. A repo with no pin (a release recorded before
+# this change, a dry run, an unreadable head) falls back to the live
+# `origin/accepted`, which is the check this code made before pins existed.
+def swept_shas = (@swept_shas ||= {})
+
+def swept_pin(repo) = swept_shas[repo.to_s].to_s.strip
+
+# The ref every `accepted` read in prepare goes through: the pinned SHA when this
+# release has one for the repo, else the live branch.
+def swept_ref(repo)
+  pin = swept_pin(repo)
+  pin.empty? ? "origin/#{ACCEPTED_BRANCH}" : pin
+end
+
+# Read and pin the `accepted` head of every repo this sweep's members name. A dry
+# run takes no fetch, so it pins the head the last fetch left and says so: the
+# preview names the SHA a live run would start from, as of that fetch.
+def pin_swept_shas!(repos)
+  targets = Array(repos).map(&:to_s).reject(&:empty?).uniq
+  return if targets.empty?
+
+  pinned = targets.filter_map do |repo|
+    path = repo_path(repo)
+    next unless Dir.exist?(path)
+
+    if DRY
+      out, ok = git_capture("-C", path, "rev-parse", "--verify", "--quiet", "origin/#{ACCEPTED_BRANCH}^{commit}")
+      sha = ok ? out.to_s.strip : ""
+    else
+      sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--quiet", capture: true)
+      sha = ref_sha(path, "origin/#{ACCEPTED_BRANCH}")
+    end
+    next if sha.empty? # unreadable: the promote and the gate read the live branch and fail closed there
+
+    swept_shas[repo] = sha
+    "#{repo}@#{short(sha)}"
+  end
+  return if pinned.empty?
+
+  step("pin: this release promotes the `#{ACCEPTED_BRANCH}` SHA swept now — #{pinned.join(', ')}" \
+       "#{DRY ? ' (as of the last fetch; a dry run takes none)' : ''}. A merge onto `#{ACCEPTED_BRANCH}` " \
+       "after this line waits for the next release.")
+end
+
+# Adopt the pins the release record carries (an earlier run's) for the repos this
+# run did not pin itself. This run's own pins win: they were read later.
+def adopt_recorded_pins!(recorded)
+  return unless recorded.is_a?(Hash)
+
+  recorded.each do |repo, sha|
+    next if sha.to_s.strip.empty? || !swept_pin(repo).empty?
+
+    swept_shas[repo.to_s] = sha.to_s.strip
+  end
+end
+
+# How many commits reached `accepted` after the pin, per pinned repo in `repos`:
+# the work that waits for the next release. Display only; a failed read is skipped.
+def post_sweep_counts(repos)
+  Array(repos).filter_map do |repo|
+    pin = swept_pin(repo)
+    next if pin.empty?
+
+    n = rung_ahead(repo_path(repo), pin, "origin/#{ACCEPTED_BRANCH}")
+    [repo, n] if n.to_i.positive?
+  end.to_h
 end
 
 # THE FAST-FORWARD PROMOTE: push the `accepted` head to `release` by ref. The same
@@ -2903,7 +3017,7 @@ def refuse_misfiled_changelog!(targets)
     path = repo_path(repo)
     next unless Dir.exist?(path) # the promote loop aborts on a missing checkout itself
 
-    head, refusal = changelog_promote_refusal(path)
+    head, refusal = changelog_promote_refusal(path, swept_ref(repo))
     checked[repo] = head if head
     failures << "gem #{repo}: #{refusal}" if refusal
   end
@@ -2916,7 +3030,7 @@ end
 # [the `accepted` SHA read, refusal-or-nil] for one gem checkout. FAILS CLOSED: a
 # promote this cannot predict is refused, because a guard that passes when it could
 # not look is the silent failure it exists to end.
-def changelog_promote_refusal(path)
+def changelog_promote_refusal(path, accepted_ref = "origin/#{ACCEPTED_BRANCH}")
   # `--tags` is load-bearing: the tags ARE the published record this judges against.
   _, fetched = sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--tags", "--quiet",
                   capture: true)
@@ -2926,9 +3040,9 @@ def changelog_promote_refusal(path)
   end
 
   release, release_ok = git_capture("-C", path, "rev-parse", "--verify", "origin/#{RELEASE_BRANCH}^{commit}")
-  accepted, accepted_ok = git_capture("-C", path, "rev-parse", "--verify", "origin/#{ACCEPTED_BRANCH}^{commit}")
+  accepted, accepted_ok = git_capture("-C", path, "rev-parse", "--verify", "#{accepted_ref}^{commit}")
   unless release_ok && accepted_ok
-    return [nil, "could not resolve origin/#{RELEASE_BRANCH} and origin/#{ACCEPTED_BRANCH} (fail closed) — " \
+    return [nil, "could not resolve origin/#{RELEASE_BRANCH} and #{accepted_ref} (fail closed) — " \
                  "fetch, then re-run `bin/release prepare`; NOTHING was promoted"]
   end
   release = release.strip
@@ -3177,14 +3291,34 @@ end
 # validate_members! raise rolls the whole sweep back; the gh merges already
 # landed, but the next run self-heals (the gh-merge failure falls back to
 # pr_merged?). Emits ONE JSON line: { slug, state, swept, repos }.
-def batch_sweep_with_plan_ruby(slugs, release_slug = nil)
+# The release metadata key the swept pins live under, and the snippet that reads them
+# back. INLINE RUBY on purpose: the conductor runs the DEPLOYED hub, so a model method
+# added with this change would not exist on the release that ships it. Guarded by
+# respond_to? like the other snippets, so a board without the column answers {}.
+SWEPT_SHAS_KEY = "swept_shas"
+RECORDED_SWEPT_SHAS_RUBY = "(r.respond_to?(:metadata) ? (r.metadata || {})[#{SWEPT_SHAS_KEY.inspect}] : nil) || {}"
+
+def batch_sweep_with_plan_ruby(slugs, release_slug = nil, swept_shas: {})
   open_ruby = release_slug ? "Release.open!(slug: #{release_slug.inspect}#{train_kwarg}) if #{rel_current}.nil?; " : ""
+  # The pins ride the SAME transaction as the membership they describe: the record of
+  # who is on the release and of which tree it promotes land together or not at all.
+  # Merged per repo, so a later run's pin replaces only the repos it re-pinned.
+  pins = swept_shas.to_h.reject { |_repo, sha| sha.to_s.strip.empty? }
+  pin_ruby = if pins.empty?
+               ""
+             else
+               "if r.respond_to?(:metadata); m = r.metadata || {}; " \
+                 "r.update!(metadata: m.merge(#{SWEPT_SHAS_KEY.inspect} => (m[#{SWEPT_SHAS_KEY.inspect}] || {})" \
+                 ".merge(#{pins.inspect}))); end; "
+             end
   "result = Release.transaction { #{open_ruby}" \
   "slugs = #{slugs.inspect}; " \
   "slugs.each { |s| Release::Conductor.sweep!(Task.find_by!(slug: s)#{train_kwarg}) }; " \
   "r = #{rel_current_or_open}; " \
   "Release::Conductor.validate_members!(r); " \
-  "{ slug: r.slug, state: r.state, swept: slugs, repos: Release::Conductor.repo_plan(r) } }; " \
+  "#{pin_ruby}" \
+  "{ slug: r.slug, state: r.state, swept: slugs, repos: Release::Conductor.repo_plan(r), " \
+  "#{SWEPT_SHAS_KEY}: #{RECORDED_SWEPT_SHAS_RUBY} } }; " \
   "puts(result.to_json)"
 end
 
@@ -3804,8 +3938,12 @@ end
 # resolves the FROZEN ship SHA through resolve_release_ci_verdict exactly as G3
 # resolves the release tip. An unresolvable accepted ref answers false (no credit,
 # normal poll) — never an abort.
-def fast_forward_promote?(path, release_sha)
+def fast_forward_promote?(path, release_sha, repo: nil)
   return false if release_sha.to_s.empty?
+  # THE PIN COUNTS AS THE ACCEPTED HEAD (task release-pins-swept-sha): the promote
+  # fast-forwarded `release` to the swept SHA, and a merge onto `accepted` since then
+  # must not demote that tip to "diverged".
+  return true if repo && swept_pin(repo) == release_sha.to_s
 
   out, ok = sh("git", "-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}", capture: true)
   ok && out.strip == release_sha.to_s
@@ -3826,23 +3964,28 @@ end
 # SHAs DIFFER (the same-SHA case is fast_forward_promote?'s, checked first).
 # Every git fault — an unresolvable ref, a failed rev-parse — answers nil: no
 # credit, normal poll, never an abort.
-def tree_identical_promote(path, release_sha)
+def tree_identical_promote(path, release_sha, repo: nil)
   return nil if release_sha.to_s.empty?
 
   accepted, ok = sh("git", "-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}", capture: true)
   return nil unless ok
 
-  accepted = accepted.strip
-  return nil if accepted.empty? || accepted == release_sha.to_s
+  # The live head first (as before pins), then the swept pin: a batch-PR merge commit
+  # snapshots the pin's tree, and `accepted` may have moved since.
+  pin = repo ? swept_pin(repo) : ""
+  [accepted.strip, pin].reject(&:empty?).uniq.each do |candidate|
+    next if candidate == release_sha.to_s
 
-  release_tree, rel_ok = sh("git", "-C", path, "rev-parse", "#{release_sha}^{tree}", capture: true)
-  accepted_tree, acc_ok = sh("git", "-C", path, "rev-parse", "#{accepted}^{tree}", capture: true)
-  return nil unless rel_ok && acc_ok
+    release_tree, rel_ok = sh("git", "-C", path, "rev-parse", "#{release_sha}^{tree}", capture: true)
+    accepted_tree, acc_ok = sh("git", "-C", path, "rev-parse", "#{candidate}^{tree}", capture: true)
+    next unless rel_ok && acc_ok
 
-  release_tree = release_tree.strip
-  return nil if release_tree.empty? || release_tree != accepted_tree.strip
+    release_tree = release_tree.strip
+    next if release_tree.empty? || release_tree != accepted_tree.strip
 
-  { accepted_sha: accepted, tree: release_tree }
+    return { accepted_sha: candidate, tree: release_tree }
+  end
+  nil
 end
 
 # The verdict pair, persisted: what CI said about the SHA the gate certified.
@@ -4260,7 +4403,7 @@ def resolve_release_ci_verdict(repo, path, sha, budget: ci_poll_timeout)
   credit = nil
   diagnostic = nil
   diverged = false
-  if fast_forward_promote?(path, sha)
+  if fast_forward_promote?(path, sha, repo: repo)
     credit = ci_credit_verdict(repo, sha)
     if credit
       credit[:credited] = "#{credit[:credited]}; fast-forward promote — " \
@@ -4269,7 +4412,7 @@ def resolve_release_ci_verdict(repo, path, sha, budget: ci_poll_timeout)
       diagnostic = "origin/#{RELEASE_BRANCH} IS the #{ACCEPTED_BRANCH} head (fast-forward) but it carries no " \
                    "completed green to credit yet — polling its own run"
     end
-  elsif (promote = tree_identical_promote(path, sha))
+  elsif (promote = tree_identical_promote(path, sha, repo: repo))
     # SAME-TREE: credit an accepted-head green, or WAIT on it while it is in flight —
     # the round-3 fix (credit-waits-accepted-ci). Whatever the outcome, it LOGS why.
     outcome = tree_identical_ci_outcome(repo, sha, promote, deadline: deadline)
@@ -4583,6 +4726,14 @@ def prepare
     step("skip promote for #{row['slug']} — already merged: #{row['merged']} (crash recovery); membership still records")
   end
 
+  # 3b-pin. THE SWEPT PIN (task release-pins-swept-sha; see swept_ref). Read each
+  #     member repo's `accepted` head NOW, after detection and before every guard that
+  #     judges `accepted`, so the guards, the promote, the record and the stale-tree
+  #     gate all describe one tree. A merge onto `accepted` from here on waits for the
+  #     next release instead of failing this one's stale-tree gate.
+  pin_swept_shas!(cands.select { |c| plan["sweep"].include?(c["slug"]) }
+                       .flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] })
+
   # 4. PROMOTE accepted → release (the accepted-ladder's SECOND rung). Review already
   #    merged each feat PR into `accepted` (merged:"accepted"), so the sweep no longer
   #    merges N per-task feat PRs — it lands ALL of `accepted` onto `release`, ONE
@@ -4718,7 +4869,7 @@ def prepare
   result = {}
   if landed.any? && !DRY
     step("record: Release::Conductor.sweep! ×#{landed.size} + repo plan in ONE run (#{landed.join(', ')})")
-    result = conductor(batch_sweep_with_plan_ruby(landed, slug))
+    result = conductor(batch_sweep_with_plan_ruby(landed, slug, swept_shas: swept_shas))
   end
 
   # 4b. No sweep write happened (dry-run, or a pure re-run with nothing new) →
@@ -4727,10 +4878,14 @@ def prepare
     step("record (read-only): Release::Conductor.repo_plan(Release.current)")
     result = conductor(
       "r = #{rel_current}; " \
-      "puts((r ? { slug: r.slug, state: r.state, branch: r.branch, repos: Release::Conductor.repo_plan(r) } : {}).to_json)",
+      "puts((r ? { slug: r.slug, state: r.state, branch: r.branch, repos: Release::Conductor.repo_plan(r), " \
+      "#{SWEPT_SHAS_KEY}: #{RECORDED_SWEPT_SHAS_RUBY} } : {}).to_json)",
       read_only: true
     )
   end
+  # The pins an earlier run of this release recorded, for every repo this run did not
+  # pin itself (a self-healing re-run sweeps nothing, so it pins nothing).
+  adopt_recorded_pins!(result[SWEPT_SHAS_KEY])
 
   rel_slug = result["slug"] || slug || "rel-pending"
 
@@ -5420,7 +5575,8 @@ def refuse_red_accepted!(repos)
   # once exhausted — to learn something GitHub will answer for free. It also inherits
   # the RELEASE_CI_STATUS injection seam, so the meta-tests never touch the network.
   verdicts = repos.to_h do |repo|
-    sha, ok = sh("git", "-C", repo_path(repo), "rev-parse", "origin/#{ACCEPTED_BRANCH}", capture: true)
+    # The swept SHA's verdict (swept_ref): that is the commit the promote lands.
+    sha, ok = sh("git", "-C", repo_path(repo), "rev-parse", swept_ref(repo), capture: true)
     [repo, ok ? ci_verdict(repo, sha.to_s.strip) : { state: :unverified }]
   end
   red = red_accepted_repos(verdicts)
@@ -5459,14 +5615,16 @@ def accepted_workflow_sources(repo)
   # tolerated here.
   return nil unless File.exist?(File.join(path, ".git"))
 
+  # The swept SHA (swept_ref) when prepare pinned one: the tree the promote lands.
+  ref = swept_ref(repo)
   listing, ok = sh("git", "-C", path, "ls-tree", "--name-only",
-                   "origin/#{ACCEPTED_BRANCH}", ".github/workflows/", capture: true)
+                   ref, ".github/workflows/", capture: true)
   return nil unless ok
 
   listing.to_s.lines.map(&:strip).reject(&:empty?)
          .select { |file| file.end_with?(".yml", ".yaml") }
          .to_h do |file|
-           content, cok = sh("git", "-C", path, "show", "origin/#{ACCEPTED_BRANCH}:#{file}", capture: true)
+           content, cok = sh("git", "-C", path, "show", "#{ref}:#{file}", capture: true)
            [file, cok ? content.to_s : ""]
          end
 end
@@ -5644,7 +5802,10 @@ def ladder_ahead_states(repos: release_repo_slugs, require_checkout: false)
 
     sh("git", "-C", path, "fetch", "origin", "--quiet")
     rel = rung_ahead(path, "origin/main", "origin/#{RELEASE_BRANCH}")
-    acc = rung_ahead(path, "origin/#{RELEASE_BRANCH}", "origin/#{ACCEPTED_BRANCH}")
+    # Inside prepare the `accepted` side is the swept pin (swept_ref): commits merged
+    # after the sweep are the next release's, not work this one left behind. Every
+    # other caller (status, the expedite pre-check) has no pin and reads the branch.
+    acc = rung_ahead(path, "origin/#{RELEASE_BRANCH}", swept_ref(repo))
     rel.nil? ? unreadable << { "repo" => repo, "rung" => RELEASE_BRANCH }
              : release_states << { "repo" => repo, "ahead" => rel }
     acc.nil? ? unreadable << { "repo" => repo, "rung" => ACCEPTED_BRANCH }
@@ -5770,7 +5931,7 @@ def refuse_foreign_accepted_work!
 
     _out, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet", capture: true)
     out, ok = sh("git", "-C", path, "log", "--merges", "--format=%h %s",
-                 "origin/#{RELEASE_BRANCH}..origin/#{ACCEPTED_BRANCH}", capture: true)
+                 "origin/#{RELEASE_BRANCH}..#{swept_ref(repo)}", capture: true)
     next unreadable << "#{repo} (git read failed)" unless fetched && ok
 
     stranded[repo] = out.to_s.lines.filter_map do |line|
@@ -5829,13 +5990,23 @@ def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
     step("verify: no three-rung repo in the deploy plan — no `#{ACCEPTED_BRANCH}` rung to fall behind")
     return
   end
+  # WHAT "CARRIES `accepted`" MEANS NOW (task release-pins-swept-sha): `release` must
+  # contain the swept pin — the `accepted` SHA this release's sweep read and recorded
+  # (swept_ref) — not the live branch head. Work merged after the sweep is the next
+  # release's and does not make this tree stale. A repo with NO pin (a release
+  # recorded before pins, a repo no member of this run named and no earlier run
+  # pinned) keeps the full live check: that is the 2026-08-11 orphan case, and the
+  # gate keeps its bite there.
+  pins = scope.to_h { |repo| [repo, swept_pin(repo)] }.reject { |_repo, sha| sha.empty? }
+  pin_note = pins.empty? ? "" : " (the swept SHA#{pins.size == 1 ? '' : 's'}: " \
+                                "#{pins.map { |repo, sha| "#{repo}@#{short(sha)}" }.join(', ')})"
   if DRY
-    step("verify: would check `#{RELEASE_BRANCH}` carries `#{ACCEPTED_BRANCH}` in #{scope.join(', ')} — " \
+    step("verify: would check `#{RELEASE_BRANCH}` carries `#{ACCEPTED_BRANCH}`#{pin_note} in #{scope.join(', ')} — " \
          "a dry run takes no fetch, so the gate runs live only")
     return
   end
 
-  step("verify: `#{RELEASE_BRANCH}` carries `#{ACCEPTED_BRANCH}` in #{scope.join(', ')} (post-promote) — " \
+  step("verify: `#{RELEASE_BRANCH}` carries `#{ACCEPTED_BRANCH}`#{pin_note} in #{scope.join(', ')} (post-promote) — " \
        "the candidate must deploy the tree its record describes")
   git   = ladder_ahead_states(repos: scope, require_checkout: true)
   stale = Release::CleanCheck.ahead_repos(git["accepted"])
@@ -5844,7 +6015,7 @@ def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
   # name are for the refusal text, so the happy path never pays for them.
   stranded = stale.to_h do |s|
     [s["repo"], rung_stranded_commits(repo_path(s["repo"]),
-                                      "origin/#{RELEASE_BRANCH}", "origin/#{ACCEPTED_BRANCH}")]
+                                      "origin/#{RELEASE_BRANCH}", swept_ref(s["repo"]))]
   end
   nwo = stale.to_h { |s| [s["repo"], repo_name_with_owner(s["repo"])] }
 
@@ -5861,10 +6032,16 @@ def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
     repo_nwo: nwo,
     release_slug: rel_slug,
     release_state: rel_state,
-    task_index: task_index
+    task_index: task_index,
+    pinned_shas: pins
   )
   if verdict["fresh"]
     say(verdict["message"])
+    # The newcomers, named so nobody reads them as stranded: they wait.
+    post_sweep_counts(pins.keys).each do |repo, n|
+      say("  ↷ #{repo}: #{n} commit#{n == 1 ? '' : 's'} reached `#{ACCEPTED_BRANCH}` after the sweep " \
+          "pinned #{short(pins[repo])} — not on this release; the next release sweeps #{n == 1 ? 'it' : 'them'}.")
+    end
     return
   end
 
@@ -5872,7 +6049,9 @@ def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
   say(verdict["message"])
   behind = (verdict["stale_repos"].map { |s| s["repo"] } +
             verdict["unreadable_repos"].map { |u| u["repo"] }).uniq.join(", ")
-  abort!("stale tree: `#{RELEASE_BRANCH}` does not carry `#{ACCEPTED_BRANCH}` in #{behind} — prepare REFUSED " \
+  swept_clause = pins.empty? ? "" : "work this release SWEPT is missing from it, so "
+  abort!("stale tree: `#{RELEASE_BRANCH}` does not carry `#{ACCEPTED_BRANCH}`#{pin_note} in #{behind} — " \
+         "#{swept_clause}prepare REFUSED " \
          "rather than deploying and reporting `✓ Assembled` over a tree missing that work. Nothing was " \
          "published, gated, or deployed. Land the stranded work as shown above, then re-run `bin/release prepare`.")
 end
@@ -7310,6 +7489,18 @@ def gem_allocation_plan(group, failures)
     return
   end
   tip = out.strip
+  # THE ONE PLACE THE PIN CANNOT HOLD (task release-pins-swept-sha). The version
+  # commit must land ON `accepted` (above), and a ref push can only extend the branch
+  # head, so a gem merge that reached `accepted` after the sweep rides this release
+  # under the version commit. Say so, name the SHAs, and advance the pin, so nothing
+  # downstream reads the tree as the swept one. The window is the minutes between the
+  # sweep and this read, on a gem repo only.
+  pin = swept_pin(repo)
+  if !pin.empty? && pin != tip
+    say("  ⚠ gem #{repo}: `#{ACCEPTED_BRANCH}` moved past the swept #{short(pin)} to #{short(tip)}. The version " \
+        "commit has to land on the branch head, so those commits ride this release; the pin advances to #{short(tip)}.")
+    swept_shas[repo] = tip
+  end
 
   # THE TAG BASELINE STAYS ON `release`, and that is not an oversight: publish tags sit
   # on release-side commits (the publish tags the release tip), which `accepted` does not
@@ -7497,6 +7688,12 @@ def commit_gem_version!(repo, tip, decision, failures)
     unless pushed
       failures << "gem #{repo}: could not push #{version} to origin/#{ACCEPTED_BRANCH} (did #{ACCEPTED_BRANCH} move?)"
       next
+    end
+    # The version commit is now what this release promotes for the gem: advance the
+    # pin to it, or the promote below would land the pre-version tree (swept_ref).
+    unless swept_pin(repo).empty?
+      version_sha, read = git_capture("-C", workspace, "rev-parse", "HEAD")
+      swept_shas[repo] = version_sha.strip if read && !version_sha.strip.empty?
     end
 
     step("  gem #{repo}: allocated #{version} — #{decision.reason}; committed with its lockfile onto " \

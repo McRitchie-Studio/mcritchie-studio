@@ -27,8 +27,14 @@ class Release
   # REFUSES when the effect is missing.
   #
   # THE PROPERTY, stated once: for every three-rung repo the candidate is about
-  # to deploy, `origin/release` must already contain `origin/accepted`. That is
-  # the ONE thing that makes prepare's own output true. It is checked AFTER the
+  # to deploy, `origin/release` must already contain the `accepted` SHA this
+  # release SWEPT — the pin prepare read right after detecting its work and
+  # recorded on the release (metadata["swept_shas"]; task release-pins-swept-sha).
+  # A repo with no pin is held to the live `origin/accepted` head, the property
+  # as it stood before pins. That is the ONE thing that makes prepare's own output
+  # true. Work merged onto `accepted` AFTER the sweep is not stranded: it is the
+  # next release's, and measuring against the live head refused releases for it
+  # (2026-10-30, hub PR #2327, one minute into `cycle`). It is checked AFTER the
   # promote deliberately — a check placed before it would be re-deriving the
   # promote's own decision (the proxy), while a check placed after it measures
   # what actually landed, and so catches every cause at once: a repo the promote
@@ -81,6 +87,8 @@ class Release
     # repo_nwo:         { "<repo>" => "owner/name" } — for the `gh` recovery
     #   commands. A missing entry drops `--repo` from the printed command.
     # release_slug / release_state: the candidate being prepared, for the message.
+    # pinned_shas:      { "<repo>" => sha } — the swept pin each repo was measured
+    #   against. A repo absent here was measured against the live `accepted` head.
     #
     # Returns a JSON-friendly, string-keyed verdict:
     #   "fresh"            => Boolean — every measured repo's `release` contains
@@ -91,7 +99,7 @@ class Release
     #                         or the REFUSAL naming the stranded commits and the
     #                         exact recovery when stale.
     def evaluate(accepted_states: [], unreadable_repos: [], stranded_commits: {},
-                 repo_nwo: {}, release_slug: nil, release_state: nil, task_index: {})
+                 repo_nwo: {}, release_slug: nil, release_state: nil, task_index: {}, pinned_shas: {})
       # Reuse Release::CleanCheck's rung comparison rather than re-deriving it.
       # Two implementations of "which repos are ahead" is exactly how the ladder
       # guard and this gate would drift apart, and they must agree: they are
@@ -105,10 +113,10 @@ class Release
         "stale_repos" => stale,
         "unreadable_repos" => unreadable,
         "message" => if fresh
-                       fresh_message(accepted_states)
+                       fresh_message(accepted_states, pinned_shas)
                      else
                        stale_message(stale, unreadable, stranded_commits, repo_nwo,
-                                     release_slug, release_state, task_index)
+                                     release_slug, release_state, task_index, pinned_shas)
                      end
       }
     end
@@ -116,11 +124,22 @@ class Release
     # The OK line. Names the repos it actually verified, so a pass is evidence
     # the check RAN over the right scope rather than a line that prints whether
     # or not anything was measured.
-    def fresh_message(accepted_states)
+    def fresh_message(accepted_states, pinned_shas = {})
       repos = Array(accepted_states).map { |s| Release::CleanCheck.value(s, "repo") }.reject { |r| r.to_s.empty? }
-      scope = repos.empty? ? "no three-rung repo in the deploy plan" : repos.join(", ")
-      "✓ `#{RELEASE_RUNG}` carries every `#{ACCEPTED_RUNG}` commit (#{scope}) — " \
-        "the candidate's tree is current."
+      scope = repos.empty? ? "no three-rung repo in the deploy plan" : repos.map { |r| scoped(r, pinned_shas) }.join(", ")
+      what = pinned_shas.to_h.empty? ? "every `#{ACCEPTED_RUNG}` commit" : "every `#{ACCEPTED_RUNG}` commit this release swept"
+      "✓ `#{RELEASE_RUNG}` carries #{what} (#{scope}) — the candidate's tree is current."
+    end
+
+    # "repo" or "repo@<pin>" — the pin a repo was measured against, when it had one.
+    def scoped(repo, pinned_shas)
+      pin = pin_for(pinned_shas, repo)
+      pin.empty? ? repo.to_s : "#{repo}@#{pin[0, 7]}"
+    end
+
+    def pin_for(pinned_shas, repo)
+      map = pinned_shas.to_h
+      (map[repo.to_s] || map[repo.to_s.to_sym]).to_s.strip
     end
 
     # The refusal. It must do three things the old silent success did not: say
@@ -128,12 +147,12 @@ class Release
     # the exact recovery with the repo and SHAs filled in. A refusal that does not
     # name its remedy just moves the confusion.
     def stale_message(stale, unreadable, stranded_commits, repo_nwo, release_slug, release_state,
-                      task_index = {})
+                      task_index = {}, pinned_shas = {})
       rel = release_slug.to_s.empty? ? "the candidate" : release_slug.to_s
       rel += " (#{release_state})" unless release_state.to_s.empty?
 
       lines = ["✗ prepare refused: #{rel} would deploy a tree that does NOT contain `#{ACCEPTED_RUNG}`."]
-      stale.each { |repo| lines.concat(stale_repo_lines(repo, stranded_commits, task_index)) }
+      stale.each { |repo| lines.concat(stale_repo_lines(repo, stranded_commits, task_index, pinned_shas)) }
       unreadable.each do |u|
         lines << "  #{u['repo']}: the `#{u['rung']}` rung could NOT be read — a failed read is not a clean read, " \
                  "so it counts as stale. Fetch the repo (or fix the missing branch), then re-run."
@@ -164,17 +183,20 @@ class Release
     # the actual commits. The count alone is not enough: "1 commit behind" sends
     # the operator to go look it up, and the whole point of the refusal is that
     # it hands over what it already knows.
-    def stale_repo_lines(repo, stranded_commits, task_index = {})
+    def stale_repo_lines(repo, stranded_commits, task_index = {}, pinned_shas = {})
       slug    = repo["repo"].to_s
       ahead   = repo["ahead"].to_i
       commits = commits_for(stranded_commits, slug)
-      header  = "  #{slug}: #{ahead} commit#{ahead == 1 ? '' : 's'} stranded on `#{ACCEPTED_RUNG}`, " \
+      pin     = pin_for(pinned_shas, slug)
+      where   = pin.empty? ? "on `#{ACCEPTED_RUNG}`" : "on `#{ACCEPTED_RUNG}` up to the swept #{pin[0, 7]}"
+      header  = "  #{slug}: #{ahead} commit#{ahead == 1 ? '' : 's'} stranded #{where}, " \
                 "missing from `#{RELEASE_RUNG}`:"
 
       if commits.empty?
+        head = pin.empty? ? "origin/#{ACCEPTED_RUNG}" : pin
         return [header,
                 "    - (commit list unavailable — run " \
-                "`git log --oneline origin/#{RELEASE_RUNG}..origin/#{ACCEPTED_RUNG}` in #{slug})"]
+                "`git log --oneline origin/#{RELEASE_RUNG}..#{head}` in #{slug})"]
       end
 
       [header] + commits.flat_map do |c|
