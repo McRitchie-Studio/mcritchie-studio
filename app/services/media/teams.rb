@@ -74,9 +74,15 @@ module Media
     # tenant, which card 2's setup will settle.
     def message_url(_message, _message_id = nil) = nil
 
-    # The thread a reply goes in: the conversation's root message id (the
-    # thread_key's last segment, "teams:<channel>:<root>").
-    def self.thread_root(message) = message.thread_key.to_s.split(":").last
+    # The thread a reply goes in: the conversation's root message id. Read from
+    # the row's envelope (thread_root, else the activity's own id: a root post),
+    # never parsed out of thread_key, whose channel part is full of colons
+    # (19:…@thread.tacv2); the key's tail is only the last resort.
+    def self.thread_root(message)
+      env = message.envelope || {}
+      env["thread_root"].presence || env["activity_id"].presence ||
+        message.thread_key.to_s.delete_prefix("teams:#{message.channel_ref}:").presence
+    end
 
     # How a soul appears on Teams: its display name (Media.display_name) and the
     # portrait Slack uses (agent_media.yml souls.<soul>.icon, else the PNG under

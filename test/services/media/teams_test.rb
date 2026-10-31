@@ -64,7 +64,7 @@ class MediaTeamsTest < ActiveSupport::TestCase
     agent_message!(soul: soul, status: "completed", channel: "teams", external_id: "#{CHANNEL}:#{id}", channel_ref: CHANNEL,
                    thread_key: "teams:#{CHANNEL}:#{root}", author_ref: author, response_text: text, reply_status: "queued",
                    envelope: { "service_url" => SERVICE_URL, "conversation_id" => "#{CHANNEL};messageid=#{root}",
-                               "activity_id" => id, "from_id" => "29:user-1", "conversation_type" => "channel" })
+                               "activity_id" => id, "thread_root" => root, "from_id" => "29:user-1", "conversation_type" => "channel" })
   end
 
   def home(id = CHANNEL) = Media::Home.new(medium: "teams", channel: "general", spec: { "id" => id }, source: "test", fell_from: [])
@@ -223,6 +223,18 @@ class MediaTeamsTest < ActiveSupport::TestCase
 
     assert_equal "skipped", row.reload.reply_status
     assert_includes row.events.find_by(kind: "reply_skipped").detail["reason"], "TEAMS_BOT_APP_ID"
+  end
+
+  test "[unit] the thread root comes from the envelope, never from splitting the colon-filled thread key" do
+    reply = teams_row(id: "1761900000222", root: "1761900000111")
+    reply.update!(envelope: reply.envelope.merge("thread_root" => "1761900000111"))
+    assert_equal "1761900000111", Media::Teams.thread_root(reply)
+
+    root = teams_row(id: "1761900000333", root: "1761900000333")
+    assert_equal "1761900000333", Media::Teams.thread_root(root), "a root post: its own activity id"
+
+    odd = AgentMessage.new(channel: "teams", channel_ref: "a:1:chat", thread_key: "teams:a:1:chat:1:abc", envelope: {})
+    assert_equal "1:abc", Media::Teams.thread_root(odd), "an id with a colon in it survives"
   end
 
   # --- the caps -------------------------------------------------------------------
