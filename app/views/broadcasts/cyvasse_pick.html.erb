@@ -4,13 +4,14 @@
 <% links = Broadcast::TEMPLATE_LINKS["cyvasse_pick"] %>
 <% named = @merge_fields.nil? || Broadcasts::CyvasseReturn.username?(@merge_fields) %>
 <% history = @merge_fields.nil? || Broadcasts::CyvasseReturn.history?(@merge_fields) %>
+<% headline_size = merge_field(:username, fallback: "").length > 10 ? 32 : 44 %>
 <% content_for :email_title, "One question" %>
 <% content_for :email_page_bg, "#efe7d6" %>
 <% content_for :preheader, @broadcast&.preview_text.presence || "Which piece do you trust with your king?" %>
 <tr>
   <td style="background-color:#fbf6ea;padding:26px 24px 8px;text-align:center;font-family:Georgia,'Times New Roman',serif;">
     <div style="font-size:15px;letter-spacing:5px;font-weight:700;color:#7a2e1d;">CYVASSE</div>
-    <div style="padding-top:24px;font-size:44px;line-height:1.08;font-weight:700;color:#2a2118;">One question<%= ", #{merge_field(:username)}" if named %>.</div>
+    <div style="padding-top:24px;font-size:<%= headline_size %>px;line-height:1.08;word-break:break-word;font-weight:700;color:#2a2118;">One question<%= ", #{merge_field(:username)}" if named %>.</div>
     <div style="padding-top:14px;font-size:20px;line-height:1.4;color:#5a4c3c;">Which piece do you trust with your king?</div>
   </td>
 </tr>

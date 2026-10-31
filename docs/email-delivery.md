@@ -331,7 +331,9 @@ creates the `cyvasse-four-<style>` drafts. `LIMIT=500 bin/rails
 broadcasts:stage_cyvasse_four` then holds the top `LIMIT` never-emailed verified
 players, most games first, dealing each run of four across the styles so every
 style gets the same mix. It never approves or sends; review and approve from the
-queue as usual.
+queue as usual. A reader gets one style: every staging path skips anyone already
+mailed, held in a queue, or cancelled from one of the four, and a cancel on an
+older broadcast does not count.
 
 ## Staged Sends: Review Before Execute
 

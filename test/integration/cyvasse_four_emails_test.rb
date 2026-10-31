@@ -72,17 +72,44 @@ class CyvasseFourEmailsTest < ActionDispatch::IntegrationTest
   end
 
   test "a staged snapshot keeps its pixel, tracked links and unsubscribe" do
-    @vet.update!(tags: [ "cyvasse-legacy" ], verification_status: "valid")
     KEYS.each do |key|
       broadcast = @broadcasts[key]
-      broadcast.stage!(audience: "cyvasse-legacy", filter: { id: @vet.id })
-      row = broadcast.staged_emails.find_by!(contact: @vet)
+      reader = Contact.create!(email: "#{key}@example.com", tags: [ "cyvasse-legacy" ], verification_status: "valid", traits: @vet.traits)
+      broadcast.stage!(audience: "cyvasse-legacy", filter: { id: reader.id })
+      row = broadcast.staged_emails.find_by!(contact: reader)
       assert_equal "staged", row.status, row.skip_reason
       assert_match "/e/o/", row.rendered_html, key
       assert_match "/e/c/", row.rendered_html, key
       assert BroadcastMailer.staged(row)["List-Unsubscribe"].present?, key
       assert_match "veyjin", row.rendered_subject.to_s + row.rendered_html, key
     end
+  end
+
+  test "counts of one read singular" do
+    one = Contact.create!(email: "one@example.com", traits: { "cyvasse" => { "username" => "solo", "games" => 7, "wins" => 1, "losses" => 1 } })
+    assert_match "1 win, 1 loss", text(render("cyvasse_wrapped", one))
+    %w[cyvasse_poster cyvasse_dragon].each { |key| assert_match(/1\s*WIN\b/, text(render(key, one)), key) }
+  end
+
+  test "a long username steps the Pick headline down" do
+    long = Contact.create!(email: "long@example.com", traits: { "cyvasse" => { "username" => "averyveryverylongname", "games" => 7 } })
+    assert_match "font-size:32px", html(render("cyvasse_pick", long))
+    assert_match "font-size:44px", html(render("cyvasse_pick", @vet))
+  end
+
+  test "the Dragon's fallback colour keeps its copy readable with images off" do
+    assert_match 'bgcolor="#c8324b"', html(render("cyvasse_dragon", @vet))
+  end
+
+  test "a forty-character username can wrap in every style" do
+    long = Contact.create!(email: "forty@example.com", traits: { "cyvasse" => { "username" => "a" * 40, "games" => 7 } })
+    KEYS.each { |key| assert_match "word-break:break-word", html(render(key, long)), key }
+  end
+
+  test "a reader without history gets natural copy and every footer has an address" do
+    assert_no_match(/ADD TO YOUR RECORD/, text(render("cyvasse_poster", @guest)))
+    assert_match "Back.", text(render("cyvasse_wrapped", @guest))
+    KEYS.each { |key| assert_match "Denver, CO", text(render(key, @vet)), key }
   end
 
   test "every image a template names is in public/email" do
@@ -100,6 +127,8 @@ class CyvasseFourEmailsTest < ActionDispatch::IntegrationTest
       get preview_broadcast_path(@broadcasts[key])
       assert_response :success
       assert_no_match(/studio-logo-white/, response.body, key)
+      assert_match "{games}", response.body, key unless key == "cyvasse_pick"
+      assert_match "{all_time_rank}", response.body, key if key == "cyvasse_wrapped"
     end
     assert_equal "broadcast_email", Broadcast.new(template_key: "cyvasse_record").email_layout
   end

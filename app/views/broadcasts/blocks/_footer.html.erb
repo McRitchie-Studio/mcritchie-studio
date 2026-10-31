@@ -6,7 +6,7 @@
     address          = "{{ site_settings.company_name }} &middot; {{ site_settings.company_street_address_1 }}, {{ site_settings.company_city }}, {{ site_settings.company_state }} {{ site_settings.company_zip }}".html_safe
     unsubscribe_href = "{{ unsubscribe_link }}"
   elsif @unsubscribe_url
-    address          = ENV["MAILER_ADDRESS"]
+    address          = ENV.fetch("MAILER_ADDRESS", "McRitchie Studio, 3000 Lawrence St, Denver, CO 80205")
     unsubscribe_href = @unsubscribe_url
   end
 %>
@@ -14,7 +14,7 @@
   <td style="background-color:#0d0a26;padding:20px 24px 26px;text-align:center;font-size:12px;line-height:1.5;color:#8a86ad;">
     <%= content_for?(:email_reason) ? content_for(:email_reason) : "You&rsquo;re receiving this because you have an account on Cyvasse.".html_safe %>
     <% if unsubscribe_href %>
-      <br><% if address.present? %><%= address %><br><% end %><a href="<%= unsubscribe_href %>" style="color:#8a86ad;text-decoration:underline;">Unsubscribe</a>
+      <br><%= address %><br><a href="<%= unsubscribe_href %>" style="color:#8a86ad;text-decoration:underline;">Unsubscribe</a>
     <% else %>
       <br>[unsubscribe + address footer is added on send]
     <% end %>
