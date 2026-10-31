@@ -23,6 +23,9 @@ async function holdResponses(page, pathname, ms) {
 
 test("a slow navigation shows the Sparkle loader until the page arrives", async ({ page }) => {
   const errors = watchPageErrors(page);
+  // The suite's use.reducedMotion is inert in the page (e2e/deployments_exit_fx.spec.js);
+  // set it here, or a reduced-motion run would draw no sparkles and name no animation.
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/about");
   await expect(overlay(page)).toBeHidden();
 
