@@ -40,3 +40,30 @@ test("a slow navigation shows the Sparkle loader until the page arrives", async 
   await expect(overlay(page)).toBeHidden();
   expect(errors.pageErrors, errors.report()).toHaveLength(0);
 });
+
+// [e2e] A background refresh never shows the overlay (studio-engine
+// loader-skips-background-visits). usage_countdown.js refreshes /build/<token>
+// with Turbo.visit(location.href, { action: "replace" }) once the month turns;
+// the visitor did not ask for that visit, so it must stay quiet however slow.
+test("a countdown's replace visit on /build/<token> never shows the loader", async ({ page }) => {
+  const errors = watchPageErrors(page);
+  await page.setExtraHTTPHeaders({ "X-Forwarded-For": `198.51.100.${1 + Math.floor(Math.random() * 250)}` });
+  await page.goto("/build");
+  const box = page.getByLabel("Tell Alex what you want to build");
+  await box.fill(`A loader check ${Date.now()}`);
+  await page.waitForTimeout(2200);
+  await box.press("Enter");
+  await page.waitForURL(/\/build\/[^/]+$/);
+  const pathname = new URL(page.url()).pathname;
+
+  await holdResponses(page, pathname, 1500);
+  const shown = page.evaluate(() => new Promise((resolve) => {
+    const el = document.querySelector("[data-studio-loader-overlay]");
+    let seen = false;
+    const timer = setInterval(() => { if (el && getComputedStyle(el).display !== "none" && !el.hidden) seen = true; }, 20);
+    window.Turbo.visit(window.location.href, { action: "replace" });
+    setTimeout(() => { clearInterval(timer); resolve(seen); }, 1200);
+  }));
+  expect(await shown).toBe(false);
+  expect(errors.pageErrors, errors.report()).toHaveLength(0);
+});
