@@ -210,13 +210,22 @@ class Release
         synopsis: "bin/release notes <release> [--post] [--force]",
         consequence: "nothing was posted to Discord",
         bool: ["--post", "--force"], value: [], allow_positional: true
+      },
+      # Tell a shipped release on Slack (ReleaseNotes::SlackAnnouncement): smoke
+      # each production app (/up, home, the deployed SHA), then the #agents-general
+      # summary, each app's post and its smoke verdict in the thread. A DRY RUN
+      # unless --post; each post is keyed, so a re-run sends only what never went out.
+      "announce" => {
+        synopsis: "bin/release announce <release> [--post]",
+        consequence: "nothing was posted to Slack",
+        bool: ["--post"], value: [], allow_positional: true
       }
     }.freeze
 
     # The whole-CLI usage line — printed for a bare `bin/release`, an unknown
     # subcommand, and appended to every per-subcommand `--help`.
     USAGE = "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|" \
-            "ship [--finalize-only [<release>]]|cycle --clearance \"<words>\"|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]} " \
+            "ship [--finalize-only [<release>]]|cycle --clearance \"<words>\"|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]|announce <release> [--post]} " \
             "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto|cleared] [--clearance \"<Alex McRitchie's words>\"] " \
             "[--feedback …] [--clean-only] [--expedite] " \
             "[--worked …] [--friction …] [--followup …] [--file-tasks] [--train SLUG] [--wait-for-1password[=MINUTES]] [--local] [--dry-run] [--yes]"

@@ -57,8 +57,9 @@ discord:
     internal:
       webhook_env: DISCORD_INTERNAL_WEBHOOK_URL
 
-# Slack (Media::Slack): the McRitchie Agents app posts as each soul. Enabled,
-# but no purpose names it yet (the cutover is card 6). Slack can post only while
+# Slack (Media::Slack): the McRitchie Agents app posts as each soul. Enabled;
+# no purpose names it yet (the cutover is card 6), but a shipped release posts
+# here (release_posts below). Slack can post only while
 # SLACK_BOT_TOKEN is set; without it Media.home falls back to discord, so a
 # half-set Slack silences nothing. A channel is an `id` (C…); the app must be a
 # member of it (invite @McRitchie Agents) or Slack answers not_in_channel.
@@ -75,6 +76,40 @@ slack:
       id: "C0CDEG43ECS"
     releases:
       id: "C0CDJCN4L92"
+
+# A SHIPPED RELEASE ON SLACK (ReleaseNotes::SlackAnnouncement, run by
+# `bin/release announce`, which the cycle runs once prod verify is green). Not a
+# purpose: it always posts on Slack and never falls back to Discord (the
+# Discord release notes stay `purposes.release_notes`).
+#   general   ONE summary: release, apps with emoji and prod SHA, every card with
+#             task and PR links. A channel name under slack.channels, posted as
+#             `soul` (Mason, the COO who runs full-cycle).
+#   app_soul  who posts in an app's channel (config/agent_routes.yml
+#             slack.channels, matched by the repo's name) when the channel has
+#             no default_soul that may answer there. turf-monster → turf_monster
+#             and cyvasse → tywin come from those channels' default_soul.
+release_posts:
+  general:
+    channel: agents                      # C0CD8ETBZBM, #agents-general
+    soul: mason
+  app_soul: steffon
+
+# THE NOISE CAPS (Media::Slack::Limits), enforced at the outbound seam:
+# Media::Slack#post and #deliver_reply check them before every chat.postMessage,
+# counting from the shared SlackPost ledger. Over a cap the post is not sent: the
+# ledger row is `suppressed` with the reason, a reply's message gets a
+# reply_suppressed event and reply_status skipped, and nothing retries it.
+# A soul-less post (an alert or report through a home) is never capped.
+limits:
+  # Posts one soul makes in one channel per rolling hour. Release posts are
+  # exempt but counted.
+  per_soul_per_channel_per_hour: 6
+  # Agent posts in one thread since Alex McRitchie last wrote in it. Nothing is
+  # exempt: the agents stop and wait for him.
+  replies_per_thread_without_owner: 4
+  # An answer to a message Alex McRitchie wrote himself counts toward the hourly
+  # cap but is never suppressed by it: his own question is not noise.
+  owner_replies_count_only: true
 
 # A registered stub (Media::Teams): every method raises NotImplementedError.
 teams:
