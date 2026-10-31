@@ -2297,8 +2297,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_31_040000) do
     t.index ["channel_id", "thread_ts", "created_at"], name: "index_slack_posts_on_channel_id_and_thread_ts_and_created_at"
     t.index ["idempotency_key"], name: "index_slack_posts_on_idempotency_key", unique: true
     t.index ["release_slug"], name: "index_slack_posts_on_release_slug"
-    t.check_constraint "kind::text = ANY (ARRAY['post'::character varying, 'reply'::character varying, 'release'::character varying]::text[])", name: "slack_posts_kind_known"
-    t.check_constraint "status::text = ANY (ARRAY['sending'::character varying, 'posted'::character varying, 'suppressed'::character varying, 'failed'::character varying]::text[])", name: "slack_posts_status_known"
+    t.check_constraint "kind::text = ANY (ARRAY['post'::character varying::text, 'reply'::character varying::text, 'release'::character varying::text])", name: "slack_posts_kind_known"
+    t.check_constraint "status::text = ANY (ARRAY['sending'::character varying::text, 'posted'::character varying::text, 'suppressed'::character varying::text, 'failed'::character varying::text])", name: "slack_posts_status_known"
   end
 
   create_table "slates", force: :cascade do |t|
