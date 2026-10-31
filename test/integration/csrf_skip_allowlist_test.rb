@@ -23,7 +23,10 @@ class CsrfSkipAllowlistTest < ActiveSupport::TestCase
     "webhooks/resend_events" => "Resend's server posts it; the svix signature is the credential (Webhooks::SvixSignature)",
     "webhooks/resend_inbound" => "Resend's server posts it; the svix signature is the credential (Webhooks::SvixSignature)",
     "webhooks/slack_events" => "Slack's server posts it; the v0 HMAC-SHA256 signature over the raw body, five-minute window, is the " \
-                               "credential (AgentMessages::SlackSignature)"
+                               "credential (AgentMessages::SlackSignature)",
+    "webhooks/teams_messages" => "the Bot Framework's Connector posts it; its RS256 JWT (issuer, audience = the bot's app id, " \
+                                 "the Bot Framework JWKS signature, expiry, the serviceUrl claim) is the credential " \
+                                 "(AgentMessages::TeamsAuth)"
   }.freeze
 
   EXCEPTION_STRATEGY = ActionController::RequestForgeryProtection::ProtectionMethods::Exception

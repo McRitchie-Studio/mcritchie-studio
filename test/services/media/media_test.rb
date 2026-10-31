@@ -9,7 +9,7 @@ class MediaTest < ActiveSupport::TestCase
   include AgentMessageFixtures
 
   test "[unit] the registry resolves discord, email, web and slack to their adapters, each keyed by itself" do
-    assert_equal %w[discord email web teams slack], Media.keys, "teams is registered, disabled (Media::Teams)"
+    assert_equal %w[discord email web teams slack], Media.keys, "teams is registered, disabled until credentials (Media::Teams)"
     { "discord" => Media::Discord, "email" => Media::Email, "web" => Media::Web, "slack" => Media::Slack }.each do |key, klass|
       adapter = Media.adapter(key)
       assert_instance_of klass, adapter
@@ -32,7 +32,7 @@ class MediaTest < ActiveSupport::TestCase
     typing = Media.keys.select { |key| Media.adapter(key).supports?(:typing) }
     assert_equal AgentMessage::TYPING_CHANNELS.sort, typing.sort
     replying = Media.keys.select { |key| Media.adapter(key).supports?(:reply) }
-    assert_equal AgentMessage::CHANNELS.sort, replying.sort, "every message channel replies; teams, not built, does not"
+    assert_equal AgentMessage::CHANNELS.sort, replying.sort, "every message channel replies, teams included"
   end
 
   test "[unit] the error hierarchy: DiscordBot errors are Media errors, so the jobs retry and drop the same set" do

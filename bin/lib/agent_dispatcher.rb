@@ -20,7 +20,8 @@ module AgentMailbox
   # AgentMessages::Routes#souls is the same rule (every soul a guild lists, plus
   # each channel override's non-empty default_soul, plus the web chat's CTOs under
   # `web: souls:`, plus the `slack:` block's named souls, mention_soul and channel
-  # defaults: AgentMessages::SlackRoutes#routed_souls); this copy exists because
+  # defaults: AgentMessages::SlackRoutes#routed_souls; the same of the `teams:`
+  # block: AgentMessages::TeamsRoutes#routed_souls); this copy exists because
   # bin/ runs without the app loaded.
   def self.routed_souls(path = File.join(REPO_ROOT, "config/agent_routes.yml"))
     config = YAML.safe_load_file(path, aliases: false) || {}
@@ -28,10 +29,12 @@ module AgentMailbox
     souls = guilds.flat_map { |g| (g["souls"] || {}).keys.map(&:to_s) }
     defaults = guilds.flat_map { |g| (g["channels"] || {}).values.compact.map { |c| c["default_soul"].to_s } }
     web = Array((config["web"] || {})["souls"]).map(&:to_s)
-    slack = config["slack"].is_a?(Hash) ? config["slack"] : {}
-    slack_souls = (slack["souls"] || {}).keys.map(&:to_s) + [ slack["mention_soul"].to_s ] +
-                  (slack["channels"] || {}).values.compact.map { |c| c["default_soul"].to_s }
-    (souls + defaults + web + slack_souls).map(&:strip).reject(&:empty?).uniq
+    chat_souls = %w[slack teams].flat_map do |medium|
+      block = config[medium].is_a?(Hash) ? config[medium] : {}
+      (block["souls"] || {}).keys.map(&:to_s) + [ block["mention_soul"].to_s ] +
+        (block["channels"] || {}).values.compact.map { |c| c["default_soul"].to_s }
+    end
+    (souls + defaults + web + chat_souls).map(&:strip).reject(&:empty?).uniq
   end
 
   # A digest of the code the running dispatcher is made of: the entry script,

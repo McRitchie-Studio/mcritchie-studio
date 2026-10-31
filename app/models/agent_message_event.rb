@@ -15,10 +15,10 @@
 # at a cap) and bot_shield (a first message without the browser proof; held), and attached
 # (a web chat message's files, by count, bytes and kind: AgentMessages::Attachments),
 # and thread_folded (a satellite chat's anon row moved to the person's thread on
-# their first signed-in post: AgentChat::Ingest#fold!), and Slack's no-nonce
-# reply guard (Media::Slack): reply_sending (an attempt is about to post) and
-# reply_not_posted (that attempt provably did not), and reply_suppressed (over a
-# noise cap, Media::Slack::Limits: never sent, never retried).
+# their first signed-in post: AgentChat::Ingest#fold!), and the no-nonce reply
+# guard Slack and Teams share (Media::OnceDelivery): reply_sending (an attempt is
+# about to post) and reply_not_posted (that attempt provably did not), and
+# reply_suppressed (over a noise cap, Media::Limits: never sent, never retried).
 class AgentMessageEvent < ApplicationRecord
   KINDS = %w[received routed unrouted claimed lease_renewed lease_expired released dead_lettered
              completed reply_posted reply_skipped reply_failed reply_bot_refused typing_bot_refused held hold_released

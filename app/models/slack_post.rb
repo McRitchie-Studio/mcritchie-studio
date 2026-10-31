@@ -1,7 +1,14 @@
-# One post the hub made, or declined to make, on Slack: the outbound ledger the
-# noise caps count from (Media::Slack::Limits, config/agent_media.yml `limits:`).
-# Media::Slack writes every row: #post for a standalone post, #deliver_reply for
-# an agent's answer. Nothing else writes here.
+# One post the hub made, or declined to make, on a chat medium: the outbound
+# ledger the noise caps count from (Media::Limits, config/agent_media.yml
+# `limits:`). Slack's and Microsoft Teams' rows share it, told apart by
+# `medium` (the table keeps its Slack name). Media::Slack and Media::Teams write
+# every row, through Media::OnceDelivery: #post for a standalone post,
+# #deliver_reply for an agent's answer. Nothing else writes here.
+#
+#   medium   slack | teams (default slack: every row before Teams)
+#   channel_id, thread_ts, ts   the medium's channel, thread root and message
+#            ids (Slack: C…, a thread ts, a ts; Teams: the channel's
+#            conversation id, the root message id, the activity id)
 #
 #   kind     post     a standalone post (a home's channel: notes, alerts)
 #            reply    an agent's answer to a message (AgentMessageReplyJob)
@@ -19,10 +26,12 @@
 # idempotency_key (unique) makes a keyed post exactly once across re-runs: a
 # release post is keyed release:<slug>:<channel>:<what>.
 class SlackPost < ApplicationRecord
+  MEDIA = %w[slack teams].freeze
   KINDS = %w[post reply release].freeze
   STATUSES = %w[sending posted suppressed failed].freeze
   AMBIGUOUS = "ambiguous:".freeze
 
+  validates :medium, inclusion: { in: MEDIA }
   validates :channel_id, presence: true
   validates :kind, inclusion: { in: KINDS }
   validates :status, inclusion: { in: STATUSES }

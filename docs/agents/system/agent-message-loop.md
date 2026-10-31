@@ -351,7 +351,7 @@ channel. The plan is `.agents/epics/omnichannel-media.md`.
 | `discord` | `Media::Discord` | Gateway (and the backstop poll) | reply, typing, post |
 | `email` | `Media::Email` | Resend webhook | reply |
 | `web` | `Media::Web` | HTTP (`/applications/:slug/chat`, `/build`, satellites) | reply, typing |
-| `teams` | `Media::Teams` | not built | nothing: registered, disabled, every method raises `NotImplementedError` |
+| `teams` | `Media::Teams` | Bot Framework messaging endpoint (`POST /webhooks/teams/messages`) | reply; post while `TEAMS_BOT_APP_ID` and `TEAMS_BOT_APP_PASSWORD` are set; `enabled: false` until the bot is registered (see [Teams](#teams-the-same-network-on-microsoft-teams)) |
 | `slack` | `Media::Slack` | Events API webhook (`POST /webhooks/slack/events`) | reply; post while `SLACK_BOT_TOKEN` is set (see [Slack](#slack-one-app-posts-as-every-soul)) |
 
 `Media.adapter(key)` returns a medium's adapter (`Media::REGISTRY`). A medium's
@@ -362,7 +362,7 @@ Rails-free `bin/lib` process, and inside `module AgentMailbox` the bare name
 
 **A reply always goes back on the medium the message arrived on.** The reply and
 typing jobs read the row's own `channel`, never a home. A medium that cannot
-reply yet (Teams) is left alone, as an unknown one is.
+reply is left alone, as an unknown one is.
 
 **Homes are for standalone posts**, the ones nobody replied to. Each reads its
 home from `config/agent_media.yml` through `Media.home` and posts with
@@ -582,10 +582,12 @@ Slack is shared space; an agent speaks there only when it adds information.
   Alex McRitchie.
 - **Agents do not reply to agents** unless Alex McRitchie names them. Bot-authored
   Slack events are never ingested, so one agent's post cannot wake another.
-- **The caps** (`config/agent_media.yml` `limits:`), enforced at the outbound seam,
-  `Media::Slack#post` and `#deliver_reply`, never in a prompt, and counted from the
-  shared `slack_posts` ledger (`SlackPost`), so the conductor's `heroku run` and the
-  reply job see the same counts:
+- **The caps** (`config/agent_media.yml` `limits:`, `Media::Limits`), enforced at
+  each medium's outbound seam, `Media::Slack`'s and `Media::Teams`' `#post` and
+  `#deliver_reply` (through `Media::OnceDelivery`), never in a prompt, and counted
+  from the shared `slack_posts` ledger (`SlackPost`, its `medium` column keeping
+  Slack's and Teams' counts apart), so the conductor's `heroku run` and the reply
+  job see the same counts:
   - **6 posts per soul per channel per rolling hour.** Release posts are exempt but
     counted; an answer to a message Alex McRitchie wrote himself is too
     (`owner_replies_count_only`): his own question is never noise.
@@ -604,6 +606,138 @@ channel sync into the directory, and the setup kit are card 5.
 **Go-live** (Steffon, after the deploy that carries this): set the Heroku vars
 and add the event subscriptions, in
 [`discord-bot-setup.md`](../agents/steffon/sops/discord-bot-setup.md#slack-go-live-mcritchie-agents).
+
+## Teams: the same network on Microsoft Teams
+
+Plan: `.agents/epics/teams-medium.md` (card 1, `teams-medium-loop`). Alex
+McRitchie, 2026-10-30: "build out the same communication network as slack but
+for Microsoft Teams." One bot, **McRitchie Agents**, posts as every soul, with
+the same names, several-souls and everyone addressing, clearance, core souls,
+fan-out and noise caps as Slack: those are shared code, not a copy. **Disabled
+until card 2** (`teams-app-kit`) registers the bot: with the credentials unset
+the endpoint answers 503 and nothing is read or posted.
+
+**How it maps to Slack.**
+
+| Slack | Teams |
+|-------|-------|
+| `POST /webhooks/slack/events`, HMAC-signed (`SlackSignature`) | `POST /webhooks/teams/messages`, a Bot Framework JWT (`AgentMessages::TeamsAuth`) |
+| `SlackIngestJob` → `SlackIngest` | `TeamsIngestJob` → `TeamsIngest` |
+| `slack:` block, `SlackRoutes` | `teams:` block, `TeamsRoutes`; both are `AgentMessages::ChannelRoutes` |
+| routing, clearance, held, fan-out in `SlackIngest` | the same `AgentMessages::ChatIngest`, included by both |
+| per-message `username` + `icon_url` | an Adaptive Card headed with the soul's name and portrait (Teams lets a bot set no per-message name) |
+| `chat.postMessage` with `thread_ts` | Bot Connector `POST {serviceUrl}/v3/conversations/{conversationId}/activities/{activityId}` |
+| `SLACK_BOT_TOKEN` | an app-only token minted from `TEAMS_BOT_APP_ID` / `TEAMS_BOT_APP_PASSWORD`, cached until 5 minutes before expiry |
+| owner `slack.owner_user_id` | owner `teams.owner_aad_object_id` (Entra object id, `from.aadObjectId`) |
+| channel ids `C…` | channel conversation ids `19:…@thread.tacv2` |
+| `slack_posts` rows | `slack_posts` rows with `medium: teams` |
+
+**Inbound.** Every request carries `Authorization: Bearer <JWT>` signed by the
+Bot Connector. `TeamsAuth` checks every requirement Microsoft lists: the Bearer
+scheme; RS256 with a `kid`; `iss` exactly `https://api.botframework.com`; `aud`
+our app id; `exp`/`nbf` with Microsoft's 5-minute skew; the signature against a
+key from the JWKS that the OpenID metadata
+(`https://login.botframework.com/v1/.well-known/openidconfiguration`) names; the
+`serviceUrl` claim equal to the activity's `serviceUrl`; and the key's
+`endorsements` including the activity's `channelId` (`msteams`), else 403. Keys
+are cached per process for 12 hours (Microsoft: refresh at least daily); an
+unknown `kid` refetches once, at most once per 5 minutes. A failure is a 401
+(403 for the endorsement) and nothing is enqueued; the log names the reason,
+never the token. A verified `message`, `conversationUpdate` or
+`installationUpdate` is acked at once and handed to `TeamsIngestJob`.
+
+`AgentMessages::TeamsIngest` stores an addressed message once:
+
+| Column | Value |
+|--------|-------|
+| `channel` | `teams` |
+| `external_id` | `<channel>:<activity id>`; the `(channel, external_id)` unique index dedupes the Bot Framework's retries. A fan-out's further rows are `<channel>:<soul>:<activity id>` |
+| `guild_id` | the tenant id |
+| `channel_ref` | the conversation's base id: a channel's `19:…@thread.tacv2` (without `;messageid=`), or a chat's own id |
+| `thread_key` | `teams:<channel>:<root id>`: a channel thread is one conversation, keyed by the root in `conversation.id`'s `;messageid=` |
+| `envelope` | the reply's reference (`service_url`, `conversation_id` with the thread, `activity_id`, `from_id`), `conversation_type` (`personal` for a chat with the bot: `MemoryBundle#private_channel?`), `tenant_id`, `team_id`, `thread_root`, and on a fan-out's rows `fan` |
+
+Never stored: another tenant's activity (with no tenant configured, nothing is
+read), anything a bot wrote (`from.id` `28:…`, `from.role` bot, or our own bot;
+Teams delivers no bot's messages even under RSC, and the ingest checks anyway),
+every type but `message`, a message with no text, a muted channel, an
+unaddressed message. The bot's own `<at>McRitchie Agents</at>` mention (the
+mention entity whose `mentioned.id` is `28:<app id>`) is stripped before routing,
+so `@McRitchie Agents Avi, …` reads `Avi, …`; another `<at>Name</at>` is kept as
+`@Name`, and HTML a formatted message carries is reduced to its text.
+
+**Routing, clearance, several souls, the owner-only guard** are Slack's, read
+from the `teams:` block: names, then the thread's soul, then `mention_soul` for
+an @mention of the bot or a personal chat, then the channel's `default_soul`.
+The block's souls, names, `recognized` and `core_souls` equal Slack's
+(`test/services/agent_messages/teams_routes_test.rb` pins them). A held row's
+event actor is `teams-clearance`. `bin/dispatcher` serves the block's souls
+(`AgentMailbox.routed_souls`), and `--channel teams` narrows a run.
+
+**Replies** (`Media::Teams#deliver_reply`) post ONE Adaptive Card (schema 1.5;
+Teams supports 1.6 or earlier) to the inbound activity, in its channel thread:
+a header with the portrait (the PNG under `/slack-icons/`, as Slack uses) beside
+the soul's display name, then the answer in a wrapped TextBlock (Markdown's
+bold, italics, lists and links render), clipped at 20,000 characters to stay well
+under Teams' ~100 KB (80 KB safe) message limit. The retry policy is Slack's,
+through the shared `Media::OnceDelivery`:
+
+| Outcome | Teams answer | What happens |
+|---------|--------------|--------------|
+| `NotPosted` (retried) | HTTP 429 (Retry-After kept), 412, 401 (the cached token is dropped), any failure minting the token, a connection that never opened | `reply_not_posted`, raised for the job's retry |
+| `Refused` | 400, 403 (blocked, not installed), 404, 413, a `serviceUrl` that is not a Bot Connector host, a row with no reference | `reply_failed`, no retry |
+| `Ambiguous` | any 5xx, a read timeout, a reset, a TLS error, a 2xx that is not the Connector's JSON | `reply_failed` with `ambiguous: true`, never re-sent |
+
+Microsoft's rate-limit page says to retry 502 and 504 too; they stay ambiguous
+here, because a gateway timeout cannot prove the message was not delivered and
+the Connector has no idempotency key. The bot token is sent only to a
+`serviceUrl` on `smba.trafficmanager.net`, `*.botframework.com` or
+`*.teams.microsoft.com`/`.us`. `AgentMessage#reply_url` is nil on Teams for now
+(a message deep link needs the team's group id, which card 2 settles), and
+typing is off, as on Slack.
+
+**Conversation references and posts.** A proactive post needs a channel's
+`serviceUrl` and conversation id, which only an activity from it carries.
+`TeamsIngest` records a `TeamsConversation` (status `installed`/`removed`) from
+the install `conversationUpdate` (the bot in `membersAdded`), `installationUpdate`
+add/remove, a `channelCreated` event, and every message it reads.
+`Media::Teams#post` (a home on `teams`, its channel `id` the conversation id)
+opens a new thread (`POST /v3/conversations` with `channelData.channel.id`) and
+puts further cards in it, or posts in `thread_ts`'s thread; a keyed post goes
+out once; the caps apply. `config/agent_media.yml`'s `teams` block stays
+`enabled: false`, so `Media.home` falls back to Discord.
+
+**The caps** are the one `limits:` block, counted per medium from the ledger's
+`medium` column: a soul's six an hour are per channel, and a channel is on one
+medium. Until `teams.owner_aad_object_id` is set no Teams message is Alex
+McRitchie's, so the thread cap never resets on Teams and his questions get no
+exemption (the stricter side).
+
+**What card 2 (`teams-app-kit`, Steffon) must set up**, and which steps need a
+tenant admin's click:
+
+| Step | Who |
+|------|-----|
+| A Microsoft 365 tenant with Teams where Alex McRitchie is a global admin | Alex McRitchie (buying one is his call) |
+| An Entra app registration for the bot (single-tenant), a client secret | Steffon, scripted once he holds an admin credential |
+| An Azure Bot resource on that app id, messaging endpoint `https://mcritchie.studio/webhooks/teams/messages`, the Microsoft Teams channel enabled | Steffon |
+| A Teams app package (manifest: the bot id, `team`, `groupChat` and `personal` scopes, RSC `ChannelMessage.Read.Group` so the bot reads every channel message without an @mention), uploaded to the org catalog | Steffon builds it; the upload or its approval is a **tenant admin click** |
+| Install the app in the McRitchie Studio team (its RSC consent) | the **team owner's click** at install (RSC is consented per team) |
+| The admin Entra app for Graph `Channel.Create` (application permission), channels mirroring Slack's layout (general + one per app) | Steffon; Graph application permissions need a **global admin's consent click** |
+| Heroku `TEAMS_BOT_APP_ID`, `TEAMS_BOT_APP_PASSWORD`, `TEAMS_TENANT_ID`; 1Password `teams.mcritchie-studio.applications` and `teams.studio.admin` | Steffon |
+| `config/agent_routes.yml` `teams.tenant_id`, `bot_app_id`, `owner_aad_object_id`, and `teams.channels` keyed by conversation id with Slack's clearance; `agent_media.yml` `teams.channels` and `enabled: true`; a data migration linking the owner's Entra id to the owner person (as `LinkOwnerSlackIdentity` did for Slack: `AgentPerson.seed_owner!` alone does not reach production) | the card's PR |
+
+Docs checked 2026-10-30 (learn.microsoft.com):
+[Bot Connector authentication](https://learn.microsoft.com/en-us/azure/bot-service/rest-api/bot-framework-rest-connector-authentication),
+[send and receive messages](https://learn.microsoft.com/en-us/azure/bot-service/rest-api/bot-framework-rest-connector-send-and-receive-messages),
+[channel and group conversations](https://learn.microsoft.com/en-us/microsoftteams/platform/bots/how-to/conversations/channel-and-group-conversations),
+[receive all messages with RSC](https://learn.microsoft.com/en-us/microsoftteams/platform/agents-in-teams/enable-receive-all-chat-messages),
+[proactive messages](https://learn.microsoft.com/en-us/microsoftteams/platform/bots/how-to/conversations/send-proactive-messages),
+[creating a channel conversation](https://learn.microsoft.com/en-us/previous-versions/microsoftteams/platform/resources/bot-v3/bot-conversations/bots-conv-proactive),
+[conversation events](https://learn.microsoft.com/en-us/microsoftteams/platform/bots/how-to/conversations/subscribe-to-conversation-events),
+[rate limits](https://learn.microsoft.com/en-us/microsoftteams/platform/bots/how-to/rate-limit),
+[cards reference](https://learn.microsoft.com/en-us/microsoftteams/platform/task-modules-and-cards/cards/cards-reference),
+[message formatting and size](https://learn.microsoft.com/en-us/microsoftteams/platform/bots/how-to/format-your-bot-messages).
 
 ## Memory: the context layers
 

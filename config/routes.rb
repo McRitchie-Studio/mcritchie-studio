@@ -400,6 +400,8 @@ Rails.application.routes.draw do
   # Slack Events API (v0-signed with SLACK_SIGNING_SECRET) -> SlackIngestJob ->
   # an agent message (docs/agents/system/agent-message-loop.md, "Slack").
   post "webhooks/slack/events", to: "webhooks/slack_events#create"
+  # The Bot Framework messaging endpoint for Microsoft Teams (docs/agents/system/agent-message-loop.md, "Teams").
+  post "webhooks/teams/messages", to: "webhooks/teams_messages#create"
 
   namespace :admin do
     get "dashboard", to: "dashboard#show", as: :dashboard

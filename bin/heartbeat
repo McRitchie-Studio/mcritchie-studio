@@ -40,8 +40,8 @@ if soul.empty? || parsed.positionals.size > 1 || worker&.strip&.empty?
   warn USAGE
   exit 2
 end
-unless %w[discord email web slack].include?(channel)
-  warn "bin/heartbeat: --channel is discord, email, web or slack (got #{channel.inspect}); nothing was claimed."
+unless %w[discord email web slack teams].include?(channel)
+  warn "bin/heartbeat: --channel is discord, email, web, slack or teams (got #{channel.inspect}); nothing was claimed."
   exit 2
 end
 

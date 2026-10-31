@@ -224,6 +224,58 @@ slack:
       name: "alex-build"            # 🧑🏻 in the topic
       souls: [alex]
 
+# MICROSOFT TEAMS (docs/agents/system/agent-message-loop.md, "Teams"), read by
+# AgentMessages::TeamsRoutes. The same network as Slack: one bot posts as every
+# soul (each reply an Adaptive Card headed with the soul's name and portrait),
+# the same names, several-souls and everyone addressing, the same clearance
+# rules and core_souls (AgentMessages::ChannelRoutes, shared with slack:).
+# DISABLED until Steffon's teams-app-kit card registers the bot: with
+# TEAMS_BOT_APP_ID / TEAMS_BOT_APP_PASSWORD unset, POST /webhooks/teams/messages
+# answers 503 and nothing is read or posted (config/agent_media.yml
+# teams.enabled is false). TEAMS_TENANT_ID and TEAMS_BOT_APP_ID win over the
+# placeholders below.
+teams:
+  tenant_id: ""                       # the McRitchie Studio Entra tenant (card 2)
+  bot_app_id: ""                      # the Azure Bot's Microsoft App id (card 2)
+  owner_aad_object_id: ""             # Alex McRitchie's Entra object id (from.aadObjectId)
+  mention_soul: alex                  # who answers a bare @mention of the bot or a personal chat
+  # The same souls and names as slack: above (test/services/agent_messages/
+  # teams_routes_test.rb pins the two lists equal).
+  souls:
+    avi:
+      names: ["Avi"]
+    alex:
+      names: ["Alex"]
+    turf_monster:
+      names: ["Turf"]
+    mason:
+      names: ["Mason"]
+    steffon:
+      names: ["Steffon"]
+    mack:
+      names: ["Mack"]
+    tywin:
+      names: ["Tywin"]
+    carl:
+      names: ["Carl"]
+    shannon:
+      names: ["Shannon"]
+    jasper:
+      names: ["Jasper"]
+    pokemon:
+      names: ["Pokemon", "Pokémon"]
+    tyrion:
+      names: ["Tyrion"]
+  recognized:
+    hank:
+      names: ["Hank"]
+  core_souls: [alex, steffon, mason, mack, avi]
+  # Keyed by the channel's conversation id (19:…@thread.tacv2), each as a slack:
+  # channel (open, souls, default_soul, ignore). Empty until card 2 creates the
+  # channels (general + one per app, mirroring Slack's layout); with no entry a
+  # channel admits every soul, as on Slack.
+  channels: {}
+
 # EMAIL (docs/agents/system/agent-message-loop.md, "Email"), read by
 # AgentMessages::EmailRoutes. Mail to team@ reaches the hub through the Resend
 # inbound (DeskCaptureResendIngestJob), is captured on the desk as always, and

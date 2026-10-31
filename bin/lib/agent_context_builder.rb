@@ -494,6 +494,10 @@ module AgentMailbox
         "someone posted to you in Slack; your reply posts in that message's Slack thread under your " \
           "own name and portrait (keep it short, as in a chat; **bold**, lists and [links](url) are " \
           "converted to Slack's format, tables are not)"
+      when "teams"
+        "someone posted to you in Microsoft Teams; your reply posts in that message's Teams thread as a card " \
+          "headed with your own name and portrait (keep it short, as in a chat; **bold**, *italics*, lists and " \
+          "[links](url) render, tables and headings do not)"
       else
         "someone posted to you in #{@message['channel'].to_s.capitalize}"
       end

@@ -2,7 +2,7 @@ require "test_helper"
 
 # [unit] Media.home (config/agent_media.yml): purpose → soul → app → defaults,
 # the fallback walk past a medium that is not usable (logged once), Teams
-# refusing everything, and the shipped file resolving every purpose to exactly
+# with no credentials unable to post, and the shipped file resolving every purpose to exactly
 # the Discord destination its poster used before the file existed.
 class MediaHomeTest < ActiveSupport::TestCase
   def config(overrides = {})
@@ -73,17 +73,19 @@ class MediaHomeTest < ActiveSupport::TestCase
     assert_kind_of Media::Error, error
   end
 
-  test "[unit] Media::Teams is registered and disabled, and every method raises NotImplementedError" do
-    teams = Media.adapter("teams")
-    assert_instance_of Media::Teams, teams
-    assert_equal "teams", teams.key
-    refute teams.enabled?
-    refute teams.configured?
-    assert_empty teams.capabilities
-    refute teams.supports?(:post)
-    [ -> { teams.inbound_mode }, -> { teams.deliver_reply(Object.new) }, -> { teams.typing(Object.new, phase: "typing") },
-      -> { teams.post(Object.new, content: "x") }, -> { teams.message_url(Object.new) }, -> { teams.setup_kit },
-      -> { teams.actor } ].each { |call| assert_raises(NotImplementedError) { call.call } }
+  test "[unit] Media::Teams with no credentials replies only (a skip), cannot post, and the walk passes it by" do
+    with_envs("TEAMS_BOT_APP_ID" => nil, "TEAMS_BOT_APP_PASSWORD" => nil) do
+      teams = Media.adapter("teams")
+      assert_instance_of Media::Teams, teams
+      assert_equal "teams", teams.key
+      refute teams.enabled?
+      refute teams.configured?
+      assert_equal %i[reply], teams.capabilities
+      refute teams.supports?(:post)
+      assert_equal :webhook, teams.inbound_mode
+      assert_equal "teams-bot", teams.actor
+      assert_nil teams.message_url(AgentMessage.new(channel: "teams"))
+    end
   end
 
   test "[unit] the shipped agent_media.yml resolves every purpose to the destination its poster used before" do

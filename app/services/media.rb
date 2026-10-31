@@ -23,9 +23,9 @@ module Media
   class NoHome < Error; end
 
   # Medium key => adapter class name, resolved lazily so the autoloader (and a
-  # code reload) owns the constants. Teams is registered but disabled: every
-  # method raises NotImplementedError (Media::Teams). Slack (Media::Slack) can
-  # :post only while SLACK_BOT_TOKEN is set.
+  # code reload) owns the constants. Slack (Media::Slack) can :post only while
+  # SLACK_BOT_TOKEN is set; Teams (Media::Teams) only while TEAMS_BOT_APP_ID and
+  # TEAMS_BOT_APP_PASSWORD are, and agent_media.yml keeps it disabled.
   REGISTRY = {
     "discord" => "Media::Discord",
     "email" => "Media::Email",
@@ -41,7 +41,7 @@ module Media
   def registered?(key) = REGISTRY.key?(key.to_s)
 
   # Whether a registered medium can do `capability` (:reply, :typing, :post)
-  # today. False for an unregistered one, and for Media::Teams on everything.
+  # today. False for an unregistered one.
   def supports?(key, capability)
     registered?(key) && REGISTRY.fetch(key.to_s).constantize.new.supports?(capability)
   end

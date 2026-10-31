@@ -292,6 +292,9 @@ module AgentMessages
       # A Slack DM to the app (channel_type im, stamped at ingest): only the
       # sender and the app read it.
       when "slack" then (@message.envelope || {})["channel_type"] == "im"
+      # A Teams personal chat with the bot (conversationType personal, stamped
+      # at ingest): only the sender and the bot read it.
+      when "teams" then (@message.envelope || {})["conversation_type"] == "personal"
       else false
       end
     end
@@ -377,6 +380,7 @@ module AgentMessages
       key = [ row.guild_id.to_s, row.channel_ref.to_s ]
       name = (@places || {})[key]
       return slack_place(row) if row.channel == "slack"
+      return teams_place(row) if row.channel == "teams"
       return "[#{row.channel}]" unless row.channel == "discord"
       return "[discord channel #{row.channel_ref.to_s.gsub(/\D/, '')[0, 25]}]" unless name
 
@@ -390,6 +394,16 @@ module AgentMessages
 
       name = AgentMessages::SlackRoutes.current.channel_name(row.channel_ref).to_s.gsub(/[^a-z0-9_-]/, "")[0, 40]
       name.present? ? "[slack ##{name}]" : "[slack channel #{row.channel_ref.to_s.gsub(/[^A-Za-z0-9]/, '')[0, 25].downcase}]"
+    end
+
+    # A Teams row's place: the channel's name from config/agent_routes.yml
+    # teams.channels (code, never a name a member chose), a personal chat,
+    # else a neutral label (a Teams conversation id is long and opaque).
+    def teams_place(row)
+      return "[teams chat]" if (row.envelope || {})["conversation_type"] == "personal"
+
+      name = AgentMessages::TeamsRoutes.current.channel_name(row.channel_ref).to_s.gsub(/[^a-z0-9_-]/, "")[0, 40]
+      name.present? ? "[teams ##{name}]" : "[teams channel]"
     end
 
     # { [guild, channel] => "#name" | "thread in #parent" } for every channel the

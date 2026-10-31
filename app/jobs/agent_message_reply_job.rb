@@ -39,8 +39,7 @@ class AgentMessageReplyJob < ApplicationJob
   def perform(message_id)
     message = AgentMessage.find_by(id: message_id)
     return if message.nil? || message.status != "completed" || message.reply_external_id.present?
-    # A medium that cannot reply (unregistered, or Media::Teams, not built) is
-    # left alone.
+    # A medium that cannot reply (unregistered) is left alone.
     return unless Media.supports?(message.channel, :reply)
 
     Media.adapter(message.channel).deliver_reply(message)

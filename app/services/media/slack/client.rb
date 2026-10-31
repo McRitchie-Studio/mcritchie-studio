@@ -35,10 +35,9 @@ module Media
       # ok:false errors that say "something ran, maybe the post": never retried.
       AMBIGUOUS_ERRORS = %w[fatal_error internal_error].freeze
 
-      NEVER_SENT = [ SocketError, Errno::ECONNREFUSED, Errno::EHOSTUNREACH, Errno::ENETUNREACH,
-                     Net::OpenTimeout ].freeze
-      MAYBE_SENT = [ OpenSSL::SSL::SSLError, Net::ReadTimeout, Net::WriteTimeout, Timeout::Error, EOFError, IOError,
-                     Errno::ECONNRESET, Errno::EPIPE, SystemCallError ].freeze
+      # Shared with Teams (Media::Http).
+      NEVER_SENT = Media::Http::NEVER_SENT
+      MAYBE_SENT = Media::Http::MAYBE_SENT
 
       # The transport is injectable: a test hands in a lambda taking
       # (method, params, token) and answering [status, headers, body].
