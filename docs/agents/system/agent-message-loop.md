@@ -512,13 +512,49 @@ ambiguous, never re-posted). With `SLACK_BOT_TOKEN` unset the reply is
 
 **Standalone posts.** `config/agent_media.yml`'s `slack` block is `enabled: true`
 with three channels (`agents` `C0CD8ETBZBM`, `ops` `C0CDEG43ECS`, `releases`
-`C0CDJCN4L92`), but no purpose names Slack yet. Slack can `:post` only while
+`C0CDJCN4L92`), but no purpose names Slack yet; a shipped release posts there
+on its own block (`release_posts`, "Release posts" below). Slack can `:post` only while
 `SLACK_BOT_TOKEN` is set; without it `Media.home` falls back to Discord. **To
 flip release notes to Slack**, change `purposes.release_notes.medium` from
 `discord` to `slack` (one line; the file marks it). Their Discord embeds become
 minimal Block Kit (sections, fields, a footer context, at most 50 blocks a
 message). The app must be a member of the channel (invite `@McRitchie Agents`)
 or Slack answers `not_in_channel`.
+
+**Release posts.** After a green prod verify, `bin/release announce` (the cycle
+runs it) posts a shipped release: one summary in #agents-general as Mason, one post
+per shipped app in its channel as that channel's soul (its `default_soul`, else
+Steffon), and the app's smoke verdict in that post's thread
+(`ReleaseNotes::SlackAnnouncement`). The smoke runs in code on the conductor's
+machine, because a dispatched soul has no tools; the soul only signs the verdict.
+Each app post is stored as a `completed` message (`routed_by: release`) keyed to
+its Slack thread, so a reply there routes to that soul like any thread reply.
+Procedure: [`production-deploy`](../agents/steffon/sops/production-deploy.md),
+"Tell the release on Slack".
+
+### Noise rules
+
+Slack is shared space; an agent speaks there only when it adds information.
+
+- **One message per release per channel**: the #agents-general summary, one post
+  in each shipped app's channel, and that post's smoke verdict in its thread.
+- **Green is one line.** Red says what failed with its evidence and @-mentions
+  Alex McRitchie.
+- **Agents do not reply to agents** unless Alex McRitchie names them. Bot-authored
+  Slack events are never ingested, so one agent's post cannot wake another.
+- **The caps** (`config/agent_media.yml` `limits:`), enforced at the outbound seam,
+  `Media::Slack#post` and `#deliver_reply`, never in a prompt, and counted from the
+  shared `slack_posts` ledger (`SlackPost`), so the conductor's `heroku run` and the
+  reply job see the same counts:
+  - **6 posts per soul per channel per rolling hour.** Release posts are exempt but
+    counted; an answer to a message Alex McRitchie wrote himself is too
+    (`owner_replies_count_only`): his own question is never noise.
+  - **4 agent posts in one thread** since Alex McRitchie last wrote in it. Nothing
+    is exempt; his next message resets it.
+  - **Over a cap** nothing is sent. The ledger row is `suppressed` with the reason;
+    a reply's message gets `reply_status: skipped` and a `reply_suppressed` event
+    naming the cap, and nothing retries it. A soul-less post (an alert, a report)
+    is recorded, never capped.
 
 **Not built yet:** go / no / change on a proposal is Discord's and email's
 (`AgentMessages::ProposalConfirm`); on Slack such a word in a thread is routed to

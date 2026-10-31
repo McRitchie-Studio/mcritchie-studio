@@ -588,6 +588,51 @@ step**.
 If it warns, run the installer path the warn line prints
 ([`docs-maintenance.md`](../../../modules/docs-maintenance.md) § Editing The Entry Docs), never the primary's copy.
 
+### Tell the release on Slack — the posts and the smoke
+
+**Once prod verify is green, the release is told on Slack, once.** `bin/release cycle`
+does it itself, right after its prod verify (every app answers `/up` and home with
+200 and runs its shipped SHA). After a ship run on its own (or a finalize), run it by
+hand; the ship's last lines print the command:
+
+```bash
+bin/release announce <release-slug>          # dry run: smokes production, prints what would post
+bin/release announce <release-slug> --post   # smokes, then posts
+```
+
+It makes, in order:
+
+1. **One summary in #agents-general** (`C0CD8ETBZBM`), as **Mason**: the release slug,
+   each app with its emoji and the SHA production runs, and every card with its task
+   and PR links. One line per app and per card.
+2. **One post per shipped app in that app's channel**, as the app's own soul: the
+   channel's `default_soul` in `config/agent_routes.yml` (turf-monster → Turf,
+   cyvasse → Tywin), else **Steffon**. It names the cards that shipped there, one line
+   each, and says a production smoke test follows. A repo with no channel (a gem,
+   turf-vault) gets none.
+3. **The smoke verdict in that post's thread**, as the same soul. The smoke runs on
+   the conductor's machine (a dispatched soul has no tools): `/up` and home answer
+   200, the app runs the shipped SHA, and for the hub the post-ship seal is green.
+   **Green is one line** (`✅ smoke green: /up 200, home 200, 2 pages checked`).
+   **Red names what failed with its evidence and @-mentions Alex McRitchie.**
+
+Each post is keyed by release and channel (the `slack_posts` ledger), so a re-run
+sends only what never went out, and a post that may have gone out (a timeout) is
+never sent again: look in the channel. The app post is held in the mailbox as its
+thread, so Alex McRitchie's reply there reaches that soul.
+
+**A Slack failure never fails, blocks or rolls back a ship.** It prints, the cycle's
+verdict stands, and the line reads `Slack posts: <n> sent / <m> failed`. Fix the
+cause (`SLACK_BOT_TOKEN` unset on the hub, the app not invited to a channel:
+`not_in_channel`), then re-run `bin/release announce <release-slug> --post`.
+
+**The noise caps** (`config/agent_media.yml` `limits:`) hold every agent post on
+Slack, these included: at most 6 posts per soul per channel per hour (release posts
+are exempt but counted, as is an answer to Alex McRitchie's own message), and at most
+4 agent posts in a thread before Alex McRitchie writes in it. Over a cap the post is
+suppressed and recorded with its reason, never retried
+([`agent-message-loop.md`](../../../system/agent-message-loop.md), "Noise rules").
+
 **Re-enable a report workflow paused for this ship.** If a scheduled report was disabled
 (`gh workflow disable`) to unblock a ship and the release carries its fix, turn it back on
 once the deploy lands: `gh workflow list --all --repo McRitchie-Studio/<repo>` shows it
@@ -634,8 +679,10 @@ A hold that names a PR read failing on a stale or wrong PR URL: fix the URL
 (`bin/task update <slug> --pr-url-for <repo>=<url>`), then run `bin/release finalize
 <release>`. A held member's `merged` column can read `main` (stamped per repo at the
 fast-forward); its stage is the truth.
-Report slug, production SHA and URL, smoke result, and **the archive result,
-separately** ("nothing to archive" is a clean answer).
+Report slug, production SHA and URL, smoke result, **the Slack posts**
+(`Slack posts: <n> sent / <m> failed`, from the cycle or `bin/release announce`;
+name each failed one), and **the archive result, separately** ("nothing to archive"
+is a clean answer).
 
 **Program drift.** A ship never upgrades an on-chain program, so production can
 be green while a cluster runs an older program than `main` carries. Run
