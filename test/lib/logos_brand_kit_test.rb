@@ -74,7 +74,7 @@ class LogosBrandKitTest < Minitest::Test
   end
 end
 
-# [unit] The typeface hierarchy: at most three levels, each a role and a face the hub serves (or the brand's own
+# [unit] The typeface hierarchy: at most four levels, each a role and a face the hub serves (or the brand's own
 # traced lettering, which names no font), named "Montserrat ExtraBold" by family and weight.
 class LogosBrandKitTypefacesTest < Minitest::Test
   BrandKit = Logos::BrandKit
@@ -102,11 +102,14 @@ class LogosBrandKitTypefacesTest < Minitest::Test
     refute BrandKit.all.reject { |kit| %w[welding welding_v2].include?(kit.brand) }.flat_map(&:typefaces).any?(&:traced?)
   end
 
-  def test_no_more_than_three_levels_and_at_least_one
-    assert_match(/1 to 3 levels/, refusal([montserrat("A", 800), montserrat("B", 500), montserrat("C", 300), montserrat("D", 300)]))
-    assert_match(/1 to 3 levels/, refusal([]))
-    assert_match(/1 to 3 levels/, refusal(nil))
-    assert_equal 3, BrandKit::MAX_LEVELS
+  # Four since task logos-table-columns-tidy (Alex McRitchie 2026-10-30: "a couple more type faces").
+  def test_no_more_than_four_levels_and_at_least_one
+    four = [montserrat("A", 800), montserrat("B", 500), montserrat("C", 300), montserrat("D", 300)]
+    assert_equal %w[A B C D], BrandKit.new("kit", styles: { "kit" => Logos::NavbarLogo.styles.fetch("studio").merge("typefaces" => four) }).typefaces.map(&:role)
+    assert_match(/1 to 4 levels/, refusal(four + [montserrat("E", 300)]))
+    assert_match(/1 to 4 levels/, refusal([]))
+    assert_match(/1 to 4 levels/, refusal(nil))
+    assert_equal 4, BrandKit::MAX_LEVELS
   end
 
   def test_a_family_must_be_one_the_hub_serves

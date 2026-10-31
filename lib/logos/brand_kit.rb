@@ -4,7 +4,7 @@ require_relative "navbar_logo"
 
 module Logos
   # A brand's KIT as the gallery shows it beside its logos: its colour PALETTE
-  # (one ordered list of named colours) and its TYPEFACE hierarchy (at most three
+  # (one ordered list of named colours) and its TYPEFACE hierarchy (at most four
   # levels, the most prominent first). Both are read from the brand's `palette:`
   # and `typefaces:` in config/logo_brands.yml and checked on load, so bad data
   # fails here and not in a page. Nothing here draws a logo: a logo's own fills
@@ -26,7 +26,7 @@ module Logos
       def name = traced? ? label : "#{family} #{WEIGHT_NAMES.fetch(weight)}"
     end
 
-    MAX_LEVELS = 3
+    MAX_LEVELS = 4
     # The only face the hub serves (studio-engine vendors Montserrat as a variable font, every weight from 100 to
     # 900). A family the page cannot render in its own face is refused, not shown in a fallback.
     FAMILIES = %w[Montserrat].freeze

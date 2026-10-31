@@ -9,7 +9,7 @@ This is Alex's `brand-kit-rollout` SOP. A brand kit is saved on the hub's
 `/logos/<brand>` page; an app draws its logo from the kit's files committed under
 its own `public/brand/`. This SOP takes one or more saved kits into one or more
 apps, through the normal pipeline, and ends by recording each app as **Applied**
-on the hub. The /logos brand column and each app's page (`/applications/<slug>`)
+on the hub. The /logos brand cell and each app's page (`/applications/<slug>`)
 show every link as **Applied**, **Kit changed** (amber: the kit was saved after
 the app last applied it) or **Not applied**. Design and status rules:
 `docs/topics/logos.md` § Which apps have the kit.

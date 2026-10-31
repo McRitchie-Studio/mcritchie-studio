@@ -605,11 +605,13 @@ and checked by `Logos::BrandKit` (`lib/logos/brand_kit.rb`):
   There is no split by light, dark or watermark: those are the logos' fills
   (`tones`, `watermark`), which stay per tone because a dark-text logo still
   needs a light-text version on a dark page. Each colour shows as a swatch with
-  its name and hex; a click copies the hex (`logos/_palette`, `data-copy-hex`). Studio has five
+  its name and hex; a click copies the hex (`logos/_palette`, `data-copy-hex`). In the /logos table the swatches are
+  small, four to a column, the columns running sideways in a strip that scrolls inside its cell, so a brand with
+  any number of colours keeps its row's height. Studio has five
   (Ink, Violet, Deep Violet, Violet Mist, White), Industries the marketing kit's
   eight, Turf Monster seven and Commercial Welding four.
 - **`typefaces:`** is the brand's typeface hierarchy, most prominent first, at
-  most three levels of `{ role, family, weight }`. `family` must be a face the
+  most four levels of `{ role, family, weight }`. `family` must be a face the
   hub serves (Montserrat, which studio-engine vendors as a variable font), and
   `weight` 100 to 900 in hundreds; the level is named by both ("Montserrat
   ExtraBold"). A level set in the brand's own traced lettering (Commercial
@@ -617,6 +619,8 @@ and checked by `Logos::BrandKit` (`lib/logos/brand_kit.rb`):
   shows its name in its own face at a size that steps down with the level
   (`LogosHelper::LOGO_TYPEFACE_SIZES`), under its role; a traced level shows a
   small picture of the brand's name in its lettering instead (`logos/_typefaces`).
+  The /logos table lists every level under its role, each named by its family only, one line at one size, no
+  weight; a traced face reads "Traced lettering", with no picture.
 
 A palette colour's hex passes the library's own `#hex` guard, and every name
 and role must be plain words; anything else raises `Logos::NavbarLogo::Error`
@@ -931,9 +935,12 @@ table opens on it again.
 - Each link's accessible name is the server's (`Download: <logo>`, with `, kit choice` for a saved choice), and the
   script puts the format in front of it (`Download PNG, 800 px wide: <logo>, kit choice`), so the saved cue is kept.
 
-Under the downloads, one line per app the kit feeds: the app's emoji and name and its status, **Applied**, **Kit
-changed** (amber) or **Not applied** ([which apps have the kit](#which-apps-have-the-kit)). The line's title gives
-the kit's save date and when the app applied it.
+Under the brand's name, right of its slug and downloads (stacked below them on a phone), the row has one chip per app the kit feeds, then one for its Google marketing kit
+([which apps have the kit](#which-apps-have-the-kit)): the app's emoji or the Google Drive mark, the name (cut to the
+chip) and a status mark on the right: a check for **Applied** or **Up to date**, an amber triangle for **Kit
+changed**, a hollow ring for **Not applied** or **No Google kit** (`logos/_kit_chips`, `BrandKitStatusHelper`). The
+chip's accessible name is its name and status in words; its title adds the dates. An app's chip opens the app's page,
+a Google kit's its Drive folder in a new tab; No Google kit opens nothing.
 
 ### Editing a logo's parts
 
@@ -1100,8 +1107,8 @@ The brand page's header says `Kit: saved <date> by <who>` (the saver's user
 name, else their email's local part; the title adds the email) while an Icon,
 Navbar or Stacked choice is saved, and `Kit: not saved yet` otherwise, notes and
 originals included; ` · originals: N` follows when the kit holds any. Its date
-is `saved_at`. The /logos table does not show this line: under each row's
-downloads it lists the apps the kit feeds ([which apps have the kit](#which-apps-have-the-kit)). Clear lands on the tab at the Kit
+is `saved_at`. The /logos table does not show this line: its brand cell
+column lists the apps the kit feeds ([which apps have the kit](#which-apps-have-the-kit)). Clear lands on the tab at the Kit
 choice card (`#kit-choice`). Its **Kit** card shows the three choices (Icon, Navbar, Stacked) in the page's tone, each with
 **Open on its tab** and **Download**, and the kit's notes; its **Download kit** button gives them all as files
 ([the kit export](#the-kit-export)).
@@ -1256,7 +1263,7 @@ save); `app_slug` is a slug FK to `apps`. `used_at` and `used_by` say when and b
 | **Kit changed** | the kit was saved after the app last applied it |
 | **Not applied** | never applied (no `used_at`) |
 
-The /logos brand column and the app's page (`/applications/<slug>`, its **Brand kit** card; the brand links to
+The /logos brand cell (a chip per link, under the name) and the app's page (`/applications/<slug>`, its **Brand kit** card; the brand links to
 `/logos` for an admin) show it. Record an application on the hub's production database, once the app's live
 `/brand/kit.json` names the version:
 
@@ -1291,8 +1298,8 @@ row per brand; `brand` is the brand key, not a foreign key. `drive_url` is the k
 | **Kit changed** | the brand's logos were saved after the last publish |
 | **No Google kit** | the brand has no row |
 
-The /logos brand column shows it on every brand, under the app lines: the Google Drive mark, the owner, the status
-and an **Open** link to the folder. Only the
+The /logos brand cell shows it on every brand, after the app chips: one chip with the Google Drive mark,
+the owner and the status mark, opening the folder in a new tab. Only the
 logos are watched: the kit's colours, words and photos live in its private spec, which the hub never sees. A real
 publish of a spec with a `brand:` key prints the command; run it on the hub's production database:
 

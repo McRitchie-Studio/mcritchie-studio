@@ -1,4 +1,4 @@
-<%# ONE ROW'S DOWNLOADS (task logos-index-download-formats), in the /logos table's brand column: the Navbar Logo, the
+<%# ONE ROW'S DOWNLOADS (task logos-index-download-formats), in the /logos table's brand column, left of the kit chips: the Navbar Logo, the
     Stacked Logo and the icon, each exactly as its tile shows it (saved choice or default; the row's icon), one link per
     tone the page carries, the one matching the hub theme shown (LogosHelper#logo_themed).
 
@@ -10,7 +10,7 @@
     (Logos::PngSizes::BACKGROUNDS: white behind a light logo, black behind a dark or watermark one). A type the
     library refused for this brand has no download. Locals: samples (per type, the variants by tone, or the refusal),
     kit (the brand's BrandKit, or nil). %>
-<div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1.5 text-3xs font-normal xl:max-w-44" data-test="logo-downloads">
+<div class="flex flex-wrap sm:flex-col sm:items-start gap-x-3 gap-y-1 text-3xs font-normal" data-test="logo-downloads">
   <% %i[navbar stacked icon].each do |type| %>
     <% sample = samples.fetch(type) %>
     <% next if sample.is_a?(Logos::NavbarLogo::Error) %>

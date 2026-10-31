@@ -29,7 +29,7 @@ class App < ApplicationRecord
                               inverse_of: :app, dependent: :delete_all
 
   # The brand kits this app takes, each Applied, Kit changed or Not applied (BrandKitApp; task
-  # brand-kit-applied-status). Shown on the app's page and in the /logos brand column.
+  # brand-kit-applied-status). Shown on the app's page and in the /logos brand cell.
   has_many :brand_kit_apps, foreign_key: :app_slug, primary_key: :slug, inverse_of: :app, dependent: :delete_all
 
   # The default app a brand-new session adopts before any task exists — the

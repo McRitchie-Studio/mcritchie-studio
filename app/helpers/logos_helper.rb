@@ -184,7 +184,7 @@ module LogosHelper
   # name (`savers`, BrandKit.saver_names), else their email's local part; `full: true` adds the email in brackets,
   # for the title attribute of a status cut short. The date is the kit's saved_at (its last logo choice saved or
   # cleared; task brand-kit-applied-status), else updated_at for a kit saved before saved_at was kept. The brand page,
-  # its Kit card and Compare show it; the /logos table shows each app's status instead (brand_kit_apps/_status).
+  # its Kit card and Compare show it; the /logos table shows each app's status instead (logos/_kit_chips).
   def logo_kit_status(kit, savers = {}, full: false)
     saved = kit&.persisted? && kit.anything_saved?
     status = saved ? ["Kit: saved #{(kit.saved_at || kit.updated_at).strftime('%b %-d, %Y')}", logo_kit_saver(kit, savers, full:)].compact.join(" ") : "Kit: not saved yet"
@@ -282,11 +282,11 @@ module LogosHelper
               style: "max-height: #{height}px#{least}", class: class_names("block max-w-full w-auto h-auto", "mx-auto" => variant.guides)
   end
 
-  # A typeface level's name size, in px, by level (0 is the most prominent): it steps down so the hierarchy reads as
-  # one. The index table's cell is narrower, so its steps are smaller.
-  LOGO_TYPEFACE_SIZES = { false => [30, 20, 15], true => [17, 13, 11] }.freeze
+  # A typeface level's name size on the brand page, in px, by level (0 is the most prominent): it steps down so the
+  # hierarchy reads as one. The index table names each face at one size (logos/_typefaces, compact).
+  LOGO_TYPEFACE_SIZES = [30, 20, 15, 13].freeze
 
-  def logo_typeface_size(level, compact: false) = LOGO_TYPEFACE_SIZES.fetch(compact).fetch(level)
+  def logo_typeface_size(level) = LOGO_TYPEFACE_SIZES.fetch(level)
 
   # The brand's name in its own traced lettering, as the typeface hierarchy shows it: the rule-of-4 Navbar Logo with
   # both words alike, one per baked tone.
