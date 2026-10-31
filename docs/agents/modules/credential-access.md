@@ -39,16 +39,15 @@ Take the first rung that answers. Never skip down a rung to "be sure".
 - **GitHub tokens come only from `bin/gh-token`.** For the agent identity it serves
   the shared cache and reads 1Password only on a miss or expiry. The deployer
   identity is minted per call by design and is never cached (`CACHEABLE_IDENTITIES`);
-  `--force` (a recovery after GitHub refused a token) also mints on purpose.
+  `--force` (a recovery after GitHub refused a token) also mints on purpose, except
+  inside a backoff window, where it gets the still-valid cached token back.
   `bin/op-reads` rows carry the identity as `via` (`gh-token:agent`,
   `gh-token:deployer`), so a spend says which one. A watcher that must never spend the
   quota asks `bin/gh-token --cached-only` (exit 3 on a miss, never reads `op`).
-- **When 1Password is hung or rate-limited, nobody retries it.** `bin/gh-token`
-  records that account-wide failure in the cache manifest and every process skips
-  `op` until the window ends (1 minute, doubling to 15). `bin/secret status` shows
-  the window. After fixing 1Password, skip it for one call with
-  `MCR_OP_NO_BACKOFF=1 bin/gh-token`. A failure one shell owns (its token not
-  sourced) does not back off the others.
+- **When 1Password is hung or rate-limited, the agent GitHub token stops retrying
+  it.** Only `bin/gh-token` for the agent identity is gated; other callers and the
+  deployer still read `op`. The window, its override and what triggers it are in
+  [`secret-cache.md`](secret-cache.md); `bin/secret status` shows it.
 
 ### Stable keys come from env files
 
