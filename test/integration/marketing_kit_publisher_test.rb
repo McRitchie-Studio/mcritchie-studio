@@ -22,6 +22,7 @@ class MarketingKitPublisherTest < ActiveSupport::TestCase
     Perm = Struct.new(:type, :email_address, :domain, keyword_init: true)
 
     attr_reader :nodes, :writes, :perms
+    attr_accessor :fail_copy
 
     def initialize
       @nodes = []
@@ -51,6 +52,7 @@ class MarketingKitPublisherTest < ActiveSupport::TestCase
 
     def files_copy(id, name:, parents:)
       @writes << [:copy, id]
+      raise Workspace::ApiRetry::Error, "files.copy failed" if @fail_copy
       source = nodes.find { |n| n.id == id }
       Node.new(id: "id#{nodes.size}", name: name, mime_type: source.mime_type, parents: parents, body: source.body).tap { |n| nodes << n }
     end
@@ -136,6 +138,18 @@ class MarketingKitPublisherTest < ActiveSupport::TestCase
       photo = drive.find("RF_photo_shop-floor.jpg").first
       refute_includes drive.writes.map(&:last), photo.id, "an uploaded photo is never copied or trashed"
       assert_empty drive.find("#{MarketingKit::Publisher::UPLOAD_PREFIX}RF_photo_shop-floor.jpg")
+    end
+  end
+
+  test "a failed copy still trashes the upload, so no stand-in is left live" do
+    with_built_kit do |spec, out|
+      drive = FakeDrive.new
+      drive.fail_copy = true
+      assert_raises(Workspace::ApiRetry::Error) { publish(spec, out, drive) }
+
+      upload = drive.nodes.find { |n| n.name.start_with?(MarketingKit::Publisher::UPLOAD_PREFIX) }
+      assert upload.trashed
+      assert_equal [:trash, upload.id], drive.writes.last
     end
   end
 

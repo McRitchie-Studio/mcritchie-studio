@@ -120,10 +120,14 @@ module MarketingKit
       # A Google file made by upload and conversion is refused by the Docs and
       # Slides template gallery ("created from outside your organization"); an
       # API copy of it is accepted. So a new Google file is uploaded under a
-      # stand-in name, copied to its real name beside it, and the upload trashed.
+      # stand-in name, copied to its real name beside it, and the upload trashed,
+      # even when the copy fails, so no stand-in is left live.
       draft = @drive.files_create(name: "#{UPLOAD_PREFIX}#{entry[:name]}", parents: [parent], mime_type: stored, body: body, content_type: sent)
-      copy = @drive.files_copy(draft.id, name: entry[:name], parents: [parent])
-      @drive.files_trash(draft.id)
+      begin
+        copy = @drive.files_copy(draft.id, name: entry[:name], parents: [parent])
+      ensure
+        @drive.files_trash(draft.id)
+      end
       note(:create, path, copy.id)
     end
 

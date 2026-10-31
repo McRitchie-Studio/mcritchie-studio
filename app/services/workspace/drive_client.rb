@@ -82,13 +82,14 @@ module Workspace
 
     # `parents` is not optional in practice: a copy with no parent lands in the
     # subject's My Drive root, and a copy into a folder we do not own is refused
-    # by Drive. Callers pass a folder the subject owns.
+    # by Drive. Callers pass a folder the subject owns. Like a create, a copy that
+    # may have landed is not retried: a second copy is a duplicate by name.
     def files_copy(id, name: nil, parents: nil)
       metadata = ::Google::Apis::DriveV3::File.new
       metadata.name = name if name
       metadata.parents = Array(parents) if parents
 
-      with_retries("files.copy", sleeper: @sleeper) do
+      with_retries("files.copy", sleeper: @sleeper, idempotent: false) do
         service.copy_file(id, metadata, fields: FILE_FIELDS, supports_all_drives: true)
       end
     end

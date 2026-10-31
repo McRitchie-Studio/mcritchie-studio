@@ -138,7 +138,10 @@ The credential holds only `drive.file`, so the publisher sees only files this ap
 people in `drive.share_with` and, as writers who can find it in their Drive,
 everyone in each Workspace domain in `drive.share_domains`. List the owner's own
 domain and `mcritchie.studio` there. A later publish finds the root by name, so
-once the folder has been renamed, pin its id in `drive.root_id`. Each new Doc,
+once the folder has been renamed, pin its id in `drive.root_id`. A kit first
+published under the old default name, `<name> — Marketing Kit`, needs
+`drive.root_id` (or `drive.root_name`) before it is published again, or the
+publish builds a second kit beside it. Each new Doc,
 Sheet or Slides file is an API copy of its upload, because the template gallery
 refuses a file made by upload. Then:
 - export the Slides template to PDF and look at every slide;

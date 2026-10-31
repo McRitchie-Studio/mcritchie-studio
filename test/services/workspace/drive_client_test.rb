@@ -37,6 +37,8 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
 
     def copy_file(id, metadata, **kwargs)
       @calls << [ :copy_file, id, { name: metadata.name, parents: metadata.parents } ]
+      raise @raises.shift if @raises.any?
+
       metadata
     end
 
@@ -194,6 +196,13 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
 
   test "files_download returns the raw bytes" do
     assert_equal "bytes-for-bin-id", client(ServiceDouble.new).files_download("bin-id")
+  end
+
+  test "a copy is not retried on a server error: a second copy would be a duplicate" do
+    service = ServiceDouble.new(raises: [ Google::Apis::ServerError.new("backendError", status_code: 503) ])
+
+    assert_raises(Workspace::ApiRetry::Error) { client(service).files_copy("src-id", name: "Doc", parents: [ "kit" ]) }
+    assert_equal 1, service.calls.size
   end
 
   test "files_trash trashes rather than deletes, and sends no body" do
