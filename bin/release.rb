@@ -1410,10 +1410,16 @@ def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil,
     # direction, as the silence that made this module necessary. `scope_weight` reads
     # `host`/`tier` off the registry row so the fact lives beside the scope's other
     # metadata; see its comment for why it is not a keyword at this call site.
-    out, ok = ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
-                                         weight: ReleasePresence.scope_weight(meta)) do
-      block ? block.call : sh(*cmd, **kw)
-    end
+    # A deploy THREAD (prepare's concurrent QA deploys, ship's satellites) skips the
+    # phase: ReleasePresence keeps ONE phase stack, and concurrent pushes and pops
+    # would scramble it (deploy_presence_phase states the same rule).
+    run = -> { block ? block.call : sh(*cmd, **kw) }
+    out, ok = if Release::ParallelDeploy.current_repo
+                run.call
+              else
+                ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
+                                           weight: ReleasePresence.scope_weight(meta), &run)
+              end
   rescue StandardError => e
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
     gate_sop(key, printable, false, (elapsed * 1000).round)
@@ -4568,6 +4574,177 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
   end
 end
 
+# --- prepare's QA deploys, concurrently (task release-pins-swept-sha, part 2) ---
+# Prepare used to deploy each app's QA one after another (Turf's qa-server push, its
+# boot poll, then the hub's qa-deploy.yml run and its boot poll) and only then run
+# the Turf devnet gauntlet, which needs nothing but Turf QA. The deploys share
+# nothing, so they now run at once, and the gauntlet starts on Turf's own thread as
+# soon as Turf QA has booted and its post-deploy hooks have run.
+#
+# THE ORDER THAT STAYS. Every deploy and the gauntlet JOIN before prepare decides
+# anything: the boot verdict, the remaining post-deploy hooks, the QA-green flip and
+# the "Assembled" line all come after the join, so nothing reports Assembled while a
+# deploy or the gauntlet is running, and a red anywhere is read before the flip.
+#
+# FAILURE, PER REPO. A deploy that ABORTS (a missing checkout, an unresolvable tip,
+# a red Turf post-deploy hook) is caught on its thread (ParallelDeploy.run_one), the
+# others run to their own end, and prepare then aborts naming every aborted repo. A
+# deploy that does not BOOT is the QA-not-green verdict it always was (exit 3),
+# naming the repo. Every wait is bounded as before: the qa-server push and the
+# Actions watch by their command deadlines, the boot poll by its attempts, the
+# gauntlet by RELEASE_GAUNTLET_DEADLINE.
+#
+# OUTPUT. With more than one app, every line a deploy thread prints is prefixed
+# [<repo>] and also written to that repo's log under a temp dir; one app, or a dry
+# run, prints exactly as before.
+QA_GAUNTLET_REPO = "turf-monster"
+
+# One app's QA deploy and boot poll. Answers { "repo", "qa_app", "qa_url", "sha",
+# "ok" }; aborts (SystemExit) on what used to abort the loop. `smoke_started` is
+# called once the deploy is accepted (it records `qa_smoke started`, once).
+def qa_deploy_app!(group, smoke_started:)
+  repo    = group["repo"]
+  members = group["members"] || []
+  path    = repo_path(repo)
+  qa_app  = group["qa_app"]
+
+  say("")
+  step("repo #{repo} → #{RELEASE_BRANCH} · #{members.size} member(s) · QA #{qa_app}")
+  abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
+
+  # a. fetch the repo's origin. (The merge-forward guard that used to sit here
+  #    ran AFTER the pre-QA gate and inside the primary checkout; it now runs
+  #    at step 4c, before the gate, in a detached workspace —
+  #    merge_forward_release_branches.)
+  sh("git", "-C", path, "fetch", "origin", "--quiet")
+
+  # c. deploy origin/release to the repo's own QA app. The github_actions apps
+  #    (the hub — DevOps v2 Phase 2) dispatch ONE qa-deploy.yml run at the swept
+  #    release tip: qa-deploy.yml is workflow_dispatch, not push:[release], so the
+  #    N PR-merge pushes of the sweep never fire N QA deploys — the conductor
+  #    fires exactly one. Every other app keeps the local qa-server force-push
+  #    (qa-server resolves origin/release in the sibling and pushes its SHA — no
+  #    local checkout/branch-cut). The /up boot poll (c2) gates the flip EITHER way.
+  if (group["prod_deploy"] || {})["strategy"].to_s == "github_actions"
+    tip = ""
+    unless DRY
+      out, tip_ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+      tip = out.strip if tip_ok
+      abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the QA deploy dispatch") if tip.empty?
+    end
+    step("qa deploy: gh workflow run qa-deploy.yml -f sha=#{short(tip)} — GitHub Actions QA deploy of the release tip")
+    qa_ok = dispatch_and_watch("qa-deploy.yml", { "sha" => tip }, chdir: path)
+  else
+    step("qa deploy: #{Release::QaDeployCommand.for(qa_app: qa_app, branch: RELEASE_BRANCH)}")
+    _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/#{RELEASE_BRANCH}",
+                  Release::QaDeployCommand::CONFIRM_FLAG, capture: false)
+  end
+
+  # c2. wait for the dyno to actually BOOT before treating the deploy as done.
+  #     `bin/qa-server deploy` returns once the push is accepted, but a slow dyno
+  #     may still be booting — recording QA + assembling against it is the
+  #     /up-smoke race that left the RC stuck `assembling`. Poll <qa_url>/up
+  #     until 200 (or timeout); a non-200 marks the app NOT ok so step 8 leaves
+  #     the release `assembling` for a clean re-run.
+  smoke_started.call if qa_ok
+  # Route the /up boot poll through the telemetry wrapper (one scope, many
+  # curls → block returns [out, ok]). `.last` keeps qa_ok a BOOLEAN (the raw
+  # [out, ok] array is always truthy and would poison the ok flag downstream);
+  # `&&=` still short-circuits, so a failed earlier step never runs the poll.
+  qa_ok &&= run_test_scope("qa_up_smoke", repo: qa_app) do
+    booted = wait_for_boot(qa_url_for(qa_app))
+    [booted ? "200" : "", booted]
+  end.last
+
+  # d. capture the deployed SHA (origin/release after any merge-forward).
+  sha = ""
+  unless DRY
+    out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+    sha = out.strip if ok
+  end
+  { "repo" => repo, "qa_app" => qa_app, "qa_url" => qa_url_for(qa_app), "sha" => sha, "ok" => (qa_ok || DRY) }
+end
+
+# Deploy every QA app, concurrently when there is more than one, and run Turf's
+# devnet gauntlet on Turf's thread once Turf QA has booted. Answers
+#   { deployed: [per-app hash, in group order], shas: { repo => sha },
+#     gauntlet: the gauntlet outcome when it ran on a thread (else nil),
+#     hooks_ran: [repos whose QA post-deploy hooks already ran], qa_smoke_started: }
+# and aborts, after every thread has finished, when any deploy aborted.
+def run_qa_deploys(qa_groups, rel_slug, repos:, qa_shas:, skip_gauntlet:)
+  outcome = { deployed: [], shas: {}, gauntlet: nil, hooks_ran: [], qa_smoke_started: false }
+  return outcome if qa_groups.empty?
+
+  smoke_lock = Mutex.new
+  smoke_started = lambda do
+    first = smoke_lock.synchronize { outcome[:qa_smoke_started] ? false : (outcome[:qa_smoke_started] = true) }
+    record_release_event(rel_slug, "qa_smoke", "started") if first
+  end
+  # The gauntlet rides Turf's thread only on a live run: a dry run previews it after
+  # the deploys, where it always printed.
+  gauntlet_here = !DRY && Release::DevnetGauntlet.turf_repos(repos.map { |g| g["repo"] }).any?
+  frozen = qa_shas.dup # gems and QA-exempt repos, complete before any thread starts
+  job = lambda do |group|
+    deployed = qa_deploy_app!(group, smoke_started: smoke_started)
+    extra = {}
+    if gauntlet_here && group["repo"] == QA_GAUNTLET_REPO && deployed["ok"]
+      # Turf's own post-deploy hooks first: the gauntlet tests the app as prepare
+      # leaves it, exactly as it did when it ran after every hook.
+      run_post_deploy([group], target: :qa)
+      extra["hooks_ran"] = true
+      extra["gauntlet"] = prepare_devnet_gauntlet!(rel_slug, repos, skip: skip_gauntlet,
+                                                                    shas: frozen.merge(group["repo"] => deployed["sha"]))
+    end
+    deployed.merge(extra)
+  end
+
+  results = if qa_groups.size == 1 || DRY
+              qa_groups.map { |group| job.call(group) }
+            else
+              qa_deploys_in_parallel(qa_groups, rel_slug, &job)
+            end
+
+  results.each do |r|
+    outcome[:deployed] << r.slice("repo", "qa_app", "qa_url", "sha", "ok")
+    outcome[:shas][r["repo"]] = r["sha"]
+    outcome[:hooks_ran] << r["repo"] if r["hooks_ran"]
+    outcome[:gauntlet] = r["gauntlet"] if r.key?("gauntlet")
+  end
+  outcome
+end
+
+# The concurrent batch. Answers one result hash per group, in group order; aborts,
+# after the join, naming every repo whose deploy aborted.
+def qa_deploys_in_parallel(qa_groups, rel_slug, &job)
+  log_dir = Dir.mktmpdir("release-qa-#{rel_slug}-")
+  say("")
+  step("qa deploy: #{qa_groups.size} apps CONCURRENTLY (#{qa_groups.map { |g| g['repo'] }.join(', ')}) — each line " \
+       "is prefixed [<repo>]; per-app logs in #{log_dir}. Turf's devnet gauntlet starts when Turf QA boots.")
+  # Memos the threads write into, made before they start so no two threads race to
+  # create one (a lost `||=` would drop a line of evidence).
+  @prepare_live ||= []
+  answers = {}
+  answers_lock = Mutex.new
+  runs = Release::ParallelDeploy.with_prefixed_output do
+    Release::ParallelDeploy.run(qa_groups, concurrency: Release::ParallelDeploy::MAX_CONCURRENCY, log_dir: log_dir) do |group|
+      answer = job.call(group)
+      answers_lock.synchronize { answers[group["repo"]] = answer }
+    end
+  end
+
+  say("")
+  say("  QA deploys (#{runs.count(&:ok)}/#{runs.size} finished):")
+  Release::ParallelDeploy.summary_lines(runs).each { |line| say(line.sub("✓ live  ", "✓ done  ")) }
+  aborted = Release::ParallelDeploy.failed(runs)
+  if aborted.any?
+    abort!("QA deploy ABORTED in #{aborted.map(&:repo).join(', ')}: " +
+           aborted.map { |r| "#{r.repo} — #{r.error}" }.join("; ") +
+           ". Every other app's deploy ran to its own end (see its log above). Members stay `reviewed` and the " \
+           "release stays `assembling`; fix what the line names, then re-run `bin/release prepare` (it resumes).")
+  end
+  qa_groups.map { |group| answers.fetch(group["repo"]) }
+end
+
 def prepare
   task_slugs = opt_values("--task")
   slug = opt_value("--slug")
@@ -5060,8 +5237,11 @@ def prepare
   #    the ship publishes the final.
   deployed = [] # [{repo, qa_app, qa_url, sha, ok}]
   qa_shas = {}  # { repo => sha } deployed to QA
-  qa_smoke_started = false
+  qa_groups = [] # the apps with a QA environment, deployed concurrently below
   record_release_event(rel_slug, "deploy_qa", "started") if app_groups.any?
+  # 6a. THE CHEAP, LOCAL HALF FIRST, on this thread: gems and QA-exempt apps only
+  #     freeze a SHA, so qa_shas is complete (turf-vault's included, which the
+  #     gauntlet's record binds) before any deploy thread starts.
   repos.each do |group|
     repo    = group["repo"]
     members = group["members"] || []
@@ -5082,15 +5262,11 @@ def prepare
       next
     end
 
-    # --- app repo: all branch ops happen in THAT repo via `git -C path` ---
-    path   = repo_path(repo)
-    qa_app = group["qa_app"]
-
     # Eligibility: a repo can be a registered app (passes validate_members!) yet
     # have NO QA env (tax-studio, chain-ops). Warn + skip its QA deploy rather
     # than firing a `bin/qa-server deploy` that has no target — it still ships at
     # `ship` via its prod_deploy adapter; it just can't be QA-reviewed here.
-    unless qa_registered?(qa_app)
+    unless qa_registered?(group["qa_app"])
       say("")
       say("  ⚠ #{repo}: no QA environment registered (qa_environments.yml) — skipping QA deploy")
       # FREEZE IT ANYWAY. A QA-exempt repo (rantly, moms-app) still ships, and the
@@ -5105,67 +5281,19 @@ def prepare
       next
     end
 
-    say("")
-    step("repo #{repo} → #{RELEASE_BRANCH} · #{members.size} member(s) · QA #{qa_app}")
-    abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
-
-    # a. fetch the repo's origin. (The merge-forward guard that used to sit here
-    #    ran AFTER the pre-QA gate and inside the primary checkout; it now runs
-    #    at step 4c, before the gate, in a detached workspace —
-    #    merge_forward_release_branches.)
-    sh("git", "-C", path, "fetch", "origin", "--quiet")
-
-    # c. deploy origin/release to the repo's own QA app. The github_actions apps
-    #    (the hub — DevOps v2 Phase 2) dispatch ONE qa-deploy.yml run at the swept
-    #    release tip: qa-deploy.yml is workflow_dispatch, not push:[release], so the
-    #    N PR-merge pushes of the sweep never fire N QA deploys — the conductor
-    #    fires exactly one. Every other app keeps the local qa-server force-push
-    #    (qa-server resolves origin/release in the sibling and pushes its SHA — no
-    #    local checkout/branch-cut). The /up boot poll (c2) gates the flip EITHER way.
-    if (group["prod_deploy"] || {})["strategy"].to_s == "github_actions"
-      tip = ""
-      unless DRY
-        out, tip_ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
-        tip = out.strip if tip_ok
-        abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the QA deploy dispatch") if tip.empty?
-      end
-      step("qa deploy: gh workflow run qa-deploy.yml -f sha=#{short(tip)} — GitHub Actions QA deploy of the release tip")
-      qa_ok = dispatch_and_watch("qa-deploy.yml", { "sha" => tip }, chdir: path)
-    else
-      step("qa deploy: #{Release::QaDeployCommand.for(qa_app: qa_app, branch: RELEASE_BRANCH)}")
-      _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/#{RELEASE_BRANCH}",
-                    Release::QaDeployCommand::CONFIRM_FLAG, capture: false)
-    end
-
-    # c2. wait for the dyno to actually BOOT before treating the deploy as done.
-    #     `bin/qa-server deploy` returns once the push is accepted, but a slow dyno
-    #     may still be booting — recording QA + assembling against it is the
-    #     /up-smoke race that left the RC stuck `assembling`. Poll <qa_url>/up
-    #     until 200 (or timeout); a non-200 marks the app NOT ok so step 4 leaves
-    #     the release `assembling` for a clean re-run.
-    if qa_ok && !qa_smoke_started
-      record_release_event(rel_slug, "qa_smoke", "started")
-      qa_smoke_started = true
-    end
-    # Route the /up boot poll through the telemetry wrapper (one scope, many
-    # curls → block returns [out, ok]). `.last` keeps qa_ok a BOOLEAN (the raw
-    # [out, ok] array is always truthy and would poison the ok flag downstream);
-    # `&&=` still short-circuits, so a failed earlier step never runs the poll.
-    qa_ok &&= run_test_scope("qa_up_smoke", repo: qa_app) do
-      booted = wait_for_boot(qa_url_for(qa_app))
-      [booted ? "200" : "", booted]
-    end.last
-
-    # d. capture the deployed SHA (origin/release after any merge-forward).
-    sha = ""
-    unless DRY
-      out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
-      sha = out.strip if ok
-    end
-    qa_shas[repo] = sha
-    deployed << { "repo" => repo, "qa_app" => qa_app, "qa_url" => qa_url_for(qa_app),
-                  "sha" => sha, "ok" => (qa_ok || DRY) }
+    qa_groups << group
   end
+
+  # 6b. THE QA DEPLOYS, CONCURRENTLY (task release-pins-swept-sha, part 2). Each app's
+  #     deploy + /up boot poll runs on its own thread (Release::ParallelDeploy, every
+  #     line prefixed [<repo>]), and Turf's devnet gauntlet starts the moment Turf QA
+  #     has booted (after Turf's own post-deploy hooks) instead of after every app.
+  #     Everything joins before the verdict below: nothing reports Assembled while a
+  #     deploy or the gauntlet is still running. See run_qa_deploys.
+  qa_run = run_qa_deploys(qa_groups, rel_slug, repos: repos, qa_shas: qa_shas, skip_gauntlet: skip_gauntlet)
+  deployed = qa_run[:deployed]
+  qa_shas.merge!(qa_run[:shas])
+  qa_smoke_started = qa_run[:qa_smoke_started]
 
   # 7. Record the QA URL + per-repo deployed SHAs on the release (the board's
   #    current-release header links straight to QA; the SHAs give provenance).
@@ -5224,7 +5352,9 @@ def prepare
     #     post_deploy_cmd against its QA app, record the [post-deploy] outcome, and
     #     ABORT prepare on a non-zero exit (so the RC stays `assembling`, members
     #     stay `reviewed`, re-run resumes). dry-run prints the plan; nothing executes.
-    run_post_deploy(repos, target: :qa)
+    # A repo whose hooks already ran on its deploy thread (Turf, ahead of its
+    # gauntlet) is not run twice.
+    run_post_deploy(repos.reject { |g| qa_run[:hooks_ran].include?(g["repo"]) }, target: :qa)
 
     # QA is ACTUALLY green now — every app booted (/up 200) AND the blocking
     # post-deploy hook passed (run_post_deploy abort!s on failure, so REACHING
@@ -5261,12 +5391,20 @@ def prepare
     #     (qa-release.md, "The devnet gauntlet"). Runs the contest-rehearsal
     #     unattended and records devnet_gauntlet on the release, which `ship` reads;
     #     a red step records the fail and aborts here, naming the step.
-    gauntlet_red = %i[red unrecorded].include?(prepare_devnet_gauntlet!(rel_slug, repos, skip: skip_gauntlet, shas: qa_shas))
+    #     It usually ran ALREADY, on Turf's deploy thread as soon as Turf QA booted
+    #     (run_qa_deploys); this runs it here only when no Turf app deployed on this
+    #     run (a turf-vault-only release, a dry run), where it has nothing to overlap.
+    gauntlet = qa_run[:gauntlet] || prepare_devnet_gauntlet!(rel_slug, repos, skip: skip_gauntlet, shas: qa_shas)
+    gauntlet_red = %i[red unrecorded].include?(gauntlet)
   end
 
   # 9. Per-repo summary of what was swept + QA'd.
   say("")
-  say("✓ #{qa_green ? 'Assembled' : 'Prepared (NOT assembled — QA not green)'} #{rel_slug}#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
+  verdict = if !qa_green then "✓ Prepared (NOT assembled — QA not green)"
+            elsif gauntlet_red then "✗ Assembled on QA but NOT shippable — the devnet gauntlet is red"
+            else "✓ Assembled"
+            end
+  say("#{verdict} #{rel_slug}#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
   gem_groups.each do |g|
     g["members"].each { |m| say("  gem #{g['repo']} (#{m['slug']}) — rides the release; published before QA (ship re-verifies idempotently).") }
   end
