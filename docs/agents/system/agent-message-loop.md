@@ -416,11 +416,11 @@ seconds.
 | Column | Value |
 |--------|-------|
 | `channel` | `slack` |
-| `external_id` | `<channel id>:<ts>` (a ts is unique only in its channel); the `(channel, external_id)` unique index dedupes Slack's retries and the message + `app_mention` pair one mention produces |
+| `external_id` | `<channel id>:<ts>` (a ts is unique only in its channel); the `(channel, external_id)` unique index dedupes Slack's retries and the message + `app_mention` pair one mention produces. A fan-out's further rows are `<channel id>:<soul>:<ts>` (see **Several souls at once**) |
 | `guild_id` | the team id |
 | `channel_ref` | the channel id (`C…`, `G…`, `D…`) |
 | `thread_key` | `slack:<channel>:<thread_ts or ts>`: a Slack thread is one conversation |
-| `envelope` | `channel_type` (`im` for a DM: `MemoryBundle#private_channel?`), `event_id`, `thread_ts` |
+| `envelope` | `channel_type` (`im` for a DM: `MemoryBundle#private_channel?`), `event_id`, `thread_ts`, and on a fan-out's rows `fan` (the primary row's `external_id`) |
 
 Never stored: another workspace's events, anything a bot wrote (`bot_id`,
 `bot_profile`, subtype `bot_message`, or the app's own user: our own customized
@@ -432,11 +432,46 @@ and every other subtype, a muted channel, and an unaddressed message.
 
 1. **Name.** The text, past a leading `@McRitchie Agents`, opens by addressing a
    soul's `names`: `Avi, …`, `Avi: …`, `Hi Avi, …`, `@Avi …` (the email matcher,
-   `EmailRoutes.addressed_to?`).
+   `EmailRoutes.addressed_to?`), or several souls, or everyone (below).
 2. **Thread.** A reply in a thread the mailbox holds keeps that thread's soul.
 3. **Mention.** An `@McRitchie Agents` mention (or an `app_mention`) or a DM to
    the app goes to `mention_soul` (`alex`).
-4. **Channel default.** The channel override's `default_soul`. `#agents-general` has none.
+4. **Channel default.** The channel override's `default_soul`. `#general` has none.
+
+**Several souls at once** (Alex McRitchie, 2026-10-30: "I should be able to send a
+message that might trigger multiple agents to respond"). `SlackRoutes#addressed`
+reads a list of names at the start of the text:
+
+| Opening | Souls |
+|---------|-------|
+| `Avi and Mason, …` · `Avi, Mason: …` · `Avi & Mason: …` | avi, mason |
+| `Avi, Mason and Carl …` · `Avi, Mason, and Carl, …` | avi, mason, carl |
+| `@Avi @Mason …` · `@Avi and @Mason …` | avi, mason |
+| `Avi, Mason said it shipped` | avi only: a list needs a closing `,`/`:`, all `@`s, or the `A, B and C` form |
+| `Avi and Mason are right` · `I asked Avi and Mason, …` | nobody: a name mid-sentence is never an address |
+| `Everyone, …` · `All: …` · `Agents, …` · `Hi everybody, …` · `<!channel>` `<!here>` `<!everyone>` | every soul served on Slack and cleared in the channel (`SlackRoutes#everyone_in`): in `#general` all twelve; in an app channel the cleared ones only, the rest named on the `routed` event's `not_cleared` |
+
+The message is stored once per soul, in one transaction, every row in the
+message's thread, so each soul replies under the one message. The first-named
+soul's row keeps `<channel>:<ts>`, so the dedupe lookup and every row stored
+before fan-out are unchanged; each further soul's row is `<channel>:<soul>:<ts>`
+(the ts stays the last segment, which `Media::Slack#message_url` reads). A
+retry or the `app_mention` twin finds the primary and gets every row or none; a
+racer that loses the insert rolls back whole. Clearance and the owner-only guard
+apply per soul: an uncleared or recognized-only soul's row is `held`, the others
+proceed.
+
+Fanned rows share `envelope.fan` (`AgentMessage::FAN_KEY`), and the claim's
+thread rule ("no older open message in this thread") skips a row's own
+siblings, so up to the dispatcher's cap answer side by side instead of in series
+(twelve answers in a row would trip the floor alert's ten-minute wait). A later
+message in the thread still waits for every open sibling. A sibling's thread
+memory leaves the other siblings out (same text, racing answers).
+
+**A follow-up in a fan-out thread.** A reply that names a soul goes to that soul.
+An unnamed reply goes to the thread's first-named soul that is not held
+(`SlackIngest#thread_row`): Slack threads are flat and an event never says which
+bot reply it answers, so the first name is the deliberate default.
 
 **Clearance** (Alex McRitchie, 2026-10-30: "some agents may not have clearance
 for public conversation"). Routing picks a soul; clearance decides whether that
@@ -445,7 +480,7 @@ carry:
 
 | Config | Who may answer there |
 |--------|----------------------|
-| `open: true` | every soul (`#agents-general`) |
+| `open: true` | every soul (`#general`) |
 | `souls: [...]` | the block's `core_souls` (alex, steffon, mason, mack, avi: the McRitchie Studio agents, who move all around) plus the souls listed |
 | neither | every soul: no clearance config is today's behaviour (`#ops`, `#releases`, a DM) |
 
@@ -456,13 +491,15 @@ channel: <soul> may not answer in #<channel>; cleared there: …`, and the
 `cleared` list; when the sender is also not an answered role, the one event names
 both causes. It is the same `held` status the owner-only guard uses, so the admin
 page shows the reason and an admin's **Release and answer** is the one override.
-Tyrion is client-facing: he is never listed in an internal channel.
+Tyrion is client-facing: he answers in the open `#general`, Alex McRitchie's
+private playground with the agents, but is never listed in an app channel's
+`souls:`.
 
 **The channel layout** (created by Steffon, 2026-10-30):
 
 | Channel | Clearance | Default soul |
 |---------|-----------|--------------|
-| `#agents-general` `C0CD8ETBZBM` | open: every agent, and where Alex McRitchie talks to all of them | none |
+| `#general` `C0CD8ETBZBM` (was `#agents-general`) | open: every agent, and where Alex McRitchie talks to all of them | none |
 | `#turf-monster` | core + `turf_monster` | `turf_monster` |
 | `#cyvasse` | core + `tywin` | `tywin` |
 | `#commercial-welding` | core + `hank` (recognized only: held, he has no role doc yet) | none |
@@ -470,14 +507,17 @@ Tyrion is client-facing: he is never listed in an internal channel.
 | every other app channel (`#mcritchie-studio`, `#mcritchie-industries`, `#rolio`, …) | core only | none |
 | `#ops`, `#releases` | no clearance config | none |
 
-Souls routable by name on Slack: `Avi`, `Alex`, `Turf`, `Mason`, `Steffon`,
-`Mack`, `Tywin`. Each answers from its `docs/agents/agents/<soul>/role.md` on the
-dispatcher's respond path, like the others. Names under `slack.recognized`
-(`Carl`, `Shannon`, `Jasper`, `Pokémon`, `Tyrion`, `Hank`) are routed to their
-soul and held with `soul cannot answer yet`: no dispatcher serves them on Slack,
-and without the entry "Carl, …" would fall through to the channel default and be
-answered by the wrong soul. Moving a soul from `recognized:` to `souls:` lets it
-answer (and makes `bin/dispatcher` serve it).
+**The #general rule.** Every soul with a role doc answers on Slack by name, and
+so in `#general`: `Alex`, `Avi`, `Carl`, `Jasper`, `Mack`, `Mason`,
+`Pokemon`/`Pokémon`, `Shannon`, `Steffon`, `Turf`, `Tyrion`, `Tywin`. Each answers
+from its `docs/agents/agents/<soul>/role.md` on the dispatcher's respond path.
+`client_cto` is not a Slack name. A name under `slack.recognized` (`Hank`, who
+has no role doc yet) is routed to its soul and held with `soul cannot answer
+yet`: no dispatcher serves it on Slack, and without the entry "Hank, …" would
+fall through to the channel default and be answered by the wrong soul. Moving a
+soul from `recognized:` to `souls:` lets it answer (and makes `bin/dispatcher`
+serve it). In an app channel, clearance still decides: a soul named there that
+is not cleared is held.
 
 The owner-only guard is Discord's: a routed message from a role
 `config/agent_answerers.yml` does not answer is stored `held`. Alex McRitchie's
@@ -511,7 +551,7 @@ ambiguous, never re-posted). With `SLACK_BOT_TOKEN` unset the reply is
 `skipped` and recorded.
 
 **Standalone posts.** `config/agent_media.yml`'s `slack` block is `enabled: true`
-with three channels (`agents` `C0CD8ETBZBM`, `ops` `C0CDEG43ECS`, `releases`
+with three channels (`general` `C0CD8ETBZBM`, `ops` `C0CDEG43ECS`, `releases`
 `C0CDJCN4L92`), but no purpose names Slack yet. Slack can `:post` only while
 `SLACK_BOT_TOKEN` is set; without it `Media.home` falls back to Discord. **To
 flip release notes to Slack**, change `purposes.release_notes.medium` from

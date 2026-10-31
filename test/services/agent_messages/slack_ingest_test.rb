@@ -160,7 +160,7 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
   test "[unit] SlackRoutes: the shipped block names the workspace, the app bot, the owner and every routed soul" do
     shipped = AgentMessages::SlackRoutes.load
     assert_equal [ "T0CC9DQ9NAK", "U0CE93ACBA4", "U0CCSMUMQJV" ], [ shipped.team_id, shipped.bot_user_id, shipped.owner_user_id ]
-    assert_nil shipped.default_soul("C0CD8ETBZBM"), "#agents is name- or mention-routed"
+    assert_nil shipped.default_soul("C0CD8ETBZBM"), "#general is name- or mention-routed"
     refute shipped.ignored?("C0CD8ETBZBM")
     assert_includes AgentMessages::Routes.load.souls, shipped.mention_soul
     shipped.routed_souls.each { |soul| assert_includes AgentMailbox.routed_souls, soul, "bin/dispatcher serves #{soul}" }
@@ -169,6 +169,9 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
   # --- CLEARANCE (slack-agent-channel-guardrails) ---------------------------
 
   GENERAL = "C0GENERAL1".freeze
+  # Every soul with a role doc (docs/agents/agents/<soul>/role.md); client_cto is
+  # not a Slack name, hank has no role doc yet.
+  SLACK_SOULS = %w[alex avi carl jasper mack mason pokemon shannon steffon turf_monster tyrion tywin].freeze
   TURFCH = "C0TURFAPP1".freeze
   BARE = "C0BAREAPP1".freeze
 
@@ -181,7 +184,7 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
       "core_souls" => %w[alex steffon mason mack avi],
       "recognized" => { "carl" => { "names" => [ "Carl" ] }, "tyrion" => { "names" => [ "Tyrion" ] },
                         "mason" => { "names" => [ "Mase" ] } },
-      "channels" => { GENERAL => { "name" => "agents-general", "open" => true },
+      "channels" => { GENERAL => { "name" => "general", "open" => true },
                       TURFCH => { "name" => "turf-monster", "souls" => [ "turf_monster" ], "default_soul" => "turf_monster" },
                       BARE => { "name" => "rolio", "souls" => [] },
                       DESK => { "name" => "desk", "default_soul" => "avi" } }
@@ -190,7 +193,7 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
 
   test "[unit] SlackRoutes clearance: open admits all, souls: admits core plus its own, no config admits all" do
     r = guarded_routes
-    %w[tywin turf_monster tyrion mason].each { |soul| assert r.cleared?(GENERAL, soul), "#agents-general is open to #{soul}" }
+    %w[tywin turf_monster tyrion mason].each { |soul| assert r.cleared?(GENERAL, soul), "#general is open to #{soul}" }
 
     %w[turf_monster alex steffon mason mack avi].each { |soul| assert r.cleared?(TURFCH, soul), "#{soul} is cleared in #turf-monster" }
     %w[tywin tyrion hank].each { |soul| refute r.cleared?(TURFCH, soul), "#{soul} is not cleared in #turf-monster" }
@@ -287,11 +290,11 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
     end
   end
 
-  test "[unit] the shipped clearance: agents-general open, app channels guarded, ops and releases unguarded, Tyrion nowhere" do
+  test "[unit] the shipped clearance: general open, app channels guarded, ops and releases unguarded, Tyrion in no app channel" do
     shipped = AgentMessages::SlackRoutes.load
     assert_equal %w[alex steffon mason mack avi], shipped.core_souls
-    assert shipped.override("C0CD8ETBZBM").open?, "#agents-general is open"
-    assert_equal "agents-general", shipped.channel_name("C0CD8ETBZBM")
+    assert shipped.override("C0CD8ETBZBM").open?, "#general is open"
+    assert_equal "general", shipped.channel_name("C0CD8ETBZBM")
     %w[C0CDEG43ECS C0CDJCN4L92].each { |id| assert_nil shipped.cleared_souls(id), "#{shipped.channel_name(id)} keeps today's behaviour" }
 
     by_name = %w[turf-monster cyvasse commercial-welding alex-build rolio].to_h do |name|
@@ -307,12 +310,11 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
     assert_equal shipped.core_souls, shipped.cleared_souls(by_name["rolio"])
     refute shipped.cleared?(by_name["cyvasse"], "turf_monster")
 
-    %w[Carl Shannon Jasper Pokemon Tyrion Hank].each do |name|
-      soul = shipped.named("#{name}, hello")
-      assert soul, "#{name} is recognized"
-      refute shipped.answers?(soul), "#{soul} is recognized-only: held, not served"
-      refute_includes shipped.routed_souls, soul, "the slack block never serves #{soul} (Tyrion's web chat may)"
-    end
+    soul = shipped.named("Hank, hello")
+    assert_equal "hank", soul, "Hank is recognized"
+    refute shipped.answers?(soul), "hank is recognized-only (no role doc yet): held, not served"
+    refute_includes shipped.routed_souls, soul, "the slack block never serves hank"
+    assert_equal %w[hank], shipped.recognized.keys, "every soul with a role doc answers; only Hank waits"
 
     shipped.channels.each do |entry|
       refute_includes Array(entry.souls), "tyrion", "Tyrion is client-facing: never cleared in ##{entry.name}"
@@ -324,7 +326,10 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
 
   test "[unit] the dispatcher can run every Slack soul: each is served and has a role doc for its owner persona" do
     shipped = AgentMessages::SlackRoutes.load
-    %w[mason steffon mack tywin].each { |soul| assert_includes shipped.souls.keys, soul }
+    assert_equal SLACK_SOULS.sort, shipped.souls.keys.sort, "every soul with a role doc answers on Slack"
+    assert_equal SLACK_SOULS.sort, shipped.everyone_in("C0CD8ETBZBM").sort, "Everyone in #general reaches all of them"
+    { "Pokemon, hi" => "pokemon", "Pokémon, hi" => "pokemon", "Carl, hi" => "carl", "Shannon, hi" => "shannon",
+      "Jasper, hi" => "jasper", "Tyrion, hi" => "tyrion" }.each { |text, soul| assert_equal soul, shipped.named(text), text }
     owner = AgentMailbox::Audience.new(role: "owner")
     shipped.souls.each_key do |soul|
       assert_includes AgentMailbox.routed_souls, soul, "bin/dispatcher serves #{soul}"
@@ -332,6 +337,187 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
       layer = AgentMailbox::ContextBuilder.new(soul: soul, message: { "id" => 1, "channel" => "slack", "content" => "hi" },
                                                context: {}, repo_root: Rails.root.to_s, audience: owner).general_layer
       refute_includes layer, "no role doc found", soul
+    end
+  end
+
+  # --- MULTI-AGENT FAN-OUT (slack-general-multi-agent) -----------------------
+
+  test "[unit] SlackRoutes#addressed: a list of names at the start addresses each, in order; a name mid-sentence none" do
+    r = guarded_routes
+    {
+      "Avi and Mason, ship it?" => %w[avi mason],
+      "Avi, Mason: ship it?" => %w[avi mason],
+      "Avi & Mason: ship it?" => %w[avi mason],
+      "Avi, Mason and Steffon what do you think?" => %w[avi mason steffon],
+      "Avi, Mason, and Mack, the books?" => %w[avi mason mack],
+      "@Avi @Mason look at this" => %w[avi mason],
+      "@Avi and @Mason look at this" => %w[avi mason],
+      "Hi Avi and Mason, quick one" => %w[avi mason],
+      "<@#{BOT}> Avi and Mason, quick one" => %w[avi mason],
+      "Mason and Avi, order is kept" => %w[mason avi],
+      "Avi and Carl, review?" => %w[avi carl],
+      "Avi, Avi: twice is once" => %w[avi],
+      "Avi, Mason said it shipped" => %w[avi],
+      "Avi, Mackenzie and Mason are here" => %w[avi],
+      "Avi, hi" => %w[avi],
+      "@Tywin status" => %w[tywin],
+      "Avi and Mason are right" => [],
+      "I asked Avi and Mason, they agreed" => [],
+      "Mackenzie and Mason, hi" => []
+    }.each { |text, souls| assert_equal souls, r.addressed(text), text }
+    assert_equal "avi", r.named("Avi and Mason, ship it?"), "#named is the first soul addressed"
+  end
+
+  test "[unit] SlackRoutes#everyone?: everyone, everybody, all, agents and Slack's broadcast tokens open an everyone address" do
+    r = guarded_routes
+    [ "Everyone, status?", "All: roll call", "Agents, who is up?", "Hey everyone, hi", "everybody! listen",
+      "<!channel> heads up", "<!here|here> heads up", "<!everyone> hi", "<@#{BOT}> Everyone, hi" ].each do |text|
+      assert r.everyone?(text), text
+    end
+    [ "All good here", "everyone knows that", "Tell everyone, please", "Avi, everyone is here", "Allison, hi" ].each do |text|
+      refute r.everyone?(text), text
+    end
+    assert_equal %w[avi alex turf_monster mason steffon mack tywin], r.everyone_in(GENERAL), "open: every served soul, config order"
+    assert_equal %w[avi alex turf_monster mason steffon mack], r.everyone_in(TURFCH), "guarded: only the cleared ones"
+    refute_includes r.everyone_in(GENERAL), "carl", "a recognized-only soul cannot answer, so is never fanned to"
+  end
+
+  test "[unit] fan-out: one message naming two souls stores one row each, the primary keyed C…:ts, a sibling C…:soul:ts, one thread" do
+    with_routes(guarded_routes) do
+      AgentPerson.seed_owner!
+      e = event("Avi and Mason, what shipped?", "channel" => GENERAL)
+      row = nil
+      assert_difference -> { AgentMessage.count }, 2 do
+        row = ingest(guarded_routes).call(e, team_id: TEAM, event_id: "Ev9")
+      end
+      base = "#{GENERAL}:#{e['ts']}"
+      sibling = AgentMessage.find_by!(channel: "slack", external_id: "#{GENERAL}:mason:#{e['ts']}")
+      assert_equal [ base, "avi", "name", "received" ], [ row.external_id, row.soul_slug, row.routed_by, row.status ]
+      assert_equal [ "mason", "name", "received" ], [ sibling.soul_slug, sibling.routed_by, sibling.status ]
+      assert_equal [ row.thread_key ] * 2, [ row.thread_key, sibling.thread_key ]
+      assert_equal [ base, base ], [ row.envelope["fan"], sibling.envelope["fan"] ]
+      assert_equal %w[avi mason], sibling.events.find_by!(kind: "routed").detail["fan"]
+      assert_equal %w[received routed], sibling.events.order(:id).map(&:kind)
+      assert_match %r{/archives/#{GENERAL}/p#{e['ts'].delete('.')}\z}, sibling.message_url, "the ts is still the id's last segment"
+    end
+  end
+
+  test "[unit] fan-out is idempotent: a retry and the app_mention twin of the same ts store nothing new" do
+    with_routes(guarded_routes) do
+      AgentPerson.seed_owner!
+      e = event("<@#{BOT}> Avi, Mason and Steffon, status?", "channel" => GENERAL)
+      first = ingest(guarded_routes).call(e, team_id: TEAM)
+      assert_equal 3, AgentMessage.where("external_id LIKE ?", "#{GENERAL}:%#{e['ts']}").count
+      assert_no_difference -> { AgentMessage.count } do
+        assert_equal first, ingest(guarded_routes).call(e, team_id: TEAM, event_id: "EvRetry")
+        assert_equal first, ingest(guarded_routes).call(e.merge("type" => "app_mention").except("channel_type"), team_id: TEAM)
+      end
+    end
+  end
+
+  test "[unit] fan-out race: the loser of a concurrent insert writes no partial fan and gets the winner's primary row" do
+    with_routes(guarded_routes) do
+      AgentPerson.seed_owner!
+      e = event("Avi and Mason, status?", "channel" => GENERAL)
+      winner = ingest(guarded_routes).call(e, team_id: TEAM)
+      lookups = 0
+      real = AgentMessage.method(:find_by)
+      blind = lambda do |*args, **kw|
+        lookups += 1
+        lookups == 1 ? nil : real.call(*args, **kw) # the first lookup misses, as a racer's would
+      end
+      assert_no_difference -> { AgentMessage.count } do
+        AgentMessage.stub(:find_by, blind) { assert_equal winner, ingest(guarded_routes).call(e, team_id: TEAM) }
+      end
+    end
+  end
+
+  test "[unit] fan-out clearance is per soul: an uncleared or unserved soul's row is held, the rest proceed" do
+    with_routes(guarded_routes) do
+      AgentPerson.seed_owner!
+      e = event("Turf and Tywin, how is the slate?", "channel" => TURFCH)
+      turf = ingest(guarded_routes).call(e, team_id: TEAM)
+      tywin = AgentMessage.find_by!(external_id: "#{TURFCH}:tywin:#{e['ts']}")
+      assert_equal [ "turf_monster", "received" ], [ turf.soul_slug, turf.status ]
+      assert_equal [ "tywin", "held" ], [ tywin.soul_slug, tywin.status ]
+      assert_match(/soul not cleared for this channel: tywin/, tywin.events.find_by!(kind: "held").detail["reason"])
+
+      e2 = event("Carl and Avi, review?", "channel" => GENERAL)
+      carl = ingest(guarded_routes).call(e2, team_id: TEAM)
+      avi = AgentMessage.find_by!(external_id: "#{GENERAL}:avi:#{e2['ts']}")
+      assert_equal [ "carl", "held" ], [ carl.soul_slug, carl.status ]
+      assert_match(/soul cannot answer yet: carl/, carl.events.find_by!(kind: "held").detail["reason"])
+      assert_equal [ "avi", "received" ], [ avi.soul_slug, avi.status ]
+    end
+  end
+
+  test "[unit] everyone: in an open channel every served soul gets a row; in an app channel only the cleared ones, the rest named" do
+    with_routes(guarded_routes) do
+      AgentPerson.seed_owner!
+      e = event("Everyone, roll call", "channel" => GENERAL)
+      primary = ingest(guarded_routes).call(e, team_id: TEAM)
+      rows = AgentMessage.where(thread_key: primary.thread_key).order(:id)
+      assert_equal %w[avi alex turf_monster mason steffon mack tywin], rows.map(&:soul_slug)
+      assert rows.all? { |row| row.status == "received" && row.envelope["fan"] == primary.external_id }
+      assert_equal "everyone", primary.events.find_by!(kind: "routed").detail["matched"]
+
+      t = event("All: anything blocking?", "channel" => TURFCH)
+      first = ingest(guarded_routes).call(t, team_id: TEAM)
+      souls = AgentMessage.where(thread_key: first.thread_key).order(:id).map(&:soul_slug)
+      assert_equal %w[avi alex turf_monster mason steffon mack], souls, "Tywin is not cleared in #turf-monster: no row for him"
+      assert_equal %w[tywin], first.events.find_by!(kind: "routed").detail["not_cleared"]
+    end
+  end
+
+  test "[unit] fan siblings in one thread are claimable side by side; a later message waits for all of them" do
+    with_routes(guarded_routes) do
+      AgentPerson.seed_owner!
+      e = event("Avi and Mason, status?", "channel" => GENERAL)
+      avi = ingest(guarded_routes).call(e, team_id: TEAM)
+      mason = AgentMessage.find_by!(external_id: "#{GENERAL}:mason:#{e['ts']}")
+      follow = ingest(guarded_routes).call(event("and the release?", "channel" => GENERAL, "thread_ts" => e["ts"]), team_id: TEAM)
+      assert_equal [ "avi", "thread" ], [ follow.soul_slug, follow.routed_by ], "an unnamed follow-up goes to the first soul named"
+
+      souls = %w[avi mason]
+      first = AgentMessage.claim!(soul: souls, worker: "w1").message
+      second = AgentMessage.claim!(soul: souls, worker: "w2").message
+      assert_equal [ avi.id, mason.id ], [ first&.id, second&.id ], "Mason's sibling does not wait on Avi's open claim"
+      assert_nil AgentMessage.claim!(soul: souls, worker: "w3").message, "the follow-up waits for both open siblings"
+
+      avi.reload.complete!(worker: "w1", response_text: "Green.")
+      assert_nil AgentMessage.claim!(soul: souls, worker: "w3").message, "still waiting on Mason's sibling"
+      mason.reload.complete!(worker: "w2", response_text: "Shipped.")
+      assert_equal follow.id, AgentMessage.claim!(soul: souls, worker: "w3").message&.id
+    end
+  end
+
+  test "[unit] follow-up routing skips a held first-named soul, and a named follow-up goes to whom it names" do
+    with_routes(guarded_routes) do
+      AgentPerson.seed_owner!
+      e = event("Tywin and Turf, slate?", "channel" => TURFCH)
+      ingest(guarded_routes).call(e, team_id: TEAM)
+      follow = ingest(guarded_routes).call(event("thanks", "channel" => TURFCH, "thread_ts" => e["ts"]), team_id: TEAM)
+      assert_equal [ "turf_monster", "thread", "received" ], [ follow.soul_slug, follow.routed_by, follow.status ]
+
+      g = event("Avi and Mason, status?", "channel" => GENERAL)
+      ingest(guarded_routes).call(g, team_id: TEAM)
+      named = ingest(guarded_routes).call(event("Mason, more detail?", "channel" => GENERAL, "thread_ts" => g["ts"]), team_id: TEAM)
+      assert_equal [ "mason", "name" ], [ named.soul_slug, named.routed_by ]
+    end
+  end
+
+  test "[unit] a fan sibling's thread memory leaves out the other siblings (same text, racing answers)" do
+    with_routes(guarded_routes) do
+      AgentPerson.seed_owner!
+      e = event("Avi and Mason, status?", "channel" => GENERAL)
+      avi = ingest(guarded_routes).call(e, team_id: TEAM)
+      mason = AgentMessage.find_by!(external_id: "#{GENERAL}:mason:#{e['ts']}")
+      avi.update!(status: "completed", response_text: "Green.", completed_at: Time.current)
+      assert_equal 0, AgentMessages::MemoryBundle.new(mason).bundle.dig("thread", "turns").to_a.length
+
+      follow = ingest(guarded_routes).call(event("and now?", "channel" => GENERAL, "thread_ts" => e["ts"]), team_id: TEAM)
+      assert_equal 2, AgentMessages::MemoryBundle.new(follow).bundle.dig("thread", "turns").to_a.length,
+                   "a later message in the thread sees every sibling"
     end
   end
 

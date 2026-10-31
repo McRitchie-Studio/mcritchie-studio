@@ -124,11 +124,9 @@ slack:
       names: ["Mack"]
     tywin:
       names: ["Tywin"]
-  # Names a message may address that no dispatcher serves on Slack: routed to
-  # that soul and held ("soul cannot answer yet"), so "Carl, …" in an app channel
-  # is never answered by the channel's default soul. Move a soul to `souls:` to
-  # let it answer. Never served (not in AgentMailbox.routed_souls).
-  recognized:
+    # Every soul with a role doc answers in #general (Alex McRitchie, 2026-10-30:
+    # "Every agent should be accessible in general"); bin/dispatcher builds each
+    # one's prompt from docs/agents/agents/<soul>/role.md.
     carl:
       names: ["Carl"]
     shannon:
@@ -139,17 +137,28 @@ slack:
       names: ["Pokemon", "Pokémon"]
     tyrion:
       names: ["Tyrion"]
+  # Names a message may address that no dispatcher serves on Slack: routed to
+  # that soul and held ("soul cannot answer yet"), so "Hank, …" in an app channel
+  # is never answered by the channel's default soul. Move a soul to `souls:` (it
+  # needs a role doc first) to let it answer. Never served (not in
+  # AgentMailbox.routed_souls).
+  recognized:
     hank:
       names: ["Hank"]
+  # SEVERAL SOULS AT ONCE. A message opening "Avi and Mason, …", "Avi, Mason: …",
+  # "Avi, Mason and Carl …" or "@Avi @Mason …" is stored once per soul named;
+  # "Everyone, …", "All: …", "Agents, …" or <!channel> reaches every soul above
+  # cleared in the channel (in #general: all of them). Each answers in the thread.
   # CLEARANCE (Alex McRitchie, 2026-10-30: "some agents may not have clearance
   # for public conversation"). Who may ANSWER in a channel, checked after routing:
-  #   open: true          every soul answers here (#agents-general)
+  #   open: true          every soul answers here (#general)
   #   souls: [...]        only these plus core_souls answer here (an app channel:
   #                       its builder/operator soul)
   #   neither             every soul answers (no clearance config: #ops, #releases)
   # A message routed (name, thread, mention or default) to a soul not cleared in
   # its channel is stored `held` with the reason, never answered unless an admin
-  # releases it. Tyrion is client-facing: never list him in an internal channel.
+  # releases it. Tyrion is client-facing: he answers in the open #general (Alex
+  # McRitchie's private playground), but never list him in an app channel's souls.
   # core_souls are the McRitchie Studio agents, cleared on every guarded channel.
   core_souls: [alex, steffon, mason, mack, avi]
   # Per-channel overrides (never an allow-list of channels the app reads):
@@ -157,7 +166,7 @@ slack:
   #   ignore: true        mute the channel, mentions included
   channels:
     "C0CD8ETBZBM":
-      name: agents-general            # the no-holds-barred channel; name- or mention-routed
+      name: general                   # every soul answers; name- or mention-routed (was agents-general)
       open: true
     "C0CDEG43ECS":
       name: ops                       # the floor alert's home once it moves (card 6)
@@ -165,52 +174,54 @@ slack:
       name: releases                  # release notes' home once flipped
     # One channel per application (created by Steffon 2026-10-30): its builder
     # soul plus core_souls; the app's operator, where one exists, is its default.
+    # Slack refuses emoji in channel names, so each channel's emoji leads its
+    # topic (Steffon, 2026-10-30); the names below are the channels' real names.
     "C0CD66BGSSK":
-      name: "mcritchie-studio"
+      name: "mcritchie-studio"      # 🪎 in the topic
       souls: []                     # core souls only: no app soul
     "C0CDPEKDABB":
-      name: "turf-monster"
+      name: "turf-monster"          # 🐊 in the topic
       souls: [turf_monster]
       default_soul: turf_monster
     "C0CDG8ZQYTX":
-      name: "cyvasse"
+      name: "cyvasse"               # 🐉 in the topic
       souls: [tywin]
       default_soul: tywin
     "C0CD66G8Q6T":
-      name: "mcritchie-industries"
+      name: "mcritchie-industries"  # 📐 in the topic
       souls: []                     # core souls only: no app soul
     "C0CDR8NHJ8L":
-      name: "commercial-welding"
+      name: "commercial-welding"    # 🔥 in the topic
       souls: [hank]
     "C0CDPELR66M":
-      name: "moms-app"
+      name: "moms-app"              # 📚 in the topic
       souls: []                     # core souls only: no app soul
     "C0CDG90RUAH":
-      name: "dads-app"
+      name: "dads-app"              # 🎞️ in the topic
       souls: []                     # core souls only: no app soul
     "C0CEFULHMJL":
-      name: "rantly"
+      name: "rantly"                # 📣 in the topic
       souls: []                     # core souls only: no app soul
     "C0CDKJNV8H4":
-      name: "10and5"
+      name: "10and5"                # 🍽️ in the topic
       souls: []                     # core souls only: no app soul
     "C0CDKJPMK3Q":
-      name: "portfolio"
+      name: "portfolio"             # 🗂️ in the topic
       souls: []                     # core souls only: no app soul
     "C0CEFUNH6HW":
-      name: "prisoners-dilemma"
+      name: "prisoners-dilemma"     # 🎲 in the topic
       souls: []                     # core souls only: no app soul
     "C0CDFAX6WAF":
-      name: "search-position"
+      name: "search-position"       # 🔎 in the topic
       souls: []                     # core souls only: no app soul
     "C0CDPENPJ7K":
-      name: "weekly-lock"
+      name: "weekly-lock"           # 🏈 in the topic
       souls: []                     # core souls only: no app soul
     "C0CDFAXV9UK":
-      name: "rolio"
+      name: "rolio"                 # 📇 in the topic
       souls: []                     # core souls only: no app soul
     "C0CD66KEPHD":
-      name: "alex-build"
+      name: "alex-build"            # 🧑🏻 in the topic
       souls: [alex]
 
 # EMAIL (docs/agents/system/agent-message-loop.md, "Email"), read by

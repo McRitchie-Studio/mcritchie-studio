@@ -69,8 +69,8 @@ slack:
   team_id: "T0CC9DQ9NAK"                 # McRitchie Studio
   fallback: discord
   channels:
-    agents:
-      id: "C0CD8ETBZBM"
+    general:
+      id: "C0CD8ETBZBM"                  # #general (was #agents-general): every soul answers there
     ops:
       id: "C0CDEG43ECS"
     releases:

@@ -1,7 +1,8 @@
 module AgentMessages
   # The `slack:` block of config/agent_routes.yml: which workspace is read, the
-  # app's own bot user, the owner's Slack user, and which soul a Slack message
-  # is for, and which souls may answer in which channel (CLEARANCE, #cleared?)
+  # app's own bot user, the owner's Slack user, which souls a Slack message is
+  # for (one or several: #addressed, #everyone?), and which souls may answer in
+  # which channel (CLEARANCE, #cleared?)
   # (docs/agents/system/agent-message-loop.md, "Slack"). Pure: it reads
   # text and ids and touches nothing. The THREAD rule needs the database, so
   # AgentMessages::SlackIngest applies it between #named and #mention_soul.
@@ -122,12 +123,41 @@ module AgentMessages
       text.to_s.strip.sub(/\A<@#{Regexp.escape(@bot_user_id)}(?:\|[^>]*)?>[\s,:]*/, "")
     end
 
-    # Rule 1: the soul the text opens by addressing, or nil. A served soul wins
-    # a tie with a recognized one.
-    def named(text)
-      line = strip_leading_bot_mention(text).lines.map(&:strip).find(&:present?).to_s
-      @souls.merge(@recognized).find { |_soul, names| EmailRoutes.addressed_to?(line, names) }&.first
+    # Rule 1: the soul the text opens by addressing, or nil: the first of
+    # #addressed. A served soul wins a tie with a recognized one.
+    def named(text) = addressed(text).first
+
+    # Rule 1, every soul the text opens by addressing, in the order named, or []:
+    #   one name    "Avi, …"  "Avi: …"  "Hi Avi, …"  "@Avi …" (EmailRoutes.addressed_to?)
+    #   a list      "Avi and Mason, …"  "Avi, Mason: …"  "Avi, Mason and Carl …"
+    #               "@Avi @Mason …"  "@Avi and @Mason …"
+    # A list is an address only when it is closed by "," or ":", when every name
+    # in it carries an @, or when it has a comma and ends "and <name>" (the
+    # "A, B and C …" form). So "Avi and Mason are right" addresses nobody (as
+    # before), and "Avi, Mason said …" addresses Avi alone: the longest list
+    # that is an address wins, else the one-name rule. A name mid-sentence is
+    # never an address.
+    def addressed(text)
+      line = opening_line(text)
+      list = addressed_list(line)
+      return list if list
+
+      one = @souls.merge(@recognized).find { |_soul, names| EmailRoutes.addressed_to?(line, names) }&.first
+      one ? [ one ] : []
     end
+
+    # Whether the text opens by addressing everyone: "Everyone, …", "All: …",
+    # "Agents, …", "Hi everybody, …", or Slack's own <!everyone>, <!channel>,
+    # <!here>. SlackIngest fans such a message to #everyone_in.
+    def everyone?(text)
+      line = opening_line(text)
+      line.match?(BROADCAST) || line.match?(EVERYONE)
+    end
+
+    # The souls an everyone address reaches in `channel_id`: every soul served on
+    # Slack (#routed_souls, config order) that is cleared there. Recognized-only
+    # souls are never included: they cannot answer.
+    def everyone_in(channel_id) = routed_souls.select { |soul| cleared?(channel_id, soul) }
 
     # Whether `soul` is served on Slack (has slack.souls names, or is the mention
     # soul or a channel default). A recognized-only soul is not: it cannot answer yet.
@@ -145,6 +175,76 @@ module AgentMessages
     end
 
     private
+
+    EVERYONE_WORDS = %w[everyone everybody all agents].freeze
+    EVERYONE = /\A#{EmailRoutes::GREETING}@?(?:#{EVERYONE_WORDS.join('|')})\s*[,:!]/i
+    BROADCAST = /\A<!(?:everyone|channel|here)(?:\|[^>]*)?>/
+    # Between two names of a list: ", and", ",", "and", "&", or bare space
+    # before an @name.
+    LIST_SEPARATOR = /\A(?:\s*,\s*and\s+|\s*,\s*|\s+and\s+|\s*&\s*|\s+(?=@))/i
+    CLOSED = /\A\s*[,:]/
+
+    # The first non-blank line, past a leading @-mention of the app.
+    def opening_line(text) = strip_leading_bot_mention(text).lines.map(&:strip).find(&:present?).to_s
+
+    # The souls a list of two or more names at the start of `line` addresses
+    # (see #addressed), or nil when it opens with no such list.
+    def addressed_list(line)
+      pos = line[/\A#{EmailRoutes::GREETING}/].to_s.length
+      found = [] # { soul:, at:, separator: (the kind before it), ends: }
+      separator = nil
+      while (name = name_at(line, pos))
+        soul, at, length = name
+        pos += length
+        found << { soul: soul, at: at, separator: separator, ends: pos }
+        sep = line[pos..].to_s[LIST_SEPARATOR]
+        break unless sep && name_at(line, pos + sep.length)
+
+        separator = separator_kind(sep)
+        pos += sep.length
+      end
+      found.length.downto(2) do |k|
+        list = found.first(k)
+        return list.map { |entry| entry[:soul] }.uniq if list_address?(line, list)
+      end
+      nil
+    end
+
+    def separator_kind(sep)
+      comma = sep.include?(",")
+      conj = sep.match?(/and|&/i)
+      return :comma_and if comma && conj
+      return :comma if comma
+
+      conj ? :and : :space
+    end
+
+    # Closed by "," or ":", every name an @name, or the "A, B and C" form.
+    def list_address?(line, list)
+      kinds = list.drop(1).map { |entry| entry[:separator] }
+      return true if line[list.last[:ends]..].to_s.match?(CLOSED)
+      return true if list.all? { |entry| entry[:at] }
+
+      kinds.intersect?(%i[comma comma_and]) && %i[and comma_and].include?(kinds.last)
+    end
+
+    # [soul, at?, length] of the longest name that starts `line` at `pos` and is
+    # a whole word, or nil. Served souls first, so a served soul wins a tie.
+    def name_at(line, pos)
+      rest = line[pos..].to_s
+      at = rest.start_with?("@")
+      body = at ? rest[1..] : rest
+      best = nil
+      @souls.merge(@recognized).each do |soul, names|
+        names.each do |name|
+          next unless body.match?(/\A#{Regexp.escape(name)}(?![[:alnum:]_])/i)
+          next if best && best[2] >= name.length + (at ? 1 : 0)
+
+          best = [ soul, at, name.length + (at ? 1 : 0) ]
+        end
+      end
+      best
+    end
 
     def soul_list(value) = Array(value).map { |s| s.to_s.strip }.reject(&:empty?).uniq
   end
