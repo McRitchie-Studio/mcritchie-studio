@@ -104,8 +104,11 @@ class ReleaseCliTrainTest < ReleaseCliHarness
                "slugs.each { |s| Release::Conductor.sweep!(Task.find_by!(slug: s)) }; " \
                "r = Release.current_or_open!; " \
                "Release::Conductor.validate_members!(r); " \
-               "{ slug: r.slug, state: r.state, swept: slugs, repos: Release::Conductor.repo_plan(r) } }; " \
+               "{ slug: r.slug, state: r.state, swept: slugs, repos: Release::Conductor.repo_plan(r), " \
+               "swept_shas: (r.respond_to?(:metadata) ? (r.metadata || {})[\"swept_shas\"] : nil) || {} } }; " \
                "puts(result.to_json)"
+    # The swept pins (release-pins-swept-sha) are read back through a respond_to?-guarded
+    # inline read, never a model method the deployed board may lack; no train keyword.
     assert_equal expected, eval_with_argv([], %(batch_sweep_with_plan_ruby(["a"])))
     assert_equal "abc", eval_with_argv([], %(train_guarded("abc")))
     assert_equal "__forming__", eval_with_argv([], "forming_slug"), "the hub keeps the bare sentinel"

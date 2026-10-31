@@ -216,7 +216,7 @@ class ReleaseCycleTest < Minitest::Test
     assert_nil ReleaseCycle.retryable_cause("")
   end
 
-  test "[unit] a stale-tree refusal from prepare re-runs bare prepare once (the newcomer rides)" do
+  test "[unit] a stale-tree refusal from prepare re-runs bare prepare once (swept work missing)" do
     stale = "✗ stale tree: `release` does not carry `accepted` in mcritchie-studio — prepare REFUSED"
     deps = FakeDeps.new(snapshots: [snap(current: release("assembling")), snap(current: release("assembled"))],
                         steps: { "prepare" => [[1, stale], [0, ""]] })

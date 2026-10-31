@@ -135,25 +135,40 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    A task that rides another **release train** is HELD too: `⚠ HELD <slug>: rides
    the <train> train …`, with the command that sweeps it.
 2. Open or resume the release candidate.
+2b. **Pin the swept SHA**: right after detection, prepare reads each member repo's
+   `accepted` head once (`→ pin: this release promotes the accepted SHA swept now —
+   <repo>@<sha>`) and records it on the release (`metadata.swept_shas`). The guards,
+   the promote, the record and the stale-tree gate all use that SHA. A merge onto
+   `accepted` after the pin is not this release's: it waits for the next one and
+   refuses nothing. A re-run with nothing new to sweep adopts the recorded pins.
 3. **Promote `accepted → release`**: per repo with reviewed work, ONE promote.
-   - **Fast-forward** when `release` is contained in `accepted`: the `accepted` head is
-     pushed to `release` by ref, with no force flag, and read back. No PR, no merge
+   - **Fast-forward** when `release` is contained in `accepted`: the pinned `accepted`
+     SHA is pushed to `release` by ref, with no force flag, and read back. No PR, no merge
      commit, so `release` carries the very SHA whose CI `accepted` already ran.
    - **Batch PR** only when `release` has diverged (it carries a commit `accepted`
      lacks, such as a hotfix on `release` or `main` not yet merged forward); the output
      says so. Open (or reuse) ONE `--base release --head accepted` PR and merge it,
      then `accepted` is carried onto the merge commit by a fast-forward, so the next
      promote fast-forwards. If `accepted` moved meanwhile it is left alone, with a `⚠`
-     line, and the next promote takes the batch PR again.
+     line, and the next promote takes the batch PR again. A PR merges the branch head,
+     not a SHA: when `accepted` moved past the pin, the newcomers ride this release, a
+     `⚠ … moved past the swept <sha>` line says so, the pin advances to the merged head,
+     and the merge is pinned to it with `--match-head-commit`. A gem's version commit
+     (step 4d) lands on the branch head the same way, with the same line.
 
    Idempotent: `accepted` level with `release` skips the promote but still records +
    deploys. Membership is recorded
    (re-stamping `merged: "release"`), skipping work stamped `merged: release`/`main`. A
    `reviewed` member with `merged: ""` is a HELD anomaly, warned and left `reviewed`.
 3b. **VERIFY the promote reached the candidate** (the stale-tree gate): per three-rung
-   repo it re-reads `origin/release..origin/accepted` and REFUSES unless `release`
-   carries `accepted`, catching a commit **no task stamped** (a zap, a hand-merge, a
-   **LOST STAMP**). An unreadable rung counts as stale. See the **STALE TREE** rows.
+   repo it reads `origin/release..<the swept pin>` and REFUSES unless `release`
+   carries the pin, catching swept work a promote never landed, and a commit **no
+   task stamped** (a zap, a hand-merge, a **LOST STAMP**) that was on `accepted` when
+   the sweep read it. A repo with no pin (a release recorded before pins, or a repo no
+   run pinned) is held to the live `origin/release..origin/accepted`, as before. Commits
+   merged after the pin print `↷ <repo>: N commits reached accepted after the sweep …
+   the next release sweeps them` and do not refuse. An unreadable rung counts as stale.
+   See the **STALE TREE** rows.
 4c. **Merge `main` forward into `release`** in every app **and gem repo** (before the
    gate and the gem publish), so a hotfix on `main` cannot block the ship. A conflict,
    failed push, or unmet containment **aborts**: resolve on a branch off
@@ -373,7 +388,13 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    one hour re-mints the GitHub App read token (the sweep prints `re-minted the GitHub
    App read token`), so a long hold no longer ends in a credentials abort.
 6. Deploy QA and wait for boot, then record each repo's frozen SHA (`qa_shas`), the
-   commit the ship will deploy. A repo with no QA environment (`qa_evidence: exempt`:
+   commit the ship will deploy. **The apps deploy concurrently**: each line is
+   prefixed `[<repo>]` and kept in a per-app log, and a summary follows. Turf's own
+   post-deploy hooks and then the devnet gauntlet start on Turf's thread the moment Turf
+   QA boots, without waiting for the hub. Everything joins before the verdict: a deploy
+   that aborts stops prepare naming that repo (after the others finish), a deploy that
+   never boots is QA-not-green naming that repo, and nothing says Assembled while a
+   deploy or the gauntlet is running. A repo with no QA environment (`qa_evidence: exempt`:
    rantly, moms-app) is not deployed but IS frozen, at its `origin/release` head with
    this sweep's gem lock (the final; under the candidate rollback, the candidate):
    without it a resumed candidate-flow ship would freeze that repo at the ship's own
@@ -430,6 +451,7 @@ Do not hand-merge or hand-flip stages; a re-run skips promoted work and resumes 
 candidate. When the interruption printed `1Password is not answering`, re-run with
 `--wait-for-1password` instead: it waits for 1Password (a read every two minutes, up
 to an hour) and resumes prepare itself. It REFUSES only on a stale tree (step 3b): take the **STALE TREE** row.
+A merge onto `accepted` while prepare runs is no longer a stale tree: it waits for the next release.
 
 ### ABORT — fix the cause, THEN re-run
 
@@ -447,7 +469,7 @@ An abort leaves the same board state as an interruption. Each abort names its ca
 | **QA DEPLOY DISPATCHED, RUN LIST UNREADABLE** (step 6 — "the run list could NOT be read afterwards — whether a run was created is UNKNOWN") | **Do NOT re-dispatch** — a second deploy can land on a live one. Fix the reader (`gh auth status`; `eval "$(bin/gh-auth-refresh --export)"`), then `gh run list --workflow <workflow> --limit 5`. If a run for that SHA is listed, `gh run watch <id> --exit-status`; only a readable list with no run makes a hand-dispatch safe | once the deploy's real state is KNOWN: re-run `prepare` (it resumes over the promoted/published work) |
 | **QA DEPLOY NOT DISPATCHED — NO BASELINE** (step 6 — "`gh run list` never answered/FAILED, so there is no baseline … NOT dispatching. NOTHING WAS DEPLOYED") | **The refusal is CORRECT.** Read the quoted `gh said:` line and its `→` remedy; a `HTTP 401: Bad credentials` means the sweep outlived its ~1h token: re-mint. The promote and any candidate publish have ALREADY happened | fix what gh named, then re-run `prepare`; it resumes over the merged/published work |
 | **QA deploy / boot FAILED** ("never returned /up 200") | **FIRST scroll up for `⚠ <workflow>: … NOTHING WAS DEPLOYED; this is not a boot failure`** — then the app was never deployed and the rows above apply. Otherwise fix the boot failure (the summary prints the `bin/qa-server deploy …` retry); eject the member if it is the cause | re-run `prepare` **once QA boots** |
-| **STALE TREE** (step 3b — "prepare refused: … would deploy a tree that does NOT contain `accepted`") | **The good outcome — the sweep caught itself.** READ THE REFUSAL FIRST. **LOST STAMP** naming a task → run the two commands it prints (`bin/task merged <slug> accepted`, plus `bin/task move <slug> reviewed` unless already there). A commit no task owns → `gh pr create --repo <owner/name> --base release --head accepted …`, **watch that PR's CI to green**, then `gh pr merge <pr-url> --merge --match-head-commit <the accepted head the abort names>` (the abort prints a short SHA; gh needs the full one from `git rev-parse origin/accepted`). Never push or reset `release`; there is deliberately no flag | re-run `prepare`; it promotes nothing new, re-gates, and re-deploys QA over the tree that now carries the work |
+| **STALE TREE** (step 3b — "prepare refused: … would deploy a tree that does NOT contain `accepted`") | **The good outcome — the sweep caught itself.** It means `release` lacks work the sweep PINNED (the line names `the swept SHA`), or, in a repo with no pin, any `accepted` work; a merge after the pin never causes it. READ THE REFUSAL FIRST. **LOST STAMP** naming a task → run the two commands it prints (`bin/task merged <slug> accepted`, plus `bin/task move <slug> reviewed` unless already there). A commit no task owns → `gh pr create --repo <owner/name> --base release --head accepted …`, **watch that PR's CI to green**, then `gh pr merge <pr-url> --merge --match-head-commit <the accepted head the abort names>` (the abort prints a short SHA; gh needs the full one from `git rev-parse origin/accepted`). Never push or reset `release`; there is deliberately no flag | re-run `prepare`; it promotes nothing new, re-gates, and re-deploys QA over the tree that now carries the work |
 | **STALE TREE — rung could NOT be read** (step 3b — "a failed read is not a clean read") | Clone the repo as a sibling, or `git fetch origin` in it, so `origin/release..origin/accepted` can be read | re-run `prepare` |
 | **`accepted → release` promote failed** (a conflict on the batch PR) | Resolve the conflict on the batch PR (or `bin/task block` the offending member) | re-run `prepare` |
 | **Fast-forward refused** ("could not fast-forward origin/release … did release move?") | Someone pushed `release` between the containment read and the push. Never force it | re-run `prepare`; it re-reads containment and takes the fast-forward or the batch PR |
@@ -514,7 +536,9 @@ feels right to run a devnet gauntlet on the package before giving production the
 light." It runs unattended (Alex McRitchie, 2026-10-12), with `--cosign agent`, so the QA
 server key and Mack co-sign the settle and no Phantom tap is owed.
 
-**`bin/release prepare` runs it for you**, right after QA green and before `✓ Assembled`
+**`bin/release prepare` runs it for you**, on Turf's deploy thread as soon as Turf QA has
+booted and Turf's post-deploy hooks have run, concurrently with the other apps' QA deploys,
+and always before the QA-green flip and the `Assembled` line
 (`Release::DevnetGauntletRun`; about 9 minutes, 4 of them step 3; the whole run, the
 worktree's cut and `bundle install` included, is capped at 30 minutes by
 `RELEASE_GAUNTLET_DEADLINE`, red at the step it stops). It runs every step of

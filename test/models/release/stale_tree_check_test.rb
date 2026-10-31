@@ -198,4 +198,32 @@ class Release::StaleTreeCheckTest < ActiveSupport::TestCase
     refute v["fresh"]
     assert_includes v["message"], "abc1234 Zap"
   end
+  # --- the swept pin (task release-pins-swept-sha) ----------------------------
+  # The gate measures `release` against the `accepted` SHA the sweep pinned, so its
+  # words must say which SHA it measured; a repo without a pin reads exactly as
+  # before.
+
+  test "[unit] a fresh verdict names the swept SHA it measured" do
+    v = S.evaluate(accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
+                   pinned_shas: { "mcritchie-studio" => "dab857d0123456789" })
+
+    assert v["fresh"]
+    assert_includes v["message"], "carries every `accepted` commit this release swept (mcritchie-studio@dab857d)"
+  end
+
+  test "[unit] a refusal of swept work names the pin and looks the commits up against it" do
+    v = S.evaluate(accepted_states: [{ "repo" => "mcritchie-studio", "ahead" => 2 }],
+                   pinned_shas: { "mcritchie-studio" => "dab857d0123456789" })
+
+    refute v["fresh"], "work the sweep took that is missing from release still refuses"
+    assert_includes v["message"], "2 commits stranded on `accepted` up to the swept dab857d"
+    assert_includes v["message"], "git log --oneline origin/release..dab857d0123456789"
+  end
+
+  test "[unit] without a pin the verdict reads exactly as it did before pins" do
+    v = S.evaluate(accepted_states: [{ "repo" => "turf-monster", "ahead" => 0 }])
+
+    assert_equal "✓ `release` carries every `accepted` commit (turf-monster) — the candidate's tree is current.",
+                 v["message"]
+  end
 end

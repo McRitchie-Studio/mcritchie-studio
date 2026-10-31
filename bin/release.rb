@@ -51,8 +51,12 @@
 #       1. DETECT the work: every `reviewed` task + any `assembled` straggler not
 #          riding the current RC (nothing + no active release → idempotent no-op).
 #       2. Ensure a candidate exists (Release.current_or_open!).
+#       2b. PIN: read each member repo's `accepted` head once, right after detection
+#          (pin_swept_shas!). The guards, the promote, the record
+#          (metadata["swept_shas"]) and the stale-tree gate all use that SHA, so a
+#          merge onto `accepted` after it waits for the next release.
 #       3. PROMOTE + RECORD: review already merged each feat PR into `accepted`, so
-#          the sweep PROMOTES all of `accepted` onto `release`, ONE promote per repo
+#          the sweep PROMOTES the pinned `accepted` SHA onto `release`, ONE promote per repo
 #          (promote_accepted_to_release!): a FAST-FORWARD ref push when `release` is
 #          contained in `accepted`, the batch PR only when `release` has diverged (a
 #          `reviewed` member with no code on `accepted` is a HELD anomaly, warned +
@@ -85,11 +89,13 @@
 #          e2e-smoke tier) on origin/release BEFORE deploying; a regression aborts
 #          with eject guidance (`bin/release eject` the offender, keep the rest).
 #       6. Deploy origin/release to QA (qa-server deploy → wait-for-boot /up
-#          smoke → post_deploy hooks).
+#          smoke → post_deploy hooks), every app CONCURRENTLY (run_qa_deploys), each
+#          line prefixed [<repo>]; all join before the flip.
 #       7. QA-GREEN → flip the swept members `reviewed → assembled`
 #          (Release::Conductor.qa_green!; merged stays "release") + assemble the
 #          RC. A QA failure leaves them `reviewed` — the next run self-heals.
-#       8. DEVNET GAUNTLET (a release carrying turf-monster or turf-vault): run
+#       8. DEVNET GAUNTLET (a release carrying turf-monster or turf-vault): on Turf's
+#          deploy thread as soon as Turf QA boots (before the flip), run
 #          Turf Monster's contest-rehearsal on QA unattended, check the settle's
 #          token deltas, record devnet_gauntlet complete or fail (which `ship`
 #          reads). A red run exits 4 with no Steffon handoff; a release that
@@ -1410,10 +1416,16 @@ def run_test_scope(key, *cmd, capture: false, chdir: nil, repo: nil, label: nil,
     # direction, as the silence that made this module necessary. `scope_weight` reads
     # `host`/`tier` off the registry row so the fact lives beside the scope's other
     # metadata; see its comment for why it is not a keyword at this call site.
-    out, ok = ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
-                                         weight: ReleasePresence.scope_weight(meta)) do
-      block ? block.call : sh(*cmd, **kw)
-    end
+    # A deploy THREAD (prepare's concurrent QA deploys, ship's satellites) skips the
+    # phase: ReleasePresence keeps ONE phase stack, and concurrent pushes and pops
+    # would scramble it (deploy_presence_phase states the same rule).
+    run = -> { block ? block.call : sh(*cmd, **kw) }
+    out, ok = if Release::ParallelDeploy.current_repo
+                run.call
+              else
+                ReleasePresence.with_phase(phase: ReleasePresence::PHASE_WORKING,
+                                           weight: ReleasePresence.scope_weight(meta), &run)
+              end
   rescue StandardError => e
     elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
     gate_sop(key, printable, false, (elapsed * 1000).round)
@@ -2681,20 +2693,25 @@ def promote_accepted_to_release!(repos, label: nil)
            "(nothing recorded; members stay `reviewed`)") unless Dir.exist?(path)
 
     sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--quiet", capture: true)
+    # THE PIN, not the live branch (swept_ref): a merge onto `accepted` after the sweep
+    # read is not this release's, so it is neither counted nor promoted here.
+    target = swept_ref(repo)
     ahead_out, ahead_ok = sh("git", "-C", path, "rev-list", "--count",
-                             "origin/#{RELEASE_BRANCH}..origin/#{ACCEPTED_BRANCH}", capture: true)
-    abort!("could not compare origin/#{RELEASE_BRANCH}..origin/#{ACCEPTED_BRANCH} in #{repo} " \
+                             "origin/#{RELEASE_BRANCH}..#{target}", capture: true)
+    abort!("could not compare origin/#{RELEASE_BRANCH}..#{target} in #{repo} " \
            "(`git rev-list` failed) — fetch, then re-run `bin/release prepare`.") unless ahead_ok
     ahead = ahead_out.strip.to_i
     if ahead.zero?
-      step("#{repo}: `#{ACCEPTED_BRANCH}` is level with `#{RELEASE_BRANCH}` — nothing to promote " \
+      pinned = swept_pin(repo).empty? ? "" : " (as swept, #{short(swept_pin(repo))})"
+      step("#{repo}: `#{ACCEPTED_BRANCH}`#{pinned} is level with `#{RELEASE_BRANCH}` — nothing to promote " \
            "(skip the batch PR; membership still records)")
       next
     end
 
-    # FAST-FORWARD OR BATCH PR. The head is the one the changelog guard checked when it
-    # read one (a gem), so the push lands exactly the tree that guard judged.
-    head = checked_heads[repo] || ref_sha(path, "origin/#{ACCEPTED_BRANCH}")
+    # FAST-FORWARD OR BATCH PR. The head is the pinned SHA, which is also the one the
+    # changelog guard checked when it read one (a gem: it reads swept_ref too), so the
+    # push lands exactly the tree those guards judged.
+    head = checked_heads[repo] || ref_sha(path, target)
     release_sha = ref_sha(path, "origin/#{RELEASE_BRANCH}")
     merge_base = (head.empty? || release_sha.empty?) ? "" : ref_merge_base(path, release_sha, head)
     if Release::PromotePlan.promote(ahead: ahead, release_sha: release_sha, merge_base: merge_base) == :fast_forward
@@ -2706,6 +2723,13 @@ def promote_accepted_to_release!(repos, label: nil)
          "`#{ACCEPTED_BRANCH}` lacks, such as a hotfix on `#{RELEASE_BRANCH}` or `main` not yet merged forward, " \
          "or containment could not be read) — promoting by the batch PR, then carrying `#{ACCEPTED_BRANCH}` " \
          "onto its merge commit so the next promote fast-forwards")
+    # THE BATCH PR MERGES A BRANCH, NOT A SHA: GitHub lands the live `accepted` head. So
+    # the merge is pinned to that head with --match-head-commit (a push in between makes
+    # gh refuse rather than merge unread work), and when `accepted` already moved past the
+    # swept SHA the pin ADVANCES to the head it merges, said out loud, so the record and
+    # the stale-tree gate describe the tree this merge lands. This is the rare path (a
+    # `release` that diverged); the fast-forward above lands the pin exactly.
+    merge_head = batch_merge_head(repo, path, head)
     pr_url = accepted_release_pr_url(repo, label: label)
     step("gh pr merge #{pr_url} --merge — promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} in #{repo} " \
          "(#{ahead} commit#{ahead == 1 ? '' : 's'})")
@@ -2721,7 +2745,7 @@ def promote_accepted_to_release!(repos, label: nil)
     # stopped to ask now fails with a message we print, instead of hanging a
     # release on a prompt nobody is watching.
     merge_out, ok = sh("gh", "pr", "merge", pr_url, "--merge",
-                       *(checked_heads[repo] ? ["--match-head-commit", checked_heads[repo]] : []), capture: true)
+                       *(merge_head.empty? ? [] : ["--match-head-commit", merge_head]), capture: true)
     # The echo of gh's words is decided AFTER the recovery, never before it. It
     # used to sit above this branch gated on `ok` — still false while the fallback
     # was deciding — so the interrupted-run path printed NOTHING, and that is the
@@ -2752,6 +2776,25 @@ def promote_accepted_to_release!(repos, label: nil)
   end
 end
 
+# The head the batch PR will merge, pinned. `pinned` is the swept SHA. When the live
+# `accepted` head is the pin (the normal case) that is the answer. When `accepted`
+# moved after the sweep the batch PR would carry the newcomers too, so the pin
+# ADVANCES to the live head and the step says how many commits ride along. "" when
+# no head is readable (the merge then runs unpinned, as it did before pins).
+def batch_merge_head(repo, path, pinned)
+  live = ref_sha(path, "origin/#{ACCEPTED_BRANCH}")
+  return pinned.to_s if live.empty? || live == pinned.to_s
+  return live if pinned.to_s.empty?
+
+  extra = rung_ahead(path, pinned, live)
+  say("  ⚠ #{repo}: `#{ACCEPTED_BRANCH}` moved past the swept #{short(pinned)} to #{short(live)} " \
+      "(#{extra.nil? ? 'an unread number of' : extra} commit#{extra == 1 ? '' : 's'}). The batch PR merges the " \
+      "branch head, so they ride this release; the pin advances to #{short(live)} so the record and the " \
+      "stale-tree gate describe the merged tree.")
+  swept_shas[repo] = live unless swept_pin(repo).empty?
+  live
+end
+
 # A remote-tracking ref's SHA, or "" when it does not resolve. A read, so an
 # unreadable answer is "" rather than an abort: every caller treats "" as "cannot
 # prove containment" and takes the path that needs no proof.
@@ -2764,6 +2807,92 @@ end
 def ref_merge_base(path, left, right)
   out, ok = sh("git", "-C", path, "merge-base", left, right, capture: true)
   ok ? out.to_s.strip : ""
+end
+
+# --- THE SWEPT PIN (task release-pins-swept-sha) ------------------------------
+# prepare reads each member repo's `accepted` head ONCE, right after it detected
+# the work it sweeps, and that SHA is the release's: the promote lands exactly it,
+# the guards before the promote judge exactly it, the stale-tree gate asserts
+# `release` contains exactly it, and the release record carries it
+# (metadata["swept_shas"]). A merge onto `accepted` after that read waits for the
+# next release instead of aborting this one with a stale-tree refusal (2026-10-30:
+# hub PR #2327 merged a minute after `cycle` started and cost a full re-prepare).
+#
+# WHY AFTER DETECTION, NOT BEFORE. Detection reads the board's merged stamps, which
+# GitHub derives from merges that already happened; the pin is read later, from a
+# fresh fetch, so every member detection found is in the pinned tree. A merge
+# between the two reads is in the tree with no member, exactly as before this
+# change; a member missing from the tree cannot happen.
+#
+# { repo => sha } for this process. A repo with no pin (a release recorded before
+# this change, a dry run, an unreadable head) falls back to the live
+# `origin/accepted`, which is the check this code made before pins existed.
+def swept_shas = (@swept_shas ||= {})
+
+def swept_pin(repo) = swept_shas[repo.to_s].to_s.strip
+
+# The ref every `accepted` read in prepare goes through: the pinned SHA when this
+# release has one for the repo, else the live branch.
+def swept_ref(repo)
+  pin = swept_pin(repo)
+  pin.empty? ? "origin/#{ACCEPTED_BRANCH}" : pin
+end
+
+# Read and pin the `accepted` head of every repo this sweep's members name. A dry
+# run takes no fetch, so it pins the head the last fetch left and says so: the
+# preview names the SHA a live run would start from, as of that fetch.
+def pin_swept_shas!(repos)
+  targets = Array(repos).map(&:to_s).reject(&:empty?).uniq
+  return if targets.empty?
+
+  pinned = targets.filter_map do |repo|
+    path = repo_path(repo)
+    next unless Dir.exist?(path)
+
+    if DRY
+      out, ok = git_capture("-C", path, "rev-parse", "--verify", "--quiet", "origin/#{ACCEPTED_BRANCH}^{commit}")
+      sha = ok ? out.to_s.strip : ""
+    else
+      _, fetched = sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--quiet", capture: true)
+      # A failed fetch leaves a ref that can predate a member detection found, and a pin
+      # missing swept work would pass the gate. No pin: the live check stands.
+      next say("  ⚠ #{repo}: fetch failed, so no pin; the gate measures the live `#{ACCEPTED_BRANCH}`") unless fetched
+      sha = ref_sha(path, "origin/#{ACCEPTED_BRANCH}")
+    end
+    next if sha.empty? # unreadable: the promote and the gate read the live branch and fail closed there
+
+    swept_shas[repo] = sha
+    "#{repo}@#{short(sha)}"
+  end
+  return if pinned.empty?
+
+  step("pin: this release promotes the `#{ACCEPTED_BRANCH}` SHA swept now — #{pinned.join(', ')}" \
+       "#{DRY ? ' (as of the last fetch; a dry run takes none)' : ''}. A merge onto `#{ACCEPTED_BRANCH}` " \
+       "after this line waits for the next release.")
+end
+
+# Adopt the pins the release record carries (an earlier run's) for the repos this
+# run did not pin itself. This run's own pins win: they were read later.
+def adopt_recorded_pins!(recorded)
+  return unless recorded.is_a?(Hash)
+
+  recorded.each do |repo, sha|
+    next if sha.to_s.strip.empty? || !swept_pin(repo).empty?
+
+    swept_shas[repo.to_s] = sha.to_s.strip
+  end
+end
+
+# How many commits reached `accepted` after the pin, per pinned repo in `repos`:
+# the work that waits for the next release. Display only; a failed read is skipped.
+def post_sweep_counts(repos)
+  Array(repos).filter_map do |repo|
+    pin = swept_pin(repo)
+    next if pin.empty?
+
+    n = rung_ahead(repo_path(repo), pin, "origin/#{ACCEPTED_BRANCH}")
+    [repo, n] if n.to_i.positive?
+  end.to_h
 end
 
 # THE FAST-FORWARD PROMOTE: push the `accepted` head to `release` by ref. The same
@@ -2903,7 +3032,7 @@ def refuse_misfiled_changelog!(targets)
     path = repo_path(repo)
     next unless Dir.exist?(path) # the promote loop aborts on a missing checkout itself
 
-    head, refusal = changelog_promote_refusal(path)
+    head, refusal = changelog_promote_refusal(path, swept_ref(repo))
     checked[repo] = head if head
     failures << "gem #{repo}: #{refusal}" if refusal
   end
@@ -2916,7 +3045,7 @@ end
 # [the `accepted` SHA read, refusal-or-nil] for one gem checkout. FAILS CLOSED: a
 # promote this cannot predict is refused, because a guard that passes when it could
 # not look is the silent failure it exists to end.
-def changelog_promote_refusal(path)
+def changelog_promote_refusal(path, accepted_ref = "origin/#{ACCEPTED_BRANCH}")
   # `--tags` is load-bearing: the tags ARE the published record this judges against.
   _, fetched = sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--tags", "--quiet",
                   capture: true)
@@ -2926,9 +3055,9 @@ def changelog_promote_refusal(path)
   end
 
   release, release_ok = git_capture("-C", path, "rev-parse", "--verify", "origin/#{RELEASE_BRANCH}^{commit}")
-  accepted, accepted_ok = git_capture("-C", path, "rev-parse", "--verify", "origin/#{ACCEPTED_BRANCH}^{commit}")
+  accepted, accepted_ok = git_capture("-C", path, "rev-parse", "--verify", "#{accepted_ref}^{commit}")
   unless release_ok && accepted_ok
-    return [nil, "could not resolve origin/#{RELEASE_BRANCH} and origin/#{ACCEPTED_BRANCH} (fail closed) — " \
+    return [nil, "could not resolve origin/#{RELEASE_BRANCH} and #{accepted_ref} (fail closed) — " \
                  "fetch, then re-run `bin/release prepare`; NOTHING was promoted"]
   end
   release = release.strip
@@ -3177,14 +3306,34 @@ end
 # validate_members! raise rolls the whole sweep back; the gh merges already
 # landed, but the next run self-heals (the gh-merge failure falls back to
 # pr_merged?). Emits ONE JSON line: { slug, state, swept, repos }.
-def batch_sweep_with_plan_ruby(slugs, release_slug = nil)
+# The release metadata key the swept pins live under, and the snippet that reads them
+# back. INLINE RUBY on purpose: the conductor runs the DEPLOYED hub, so a model method
+# added with this change would not exist on the release that ships it. Guarded by
+# respond_to? like the other snippets, so a board without the column answers {}.
+SWEPT_SHAS_KEY = "swept_shas"
+RECORDED_SWEPT_SHAS_RUBY = "(r.respond_to?(:metadata) ? (r.metadata || {})[#{SWEPT_SHAS_KEY.inspect}] : nil) || {}"
+
+def batch_sweep_with_plan_ruby(slugs, release_slug = nil, swept_shas: {})
   open_ruby = release_slug ? "Release.open!(slug: #{release_slug.inspect}#{train_kwarg}) if #{rel_current}.nil?; " : ""
+  # The pins ride the SAME transaction as the membership they describe: the record of
+  # who is on the release and of which tree it promotes land together or not at all.
+  # Merged per repo, so a later run's pin replaces only the repos it re-pinned.
+  pins = swept_shas.to_h.reject { |_repo, sha| sha.to_s.strip.empty? }
+  pin_ruby = if pins.empty?
+               ""
+             else
+               "if r.respond_to?(:metadata); m = r.metadata || {}; " \
+                 "r.update!(metadata: m.merge(#{SWEPT_SHAS_KEY.inspect} => (m[#{SWEPT_SHAS_KEY.inspect}] || {})" \
+                 ".merge(#{pins.inspect}))); end; "
+             end
   "result = Release.transaction { #{open_ruby}" \
   "slugs = #{slugs.inspect}; " \
   "slugs.each { |s| Release::Conductor.sweep!(Task.find_by!(slug: s)#{train_kwarg}) }; " \
   "r = #{rel_current_or_open}; " \
   "Release::Conductor.validate_members!(r); " \
-  "{ slug: r.slug, state: r.state, swept: slugs, repos: Release::Conductor.repo_plan(r) } }; " \
+  "#{pin_ruby}" \
+  "{ slug: r.slug, state: r.state, swept: slugs, repos: Release::Conductor.repo_plan(r), " \
+  "#{SWEPT_SHAS_KEY}: #{RECORDED_SWEPT_SHAS_RUBY} } }; " \
   "puts(result.to_json)"
 end
 
@@ -3804,8 +3953,12 @@ end
 # resolves the FROZEN ship SHA through resolve_release_ci_verdict exactly as G3
 # resolves the release tip. An unresolvable accepted ref answers false (no credit,
 # normal poll) — never an abort.
-def fast_forward_promote?(path, release_sha)
+def fast_forward_promote?(path, release_sha, repo: nil)
   return false if release_sha.to_s.empty?
+  # THE PIN COUNTS AS THE ACCEPTED HEAD (task release-pins-swept-sha): the promote
+  # fast-forwarded `release` to the swept SHA, and a merge onto `accepted` since then
+  # must not demote that tip to "diverged".
+  return true if repo && swept_pin(repo) == release_sha.to_s
 
   out, ok = sh("git", "-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}", capture: true)
   ok && out.strip == release_sha.to_s
@@ -3826,23 +3979,28 @@ end
 # SHAs DIFFER (the same-SHA case is fast_forward_promote?'s, checked first).
 # Every git fault — an unresolvable ref, a failed rev-parse — answers nil: no
 # credit, normal poll, never an abort.
-def tree_identical_promote(path, release_sha)
+def tree_identical_promote(path, release_sha, repo: nil)
   return nil if release_sha.to_s.empty?
 
   accepted, ok = sh("git", "-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}", capture: true)
   return nil unless ok
 
-  accepted = accepted.strip
-  return nil if accepted.empty? || accepted == release_sha.to_s
+  # The live head first (as before pins), then the swept pin: a batch-PR merge commit
+  # snapshots the pin's tree, and `accepted` may have moved since.
+  pin = repo ? swept_pin(repo) : ""
+  [accepted.strip, pin].reject(&:empty?).uniq.each do |candidate|
+    next if candidate == release_sha.to_s
 
-  release_tree, rel_ok = sh("git", "-C", path, "rev-parse", "#{release_sha}^{tree}", capture: true)
-  accepted_tree, acc_ok = sh("git", "-C", path, "rev-parse", "#{accepted}^{tree}", capture: true)
-  return nil unless rel_ok && acc_ok
+    release_tree, rel_ok = sh("git", "-C", path, "rev-parse", "#{release_sha}^{tree}", capture: true)
+    accepted_tree, acc_ok = sh("git", "-C", path, "rev-parse", "#{candidate}^{tree}", capture: true)
+    next unless rel_ok && acc_ok
 
-  release_tree = release_tree.strip
-  return nil if release_tree.empty? || release_tree != accepted_tree.strip
+    release_tree = release_tree.strip
+    next if release_tree.empty? || release_tree != accepted_tree.strip
 
-  { accepted_sha: accepted, tree: release_tree }
+    return { accepted_sha: candidate, tree: release_tree }
+  end
+  nil
 end
 
 # The verdict pair, persisted: what CI said about the SHA the gate certified.
@@ -4260,7 +4418,7 @@ def resolve_release_ci_verdict(repo, path, sha, budget: ci_poll_timeout)
   credit = nil
   diagnostic = nil
   diverged = false
-  if fast_forward_promote?(path, sha)
+  if fast_forward_promote?(path, sha, repo: repo)
     credit = ci_credit_verdict(repo, sha)
     if credit
       credit[:credited] = "#{credit[:credited]}; fast-forward promote — " \
@@ -4269,7 +4427,7 @@ def resolve_release_ci_verdict(repo, path, sha, budget: ci_poll_timeout)
       diagnostic = "origin/#{RELEASE_BRANCH} IS the #{ACCEPTED_BRANCH} head (fast-forward) but it carries no " \
                    "completed green to credit yet — polling its own run"
     end
-  elsif (promote = tree_identical_promote(path, sha))
+  elsif (promote = tree_identical_promote(path, sha, repo: repo))
     # SAME-TREE: credit an accepted-head green, or WAIT on it while it is in flight —
     # the round-3 fix (credit-waits-accepted-ci). Whatever the outcome, it LOGS why.
     outcome = tree_identical_ci_outcome(repo, sha, promote, deadline: deadline)
@@ -4423,6 +4581,177 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
       abort!(pre_qa_ci_abort(repo, sha, ci, budget))
     end
   end
+end
+
+# --- prepare's QA deploys, concurrently (task release-pins-swept-sha, part 2) ---
+# Prepare used to deploy each app's QA one after another (Turf's qa-server push, its
+# boot poll, then the hub's qa-deploy.yml run and its boot poll) and only then run
+# the Turf devnet gauntlet, which needs nothing but Turf QA. The deploys share
+# nothing, so they now run at once, and the gauntlet starts on Turf's own thread as
+# soon as Turf QA has booted and its post-deploy hooks have run.
+#
+# THE ORDER THAT STAYS. Every deploy and the gauntlet JOIN before prepare decides
+# anything: the boot verdict, the remaining post-deploy hooks, the QA-green flip and
+# the "Assembled" line all come after the join, so nothing reports Assembled while a
+# deploy or the gauntlet is running, and a red anywhere is read before the flip.
+#
+# FAILURE, PER REPO. A deploy that ABORTS (a missing checkout, an unresolvable tip,
+# a red Turf post-deploy hook) is caught on its thread (ParallelDeploy.run_one), the
+# others run to their own end, and prepare then aborts naming every aborted repo. A
+# deploy that does not BOOT is the QA-not-green verdict it always was (exit 3),
+# naming the repo. Every wait is bounded as before: the qa-server push and the
+# Actions watch by their command deadlines, the boot poll by its attempts, the
+# gauntlet by RELEASE_GAUNTLET_DEADLINE.
+#
+# OUTPUT. With more than one app, every line a deploy thread prints is prefixed
+# [<repo>] and also written to that repo's log under a temp dir; one app, or a dry
+# run, prints exactly as before.
+QA_GAUNTLET_REPO = "turf-monster"
+
+# One app's QA deploy and boot poll. Answers { "repo", "qa_app", "qa_url", "sha",
+# "ok" }; aborts (SystemExit) on what used to abort the loop. `smoke_started` is
+# called once the deploy is accepted (it records `qa_smoke started`, once).
+def qa_deploy_app!(group, smoke_started:)
+  repo    = group["repo"]
+  members = group["members"] || []
+  path    = repo_path(repo)
+  qa_app  = group["qa_app"]
+
+  say("")
+  step("repo #{repo} → #{RELEASE_BRANCH} · #{members.size} member(s) · QA #{qa_app}")
+  abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
+
+  # a. fetch the repo's origin. (The merge-forward guard that used to sit here
+  #    ran AFTER the pre-QA gate and inside the primary checkout; it now runs
+  #    at step 4c, before the gate, in a detached workspace —
+  #    merge_forward_release_branches.)
+  sh("git", "-C", path, "fetch", "origin", "--quiet")
+
+  # c. deploy origin/release to the repo's own QA app. The github_actions apps
+  #    (the hub — DevOps v2 Phase 2) dispatch ONE qa-deploy.yml run at the swept
+  #    release tip: qa-deploy.yml is workflow_dispatch, not push:[release], so the
+  #    N PR-merge pushes of the sweep never fire N QA deploys — the conductor
+  #    fires exactly one. Every other app keeps the local qa-server force-push
+  #    (qa-server resolves origin/release in the sibling and pushes its SHA — no
+  #    local checkout/branch-cut). The /up boot poll (c2) gates the flip EITHER way.
+  if (group["prod_deploy"] || {})["strategy"].to_s == "github_actions"
+    tip = ""
+    unless DRY
+      out, tip_ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+      tip = out.strip if tip_ok
+      abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the QA deploy dispatch") if tip.empty?
+    end
+    step("qa deploy: gh workflow run qa-deploy.yml -f sha=#{short(tip)} — GitHub Actions QA deploy of the release tip")
+    qa_ok = dispatch_and_watch("qa-deploy.yml", { "sha" => tip }, chdir: path)
+  else
+    step("qa deploy: #{Release::QaDeployCommand.for(qa_app: qa_app, branch: RELEASE_BRANCH)}")
+    _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/#{RELEASE_BRANCH}",
+                  Release::QaDeployCommand::CONFIRM_FLAG, capture: false)
+  end
+
+  # c2. wait for the dyno to actually BOOT before treating the deploy as done.
+  #     `bin/qa-server deploy` returns once the push is accepted, but a slow dyno
+  #     may still be booting — recording QA + assembling against it is the
+  #     /up-smoke race that left the RC stuck `assembling`. Poll <qa_url>/up
+  #     until 200 (or timeout); a non-200 marks the app NOT ok so step 8 leaves
+  #     the release `assembling` for a clean re-run.
+  smoke_started.call if qa_ok
+  # Route the /up boot poll through the telemetry wrapper (one scope, many
+  # curls → block returns [out, ok]). `.last` keeps qa_ok a BOOLEAN (the raw
+  # [out, ok] array is always truthy and would poison the ok flag downstream);
+  # `&&=` still short-circuits, so a failed earlier step never runs the poll.
+  qa_ok &&= run_test_scope("qa_up_smoke", repo: qa_app) do
+    booted = wait_for_boot(qa_url_for(qa_app))
+    [booted ? "200" : "", booted]
+  end.last
+
+  # d. capture the deployed SHA (origin/release after any merge-forward).
+  sha = ""
+  unless DRY
+    out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+    sha = out.strip if ok
+  end
+  { "repo" => repo, "qa_app" => qa_app, "qa_url" => qa_url_for(qa_app), "sha" => sha, "ok" => (qa_ok || DRY) }
+end
+
+# Deploy every QA app, concurrently when there is more than one, and run Turf's
+# devnet gauntlet on Turf's thread once Turf QA has booted. Answers
+#   { deployed: [per-app hash, in group order], shas: { repo => sha },
+#     gauntlet: the gauntlet outcome when it ran on a thread (else nil),
+#     hooks_ran: [repos whose QA post-deploy hooks already ran], qa_smoke_started: }
+# and aborts, after every thread has finished, when any deploy aborted.
+def run_qa_deploys(qa_groups, rel_slug, repos:, qa_shas:, skip_gauntlet:)
+  outcome = { deployed: [], shas: {}, gauntlet: nil, hooks_ran: [], qa_smoke_started: false }
+  return outcome if qa_groups.empty?
+
+  smoke_lock = Mutex.new
+  smoke_started = lambda do
+    first = smoke_lock.synchronize { outcome[:qa_smoke_started] ? false : (outcome[:qa_smoke_started] = true) }
+    record_release_event(rel_slug, "qa_smoke", "started") if first
+  end
+  # The gauntlet rides Turf's thread only on a live run: a dry run previews it after
+  # the deploys, where it always printed.
+  gauntlet_here = !DRY && Release::DevnetGauntlet.turf_repos(repos.map { |g| g["repo"] }).any?
+  frozen = qa_shas.dup # gems and QA-exempt repos, complete before any thread starts
+  job = lambda do |group|
+    deployed = qa_deploy_app!(group, smoke_started: smoke_started)
+    extra = {}
+    if gauntlet_here && group["repo"] == QA_GAUNTLET_REPO && deployed["ok"]
+      # Turf's own post-deploy hooks first: the gauntlet tests the app as prepare
+      # leaves it, exactly as it did when it ran after every hook.
+      run_post_deploy([group], target: :qa)
+      extra["hooks_ran"] = true
+      extra["gauntlet"] = prepare_devnet_gauntlet!(rel_slug, repos, skip: skip_gauntlet,
+                                                                    shas: frozen.merge(group["repo"] => deployed["sha"]))
+    end
+    deployed.merge(extra)
+  end
+
+  results = if qa_groups.size == 1 || DRY
+              qa_groups.map { |group| job.call(group) }
+            else
+              qa_deploys_in_parallel(qa_groups, rel_slug, &job)
+            end
+
+  results.each do |r|
+    outcome[:deployed] << r.slice("repo", "qa_app", "qa_url", "sha", "ok")
+    outcome[:shas][r["repo"]] = r["sha"]
+    outcome[:hooks_ran] << r["repo"] if r["hooks_ran"]
+    outcome[:gauntlet] = r["gauntlet"] if r.key?("gauntlet")
+  end
+  outcome
+end
+
+# The concurrent batch. Answers one result hash per group, in group order; aborts,
+# after the join, naming every repo whose deploy aborted.
+def qa_deploys_in_parallel(qa_groups, rel_slug, &job)
+  log_dir = Dir.mktmpdir("release-qa-#{rel_slug}-")
+  say("")
+  step("qa deploy: #{qa_groups.size} apps CONCURRENTLY (#{qa_groups.map { |g| g['repo'] }.join(', ')}) — each line " \
+       "is prefixed [<repo>]; per-app logs in #{log_dir}. Turf's devnet gauntlet starts when Turf QA boots.")
+  # Memos the threads write into, made before they start so no two threads race to
+  # create one (a lost `||=` would drop a line of evidence).
+  @prepare_live ||= []
+  answers = {}
+  answers_lock = Mutex.new
+  runs = Release::ParallelDeploy.with_prefixed_output do
+    Release::ParallelDeploy.run(qa_groups, concurrency: Release::ParallelDeploy::MAX_CONCURRENCY, log_dir: log_dir) do |group|
+      answer = job.call(group)
+      answers_lock.synchronize { answers[group["repo"]] = answer }
+    end
+  end
+
+  say("")
+  say("  QA deploys (#{runs.count(&:ok)}/#{runs.size} finished):")
+  Release::ParallelDeploy.summary_lines(runs).each { |line| say(line.sub("✓ live  ", "✓ done  ")) }
+  aborted = Release::ParallelDeploy.failed(runs)
+  if aborted.any?
+    abort!("QA deploy ABORTED in #{aborted.map(&:repo).join(', ')}: " +
+           aborted.map { |r| "#{r.repo} — #{r.error}" }.join("; ") +
+           ". Every other app's deploy ran to its own end (see its log above). Members stay `reviewed` and the " \
+           "release stays `assembling`; fix what the line names, then re-run `bin/release prepare` (it resumes).")
+  end
+  qa_groups.map { |group| answers.fetch(group["repo"]) }
 end
 
 def prepare
@@ -4583,6 +4912,14 @@ def prepare
     step("skip promote for #{row['slug']} — already merged: #{row['merged']} (crash recovery); membership still records")
   end
 
+  # 3b-pin. THE SWEPT PIN (task release-pins-swept-sha; see swept_ref). Read each
+  #     member repo's `accepted` head NOW, after detection and before every guard that
+  #     judges `accepted`, so the guards, the promote, the record and the stale-tree
+  #     gate all describe one tree. A merge onto `accepted` from here on waits for the
+  #     next release instead of failing this one's stale-tree gate.
+  pin_swept_shas!(cands.select { |c| plan["sweep"].include?(c["slug"]) }
+                       .flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] })
+
   # 4. PROMOTE accepted → release (the accepted-ladder's SECOND rung). Review already
   #    merged each feat PR into `accepted` (merged:"accepted"), so the sweep no longer
   #    merges N per-task feat PRs — it lands ALL of `accepted` onto `release`, ONE
@@ -4718,7 +5055,7 @@ def prepare
   result = {}
   if landed.any? && !DRY
     step("record: Release::Conductor.sweep! ×#{landed.size} + repo plan in ONE run (#{landed.join(', ')})")
-    result = conductor(batch_sweep_with_plan_ruby(landed, slug))
+    result = conductor(batch_sweep_with_plan_ruby(landed, slug, swept_shas: swept_shas))
   end
 
   # 4b. No sweep write happened (dry-run, or a pure re-run with nothing new) →
@@ -4727,10 +5064,14 @@ def prepare
     step("record (read-only): Release::Conductor.repo_plan(Release.current)")
     result = conductor(
       "r = #{rel_current}; " \
-      "puts((r ? { slug: r.slug, state: r.state, branch: r.branch, repos: Release::Conductor.repo_plan(r) } : {}).to_json)",
+      "puts((r ? { slug: r.slug, state: r.state, branch: r.branch, repos: Release::Conductor.repo_plan(r), " \
+      "#{SWEPT_SHAS_KEY}: #{RECORDED_SWEPT_SHAS_RUBY} } : {}).to_json)",
       read_only: true
     )
   end
+  # The pins an earlier run of this release recorded, for every repo this run did not
+  # pin itself (a self-healing re-run sweeps nothing, so it pins nothing).
+  adopt_recorded_pins!(result[SWEPT_SHAS_KEY])
 
   rel_slug = result["slug"] || slug || "rel-pending"
 
@@ -4905,8 +5246,11 @@ def prepare
   #    the ship publishes the final.
   deployed = [] # [{repo, qa_app, qa_url, sha, ok}]
   qa_shas = {}  # { repo => sha } deployed to QA
-  qa_smoke_started = false
+  qa_groups = [] # the apps with a QA environment, deployed concurrently below
   record_release_event(rel_slug, "deploy_qa", "started") if app_groups.any?
+  # 6a. THE CHEAP, LOCAL HALF FIRST, on this thread: gems and QA-exempt apps only
+  #     freeze a SHA, so qa_shas is complete (turf-vault's included, which the
+  #     gauntlet's record binds) before any deploy thread starts.
   repos.each do |group|
     repo    = group["repo"]
     members = group["members"] || []
@@ -4927,15 +5271,11 @@ def prepare
       next
     end
 
-    # --- app repo: all branch ops happen in THAT repo via `git -C path` ---
-    path   = repo_path(repo)
-    qa_app = group["qa_app"]
-
     # Eligibility: a repo can be a registered app (passes validate_members!) yet
     # have NO QA env (tax-studio, chain-ops). Warn + skip its QA deploy rather
     # than firing a `bin/qa-server deploy` that has no target — it still ships at
     # `ship` via its prod_deploy adapter; it just can't be QA-reviewed here.
-    unless qa_registered?(qa_app)
+    unless qa_registered?(group["qa_app"])
       say("")
       say("  ⚠ #{repo}: no QA environment registered (qa_environments.yml) — skipping QA deploy")
       # FREEZE IT ANYWAY. A QA-exempt repo (rantly, moms-app) still ships, and the
@@ -4950,67 +5290,19 @@ def prepare
       next
     end
 
-    say("")
-    step("repo #{repo} → #{RELEASE_BRANCH} · #{members.size} member(s) · QA #{qa_app}")
-    abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless DRY || Dir.exist?(path)
-
-    # a. fetch the repo's origin. (The merge-forward guard that used to sit here
-    #    ran AFTER the pre-QA gate and inside the primary checkout; it now runs
-    #    at step 4c, before the gate, in a detached workspace —
-    #    merge_forward_release_branches.)
-    sh("git", "-C", path, "fetch", "origin", "--quiet")
-
-    # c. deploy origin/release to the repo's own QA app. The github_actions apps
-    #    (the hub — DevOps v2 Phase 2) dispatch ONE qa-deploy.yml run at the swept
-    #    release tip: qa-deploy.yml is workflow_dispatch, not push:[release], so the
-    #    N PR-merge pushes of the sweep never fire N QA deploys — the conductor
-    #    fires exactly one. Every other app keeps the local qa-server force-push
-    #    (qa-server resolves origin/release in the sibling and pushes its SHA — no
-    #    local checkout/branch-cut). The /up boot poll (c2) gates the flip EITHER way.
-    if (group["prod_deploy"] || {})["strategy"].to_s == "github_actions"
-      tip = ""
-      unless DRY
-        out, tip_ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
-        tip = out.strip if tip_ok
-        abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the QA deploy dispatch") if tip.empty?
-      end
-      step("qa deploy: gh workflow run qa-deploy.yml -f sha=#{short(tip)} — GitHub Actions QA deploy of the release tip")
-      qa_ok = dispatch_and_watch("qa-deploy.yml", { "sha" => tip }, chdir: path)
-    else
-      step("qa deploy: #{Release::QaDeployCommand.for(qa_app: qa_app, branch: RELEASE_BRANCH)}")
-      _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/#{RELEASE_BRANCH}",
-                    Release::QaDeployCommand::CONFIRM_FLAG, capture: false)
-    end
-
-    # c2. wait for the dyno to actually BOOT before treating the deploy as done.
-    #     `bin/qa-server deploy` returns once the push is accepted, but a slow dyno
-    #     may still be booting — recording QA + assembling against it is the
-    #     /up-smoke race that left the RC stuck `assembling`. Poll <qa_url>/up
-    #     until 200 (or timeout); a non-200 marks the app NOT ok so step 4 leaves
-    #     the release `assembling` for a clean re-run.
-    if qa_ok && !qa_smoke_started
-      record_release_event(rel_slug, "qa_smoke", "started")
-      qa_smoke_started = true
-    end
-    # Route the /up boot poll through the telemetry wrapper (one scope, many
-    # curls → block returns [out, ok]). `.last` keeps qa_ok a BOOLEAN (the raw
-    # [out, ok] array is always truthy and would poison the ok flag downstream);
-    # `&&=` still short-circuits, so a failed earlier step never runs the poll.
-    qa_ok &&= run_test_scope("qa_up_smoke", repo: qa_app) do
-      booted = wait_for_boot(qa_url_for(qa_app))
-      [booted ? "200" : "", booted]
-    end.last
-
-    # d. capture the deployed SHA (origin/release after any merge-forward).
-    sha = ""
-    unless DRY
-      out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
-      sha = out.strip if ok
-    end
-    qa_shas[repo] = sha
-    deployed << { "repo" => repo, "qa_app" => qa_app, "qa_url" => qa_url_for(qa_app),
-                  "sha" => sha, "ok" => (qa_ok || DRY) }
+    qa_groups << group
   end
+
+  # 6b. THE QA DEPLOYS, CONCURRENTLY (task release-pins-swept-sha, part 2). Each app's
+  #     deploy + /up boot poll runs on its own thread (Release::ParallelDeploy, every
+  #     line prefixed [<repo>]), and Turf's devnet gauntlet starts the moment Turf QA
+  #     has booted (after Turf's own post-deploy hooks) instead of after every app.
+  #     Everything joins before the verdict below: nothing reports Assembled while a
+  #     deploy or the gauntlet is still running. See run_qa_deploys.
+  qa_run = run_qa_deploys(qa_groups, rel_slug, repos: repos, qa_shas: qa_shas, skip_gauntlet: skip_gauntlet)
+  deployed = qa_run[:deployed]
+  qa_shas.merge!(qa_run[:shas])
+  qa_smoke_started = qa_run[:qa_smoke_started]
 
   # 7. Record the QA URL + per-repo deployed SHAs on the release (the board's
   #    current-release header links straight to QA; the SHAs give provenance).
@@ -5069,7 +5361,9 @@ def prepare
     #     post_deploy_cmd against its QA app, record the [post-deploy] outcome, and
     #     ABORT prepare on a non-zero exit (so the RC stays `assembling`, members
     #     stay `reviewed`, re-run resumes). dry-run prints the plan; nothing executes.
-    run_post_deploy(repos, target: :qa)
+    # A repo whose hooks already ran on its deploy thread (Turf, ahead of its
+    # gauntlet) is not run twice.
+    run_post_deploy(repos.reject { |g| qa_run[:hooks_ran].include?(g["repo"]) }, target: :qa)
 
     # QA is ACTUALLY green now — every app booted (/up 200) AND the blocking
     # post-deploy hook passed (run_post_deploy abort!s on failure, so REACHING
@@ -5106,12 +5400,23 @@ def prepare
     #     (qa-release.md, "The devnet gauntlet"). Runs the contest-rehearsal
     #     unattended and records devnet_gauntlet on the release, which `ship` reads;
     #     a red step records the fail and aborts here, naming the step.
-    gauntlet_red = %i[red unrecorded].include?(prepare_devnet_gauntlet!(rel_slug, repos, skip: skip_gauntlet, shas: qa_shas))
+    #     It usually ran ALREADY, on Turf's deploy thread as soon as Turf QA booted
+    #     (run_qa_deploys); this runs it here only when no Turf app deployed on this
+    #     run (a turf-vault-only release, a dry run), where it has nothing to overlap.
+    gauntlet = qa_run[:gauntlet] || prepare_devnet_gauntlet!(rel_slug, repos, skip: skip_gauntlet, shas: qa_shas)
+    gauntlet_red = %i[red unrecorded].include?(gauntlet)
   end
 
   # 9. Per-repo summary of what was swept + QA'd.
   say("")
-  say("✓ #{qa_green ? 'Assembled' : 'Prepared (NOT assembled — QA not green)'} #{rel_slug}#{DRY ? ' (DRY RUN — nothing executed)' : ''}.")
+  # A red gauntlet leaves the release assembled on QA (the board's word, qa-release.md
+  # exit 4) but never prints the ✓: the line says it cannot ship.
+  dry_note = DRY ? " (DRY RUN — nothing executed)" : ""
+  if qa_green && gauntlet_red
+    say("✗ Assembled #{rel_slug} on QA, but NOT shippable: the devnet gauntlet is red#{dry_note}.")
+  else
+    say("✓ #{qa_green ? 'Assembled' : 'Prepared (NOT assembled — QA not green)'} #{rel_slug}#{dry_note}.")
+  end
   gem_groups.each do |g|
     g["members"].each { |m| say("  gem #{g['repo']} (#{m['slug']}) — rides the release; published before QA (ship re-verifies idempotently).") }
   end
@@ -5420,7 +5725,8 @@ def refuse_red_accepted!(repos)
   # once exhausted — to learn something GitHub will answer for free. It also inherits
   # the RELEASE_CI_STATUS injection seam, so the meta-tests never touch the network.
   verdicts = repos.to_h do |repo|
-    sha, ok = sh("git", "-C", repo_path(repo), "rev-parse", "origin/#{ACCEPTED_BRANCH}", capture: true)
+    # The swept SHA's verdict (swept_ref): that is the commit the promote lands.
+    sha, ok = sh("git", "-C", repo_path(repo), "rev-parse", swept_ref(repo), capture: true)
     [repo, ok ? ci_verdict(repo, sha.to_s.strip) : { state: :unverified }]
   end
   red = red_accepted_repos(verdicts)
@@ -5459,14 +5765,16 @@ def accepted_workflow_sources(repo)
   # tolerated here.
   return nil unless File.exist?(File.join(path, ".git"))
 
+  # The swept SHA (swept_ref) when prepare pinned one: the tree the promote lands.
+  ref = swept_ref(repo)
   listing, ok = sh("git", "-C", path, "ls-tree", "--name-only",
-                   "origin/#{ACCEPTED_BRANCH}", ".github/workflows/", capture: true)
+                   ref, ".github/workflows/", capture: true)
   return nil unless ok
 
   listing.to_s.lines.map(&:strip).reject(&:empty?)
          .select { |file| file.end_with?(".yml", ".yaml") }
          .to_h do |file|
-           content, cok = sh("git", "-C", path, "show", "origin/#{ACCEPTED_BRANCH}:#{file}", capture: true)
+           content, cok = sh("git", "-C", path, "show", "#{ref}:#{file}", capture: true)
            [file, cok ? content.to_s : ""]
          end
 end
@@ -5644,7 +5952,10 @@ def ladder_ahead_states(repos: release_repo_slugs, require_checkout: false)
 
     sh("git", "-C", path, "fetch", "origin", "--quiet")
     rel = rung_ahead(path, "origin/main", "origin/#{RELEASE_BRANCH}")
-    acc = rung_ahead(path, "origin/#{RELEASE_BRANCH}", "origin/#{ACCEPTED_BRANCH}")
+    # Inside prepare the `accepted` side is the swept pin (swept_ref): commits merged
+    # after the sweep are the next release's, not work this one left behind. Every
+    # other caller (status, the expedite pre-check) has no pin and reads the branch.
+    acc = rung_ahead(path, "origin/#{RELEASE_BRANCH}", swept_ref(repo))
     rel.nil? ? unreadable << { "repo" => repo, "rung" => RELEASE_BRANCH }
              : release_states << { "repo" => repo, "ahead" => rel }
     acc.nil? ? unreadable << { "repo" => repo, "rung" => ACCEPTED_BRANCH }
@@ -5770,7 +6081,7 @@ def refuse_foreign_accepted_work!
 
     _out, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet", capture: true)
     out, ok = sh("git", "-C", path, "log", "--merges", "--format=%h %s",
-                 "origin/#{RELEASE_BRANCH}..origin/#{ACCEPTED_BRANCH}", capture: true)
+                 "origin/#{RELEASE_BRANCH}..#{swept_ref(repo)}", capture: true)
     next unreadable << "#{repo} (git read failed)" unless fetched && ok
 
     stranded[repo] = out.to_s.lines.filter_map do |line|
@@ -5829,13 +6140,23 @@ def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
     step("verify: no three-rung repo in the deploy plan — no `#{ACCEPTED_BRANCH}` rung to fall behind")
     return
   end
+  # WHAT "CARRIES `accepted`" MEANS NOW (task release-pins-swept-sha): `release` must
+  # contain the swept pin — the `accepted` SHA this release's sweep read and recorded
+  # (swept_ref) — not the live branch head. Work merged after the sweep is the next
+  # release's and does not make this tree stale. A repo with NO pin (a release
+  # recorded before pins, a repo no member of this run named and no earlier run
+  # pinned) keeps the full live check: that is the 2026-08-11 orphan case, and the
+  # gate keeps its bite there.
+  pins = scope.to_h { |repo| [repo, swept_pin(repo)] }.reject { |_repo, sha| sha.empty? }
+  pin_note = pins.empty? ? "" : " (the swept SHA#{pins.size == 1 ? '' : 's'}: " \
+                                "#{pins.map { |repo, sha| "#{repo}@#{short(sha)}" }.join(', ')})"
   if DRY
-    step("verify: would check `#{RELEASE_BRANCH}` carries `#{ACCEPTED_BRANCH}` in #{scope.join(', ')} — " \
+    step("verify: would check `#{RELEASE_BRANCH}` carries `#{ACCEPTED_BRANCH}`#{pin_note} in #{scope.join(', ')} — " \
          "a dry run takes no fetch, so the gate runs live only")
     return
   end
 
-  step("verify: `#{RELEASE_BRANCH}` carries `#{ACCEPTED_BRANCH}` in #{scope.join(', ')} (post-promote) — " \
+  step("verify: `#{RELEASE_BRANCH}` carries `#{ACCEPTED_BRANCH}`#{pin_note} in #{scope.join(', ')} (post-promote) — " \
        "the candidate must deploy the tree its record describes")
   git   = ladder_ahead_states(repos: scope, require_checkout: true)
   stale = Release::CleanCheck.ahead_repos(git["accepted"])
@@ -5844,7 +6165,7 @@ def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
   # name are for the refusal text, so the happy path never pays for them.
   stranded = stale.to_h do |s|
     [s["repo"], rung_stranded_commits(repo_path(s["repo"]),
-                                      "origin/#{RELEASE_BRANCH}", "origin/#{ACCEPTED_BRANCH}")]
+                                      "origin/#{RELEASE_BRANCH}", swept_ref(s["repo"]))]
   end
   nwo = stale.to_h { |s| [s["repo"], repo_name_with_owner(s["repo"])] }
 
@@ -5861,10 +6182,16 @@ def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
     repo_nwo: nwo,
     release_slug: rel_slug,
     release_state: rel_state,
-    task_index: task_index
+    task_index: task_index,
+    pinned_shas: pins
   )
   if verdict["fresh"]
     say(verdict["message"])
+    # The newcomers, named so nobody reads them as stranded: they wait.
+    post_sweep_counts(pins.keys).each do |repo, n|
+      say("  ↷ #{repo}: #{n} commit#{n == 1 ? '' : 's'} reached `#{ACCEPTED_BRANCH}` after the sweep " \
+          "pinned #{short(pins[repo])} — not on this release; the next release sweeps #{n == 1 ? 'it' : 'them'}.")
+    end
     return
   end
 
@@ -5872,7 +6199,9 @@ def verify_release_carries_accepted!(repo_groups, rel_slug, rel_state)
   say(verdict["message"])
   behind = (verdict["stale_repos"].map { |s| s["repo"] } +
             verdict["unreadable_repos"].map { |u| u["repo"] }).uniq.join(", ")
-  abort!("stale tree: `#{RELEASE_BRANCH}` does not carry `#{ACCEPTED_BRANCH}` in #{behind} — prepare REFUSED " \
+  swept_clause = pins.empty? ? "" : "work this release SWEPT is missing from it, so "
+  abort!("stale tree: `#{RELEASE_BRANCH}` does not carry `#{ACCEPTED_BRANCH}`#{pin_note} in #{behind} — " \
+         "#{swept_clause}prepare REFUSED " \
          "rather than deploying and reporting `✓ Assembled` over a tree missing that work. Nothing was " \
          "published, gated, or deployed. Land the stranded work as shown above, then re-run `bin/release prepare`.")
 end
@@ -7310,6 +7639,18 @@ def gem_allocation_plan(group, failures)
     return
   end
   tip = out.strip
+  # THE ONE PLACE THE PIN CANNOT HOLD (task release-pins-swept-sha). The version
+  # commit must land ON `accepted` (above), and a ref push can only extend the branch
+  # head, so a gem merge that reached `accepted` after the sweep rides this release
+  # under the version commit. Say so, name the SHAs, and advance the pin, so nothing
+  # downstream reads the tree as the swept one. The window is the minutes between the
+  # sweep and this read, on a gem repo only.
+  pin = swept_pin(repo)
+  if !pin.empty? && pin != tip
+    say("  ⚠ gem #{repo}: `#{ACCEPTED_BRANCH}` moved past the swept #{short(pin)} to #{short(tip)}. The version " \
+        "commit has to land on the branch head, so those commits ride this release; the pin advances to #{short(tip)}.")
+    swept_shas[repo] = tip
+  end
 
   # THE TAG BASELINE STAYS ON `release`, and that is not an oversight: publish tags sit
   # on release-side commits (the publish tags the release tip), which `accepted` does not
@@ -7497,6 +7838,12 @@ def commit_gem_version!(repo, tip, decision, failures)
     unless pushed
       failures << "gem #{repo}: could not push #{version} to origin/#{ACCEPTED_BRANCH} (did #{ACCEPTED_BRANCH} move?)"
       next
+    end
+    # The version commit is now what this release promotes for the gem: advance the
+    # pin to it, or the promote below would land the pre-version tree (swept_ref).
+    unless swept_pin(repo).empty?
+      version_sha, read = git_capture("-C", workspace, "rev-parse", "HEAD")
+      swept_shas[repo] = version_sha.strip if read && !version_sha.strip.empty?
     end
 
     step("  gem #{repo}: allocated #{version} — #{decision.reason}; committed with its lockfile onto " \

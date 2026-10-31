@@ -15,7 +15,8 @@ require "stringio"
 # the operator each time: a GitHub connect timeout 545 seconds into prepare (a re-run
 # resumed it), a ship refused for a Turf release with no devnet gauntlet (a re-run of
 # prepare runs it), a stale-tree refusal when a newcomer landed on `accepted`
-# mid-release (a re-run of bare prepare sweeps it). Alex McRitchie: "think about how to
+# mid-release (since release-pins-swept-sha the newcomer waits for the next release
+# instead; see STALE_TREE). Alex McRitchie: "think about how to
 # systemize so they run seamlessly." This is the scripts, absorbed.
 #
 # THE SHAPE. A state machine over the board's own record, so re-running it resumes:
@@ -71,9 +72,13 @@ module ReleaseCycle
   NETWORK_FAILURE = /^(?=.*github\.com).*(?:Failed to connect to|Timeout was reached|Could not resolve host)/
   NETWORK_WINDOW = 40
 
-  # prepare's stale-tree refusal (bin/release.rb#verify_release_carries_accepted!):
-  # `accepted` moved after the promote, almost always a newcomer reviewed mid-run.
-  # A re-run of bare prepare sweeps it onto the candidate.
+  # prepare's stale-tree refusal (bin/release.rb#verify_release_carries_accepted!).
+  # Since release-pins-swept-sha a newcomer merged onto `accepted` mid-run no longer
+  # causes it: prepare promotes the SHA it swept and the newcomer waits. What is left
+  # is `release` missing work the sweep DID take (or, for a repo with no pin, any
+  # `accepted` work), most often a stamp the board had not derived yet, which the
+  # re-run's fresh detection and fresh pin can heal. ONE re-run, as before: a second
+  # identical refusal stops the cycle with the refusal's own recovery printed.
   STALE_TREE = /stale tree: `release` does not carry `accepted`/
 
   # ship's devnet-gauntlet refusal (Release::DevnetGauntlet.refusal). Its remedy is
@@ -82,7 +87,7 @@ module ReleaseCycle
 
   RETRYABLE = [
     [NETWORK_FAILURE, "a transient GitHub network failure"],
-    [STALE_TREE, "a stale-tree refusal (work landed on `accepted` mid-release)"]
+    [STALE_TREE, "a stale-tree refusal (`release` is missing swept `accepted` work)"]
   ].freeze
 
   module_function
