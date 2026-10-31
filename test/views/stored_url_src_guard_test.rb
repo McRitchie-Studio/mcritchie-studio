@@ -27,13 +27,13 @@ class StoredUrlSrcGuardTest < ActiveSupport::TestCase
     "frame_url" => "alt videos: a signed storage URL minted from an object key",
     "audio_url" => "alt videos: a signed storage URL minted from the source object key",
     "@open_pixel_url" => "broadcast mailer: the tracking route the mailer builds",
+    "@email_asset_host" => "broadcast email views: the mailer's asset host plus a fixed file name",
     "identity.mark_light_uri" => "client kit: Mark.data_uri over the kit's own SVG",
     "identity.mark_dark_uri" => "client kit: Mark.data_uri over the kit's own SVG"
   }.freeze
 
   SITE_ALLOWED = {
     "app/views/layouts/broadcast_email.html.erb" => {
-      "@email_asset_host" => "the mailer's asset host plus a fixed file name",
       "yield :email_hero_image" => "broadcasts/_email_head: @email_asset_host plus a fixed hero file"
     },
     "app/views/stack/index.html.erb" => {
