@@ -12598,7 +12598,7 @@ def cycle
   if DRY
     say("bin/release cycle --dry-run: runs, from the board's current stage, `bin/release prepare` → QA verify " \
         "(each QA app /up and / answer 200) → `bin/release ship --mode cleared --clearance …` → prod verify " \
-        "(/up and / answer 200, each app runs its frozen SHA) → " \
+        "(/up and / answer 200, each app runs its frozen SHA) → the Slack posts (`bin/release announce --post`) → " \
         "`bin/release archive`. A dry run starts none of them; preview each act with its own --dry-run.")
     return 0
   end
