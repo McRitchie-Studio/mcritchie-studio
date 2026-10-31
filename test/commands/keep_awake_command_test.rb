@@ -139,8 +139,9 @@ class KeepAwakeCommandTest < Minitest::Test
 
     _, code = run_cli("status")
     assert_equal 1, code
+    # Notifications are detached spawns: wait for the stub to write them.
+    wait_for { notifications.match?(/may sleep again/) }
     assert_match(/Started by pokemon-a/, notifications)
-    assert_match(/may sleep again/, notifications)
 
     events = run_cli("history", stdout_only: true).first.lines.map { |l| l.split("\t")[1] }
     assert_equal %w[start join release release end], events
@@ -149,12 +150,15 @@ class KeepAwakeCommandTest < Minitest::Test
   def test_integration_an_unrenewed_lease_lapses_and_releases_the_mac
     _, code = run_cli("start", "--by", "pokemon-a", "--reason", "short", "--for", "1s")
     assert_equal 0, code
-    wait_for { caffeinate_pids.any? }
+    # start records the supervisor under the lock, so its pid is readable now.
+    # Do not wait for the caffeinate stub's log row: with a 1s lease the
+    # supervisor can lapse and TERM the stub before the stub writes it.
     supervisor = supervisor_pid
+    refute_nil supervisor
 
     wait_for { !alive?(supervisor) }
-    wait_for { !alive?(caffeinate_pids.first) }
-    assert_match(/pokemon-a's hold lapsed/, notifications)
+    caffeinate_pids.each { |pid| wait_for { !alive?(pid) } }
+    wait_for { notifications.match?(/pokemon-a's hold lapsed/) }
     _, code = run_cli("status")
     assert_equal 1, code
   end
