@@ -305,22 +305,21 @@ module KeepAwake
     notifier = env["MCR_KEEP_AWAKE_NOTIFIER"].to_s.strip
     return if notifier == "0"
 
-    argv = if notifier.empty?
-             script = "display notification #{applescript(message)} with title #{applescript(TITLE)}"
-             [OSASCRIPT, "-e", script]
-           else
-             [notifier, TITLE, message]
-           end
-    pid = Process.spawn(*argv, in: File::NULL, out: File::NULL, err: File::NULL)
+    quiet = { in: File::NULL, out: File::NULL, err: File::NULL }
+    # The title and message travel as osascript ARGUMENTS, never interpolated
+    # into the script, so no text a holder wrote can become AppleScript.
+    pid = if notifier.empty?
+            Process.spawn(OSASCRIPT, "-e", NOTIFY_SCRIPT, TITLE, message.to_s, **quiet)
+          else
+            Process.spawn(notifier, TITLE, message.to_s, **quiet)
+          end
     Process.detach(pid)
     nil
   rescue SystemCallError
     nil
   end
 
-  def applescript(text)
-    "\"#{text.to_s.gsub("\\", "\\\\\\\\").gsub('"', '\\"')}\""
-  end
+  NOTIFY_SCRIPT = "on run argv\ndisplay notification (item 2 of argv) with title (item 1 of argv)\nend run"
 
   def caffeinate_bin(env = ENV)
     override = env["MCR_KEEP_AWAKE_CAFFEINATE"].to_s.strip
