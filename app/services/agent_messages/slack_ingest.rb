@@ -19,12 +19,24 @@ module AgentMessages
   # come back as events, as do the Steffon Admin app's); edits, deletes, joins
   # and every other subtype; a muted channel; an unaddressed message.
   #
-  # ROUTING (AgentMessages::SlackRoutes): a soul NAMED at the start of the text,
-  # else the soul of the thread it replies in, else the app's mention soul for
-  # an @-mention or a DM, else the channel's default soul. A reply in a thread
-  # the mailbox holds whose thread has no soul is kept `unrouted`, as on Discord.
+  # ROUTING (AgentMessages::SlackRoutes): the souls NAMED at the start of the
+  # text (one, or a list: "Avi and Mason, …"), or EVERYONE ("Everyone, …":
+  # every soul served and cleared in the channel), else the soul of the thread
+  # it replies in, else the app's mention soul for an @-mention or a DM, else
+  # the channel's default soul. A reply in a thread the mailbox holds whose
+  # thread has no soul is kept `unrouted`, as on Discord.
   #
-  # CLEARANCE (SlackRoutes#cleared?): a channel may name the souls cleared to
+  # FAN-OUT. A message for several souls is stored as one row per soul, in one
+  # transaction, all in the message's thread: the first-named soul's row keeps
+  # "<channel>:<ts>" (so dedupe and every older row are unchanged), each
+  # other's is "<channel>:<soul>:<ts>" (#sibling_id), and every row carries
+  # envelope.fan = the primary's id, which lets them be claimed side by side
+  # (AgentMessage::FAN_KEY). #call returns the primary. A later, unnamed reply
+  # in that thread goes to the first-named soul that is not held (#thread_row):
+  # Slack threads are flat, so an event never says which reply it answers.
+  #
+  # CLEARANCE (SlackRoutes#cleared?), per soul, so a fan-out holds only the
+  # uncleared souls' rows: a channel may name the souls cleared to
   # answer in it (`souls:` plus the block's core_souls) or admit all (`open:
   # true`). A message routed, by any rule, to a soul not cleared there is stored
   # `held` with the reason on its `held` event, and never answered unless an
@@ -193,7 +205,9 @@ module AgentMessages
     def thread_key(event) = "slack:#{event['channel']}:#{event['thread_ts'].presence || event['ts']}"
 
     # The oldest row the mailbox holds in this message's thread (a reply in a
-    # thread only: thread_ts set and not the message itself), or nil.
+    # thread only: thread_ts set and not the message itself), or nil. A routed
+    # row before an unrouted one and one not held before a held one, so after a
+    # fan-out the follow-up goes to the first-named soul that may answer.
     def thread_row(event)
       return nil if event["thread_ts"].blank? || event["thread_ts"] == event["ts"]
 

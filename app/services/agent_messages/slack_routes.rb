@@ -1,7 +1,8 @@
 module AgentMessages
   # The `slack:` block of config/agent_routes.yml: which workspace is read, the
-  # app's own bot user, the owner's Slack user, and which soul a Slack message
-  # is for, and which souls may answer in which channel (CLEARANCE, #cleared?)
+  # app's own bot user, the owner's Slack user, which souls a Slack message is
+  # for (one or several: #addressed, #everyone?), and which souls may answer in
+  # which channel (CLEARANCE, #cleared?)
   # (docs/agents/system/agent-message-loop.md, "Slack"). Pure: it reads
   # text and ids and touches nothing. The THREAD rule needs the database, so
   # AgentMessages::SlackIngest applies it between #named and #mention_soul.
