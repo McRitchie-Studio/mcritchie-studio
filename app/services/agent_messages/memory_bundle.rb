@@ -319,7 +319,7 @@ module AgentMessages
                           .where("agent_messages.id < ?", @message.id)
                           .where.not(status: UNSEEN_STATUSES)
       fan = @message.envelope.to_h[AgentMessage::FAN_KEY].presence
-      fan ? scope.where("agent_messages.envelope->>'#{AgentMessage::FAN_KEY}' IS DISTINCT FROM ?", fan) : scope
+      fan ? scope.where("agent_messages.envelope->>'fan' IS DISTINCT FROM ?", fan) : scope
     end
 
     # Oldest first, the newest THREAD_TURNS.

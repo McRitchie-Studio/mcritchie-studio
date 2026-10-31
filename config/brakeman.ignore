@@ -165,13 +165,13 @@
     {
       "warning_type": "SQL Injection",
       "warning_code": 0,
-      "fingerprint": "b2bc3e00a078ad4ce6bd101edc23f18d47f5371848597e00b08a7e2746357b09",
+      "fingerprint": "3e9556c06c4bf4e5002f1464317082528edd998cdf8fee75f60d9fac30a726a3",
       "check_name": "SQL",
       "message": "Possible SQL injection",
       "file": "app/models/agent_message.rb",
-      "line": 180,
+      "line": 198,
       "link": "https://brakemanscanner.org/docs/warning_types/sql_injection/",
-      "code": "where(:soul_slug => soul).where(\"agent_messages.status = 'received' OR (agent_messages.status = 'claimed' AND agent_messages.lease_expires_at < :now AND agent_messages.attempts < :cap)\", :now => now, :cap => 3).where(answerers.sql_guard.call(\"agent_messages\")).where(\"NOT EXISTS (SELECT 1 FROM agent_messages older\\n            WHERE older.thread_key = agent_messages.thread_key\\n              AND older.id < agent_messages.id\\n              AND older.status IN ('received', 'claimed')\\n              AND #{answerers.sql_guard.call(\"older\")})\\n\".squish)",
+      "code": "where(:soul_slug => soul).where(\"agent_messages.status = 'received' OR (agent_messages.status = 'claimed' AND agent_messages.lease_expires_at < :now AND agent_messages.attempts < :cap)\", :now => now, :cap => 3).where(answerers.sql_guard.call(\"agent_messages\")).where(\"NOT EXISTS (SELECT 1 FROM agent_messages older\\n            WHERE older.thread_key = agent_messages.thread_key\\n              AND older.id < agent_messages.id\\n              AND older.status IN ('received', 'claimed')\\n              AND (older.envelope->>'fan' IS NULL\\n                   OR older.envelope->>'fan' IS DISTINCT FROM agent_messages.envelope->>'fan')\\n              AND #{answerers.sql_guard.call(\"older\")})\\n\".squish)",
       "render_path": null,
       "location": {
         "type": "method",

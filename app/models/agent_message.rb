@@ -193,8 +193,8 @@ class AgentMessage < ApplicationRecord
                           WHERE older.thread_key = agent_messages.thread_key
                             AND older.id < agent_messages.id
                             AND older.status IN ('received', 'claimed')
-                            AND (older.envelope->>'#{FAN_KEY}' IS NULL
-                                 OR older.envelope->>'#{FAN_KEY}' IS DISTINCT FROM agent_messages.envelope->>'#{FAN_KEY}')
+                            AND (older.envelope->>'fan' IS NULL
+                                 OR older.envelope->>'fan' IS DISTINCT FROM agent_messages.envelope->>'fan')
                             AND #{answerable.call('older')})
             SQL
             .where(<<~SQL.squish)
