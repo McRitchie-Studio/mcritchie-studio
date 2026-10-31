@@ -9,7 +9,7 @@
     strip is relative so each swatch's sr-only status (absolutely positioned) is clipped with it, not left hanging
     past the page's edge. %>
 <% compact = local_assigns.fetch(:compact, false) %>
-<ul class="<%= compact ? 'relative grid grid-flow-col grid-rows-4 auto-cols-[6.25rem] gap-x-2 gap-y-1 overflow-x-auto overscroll-x-contain pb-1' : 'grid grid-cols-2 sm:grid-cols-4 gap-3' %>" data-test="logo-palette" data-brand="<%= kit.brand %>" aria-label="Colours">
+<ul class="<%= compact ? 'relative grid grid-flow-col grid-rows-4 auto-cols-[6rem] gap-x-1.5 gap-y-1 overflow-x-auto overscroll-x-contain pb-1' : 'grid grid-cols-2 sm:grid-cols-4 gap-3' %>" data-test="logo-palette" data-brand="<%= kit.brand %>" aria-label="Colours">
   <% kit.palette.each do |swatch| %>
     <li class="min-w-0" data-test="logo-swatch" data-hex="<%= swatch.hex %>">
       <button type="button"

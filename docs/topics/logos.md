@@ -935,7 +935,7 @@ table opens on it again.
 - Each link's accessible name is the server's (`Download: <logo>`, with `, kit choice` for a saved choice), and the
   script puts the format in front of it (`Download PNG, 800 px wide: <logo>, kit choice`), so the saved cue is kept.
 
-Under the brand's name, right of its downloads (stacked below them on a phone), the row has one chip per app the kit feeds, then one for its Google marketing kit
+Under the brand's name, right of its slug and downloads (stacked below them on a phone), the row has one chip per app the kit feeds, then one for its Google marketing kit
 ([which apps have the kit](#which-apps-have-the-kit)): the app's emoji or the Google Drive mark, the name (cut to the
 chip) and a status mark on the right: a check for **Applied** or **Up to date**, an amber triangle for **Kit
 changed**, a hollow ring for **Not applied** or **No Google kit** (`logos/_kit_chips`, `BrandKitStatusHelper`). The

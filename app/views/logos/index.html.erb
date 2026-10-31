@@ -60,11 +60,13 @@
             <tr class="block xl:table-row" data-test="logo-brand-row" data-brand="<%= logo.brand %>">
               <th scope="row" class="block xl:table-cell py-3 xl:pr-4 text-left align-top">
                 <%= link_to name, logo_brand_path(logo.brand, logo_page_params), class: "font-bold text-primary hover:underline" %>
-                <p class="text-3xs text-muted font-mono font-normal"><%= logo.brand %></p>
-                <%# Two sub-columns under the name: the downloads on the left, the kit chips on the right; stacked on a
-                    phone, downloads first. %>
-                <div class="flex flex-col sm:flex-row sm:items-start gap-x-3 gap-y-1.5 pt-1.5" data-test="logo-brand-subcolumns">
-                  <div class="shrink-0"><%= render "index_downloads", samples:, kit: @kits[logo.brand] %></div>
+                <%# Two sub-columns under the name: the slug and downloads on the left, the kit chips on the right from
+                    the slug's row; stacked on a phone, slug and downloads first. %>
+                <div class="flex flex-col sm:flex-row sm:items-start gap-x-3 gap-y-1.5" data-test="logo-brand-subcolumns">
+                  <div class="shrink-0 space-y-1">
+                    <p class="text-3xs text-muted font-mono font-normal" data-test="logo-brand-slug"><%= logo.brand %></p>
+                    <%= render "index_downloads", samples:, kit: @kits[logo.brand] %>
+                  </div>
                   <div class="min-w-0 flex-1 font-normal sm:max-w-60" data-test="logo-kit-apps">
                     <%= render "kit_chips", brand: logo.brand, links: @app_links.fetch(logo.brand, []), marketing_kit: @marketing_kits[logo.brand], kit: @kits[logo.brand] %>
                   </div>
