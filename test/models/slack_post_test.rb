@@ -22,4 +22,10 @@ class SlackPostTest < ActiveSupport::TestCase
     assert row.call("failed", "#{SlackPost::AMBIGUOUS} timeout").final?
     refute row.call("failed", "not_in_channel: refused").final?
   end
+
+  test "[unit] the medium CHECK lists exactly SlackPost::MEDIA, and a row defaults to slack" do
+    assert_equal SlackPost::MEDIA.sort, check_values("slack_posts_medium_known")
+    assert_equal "slack", SlackPost.new.medium
+    refute SlackPost.new(medium: "discord", channel_id: "C1", kind: "post", status: "posted").valid?
+  end
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_31_040000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_31_120100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2286,6 +2286,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_31_040000) do
     t.datetime "created_at", null: false
     t.string "idempotency_key"
     t.string "kind", null: false
+    t.string "medium", default: "slack", null: false
     t.string "reason"
     t.string "release_slug"
     t.string "soul_slug"
@@ -2298,6 +2299,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_31_040000) do
     t.index ["idempotency_key"], name: "index_slack_posts_on_idempotency_key", unique: true
     t.index ["release_slug"], name: "index_slack_posts_on_release_slug"
     t.check_constraint "kind::text = ANY (ARRAY['post'::character varying::text, 'reply'::character varying::text, 'release'::character varying::text])", name: "slack_posts_kind_known"
+    t.check_constraint "medium::text = ANY (ARRAY['slack'::character varying::text, 'teams'::character varying::text])", name: "slack_posts_medium_known"
     t.check_constraint "status::text = ANY (ARRAY['sending'::character varying::text, 'posted'::character varying::text, 'suppressed'::character varying::text, 'failed'::character varying::text])", name: "slack_posts_status_known"
   end
 
@@ -2836,6 +2838,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_31_040000) do
     t.index ["slug"], name: "index_teams_on_slug", unique: true
     t.index ["sport", "league"], name: "index_teams_on_sport_and_league"
     t.index ["updated_at"], name: "index_teams_on_updated_at"
+  end
+
+  create_table "teams_conversations", force: :cascade do |t|
+    t.string "bot_id"
+    t.string "conversation_id", null: false
+    t.string "conversation_type"
+    t.datetime "created_at", null: false
+    t.string "installed_by_aad_object_id"
+    t.datetime "last_activity_at"
+    t.string "name"
+    t.string "service_url", null: false
+    t.string "status", default: "installed", null: false
+    t.string "team_id"
+    t.string "team_name"
+    t.string "tenant_id"
+    t.datetime "updated_at", null: false
+    t.index ["conversation_id"], name: "index_teams_conversations_on_conversation_id", unique: true
+    t.index ["team_id"], name: "index_teams_conversations_on_team_id"
+    t.check_constraint "status::text = ANY (ARRAY['installed'::character varying::text, 'removed'::character varying::text])", name: "teams_conversations_status_known"
   end
 
   create_table "theme_settings", force: :cascade do |t|
