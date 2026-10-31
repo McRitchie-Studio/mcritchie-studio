@@ -1,0 +1,37 @@
+<%# Four-prong style "wrapped" (task cyvasse-four-prong-emails): one giant stat
+    per colour card. Each card needs its own stat; a reader with no history
+    gets the account card. No merge field is required
+    (Broadcasts::CyvasseFour). One tracked play link. %>
+<% play_url = broadcast_link(:play, Broadcast::TEMPLATE_LINKS["cyvasse_wrapped"]["play"]) %>
+<% history = @merge_fields.nil? || Broadcasts::CyvasseReturn.history?(@merge_fields) %>
+<% named = @merge_fields.nil? || Broadcasts::CyvasseReturn.username?(@merge_fields) %>
+<% year = @merge_fields ? Broadcasts::CyvasseYourGames.joined_year(@merge_fields) : "{joined_on}" %>
+<% wins = merge_field(:wins, fallback: "") %>
+<% losses = merge_field(:losses, fallback: "") %>
+<% rank = merge_field(:all_time_rank, fallback: "") %>
+<% rate = @merge_fields ? Broadcasts::CyvasseFour.win_rate(@merge_fields) : "{win_rate}" %>
+<% who = named ? "#{merge_field(:username).upcase}, YOUR CYVASSE YEARS" : "YOUR CYVASSE YEARS" %>
+<% content_for :email_title, "Your Cyvasse years" %>
+<% content_for :preheader, @broadcast&.preview_text.presence || "The numbers you left on the board." %>
+<% if history %>
+  <% label = who %>
+  <% if year.present? %>
+    <%= render "broadcasts/blocks/stat_card", bg: "#16123c", color: "#ffffff", label: label, big: year, note: "The year you joined." %>
+    <% label = "YOU PLAYED" %>
+  <% end %>
+  <%= render "broadcasts/blocks/stat_card", bg: "#8e82fe", color: "#16123c", label: label, big: merge_field(:games), note: "games on the old board." %>
+  <% if rate.present? && wins.present? && losses.present? %>
+    <%= render "broadcasts/blocks/stat_card", bg: "#ffa800", color: "#16123c", label: "YOU WON", big: @merge_fields ? "#{rate}%" : rate, note: "#{wins} wins, #{losses} losses." %>
+  <% end %>
+  <% if rank.present? %>
+    <%= render "broadcasts/blocks/stat_card", bg: "#c8324b", color: "#ffffff", label: "ALL-TIME RANK", big: "##{rank}", note: "Still yours. For now." %>
+  <% end %>
+<% else %>
+  <%= render "broadcasts/blocks/stat_card", bg: "#16123c", color: "#ffffff", label: who, big: "1", note: "Account waiting for you on the rebuilt game." %>
+<% end %>
+<tr>
+  <td style="background-color:#16123c;padding:36px 24px;text-align:center;">
+    <div style="font-size:30px;line-height:1.15;font-weight:900;color:#ffffff;padding-bottom:20px;">Chapter two starts<br>with one game.</div>
+    <%= render "broadcasts/blocks/cta", url: play_url, label: "PLAY NOW", bg: "#ffa800", color: "#16123c" %>
+  </td>
+</tr>

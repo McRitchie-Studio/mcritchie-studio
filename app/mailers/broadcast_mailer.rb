@@ -26,7 +26,7 @@ class BroadcastMailer < ApplicationMailer
     list_unsubscribe_headers(@unsubscribe_url)
 
     mail(to: contact.email, subject: @broadcast.subject_for(@merge_fields)) do |format|
-      format.html { render template: "broadcasts/#{@broadcast.template_key}", layout: "broadcast_email" }
+      format.html { render template: "broadcasts/#{@broadcast.template_key}", layout: @broadcast.email_layout }
     end
   end
 

@@ -1,0 +1,43 @@
+<%# Four-prong style "pick" (task cyvasse-four-prong-emails): one question, and
+    each answer is its own tracked link, so the click report shows which piece
+    readers chose. No merge field is required (Broadcasts::CyvasseFour). %>
+<% links = Broadcast::TEMPLATE_LINKS["cyvasse_pick"] %>
+<% named = @merge_fields.nil? || Broadcasts::CyvasseReturn.username?(@merge_fields) %>
+<% history = @merge_fields.nil? || Broadcasts::CyvasseReturn.history?(@merge_fields) %>
+<% content_for :email_title, "One question" %>
+<% content_for :email_page_bg, "#efe7d6" %>
+<% content_for :preheader, @broadcast&.preview_text.presence || "Which piece do you trust with your king?" %>
+<tr>
+  <td style="background-color:#fbf6ea;padding:26px 24px 8px;text-align:center;font-family:Georgia,'Times New Roman',serif;">
+    <div style="font-size:15px;letter-spacing:5px;font-weight:700;color:#7a2e1d;">CYVASSE</div>
+    <div style="padding-top:24px;font-size:44px;line-height:1.08;font-weight:700;color:#2a2118;">One question<%= ", #{merge_field(:username)}" if named %>.</div>
+    <div style="padding-top:14px;font-size:20px;line-height:1.4;color:#5a4c3c;">Which piece do you trust with your king?</div>
+  </td>
+</tr>
+<tr>
+  <td style="background-color:#fbf6ea;padding:20px 18px 6px;font-family:Georgia,'Times New Roman',serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <% Broadcasts::CyvasseFour::PICK_ANSWERS.each_slice(2) do |pair| %>
+        <tr>
+          <% pair.each do |key, (name, tagline)| %>
+            <td width="50%" style="padding:6px;">
+              <a href="<%= broadcast_link(key.to_sym, links[key]) %>" target="_blank" style="display:block;background-color:#ffffff;border:2px solid #2a2118;border-radius:12px;text-decoration:none;text-align:center;padding:14px 8px;color:#2a2118;">
+                <img src="<%= @email_asset_host %>/email/cyvasse_piece_<%= key %>.png" width="110" alt="" style="display:block;margin:0 auto;border:0;">
+                <div style="padding-top:8px;font-size:19px;font-weight:700;"><%= name %></div>
+                <div style="font-size:14px;font-style:italic;color:#7a2e1d;"><%= tagline %></div>
+              </a>
+            </td>
+          <% end %>
+        </tr>
+      <% end %>
+    </table>
+  </td>
+</tr>
+<tr><td style="background-color:#fbf6ea;padding:12px 28px 26px;text-align:center;font-family:Georgia,'Times New Roman',serif;font-size:15px;line-height:1.5;color:#5a4c3c;">Tap one, then prove it on the board.</td></tr>
+<tr><td style="background-color:#fbf6ea;padding:0 34px;"><div style="border-top:1px solid #cdbfa6;font-size:0;line-height:0;">&nbsp;</div></td></tr>
+<tr>
+  <td style="background-color:#fbf6ea;padding:24px 34px 34px;font-family:Georgia,'Times New Roman',serif;font-size:17px;line-height:1.6;color:#2a2118;">
+    I built Cyvasse in 2014, and this fall I rebuilt it from scratch.<%= " Your #{merge_count(:games, 'game')} came with it." if history %><br><br>
+    Tell me if it&rsquo;s any good. Replies come to me.<br><br>&mdash; Alex
+  </td>
+</tr>
