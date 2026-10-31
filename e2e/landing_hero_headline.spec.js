@@ -4,7 +4,10 @@
 // Plan]". The middle word cycles; at a phone, the lg edge and a desktop each word
 // sits whole inside its box, centred, the headline never reaches the subtitle,
 // the headline holds one height through the cycle (a word that fits where another
-// wraps must not reflow the page), and the page never scrolls sideways.
+// wraps must not reflow the page), and the page never scrolls sideways. The box
+// fits each word, so the word must also stay whole WHILE it drops in: a box that
+// widened only after a long word entered clipped "Workflow" to "Workflov" for its
+// first 0.4s (Carl's review of PR #2352).
 // @qa-readonly: it only reads the signed-out landing page.
 const { test, expect } = require("@playwright/test");
 const { blockThirdPartyRequests, watchPageErrors, VISITOR } = require("./helpers");
@@ -22,7 +25,32 @@ async function checkHeadline(page, width) {
   await expect(page.locator("h1.hero-title")).toContainText("Built Right");
 
   const seen = {};
-  for (const word of ["Workflow", "Idea", "Plan"]) {
+  // Every frame of every entry, sampled in the page for the first 600ms after a
+  // word goes active: its text never runs past either edge of the box.
+  await page.evaluate(() => {
+    window.__heroClips = [];
+    const box = document.querySelector(".dropping-texts");
+    new MutationObserver((records) => {
+      for (const r of records) {
+        if (!r.target.classList.contains("drop-active")) continue;
+        const span = r.target;
+        const start = performance.now();
+        const sample = () => {
+          const range = document.createRange();
+          range.selectNodeContents(span);
+          const text = range.getBoundingClientRect();
+          const b = box.getBoundingClientRect();
+          const over = Math.max(b.left - text.left, text.right - b.right);
+          if (over > 1) window.__heroClips.push(`${span.textContent} ${Math.round(over)}px at ${Math.round(performance.now() - start)}ms`);
+          if (performance.now() - start < 600) requestAnimationFrame(sample);
+        };
+        sample();
+      }
+    }).observe(box, { subtree: true, attributes: true, attributeFilter: ["class"] });
+  });
+
+  // Idea, Plan, then Workflow again: the short-to-long entry is the one that clipped.
+  for (const word of ["Idea", "Plan", "Workflow"]) {
     const active = page.locator(".dropping-texts > span.drop-active", { hasText: word });
     await expect(active).toHaveCount(1, { timeout: 8_000 });
     // The box eases to the word's width (0.4s) after it drops in.
@@ -51,6 +79,9 @@ async function checkHeadline(page, width) {
     expect(m.clears, `${word}: the headline clears the subtitle`).toBe(true);
     expect(m.sideways, `${word}: no sideways scroll`).toBe(false);
   }
+  // Let the last entry's 600ms of samples finish.
+  await page.waitForTimeout(100);
+  expect(await page.evaluate(() => window.__heroClips), "no word is clipped while it drops in").toEqual([]);
   const heights = new Set(Object.values(seen).map((m) => m.h1Height));
   expect([...heights], "the headline holds one height through the cycle").toHaveLength(1);
   expect(pageErrors, report()).toEqual([]);
@@ -58,5 +89,6 @@ async function checkHeadline(page, width) {
 
 test("at 320px every headline word fits its box and clears the subtitle", async ({ page }) => checkHeadline(page, 320));
 test("at 375px every headline word fits its box and clears the subtitle", async ({ page }) => checkHeadline(page, 375));
+test("at 768px every headline word fits its box and clears the subtitle", async ({ page }) => checkHeadline(page, 768));
 test("at 1024px every headline word fits its box and clears the subtitle", async ({ page }) => checkHeadline(page, 1024));
 test("at 1280px every headline word fits its box and clears the subtitle", async ({ page }) => checkHeadline(page, 1280));
