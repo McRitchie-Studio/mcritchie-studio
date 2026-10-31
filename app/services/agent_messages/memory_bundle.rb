@@ -309,11 +309,17 @@ module AgentMessages
       person_scope.order(created_at: :desc, id: :desc).limit(FETCH_LIMIT).with_attached_attachments.to_a.reverse
     end
 
+    # A fan's siblings (AgentMessage::FAN_KEY: the same Slack message stored for
+    # another soul) are left out: their text IS this message, and whether a
+    # sibling has answered yet is a race, so the thread layer would differ run
+    # to run.
     def thread_scope
-      AgentMessage.where(thread_key: @message.thread_key, channel: @message.channel,
-                         channel_ref: @message.channel_ref, guild_id: @message.guild_id)
-                  .where("agent_messages.id < ?", @message.id)
-                  .where.not(status: UNSEEN_STATUSES)
+      scope = AgentMessage.where(thread_key: @message.thread_key, channel: @message.channel,
+                                 channel_ref: @message.channel_ref, guild_id: @message.guild_id)
+                          .where("agent_messages.id < ?", @message.id)
+                          .where.not(status: UNSEEN_STATUSES)
+      fan = @message.envelope.to_h[AgentMessage::FAN_KEY].presence
+      fan ? scope.where("agent_messages.envelope->>'#{AgentMessage::FAN_KEY}' IS DISTINCT FROM ?", fan) : scope
     end
 
     # Oldest first, the newest THREAD_TURNS.

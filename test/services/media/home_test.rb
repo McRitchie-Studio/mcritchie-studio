@@ -105,7 +105,7 @@ class MediaHomeTest < ActiveSupport::TestCase
     refute Media.home(purpose: :reports, app: "turf_monster", config: shipped).channel?, "a report with no row stays not_configured"
     assert shipped.enabled?("slack"), "enabled, but no purpose, app or soul names it until the cutover (card 6)"
     assert_equal %w[SLACK_BOT_TOKEN SLACK_SIGNING_SECRET], shipped.medium("slack").values_at("token_env", "signing_secret_env")
-    assert_equal %w[C0CD8ETBZBM C0CDEG43ECS C0CDJCN4L92], %w[agents ops releases].map { |name| shipped.channel("slack", name)["id"] }
+    assert_equal %w[C0CD8ETBZBM C0CDEG43ECS C0CDJCN4L92], %w[general ops releases].map { |name| shipped.channel("slack", name)["id"] }
     %w[purposes apps souls].each do |level|
       YAML.safe_load_file(Media::Config::PATH)[level].each do |name, entry|
         assert_equal "discord", entry["medium"], "#{level}.#{name} stays on Discord until the cutover"

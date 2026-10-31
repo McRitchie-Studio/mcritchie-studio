@@ -46,6 +46,12 @@ class AgentMessage < ApplicationRecord
   # mention is Slack's: the app itself was @-mentioned (or DMed) with no soul named.
   ROUTED_BY = %w[user role thread default none alias name chat mention].freeze
   REPLY_STATUSES = %w[queued posted skipped failed].freeze
+  # FAN-OUT (AgentMessages::SlackIngest): one Slack message addressed to several
+  # souls ("Avi and Mason, …", "Everyone, …") is stored as one row per soul, all
+  # in the message's thread, each carrying envelope[FAN_KEY] = the primary row's
+  # external_id. Rows of one fan are SIBLINGS: the thread rule in .claimable
+  # lets them be claimed side by side instead of one after another.
+  FAN_KEY = "fan".freeze
 
   # How long a claim holds before another worker may take the message. A
   # heartbeat run (one read-only action plus one headless Claude call, capped at
@@ -150,6 +156,13 @@ class AgentMessage < ApplicationRecord
   # "No older open message" refuses that, because the locked row is still older
   # and still open. It also yields at most one active claim per thread for free.
   #
+  # The one exception is a fan's SIBLINGS (FAN_KEY): rows stored from the same
+  # Slack message for different souls never wait on each other, so "Everyone, …"
+  # is answered by up to the dispatcher's cap at once rather than in series
+  # (twelve answers one after another would trip the floor alert's 10-minute
+  # wait). A later message in the thread still waits for every older open
+  # sibling, so the conversation stays ordered.
+  #
   # The same rule holds per PERSON per soul (AgentMessages::MemoryBundle): a
   # person's second message to a soul waits for their first to be answered, on
   # any channel and even when the two are not a reply chain, so the second
@@ -180,6 +193,8 @@ class AgentMessage < ApplicationRecord
                           WHERE older.thread_key = agent_messages.thread_key
                             AND older.id < agent_messages.id
                             AND older.status IN ('received', 'claimed')
+                            AND (older.envelope->>'#{FAN_KEY}' IS NULL
+                                 OR older.envelope->>'#{FAN_KEY}' IS DISTINCT FROM agent_messages.envelope->>'#{FAN_KEY}')
                             AND #{answerable.call('older')})
             SQL
             .where(<<~SQL.squish)

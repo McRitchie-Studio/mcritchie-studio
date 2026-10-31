@@ -13,7 +13,7 @@ class SlackEventsLoopTest < ActionDispatch::IntegrationTest
 
   SECRET = "test-slack-signing-secret".freeze
   TEAM = "T0CC9DQ9NAK".freeze      # the shipped slack.team_id
-  AGENTS = "C0CD8ETBZBM".freeze    # #agents
+  AGENTS = "C0CD8ETBZBM".freeze    # #general (was #agents-general)
   OWNER = "U0CCSMUMQJV".freeze     # Alex McRitchie (slack.owner_user_id)
   APP_BOT = "U0CE93ACBA4".freeze   # McRitchie Agents
 

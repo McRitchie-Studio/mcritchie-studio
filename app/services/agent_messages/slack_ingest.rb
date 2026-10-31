@@ -73,10 +73,32 @@ module AgentMessages
 
     # The routing decision alone (pure but for the thread lookup), for tests and
     # for the timeline's `routed` event.
-    def route(event)
+    def route(event) = routes_for(event).first
+
+    # Every routing decision for the event: one Router::Result per soul it is
+    # for, the first being the primary row's. Several only when the text opens
+    # by addressing several souls by name, or everyone.
+    def routes_for(event)
       text = event["text"].to_s
-      named = @routes.named(text)
-      return Router::Result.new(soul: named, routed_by: "name", detail: { "matched" => "name" }) if named
+      if @routes.everyone?(text)
+        souls = @routes.everyone_in(event["channel"])
+        left_out = @routes.routed_souls - souls
+        detail = { "matched" => "everyone", "fan" => souls.presence, "not_cleared" => left_out.presence }.compact
+        return souls.map { |soul| Router::Result.new(soul: soul, routed_by: "name", detail: detail) } if souls.any?
+      end
+
+      named = @routes.addressed(text)
+      if named.any?
+        detail = { "matched" => "name", "fan" => (named if named.length > 1) }.compact
+        return named.map { |soul| Router::Result.new(soul: soul, routed_by: "name", detail: detail) }
+      end
+
+      [ single_route(event, text) ]
+    end
+
+    private
+
+    def single_route(event, text)
 
       parent = thread_row(event)
       if parent&.soul_slug.present?
@@ -94,8 +116,6 @@ module AgentMessages
       Router::Result.new(soul: nil, routed_by: "none", detail: { "reason" => "no soul named, no thread, no mention and no channel default" })
     end
 
-    private
-
     def inbound?(event)
       return false unless EVENT_TYPES.include?(event["type"])
       return false unless MESSAGE_SUBTYPES.include?(event["subtype"])
@@ -107,35 +127,53 @@ module AgentMessages
     end
 
     def store(event, team_id, external_id, event_id)
-      result = route(event)
-      parent = result.routed_by == "thread" ? nil : thread_row(event)
-      return nil unless result.routed? || parent
+      results = routes_for(event)
+      primary = results.first
+      parent = primary.routed_by == "thread" ? nil : thread_row(event)
+      return nil unless primary.routed? || parent
 
       author_ref = event["user"].to_s
       name = author_name(author_ref)
+      fan = results.length > 1 ? external_id : nil
       AgentMessage.transaction(requires_new: true) do
         person = AgentPerson.resolve!(platform: CHANNEL, external_id: author_ref, display_name: name)
-        unserved = result.routed? && !@routes.answers?(result.soul)
-        uncleared = result.routed? && !@routes.cleared?(event["channel"], result.soul)
-        unanswered = result.routed? && !@answerers.allowed?(person)
-        held = unserved || uncleared || unanswered
-        message = AgentMessage.create!(
-          channel: CHANNEL, external_id: external_id, guild_id: team_id, channel_ref: event["channel"].to_s,
-          thread_key: thread_key(event), author_ref: author_ref, author_name: name, person: person,
-          content: event["text"].to_s, mentions: { "users" => mentioned_users(event["text"]) },
-          soul_slug: result.soul, routed_by: result.routed_by, status: status_for(result, held),
-          sent_at: Time.zone.at(event["ts"].to_f),
-          envelope: { "channel_type" => channel_type(event), "event_id" => event_id.presence,
-                      "thread_ts" => event["thread_ts"].presence }.compact
-        )
-        message.record!("received", actor: "slack-events", detail: { "author" => message.author_name })
-        message.record!(result.routed? ? "routed" : "unrouted", actor: "router",
-                        detail: result.detail.merge("soul" => result.soul, "routed_by" => result.routed_by).compact)
-        if held
-          record_held(message, event, result, person, unserved: unserved, uncleared: uncleared, unanswered: unanswered)
+        rows = results.each_with_index.map do |result, index|
+          store_one(event, team_id, index.zero? ? external_id : sibling_id(event, result.soul), event_id,
+                    result, person, name, fan)
         end
-        message
+        rows.first
       end
+    end
+
+    # FAN-OUT KEYS. The primary (first-named) row keeps "<channel>:<ts>", so a
+    # single-soul message, every row stored before fan-out, and the dedupe lookup
+    # in #call are unchanged; each further soul's row is "<channel>:<soul>:<ts>".
+    # The ts stays the LAST segment, which Media::Slack#message_url reads. All of
+    # a message's rows are written in one transaction, so a retry or the
+    # app_mention twin finds the primary and gets every row or none.
+    def sibling_id(event, soul) = "#{event['channel']}:#{soul}:#{event['ts']}"
+
+    def store_one(event, team_id, external_id, event_id, result, person, name, fan)
+      unserved = result.routed? && !@routes.answers?(result.soul)
+      uncleared = result.routed? && !@routes.cleared?(event["channel"], result.soul)
+      unanswered = result.routed? && !@answerers.allowed?(person)
+      held = unserved || uncleared || unanswered
+      message = AgentMessage.create!(
+        channel: CHANNEL, external_id: external_id, guild_id: team_id, channel_ref: event["channel"].to_s,
+        thread_key: thread_key(event), author_ref: event["user"].to_s, author_name: name, person: person,
+        content: event["text"].to_s, mentions: { "users" => mentioned_users(event["text"]) },
+        soul_slug: result.soul, routed_by: result.routed_by, status: status_for(result, held),
+        sent_at: Time.zone.at(event["ts"].to_f),
+        envelope: { "channel_type" => channel_type(event), "event_id" => event_id.presence,
+                    "thread_ts" => event["thread_ts"].presence, AgentMessage::FAN_KEY => fan }.compact
+      )
+      message.record!("received", actor: "slack-events", detail: { "author" => message.author_name })
+      message.record!(result.routed? ? "routed" : "unrouted", actor: "router",
+                      detail: result.detail.merge("soul" => result.soul, "routed_by" => result.routed_by).compact)
+      if held
+        record_held(message, event, result, person, unserved: unserved, uncleared: uncleared, unanswered: unanswered)
+      end
+      message
     end
 
     # One `held` event naming every cause: a soul no dispatcher serves on Slack,
@@ -160,7 +198,7 @@ module AgentMessages
       return nil if event["thread_ts"].blank? || event["thread_ts"] == event["ts"]
 
       AgentMessage.where(channel: CHANNEL, channel_ref: event["channel"].to_s, thread_key: thread_key(event))
-                  .order(Arel.sql("soul_slug IS NULL"), :id).first
+                  .order(Arel.sql("soul_slug IS NULL"), Arel.sql("status = 'held'"), :id).first
     end
 
     def status_for(result, held)
