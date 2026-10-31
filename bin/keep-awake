@@ -1,0 +1,163 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/keep-awake — ONE shared hold that keeps Alex McRitchie's Mac awake while
+# agents work past the time he is at it. SOP: docs/agents/agents/steffon/sops/keep-awake.md
+#
+#   keep-awake status [--json]                       exit 0 only while a hold is live
+#   keep-awake start --by <you> --reason "<why>" [--for 30m]
+#   keep-awake renew --by <you> [--for 30m]          extend your live lease
+#   keep-awake stop  --by <you>                      release your lease
+#   keep-awake history [--tail 20]                   the hold log
+#
+# BACK OFF: when `status` exits 0 another agent already holds the Mac. Do not
+# start a caffeinate of your own; `start` JOINS the live hold (adds you as a
+# holder), and the hold ends only when every holder has released or lapsed.
+#
+# Each lease lasts 30 minutes unless renewed (`start` again or `renew`), so an
+# agent that dies lets the Mac sleep on its own. One supervisor holds
+# `caffeinate -dims` and a menu-bar indicator; start, stop and lapse post a
+# macOS notification. The library is bin/lib/keep_awake.rb.
+
+require "json"
+require "optparse"
+require "time"
+require_relative "lib/keep_awake"
+
+# launchd and cron start with no LANG, so Ruby would read state.json and ARGV as
+# US-ASCII and crash on the first em dash in a --reason (killing a running
+# supervisor). The hold is UTF-8 whatever the caller's locale.
+Encoding.default_external = Encoding::UTF_8
+Encoding.default_internal = Encoding::UTF_8
+ARGV.map! { |arg| arg.dup.force_encoding(Encoding::UTF_8) }
+
+SCRIPT = File.expand_path(__FILE__)
+USAGE = <<~TEXT
+  usage: keep-awake status [--json]
+         keep-awake start --by <agent/session> --reason "<why>" [--for 30m]
+         keep-awake renew --by <agent/session> [--for 30m]
+         keep-awake stop --by <agent/session>
+         keep-awake history [--tail N]
+TEXT
+
+def die(message, code = 2)
+  warn("keep-awake: #{message}")
+  exit code
+end
+
+def local(iso)
+  Time.parse(iso.to_s).localtime.strftime("%H:%M %Z")
+rescue ArgumentError
+  iso.to_s
+end
+
+def left(iso, now)
+  minutes = ((Time.parse(iso.to_s) - now) / 60.0).ceil
+  minutes >= 60 ? format("%dh%02dm", minutes / 60, minutes % 60) : "#{minutes}m"
+rescue ArgumentError
+  "?"
+end
+
+def holder_line(holder, now)
+  "  #{holder["by"]}  until #{local(holder["expires"])} (#{left(holder["expires"], now)} left)  #{holder["reason"]}"
+end
+
+def print_status(report, now)
+  pid = report.dig("supervisor", "pid")
+  if report["held"]
+    puts "keep-awake: HELD. The Mac is held awake (caffeinate #{KeepAwake::CAFFEINATE_FLAGS}, supervisor pid #{pid})."
+    puts "  Back off: do not start your own caffeinate; `keep-awake start` joins this hold."
+  elsif report["stale"]
+    puts "keep-awake: STALE. #{report["holders"].size} live lease(s) but no live supervisor (pid #{pid || "-"})."
+    puts "  The Mac is NOT held. `keep-awake start --by <you> --reason ...` re-arms it."
+  else
+    puts "keep-awake: not held. The Mac may sleep."
+  end
+  report["holders"].each { |h| puts holder_line(h, now) }
+end
+
+command = ARGV.shift
+options = { seconds: nil, json: false, tail: 20 }
+parser = OptionParser.new do |o|
+  o.banner = USAGE
+  o.on("--by NAME") { |v| options[:by] = v }
+  o.on("--reason TEXT") { |v| options[:reason] = v }
+  o.on("--for DURATION") { |v| options[:for] = v }
+  o.on("--json") { options[:json] = true }
+  o.on("--tail N", Integer) { |v| options[:tail] = v }
+  o.on("-h", "--help") do
+    puts USAGE
+    exit 0
+  end
+end
+
+begin
+  parser.parse!(ARGV)
+  die("unexpected argument(s): #{ARGV.join(" ")}\n#{USAGE}") unless ARGV.empty?
+  store = KeepAwake::Store.new
+  now = Time.now
+
+  case command
+  when "status", "list"
+    report = store.status
+    if options[:json]
+      puts JSON.pretty_generate(report)
+    else
+      print_status(report, now)
+    end
+    exit(report["held"] ? 0 : 1)
+  when "start"
+    seconds = KeepAwake.parse_duration(options[:for])
+    result = store.start(by: options[:by], reason: options[:reason], seconds: seconds,
+                         spawn: -> { KeepAwake.spawn_supervisor(SCRIPT) })
+    holder = result[:holder]
+    verb = { "start" => "Started", "join" => "Joined", "renew" => "Renewed" }.fetch(result[:event])
+    puts "keep-awake: #{verb} the hold for #{holder["by"]} until #{local(holder["expires"])}: #{holder["reason"]}"
+    puts "  Renew within #{left(holder["expires"], now)} (`keep-awake start` again, or `renew`), " \
+         "and `keep-awake stop --by #{holder["by"]}` when done."
+    unless result[:event] == "renew"
+      KeepAwake.notify("#{verb} by #{holder["by"]} until #{local(holder["expires"])}: #{holder["reason"]}")
+    end
+    exit 0
+  when "renew"
+    seconds = KeepAwake.parse_duration(options[:for])
+    result = store.renew(by: options[:by], seconds: seconds)
+    holder = result[:holder]
+    puts "keep-awake: Renewed #{holder["by"]} until #{local(holder["expires"])}."
+    unless result[:supervising]
+      puts "  WARNING: no live supervisor holds the Mac; run `keep-awake start` to re-arm it."
+      exit 1
+    end
+    exit 0
+  when "stop", "release"
+    result = store.release(by: options[:by])
+    unless result[:released]
+      puts "keep-awake: #{options[:by]} held no live lease; nothing to release."
+      exit 0
+    end
+    if result[:remaining].zero?
+      puts "keep-awake: Released. No holder is left, so the hold ends and the Mac may sleep."
+      begin
+        Process.kill("USR1", result[:supervisor].to_i) if KeepAwake.supervisor_alive?(result[:supervisor])
+      rescue SystemCallError
+        nil
+      end
+    else
+      puts "keep-awake: Released #{options[:by]}. #{result[:remaining]} holder(s) still hold the Mac awake."
+    end
+    exit 0
+  when "history"
+    puts store.history(limit: options[:tail])
+    exit 0
+  when "__supervise"
+    KeepAwake::Supervisor.new.run
+    exit 0
+  when nil, "help", "-h", "--help"
+    puts USAGE
+    exit(command.nil? ? 2 : 0)
+  else
+    die("unknown command #{command.inspect}\n#{USAGE}")
+  end
+rescue KeepAwake::Error, OptionParser::ParseError => e
+  die(e.message, e.is_a?(KeepAwake::Error) && command == "renew" ? 1 : 2)
+end

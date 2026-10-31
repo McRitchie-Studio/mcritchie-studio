@@ -212,7 +212,7 @@ class Release
         bool: ["--post", "--force"], value: [], allow_positional: true
       },
       # Tell a shipped release on Slack (ReleaseNotes::SlackAnnouncement): smoke
-      # each production app (/up, home, the deployed SHA), then the #agents-general
+      # each production app (/up, home, the deployed SHA), then the #general
       # summary, each app's post and its smoke verdict in the thread. A DRY RUN
       # unless --post; each post is keyed, so a re-run sends only what never went out.
       "announce" => {

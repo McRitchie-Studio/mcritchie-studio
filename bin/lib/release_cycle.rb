@@ -398,7 +398,7 @@ module ReleaseCycle
     end
 
     # The Slack posts for a green production (`bin/release announce`, through the
-    # deps): the #agents-general summary, each app's post and its smoke verdict.
+    # deps): the #general summary, each app's post and its smoke verdict.
     # BEST-EFFORT by construction: whatever it answers or raises, prod verify's
     # verdict stands, and the line says what was sent and what failed.
     def announce(slug)

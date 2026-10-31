@@ -260,7 +260,8 @@ Each service holds `caffeinate -is -w <its pid>` while it lives (`bin/dispatcher
 holds off sleep on AC power only, so a closed lid on battery slept anyway. On
 the mini, `pmset sleep 0` on mains power is what keeps it awake; caffeinate stays
 as a second guard if someone resets Energy settings. For a long unattended run
-started by hand on any Mac, still wrap it: `caffeinate -is <command>`.
+started by hand on any Mac, join the shared hold instead of a private caffeinate:
+[`keep-awake`](keep-awake.md).
 
 ## What moved off the laptop
 

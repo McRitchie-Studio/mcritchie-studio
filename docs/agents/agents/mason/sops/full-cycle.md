@@ -79,7 +79,7 @@ not resolve host`) or on prepare's stale-tree refusal (a newcomer landed on
 `accepted`), and re-runs prepare once when ship refuses for a missing gauntlet.
 
 **A green prod verify tells the release on Slack** (`bin/release announce <release>
---post`, which the cycle runs for you): one summary in #agents-general as you, Mason
+--post`, which the cycle runs for you): one summary in #general as you, Mason
 (release slug, each app with its emoji and production SHA, every card with its task
 and PR links); one post per shipped app in that app's channel as its soul (Turf,
 Tywin, else Steffon); and in that post's thread, the app's production smoke verdict

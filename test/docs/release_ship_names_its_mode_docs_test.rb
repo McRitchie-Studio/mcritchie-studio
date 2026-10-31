@@ -25,12 +25,17 @@ class ReleaseShipNamesItsModeDocsTest < ActiveSupport::TestCase
 
   def bare_yes?(cmd) = cmd.include?("--yes") && !cmd.include?("--mode")
 
+  # The WORD auto (bare or backticked), never a substring: "autonomous",
+  # "automatically" and "autopilot" said nothing about the mode, yet exempted the
+  # line (task release-gem-doc-followups).
+  def says_auto?(line) = line.to_s.match?(/(?<![\w-])auto(?![\w-])/)
+
   def offenders
     active_docs.flat_map do |path|
       lines = File.readlines(path)
       lines.each_with_index.flat_map do |line, i|
         cmds = line.scan(SPAN).flatten + line.scan(FENCED).flatten
-        said_auto = line.include?("auto") || lines[i + 1].to_s.include?("auto")
+        said_auto = says_auto?(line) || says_auto?(lines[i + 1])
         cmds.select { |cmd| bare_yes?(cmd) && !said_auto }.map { |cmd| "#{path.delete_prefix("#{Rails.root}/")}:#{i + 1}: #{cmd}" }
       end
     end
@@ -41,6 +46,14 @@ class ReleaseShipNamesItsModeDocsTest < ActiveSupport::TestCase
     assert bare_yes?("bin/release ship --by conductor --yes")
     refute bare_yes?("bin/release ship --mode cleared --clearance \"x\" --yes")
     refute bare_yes?("bin/release ship --mode timed --yes")
+  end
+
+  test "only the word auto exempts a line, never a word that contains it" do
+    assert says_auto?("It names no `--mode`, so it resolves to `auto`.")
+    assert says_auto?("a bare --yes is auto")
+    refute says_auto?("the explicit autonomous path is `bin/release ship --by conductor --yes`")
+    refute says_auto?("read automatically by the autopilot")
+    refute says_auto?("--mode auto-ish is not a mode") # a hyphenated compound is not the word
   end
 
   test "no active doc teaches a bare bin/release ship --yes" do

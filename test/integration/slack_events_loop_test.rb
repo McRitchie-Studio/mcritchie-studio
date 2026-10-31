@@ -13,7 +13,7 @@ class SlackEventsLoopTest < ActionDispatch::IntegrationTest
 
   SECRET = "test-slack-signing-secret".freeze
   TEAM = "T0CC9DQ9NAK".freeze      # the shipped slack.team_id
-  AGENTS = "C0CD8ETBZBM".freeze    # #agents
+  AGENTS = "C0CD8ETBZBM".freeze    # #general (was #agents-general)
   OWNER = "U0CCSMUMQJV".freeze     # Alex McRitchie (slack.owner_user_id)
   APP_BOT = "U0CE93ACBA4".freeze   # McRitchie Agents
 
@@ -162,5 +162,48 @@ class SlackEventsLoopTest < ActionDispatch::IntegrationTest
     assert_equal turf.id, claimed.message.id, "the cleared soul's message is answered"
     assert_nil AgentMessage.claim!(soul: %w[turf_monster tywin], worker: "dispatcher-test").message,
                "the uncleared soul's message is never claimed"
+  end
+
+  test "[integration] fan-out: one message naming Avi and Mason is two rows, answered side by side, two replies in its thread" do
+    AgentMessages::Answerers.reset!
+    AgentPerson.seed_owner!
+    body = callback(message_event("<@#{APP_BOT}> Avi and Mason, is the release green?", ts: "1761800200.000100"), event_id: "EvFan")
+    post "/webhooks/slack/events", params: body, headers: headers(body)
+    assert_response :ok
+    twin = callback(message_event("<@#{APP_BOT}> Avi and Mason, is the release green?", ts: "1761800200.000100")
+                      .merge(type: "app_mention").except(:channel_type), event_id: "EvFanMention")
+    post "/webhooks/slack/events", params: twin, headers: headers(twin)
+    assert_response :ok
+    assert_difference -> { AgentMessage.count }, 2 do
+      perform_enqueued_jobs(only: SlackIngestJob)
+    end
+
+    avi = AgentMessage.find_by!(channel: "slack", external_id: "#{AGENTS}:1761800200.000100")
+    mason = AgentMessage.find_by!(channel: "slack", external_id: "#{AGENTS}:mason:1761800200.000100")
+    assert_equal [ "avi", "mason" ], [ avi.soul_slug, mason.soul_slug ]
+
+    a = AgentMessage.claim!(soul: %w[avi mason], worker: "dispatcher-1").message
+    m = AgentMessage.claim!(soul: %w[avi mason], worker: "dispatcher-2").message
+    assert_equal [ avi.id, mason.id ], [ a&.id, m&.id ], "both souls are claimed at once"
+    avi.reload.complete!(worker: "dispatcher-1", response_text: "Green from Avi.")
+    mason.reload.complete!(worker: "dispatcher-2", response_text: "Green from Mason.")
+
+    calls = []
+    transport = lambda do |method, params, _token|
+      calls << [ method, params ]
+      [ 200, {}, { ok: true, channel: AGENTS, ts: "1761800205.00#{calls.length}000" }.to_json ]
+    end
+    client = Media::Slack::Client.new(token: "xoxb-test", transport: transport)
+    with_env("SLACK_BOT_TOKEN", "xoxb-test") do
+      Media::Slack::Client.stub(:new, ->(*, **) { client }) do
+        perform_enqueued_jobs(only: AgentMessageReplyJob)
+      end
+    end
+
+    posts = calls.select { |method, _| method == "chat.postMessage" }.map(&:last)
+    assert_equal [ [ AGENTS, "1761800200.000100" ] ] * 2, posts.map { |p| p.values_at(:channel, :thread_ts) }
+    assert_equal [ [ "Avi", "Green from Avi." ], [ "Mason", "Green from Mason." ] ],
+                 posts.map { |p| p.values_at(:username, :text) }.sort
+    assert_equal %w[posted posted], [ avi.reload.reply_status, mason.reload.reply_status ]
   end
 end

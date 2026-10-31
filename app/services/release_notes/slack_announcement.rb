@@ -7,7 +7,7 @@ module ReleaseNotes
   # cycle runs once prod verify is green).
   #
   #   1. ONE summary in the general channel (agent_media.yml release_posts.general,
-  #      #agents-general), as Mason: the release, each app with its emoji and the
+  #      #general), as Mason: the release, each app with its emoji and the
   #      SHA production runs, and every card with its task and PR links.
   #   2. ONE post per shipped app in that app's channel (agent_routes.yml
   #      slack.channels, by the repo's name), as the channel's own soul (its
@@ -35,7 +35,7 @@ module ReleaseNotes
     TASK_BASE_URL = Formatter::PRODUCTION_TASK_BASE_URL
     GENERAL_SOUL = "mason".freeze
     APP_SOUL = "steffon".freeze
-    GENERAL_CHANNEL = "agents".freeze
+    GENERAL_CHANNEL = "general".freeze
 
     Result = Struct.new(:posts, keyword_init: true) do
       def count(status) = posts.count { |p| p[:status] == status }

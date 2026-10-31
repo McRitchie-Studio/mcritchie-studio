@@ -5,7 +5,7 @@
 #
 #   kind     post     a standalone post (a home's channel: notes, alerts)
 #            reply    an agent's answer to a message (AgentMessageReplyJob)
-#            release  a release post: the #agents-general summary, an app
+#            release  a release post: the #general summary, an app
 #                     channel's post, or its smoke verdict
 #                     (ReleaseNotes::SlackAnnouncement). Exempt from the hourly
 #                     cap, still counted by it.

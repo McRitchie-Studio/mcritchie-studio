@@ -999,7 +999,7 @@ class Release
     end
 
     # Tell a shipped release on Slack (ReleaseNotes::SlackAnnouncement): one
-    # summary in #agents-general as Mason, one post per shipped app in its
+    # summary in #general as Mason, one post per shipped app in its
     # channel as that app's soul, and the smoke verdict in that post's thread.
     # `smoke` is what `bin/release announce` checked on production, per repo.
     # Each post is keyed, so a re-run sends only what never went out. NEVER

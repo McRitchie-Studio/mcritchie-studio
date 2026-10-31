@@ -72,8 +72,8 @@ slack:
   team_id: "T0CC9DQ9NAK"                 # McRitchie Studio
   fallback: discord
   channels:
-    agents:
-      id: "C0CD8ETBZBM"
+    general:
+      id: "C0CD8ETBZBM"                  # #general (was #agents-general): every soul answers there
     ops:
       id: "C0CDEG43ECS"
     releases:
@@ -92,7 +92,7 @@ slack:
 #             and cyvasse → tywin come from those channels' default_soul.
 release_posts:
   general:
-    channel: agents                      # C0CD8ETBZBM, #agents-general
+    channel: general                     # C0CD8ETBZBM, #general
     soul: mason
   app_soul: steffon
 

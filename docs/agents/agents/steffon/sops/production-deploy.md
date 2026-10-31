@@ -195,7 +195,7 @@ Ship from the primary checkout. **`--mode` takes production authority**
 | `cleared` | records Alex McRitchie's chat clearance as the grant: `--clearance "<his words>"` is required, and the completion carries `granted_via chat`, `cleared_by` and the words. `--cleared-by` and `--by` default to `Alex McRitchie` (never the Mac login, which is the `alex` soul slug). No window, no button, and each run records its own grant, so a re-run stores the words it was given. A blank clearance refuses before anything moves, and so does `--clearance` with any other mode. The Next Release card names it as cleared in chat and unsigned, never in the success tone a signed Approve gets. |
 | `timed` (the config default, `production_ship.mode` in `config/release_builder.yml`) | posts the `ship_authorized` request on the release, shows a 30-minute countdown with an **Approve** button on the Next Release card, and waits. A grant deploys at once. On lapse it deploys only if G3 Candidate is green and no member carries an open escalation; otherwise it refuses, names why, and deploys nothing. |
 | `ask` | the interactive `confirm("Deploy this release to production?")` prompt — holds until a human answers (needs a TTY, or `--yes`). |
-| `auto` | proceeds on green with no prompt. `bin/release ship --yes` with no `--mode` is `auto`. It asks nobody and records no clearance, so it is not a production path under First Rule 5: a cleared ship runs `cleared` (or `bin/release cycle --clearance`), and an uncleared one runs `timed`. The code still accepts it (and `bin/conductor ship --run` still calls it). |
+| `auto` | proceeds on green with no prompt. `bin/release ship --yes` with no `--mode` is `auto`. It asks nobody and records no clearance, so it is not a production path under First Rule 5: a cleared ship runs `cleared` (or `bin/release cycle --clearance`), and an uncleared one runs `timed`. The code still accepts it; `bin/conductor ship --run` no longer calls it (it runs `--mode timed`, or `--mode cleared` with `--clearance`). |
 
 `--yes` answers the OTHER local confirms and skips nothing else. **The authority step is
 the only human gate; in `cleared` mode that gate is Alex McRitchie's word in the chat, recorded on
@@ -285,10 +285,15 @@ be undone. In order, after production authority:
    difference refuses with nothing published. A gem with no candidate is never
    published.
 3. **`gem push`**, then tag `v<version>`.
-4. **Wait until RubyGems serves it** steadily: `/info`, the `/versions` tail and the
-   `.gem` answer on every read for `RELEASE_GEM_SETTLE_S` (60s), inside the
-   `RELEASE_GEM_POLL_TIMEOUT` budget; a timeout stops as `GEM_NOT_SERVED` with no lock
-   pushed, and a re-run resumes. Then
+4. **Wait until RubyGems serves it** steadily: the compact index `/info` line, then
+   `/versions` (a Range read of its tail; on a tail miss the whole ~25 MB file, read at
+   most once a minute per version under its own `RELEASE_GEM_VERSIONS_FULL_MAX_TIME`
+   cap, 120s, because a version from before the monthly rebuild sits in the base line),
+   then the `.gem`, all answering on every read for `RELEASE_GEM_SETTLE_S` (60s), inside
+   the `RELEASE_GEM_POLL_TIMEOUT` budget (300s). A timeout stops as `GEM_NOT_SERVED`
+   with no lock pushed, names the surface the last poll missed (`/info`, `/versions
+   tail`, `/versions full read`, `/versions full read (failed)` or `.gem`) and prints
+   the curl that checks that surface; a re-run resumes. Then
    confirm the served `.gem`'s SHA-256 is the built artifact's.
 5. **Advance the gem repo's `main`.**
 6. **Re-lock each consumer to `x.y.z`**: `bundle lock --update <gem> --conservative`,
@@ -602,7 +607,7 @@ bin/release announce <release-slug> --post   # smokes, then posts
 
 It makes, in order:
 
-1. **One summary in #agents-general** (`C0CD8ETBZBM`), as **Mason**: the release slug,
+1. **One summary in #general** (`C0CD8ETBZBM`), as **Mason**: the release slug,
    each app with its emoji and the SHA production runs, and every card with its task
    and PR links. One line per app and per card.
 2. **One post per shipped app in that app's channel**, as the app's own soul: the
@@ -675,6 +680,10 @@ that commit; an unreadable check clears with `bin/release finalize <release>`.
 A PR the ship's token cannot read (`Resource not accessible by integration`) does
 not hold on its own: the check falls back to git, reading the PR's
 `refs/pull/<n>/head` and asking whether it is an ancestor of the shipped `main`.
+The ship's preflight says so up front: a `⚠ PR READ PREFLIGHT` line lists every app
+repo the ship identity cannot read PRs in (today the private ones) and the grant that
+closes the gap. It is a warning, never a stop; the grant is Alex McRitchie's GitHub
+settings click, never an agent's.
 A hold that names a PR read failing on a stale or wrong PR URL: fix the URL
 (`bin/task update <slug> --pr-url-for <repo>=<url>`), then run `bin/release finalize
 <release>`. A held member's `merged` column can read `main` (stamped per repo at the

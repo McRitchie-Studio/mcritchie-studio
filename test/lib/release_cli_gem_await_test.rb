@@ -171,7 +171,7 @@ class ReleaseCliGemAwaitTest < Minitest::Test
       $reads = 0
       def monotonic_s = $clock
       def sleep(seconds) = $clock += seconds
-      def gem_version_indexed?(_gem, _version) = ($reads += 1; true)
+      def gem_version_miss(_gem, _version) = ($reads += 1; nil) # the probe await reads (nil = served)
       await_published_gems!({ "studio-engine" => "0.49.0" })
       puts "READS=" + $reads.to_s + " AT=" + $clock.to_i.to_s
       puts "PROCEEDED"
@@ -245,5 +245,46 @@ class ReleaseCliGemAwaitTest < Minitest::Test
 
     assert_includes out, "SERVED=true", out
     assert_includes out, "BOUNDED=true 3", out
+  end
+
+  # ── [integration] GEM_NOT_SERVED names the surface, and its remedy follows it ──
+  #
+  # task release-gem-doc-followups: the refusal used to send the operator to /info
+  # whatever was stale. Through the seam: a .gem miss names ".gem" and the .gem check.
+  def test_the_refusal_names_the_surface_that_missed
+    out = run_release(%(await_published_gems!({ "studio-engine" => "0.49.0" }); puts "PROCEEDED"),
+                      { "RELEASE_GEM_INDEXED" => "no:.gem", "RELEASE_GEM_POLL_TIMEOUT" => "0" })
+
+    assert_includes out, "REFUSED", out
+    assert_match(/GEM_NOT_SERVED: published studio-engine 0\.49\.0 .*the last poll missed on \.gem/, out)
+    assert_includes out, "curl -sfIL -o /dev/null https://rubygems.org/gems/studio-engine-0.49.0.gem"
+  end
+
+  # Through the REAL probe: /info lists it, the tail misses, the whole-file read
+  # fails (its cap), and the refusal says so and names the override, which the
+  # full read's curl carries as its --max-time.
+  def test_a_failed_full_read_is_named_and_its_cap_takes_the_env_override
+    call = <<~RUBY
+      $full_argv = nil
+      status = Struct.new(:ok) { def success? = ok }
+      Open3.define_singleton_method(:capture2e) do |*cmd|
+        url = cmd.last
+        if url.include?("/info/") then ["0.49.0 a:~> 1|checksum:x\n", status.new(true)]
+        elsif url.end_with?("/versions") && cmd.include?("-r") then ["cut\nrantly 1.0 x\n", status.new(true)]
+        elsif url.end_with?("/versions") then ($full_argv = cmd; ["", status.new(false)])
+        else ["", status.new(true)]
+        end
+      end
+      at_exit { puts "FULL_MAX_TIME=" + $full_argv[$full_argv.index("--max-time") + 1].to_s }
+      await_published_gems!({ "studio-engine" => "0.49.0" })
+      puts "PROCEEDED"
+    RUBY
+    out = run_release(call, { "RELEASE_GEM_INDEXED" => "", "RELEASE_GEM_POLL_TIMEOUT" => "0",
+                              "RELEASE_GEM_VERSIONS_FULL_MAX_TIME" => "600" })
+
+    assert_includes out, "REFUSED", out
+    assert_includes out, "the last poll missed on /versions full read (failed)", out
+    assert_includes out, "raise RELEASE_GEM_VERSIONS_FULL_MAX_TIME", out
+    assert_includes out, "FULL_MAX_TIME=600", "the 120s full-read cap must take RELEASE_GEM_VERSIONS_FULL_MAX_TIME"
   end
 end

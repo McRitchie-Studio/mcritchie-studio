@@ -227,6 +227,7 @@ require_relative "lib/local_services"
 require_relative "lib/bounded_command" # the record-op deadline (run_record_op)
 require_relative "lib/one_password_wait" # --wait-for-1password, and OpMeter for the hang hint
 require_relative "lib/gem_served_wait" # publish → lock-push wait (GemServedWait)
+require_relative "lib/ship_pr_access" # ship preflight: repos the ship identity cannot read PRs in
 require_relative "lib/static_cloudflare" # the static_cloudflare prod_deploy strategy
 # `status` prints PROGRAM DRIFT: on-chain programs behind their source (program_drift_report).
 require_relative "lib/program_drift"
@@ -6023,15 +6024,18 @@ end
 GEM_INDEX_URL = "https://index.rubygems.org/info/%s"
 # The compact index's `/versions` file, bundler's FIRST read: it lists every gem's
 # versions and the checksum of each `/info` file. It is ~25 MB, so the probe reads
-# only its tail by Range (bundler itself reads it incrementally the same way); a
-# version published minutes ago is always in the last few hundred KB.
+# its tail by Range first (bundler itself reads it incrementally the same way); a
+# version published minutes ago is in the last few hundred KB. A tail miss falls
+# back to the whole file, rationed (below).
 GEM_VERSIONS_URL = "https://index.rubygems.org/versions"
 GEM_VERSIONS_TAIL_BYTES = 200_000
 # A tail miss falls back to the WHOLE file (GemServedWait.versions_served?: a version
 # from before the monthly rebuild lives in the base line, not the tail). It is ~25 MB,
 # so it gets its own ceiling, and is read at most once per GEM_VERSIONS_FULL_EVERY_S
 # per version: a just-pushed version reaches the tail anyway, and a hit is memoized.
-GEM_VERSIONS_FULL_MAX_TIME = 120
+# RELEASE_GEM_VERSIONS_FULL_MAX_TIME raises the ceiling on a slow link, where 25 MB
+# in 120s fails every poll and the wait ends GEM_NOT_SERVED on "/versions full read (failed)".
+GEM_VERSIONS_FULL_MAX_TIME = Integer(ENV.fetch("RELEASE_GEM_VERSIONS_FULL_MAX_TIME", "120"))
 GEM_VERSIONS_FULL_EVERY_S = 60
 GEM_POLL_INTERVAL = Integer(ENV.fetch("RELEASE_GEM_POLL_INTERVAL", "5"))
 GEM_POLL_TIMEOUT  = Integer(ENV.fetch("RELEASE_GEM_POLL_TIMEOUT", "300"))
@@ -6048,50 +6052,76 @@ GEM_CURL_MAX_TIME = Integer(ENV.fetch("RELEASE_GEM_CURL_MAX_TIME", "20"))
 GEM_FILE_URL = "https://rubygems.org/gems/%s-%s.gem"
 
 # Is `version` of `gem_name` SERVED by the RubyGems CDN, on every surface bundler
-# reads in order: listed on the compact index's `/info/<gem>`, listed on the tail of
-# its `/versions` file, AND its .gem artifact downloadable? One read of each; the
-# settle window in await_published_gems! decides whether the answer has held.
-#
-# RELEASE_GEM_INDEXED is the test seam, mirroring RELEASE_CI_STATUS: "yes"/"no" so
-# the meta-tests never touch the network.
+# reads in order: listed on the compact index's `/info/<gem>`, listed on its
+# `/versions` file (the tail by Range, the whole file on a tail miss), AND its .gem
+# artifact downloadable? One read of each; the settle window in
+# await_published_gems! decides whether the answer has held.
 def gem_version_indexed?(gem_name, version)
+  gem_version_miss(gem_name, version).nil?
+end
+
+# The same probe, answering WHICH surface missed: nil when served, else a
+# GemServedWait::SURFACE_* name, so GEM_NOT_SERVED says what was stale.
+#
+# RELEASE_GEM_INDEXED is the test seam, mirroring RELEASE_CI_STATUS: "yes" served,
+# "no" a miss on /info, "no:<surface>" a miss on that surface, so the meta-tests
+# never touch the network.
+def gem_version_miss(gem_name, version)
   injected = ENV["RELEASE_GEM_INDEXED"].to_s
-  return injected == "yes" unless injected.empty?
+  unless injected.empty?
+    return nil if injected == "yes"
 
-  # --max-time on both reads: a hung connection is a failed read the deadline can count.
-  out, status = Open3.capture2e("/usr/bin/curl", "-sf", "--max-time", GEM_CURL_MAX_TIME.to_s,
-                                format(GEM_INDEX_URL, gem_name))
-  return false unless status.success?
-  return false unless gem_index_lists?(out, version)
+    surface = injected.delete_prefix("no").delete_prefix(":")
+    return surface.empty? ? GemServedWait::SURFACE_INFO : surface
+  end
 
-  # `/versions`: bundler reads it before any `/info`, so a stale copy there hides the
-  # version even when `/info` is fresh. The tail first; the whole file on a miss.
+  # --max-time on every read: a hung connection is a failed read the deadline can count.
+  GemServedWait.first_miss([
+    [GemServedWait::SURFACE_INFO, lambda {
+      out, status = Open3.capture2e("/usr/bin/curl", "-sf", "--max-time", GEM_CURL_MAX_TIME.to_s,
+                                    format(GEM_INDEX_URL, gem_name))
+      status.success? && gem_index_lists?(out, version)
+    }],
+    # `/versions`: bundler reads it before any `/info`, so a stale copy there hides
+    # the version even when `/info` is fresh. Its own miss names tail vs full read.
+    [:versions, -> { (@gem_versions_miss = gem_versions_miss(gem_name, version)).nil? }],
+    [GemServedWait::SURFACE_GEM, lambda {
+      _, served = Open3.capture2e("/usr/bin/curl", "-sfIL", "--max-time", GEM_CURL_MAX_TIME.to_s, "-o", "/dev/null",
+                                  format(GEM_FILE_URL, gem_name, version))
+      served.success?
+    }]
+  ]).then { |miss| miss == :versions ? @gem_versions_miss : miss }
+end
+
+# `/versions` for one probe: nil when served, else the GemServedWait surface that missed.
+def gem_versions_miss(gem_name, version)
   tail, read = Open3.capture2e("/usr/bin/curl", "-sf", "--max-time", GEM_CURL_MAX_TIME.to_s,
                                "-r", "-#{GEM_VERSIONS_TAIL_BYTES}", GEM_VERSIONS_URL)
   tail = "" unless read.success?
-  full = -> { gem_versions_full_body(gem_name, version) }
-  return false unless GemServedWait.versions_served?(gem_name, version, tail, full: full)
-
-  _, served = Open3.capture2e("/usr/bin/curl", "-sfIL", "--max-time", GEM_CURL_MAX_TIME.to_s, "-o", "/dev/null",
-                              format(GEM_FILE_URL, gem_name, version))
-  served.success?
+  GemServedWait.versions_miss(gem_name, version, tail, full: -> { gem_versions_full_body(gem_name, version) })
 end
 
-# The WHOLE /versions file, for a tail miss; nil when it was read for this version
-# under GEM_VERSIONS_FULL_EVERY_S ago (and missed) or the read failed. A hit is
-# memoized as a one-line body, so an already-live version costs one 25 MB read.
+# The WHOLE /versions file, for a tail miss. A hit is memoized as a one-line body, so
+# an already-live version costs one 25 MB read. A miss or a failed read is memoized
+# too, and inside GEM_VERSIONS_FULL_EVERY_S the probe answers from that memo instead
+# of reading again: "" (read, not listed) or :failed (curl error or the
+# GEM_VERSIONS_FULL_MAX_TIME cap), so the refusal still names the full read.
 def gem_versions_full_body(gem_name, version)
   key = [gem_name, version.to_s]
   @gem_versions_full ||= {}
   memo = @gem_versions_full[key]
-  return memo[:body] if memo&.dig(:body)
-  return nil if memo && monotonic_s - memo[:at] < GEM_VERSIONS_FULL_EVERY_S
+  return memo[:body] if memo && (memo[:body].is_a?(String) && !memo[:body].empty?)
+  return memo[:body] if memo && monotonic_s - memo[:at] < GEM_VERSIONS_FULL_EVERY_S
 
   out, status = Open3.capture2e("/usr/bin/curl", "-sf", "--max-time", GEM_VERSIONS_FULL_MAX_TIME.to_s,
                                 GEM_VERSIONS_URL)
-  listed = status.success? && GemServedWait.versions_lists?(out, gem_name, version)
-  @gem_versions_full[key] = { at: monotonic_s, body: listed ? "#{gem_name} #{version} full\n" : nil }
-  @gem_versions_full[key][:body]
+  body =
+    if !status.success? then :failed
+    elsif GemServedWait.versions_lists?(out, gem_name, version) then "#{gem_name} #{version} full\n"
+    else ""
+    end
+  @gem_versions_full[key] = { at: monotonic_s, body: body }
+  body
 end
 
 # PURE. Does a compact-index body list `version`? Lines read
@@ -6171,20 +6201,23 @@ def await_published_gems!(published_gems, resume = "bin/release prepare")
   pending = published_gems.reject { |gem_name, version| @gems_ready[[gem_name, version.to_s]] }
   return if pending.empty?
 
-  step("await: each published gem must be SERVED by the RubyGems CDN (compact index /info + /versions + .gem, " \
-       "held #{GEM_SETTLE_S}s) and INSTALLED here before anything reads it")
+  step("await: each published gem must be SERVED by the RubyGems CDN (compact index /info, /versions tail with a " \
+       "rationed full read on a miss, and the .gem; held #{GEM_SETTLE_S}s) and INSTALLED here before anything reads it")
   pending.each do |gem_name, version|
     # Wall time, so the curl calls and the installs count against the budget too.
     started = monotonic_s
-    wait = GemServedWait.await(probe: -> { gem_version_indexed?(gem_name, version) },
+    wait = GemServedWait.await(probe: -> { gem_version_miss(gem_name, version) || true },
                                timeout: GEM_POLL_TIMEOUT, interval: GEM_POLL_INTERVAL, settle: GEM_SETTLE_S,
                                clock: -> { monotonic_s }, sleeper: ->(s) { sleep(s) })
     unless wait.served?
-      abort!("#{GemServedWait::NOT_SERVED}: published #{gem_name} #{version} but the RubyGems CDN has not served it " \
-             "steadily (compact index /info + /versions + .gem, held #{GEM_SETTLE_S}s) after #{GEM_POLL_TIMEOUT}s " \
+      miss = wait.miss || GemServedWait::SURFACE_INFO
+      remedy = GemServedWait.remedy(miss, gem_name: gem_name, version: version,
+                                          urls: { info: GEM_INDEX_URL, versions: GEM_VERSIONS_URL, file: GEM_FILE_URL })
+      abort!("#{GemServedWait::NOT_SERVED}: published #{gem_name} #{version} but the RubyGems CDN has not " \
+             "served it steadily: the last poll missed on #{miss} (surfaces: /info, /versions tail with a rationed " \
+             "full read, .gem; held #{GEM_SETTLE_S}s) after #{GEM_POLL_TIMEOUT}s " \
              "(#{wait.polls} poll(s)). NOTHING was bumped, pushed, recorded or deployed — the consumer locks are " \
-             "untouched, so re-run `#{resume}` once `curl -s #{format(GEM_INDEX_URL, gem_name)} | tail -3` lists " \
-             "#{version}; the publish skips as already-live. Bumping now would push a lock CI cannot install " \
+             "untouched, so re-run `#{resume}` once #{remedy}; the publish skips as already-live. Bumping now would push a lock CI cannot install " \
              "(bundler exits 7 in `Set up Ruby`: \"can no longer be found in that source\"), redding a lane and " \
              "aborting the release AFTER the publish became irreversible.")
     end
@@ -10178,6 +10211,9 @@ end
 def ship_preflight(app_groups, gem_groups = [], ship_sha = {})
   say("")
   step("ship preflight: pin each app's ship workspace at its frozen SHA; check the gem builds")
+  # 0. Before the DRY return on purpose: the read mutates nothing, and a dry run is
+  #    exactly where an operator should learn the identity is blind somewhere.
+  ship_pr_access_preflight(app_groups.map { |g| g["repo"] })
   if DRY
     gem_groups.each { |g| say("  [dry-run] check #{g['repo']} (#{repo_path(g['repo'])}) has no modified tracked files (it is BUILT from its primary)") }
     app_groups.each { |g| say("  [dry-run] pin #{g['repo']} ship workspace (#{Release::GateWorkspace.path(repo_path(g['repo']), role: 'ship')}) at the frozen SHA") }
@@ -10206,6 +10242,45 @@ def ship_preflight(app_groups, gem_groups = [], ship_sha = {})
     Release::ShipSequence.preflight_offenders(app_states), root: projects_root
   )
   say(advisory) if advisory
+end
+
+# The PR-read preflight (ShipPrAccess): ask GitHub for one merged PR in each app
+# repo, as the ship identity, with the same gh read and auth retry the containment
+# check uses (member_code_shas), and WARN on every repo that refuses. Never aborts.
+def ship_pr_access_preflight(repos)
+  identity = GhIdentity.item_for(GhIdentity.resolve.to_s) || ENV["GH_APP_ITEM"].to_s.strip
+  identity = "github.mcritchie-agent" if identity.empty?
+  unreadable = ShipPrAccess.unreadable(repos, reader: ->(repo) { ship_pr_readable(repo) })
+  message = ShipPrAccess.warning(unreadable, identity: identity)
+  say(message ? "  #{message}" : "  ✓ PR read: the ship identity (#{identity}) reads pull requests in every app repo")
+rescue StandardError => e
+  say("  ⚠ PR READ PREFLIGHT could not run (#{e.class}: #{e.message.to_s[0, 140]}); the ship goes on")
+end
+
+# One repo's PR read: [ok, output]. RELEASE_PR_UNREADABLE is the test seam: when it
+# is SET, its comma list names the unreadable repos and no gh call runs (armed ""
+# by test/support/outbound_seams.rb, so no test reaches GitHub).
+def ship_pr_readable(repo)
+  if ENV.key?("RELEASE_PR_UNREADABLE")
+    denied = ENV["RELEASE_PR_UNREADABLE"].to_s.split(",").map(&:strip)
+    return denied.include?(repo.to_s) ? [false, "RELEASE_PR_UNREADABLE names #{repo}"] : [true, ""]
+  end
+
+  # The origin read goes around `sh`, whose --dry-run arm answers "" without running
+  # it: every repo then read as "no GitHub origin" on exactly the dry run this serves.
+  origin, read = bounded_capture2e("git", "-C", repo_path(repo), "remote", "get-url", "origin")
+  nwo = read.success? ? CiStatus.name_with_owner(origin) : ""
+  return [false, "no GitHub origin for #{repo}"] if nwo.empty?
+
+  argv = ["gh", "pr", "list", "--repo", nwo, "--state", "merged", "--json", "number", "--limit", "1"]
+  out, status = bounded_capture2e(*argv)
+  # A missing grant ("resource not accessible") is the answer, not a stale token: a
+  # forced mint (a 1Password read) per private repo would only hear it again.
+  if !status.success? && GhAuthRetry.auth_failure?(out) && !out.match?(/resource not accessible/i)
+    token = GhAuthRetry.mint
+    out, status = bounded_capture2e(*argv, env: gh_token_env(token)) if token
+  end
+  [status.success?, out.to_s]
 end
 
 # --- step 5c: production smoke SEAL -----------------------------------------
@@ -12322,7 +12397,7 @@ end
 # `bin/release announce <release> [--post]` — tell a SHIPPED release on Slack
 # (bin/lib/release_announce.rb, ReleaseNotes::SlackAnnouncement): smoke each
 # production app the release carries (/up and home answer 200, the app runs the
-# shipped SHA), then one #agents-general summary as Mason, one post per shipped app
+# shipped SHA), then one #general summary as Mason, one post per shipped app
 # in its channel as that app's soul, and the smoke verdict in that post's thread.
 # A DRY RUN by default: it smokes and prints what would post. `bin/release cycle`
 # runs it with --post once prod verify is green; after a ship run on its own, run it
