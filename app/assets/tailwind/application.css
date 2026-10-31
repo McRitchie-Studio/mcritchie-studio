@@ -407,10 +407,8 @@
   }
 }
 
-/* A cycling word in the middle of a line: centre each word in the box, and let
-   the box's width (set per word by data-fit-width) ease between words. */
+/* A cycling word on its own line: centre each word in the spacer's box. */
 @utility dropping-texts-center {
-  transition: width 0.4s ease;
   & span {
     right: 0;
     text-align: center;

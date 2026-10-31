@@ -43,17 +43,13 @@
       where the headline is dark text. %>
   <div class="hero-scrim absolute inset-0" data-hero-scrim style="background: linear-gradient(135deg, color-mix(in srgb, var(--color-page) var(--hero-scrim-edge), transparent) 0%, color-mix(in srgb, var(--color-page) var(--hero-scrim-mid), transparent) 50%, color-mix(in srgb, var(--color-page) var(--hero-scrim-edge), transparent) 100%);"></div>
   <div class="relative z-10 max-w-4xl mx-auto px-4 text-center section-padding-lg">
-    <%# Your ___ Built Right (Alex McRitchie, 2026-10-30). The cycling word sits in
-        the middle of a line, so its box fits each word as it drops in
-        (data-fit-width, dropping_text.js) rather than leaving "Plan" a gap the
-        width of "Workflow"; the spacer still holds the height before the script
-        runs. "Built Right" takes its own line. Below lg "Your" takes its own line
-        too: there "Your Idea" fits where "Your Workflow" wraps, so a fitted box
-        would reflow the headline, and the subtitle under it, every cycle. From lg
-        the content is 992px and "Your Workflow" (about 745px at 96px) always fits. %>
+    <%# Your ___ Built Right (Alex McRitchie, 2026-10-30). Three lines at every
+        width, and the spacing never moves (his call: no expanding title). The
+        cycling word has its own line, in a box as wide as the longest word
+        (data-spacer), each word centred in it. %>
     <h1 class="font-extrabold text-heading tracking-tight mb-6 flex items-baseline justify-center flex-wrap hero-title" style="line-height: 1.1; column-gap: 0.3em;">
-      <span class="max-lg:basis-full">Your</span>
-      <span class="dropping-texts dropping-texts-center text-primary" data-spacer="Workflow" data-fit-width>
+      <span class="basis-full">Your</span>
+      <span class="dropping-texts dropping-texts-center text-primary" data-spacer="Workflow">
         <span>Workflow</span>
         <span>Idea</span>
         <span>Plan</span>

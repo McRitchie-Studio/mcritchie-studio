@@ -4,10 +4,11 @@
 // Plan]". The middle word cycles; at a phone, the lg edge and a desktop each word
 // sits whole inside its box, centred, the headline never reaches the subtitle,
 // the headline holds one height through the cycle (a word that fits where another
-// wraps must not reflow the page), and the page never scrolls sideways. The box
-// fits each word, so the word must also stay whole WHILE it drops in: a box that
-// widened only after a long word entered clipped "Workflow" to "Workflov" for its
-// first 0.4s (Carl's review of PR #2352).
+// wraps must not reflow the page), and the page never scrolls sideways. The word
+// stays whole WHILE it drops in too: an earlier cut whose box fitted each word
+// clipped "Workflow" to "Workflov" for its first 0.4s (Carl's review of PR #2352).
+// The box is static now (Alex McRitchie: no expanding title), so it holds one
+// width through the cycle as well.
 // @qa-readonly: it only reads the signed-out landing page.
 const { test, expect } = require("@playwright/test");
 const { blockThirdPartyRequests, watchPageErrors, VISITOR } = require("./helpers");
@@ -67,6 +68,7 @@ async function checkHeadline(page, width) {
         inside: text.left >= box.left - 1 && text.right <= box.right + 1,
         align: getComputedStyle(span).textAlign,
         h1Height: Math.round(h1.height),
+        boxWidth: Math.round(box.width),
         clears: h1.bottom <= subtitle.top,
         sideways: document.documentElement.scrollWidth > window.innerWidth,
       };
@@ -82,6 +84,8 @@ async function checkHeadline(page, width) {
   // Let the last entry's 600ms of samples finish.
   await page.waitForTimeout(100);
   expect(await page.evaluate(() => window.__heroClips), "no word is clipped while it drops in").toEqual([]);
+  const widths = new Set(Object.values(seen).map((m) => m.boxWidth));
+  expect([...widths], "the word's box holds one width through the cycle").toHaveLength(1);
   const heights = new Set(Object.values(seen).map((m) => m.h1Height));
   expect([...heights], "the headline holds one height through the cycle").toHaveLength(1);
   expect(pageErrors, report()).toEqual([]);

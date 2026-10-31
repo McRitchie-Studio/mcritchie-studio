@@ -13,7 +13,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     # Hero
     assert_select "h1.hero-title" do
-      assert_select "span.dropping-texts[data-spacer=Workflow][data-fit-width] > span", count: 3
+      assert_select "span.dropping-texts[data-spacer=Workflow] > span", count: 3
       %w[Workflow Idea Plan].each { |word| assert_select "span.dropping-texts > span", text: word }
       assert_select "span", text: "Built Right"
     end
