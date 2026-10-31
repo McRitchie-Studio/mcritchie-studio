@@ -322,9 +322,13 @@ def backed_off!(identity, held)
     return [fallback, false]
   end
 
-  die!("1Password was #{held[1]} on the last refresh, so no process reads it again until " \
+  warn("gh-token: 1Password was #{held[1]} on the last refresh, so no process reads it again until " \
        "#{held[0].iso8601} (bin/secret status). After fixing 1Password, skip the wait for one call: " \
        "#{SecretCache::BACKOFF_OVERRIDE}=1 bin/gh-token")
+  # HUNG_EXIT, not 1: bin/gh-app-git-credential reads 75 as "do not try 1Password
+  # yourself". On exit 1 it falls through to its own three reads, on every git
+  # operation, which is the spend this window exists to stop.
+  exit(OpMeter::HUNG_EXIT)
 end
 
 def mint(identity)
@@ -359,6 +363,13 @@ def mint(identity)
     # line that names it and its fix, so the sign-in advice below would only
     # mislead. Exit HUNG_EXIT, which bin/gh-app-git-credential reads as "do not
     # spend thirty more seconds on your own reads" (release-survives-1password-hang).
+    # The rate limit is account-wide too: say what op said, then exit HUNG_EXIT so the
+    # credential helper does not spend three more reads of its own on the same refusal.
+    if cause == "rate-limited"
+      warn("gh-token: 1Password refused the read: #{@op_said} — the account-wide quota; " \
+           "bin/op-reads names the spender (docs/agents/modules/credential-access.md)")
+      exit(OpMeter::HUNG_EXIT)
+    end
     exit(OpMeter::HUNG_EXIT) if OpMeter.hung?
     # The parenthetical goes BEFORE the diagnosis, never after. OpVaults.diagnose
     # ends on an indented, copy-pasteable command; anything appended lands on that

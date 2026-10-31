@@ -83,7 +83,7 @@ class GhTokenBackoffTest < Minitest::Test
       assert_equal "hung", manifest_entry(dir)["backoff_reason"]
 
       _out, err, second = run_token(env)
-      refute second.success?
+      assert_equal 75, second.exitstatus, "HUNG_EXIT, so the git credential helper spends no read of its own"
       assert_equal after_first, op_calls(dir), "inside the window no process reads 1Password"
       assert_match(/MCR_OP_NO_BACKOFF=1 bin\/gh-token\z/, err.strip, "the refusal ends on the command that skips it")
     end
@@ -92,7 +92,8 @@ class GhTokenBackoffTest < Minitest::Test
   def test_the_rate_limit_backs_off_and_the_override_skips_it
     Dir.mktmpdir do |dir|
       env = env_for(dir, op_body: "echo '[ERROR] Too many requests' >&2; exit 1")
-      run_token(env)
+      _out, _err, first = run_token(env)
+      assert_equal 75, first.exitstatus, "the rate limit stops the credential helper's own reads too"
       assert_equal "rate-limited", manifest_entry(dir)["backoff_reason"]
       calls = op_calls(dir)
 
