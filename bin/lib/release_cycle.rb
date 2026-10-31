@@ -26,7 +26,7 @@ require "stringio"
 #   assembled                           qa verify  (then ship)
 #   no active release, archive pending  prod verify (the last release shipped; then archive)
 #
-#   prepare → qa verify → ship → prod verify → archive
+#   prepare → qa verify → ship → prod verify (green: the Slack posts) → archive
 #
 # Each act is the existing `bin/release <step>`, run as a child with the lane's
 # credentials (CREDENTIALS below); the cycle adds only the seams between them. It
@@ -385,11 +385,30 @@ module ReleaseCycle
     # Each production app answers 200 on /up and /, AND runs the SHA the release froze.
     # A 200 proves an app is up, not that it runs this release: a deploy that never
     # landed answers 200 from the old code (rel-20261029-f328a7's prod verify took 1s).
+    #
+    # Green, it tells the release on Slack (announce): never a reason to stop.
     def stage_prod_verify(snapshot, fresh:)
       status = verify(:prod)
       return [status, snapshot] unless status.zero?
 
-      [verify_deployed_shas(@shipped_slug || snapshot.dig("last_shipped", "slug")), snapshot]
+      slug = @shipped_slug || snapshot.dig("last_shipped", "slug")
+      status = verify_deployed_shas(slug)
+      announce(slug) if status.zero?
+      [status, snapshot]
+    end
+
+    # The Slack posts for a green production (`bin/release announce`, through the
+    # deps): the #general summary, each app's post and its smoke verdict.
+    # BEST-EFFORT by construction: whatever it answers or raises, prod verify's
+    # verdict stands, and the line says what was sent and what failed.
+    def announce(slug)
+      return if slug.to_s.empty? || !@deps.respond_to?(:announce)
+
+      line = @deps.announce(slug, repos: @repos, verdicts: @sha_verdicts)
+      say("  #{line}") unless line.to_s.empty?
+    rescue StandardError => e
+      say("  ⚠ Slack posts: not made (#{e.class}: #{e.message}); the release stands. " \
+          "Re-run: bin/release announce #{slug} --post")
     end
 
     def stage_archive(snapshot, fresh:) = [run_step("archive", archive_argv), snapshot]
@@ -445,7 +464,7 @@ module ReleaseCycle
         say("  ✗ no shipped release on the board to read its frozen SHAs from; the deployed SHAs are unproven")
         return VERIFY_FAILED
       end
-      verdicts = read_sha_verdicts(slug)
+      verdicts = @sha_verdicts = read_sha_verdicts(slug)
       if verdicts.nil?
         say("  ✗ could not read #{slug}'s frozen SHAs or what production runs; the deployed SHAs are unproven")
         return VERIFY_FAILED

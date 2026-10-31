@@ -998,6 +998,23 @@ class Release
       result.merge(already_delivered: false)
     end
 
+    # Tell a shipped release on Slack (ReleaseNotes::SlackAnnouncement): one
+    # summary in #general as Mason, one post per shipped app in its
+    # channel as that app's soul, and the smoke verdict in that post's thread.
+    # `smoke` is what `bin/release announce` checked on production, per repo.
+    # Each post is keyed, so a re-run sends only what never went out. NEVER
+    # raises: a Slack failure (or any other) comes back in the result, because
+    # this runs after an irreversible ship. Returns the result's hash (line:
+    # "Slack posts: N sent / M failed", sent, failed, posts).
+    def announce_release(release:, smoke: {}, dry_run: false)
+      ReleaseNotes::SlackAnnouncement.new(release: release, smoke: smoke).call(dry_run: dry_run).to_h
+    rescue StandardError => e
+      Rails.logger.warn("[release-slack] announce for #{release&.slug} failed (non-fatal): #{e.class}: #{e.message}")
+      ErrorLog.capture!(e) rescue nil # rubocop:disable Style/RescueModifier
+      { line: "Slack posts: 0 sent / 1 failed (#{e.class.name.demodulize}: #{e.message.to_s[0, 200]})", sent: 0,
+        failed: 1, posts: [] }
+    end
+
     # Re-post a release's notes on demand (`bin/release notes <release> --post`),
     # e.g. after a delivery failed. Writes NO new release event — the ship's own
     # release_notes step already completed; a delivery here is recorded ON that

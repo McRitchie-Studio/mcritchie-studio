@@ -27,7 +27,9 @@ class ReleaseCycleTest < Minitest::Test
   # last one repeats); `steps` maps a step name to a list of [status, output]
   # answers consumed in order (the last repeats).
   class FakeDeps
-    attr_reader :calls, :reads, :checked, :sha_reads, :pauses
+    attr_reader :calls, :reads, :checked, :sha_reads, :pauses, :announced
+    # The Slack announce's answer: a line, or an exception to raise.
+    attr_accessor :announce_answer
 
     # `shas` answers deployed_sha_verdicts: a list of verdict hashes, nil (unreadable),
     # or a lambda of the release slug. Default: every app runs its frozen SHA.
@@ -72,6 +74,14 @@ class ReleaseCycleTest < Minitest::Test
     end
 
     def pause(seconds) = @pauses << seconds
+
+    def announce(slug, repos:, verdicts:)
+      (@announced ||= []) << { slug: slug, repos: repos, verdicts: verdicts }
+      answer = @announce_answer || "Slack posts: 7 sent / 0 failed"
+      raise answer if answer.is_a?(Exception)
+
+      answer
+    end
 
     def deployed_sha_verdicts(slug)
       @sha_reads << slug
@@ -360,6 +370,39 @@ class ReleaseCycleTest < Minitest::Test
     assert_equal 0, status, out
     assert_equal %w[archive], step_names(deps)
     assert_equal ["rel-s"], deps.sha_reads
+  end
+
+  test "[unit] a green prod verify posts the release on Slack once, with the repos and SHA verdicts it read" do
+    deps = FakeDeps.new(snapshots: [shipped_snap])
+    status, out = run_cycle(deps)
+
+    assert_equal 0, status, out
+    assert_equal 1, deps.announced.size
+    call = deps.announced.first
+    assert_equal "rel-s", call[:slug]
+    assert_equal shipped_snap.dig("last_shipped", "repos"), call[:repos]
+    assert_equal ["mcritchie-studio"], call[:verdicts].map { |v| v["repo"] }
+    assert_includes out, "  Slack posts: 7 sent / 0 failed"
+    assert_operator out.index("Slack posts"), :<, out.index("5/5 archive"), "the posts come before the archive"
+  end
+
+  test "[unit] a red prod verify posts nothing on Slack" do
+    deps = FakeDeps.new(snapshots: [shipped_snap], shas: [{ "repo" => "mcritchie-studio", "sha" => "x", "ok" => false,
+                                                            "reason" => "not live" }])
+    status, = run_cycle(deps)
+
+    assert_equal ReleaseCycle::VERIFY_FAILED, status
+    assert_nil deps.announced
+  end
+
+  test "[unit] a Slack announce that raises never fails the cycle: prod verify stands and the archive runs" do
+    deps = FakeDeps.new(snapshots: [shipped_snap])
+    deps.announce_answer = RuntimeError.new("slack down")
+    status, out = run_cycle(deps)
+
+    assert_equal 0, status, out
+    assert_equal %w[archive], step_names(deps)
+    assert_includes out, "⚠ Slack posts: not made (RuntimeError: slack down); the release stands"
   end
 
   test "[unit] after a ship in this cycle, prod verify reads the SHAs of the release it shipped" do

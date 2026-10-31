@@ -244,7 +244,9 @@ SOP: [`../agents/steffon/sops/production-deploy.md`](../agents/steffon/sops/prod
      ship is `--mode timed`.
   3. Prod-smoke, green seal, and post release notes (`ship!` flips members `shipped`,
      except a member whose own commit is not in the pushed `main`: it keeps its
-     stage with a comment naming the commit).
+     stage with a comment naming the commit). The Slack posts (the #general
+     summary, each app's post and its smoke verdict) follow the cycle's green prod
+     verify, or `bin/release announce <release> --post` after a ship run alone.
   4. Restore the primary checkouts.
   5. Post-ship agent-docs sync — ship auto-runs `bin/install-agent-docs` from the
      tree that shipped (`bin/release.rb#sync_agent_docs` picks it; non-fatal, never

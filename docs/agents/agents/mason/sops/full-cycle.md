@@ -68,7 +68,7 @@ prepare runs one) → `ship --mode cleared` with his words → prod verify (`/up
 SHA QA froze: the Heroku release history, where a config-var or add-on change after
 the deploy still counts and a rollback does not, or the deploy workflow's run, read
 under the agent token; read three times 20 seconds apart, then a mismatch or an
-unreadable answer stops it, exit 5) → `archive`,
+unreadable answer stops it, exit 5) → the Slack posts (below) → `archive`,
 one line per act with its elapsed time and the DevOps estimate's ETA. It owns the
 plumbing the hand-rolled scratch scripts carried: OP_CACHE=false, the AGENT GitHub
 token for prepare and archive, the admin 1Password token and DEPLOYER token for
@@ -77,6 +77,21 @@ ship (minted fresh for every act, never left empty), a one-hour CI poll budget, 
 network failure (`Failed to connect to github.com`, `Timeout was reached`, `Could
 not resolve host`) or on prepare's stale-tree refusal (a newcomer landed on
 `accepted`), and re-runs prepare once when ship refuses for a missing gauntlet.
+
+**A green prod verify tells the release on Slack** (`bin/release announce <release>
+--post`, which the cycle runs for you): one summary in #general as you, Mason
+(release slug, each app with its emoji and production SHA, every card with its task
+and PR links); one post per shipped app in that app's channel as its soul (Turf,
+Tywin, else Steffon); and in that post's thread, the app's production smoke verdict
+(`/up`, home, the shipped SHA, the hub's seal). Green is one line; red names what
+failed and @-mentions Alex McRitchie. Each post goes out once (a re-run sends only
+what never went out), every agent post obeys the noise caps in
+`config/agent_media.yml` `limits:` (6 per soul per channel per hour, release posts
+exempt but counted; 4 agent posts in a thread before Alex McRitchie writes), and a
+Slack failure never stops the cycle: it prints `Slack posts: <n> sent / <m> failed`
+and the archive still runs. After a ship you ran as an atom, run `bin/release
+announce <release> --post` yourself. Detail: [`production-deploy`](../../steffon/sops/production-deploy.md),
+"Tell the release on Slack".
 
 It enters at the board's own stage, so **re-running it is the recovery** for an
 interruption: none or `assembling` → prepare; `assembled` → QA verify; shipped
@@ -187,6 +202,8 @@ work. Report:
 - production SHA
 - release slug
 - smoke result when a ship happens
+- **the Slack posts**: `Slack posts: <n> sent / <m> failed`, naming each failed or
+  suppressed post (re-run `bin/release announce <release> --post` after fixing it)
 - **the archive result, separately** — tasks archived and releases closed, or
   "nothing to archive", or the refusal and what it named
 

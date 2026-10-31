@@ -32,6 +32,13 @@ module Media
 
     def enabled?(key) = medium(key)&.fetch("enabled", false) == true
 
+    # The Slack noise caps (Media::Slack::Limits), {} when the file names none.
+    def limits = @config["limits"].is_a?(Hash) ? @config["limits"] : {}
+
+    # Who posts a shipped release where (ReleaseNotes::SlackAnnouncement), {}
+    # when the file names none.
+    def release_posts = @config["release_posts"].is_a?(Hash) ? @config["release_posts"] : {}
+
     # Where a skipped medium falls to: its own `fallback`, else defaults.fallback.
     def fallback(key) = (medium(key) || {})["fallback"].to_s.presence || defaults["fallback"].to_s.presence
 

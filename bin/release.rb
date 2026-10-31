@@ -352,6 +352,7 @@ require_relative "lib/cli_arg_guard"
 # suite. Slice 4 of docs/agents/system/agent-presence.md.
 require_relative "lib/release_presence"
 require_relative "lib/release_cycle" # `bin/release cycle`: the whole release, resumable
+require_relative "lib/release_announce" # `bin/release announce`: smoke production, then post the release on Slack
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
@@ -10890,6 +10891,7 @@ def ship
   say("")
   say("🚀 Shipped #{rel_slug} → production#{DRY ? ' (DRY RUN — nothing executed)' : " (#{short(deployed_sha)})"}.")
   say(Release::Cli.release_notes_line(shipped, rel_slug)) unless DRY
+  say(announce_hint(rel_slug)) unless DRY
 
   # 7. Restore each app's PRIMARY checkout to a clean `main`, now fast-forwarded to
   #    what shipped — the COMPLEMENT of ship_preflight's ADVISORY. The ship itself
@@ -11145,6 +11147,7 @@ def finalize(slug = nil)
         "notes_error: n[:error], notes_messages: n[:messages].size}.to_json)"
       )
       say(Release::Cli.release_notes_line(notes, rel_slug))
+      say(announce_hint(rel_slug))
     end
 
     # 7. The idempotent tail: restore each app primary to a clean `main`, then sync
@@ -12391,6 +12394,64 @@ def notes
   end
 end
 
+# `bin/release announce <release> [--post]` — tell a SHIPPED release on Slack
+# (bin/lib/release_announce.rb, ReleaseNotes::SlackAnnouncement): smoke each
+# production app the release carries (/up and home answer 200, the app runs the
+# shipped SHA), then one #general summary as Mason, one post per shipped app
+# in its channel as that app's soul, and the smoke verdict in that post's thread.
+# A DRY RUN by default: it smokes and prints what would post. `bin/release cycle`
+# runs it with --post once prod verify is green; after a ship run on its own, run it
+# by hand. Each post is keyed, so a re-run sends only what never went out.
+#
+# NEVER FATAL: a Slack (or board) failure prints and the exit stays 0 unless no
+# post could be made at all with --post, so a script can see it; nothing it does
+# touches the ship.
+def announce
+  post = Release::Cli.take_flag(ARGV, "--post")
+  slug = Release::Cli.positional_slugs(ARGV).first
+  abort!("usage: bin/release announce <release> [--post]") if slug.to_s.empty?
+
+  sending = post && !DRY
+  say("Release announce #{slug}#{PROD ? ' (PROD board)' : ' (local)'} — #{sending ? 'POSTING to Slack' : 'DRY RUN (pass --post to send)'}")
+  warn_local!
+  result = announce_release(slug, post: sending)
+  exit 1 if sending && result["sent"].to_i.zero? && result["failed"].to_i.positive?
+end
+
+# Where the Slack posts come from after a ship: the cycle's prod verify, else by hand.
+def announce_hint(slug)
+  "  Slack posts: `bin/release cycle` posts this release once its prod verify is green; " \
+    "after a ship run on its own: #{RELEASE_SELF_CMD} announce #{slug} --post"
+end
+
+# The announce, for the subcommand and the cycle. +repos+ and +verdicts+ are what
+# the caller already read (the cycle's prod verify); nil reads them. Answers the
+# hub's result hash ({ "line", "sent", "failed", "posts" }); NEVER raises.
+def announce_release(slug, post:, repos: nil, verdicts: nil, deps: ReleaseCycleDeps.new)
+  if repos.nil?
+    plan = conductor("r = Release.find_by!(slug: #{slug.to_s.inspect}); " \
+                     "puts({ state: r.state, repos: r.tasks.flat_map(&:release_repos).uniq }.to_json)", read_only: true)
+    unless plan["state"] == "shipped"
+      say("  ✗ #{slug} is #{plan['state'] || 'unknown'}, not shipped: nothing to announce")
+      return { "line" => "Slack posts: 0 sent / 0 failed (#{slug} is not shipped)", "sent" => 0, "failed" => 0 }
+    end
+    repos = Array(plan["repos"])
+  end
+  verdicts ||= deps.deployed_sha_verdicts(slug)
+  smoke = ReleaseAnnounce.smoke(deps.verify_targets(repos, :prod), http_status: deps.method(:http_status),
+                                                                   sha_verdicts: verdicts)
+  ReleaseAnnounce.smoke_lines(smoke).each { |line| say(line) }
+  step("#{post ? 'post' : 'preview (read-only)'}: Release::Conductor.announce_release")
+  result = conductor(ReleaseAnnounce.ruby(slug, smoke, dry_run: !post), read_only: !post)
+  ReleaseAnnounce.result_lines(result).each { |line| say(line) }
+  result
+rescue SystemExit, StandardError => e
+  line = "Slack posts: 0 sent / 1 failed (#{e.message.to_s.lines.first.to_s.strip[0, 200]})"
+  say("  ⚠ Slack announce for #{slug} did not complete; the ship stands. #{line}")
+  say("  re-run with: #{RELEASE_SELF_CMD} announce #{slug} --post")
+  { "line" => line, "sent" => 0, "failed" => 1 }
+end
+
 # --- bin/release cycle (bin/lib/release_cycle.rb) ----------------------------------
 # The whole release as one resumable command: prepare → QA verify → ship (--mode
 # cleared) → prod verify → archive. The state machine is ReleaseCycle::Runner, pure
@@ -12491,6 +12552,12 @@ class ReleaseCycleDeps
   end
 
   def pause(seconds) = sleep(seconds)
+
+  # After a green prod verify: post the release on Slack (announce_release), with
+  # the repos and SHA verdicts prod verify already read. Answers the Exit Seam line.
+  def announce(slug, repos:, verdicts:)
+    announce_release(slug, post: true, repos: repos, verdicts: verdicts, deps: self)["line"].to_s
+  end
 
   # The HTTP status code as a string, or nil when nothing answered.
   def http_status(url)
@@ -12606,7 +12673,7 @@ def cycle
   if DRY
     say("bin/release cycle --dry-run: runs, from the board's current stage, `bin/release prepare` → QA verify " \
         "(each QA app /up and / answer 200) → `bin/release ship --mode cleared --clearance …` → prod verify " \
-        "(/up and / answer 200, each app runs its frozen SHA) → " \
+        "(/up and / answer 200, each app runs its frozen SHA) → the Slack posts (`bin/release announce --post`) → " \
         "`bin/release archive`. A dry run starts none of them; preview each act with its own --dry-run.")
     return 0
   end
@@ -12667,6 +12734,7 @@ if __FILE__ == $PROGRAM_NAME
   when "archive"  then archive
   when "retro"    then retro
   when "notes"    then notes
+  when "announce" then announce
   when "cycle"    then exit(cycle)
   else
     # The usage string moved to Release::Cli::USAGE so the guard's per-subcommand

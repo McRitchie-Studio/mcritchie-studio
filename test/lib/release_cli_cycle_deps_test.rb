@@ -121,4 +121,41 @@ class ReleaseCliCycleDepsTest < ReleaseCliHarness
     assert_includes ruby, "gauntlet: g&.slice('occurred_at', 'actor', 'metadata', 'status')"
     assert_includes ruby, "qa_shas: (r.metadata['qa_shas'] || {})"
   end
+  # --- the Slack announce after a green prod verify ----------------------------
+
+  def announce_call(answer:)
+    setup = <<~RUBY
+      def conductor(ruby, read_only: false)
+        $stdout.puts("HUB read_only=" + read_only.to_s + " " + ruby)
+        #{answer}
+      end
+      class ReleaseCycleDeps
+        def http_status(_url) = "200"
+      end
+    RUBY
+    verdicts = [{ "repo" => "turf-monster", "sha" => "turf222bbbb", "ok" => true, "reason" => "" }]
+    run_cli([], setup: setup,
+                call: "puts('LINE ' + ReleaseCycleDeps.new.announce('rel-s', repos: ['turf-monster'], " \
+                      "verdicts: #{verdicts.inspect}))")
+  end
+
+  def test_announce_smokes_production_and_posts_through_the_hub_with_the_verdicts_prod_verify_read
+    out = announce_call(answer: 'JSON.parse(\'{"line":"Slack posts: 5 sent / 0 failed","sent":5,"failed":0,"posts":[]}\')')
+
+    hub = out[/^HUB read_only=false .*$/]
+    refute_nil hub, out
+    assert_includes hub, "Release::Conductor.announce_release(release: r"
+    assert_includes hub, "dry_run: false"
+    assert_includes hub, "turf222bbbb", "prod verify's SHA verdict rides to the hub; it is not read again"
+    refute_includes out, "HUB read_only=true", "the cycle's repos and verdicts are reused: no extra board read"
+    assert_includes out, "✓ smoke turf-monster: /up 200, / 200"
+    assert_includes out, "LINE Slack posts: 5 sent / 0 failed"
+  end
+
+  def test_announce_that_the_hub_aborts_answers_a_failed_line_and_never_raises
+    out = announce_call(answer: 'abort!("record op failed: heroku down")')
+
+    assert_includes out, "Slack announce for rel-s did not complete; the ship stands"
+    assert_includes out, "LINE Slack posts: 0 sent / 1 failed"
+  end
 end

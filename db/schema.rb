@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_30_165439) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_31_040000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2280,6 +2280,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_165439) do
     t.index ["slug"], name: "index_skills_on_slug", unique: true
   end
 
+  create_table "slack_posts", force: :cascade do |t|
+    t.bigint "agent_message_id"
+    t.string "channel_id", null: false
+    t.datetime "created_at", null: false
+    t.string "idempotency_key"
+    t.string "kind", null: false
+    t.string "reason"
+    t.string "release_slug"
+    t.string "soul_slug"
+    t.string "status", null: false
+    t.string "thread_ts"
+    t.string "ts"
+    t.datetime "updated_at", null: false
+    t.index ["channel_id", "soul_slug", "created_at"], name: "index_slack_posts_on_channel_id_and_soul_slug_and_created_at"
+    t.index ["channel_id", "thread_ts", "created_at"], name: "index_slack_posts_on_channel_id_and_thread_ts_and_created_at"
+    t.index ["idempotency_key"], name: "index_slack_posts_on_idempotency_key", unique: true
+    t.index ["release_slug"], name: "index_slack_posts_on_release_slug"
+    t.check_constraint "kind::text = ANY (ARRAY['post'::character varying::text, 'reply'::character varying::text, 'release'::character varying::text])", name: "slack_posts_kind_known"
+    t.check_constraint "status::text = ANY (ARRAY['sending'::character varying::text, 'posted'::character varying::text, 'suppressed'::character varying::text, 'failed'::character varying::text])", name: "slack_posts_status_known"
+  end
+
   create_table "slates", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.date "ends_at"
@@ -3219,6 +3240,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_165439) do
   add_foreign_key "rosters", "teams", column: "team_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "skill_assignments", "agents", column: "agent_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "skill_assignments", "skills", column: "skill_slug", primary_key: "slug", on_update: :cascade
+  add_foreign_key "slack_posts", "releases", column: "release_slug", primary_key: "slug", on_update: :cascade, on_delete: :nullify
   add_foreign_key "slates", "seasons", column: "season_slug", primary_key: "slug", on_update: :cascade
   add_foreign_key "solid_queue_blocked_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade
   add_foreign_key "solid_queue_claimed_executions", "solid_queue_jobs", column: "job_id", on_delete: :cascade

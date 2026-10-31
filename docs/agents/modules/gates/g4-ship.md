@@ -78,6 +78,11 @@ The gate window spans the whole irreversible half of the ship:
     PERSISTED through the retry**: a confirmed failure, not a timing blip, so
     treat it with more weight than before. The seal's contract is otherwise
     unchanged — still non-blocking, still never auto-rolls-back.
+  - **It reaches Slack.** The hub's smoke verdict in #mcritchie-studio
+    (`bin/release announce`, after the cycle's prod verify) reads the recorded
+    seal: a red seal turns that verdict red and @-mentions Alex McRitchie
+    ([`production-deploy`](../../agents/steffon/sops/production-deploy.md),
+    "Tell the release on Slack").
 - **It runs the SHIPPED tree's specs.** The seal runs `bin/prod-smoke` from
   the hub's ship workspace (`mcritchie-studio/.worktrees/_ship`), pinned at
   the frozen ship SHA under the ship-workspace lock, and never from the
