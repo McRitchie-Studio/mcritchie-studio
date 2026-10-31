@@ -24,8 +24,9 @@ class BrandKitAppStatusTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     cell = css_select("[data-brand='studio'] th").first
-    assert_equal %w[logo-kit-apps logo-downloads], cell.css("[data-test='logo-kit-apps'], [data-test='logo-downloads']").map { |n| n["data-test"] },
-                 "the chips sit under the brand's name, above its downloads"
+    assert_equal %w[logo-downloads logo-kit-apps], cell.css("[data-test='logo-brand-subcolumns'] > div > [data-test='logo-downloads'], " \
+                                                           "[data-test='logo-brand-subcolumns'] > [data-test='logo-kit-apps']").map { |n| n["data-test"] },
+                 "under the brand's name, the downloads on the left and the chips on the right"
     assert_select "[data-test='logo-brands'] thead th", { text: "Apps and kits", count: 0 }, "no column of their own"
     assert_select "[data-test='logo-kit-status']", 0, "the 'Kit: saved … by' line is gone"
 

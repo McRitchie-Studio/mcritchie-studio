@@ -9,7 +9,7 @@
     header's Download format). With a saved kit
     icon all three tiles draw it (task kit-icon-atomic-unit); without one a
     saved choice keeps the icon it was saved with, as its brand page draws it.
-    Under the brand's name, before its downloads (task logos-table-columns-tidy), one chip per app the kit feeds
+    Under the brand's name, right of its downloads (task logos-table-columns-tidy), one chip per app the kit feeds
     (BrandKitApp: Applied, Kit changed or Not applied) and one for its Google marketing kit (BrandMarketingKit: Up to
     date, Kit changed or No Google kit), each with its status mark on the right (logos/_kit_chips); the column is
     wide enough for a chip's whole name at desktop width. Then its typefaces (every role, by family) and its palette (its one list of named colours, in a strip that scrolls inside its cell;
@@ -48,7 +48,7 @@
       <table class="w-full block xl:table xl:table-fixed text-sm" data-test="logo-brands" data-download-format="<%= @download_format %>">
         <thead class="hidden xl:table-header-group text-left text-3xs uppercase tracking-wide text-muted">
           <tr>
-            <th scope="col" class="pb-2 pr-4 font-semibold w-60">Brand</th>
+            <th scope="col" class="pb-2 pr-4 font-semibold w-[22rem]">Brand</th>
             <th scope="col" class="pb-2 pr-3 font-semibold w-[29rem]">Logos</th>
             <th scope="col" class="pb-2 pr-3 font-semibold w-40">Typefaces</th>
             <th scope="col" class="pb-2 font-semibold">Colours</th>
@@ -61,10 +61,14 @@
               <th scope="row" class="block xl:table-cell py-3 xl:pr-4 text-left align-top">
                 <%= link_to name, logo_brand_path(logo.brand, logo_page_params), class: "font-bold text-primary hover:underline" %>
                 <p class="text-3xs text-muted font-mono font-normal"><%= logo.brand %></p>
-                <div class="pt-1.5 font-normal sm:max-w-60" data-test="logo-kit-apps">
-                  <%= render "kit_chips", brand: logo.brand, links: @app_links.fetch(logo.brand, []), marketing_kit: @marketing_kits[logo.brand], kit: @kits[logo.brand] %>
+                <%# Two sub-columns under the name: the downloads on the left, the kit chips on the right; stacked on a
+                    phone, downloads first. %>
+                <div class="flex flex-col sm:flex-row sm:items-start gap-x-3 gap-y-1.5 pt-1.5" data-test="logo-brand-subcolumns">
+                  <div class="shrink-0"><%= render "index_downloads", samples:, kit: @kits[logo.brand] %></div>
+                  <div class="min-w-0 flex-1 font-normal sm:max-w-60" data-test="logo-kit-apps">
+                    <%= render "kit_chips", brand: logo.brand, links: @app_links.fetch(logo.brand, []), marketing_kit: @marketing_kits[logo.brand], kit: @kits[logo.brand] %>
+                  </div>
                 </div>
-                <%= render "index_downloads", samples:, kit: @kits[logo.brand] %>
               </th>
               <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top" data-test="logo-cell">
                 <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted">Logos</p>
