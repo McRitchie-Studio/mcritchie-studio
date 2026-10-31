@@ -7,21 +7,27 @@
     Logo, both words alike, in the page theme's tone). Montserrat is the engine's
     own vendored variable face: nothing else is loaded. Locals: kit; compact
     (true in the index table: smaller steps, and only two roles, Primary and Secondary, read from the hierarchy by
-    Logos::BrandKit#primary_typeface and #secondary_typeface; a brand with one face shows Primary alone). %>
+    Logos::BrandKit#primary_typeface and #secondary_typeface; a brand with one face shows Primary alone; each is its
+    family name only, or "Traced lettering", in the page's own text). %>
 <% compact = local_assigns.fetch(:compact, false) %>
 <% levels = compact ? [["Primary", kit.primary_typeface], ["Secondary", kit.secondary_typeface]].select(&:last) : kit.typefaces.map { |typeface| [typeface.role, typeface] } %>
 <ol class="<%= compact ? 'space-y-1.5' : 'space-y-4' %>" data-test="logo-typefaces" data-brand="<%= kit.brand %>" aria-label="Typefaces">
   <% levels.each_with_index do |(role, typeface), level| %>
     <li class="min-w-0" data-test="logo-typeface-level" data-level="<%= level + 1 %>" data-role="<%= typeface.role %>">
       <span class="block text-3xs font-semibold uppercase tracking-wide text-muted" data-test="logo-typeface-role"><%= role %></span>
-      <% if typeface.traced? %>
+      <% if compact %>
+        <%# The table names the family only, one line, the same size for both (Alex McRitchie, 2026-10-30): no
+            weight words or weights, and a traced face is plain text, no lettering picture. %>
+        <span class="block truncate text-sm leading-tight text-heading" data-test="logo-typeface-name"
+              title="<%= typeface.name %>"><%= typeface.traced? ? "Traced lettering" : typeface.family %></span>
+      <% elsif typeface.traced? %>
         <span class="block" data-test="logo-typeface-traced">
-          <%= logo_themed_images(logo_traced_name_variants(kit.brand), height: logo_typeface_size(level, compact:) + 4, test: "logo-typeface-sample") %>
+          <%= logo_themed_images(logo_traced_name_variants(kit.brand), height: logo_typeface_size(level) + 4, test: "logo-typeface-sample") %>
           <span class="block text-3xs text-muted" data-test="logo-typeface-name"><%= typeface.name %></span>
         </span>
       <% else %>
         <span class="block leading-tight text-heading break-words" data-test="logo-typeface-name"
-              style="font-family: 'Montserrat', sans-serif; font-weight: <%= typeface.weight %>; font-size: <%= logo_typeface_size(level, compact:) %>px"><%= typeface.name %></span>
+              style="font-family: 'Montserrat', sans-serif; font-weight: <%= typeface.weight %>; font-size: <%= logo_typeface_size(level) %>px"><%= typeface.name %></span>
       <% end %>
     </li>
   <% end %>

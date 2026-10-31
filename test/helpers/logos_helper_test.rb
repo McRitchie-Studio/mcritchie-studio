@@ -147,11 +147,9 @@ class LogosHelperTest < ActionView::TestCase
     assert_equal %w[Stacked Navbar Icon], LogosHelper::LOGO_BADGES.values
   end
 
-  test "each typeface level is smaller than the one above, at both sizes, for up to three levels" do
-    [false, true].each do |compact|
-      sizes = (0...Logos::BrandKit::MAX_LEVELS).map { |level| logo_typeface_size(level, compact:) }
-      assert_equal sizes.sort.reverse.uniq, sizes, "compact: #{compact}"
-    end
+  test "each typeface level is smaller than the one above, for up to three levels" do
+    sizes = (0...Logos::BrandKit::MAX_LEVELS).map { |level| logo_typeface_size(level) }
+    assert_equal sizes.sort.reverse.uniq, sizes
   end
 
   # Task logo-gallery-polish-pass, item 1.

@@ -282,11 +282,11 @@ module LogosHelper
               style: "max-height: #{height}px#{least}", class: class_names("block max-w-full w-auto h-auto", "mx-auto" => variant.guides)
   end
 
-  # A typeface level's name size, in px, by level (0 is the most prominent): it steps down so the hierarchy reads as
-  # one. The index table's cell is narrower, so its steps are smaller.
-  LOGO_TYPEFACE_SIZES = { false => [30, 20, 15], true => [17, 13, 11] }.freeze
+  # A typeface level's name size on the brand page, in px, by level (0 is the most prominent): it steps down so the
+  # hierarchy reads as one. The index table names each face at one size (logos/_typefaces, compact).
+  LOGO_TYPEFACE_SIZES = [30, 20, 15].freeze
 
-  def logo_typeface_size(level, compact: false) = LOGO_TYPEFACE_SIZES.fetch(compact).fetch(level)
+  def logo_typeface_size(level) = LOGO_TYPEFACE_SIZES.fetch(level)
 
   # The brand's name in its own traced lettering, as the typeface hierarchy shows it: the rule-of-4 Navbar Logo with
   # both words alike, one per baked tone.

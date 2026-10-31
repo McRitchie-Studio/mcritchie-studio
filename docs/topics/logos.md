@@ -621,8 +621,8 @@ and checked by `Logos::BrandKit` (`lib/logos/brand_kit.rb`):
   small picture of the brand's name in its lettering instead (`logos/_typefaces`).
   The /logos table names two faces only: **Primary**, the first level (Display), and **Secondary**, the level whose
   role is Text, else the next level down (Commercial Welding's Tagline); a brand with one level shows Primary alone
-  (`Logos::BrandKit#primary_typeface`, `#secondary_typeface`). A traced Primary has no family or weight, so it shows
-  its lettering and label there too.
+  (`Logos::BrandKit#primary_typeface`, `#secondary_typeface`). Each is named by its family only, one line at one
+  size, no weight; a traced face reads "Traced lettering", with no picture.
 
 A palette colour's hex passes the library's own `#hex` guard, and every name
 and role must be plain words; anything else raises `Logos::NavbarLogo::Error`
