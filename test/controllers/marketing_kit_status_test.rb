@@ -2,8 +2,8 @@
 
 require "test_helper"
 
-# [component] Each brand's Google marketing kit on /logos (tasks marketing-kit-on-logos, logos-table-columns-tidy): in the
-# Apps and kits column every brand has one Google kit chip: the Drive mark, the account that owns the kit and a check
+# [component] Each brand's Google marketing kit on /logos (tasks marketing-kit-on-logos, logos-table-columns-tidy): under
+# each brand's name every brand has one Google kit chip: the Drive mark, the account that owns the kit and a check
 # (Up to date) or an amber triangle (Kit changed), opening its Drive folder in a new tab; or a hollow "No Google kit".
 # The accessible name carries the status, the title the dates. One query reads every brand's.
 class MarketingKitStatusTest < ActionDispatch::IntegrationTest
@@ -41,8 +41,8 @@ class MarketingKitStatusTest < ActionDispatch::IntegrationTest
     assert_equal ["span", "none", "No Google kit", "none"], [none.name, none["data-status"], none["aria-label"], mark(none)["data-mark"]]
     assert_equal "No Google kit", none.text.squish
     assert_equal Logos::NavbarLogo.brands.size, css_select("[data-test='kit-chip'][data-kind='google']").size, "one chip per brand"
-    assert_select "[data-brand='welding_v2'] [data-test='logo-kit-apps'] [data-test='kit-chip'][data-kind='google']", 1,
-                  "the Google kit chip sits in the Apps and kits column"
+    assert_select "[data-brand='welding_v2'] th [data-test='logo-kit-apps'] [data-test='kit-chip'][data-kind='google']", 1,
+                  "the Google kit chip sits under the brand's name"
   end
 
   test "the table reads every brand's Google kit in one query" do

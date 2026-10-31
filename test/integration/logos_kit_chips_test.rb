@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-# [integration] The /logos Apps and kits column (task logos-table-columns-tidy): every BrandKitApp link and every
+# [integration] The /logos brand cell (task logos-table-columns-tidy): every BrandKitApp link and every
 # brand's Google kit is one chip in its own column, whose accessible name carries the status in words, whose mark on
 # the right has its own shape per status, and which opens the app's page or the kit's Drive folder.
 class LogosKitChipsTest < ActionDispatch::IntegrationTest

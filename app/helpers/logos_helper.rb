@@ -284,7 +284,7 @@ module LogosHelper
 
   # A typeface level's name size on the brand page, in px, by level (0 is the most prominent): it steps down so the
   # hierarchy reads as one. The index table names each face at one size (logos/_typefaces, compact).
-  LOGO_TYPEFACE_SIZES = [30, 20, 15].freeze
+  LOGO_TYPEFACE_SIZES = [30, 20, 15, 13].freeze
 
   def logo_typeface_size(level) = LOGO_TYPEFACE_SIZES.fetch(level)
 

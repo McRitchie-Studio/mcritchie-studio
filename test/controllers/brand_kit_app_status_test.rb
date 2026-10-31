@@ -3,7 +3,7 @@
 require "test_helper"
 
 # [component] Which apps have the brand kit (tasks brand-kit-applied-status, logos-table-columns-tidy): the /logos
-# Apps and kits column has a chip per app a kit feeds (name, then a check, an amber triangle or a hollow ring for
+# brand cell has a chip per app a kit feeds (name, then a check, an amber triangle or a hollow ring for
 # Applied / Kit changed / Not applied, the status in its accessible name, the dates in its title, opening the app's
 # page), and the app's page shows a line per kit it takes.
 class BrandKitAppStatusTest < ActionDispatch::IntegrationTest
@@ -15,7 +15,7 @@ class BrandKitAppStatusTest < ActionDispatch::IntegrationTest
   def chip(brand, app) = css_select("[data-test='kit-chip'][data-kind='app'][data-brand='#{brand}'][data-app='#{app}']").first
   def mark(node) = node.at_css("[data-test='kit-chip-mark']")["data-mark"]
 
-  test "the /logos Apps and kits column has a chip per linked app: its name, its status mark, its page" do
+  test "the /logos brand cell has a chip per linked app: its name, its status mark, its page" do
     BrandKitApp.create!(brand: "studio", app_slug: "mcritchie-studio", used_at: Time.utc(2026, 10, 21), applied_saved_at: Time.utc(2026, 10, 20, 15))
     BrandKitApp.create!(brand: "studio", app_slug: "turf-monster", used_at: Time.utc(2026, 10, 19), applied_saved_at: Time.utc(2026, 10, 1))
     BrandKitApp.create!(brand: "turf", app_slug: "turf-monster")
@@ -23,7 +23,10 @@ class BrandKitAppStatusTest < ActionDispatch::IntegrationTest
     get logos_path
     assert_response :success
 
-    assert_select "[data-brand='studio'] th [data-test='kit-chip']", 0, "the brand cell keeps only its name and downloads"
+    cell = css_select("[data-brand='studio'] th").first
+    assert_equal %w[logo-kit-apps logo-downloads], cell.css("[data-test='logo-kit-apps'], [data-test='logo-downloads']").map { |n| n["data-test"] },
+                 "the chips sit under the brand's name, above its downloads"
+    assert_select "[data-test='logo-brands'] thead th", { text: "Apps and kits", count: 0 }, "no column of their own"
     assert_select "[data-test='logo-kit-status']", 0, "the 'Kit: saved … by' line is gone"
 
     hub = chip("studio", "mcritchie-studio")

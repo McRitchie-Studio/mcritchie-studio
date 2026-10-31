@@ -72,7 +72,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     get logos_path
     assert_response :success
 
-    assert_equal ["Brand", "Logos", "Apps and kits", "Typefaces", "Colours"], css_select("[data-test='logo-brands'] thead th").map { |th| th.text.strip }
+    assert_equal %w[Brand Logos Typefaces Colours], css_select("[data-test='logo-brands'] thead th").map { |th| th.text.strip }
     assert_equal Logos::NavbarLogo.brands, css_select("[data-test='logo-brand-row']").map { |row| row["data-brand"] }
     assert_select "[data-test='logo-table-scroll'].overflow-x-auto [data-test='logo-brands']", 1, "a wide row scrolls inside its own container"
     assert_select "[data-test='logo-cluster']", Logos::NavbarLogo.brands.size, "one cluster per brand"
@@ -258,31 +258,29 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # Task logos-table-columns-tidy: the index names two faces, Primary (the Display level) and Secondary (the Text
-  # level, else the next one down; Logos::BrandKit#secondary_typeface), each by its family only, one size, no weight
-  # (Alex McRitchie, 2026-10-30), as [role shown, name shown, the level's role]. A traced face reads Traced lettering.
+  # Task logos-table-columns-tidy: the index lists every level under its config role, each by its family only, one
+  # size, no weight (Alex McRitchie, 2026-10-30), as [role, name shown]. A traced face reads Traced lettering.
   ROLES = {
-    "studio" => [%w[Primary Montserrat Display], %w[Secondary Montserrat Text]],
-    "industries" => [%w[Primary Montserrat Display], %w[Secondary Montserrat Text]],
-    "turf" => [%w[Primary Montserrat Display], %w[Secondary Montserrat Text]],
-    "welding" => [["Primary", "Traced lettering", "Display"], %w[Secondary Montserrat Tagline]],
-    "welding_v2" => [["Primary", "Traced lettering", "Display"], %w[Secondary Montserrat Tagline]]
+    "studio" => [%w[Display Montserrat], %w[Text Montserrat], %w[Tagline Montserrat]],
+    "industries" => [%w[Display Montserrat], %w[Text Montserrat], %w[Tagline Montserrat]],
+    "turf" => [%w[Display Montserrat], %w[Text Montserrat]],
+    "welding" => [["Display", "Traced lettering"], %w[Tagline Montserrat]],
+    "welding_v2" => [["Display", "Traced lettering"], %w[Tagline Montserrat]]
   }.freeze
 
-  test "the Typefaces column shows each brand's Primary and Secondary family, one size, no weight and no picture" do
+  test "the Typefaces column lists every role by its family, one size, no weight and no picture" do
     log_in_as(@admin)
     get logos_path
     ROLES.each do |brand, levels|
       scope = "[data-brand='#{brand}'] [data-test='logo-typeface']"
-      assert_equal levels.map { |role, name, _| [role, name] }, hierarchy_shown(scope), brand
-      assert_equal levels.map(&:last), css_select("#{scope} [data-test='logo-typeface-level']").map { |l| l["data-role"] }, brand
+      assert_equal levels, hierarchy_shown(scope), brand
+      assert_equal levels.map(&:first), css_select("#{scope} [data-test='logo-typeface-level']").map { |l| l["data-role"] }, brand
     end
     names = css_select("[data-test='logo-typeface'] [data-test='logo-typeface-name']")
     assert names.none? { |n| n.text.match?(/Bold|Light|Medium|Thin|Black|Regular|not identified/) }, "no weight words"
-    assert_equal [nil], names.map { |n| n["style"] }.uniq, "no per-level weight or size: one size for both"
-    assert_equal 1, names.map { |n| n["class"] }.uniq.size, "both set alike"
+    assert_equal [nil], names.map { |n| n["style"] }.uniq, "no per-level weight or size: one size for every level"
+    assert_equal 1, names.map { |n| n["class"] }.uniq.size, "every level set alike"
     assert_select "[data-test='logo-typeface'] img, [data-test='logo-typeface'] [data-test='logo-typeface-traced']", 0, "no lettering picture"
-    assert_select "[data-test='logo-typeface'] [data-test='logo-typeface-role']", { text: "Tagline", count: 0 }, "a third level is not shown"
   end
 
   test "a brand page's traced level shows the brand's name in its own lettering, not a font name in some other face" do
@@ -316,8 +314,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_equal %w[studio industries turf welding welding_v2], css_select("[data-test='logo-brand-row']").map { |row| row["data-brand"] }
-    assert_equal [%w[Primary Montserrat], %w[Secondary Montserrat]], hierarchy_shown("[data-brand='turf'] [data-test='logo-typeface']")
-    assert_equal [["Primary", "Traced lettering"], ["Secondary", "Montserrat"]],
+    assert_equal [%w[Display Montserrat], %w[Text Montserrat]], hierarchy_shown("[data-brand='turf'] [data-test='logo-typeface']")
+    assert_equal [["Display", "Traced lettering"], %w[Tagline Montserrat]],
                  hierarchy_shown("[data-brand='welding'] [data-test='logo-typeface']")
 
     { "turf" => "Turf Monster", "welding" => "Commercial Welding v1" }.each do |brand, name|

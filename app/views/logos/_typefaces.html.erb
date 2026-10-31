@@ -1,20 +1,18 @@
 <%# A BRAND'S TYPEFACE HIERARCHY (Logos::BrandKit, config/logo_brands.yml
-    `typefaces:`): at most three levels, the most prominent first. Each level
+    `typefaces:`): at most four levels, the most prominent first. Each level
     shows its own name ("Montserrat ExtraBold") set IN that face, at a size that
     steps down with the level, under its role as a small label. A level set in
     the brand's own traced lettering has no font to set its name in, so it shows
     a small picture of the brand's name in that lettering instead (the Navbar
     Logo, both words alike, in the page theme's tone). Montserrat is the engine's
     own vendored variable face: nothing else is loaded. Locals: kit; compact
-    (true in the index table: smaller steps, and only two roles, Primary and Secondary, read from the hierarchy by
-    Logos::BrandKit#primary_typeface and #secondary_typeface; a brand with one face shows Primary alone; each is its
-    family name only, or "Traced lettering", in the page's own text). %>
+    (true in the index table: every level under its role, each its family name only, or "Traced lettering", in the
+    page's own text at one size). %>
 <% compact = local_assigns.fetch(:compact, false) %>
-<% levels = compact ? [["Primary", kit.primary_typeface], ["Secondary", kit.secondary_typeface]].select(&:last) : kit.typefaces.map { |typeface| [typeface.role, typeface] } %>
-<ol class="<%= compact ? 'space-y-1.5' : 'space-y-4' %>" data-test="logo-typefaces" data-brand="<%= kit.brand %>" aria-label="Typefaces">
-  <% levels.each_with_index do |(role, typeface), level| %>
+<ol class="<%= compact ? 'space-y-1' : 'space-y-4' %>" data-test="logo-typefaces" data-brand="<%= kit.brand %>" aria-label="Typefaces">
+  <% kit.typefaces.each_with_index do |typeface, level| %>
     <li class="min-w-0" data-test="logo-typeface-level" data-level="<%= level + 1 %>" data-role="<%= typeface.role %>">
-      <span class="block text-3xs font-semibold uppercase tracking-wide text-muted" data-test="logo-typeface-role"><%= role %></span>
+      <span class="block text-3xs font-semibold uppercase tracking-wide text-muted" data-test="logo-typeface-role"><%= typeface.role %></span>
       <% if compact %>
         <%# The table names the family only, one line, the same size for both (Alex McRitchie, 2026-10-30): no
             weight words or weights, and a traced face is plain text, no lettering picture. %>

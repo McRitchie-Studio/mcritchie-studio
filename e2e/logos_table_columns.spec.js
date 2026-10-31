@@ -47,7 +47,7 @@ test("at 1280 px thirty colours scroll inside their cell without growing the row
   await expectStripScrolls(page, 1280);
 });
 
-test("at 375 px every Apps and kits chip fits the screen", async ({ page }) => {
+test("at 375 px every app and Google kit chip fits the screen", async ({ page }) => {
   await open(page, 375);
   const chips = page.locator("[data-test='kit-chip']");
   expect(await chips.count()).toBeGreaterThan(0);

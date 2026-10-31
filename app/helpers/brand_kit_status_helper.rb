@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # The words and marks for a brand kit's reach (task logos-table-columns-tidy): each app the kit feeds (BrandKitApp)
-# and its Google marketing kit (BrandMarketingKit), as the /logos Apps and kits column draws them (logos/_kit_chip)
+# and its Google marketing kit (BrandMarketingKit), as the /logos brand cell draws them (logos/_kit_chip)
 # and as an app's page words its line (brand_kit_apps/_status).
 module BrandKitStatusHelper
   # Each status, as the mark a chip draws on its right: a check for done, a triangle for Kit changed, a hollow ring

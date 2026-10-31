@@ -147,7 +147,7 @@ class LogosHelperTest < ActionView::TestCase
     assert_equal %w[Stacked Navbar Icon], LogosHelper::LOGO_BADGES.values
   end
 
-  test "each typeface level is smaller than the one above, for up to three levels" do
+  test "each typeface level is smaller than the one above, for up to four levels" do
     sizes = (0...Logos::BrandKit::MAX_LEVELS).map { |level| logo_typeface_size(level) }
     assert_equal sizes.sort.reverse.uniq, sizes
   end
