@@ -5,7 +5,7 @@
 #
 # WHY. On 2026-10-30 and 2026-10-31 the dispatcher's harness probe asked for a token
 # once a minute with an expired cache and a hung, then rate-limited, 1Password. Each
-# beat read `op` again: about 1,060 metered attempts in two windows. Two seams close
+# beat read `op` again: 1,075 metered failed attempts in two windows. Two seams close
 # it: `--cached-only` (a watcher's read that never reaches op) and the account-wide
 # backoff (a hang or the rate limit, recorded where every sibling sees it).
 #

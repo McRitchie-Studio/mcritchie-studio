@@ -42,7 +42,7 @@ module AgentMailbox
     # THE PROBE NEVER SPENDS THE QUOTA WHILE 1PASSWORD IS DOWN (one-way-into-1password).
     # On 2026-10-30 and 2026-10-31 GH_SCRIPT ran every minute with an expired cache and
     # a hung, then rate-limited, 1Password: each beat went back to `op` and was killed
-    # at DEADLINE, about 1,060 metered attempts in two windows, the whole of the
+    # at DEADLINE, 1,075 metered failed attempts in two windows, the whole of the
     # sessionless gh-token traffic that day. When op_ok is false the probe now asks
     # for the cached session only, so gh_ok still says whether agents can reach
     # GitHub, and the probe never becomes the process that reads 1Password. bin/gh-token's

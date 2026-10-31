@@ -473,7 +473,7 @@ module SecretCache
   # WHY. On 2026-10-30 and 2026-10-31 the dispatcher's harness probe asked
   # bin/gh-token for a token once a minute (bin/lib/agent_harness_probe.rb). The
   # cache had expired and 1Password was hung, then out of quota, so every beat
-  # went back to `op`: about 1,060 metered attempts across two windows, none of
+  # went back to `op`: 1,075 metered failed attempts across two windows, none of
   # which could succeed. A failure that is ACCOUNT-WIDE (a hung daemon, the
   # service-account rate limit) is the same answer for every process on the
   # machine, so it is recorded here, where every sibling reads it, and a refresh
