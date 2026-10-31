@@ -97,6 +97,15 @@ class CyvasseFourEmailsTest < ActionDispatch::IntegrationTest
     assert_match "font-size:44px", html(render("cyvasse_pick", @vet))
   end
 
+  test "the Dragon's fallback colour keeps its copy readable with images off" do
+    assert_match 'bgcolor="#c8324b"', html(render("cyvasse_dragon", @vet))
+  end
+
+  test "a forty-character username can wrap in every style" do
+    long = Contact.create!(email: "forty@example.com", traits: { "cyvasse" => { "username" => "a" * 40, "games" => 7 } })
+    KEYS.each { |key| assert_match "word-break:break-word", html(render(key, long)), key }
+  end
+
   test "a reader without history gets natural copy and every footer has an address" do
     assert_no_match(/ADD TO YOUR RECORD/, text(render("cyvasse_poster", @guest)))
     assert_match "Back.", text(render("cyvasse_wrapped", @guest))
@@ -119,6 +128,7 @@ class CyvasseFourEmailsTest < ActionDispatch::IntegrationTest
       assert_response :success
       assert_no_match(/studio-logo-white/, response.body, key)
       assert_match "{games}", response.body, key unless key == "cyvasse_pick"
+      assert_match "{all_time_rank}", response.body, key if key == "cyvasse_wrapped"
     end
     assert_equal "broadcast_email", Broadcast.new(template_key: "cyvasse_record").email_layout
   end

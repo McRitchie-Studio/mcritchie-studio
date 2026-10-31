@@ -253,7 +253,8 @@ class Broadcast < ApplicationRecord
   # The audience rules are Broadcast#unsent_contacts': subscribed only,
   # verified-only where the audience requires it, never someone already sent.
   # `filter` narrows the contacts further: a Hash for `where`, or a callable
-  # taking and returning the relation.
+  # taking and returning the relation. A four-prong template also leaves out
+  # anyone Broadcasts::CyvasseFour.untouched refuses, so a reader gets one style.
   def stage!(audience: target_list, limit: nil, filter: nil, verified: nil, now: Time.current)
     raise ArgumentError, "no audience: set the broadcast's target list or pass one" if audience.blank?
 

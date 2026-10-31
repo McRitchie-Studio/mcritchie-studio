@@ -11,7 +11,7 @@
 <tr>
   <td style="background-color:#16123c;padding:40px 24px 18px;text-align:center;">
     <div style="font-size:64px;line-height:1;font-weight:900;letter-spacing:-2px;color:#ffffff;">YOUR<br>MOVE.</div>
-    <div style="padding-top:14px;font-size:18px;line-height:1.4;color:#c9c4f5;">The board is set<%= ", #{merge_field(:username)}" if named %>. 30 seconds a move.</div>
+    <div style="padding-top:14px;font-size:18px;line-height:1.4;color:#c9c4f5;word-break:break-word;">The board is set<%= ", #{merge_field(:username)}" if named %>. 30 seconds a move.</div>
   </td>
 </tr>
 <tr><td style="background-color:#16123c;font-size:0;line-height:0;"><img src="<%= @email_asset_host %>/email/cyvasse_board.jpg" width="600" alt="A Cyvasse board mid-game" style="display:block;width:100%;height:auto;border:0;"></td></tr>
@@ -33,7 +33,7 @@
     <div style="font-size:28px;line-height:1.1;font-weight:900;color:#16123c;padding-bottom:20px;">What&rsquo;s new since you left</div>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr><td style="padding:12px 0;border-top:2px solid #16123c;font-size:16px;line-height:1.4;color:#16123c;text-align:left;"><b>Live matches.</b> Hit Play and you&rsquo;re in a game in seconds.</td></tr>
-      <tr><td style="padding:12px 0;border-top:2px solid #16123c;font-size:16px;line-height:1.4;color:#16123c;text-align:left;"><b>A leaderboard.</b> Your old record still counts.</td></tr>
+      <tr><td style="padding:12px 0;border-top:2px solid #16123c;font-size:16px;line-height:1.4;color:#16123c;text-align:left;"><b>A leaderboard.</b> <%= history ? "Your old record still counts." : "Climb it from your first game." %></td></tr>
       <tr><td style="padding:12px 0;border-top:2px solid #16123c;border-bottom:2px solid #16123c;font-size:16px;line-height:1.4;color:#16123c;text-align:left;"><b>Made for your phone.</b> No download. It runs in your browser.</td></tr>
     </table>
     <div style="padding-top:24px;"><%= render "broadcasts/blocks/cta", url: play_url, label: history ? "ADD TO YOUR RECORD" : "PLAY NOW", bg: "#16123c", color: "#ffffff" %></div>

@@ -6,13 +6,14 @@
 <% history = @merge_fields.nil? || Broadcasts::CyvasseReturn.history?(@merge_fields) %>
 <% named = @merge_fields.nil? || Broadcasts::CyvasseReturn.username?(@merge_fields) %>
 <% year = @merge_fields ? Broadcasts::CyvasseYourGames.joined_year(@merge_fields) : "{joined_on}" %>
-<% wins = merge_field(:wins, fallback: "") %>
-<% losses = merge_field(:losses, fallback: "") %>
-<% rank = merge_field(:all_time_rank, fallback: "") %>
+<% wins = merge_field(:wins, fallback: @merge_fields ? "" : nil) %>
+<% losses = merge_field(:losses, fallback: @merge_fields ? "" : nil) %>
+<% rank = merge_field(:all_time_rank, fallback: @merge_fields ? "" : nil) %>
 <% rate = @merge_fields ? Broadcasts::CyvasseFour.win_rate(@merge_fields) : "{win_rate}" %>
-<% who = named ? "#{merge_field(:username).upcase}, YOUR CYVASSE YEARS" : "YOUR CYVASSE YEARS" %>
+<% years = history ? "YOUR CYVASSE YEARS" : "YOUR CYVASSE ACCOUNT" %>
+<% who = named ? "#{merge_field(:username).upcase}, #{years}" : years %>
 <% content_for :email_title, "Your Cyvasse years" %>
-<% content_for :preheader, @broadcast&.preview_text.presence || "The numbers you left on the board." %>
+<% content_for :preheader, @broadcast&.preview_text.presence || (history ? "The numbers you left on the board." : "Your account came across to the rebuilt game.") %>
 <% if history %>
   <% label = who %>
   <% if year.present? %>
