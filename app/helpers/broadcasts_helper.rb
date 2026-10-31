@@ -26,6 +26,16 @@ module BroadcastsHelper
     fallback || "{#{key}}"
   end
 
+  # The [value, label] pairs of the reader's record, for blocks/stat_row: blanks
+  # left out, labels singular for exactly one. The preview shows the braces.
+  def cyvasse_record_stats
+    rank = merge_field(:all_time_rank, fallback: @merge_fields ? "" : nil)
+    [ [ :games, "GAME" ], [ :wins, "WIN" ] ].map do |key, noun|
+      value = merge_field(key, fallback: @merge_fields ? "" : nil)
+      [ value, value.to_i == 1 ? noun : noun.pluralize ]
+    end.push([ rank.present? ? "##{rank}" : "", "ALL-TIME" ]).reject { |value, _| value.blank? }
+  end
+
   # A count from the merge fields with its noun, pluralized: "1 game",
   # "7 games" (Broadcasts::MergeFields.counted). With no value it shows the
   # field's name in braces, as merge_field does: "{games} games".

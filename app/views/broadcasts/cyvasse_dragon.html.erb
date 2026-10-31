@@ -5,12 +5,11 @@
 <% play_url = broadcast_link(:play, Broadcast::TEMPLATE_LINKS["cyvasse_dragon"]["play"]) %>
 <% named = @merge_fields.nil? || Broadcasts::CyvasseReturn.username?(@merge_fields) %>
 <% history = @merge_fields.nil? || Broadcasts::CyvasseReturn.history?(@merge_fields) %>
-<% rank = merge_field(:all_time_rank, fallback: "") %>
-<% stats = [ [ merge_field(:games, fallback: ""), "GAMES" ], [ merge_field(:wins, fallback: ""), "WINS" ], [ rank.present? ? "##{rank}" : "", "ALL-TIME" ] ].reject { |value, _| value.blank? } %>
+<% stats = cyvasse_record_stats %>
 <% content_for :email_title, "The dragon is awake" %>
 <% content_for :preheader, @broadcast&.preview_text.presence || "Your board is set. 30 seconds a move." %>
 <%= render "broadcasts/blocks/strip", text: "CYVASSE IS BACK", bg: "#ffa800", color: "#16123c" %>
-<%= render layout: "broadcasts/blocks/band", locals: { image: "cyvasse_band_ember.jpg", color: "#ffa800" } do %>
+<%= render layout: "broadcasts/blocks/band", locals: { image: "cyvasse_band_ember.jpg", color: "#c8324b" } do %>
   <div style="height:30px;line-height:30px;">&nbsp;</div>
   <img src="<%= @email_asset_host %>/email/cyvasse_wordmark.png" width="170" alt="Cyvasse" style="display:block;margin:0 auto;height:auto;border:0;">
   <div style="font-size:48px;line-height:1.02;font-weight:900;letter-spacing:-1.5px;color:#ffffff;padding-top:6px;">The Dragon<br>Is Awake.</div>

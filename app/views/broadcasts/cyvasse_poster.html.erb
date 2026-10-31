@@ -4,8 +4,7 @@
 <% play_url = broadcast_link(:play, Broadcast::TEMPLATE_LINKS["cyvasse_poster"]["play"]) %>
 <% named = @merge_fields.nil? || Broadcasts::CyvasseReturn.username?(@merge_fields) %>
 <% history = @merge_fields.nil? || Broadcasts::CyvasseReturn.history?(@merge_fields) %>
-<% rank = merge_field(:all_time_rank, fallback: "") %>
-<% stats = [ [ merge_field(:games, fallback: ""), "GAMES" ], [ merge_field(:wins, fallback: ""), "WINS" ], [ rank.present? ? "##{rank}" : "", "ALL-TIME" ] ].reject { |value, _| value.blank? } %>
+<% stats = cyvasse_record_stats %>
 <% content_for :email_title, "Your move" %>
 <% content_for :preheader, @broadcast&.preview_text.presence || "The board is set. 30 seconds a move." %>
 <%= render "broadcasts/blocks/strip", text: "CYVASSE IS BACK", bg: "#ffa800", color: "#16123c" %>
@@ -37,6 +36,6 @@
       <tr><td style="padding:12px 0;border-top:2px solid #16123c;font-size:16px;line-height:1.4;color:#16123c;text-align:left;"><b>A leaderboard.</b> Your old record still counts.</td></tr>
       <tr><td style="padding:12px 0;border-top:2px solid #16123c;border-bottom:2px solid #16123c;font-size:16px;line-height:1.4;color:#16123c;text-align:left;"><b>Made for your phone.</b> No download. It runs in your browser.</td></tr>
     </table>
-    <div style="padding-top:24px;"><%= render "broadcasts/blocks/cta", url: play_url, label: "ADD TO YOUR RECORD", bg: "#16123c", color: "#ffffff" %></div>
+    <div style="padding-top:24px;"><%= render "broadcasts/blocks/cta", url: play_url, label: history ? "ADD TO YOUR RECORD" : "PLAY NOW", bg: "#16123c", color: "#ffffff" %></div>
   </td>
 </tr>

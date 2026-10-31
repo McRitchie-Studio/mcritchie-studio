@@ -21,13 +21,13 @@
   <% end %>
   <%= render "broadcasts/blocks/stat_card", bg: "#8e82fe", color: "#16123c", label: label, big: merge_field(:games), note: "games on the old board." %>
   <% if rate.present? && wins.present? && losses.present? %>
-    <%= render "broadcasts/blocks/stat_card", bg: "#ffa800", color: "#16123c", label: "YOU WON", big: @merge_fields ? "#{rate}%" : rate, note: "#{wins} wins, #{losses} losses." %>
+    <%= render "broadcasts/blocks/stat_card", bg: "#ffa800", color: "#16123c", label: "YOU WON", big: @merge_fields ? "#{rate}%" : rate, note: "#{merge_count(:wins, "win")}, #{merge_count(:losses, "loss")}." %>
   <% end %>
   <% if rank.present? %>
     <%= render "broadcasts/blocks/stat_card", bg: "#c8324b", color: "#ffffff", label: "ALL-TIME RANK", big: "##{rank}", note: "Still yours. For now." %>
   <% end %>
 <% else %>
-  <%= render "broadcasts/blocks/stat_card", bg: "#16123c", color: "#ffffff", label: who, big: "1", note: "Account waiting for you on the rebuilt game." %>
+  <%= render "broadcasts/blocks/stat_card", bg: "#16123c", color: "#ffffff", label: who, big: "Back.", note: "Your account came across to the rebuilt game." %>
 <% end %>
 <tr>
   <td style="background-color:#16123c;padding:36px 24px;text-align:center;">
