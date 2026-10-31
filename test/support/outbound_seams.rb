@@ -339,6 +339,12 @@ module OutboundSeams
     # comparison points this at a directory of gems it built.
     ENV["RELEASE_GEM_FETCH"] = "none"
 
+    # THE SHIP'S PR-READ PREFLIGHT (bin/lib/ship_pr_access.rb): `bin/release ship`
+    # asks GitHub for one merged PR per app repo as the ship identity. Set (even
+    # empty) it answers instead of gh: "" means every repo is readable, and a test
+    # of the warning names the unreadable repos, comma-separated.
+    ENV["RELEASE_PR_UNREADABLE"] = ""
+
     # THE DEVNET GAUNTLET, process-wide as well as in `env`: a child of a harness
     # that never adopted OutboundSeams still runs the sealed driver and an
     # unroutable devnet RPC, never turf-monster's real rehearsal.

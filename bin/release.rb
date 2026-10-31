@@ -227,6 +227,7 @@ require_relative "lib/local_services"
 require_relative "lib/bounded_command" # the record-op deadline (run_record_op)
 require_relative "lib/one_password_wait" # --wait-for-1password, and OpMeter for the hang hint
 require_relative "lib/gem_served_wait" # publish → lock-push wait (GemServedWait)
+require_relative "lib/ship_pr_access" # ship preflight: repos the ship identity cannot read PRs in
 require_relative "lib/static_cloudflare" # the static_cloudflare prod_deploy strategy
 # `status` prints PROGRAM DRIFT: on-chain programs behind their source (program_drift_report).
 require_relative "lib/program_drift"
@@ -10209,6 +10210,9 @@ end
 def ship_preflight(app_groups, gem_groups = [], ship_sha = {})
   say("")
   step("ship preflight: pin each app's ship workspace at its frozen SHA; check the gem builds")
+  # 0. Before the DRY return on purpose: the read mutates nothing, and a dry run is
+  #    exactly where an operator should learn the identity is blind somewhere.
+  ship_pr_access_preflight(app_groups.map { |g| g["repo"] })
   if DRY
     gem_groups.each { |g| say("  [dry-run] check #{g['repo']} (#{repo_path(g['repo'])}) has no modified tracked files (it is BUILT from its primary)") }
     app_groups.each { |g| say("  [dry-run] pin #{g['repo']} ship workspace (#{Release::GateWorkspace.path(repo_path(g['repo']), role: 'ship')}) at the frozen SHA") }
@@ -10237,6 +10241,40 @@ def ship_preflight(app_groups, gem_groups = [], ship_sha = {})
     Release::ShipSequence.preflight_offenders(app_states), root: projects_root
   )
   say(advisory) if advisory
+end
+
+# The PR-read preflight (ShipPrAccess): ask GitHub for one merged PR in each app
+# repo, as the ship identity, with the same gh read and auth retry the containment
+# check uses (member_code_shas), and WARN on every repo that refuses. Never aborts.
+def ship_pr_access_preflight(repos)
+  identity = GhIdentity.item_for(GhIdentity.resolve.to_s) || ENV["GH_APP_ITEM"].to_s.strip
+  identity = "github.mcritchie-agent" if identity.empty?
+  unreadable = ShipPrAccess.unreadable(repos, reader: ->(repo) { ship_pr_readable(repo) })
+  message = ShipPrAccess.warning(unreadable, identity: identity)
+  say(message ? "  #{message}" : "  ✓ PR read: the ship identity (#{identity}) reads pull requests in every app repo")
+rescue StandardError => e
+  say("  ⚠ PR READ PREFLIGHT could not run (#{e.class}: #{e.message.to_s[0, 140]}); the ship goes on")
+end
+
+# One repo's PR read: [ok, output]. RELEASE_PR_UNREADABLE is the test seam: when it
+# is SET, its comma list names the unreadable repos and no gh call runs (armed ""
+# by test/support/outbound_seams.rb, so no test reaches GitHub).
+def ship_pr_readable(repo)
+  if ENV.key?("RELEASE_PR_UNREADABLE")
+    denied = ENV["RELEASE_PR_UNREADABLE"].to_s.split(",").map(&:strip)
+    return denied.include?(repo.to_s) ? [false, "RELEASE_PR_UNREADABLE names #{repo}"] : [true, ""]
+  end
+
+  nwo = repo_name_with_owner(repo)
+  return [false, "no GitHub origin for #{repo}"] if nwo.empty?
+
+  argv = ["gh", "pr", "list", "--repo", nwo, "--state", "merged", "--json", "number", "--limit", "1"]
+  out, status = bounded_capture2e(*argv)
+  if !status.success? && GhAuthRetry.auth_failure?(out)
+    token = GhAuthRetry.mint
+    out, status = bounded_capture2e(*argv, env: gh_token_env(token)) if token
+  end
+  [status.success?, out.to_s]
 end
 
 # --- step 5c: production smoke SEAL -----------------------------------------
