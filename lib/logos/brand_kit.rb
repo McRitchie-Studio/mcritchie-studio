@@ -46,6 +46,16 @@ module Logos
       @typefaces = checked_typefaces(style["typefaces"]).freeze
     end
 
+    # The two faces the /logos table names (task logos-table-columns-tidy). Primary is the most prominent level (the
+    # first: Display). Secondary is the face running copy is set in: the level whose role is Text, else the next level
+    # down (a Tagline when the brand names no Text face). A brand with one level has no secondary (nil).
+    def primary_typeface = typefaces.first
+
+    def secondary_typeface
+      rest = typefaces.drop(1)
+      rest.find { |typeface| typeface.role == "Text" } || rest.first
+    end
+
     private
 
     def checked_palette(given)

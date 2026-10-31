@@ -130,4 +130,25 @@ class LogosBrandKitTypefacesTest < Minitest::Test
     assert_match(/with a role/, refusal([montserrat("Display", 800).merge("size" => 30)]))
     assert_match(/typeface role must be plain words/, refusal([montserrat("<b>Display</b>", 800)]))
   end
+
+  # Task logos-table-columns-tidy: the /logos table names two faces, Primary and Secondary.
+  def roles(typefaces)
+    kit = BrandKit.new("kit", styles: { "kit" => Logos::NavbarLogo.styles.fetch("studio").merge("typefaces" => typefaces) })
+    [kit.primary_typeface&.role, kit.secondary_typeface&.role]
+  end
+
+  def test_primary_is_the_display_face_and_secondary_the_text_face
+    studio = BrandKit.new("studio")
+    assert_equal ["Montserrat ExtraBold", "Montserrat Light"], [studio.primary_typeface.name, studio.secondary_typeface.name]
+    assert_equal %w[Display Text], roles([montserrat("Display", 800), montserrat("Text", 300), montserrat("Tagline", 500)])
+    assert_equal %w[Display Text], roles([montserrat("Display", 800), montserrat("Tagline", 500), montserrat("Text", 300)]), "Text wins over a Tagline listed before it"
+  end
+
+  def test_without_a_text_face_secondary_is_the_next_level_and_one_face_has_no_secondary
+    assert_equal %w[Display Tagline], roles([{ "role" => "Display", "label" => "Traced lettering" }, montserrat("Tagline", 500)])
+    assert_equal ["Display", nil], roles([montserrat("Display", 800)])
+    welding = BrandKit.new("welding")
+    assert_predicate welding.primary_typeface, :traced?
+    assert_equal "Montserrat Medium", welding.secondary_typeface.name
+  end
 end
