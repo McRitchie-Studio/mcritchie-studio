@@ -635,6 +635,10 @@ that commit; an unreadable check clears with `bin/release finalize <release>`.
 A PR the ship's token cannot read (`Resource not accessible by integration`) does
 not hold on its own: the check falls back to git, reading the PR's
 `refs/pull/<n>/head` and asking whether it is an ancestor of the shipped `main`.
+The ship's preflight says so up front: a `⚠ PR READ PREFLIGHT` line lists every app
+repo the ship identity cannot read PRs in (today the private ones) and the grant that
+closes the gap. It is a warning, never a stop; the grant is Alex McRitchie's GitHub
+settings click, never an agent's.
 A hold that names a PR read failing on a stale or wrong PR URL: fix the URL
 (`bin/task update <slug> --pr-url-for <repo>=<url>`), then run `bin/release finalize
 <release>`. A held member's `merged` column can read `main` (stamped per repo at the

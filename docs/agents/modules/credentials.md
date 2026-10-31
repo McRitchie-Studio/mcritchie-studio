@@ -669,6 +669,14 @@ The two GitHub App items are split across the two vaults — `github.mcritchie-a
 | `github.mcritchie-agent` (**default**) | build / review | Contents write + **Pull requests write** + Checks read + Actions write + Workflows write + Administration write + Metadata/Statuses read |
 | `github.mcritchie-admin` (`export GH_APP_ITEM=github.mcritchie-admin`) | ship | Contents write + Actions write + Checks read + Secrets write + Administration write + Metadata/Statuses read. **No `pull_requests` grant at all** — the deployer cannot open or merge PRs by design |
 
+The deployer's missing `pull_requests` grant bites only on PRIVATE repos: GitHub
+serves a public repo's pull requests to any token, so the ship reads PRs in the
+public repos and not in `voicebox`, `alex-build` or `rolio` (private, checked
+2026-10-30 with `gh repo list McRitchie-Studio`). The ship's containment check falls
+back to git ancestry there, and `bin/release ship`'s preflight prints a `PR READ
+PREFLIGHT` warning naming each repo it cannot read and the grant that closes it
+(Alex McRitchie's click: the App's Repository access plus Pull requests: Read-only).
+
 Grants above are the installations' live permission sets, read 2026-08-12 from
 `GET /app/installations`. Re-read them there rather than trusting this table if a
 `not accessible by integration` ever disagrees with it.
