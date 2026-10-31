@@ -260,7 +260,7 @@ def cached_entries(identity)
   [read_store[identity], read_legacy_store[identity]]
 end
 
-def read_secret(ref, lane = OpVaults::DEFAULT_LANE)
+def read_secret(ref, lane = OpVaults::DEFAULT_LANE, via: "gh-token")
   return "" unless File.executable?(OP_BIN)
 
   # op takes its credential from OP_SERVICE_ACCOUNT_TOKEN and nothing else, so a
@@ -271,7 +271,7 @@ def read_secret(ref, lane = OpVaults::DEFAULT_LANE)
   # command that caused it. OpMeter.popen spawns nothing beyond this child, so
   # `$?` below still reports op's status and not the recorder's.
   Tempfile.create("gh-token-op-err") do |err|
-    out = OpMeter.popen(OpVaults.op_env(lane), [OP_BIN, "read", ref], via: "gh-token", err: err)
+    out = OpMeter.popen(OpVaults.op_env(lane), [OP_BIN, "read", ref], via: via, err: err)
     next out if $?.success?
 
     @op_said = scrub_op_error(File.read(err.path))
@@ -340,11 +340,14 @@ def mint(identity)
   # who has just sourced the admin profile must not wait out another's window.
   held = SecretCache.backoff("github.#{identity}")
   return backed_off!(identity, held) if held
-  app_id = read_secret(OpVaults.ref(item, "app-id", lane), lane).strip
+  # The identity rides the meter's `via` column, so bin/op-reads says which App spent
+  # a read: the deployer is minted per call by design, the agent once an hour.
+  via = "gh-token:#{identity}"
+  app_id = read_secret(OpVaults.ref(item, "app-id", lane), lane, via: via).strip
   # A failed first read (op hung or signed out) is not followed by a second one:
   # each bounded attempt can cost its whole deadline, and the contingency below is
   # what the caller needs, in seconds rather than minutes.
-  pem = app_id.empty? ? "" : read_secret(OpVaults.ref(item, PEM_ATTACHMENTS.fetch(item), lane), lane)
+  pem = app_id.empty? ? "" : read_secret(OpVaults.ref(item, PEM_ATTACHMENTS.fetch(item), lane), lane, via: via)
   if app_id.empty? || pem.strip.empty?
     SecretCache.record_failure!("github.#{identity}")
     cause = account_wide_cause(@op_said)

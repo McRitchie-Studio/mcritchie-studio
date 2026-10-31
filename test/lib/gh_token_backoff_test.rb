@@ -150,6 +150,7 @@ class GhTokenBackoffTest < Minitest::Test
       reads = JSON.parse(out).select { |r| r["caller"] == "gh-token" }
       assert_equal 2, reads.size, "one mint is two reads (app-id and the key); the two cache hits add none"
       assert_equal %w[ok ok], reads.map { |r| r["outcome"] }
+      assert_equal %w[gh-token:agent gh-token:agent], reads.map { |r| r["via"] }, "the identity is in the row"
       assert_equal 2, op_calls(dir), "the stub agrees with the meter"
     end
   end

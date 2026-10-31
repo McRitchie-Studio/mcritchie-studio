@@ -26,18 +26,22 @@ Take the first rung that answers. Never skip down a rung to "be sure".
 
 | Rung | Source | Costs a read? | How |
 |------|--------|---------------|-----|
-| 1 | The process environment, or the repo's env file | No | `ENV["NAME"]`; `.env` / `.env.development` (table below) |
+| 1 | The process environment, or the repo's env file | No | `ENV["NAME"]`; `.env` / `.env.development` (table below). Not Heroku tokens: they resolve at use, rung 3 |
 | 2 | The secret cache, `/Users/alex/projects/.secret-cache/` | No | `bin/secret get <name>`, `bin/gh-token` |
 | 3 | 1Password, through the one metered wrapper | **Yes** | Ruby: `OpMeter.popen`. Shell: `op_metered` (`bin/lib/op-meter.sh`). By hand: `bin/secret <vault> <item> [field]` |
 
 - **Rung 3 is the only way to run `op`.** A raw `op read`, `op item get`,
   `IO.popen(["op", …])` or `Open3` call is invisible to `bin/op-reads`.
-  `test/lib/op_call_guard_test.rb` fails on a new one in `bin/`, `app/` or `lib/`;
+  `test/lib/op_reads_are_bounded_test.rb` fails on a new one in `bin/`, `app/` or `lib/`;
   the few allowed exceptions are listed there, each with its reason.
 - **A process reads a key once.** Memoize it (`AgentApi#op_secret`), or export it
   for the children (`HerokuToken.export_once!`). A retry bills too.
-- **GitHub tokens come only from `bin/gh-token`**, which serves the shared cache and
-  reads 1Password only on a miss or expiry. A watcher that must never spend the
+- **GitHub tokens come only from `bin/gh-token`.** For the agent identity it serves
+  the shared cache and reads 1Password only on a miss or expiry. The deployer
+  identity is minted per call by design and is never cached (`CACHEABLE_IDENTITIES`);
+  `--force` (a recovery after GitHub refused a token) also mints on purpose.
+  `bin/op-reads` rows carry the identity as `via` (`gh-token:agent`,
+  `gh-token:deployer`), so a spend says which one. A watcher that must never spend the
   quota asks `bin/gh-token --cached-only` (exit 3 on a miss, never reads `op`).
 - **When 1Password is hung or rate-limited, nobody retries it.** `bin/gh-token`
   records that account-wide failure in the cache manifest and every process skips
@@ -154,8 +158,9 @@ rows above); the `deployer` rows are from
 1. `bin/op-reads --since 24h` (free): reads by calling command. Add `--by hour`,
    `--by context`, or `--tail 40` for the raw rows. A row with context `-` came
    from a process with no Claude session (launchd, git's credential helper).
-2. `OP_CACHE=false op service-account ratelimit` (costs one read): the token and
-   account counters. Run it once before a batch of 1Password work, not in a loop.
+2. `OP_CACHE=false op service-account ratelimit`: the token and account counters.
+   Measured 2026-10-24 to move neither counter, but run it once before a batch of
+   1Password work, never in a loop.
 3. A burst of `timeout` rows is a hung 1Password, not a spend: quit and reopen
    the app ([`secret-cache.md`](secret-cache.md), when 1Password fails).
 

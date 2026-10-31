@@ -3,6 +3,10 @@
 
 ## Status: Active
 
+Every read during a rotation follows [`credential-access`](../../../modules/credential-access.md):
+the 1Password item is the one place a key flips, and its derived copies (the secret cache,
+the env files that SOP lists) are dropped and rewritten from it.
+
 **When:** one filed credential is compromised, stale or due. Run top to bottom, once per
 credential; never merge two credentials' Phase 4. Filing a NEW credential is
 [`credential-filing`](credential-filing.md). A real exposure (money, customer data, production, a

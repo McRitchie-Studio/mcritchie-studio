@@ -87,7 +87,7 @@ The dispatcher will take it on its next poll; a hand claim only competes with it
 | Its ping and the alerts | `POST /api/v1/agent_dispatchers/ping`; `AgentDispatcherAlertJob` every minute on the worker dyno (`config/recurring.yml`) |
 | Where alerts post | The floor alert's home in `config/agent_media.yml` (`purposes.floor_alert` → `discord.channels.ops`, `lobster-tank` today), as the shared bot ([loop doc](../../../system/agent-message-loop.md#media)) |
 | Where it escalates | `floor.escalation_email` in `config/agent_routes.yml` (alex@mcritchie.studio; that address when unset), by email through the hub's outbox (`Studio::Email.deliver`, `AgentFloorMailer`) |
-| The harness probe | `AgentMailbox::HarnessProbe` (`bin/lib/agent_harness_probe.rb`), on its own thread each beat; its answer rides the next ping and lands on the dispatcher row (`op_ok`, `gh_ok`, `power_source`, `harness_failing_beats`) |
+| The harness probe | `AgentMailbox::HarnessProbe` (`bin/lib/agent_harness_probe.rb`), on its own thread each beat; its answer rides the next ping and lands on the dispatcher row (`op_ok`, `gh_ok`, `power_source`, `harness_failing_beats`). When `op whoami` fails, the gh check asks `bin/gh-token --cached-only`, so the probe never reads 1Password while it is down: on 2026-10-30/31 it re-read it every beat for hours ([`credential-access`](../../../modules/credential-access.md)) |
 | What you watch | `/admin/agent_messages`: the dispatcher row (live, paused, silent) above the message list |
 
 **Billing.** Claude runs as `claude -p --safe-mode --tools "" --output-format json`
