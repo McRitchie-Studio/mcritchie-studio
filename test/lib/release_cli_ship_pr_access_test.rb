@@ -56,4 +56,21 @@ class ReleaseCliShipPrAccessTest < ReleaseCliHarness
     refute_includes out, "no GitHub origin"
     assert_includes out, "reads pull requests in every app repo"
   end
+
+  # A missing grant is not a stale token: no forced mint (a 1Password read) per repo.
+  def test_a_missing_grant_warns_without_minting
+    setup = %(ENV.delete("RELEASE_PR_UNREADABLE")\n) + SHIP_STUB + <<~'RUBY'
+      def GhAuthRetry.mint(**) = puts("MINTED") || nil
+      def bounded_capture2e(*a, **k)
+        st = ->(ok) { Struct.new(:success?).new(ok) }
+        return ["git@github.com:McRitchie-Studio/x.git\n", st[true]] if a[0] == "git" && a.include?("get-url")
+        return ["GraphQL: Resource not accessible by integration\n", st[false]] if a[0, 3] == %w[gh pr list]
+        ["", st[true]]
+      end
+    RUBY
+    out = run_cli(["--dry-run"], call: "ship", setup: setup)
+
+    assert_includes out, "Resource not accessible by integration"
+    refute_includes out, "MINTED"
+  end
 end

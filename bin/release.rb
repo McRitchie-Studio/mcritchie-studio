@@ -10273,7 +10273,9 @@ def ship_pr_readable(repo)
 
   argv = ["gh", "pr", "list", "--repo", nwo, "--state", "merged", "--json", "number", "--limit", "1"]
   out, status = bounded_capture2e(*argv)
-  if !status.success? && GhAuthRetry.auth_failure?(out)
+  # A missing grant ("resource not accessible") is the answer, not a stale token: a
+  # forced mint (a 1Password read) per private repo would only hear it again.
+  if !status.success? && GhAuthRetry.auth_failure?(out) && !out.match?(/resource not accessible/i)
     token = GhAuthRetry.mint
     out, status = bounded_capture2e(*argv, env: gh_token_env(token)) if token
   end
