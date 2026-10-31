@@ -166,6 +166,20 @@ class KeepAwakeCommandTest < Minitest::Test
     assert_match(/no live lease/, out)
   end
 
+  # launchd/cron run with no locale: a UTF-8 reason must neither fail the start
+  # nor kill the supervisor that a no-locale caller spawned.
+  def test_integration_utf8_reason_without_a_locale_keeps_the_hold
+    no_locale = env.merge("LANG" => nil, "LC_ALL" => nil, "LC_CTYPE" => nil)
+    out, err, status = Open3.capture3(no_locale, RbConfig.ruby, BIN, "start", "--by", "cron", "--reason", "ship — night")
+    assert_equal 0, status.exitstatus, out + err
+    wait_for { caffeinate_pids.any? }
+    _, code = run_cli("start", "--by", "carl-b", "--reason", "review — long")
+    assert_equal 0, code
+    sleep 0.6
+    out, err, status = Open3.capture3(no_locale, RbConfig.ruby, BIN, "status")
+    assert_equal 0, status.exitstatus, out + err
+  end
+
   def test_integration_start_without_reason_is_a_usage_error
     out, code = run_cli("start", "--by", "pokemon-a")
 

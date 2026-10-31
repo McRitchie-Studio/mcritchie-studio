@@ -24,6 +24,13 @@ require "optparse"
 require "time"
 require_relative "lib/keep_awake"
 
+# launchd and cron start with no LANG, so Ruby would read state.json and ARGV as
+# US-ASCII and crash on the first em dash in a --reason (killing a running
+# supervisor). The hold is UTF-8 whatever the caller's locale.
+Encoding.default_external = Encoding::UTF_8
+Encoding.default_internal = Encoding::UTF_8
+ARGV.map! { |arg| arg.dup.force_encoding(Encoding::UTF_8) }
+
 SCRIPT = File.expand_path(__FILE__)
 USAGE = <<~TEXT
   usage: keep-awake status [--json]
