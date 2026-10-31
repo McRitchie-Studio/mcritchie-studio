@@ -113,8 +113,9 @@ Use the production board by default. Do not add `--local`.
 
    - **Clean** (exit 0) → continue.
    - **Dirty** (exit non-zero) → **STOP**. The ship fast-forwards `release →
-     main` and step 3's sweep promotes **all of `accepted`** onto `release`, so
-     anything parked on either rung rides to production with your expedite,
+     main` and step 3's sweep promotes **all of `accepted` as it stands when the
+     sweep pins it** onto `release` (a merge after the pin waits for the next
+     release), so anything parked on either rung rides to production with your expedite,
      un-expedited and unasked. Report the pending work the guard printed and
      recommend: *"Ship the WHOLE release instead: run the `full-cycle`
      launcher."* Never force past the guard.
@@ -189,7 +190,9 @@ them in THIS session, with a terminal attached.
    cannot describe the world after it, so the promote — the irreversible moment,
    the one that puts other people's work on the release — proves it again. A
    refusal here promotes, records, and deploys **nothing**; make the same
-   `full-cycle` recommendation as step 1.
+   `full-cycle` recommendation as step 1. The re-check reads the swept pin, which
+   prepare takes just before it, so it judges exactly the SHA the promote lands; a
+   merge after the pin is not promoted and cannot ride the expedite.
 
    `--expedite` requires exactly one `--task`, and it is opt-in: a bare
    `bin/release prepare` (the normal full-queue sweep, where promoting all of
