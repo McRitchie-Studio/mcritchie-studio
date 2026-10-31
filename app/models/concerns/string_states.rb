@@ -67,6 +67,8 @@ module StringStates
                             "not by AddStateChecks; test/models/book_close_test.rb pins it to BookClose::STATUSES",
     "agent_setups.status" => "CHECK agent_setups_status_known is created with the table (20261028120000), " \
                              "not by AddStateChecks; test/models/agent_setup_test.rb pins it to AgentSetup::STATUSES",
+    "slack_posts.status" => "CHECK slack_posts_status_known is created with the table (20261031040000), " \
+                            "not by AddStateChecks; test/models/slack_post_test.rb pins it to SlackPost::STATUSES",
     "agent_dispatchers.state" => "bin/dispatcher's self-report from its ping, nullable; AgentDispatcher.ping! drops an unknown value rather than storing it",
     "agent_actions.stage" => "a copy of the task's stage at the time of the action; history keeps retired stages",
     "agent_activities.stage" => "a copy of the task's stage at the time of the activity; history keeps retired stages",
