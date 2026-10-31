@@ -23,12 +23,13 @@ class MarketingKitOnLogosTest < ActionDispatch::IntegrationTest
 
     log_in_as(users(:alex))
     get logos_path
-    assert_select "[data-test='marketing-kit-status'][data-brand='welding_v2'][data-status='current'] a[href=?]", URL
-    assert_select "[data-test='marketing-kit-status'][data-brand='welding_v2'] [data-test='marketing-kit-owner']", "team@commercialwelding.llc"
+    assert_select "a[data-test='kit-chip'][data-kind='google'][data-brand='welding_v2'][data-status='current'][href=?]", URL
+    assert_select "[data-test='kit-chip'][data-kind='google'][data-brand='welding_v2'] [data-test='kit-chip-name']", "team@commercialwelding.llc"
 
     kit.update!(saved_at: Time.utc(2026, 10, 9))
     get logos_path
-    assert_select "[data-test='marketing-kit-status'][data-brand='welding_v2'][data-status='changed']"
+    assert_select "[data-test='kit-chip'][data-kind='google'][data-brand='welding_v2'][data-status='changed'][aria-label=?]",
+                  "Google kit team@commercialwelding.llc: Kit changed"
   end
 
   test "an unknown brand, a missing or non-Drive URL, or a bad time is refused and writes nothing" do

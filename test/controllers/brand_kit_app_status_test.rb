@@ -11,10 +11,10 @@ class BrandKitAppStatusTest < ActionDispatch::IntegrationTest
     @kit = BrandKit.create!(brand: "studio", saved_at: Time.utc(2026, 10, 20, 15))
   end
 
-  def line(brand, app) = css_select("[data-test='kit-app-status'][data-brand='#{brand}'][data-app='#{app}']").first
-  def status_word(node) = node.css("span").last
+  def chip(brand, app) = css_select("[data-test='kit-chip'][data-kind='app'][data-brand='#{brand}'][data-app='#{app}']").first
+  def mark(node) = node.at_css("[data-test='kit-chip-mark']")["data-mark"]
 
-  test "the /logos brand column lists each linked app with its status, under the downloads" do
+  test "the /logos Apps and kits column has a chip per linked app: its name, its status mark, its page" do
     BrandKitApp.create!(brand: "studio", app_slug: "mcritchie-studio", used_at: Time.utc(2026, 10, 21), applied_saved_at: Time.utc(2026, 10, 20, 15))
     BrandKitApp.create!(brand: "studio", app_slug: "turf-monster", used_at: Time.utc(2026, 10, 19), applied_saved_at: Time.utc(2026, 10, 1))
     BrandKitApp.create!(brand: "turf", app_slug: "turf-monster")
@@ -22,28 +22,26 @@ class BrandKitAppStatusTest < ActionDispatch::IntegrationTest
     get logos_path
     assert_response :success
 
-    cell = css_select("[data-brand='studio'] th").first
-    assert_equal %w[logo-downloads logo-kit-apps], cell.css("[data-test='logo-downloads'], [data-test='logo-kit-apps']").map { |n| n["data-test"] },
-                 "the app lines sit under the download links"
+    assert_select "[data-brand='studio'] th [data-test='kit-chip']", 0, "the brand cell keeps only its name and downloads"
     assert_select "[data-test='logo-kit-status']", 0, "the 'Kit: saved … by' line is gone"
 
-    hub = line("studio", "mcritchie-studio")
-    assert_equal "🪎 McRitchie Studio Applied", hub.text.squish
-    assert_includes status_word(hub)["class"].split, "text-success-ink"
-    assert_equal "🪎 McRitchie Studio: Kit saved Oct 20, 2026; applied Oct 21, 2026 (kit of Oct 20, 2026)", hub["title"]
+    hub = chip("studio", "mcritchie-studio")
+    assert_equal "a", hub.name
+    assert_equal application_path("mcritchie-studio"), hub["href"]
+    assert_equal "McRitchie Studio", hub.at_css("[data-test='kit-chip-name']").text
+    assert_equal "McRitchie Studio: Applied", hub["aria-label"]
+    assert_equal "McRitchie Studio: Applied. Kit saved Oct 20, 2026; applied Oct 21, 2026 (kit of Oct 20, 2026)", hub["title"]
+    assert_equal "done", mark(hub)
 
-    turf = line("studio", "turf-monster")
-    assert_equal "🐊 Turf Monster Kit changed", turf.text.squish
-    assert_equal "changed", turf["data-status"]
-    assert_includes status_word(turf)["class"].split, "text-warning-ink", "Kit changed is amber"
-    assert_match(/\A🐊 Turf Monster: Kit saved Oct 20, 2026; /, turf["title"], "the title gives the kit's save date")
+    turf = chip("studio", "turf-monster")
+    assert_equal ["changed", "Turf Monster: Kit changed", "changed"], [turf["data-status"], turf["aria-label"], mark(turf)]
+    assert_includes turf.at_css("[data-test='kit-chip-mark']")["class"].split, "text-warning-ink", "Kit changed is amber"
 
-    fresh = line("turf", "turf-monster")
-    assert_equal "🐊 Turf Monster Not applied", fresh.text.squish
-    assert_equal "🐊 Turf Monster: Kit never saved; not applied yet", fresh["title"]
-    assert_includes status_word(fresh)["class"].split, "text-muted"
+    fresh = chip("turf", "turf-monster")
+    assert_equal ["Turf Monster: Not applied", "none"], [fresh["aria-label"], mark(fresh)]
+    assert_equal "Turf Monster: Not applied. Kit never saved; not applied yet", fresh["title"]
 
-    assert_select "[data-brand='industries'] [data-test='logo-kit-apps']", 0, "a brand with no linked app shows no list"
+    assert_select "[data-brand='industries'] [data-test='kit-chip'][data-kind='app']", 0, "a brand with no linked app has no app chip"
   end
 
   test "the table reads every app link in one query, whatever the number of brands and apps" do

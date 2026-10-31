@@ -42,13 +42,16 @@
   <div class="card p-4 sm:p-5">
     <div class="overflow-x-auto" data-test="logo-table-scroll">
       <%# The format every row's Download links give (logos/_download_format_control; read by app/javascript/logo_download.js). %>
-      <table class="w-full block xl:table text-sm" data-test="logo-brands" data-download-format="<%= @download_format %>">
+      <%# Fixed layout at xl: the header gives each column its width and Colours takes the rest, its strip scrolling
+          inside it. Logos is as wide as the widest brand's cluster on one line (Industries and Commercial Welding,
+          about 447 px, plus the cell's padding), so a Navbar tile never squeezes under its square. %>
+      <table class="w-full block xl:table xl:table-fixed text-sm" data-test="logo-brands" data-download-format="<%= @download_format %>">
         <thead class="hidden xl:table-header-group text-left text-3xs uppercase tracking-wide text-muted">
           <tr>
-            <th scope="col" class="pb-2 pr-3 font-semibold">Brand</th>
-            <th scope="col" class="pb-2 pr-3 font-semibold">Logos</th>
-            <th scope="col" class="pb-2 pr-3 font-semibold">Apps and kits</th>
-            <th scope="col" class="pb-2 pr-3 font-semibold">Typefaces</th>
+            <th scope="col" class="pb-2 pr-3 font-semibold w-40">Brand</th>
+            <th scope="col" class="pb-2 pr-3 font-semibold w-[29rem]">Logos</th>
+            <th scope="col" class="pb-2 pr-3 font-semibold w-44">Apps and kits</th>
+            <th scope="col" class="pb-2 pr-3 font-semibold w-40">Typefaces</th>
             <th scope="col" class="pb-2 font-semibold">Colours</th>
           </tr>
         </thead>
@@ -56,27 +59,24 @@
           <% @rows.each do |logo, samples| %>
             <% name = Logos::Variant.brand_name(logo) %>
             <tr class="block xl:table-row" data-test="logo-brand-row" data-brand="<%= logo.brand %>">
-              <th scope="row" class="block xl:table-cell py-3 xl:pr-3 text-left align-top xl:w-40">
+              <th scope="row" class="block xl:table-cell py-3 xl:pr-3 text-left align-top">
                 <%= link_to name, logo_brand_path(logo.brand, logo_page_params), class: "font-bold text-primary hover:underline" %>
                 <p class="text-3xs text-muted font-mono font-normal"><%= logo.brand %></p>
                 <%= render "index_downloads", samples:, kit: @kits[logo.brand] %>
               </th>
-              <%# At least as wide as the widest brand's cluster on one line (Industries and Commercial Welding, about
-                  432 px with the cell's padding), so the table never squeezes a brand's Navbar tile under its square. %>
-              <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top xl:min-w-[28rem]" data-test="logo-cell">
+              <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top" data-test="logo-cell">
                 <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted">Logos</p>
                 <%= render "cluster", logo:, name:, samples:, saved: BrandKit::CHOICE_TYPES.select { |type| @kits[logo.brand]&.saved?(type) } %>
               </td>
-              <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top xl:w-44" data-test="logo-kit-apps">
+              <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top" data-test="logo-kit-apps">
                 <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted">Apps and kits</p>
                 <%= render "kit_chips", brand: logo.brand, links: @app_links.fetch(logo.brand, []), marketing_kit: @marketing_kits[logo.brand], kit: @kits[logo.brand] %>
               </td>
-              <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top xl:w-36" data-test="logo-typeface">
+              <td class="block xl:table-cell pb-3 xl:py-3 xl:pr-3 align-top" data-test="logo-typeface">
                 <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted">Typefaces</p>
                 <%= render "typefaces", kit: Logos::BrandKit.new(logo.brand), compact: true %>
               </td>
-              <%# The column takes what the others leave (w-full with max-w-0), so the strip scrolls rather than widening it. %>
-              <td class="block xl:table-cell pb-3 xl:py-3 align-top xl:w-full xl:max-w-0 xl:min-w-[7rem]" data-test="logo-colours">
+              <td class="block xl:table-cell pb-3 xl:py-3 align-top" data-test="logo-colours">
                 <p class="xl:hidden pb-1 text-3xs uppercase tracking-wide text-muted">Colours</p>
                 <%= render "palette", kit: Logos::BrandKit.new(logo.brand), compact: true %>
               </td>

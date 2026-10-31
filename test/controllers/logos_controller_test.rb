@@ -72,7 +72,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     get logos_path
     assert_response :success
 
-    assert_equal %w[Brand Logos Typeface Colours], css_select("[data-test='logo-brands'] thead th").map { |th| th.text.strip }
+    assert_equal ["Brand", "Logos", "Apps and kits", "Typefaces", "Colours"], css_select("[data-test='logo-brands'] thead th").map { |th| th.text.strip }
     assert_equal Logos::NavbarLogo.brands, css_select("[data-test='logo-brand-row']").map { |row| row["data-brand"] }
     assert_select "[data-test='logo-table-scroll'].overflow-x-auto [data-test='logo-brands']", 1, "a wide row scrolls inside its own container"
     assert_select "[data-test='logo-cluster']", Logos::NavbarLogo.brands.size, "one cluster per brand"
@@ -258,20 +258,29 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the Typeface column shows each brand's hierarchy, each level's name in its own face, stepping down in size" do
+  # Task logos-table-columns-tidy: the index names two faces, Primary (the Display level) and Secondary (the Text
+  # level, else the next one down; Logos::BrandKit#secondary_typeface), as [role shown, name, weight, the level's role].
+  ROLES = {
+    "studio" => [["Primary", "Montserrat ExtraBold", 800, "Display"], ["Secondary", "Montserrat Light", 300, "Text"]],
+    "industries" => [["Primary", "Montserrat Bold", 700, "Display"], ["Secondary", "Montserrat Light", 300, "Text"]],
+    "turf" => [["Primary", "Montserrat ExtraBold", 800, "Display"], ["Secondary", "Montserrat Medium", 500, "Text"]],
+    "welding" => [["Primary", "Traced lettering (face not identified)", nil, "Display"], ["Secondary", "Montserrat Medium", 500, "Tagline"]]
+  }.freeze
+
+  test "the Typefaces column shows each brand's Primary and Secondary face, each name in its own face" do
     log_in_as(@admin)
     get logos_path
-    HIERARCHIES.each do |brand, levels|
+    ROLES.each do |brand, levels|
       scope = "[data-brand='#{brand}'] [data-test='logo-typeface']"
-      assert_equal levels.map { |role, name, _| [role, name] }, hierarchy_shown(scope), brand
-      assert_equal (1..levels.size).map(&:to_s), css_select("#{scope} [data-test='logo-typeface-level']").map { |l| l["data-level"] }
-      levels.each_with_index do |(_, _, weight), index|
+      assert_equal levels.map { |role, name, _, _| [role, name] }, hierarchy_shown(scope), brand
+      assert_equal levels.map(&:last), css_select("#{scope} [data-test='logo-typeface-level']").map { |l| l["data-role"] }, brand
+      levels.each_with_index do |(_, _, weight, _), index|
         next unless weight
 
         assert_equal [weight, LogosHelper::LOGO_TYPEFACE_SIZES.fetch(true)[index], true], faces_shown(scope)[index], "#{brand} level #{index + 1}"
       end
     end
-    assert_equal [17, 13, 11], LogosHelper::LOGO_TYPEFACE_SIZES.fetch(true), "each level smaller than the one above"
+    assert_select "[data-test='logo-typeface'] [data-test='logo-typeface-role']", { text: "Tagline", count: 0 }, "a third level is not shown"
   end
 
   test "a traced level shows the brand's name in its own lettering, not a font name in some other face" do
@@ -308,8 +317,8 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_equal %w[studio industries turf welding welding_v2], css_select("[data-test='logo-brand-row']").map { |row| row["data-brand"] }
-    assert_equal [%w[Display Montserrat\ ExtraBold], %w[Text Montserrat\ Medium]], hierarchy_shown("[data-brand='turf'] [data-test='logo-typeface']")
-    assert_equal [["Display", "Traced lettering (face not identified)"], ["Tagline", "Montserrat Medium"]],
+    assert_equal [%w[Primary Montserrat\ ExtraBold], %w[Secondary Montserrat\ Medium]], hierarchy_shown("[data-brand='turf'] [data-test='logo-typeface']")
+    assert_equal [["Primary", "Traced lettering (face not identified)"], ["Secondary", "Montserrat Medium"]],
                  hierarchy_shown("[data-brand='welding'] [data-test='logo-typeface']")
 
     { "turf" => "Turf Monster", "welding" => "Commercial Welding v1" }.each do |brand, name|

@@ -2,17 +2,19 @@
 
 require "test_helper"
 
-# [component] Each brand's Google marketing kit on /logos (task marketing-kit-on-logos): under the app lines, every
-# brand shows the Google Drive mark and the account that owns the kit, Up to date (green) or Kit changed (amber) and an
-# Open link to its Drive folder, or a muted "No Google kit"; the title gives the owner and dates. One query reads every brand's.
+# [component] Each brand's Google marketing kit on /logos (tasks marketing-kit-on-logos, logos-table-columns-tidy): in the
+# Apps and kits column every brand has one Google kit chip: the Drive mark, the account that owns the kit and a check
+# (Up to date) or an amber triangle (Kit changed), opening its Drive folder in a new tab; or a hollow "No Google kit".
+# The accessible name carries the status, the title the dates. One query reads every brand's.
 class MarketingKitStatusTest < ActionDispatch::IntegrationTest
   URL = "https://drive.google.com/drive/folders/cw123"
 
   setup { log_in_as(users(:alex)) }
 
-  def line(brand) = css_select("[data-test='marketing-kit-status'][data-brand='#{brand}']").first
+  def chip(brand) = css_select("[data-test='kit-chip'][data-kind='google'][data-brand='#{brand}']").first
+  def mark(node) = node.at_css("[data-test='kit-chip-mark']")
 
-  test "every brand shows its Google kit line: Up to date, Kit changed or No Google kit" do
+  test "every brand shows its Google kit chip: Up to date, Kit changed or No Google kit" do
     BrandKit.create!(brand: "welding_v2", saved_at: Time.utc(2026, 10, 20))
     BrandKit.create!(brand: "studio", saved_at: Time.utc(2026, 10, 22))
     BrandMarketingKit.create!(brand: "welding_v2", drive_url: URL, owner: "team@commercialwelding.llc",
@@ -21,29 +23,26 @@ class MarketingKitStatusTest < ActionDispatch::IntegrationTest
     get logos_path
     assert_response :success
 
-    cw = line("welding_v2")
-    assert_equal "team@commercialwelding.llc Up to date Open", cw.text.squish
+    cw = chip("welding_v2")
+    assert_equal "team@commercialwelding.llc", cw.at_css("[data-test='kit-chip-name']").text
     assert_equal "Google Drive", cw.css("svg[data-test='google-drive-icon']").first["aria-label"]
-    assert_equal "current", cw["data-status"]
-    assert_includes cw.css("span").detect { |n| n.text == "Up to date" }["class"].split, "text-success-ink"
-    assert_equal "Google kit owned by team@commercialwelding.llc: Kit saved Oct 20, 2026; published Oct 21, 2026 (kit of Oct 20, 2026)", cw["title"]
-    open_link = cw.css("a[data-test='marketing-kit-link']").first
-    assert_equal [URL, "_blank", "noopener"], [open_link["href"], open_link["target"], open_link["rel"]]
+    assert_equal ["current", "done"], [cw["data-status"], mark(cw)["data-mark"]]
+    assert_includes mark(cw)["class"].split, "text-success-ink"
+    assert_equal "Google kit team@commercialwelding.llc: Up to date", cw["aria-label"]
+    assert_equal "Google kit team@commercialwelding.llc: Up to date. Kit saved Oct 20, 2026; published Oct 21, 2026 (kit of Oct 20, 2026)", cw["title"]
+    assert_equal ["a", URL, "_blank", "noopener"], [cw.name, cw["href"], cw["target"], cw["rel"]]
 
-    studio = line("studio")
-    assert_equal "Google kit Kit changed Open", studio.text.squish, "no owner recorded: the line says Google kit"
-    assert_includes studio.css("span").detect { |n| n.text == "Kit changed" }["class"].split, "text-warning-ink", "Kit changed is amber"
+    studio = chip("studio")
+    assert_equal "Google kit", studio.at_css("[data-test='kit-chip-name']").text, "no owner recorded: the chip says Google kit"
+    assert_equal ["Google kit: Kit changed", "changed"], [studio["aria-label"], mark(studio)["data-mark"]]
+    assert_includes mark(studio)["class"].split, "text-warning-ink", "Kit changed is amber"
 
-    none = line("turf")
+    none = chip("turf")
+    assert_equal ["span", "none", "No Google kit", "none"], [none.name, none["data-status"], none["aria-label"], mark(none)["data-mark"]]
     assert_equal "No Google kit", none.text.squish
-    assert_equal "none", none["data-status"]
-    assert_empty none.css("a"), "nothing to open"
-    assert_equal Logos::NavbarLogo.brands.size, css_select("[data-test='marketing-kit-status']").size, "one line per brand"
-
-    cell = css_select("[data-brand='welding_v2'] th").first
-    assert_equal %w[logo-downloads logo-marketing-kit],
-                 cell.css("[data-test='logo-downloads'], [data-test='logo-marketing-kit']").map { |n| n["data-test"] },
-                 "the Google kit line sits under the downloads"
+    assert_equal Logos::NavbarLogo.brands.size, css_select("[data-test='kit-chip'][data-kind='google']").size, "one chip per brand"
+    assert_select "[data-brand='welding_v2'] [data-test='logo-kit-apps'] [data-test='kit-chip'][data-kind='google']", 1,
+                  "the Google kit chip sits in the Apps and kits column"
   end
 
   test "the table reads every brand's Google kit in one query" do

@@ -5,9 +5,11 @@
     data-copy-hex, through window.copyText from components/_copy_text_script,
     which the page renders once). Locals: kit;
     compact (true in the index table, task logos-table-columns-tidy: small swatches, four to a column, the columns
-    running sideways in a strip that scrolls inside its cell, so any number of colours keeps the row's height). %>
+    running sideways in a strip that scrolls inside its cell, so any number of colours keeps the row's height). The
+    strip is relative so each swatch's sr-only status (absolutely positioned) is clipped with it, not left hanging
+    past the page's edge. %>
 <% compact = local_assigns.fetch(:compact, false) %>
-<ul class="<%= compact ? 'grid grid-flow-col grid-rows-4 auto-cols-[6.5rem] gap-x-2 gap-y-1 overflow-x-auto overscroll-x-contain pb-1' : 'grid grid-cols-2 sm:grid-cols-4 gap-3' %>" data-test="logo-palette" data-brand="<%= kit.brand %>" aria-label="Colours">
+<ul class="<%= compact ? 'relative grid grid-flow-col grid-rows-4 auto-cols-[6.25rem] gap-x-2 gap-y-1 overflow-x-auto overscroll-x-contain pb-1' : 'grid grid-cols-2 sm:grid-cols-4 gap-3' %>" data-test="logo-palette" data-brand="<%= kit.brand %>" aria-label="Colours">
   <% kit.palette.each do |swatch| %>
     <li class="min-w-0" data-test="logo-swatch" data-hex="<%= swatch.hex %>">
       <button type="button"
