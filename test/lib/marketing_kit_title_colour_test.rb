@@ -18,7 +18,9 @@ class MarketingKitTitleColourTest < ActiveSupport::TestCase
   # taken on the code before the title key existed. The temp kit folder is
   # normalised to KIT, the slides payload is hashed without its new :title entry,
   # and the Brand Guide's stacked-logo label (reworded in the same change) is
-  # normalised to STACKED_LABEL. If a later change means to alter a render,
+  # normalised to STACKED_LABEL. Start Here's heading is the kit folder's name,
+  # renamed since (task brand-kits-share-and-template), so the old name is put
+  # back before hashing. If a later change means to alter a render,
   # recompute these; this change must not.
   BEFORE = {
     guidelines: "5a7e168fb1aa419a5e4b5f79d8bfb70ecdd46f9ea9f20c91b6a3a9e691d01508",
@@ -38,7 +40,7 @@ class MarketingKitTitleColourTest < ActiveSupport::TestCase
       assert_equal PRIMARY, payload[:colours].delete(:title), "slides fall back to primary for titles"
       renders = {
         guidelines: MarketingKit::Guidelines.new(spec).html, general: templates.general, proposal: templates.proposal,
-        start_here: docs.start_here.html,
+        start_here: docs.start_here.html.sub(">#{spec.root_name}<", ">Ridgeline Fabrication — Marketing Kit<"),
         brand_guide: docs.brand_guide.html.sub(">Stacked<", ">STACKED_LABEL<"),
         slides: JSON.generate(payload)
       }

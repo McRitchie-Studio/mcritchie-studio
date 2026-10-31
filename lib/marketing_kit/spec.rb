@@ -16,6 +16,7 @@ module MarketingKit
   #   spec.logo_png(:full, :dark)  # => "/abs/logos/png/full_dark.png"
   class Spec
     HEX = /\A#[0-9A-F]{6}\z/i
+    HOSTNAME = /\A(?=.{1,253}\z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]\z/i
     # The palette keys every renderer draws with. Anything else in the palette is
     # shown in the guidelines but never drawn with.
     REQUIRED_COLOURS = %i[primary accent dark].freeze
@@ -70,7 +71,9 @@ module MarketingKit
     def start_here = data[:start_here] || {}
     def brand_guide = data[:brand_guide] || {}
 
-    def root_name = drive[:root_name] || "#{name} — Marketing Kit"
+    def root_name = drive[:root_name] || "Brand Kit: #{name}"
+    # Workspace domains the root is shared with as writers (drive.share_domains).
+    def share_domains = Array(drive[:share_domains]).map { |d| d.to_s.downcase }
     # The brand's key on /logos (config/logo_brands.yml), if it has one: a publish prints the command that records
     # the kit there (BrandMarketingKit, task marketing-kit-on-logos), owned by drive.subject.
     def logo_brand = data[:brand].presence&.to_s
@@ -130,6 +133,7 @@ module MarketingKit
       raise Error, "#{label}: missing #{missing.join(', ')}" if missing.any?
       raise Error, "#{label}: short must be 1-6 letters or digits" unless short.to_s.match?(/\A[A-Za-z0-9]{1,6}\z/)
       raise Error, "#{label}: drive.subject is required" if drive[:subject].blank?
+      validate_share_domains!
       if logo_brand && !Logos::NavbarLogo.brands.include?(logo_brand)
         raise Error, "#{label}: brand #{logo_brand} is not a /logos brand (#{Logos::NavbarLogo.brands.join(', ')})"
       end
@@ -137,6 +141,15 @@ module MarketingKit
       validate_palette!
       validate_logos!
       validate_photos!
+    end
+
+    def validate_share_domains!
+      list = drive[:share_domains]
+      return if list.nil?
+      raise Error, "#{label}: drive.share_domains must be a list of domains" unless list.is_a?(Array)
+
+      bad = list.reject { |d| d.is_a?(String) && d.match?(HOSTNAME) }
+      raise Error, "#{label}: drive.share_domains takes plain domains (example.com), not #{bad.map(&:inspect).join(', ')}" if bad.any?
     end
 
     def validate_palette!

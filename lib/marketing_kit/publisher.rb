@@ -15,7 +15,11 @@ module MarketingKit
   #     people edit them (the tracker's backlog, a template someone tidied).
   #     Name it in `replace:` (or pass replace: :all) to overwrite it in place;
   #   - two files of one name in one folder are never guessed between: the entry
-  #     is reported and skipped.
+  #     is reported and skipped;
+  #   - a new Google file is a copy of its upload, so the template gallery
+  #     takes it (see #upload);
+  #   - the root is shared with drive.share_with (people) and
+  #     drive.share_domains (whole Workspace domains), once each.
   #
   # dry_run: true reads Drive and reports, writing nothing.
   class Publisher
@@ -23,6 +27,10 @@ module MarketingKit
     NATIVE = { "doc" => ["application/vnd.google-apps.document", "text/html"],
                "sheet" => ["application/vnd.google-apps.spreadsheet", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
                "slides" => ["application/vnd.google-apps.presentation", "application/vnd.openxmlformats-officedocument.presentationml.presentation"] }.freeze
+
+    # The stand-in name a new Google file is uploaded under before its copy
+    # takes the real name (see #upload).
+    UPLOAD_PREFIX = "~upload "
 
     Result = Data.define(:action, :path, :id)
 
@@ -106,8 +114,21 @@ module MarketingKit
       stored, sent = NATIVE.fetch(entry[:kind]) { [nil, Build.mime(entry[:local])] }
       return note(:create, path) if @dry_run
 
-      f = @drive.files_create(name: entry[:name], parents: [parent], mime_type: stored, body: File.binread(entry[:local]), content_type: sent)
-      note(:create, path, f.id)
+      body = File.binread(entry[:local])
+      return note(:create, path, @drive.files_create(name: entry[:name], parents: [parent], body: body, content_type: sent).id) unless stored
+
+      # A Google file made by upload and conversion is refused by the Docs and
+      # Slides template gallery ("created from outside your organization"); an
+      # API copy of it is accepted. So a new Google file is uploaded under a
+      # stand-in name, copied to its real name beside it, and the upload trashed,
+      # even when the copy fails, so no stand-in is left live.
+      draft = @drive.files_create(name: "#{UPLOAD_PREFIX}#{entry[:name]}", parents: [parent], mime_type: stored, body: body, content_type: sent)
+      begin
+        copy = @drive.files_copy(draft.id, name: entry[:name], parents: [parent])
+      ensure
+        @drive.files_trash(draft.id)
+      end
+      note(:create, path, copy.id)
     end
 
     def replace(entry, existing, path)
@@ -125,17 +146,29 @@ module MarketingKit
       @drive.files_create(name: name, parents: Array(parent), mime_type: mime).id
     end
 
+    # Shares the root with each person in drive.share_with and each Workspace
+    # domain in drive.share_domains, skipping any already shared.
     def share
       emails = Array(@spec.drive[:share_with])
-      return if emails.empty? || @root_id.nil?
+      domains = @spec.share_domains
+      return if (emails.empty? && domains.empty?) || @root_id.nil?
 
-      have = Array(@drive.permissions_list(@root_id).permissions).filter_map { |p| p.email_address&.downcase }
+      perms = Array(@drive.permissions_list(@root_id).permissions)
+      have = perms.filter_map { |p| p.email_address&.downcase }
+      have_domains = perms.select { |p| p.type == "domain" }.filter_map { |p| p.domain&.downcase }
       emails.each do |email|
         next note(:shared, "share #{email}") if have.include?(email.downcase)
         next note(:share, "share #{email}") if @dry_run
 
         @drive.permissions_create(@root_id, email: email)
         note(:share, "share #{email}")
+      end
+      domains.each do |domain|
+        next note(:shared, "share #{domain}") if have_domains.include?(domain)
+        next note(:share, "share #{domain}") if @dry_run
+
+        @drive.permissions_create_domain(@root_id, domain: domain)
+        note(:share, "share #{domain}")
       end
     end
   end
