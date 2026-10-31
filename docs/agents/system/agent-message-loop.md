@@ -725,7 +725,7 @@ tenant admin's click:
 | Install the app in the McRitchie Studio team (its RSC consent) | the **team owner's click** at install (RSC is consented per team) |
 | The admin Entra app for Graph `Channel.Create` (application permission), channels mirroring Slack's layout (general + one per app) | Steffon; Graph application permissions need a **global admin's consent click** |
 | Heroku `TEAMS_BOT_APP_ID`, `TEAMS_BOT_APP_PASSWORD`, `TEAMS_TENANT_ID`; 1Password `teams.mcritchie-studio.applications` and `teams.studio.admin` | Steffon |
-| `config/agent_routes.yml` `teams.tenant_id`, `bot_app_id`, `owner_aad_object_id`, and `teams.channels` keyed by conversation id with Slack's clearance; `agent_media.yml` `teams.channels` and `enabled: true`; then `db:seed` (links the owner's Entra id) | the card's PR |
+| `config/agent_routes.yml` `teams.tenant_id`, `bot_app_id`, `owner_aad_object_id`, and `teams.channels` keyed by conversation id with Slack's clearance; `agent_media.yml` `teams.channels` and `enabled: true`; a data migration linking the owner's Entra id to the owner person (as `LinkOwnerSlackIdentity` did for Slack: `AgentPerson.seed_owner!` alone does not reach production) | the card's PR |
 
 Docs checked 2026-10-30 (learn.microsoft.com):
 [Bot Connector authentication](https://learn.microsoft.com/en-us/azure/bot-service/rest-api/bot-framework-rest-connector-authentication),
