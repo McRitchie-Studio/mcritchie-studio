@@ -141,6 +141,7 @@ its invocation exactly.
 | Steffon `discord-bot-setup` SOP (the agents' Discord bot, once, then each client's invite) | `mcritchie-studio/docs/agents/agents/steffon/sops/discord-bot-setup.md` |
 | Steffon `domain-dns` SOP (verify, MX, SPF, DKIM, DMARC) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-dns.md` |
 | Steffon `domain-purchase` SOP (buy on Cloudflare by API or on Squarespace, prove ownership) | `mcritchie-studio/docs/agents/agents/steffon/sops/domain-purchase.md` |
+| Steffon `keep-awake` SOP (one shared hold that keeps Alex McRitchie's Mac awake while agents work past him: start, renew, stop, status, back off) | `mcritchie-studio/docs/agents/agents/steffon/sops/keep-awake.md` |
 | Steffon `production-deploy` SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | Steffon `program-upgrade` SOP (on-chain program upgrade, devnet then mainnet, through Squads) | `mcritchie-studio/docs/agents/agents/steffon/sops/program-upgrade.md` |
 | Steffon `r2-backup` SOP (backup bucket, nightly run, garbage collection, restore) | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |
