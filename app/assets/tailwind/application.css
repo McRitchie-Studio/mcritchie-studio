@@ -407,6 +407,15 @@
   }
 }
 
+/* A cycling word on its own line: centre each word in the spacer's box. */
+@utility dropping-texts-center {
+  & span {
+    right: 0;
+    text-align: center;
+    white-space: nowrap;
+  }
+}
+
 @layer components {
   /* The Pokédex collection grid's three artwork states. Each species has ONE image on
      S3, so the state is a filter over that image — a cell never fetches a second asset
