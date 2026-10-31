@@ -1,0 +1,26 @@
+<%# A BRAND'S REACH, in the /logos Apps and kits column (task logos-table-columns-tidy): one chip per app its kit feeds
+    (BrandKitApp: Applied, Kit changed or Not applied; the chip opens the app's page), then one for its Google marketing
+    kit (BrandMarketingKit: Up to date or Kit changed, opening its Drive folder; or No Google kit). Locals: brand, links
+    (its BrandKitApps, apps loaded), marketing_kit (or nil), kit (its BrandKit, or nil: never saved). %>
+<ul class="flex flex-col gap-1 min-w-0" data-test="logo-kit-chips" aria-label="Apps and kits">
+  <% links.each do |link| %>
+    <% status = link.status(kit) %>
+    <li class="min-w-0">
+      <%= render "logos/kit_chip", kind: "app", brand:, app: link.app_slug, icon: link.app.emoji.presence || "▫️", name: link.app.name,
+                 status:, label: "#{link.app.name}: #{BrandKitApp::STATUSES.fetch(status)}", dates: kit_app_dates(link, kit),
+                 href: application_path(link.app_slug) %>
+    </li>
+  <% end %>
+  <li class="min-w-0">
+    <% if marketing_kit %>
+      <% status = marketing_kit.status(kit) %>
+      <%= render "logos/kit_chip", kind: "google", brand:, icon: render("brand_marketing_kits/drive_icon"), name: marketing_kit.owner.presence || "Google kit",
+                 status:, label: "Google kit#{" #{marketing_kit.owner}" if marketing_kit.owner.present?}: #{BrandMarketingKit::STATUSES.fetch(status)}",
+                 dates: marketing_kit_dates(marketing_kit, kit),
+                 href: marketing_kit.drive_url, external: true %>
+    <% else %>
+      <%= render "logos/kit_chip", kind: "google", brand:, icon: render("brand_marketing_kits/drive_icon"), name: BrandMarketingKit::NONE_LABEL,
+                 status: :none, label: BrandMarketingKit::NONE_LABEL, href: nil %>
+    <% end %>
+  </li>
+</ul>

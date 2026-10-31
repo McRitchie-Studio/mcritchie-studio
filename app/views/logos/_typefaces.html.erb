@@ -6,12 +6,14 @@
     a small picture of the brand's name in that lettering instead (the Navbar
     Logo, both words alike, in the page theme's tone). Montserrat is the engine's
     own vendored variable face: nothing else is loaded. Locals: kit; compact
-    (true in the index table: smaller steps). %>
+    (true in the index table: smaller steps, and only two roles, Primary and Secondary, read from the hierarchy by
+    Logos::BrandKit#primary_typeface and #secondary_typeface; a brand with one face shows Primary alone). %>
 <% compact = local_assigns.fetch(:compact, false) %>
+<% levels = compact ? [["Primary", kit.primary_typeface], ["Secondary", kit.secondary_typeface]].select(&:last) : kit.typefaces.map { |typeface| [typeface.role, typeface] } %>
 <ol class="<%= compact ? 'space-y-1.5' : 'space-y-4' %>" data-test="logo-typefaces" data-brand="<%= kit.brand %>" aria-label="Typefaces">
-  <% kit.typefaces.each_with_index do |typeface, level| %>
+  <% levels.each_with_index do |(role, typeface), level| %>
     <li class="min-w-0" data-test="logo-typeface-level" data-level="<%= level + 1 %>" data-role="<%= typeface.role %>">
-      <span class="block text-3xs font-semibold uppercase tracking-wide text-muted" data-test="logo-typeface-role"><%= typeface.role %></span>
+      <span class="block text-3xs font-semibold uppercase tracking-wide text-muted" data-test="logo-typeface-role"><%= role %></span>
       <% if typeface.traced? %>
         <span class="block" data-test="logo-typeface-traced">
           <%= logo_themed_images(logo_traced_name_variants(kit.brand), height: logo_typeface_size(level, compact:) + 4, test: "logo-typeface-sample") %>

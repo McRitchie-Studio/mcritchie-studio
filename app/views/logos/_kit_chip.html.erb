@@ -1,0 +1,17 @@
+<%# ONE CHIP IN THE /logos APPS AND KITS COLUMN (task logos-table-columns-tidy): the app's or kit's icon, its name (cut to
+    the chip, in full in the title) and its status mark on the right (BrandKitStatusHelper#kit_status_mark: a check, a
+    triangle for Kit changed, a hollow ring). The accessible name is the label, which carries the status in words;
+    the title adds the dates. A chip with somewhere to go is a link to it. Locals: kind ("app" or "google"), brand,
+    app (its slug, apps only), icon (HTML), name, status (the model's symbol, or :none), label, dates (or nil), href
+    (or nil), external. %>
+<% external = local_assigns.fetch(:external, false) %>
+<% chip = { class: "group flex w-full min-w-0 items-center gap-1.5 rounded-full border border-subtle bg-surface py-0.5 pl-2 pr-1 text-2xs leading-tight text-secondary#{' hover:border-primary hover:text-heading focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary' if href}",
+            title: [label, local_assigns[:dates].presence].compact.join(". "), aria: { label: },
+            data: { test: "kit-chip", kind:, brand:, app: local_assigns[:app], status: } } %>
+<% chip.merge!(target: "_blank", rel: "noopener") if href && external %>
+<% body = capture do %>
+  <span class="flex shrink-0 items-center text-xs leading-none<%= ' opacity-50 grayscale' if status == :none && kind == 'google' %>" aria-hidden="true"><%= icon %></span>
+  <span class="min-w-0 flex-1 truncate" data-test="kit-chip-name"><%= name %></span>
+  <%= kit_status_mark(status) %>
+<% end %>
+<%= href ? safe_link_to(href, chip) { body } : tag.span(body, **chip) %>
