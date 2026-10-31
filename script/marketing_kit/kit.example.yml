@@ -134,6 +134,7 @@ docs:                                  # docs the brand writes itself: HTML frag
 
 drive:
   subject: team@mcritchie.studio       # the Workspace account that owns the kit
-  # root_name: Ridgeline Fabrication — Marketing Kit   (the default: "<name> — Marketing Kit")
-  # root_id: an existing kit folder's id, when the name alone is ambiguous
+  # root_name: Brand Kit: Ridgeline Fabrication   (the default: "Brand Kit: <name>")
+  # root_id: an existing kit folder's id, when the name alone is ambiguous or the folder was renamed
   share_with: [owner@ridgeline.example]
+  share_domains: [ridgeline.example, mcritchie.studio]   # Workspace domains given writer access, findable in their Drive: the owner's own plus ours

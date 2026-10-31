@@ -41,7 +41,7 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
     end
 
     def update_file(id, metadata, **kwargs)
-      @calls << [ :update_file, id, { name: metadata.name, has_body: !kwargs[:upload_source].nil? } ]
+      @calls << [ :update_file, id, { name: metadata.name, trashed: metadata.trashed, has_body: !kwargs[:upload_source].nil? } ]
       metadata
     end
 
@@ -51,6 +51,14 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
       raise @raises.shift if @raises.any?
 
       metadata
+    end
+
+    def create_permission(id, permission, **kwargs)
+      @calls << [ :create_permission, id, { type: permission.type, role: permission.role, domain: permission.domain,
+                                            discoverable: permission.allow_file_discovery } ]
+      raise @raises.shift if @raises.any?
+
+      permission
     end
 
     def list_permissions(id, **kwargs)
@@ -186,5 +194,27 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
 
   test "files_download returns the raw bytes" do
     assert_equal "bytes-for-bin-id", client(ServiceDouble.new).files_download("bin-id")
+  end
+
+  test "files_trash trashes rather than deletes, and sends no body" do
+    service = ServiceDouble.new
+    client(service).files_trash("draft-id")
+
+    assert_equal [ [ :update_file, "draft-id", { name: nil, trashed: true, has_body: false } ] ], service.calls
+  end
+
+  test "permissions_create_domain grants the whole domain, findable in its Drive" do
+    service = ServiceDouble.new
+    client(service).permissions_create_domain("root-id", domain: "example.com")
+
+    assert_equal [ [ :create_permission, "root-id", { type: "domain", role: "writer", domain: "example.com", discoverable: true } ] ],
+                 service.calls
+  end
+
+  test "a domain grant is not retried on a server error, which may have landed" do
+    service = ServiceDouble.new(raises: [ Google::Apis::ServerError.new("backendError", status_code: 503) ])
+
+    assert_raises(Workspace::ApiRetry::Error) { client(service).permissions_create_domain("root-id", domain: "example.com") }
+    assert_equal 1, service.calls.size
   end
 end

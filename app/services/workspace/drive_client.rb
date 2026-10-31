@@ -6,8 +6,8 @@ module Workspace
   # the tasks that consume this.
   #
   # WRITE SURFACE, stated plainly because it matters more than the read surface:
-  # #files_create, #files_copy, #files_update and #permissions_create are the
-  # only methods here that change anything, and under this credential's scopes
+  # #files_create, #files_copy, #files_update, #files_trash, #permissions_create
+  # and #permissions_create_domain are the only methods here that change anything, and under this credential's scopes
   # they can only reach files the app itself created (see Credentials::SCOPES on
   # why `drive.file` means that under domain-wide delegation). The ownership CHECK that decides whether to
   # copy before editing is a caller's job and lands with the binding task; this
@@ -117,11 +117,20 @@ module Workspace
       end
     end
 
+    # Moves a file to the trash, where Drive keeps it 30 days: the reversible
+    # delete. Trashing twice is harmless, so it retries like any update.
+    def files_trash(id)
+      with_retries("files.update(trash)", sleeper: @sleeper) do
+        service.update_file(id, ::Google::Apis::DriveV3::File.new(trashed: true),
+                            fields: "id,trashed", supports_all_drives: true)
+      end
+    end
+
     # Who can reach this file, and how. The ownership question this answers is
     # the one guardrail the write path hangs on.
     def permissions_list(id)
       with_retries("permissions.list", sleeper: @sleeper) do
-        service.list_permissions(id, fields: "permissions(id,type,role,emailAddress)",
+        service.list_permissions(id, fields: "permissions(id,type,role,emailAddress,domain)",
                                      supports_all_drives: true)
       end
     end
@@ -132,6 +141,16 @@ module Workspace
       with_retries("permissions.create", sleeper: @sleeper, idempotent: false) do
         service.create_permission(id, permission, send_notification_email: false, fields: "id,type,role,emailAddress",
                                                   supports_all_drives: true)
+      end
+    end
+
+    # Shares a file with everyone signed in to one Workspace domain, findable in
+    # their Drive search (allow_file_discovery), so a team reaches the kit
+    # without being invited one by one.
+    def permissions_create_domain(id, domain:, role: "writer")
+      permission = ::Google::Apis::DriveV3::Permission.new(type: "domain", role: role, domain: domain, allow_file_discovery: true)
+      with_retries("permissions.create", sleeper: @sleeper, idempotent: false) do
+        service.create_permission(id, permission, fields: "id,type,role,domain", supports_all_drives: true)
       end
     end
 

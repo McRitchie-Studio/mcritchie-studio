@@ -13,7 +13,7 @@ class MarketingKitSpecTest < ActiveSupport::TestCase
       assert_equal "RF", spec.short
       assert_equal "#2F6B4F", spec.colour(:primary)
       assert_equal "#E8955A", spec.colour(:accent_on_dark)
-      assert_equal "Ridgeline Fabrication — Marketing Kit", spec.root_name
+      assert_equal "Brand Kit: Ridgeline Fabrication", spec.root_name
       assert File.file?(spec.logo_png(:full, :dark))
       assert_includes spec.logo_files.map(&:last), "RF_logo_full_light.svg"
       assert_equal "RF_photo_shop-floor.jpg", spec.photo_name("shop-floor.jpg")
@@ -75,7 +75,10 @@ class MarketingKitSpecTest < ActiveSupport::TestCase
     "unlisted favourite" => [->(d) { d["photos"]["favourites"] << "ghost.jpg" }, /not listed in photos.items: ghost.jpg/],
     "unknown slot" => [->(d) { d["photos"]["slots"]["hero"] = "shop-floor.jpg" }, /unknown photo slot hero/],
     "no cover slot" => [->(d) { d["photos"]["slots"].delete("cover") }, /slots.cover is required/],
-    "brand not on /logos" => [->(d) { d["brand"] = "nike" }, /brand nike is not a \/logos brand/]
+    "brand not on /logos" => [->(d) { d["brand"] = "nike" }, /brand nike is not a \/logos brand/],
+    "a share domain that is a URL" => [->(d) { d["drive"]["share_domains"] = ["https://example.com"] }, /plain domains .*https:\/\/example.com/],
+    "a share domain that is an address" => [->(d) { d["drive"]["share_domains"] = ["owner@example.com"] }, /plain domains .*owner@example.com/],
+    "share domains not a list" => [->(d) { d["drive"]["share_domains"] = "example.com" }, /share_domains must be a list/]
   }.each do |label, (edit, message)|
     test "refuses a spec with #{label}" do
       with_kit(edit: edit) do |path|
@@ -83,6 +86,17 @@ class MarketingKitSpecTest < ActiveSupport::TestCase
         assert_match message, error.message
       end
     end
+  end
+
+  test "share_domains reads lowercased, and a spec without it shares with no domain" do
+    load_kit(edit: ->(d) { d["drive"]["share_domains"] = ["Example.COM", "mcritchie.studio"] }) do |spec|
+      assert_equal %w[example.com mcritchie.studio], spec.share_domains
+    end
+    load_kit(edit: ->(d) { d["drive"].delete("share_domains") }) { |spec| assert_empty spec.share_domains }
+  end
+
+  test "a root_name in the spec overrides the Brand Kit default" do
+    load_kit(edit: ->(d) { d["drive"]["root_name"] = "Ridgeline Kit" }) { |spec| assert_equal "Ridgeline Kit", spec.root_name }
   end
 
   test "refuses a spec whose required logo file is missing" do
