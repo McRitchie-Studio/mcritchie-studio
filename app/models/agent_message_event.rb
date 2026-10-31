@@ -17,14 +17,15 @@
 # and thread_folded (a satellite chat's anon row moved to the person's thread on
 # their first signed-in post: AgentChat::Ingest#fold!), and Slack's no-nonce
 # reply guard (Media::Slack): reply_sending (an attempt is about to post) and
-# reply_not_posted (that attempt provably did not).
+# reply_not_posted (that attempt provably did not), and reply_suppressed (over a
+# noise cap, Media::Slack::Limits: never sent, never retried).
 class AgentMessageEvent < ApplicationRecord
   KINDS = %w[received routed unrouted claimed lease_renewed lease_expired released dead_lettered
              completed reply_posted reply_skipped reply_failed reply_bot_refused typing_bot_refused held hold_released
              proposed proposal_refused confirmed confirm_refused proposal_rejected proposal_expired proposal_closed
              proposal_executed proposal_failed usage_warned usage_capped rate_limited
              intake_card intake_refused intake_capped bot_shield attached thread_folded
-             reply_sending reply_not_posted].freeze
+             reply_sending reply_not_posted reply_suppressed].freeze
 
   belongs_to :agent_message
 
