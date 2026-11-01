@@ -39,7 +39,7 @@ class E2eQuarantineRatchetTest < Minitest::Test
   # OUTSIDE the diff, here `origin/release`. FAIL CLOSED: an unresolved baseline goes RED, never
   # a pass. So .github/workflows/ci.yml checks out the `test` job with `fetch-depth: 0`, pinned
   # by test/lib/ci_workflow_triggers_test.rb.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   BASELINE_REF = "origin/release"
   # ====================================================================================
 
@@ -73,7 +73,7 @@ class E2eQuarantineRatchetTest < Minitest::Test
   # that vector is GREEN here and RED there, deliberately. The receiver class must include `(`
   # and `)`, or `test.info().skip()` fires naming a bare `)` as the offender. See
   # test_unit_refuses_a_runtime_skip_through_test_info.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   SELECTION_VERBS = %w[only skip fixme fail].freeze
   SELECTION_CALL = /(?<receiver>[\w$()\].]+)\s*\.\s*(?<verb>#{Regexp.union(SELECTION_VERBS)})\s*\(/
   # ====================================================================================
@@ -149,7 +149,7 @@ class E2eQuarantineRatchetTest < Minitest::Test
   #      commit that first added the file. A later commit raising it goes RED. The initial
   #      value is a reviewed line on a wholly-added diff. Without case 2, "no baseline" means
   #      never green or a decorative ratchet.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   def baseline_ceiling
     return [nil, "git cannot read #{ROOT} (not a repository?)"] unless git("rev-parse", "--git-dir")
 
@@ -319,7 +319,7 @@ class E2eQuarantineRatchetTest < Minitest::Test
   # bin/e2e-executed-set-check believing the static scan covers it. Destructure the method off
   # TestInfo, or put it in a helper, and no `.skip(` is in the spec; the lane still loses the
   # spec, silently, exit 0. RED at runtime, GREEN here.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   def test_unit_a_destructured_skip_is_INVISIBLE_to_this_file_and_that_is_why_the_receipt_exists
     source = <<~JS
       test("landing page loads", async ({ page }, testInfo) => {

@@ -6,7 +6,7 @@
 # task's branch (board devops.branch, else the feat/<slug> convention) or it is the task's
 # .worktrees/<worktree_slug> dir; anything else refuses. The shelled refusal is in
 # test/lib/fast_check_test.rb.
-# History: task detect-engine-migration-content-drift.
+# History: task cert-must-root-at-task.
 
 require "minitest/autorun"
 require "tmpdir"

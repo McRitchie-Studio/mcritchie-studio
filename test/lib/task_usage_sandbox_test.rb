@@ -7,7 +7,7 @@
 # <projects>/.agents) and (2) OUTSIDE the real <projects>/.agents, whatever pointed it there.
 # Rule 2 is proven against an INJECTED stand-in state dir: against the real one a red run would
 # do the damage.
-# History: task detect-engine-migration-content-drift.
+# History: task sandbox-test-task-usage-writes.
 
 require "minitest/autorun"
 require "json"
@@ -49,7 +49,7 @@ class TaskUsageSandboxTest < Minitest::Test
   # this goes red, instead of the guard silently covering only some.
   # (That every store's write SEAM calls enforce! is the other half, asserted statically:
   # test/lib/state_store_containment_test.rb.)
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
 
   def test_every_registered_store_refuses_an_unpinned_write
     TaskUsageSandbox::STORES.each do |store, pins|

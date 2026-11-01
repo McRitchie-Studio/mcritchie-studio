@@ -35,7 +35,7 @@ class StatuslineTest < Minitest::Test
   # (TaskUsageSandboxEnv.child_env) and TASK_BIN is a no-op stub. THE SLUG IS FICTIONAL: a
   # fixture naming a live record turns any escape into a targeted write. The pins contain the
   # blast; the fictional slug makes it harmless if a pin is missed. Keep it fictional.
-  # History: task detect-engine-migration-content-drift.
+  # History: task session-resume-v1.
   def render_in(session:, extra: {}, provider: :claude)
     Dir.mktmpdir do |dir|
       File.write(File.join(dir, ".agent-context.json"), JSON.generate({
@@ -397,7 +397,7 @@ class StatuslineTest < Minitest::Test
   # `desk: true` also drops .agent-context.json. Fixtures carry NO task slug, so every call is
   # the heal's. A `stat` shim like GNU's: `-f` is `--file-system`, so `%m` is a FILE OPERAND and
   # its MULTI-LINE output is a fatal $(( )) error. Returns the dir to prepend to PATH.
-  # History: task detect-engine-migration-content-drift.
+  # History: task self-heal-session-mascot.
   def gnu_stat_shim(dir)
     bin = File.join(dir, "shim")
     FileUtils.mkdir_p(bin)
@@ -508,7 +508,7 @@ class StatuslineTest < Minitest::Test
   # $(( )) as a FATAL expansion error, so the whole render dies. A crashed render produces the
   # same call count as a working throttle, so the throttle tests ABOVE cannot tell them apart.
   # Only forcing the window OPEN can, because then the count and the crash disagree.
-  # History: task detect-engine-migration-content-drift.
+  # History: task self-heal-session-mascot.
   def test_heal_survives_a_gnu_stat_and_still_retries
     assert_equal 3, mascot_heal_calls(runs: 3, throttle: "0", gnu_stat: true).size,
                  "the throttle clock must read an mtime on GNU too — not kill the render"
@@ -634,7 +634,7 @@ class StatuslineTest < Minitest::Test
   # board: marker pollution mis-attributes activities on the timeline the learning loop reads.
   # Reproduced SAFELY: HOME is pinned at a tmpdir, so an unguarded statusline writes THERE.
   # Assert on the fallback root, never on the real one.
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   def unpinned_sandboxed_run(stage: "building", armed: "1")
     Dir.mktmpdir do |dir|
       home = File.join(dir, "home")

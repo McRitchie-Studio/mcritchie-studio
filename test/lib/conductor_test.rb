@@ -7,7 +7,7 @@
 # The load-bearing assertion: conductor never ships implicitly. The fake `release` appends
 # every call to RELEASE_CALL_LOG, proving survey/plan/plain ship are dry while `ship --run` is
 # the explicit autonomous production path.
-# History: task detect-engine-migration-content-drift.
+# History: task conductor-cycle-driver.
 require "minitest/autorun"
 require "json"
 require "open3"

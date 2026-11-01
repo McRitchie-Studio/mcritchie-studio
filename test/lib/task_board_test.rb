@@ -60,7 +60,7 @@ class TaskBoardTest < Minitest::Test
   # `[]` and the count is 0, and for a SAFETY count a broken read resolves toward "proceed".
   # Assert the EFFECT, not the return type: the two readers DIVERGE on an unreadable body, and
   # `[]` from `rows!` means genuinely none.
-  # History: task detect-engine-migration-content-drift.
+  # History: task board-parse-silently-returns-empty.
 
   def test_unit_rows_refuses_a_non_json_body_where_the_lenient_parse_scores_zero
     html = FakeResponse.new("<html><title>502 Bad Gateway</title></html>", "502")

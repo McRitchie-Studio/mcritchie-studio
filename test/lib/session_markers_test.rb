@@ -7,7 +7,7 @@
 # PINNED by CLAUDE_PROJECTS_DIR, the fallback forbidden, and (2) OUTSIDE the real
 # <projects>/.agents. NOTHING HERE TOUCHES THE REAL STORE: write_path is pure and aborts BEFORE
 # any IO, so violation cases assert against the real state dir. Allowed writes go to a tmpdir.
-# History: task detect-engine-migration-content-drift.
+# History: task dedup-bin-shared-library.
 
 require "minitest/autorun"
 require "json"
@@ -336,7 +336,7 @@ class SessionMarkersTest < Minitest::Test
   # guard cases reaching real IO if the guard regresses, so they aim at an INJECTED stand-in state
   # dir, the same reason TaskUsageSandbox's own rule-2 tests inject a root instead of firing at
   # ~/projects.
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   def test_unit_the_abort_is_not_swallowed_by_the_writers_own_rescue
     Dir.mktmpdir do |stand_in|
       env = ON.merge("CLAUDE_PROJECTS_DIR" => stand_in)

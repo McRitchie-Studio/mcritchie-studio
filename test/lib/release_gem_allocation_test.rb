@@ -7,7 +7,7 @@
 # tag, bin/release's own workspace/commit/push path. Stubbed, both network:
 # `rubygems_versions` (redefined after `load`) and `bundle` on PATH, which reproduces the
 # measured `PATH remote: .` rewrite and can MISBEHAVE, proving the lockfile guard bites.
-# History: task detect-engine-migration-content-drift.
+# History: task wire-gem-version-allocation.
 
 require "minitest/autorun"
 require "open3"
@@ -45,7 +45,7 @@ class ReleaseGemAllocationTest < Minitest::Test
   # `PATH`, shadowing the `bundle` stub below, so every stubbed-misbehaviour test silently
   # exercises a healthy bundler against this worktree's Gemfile. `bin/release` runs as a plain
   # CLI in production anyway.
-  # History: task detect-engine-migration-content-drift.
+  # History: task wire-gem-version-allocation.
   BUNDLER_ENV_KEYS = %w[RUBYOPT RUBYLIB BUNDLE_GEMFILE BUNDLE_BIN_PATH BUNDLER_VERSION BUNDLER_SETUP].freeze
 
   def child_env(root, stub_bin)
@@ -134,7 +134,7 @@ class ReleaseGemAllocationTest < Minitest::Test
   # WRITTEN IN RUBY, not shell: `sed -i ''` is BSD syntax, and GNU sed consumes the empty `''`
   # as the SCRIPT, so the stub silently does nothing and tests go red on CI and green on macOS.
   # Ruby has one dialect.
-  # History: task detect-engine-migration-content-drift.
+  # History: task wire-gem-version-allocation.
   def install_bundle_stub(root, mode: :real)
     dir = File.join(root, "stub-bin")
     FileUtils.mkdir_p(dir)

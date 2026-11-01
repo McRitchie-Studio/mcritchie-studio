@@ -58,7 +58,7 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
   # IS NOW A BACKSTOP: step 4d's phase 0 allocates the version first, so the guard must keep
   # firing when allocation does NOT happen (skipped, refused or wrong). `allocate: false`
   # models that.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task publish-gems-before-qa.
   def test_prepare_blocks_loudly_on_stranded_gem_work_when_allocation_did_not_run
     out = run_cli(["--yes"], setup: gem_publish_stub(version: "0.10.0", allocate: false),
                   call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
@@ -102,7 +102,7 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
   # retry, then abort. The ladder must retry exit 0 with the old version resolved, not just a
   # NON-ZERO exit. Aborting on first observation turns a self-curing index delay into a manual
   # stop moments after an IRREVERSIBLE gem push.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task verify-gem-lock-bump-landed.
   def test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_compact_index
     Dir.mktmpdir do |dir|
       File.write(File.join(dir, "Gemfile.lock"), <<~LOCK)
@@ -279,7 +279,7 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
   # rewrite (`~> 0.9`) ever reaches a commit. Driven with `allocate: false`, as in the
   # stranded test above: phase 0 allocates forward over a backward version, so the DOWNGRADE
   # branch is reachable only when allocation did not run. It must still fail closed there.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task publish-gems-before-qa.
   def test_prepare_backward_gem_version_aborts_and_never_downgrades_a_consumer
     out = run_cli(["--yes"], setup: gem_publish_stub(version: "0.9.0", live: [{ "number" => "0.9.0" }],
                                                     allocate: false),

@@ -6,7 +6,7 @@
 # create/claim writes and the child `move building` are real requests; worktree/preflight tools
 # are logging stubs via the TASK_BEGIN_* seams (test/lib/fast_check_test.rb). Slug derivation:
 # test/lib/fast_lane_test.rb.
-# History: task detect-engine-migration-content-drift.
+# History: task fast-lane-begin-ship.
 
 require "minitest/autorun"
 require "json"
@@ -255,7 +255,7 @@ class TaskBeginTest < Minitest::Test
   # (BinHelpers.bin_for), so `chdir: worktree` is cosmetic: a false GREEN on a desk it never
   # examined, a false RED when the primary drifts. Pin with --root <worktree>; assert it points at
   # the task's worktree.
-  # History: task detect-engine-migration-content-drift.
+  # History: task begin-preflight-wrong-root.
   def test_begin_pins_preflight_root_to_the_worktree
     _requests, _out, err, status, lines = run_begin([SLUG], existing: building_task)
 

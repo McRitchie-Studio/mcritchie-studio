@@ -96,7 +96,7 @@ class ReleaseMergeForwardTest < ActiveSupport::TestCase
   # CLAUSES BY NAME, not a count: `scan(/abort!/).size >= 4` lets fetch and push aborts be deleted
   # with the suite green. Behavioural coverage lives in the release CLI repin tests,
   # test_merge_forward_*.
-  # History: task detect-engine-migration-content-drift.
+  # History: task harden-release-merge-forward-guard.
   test "every fallible step in the merge-forward is captured and feeds an abort" do
     # A `sh` whose result is thrown away is the bug this PR exists to fix.
     {

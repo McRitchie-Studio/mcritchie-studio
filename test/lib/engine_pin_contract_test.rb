@@ -7,7 +7,7 @@ require "test_helper"
 # somebody thought of, and stayed green when studio-engine 0.46.0 shipped a `users`
 # migration this app never installed. Two tests ask: has every migration the RESOLVED gem
 # ships been installed here, and can the operator's Save land.
-# History: task detect-engine-migration-content-drift.
+# History: task close-email-copy-coverage-gaps.
 class EnginePinContractTest < ActiveSupport::TestCase
   # Each entry is a feature this app relies on, with its version. 0.42: Studio::EmailSetting
   # and Studio::EmailPreviewTarget back /admin/emails (config.draw_admin_emails_routes);
@@ -16,7 +16,7 @@ class EnginePinContractTest < ActiveSupport::TestCase
   # app/mailers/user_mailer.rb#magic_link on every send, and the studio_email_settings columns
   # behind them. The floor deliberately does NOT track the newest release: the migration test
   # below reads the RESOLVED gem, and a bump per release is a list by another name.
-  # History: task detect-engine-migration-content-drift.
+  # History: task close-email-copy-coverage-gaps.
   MINIMUM = Gem::Version.new("0.43.0")
 
   # WHY FOUR TESTS: they fail on different days. The columns behind the mailer's methods live
@@ -24,7 +24,7 @@ class EnginePinContractTest < ActiveSupport::TestCase
   # mailer is broken. The version test states the floor; the API test states what the floor is
   # FOR; the migration test catches a gem that moved FORWARD past this app's db/migrate; the
   # save test catches a schema that never caught up.
-  # History: task detect-engine-migration-content-drift.
+  # History: task close-email-copy-coverage-gaps.
 
   # What app/mailers/user_mailer.rb reads off the catalog. Named as the methods
   # rather than as a version number, because this is the thing that actually
@@ -88,7 +88,7 @@ class EnginePinContractTest < ActiveSupport::TestCase
   # user.respond_to?(:ip_locations)`. THIS IS THE NAME HALF OF THE CONTRACT, AND ONLY THE NAME
   # HALF: a migration whose BODY changed keeps its name.
   # `test/lib/engine_migration_content_test.rb` is the content half.
-  # History: task detect-engine-migration-content-drift.
+  # History: task studio-adopts-profile-migration.
   test "every migration the resolved engine ships has been installed here" do
     assert_empty missing_engine_migrations,
                  "the resolved studio-engine (#{Studio::VERSION}) ships migrations this app never " \
@@ -115,7 +115,7 @@ class EnginePinContractTest < ActiveSupport::TestCase
   # its gem, `record.body = ...` is a NoMethodError. Reading proves nothing: reads are
   # nil-safe and every writer short-circuits on `table_ready?` and returns nil. So round-trip
   # the values: a write that silently no-opped reads back as nil and fails here.
-  # History: task detect-engine-migration-content-drift.
+  # History: task studio-adopts-profile-migration.
   test "the operator can actually save on /admin/emails" do
     assert_nothing_raised do
       Studio::EmailSetting.set_copy("magic_link", header: "Header the operator typed",
@@ -147,7 +147,7 @@ class EnginePinContractTest < ActiveSupport::TestCase
     # `.studio`. This also lets the app pass at all: four engine migrations were written HERE
     # first and remain native, un-suffixed files (create_studio_links and friends), which
     # `install:migrations` skips by name, so the host's copy must count as installed.
-    # History: task detect-engine-migration-content-drift.
+    # History: task studio-adopts-profile-migration.
     def missing_engine_migrations
       @missing_engine_migrations ||= engine_migration_names - installed_migration_names
     end

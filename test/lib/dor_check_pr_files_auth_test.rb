@@ -7,7 +7,7 @@
 # CiStatus.unreadable_cause nothing to classify. EVERY TEST DRIVES THE REAL READ. No
 # DOR_CHECK_PR_FILES injection: gh is stubbed through CI_STATUS_GH_BIN and the broker through
 # GH_AUTH_TOKEN_BIN, so capture, classification, mint and retry all run.
-# History: task detect-engine-migration-content-drift.
+# History: task harden-dor-check-file-read.
 require "minitest/autorun"
 require "json"
 require "tmpdir"

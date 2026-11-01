@@ -6,7 +6,7 @@
 #     derivation, full payload shape), loaded in process (main is guarded).
 #   [integration] the real script, shelled against a localhost stub HTTP server, mints a token
 #     then POSTs to /api/v1/agent_actions.
-# History: task detect-engine-migration-content-drift.
+# History: task tool-call-capture-hook.
 
 require "minitest/autorun"
 require "json"

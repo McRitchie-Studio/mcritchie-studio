@@ -4,7 +4,7 @@
 # bin/verify-review-hop. Each failure mode is success-shaped: a dead-ended CTA is a 302, a mint
 # with no reviewer is a 302, a reviewer who is not an admin lands 200. So each case asserts that
 # reading the DESTINATION separates them, because reading the status cannot.
-# History: task detect-engine-migration-content-drift.
+# History: task correct-verify-hop-recipe.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/review_hop"
@@ -59,7 +59,7 @@ class ReviewHopTest < Minitest::Test
   # Studio::LinksController with its own (inheriting ::MagicLinksController); both /l/:token and
   # /magic_link/:token route there and its local-review mint answers the latter. The checker
   # must not report that WORKING hop as BROKEN on the gate building-sop Step 4 requires green.
-  # History: task detect-engine-migration-content-drift.
+  # History: task correct-verify-hop-recipe.
   def test_mint_passes_on_the_app_local_magic_link_path
     v = ReviewHop.mint(status: 302, location: "http://localhost:3115/magic_link/abc123")
 

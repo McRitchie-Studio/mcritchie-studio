@@ -7,7 +7,7 @@
 # THE CONTROL MATTERS AS MUCH: `test_a_lone_migration_is_not_a_collision` and the rename
 # case; `git diff` with rename detection ON hides the deleted path, so a branch collides
 # with its own old copy.
-# History: commit 2abcc093f.
+# History: task catch-migration-collision-at-merge.
 require "minitest/autorun"
 require "json"
 require "tmpdir"

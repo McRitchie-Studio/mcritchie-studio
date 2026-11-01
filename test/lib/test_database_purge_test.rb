@@ -102,7 +102,7 @@ class TestDatabasePurgeTest < ActiveSupport::TestCase
   # PROVE that database is the test database before it fires. Every case drives it with a FAKE
   # connection (it records whether truncate_tables was called) or a stubbed config, so a REFUSAL
   # is proved without pointing the real destructive path at a real database.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-seed-poisons-test-db.
 
   # Quacks like the two things purge! touches: pool.db_config.database, and the
   # truncate it must NOT reach on a refusal.
@@ -162,7 +162,7 @@ class TestDatabasePurgeTest < ActiveSupport::TestCase
     # value against itself and stomps the dev DB. The anchor is the `database:` LITERAL in
     # database.yml, which no ENV var can rewrite. Simulate the merge: the purge must STILL
     # refuse.
-    # History: task detect-engine-migration-content-drift.
+    # History: task e2e-seed-poisons-test-db.
     connection = FakeConnection.new("mcritchie_studio_development")
 
     error = assert_raises(TestDatabasePurge::UnsafeDatabase) do
@@ -180,7 +180,7 @@ class TestDatabasePurgeTest < ActiveSupport::TestCase
     # `start_with?(base)` would wave it through; the required separator does not. Both names are
     # stubbed to the SAME base ON PURPOSE: against the live lane, in a worktree, the drift lock
     # refuses first and the separator is never exercised. This holds in EVERY lane.
-    # History: task detect-engine-migration-content-drift.
+    # History: task e2e-seed-poisons-test-db.
     TestDatabasePurge.stub(:declared_test_database, "app_test") do
       TestDatabasePurge.stub(:configured_test_database, "app_test") do
         connection = FakeConnection.new("app_testing_dev")
@@ -261,7 +261,7 @@ class TestDatabasePurgeTest < ActiveSupport::TestCase
   # INFIXED BEFORE `_test`, so they do NOT start with `<base>` ("mcritchie_studio_test"). Both
   # directions are pinned: too tight bricks the release, too loose re-opens the dev-DB
   # truncation hole the guard exists to close.
-  # History: task detect-engine-migration-content-drift.
+  # History: task purge-guard-bricks-gate-workspace.
 
   # How the gate workspace ACTUALLY presents itself to the guard (measured from
   # the failing gate run): `declared` is the YAML literal, which no ENV var can

@@ -7,7 +7,7 @@
 # test/lib/bounce_check_cli_test.rb. House pattern: pr_review_zap_safety_test.rb. Asserts a
 # PROPERTY over every rework block: breaker-GUARDED or breaker-ACKNOWLEDGED. A new rework
 # block goes red until classified, because an unclassified one silently re-arms the loop.
-# History: task detect-engine-migration-content-drift.
+# History: task circuit-breaker-check-always-zero.
 
 require "minitest/autorun"
 
@@ -30,7 +30,7 @@ class PrReviewBreakerTest < Minitest::Test
   # and proceeds. A JUDGEMENT (request-changes): a repeat one is a review DEADLOCK, so it
   # routes through breaker_tripped? and escalates. A third, unclassified kind is the bug:
   # refused, or bouncing forever.
-  # History: task detect-engine-migration-content-drift.
+  # History: task circuit-breaker-check-always-zero.
   def test_every_rework_block_is_either_acknowledged_or_breaker_guarded
     guarded_body = SRC[/def block_for_rework\b.*?\nend\n/m]
     refute_nil guarded_body, "block_for_rework not found — the judgement path must exist"

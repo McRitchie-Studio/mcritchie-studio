@@ -6,7 +6,7 @@
 # script is shelled via Open3 against a throwaway git repo with a real bare `origin`, with the
 # board/cert/gate/GitHub CLIs stubbed via SHIP_* env seams. Skip decisions are unit-tested in
 # test/lib/fast_lane_test.rb.
-# History: task detect-engine-migration-content-drift.
+# History: task fast-lane-begin-ship.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/ship_wait"
@@ -78,7 +78,7 @@ class SubmitTest < Minitest::Test
   # verify. The GH stub serves the `--head` `pr list` from GH_PR_LIST_JSON and the un-headed one
   # from GH_PR_LIST_SIBLINGS_JSON: two questions that must carry two answers. It prints a PR URL
   # on `pr create`.
-  # History: task detect-engine-migration-content-drift.
+  # History: task fast-lane-begin-ship.
   def write_stub(dir, name, marker)
     stub = File.join(dir, name)
     File.write(stub, <<~RUBY)
@@ -426,7 +426,7 @@ class SubmitTest < Minitest::Test
       # whether it derives the PR url; this stub predates the field, so ship writes it. PRECHECK and
       # FAST come BEFORE the push and the PR; DOR still follows CI. TASK scout-brief rides 0/8 and
       # only warns.
-      # History: task detect-engine-migration-content-drift.
+      # History: task ship-checks-overlap-and-auth.
       assert_equal ["TASK show", "PRECHECK #{SLUG}", "TASK scout-brief", "FAST #{SLUG}", "GH pr", "GH pr", "GH pr", "TASK show",
                     "TASK update", "DOR #{SLUG}", "TASK move"], markers(lines),
                    "steps must run in the handoff order (commit + push are real git, not stubs)"
@@ -1370,7 +1370,7 @@ class SubmitTest < Minitest::Test
   # WHICH refusal you get: without it the root guard says the desk "is not <slug>'s tree", which
   # is false; with it ship reaches the branch guard, which names the real fix (finish the
   # rebase). Same exit code, same steps run.
-  # History: task detect-engine-migration-content-drift.
+  # History: task dor-check-review-rooting.
 
   # Run ship from `cwd` with NO SHIP_ROOT, so the real root guard runs.
   def run_ship_from(cwd, dir, projects)

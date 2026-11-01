@@ -7,7 +7,7 @@
 #     it.
 # NOTE: `require`, not `load`: the bin scripts require_relative this file, so `load` re-executes
 # it and sprays constant-redefinition warnings.
-# History: task detect-engine-migration-content-drift.
+# History: task extract-shared-agent-api-client.
 
 require "minitest/autorun"
 require "json"
@@ -120,7 +120,7 @@ class AgentApiTest < Minitest::Test
   # eviction. It is guarded because an unguarded write into the real store is the bug, not an
   # emergency.
   # The guard aborts BEFORE any IO, so this proves the refusal without attempting it.
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   def test_unit_an_unpinned_token_cache_mutation_aborts_instead_of_touching_the_real_store
     real = File.join(TaskUsageSandbox.real_state_dir, "atomic-capture", "token.json")
     existed = File.exist?(real)

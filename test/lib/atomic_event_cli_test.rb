@@ -6,7 +6,7 @@
 #     process (main is guarded so `load` is side-effect free).
 #   [integration] the real script, shelled against a localhost stub HTTP server, mints a token
 #     then POSTs the right open/close shape.
-# History: task detect-engine-migration-content-drift.
+# History: task narrated-trajectory-events.
 
 require "minitest/autorun"
 require "minitest/mock"
@@ -982,7 +982,7 @@ class AgentActivityCliTest < Minitest::Test
   # `heartbeat` is the probe because it is LOCAL-only: it writes .acting-agent straight to disk,
   # so the guard is all that stands between child and store. The unpinned case ABORTS before any
   # IO, so this never writes the real store even when red.
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   def spawn_unpinned(*argv)
     env = SessionEnv.neutralized(
       "CLAUDE_CODE_SESSION_ID" => SESSION,
@@ -998,7 +998,7 @@ class AgentActivityCliTest < Minitest::Test
   # (effectively every `end`/`next`), so a sandboxed-but-unpinned child deleting <real
   # projects>/.agents/sessions/<sid>.activity-usage.json must abort like its guarded siblings. The
   # guard aborts BEFORE any IO, so this asserts the refusal without attempting the delete.
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   def test_unit_an_unpinned_activity_usage_clear_aborts_instead_of_deleting_the_real_store
     real = File.join(TaskUsageSandbox.real_state_dir, "sessions", "#{SESSION}.activity-usage.json")
     existed = File.exist?(real)

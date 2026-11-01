@@ -156,7 +156,7 @@ class ClaimLeaseTest < Minitest::Test
   # a same-session claim reads as the SAME instance, or an owner is locked out of its OWN task.
   # Two DISTINCT live instances are refused ONLY when BOTH nonces are known and differ; every
   # blank case degrades to session-level. Assert this across the whole nonce-visibility matrix.
-  # History: task detect-engine-migration-content-drift.
+  # History: task ship-claim-blank-nonce.
   def test_same_session_blank_nonce_on_either_side_is_the_same_instance
     good = "inst-A"
     { # [stored_nonce, current_nonce] => expected disposition, same session
@@ -309,7 +309,7 @@ class ClaimLeaseTest < Minitest::Test
   # Do not pin the LITERAL (`assert_equal 7200, PROGRESS_QUIET_SECONDS`): that cannot see a
   # constant drift under its evidence. The invariant: no measured HEALTHY window may ever render
   # quiet. Drift the constant beneath the corpus and these go red, whatever number it drifts to.
-  # History: task detect-engine-migration-content-drift.
+  # History: task claim-heartbeat-evidences-progress.
   def test_no_measured_healthy_window_ever_reads_quiet
     ClaimLease::MEASURED_SILENCE_SECONDS.each do |percentile, silence|
       refute ClaimLease.quiet?(live_claim, last_progress_at: NOW - silence, now: NOW),

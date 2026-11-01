@@ -61,7 +61,7 @@ class ReleaseCliCoreTest < ReleaseCliHarness
   # The guard aborts BEFORE mkdir_p, so this proves the refusal without creating the real lock
   # dir. `abort` raises SystemExit carrying the message, so the wording is assertable in-process
   # by rescuing it.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task guard-narration-marker-writes.
   def test_unit_an_unpinned_conductor_lock_aborts_instead_of_flocking_the_real_one
     %w[primary_checkout_lock_path gate_workspace_lock_path].each do |helper|
       out = run_ruby_unpinned(<<~RUBY)
@@ -295,7 +295,7 @@ class ReleaseCliCoreTest < ReleaseCliHarness
   # A subprocess that EXITS NONZERO must fail LOUD with its stderr surfaced, never a bare `Actual:
   # ""`. Forced deterministically: a script that writes to stderr and exits nonzero on every
   # attempt. An `IO.popen(err: File::NULL)` helper returns "" silently and fails this assertion.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task harden-release-cli-subprocess-capture.
   def test_run_ruby_flunks_loudly_when_subprocess_exits_nonzero
     error = assert_raises(Minitest::Assertion) do
       run_cli([], call: "STDERR.puts 'forced-subprocess-failure'; exit 1")

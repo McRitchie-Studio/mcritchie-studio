@@ -7,7 +7,7 @@
 # (CI_SCOPE_AGENT_ACTIVITY), no network.
 # Two tiers: [unit] the parse/normalize/skip/gate/idempotency-key logic; [integration] a
 # full PR fixture (pass/fail/pending/cancel).
-# History: task detect-engine-migration-content-drift.
+# History: task test-telemetry-from-ci.
 
 require "minitest/autorun"
 require "tmpdir"

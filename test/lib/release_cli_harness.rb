@@ -46,7 +46,7 @@ class ReleaseCliHarness < Minitest::Test
   # CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID makes agent_activity shell out to
   # bin/atomic-event mid-test; tests needing a session set it via ENV[...] (see the
   # with_conductor_session tests).
-  # History: task release-cli-tests-by-subcommand.
+  # History: task harden-release-cli-subprocess-capture.
 
   # ISOLATE the primary-checkout lock dir for EVERY release subprocess. The real
   # <projects_root>/.agents/locks belongs to the live conductor: a G3 pre-QA gate holds the
@@ -54,7 +54,7 @@ class ReleaseCliHarness < Minitest::Test
   # deadlock the gate (run_ruby has no timeout) or flake on contention. Lazy and memoized so
   # forked workers each get their own dir; lock-semantics tests override
   # ENV["MCR_PRIMARY_LOCK_DIR"] in the child's setup.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task guard-conductor-gate-checkout.
   def self.lock_dir
     @lock_dir ||= begin
       dir = Dir.mktmpdir("release-cli-locks")
@@ -99,7 +99,7 @@ class ReleaseCliHarness < Minitest::Test
   # workspace). Both `bin/rails` subcommands key on a[1]. Returns nil otherwise, so each stub
   # starts `g = gate_git(a, k); return g if g`. Every stub must take **k and pass it: the
   # probe reads the env overlay and chdir.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task harden-release-gate-isolation.
   GATE_GIT_STUB = <<~RUBY
     GATE_SHA = #{GATE_SHA.inspect}
     def gate_git(a, k)
@@ -138,7 +138,7 @@ class ReleaseCliHarness < Minitest::Test
   # test_retro_collects_repeated_answer_flags_into_the_runner_payload filed real findings into
   # the live triage inbox. Every test here stubs `conductor` (the board seam), so a real board
   # call in this file is a bug and should fail locally, not succeed remotely.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task retro-refiles-duplicate-findings.
   UNROUTABLE_API_BASE = "http://127.0.0.1:1"
 
   def run_ruby(script)
@@ -149,7 +149,7 @@ class ReleaseCliHarness < Minitest::Test
     # instead of reaching real `gh` / `heroku` / `op` / `ssh`. NOT a substitute for per-case
     # stubs: PATH sealing cannot catch a script invoked by RELATIVE PATH (bin/prod-smoke,
     # bin/clean-artifacts), hence ReleaseArchiveSeams.
-    # History: task release-cli-tests-by-subcommand.
+    # History: task seal-retries-boot-window.
     env = OutboundSeams.env(
       "MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir, "TMPDIR" => subprocess_tmpdir,
       "SEAL_RETRY_DELAY_SECONDS" => "0",
@@ -260,7 +260,7 @@ class ReleaseCliHarness < Minitest::Test
   # Gemfile.lock bump BEFORE the pre-QA gate and any QA deploy, so gate SHA, QA tree and prod
   # tree are the SAME tree. These drive the REAL prepare with the publish/bump I/O seams
   # stubbed: no network, no real remotes.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task publish-gems-before-qa.
 
   # `version` is what origin/release's version_file declares (last tag pinned v0.10.0, tip one
   # past: 1.0.0/0.11.0 bumped, 0.10.0 STRANDED); `live` is the RubyGems listing; `lock_dirty`
@@ -589,7 +589,7 @@ class ReleaseCliHarness < Minitest::Test
   # The stub drives the REAL git reads (fetch / rev-list / log / remote) through `sh`, so
   # these exercise the whole wiring (repos: scope, require_checkout:, commit parse, remote
   # lookup), not just the pure verdict.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task promote-reaches-assembled-candidate.
   def stale_tree_stub(ahead: 1, state: "assembled", rev_list_ok: true)
     GATE_GIT_STUB +
       %(ENV["RELEASE_CI_STATUS"] = "green"\n) +
@@ -1402,7 +1402,7 @@ class ReleaseCliHarness < Minitest::Test
   # raises), where `installer` is in lexical scope but NIL, so "#{installer}" prints an empty
   # backtick pair. The seed at the top of sync_agent_docs exists for that. Neither test
   # executes the real installer; the second ASSERTS it via the SH-REACHED sentinel.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task rescue-warn-omits-installer-path.
 
   # The path the rescue hands over, or nil if the warn line stopped offering one.
   def skipped_installer_path(out)
@@ -1671,7 +1671,7 @@ class ReleaseCliHarness < Minitest::Test
   # primary shows the old `~> x.y` pin, the ship prints "already pinned" and DEPLOYS A FROZEN
   # SHA WHOSE GEMFILE POINTS AT A GIT BRANCH. The tree the re-pin is built ON is the only tree
   # entitled to decide.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task give-ship-a-dedicated-checkout.
 
   # A real-git consumer: `main` carries an OLD PINNED Gemfile; `release` (the frozen
   # tip) carries a BRANCH-REF'd one that must be re-pinned before prod.
@@ -1738,7 +1738,7 @@ class ReleaseCliHarness < Minitest::Test
   # re-pin as un-QA'd drift ("drifted past the QA-frozen SHA"), after the gems published, nor
   # mint repin₂: an identical tree in a distinct commit, non-fast-forward against repin₁.
   # Never mint a rival: recognize the re-pin already on the branch and SHIP IT.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task give-ship-a-dedicated-checkout.
 
   # A consumer mid-partial-ship: `release` already carries repin₁, `qa_shas` still
   # says frozen. Returns [clone, frozen, repin1].
@@ -1796,7 +1796,7 @@ class ReleaseCliHarness < Minitest::Test
   # SystemExit, StandardError → warn → continue), mirroring bin/reviewer-select's
   # review-intent write. These stubs abort! on the intent snippet ONLY and prove the deploy
   # proceeds.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task auto-record-deploy-lane-intents.
 
   # The repo plan succeeds; the crew-ticker intent write abort!s (transient prod-board).
   INTENT_FAIL_PREPARE_STUB = <<~RUBY

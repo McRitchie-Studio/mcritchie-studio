@@ -4,7 +4,7 @@
 # harnesses that never heard of it: a claim about a CHILD PROCESS's environment, so every test
 # spawns a real child. Two go red on specific mistakes: arming with `||=` (a no-op in a shell
 # that exports the production board), and treating the floor as opt-in.
-# History: task detect-engine-migration-content-drift.
+# History: task stop-tests-hitting-production-board.
 
 require "minitest/autorun"
 require "open3"

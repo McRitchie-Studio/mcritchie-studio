@@ -6,7 +6,7 @@
 # detach and child env, where a renewer renewing the WRONG instance looks fine. Two halves
 # against a live process: 1. a headless holder's renewals KEEP ARRIVING, unprompted, with no
 # UI; 2. when the anchor process dies they STOP, so a crash frees the lane.
-# History: task detect-engine-migration-content-drift.
+# History: task shift-lease-survives-headless.
 
 require "minitest/autorun"
 require "json"

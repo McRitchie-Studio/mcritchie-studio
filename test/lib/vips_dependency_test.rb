@@ -8,7 +8,7 @@ require "test_helper"
 # nothing warns. image_processing 1.14.0 declares ruby-vips as a runtime dependency; 2.0.x
 # declares NONE. ASSERTS DIRECTNESS, NOT PRESENCE: "ruby-vips appears in the lockfile" is
 # GREEN transitively, in precisely the state this guard exists to catch.
-# History: task detect-engine-migration-content-drift.
+# History: task pin-ruby-vips-explicitly.
 class VipsDependencyTest < ActiveSupport::TestCase
   # Bundler.load reads this app's Gemfile — the DIRECT declarations, and only
   # those. Gems pulled in transitively never appear here, which is the point.

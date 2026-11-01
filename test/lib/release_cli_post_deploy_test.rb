@@ -75,7 +75,7 @@ class ReleaseCliPostDeployTest < ReleaseCliHarness
   # when none exists. The branch is chosen by whether `<ship-workspace>/bin/install-agent-docs`
   # exists, and GateWorkspace.path is ABSOLUTE, so a raw run depends on the HOST filesystem.
   # These two stub GateWorkspace.path to fix the branch on every host and assert the DESIGN.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task harden-sync-agent-docs-test.
 
   def test_sync_agent_docs_installs_from_the_shipped_ship_workspace
     setup = <<~RUBY

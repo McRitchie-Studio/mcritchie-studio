@@ -93,7 +93,7 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
   # `dirt` (files that are not the task's). <projects>/myapp/.worktrees/task-x/ is the task's
   # tree, carrying `files` on feat/task-x. `worktree: false` omits the task tree. Yields
   # [projects, primary, tree].
-  # History: task detect-engine-migration-content-drift.
+  # History: task dor-check-review-rooting.
   def with_world(files: PR_CODE, dirt: [PRIMARY_DIRT], worktree: true, base_rung: "accepted")
     Dir.mktmpdir do |raw|
       projects = File.realpath(raw)
@@ -135,7 +135,7 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
   # bypasses the guard by design). DOR_CHECK_PR_FILES=unverified simulates `gh` unable to read
   # the PR's file list, so the resolver falls back to a local view, the subject of this file.
   # Returns [verdict_hash, exit_code, stderr].
-  # History: task detect-engine-migration-content-drift.
+  # History: task dor-check-review-rooting.
   def dor_check(task, cwd, projects, *args, pr_files: "unverified")
     Dir.mktmpdir do |d|
       path = File.join(d, "task.json")
@@ -531,14 +531,14 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
   # destination is never trusted for its DIRECTORY NAME. B1 has the right branch in the wrong
   # repo, B2 the right repo on the wrong branch. Either alone reopens the false pass, so it must
   # satisfy BOTH.
-  # History: task detect-engine-migration-content-drift.
+  # History: task dor-check-review-rooting.
 
   def test_integration_refuses_a_lone_worktree_that_belongs_to_another_repo
     # B1. A SINGLE candidate must still be asked which repo it is in; the check must not sit
     # behind `candidates.size > 1`. The PR is in myapp; the only worktree is otherapp's, on the
     # right branch, carrying prose. The refusal is promised by the AMBIGUOUS banner and
     # docs/agents/modules/gates/dor.md.
-    # History: task detect-engine-migration-content-drift.
+    # History: task dor-check-review-rooting.
     Dir.mktmpdir do |raw|
       projects = File.realpath(raw)
       primary = init_repo(File.join(projects, "myapp"))
@@ -608,7 +608,7 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
   # `assess` must not short-circuit on a branch-only check backed by a STRING match on
   # `.worktrees/<slug>`: the repo axis is asked of the standing root as well. These three
   # otherwise pass with `exempt: true`, exit 0 and no stderr banner. No banner is the tell.
-  # History: task detect-engine-migration-content-drift.
+  # History: task dor-check-review-rooting.
 
   # Stand INSIDE `desk` (a checkout named like the task's worktree) and gate a chore
   # whose PR is a multi-file code change in `repo`.

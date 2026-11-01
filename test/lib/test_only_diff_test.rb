@@ -6,7 +6,7 @@
 # test_unit_a_diff_with_any_non_test_file_is_refused mutates ONE file at a time across a
 # corpus of production paths. A file type nobody imagined is refused by construction: the
 # allowlist has no `else` that guesses.
-# History: task detect-engine-migration-content-drift.
+# History: task add-test-only-shape.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/test_only_diff"
@@ -74,7 +74,7 @@ class TestOnlyDiffTest < Minitest::Test
   # Inject exactly ONE production path into a legitimate diff: every injection must flip the
   # verdict to refused, and the refusal must NAME the injected file. One assertion per
   # adversary, so a regression names the file that got through.
-  # History: task detect-engine-migration-content-drift.
+  # History: task add-test-only-shape.
   def test_unit_a_diff_with_any_non_test_file_is_refused
     NON_TEST_PATHS.each do |intruder, why|
       mutated = TEST_PATHS + [intruder]
@@ -176,7 +176,7 @@ class TestOnlyDiffTest < Minitest::Test
     # deliberately absent. SCOPE: in CI only this repo is checked out, so a sibling-only root is
     # verified by its DECLARATION there and by the DIRECTORY on a developer machine. Every root
     # has a named owner; a root with no owner fails everywhere.
-    # History: task detect-engine-migration-content-drift.
+    # History: task add-test-only-shape.
     projects = ProjectsRoot.default_projects_dir(ROOT)
 
     TestOnlyDiff::TEST_ROOTS.each do |root|

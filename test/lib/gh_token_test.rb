@@ -23,7 +23,7 @@ class GhTokenTest < Minitest::Test
   # a dotted JWT (`ghs_<base64>.<base64>.<sig>`), and that class used for REDACTION stops at the
   # first dot and passes the signature through (docs/agents/modules/credentials.md). Aligned so
   # nobody copies it.
-  # History: task detect-engine-migration-content-drift.
+  # History: task reviewer-merges-mint-tokens.
   TOKEN_SHAPED = /gh[psou]_[A-Za-z0-9_.-]{8,}|github_pat_[A-Za-z0-9_.-]{8,}/
   DOTTED_TOKEN = "ghs_16C7e42F292c6912E7710c838347Ae178B4a.eyJhbGciOiJIUzI1NiJ9.q-3sT_signature"
 
@@ -343,7 +343,7 @@ class GhTokenTest < Minitest::Test
   # PROPERTY, NOT A SPELLING: `{not json` only exercises the rescue, while `[]`, `null` and a
   # scalar entry parse CLEANLY and blow up downstream, killing the command every `gh` call depends
   # on.
-  # History: task detect-engine-migration-content-drift.
+  # History: task reviewer-merges-mint-tokens.
   CORRUPT_CACHES = {
     "unparseable" => "{not json",
     "a JSON array" => "[]",

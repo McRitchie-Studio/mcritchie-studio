@@ -6,7 +6,7 @@
 # report the lane FREE. So it is anchored to the ANCHOR PROCESS, never a rendered UI:
 #   anchor alive  ⇒ keep renewing, headless or not
 #   anchor gone   ⇒ STOP, so the lease lapses and a crash can never wedge the lane
-# History: task detect-engine-migration-content-drift.
+# History: task shift-lease-survives-headless.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/shift_renewer"

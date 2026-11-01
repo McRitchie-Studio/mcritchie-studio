@@ -234,7 +234,7 @@ class CiStatusTest < Minitest::Test
   # saying "rebase and --force-with-lease" force-pushes a healthy branch. THE RULE,
   # three-valued: AFFIRMED, REFUTED or UNKNOWN; UNKNOWN is never converted into an actionable
   # negative. Only an affirmative negative blocks; a wrong wait costs a bounded timeout.
-  # History: task detect-engine-migration-content-drift.
+  # History: task detect-ci-less-stale-prs.
 
   def test_undetermined_mergeability_is_a_wait_not_ci_less
     # The exact vector review prescribed. UNKNOWN + zero checks = the fresh-push
@@ -304,7 +304,7 @@ class CiStatusTest < Minitest::Test
   # evidence, against an asynchronous GitHub computation with no SLA. So no bound and no sleep
   # on a hot path both dor-check and pr-review call. :ci_less has EXACTLY ONE producer: an
   # affirmative negative.
-  # History: task detect-engine-migration-content-drift.
+  # History: task detect-ci-less-stale-prs.
 
   def test_ci_less_has_exactly_one_producer_an_affirmative_negative
     # THE invariant, asserted over the whole input space rather than by spot-checking
@@ -383,7 +383,7 @@ class CiStatusTest < Minitest::Test
   # push --force-with-lease` chain halts at the rebase and leaves the operator mid-rebase with
   # no next instruction. These assert the property (recoverable + clearly labeled), not the
   # prose.
-  # History: task detect-engine-migration-content-drift.
+  # History: task detect-ci-less-stale-prs.
 
   def refuted_remedy
     CiStatus.ci_less_remedy(CiStatus.ci_less_verdict(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING", base: "accepted")))
@@ -1180,7 +1180,7 @@ class CiStatusTest < Minitest::Test
   # as GitHub does ("Bad credentials (HTTP 401)", exit 1) unless the minted token is in its
   # OWN environment. Passing requires the chain: classify the refusal → mint once → hand the
   # token to the RETRIED CHILD → re-read.
-  # History: task detect-engine-migration-content-drift.
+  # History: task standardize-ci-read-auth.
 
   MINTED = "stub-minted-token"
 

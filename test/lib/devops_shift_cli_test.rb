@@ -102,7 +102,7 @@ class DevopsShiftCliTest < Minitest::Test
   # The `abort` is SystemExit, not a StandardError, so it escapes write_marker's `rescue
   # StandardError => nil` (a silent skip otherwise) AND DevopsShiftCli#run's top-level rescue.
   # The guard is only as good as its arming, so assert the arming.
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   def test_unit_this_process_arms_the_narration_marker_sandbox
     assert TaskUsageSandbox.active?,
            "this file drives a CLI that writes the marker store — it must run sandboxed"

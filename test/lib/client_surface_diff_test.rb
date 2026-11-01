@@ -116,7 +116,7 @@ class ClientSurfaceDiffTest < Minitest::Test
   # untracked, and a vendored gem's rescues/*.html.erb is a real ERB template with a real
   # <script>. These fixtures are why the next person cannot quietly re-anchor template? on
   # extension alone.
-  # History: task detect-engine-migration-content-drift.
+  # History: task gate-client-side-behavior.
   VENDORED = %w[
     vendor/bundle/ruby/3.3.0/gems/actionpack-8.1.3/lib/action_dispatch/middleware/templates/rescues/diagnostics.html.erb
     vendor/bundle/ruby/3.3.0/gems/actionpack-8.1.3/lib/action_dispatch/middleware/templates/rescues/_source.html.erb
@@ -198,7 +198,7 @@ class ClientSurfaceDiffTest < Minitest::Test
   # Playwright spec. The first example is multi-line: the offending line has no `<%#`. So the
   # classifier compares masked FILE VERSIONS; no per-line or per-hunk rule sees context outside
   # the hunk.
-  # History: task detect-engine-migration-content-drift.
+  # History: task gate-client-side-behavior.
   TURF_GOAL_FEED = <<~ERB
     <%# A data-only node appended to the hidden goal feed on the live page. The
         page's MutationObserver reads these data-* attrs, fires a toast, then removes

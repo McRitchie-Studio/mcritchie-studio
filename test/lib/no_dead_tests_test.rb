@@ -9,7 +9,7 @@ require "test_helper"
 # heredocs and nesting. COMPLETE UNDER A FULL-SUITE RUN: this file alone cannot false-RED, it
 # sees less. NOTHING IS EXEMPT, not even this file; the mutation tests below (throwaway classes,
 # never registered) RE-PROVE the detector.
-# History: task detect-engine-migration-content-drift.
+# History: task guard-narration-marker-writes.
 class NoDeadTestsTest < Minitest::Test
   # The invariant, by reflection: the `test_*` methods DEFINED directly on `klass`
   # (the `false` — inherited base-class methods are not this class's concern) that

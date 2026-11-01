@@ -9,7 +9,7 @@ require "test_helper"
 # take the hub's first_name. `up` guards adds with `if_not_exists`, so on the way out it
 # cannot know which columns it created. The refusal is WHOLESALE on purpose: "the four
 # columns we added" leaves `first_name` droppable.
-# History: task detect-engine-migration-content-drift.
+# History: task guard-engine-migration-rollback.
 class StandardProfileRollbackGuardTest < ActiveSupport::TestCase
   MIGRATION = Rails.root.glob("db/migrate/*_add_standard_user_profile_columns.studio_engine.rb").freeze
 

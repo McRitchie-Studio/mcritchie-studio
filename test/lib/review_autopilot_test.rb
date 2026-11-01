@@ -7,7 +7,7 @@
 # test/lib/board_cli_canonical_host_test.rb. Tests assert the EFFECT, not the exit code: the
 # reassuring SENTENCE and the ARM RECEIPT must not print. `armed: t` on stdout is the write's
 # own proof; it prints only after the POST succeeds.
-# History: task detect-engine-migration-content-drift.
+# History: task board-parse-silently-returns-empty.
 
 require "minitest/autorun"
 require "open3"

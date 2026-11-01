@@ -23,7 +23,7 @@ class TaskUsageBaselineTest < Minitest::Test
   # TaskUsageBaseline#write the two look alike. Unpinned, the first `seed` ABORTS the whole
   # combined `bin/rails test` process. Requiring the support here makes the standalone run the
   # regression.
-  # History: task detect-engine-migration-content-drift.
+  # History: task sandbox-test-task-usage-writes.
   def setup
     @pinned_usage_dir = Dir.mktmpdir
     @prior_usage_dir = ENV["TASK_USAGE_DIR"]

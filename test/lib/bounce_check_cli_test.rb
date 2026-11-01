@@ -5,7 +5,7 @@
 # wire. BounceLedger's unit tests cannot catch a CLI that forgets to parse, so this gives
 # the CLI a real socket, a real Net::HTTPResponse and a real 401, and asserts the breaker's
 # ANSWER, not its internals.
-# History: task detect-engine-migration-content-drift.
+# History: task circuit-breaker-check-always-zero.
 
 require "minitest/autorun"
 require "json"

@@ -54,7 +54,7 @@ class ReleaseCliDeployAppTest < ReleaseCliHarness
   # the literal "HEAD" (so `PUSH_SPEC="$BRANCH:main"` pushes `HEAD:main`, exactly the frozen
   # commit); the tree is CLEAN, so `git diff-index --quiet HEAD` passes while the primary is
   # filthy.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task give-ship-a-dedicated-checkout.
   def test_deploy_app_repo_script_runs_in_the_ship_workspace_at_the_frozen_sha
     Dir.mktmpdir do |dir|
       clone  = build_sibling_fixture(dir)
@@ -97,7 +97,7 @@ class ReleaseCliDeployAppTest < ReleaseCliHarness
   # main still advances, members are still stamped merged:"main", and ship carries on to the
   # next app. It must NOT say "deployed to production": that lie is what a no-op bin/deploy
   # would have bought, and it is the reason this path exists.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task drop-chain-ops-system-lane.
   def test_deploy_app_with_no_prod_deploy_advances_main_and_dispatches_nothing
     Dir.mktmpdir do |dir|
       clone  = build_sibling_fixture(dir)
@@ -261,7 +261,7 @@ class ReleaseCliDeployAppTest < ReleaseCliHarness
   # (`waiting`/`in_progress` is not a failed deploy) and conclude only when the run finishes,
   # not fail CLOSED on a 100s budget. `sleep` is stubbed to a no-op so the hold costs no
   # wall-clock.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task remove-prod-deploy-approval.
   def test_dispatch_and_watch_holds_through_a_waiting_protection_pause_then_succeeds
     setup = <<~RUBY
       def sleep(*) = nil

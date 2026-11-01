@@ -7,7 +7,7 @@
 #   UNSET      a definite negative in words, never a bare "-"
 #   UNREPORTED the payload carries no such key, so the tool cannot say
 # UNSET and UNREPORTED collapsing back into one rendering is the regression.
-# History: task detect-engine-migration-content-drift.
+# History: task show-prints-merged-field.
 
 require "minitest/autorun"
 

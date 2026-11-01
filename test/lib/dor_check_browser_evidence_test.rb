@@ -5,7 +5,7 @@
 # bin/dor-check ASKS it, reads the real git tree, and ACTS on the answer. A green classifier
 # wired to nothing (a DEAD PATH) is the failure mode. Own file, not dor_check_test.rb, so a
 # merge conflict cannot silently drop it.
-# History: task detect-engine-migration-content-drift.
+# History: task gate-client-side-behavior.
 
 require "minitest/autorun"
 require "json"
@@ -107,7 +107,7 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
   # TASK_API_BASE points at a local sink. Proven by
   # test_integration_the_board_pin_actually_intercepts, which drives the DANGEROUS shape (no
   # --file) and asserts the sink RECEIVED the request: a positive receipt.
-  # History: task detect-engine-migration-content-drift.
+  # History: task gate-client-side-behavior.
   SINK_HOST = "127.0.0.1"
 
   def board_pinned_env(extra = {})
@@ -141,7 +141,7 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
   # has none, so the child exits before opening a socket and the sink sees nothing. Do not
   # weaken the receipt. The value is fake and only reaches a localhost sink: TASK_API_BASE is
   # pinned in the same env hash.
-  # History: task detect-engine-migration-content-drift.
+  # History: task gate-client-side-behavior.
   PIN_PROOF_SECRET = "pin-proof-not-a-real-secret"
 
   # Run `cmd` with the board pinned at a sink this test owns; return the HTTP
@@ -180,7 +180,7 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
   # DOES emit (a real slug, no --file), and bin/gate, which writes the GateRun; through
   # dor-check the sink would have to impersonate a whole board. If either routes elsewhere, this
   # NAMES the portability break.
-  # History: task detect-engine-migration-content-drift.
+  # History: task gate-client-side-behavior.
   def test_integration_the_board_pin_actually_intercepts
     dor = sink_requests("#{BIN} some-slug-that-does-not-exist")
     refute_empty dor,
@@ -271,7 +271,7 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
   # classifier is right. Live at turf-monster/app/views/contests/_goal_feed_item.html.erb:3. It
   # is MULTI-LINE: the line carrying `<script>` has no `<%#`, so any per-line or per-hunk rule
   # is blind here.
-  # History: task detect-engine-migration-content-drift.
+  # History: task gate-client-side-behavior.
   GOAL_FEED_COMMENT = <<~ERB
     <%# A data-only node appended to the hidden goal feed on the live page. The
         page's MutationObserver reads these data-* attrs, fires a toast, then removes

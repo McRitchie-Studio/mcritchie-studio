@@ -4,7 +4,7 @@
 # rollover split. The reference rule runs against a REAL git repo in a tmpdir, because `git
 # grep` (tracked files only, exit 1 on no match) is the behavior relied on; stubbing it would
 # test the stub.
-# History: task detect-engine-migration-content-drift.
+# History: task sweep-logs-on-archive.
 
 require "minitest/autorun"
 require "tmpdir"

@@ -26,7 +26,7 @@ class DorCheckTest < Minitest::Test
   # seams with_neutralized_pr_read and with_default_ci_verdict are per-CONCERN defaults in this
   # process's ENV. The floor seals the CHILD'S REACH, so a call site nobody thought about (a new
   # gh read, a board write, an `op` shell-out) is contained.
-  # History: task detect-engine-migration-content-drift.
+  # History: task stop-tests-hitting-production-board.
   def dor_env(overrides = {})
     OutboundSeams.env(overrides)
   end
@@ -74,7 +74,7 @@ class DorCheckTest < Minitest::Test
   # files": not a failure, so it raises no alert and every test keeps its local-diff behavior. A
   # test wanting the real read (or a specific failure) sets the key itself and this default steps
   # aside.
-  # History: task detect-engine-migration-content-drift.
+  # History: task harden-dor-check-file-read.
   def with_neutralized_pr_read
     had = ENV.key?("DOR_CHECK_PR_FILES")
     ENV["DOR_CHECK_PR_FILES"] = "" unless had
@@ -114,7 +114,7 @@ class DorCheckTest < Minitest::Test
   # staged (git diff --cached), unstaged (git diff), untracked (git ls-files --others). The base
   # is HEAD, so base...HEAD is empty, mirroring the pre-commit SOP case. Yields the repo dir; the
   # block runs dor-check via with_env(DOR_CHECK_DIFF_ROOT => dir, ...).
-  # History: task detect-engine-migration-content-drift.
+  # History: task gate-code-producing-chores.
   def with_git_repo(staged: [], unstaged: [], untracked: [])
     Dir.mktmpdir do |dir|
       git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
@@ -292,7 +292,7 @@ class DorCheckTest < Minitest::Test
   # no writer and no documented manual path; refusing edits to a file nothing maintains is a dead
   # end, not ownership. The version has a working manual path. It re-enters WITH its assembler
   # (finding-d0621629719b).
-  # History: task detect-engine-migration-content-drift.
+  # History: task release-owns-gem-version.
   def test_integration_the_changelog_is_not_gated_until_an_assembler_exists
     devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
                "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
@@ -1911,7 +1911,7 @@ class DorCheckTest < Minitest::Test
   # GATE, not just in the classifier's unit tier. See bin/lib/test_only_diff.rb for why the
   # classifier is an allowlist, and config/feature_shapes.yml for the shape's full three-part
   # contract.
-  # History: task detect-engine-migration-content-drift.
+  # History: task add-test-only-shape.
 
   # A complete, honest `test-only` submission: all-test diff, a control naming a
   # file from that diff, everything else the shape asks for.
@@ -2092,7 +2092,7 @@ class DorCheckTest < Minitest::Test
   #   * replayable → the executed stamp is required (prose alone stops working)
   #   * not replayable → the author's prose line stays the requirement, unchanged
   # And either way the gate must not refuse on the VERDICT.
-  # History: task detect-engine-migration-content-drift.
+  # History: task execute-test-only-control.
 
   # A temp repo whose BASE commit carries `test/models/a_test.rb`, so the path is
   # genuinely replayable (it has a pre-change version) rather than merely named.

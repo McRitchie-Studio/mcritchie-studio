@@ -4,7 +4,7 @@
 # stub HTTP server (no Rails, no real network) and asserts what goes on the wire. A gate run
 # must record WHO ran it: progress with no owner gets credited to whoever holds the claim, and
 # Task#progress_actor reads this stamp.
-# History: task detect-engine-migration-content-drift.
+# History: task lease-outlives-idle-session.
 
 require "minitest/autorun"
 require "json"
@@ -45,7 +45,7 @@ class GateCliTest < Minitest::Test
     # SystemExit that AgentApi#write_cached_token's rescue does not catch, so the CLI dies after
     # POSTing /api/v1/auth. A desk's WARM token.json hides this; CI starts cold. A FRESH tmpdir per
     # test makes both worlds cold.
-    # History: task detect-engine-migration-content-drift.
+    # History: task lease-outlives-idle-session.
     base = SessionEnv.neutralized({
       "TASK_API_BASE" => "http://127.0.0.1:#{port}",
       "AGENT_API_SECRET" => "test-secret"

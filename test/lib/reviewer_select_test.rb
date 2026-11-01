@@ -4,7 +4,7 @@
 # payload, proving the CLI WIRING: it reads devops shape + risk tags, calls
 # ReviewerSelector, and emits a machine-readable primary+light pair that excludes the QA
 # owner. The selection LOGIC is unit-tested in test/services/reviewer_selector_test.rb.
-# History: task detect-engine-migration-content-drift.
+# History: task wire-2-senior-review.
 require "minitest/autorun"
 require "json"
 require "tmpdir"
@@ -349,7 +349,7 @@ class ReviewerSelectCliTest < Minitest::Test
   # serve an unreadable answer.
   # Two agent sessions, so a test can drive the SAME task from DIFFERENT live instances, the
   # whole point of the review claim (two-primaries-reviewed-one-pr).
-  # History: task detect-engine-migration-content-drift.
+  # History: task reviewer-select-record-by-default.
   SESSION_A = "aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa"
   SESSION_B = "bbbbbbbb-2222-4bbb-8bbb-bbbbbbbbbbbb"
 
@@ -375,7 +375,7 @@ class ReviewerSelectCliTest < Minitest::Test
     # the write root is PINNED (TaskUsageSandboxEnv.child_env) and TASK_USAGE_SANDBOX
     # (test/support/task_usage_sandbox.rb) makes an unpinned child ABORT rather than reach the
     # real store.
-    # History: task detect-engine-migration-content-drift.
+    # History: task sandbox-test-task-usage-writes.
     runner = lambda do |*args, session: SESSION_A|
       env = SessionEnv.neutralized(
         {

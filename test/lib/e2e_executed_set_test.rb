@@ -6,7 +6,7 @@
 # The property, on every axis at once: THE LANE EXECUTED EXACTLY THE SPECS IT IS SUPPOSED TO
 # EXECUTE.
 # One tier (backend shape): [unit] the gate's verdict over hand-built Playwright JSON reports.
-# History: task detect-engine-migration-content-drift.
+# History: task e2e-tiers-are-decorative.
 
 require "minitest/autorun"
 require "tmpdir"

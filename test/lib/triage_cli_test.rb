@@ -5,7 +5,7 @@
 # `list` drops the BODY, hence --json; (2) Api::Paginatable caps per_page at 100, so a
 # single-page read goes blind past the cap with NO error, so the paging is asserted.
 # Stub-server shape borrowed from test/lib/task_cli_test.rb.
-# History: task detect-engine-migration-content-drift.
+# History: task retro-refiles-duplicate-findings.
 
 require "minitest/autorun"
 require "open3"
@@ -346,7 +346,7 @@ class TriageCliTest < Minitest::Test
   # retro`'s duplicate guard reads this list, so a false empty files a duplicate follow-up.
   # Asserted as the EFFECT, not the exit code, which a bare JSON::ParserError backtrace also
   # satisfies: the reassuring COUNT never prints.
-  # History: task detect-engine-migration-content-drift.
+  # History: task board-parse-silently-returns-empty.
 
   def test_a_non_json_findings_page_refuses_instead_of_reporting_an_empty_inbox
     _reqs, out, err, status = run_triage("list", findings_payload: "<html><body>502 Bad Gateway</body></html>")

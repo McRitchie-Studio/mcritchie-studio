@@ -120,7 +120,7 @@ class StateStoreContainmentTest < Minitest::Test
   # :guard: the guard itself; it must name .agents to DEFINE the forbidden root. Exactly one file
   # may carry this, and LAYER 2 asserts that.
   # :bash: LAYER 2 is structurally blind here. Held to LAYER 3 instead.
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   ALLOWED_CONSTRUCTORS = {
     "lib/task_usage_sandbox.rb" => [:guard, "the guard itself — it names .agents to DEFINE the forbidden root"],
     "bin/lib/session_markers.rb" => [:ruby, "narration-marker choke point: marker_path is PRIVATE; write/delete enforce"],
@@ -181,7 +181,7 @@ class StateStoreContainmentTest < Minitest::Test
   #   READ: uses the path to read. A read cannot pollute.
   # This enumerates the METHODS PERMITTED, a bounded set, replacing SINK_RE's unbounded list of
   # forbidden verbs. Anything not on it is refused, whatever verb or language it reaches for.
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   UNGUARDED_PATH_METHODS = {
     "bin/lib/agent_mailbox.rb" => {
       "mailbox_root" => "BUILDER — private; soul_folder, the only method that hands a folder out, launders it"
@@ -282,7 +282,7 @@ class StateStoreContainmentTest < Minitest::Test
   # "$PROJECTS/.agents/...". Lookarounds: `block.agents`, `reviewed.agents` are method calls,
   # `.agentsx` is another name. Comments are stripped first. `.secret-cache` is the SECOND real
   # root (bin/lib/secret_cache.rb). marker_path clauses back LAYER 2a.
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   PATH_RE = /(?<!\w)\.agents(?!\w)|(?<!\w)\.secret-cache(?!\w)|SessionMarkers\.marker_path\(|send\(:marker_path/
 
   # Only the TOP-LEVEL residual scan still uses this — an inert top-level enforce! line is
@@ -326,7 +326,7 @@ class StateStoreContainmentTest < Minitest::Test
   # launder excuses only the expression the guard was HANDED, so what remains is the paths the
   # guard never saw. A METHOD-scoped question lets one launder free-pass every other raw path
   # beside it and, via raw_producers, every caller downstream.
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   def scan_source(src)
     launder_stripped(strip_comments(src))
   end
@@ -398,7 +398,7 @@ class StateStoreContainmentTest < Minitest::Test
   # LAUNDERED RETURNS ARE NOT PRODUCERS, PER PATH: returning enforce!(raw) drops out (scan_source
   # blanked it), but laundering A and RETURNING raw B stays a producer for B. CONSTANTS are
   # producers too (`SESSIONS = File.join(root, ".agents", "sessions")`).
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   def raw_producers(src, methods)
     producers = src.lines.filter_map do |l|
       next unless l =~ PATH_RE
@@ -427,7 +427,7 @@ class StateStoreContainmentTest < Minitest::Test
   # Visibility is tracked PER SCOPE: a bare `private` binds only defs at its own indentation, and
   # a `class`/`module`/`end` discards the visibility of every deeper scope. Reading a PUBLIC
   # method as private MISSES a real export, so the scope reset is the safety-critical half.
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   def private_method_names(src)
     names = src.scan(/private_class_method\s+:(\w+)|private\s+:(\w+)/).flatten.compact.to_set
     visibility = {}
@@ -476,7 +476,7 @@ class StateStoreContainmentTest < Minitest::Test
     # to hoist it into a named method, where it is laundered or declared.
     # This grammar is THREE closed forms, checked positively, not a blacklist (the SINK_RE mistake
     # again).
-    # History: task detect-engine-migration-content-drift.
+    # History: task guard-narration-marker-writes.
     bodies = methods.map(&:body).join
     residual = code.lines.each_with_index.reject { |l, _| bodies.include?(l) }
     found + residual.filter_map do |line, i|
@@ -614,7 +614,7 @@ class StateStoreContainmentTest < Minitest::Test
   # with the guard DELETED.
   # So the stand-in root is SEEDED with decoy markers and FINGERPRINTED (sha256 per file) before
   # and after, asserting NOTHING CHANGED, not that a predicted path is absent.
-  # History: task detect-engine-migration-content-drift.
+  # History: task guard-narration-marker-writes.
   def test_integration_bash_statusline_cannot_touch_the_marker_store_when_unpinned
     id = "containment-#{SecureRandom.uuid}"
 
@@ -672,7 +672,7 @@ class StateStoreContainmentTest < Minitest::Test
   # reaches its write.
   # Registering a bash file in WRITERS buys coverage of the code paths a fixture's cwd walks, not
   # of the file.
-  # History: task detect-engine-migration-content-drift.
+  # History: task self-heal-session-mascot.
   def test_integration_bash_statusline_mascot_heal_cannot_touch_the_marker_store_when_unpinned
     id = "containment-heal-#{SecureRandom.uuid}"
 

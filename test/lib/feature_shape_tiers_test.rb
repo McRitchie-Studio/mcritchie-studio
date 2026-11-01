@@ -7,7 +7,7 @@
 # is deliberately NOT a runner: it is a CATALOG. Resolve against what EXECUTES, never what
 # DECLARES. SCOPE: mcritchie-studio only; each satellite needs its own copy against its own
 # ci.yml. [unit] runs over fixtures; [integration] runs real config vs real runners.
-# History: task detect-engine-migration-content-drift.
+# History: task e2e-tiers-are-decorative.
 
 require "minitest/autorun"
 require "yaml"
@@ -31,7 +31,7 @@ class FeatureShapeTiersTest < Minitest::Test
   # (audited by bin/rails-executed-set-check), so the tier TAG is the builder's claim and the
   # LANE proves the file runs. e2e: Playwright needs a booted server, so it is its own job,
   # never a bare argless rails lane. e2e_onchain: no pattern, no runner: see the constant below.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   TIER_COMMANDS = {
     "unit" => %r{bin/rails\b[^\n]*\btest\b},
     "component" => %r{bin/rails\b[^\n]*\btest\b},
@@ -147,7 +147,7 @@ class FeatureShapeTiersTest < Minitest::Test
     # it) XOR is declared structurally unrunnable. A tier in NEITHER set gets [] from
     # `lanes_running`, and the primary guard reports "no runner executes it", burying that nobody
     # told the table. Force the classification at the table, where it is one line to fix.
-    # History: task detect-engine-migration-content-drift.
+    # History: task e2e-tiers-are-decorative.
     known = (required_tiers(File.read(FEATURE_SHAPES)) + UNRUNNABLE_TIERS + TIER_COMMANDS.keys).uniq
 
     refute_empty known, "no tiers known at all — this guard would be vacuous"
@@ -211,7 +211,7 @@ class FeatureShapeTiersTest < Minitest::Test
   # RUNNER_FILES below are MCRITCHIE-STUDIO's, so this proves nothing about sibling repos (rolio
   # has no Playwright lane while `ui+db` demands `e2e`). The audit block in that config holds
   # the per-repo picture and the condition that lifts this qualifier. NO TASK CARRIES THAT WORK.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   def test_integration_every_required_tier_is_run_by_a_real_lane_in_this_repo
     commands = runner_commands
     tiers = required_tiers(File.read(FEATURE_SHAPES))
@@ -238,7 +238,7 @@ class FeatureShapeTiersTest < Minitest::Test
   # bin/dor-check must not choose FULL-suite + rubocop evidence by asking `!dor_tiers.empty?`:
   # that welds "which tiers do you owe" to "must your code be certified at all". `docs` ships
   # prose; `test-only` has NO tiers and ships EXECUTABLE CODE.
-  # History: task detect-engine-migration-content-drift.
+  # History: task add-test-only-shape.
 
   def test_integration_no_shape_demands_a_structurally_unrunnable_tier
     # Defense in depth behind the primary guard, and a louder error for the specific case
@@ -263,7 +263,7 @@ class FeatureShapeTiersTest < Minitest::Test
   # is another blacklist. The doc's tier names are backticked, and this asserts the two copies
   # are the SAME SET, both directions, for every shape: the doc may not demand a tier the config
   # does not, nor drop one it does.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   DOC_TIER_ROW = /^\|\s*\*\*(?<shape>[a-z+-]+)\*\*\s*\|[^|]*\|(?<tiers>[^|]*)\|/
 
   def doc_dor_tiers(markdown)

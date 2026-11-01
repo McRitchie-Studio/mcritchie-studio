@@ -4,7 +4,7 @@
 # boundary between the two Apps, but WHICH App a process asks for is decided here, so a ship
 # session holding GH_APP_ITEM=github.mcritchie-admin is not handed the App with `pull_requests:
 # write`. These cases pin the resolution order.
-# History: task detect-engine-migration-content-drift.
+# History: task fix-token-remedy-lane-crossing.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/gh_identity"
@@ -59,7 +59,7 @@ class GhIdentityTest < Minitest::Test
   # The CLIs turn a missing flag value into "" via `.to_s.strip`; if "" reads as no explicit, they
   # silently mint the App holding `pull_requests: write`. An empty explicit value is unreadable
   # like a typo'd GH_APP_ITEM: nil, and every caller aborts.
-  # History: task detect-engine-migration-content-drift.
+  # History: task fix-token-remedy-lane-crossing.
   def test_an_explicit_but_empty_identity_refuses_rather_than_defaulting
     assert_nil GhIdentity.resolve("", env: {}),
                "an empty --identity is a caller error, not an omission"

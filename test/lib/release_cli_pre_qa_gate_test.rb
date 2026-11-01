@@ -750,7 +750,7 @@ class ReleaseCliPreQaGateTest < ReleaseCliHarness
     # integration subset: bin/deploy runs its full suite. turf-vault registers NOTHING:
     # `bin/release` reads the registry STANDALONE, apart from Release::Repos.qa_test_cmd, and a
     # non-empty answer arms a Rails gate against an Anchor repo, red at G3.
-    # History: task release-cli-tests-by-subcommand.
+    # History: task close-rolio-system-test-gap.
     out = eval_helper(%(%w[mcritchie-studio turf-monster turf-vault rolio tax-studio chain-ops].map { |r| qa_gate_cmd(r) }.inspect))
 
     expected = [HUB_GATE_CMD,

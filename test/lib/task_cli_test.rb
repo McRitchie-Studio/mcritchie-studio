@@ -99,7 +99,7 @@ class TaskCliTest < Minitest::Test
     # the operator's real cost store (see the sandbox section below). HOME is the READ half:
     # SESSION is a real past session id whose transcript an unpinned child would glob. A case may
     # override any of the three (with_session_transcript does).
-    # History: task detect-engine-migration-content-drift.
+    # History: task share-test-session-env-neutralizer.
     base_env = SessionEnv.neutralized({
       "TASK_API_BASE" => "http://127.0.0.1:#{port}",
       "AGENT_API_SECRET" => "test-secret",
@@ -397,7 +397,7 @@ class TaskCliTest < Minitest::Test
   # reads the task back and confirms the persisted stage matches the requested one before
   # reporting success; a stranded task is invisible to reviewers and skipped by the qa-release
   # sweep. stub_persist:false models that board.
-  # History: task detect-engine-migration-content-drift.
+  # History: task task-writes-report-false-success.
   def test_move_that_does_not_persist_exits_nonzero_not_false_success
     requests, out, err, status = run_task(
       ["move", "demo-task", "submitted"],
@@ -650,7 +650,7 @@ class TaskCliTest < Minitest::Test
   # base_env pins those two and HOME into a tmpdir. The layer that must never rot:
   # TASK_USAGE_SANDBOX (test/support/task_usage_sandbox.rb) makes the CLI FAIL CLOSED on an
   # unpinned write root. This proves it with a STAND-IN projects root.
-  # History: task detect-engine-migration-content-drift.
+  # History: task sandbox-test-task-usage-writes.
   def test_sandboxed_run_refuses_to_fall_back_to_the_projects_root_usage_store
     Dir.mktmpdir do |projects|
       _requests, _out, err, status = run_task(
@@ -854,7 +854,7 @@ class TaskCliTest < Minitest::Test
   # (same HOME + TASK_USAGE_DIR).
   # The review lane's intent comes from the claim. A claim-less `intent --to reviewed` says so
   # itself, so no doc has to forbid it; the deploy lane's intents stay quiet.
-  # History: task detect-engine-migration-content-drift.
+  # History: task usage-capture-hardening.
   def test_intent_to_reviewed_points_at_the_review_claim
     _req, _out, err, status = run_task(["intent", "demo-task", "--to", "reviewed"])
     assert status.success?, err
@@ -895,7 +895,7 @@ class TaskCliTest < Minitest::Test
   # End-to-end through bin/task against the stub board (whose create POST returns slug
   # "demo-task"), sharing the on-disk baseline (same HOME + TASK_USAGE_DIR). Contrast
   # test_first_move_with_no_baseline_records_model_only.
-  # History: task detect-engine-migration-content-drift.
+  # History: task seed-usage-baseline-at-create.
   def test_create_seeds_baseline_so_first_build_move_records_a_delta
     Dir.mktmpdir do |home|
       proj = File.join(home, ".claude", "projects", "-Users-xan-projects")
@@ -1103,7 +1103,7 @@ class TaskCliTest < Minitest::Test
   # candidate. `metadata.devops.merged` is always null (nothing writes there), so null there is
   # not a dropped write. These cases pin the three states apart THROUGH THE REAL CLI, so the
   # output cannot regress into "prints something".
-  # History: task detect-engine-migration-content-drift.
+  # History: task show-prints-merged-field.
 
   def test_show_verbose_prints_the_merged_stamp_from_the_top_level_column
     _requests, out, _err, status = run_task(
@@ -1851,7 +1851,7 @@ class TaskCliTest < Minitest::Test
   # write_feature_marker's `rescue StandardError` and kills the move AFTER its stage PATCH
   # landed. A non-building move isolates the board read as the only task GET, so fail_get hits
   # exactly that read.
-  # History: task detect-engine-migration-content-drift.
+  # History: task mascot-marker-no-downgrade-fallback.
   def test_a_board_read_failure_never_aborts_the_command
     marker, status = run_with_marker(
       ["move", "demo-task", "reviewed"],     # non-building: the board read is the only task GET
@@ -2240,7 +2240,7 @@ class TaskCliTest < Minitest::Test
   # a scalar flag's silently overwrites it, whichever came last in argv. Asserted at the SOURCE
   # because bin/task dispatches on ARGV at the top level the moment it is read, so this process
   # cannot load it.
-  # History: task detect-engine-migration-content-drift.
+  # History: task record-per-repo-prs.
   def test_map_and_scalar_flags_never_share_a_devops_key
     source = File.read(BIN)
     scalar_literal = source[/^SCALAR_FLAGS = (\{.*?^\})\.freeze$/m, 1]
@@ -2619,7 +2619,7 @@ class TaskCliTest < Minitest::Test
   # path: 4 fires ONLY on the API's own not-found (HTTP 404 + its exact "task not found" body);
   # every FAILED read (5xx, a Heroku router 404, a route-level 404) stays on 1, or an outage
   # reclassifies as "task gone, free to tear the desk down".
-  # History: task detect-engine-migration-content-drift.
+  # History: task task-cli-exit-codes.
 
   TASK_NOT_FOUND_BODY = JSON.generate("error" => "task not found", "error_code" => "NOT_FOUND")
 

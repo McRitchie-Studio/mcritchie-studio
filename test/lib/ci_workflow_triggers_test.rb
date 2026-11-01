@@ -237,7 +237,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   # on pull_request events) each keep `release` in the trigger while the job runs NOTHING on the
   # release tip, a green required check over zero tests. Match the whole family; a new context
   # key is the way this regresses next.
-  # History: task detect-engine-migration-content-drift.
+  # History: task run-ci-on-release-branch.
   SKIP_CONTEXT_KEYS = /github\.(ref|event_name|base_ref)/
 
   # A path filter on the PUSH trigger is a second, quieter way to strand the RC tip: it
@@ -393,7 +393,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   # `TESTOPTS='-n /nothing_matches_this/'` is LOUD (exit 1); a passing TESTOPTS subset,
   # `TEST=<one passing file>` and `DEFAULT_TEST_EXCLUDE='test/**/*_test.rb'` exit 0. Test via rake
   # (`run_from_rake`): the `bin/rails test <file>` path does NOT read TESTOPTS.
-  # History: task detect-engine-migration-content-drift.
+  # History: task backport-ci-guard-rungs.
   NARROWING_ENV_KEYS = %w[TEST TESTOPTS DEFAULT_TEST DEFAULT_TEST_EXCLUDE].freeze
 
   # THE SECOND VERDICT COMMAND: the `e2e` tier's lane (the sharded `playwright` job). TEST_COMMAND
@@ -403,7 +403,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   # config/feature_shapes.yml; deleted 2026-10-24). A lane that CONSTITUTES a verdict must be
   # enrolled here on the day it is wired. Proving a command STRING exists in a `run:` step is not
   # proving the JOB RUNS.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   E2E_COMMAND = /\bplaywright\s+test\b/
 
   # The EXECUTED-SET gate: reads the shards' own JSON receipts and asserts the lane ran the 51
@@ -430,7 +430,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   # by default, so without `if: always()` that gate goes quiet exactly when a shard died. Every
   # other expression (event context, env var, repo variable, workflow input, matrix flag) is
   # refused.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   UNCONDITIONAL_IF = ["always()"].freeze
 
   # A LANE INPUT AT ITS DEFAULT IS NOT A CONDITION. The lane guards read `suite_as_run`,
@@ -500,7 +500,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   #   --grep-invert  the ONE sanctioned exclusion, VALUE-PINNED below.
   #   --reporter     output format only, but NOT inert: it EMITS THE JSON RECEIPT, pinned by
   #                  test_integration_the_e2e_lane_emits_the_receipt_it_is_judged_on.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   NON_NARROWING_E2E_FLAGS = %w[--shard --grep-invert --reporter].freeze
   # ====================================================================================
 
@@ -562,7 +562,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   # comment-out, an `export`, a heredoc, a `cd` and a `source` all fail this single assertion.
   # Comments, blank lines and a trailing newline are tolerated. The env walk STAYS: it catches
   # narrowing supplied from OUTSIDE the run script, which this assertion cannot see.
-  # History: task detect-engine-migration-content-drift.
+  # History: task backport-ci-guard-rungs.
   def script_body(step)
     step["run"].to_s.lines.map(&:strip).reject { |line| line.empty? || line.start_with?("#") }
   end
@@ -1479,7 +1479,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   # the EXPRESSION exactly, and to the contract, so there is one place to change it.
   # bin/e2e-executed-set-check catches a widened filter too; this is the fast, specific, local
   # diagnosis and the receipt is the durable one. Both are load-bearing.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   def test_integration_the_sanctioned_exclusion_is_pinned_to_its_exact_value
     contract = YAML.safe_load_file(E2E_CONTRACT)
     tag = contract.fetch("quarantine_tag")
@@ -1516,7 +1516,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   # the head SHA by default (depth 1). The ratchet fails CLOSED then, and the wrong fix is
   # deleting it to get green. So the fetch is PINNED: the `test` job, which runs the ratchet, must
   # use `fetch-depth: 0`. An invariant that depends on a condition must ASSERT that condition.
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   def test_integration_the_test_job_can_see_the_ratchets_baseline
     # EVERY lane that could run the ratchet needs the baseline, not "the lane that does".
     # test/lib/e2e_quarantine_ratchet_test.rb reads the ceiling from `origin/release`, and which
@@ -1555,7 +1555,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   # executed-set gate is judged on. The gate fails closed if the receipt vanishes, so this is not
   # a hole, it is a diagnosis: a dropped `json` reporter says "you broke the receipt" instead of
   # "e2e_executed_set found no reports".
-  # History: task detect-engine-migration-content-drift.
+  # History: task e2e-tiers-are-decorative.
   def test_integration_the_e2e_lane_emits_the_receipt_it_is_judged_on
     lanes = e2e_command_lanes(suite_as_run)
 

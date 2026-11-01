@@ -6,7 +6,7 @@
 # migration. Git merges both (only db/schema.rb conflicts), and Rails raises
 # DuplicateMigrationNameError on every db:migrate, including the Heroku release phase, because
 # it groups by CLASS NAME, not filename.
-# History: task detect-engine-migration-content-drift.
+# History: task detect-duplicate-migration-installs.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/migration_collision"

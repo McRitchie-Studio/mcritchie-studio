@@ -7,7 +7,7 @@ require "test_helper"
 # The echo must not sit above the `pr_merged?` fallback, gated on an `ok` it has not yet set: in
 # the interrupted-run recovery gh's line ("... is already merged") is the EVIDENCE for
 # continuing. Same shape as release_merge_forward_test.rb.
-# History: task detect-engine-migration-content-drift.
+# History: task release-reporting-follow-ups.
 class ReleasePromoteRecoveryTest < ActiveSupport::TestCase
   SOURCE = Rails.root.join("bin/release.rb").read.freeze
 

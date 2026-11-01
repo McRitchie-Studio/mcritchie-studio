@@ -6,7 +6,7 @@
 #     guarded).
 #   [integration] the real script vs a localhost stub minting a token and serving
 #     /api/v1/insights; prints the SessionStart JSON.
-# History: task detect-engine-migration-content-drift.
+# History: task feed-banked-insights-forward.
 
 require "minitest/autorun"
 require "json"

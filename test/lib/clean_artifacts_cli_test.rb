@@ -4,7 +4,7 @@
 # a fake projects root on real disk. Crosses process spawn, the child env handed to each app,
 # and the tagged JSON summary `bin/release archive` parses. Apps are shims; the "a real Rails
 # app gets the cap" half is in studio-engine's test/integration/log_rotation_test.rb.
-# History: task detect-engine-migration-content-drift.
+# History: task sweep-logs-on-archive.
 
 require "minitest/autorun"
 require "tmpdir"

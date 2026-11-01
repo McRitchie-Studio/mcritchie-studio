@@ -51,7 +51,7 @@ class DorCheckRootGuardTest < Minitest::Test
   # where the agent stands. <projects>/myapp/.worktrees/task-x/ is the task's tree (branch
   # feat/task-x). `worktree:` false omits the worktree (the reclaimed-worktree case). Yields
   # [projects, primary, worktree_or_nil].
-  # History: task detect-engine-migration-content-drift.
+  # History: task dor-check-misses-root-guard.
   def with_projects(worktree: true)
     Dir.mktmpdir do |raw|
       projects = File.realpath(raw)

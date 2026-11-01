@@ -13,7 +13,7 @@ require_relative "../support/session_env"
 # `autoload` is a NO-OP on it, and the Release AR model stays shadowed: an order-dependent red.
 # `defined?(Rails)` alone is NOT enough: nothing is autoloadable yet. So BOOT the app, as
 # test_helper does, then let Zeitwerk resolve it. Bare, the require_relative is correct.
-# History: task detect-engine-migration-content-drift.
+# History: task guard-session-env-key-drift.
 if defined?(Rails)
   require_relative "../../config/environment"
   Release::GateEnv.name # Zeitwerk resolves it — never require_relative an autoloadable path

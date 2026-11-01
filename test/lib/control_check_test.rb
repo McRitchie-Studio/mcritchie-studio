@@ -6,7 +6,7 @@
 # fail: NECESSARY. One that silently failed to swap (the `sed -i ''` no-op class) runs the NEW
 # file twice: NO-SIGNAL. So asserting NECESSARY asserts the swap BIT, not merely that the script
 # exited 0.
-# History: task detect-engine-migration-content-drift.
+# History: task execute-test-only-control.
 
 require "minitest/autorun"
 require "json"

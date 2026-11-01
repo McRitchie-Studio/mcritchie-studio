@@ -4,7 +4,7 @@
 # behavior: test/controllers/api/v1/release_conductor_claims_controller_test.rb. Here: exit-code
 # branching (0 held / 10 stood down / 1 fail-open), the held-claim marker, the detached renewer
 # and its identity, and the no-session/no-slug/no-role fallbacks.
-# History: task detect-engine-migration-content-drift.
+# History: task release-conductor-claims.
 
 require "minitest/autorun"
 require "json"

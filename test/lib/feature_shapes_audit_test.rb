@@ -34,7 +34,7 @@ class FeatureShapesAuditTest < ActiveSupport::TestCase
   # The LOOKBEHIND is what fixes this, not the case. /COLLECTED/i let "unCOLLECTED" through;
   # rejecting any letter before the word kills "uncollected", "recollected" and "precollected"
   # in any case. `i` stays: a verdict in lower case is still a verdict.
-  # History: task detect-engine-migration-content-drift.
+  # History: task audit-industries-tier-collectability.
   VERDICT = /(?<![A-Za-z])(NOT )?COLLECTED/i
 
   def registered_apps
@@ -84,7 +84,7 @@ class FeatureShapesAuditTest < ActiveSupport::TestCase
   # rule is a CONDITION on the prose. 1. DATED: a date within one line of every citation. 2.
   # NOT DEFERRING: no citation shares a window with language handing a limitation to that
   # task. Rule 1 is the invariant; rule 2 nets the dated-but-deferring.
-  # History: task detect-engine-migration-content-drift.
+  # History: task audit-verdict-matches-uncollected.
   CITED_FILES = [
     Rails.root.join("config/feature_shapes.yml"),
     Rails.root.join("test/lib/feature_shape_tiers_test.rb"),

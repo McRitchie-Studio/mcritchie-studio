@@ -30,7 +30,7 @@ class AgentWorktreeTest < Minitest::Test
   # if all fail it FLUNKS with exit/signal + stderr, never a bare `Actual: ""`.
   # `env:` merges OVER the neutralized base: PROJECTS_DIR is read into a constant at load, so it
   # has to be in the child's env.
-  # History: task detect-engine-migration-content-drift.
+  # History: task reserve-foreign-ports.
   def run_in_script(body, env: {})
     script = "load #{BIN.inspect}\n#{body}"
     last = nil
@@ -330,7 +330,7 @@ class AgentWorktreeTest < Minitest::Test
   #     EVERYWHERE.
   # There is no "advisory" lane: the answer is consumed to destroy (registry -> qa-intake ->
   # `remove --yes`).
-  # History: task detect-engine-migration-content-drift.
+  # History: task reclaim-guard-live-claim.
   def test_bound_but_unreadable_is_withheld_everywhere
     hold = run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false); nil; end
@@ -378,7 +378,7 @@ class AgentWorktreeTest < Minitest::Test
   # in a managed root and the claim decides.
   # The real paths are driven in test/commands/agent_worktree_test.rb and
   # test/lib/agent_worktree_desk_discovery_test.rb.
-  # History: task detect-engine-migration-content-drift.
+  # History: task reclaim-eats-fresh-desks.
   ABANDONED_DESK = <<~RUBY
     def desk_age_seconds(_r); ClaimLease::DESK_IDLE_SECONDS * 10; end
     def desk_touched_recently?(_r); false; end
@@ -414,7 +414,7 @@ class AgentWorktreeTest < Minitest::Test
   # So every check runs with NO claim (`{}` devops): the test is whether the DESK channel still
   # holds them back and, in the control, lets an abandoned one go. The filesystem seams are
   # stubbed; real mtimes and `.git` marker: test/commands/agent_worktree_test.rb.
-  # History: task detect-engine-migration-content-drift.
+  # History: task reclaim-eats-fresh-desks.
 
   def desk_verdict(age:, touched:, task_json: %({ "stage" => "shipped", "metadata" => { "devops" => {} } }), env: %({ "TASK_RECORD_SLUG" => "t" }))
     run_in_script(<<~RUBY)
@@ -711,7 +711,7 @@ class AgentWorktreeTest < Minitest::Test
   # `_ship` while the deployer claim is free. This drives the REAL compute_release_claim_liveness
   # with only the ASSEMBLER role live (CLI: exit 0 for assembler, exit 3 "no live claim" for
   # deployer). A deployer-only guard reads :none and nominates the workspace.
-  # History: task detect-engine-migration-content-drift.
+  # History: task close-residual-claim-coverage.
   def test_release_liveness_is_live_when_only_the_assembler_role_is_held
     out = run_in_script(<<~RUBY)
       def File.exist?(_p); true; end                       # the CLI is present
@@ -774,7 +774,7 @@ class AgentWorktreeTest < Minitest::Test
   # Test the EFFECT: memo seeded :none, LIVE state then held. Non-fresh STILL reads stale :none
   # (reclaimable); fresh: true returns held (WITHHELD). compute_release_claim_liveness is stubbed
   # to a mutable state so the REAL memo logic is observable.
-  # History: task detect-engine-migration-content-drift.
+  # History: task close-residual-claim-coverage.
   def test_reclaim_toctou_fresh_reverify_rereads_the_live_release_claim
     out = run_in_script(<<~RUBY)
       $live = :none
@@ -796,7 +796,7 @@ class AgentWorktreeTest < Minitest::Test
   # "not a cleanup candidate" matched and it recommended `remove ... --yes` for a live builder's
   # desk. qa-intake now reads the structured verdict (pinned in qa_intake_command_test), but the
   # phrase stays OUT of the negative branch regardless: this answer is consumed to DESTROY.
-  # History: task detect-engine-migration-content-drift.
+  # History: task reclaim-guard-live-claim.
   def test_the_held_desk_message_never_contains_the_phrase_cleanup_candidate
     source = File.read(BIN)
     held_line = source.lines.find { |line| line.include?("clean and landed on") }
@@ -1130,7 +1130,7 @@ class AgentWorktreeTest < Minitest::Test
   # an over-broad match makes EVERY bound desk read free, disarming the guard on the destroy path.
   # So the checks assert BOTH directions: proving only the happy 404 also passes on the broken
   # form.
-  # History: task detect-engine-migration-content-drift.
+  # History: task reclaim-guard-live-claim.
   def hold_for(stderr)
     run_in_script(<<~RUBY)
       def capture_status(*_cmd, **_kw); [false, "", #{stderr.inspect}]; end
@@ -1173,7 +1173,7 @@ class AgentWorktreeTest < Minitest::Test
   # stderr match above is a FALLBACK for an older bin/task (which exits 1 for every failure).
   # These cases run a REAL fake bin/task through capture_status, so the whole seam (spawn, timeout
   # plumbing, exit status, classification) is exercised, not stubbed.
-  # History: task detect-engine-migration-content-drift.
+  # History: task task-cli-exit-codes.
   def hold_for_fake_task_cli(script)
     run_in_script(<<~RUBY)
       def command_env(*_a); {}; end
@@ -1242,7 +1242,7 @@ class AgentWorktreeTest < Minitest::Test
   # its sleep, so ABSENCE proves the escalation KILL. An injected clock elapses the grace deadline
   # at once. Mutations go RED: no bound -> ok:true; no KILL or no-op terminate -> marker present;
   # sleep past the quantum -> slept.max > 0.05.
-  # History: task detect-engine-migration-content-drift.
+  # History: task reclaim-guard-live-claim.
   def test_capture_status_timeout_actually_kills_the_child
     out = run_in_script(<<~'RUBY')
       require "tmpdir"
@@ -1306,7 +1306,7 @@ class AgentWorktreeTest < Minitest::Test
   # `Actual: ""`. Forced deterministically: a body that writes to stderr and exits nonzero on
   # every attempt. An IO.popen(err: File::NULL) helper returns "" silently and fails this
   # assertion.
-  # History: task detect-engine-migration-content-drift.
+  # History: task stabilize-worktree-port-test.
   def test_run_in_script_flunks_loudly_when_subprocess_yields_no_output
     error = assert_raises(Minitest::Assertion) do
       run_in_script("STDERR.puts 'forced-subprocess-failure'; exit 1")
@@ -1322,7 +1322,7 @@ class AgentWorktreeTest < Minitest::Test
   # bin/fast-check lane) makes Rails SKIP test:prepare, so view tests error with `The asset
   # "tailwind.css" is not present in the asset pipeline`. Preparing the test env means the DB
   # *and* the bundler hook, in one boot.
-  # History: task detect-engine-migration-content-drift.
+  # History: task build-assets-on-worktree-bringup.
   def test_prepare_test_env_runs_the_bundler_hook_alongside_the_db_prepare
     out = run_in_script(<<~RUBY)
       CALLS = []

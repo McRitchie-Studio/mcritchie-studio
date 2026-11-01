@@ -4,7 +4,7 @@
 # partitions their spend across the authoring activities. Plain Ruby. The fixture mirrors
 # the real pr-review shape: a quiet PARENT + an AVI supervisor child narrating the nil lane
 # + a CARL reviewer child narrating its own soul lane.
-# History: task detect-engine-migration-content-drift.
+# History: task fan-out-token-attribution.
 
 require "minitest/autorun"
 require "json"

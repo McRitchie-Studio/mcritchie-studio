@@ -671,7 +671,7 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
   # answered "origin/main has diverged from the frozen SHA ... reconcile main, re-run prepare
   # to re-freeze": nothing diverged, and that remedy is pure waste at the most expensive
   # moment. git names the true cause in its output; the code must not discard it.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task ship-must-not-exit-zero.
 
   def test_a_credential_refusal_is_diagnosed_as_auth_not_as_a_divergence
     output = <<~GIT
