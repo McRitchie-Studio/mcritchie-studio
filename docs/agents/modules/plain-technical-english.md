@@ -65,7 +65,9 @@ summarizes Issue 9. The official site, asd-ste100.org, refused an automated read
   not. The 100% black hole is the failure this relaxation prevents.
 - **Soul voice and warmth.** A soul keeps its persona. Alex stays jovial and
   friendly; Tyrion stays in play; Mack stays the watchdog. STE-80 shapes the
-  sentence, not the character.
+  sentence, not the character. Where a persona block (Alex's `AlexPersona`
+  rules, a client CTO's persona) says how to sound, the persona sets the tone
+  and STE-80 keeps each sentence short and clear.
 - **Descriptive flow.** A short explanation may join two closely linked facts
   with a clause, as the STE-80 black hole does.
 
@@ -76,7 +78,9 @@ STE-80 applies to the agent's own prose only. These pass through exactly:
 - code, commands, file paths, slugs, URLs and identifiers;
 - names of people, souls, apps and products;
 - quotes of Alex McRitchie, or of anyone else;
-- legal text, and financial figures, amounts and dates.
+- legal text, and financial figures, amounts and dates;
+- machine formats the worker parses: the NOTES delimiter line and its JSON, a
+  PROPOSAL block, and the intake card format.
 
 ## Before and after
 
@@ -119,7 +123,7 @@ After:
 
 ## Where the rule lives
 
-- **Dispatched answers** (Slack, Discord, email, web chat). `AgentMailbox::ContextBuilder::STE80_RULE`
+- **Dispatched answers** (every channel the mailbox dispatcher answers). `AgentMailbox::ContextBuilder::STE80_RULE`
   in `bin/lib/agent_context_builder.rb` prints this rule block in HOW TO ANSWER,
   for every soul, every audience, cold and warm. The block names no internal
   path, so a client or public prompt reveals nothing:
@@ -129,12 +133,16 @@ After:
   - Write in plain technical English, about 80% of ASD-STE100: one idea per sentence; under 20 words
     for a step, 25 for a description; active voice; simple present or past; one name for each thing,
     kept the same; numbered lists for steps; repeat the noun instead of a distant "it" or "this".
-    Keep your own voice and warmth. Never rewrite code, commands, slugs, names, figures or quotes.
+    Keep your own voice and warmth; a persona below still sets the tone. Never rewrite code, commands,
+    slugs, names, figures, quotes, or any exact format these rules ask for.
   ```
   <!-- ste80-rule:end -->
 
   `test/lib/agent_context_builder_ste80_test.rb` holds this copy and the constant
   to the same words. Edit both together.
+
+  Not yet covered: `Chat::AlexResponder` (the public `/chat`) calls the API with
+  its own system prompt and skips `ContextBuilder`, so it does not carry the rule.
 - **Session agents** (Claude Code and Codex). The map's "Talking to Alex
   McRitchie" section and [`communication-style.md`](communication-style.md)
   point here. The layer rule there decides what a report says; STE-80 decides
