@@ -918,8 +918,13 @@ phase_nfl_data() {
     # scoring every team 0.0 — so "448 rank rows populated" is what this line
     # prints whether the rankings mean anything or not. The task now refuses an
     # all-zero ranking and names the grade season that came back empty.
+    # A GREEN LINE HERE NEEDS IMPORTED GRADES. The task's exit code cannot tell: see
+    # report_pff_grades. Without them the rows exist and are not a ranking of players.
     bundle exec rails nfl:rankings_compute SEASON="${NFL_YEAR:-2026}-nfl" GRADES_FROM="${grades_from}" >/dev/null \
-      && log_ok "nfl:rankings_compute" "$(bundle exec rails runner "puts TeamRanking.where(season_slug: \"${NFL_YEAR:-2026}-nfl\").count" 2>/dev/null | tail -1) rank rows populated" \
+      && { local rank_rows log_rank=log_warn rank_note="rank rows written from placeholder grades, not a ranking of players"
+           rank_rows="$(bundle exec rails runner "puts TeamRanking.where(season_slug: \"${NFL_YEAR:-2026}-nfl\").count" 2>/dev/null | tail -1)"
+           if pff_stat_count "$mcr_path" | grep -qE '^[1-9][0-9]*$'; then log_rank=log_ok; rank_note="rank rows populated"; fi
+           "$log_rank" "nfl:rankings_compute" "$rank_rows $rank_note"; } \
       || log_fail "nfl:rankings_compute failed — either ${NFL_YEAR:-2026}-nfl/${grades_from} names a season that does not exist, or ${grades_from} has no AthleteGrade rows and every team scored 0.0. The line above says which."
   )
   report_pff_grades "$mcr_path"
@@ -927,7 +932,7 @@ phase_nfl_data() {
 
 # THE REPO SHIPS NO PFF DATA (Alex McRitchie's ruling, 2026-11-01), SO A CLEAN REBUILD
 # HAS NO PFF GRADES, AND NOTHING ABOVE CAN SEE IT. Seed 29 warns on stderr, but Phase 6
-# discards both db:seed streams, and a re-run never reseeds. MEASURED with the files
+# discards both db:seed streams. MEASURED with the files
 # gone: db:seed exits 0, and nfl:rankings_compute writes the same 448 rows as a
 # graded database and passes its all-zero refusal, because seed 30's draft-tier
 # prospects still carry sub-grades. So this reads the rows, whichever Phase 6 branch
@@ -935,9 +940,10 @@ phase_nfl_data() {
 # degrades the build and does not fail it: no grades is the expected state of a clean
 # checkout, and an unreadable count is reported the same way rather than passing.
 BUILD_DEGRADED=()
+pff_stat_count() { (cd "$1" && bundle exec rails runner 'puts PffStat.count' 2>/dev/null | tail -1); }
 report_pff_grades() {
   local path="$1" count why
-  count=$(cd "$path" && bundle exec rails runner 'puts PffStat.count' 2>/dev/null | tail -1)
+  count=$(pff_stat_count "$path")
   case "$count" in
     ''|*[!0-9]*) why="PFF grade rows unreadable (try: cd $path && bin/rails runner 'puts PffStat.count')" ;;
     0) why="no PFF grades: active NFL athletes hold a flat 50.0 placeholder, and team rankings rest on draft-tier prospect grades only" ;;

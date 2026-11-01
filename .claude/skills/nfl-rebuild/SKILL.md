@@ -1,13 +1,13 @@
 ---
 name: nfl-rebuild
-description: Full NFL data rebuild from scratch (house-burned-down recovery). Drops the database, reseeds teams/coaches/seasons/Spotrac/PFF, pulls nflverse master player CSV with cross-ref IDs, caches headshots to S3, then runs ESPN depth-chart scrape. Run when starting fresh.
+description: Full NFL data rebuild from scratch (house-burned-down recovery). Drops the database, reseeds teams/coaches/seasons/Spotrac, pulls nflverse master player CSV with cross-ref IDs, caches headshots to S3, then runs ESPN depth-chart scrape. Run when starting fresh.
 disable-model-invocation: true
 allowed-tools: Bash, Read
 ---
 
 # NFL Rebuild — Full Recovery Pipeline
 
-End state: every NFL team has 32 active rosters with starting offense/defense lineups, depth charts, contracts, salaries, grades, and headshots. Idempotent — safe to re-run.
+End state: every NFL team has 32 active rosters with starting offense/defense lineups, depth charts, contracts, salaries, placeholder grades, and headshots. The repo ships no PFF data, so real grades need a licensed export imported locally: `bin/rails pff:import_dir DIR=path/to/dir SEASON=2025-nfl`, run before Step 5c. Never commit that export or host it. Idempotent — safe to re-run.
 
 ## Preconditions
 
@@ -42,7 +42,7 @@ echo "exit: $?"
 tail -40 tmp/seed.log
 ```
 
-This populates: 32 NFL teams + 71 NCAA + 48 FIFA, 128 coaches, 3 seasons, 29 slates, ~2,400 Spotrac contracts (read from R2: needs the R2 keys, skips without them), prospects, PFF grades, synthetic grade fill, depth chart shells, sample roster spots, news/content/tasks fixtures.
+This populates: 32 NFL teams + 71 NCAA + 48 FIFA, 128 coaches, 3 seasons, 29 slates, ~2,400 Spotrac contracts (read from R2: needs the R2 keys, skips without them), prospects, placeholder and draft-tier grades (no PFF: the repo ships none, and `tmp/seed.log` carries the `PFF:` warning), depth chart shells, sample roster spots, news/content/tasks fixtures.
 
 ### Step 3 — Pull nflverse master CSV (identity + cross-ref IDs + headshots)
 
@@ -172,7 +172,7 @@ curl -sI "$(heroku run -x -a mcritchie-studio 'bin/rails runner "print Athlete.f
 
 ### Step 5c — Compute proprietary Pass/Run grades
 
-Reads the `*_grade_pff` columns (set by `db/seeds/29_pff_grades.rb` during Step 2) and writes `position_pass_rank` / `position_pass_grade` / `position_run_rank` / `position_run_grade` on each `AthleteGrade`. Without this step the P/R letter-grade badges on `/games/.../show` and `/nfl-team-grades/:team_slug` render empty (`—`).
+Reads the `*_grade_pff` columns and writes `position_pass_rank` / `position_pass_grade` / `position_run_rank` / `position_run_grade` on each `AthleteGrade`. Without this step the P/R letter-grade badges on `/games/.../show` and `/nfl-team-grades/:team_slug` render empty (`—`).
 
 ```bash
 op run --env-file=/Users/alex/projects/.env -- bin/rails nfl:assign_grades > tmp/assign_grades.log 2>&1
@@ -180,7 +180,7 @@ echo "exit: $?"
 tail -3 tmp/assign_grades.log
 ```
 
-Expect: a stats hash like `proprietary grades: {qb=>~80, rb=>~150, wr_te=>~500, ol=>~460, dl=>~590, lb=>~210, db=>~350}` (sizes vary with PFF coverage). Pure DB compute, runs in seconds. Idempotent — re-runs overwrite prior values.
+Expect: a stats hash like `proprietary grades: {qb=>~80, rb=>~150, wr_te=>~500, ol=>~460, dl=>~590, lb=>~210, db=>~350}` (with a licensed PFF export imported; a clean rebuild has no PFF grades, so the task warns on stderr that these letters rest on placeholder and draft-tier inputs). Pure DB compute, runs in seconds. Idempotent — re-runs overwrite prior values.
 
 ## Verification
 

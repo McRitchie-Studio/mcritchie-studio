@@ -123,6 +123,13 @@ class EcosystemBuildNflDataVerdictTest < Minitest::Test
     refute_match(/steady state/, out, "a build with no grades must not close on the healthy banner")
   end
 
+  def test_the_rankings_line_does_not_read_populated_without_pff_rows
+    out = phase(pff_answer: "echo 0")
+
+    assert_match(/448 rank rows written from placeholder grades/, out)
+    refute_match(/rank rows populated/, out, "the same 448 rows print in a graded database")
+  end
+
   def test_pff_rows_keep_the_healthy_banner
     out = phase(pff_answer: "echo 4743", after: VERDICT)
 
