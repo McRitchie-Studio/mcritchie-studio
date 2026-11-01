@@ -28,13 +28,16 @@ keeps the rules that make text clear and drops the ones that make it stiff.
 
 ## What ASD-STE100 says
 
-The standard is ASD-STE100 Issue 9 (January 2025). It has 53 writing rules and a
-dictionary of about 900 approved words. The rules this module uses:
+Per Wikipedia's summary of the current standard, ASD-STE100 Issue 9 (January
+2025) has 53 writing rules and a dictionary of about 900 approved words. The
+rules this module uses include:
 
 - No more than 20 words in a procedural sentence, 25 in a descriptive one.
 - One instruction per sentence.
-- Active voice. Passive only when the actor is unknown.
-- Simple tenses only: imperative, simple present, simple past, simple future.
+- Active voice in procedures. Passive only in descriptive text, and only when
+  the actor is unknown.
+- Simple verb forms only: infinitive, imperative, simple present, simple past,
+  simple future, and the past participle used as an adjective.
 - Do not drop words (a verb, a subject, an article) to shorten text.
 - Each approved word has one part of speech and one meaning.
 - One topic per paragraph, at most six sentences.
