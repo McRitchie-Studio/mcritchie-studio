@@ -182,6 +182,7 @@ class TestHealthRatchetTest < Minitest::Test
     "block edited, same size" => [{ "a.rb" => LONG }, { "a.rb" => LONG.sub("1", "x") }, 0],
     "block shrank"            => [{ "a.rb" => LONG }, { "a.rb" => LONG.lines.drop(4).join }, 0],
     "moved and re-indented"   => [{ "a.rb" => LONG }, { "b.rb" => LONG.gsub(/^/, "    ") }, 0],
+    "JS moved and re-indented" => [{ "a.js" => LONG.gsub("#", "//") }, { "b.js" => LONG.gsub("#", "//").gsub(/^/, "    ") }, 0],
     "block re-indented"       => [{ "a.rb" => LONG }, { "a.rb" => LONG.gsub(/^/, "    ") }, 0],
     "reordered and edited"    => [{ "a.rb" => "#{LONG}#{LONG}#{LONG}\ncode\n\n#{LONG}" },
                                   { "a.rb" => "#{LONG.upcase}\ncode\n\n#{(LONG * 3).sub("1", "x")}" }, 0],
