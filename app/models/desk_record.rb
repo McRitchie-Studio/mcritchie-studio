@@ -41,7 +41,8 @@ class DeskRecord < ApplicationRecord
 
   # Where the write came from, so a row filed by a batch sweep is legible as such next
   # to one an operator typed by hand. `import` has no writer left: it marks the 166 rows
-  # recovered from the stranded ledger stashes on 2026-11-01, and it stays so they stay valid.
+  # recovered from the stranded ledger stashes on 2026-11-01. This list names the values and
+  # nothing validates against it, so a row's validity does not depend on it.
   SOURCES = %w[snapshot cleanup remove reclaim import].freeze
 
   RESOLVED_STATUS = "removed"

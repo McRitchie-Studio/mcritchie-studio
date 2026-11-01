@@ -386,8 +386,8 @@ class DeskRecordTest < ActiveSupport::TestCase
                    payload: { "import_key" => key, "ledger_row" => "| `#{path}` | worktree |" })
   end
 
-  # Dropping "import" from SOURCES would make every one of the 166 rows invalid, and the
-  # only sign would be a validation failure the next time anything touched one.
+  # `source` has no inclusion validation, so this pins the row shape, not DeskRecord::SOURCES:
+  # a validation added later that omits "import" reddens here, before it strands the 166.
   test "[unit] a row the harvest imported stays valid" do
     record = imported_row
     assert record.valid?, record.errors.full_messages.to_sentence
