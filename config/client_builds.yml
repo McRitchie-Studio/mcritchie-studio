@@ -32,3 +32,25 @@ model: opus
 poll_seconds: 30
 bundle_max_bytes: 5000000
 typical_build_minutes: 8
+
+# change_builder   the headless Pokémon builder the launcher runs in a change card's
+#                  desk after it cut it (docs/agents/system/client-build-launcher.md,
+#                  "The change builder"), ONLY for a card Alex McRitchie's own Slack
+#                  or Teams go opened (ChangeBuilds.owner_go?); an app owner's web
+#                  card never gets one. It holds a slot of `cap` above. Read by the
+#                  board (which offers a card) and by the launcher (which runs it);
+#                  `enabled: false` in either place runs no builder, and a missing
+#                  section is off.
+#   enabled        the switch
+#   run_minutes    the builder's wall-clock cap; the run's process group gets TERM,
+#                  then KILL. A cold bin/submit-wait alone is about 12 minutes.
+#   max_turns      assistant turns before the run is stopped
+#   max_attempts   builder runs per card; a failed run is retried after 10 minutes
+#                  until this many, then left for a session (the floor alert says so)
+#   model          the builder's model
+change_builder:
+  enabled: true
+  run_minutes: 90
+  max_turns: 400
+  max_attempts: 2
+  model: opus

@@ -170,4 +170,48 @@ class AgentMessages::FloorAlertPerCardTest < ActiveSupport::TestCase
 
     assert_empty AgentMailboxIncident.where(kind: "change_build_refused")
   end
+
+  test "a failed change builder opens one incident naming the card, its desk and log; a submit recovers it" do
+    desk = "/Users/alex/projects/mcritchie-studio/.worktrees/owner-card"
+    task = Task.create!(title: "Owner card", slug: "owner-card", stage: "building", priority: 1,
+                        metadata: { "devops" => { "change_build" => {
+                          "state" => "started", "attempts" => 1, "desk" => desk,
+                          "builder" => { "state" => "failed", "attempts" => 2, "reason" => "it ran past 90 minutes and was stopped",
+                                         "log" => "/Users/alex/.client-builds/change-builders/owner-card/r.log" } } } })
+    @floor.call(now: @t0)
+
+    incident = AgentMailboxIncident.where(kind: "change_build_refused").sole
+    assert_equal "owner-card", incident.subject
+    post = @recorder.posts.sole
+    assert_match(/\AChange builder failed: the headless builder for `owner-card` stopped short of submitted \(it ran past 90 minutes/, post)
+    assert_includes post, "attempt 2 of 2"
+    assert_includes post, "log /Users/alex/.client-builds/change-builders/owner-card/r.log"
+    assert_includes post, "No attempts left. Continue it by hand: `cd #{desk} && claude --agent pokemon"
+
+    task.update_columns(stage: "submitted")
+    @floor.call(now: @t0 + 1.minute)
+    refute incident.reload.open?
+    assert_match(/`owner-card` no longer waits for its build: it started, its builder submitted it/, @recorder.posts.last)
+  end
+
+  test "a failed builder with a retry due names no hand launch line, so no second builder shares the desk" do
+    Task.create!(title: "Retry card", slug: "retry-card", stage: "building", priority: 1,
+                 metadata: { "devops" => { "change_build" => { "state" => "started", "desk" => "/tmp/d",
+                                                               "builder" => { "state" => "failed", "attempts" => 1 } } } })
+    @floor.call(now: @t0)
+
+    post = @recorder.posts.sole
+    assert_includes post, "attempt 1 of 2"
+    assert_includes post, "retries it by itself 10 minutes after the failure; do not start a builder by hand"
+    refute_includes post, "claude --agent pokemon"
+  end
+
+  test "control: a running or submitted builder opens no incident" do
+    %w[running submitted].each do |state|
+      Task.create!(title: "B #{state}", slug: "builder-#{state}", stage: "building", priority: 1,
+                   metadata: { "devops" => { "change_build" => { "state" => "started", "builder" => { "state" => state } } } })
+    end
+    @floor.call(now: @t0)
+    assert_empty AgentMailboxIncident.where(kind: "change_build_refused")
+  end
 end

@@ -260,8 +260,9 @@ module AgentMailbox
       - Building IS enabled: a change you propose becomes a designed board card on the owner's `go`,
         and the build launcher then starts it by itself (it cuts the desk, claims the card and posts
         "Building started" in this thread) when the go is an app owner's on their own app's chat or
-        Alex McRitchie's own in Slack. Never say you cannot build or launch a builder from chat;
-        offer the change and say that `go` starts it.
+        Alex McRitchie's own in Slack; on his own go a headless builder then takes it to submitted
+        for review. Never say you cannot build or launch a builder from chat; offer the change and
+        say that `go` starts it.
     TEXT
 
     # STE-80, the reply primitive (docs/agents/modules/plain-technical-english.md):

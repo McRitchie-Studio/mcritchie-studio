@@ -15,6 +15,13 @@
 #   announce_submitted    a started card reaching `submitted` (Task's after_commit)
 #                         posts one line in the same thread: submitted for review,
 #                         with the PR on an owner's Slack or Teams thread.
+#   builder_candidates    started cards whose headless builder the launcher may run
+#   builder_claim!        records a builder run (builder state running) and answers
+#                         the brief's card fields; the thread hears it started
+#   builder_finish!       finished (the board reads the stage: submitted, or failed
+#                         when the card never got there), failed, or released (the
+#                         launcher stopped); a failure is told in the thread and
+#                         raised by the floor alert (change_build_refused, per card)
 #
 # WHICH CARDS, every rule required (never a title match):
 #   - stage designed, not blocked, nobody assigned, not a launch task (AppRequest)
@@ -41,14 +48,25 @@
 #     most max_attempts starts (config/client_builds.yml, the same limit launch
 #     tasks take).
 #
-# WHY THE LAUNCHER STOPS AT THE DESK. The launcher's builder is a sandboxed
-# headless Claude built for static client bundles: no secrets in its environment,
-# no file outside its run directory, no git, no network beyond the model. A hub
-# app's builder needs the opposite (a desk in a primary checkout, a database, gh
-# credentials to push and open a PR, bin/submit), and its instructions would come
-# from a chat message. So the launcher runs our own `bin/task begin` (desk, claim,
-# Avi's scout) and the one-command builder launch line goes to the ops channel and
-# onto the card (devops.change_build.launch_line) for a session to run.
+# WHERE THE LAUNCHER STOPS. For an app owner's WEB card it stops at the desk: its
+# instructions came from a client's chat, and a hub app's builder needs a desk, a
+# database, gh credentials and bin/submit, so the launch line goes to the ops
+# channel and onto the card (devops.change_build.launch_line) for a session.
+#
+# THE CHANGE BUILDER (devops.change_build.builder). For a card ALEX McRITCHIE'S
+# OWN go opened (owner_go?) and while config/client_builds.yml `change_builder`
+# is enabled, the start records builder state `pending` and the launcher then runs
+# a headless Pokémon in the desk (ClientBuildLauncher::ChangeBuilder) that follows
+# the DevOps cycle to `submitted` with bin/submit-wait. Its brief is built only
+# from this card's fields (builder_json), fenced as data. States:
+#   pending   offered to the launcher
+#   running   a run holds it (worker, run, started_at); a run left running past
+#             run_minutes + BUILDER_GRACE is offered again (a launcher that died)
+#   submitted the run ended and the card had reached submitted (or later)
+#   failed    the run ended short (timeout, crash, never submitted); offered again
+#             after RETRY_AFTER until change_builder.max_attempts, then left for a
+#             session; the floor alert raises it either way
+# The board, not the builder, says whether it submitted: finished reads the stage.
 module ChangeBuilds
   KEY = "change_build".freeze
   ACTOR = "client-build-launcher".freeze
@@ -60,6 +78,10 @@ module ChangeBuilds
   OWNER_ROUTES = { "slack" => "AgentMessages::SlackRoutes", "teams" => "AgentMessages::TeamsRoutes" }.freeze
   TIERS = %w[studio product].freeze
   OUTCOMES = %w[started refused].freeze
+  BUILDER_OUTCOMES = %w[finished failed released].freeze
+  # The stages a card the builder submitted can be in by the time its run ends.
+  SUBMITTED_STAGES = %w[submitted reviewed assembled shipped archived].freeze
+  BUILDER_GRACE = 15.minutes
   RETRY_AFTER = 10.minutes
   STALE_AFTER = 30.minutes
   CANDIDATE_LIMIT = 25
@@ -125,6 +147,25 @@ module ChangeBuilds
   end
 
   def chat?(proposal) = OWNER_ROUTES.key?(proposal.channel.to_s)
+
+  # The change_builder section of config/client_builds.yml; a missing one is off.
+  def builder_config
+    section = ClientBuilds.config["change_builder"]
+    section.is_a?(Hash) ? section : {}
+  end
+
+  def builder_enabled? = builder_config["enabled"] == true
+  def builder_max_attempts = Integer(builder_config.fetch("max_attempts", 2))
+  def builder_run_minutes = Integer(builder_config.fetch("run_minutes", 90))
+
+  # Whether a start of the card this proposal confirmed also runs the headless
+  # builder: only Alex McRitchie's own Slack or Teams go, and only while enabled.
+  def builds?(proposal) = !proposal.nil? && builder_enabled? && owner_go?(proposal)
+
+  def builder_of(task)
+    builder = run_of(task)["builder"]
+    builder.is_a?(Hash) ? builder : {}
+  end
 
   def candidates(limit: CANDIDATE_LIMIT, now: Time.current)
     repos = eligible_repos
@@ -195,8 +236,10 @@ module ChangeBuilds
 
       if outcome.to_s == "started"
         desk = desk.to_s.match?(DESK_RULE) ? desk.to_s : nil
+        builds = desk && builds?(confirmed_proposals([ slug ])[slug])
         write_run!(task, { "state" => "started", "finished_at" => now.iso8601, "desk" => desk,
-                           "launch_line" => launch_line(slug, desk), "refused_reason" => nil })
+                           "launch_line" => launch_line(slug, desk), "refused_reason" => nil,
+                           "builder" => ({ "state" => "pending", "attempts" => 0 } if builds) })
       else
         why = reason.to_s.squish.presence || "bin/task begin failed without a reason"
         write_run!(task, { "state" => "refused", "finished_at" => now.iso8601, "refused_reason" => why[0, REASON_LIMIT] })
@@ -219,8 +262,29 @@ module ChangeBuilds
     line = "Building started, task `#{task.slug}`."
     launch = run_of(task)["launch_line"]
     return line unless proposal && chat?(proposal) && launch.present?
+    if builder_of(task).present?
+      return "#{line} Its desk is cut and the card is building; a headless Pokémon builder takes it to submitted next."
+    end
 
     "#{line} Its desk is cut and the card is building; start its builder with: `#{launch}`"
+  end
+
+  # The builder's own thread lines (owner chat threads only: only owner_go? cards
+  # get a builder).
+  def builder_text(task, kind)
+    builder = builder_of(task)
+    case kind
+    when "builder-started"
+      "Builder running, task `#{task.slug}`: a headless Pokémon is building it in its desk " \
+        "(attempt #{builder['attempts']} of #{builder_max_attempts}, up to #{builder_run_minutes} min)."
+    else
+      retry_text = if builder["attempts"].to_i < builder_max_attempts
+                     "The launcher tries again in #{RETRY_AFTER.inspect}."
+                   else
+                     "No attempts left; a session can continue it from the desk: `#{run_of(task)['launch_line']}`"
+                   end
+      "Builder stopped, task `#{task.slug}`: #{builder['reason']}. #{retry_text}"
+    end
   end
 
   def submitted_text(task, proposal)
@@ -233,8 +297,11 @@ module ChangeBuilds
   def ops_text(task, proposal = confirmed_proposals([ task.slug ])[task.slug])
     run = run_of(task)
     from = proposal ? proposal.requested_in : "a chat"
-    "Change build started: `#{task.slug}` (#{task.devops['repositories'].first}, from #{from}) is building " \
-      "with its desk#{run['desk'] ? " at #{run['desk']}" : ''}. Start its builder: `#{run['launch_line']}`"
+    head = "Change build started: `#{task.slug}` (#{task.devops['repositories'].first}, from #{from}) is building " \
+           "with its desk#{run['desk'] ? " at #{run['desk']}" : ''}."
+    return "#{head} The launcher runs its headless builder next; do not start a second one." if builder_of(task).present?
+
+    "#{head} Start its builder: `#{run['launch_line']}`"
   end
 
   # After the commit: the thread's one message and the ops line. Neither failing
@@ -270,10 +337,15 @@ module ChangeBuilds
   # posts it in that thread as the proposal's soul.
   def post_to_thread!(task, proposal, kind: "started", now: Time.current)
     external = "change-build:#{task.slug}:#{kind}"
+    external += ":#{builder_of(task)['attempts'].to_i}" if kind.start_with?("builder-")
     existing = AgentMessage.find_by(channel: proposal.channel, external_id: external)
     return existing if existing
 
-    text = kind == "submitted" ? submitted_text(task, proposal) : thread_text(task, proposal)
+    text = case kind
+           when "submitted" then submitted_text(task, proposal)
+           when "started" then thread_text(task, proposal)
+           else builder_text(task, kind)
+           end
     source = proposal.confirm_message || proposal.source_message
     web = proposal.channel == "web"
     envelope = (web ? {} : source&.envelope.to_h.slice("service_url", "conversation_id", "activity_id", "from_id", "channel_type"))
@@ -308,10 +380,118 @@ module ChangeBuilds
     Media.post(home, **payload)
   end
 
+  # Started cards whose headless builder may run now, oldest first: building, not
+  # blocked, a builder recorded at the start, still Alex McRitchie's own go, and
+  # startable (builder_startable?). Empty while the switch is off.
+  def builder_candidates(limit: CANDIDATE_LIMIT, now: Time.current)
+    return [] unless builder_enabled?
+
+    scope = Task.where(stage: "building", blocked_at: nil)
+                .where("tasks.metadata->'devops'->'#{KEY}'->>'state' = 'started'")
+                .where("tasks.metadata->'devops'->'#{KEY}'->'builder' IS NOT NULL")
+                .order(:created_at, :id).to_a
+    proposals = confirmed_proposals(scope.map(&:slug))
+    picked = scope.select { |task| builds?(proposals[task.slug]) && builder_startable?(task, now) }
+    (limit ? picked.first(limit) : picked).map { |task| builder_json(task) }
+  end
+
+  def builder_startable?(task, now)
+    builder = builder_of(task)
+    return false if run_of(task)["desk"].blank? || builder["attempts"].to_i >= builder_max_attempts
+
+    case builder["state"]
+    when "pending" then true
+    when "failed" then (at = parse_time(builder["finished_at"])).nil? || at <= now - RETRY_AFTER
+    when "running" then (at = parse_time(builder["started_at"])).nil? || at <= now - (builder_run_minutes.minutes + BUILDER_GRACE)
+    else false
+    end
+  end
+
+  # The card fields a builder brief is built from, and nothing else: never the
+  # task's description or a chat message.
+  def builder_json(task)
+    devops = task.devops
+    { "task_slug" => task.slug, "title" => task.title, "repo" => devops["repositories"].first,
+      "kind" => devops["kind"], "shape" => devops["shape"], "acceptance" => Array(devops["acceptance"]),
+      "test_plan" => Array(devops["test_plan"]), "risk_tags" => Array(devops["risk_tags"]),
+      "source_thread" => devops["source_thread"], "desk" => run_of(task)["desk"],
+      "created_at" => task.created_at.iso8601, "attempts" => builder_of(task)["attempts"].to_i }
+  end
+
+  # Records a builder run under the card's row lock; answers the brief's fields.
+  def builder_claim!(slug, worker:, run:, now: Time.current)
+    raise Refused.new(:bad_request, "worker and run are required") if worker.blank? || run.blank?
+
+    task = Task.transaction do
+      task = Task.lock.find_by(slug: slug)
+      raise Refused.new(:not_found, "task #{slug} not found") unless task
+      unless builder_candidates(limit: nil, now: now).any? { |c| c["task_slug"] == slug }
+        raise Refused.new(:not_a_candidate, "#{slug} has no builder to run (#{task.stage}, builder #{builder_of(task)['state'] || 'none'})")
+      end
+
+      write_builder!(task, { "state" => "running", "worker" => worker.to_s, "run" => run.to_s,
+                             "attempts" => builder_of(task)["attempts"].to_i + 1, "started_at" => now.iso8601,
+                             "finished_at" => nil, "reason" => nil, "log" => nil })
+      task
+    end
+    announce_builder(task, "builder-started")
+    builder_json(task)
+  end
+
+  # The launcher's report on a builder run. finished: the run exited by itself,
+  # and the stage decides (submitted, or failed: it never got there). failed: a
+  # timeout, a turn cap, a crash, or a brief the launcher refused to run. released:
+  # the launcher stopped; back to pending, the attempt spent.
+  def builder_finish!(slug, run:, outcome:, reason: nil, log: nil, now: Time.current)
+    raise Refused.new(:bad_request, "outcome is #{BUILDER_OUTCOMES.join(', ')}") unless BUILDER_OUTCOMES.include?(outcome.to_s)
+
+    task = Task.transaction do
+      task = Task.lock.find_by(slug: slug)
+      raise Refused.new(:not_found, "task #{slug} not found") unless task
+
+      held = builder_of(task)
+      unless held["state"] == "running" && held["run"].to_s == run.to_s && run.present?
+        raise Refused.new(:not_held, "run #{run} does not hold #{slug}'s builder (#{held['state'] || 'none'} run #{held['run'] || '-'})")
+      end
+
+      state, why = case outcome.to_s
+                   when "released" then [ "pending", nil ]
+                   when "finished"
+                     if SUBMITTED_STAGES.include?(task.stage) then [ "submitted", nil ]
+                     else [ "failed", "the builder exited without reaching submitted (the card is #{task.stage})" ]
+                     end
+                   else [ "failed", reason.to_s.squish.presence || "the builder failed without a reason" ]
+                   end
+      write_builder!(task, { "state" => state, "finished_at" => now.iso8601, "reason" => why&.slice(0, REASON_LIMIT),
+                             "log" => (log.to_s if log.to_s.match?(DESK_RULE)) })
+      task
+    end
+    announce_builder(task, "builder-failed") if builder_of(task)["state"] == "failed"
+    task
+  end
+
+  def announce_builder(task, kind)
+    safely(task) do
+      proposal = confirmed_proposals([ task.slug ])[task.slug]
+      post_to_thread!(task, proposal, kind: kind) if proposal
+    end
+  end
+
+  # Cards whose builder failed and that never reached submitted: the floor
+  # alert's per-card change_build_refused check names each.
+  def failed_builders
+    Task.where(stage: "building")
+        .where("tasks.metadata->'devops'->'#{KEY}'->'builder'->>'state' = 'failed'").order(:id).to_a
+  end
+
   def parse_time(value)
     value.present? ? Time.zone.parse(value.to_s) : nil
   rescue ArgumentError
     nil
+  end
+
+  def write_builder!(task, fields)
+    write_run!(task, { "builder" => builder_of(task).merge(fields).compact })
   end
 
   def write_run!(task, fields)

@@ -14,6 +14,8 @@ module AgentProposals
   #           launcher on Alex McRitchie's Mac (ChangeBuilds: bin/task begin, the
   #           thread's "Building started" line, the builder launch line to ops),
   #           and the go answer says so; any other card waits for a session.
+  #           Alex McRitchie's own go also gets a headless builder in the desk
+  #           (ChangeBuilds.builds?, ClientBuildLauncher::ChangeBuilder).
   #   operate the named operation (AgentProposals::Operations) with the params
   #           frozen at propose time, through the domain's operator client
   #           (Turf Monster's operator endpoint). Its result records who said go.
@@ -26,6 +28,10 @@ module AgentProposals
     # card (ChangeBuilds.starts?), so the thread is told the truth either way.
     STARTS_TEXT = "\nThe build launcher starts it next: it cuts the desk and claims the card, " \
                   "and this thread hears when building has started.".freeze
+    # Appended after STARTS_TEXT when the start also runs the headless builder
+    # (ChangeBuilds.builds?: Alex McRitchie's own Slack or Teams go, switch on).
+    BUILDS_TEXT = " Then a headless Pokémon builds it to submitted for review; this thread hears " \
+                  "when the builder runs, stops, or submits.".freeze
 
     # The satellite health reader asks use; a test sets a fake here.
     class << self
@@ -105,7 +111,8 @@ module AgentProposals
       end
       url = @proposal.task_url(task.slug)
       starts = ChangeBuilds.starts?(@proposal, repo: spec["repo"], kind: task.devops["kind"])
-      [ "Opened `#{task.slug}` #{url}#{STARTS_TEXT if starts}",
+      builds = starts && ChangeBuilds.builds?(@proposal)
+      [ "Opened `#{task.slug}` #{url}#{STARTS_TEXT if starts}#{BUILDS_TEXT if builds}",
         { "task_slug" => task.slug, "task_url" => url, "files" => (blobs.size if blobs.any?) }.compact ]
     end
 
