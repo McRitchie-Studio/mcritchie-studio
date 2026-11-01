@@ -340,6 +340,49 @@ queue as usual. A reader gets one style: every staging path skips anyone already
 mailed, held in a queue, or cancelled from one of the four, and a cancel on an
 older broadcast does not count.
 
+Running a send of the four. Nothing schedules it: someone runs each step by hand
+in the window, on production, and only on Alex McRitchie's go.
+
+```bash
+H() { heroku run -a mcritchie-studio --no-tty -x -- "$@"; }
+H env LIMIT=500 bin/rails broadcasts:stage_cyvasse_four
+# preview each style in /broadcasts/<slug>/queue, then for each cyvasse-four-<style>:
+H bin/rails "broadcasts:approve[cyvasse-four-poster,all]"
+H bin/rails "broadcasts:execute[cyvasse-four-poster,125]"
+H bin/rails "broadcasts:queue_status[cyvasse-four-poster]"
+```
+
+- **Address first.** No staging until `MAILER_ADDRESS` is set, or Alex McRitchie has
+  ruled to send without it for this send: ask him, because the 2026-10-31 decision
+  that left it unset is not that go. `broadcasts:restage` reaches staged rows, never
+  approved ones, so a late change misses them.
+- **`LIMIT` adds readers, it does not top up.** A second run holds `LIMIT` more, so
+  set it to the target minus what is already held. Run one staging at a time: the
+  unique index is per broadcast, so two overlapping runs can put one reader on
+  two styles.
+  `heroku run` output can vanish while the command ran, so read the counts in
+  `queue_status` before you repeat a stage or an execute.
+- **Split the cap evenly.** `DAILY_CAP` (500) is a rolling 24 hours across every
+  broadcast, and an execute takes what is left, so one big execute starves the
+  rest. Read what the gate has left on the queue page and pass the same limit per
+  style: 125 each fits only with nothing else sent in 24 hours. On `gate: PAUSED`
+  stop and tell Alex McRitchie; that execute queued nothing.
+- **Let one style finish before the next.** `BATCH_SPACING` paces each execute alone,
+  so four at once outrun Resend. 125 takes about 75 seconds.
+- **Check after each style.** `queue_status` is done at queued 0 with every row sent
+  or skipped. A row whose retries ran out stays approved and queued, and holds cap for
+  24 hours; another execute does not recover it, so stop and report it.
+- **Leave a cancelled row cancelled.** The Restage button can revive it, past the
+  one-style guard.
+- **Window and stop rules** are in
+  [`launch-warmup`](agents/agents/alex/sops/launch-warmup.md): the placement test,
+  the send window, the gate read and the rollback. An open `SendGate` covers bounces,
+  complaints and the cap only, so it is not a green warm-up gate.
+- **Reading the result.** The scoreboard calls a lead only once every style has 100
+  delivered, and 125 leaves 25 of margin. Started a game fires at game setup, not at
+  a finished game. Rates run high until Resend reports deliveries. Later batches come
+  from lower in the most-games-first list, so compare styles within one run.
+
 ## Staged Sends: Review Before Execute
 
 A personalized broadcast (a subject with `%{field}`s, or a template listed in
