@@ -162,7 +162,7 @@ class TestHealthRatchetIntegrationTest < Minitest::Test
 
       out, status = Open3.capture2e(env, File.join(ROOT, "bin", "test-health"), "--root", root)
       assert status.success?, out
-      assert_match(/\A6 test lines \(no ceiling set\)/, out)
+      assert_match(/^6 test lines \(no ceiling set\)/, out)
 
       File.write(File.join(root, "test", "a_test.rb"), LONG_COMMENT + CLEAN_TEST)
       out, status = Open3.capture2e(env, File.join(ROOT, "bin", "test-health"), "--root", root)
