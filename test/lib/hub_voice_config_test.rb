@@ -44,6 +44,14 @@ class HubVoiceConfigTest < ActiveSupport::TestCase
                  HubVoiceConfig.transcriber(env: { "STUDIO_VOICE_TRANSCRIBER" => "openai" }, production: true, qa: false)
   end
 
+  test "the engine's per-user take limit, where the engine has it, counts in Rack::Attack's shared store" do
+    if Studio.respond_to?(:voice_takes_rate_limit)
+      assert_same Rack::Attack.cache.store, Studio.voice_takes_rate_limit[:store], "a per-dyno Rails.cache would multiply the limit"
+    else
+      assert_includes Rack::Attack.throttles.keys, "voice_takes/user", "on 0.121.0 the hub's own throttle bounds takes"
+    end
+  end
+
   private
 
   def with_transcriber(name)

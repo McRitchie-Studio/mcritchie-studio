@@ -174,6 +174,16 @@ Studio.configure do |config|
     config.voice_openai_api_key = HubVoiceConfig.api_key
     config.voice_transcriber = HubVoiceConfig.transcriber
   end
+  # The engine's per-user take limit (studio-engine >= the release carrying
+  # engine-voice-takes-hardened). Its counter must be SHARED: the hub's
+  # Rails.cache is a per-dyno file store (config/environments/production.rb),
+  # which would multiply the limit by the web dyno count. Rack::Attack's store
+  # (config/initializers/rack_attack.rb, loaded first) is the shared one.
+  # Inert on 0.121.0, which has no setting; Rack::Attack's VOICE_* throttles
+  # bound takes until the relock.
+  if Studio.respond_to?(:voice_takes_rate_limit=)
+    config.voice_takes_rate_limit = { to: 20, within: 600, store: Rack::Attack.cache.store }
+  end
   # ---- Site footer and booking (studio-engine docs/SITE_FOOTER.md) ----
   # The engine renders the footer, the map, the booking frame and the booking
   # popup, and serves Leaflet. This block is only the facts.
