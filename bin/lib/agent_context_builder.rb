@@ -264,7 +264,7 @@ module AgentMailbox
       - Write in plain technical English, about 80% of ASD-STE100: one idea per sentence; under 20 words
         for a step, 25 for a description; active voice; simple present or past; one name for each thing,
         kept the same; numbered lists for steps; repeat the noun instead of a distant "it" or "this".
-        Keep your own voice and warmth; a persona below still sets the tone. Never rewrite code, commands,
+        Keep your own voice and warmth; your persona or role still sets the tone. Never rewrite code, commands,
         slugs, names, figures, quotes, or any exact format these rules ask for.
     TEXT
 
