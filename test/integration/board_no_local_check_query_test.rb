@@ -2,7 +2,7 @@
 
 require "test_helper"
 
-# The local cert is retired (docs/agents/archive/g1-cert-2026-10-06.md) and nothing
+# The local cert is retired (g1-cert-2026-10-06.md, docs/agents/archive/README.md) and nothing
 # opens a g1_cert gate any more, so the board's "local check running" indicator
 # could never fire — yet every render still queried in-flight g1_cert rows to feed
 # it. The indicator is gone; these pin that the boards no longer ask for it.

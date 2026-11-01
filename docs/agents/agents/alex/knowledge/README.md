@@ -96,7 +96,7 @@ directory is built to avoid, and it is invisible to a reader. Check it:
 ```bash
 cd docs/agents/agents/alex
 jq -r '.items[].source_id' ~/projects/.corpus/hormozi/extract/b*.json | sort -u > /tmp/corpus_ids.txt
-grep -rhoE '`[A-Za-z0-9_-]{11}`' knowledge/ ../../archive/agents/rex/briefs/ EVAL.md | tr -d '`' | sort -u > /tmp/cited_ids.txt
+grep -rhoE '`[A-Za-z0-9_-]{11}`' knowledge/ EVAL.md | tr -d '`' | sort -u > /tmp/cited_ids.txt
 comm -23 /tmp/cited_ids.txt /tmp/corpus_ids.txt
 ```
 

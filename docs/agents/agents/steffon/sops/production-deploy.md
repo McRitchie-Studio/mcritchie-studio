@@ -4,7 +4,7 @@
 
 Steffon's `production-deploy` SOP ships an assembled, QA-green release to production.
 History cut from this page:
-[`../../../archive/production-deploy-2026-09-25.md`](../../../archive/production-deploy-2026-09-25.md).
+[`production-deploy-2026-09-25.md`](../../../archive/README.md).
 
 ## Scope
 

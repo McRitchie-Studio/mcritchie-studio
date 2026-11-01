@@ -4,7 +4,7 @@ Everything an agent needs to push, open a PR, read CI, and merge, and to fix its
 own credential when that stops working. **The provider is GitHub** (the
 `McRitchie-Studio` org). The contract is at the top; the GitHub specifics are
 underneath. The rationale and measurements this page no longer carries are frozen
-verbatim in [`../archive/source-control-2026-09-25.md`](../archive/source-control-2026-09-25.md).
+verbatim in [`source-control-2026-09-25.md`](../archive/README.md).
 
 ## ⛔ The standing rule: source-control auth is SELF-SERVICE
 

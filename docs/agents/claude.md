@@ -2,8 +2,8 @@
 
 Claude Code auto-loads this file, not `AGENTS.md`, so this adapter carries the
 gate that must not be missed and then imports the map. Read both before acting.
-The long form this adapter replaced is kept verbatim in
-`mcritchie-studio/docs/agents/archive/entry-docs-2026-09-24.md`.
+The long form this adapter replaced is in git history:
+`mcritchie-studio/docs/agents/archive/README.md`.
 
 ## SOP invocation standard
 

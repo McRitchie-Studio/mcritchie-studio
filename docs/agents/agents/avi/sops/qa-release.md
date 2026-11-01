@@ -13,7 +13,7 @@ then deploys those gated SHAs with no re-lock. A red QA that changes the gem bur
 patch. Why, and the older candidate flow (`RELEASE_GEM_FLOW=candidate`):
 [`gem-release-flow.md`](../../../system/gem-release-flow.md).
 History and rationale cut from this page live in
-[`../../../archive/qa-release-2026-09-25.md`](../../../archive/qa-release-2026-09-25.md).
+[`qa-release-2026-09-25.md`](../../../archive/README.md).
 
 ## Scope
 

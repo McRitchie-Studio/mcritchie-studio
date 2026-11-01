@@ -45,7 +45,7 @@ class GateRun < ApplicationRecord
   # offers them, and the gates API refuses to write one (RETIRED_GATE_KEY). Their
   # rows stay valid so history reads, and so the one-time close of the stale
   # in-flight ones (lib/tasks/gate_runs.rake) can save them. g1_cert was the local
-  # cert, retired for the PR's settled CI (docs/agents/archive/g1-cert-2026-10-06.md).
+  # cert, retired for the PR's settled CI (g1-cert-2026-10-06.md, docs/agents/archive/README.md).
   RETIRED_GATES = { "g1_cert" => { "grain" => "task" } }.freeze
   RETIRED_KEYS = RETIRED_GATES.keys.freeze
 

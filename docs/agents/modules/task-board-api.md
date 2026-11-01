@@ -414,7 +414,7 @@ gate docs live in `docs/agents/modules/gates/`). Keys and grains:
 | `g3_candidate` | G3 Candidate (pre-QA + QA deploy) | `release` |
 | `g4_ship` | G4 Ship (frozen-SHA + prod deploy) | `release` |
 
-A **retired** key (`GateRun::RETIRED_KEYS`; history in `docs/agents/archive/`) is
+A **retired** key (`GateRun::RETIRED_KEYS`; history in `docs/agents/archive/README.md`) is
 refused on every write (`open`, `sops`, `close`) with `422 RETIRED_GATE_KEY` and
 mints no row. Its old rows still validate and still list through `GET`.
 
