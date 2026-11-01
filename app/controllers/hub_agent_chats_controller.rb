@@ -11,8 +11,10 @@ require "ipaddr"
 #
 # The page is /chat (ChatController#index), the hub's own chat with Alex on the
 # engine primitive: thread chat:<soul>:<user id> (AgentChat), the same thread a
-# satellite's chat with Alex reaches for this person. SIGNED IN ONLY: the
-# session names the user, so no email or anon token is read from the browser.
+# satellite's chat with Alex reaches for this person. Behind the ADMIN WALL
+# (AdminWall: neither action is listed), as /chat and the engine's POST
+# /voice/takes are: the pilot is Alex McRitchie's. The session names the user,
+# so no email or anon token is read from the browser.
 # The app on the row is "mcritchie-studio" (config/agent_routes.yml `web: apps:`).
 #
 # `voice` is what POST /voice/takes answered for a held take (epic
@@ -22,7 +24,6 @@ require "ipaddr"
 class HubAgentChatsController < ApplicationController
   APP = "mcritchie-studio".freeze
 
-  before_action :require_authentication
   protect_from_forgery with: :exception
   before_action :no_store
   before_action :require_soul!

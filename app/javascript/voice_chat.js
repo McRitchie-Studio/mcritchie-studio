@@ -155,9 +155,9 @@ export function bindVoiceChat(doc = globalThis.document, {
 
   async function embed(section, blob) {
     try {
-      const embedder = await within(embedderOf(section), EMBED_WAIT_MS)
+      const embedder = await within(embedderOf(section), EMBED_WAIT_MS, null, setTimer)
       if (!embedder) return {}
-      const vector = await within(embedder.embed(blob), EMBED_WAIT_MS)
+      const vector = await within(embedder.embed(blob), EMBED_WAIT_MS, null, setTimer)
       return Array.isArray(vector) && vector.length ? { embedding: vector, model: embedder.id } : {}
     } catch (_) {
       return {}

@@ -1,3 +1,30 @@
+# The hub's voice settings (see "Talk to Alex by voice" below), as a plain
+# module so test/lib/hub_voice_config_test.rb can ask each case.
+module HubVoiceConfig
+  KEY_ENV = "STUDIO_VOICE_OPENAI_API_KEY".freeze
+  # A transcriber name with no adapter: Studio::VoiceTranscription raises
+  # NotConfigured, so a take answers 503 not_configured.
+  NO_KEY = "no-voice-key".freeze
+
+  module_function
+
+  def api_key(env: ENV) = env[KEY_ENV].to_s.strip.presence
+
+  # The Studio.voice_transcriber to set: "mock" on QA; NO_KEY in production
+  # with no voice key, unless STUDIO_VOICE_TRANSCRIBER asks for the mock
+  # (studio-engine 0.121.0 would fall back to the hub's shared OPENAI_API_KEY
+  # image key; remove with the engine release that drops that fallback); else
+  # nil, the engine's choice (STUDIO_VOICE_TRANSCRIBER, else openai in
+  # production and mock everywhere else).
+  def transcriber(env: ENV, production: Rails.env.production?, qa: Studio.qa_environment?)
+    return "mock" if qa
+    return nil unless production && api_key(env: env).nil?
+    return nil if env["STUDIO_VOICE_TRANSCRIBER"].to_s.strip == "mock"
+
+    NO_KEY
+  end
+end
+
 Studio.configure do |config|
   # ---- Site identity + link preview (studio-engine docs/LINK_PREVIEW.md) ----
   # The DRAFTED title and description; the operator edits them at
@@ -144,16 +171,8 @@ Studio.configure do |config|
   # desks default to the mock already (Studio::VoiceTranscription.adapter_name).
   if Studio.respond_to?(:voice_transcription=)
     config.voice_transcription = true
-    voice_key = ENV["STUDIO_VOICE_OPENAI_API_KEY"].to_s.strip
-    config.voice_openai_api_key = voice_key.presence
-    if Studio.qa_environment?
-      config.voice_transcriber = "mock"
-    elsif voice_key.empty? && ENV["STUDIO_VOICE_TRANSCRIBER"].to_s.strip.empty? && Rails.env.production?
-      # Names no adapter, so Studio::VoiceTranscription raises NotConfigured
-      # (503 not_configured, an ErrorLog row naming it). Remove with the
-      # engine release that drops the OPENAI_API_KEY fallback.
-      config.voice_transcriber = "no-voice-key"
-    end
+    config.voice_openai_api_key = HubVoiceConfig.api_key
+    config.voice_transcriber = HubVoiceConfig.transcriber
   end
   # ---- Site footer and booking (studio-engine docs/SITE_FOOTER.md) ----
   # The engine renders the footer, the map, the booking frame and the booking
