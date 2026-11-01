@@ -71,4 +71,26 @@ class EcosystemBuildNflContractsTest < Minitest::Test
       refute_includes out, "nothing waits on you"
     end
   end
+
+  def test_a_failed_satellite_costs_only_that_app
+    Dir.mktmpdir do |dir|
+      %w[broken-app next-app].each do |app|
+        FileUtils.mkdir_p(File.join(dir, app, "config"))
+        File.write(File.join(dir, app, "config/database.yml"), "development:\n  database: no_such_db\n")
+      end
+      script = <<~BASH
+        source #{SCRIPT.shellescape} >/dev/null 2>&1
+        PROJECTS_DIR=#{dir.shellescape}
+        RAILS_APPS=(broken-app next-app)
+        bundle() { [ "$1" = check ] && return 0; [ "$(basename "$PWD")" != broken-app ]; }
+        ruby() { echo no_such_db; }
+        phase_bundles_dbs
+        echo "REACHED STEADY STATE"
+      BASH
+      out = Open3.capture2e("bash", "-c", script).first
+      assert_includes out, "broken-app DB setup failed"
+      assert_includes out, "next-app DB"
+      assert_includes out, "REACHED STEADY STATE"
+    end
+  end
 end

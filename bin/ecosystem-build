@@ -833,7 +833,7 @@ phase_bundles_dbs() {
       if [ "$app" = "mcritchie-studio" ]; then
         assert_nfl_contracts "$path" || exit 1
       fi
-    ) || stop_at 6
+    ) || [ "$app" != "mcritchie-studio" ] || stop_at 6 # a satellite's failure stays logged and costs only that app
   done
 
   # solana-studio and studio-engine are library gems — bundle only, no DB.
