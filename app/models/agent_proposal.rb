@@ -160,6 +160,8 @@ class AgentProposal < ApplicationRecord
     case channel
     when "email" then "email"
     when "web" then "the #{channel_ref} web chat"
+    when "slack" then "Slack"
+    when "teams" then "Teams"
     else "Discord"
     end
   end
@@ -171,6 +173,11 @@ class AgentProposal < ApplicationRecord
   def thread_url
     return "#{BOARD_URL}/applications/#{channel_ref}/chat" if channel == "web" && channel_ref.to_s.match?(/\A[a-z0-9-]+\z/)
     return "#{BOARD_URL}/admin/agent_messages/#{source_message_id}" if channel == "email" && source_message_id
+    # Slack and Teams: the medium's own link to the message, else its admin page.
+    if %w[slack teams].include?(channel)
+      link = source_message && Media.adapter(channel)&.message_url(source_message)
+      return link.presence || (source_message_id ? "#{BOARD_URL}/admin/agent_messages/#{source_message_id}" : nil)
+    end
 
     source_message&.discord_url || (guild_id.present? ? "https://discord.com/channels/#{guild_id}/#{channel_ref}" : nil)
   end

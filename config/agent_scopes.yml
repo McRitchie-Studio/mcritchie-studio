@@ -75,3 +75,13 @@ souls:
       - "config/accountability_chart.yml"
       - "docs/agents/agents/mack/**/*.md"
       - "docs/agents/system/agent-usage.md"
+  # Turf Monster's operator: the contests, read through Turf's operator endpoint
+  # (turf-monster docs/OPERATOR_API.md), so it can say what a cancel would touch
+  # before it proposes one. Its operations stay proposals (config/agent_domains.yml
+  # `operate:`), run only on Alex McRitchie's `go`.
+  turf_monster:
+    lookups: [turf_contests, usage]
+    commands: []
+    paths:
+      - "docs/agents/domains/turf-monster.md"
+      - "docs/agents/agents/turf_monster/**/*.md"

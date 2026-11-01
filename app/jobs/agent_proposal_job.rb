@@ -32,6 +32,11 @@ class AgentProposalJob < ApplicationJob
   # claim still live by a clock tick.
   RECHECK_MARGIN = 30.seconds
 
+  # Errors whose message is operator copy written in code (never an exception's
+  # free text that might carry a secret), so the thread is told it whole.
+  SAFE_MESSAGES = [ AgentProposals::Executor::NotEnabled, AgentProposals::Queries::Unavailable,
+                    AgentProposals::Operations::Refused, AgentProposals::TurfOperator::Error ].freeze
+
   def perform(proposal_id, executor: nil)
     proposal = AgentProposal.find_by(id: proposal_id)
     return unless proposal&.status == "confirmed"
@@ -99,16 +104,22 @@ class AgentProposalJob < ApplicationJob
 
   def executed(proposal, message, text, result)
     proposal.update!(status: "executed", result: result || {})
-    message&.record!("proposal_executed", actor: "board", detail: { "proposal_id" => proposal.id }.merge(result.to_h.slice("task_slug", "query")))
+    message&.record!("proposal_executed", actor: "board",
+                                          detail: { "proposal_id" => proposal.id }
+                                                    .merge(result.to_h.slice("task_slug", "query", "operation", "state", "confirmed_by")))
     text
   end
 
   def failed(proposal, message, error)
-    reason = error.is_a?(AgentProposals::Executor::NotEnabled) || error.is_a?(AgentProposals::Queries::Unavailable) ? error.message : error.class.name.demodulize
+    reason = SAFE_MESSAGES.any? { |klass| error.is_a?(klass) } ? error.message : error.class.name.demodulize
     log(error, message)
     proposal.update!(status: "proposed", confirm_message: nil, settled_at: nil, settled_by: nil,
                      result: { "error" => reason.to_s[0, 200] })
     message&.record!("proposal_failed", actor: "board", detail: { "proposal_id" => proposal.id, "reason" => reason.to_s[0, 200] })
+    if error.is_a?(AgentProposals::Operations::Refused)
+      return "That did not run: #{reason.to_s[0, 200]} Nothing changed. Reply **change: …** to revise it, or **no** to drop it."
+    end
+
     "That did not run (#{reason.to_s[0, 200]}). The proposal is still open: reply **go** to try again, or **no** to drop it."
   end
 

@@ -70,6 +70,9 @@ module AgentMessages
     # primary row, or nil when it is for nobody and replies in no held thread.
     # `ctx` is handed to #row_attributes untouched.
     def store(event, external_id, ctx)
+      confirmed = confirm(event, external_id, ctx)
+      return confirmed if confirmed
+
       results = routes_for(event)
       primary = results.first
       parent = primary.routed_by == "thread" ? nil : thread_row(event)
@@ -85,6 +88,54 @@ module AgentMessages
         end
         rows.first
       end
+    end
+
+    # CONFIRM BY REPLY (docs/agents/system/agent-message-loop.md, "Proposals and
+    # confirm"), as DiscordIngest#confirm: a reply in a thread whose text is
+    # exactly go, no or change: … (leading mentions ignored) and that has a
+    # proposal is stored by ProposalConfirm, before routing and before any model,
+    # and its follow-up job is enqueued once it is stored. The thread scope is the
+    # proposal's own (key, channel, team, channel ref), so a go in another thread,
+    # or a top-level go (a thread of its own), finds nothing and routes as usual.
+    # Who may confirm is ProposalConfirm's: the person's role, never the text.
+    # A chat medium has no per-message reply reference, so the word is about the
+    # thread's newest pending proposal. nil when the message is not one.
+    def confirm(event, external_id, ctx)
+      intent = ProposalConfirm.intent(event["text"])
+      return nil unless intent
+      return nil if event["thread_ts"].blank? || event["thread_ts"] == event["ts"]
+
+      columns = row_attributes(event, ctx.merge(fan: nil))
+      scope = { thread_key: thread_key(event), channel: self.class::CHANNEL, guild_id: columns[:guild_id],
+                channel_ref: columns[:channel_ref] }
+      proposal = AgentProposal.for_word(**scope) || recently_run(scope)
+      return nil unless proposal
+
+      author_ref = event["user"].to_s
+      name = display_name(event)
+      message, jobs = AgentMessage.transaction(requires_new: true) do
+        person = AgentPerson.resolve!(platform: self.class::CHANNEL, external_id: author_ref, display_name: name)
+        attrs = { channel: self.class::CHANNEL, external_id: external_id, thread_key: thread_key(event),
+                  author_ref: author_ref, author_name: name, person: person, content: event["text"].to_s }.merge(columns)
+        ProposalConfirm.new(proposal: proposal, intent: intent).store!(attrs, person: person, source: self.class::RECEIVED_ACTOR)
+      end
+      jobs.each { |job, id| job.perform_later(id) }
+      message
+    end
+
+    # A word with no pending proposal, in a thread whose newest proposal was
+    # confirmed or ran within RECENT_RUN: a second `go` on a running or finished
+    # operation. Discord tells it apart by the reply reference; a chat medium
+    # has none, so the thread's newest such proposal takes the word and the
+    # owner is told it is running or already ran (ProposalConfirm), instead of
+    # the bare word reaching the soul as a new message.
+    RECENT_RUN = 1.hour
+
+    def recently_run(scope)
+      newest = AgentProposal.where(scope).order(id: :desc).first
+      return nil unless newest && %w[confirmed executed].include?(newest.status)
+
+      newest.updated_at > RECENT_RUN.ago ? newest : nil
     end
 
     def store_one(event, external_id, result, person, name, fan, ctx)

@@ -294,9 +294,20 @@ module AgentMailbox
           {"kind": "ask", "capability": "#{catalog.first['capability']}", "params": {}, "summary": "#{catalog.first['description'].to_s[0, 60]}"}
           Everything from #{ProposalBlock::DELIMITER} on is removed before your reply is posted; the board checks
           it and asks the owner to reply go, no, or change. A change's params are title, kind, shape,
-          accept (a list), test (a list) and risk (a list). Offer nothing outside the catalog, and leave
-          the block out when nothing in it fits.#{prior}
+          accept (a list), test (a list) and risk (a list).#{operate_hint} Offer nothing outside the catalog,
+          and leave the block out when nothing in it fits.#{prior}
       TEXT
+    end
+
+    # Said only when the catalog has an operate entry: an operation changes
+    # something real, so the owner must see what it touches before the go.
+    def operate_hint
+      return "" unless catalog.any? { |c| c["kind"] == "operate" }
+
+      " An operate changes something real and runs, on the owner's go, with exactly the params you" \
+        " give: read first, say in your answer what it will touch (which contest, how many entries and" \
+        " paid entries), and never fill a choice the owner has not stated (a refund or credit for paid" \
+        " entries is theirs to say); propose one operation at a time."
     end
 
     # The /build intake playbook (docs/agents/agents/alex/intake.md, below its

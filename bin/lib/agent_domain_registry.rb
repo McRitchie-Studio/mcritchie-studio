@@ -127,6 +127,12 @@ module AgentMailbox
         { "kind" => "ask", "capability" => name.to_s, "description" => spec["description"].to_s,
           "params" => describe_params(spec["params"] || {}) }
       end
+      entries += (caps["operate"] || {}).filter_map do |name, spec|
+        next unless spec.is_a?(Hash) && allows?(audience, "operate", spec["min_audience"], domain)
+
+        { "kind" => "operate", "capability" => name.to_s, "description" => spec["description"].to_s,
+          "params" => describe_params(spec["params"] || {}) }
+      end
       change = caps["change"]
       if change.is_a?(Hash) && allows?(audience, "change", change["min_audience"], domain)
         entries << { "kind" => "change", "capability" => "task",
@@ -170,6 +176,13 @@ module AgentMailbox
     def ask(soul, name)
       domain = front_door(soul)
       spec = domain && (domain.dig("capabilities", "ask") || {})[name.to_s]
+      spec.is_a?(Hash) ? spec.merge("app" => domain["app"], "domain" => domain["key"]) : nil
+    end
+
+    # The operation an operate capability names, for the executor.
+    def operate(soul, name)
+      domain = front_door(soul)
+      spec = domain && (domain.dig("capabilities", "operate") || {})[name.to_s]
       spec.is_a?(Hash) ? spec.merge("app" => domain["app"], "domain" => domain["key"]) : nil
     end
 

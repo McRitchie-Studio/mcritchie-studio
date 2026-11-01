@@ -38,12 +38,12 @@ class AgentDomainRegistryTest < ActiveSupport::TestCase
     avi = @registry.catalog("avi", audience: @owner).map { |c| c["capability"] }
     turf = @registry.catalog("turf_monster", audience: @owner).map { |c| c["capability"] }
     assert_equal %w[board_status recently_shipped release_status usage task], avi
-    assert_equal %w[signups_and_errors usage task], turf
+    assert_equal %w[signups_and_errors usage contests cancel_contest create_contest task], turf
     assert_empty @registry.catalog("alex", audience: @owner), "alex has no catalog"
     assert_equal %w[board_status recently_shipped release_status usage task],
                  @registry.catalog("avi", audience: @team).map { |c| c["capability"] }
     assert_equal %w[usage task], @registry.catalog("turf_monster", audience: @team).map { |c| c["capability"] },
-                 "signups are owner-only"
+                 "signups, the contests read and every operation are owner-only"
     assert_empty @registry.catalog("avi", audience: @public)
     joined = @registry.catalog("avi", audience: @owner).inspect + @registry.catalog("turf_monster", audience: @owner).inspect
     refute_match(/welding/i, joined, "an internal domain is never named in a catalog")
@@ -124,8 +124,48 @@ class AgentDomainRegistryTest < ActiveSupport::TestCase
     assert_equal "hi", verdict.proposal["summary"]
   end
 
-  def test_operate_is_empty_in_phase_one
-    refute @registry.validate(soul: "turf_monster", audience: @owner,
-                              proposal: { "kind" => "operate", "capability" => "content_build", "params" => {} }).ok?
+  def operate(name, params) = { "kind" => "operate", "capability" => name, "params" => params, "summary" => "s" }
+
+  def test_operate_names_only_the_catalogs_operations
+    refute @registry.validate(soul: "turf_monster", audience: @owner, proposal: operate("content_build", {})).ok?
+    refute @registry.validate(soul: "avi", audience: @owner, proposal: operate("cancel_contest", { "contest" => "x" })).ok?,
+           "Avi cannot propose Turf's operation"
+    assert_equal %w[cancel_contest create_contest],
+                 @registry.catalog("turf_monster", audience: @owner).select { |c| c["kind"] == "operate" }.map { |c| c["capability"] }
+  end
+
+  def test_operate_is_owner_only_to_request
+    verdict = @registry.validate(soul: "turf_monster", audience: @team, proposal: operate("cancel_contest", { "contest" => "wk-8" }))
+    refute verdict.ok?
+    assert_match(/may not request operate cancel_contest/, verdict.reason)
+  end
+
+  def test_operate_params_are_bounded_and_defaulted
+    verdict = @registry.validate(soul: "turf_monster", audience: @owner, proposal: operate("cancel_contest", { "contest" => "nfl-weeks-8-10" }))
+    assert verdict.ok?, verdict.reason
+    assert_equal({ "contest" => "nfl-weeks-8-10", "paid_entries" => "none" }, verdict.proposal["params"])
+
+    { { "contest" => "x", "paid_entries" => "both" } => /paid_entries must be one of/,
+      { "paid_entries" => "refund" } => /contest is required/,
+      { "contest" => "x", "sql" => "DROP" } => /unknown param/ }.each do |params, reason|
+      refused = @registry.validate(soul: "turf_monster", audience: @owner, proposal: operate("cancel_contest", params))
+      refute refused.ok?, params.inspect
+      assert_match reason, refused.reason
+    end
+
+    created = @registry.validate(soul: "turf_monster", audience: @owner, proposal: operate("create_contest", { "week" => 10, "weeks" => 3 }))
+    assert created.ok?, created.reason
+    assert_equal({ "week" => 10, "weeks" => 3, "season" => "regular", "contest_type" => "medium" }, created.proposal["params"])
+    refute @registry.validate(soul: "turf_monster", audience: @owner, proposal: operate("create_contest", { "week" => 10, "weeks" => 4 })).ok?
+    refute @registry.validate(soul: "turf_monster", audience: @owner, proposal: operate("create_contest", { "weeks" => 2 })).ok?
+  end
+
+  def test_every_operate_entry_names_a_known_operation
+    @registry.domains.each_value do |domain|
+      (domain.dig("capabilities", "operate") || {}).each do |name, spec|
+        assert_includes AgentProposals::Operations::NAMES, spec["operation"], "#{name} names an operation the board runs"
+        assert_equal "owner", spec["min_audience"], "#{name}: an operation is the owner's to request"
+      end
+    end
   end
 end

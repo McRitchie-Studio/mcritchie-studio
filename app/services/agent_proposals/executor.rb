@@ -13,7 +13,9 @@ module AgentProposals
   #           Mac (ChangeBuilds: bin/task begin, the thread's "Building started"
   #           line, the builder launch line to ops); any other card waits for a
   #           session.
-  #   operate not enabled in Phase 1: refused.
+  #   operate the named operation (AgentProposals::Operations) with the params
+  #           frozen at propose time, through the domain's operator client
+  #           (Turf Monster's operator endpoint). Its result records who said go.
   #
   # Raises on any failure; AgentProposalJob logs it and leaves the proposal open.
   class Executor
@@ -24,13 +26,19 @@ module AgentProposals
       attr_writer :fetcher
 
       def fetcher = @fetcher || DailyAppReport::Fetcher.new
+
+      # The operator client operations and the contests ask use; a test sets a fake.
+      attr_writer :operator
+
+      def operator = @operator || TurfOperator.new
     end
 
     def initialize(proposal, registry: AgentProposal.registry, fetcher: self.class.fetcher, env: ENV,
-                   now: Time.current)
+                   now: Time.current, operator: self.class.operator)
       @proposal = proposal
       @registry = registry
       @fetcher = fetcher
+      @operator = operator
       @env = env
       @now = now
     end
@@ -39,7 +47,8 @@ module AgentProposals
       case @proposal.kind
       when "ask" then ask
       when "change" then change
-      else raise NotEnabled, "operations are not enabled yet"
+      when "operate" then operate
+      else raise NotEnabled, "#{@proposal.kind} is not a kind the board runs"
       end
     end
 
@@ -49,8 +58,20 @@ module AgentProposals
       spec = @registry.ask(@proposal.soul_slug, @proposal.capability)
       raise NotEnabled, "#{@proposal.capability} is no longer in the catalog" unless spec
 
-      text = Queries.run(spec["query"], @proposal.params, app: spec["app"], now: @now, fetcher: @fetcher, env: @env)
+      text = Queries.run(spec["query"], @proposal.params, app: spec["app"], now: @now, fetcher: @fetcher, env: @env,
+                                                          operator: @operator)
       [ text, { "query" => spec["query"], "text" => text[0, 2000] } ]
+    end
+
+    # The operation the registry names for this capability, run with the
+    # params stored (and shown on the Runs line) when it was proposed: a `go`
+    # runs exactly what it confirmed. The result names who confirmed it.
+    def operate
+      spec = @registry.operate(@proposal.soul_slug, @proposal.capability)
+      raise NotEnabled, "#{@proposal.capability} is no longer in the catalog" unless spec
+
+      text, result = Operations.run(spec["operation"], @proposal.params, proposal: @proposal, client: @operator)
+      [ text, result.merge("confirmed_by" => Operations.confirmed_by(@proposal)) ]
     end
 
     def change

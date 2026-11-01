@@ -137,4 +137,12 @@ class AgentScopes::LookupsTest < ActiveSupport::TestCase
   test "an unknown name is refused" do
     assert_raises(AgentMailbox::Scopes::Refused) { L.run("raw_sql", {}) }
   end
+
+  test "turf_contests reads Turf's operator endpoint, and says why when it is not wired" do
+    error = assert_raises(AgentScopes::Lookups::Unavailable) do
+      AgentScopes::Lookups.run("turf_contests", { "scope" => "open", "limit" => 10 }, env: {})
+    end
+    assert_match(/OPERATOR_TOKEN_TURF_MONSTER is unset/, error.message)
+  end
+
 end

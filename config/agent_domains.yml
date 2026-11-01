@@ -23,7 +23,13 @@
 #                   audience that may request it (min_audience), the query it runs
 #                   (a method in AgentProposals::Queries, never model-written
 #                   SQL), and its params schema (bounded, see below).
-#     operate:      named SOPs. Empty in Phase 1.
+#     operate:      named OPERATIONS that change something, run only on the
+#                   owner's `go` (never an app owner's): a description,
+#                   min_audience, the operation (a method in
+#                   AgentProposals::Operations, never model-written code), and
+#                   its params schema. The params are frozen when proposed and
+#                   shown on the Runs line; the `go` runs exactly those.
+#                   docs/agents/system/agent-message-loop.md, "Operations".
 #     change:       the task template a change proposal fills: repo,
 #                   default_shape, min_audience.
 #
@@ -107,7 +113,33 @@ domains:
           min_audience: team
           query: usage
           params: {}
-      operate: {}
+        contests:
+          description: Turf Monster's recent contests with their state, weeks, format, entries and paid entries (scope open or all, up to 25). Read this before proposing a cancel.
+          min_audience: owner
+          query: turf_contests
+          params:
+            scope: { type: enum, values: [open, all], default: open }
+            limit: { type: integer, min: 1, max: 25, default: 10 }
+      # Each operation stops where Alex McRitchie's own wallet takes over (AGENTS.md
+      # First Rule 10): nothing here signs or broadcasts. Turf Monster's operator
+      # endpoint (turf-monster docs/OPERATOR_API.md) runs it.
+      operate:
+        cancel_contest:
+          description: Queue a contest's on-chain cancel for your cosign in Turf's Treasury (your wallet signs; it returns the creator's prize pool). With paid entries it is refused until paid_entries says refund or credit, which you must state; making entrants whole stays the refund runbook's human step. Give the contest's slug from the contests read.
+          min_audience: owner
+          operation: cancel_contest
+          params:
+            contest: { type: string, max: 100, required: true }
+            paid_entries: { type: enum, values: [none, refund, credit], default: none }
+        create_contest:
+          description: Check an NFL week span (week, then weeks 1 to 3) and a format, and return the pre-filled new-contest form; you review it and sign the create in Phantom, funding the prize pool. Nothing is created until you sign.
+          min_audience: owner
+          operation: create_contest
+          params:
+            week: { type: integer, min: 1, max: 22, required: true }
+            weeks: { type: integer, min: 1, max: 3, default: 1 }
+            season: { type: enum, values: [regular, preseason], default: regular }
+            contest_type: { type: enum, values: [tiny, small, medium, standard, large], default: medium }
       change:
         repo: turf-monster
         default_shape: backend
