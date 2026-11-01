@@ -41,9 +41,9 @@ class CliArgGuardTest < Minitest::Test
       argv,
       program: "archive-docs",
       usage: "usage: bin/archive-docs [--repo <path>] [--dry-run]",
-      consequence: "NOTHING was archived and the ledger was NOT rolled.",
+      consequence: "NOTHING was archived.",
       bool: %w[--dry-run --json],
-      value: %w[--repo --ledger-cutoff],
+      value: %w[--repo],
       out: @out,
       err: @err,
       exiter: ->(code) { raise Exited, code },
@@ -89,8 +89,8 @@ class CliArgGuardTest < Minitest::Test
     assert_empty @err.string, "a help request is not a refusal"
   end
 
-  # Where exit 0 carries a meaning beyond "it ran" — bin/ledger-guard's 0 is a green
-  # verdict, bin/devops-shift's 0 asserts "you are on shift" — help must not answer
+  # Where exit 0 carries a meaning beyond "it ran" — bin/devops-shift's 0 asserts
+  # "you are on shift" — help must not answer
   # with it, and its usage goes to stderr so it is never parsed as that channel's value.
   def test_a_script_whose_zero_means_a_verdict_can_refuse_the_help_exit_code
     error = assert_raises(Exited) { guard(["--help"], help_exit: 1) }
