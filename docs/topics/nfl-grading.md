@@ -28,7 +28,7 @@ Measured 2026-11-01, `phase_bundles_dbs` + `phase_nfl_data` on two fresh databas
 | `DepthChartEntry` · `RosterSpot` | 2,790 · 7,764 | 2,728 · 7,702 |
 | 2026 `TeamRanking` rows | 448, 439 distinct scores, none zero | 448, 199 distinct, 214 zero |
 
-Rankings pages, team grades, depth charts and game pages all answer 200 without the data, and each roster still fills its 12-slot lineups. The order they show is not a ranking of players: only 3 teams have a quarterback score, for instance. The all-zero refusal in `nfl:rankings_compute` stays quiet, because prospects still score.
+Rankings pages, team grades, depth charts and game pages all answer 200 without the data, and each roster still fills its 12-slot lineups. The order they show is not a ranking of players: the quarterback unit has 3 distinct scores across 32 teams, for instance. The all-zero refusal in `nfl:rankings_compute` stays quiet, because prospects still score.
 
 ## Proprietary Pass/Run Grade Pipeline
 
