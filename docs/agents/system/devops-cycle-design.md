@@ -1455,7 +1455,7 @@ tiers that must be green by the time the task is `submitted` for review:
 | Shape | Example | Required tiers (DoR contract) |
 |---|---|---|
 | **ui-only** | "make the button blue" | `component` — rendered partial / Alpine, plus manual review at QA (add `unit` if it grows real logic) |
-| **ui+db** | new form that persists | `unit` `component` `integration` `e2e` — model/validation, request+view, request→DB, happy path |
+| **ui+db** | new form that persists | `unit` `component` `integration` `e2e` — model/validation, request+view, request→DB, happy path; each tier names a test path, new or existing |
 | **backend** | new job/service | `unit` `integration` — service/PORO, job + mocked I/O |
 | **library** | studio-engine change | `unit` `integration` — in the engine, plus consumer-CI in *both* apps |
 | **onchain** | new turf-vault instruction | `unit` `integration` — Anchor unit, Anchor lifecycle, Ruby decoder unit |

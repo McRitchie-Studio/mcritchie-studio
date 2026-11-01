@@ -1,7 +1,7 @@
 ---
 # THE RUBY SUITE'S RATCHET — the contract test/lib/test_health_ratchet_test.rb enforces.
 #
-# Three numbers can rot a suite silently, because none shows up as a failure:
+# Five numbers can rot a suite silently, because none shows up as a failure:
 #
 #   assertion_free  a test that exercises code and asserts nothing about it. It goes
 #                   green whatever the code does, which is worse than no test: it
@@ -14,14 +14,37 @@
 #
 #   frozen          the suite's APPEND hotspots, the files every PR collides at the
 #                   bottom of. A frozen file may not grow past its size at the merge
-#                   base; a new test goes in a NEW file named for its concern (the
+#                   base. A new test goes in the unfrozen file that already owns its
+#                   concern. Only when none exists does it start a new file, and that
+#                   file uses the concern's shared harness instead of a fresh stub (the
 #                   bin/release CLI suite is the model: a shared harness,
 #                   test/lib/release_cli_harness.rb, and one file per subcommand).
 #                   Shrinking and splitting need no edit here.
 #
-# The merge base is the one copy of these counts an author's diff cannot move, so no
-# ceiling is written down and none drifts stale.
+#   comment_blocks  a comment block over max_lines in a test file. HARD. A new or grown
+#                   block fails; a block the merge base already held is grandfathered,
+#                   so the count of long blocks may only fall. Read against the merge
+#                   base, so only a PR's own diff can trip it.
+#
+#   line_budget     test lines per repo. REPORT-ONLY for now (enforce: false): at the
+#                   ceiling every PR that adds a test would redden, whatever it is for.
+#                   With enforce: true, a PR over the ceiling fails unless it adds no lines.
+#                   Hard today: both written limits, the ceiling and max_lines, may only
+#                   fall below the merge base's, and neither they nor a root may go.
+#                   Every run also prints the diff's net test and production lines.
+#
+# The merge base is the one copy of these counts an author's diff cannot move. Only
+# the ceiling and max_lines are written down, and each is itself ratcheted against it.
 assertion_free: 0
+
+comment_blocks:
+  max_lines: 8
+
+line_budget:
+  enforce: false
+  ceiling: 390000
+  roots: [test, e2e]
+  production_roots: [app, lib, bin]
 
 frozen:
   - test/lib/release_cli_harness.rb

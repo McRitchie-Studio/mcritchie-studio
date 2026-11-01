@@ -1,0 +1,30 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# The shared test-health check: comment-block cap, ceiling ratchet, test-line budget.
+# It runs against any repo, with or without that repo's config/test_health.yml.
+require "json"
+require_relative "lib/cli_arg_guard"
+require_relative "lib/test_health"
+
+USAGE = <<~TEXT
+  usage: bin/test-health [--root PATH] [--json]
+
+  Reports a repo's test lines against its budget and fails on a new comment block over
+  the cap, reading only. Compares with the merge base of HEAD and origin/accepted.
+  Exit: 0 clean, 1 a failure printed, 2 usage.
+TEXT
+
+options = CliArgGuard.guard!(ARGV, program: "bin/test-health", usage: USAGE,
+                             consequence: "this check reads and reports only", bool: %w[--json], value: %w[--root])
+
+root = File.expand_path(options.first("--root") || Dir.pwd)
+result = TestHealth.check(root)
+
+if options.bool?("--json")
+  puts JSON.generate(result)
+else
+  puts TestHealth.budget_summary(result[:report])
+  result[:failures].each { |failure| puts "FAIL #{failure}" }
+end
+exit(result[:failures].empty? ? 0 : 1)

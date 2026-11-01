@@ -135,15 +135,88 @@ class TestHealthRatchetTest < Minitest::Test
 
     assert_empty over,
                  "#{named.join("; ")}. These files are the suite's APPEND hotspots, where PRs collide " \
-                 "at the bottom of one file. Put the new test in a NEW file named for its concern."
+                 "at the bottom of one file. Put the new test in the unfrozen file that owns its concern, " \
+                 "or in a new file for that concern on its shared harness."
   end
 
   def test_the_frozen_list_is_not_empty
     refute_empty Array(RATCHET["frozen"]), "an empty frozen list freezes nothing"
   end
 
+  # ── the comment cap and the line budget ─────────────────────────────────────
+
+  LONG = (1..9).map { |n| "# line #{n}\n" }.join
+
+  def test_a_comment_block_is_a_run_of_adjacent_full_line_comments
+    source = "# a\n# b\n\n# c\ncode # trailing\n"
+
+    assert_equal [2, 1], TestHealth.comment_blocks_in(source, "x.rb").map { |block| block[:lines] }
+  end
+
+  def test_a_hash_inside_a_heredoc_is_not_a_comment
+    assert_empty TestHealth.comment_blocks_in("X = <<~rb\n  #{LONG}rb\n", "x.rb")
+  end
+
+  def test_begin_blocks_and_js_comments_count
+    embdoc = "=begin\n#{"text\n" * 9}=end\n"
+    js = (1..9).map { |n| "  // line #{n}\n" }.join
+
+    assert_equal 1, TestHealth.long_blocks({ "x.rb" => embdoc }, 8).size
+    assert_equal 1, TestHealth.long_blocks({ "x.spec.js" => js }, 8).size
+  end
+
+  def test_the_cap_is_a_maximum_not_a_floor
+    eight = LONG.lines.first(8).join
+
+    assert_empty TestHealth.long_blocks({ "x.rb" => eight }, 8), "eight lines is allowed"
+    assert_equal 1, TestHealth.long_blocks({ "x.rb" => LONG }, 8).size, "nine is not"
+  end
+
+  # One row per cell of the rule: [base tree, tree now, offenders].
+  { "new block"               => [{}, { "a.rb" => LONG }, 1],
+    "new copy of an old block" => [{ "a.rb" => LONG }, { "a.rb" => LONG, "b.rb" => LONG }, 1],
+    "block grew"              => [{ "a.rb" => LONG }, { "a.rb" => "#{LONG}# ten\n" }, 1],
+    "swap, count unchanged"   => [{ "a.rb" => LONG }, { "a.rb" => LONG.sub("1", "x") + "\ncode\n#{LONG.upcase}" }, 1],
+    "untouched"               => [{ "a.rb" => LONG }, { "a.rb" => LONG }, 0],
+    "file renamed"            => [{ "a.rb" => LONG }, { "b.rb" => LONG }, 0],
+    "block edited, same size" => [{ "a.rb" => LONG }, { "a.rb" => LONG.sub("1", "x") }, 0],
+    "block shrank"            => [{ "a.rb" => LONG }, { "a.rb" => LONG.lines.drop(4).join }, 0],
+    "moved and re-indented"   => [{ "a.rb" => LONG }, { "b.rb" => LONG.gsub(/^/, "    ") }, 0],
+    "JS moved and re-indented" => [{ "a.js" => LONG.gsub("#", "//") }, { "b.js" => LONG.gsub("#", "//").gsub(/^/, "    ") }, 0],
+    "block re-indented"       => [{ "a.rb" => LONG }, { "a.rb" => LONG.gsub(/^/, "    ") }, 0],
+    "reordered and edited"    => [{ "a.rb" => "#{LONG}#{LONG}#{LONG}\ncode\n\n#{LONG}" },
+                                  { "a.rb" => "#{LONG.upcase}\ncode\n\n#{(LONG * 3).sub("1", "x")}" }, 0],
+    "edited in another file"  => [{ "a.rb" => LONG, "b.rb" => "code\n" }, { "a.rb" => "code\n", "b.rb" => LONG.upcase }, 1],
+    "moved across and edited" => [{ "a.rb" => LONG }, { "b.rb" => LONG.upcase }, 1],
+    "block moved in its file" => [{ "a.rb" => LONG }, { "a.rb" => "code\n\n#{LONG}" }, 0] }.each do |name, (base, now, count)|
+    define_method("test_new_long_blocks_#{name.tr(" ,", "_")}") do
+      assert_equal count, TestHealth.new_long_blocks(now, base, 8).size
+    end
+  end
+
+  # Report-only until `enforce` is on; cutting lines passes even with it on.
+  { [false, 10, 5]  => false, [true, 0, 5] => false, [true, 10, 0] => false, [true, 10, -5] => false,
+    [true, 10, 5]   => true }.each do |(enforce, over, net), red|
+    define_method("test_budget_exceeded_enforce_#{enforce}_over_#{over}_net_#{net}".tr("-", "m")) do
+      report = { enforce: enforce, over: over, net_test: net }
+
+      assert_equal red, TestHealth.budget_exceeded?(report)
+    end
+  end
+
+  # The CI report, and the two hard rules of this slice, from one call.
+  def test_the_shared_check_is_clean_and_reports_the_budget
+    result = TestHealth.check(ROOT, RATCHET)
+    report = result[:report]
+    level = report[:over].positive? ? "warning" : "notice"
+    puts "\n::#{level} title=test line budget::#{TestHealth.budget_summary(report)}"
+
+    assert_empty result[:failures], result[:failures].join("\n")
+    assert_operator report[:total], :>, 0, "a budget that counted nothing proves nothing"
+  end
+
   def test_the_ratchet_declares_every_key_the_guard_reads
-    assert_equal %w[assertion_free frozen].sort, RATCHET.keys.sort,
+    assert_equal %w[assertion_free comment_blocks frozen line_budget].sort, RATCHET.keys.sort,
                  "the contract and the guard must not drift: a key here with no assertion is a number " \
                  "nobody enforces, and an assertion with no key fails on arrival"
   end

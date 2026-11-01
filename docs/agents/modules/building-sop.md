@@ -149,8 +149,12 @@ cd /Users/alex/projects/mcritchie-studio/.worktrees/<slug>
 ## Step 3 — Test as you go, unit-first
 
 Write the **test tiers your shape requires** while you build. For a **bug**, write
-the failing regression test FIRST, at the lowest tier that reproduces it. Record
-them tier-tagged:
+the failing regression test FIRST, at the lowest tier that reproduces it, as a new
+test case in the file that owns the behaviour when one exists. A `ui+db` tier is
+credited by a line that names a test path, new or existing: new logic at the tier
+cites a test that goes red on revert; no new logic cites the test covering the
+surface the change passes through and says so ([`testing.md`](testing.md)). Record them
+tier-tagged:
 
 ```bash
 bin/task update <slug> --checks "[unit] ..." --checks "[integration] ..."

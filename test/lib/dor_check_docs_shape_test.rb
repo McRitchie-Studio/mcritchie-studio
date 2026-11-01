@@ -259,7 +259,7 @@ class DorCheckDocsShapeTest < Minitest::Test
 
   # ==== [integration] THE DOCS+GUARD PATTERN (/tasks/docs-shape-rejects-guard-test) ===
   #
-  # Every SOP wants the registry-guard test that pins its rows, and pure
+  # A doc can need a guard that pins it, and pure
   # doc_only_diff forced its author to delete the guard or mislabel the shape —
   # PR #1169 was bounced on exactly this. The claim rule is TYPE AND LOCATION
   # together: a *_test.rb under test/docs/ may ride a prose diff; nothing else may.
