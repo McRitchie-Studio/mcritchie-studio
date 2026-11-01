@@ -104,10 +104,10 @@ landed. Never `--dry-run` with the real secret: its preview prints the concealed
 - **Notes are a permission matrix, not prose.** `scope`, `CAN`, `CANNOT`,
   plus a line for any SOP-only rule (e.g. Heroku cannot separate app-delete
   from write, so "never delete" is policy — say so in the note).
-- **The value rides the command's argv** (`credential[concealed]=$VALUE`), so
-  it is readable via `ps` by same-user processes for the life of the call.
-  Acceptable on this single-operator machine; stated so the recipe is not
-  mistaken for airtight.
+- **The value never rides argv.** The recipe pipes it to `op` as a stdin
+  template (the `-`), so `ps` never shows it; only the public fields ride the
+  command line. An earlier form passed `credential[concealed]=$VALUE` as an
+  argument, which `ps` could read for the life of the call; never use it.
 - Scope claims must be **measured, not assumed**: probe with a throwaway
   token/act where the provider's docs are vague, and put what you measured
   in the note. (2026-09-02: a Heroku `write-protected` probe created AND
