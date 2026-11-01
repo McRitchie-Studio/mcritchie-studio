@@ -6,7 +6,7 @@ require "ipaddr"
 # would be the hub calling itself, so these routes are drawn BEFORE
 # Studio.routes and win recognition for the same paths:
 #
-#   POST /agent_chat/messages   soul, text, voice (optional)   201 {turn} · 422 · 429 · 404
+#   POST /agent_chat/messages   soul, text, voice (optional)   201 {turn, voice} · 422 · 429 · 404
 #   GET  /agent_chat/turns      soul, after, limit             200 {turns, pending}
 #
 # The page is /chat (ChatController#index), the hub's own chat with Alex on the
@@ -30,7 +30,9 @@ class HubAgentChatsController < ApplicationController
   def create
     voice = AgentChat::Voice.from_param(params[:voice], user: current_user)
     message = AgentChat::Ingest.new(app: APP, visitor: visitor, ip: client_ip).call(params[:text], voice: voice)
-    render json: { turn: AgentChat::Turns.for_row(message).first }, status: :created
+    # `voice` is what the row keeps (and the dispatcher's prompt reads), so the
+    # page says who Alex was told spoke, not what the browser sent.
+    render json: { turn: AgentChat::Turns.for_row(message).first, voice: message.envelope["voice"] }.compact, status: :created
   rescue AgentChat::Ingest::Capped => e
     render json: { error: e.message }, status: :too_many_requests
   rescue AgentChat::Ingest::Refused, AgentChat::Voice::Invalid, AgentChat::Visitor::Invalid => e

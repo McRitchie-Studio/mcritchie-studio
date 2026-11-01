@@ -31,6 +31,7 @@ export const MESSAGES = {
   transcribing: "Turning that into words...",
   sending: (name) => `Sending to ${name}...`,
   sent: (speaker) => `Sent. Spoken by ${speaker}.`,
+  sentPlain: "Sent.",
   silent: "I couldn't hear anything. Check your microphone and hold to talk again.",
   noSpeech: "I couldn't hear any words in that. Check your microphone and try again.",
   notConfigured: "Voice isn't set up on this app yet, so I can't hear recordings. Type instead for now.",
@@ -96,9 +97,13 @@ export function parseEmbedder(text) {
   }
 }
 
+// The page's token (csrf_meta_tags), else the chat form's own hidden field.
 export function csrfToken(doc = globalThis.document) {
-  const meta = doc && doc.querySelector && doc.querySelector("meta[name='csrf-token']")
-  return meta ? meta.getAttribute("content") : null
+  if (!doc || !doc.querySelector) return null
+  const meta = doc.querySelector("meta[name='csrf-token']")
+  if (meta && meta.getAttribute("content")) return meta.getAttribute("content")
+  const field = doc.querySelector("[data-agent-chat-form] input[name='authenticity_token']")
+  return field ? field.value : null
 }
 
 // Resolves to `promise`'s value, or `fallback` once `ms` have passed.
@@ -201,7 +206,10 @@ export function bindVoiceChat(doc = globalThis.document, {
     }
     const data = await readJson(response)
     if (response.status === 201 && data.turn) {
-      say(section, "sent", MESSAGES.sent(voice.speaker))
+      // The speaker the row kept (AgentChat::Voice names it on the server),
+      // which is what Alex is told; never the browser's own copy.
+      const kept = data.voice && typeof data.voice.speaker === "string" ? data.voice.speaker : null
+      say(section, "sent", kept ? MESSAGES.sent(kept) : MESSAGES.sentPlain)
       nudge(chat, data.turn.id)
       return
     }
