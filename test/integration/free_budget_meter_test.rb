@@ -60,7 +60,12 @@ class FreeBudgetMeterTest < ActionDispatch::IntegrationTest
     assert_match(/data-test="usage-meter-tokens">1,840 \/ 25,000</, meter)
     assert_includes meter, %(data-state="ok")
     assert_includes meter, %(aria-valuenow="7")
-    assert_not_includes meter, "$", "tokens, never dollars"
+    # The meter counts tokens, never dollars. The upgrade suggestion is the one
+    # line that may name a price ("Builder ($100/month) raises it."): early in a
+    # month one day's spend projects past the allowance and it appears, which
+    # turned this assertion red on 2026-11-01. Judge everything but that line.
+    usage = meter.sub(%r{<p [^>]*data-test="usage-suggestion".*?</p>}m, "")
+    assert_not_includes usage, "$", "tokens, never dollars"
   end
 
   test "[integration] at the cap the owner gets the cap line and the plans link from code, with no dispatch" do
