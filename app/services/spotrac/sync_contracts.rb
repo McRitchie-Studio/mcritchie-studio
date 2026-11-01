@@ -18,13 +18,20 @@ require "json"
 # Usage:
 #   Spotrac::SyncContracts.new.call
 #   Spotrac::SyncContracts.new(json_path: "/tmp/contracts.json", verbose: true).call
+#
+# Without a json_path it reads SNAPSHOT from R2 (SeedSnapshot) and refuses when
+# there is none to read, because an operator asked for this sync. db/seeds/22
+# alone passes skip_if_absent: true, and warns on stderr.
 class Spotrac::SyncContracts
-  DEFAULT_JSON_PATH = -> { Rails.root.join("db/seeds/data/spotrac_contracts_2025.json") }
+  class SnapshotUnavailable < StandardError; end
+
+  SNAPSHOT = "spotrac_contracts_2025.json".freeze
 
   attr_reader :stats
 
-  def initialize(json_path: nil, verbose: false, entries: nil)
-    @json_path = json_path || DEFAULT_JSON_PATH.call
+  def initialize(json_path: nil, verbose: false, entries: nil, skip_if_absent: false)
+    @json_path = json_path
+    @skip_if_absent = skip_if_absent
     @verbose = verbose
     @entries = entries
     @stats = Hash.new(0)
@@ -63,11 +70,30 @@ class Spotrac::SyncContracts
 
   def load_entries
     return @entries if @entries
-    unless File.exist?(@json_path)
-      puts "[!] Spotrac JSON not found at #{@json_path}"
-      return nil
-    end
-    JSON.parse(File.read(@json_path), symbolize_names: true)
+
+    raw = @json_path ? read_file : read_snapshot
+    raw && JSON.parse(raw, symbolize_names: true)
+  end
+
+  def read_file
+    return File.read(@json_path) if File.exist?(@json_path)
+
+    puts "[!] Spotrac JSON not found at #{@json_path}"
+    nil
+  end
+
+  def read_snapshot
+    raw = SeedSnapshot.read(SNAPSHOT)
+    return raw if raw
+
+    missing = "#{SeedSnapshot.key(SNAPSHOT)}: no R2 connection, SKIP_NETWORK_SEEDS=1 or no object"
+    raise SnapshotUnavailable, missing unless @skip_if_absent
+
+    warn "#{missing}. Skipped the Spotrac seed: no active NFL contracts, so seeds 30 and 31 leave " \
+         "depth charts and roster spots empty. Put the R2 keys in .env.development " \
+         "(1Password r2.mcritchie-studio), then run bin/rails db:seed; nfl:salaries_sync alone " \
+         "does not rebuild those seeds."
+    nil
   end
 
   # Match by otc_id first (canonical anchor when available), fall back to smart

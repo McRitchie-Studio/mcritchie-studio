@@ -113,10 +113,12 @@ namespace :spotrac do
     end
 
     # Write JSON output
-    output_path = Rails.root.join("db/seeds/data/spotrac_contracts_2025.json")
+    output_path = Rails.root.join("tmp", Spotrac::SyncContracts::SNAPSHOT)
     File.write(output_path, JSON.pretty_generate(contracts))
 
     puts "\nDone! #{contracts.size} contracts written to #{output_path}"
+    puts "This file does not reach any seed by itself. Refreshing means scrape and seed_data:publish in one " \
+         "heroku run session, then bumping the pin: docs/agents/modules/object-storage.md, Seed assets."
     puts "Teams with errors: #{errors.map { |e| e[:code] }.join(', ')}" if errors.any?
 
     # Show unique positions for debugging

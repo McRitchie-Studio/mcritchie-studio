@@ -758,9 +758,36 @@ phase_agent_docs() {
   log_ok "Codex runtime" "marker hooks configured"
 }
 
+# THE HUB'S SPOTRAC SEED SKIPS WITHOUT R2, AND A SKIP EXITS 0. db:seed runs with
+# both streams discarded, so the row is the only signal: no active NFL contract
+# means seeds 30 and 31 left depth charts and roster spots empty. The caller runs
+# this inside the hub's checkout.
+assert_nfl_contracts() {
+  local path="$1" count
+  count=$(bundle exec rails runner 'puts Contract.where(contract_type: "active", team_slug: Team.nfl.select(:slug)).count' 2>/dev/null | tail -1)
+  case "$count" in
+    ''|*[!0-9]*)
+      log_fail "mcritchie-studio active NFL contracts unreadable" "try: cd $path && bin/rails runner 'puts Contract.count'"
+      return 1
+      ;;
+  esac
+  if [ "$count" -gt 0 ]; then
+    log_ok "mcritchie-studio active NFL contracts" "$count"
+    return 0
+  fi
+  if [ "${SKIP_NETWORK_SEEDS:-}" = "1" ]; then
+    log_act "SKIP_NETWORK_SEEDS=1: no active NFL contracts, so depth charts and roster spots are empty. Reseed once you have network access: cd $path && bin/rails db:seed"
+    return 0
+  fi
+  checklist_add 1 "Restore the hub's Spotrac contracts: put the R2 keys in .env.development (1Password r2.mcritchie-studio), then reseed" "cd $path && bin/rails db:seed"
+  log_fail "mcritchie-studio has no active NFL contracts" "the Spotrac seed reads R2 and skipped, so depth charts and roster spots are empty. Put the R2 keys in $path/.env.development (1Password r2.mcritchie-studio; re-running this build writes them when 1Password can), then: cd $path && bin/rails db:seed"
+  return 1
+}
+
 # ─── Phase 6: Bundles + databases ───────────────────────────────────────────
 phase_bundles_dbs() {
   log_phase "Phase 6: Bundles + databases"
+  ensure_checklist_file # the app loop is a subshell: its items need the file named here
 
   for app in "${RAILS_APPS[@]}"; do
     local path="$PROJECTS_DIR/$app"
@@ -795,12 +822,18 @@ phase_bundles_dbs() {
         # SKIP_NETWORK_SEEDS=1 in this line, a firewalled rebuild's printed advice is
         # to run the command that just failed, for a reason it does not mention.
         if ! bundle exec rails db:create db:migrate db:seed >/dev/null 2>&1; then
-          log_fail "$app DB setup failed" "if a seed reads Rails credentials, $app needs its master key (Phase 4 says where it comes from) + try: cd $path && bin/rails db:seed — behind a firewall the network seed (32_headshot_links.rb) aborts, so: SKIP_NETWORK_SEEDS=1 bin/rails db:seed"
+          log_fail "$app DB setup failed" "if a seed reads Rails credentials, $app needs its master key (Phase 4 says where it comes from). On the hub, seed 22 reads R2, so an R2 outage or a bad key in .env.development (1Password r2.$app) stops it. Then try: cd $path && bin/rails db:seed — behind a firewall the network seeds (22_nfl_contracts_2025.rb, 32_headshot_links.rb) fail, so: SKIP_NETWORK_SEEDS=1 bin/rails db:seed, which also seeds no Spotrac contracts"
           exit 1
         fi
         log_ok "$app DB" "seeded"
       fi
-    )
+
+      # BOTH BRANCHES ABOVE: the check also has to catch a re-run, which sees the
+      # database exists and never reseeds it.
+      if [ "$app" = "mcritchie-studio" ]; then
+        assert_nfl_contracts "$path" || exit 1
+      fi
+    ) || [ "$app" != "mcritchie-studio" ] || stop_at 6 # a satellite's failure stays logged and costs only that app
   done
 
   # solana-studio and studio-engine are library gems — bundle only, no DB.

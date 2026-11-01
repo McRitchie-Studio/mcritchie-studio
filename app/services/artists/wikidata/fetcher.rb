@@ -2,7 +2,7 @@ module Artists
   module Wikidata
     # Builds the CC0 artist snapshot from Wikidata. Run by hand
     # (`bin/rails artists:fetch_wikidata`), never on deploy; production loads
-    # the committed file with artists:import_wikidata.
+    # the published R2 copy with artists:import_wikidata.
     #
     # Seed: rappers (occupation Q2252262) and musical groups whose genre falls
     # under hip hop, R&B or pop, each with an English Wikipedia article; plus
@@ -55,7 +55,7 @@ module Artists
         }
       end
 
-      # One artist per line so a refresh diffs cleanly.
+      # One artist per line, so two snapshot files diff cleanly.
       def self.write(snapshot, path)
         meta = snapshot.except("artists", "memberships")
         lines = meta.map { |k, v| "  #{k.to_json}: #{v.to_json}" }

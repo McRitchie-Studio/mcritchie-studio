@@ -1,4 +1,5 @@
 require "test_helper"
+require "minitest/mock"
 
 class Spotrac::SyncContractsTest < ActiveSupport::TestCase
   setup do
@@ -15,6 +16,62 @@ class Spotrac::SyncContractsTest < ActiveSupport::TestCase
       annual_value_cents: 5_000_000_000,
       guaranteed_cents:   8_000_000_000
     }.merge(overrides)
+  end
+
+  def snapshot_rows = [entry(first_name: "Snapshot", last_name: "Row")].to_json
+
+  test "by default it reads the snapshot from R2" do
+    read = ->(name) { name == "spotrac_contracts_2025.json" ? snapshot_rows : flunk(name) }
+    SeedSnapshot.stub(:read, read) do
+      assert_difference -> { Contract.count }, 1 do
+        assert_output(/Spotrac sync: 1 entries/) { Spotrac::SyncContracts.new.call }
+      end
+    end
+  end
+
+  test "refuses by default when the R2 snapshot is absent, and changes nothing" do
+    SeedSnapshot.stub(:read, nil) do
+      assert_no_difference ["Contract.count", "Athlete.count"] do
+        error = assert_raises(Spotrac::SyncContracts::SnapshotUnavailable) { Spotrac::SyncContracts.new.call }
+        assert_includes error.message, "seed-data/spotrac_contracts_2025.json"
+      end
+    end
+  end
+
+  test "nfl:salaries_sync refuses when the snapshot is absent" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("nfl:salaries_sync")
+    task = Rake::Task["nfl:salaries_sync"]
+    task.reenable
+    SeedSnapshot.stub(:read, nil) do
+      assert_raises(Spotrac::SyncContracts::SnapshotUnavailable) { task.invoke }
+    end
+  end
+
+  test "seed 22 skips with a stderr warning naming the consequence and the recovery" do
+    SeedSnapshot.stub(:read, nil) do
+      assert_no_difference ["Contract.count", "Athlete.count"] do
+        _out, err = capture_io { load Rails.root.join("db/seeds/22_nfl_contracts_2025.rb").to_s }
+        assert_match(/no active NFL contracts/, err)
+        assert_match(/depth charts and roster spots empty/, err)
+        assert_match(%r{bin/rails db:seed}, err)
+      end
+    end
+  end
+
+  test "an R2 failure stops the sync instead of reading as absent" do
+    SeedSnapshot.stub(:read, ->(_name) { raise Studio::S3::Error, "403" }) do
+      assert_raises(Studio::S3::Error) { Spotrac::SyncContracts.new.call }
+    end
+  end
+
+  test "an explicit json_path reads that file and never asks R2" do
+    Tempfile.create(["contracts", ".json"]) do |file|
+      file.write(snapshot_rows)
+      file.flush
+      SeedSnapshot.stub(:read, ->(_name) { flunk "asked R2" }) do
+        assert_output(/Spotrac sync: 1 entries/) { Spotrac::SyncContracts.new(json_path: file.path).call }
+      end
+    end
   end
 
   test "matches existing Athlete by otc_id when present" do
