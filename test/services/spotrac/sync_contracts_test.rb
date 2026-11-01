@@ -31,7 +31,7 @@ class Spotrac::SyncContractsTest < ActiveSupport::TestCase
 
   test "skips and changes nothing when the R2 snapshot is absent" do
     SeedSnapshot.stub(:read, nil) do
-      assert_no_difference -> { [Contract.count, Athlete.count] } do
+      assert_no_difference ["Contract.count", "Athlete.count"] do
         assert_output(/seed-data\/spotrac_contracts_2025.json.*skipping/) do
           assert_empty Spotrac::SyncContracts.new.call
         end

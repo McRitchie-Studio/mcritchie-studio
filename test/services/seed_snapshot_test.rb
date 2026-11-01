@@ -63,7 +63,7 @@ class SeedSnapshotTest < ActiveSupport::TestCase
   end
 
   test "publish uploads under seed-data in production and answers the checksum" do
-    Tempfile.create("snapshot") do |file|
+    Tempfile.create("snapshot", binmode: true) do |file|
       file.write(BODY)
       file.flush
       sent = nil
