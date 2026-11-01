@@ -7,8 +7,9 @@ require "minitest/mock"
 # at `reviewed` on a live desk. The release registry keeps a bare `ladder: blocked`
 # row so that card stays parked. These tests read the REAL registry, not a fixture.
 #
-# When the card is archived, delete the row, this file, and the entry in
-# AppRegistryTest::RETIRED_HOLDING_A_CARD together.
+# When the card is archived, delete the row, this file, the entry in
+# AppRegistryTest::RETIRED_HOLDING_A_CARD and the exclusion in the glyph test of
+# ApplicationHelperTest together.
 class Release::RetiredRepoCardHoldTest < ActiveSupport::TestCase
   RETIRED = "chain-ops"
   LIVE = "mcritchie-studio"
