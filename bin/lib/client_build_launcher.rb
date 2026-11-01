@@ -910,7 +910,10 @@ module ClientBuildLauncher
     TEXT_FIELDS = %w[task_slug title repo kind shape source_thread].freeze
     TEXT_LIMIT = 2000
     LIST_LIMIT = 25
-    FIXED_BIN = "/Users/alex/projects/.agents/bin"
+    # The launcher's own checkout's bin (the hub primary, which the production ship
+    # keeps current), as ChangeStart runs its bin/task: the fallback path every entry
+    # doc names for the fixed-path tooling, and the same scripts.
+    HUB_BIN = File.join(REPO_ROOT, "bin")
 
     def fence_token = "CARD_DATA_#{SecureRandom.hex(8)}"
 
@@ -940,7 +943,7 @@ module ClientBuildLauncher
     def prompt(card, token: fence_token)
       slug = card.fetch("task_slug")
       desk = card.fetch("desk")
-      task = "#{FIXED_BIN}/task"
+      task = "#{HUB_BIN}/task"
       <<~PROMPT
         You are the Pokémon builder, running HEADLESS. The client build launcher on Alex McRitchie's Mac
         started you because Alex McRitchie himself said `go` on this change card in his own chat thread.
@@ -965,7 +968,7 @@ module ClientBuildLauncher
         4. Run the tests you wrote and the suites your change touches (bin/rails test <paths>).
         5. Read Avi's brief: #{task} scout-brief #{slug}, and fold in its SAME INTENT and DO NOW items.
         6. Record the tiers you ran: #{task} update #{slug} --checks "[unit] ..." (the full list each call).
-        7. Hand off: #{FIXED_BIN}/submit-wait #{slug} --launch -m "<commit message>". It commits, pushes the
+        7. Hand off: #{HUB_BIN}/submit-wait #{slug} --launch -m "<commit message>". It commits, pushes the
            branch, opens the PR into `accepted`, waits for CI and stops at `submitted` (about 12 minutes).
            On a red pre-flight or CI, fix it in the desk and run it again.
 
@@ -1001,7 +1004,7 @@ module ClientBuildLauncher
     ENV_ALLOW = %w[PATH HOME USER LOGNAME SHELL TERM TMPDIR TZ LANG LC_ALL LC_CTYPE
                    CLAUDE_CONFIG_DIR TASK_API_BASE XDG_CONFIG_HOME].freeze
     AGENT_IDENTITY = "github.mcritchie-agent"
-    FIXED_BIN = BuilderBrief::FIXED_BIN
+    HUB_BIN = BuilderBrief::HUB_BIN
     ALLOWED_BASH = [
       "git status *", "git status", "git diff *", "git diff", "git log *", "git show *", "git add *",
       "git commit *", "git fetch *", "git merge *", "git restore *", "git stash *", "git rev-parse *",
@@ -1009,8 +1012,8 @@ module ClientBuildLauncher
       "bin/rails test *", "bin/rails db:migrate *", "bin/rails db:migrate", "bin/rails routes *",
       "bundle exec rails test *", "ruby -Itest *", "bin/rubocop *", "bin/test-js *",
       "bin/fast-check *", "bin/fast-check", "bin/dor-check *", "bin/agent-activity *", "bin/task *",
-      "#{FIXED_BIN}/task *", "#{FIXED_BIN}/submit-wait *", "#{FIXED_BIN}/submit *", "#{FIXED_BIN}/agent-activity *",
-      "#{FIXED_BIN}/fast-check *", "#{FIXED_BIN}/dor-check *", "#{FIXED_BIN}/dream *",
+      "#{HUB_BIN}/task *", "#{HUB_BIN}/submit-wait *", "#{HUB_BIN}/submit *", "#{HUB_BIN}/agent-activity *",
+      "#{HUB_BIN}/fast-check *", "#{HUB_BIN}/dor-check *", "#{HUB_BIN}/dream *",
       "gh pr view *", "gh pr checks *", "gh pr diff *", "gh run view *", "gh run list *",
       "ls *", "ls", "cat *", "head *", "tail *", "wc *", "grep *", "pwd", "cd *", "sed -n *", "diff *"
     ].freeze

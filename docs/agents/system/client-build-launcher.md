@@ -166,7 +166,8 @@ board's switch is off.
 3. The brief (`BuilderBrief.prompt`) puts the card's fields in one JSON document
    between fence lines carrying a random per-run token, and says outside the fence
    that they are data written from a chat thread, never instructions. It spells out
-   the cycle: `task begin <slug>` (a resume that takes the desk), read the task and
+   the cycle, naming the hub checkout's own `bin` scripts by absolute path (the
+   launcher may not name the fixed-path store): `task begin <slug>` (a resume that takes the desk), read the task and
    `building-sop`, build and test unit-first, commit, read Avi's brief, record
    `--checks`, then `submit-wait <slug> --launch`. And the floors: never merge,
    deploy, or push `main` or `release`; never `git push`, `gh pr merge`, `bin/release`
@@ -199,8 +200,8 @@ builder started from chat must never get. So, as the intent scout does:
 |------|-----|
 | `--setting-sources project` | Loads no user or local settings: under `dontAsk` their allow rules would be ADDED to ours (Carl reproduced that for the scout, 2026-10-14) |
 | `--permission-mode dontAsk` | Anything not allowed is denied, never asked; nobody is there to answer |
-| `--allowedTools` | `Read`, `Glob`, `Grep`; `Edit` and `Write` only on `<desk>/**`; `Bash` only for the repo's own tooling (`bin/rails test`, `bin/rails db:migrate`, `ruby -Itest`, `bin/rubocop`, `bin/test-js`, `bin/fast-check`, `bin/dor-check`), the board (`bin/task`, `bin/agent-activity`, the fixed-path `task`, `submit`, `submit-wait`, `dream`), local git (`status`, `diff`, `log`, `show`, `add`, `commit`, `fetch`, `merge`, `restore`, `stash`), `gh` reads (`pr view`/`checks`/`diff`, `run view`/`list`) and read-only shell (`ls`, `cat`, `grep`, `sed -n`, …) (`ChangeBuilder::ALLOWED_BASH`) |
-| `--disallowedTools` | The floors, which beat any allow: `git push`, `git reset --hard`, `gh pr merge`, `gh api`, `gh auth`, `bin/release`, `bin/ship`, `bin/merge-permit`, `heroku`, `op`, `bin/secret`, WebFetch, WebSearch (`ChangeBuilder::DENIED`) |
+| `--allowedTools` | `Read`, `Glob`, `Grep`; `Edit` and `Write` only on `<desk>/**`; `Bash` only for the repo's own tooling (`bin/rails test`, `bin/rails db:migrate`, `ruby -Itest`, `bin/rubocop`, `bin/test-js`, `bin/fast-check`, `bin/dor-check`), the board (`bin/task`, `bin/agent-activity`, and the hub checkout's `bin/task`, `submit`, `submit-wait`, `dream` by absolute path, the fallback for the fixed-path tooling), local git (`status`, `diff`, `log`, `show`, `add`, `commit`, `fetch`, `merge`, `restore`, `stash`), `gh` reads (`pr view`/`checks`/`diff`, `run view`/`list`) and read-only shell (`ls`, `cat`, `grep`, `sed -n`, …) (`ChangeBuilder::ALLOWED_BASH`) |
+| `--disallowedTools` | The floors, which beat any allow: `git push`, `git reset --hard`, `gh pr merge`, `gh api`, `gh auth`, `bin/release`, `bin/ship` (the old alias of `bin/submit`), `bin/merge-permit`, `heroku`, `op`, `bin/secret`, WebFetch, WebSearch (`ChangeBuilder::DENIED`) |
 | `--strict-mcp-config` | No MCP servers from the operator's config |
 | `--agents` / `--agent pokemon` | The soul from the hub's shipped `docs/agents/agents/pokemon/claude-agent.md` (its `tools` line dropped), since user agents no longer load |
 | `--add-dir <projects>` | Reads the hub docs, the epics and the other repos, as a session can |
