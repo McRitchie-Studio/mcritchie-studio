@@ -340,6 +340,20 @@ queue as usual. A reader gets one style: every staging path skips anyone already
 mailed, held in a queue, or cancelled from one of the four, and a cancel on an
 older broadcast does not count.
 
+Operating rules for a send of the four:
+
+- `LIMIT` adds readers, it does not top up. A second run holds `LIMIT` more, so
+  set it to the target minus what is already held.
+- `DAILY_CAP` (500) spans every broadcast, so `LIMIT=500` uses the whole day.
+- Run one staging at a time. The unique index is per broadcast, so two
+  overlapping runs can put one reader on two styles.
+- Execute one style at a time, waiting about 0.6s times its row count before the
+  next. `BATCH_SPACING` paces each broadcast alone, so four at once outrun it.
+- The Restage button can revive a row cancelled from the queue, past the
+  one-style guard. On these four, leave a cancelled row cancelled.
+- Read the scoreboard a few hours after a send. Rates use delivered once Resend
+  reports it, and sent until then, so early percentages run high.
+
 ## Staged Sends: Review Before Execute
 
 A personalized broadcast (a subject with `%{field}`s, or a template listed in
