@@ -8,8 +8,9 @@ require "minitest/mock"
 # row so that card stays parked. These tests read the REAL registry, not a fixture.
 #
 # When the card is archived, delete the row, this file, the entry in
-# AppRegistryTest::RETIRED_HOLDING_A_CARD and the exclusions in the glyph tests of
-# ApplicationHelperTest and AppProfileTest together.
+# AppRegistryTest::RETIRED_HOLDING_A_CARD, the exclusions in the glyph tests of
+# ApplicationHelperTest and AppProfileTest, and the chain-ops entries in
+# Release::ReposTest (the app list and the prod_deploy strategy table) together.
 class Release::RetiredRepoCardHoldTest < ActiveSupport::TestCase
   RETIRED = "chain-ops"
   LIVE = "mcritchie-studio"
