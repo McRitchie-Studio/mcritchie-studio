@@ -1043,8 +1043,9 @@ module ClientBuildLauncher
     # `config`: config/client_builds.yml. `runner`: Sandbox.run's shape (a test's seam).
     def initialize(config:, claude: "claude", projects_dir: File.dirname(REPO_ROOT),
                    log_root: File.join(Dir.home, ".client-builds", "change-builders"), runner: Sandbox.method(:run),
-                   env: ENV, agent_json: nil)
+                   env: ENV, agent_json: nil, timeout_seconds: nil)
       @config = config
+      @timeout_seconds = timeout_seconds
       @claude = claude
       @projects_dir = projects_dir
       @log_root = log_root
@@ -1092,7 +1093,8 @@ module ClientBuildLauncher
                     "started_at" => Time.now.utc.iso8601 }.to_json)
         file.flush
         @runner.call(argv(card, agent_json: definition), prompt: BuilderBrief.prompt(card), dir: card["desk"],
-                                                         timeout: run_minutes * 60, max_turns: max_turns, env: child_env(run_id),
+                                                         timeout: @timeout_seconds || (run_minutes * 60), max_turns: max_turns,
+                                                         env: child_env(run_id),
                                                          on_line: lambda { |event|
                                                            file.puts(JSON.generate(event))
                                                            file.flush

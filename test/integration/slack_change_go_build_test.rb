@@ -53,6 +53,7 @@ class SlackChangeGoBuildTest < ActiveSupport::TestCase
     assert_equal [ "System tests or shared layouts may depend on the current admin sidebar links" ], task.devops["risk_tags"]
     assert_includes go.reload.response_text, "Opened `#{slug}`"
     assert_includes go.response_text, AgentProposals::Executor::STARTS_TEXT.strip
+    assert_includes go.response_text, AgentProposals::Executor::BUILDS_TEXT.strip, "the owner's go also gets the headless builder"
     assert_equal [ slug ], ChangeBuilds.candidates.map { |c| c["task_slug"] }
 
     ChangeBuilds.claim!(slug, worker: "mac", run: "r1")
@@ -91,6 +92,7 @@ class SlackChangeGoBuildTest < ActiveSupport::TestCase
     slug = @proposal.reload.result["task_slug"]
     assert Task.exists?(slug: slug), "ProposalConfirm let the owner role confirm"
     refute_includes go.reload.response_text, AgentProposals::Executor::STARTS_TEXT.strip
+    refute_includes go.response_text, AgentProposals::Executor::BUILDS_TEXT.strip
     assert_empty ChangeBuilds.candidates, "only the configured owner Slack user's go starts a build"
   end
 end
