@@ -4,7 +4,7 @@ require "test_helper"
 require "minitest/mock"
 
 # chain-ops left the app catalog on 2026-11-01, but chain-ops-mail-from-team still sits
-# at `reviewed` on a live desk. config/release_repos.yml keeps a bare `ladder: blocked`
+# at `reviewed` on a live desk. The release registry keeps a bare `ladder: blocked`
 # row so that card stays parked. These tests read the REAL registry, not a fixture.
 #
 # When the card is archived, delete the row, this file, and the entry in
