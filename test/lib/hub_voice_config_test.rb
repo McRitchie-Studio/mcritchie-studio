@@ -1,6 +1,6 @@
 require "test_helper"
 
-# [unit] The hub's voice wiring (config/initializers/studio.rb; task
+# [unit] The hub's voice wiring (the hub's Studio initializer, HubVoiceConfig; task
 # talk-to-alex-by-voice): POST /voice/takes is on, /chat may render the engine
 # chat with Alex, the key is voice's own, QA runs the mock, and production with
 # no voice key never reaches the hub's shared OPENAI_API_KEY.

@@ -10,7 +10,7 @@
     POST /chat) is no longer drawn here. %>
 <div class="pb-8" data-voice-chat-page data-test="alex-chat-page">
   <%= render "studio/agent_chat/chat", soul: "alex", name: "Alex",
-             portrait: image_tag("/agents/alex.webp", alt: "", class: "w-24 h-24 rounded-full object-cover"),
+             portrait: safe_image_tag("/agents/alex.webp", alt: "", class: "w-24 h-24 rounded-full object-cover"),
              role: "Sales and Marketing · McRitchie Studio",
              empty: "Say hello to Alex, or hold to talk." %>
   <% if Studio.voice_transcription %>

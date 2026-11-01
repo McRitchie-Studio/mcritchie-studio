@@ -381,9 +381,11 @@ Rails.application.routes.draw do
   # in-process (HubAgentChatsController). BEFORE Studio.routes, which draws the
   # same two paths to its satellite proxy (Studio.agent_chat_souls is set):
   # these win recognition, and the engine's studio_agent_chat_* helpers still
-  # build these paths. Named hub_* so the names never clash.
-  post "agent_chat/messages", to: "hub_agent_chats#create", as: :hub_agent_chat_messages, defaults: { format: :json }
-  get  "agent_chat/turns",    to: "hub_agent_chats#turns",  as: :hub_agent_chat_turns,    defaults: { format: :json }
+  # build these paths. Named hub_* so the names never clash. No format default:
+  # the page's fetches ask for JSON (the wall answers them 401/403), and an HTML
+  # visit is walled like any other page.
+  post "agent_chat/messages", to: "hub_agent_chats#create", as: :hub_agent_chat_messages
+  get  "agent_chat/turns",    to: "hub_agent_chats#turns",  as: :hub_agent_chat_turns
   resources :schedule, only: [:index]
 
   # Unified auth — login + signup are one create-or-login flow, so they share a
