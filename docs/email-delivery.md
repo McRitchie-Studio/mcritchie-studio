@@ -328,7 +328,7 @@ use this layout. `Broadcasts::CyvasseFour` holds the styles and the split.
 No template requires a merge field. `bin/rails broadcasts:publish_assets
 broadcasts:draft_cyvasse_four_styles` (the post-deploy) publishes the images and
 creates the `cyvasse-four-<style>` drafts. `/broadcasts/analytics/cyvasse-four`
-compares the four, ranked by people who played a match from the email, and says
+compares the four, ranked by people who started a game from the email, and says
 when a lead is too early to call (`Broadcasts::CyvasseFourScoreboard`). These four
 print a postal address only when `MAILER_ADDRESS` is set; by Alex McRitchie's
 decision of 2026-10-31 it is unset. CAN-SPAM requires one on commercial mail, and

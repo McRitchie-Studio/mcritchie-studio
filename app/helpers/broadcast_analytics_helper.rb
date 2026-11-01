@@ -12,7 +12,6 @@ module BroadcastAnalyticsHelper
     "survey_completed" => "Answered a survey"
   }.freeze
 
-  # A rate as a percent; small rates keep two decimals so 0.08% reads true.
   # A count with its share of delivered, as the four-style table shows it.
   def cyvasse_four_cell(count, rate)
     "#{number_with_delimiter(count)} · #{analytics_pct(rate)}"
@@ -30,12 +29,20 @@ module BroadcastAnalyticsHelper
   def cyvasse_four_verdict_note(verdict)
     case verdict.state
     when :waiting then "Results appear here as the first batch goes out."
-    when :early then "#{verdict.leader.name} leads on #{verdict.metric}, but every style needs #{Broadcasts::CyvasseFourScoreboard::MIN_DELIVERED} delivered before the lead means much."
-    when :close then "#{verdict.leader.name} leads on #{verdict.metric}, but the gap could still be chance. Send more before picking a winner."
+    when :early
+      need = "every style needs #{Broadcasts::CyvasseFourScoreboard::MIN_DELIVERED} delivered before a lead means much."
+      verdict.leader ? "#{verdict.leader.name} leads on #{verdict.metric}, but #{need}" : "No style leads yet, and #{need}"
+    when :close
+      if verdict.leader
+        "#{verdict.leader.name} leads on #{verdict.metric}, but the gap could still be chance. Send more before picking a winner."
+      else
+        "The top styles are level on #{verdict.metric}. Send more before picking a winner."
+      end
     when :clear then "The lead on #{verdict.metric} is unlikely to be chance, at about 95% confidence."
     end
   end
 
+  # A rate as a percent; small rates keep two decimals so 0.08% reads true.
   def analytics_pct(rate)
     return "—" if rate.nil?
 

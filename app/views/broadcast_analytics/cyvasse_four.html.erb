@@ -3,7 +3,7 @@
   <div>
     <%= link_to "Email analytics", broadcast_analytics_path, class: "text-sm text-secondary hover:text-heading" %>
     <h1 class="text-2xl font-extrabold text-heading mt-1">Cyvasse four-style test</h1>
-    <p class="text-secondary text-sm mt-1">Which email brings players back. Ranked by people who played a match from the email.</p>
+    <p class="text-secondary text-sm mt-1">Which email brings players back. Ranked by people who started a game from the email.</p>
   </div>
 
   <section class="card p-4" aria-label="Verdict" data-verdict="<%= @verdict.state %>">
@@ -13,16 +13,16 @@
 
   <section class="card overflow-hidden" aria-label="The four styles">
     <div class="overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="w-full text-sm whitespace-nowrap">
         <thead class="text-secondary border-b border-subtle">
           <tr>
-            <th class="text-left p-3">Style</th>
+            <th class="sticky left-0 z-10 bg-surface text-left p-3">Style</th>
             <th class="text-right p-3">Waiting</th>
             <th class="text-right p-3">Sent</th>
             <th class="text-right p-3">Delivered</th>
             <th class="text-right p-3">Clicked</th>
             <th class="text-right p-3">Signed in</th>
-            <th class="text-right p-3">Played</th>
+            <th class="text-right p-3">Started a game</th>
             <th class="text-right p-3">Unsub</th>
             <th class="text-right p-3">Spam</th>
           </tr>
@@ -32,7 +32,7 @@
           <% @rows.each do |row| %>
             <% s = row.summary %>
             <tr class="border-b border-subtle/50" data-style="<%= row.style %>">
-              <td class="p-3 font-medium text-heading whitespace-nowrap"><%= link_to row.name, broadcast_analytics_path(broadcast: row.broadcast.slug) %></td>
+              <td class="sticky left-0 z-10 bg-surface p-3 font-medium text-heading"><%= link_to row.name, broadcast_analytics_path(broadcast: row.broadcast.slug) %></td>
               <td class="p-3 text-right tabular-nums"><%= number_with_delimiter(row.waiting) %></td>
               <td class="p-3 text-right tabular-nums"><%= number_with_delimiter(s.sent) %></td>
               <td class="p-3 text-right tabular-nums"><%= analytics_pct(s.rate(s.delivered, s.sent)) %></td>
@@ -57,5 +57,5 @@
     </dl>
   </section>
 
-  <p class="text-secondary text-xs">Clicked counts people, not mail scanners. Percentages are of emails delivered. Signed in and Played come from Cyvasse, for readers who arrived from the email, so someone who returns later on their own is not counted.</p>
+  <p class="text-secondary text-xs">Clicked counts people, not mail scanners. Delivered is a share of sent, and the other percentages are shares of delivered. Signed in and Started a game come from Cyvasse, for readers who arrived from the email, so someone who returns later on their own is not counted. Started a game fires at game setup, not at a finished game.</p>
 </div>
