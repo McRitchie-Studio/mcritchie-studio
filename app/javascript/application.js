@@ -40,6 +40,8 @@ import "chat_attachments"
 import "usage_countdown"
 // The app chat status card's live pill countdown, MM:SS ticked each second: inert where no pill counts down.
 import "devops_countdown"
+// Hold to talk to Alex on /chat: transcribe a take, send it as a message naming who spoke; delegated, inert elsewhere.
+import "voice_chat"
 
 // How a board page's chrome reaches the engine board it wraps (board/engine_board).
 // Installed here, on every page, so it is there before Alpine initialises a board

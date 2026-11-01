@@ -94,6 +94,28 @@ class Rack::Attack
     end
   end
 
+  ### Throttle: voice takes — every POST /voice/takes is a paid speech-to-text
+  # call (studio-engine docs/VOICE_TRANSCRIPTION.md; /chat's hold to talk). The
+  # engine adds its own per-user limit (task engine-voice-takes-hardened); this
+  # one is the hub's floor until then, and stays as the per-address bound. A
+  # person talking takes a few a minute; a loop takes hundreds.
+  VOICE_IP_LIMIT    = 12
+  VOICE_IP_PERIOD   = 1.minute
+  VOICE_USER_LIMIT  = 40
+  VOICE_USER_PERIOD = 10.minutes
+
+  throttle("voice_takes/ip", limit: VOICE_IP_LIMIT, period: VOICE_IP_PERIOD) do |req|
+    req.ip if req.post? && req.path == "/voice/takes"
+  end
+
+  throttle("voice_takes/user", limit: VOICE_USER_LIMIT, period: VOICE_USER_PERIOD) do |req|
+    if req.post? && req.path == "/voice/takes"
+      session = req.env["rack.session"] || {}
+      user_id = session[Studio.session_key.to_s] || session[Studio.session_key]
+      user_id&.to_s
+    end
+  end
+
   ### Response: throttled requests get 429
   self.throttled_responder = lambda do |request|
     match_data = request.env["rack.attack.match_data"] || {}
