@@ -126,8 +126,8 @@ class ClientBuildLauncherChangeBuilderTest < Minitest::Test
 
   def test_the_permission_set_writes_only_in_the_desk_and_denies_the_floors
     allowed = Builder.allowed_tools(@desk)
-    assert_includes allowed, "Edit(#{@desk}/**)"
-    assert_includes allowed, "Write(#{@desk}/**)"
+    assert_includes allowed, "Edit(/#{@desk}/**)", "two slashes: an absolute path, not settings-relative"
+    assert_includes allowed, "Write(/#{@desk}/**)"
     refute(allowed.any? { |rule| rule.match?(/\A(Edit|Write)\z/) || rule == "Bash" }, "no unscoped write or shell")
     assert_includes allowed, "Bash(/Users/alex/projects/.agents/bin/submit-wait *)"
     refute(allowed.any? { |rule| rule.match?(/git push|gh pr merge|gh api|bin\/release|heroku|\bop /) })

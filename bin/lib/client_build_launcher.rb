@@ -1012,7 +1012,7 @@ module ClientBuildLauncher
       "#{FIXED_BIN}/task *", "#{FIXED_BIN}/submit-wait *", "#{FIXED_BIN}/submit *", "#{FIXED_BIN}/agent-activity *",
       "#{FIXED_BIN}/fast-check *", "#{FIXED_BIN}/dor-check *", "#{FIXED_BIN}/dream *",
       "gh pr view *", "gh pr checks *", "gh pr diff *", "gh run view *", "gh run list *",
-      "ls *", "ls", "cat *", "head *", "tail *", "wc *", "grep *", "rg *", "pwd", "cd *", "sed -n *", "diff *"
+      "ls *", "ls", "cat *", "head *", "tail *", "wc *", "grep *", "pwd", "cd *", "sed -n *", "diff *"
     ].freeze
     DENIED = [
       "Bash(git push *)", "Bash(git push)", "Bash(git reset --hard *)", "Bash(git checkout main *)",
@@ -1036,8 +1036,12 @@ module ClientBuildLauncher
       nil
     end
 
+    # A permission rule's path that starts with ONE slash is relative to the settings
+    # root; an absolute path takes two (`//Users/...`). The live smoke
+    # (script/change_builder_permission_smoke.rb) caught `Write(/abs/**)` denying the
+    # desk itself.
     def self.allowed_tools(desk)
-      %w[Read Glob Grep] + [ "Edit(#{desk}/**)", "Write(#{desk}/**)" ] + ALLOWED_BASH.map { |cmd| "Bash(#{cmd})" }
+      %w[Read Glob Grep] + [ "Edit(/#{desk}/**)", "Write(/#{desk}/**)" ] + ALLOWED_BASH.map { |cmd| "Bash(#{cmd})" }
     end
 
     # `config`: config/client_builds.yml. `runner`: Sandbox.run's shape (a test's seam).

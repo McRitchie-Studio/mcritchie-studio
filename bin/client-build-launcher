@@ -18,6 +18,11 @@
 #   --dry-run   read the board and say what it would claim; claims, builds and
 #               posts nothing (implies --once)
 #
+# It also starts owner-confirmed change cards (bin/task begin) and, for a card
+# Alex McRitchie's own Slack or Teams go opened, runs a headless Pokémon builder
+# in the card's desk to `submitted` (ClientBuildLauncher::ChangeBuilder; config
+# change_builder; runbook "The change builder").
+#
 # New code restarts it with nobody's help: on the minute beat it re-reads a
 # digest of its own files; a new digest seen twice stops claiming, lets the runs
 # finish, and exits 0, and launchd's KeepAlive starts the new code. SIGTERM ends

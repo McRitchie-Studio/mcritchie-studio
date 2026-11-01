@@ -382,9 +382,11 @@ starts and change builders) **+ 5 dispatcher responders**
 interactive sessions and their agents.
 
 The 5-agent cap in the operating model protects the board's database
-connections. A builder makes no board call (it has no network tool), and the
-launcher makes its board calls one at a time from its main loop, so the builders
-do not draw on that budget. What they do draw on is the subscription's rate and
+connections. A bundle builder makes no board call (it has no network tool), and the
+launcher makes its board calls one at a time from its main loop, so bundle builders
+do not draw on that budget. A change builder does: it runs `bin/task`,
+`bin/agent-activity` and `bin/submit-wait` as a session builder would, so while one
+runs it counts as one of the five, like any session's builder. What they do draw on is the subscription's rate and
 this Mac. The launcher does not back off when the dispatcher is busy: it has no
 local read of the dispatcher's running count (that lives in the dispatcher's
 process and its board ping), and a `claude -p` run is mostly waiting on the API,
