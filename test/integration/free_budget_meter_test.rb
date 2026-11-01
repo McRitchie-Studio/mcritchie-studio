@@ -13,7 +13,11 @@ class FreeBudgetMeterTest < ActionDispatch::IntegrationTest
   include ActionCable::TestHelper
   include ClientCtoFixtures
 
+  # Day one of October, after the 1am Denver reset: one answer projects past the
+  # allowance, so the upgrade suggestion always renders. The clock steps a minute
+  # after each answer, because the meter counts [period start, now).
   setup do
+    travel_to Time.find_zone("America/Denver").local(2026, 10, 1, 9)
     AgentMessages::Answerers.current = AgentMessages::Answerers.load
     @client_app = client_app!
     @owner = User.create!(email: "pat@example.com", name: "Pat", role: "viewer")
@@ -50,6 +54,7 @@ class FreeBudgetMeterTest < ActionDispatch::IntegrationTest
     claimed = claim_one
     assert_equal message, claimed
     claimed.complete!(worker: "w1", response_text: "Add a form on the home page.", run: run_summary(1_840))
+    travel 1.minute
     assert_equal "client", claimed.reload.run_meta["audience"], "the owner's answer is metered as a client's"
 
     perform_enqueued_jobs(only: AgentMessageReplyJob) { AgentMessageReplyJob.perform_later(claimed.id) }
@@ -60,13 +65,20 @@ class FreeBudgetMeterTest < ActionDispatch::IntegrationTest
     assert_match(/data-test="usage-meter-tokens">1,840 \/ 25,000</, meter)
     assert_includes meter, %(data-state="ok")
     assert_includes meter, %(aria-valuenow="7")
-    assert_not_includes meter, "$", "tokens, never dollars"
+    # The meter counts tokens, never dollars. The upgrade suggestion is the one
+    # line that may name a price ("Builder ($100/month) raises it."): early in a
+    # month one day's spend projects past the allowance and it appears, which
+    # turned this assertion red on 2026-11-01. Judge everything but that line.
+    assert_match(%r{data-test="usage-suggestion"[^>]*>[^<]*\$}, meter, "day one renders the priced suggestion")
+    usage = meter.sub(%r{<p [^>]*data-test="usage-suggestion".*?</p>}m, "")
+    assert_not_includes usage, "$", "tokens, never dollars"
   end
 
   test "[integration] at the cap the owner gets the cap line and the plans link from code, with no dispatch" do
     log_in_as(@owner)
     spent = send_chat("first")
     claim_one.complete!(worker: "w1", response_text: "Sure.", run: run_summary(25_000))
+    travel 1.minute
     assert_equal 25_000, AgentUsage.owner_meter(@client_app).used
 
     capped = nil
