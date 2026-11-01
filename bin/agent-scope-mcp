@@ -1,0 +1,38 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/agent-scope-mcp — the read-only tools of one scoped run, over MCP stdio.
+# The dispatcher never runs this itself: it hands `claude -p` an inline
+# --mcp-config naming it (AgentMailbox::Scopes::Grant#mcp_config), and Claude
+# starts it for the life of that one answer. The logic, the allow-list and the
+# redaction are AgentMailbox::Scopes::Server (bin/lib/agent_scope_server.rb);
+# the scopes are config/agent_scopes.yml. Doc:
+# docs/agents/system/agent-message-loop.md, "Scoped runs: the owner's terminal in Slack".
+#
+#   bin/agent-scope-mcp --soul SOUL --message ID --worker WORKER --repo ROOT
+
+require_relative "lib/process_encoding"
+ProcessEncoding.force_utf8!
+
+require "optparse"
+require_relative "lib/agent_scope_server"
+
+USAGE = "usage: bin/agent-scope-mcp --soul SOUL --message ID --worker WORKER --repo ROOT " \
+        "(started by claude -p for a scoped run; serves MCP on stdio, writes nothing)"
+
+opts = {}
+OptionParser.new do |o|
+  o.banner = USAGE
+  o.on("-h", "--help") { puts USAGE; exit 0 }
+  o.on("--soul SOUL") { |v| opts[:soul] = v }
+  o.on("--message ID") { |v| opts[:message_id] = v }
+  o.on("--worker WORKER") { |v| opts[:worker] = v }
+  o.on("--repo ROOT") { |v| opts[:repo_root] = v }
+end.parse!(ARGV)
+
+abort "agent-scope-mcp: unexpected argument #{ARGV.first.inspect}\n#{USAGE}" if ARGV.any?
+missing = %i[soul message_id worker repo_root].reject { |k| opts[k].to_s.strip != "" }
+abort "agent-scope-mcp: missing #{missing.join(', ')}" if missing.any?
+
+$stdout.sync = true
+AgentMailbox::Scopes::Server.new(**opts).run

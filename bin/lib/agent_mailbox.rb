@@ -15,6 +15,7 @@ require_relative "agent_context_builder"
 require_relative "agent_media"
 require_relative "agent_proposal_block"
 require_relative "agent_warm_session"
+require_relative "agent_scope"
 require_relative "child_env"
 
 # The worker and observer side of the agent mailbox
@@ -94,6 +95,13 @@ module AgentMailbox
     end
 
     # `run`: what the Claude run reported (Responder::Answer#run_record), optional.
+    # One bounded board read for a scoped run (AgentMailbox::Scopes, LOOKUPS),
+    # holder-only and owner-only on the board too. data.text is the answer.
+    def lookup(id, worker:, name:, params: {})
+      call(:get, path("/api/v1/agent_messages/#{Integer(id)}/lookup",
+                      worker: worker, name: name, params: JSON.generate(params || {})))
+    end
+
     def complete(id, worker:, response_text:, action_summary:, run: {})
       body = { "worker" => worker, "response_text" => response_text, "action_summary" => action_summary }
       call(:post, "/api/v1/agent_messages/#{Integer(id)}/complete", body.merge(run.compact))
@@ -321,7 +329,10 @@ module AgentMailbox
   # stream with no result line is a FAILED run, never a reply: its stdout is
   # the CLI's own event stream, not an answer to post.
   module ClaudeRun
-    Parsed = Struct.new(:reply, :error_text, :api_status, :session_id, :meta, keyword_init: true)
+    # max_turns: the envelope's subtype is error_max_turns (CLI-authored, measured
+    # on claude 2.1.316: exit 1, is_error true, empty result): a scoped run used
+    # its --max-turns before it answered (Responder#respond posts a code reply).
+    Parsed = Struct.new(:reply, :error_text, :api_status, :session_id, :meta, :max_turns, keyword_init: true)
 
     def self.parse(stdout, status, stderr, stream: false)
       env = stream ? stream_envelope(stdout) : envelope(stdout)
@@ -334,7 +345,8 @@ module AgentMailbox
         reply = failed ? nil : env["result"].to_s.strip
         error = failed ? [ (env["result"] if env["is_error"] == true), env["error"], stderr ] : nil
         return Parsed.new(reply: reply.to_s.empty? ? nil : reply, error_text: join(error),
-                          api_status: env["api_error_status"], session_id: session_id(env), meta: meta(env))
+                          api_status: env["api_error_status"], session_id: session_id(env), meta: meta(env),
+                          max_turns: env["subtype"].to_s == "error_max_turns")
       end
 
       text = stdout.to_s.strip
@@ -613,7 +625,9 @@ module AgentMailbox
     # answering it can read nothing and run nothing beyond the prompt it is given.
     # --safe-mode skips CLAUDE.md, hooks, skills and plugins for the same reason.
     # json, so the reply and any error arrive in an envelope whose status fields
-    # the model cannot write (ClaudeRun).
+    # the model cannot write (ClaudeRun). The one exception is a SCOPED run (the
+    # owner on Slack, Scopes.grant): Scopes::Grant#claude_cmd adds read-only MCP
+    # tools to this command, built-in tools still off.
     DEFAULT_CLAUDE_CMD = [ "claude", "-p", "--safe-mode", "--tools", "", "--output-format", "json" ].freeze
     CLAUDE_TIMEOUT = 300
     # reply: the text to post, or nil when the run failed. usage_limit: a
@@ -657,18 +671,28 @@ module AgentMailbox
     # partial messages, each line feeds the phase as it arrives, and the answer
     # is read from the stream's result line: the same envelope, so the reply,
     # usage and session id are what json mode would have read.
-    def respond(message, context: nil, warm: nil, phase: nil)
+    #
+    # `scope`: a Scopes::Decision (bin/dispatcher's Scopes.grant), or nil. A
+    # granted one answers with the scope's read-only tools (Grant#claude_cmd)
+    # instead of the no-tools command, never warm; the decision's reason goes
+    # into the run record either way. Only the owner is ever granted, and the
+    # audience is checked again here.
+    def respond(message, context: nil, warm: nil, phase: nil, scope: nil)
       audience = Audience.from_context(context)
-      action = run_action(audience)
+      grant = scope&.grant if audience.may?(:scoped_tools) && warm.nil?
+      action = grant ? nil : run_action(audience)
       cwd = soul_folder
       stdin = if warm
                 ContextBuilder.new(soul: @soul, message: message, context: context, action: action,
                                    action_what: ACTIONS.dig(@soul, :what), repo_root: @repo_root,
                                    audience: audience).warm_prompt(warm)
               else
-                prompt_for(message, action, context: context, audience: audience)
+                prompt_for(message, action, context: context, audience: audience, scope: grant)
               end
-      cmd = warm ? warm_cmd(warm.resume_id) : @claude_cmd
+      cmd = if warm then warm_cmd(warm.resume_id)
+            elsif grant then grant.claude_cmd(@claude_cmd)
+            else @claude_cmd
+            end
       media = prepared_media(context)
       if media&.any?
         stdin = Media.user_message(media.blocks, stdin)
@@ -689,11 +713,27 @@ module AgentMailbox
                             [ nil, nil ]
                           end
       meta = (run.meta || {}).merge(source ? { "reasoning_source" => source } : {}).merge(media ? media.meta : {})
+      meta = meta.merge("scope" => scope_reason(scope, grant, warm)) if scope
       reply, notes, proposal = run.reply && !limit ? ProposalBlock.split(run.reply) : [ nil, [], nil ]
+      # A scoped run that spent its turns posts a code-written answer instead of
+      # being given back: a retry would spend the same turns again, and pause.
+      if grant && reply.nil? && limit.nil? && run.max_turns
+        reply = Scopes.max_turns_reply(grant)
+        meta = meta.merge("scope" => "max_turns")
+      end
       Answer.new(reply: reply.to_s.empty? ? nil : reply, notes: notes, proposal: proposal, action: action, status: status, usage_limit: limit,
                  signed_out: limit.nil? && ClaudeAuth.signed_out?(run), session_id: run.session_id, cwd: cwd,
                  reasoning: reasoning, meta: meta.merge(warm ? { "warm" => warm.resumed? ? "resumed" : "fresh" } : {}),
                  warm: warm)
+    end
+
+    # What the run record says about the scope: granted only when this run
+    # actually had the tools.
+    def scope_reason(decision, grant, warm)
+      return "granted" if grant
+      return decision.reason unless decision.granted?
+
+      warm ? "warm" : "not_owner"
     end
 
     # Whether this responder's runner hands stdout over line by line (the real
@@ -730,9 +770,10 @@ module AgentMailbox
       @claude_cmd + [ "--resume", resume_id.to_s ]
     end
 
-    def prompt_for(message, action, context: nil, audience: nil)
+    def prompt_for(message, action, context: nil, audience: nil, scope: nil)
       ContextBuilder.new(soul: @soul, message: message, context: context, action: action,
-                         action_what: ACTIONS.dig(@soul, :what), repo_root: @repo_root, audience: audience).prompt
+                         action_what: ACTIONS.dig(@soul, :what), repo_root: @repo_root, audience: audience,
+                         scope: scope).prompt
     end
 
     # The soul's folder, <mailbox root>/<soul>, made on demand: the ONE seam that

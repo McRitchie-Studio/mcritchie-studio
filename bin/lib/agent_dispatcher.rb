@@ -42,7 +42,8 @@ module AgentMailbox
   # agent_mailbox.rb, agent_api.rb, cli_arg_guard.rb and what they pull in),
   # config/agent_routes.yml, whose souls are read only at startup, and
   # config/agent_domains.yml, whose warm_session flags are too (so turning a
-  # domain warm reaches a running dispatcher). The file LIST
+  # domain warm reaches a running dispatcher), and config/agent_scopes.yml,
+  # whose scopes are read once at startup too (Scopes::Config). The file LIST
   # is fixed when the fingerprint is taken; each #call re-reads those files, so
   # an edit, a checkout or a deletion changes the digest and an unrelated
   # release (one that touches none of them) does not. A missing file digests as
@@ -57,7 +58,7 @@ module AgentMailbox
                                                                                   .map { |r| File.join(r, "") }
       required = loaded.select { |path| roots.any? { |root| path.start_with?(root) } }
       new([ File.expand_path(entry), *required, File.join(repo_root, "config/agent_routes.yml"),
-            File.join(repo_root, "config/agent_domains.yml") ])
+            File.join(repo_root, "config/agent_domains.yml"), File.join(repo_root, Scopes::PATH) ])
     end
 
     def initialize(files)
@@ -176,7 +177,7 @@ module AgentMailbox
                    runner: nil, out: $stdout, clock: -> { Time.now }, sleeper: ->(s) { sleep(s) },
                    repo_root: REPO_ROOT, idle_wait: IDLE_WAIT, busy_wait: BUSY_WAIT, version: nil, fingerprint: nil,
                    registry: nil, mailbox_home: nil, claude_home: File.join(Dir.home, ".claude"), host: nil, media: nil,
-                   harness_probe: nil, threader: ->(&work) { Thread.new(&work) })
+                   harness_probe: nil, threader: ->(&work) { Thread.new(&work) }, scopes: nil)
       raise ArgumentError, "no souls to serve" if souls.empty?
 
       # The files a message carries are fetched and converted on the run's
@@ -216,6 +217,16 @@ module AgentMailbox
       # or restored per domain (domain => OwnCheckpoint), the one local
       # transcript trusted without a download.
       @registry = registry || DomainRegistry.load(File.join(repo_root, "config/agent_domains.yml"))
+      # Scoped runs (config/agent_scopes.yml): read once, like the routes; the
+      # code fingerprint includes the file, so an edit restarts the dispatcher.
+      # A config that will not load scopes nothing (scope_for logs it per message).
+      @scopes = begin
+        scopes || Scopes::Config.load(repo_root)
+      rescue Scopes::ConfigError => e
+        log "scopes config refused: #{e.message}; every answer runs with no tools"
+        Scopes::Config.new({})
+      end
+      @scope_routes = Scopes.load_routes(repo_root)
       @mailbox_home = mailbox_home
       @claude_home = claude_home
       @leases = {}
@@ -404,19 +415,35 @@ module AgentMailbox
         return
       end
       responder = responder_for(message["soul_slug"])
-      warm = warm_turn(message, context)
+      # A scoped run (the owner on Slack, config/agent_scopes.yml) answers with
+      # read-only tools and is never warm; anything else is decided as before.
+      scope = scope_for(message, context)
+      warm = scope&.granted? ? nil : warm_turn(message, context)
       phase = ClaudeStream::Phase.new if message["channel"] == "web" && responder.streams?
       thread = Thread.new do
         Thread.current.report_on_exception = false
         options = { context: context }
         options[:warm] = warm if warm
         options[:phase] = phase if phase
+        options[:scope] = scope if scope
         responder.respond(message, **options)
       end
       run = Run.new(message: message, thread: thread, started_at: now, renewed_at: now,
                     typing: TYPING_CHANNELS.include?(message["channel"]), warm: warm, phase: phase)
       @runs << run
       pulse_typing(run, now)
+    end
+
+    # The scope decision for this message (Scopes.grant), or nil when the
+    # scopes config will not load (logged; the message is answered with no tools).
+    def scope_for(message, context)
+      decision = Scopes.grant(soul: message["soul_slug"], message: message, context: context, worker: @worker,
+                              repo_root: @repo_root, config: @scopes, routes: @scope_routes)
+      log "scoped ##{message['id']} for #{message['soul_slug']}: read-only tools" if decision.granted?
+      decision
+    rescue Scopes::ConfigError => e
+      log "scopes config refused (#{e.message}); ##{message['id']} answers with no tools"
+      nil
     end
 
     def responder_for(soul)

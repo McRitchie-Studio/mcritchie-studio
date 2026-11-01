@@ -1,0 +1,77 @@
+# Dominion of scope (epic .agents/epics/slack-terminal-scope.md; Alex McRitchie,
+# 2026-10-31: "when we are in the MS slack I want to be able to interact with
+# agents like I'm talking in terminal"). docs/agents/system/agent-message-loop.md,
+# "Scoped runs: the owner's terminal in Slack".
+#
+# When Alex McRitchie (the verified owner, slack.owner_user_id in
+# config/agent_routes.yml) messages a soul below on Slack, and that soul is cleared
+# in the channel, the dispatcher answers with READ-ONLY tools limited to the
+# soul's scope instead of today's no-tools run. Everyone else, a held or released
+# message, and every soul not listed here keep the no-tools path
+# (AgentMailbox::Scopes#grant).
+#
+# The tools are served by ONE local MCP server, bin/agent-scope-mcp, and Claude
+# runs with every built-in tool off (--tools ""): no Bash, no Read, no Write, no
+# Edit, no WebFetch. Each soul's tools are only these:
+#
+#   lookups:   bounded board reads by name (AgentScopes::Lookups::CATALOG holds
+#              each one's params and bounds), served by the holder-only endpoint
+#              GET /api/v1/agent_messages/:id/lookup. Code, never model-written SQL.
+#   commands:  read-only commands, each an EXACT argv prefix run without a shell;
+#              the model may add at most `max_args` arguments, each matching `args`
+#              (a Ruby regex, anchored here). Never a general shell.
+#   paths:     files the soul may read or list, as globs relative to the hub
+#              checkout. `deny_paths` below wins over every soul's list, and a
+#              path that resolves (symlinks included) outside the checkout is refused.
+#
+# A key a soul's list names that the code does not know is refused at load, so a
+# typo cannot widen nothing into something (Scopes.load raises).
+defaults:
+  channels: [slack]            # the media a scoped run may answer on
+  max_turns: 12                # claude --max-turns: tool round trips per answer
+  tool_timeout: 45             # seconds per command or lookup call
+  output_limit: 12000          # characters any one tool result returns
+  read_limit: 40000            # bytes read_file reads from one file
+deny_paths:
+  - "**/.env*"
+  - "**/*.key"
+  - "**/*.pem"
+  - "**/*.enc"
+  - "**/credentials*"
+  - "**/*.sqlite3"
+  - "**/.git/**"
+  - "log/**"
+  - "tmp/**"
+  - "storage/**"
+souls:
+  # COO: why things break. ErrorLogs and health across apps, the board's gates,
+  # review findings and grades, the release ladder, the operating docs.
+  mason:
+    lookups: [error_groups, gate_failures, review_findings, grades, board_status, recently_shipped, release_status]
+    commands:
+      - name: task_list
+        argv: [bin/task, list]
+        args: '\A(?:--stage|--agent|--epic|--reviewable|--all|[a-z][a-z0-9_-]{0,60})\z'
+        max_args: 4
+        what: "the task board (bin/task list [--stage S] [--agent A] [--epic E] [--reviewable] [--all])"
+      - name: task_show
+        argv: [bin/task, show]
+        args: '\A(?:-v|--verbose|[a-z0-9][a-z0-9-]{0,80})\z'
+        max_args: 2
+        what: "one task's record (bin/task show <slug> [-v])"
+    paths:
+      - "docs/agents/**/*.md"
+      - "config/agent_*.yml"
+      - "config/release_builder.yml"
+      - "config/feature_shapes.yml"
+      - "config/accountability_chart.yml"
+  # CFO: the books. Entities and the chart of accounts, statements, lines waiting,
+  # closes and month totals, the agents' spend, his own SOPs.
+  mack:
+    lookups: [books_status, books_unclassified, books_month, usage]
+    commands: []
+    paths:
+      - "config/books.yml"
+      - "config/accountability_chart.yml"
+      - "docs/agents/agents/mack/**/*.md"
+      - "docs/agents/system/agent-usage.md"

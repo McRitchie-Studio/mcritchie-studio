@@ -85,6 +85,12 @@ class AgentAudienceTest < ActiveSupport::TestCase
                  "every capability names only known roles"
   end
 
+  test "scoped_tools (read-only tools on Slack) is the owner's alone" do
+    assert aud("owner").may?(:scoped_tools)
+    [ aud("team"), aud("client", "turf_monster"), aud("public") ].each { |a| refute a.may?(:scoped_tools), a.label }
+    assert_equal %w[owner], A::CAPABILITIES.fetch(:scoped_tools)
+  end
+
   # --- the SOP's rules ------------------------------------------------------------
 
   test "the SOP's rules block names every role, each with may and never lists, and the always-rules" do

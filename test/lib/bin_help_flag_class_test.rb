@@ -208,6 +208,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # CLAIMS a message on the board; bin/agent-inbox only reads. Both guard first.
     "heartbeat"              => :cli_arg_guard,
     "dispatcher"             => :cli_arg_guard,
+    # A scoped run's MCP tool server (Scopes::Server), started by `claude -p`.
+    # OptionParser with a -h arm; help prints and exits before any tool is served,
+    # and a stray positional argument refuses. It writes nothing in any case.
+    "agent-scope-mcp"        => :optparse,
     # bin/dispatcher's sibling service: install writes ~/Library/LaunchAgents and
     # run claims board tasks, so every subcommand guards first.
     "client-build-launcher"  => :cli_arg_guard,

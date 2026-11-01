@@ -110,7 +110,8 @@ class AgentMessage < ApplicationRecord
   RUN_META_NUMERIC = %w[input_tokens cache_read_tokens cache_creation_tokens output_tokens thinking_tokens
                         total_cost_usd num_turns duration_ms].freeze
   # files_shown, files_skipped: a run with media (AgentMailbox::Media), the files sent and not.
-  RUN_META_KEYS = (RUN_META_NUMERIC + %w[model reasoning_source warm files_shown files_skipped]).freeze
+  # scope: the scoped-run decision (AgentMailbox::Scopes.grant): granted, or the code-shaped reason not.
+  RUN_META_KEYS = (RUN_META_NUMERIC + %w[model reasoning_source warm files_shown files_skipped scope]).freeze
 
   ClaimResult = Struct.new(:message, :reason, keyword_init: true)
 

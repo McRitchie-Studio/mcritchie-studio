@@ -36,7 +36,12 @@ module AgentMailbox
       # The one exception, an app owner on their own app's web CTO thread, is
       # decided in code by AgentMessages::ProposalConfirm#owner_verdict, never here:
       # widening this row would let every client confirm on every channel.
-      confirm_proposal: %w[owner]
+      confirm_proposal: %w[owner],
+      # A SCOPED run: read-only tools inside the soul's scope (config/agent_scopes.yml,
+      # AgentMailbox::Scopes.grant). The role is one floor of several: the gate also
+      # needs Slack, the configured owner platform id, no released hold, a cleared
+      # route and the owner's own words. Widening this row widens nothing alone.
+      scoped_tools: %w[owner]
     }.freeze
     # The ranking a capability's min_audience is read against, lowest first.
     RANK = %w[public client team owner].freeze
