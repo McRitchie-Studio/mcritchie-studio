@@ -60,6 +60,13 @@ class AgentProposalTest < ActiveSupport::TestCase
                  "lists join with ;, and backticks and newlines cannot break the line"
     long = AgentProposal.new(kind: "change", capability: "task", params: { "accept" => [ "x" * 500 ] * 6 })
     assert_operator long.runs_line.length, :<=, AgentProposal::RUNS_LINE_LIMIT
+
+    note = "#{'System tests or shared layouts may depend on the admin sidebar ' * 2}links"
+    risky = AgentProposal.new(kind: "change", capability: "task", params: { "risk" => [ note ] })
+    shown = risky.runs_line.delete_prefix("change `task` · risk ")
+    assert shown.end_with?("..."), shown
+    assert note.start_with?(shown.delete_suffix("...")), "the risk note is cut at a word boundary, never mid-word"
+    assert_equal " ", note[shown.delete_suffix("...").length], "the cut lands on a space"
   end
 
   test "a refused proposal is logged and never shown" do

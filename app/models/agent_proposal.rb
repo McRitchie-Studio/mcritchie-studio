@@ -133,7 +133,7 @@ class AgentProposal < ApplicationRecord
   def runs_line
     parts = params.to_h.map { |key, value| "#{key} #{param_text(value)}" }
     line = [ "#{kind} `#{capability}`", *parts ].join(" · ")
-    parts.empty? ? "#{line} (no params)" : line.truncate(RUNS_LINE_LIMIT)
+    parts.empty? ? "#{line} (no params)" : line.truncate(RUNS_LINE_LIMIT, separator: " ")
   end
 
   # The bundle's view of it, for the next answer's context (`change: …`).
@@ -147,7 +147,7 @@ class AgentProposal < ApplicationRecord
   # out of the line.
   def param_text(value)
     pieces = value.is_a?(Array) ? value : [ value ]
-    pieces.map { |v| v.to_s.delete("`").squish.truncate(PARAM_VALUE_LIMIT) }.join("; ")
+    pieces.map { |v| v.to_s.delete("`").squish.truncate(PARAM_VALUE_LIMIT, separator: " ") }.join("; ")
   end
 
   def task_url(slug) = "#{BOARD_URL}/tasks/#{slug}"

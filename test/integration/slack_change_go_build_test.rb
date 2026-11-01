@@ -62,6 +62,17 @@ class SlackChangeGoBuildTest < ActiveSupport::TestCase
     assert_enqueued_with(job: AgentMessageReplyJob, args: [ line.id ])
   end
 
+  test "a double go opens one card and offers it to the launcher once" do
+    reply("go")
+    run_jobs
+    second = reply("go")
+    run_jobs
+
+    assert_equal 1, Task.where("title LIKE ?", "Combine Admin Sidebar Links%").count
+    assert second.events.exists?(kind: "proposal_closed")
+    assert_equal 1, ChangeBuilds.candidates.size
+  end
+
   test "a stranger's go is held: no card, no build" do
     held = reply("go", user: STRANGER)
     run_jobs
