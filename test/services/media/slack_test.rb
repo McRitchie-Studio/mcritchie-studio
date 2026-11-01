@@ -60,6 +60,8 @@ class MediaSlackTest < ActiveSupport::TestCase
     assert_equal [ CHAN, "1761800000.000100", "Avi" ], params.values_at(:channel, :thread_ts, :username)
     assert_equal "https://mcritchie.studio/slack-icons/avi.png", params[:icon_url], "an absolute public URL"
     assert_equal "*Done.* See <https://mcritchie.studio/tasks|the board>", params[:text]
+    assert_equal [ false, false ], params.values_at(:unfurl_links, :unfurl_media),
+                 "an answer is text a sender can steer, so Slack never fetches its links"
 
     message.reload
     assert_equal [ "posted", "1761800001.000200" ], [ message.reply_status, message.reply_external_id ]

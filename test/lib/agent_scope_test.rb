@@ -131,12 +131,24 @@ class AgentScopeTest < Minitest::Test
     assert_includes shipped.scope_for("mason").lookups, "error_groups"
     assert_includes shipped.scope_for("mack").lookups, "books_month"
     assert shipped.scope_for("mack").paths.include?("config/books.yml")
-    assert_nil shipped.scope_for("avi"), "card 1 scopes Mason and Mack only"
+    assert_nil shipped.scope_for("avi"), "Avi is not scoped yet"
+    turf = shipped.scope_for("turf_monster")
+    assert_equal %w[turf_contests usage], turf.lookups, "Turf reads its contests before it proposes an operation"
+    assert_empty turf.commands
     assert_equal %w[slack], shipped.channels
     assert shipped.max_turns.between?(1, AgentMailbox::Scopes::MAX_TURNS_CAP)
     shipped.souls.each_value do |scope|
       scope.commands.each { |c| assert c.argv.first.start_with?("bin/"), c.name }
     end
+  end
+
+  def test_turf_contests_params_are_bounded
+    allowed = %w[turf_contests]
+    assert_equal [ "turf_contests", { "scope" => "open", "limit" => 10 } ],
+                 AgentMailbox::Scopes.check_lookup("turf_contests", {}, allowed: allowed)
+    assert_equal({ "scope" => "all", "limit" => 25 }, AgentMailbox::Scopes.check_lookup("turf_contests", { "scope" => "all", "limit" => 25 }, allowed: allowed).last)
+    assert_raises(AgentMailbox::Scopes::Refused) { AgentMailbox::Scopes.check_lookup("turf_contests", { "scope" => "settled" }, allowed: allowed) }
+    assert_raises(AgentMailbox::Scopes::Refused) { AgentMailbox::Scopes.check_lookup("turf_contests", { "limit" => 26 }, allowed: allowed) }
   end
 
   def test_an_unknown_lookup_is_refused_at_load

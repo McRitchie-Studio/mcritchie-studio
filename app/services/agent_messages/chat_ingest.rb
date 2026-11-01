@@ -106,8 +106,9 @@ module AgentMessages
       return nil if event["thread_ts"].blank? || event["thread_ts"] == event["ts"]
 
       columns = row_attributes(event, ctx.merge(fan: nil))
-      proposal = AgentProposal.for_word(thread_key: thread_key(event), channel: self.class::CHANNEL,
-                                        guild_id: columns[:guild_id], channel_ref: columns[:channel_ref])
+      scope = { thread_key: thread_key(event), channel: self.class::CHANNEL, guild_id: columns[:guild_id],
+                channel_ref: columns[:channel_ref] }
+      proposal = AgentProposal.for_word(**scope) || recently_run(scope)
       return nil unless proposal
 
       author_ref = event["user"].to_s
@@ -120,6 +121,21 @@ module AgentMessages
       end
       jobs.each { |job, id| job.perform_later(id) }
       message
+    end
+
+    # A word with no pending proposal, in a thread whose newest proposal was
+    # confirmed or ran within RECENT_RUN: a second `go` on a running or finished
+    # operation. Discord tells it apart by the reply reference; a chat medium
+    # has none, so the thread's newest such proposal takes the word and the
+    # owner is told it is running or already ran (ProposalConfirm), instead of
+    # the bare word reaching the soul as a new message.
+    RECENT_RUN = 1.hour
+
+    def recently_run(scope)
+      newest = AgentProposal.where(scope).order(id: :desc).first
+      return nil unless newest && %w[confirmed executed].include?(newest.status)
+
+      newest.updated_at > RECENT_RUN.ago ? newest : nil
     end
 
     def store_one(event, external_id, result, person, name, fan, ctx)
