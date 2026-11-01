@@ -14,7 +14,7 @@ class CyvasseFourScoreboardTest < ApplicationSystemTestCase
       visit cyvasse_four_scoreboard_path
       assert_text "Nothing sent yet"
       assert_selector "tr[data-style]", count: 4, visible: :all
-      assert_equal width, evaluate_script("document.documentElement.scrollWidth")
+      assert_operator evaluate_script("document.documentElement.scrollWidth"), :<=, evaluate_script("document.documentElement.clientWidth")
     end
   end
 end
