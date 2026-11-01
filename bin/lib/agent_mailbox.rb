@@ -15,6 +15,7 @@ require_relative "agent_context_builder"
 require_relative "agent_media"
 require_relative "agent_proposal_block"
 require_relative "agent_warm_session"
+require_relative "agent_scope"
 require_relative "child_env"
 
 # The worker and observer side of the agent mailbox
@@ -664,18 +665,28 @@ module AgentMailbox
     # partial messages, each line feeds the phase as it arrives, and the answer
     # is read from the stream's result line: the same envelope, so the reply,
     # usage and session id are what json mode would have read.
-    def respond(message, context: nil, warm: nil, phase: nil)
+    #
+    # `scope`: a Scopes::Decision (bin/dispatcher's Scopes.grant), or nil. A
+    # granted one answers with the scope's read-only tools (Grant#claude_cmd)
+    # instead of the no-tools command, never warm; the decision's reason goes
+    # into the run record either way. Only the owner is ever granted, and the
+    # audience is checked again here.
+    def respond(message, context: nil, warm: nil, phase: nil, scope: nil)
       audience = Audience.from_context(context)
-      action = run_action(audience)
+      grant = scope&.grant if audience.owner? && warm.nil?
+      action = grant ? nil : run_action(audience)
       cwd = soul_folder
       stdin = if warm
                 ContextBuilder.new(soul: @soul, message: message, context: context, action: action,
                                    action_what: ACTIONS.dig(@soul, :what), repo_root: @repo_root,
                                    audience: audience).warm_prompt(warm)
               else
-                prompt_for(message, action, context: context, audience: audience)
+                prompt_for(message, action, context: context, audience: audience, scope: grant)
               end
-      cmd = warm ? warm_cmd(warm.resume_id) : @claude_cmd
+      cmd = if warm then warm_cmd(warm.resume_id)
+            elsif grant then grant.claude_cmd(@claude_cmd)
+            else @claude_cmd
+            end
       media = prepared_media(context)
       if media&.any?
         stdin = Media.user_message(media.blocks, stdin)
@@ -696,6 +707,7 @@ module AgentMailbox
                             [ nil, nil ]
                           end
       meta = (run.meta || {}).merge(source ? { "reasoning_source" => source } : {}).merge(media ? media.meta : {})
+      meta = meta.merge("scope" => grant ? "granted" : scope.reason) if scope
       reply, notes, proposal = run.reply && !limit ? ProposalBlock.split(run.reply) : [ nil, [], nil ]
       Answer.new(reply: reply.to_s.empty? ? nil : reply, notes: notes, proposal: proposal, action: action, status: status, usage_limit: limit,
                  signed_out: limit.nil? && ClaudeAuth.signed_out?(run), session_id: run.session_id, cwd: cwd,
@@ -737,9 +749,10 @@ module AgentMailbox
       @claude_cmd + [ "--resume", resume_id.to_s ]
     end
 
-    def prompt_for(message, action, context: nil, audience: nil)
+    def prompt_for(message, action, context: nil, audience: nil, scope: nil)
       ContextBuilder.new(soul: @soul, message: message, context: context, action: action,
-                         action_what: ACTIONS.dig(@soul, :what), repo_root: @repo_root, audience: audience).prompt
+                         action_what: ACTIONS.dig(@soul, :what), repo_root: @repo_root, audience: audience,
+                         scope: scope).prompt
     end
 
     # The soul's folder, <mailbox root>/<soul>, made on demand: the ONE seam that

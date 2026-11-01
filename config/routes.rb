@@ -859,6 +859,7 @@ Rails.application.routes.draw do
         end
         member do
           get :context
+          get :lookup
           post :complete
           post :release
           post :renew

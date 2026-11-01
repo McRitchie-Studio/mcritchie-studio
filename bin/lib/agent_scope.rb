@@ -138,18 +138,26 @@ module AgentMailbox
                                                     "args" => [ server, *args ] } })
       end
 
-      # The cold command plus the scope: built-in tools stay off (--tools "" is
-      # already in it, and is put in if missing), only this server is loaded
-      # (--strict-mcp-config), only its tools are allowed, anything else is
-      # denied without a prompt (dontAsk), and the run is held to max_turns.
+      # The cold command plus the scope. Measured against claude 2.1.316
+      # (2026-10-31): --safe-mode turns MCP servers off, --mcp-config included, so
+      # a scoped run swaps it for --restricted, which ignores the user, project
+      # and local settings files (their hooks, permission rules and plugins with
+      # them) and confines any file tool to the working directories, and adds
+      # --disable-slash-commands. Built-in tools stay off (--tools "", put in if
+      # missing), only this server is loaded (--strict-mcp-config), only its
+      # tools are allowed, the built-ins are denied by name as well, anything
+      # else is refused without a prompt (dontAsk), and the run is held to
+      # max_turns.
       def claude_cmd(base)
-        argv = base.dup
+        argv = base.map { |a| a == "--safe-mode" ? "--restricted" : a }
+        argv += [ "--restricted" ] unless argv.include?("--restricted")
         if (i = argv.index("--tools"))
           argv[i + 1] = ""
         else
           argv += [ "--tools", "" ]
         end
-        argv + [ "--mcp-config", mcp_config, "--strict-mcp-config",
+        argv + [ "--disable-slash-commands",
+                 "--mcp-config", mcp_config, "--strict-mcp-config",
                  "--allowedTools", allowed_tools.join(","),
                  "--disallowedTools", DENIED_BUILTINS.join(","),
                  "--permission-mode", "dontAsk",
