@@ -24,6 +24,10 @@ class AppRegistryTest < Minitest::Test
   # Apps whose production_url may disagree, each with the reason. Remove a row
   # when its question is answered; test_every_production_url_exception_is_still_needed
   # fails once the two files agree.
+  # Left the catalog but kept in release_repos.yml as a bare parked row, only so a
+  # card still reviewed on that repo stays held: retired_repo_card_hold_test.rb.
+  RETIRED_HOLDING_A_CARD = %w[chain-ops].freeze
+
   PRODUCTION_URL_EXCEPTIONS = {
     "cyvasse" => "Alex McRitchie owns the Cyvasse URL decision: https://cyvasse.xyz (apps.yml) and " \
                  "https://cyvasse.mcritchie.studio (satellites.yml) both answer, the second 301s to the first " \
@@ -104,6 +108,7 @@ class AppRegistryTest < Minitest::Test
       next if library_slugs.include?(slug) # turf-vault ships as an app member but is a library
 
       app = catalog.apps.find { |entry| entry.slug == slug }
+      next if app.nil? && RETIRED_HOLDING_A_CARD.include?(slug)
       next errors << "release_repos.yml app #{slug} is not an app in config/apps.yml" unless app
 
       ladder = row["ladder"]

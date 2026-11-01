@@ -13,7 +13,6 @@ disagree.
 | Turf Monster | 3100 | 3100-3199 | Showcase |
 | Tax Studio | 3200 | 3200-3299 | Archived |
 | Rolio | 3300 | 3300-3399 | Archived |
-| Chain Ops | 3400 | 3400-3499 | Archived |
 | McRitchie Industries | 3500 | 3500-3599 (3510 held) | Active |
 | Cyvasse | 3600 | 3600-3699 | Showcase |
 | Dads App | 3700 | 3700-3799 | Showcase |

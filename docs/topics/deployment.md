@@ -8,7 +8,6 @@
 - Turf Monster runs on port 3100
 - Tax Studio is planned on port 3200
 - Rolio is reserved on port 3300
-- Chain Ops is planned on port 3400
 
 ## Deployment
 
