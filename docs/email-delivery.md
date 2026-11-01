@@ -364,8 +364,9 @@ H bin/rails "broadcasts:queue_status[cyvasse-four-poster]"
   `queue_status` before you repeat a stage or an execute.
 - **Split the cap evenly.** `DAILY_CAP` (500) is a rolling 24 hours across every
   broadcast, and an execute takes what is left, so one big execute starves the
-  rest. Read what the gate has left and pass the same limit per style: 125 each
-  fits only with nothing else sent in 24 hours.
+  rest. Read what the gate has left on the queue page and pass the same limit per
+  style: 125 each fits only with nothing else sent in 24 hours. On `gate: PAUSED`
+  stop and tell Alex McRitchie; that execute queued nothing.
 - **Let one style finish before the next.** `BATCH_SPACING` paces each execute alone,
   so four at once outrun Resend. 125 takes about 75 seconds.
 - **Check after each style.** Compare queued with sent in `queue_status`. A row whose
