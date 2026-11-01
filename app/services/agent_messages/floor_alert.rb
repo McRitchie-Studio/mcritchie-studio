@@ -211,8 +211,8 @@ module AgentMessages
         if d["builder"]
           return "Change builder failed: the headless builder for `#{d['slug']}` stopped short of submitted " \
                  "(#{d['reason']}); attempt #{d['attempts']} of #{d['max_attempts']}. The card stays building with its desk" \
-                 "#{d['desk'] ? " at #{d['desk']}" : ''}#{d['log'] ? "; log #{d['log']}" : ''}. Continue it by hand: " \
-                 "`#{ChangeBuilds.launch_line(d['slug'], d['desk'])}`"
+                 "#{d['desk'] ? " at #{d['desk']}" : ''}#{d['log'] ? "; log #{d['log']}" : ''}. " \
+                 "#{builder_next_step(d)}"
         end
 
         "Change build not started: the launcher could not run bin/task begin for `#{d['slug']}` (#{d['reason']}). " \
@@ -262,6 +262,15 @@ module AgentMessages
       iso.present? ? ((now - Time.zone.parse(iso)) / 60).floor : "?"
     end
     private_class_method :minutes_since
+
+    # Attempts left: the launcher retries, so no hand launch (it would share the desk).
+    def self.builder_next_step(d)
+      return "No attempts left. Continue it by hand: `#{ChangeBuilds.launch_line(d['slug'], d['desk'])}`" if d["attempts"].to_i >= d["max_attempts"].to_i
+
+      "The launcher retries it by itself #{ChangeBuilds::RETRY_AFTER.inspect} after the failure; do not start a builder by hand " \
+        "while a retry is due (two builders would share the desk)."
+    end
+    private_class_method :builder_next_step
 
     private
 
