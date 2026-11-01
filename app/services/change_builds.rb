@@ -1,6 +1,7 @@
 # Change cards start their builder (runbook: docs/agents/system/client-build-launcher.md,
-# "Change cards"). An owner's `go` on a change proposal in an app's web chat opens a
-# `designed` card (AgentProposals::Executor#change); bin/client-build-launcher on
+# "Change cards"). An owner's `go` on a change proposal in an app's web chat, or
+# Alex McRitchie's own `go` in Slack or Teams, opens a `designed` card
+# (AgentProposals::Executor#change); bin/client-build-launcher on
 # Alex McRitchie's Mac picks that card up here, runs `bin/task begin` for it, and reports
 # back, so the card reaches `building` with a desk and nobody has to notice it.
 #
@@ -11,16 +12,30 @@
 #                         line to the ops channel. refused: bin/task begin failed; the
 #                         card stays designed and the floor alert opens one
 #                         change_build_refused incident for it.
+#   announce_submitted    a started card reaching `submitted` (Task's after_commit)
+#                         posts one line in the same thread: submitted for review,
+#                         with the PR on an owner's Slack or Teams thread.
 #
 # WHICH CARDS, every rule required (never a title match):
 #   - stage designed, not blocked, nobody assigned, not a launch task (AppRequest)
 #   - devops.kind feature, bug or chore, and devops.source_thread present
 #   - exactly one repository, an app in config/apps.yml that is live and tier
 #     studio or product (a basic-tier app is not started)
-#   - CONFIRMED: an AgentProposal of kind change, channel web, status executed,
-#     settled by the person who said go, whose result names this card's slug. The
-#     executor writes that result after the owner's go ran (AgentProposalJob), so a
-#     card the owner never confirmed has no such row and is never started.
+#   - CONFIRMED: an AgentProposal of kind change, status executed, settled by the
+#     person who said go, whose result names this card's slug. The executor writes
+#     that result after the owner's go ran (AgentProposalJob), so a card the owner
+#     never confirmed has no such row and is never started. Its channel is either
+#       web    an app owner's go on their own app's CTO thread (ProposalConfirm's
+#              owner_verdict), as before; or
+#       slack / teams  ONLY Alex McRitchie's go (owner_go?): the go message's
+#              person holds the owner role, the proposal was settled by that
+#              person, and the go's author is the medium's configured owner user
+#              (config/agent_routes.yml slack.owner_user_id, teams.owner_aad_object_id).
+#              A team member's or anyone else's go in Slack never starts a build,
+#              even where ProposalConfirm let it confirm the card.
+#     The repo rule is the same for both: the hub (tier studio) and Turf Monster
+#     (tier product) are already eligible, so an owner's Slack card on either starts;
+#     a basic-tier app or a library waits for a session on every channel.
 #   - its start not already recorded: never started, a refusal past RETRY_AFTER, or
 #     a start left `starting` past STALE_AFTER (a launcher that died mid-begin); at
 #     most max_attempts starts (config/client_builds.yml, the same limit launch
@@ -39,6 +54,10 @@ module ChangeBuilds
   ACTOR = "client-build-launcher".freeze
   BUILDER = "pokemon".freeze
   KINDS = %w[feature bug chore].freeze
+  # The channels a confirming proposal may be on: web (an app owner) and the chat
+  # media where only Alex McRitchie's own go counts (OWNER_ROUTES).
+  CHANNELS = %w[web slack teams].freeze
+  OWNER_ROUTES = { "slack" => "AgentMessages::SlackRoutes", "teams" => "AgentMessages::TeamsRoutes" }.freeze
   TIERS = %w[studio product].freeze
   OUTCOMES = %w[started refused].freeze
   RETRY_AFTER = 10.minutes
@@ -75,10 +94,37 @@ module ChangeBuilds
   def confirmed_proposals(slugs)
     return {} if slugs.empty?
 
-    AgentProposal.where(kind: "change", channel: "web", status: "executed").where.not(settled_by: [ nil, "" ])
-                 .where("agent_proposals.result->>'task_slug' IN (?)", slugs).order(:id)
+    AgentProposal.where(kind: "change", channel: CHANNELS, status: "executed").where.not(settled_by: [ nil, "" ])
+                 .where("agent_proposals.result->>'task_slug' IN (?)", slugs).includes(confirm_message: :person).order(:id)
+                 .select { |proposal| confirmer_may_start?(proposal) }
                  .index_by { |proposal| proposal.result["task_slug"] }
   end
+
+  # Whoever said go may have the card started: an app owner on web (ProposalConfirm
+  # already held them to their own app's thread), or Alex McRitchie in Slack/Teams.
+  def confirmer_may_start?(proposal) = proposal.channel == "web" || owner_go?(proposal)
+
+  # ALEX McRITCHIE'S OWN GO in Slack or Teams, from facts code wrote (never the
+  # message text): the go is on the proposal's medium, its person holds the owner
+  # role and settled the proposal, and its author is the medium's configured owner
+  # user. A blank configured id (Teams before its tenant exists) answers false.
+  def owner_go?(proposal)
+    routes = OWNER_ROUTES[proposal.channel.to_s]
+    go = proposal.confirm_message
+    return false unless routes && go && go.channel == proposal.channel && go.person&.role == "owner"
+    return false unless proposal.settled_by.to_s == "person:#{go.person_id}"
+
+    owner = routes.constantize.current.owner_user_id.to_s.strip
+    owner.present? && go.author_ref.to_s == owner
+  end
+
+  # Whether the launcher will pick up the card this confirmed proposal opens in
+  # `repo`: the executor's go answer says so only when it will.
+  def starts?(proposal, repo:, kind:)
+    confirmer_may_start?(proposal) && KINDS.include?(kind.to_s) && eligible_repos.include?(repo.to_s)
+  end
+
+  def chat?(proposal) = OWNER_ROUTES.key?(proposal.channel.to_s)
 
   def candidates(limit: CANDIDATE_LIMIT, now: Time.current)
     repos = eligible_repos
@@ -167,11 +213,27 @@ module ChangeBuilds
       "to take the desk, then building-sop from Step 2.\""
   end
 
-  def thread_text(slug) = "Building started, task `#{slug}`."
+  # The thread's line. On the owner's own Slack or Teams thread it carries the
+  # launch line too: he is the operator who runs it.
+  def thread_text(task, proposal = nil)
+    line = "Building started, task `#{task.slug}`."
+    launch = run_of(task)["launch_line"]
+    return line unless proposal && chat?(proposal) && launch.present?
 
-  def ops_text(task)
+    "#{line} Its desk is cut and the card is building; start its builder with: `#{launch}`"
+  end
+
+  def submitted_text(task, proposal)
+    line = "Submitted for review, task `#{task.slug}`."
+    return line unless chat?(proposal)
+
+    "#{line} #{[ task.pr_url.presence, proposal.task_url(task.slug) ].compact.join(' · ')}"
+  end
+
+  def ops_text(task, proposal = confirmed_proposals([ task.slug ])[task.slug])
     run = run_of(task)
-    "Change build started: `#{task.slug}` (#{task.devops['repositories'].first}, from the app's web chat) is building " \
+    from = proposal ? proposal.requested_in : "a chat"
+    "Change build started: `#{task.slug}` (#{task.devops['repositories'].first}, from #{from}) is building " \
       "with its desk#{run['desk'] ? " at #{run['desk']}" : ''}. Start its builder: `#{run['launch_line']}`"
   end
 
@@ -180,7 +242,18 @@ module ChangeBuilds
   def announce_started(task)
     proposal = confirmed_proposals([ task.slug ])[task.slug]
     safely(task) { post_to_thread!(task, proposal) } if proposal
-    safely(task) { post_to_ops!(task) }
+    safely(task) { post_to_ops!(task, proposal: proposal) }
+  end
+
+  # A card the launcher started, reaching `submitted`: one line in its thread.
+  # Called from Task's after_commit; never raises (a failure is an ErrorLog row).
+  def announce_submitted(task)
+    return unless run_of(task)["state"] == "started"
+
+    safely(task) do
+      proposal = confirmed_proposals([ task.slug ])[task.slug]
+      post_to_thread!(task, proposal, kind: "submitted") if proposal
+    end
   end
 
   def safely(task)
@@ -190,36 +263,47 @@ module ChangeBuilds
     nil
   end
 
-  # One code-written line in the web thread the proposal came from, stored already
-  # answered so no dispatcher claims it, and idempotent per card (external_id).
-  def post_to_thread!(task, proposal, now: Time.current)
-    external = "change-build:#{task.slug}:started"
-    existing = AgentMessage.find_by(channel: "web", external_id: external)
+  # One code-written line in the thread the proposal came from, idempotent per
+  # card and kind (external_id). On web it is stored already answered, so no
+  # dispatcher claims it. On Slack or Teams it is stored completed with its reply
+  # queued, so the one reply path (AgentMessageReplyJob, Media#deliver_reply)
+  # posts it in that thread as the proposal's soul.
+  def post_to_thread!(task, proposal, kind: "started", now: Time.current)
+    external = "change-build:#{task.slug}:#{kind}"
+    existing = AgentMessage.find_by(channel: proposal.channel, external_id: external)
     return existing if existing
 
+    text = kind == "submitted" ? submitted_text(task, proposal) : thread_text(task, proposal)
     source = proposal.confirm_message || proposal.source_message
+    web = proposal.channel == "web"
+    envelope = (web ? {} : source&.envelope.to_h.slice("service_url", "conversation_id", "activity_id", "from_id", "channel_type"))
+                 .merge("via" => ClientBuilds::VIA, "kind" => kind, "task" => task.slug)
     message = AgentMessage.create!(
-      channel: "web", external_id: external, channel_ref: proposal.channel_ref, thread_key: proposal.thread_key,
-      author_ref: source&.author_ref, author_name: source&.author_name, person: proposal.person,
-      content: ClientBuilds.content_marker("started"), mentions: {}, sent_at: now, soul_slug: proposal.soul_slug,
-      routed_by: "chat", status: "completed", completed_at: now, hold_released_at: now, hold_released_by: ACTOR,
-      action_summary: "build progress (started)", response_text: thread_text(task.slug), reply_posted_at: now,
-      reply_status: "posted", envelope: { "via" => ClientBuilds::VIA, "kind" => "started", "task" => task.slug },
+      channel: proposal.channel, external_id: external, channel_ref: proposal.channel_ref, thread_key: proposal.thread_key,
+      guild_id: proposal.guild_id, author_ref: source&.author_ref, author_name: source&.author_name, person: proposal.person,
+      content: ClientBuilds.content_marker(kind), mentions: {}, sent_at: now, soul_slug: proposal.soul_slug,
+      routed_by: web ? "chat" : "thread", status: "completed", completed_at: now, hold_released_at: now,
+      hold_released_by: ACTOR, action_summary: "build progress (#{kind})", response_text: text,
+      reply_posted_at: (now if web), reply_status: web ? "posted" : "queued", envelope: envelope,
       run_meta: { "code_written" => true }
     )
-    message.update!(reply_nonce: "agentmsg-#{message.id}", reply_external_id: "web:#{message.id}")
-    message.record!("completed", actor: ACTOR, detail: { "via" => ClientBuilds::VIA, "kind" => "started" })
-    AgentMessages::WebChat.broadcast_turn(message, append: true)
+    message.update!({ reply_nonce: "agentmsg-#{message.id}" }.merge(web ? { reply_external_id: "web:#{message.id}" } : {}))
+    message.record!("completed", actor: ACTOR, detail: { "via" => ClientBuilds::VIA, "kind" => kind })
+    if web
+      AgentMessages::WebChat.broadcast_turn(message, append: true)
+    else
+      AgentMessageReplyJob.perform_later(message.id)
+    end
     message
   end
 
   # The ops line goes to the floor alert's home (config/agent_media.yml
   # `purposes.floor_alert`: discord #ops), as the shared bot.
-  def post_to_ops!(task, home: Media.home(purpose: :floor_alert), bot: nil)
+  def post_to_ops!(task, home: Media.home(purpose: :floor_alert), bot: nil, proposal: nil)
     return if home.nil? || !home.channel?
     return if home.medium == "discord" && bot.nil? && !AgentMessages::DiscordBot.configured?
 
-    payload = { content: ops_text(task)[0, 1900], nonce: "chb-#{task.id}-#{run_of(task)['attempts'].to_i}" }
+    payload = { content: (proposal ? ops_text(task, proposal) : ops_text(task))[0, 1900], nonce: "chb-#{task.id}-#{run_of(task)['attempts'].to_i}" }
     payload[:bot] = bot if bot
     Media.post(home, **payload)
   end

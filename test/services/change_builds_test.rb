@@ -7,9 +7,49 @@ require "test_helper"
 class ChangeBuildsTest < ActiveSupport::TestCase
   include ActionCable::TestHelper
 
+  include ActiveJob::TestHelper
+
+  OWNER_SLACK = "U0OWNER001".freeze
+
   setup do
     @t0 = Time.current
     @seq = 0
+    AgentMessages::SlackRoutes.current = AgentMessages::SlackRoutes.new(
+      "team_id" => "T0TEST0001", "bot_user_id" => "U0APPBOT01", "owner_user_id" => OWNER_SLACK, "souls" => { "avi" => {} }
+    )
+  end
+
+  teardown { AgentMessages::SlackRoutes.reset! }
+
+  def person!(role)
+    AgentPerson.create!(display_name: "#{role} #{SecureRandom.hex(2)}").tap { |p| p.set_role!(role, client_domain: (role == "client" ? "turf_monster" : nil)) }
+  end
+
+  def slack_message!(author:, person:, content:, ts:)
+    AgentMessage.create!(channel: "slack", external_id: "C0DESK0001:#{ts}", channel_ref: "C0DESK0001",
+                         guild_id: "T0TEST0001", thread_key: "slack:C0DESK0001:1761800000.000001",
+                         author_ref: author, author_name: "Someone", person: person, content: content,
+                         soul_slug: "avi", routed_by: "thread", status: "completed",
+                         envelope: { "channel_type" => "channel" })
+  end
+
+  # A designed card opened from a Slack proposal, confirmed by `go` from `author`
+  # (the person `person`, settled as `settled_by`; :go for the go's own person).
+  def slack_card!(slug, repo: "mcritchie-studio", author: OWNER_SLACK, person: person!("owner"), settled_by: :go)
+    task = Task.create!(title: "Admin page #{slug}", slug: slug, stage: "designed", priority: 1,
+                        metadata: { "devops" => { "kind" => "feature", "shape" => "ui-only", "repositories" => [ repo ],
+                                                  "acceptance" => [ "one admin link" ],
+                                                  "source_thread" => "https://slack.com/archives/C0DESK0001/p1" } })
+    @seq += 1
+    ask = slack_message!(author: author, person: person, content: "Avi, combine the admin links", ts: "1761800000.#{format('%06d', @seq)}")
+    @seq += 1
+    go = slack_message!(author: author, person: person, content: "go", ts: "1761800000.#{format('%06d', @seq)}")
+    AgentProposal.create!(thread_key: ask.thread_key, channel: "slack", channel_ref: "C0DESK0001", guild_id: "T0TEST0001",
+                          soul_slug: "avi", source_message: ask, confirm_message: go, kind: "change", capability: "task",
+                          params: { "title" => task.title }, summary: "Open a task", status: "executed",
+                          settled_by: settled_by == :go ? "person:#{person.id}" : settled_by, settled_at: @t0,
+                          expires_at: 1.day.from_now, result: { "task_slug" => slug })
+    task
   end
 
   def web_message!(app: "turf-monster", user_id: 41, content: "Can you add a dark toggle?")
@@ -161,5 +201,109 @@ class ChangeBuildsTest < ActiveSupport::TestCase
 
     assert_empty ChangeBuilds.candidates(now: @t0 + 29.minutes)
     assert_equal [ "died-mid-begin" ], ChangeBuilds.candidates(now: @t0 + 31.minutes).map { |c| c["task_slug"] }
+  end
+
+  test "Alex McRitchie's own Slack go starts a hub card and a Turf card" do
+    slack_card!("combine-admin-links")
+    slack_card!("turf-slack-card", repo: "turf-monster")
+
+    assert_equal %w[combine-admin-links turf-slack-card], picked.sort
+    assert_equal "mcritchie-studio", ChangeBuilds.candidates(now: @t0).find { |c| c["task_slug"] == "combine-admin-links" }["repo"]
+  end
+
+  test "a Slack go not from the verified owner never starts a build; control: the owner's does" do
+    slack_card!("wrong-author", author: "U0OTHER001")                  # owner role, not the configured Slack user
+    slack_card!("team-person", person: person!("team"))                # the owner's Slack id, a team person
+    slack_card!("client-person", person: person!("client"))
+    slack_card!("other-settler", settled_by: "person:#{person!('owner').id}") # settled by someone else
+    slack_card!("basic-app", repo: "moms-app")                         # the owner, but a basic-tier app
+    assert_empty picked
+
+    AgentMessages::SlackRoutes.current = AgentMessages::SlackRoutes.new("team_id" => "T0TEST0001", "owner_user_id" => "")
+    slack_card!("no-owner-configured")
+    assert_empty picked, "a blank configured owner id starts nothing"
+
+    AgentMessages::SlackRoutes.current = AgentMessages::SlackRoutes.new("team_id" => "T0TEST0001", "owner_user_id" => OWNER_SLACK)
+    assert_equal [ "no-owner-configured" ], picked
+  end
+
+  test "a Discord go on the same card is not started: only web and the owner's Slack or Teams" do
+    card = slack_card!("discord-card")
+    AgentProposal.find_by!("result->>'task_slug' = ?", card.slug).update_columns(channel: "discord")
+
+    assert_empty picked
+  end
+
+  test "an owner's Slack start posts the started line (with the launch line) into the Slack thread through the reply job" do
+    card = slack_card!("combine-admin-links")
+    ChangeBuilds.claim!(card.slug, worker: "mac", run: "r1", now: @t0)
+    desk = "/Users/alex/projects/mcritchie-studio/.worktrees/combine-admin-links"
+
+    assert_enqueued_with(job: AgentMessageReplyJob) do
+      ChangeBuilds.finish!(card.slug, run: "r1", outcome: "started", desk: desk, now: @t0)
+    end
+    proposal = AgentProposal.find_by!("result->>'task_slug' = ?", card.slug)
+    line = AgentMessage.find_by!(channel: "slack", external_id: "change-build:combine-admin-links:started")
+    assert_equal [ proposal.thread_key, "C0DESK0001", "T0TEST0001", "queued", "completed", OWNER_SLACK ],
+                 [ line.thread_key, line.channel_ref, line.guild_id, line.reply_status, line.status, line.author_ref ]
+    assert line.response_text.start_with?("Building started, task `combine-admin-links`.")
+    assert_includes line.response_text, "cd #{desk} && claude --agent pokemon"
+    assert_equal "1761800000.000001", Media::Slack.thread_ts(line), "the reply lands in the proposal's thread"
+    assert ClientBuilds.progress?(line)
+
+    assert_no_difference -> { AgentMessage.count } do
+      ChangeBuilds.post_to_thread!(card.reload, proposal)
+    end
+  end
+
+  test "a started card reaching submitted posts one submitted line, with the PR on the owner's Slack thread" do
+    card = slack_card!("combine-admin-links")
+    ChangeBuilds.claim!(card.slug, worker: "mac", run: "r1", now: @t0)
+    ChangeBuilds.finish!(card.slug, run: "r1", outcome: "started", desk: "/tmp/desk", now: @t0)
+    card.reload.update_columns(pr_url: "https://github.com/McRitchie-Studio/mcritchie-studio/pull/9")
+
+    assert_difference -> { AgentMessage.where(channel: "slack").count }, 1 do
+      ChangeBuilds.announce_submitted(card.reload)
+      ChangeBuilds.announce_submitted(card.reload)
+    end
+    line = AgentMessage.find_by!(external_id: "change-build:combine-admin-links:submitted")
+    assert_equal "Submitted for review, task `combine-admin-links`. https://github.com/McRitchie-Studio/mcritchie-studio/pull/9 · " \
+                 "#{AgentProposal::BOARD_URL}/tasks/combine-admin-links", line.response_text
+  end
+
+  test "a card the launcher never started posts nothing at submitted; a web card's submitted line names no PR" do
+    never = slack_card!("never-started")
+    assert_no_difference -> { AgentMessage.count } do
+      ChangeBuilds.announce_submitted(never)
+    end
+
+    web = chat_card!("web-card")
+    ChangeBuilds.claim!(web.slug, worker: "mac", run: "r1", now: @t0)
+    ChangeBuilds.finish!(web.slug, run: "r1", outcome: "started", desk: "/tmp/desk", now: @t0)
+    web.reload.update_columns(pr_url: "https://github.com/McRitchie-Studio/turf-monster/pull/3")
+    ChangeBuilds.announce_submitted(web.reload)
+    line = AgentMessage.find_by!(channel: "web", external_id: "change-build:web-card:submitted")
+    assert_equal [ "Submitted for review, task `web-card`.", "posted" ], [ line.response_text, line.reply_status ]
+  end
+
+  test "Task's after_commit announces the submitted move" do
+    card = slack_card!("hooked-card")
+    ChangeBuilds.claim!(card.slug, worker: "mac", run: "r1", now: @t0)
+    ChangeBuilds.finish!(card.slug, run: "r1", outcome: "started", desk: "/tmp/desk", now: @t0)
+    card.reload.update_columns(stage: "building")
+
+    card.reload.update!(stage: "submitted")
+    assert AgentMessage.exists?(external_id: "change-build:hooked-card:submitted")
+  end
+
+  test "starts? answers the executor: the owner's Slack go on an eligible repo, never a basic app or a docs kind" do
+    card = slack_card!("asked")
+    proposal = AgentProposal.find_by!("result->>'task_slug' = ?", card.slug)
+
+    assert ChangeBuilds.starts?(proposal, repo: "mcritchie-studio", kind: "feature")
+    refute ChangeBuilds.starts?(proposal, repo: "moms-app", kind: "feature")
+    refute ChangeBuilds.starts?(proposal, repo: "mcritchie-studio", kind: "docs")
+    proposal.update_columns(settled_by: "person:0")
+    refute ChangeBuilds.starts?(proposal.reload, repo: "mcritchie-studio", kind: "feature")
   end
 end

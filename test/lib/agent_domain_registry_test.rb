@@ -168,4 +168,29 @@ class AgentDomainRegistryTest < ActiveSupport::TestCase
       end
     end
   end
+
+  # Avi's card risk note came back "System tests or shared layouts may depen": a
+  # 40-character cap cut mid-word. A risk line now holds a real note, and any
+  # field over its cap ends at a word boundary with an ellipsis.
+  def test_a_risk_note_is_kept_whole_and_an_over_long_field_clips_at_a_word_boundary
+    note = "System tests or shared layouts may depend on the current admin sidebar links"
+    verdict = @registry.validate(soul: "avi", audience: @owner, proposal: change("risk" => [ note ]))
+    assert verdict.ok?, verdict.reason
+    assert_equal [ note ], verdict.proposal["params"]["risk"]
+
+    long = ("word " * 60).strip + " tail"
+    risk = @registry.validate(soul: "avi", audience: @owner, proposal: change("risk" => [ long ])).proposal["params"]["risk"].sole
+    assert_operator risk.length, :<=, AgentMailbox::DomainRegistry::RISK_MAX
+    assert risk.end_with?("word…"), "ends on a whole word, then the ellipsis: #{risk.inspect}"
+  end
+
+  def test_clip_keeps_short_text_ends_on_whole_words_and_cuts_one_giant_word
+    registry = @registry
+    clip = ->(text, max) { registry.send(:clip, text, max) }
+    assert_equal "short", clip.call("short", 40)
+    assert_equal "System tests or shared layouts may…", clip.call("System tests or shared layouts may depend on it", 40)
+    assert_equal "abc, def…", clip.call("abc, def, ghi", 11)
+    assert_equal "#{'x' * 9}…", clip.call("x" * 30, 10), "one word longer than the cap is cut, still within it"
+    assert_equal "#{"x" * 30}…", clip.call("#{"x" * 30} #{"y" * 30}", 40), "the whole first word, not half of the second"
+  end
 end

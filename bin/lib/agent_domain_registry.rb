@@ -37,6 +37,9 @@ module AgentMailbox
     TITLE_MAX = 80
     LINE_MAX = 200
     LIST_MAX = 5
+    # A risk note is a short line, not a tag: 40 cut real notes mid-word
+    # ("System tests or shared layouts may depen").
+    RISK_MAX = 120
     SUMMARY_MAX = 200
     NAME = /\A[a-z][a-z0-9_]{0,40}\z/
 
@@ -219,7 +222,7 @@ module AgentMailbox
         "shape" => { "type" => "enum", "values" => shapes, "default" => spec["default_shape"].to_s },
         "accept" => { "type" => "list", "max_items" => LIST_MAX, "max" => LINE_MAX, "required" => true },
         "test" => { "type" => "list", "max_items" => LIST_MAX, "max" => LINE_MAX, "required" => true },
-        "risk" => { "type" => "list", "max_items" => LIST_MAX, "max" => 40 }
+        "risk" => { "type" => "list", "max_items" => LIST_MAX, "max" => RISK_MAX }
       }
     end
 
@@ -287,9 +290,23 @@ module AgentMailbox
     end
 
     # One line of plain text: control characters and markdown links out,
-    # whitespace folded, mentions defanged, cut to `max`.
+    # whitespace folded, mentions defanged, cut to `max` (clip).
     def plain(value, max)
-      value.to_s.gsub(/[[:cntrl:]]/, " ").gsub(/<@[!&]?\d+>|@(everyone|here)/, "").gsub(/\s+/, " ").strip[0, max.to_i]
+      clip(value.to_s.gsub(/[[:cntrl:]]/, " ").gsub(/<@[!&]?\d+>|@(everyone|here)/, "").gsub(/\s+/, " ").strip, max.to_i)
+    end
+
+    # Text over `max` characters ends at the last word boundary that keeps at
+    # least half of it, then an ellipsis, all within `max`; never mid-word
+    # unless one word fills the line.
+    def clip(text, max)
+      return text if text.length <= max
+      return text[0, [ max, 0 ].max] if max < 2
+
+      cut = text[0, max - 1]
+      boundary = cut.rindex(" ")
+      boundary = nil if boundary && boundary < max / 2
+      head = boundary && text[max - 1] != " " ? cut[0, boundary] : cut
+      "#{head.rstrip.sub(/[,;:.\-]+\z/, '')}…"
     end
 
     def describe_params(schema)

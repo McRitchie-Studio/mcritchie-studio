@@ -9,10 +9,11 @@ module AgentProposals
   #           the email's admin page, or the app's web chat), and the files the
   #           proposal's message carried attached to the task as references to
   #           the same blobs (Task#attachments). A web-chat card on a studio
-  #           or product app is then started by the build launcher on Alex McRitchie's
-  #           Mac (ChangeBuilds: bin/task begin, the thread's "Building started"
-  #           line, the builder launch line to ops); any other card waits for a
-  #           session.
+  #           or product app, or a card Alex McRitchie himself confirmed in Slack
+  #           or Teams (ChangeBuilds.owner_go?), is then started by the build
+  #           launcher on Alex McRitchie's Mac (ChangeBuilds: bin/task begin, the
+  #           thread's "Building started" line, the builder launch line to ops),
+  #           and the go answer says so; any other card waits for a session.
   #   operate the named operation (AgentProposals::Operations) with the params
   #           frozen at propose time, through the domain's operator client
   #           (Turf Monster's operator endpoint). Its result records who said go.
@@ -20,6 +21,11 @@ module AgentProposals
   # Raises on any failure; AgentProposalJob logs it and leaves the proposal open.
   class Executor
     class NotEnabled < StandardError; end
+
+    # Appended to a change's go answer only when the build launcher will start the
+    # card (ChangeBuilds.starts?), so the thread is told the truth either way.
+    STARTS_TEXT = "\nThe build launcher starts it next: it cuts the desk and claims the card, " \
+                  "and this thread hears when building has started.".freeze
 
     # The satellite health reader asks use; a test sets a fake here.
     class << self
@@ -98,7 +104,9 @@ module AgentProposals
         created
       end
       url = @proposal.task_url(task.slug)
-      [ "Opened `#{task.slug}` #{url}", { "task_slug" => task.slug, "task_url" => url, "files" => (blobs.size if blobs.any?) }.compact ]
+      starts = ChangeBuilds.starts?(@proposal, repo: spec["repo"], kind: task.devops["kind"])
+      [ "Opened `#{task.slug}` #{url}#{STARTS_TEXT if starts}",
+        { "task_slug" => task.slug, "task_url" => url, "files" => (blobs.size if blobs.any?) }.compact ]
     end
 
     # The blobs on the message the proposal answered (a web chat message's
