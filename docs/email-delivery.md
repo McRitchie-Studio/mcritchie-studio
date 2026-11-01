@@ -344,7 +344,7 @@ Running a send of the four. Nothing schedules it: someone runs each step by hand
 in the window, on production, and only on Alex McRitchie's go.
 
 ```bash
-H() { heroku run -a mcritchie-studio --no-tty -- "$@"; }
+H() { heroku run -a mcritchie-studio --no-tty -x -- "$@"; }
 H env LIMIT=500 bin/rails broadcasts:stage_cyvasse_four
 # preview each style in /broadcasts/<slug>/queue, then for each cyvasse-four-<style>:
 H bin/rails "broadcasts:approve[cyvasse-four-poster,all]"
