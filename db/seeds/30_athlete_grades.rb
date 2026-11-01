@@ -1,12 +1,12 @@
-# Athlete grades — fallback layer for athletes not in any PFF CSV.
+# Athlete grades: the fallback layer for athletes no PFF file covered.
 #
-# By the time this runs:
-#   29_pff_grades.rb has imported ~570 real PFF grades for starters/role
-#   players. The athletes left here are backups + practice-squad — by definition
-#   non-stars without enough snaps for a meaningful PFF grade. They get a flat
-#   50.0 placeholder so ranking pages and the player-impact simulator have a
-#   value to sort/compute against; depth chart ordering itself comes from
-#   ESPN's scraper now (espn:scrape_depth_charts), not from grades.
+# The repo ships no PFF data (see 29_pff_grades.rb), so on a clean checkout seed 29
+# imported nothing and THIS FILE WRITES EVERY GRADE: a flat 50.0 placeholder for
+# each active NFL athlete, sub-grades left empty, and tier-based grades for drafted
+# prospects. A flat 50.0 is not a measurement. Ranking pages and the player-impact
+# simulator get a value to sort and compute against, and that is all; depth chart
+# ordering itself comes from ESPN's scraper (espn:scrape_depth_charts), not from
+# grades. With a licensed export imported first, athletes it covers keep their rows.
 #
 # Prospects keep the tier-based grading with grade_ranges JSONB since draft
 # slot is the only signal we have for them pre-NFL.
@@ -77,7 +77,8 @@ end
 nfl_season = Season.find_by(year: 2025, league: "nfl")
 
 if nfl_season
-  # Non-PFF active NFL athletes — flat baseline, find_or_create skips PFF rows
+  # Active NFL athletes with no imported grade: flat baseline. find_or_create skips
+  # any row an imported PFF file already wrote.
   Athlete.joins(:person).joins("INNER JOIN contracts ON contracts.person_slug = people.slug AND contracts.contract_type = 'active'")
          .where(sport: "football")
          .distinct.find_each do |athlete|

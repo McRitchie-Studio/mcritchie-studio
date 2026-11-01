@@ -42,8 +42,10 @@
 /app/assets/builds/*
 !/app/assets/builds/.keep
 
-# PFF data files
+# PFF data files. PFF's terms read as barring hosting: a licensed export stays on
+# the operator's machine and never enters this public repo (ruling 2026-11-01).
 /lib/pff/
+/db/seeds/data/pff/
 
 # Playwright
 # No trailing slash: "node_modules/" matches only a directory, and a desk once held
