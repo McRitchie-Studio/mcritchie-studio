@@ -111,7 +111,7 @@ steps just to feel safer about code loss.
 
 ## Leave A Cleaner Trail
 
-When code behavior, setup, ports, credentials, or workflows change, update the doc a future agent would read first. If a stale file cannot be deleted yet, add it to `docs/agents/maintenance/delete-later.md`.
+When code behavior, setup, ports, credentials, or workflows change, update the doc a future agent would read first. If a stale file cannot be deleted yet, add it to `docs/agents/maintenance/parking-lot.md`.
 
 ## Quality Bar
 

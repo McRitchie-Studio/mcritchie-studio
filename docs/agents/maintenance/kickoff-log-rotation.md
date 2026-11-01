@@ -27,7 +27,7 @@ accumulated in the one environment nobody watches.
 
 `bin/clean-artifacts` already exists and does the right sweep. **Nothing calls
 it.** The only references are three frozen June audit docs and the delete-later
-ledger. A correct script that no process runs is how this rotted the first time —
+ledger (retired 2026-11-01). A correct script that no process runs is how this rotted the first time —
 so the fix must not depend on anyone remembering to run it.
 
 ## Task 1 — studio-engine: rotation that nobody runs
@@ -163,9 +163,9 @@ Report moved-file count in the SOP **Exit Seam**, and add the step to
 
 ### While you are in there — cap the ledger
 
-`docs/agents/maintenance/delete-later.md` is **1,014 lines** and grew 78 in a
-single reclaim run. The ledger that tracks deletions is becoming the thing that
-needs one. Give it a rollover: entries older than one release cycle move into
+Done, then superseded: the delete-later ledger was retired on 2026-11-01 (see
+[`parking-lot.md`](parking-lot.md#retired-delete-later-ledger)). The original request:
+entries older than one release cycle move into
 `docs/agents/archive/`, on the same archive beat.
 
 ## What rotation cannot reach

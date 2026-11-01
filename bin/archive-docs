@@ -1,14 +1,12 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# archive-docs — retire frozen doc snapshots out of the live tree, and roll over
-# the delete-later ledger.
+# archive-docs — retire frozen doc snapshots out of the live tree.
 #
 #   bin/archive-docs                        # perform it
 #   bin/archive-docs --dry-run              # report only, change nothing
-#   bin/archive-docs --ledger-cutoff=2026-08-09
 #   bin/archive-docs --json                 # machine summary only
-#   bin/archive-docs --help                 # usage; SWEEPS NOTHING, ROLLS NOTHING
+#   bin/archive-docs --help                 # usage; SWEEPS NOTHING
 #
 # `bin/release archive` drives this beside the log sweep, same contract:
 # --dry-run previews, the confirm authorizes it. Nothing is ever deleted; every
@@ -17,27 +15,24 @@
 # snapshot is someone's live citation, and the referrer gets fixed first,
 # deliberately, rather than being silently orphaned.
 #
-# Moves are STAGED, not committed: bin/release archive already commits the
-# ledger artifact, and a standalone run leaves a reviewable `git status`.
+# Moves are STAGED, not committed: bin/release archive commits them, and a
+# standalone run leaves a reviewable `git status`.
 
 require "fileutils"
 require "json"
 require_relative "lib/cli_arg_guard"
 require_relative "lib/docs_archive"
-require_relative "lib/ledger_guard"
 require_relative "lib/repo_root"
 
 USAGE = <<~TXT
-  usage: bin/archive-docs [--repo <path>] [--ledger-cutoff <YYYY-MM-DD>] [--dry-run] [--json]
+  usage: bin/archive-docs [--repo <path>] [--dry-run] [--json]
 
-    Retire frozen doc snapshots out of the live tree into docs/agents/archive/,
-    and roll resolved delete-later ledger rows into the ledger archive.
+    Retire frozen doc snapshots out of the live tree into docs/agents/archive/.
 
     --repo <path>           repository to sweep (default: this script's checkout)
-    --ledger-cutoff <date>  override the derived cycle boundary
     --dry-run               report only; changes nothing
     --json                  print the machine summary line only
-    --help, -h              this text — SWEEPS NOTHING, ROLLS NOTHING
+    --help, -h              this text — SWEEPS NOTHING
 
   Nothing is ever deleted: every retirement is a `git mv`, staged not committed.
   Both `--flag=value` and `--flag value` parse.
@@ -49,13 +44,10 @@ TXT
 # Until 2026-08-31 the four lines below were the ENTIRE parser: four exact
 # spellings read out of ARGV, with no notion of an argument this script does not
 # recognize. So `bin/archive-docs --help` matched nothing, was silently dropped,
-# and fell straight through to a REAL archive roll — it rewrote
-# docs/agents/maintenance/delete-later.md by -41 lines and staged a second file,
-# for an operator who was only asking what the command does. The ledger is
-# append-only audit product; the rows it was mid-roll on had no reflog behind
-# them, and only his copy-first habit saved them.
+# and fell straight through to a REAL archive roll, for an operator who was only
+# asking what the command does.
 #
-# The guard runs FIRST — ahead of the ledger loss check, ahead of the sweep —
+# The guard runs FIRST, ahead of the sweep,
 # because a probe has to be answerable before anything can mutate, and it has to
 # work on a repo whose state would make the real action refuse.
 ARGS = CliArgGuard.guard!(
@@ -63,12 +55,11 @@ ARGS = CliArgGuard.guard!(
   program: "archive-docs",
   usage: USAGE,
   bool: %w[--dry-run --json],
-  value: %w[--repo --ledger-cutoff],
-  # exit 0 because THIS script's 0 means only "it ran". Contrast bin/ledger-guard,
-  # whose 0 is a green verdict, and bin/devops-shift, whose 0 asserts "you are on
-  # shift" — both must answer help with non-zero so it is never read as that claim.
+  value: %w[--repo],
+  # exit 0 because THIS script's 0 means only "it ran". Contrast bin/devops-shift,
+  # whose 0 asserts "you are on shift", so it answers help with non-zero.
   help_exit: 0,
-  consequence: "NOTHING was archived and the ledger was NOT rolled."
+  consequence: "NOTHING was archived."
 )
 
 DRY       = ARGS.bool?("--dry-run")
@@ -78,57 +69,12 @@ JSON_ONLY = ARGS.bool?("--json")
 REPO      = ARGS.first("--repo") ||
             RepoRoot.git_toplevel(__dir__) ||
             File.expand_path("..", __dir__)
-CUTOFF    = ARGS.first("--ledger-cutoff")
 
 def say(message = "")
   puts(message) unless JSON_ONLY
 end
 
-# THE MOVE-NEVER-DELETE INVARIANT, checked against HEAD at both ends of the roll.
-#
-# BEFORE, because this beat is where the damage was FIRST observable and where it
-# became permanent: a teardown driven from a desk carrying a stale bin/agent-worktree
-# overwrites a dated row in the hub's working tree, and the next `bin/release archive`
-# commits the loss. Refusing here means the sweep never stages on top of a ledger that
-# has already lost history — and the row is still one `git show HEAD:` away.
-#
-# THE EXIT CODE ONLY PROTECTS ANYTHING BECAUSE THE CALLER READS IT. This refusal shipped
-# INERT: bin/release.rb's sweep_docs returns [out, ok] and BOTH call sites took `.first`,
-# so `bin/release archive` printed the warning and went on to commit the ledger and its
-# archive to `release` — committing the very loss refused here. Exiting non-zero is half a
-# guard; the other half is bin/release.rb's abort, pinned by
-# test/lib/release_archive_docs_refusal_test.rb. Do not describe this as a guarantee
-# without checking that both halves are still in place.
-#
-# AFTER, because the roll itself writes both files, and a post-condition on a
-# move is cheap: the union it produced must still hold every row it was handed.
-#
-# A dry run REPORTS and exits 0 — it changes nothing, and a preview that returns
-# failure wedges the callers that preview before confirming. An APPLY refuses.
-def refuse_if_ledger_lost!(repo, when_label, dry:)
-  losses = LedgerGuard.lost_against_ref(repo, "HEAD")
-  return if losses.empty?
-
-  warn "==> DELETE-LATER LEDGER: rows destroyed (#{when_label})"
-  warn LedgerGuard.report(losses, base_label: "HEAD")
-  exit 1 unless dry
-rescue LedgerGuard::UnreadableBase => e
-  # "I could not read HEAD's ledger" is not "HEAD's ledger was empty". The comparison
-  # certified nothing, so an APPLY refuses exactly as it does for a real loss rather than
-  # rolling on top of a baseline it never saw. A dry run still reports and exits 0.
-  warn "==> DELETE-LATER LEDGER: baseline unreadable (#{when_label})"
-  warn "    #{e.message}"
-  exit 1 unless dry
-end
-
 # --- the doc sweep -----------------------------------------------------------
-# Ledger FIRST, on purpose. Rows in delete-later.md cite dated docs, so a row
-# that rolls over stops pinning the doc it named — and that doc becomes
-# archivable in the SAME run instead of waiting for the next one.
-refuse_if_ledger_lost!(REPO, "already lost before this sweep ran", dry: DRY)
-ledger = DocsArchive.roll_ledger!(REPO, cutoff: CUTOFF, apply: !DRY)
-refuse_if_ledger_lost!(REPO, "lost by the rollover itself", dry: DRY) unless DRY
-
 plan = DocsArchive.plan(REPO)
 
 say("==> Archiving frozen doc snapshots#{DRY ? ' (dry-run — nothing will change)' : ''}")
@@ -153,27 +99,6 @@ end
 
 moved = DRY ? plan[:moves].size : DocsArchive.apply_moves!(REPO, plan[:moves])
 
-# --- the ledger --------------------------------------------------------------
-
-say
-if ledger[:rolled].positive?
-  say("==> Ledger rollover: #{DRY ? 'would roll' : 'rolled'} #{ledger[:rolled]} resolved row(s) " \
-      "older than #{ledger[:cutoff]} → #{DocsArchive::LEDGER_ARCHIVE}")
-  say("    Undated rows (\"pending approval\", \"reference only\") are UNRESOLVED and always stay.")
-else
-  say("==> Ledger rollover: nothing older than #{ledger[:cutoff] || 'n/a'} to roll.")
-end
-
-# Say WHY nothing rolled when the reason is "it already did". Silence here is what
-# cost the previous three runs a re-verification pass apiece.
-if ledger[:already_landed].to_i.positive?
-  say("    #{ledger[:already_landed]} row(s) SKIPPED — already rotated on #{ledger[:rung]}.")
-  say("    This checkout lags that rung; rotating them again would duplicate landed work.")
-elsif ledger[:rung].nil?
-  say("    NOTE: #{DocsArchive::ACCEPTED_RUNGS.join(' / ')} unreadable — " \
-      "the already-landed check did NOT run, so a duplicate rotation is possible.")
-end
-
 say
 say("==> #{DRY ? 'Would retire' : 'Retired'} #{moved} doc(s); " \
     "#{plan[:skipped].size} left in place as still-referenced")
@@ -182,7 +107,5 @@ puts DocsArchive.summary_line(
   dry_run: DRY,
   moved: moved,
   moved_paths: plan[:moves].map { |m| m[:from] },
-  skipped: plan[:skipped].map { |s| { path: s[:path], referrers: s[:referrers] } },
-  ledger_rolled: ledger[:rolled],
-  ledger_cutoff: ledger[:cutoff]
+  skipped: plan[:skipped].map { |s| { path: s[:path], referrers: s[:referrers] } }
 )

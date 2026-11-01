@@ -8,7 +8,7 @@ require "socket"
 # WHY IT EXISTS. `bin/agent-worktree` files its teardown record on the board BEFORE it
 # destroys anything, and it FAILS CLOSED: a write it cannot make aborts the teardown. That
 # is the whole point of the change that moved the ledger off
-# docs/agents/maintenance/delete-later.md (a row written from the primary lands on `main`
+# a markdown file (a row written from the primary lands on `main`
 # and can never be committed — 166 rows were stranded that way). It also means the command
 # tests, which run under the OutboundSeams network floor with TASK_API_BASE pinned at an
 # UNROUTABLE address, can no longer complete a teardown at all.

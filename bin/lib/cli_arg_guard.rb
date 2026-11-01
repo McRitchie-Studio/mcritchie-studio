@@ -13,9 +13,8 @@
 #   PR #980  bin/lib/release_claim_cli.rb  — same shape, release lane
 #   PR #?    bin/devops-shift              — `acquire avi --help` TOOK THE SHIFT
 #   2026-08-31  bin/archive-docs           — `--help` ROLLED THE DOCS LEDGER,
-#               rewriting docs/agents/maintenance/delete-later.md by -41 lines and
-#               staging a second file, for an operator who was asking what the
-#               command does.
+#               rewriting it by -41 lines and staging a second file, for an operator
+#               who was asking what the command does.
 #   2026-08-31  bin/release                — `prepare --yes --help` PROMOTED
 #               `accepted` onto `release` in EVERY repo, merged the batch PRs,
 #               wrote membership to the PRODUCTION board and deployed QA.
@@ -55,8 +54,8 @@
 #
 # Unit tests: test/lib/cli_arg_guard_test.rb
 module CliArgGuard
-  # The two spellings honored everywhere in this bin/ — bin/task, bin/ledger-guard,
-  # and the three claim CLIs. Someone probing a script has no way to know it is a
+  # The two spellings honored everywhere in this bin/ — bin/task and the three
+  # claim CLIs. Someone probing a script has no way to know it is a
   # different parser, so every parser answers to the same two.
   HELP_FLAGS = %w[--help -h].freeze
 
@@ -80,7 +79,7 @@ module CliArgGuard
 
   # The PURE core: split a command line against a flag dictionary.
   #
-  # Both `--flag=value` and `--flag value` parse, matching bin/ledger-guard. That
+  # Both `--flag=value` and `--flag value` parse. That
   # dual form is a safety property, not a convenience: a script whose own parser
   # only understood `--repo=x` would SILENTLY IGNORE `--repo /path` and sweep its
   # default repo instead — the same silent-substitution bug one seam over. Parsing
@@ -134,8 +133,8 @@ module CliArgGuard
   # The one call a flat script makes, BEFORE it does anything else.
   #
   # `help_exit` is a decision each script owns, and it is not always 0. Where exit 0
-  # carries a MEANING beyond "the command ran" — bin/ledger-guard's 0 is a green
-  # verdict, bin/devops-shift's 0 is the assertion "you are on shift" — help must
+  # carries a MEANING beyond "the command ran" — bin/devops-shift's 0 is the
+  # assertion "you are on shift" — help must
   # not answer with it. Where 0 means only "this ran", 0 is right and is what every
   # operator expects from an explicit `--help`.
   #

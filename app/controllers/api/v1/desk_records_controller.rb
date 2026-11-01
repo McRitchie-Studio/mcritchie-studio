@@ -37,16 +37,13 @@ module Api
         render_data(result[:records], meta: result[:meta])
       end
 
-      # File ONE desk record — a `cleanup --write` nomination or a teardown, or an
-      # IMPORT of a row stranded in the markdown ledger.
+      # File ONE desk record — a `cleanup --write` nomination or a teardown.
       def create
-        # NAMING the field is what makes this an import, not supplying a usable value.
-        # Keyed on `present?` a BLANK key fell through to the teardown path below — and
-        # that path resolves through `open_for`, which never matches a resolved row, so a
-        # keyless import would have duplicated every row on the next run while answering
-        # 201 each time. That is the exact defect this endpoint was reviewed for, so it
-        # fails LOUD here rather than open: `import!` refuses the blank by name.
-        return import if desk_params.key?(:import_key)
+        # THE LEDGER IMPORT IS RETIRED, AND AN OLD CLIENT IS REFUSED BY NAME. The harvest ran
+        # on 2026-11-01. A stale copy of it that reached the teardown path below would file
+        # every row again, because `file!` resolves only OPEN episodes and answers 201 each
+        # time. So naming the field is still enough to stop the write here.
+        return render_error("the desk ledger import is retired", status: :gone, error_code: "DESK_IMPORT_RETIRED") if desk_params.key?(:import_key)
 
         attrs = registry_attributes
         path = (desk_params[:worktree_path].presence || attrs[:worktree_path]).to_s
@@ -91,42 +88,6 @@ module Api
 
       private
 
-      # THE IMPORT PATH — /tasks/harvest-stranded-ledger-stashes.
-      #
-      # It is separate from the teardown path because the two resolve an existing record
-      # by DIFFERENT keys, and using the teardown's key here is the bug this endpoint was
-      # reviewed for. `DeskRecord.file!` looks up `open_for(worktree_path)`, which matches
-      # OPEN episodes only; every stranded row is a RESOLVED `removed` episode, so the
-      # lookup never matches and a re-run of the harvest would file all 166 a second time.
-      # `import!` keys on the row's own digest instead, which is unique in the schema.
-      #
-      # 201 for a row this call WROTE, 200 for one the board already held. The harvest
-      # counts the two separately, so a second run reports that it wrote nothing rather
-      # than claiming successes it did not perform.
-      def import
-        record = DeskRecord.import!(**import_attributes)
-        render_data(record, status: record.previously_new_record? ? :created : :ok)
-      rescue ArgumentError => e
-        render_error(e.message, error_code: "INVALID_DESK_IMPORT")
-      end
-
-      IMPORT_FIELDS = %i[
-        worktree_path label app_slug desk_slug task_slug task_url
-        reason rationale safe_delete_condition branch head
-      ].freeze
-
-      def import_attributes
-        attrs = desk_params.to_h.symbolize_keys
-        payload = attrs[:payload]
-        payload = payload.to_h if payload.respond_to?(:to_h)
-
-        attrs.slice(*IMPORT_FIELDS).compact_blank.merge(
-          import_key: attrs[:import_key],
-          resolved_on: attrs[:resolved_on],
-          payload: payload.is_a?(Hash) ? payload.stringify_keys : {}
-        )
-      end
-
       # The narrative fields the SWEEP owns and the registry does not carry: why this
       # desk was safe to take (`reason`), what label that safety wears, and the
       # condition cell the markdown ledger used to print. `compact` so an absent field
@@ -160,7 +121,7 @@ module Api
           :worktree_path, :status, :resolved_on, :source, :actor,
           :label, :app_slug, :desk_slug, :task_slug, :task_url,
           :safety, :reason, :rationale, :withheld_reason, :safe_delete_condition,
-          :import_key, :branch, :head,
+          :import_key,
           registry: {}, payload: {}, leaked_processes: %i[pid label via port cwd]
         )
       end

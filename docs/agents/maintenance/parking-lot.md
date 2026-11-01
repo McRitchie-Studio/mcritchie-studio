@@ -266,3 +266,45 @@ small-host example with scaled knobs — so the next person sizing it down reads
 the answer instead of rediscovering it. `mcritchie-studio`'s
 `tasks/_deployments_live_fx` (its `.release-meter-glow` CSS) carries a worked small-host override
 (2px ring, 4px bloom, on a wrapper sized to the bar) to copy from.
+
+---
+
+## Retired delete-later ledger
+
+Alex McRitchie ruled on 2026-11-01 to retire `docs/agents/maintenance/delete-later.md`,
+its archive, `bin/ledger-guard` and the harvest. Desk teardown records are `DeskRecord`
+rows on the board. A file or doc that looks removable once some condition holds is
+parked here, in this section, with its condition.
+
+**Where the old rows are.**
+
+- 166 rows stranded in stashes are on the production board with `source: import`, read
+  back on 2026-11-01. `GET /api/v1/desk_records` has no `source` filter, so count them by
+  paging the whole list. The stashes in the hub primary were left in place.
+- 598 resolved rows committed to the two files (590 `removed <date>`, 8
+  `archive-only <date>`) stay in git at `ded736a70c06`, with the 9 open rows below as first filed:
+
+```bash
+git show ded736a70c06:docs/agents/maintenance/delete-later.md
+git show ded736a70c06:docs/agents/archive/maintenance/delete-later-archive.md
+```
+
+### Open items carried from the ledger
+
+Measured 2026-11-01. Each row holds what you need to act on it; the original wording is at
+the commit above.
+
+| Item | State | What closes it |
+|------|-------|----------------|
+| `SOLANA_DEVNET_RPC_URL` on Heroku `mcritchie-studio` | Still set. No hub code reads it since `retire-signing-console`, which reached `main` in `rel-20260905-d6c266`. Its value carries a Helius key **shared** with `turf-monster-mainnet`'s `SOLANA_RPC_URL`. | `heroku config:unset SOLANA_DEVNET_RPC_URL -a mcritchie-studio`. Do not route it through `post_deploy_cmd`, which also fires on the QA deploy. Unsetting is safe alone; **rotating the key is not**: rotate only alongside `turf-monster-mainnet`. |
+| Postgres per-desk databases | The 498 `*_development_*` orphans filed on 2026-08-25 are gone. 354 databases remain: 32 `*_development_*`, 277 `*_test*`. `bin/agent-worktree remove` now drops a desk's database. | Needs Alex McRitchie's go-ahead for any bulk drop, with a `pg_stat_activity` check per database, because a drop cannot be undone. |
+| `feat/ai-builder-cache-run` (was the worktree `mcritchie-studio-ai-builder-cache`) | The worktree is gone from disk. `origin/feat/ai-builder-cache-run` is still at `c7d5d3267`: 5 commits, 517 insertions across 27 files, not on `accepted`. No board task. | Point at the code that supersedes those commits, or file a task to land them. Record the verdict here. |
+| Desk `mcritchie-studio/devops-scout-launcher-v1` | Filed `pending approval`. Gone from disk; branch still on origin. No board record. | Nothing to approve. Branch cleanup belongs to `bin/prune-branches`. |
+| Desk `mcritchie-studio/devops-scout-control-v1` | Same. | Same. |
+| Desk `mcritchie-studio/task-board-devops-contract` | Same. | Same. |
+| Desk `turf-monster/sidebar-back-qa-sync` | Same, in the turf-monster repo. | Same. |
+
+Two more rows were `reference only`, with no action owed: Claude's local memory
+(`~/.claude/projects/-Users-alex-projects/memory/*`) and character files
+(`~/.claude/agents/*.md`). Promote durable lessons into repo docs and leave those files alone
+unless Alex McRitchie asks.

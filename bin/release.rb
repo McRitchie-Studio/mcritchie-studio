@@ -320,13 +320,8 @@ require_relative "lib/artifact_sweep"
 # The frozen-doc retirement's summary contract — `archive` drives
 # bin/archive-docs as a step and parses its tagged JSON line for the Exit Seam.
 # Also its FAILURE contract (DocsArchive.failure_report): the sweep's non-zero exit
-# is one bit with four causes, so the beat reports what actually failed instead of
-# reading a ledger loss out of it.
+# is one bit with several causes, so the beat reports what actually failed.
 require_relative "lib/docs_archive"
-# The delete-later ledger's MOVE-NEVER-DELETE invariant. `archive` measures it ITSELF
-# when the doc sweep fails, so a ledger-loss claim is backed by a row count rather
-# than by the sub-command's exit code. See ledger_verdict.
-require_relative "lib/ledger_guard"
 # The two pruners' summary contracts — `archive` drives bin/prune-session-markers
 # and bin/prune-branches as steps and parses their tagged JSON lines.
 require_relative "lib/marker_prune"
@@ -9155,8 +9150,8 @@ end
 #     _, fwd = sh("git", "-C", path, "merge", "origin/main", capture: true)
 #
 # Three defects compounded:
-#   1. THE PRIMARY. The hub primary had an uncommitted delete-later.md (the ledger
-#      bin/agent-worktree remove appends to), so git refused the checkout outright.
+#   1. THE PRIMARY. The hub primary had an uncommitted ledger file (a markdown ledger
+#      bin/agent-worktree remove appended to then), so git refused the checkout outright.
 #   2. THE UNCHECKED CHECKOUT. Only the MERGE's result was tested. With the
 #      checkout failed the primary was still on `main`, so `git merge origin/main`
 #      ran against main and succeeded as "Already up to date" — a green no-op on
@@ -9290,8 +9285,8 @@ def merge_forward_release_branches(app_groups, gem_groups: [])
   end
 end
 
-# Best-effort: commit a generated doc (a `retro` doc or the `delete-later.md`
-# ledger `archive` updates) onto `accepted` so it stops piling up as uncommitted dirt
+# Best-effort: commit a generated doc (a `retro` doc or the frozen docs `archive`
+# retires) onto `accepted` so it stops piling up as uncommitted dirt
 # in the primary. NON-FATAL — any problem leaves the doc uncommitted in the primary's
 # working tree (which no longer blocks anything: the ship deploys from its own
 # workspace and only ADVISES on a dirty primary) and never aborts retro/archive.
@@ -9307,7 +9302,7 @@ end
 # NO LOCAL BRANCH, NO FLIP (harden-artifact-commit-onto-accepted). This used to
 # `checkout accepted` in the primary, ff-merge, commit, push and `ensure` back to
 # `main`. The hub primary's local `accepted` sat 3,284 commits behind origin with a
-# delete-later.md that differed from main's, so the checkout refused outright; and a
+# ledger file that differed from main's, so the checkout refused outright; and a
 # push refused because a review merge landed meanwhile stranded the commit on local
 # `accepted` while the ensure took the doc out of the working tree, under a step line
 # that said "left uncommitted". Now artifact_commit_onto_accepted builds the commit in
@@ -9317,8 +9312,7 @@ end
 # exactly what the old flip back to `main` did to them.
 #
 # `abs_path` takes one path OR many — many for the archive beat's docs sweep,
-# which retires a batch of frozen snapshots and rewrites the ledger as ONE
-# logical change. All of them must be named here, or the safety check reads the
+# which retires a batch of frozen snapshots as ONE logical change. All of them must be named here, or the safety check reads the
 # rest as unrelated work and strands the batch as dirt on the primary.
 def commit_artifact_to_accepted(repo, abs_path, message)
   return if DRY
@@ -11732,7 +11726,7 @@ end
 # idempotent, so a broken sweep costs only desks left standing until the next run. It
 # used to cost more: a non-zero exit was dropped without a word, and a raise (the tool
 # missing from the cwd) killed the run before the artifact sweep, the doc retirement and
-# the ledger commit. Either now prints a warning naming the re-run, and the rest goes on.
+# its commit. Either now prints a warning naming the re-run, and the rest goes on.
 #
 # Returns an ArchiveReclaim: the reclaimed count for the Exit Seam line, and whether the
 # sweep failed, which the archive's closing line repeats (reclaim_failed_closing_line).
@@ -11822,15 +11816,14 @@ end
 
 # The DOC sweep, driven the same way as the log sweep: apply: false is the tool's
 # own --dry-run. It `git mv`s frozen snapshots — dated audits, release retros,
-# misfiled dated designs — out of the LIVE doc tree into docs/agents/archive/,
-# and rolls the delete-later ledger's resolved rows over.
+# misfiled dated designs — out of the LIVE doc tree into docs/agents/archive/.
 #
 # NOTHING IS EVER DELETED, and a snapshot something still cites is left exactly
 # where it is and NAMED in the report: a referenced snapshot is someone's live
 # citation, and the referrer gets fixed first, deliberately.
 #
 # Unlike the log sweep this touches TRACKED files, so its output is staged and
-# then committed to `release` with the ledger, in one artifact commit — leaving
+# then committed to `accepted` in one artifact commit — leaving
 # the primary checkout clean rather than carrying a dozen staged renames as dirt.
 #
 # ITS EXIT STATUS IS LOAD-BEARING, and that is what separates this sweep from the
@@ -11838,17 +11831,13 @@ end
 # best-effort: they run after the board write, and a hiccup there just means fewer
 # worktrees freed this run, so both call sites take `.first` on purpose. This one
 # refuses — and the caller must HONOUR that refusal, because the very next thing the
-# beat does is commit the ledger and its archive to `release`. Taking `.first` here
-# (which both call sites did until this was fixed) printed the refusal and committed
-# the loss anyway. See the two `abort!`s below and
+# beat does is commit what the sweep staged. Taking `.first` here (which both call
+# sites did until this was fixed) printed the refusal and committed anyway. See the two `abort!`s below and
 # test/lib/release_archive_docs_refusal_test.rb.
 #
 # THE EXIT STATUS SAYS "IT FAILED". IT DOES NOT SAY WHY. bin/archive-docs exits
-# non-zero for a genuine ledger loss, for an UNREADABLE baseline, for an argument its
-# guard does not account for, and for any crash inside the sweep. Reading one cause
-# out of that single bit is what put "the delete-later ledger has lost resolved
-# row(s)" in front of an operator during a production deploy when a `git mv` had
-# simply crashed — see DocsArchive.failure_report, which is why the pieces of the
+# non-zero for an argument its guard does not account for and for any crash inside
+# the sweep. See DocsArchive.failure_report, which is why the pieces of the
 # answer (the repo swept, the command, the exit status, and stderr SEPARATED from
 # stdout) are carried out of here instead of being flattened into one string.
 DocsSweep = Struct.new(:repo, :command, :out, :err, :status, keyword_init: true) do
@@ -11870,34 +11859,6 @@ def sweep_docs(apply:)
   print(out)
   warn(err) unless err.to_s.empty?
   DocsSweep.new(repo: repo, command: cmd.join(" "), out: out, err: err, status: status)
-end
-
-# THE LEDGER VERDICT, MEASURED — never inferred from an exit code.
-#
-# LedgerGuard.lost_against_ref is the same instrument bin/archive-docs refuses on:
-# resolved rows counted as a MULTISET across delete-later.md AND its archive, against
-# the merge base with HEAD. Counting the union is what makes it the honest test — a
-# row that merely MOVED from the ledger into the archive is conserved (that is the
-# whole archive beat), and only a row that left BOTH files is a loss. The 2026-09-01
-# rollover this defect maligned was 41 out of one file and 41 into the other; this
-# check calls that intact, because it is.
-#
-# Three outcomes, three sentences. `:unreadable` is NOT a pass: a comparison that
-# could not run certifies nothing, and collapsing it into `:intact` would rebuild
-# this very bug facing the other way. The bare StandardError rescue exists for the
-# same reason — if the check itself breaks, the honest answer is "unknown", never
-# "intact".
-def ledger_verdict(repo)
-  losses = LedgerGuard.lost_against_ref(repo, "HEAD")
-  return { verdict: :intact } if losses.empty?
-
-  { verdict: :lost,
-    missing: losses.sum(&:missing),
-    detail: LedgerGuard.report(losses, base_label: "HEAD") }
-rescue LedgerGuard::UnreadableBase => e
-  { verdict: :unreadable, detail: e.message }
-rescue StandardError => e
-  { verdict: :unreadable, detail: "#{e.class}: #{e.message}" }
 end
 
 def docs_summary(out)
@@ -11951,16 +11912,9 @@ def archive
   #    move out of the live doc tree and names anything a live citation pins.
   say("")
   step("docs archive preview: bin/archive-docs --dry-run")
-  # A failing PREVIEW is the sweep tool itself being broken, not a lost ledger row:
-  # bin/archive-docs' dry run REPORTS a loss and exits 0 by design, so this branch
-  # cannot be reached by the invariant it checks. It fires when the preview could
-  # not be produced at all — and confirming a sweep you were unable to preview is
-  # the worst moment to carry on. Nothing has been mutated yet, so aborting here
-  # costs nothing and stops short of the confirm.
-  #
-  # NO `ledger:` IS PASSED, deliberately. The ledger is not what failed here, and a
-  # report that stayed silent about it is the honest one — `failure_report` then says
-  # "not measured" rather than guessing in either direction.
+  # A failing PREVIEW is the sweep tool itself being broken. Confirming a sweep you
+  # were unable to preview is the worst moment to carry on. Nothing has been mutated
+  # yet, so aborting here costs nothing and stops short of the confirm.
   docs_preview_sweep = sweep_docs(apply: false)
   unless docs_preview_sweep.ok?
     abort!(DocsArchive.failure_report(
@@ -11987,7 +11941,7 @@ def archive
     say("✓ Archive plan previewed (DRY RUN — nothing executed). Re-run without --dry-run to archive + reclaim + sweep.")
     say("  would reclaim #{sweep_preview[:reclaimed_human]} of regenerable artifacts") if sweep_preview[:reclaimed_human]
     if docs_preview[:moved]
-      say("  would retire #{docs_preview[:moved]} frozen doc(s) and roll #{docs_preview[:ledger_rolled]} ledger row(s)")
+      say("  would retire #{docs_preview[:moved]} frozen doc(s)")
     end
     say("  #{prune_report_line('session markers', markers_preview)}")
     say("  #{prune_report_line('merged branches', branches_preview)}")
@@ -12037,61 +11991,41 @@ def archive
   step("branch prune: bin/prune-branches --yes")
   branches = prune_branches(apply: true)
 
-  # 10. Retire the frozen docs + roll the ledger. This STAGES tracked changes
-  #     (git mv + the ledger rewrite), which the commit below then carries to
-  #     `accepted` as ONE artifact commit.
+  # 10. Retire the frozen docs. This STAGES tracked changes (git mv), which the
+  #     commit below then carries to `accepted` as ONE artifact commit.
   say("")
   step("docs archive: bin/archive-docs")
   docs_sweep = sweep_docs(apply: true)
-  # THE REFUSAL, HONOURED — AND DIAGNOSED. The commit below git-adds the ledger AND its
-  # archive and pushes them to `release`, so continuing past a non-zero exit is what
-  # turns a recoverable working-tree loss into committed history. Stop here: the board
-  # archive, the reclaim, and the artifact sweep have already succeeded and are all
-  # idempotent, so a re-run picks up exactly where this left off.
-  #
-  # HALTING WAS ALWAYS RIGHT. THE EXPLANATION WAS NOT. This branch used to announce
-  # "the delete-later ledger has lost resolved row(s)" for EVERY non-zero exit, having
-  # checked no such thing — and on 2026-09-01 it said exactly that when a `git mv` had
-  # crashed, mid production deploy, over a ledger that was perfectly conserved (41 rows
-  # out of one file, 41 into the other). Data loss in an audit trail is the most
-  # alarming thing this beat can say; saying it on a hunch cost the deploying agent a
-  # detour at the worst possible moment.
-  #
-  # So the halt stays and the claim is MEASURED: ledger_verdict counts the rows itself
-  # against the same repo the sweep was pointed at, and failure_report says only what
-  # that count supports — while always naming the command, its exit status and its
-  # stderr, which is what an operator actually needed to read.
+  # THE REFUSAL, HONOURED. The commit below pushes what the sweep staged, so stop here
+  # on a non-zero exit: the board archive, the reclaim and the artifact sweep have
+  # already succeeded and are all idempotent, so a re-run picks up where this left off.
   unless docs_sweep.ok?
     abort!(DocsArchive.failure_report(
              command: docs_sweep.command,
              exit_label: docs_sweep.exit_label,
-             stderr: docs_sweep.err,
-             ledger: ledger_verdict(docs_sweep.repo)
+             stderr: docs_sweep.err
            ))
   end
   docs = docs_summary(docs_sweep.out)
 
-  # The doc retirement moved frozen snapshots and rolled the ledger's resolved rows into
-  # the archive — commit ALL of it to `accepted` so it rides the next ship instead of
-  # becoming ship-preflight dirt. (The RECLAIM no longer writes here: since
-  # `ledger-writes-to-primary`, `bin/agent-worktree` files desk records on the board, and
-  # these two files are tracked history the archive beat still rolls.)
-  # (best-effort). Every path must be named: the safety check refuses when
-  # anything ELSE is dirty, so omitting the retirements would strand them.
+  # The doc retirement moved frozen snapshots: commit ALL of it to `accepted` so it rides
+  # the next ship instead of becoming ship-preflight dirt (best-effort). Every path must
+  # be named: the safety check refuses when anything ELSE is dirty, so omitting the
+  # retirements would strand them. BOTH SIDES of every move: the archive copy AND the
+  # live source's removal. Naming only the destination is how rel-20261006-f6a119 left a
+  # retired doc on `release` at two paths (e8f121d4). No move means no commit to make.
   hub = repo_path("mcritchie-studio")
-  artifact_paths = [File.join(hub, DocsArchive::LEDGER), File.join(hub, DocsArchive::LEDGER_ARCHIVE)]
-  # BOTH SIDES of every move: the archive copy AND the live source's removal. Naming
-  # only the destination is how rel-20261006-f6a119 left a retired doc on `release`
-  # at two paths (e8f121d4).
-  artifact_paths += docs[:moved_paths].to_a.flat_map do |rel|
+  artifact_paths = docs[:moved_paths].to_a.flat_map do |rel|
     [File.join(hub, DocsArchive.archive_path_for(rel)), File.join(hub, rel)]
   end
-  commit_artifact_to_accepted(
-    "mcritchie-studio",
-    artifact_paths,
-    "ledger: delete-later after archive (#{archived_count} archived, #{reclaimed} reclaimed, " \
-    "#{docs[:moved] || 0} doc(s) retired)"
-  )
+  if artifact_paths.any?
+    commit_artifact_to_accepted(
+      "mcritchie-studio",
+      artifact_paths,
+      "docs: retire #{docs[:moved] || artifact_paths.size / 2} frozen doc(s) after archive " \
+      "(#{archived_count} archived, #{reclaimed} reclaimed)"
+    )
+  end
 
   # 11. Summary. The disk numbers are MACHINE-LOCAL, not board state — say so in
   #     the Exit Seam report rather than filing them as pipeline facts.
@@ -12109,8 +12043,7 @@ def archive
   # month. ArtifactSweep.rotation_report_lines owns the wording for all five
   # verdicts and never returns nothing.
   ArtifactSweep.rotation_report_lines(sweep).each { |line| say(line) }
-  say("✓ Retired #{docs[:moved] || 0} frozen doc(s) into #{DocsArchive::ARCHIVE_DIR}/ " \
-      "and rolled #{docs[:ledger_rolled] || 0} ledger row(s) — moved, never deleted")
+  say("✓ Retired #{docs[:moved] || 0} frozen doc(s) into #{DocsArchive::ARCHIVE_DIR}/ — moved, never deleted")
   say(prune_report_line("session markers", markers))
   say(prune_report_line("merged branches", branches))
   if docs[:skipped].to_a.any?

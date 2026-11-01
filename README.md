@@ -170,4 +170,4 @@ scaled so Solid Queue can process durable mail/auth jobs. Required env vars:
 
 ## Development Notes
 
-See [`docs/agents/index.md`](docs/agents/index.md) for agent session context. Legacy LLM-specific files are migration sources only; track their removal in [`docs/agents/maintenance/delete-later.md`](docs/agents/maintenance/delete-later.md).
+See [`docs/agents/index.md`](docs/agents/index.md) for agent session context. Legacy LLM-specific files are migration sources only; track their removal in [`docs/agents/maintenance/parking-lot.md`](docs/agents/maintenance/parking-lot.md).

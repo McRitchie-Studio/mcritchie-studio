@@ -198,7 +198,7 @@ instructs, printed this over a multi-file code PR:
 
 ```text
 ✓ DoR-to-Merge n/a … doc-only diff (kind: chore): 1 file(s), none behavioral —
-  docs/agents/maintenance/delete-later.md [source: git working tree]
+  <one dirty prose file on the primary> [source: git working tree]
   → ready to advance submitted → reviewed
 ```
 

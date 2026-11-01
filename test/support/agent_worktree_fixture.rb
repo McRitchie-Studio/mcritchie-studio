@@ -115,7 +115,7 @@ module AgentWorktreeFixture
 
   def setup_repo
     FileUtils.mkdir_p(@hub_dir)
-    # delete-later.md lives here; teardown_worktree appends a removal row to it.
+    # The hub's maintenance docs live here.
     FileUtils.mkdir_p(File.join(@hub_dir, "docs", "agents", "maintenance"))
     git!(@hub_dir, "init")
     git!(@hub_dir, "config", "user.email", "agent-test@example.com")

@@ -7,7 +7,7 @@ require_relative "task_board"
 # DeskLedger — the desk ledger's WRITE side, from the CLI.
 #
 # WHAT IT REPLACES. `bin/agent-worktree` used to append its teardown row to
-# `docs/agents/maintenance/delete-later.md`, resolved against HUB_DIR. A cleanup is
+# a markdown ledger, resolved against HUB_DIR. A cleanup is
 # normally run from the PRIMARY checkout, and the primary sits on `main` — a branch
 # nobody may commit to. So the record was created in the one place it could never be
 # saved from: twelve stashes of "restore later" ledger content between 2026-06-26 and
@@ -45,9 +45,7 @@ module DeskLedger
   # ok      — the board accepted the write (2xx)
   # record  — the parsed `data` payload, when there is one
   # error   — a one-line reason, ALWAYS set when ok is false
-  # created — 201 (the board WROTE a row) vs 200 (it already held it). Carried so an
-  #           idempotent import can report what it actually did: a second harvest that
-  #           counted 200s as successes would claim 166 writes it never performed.
+  # created — 201 (the board WROTE a row) vs 200 (it already held it)
   # code    — the HTTP status when the board answered, nil when it did not
   # queued  — the record could not be posted and is waiting in the local queue
   Result = Struct.new(:ok, :record, :error, :created, :code, :queued, keyword_init: true) do
@@ -181,15 +179,6 @@ module DeskLedger
         leaked_processes: leaked_processes
       }.compact
     }
-  end
-
-  # Import ONE stranded ledger row. Distinct from `file` because that path resolves an
-  # existing record through the OPEN episode for the desk path, and every stranded row is
-  # a RESOLVED teardown that no open episode matches — so `file` would write a duplicate
-  # on every re-run. The board keys this write on `import_key` instead, and answers 200
-  # rather than 201 for a row it already holds.
-  def import(attributes:, dotenv: nil, env: ENV)
-    post("/api/v1/desk_records", { desk: attributes.merge(status: "removed") }, dotenv: dotenv, env: env)
   end
 
   # Fold a whole snapshot registry in. `registry` is the parsed snapshot payload.

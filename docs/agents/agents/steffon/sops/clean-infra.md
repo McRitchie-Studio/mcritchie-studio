@@ -296,13 +296,11 @@ anything you are unsure about on the desk ledger (`bin/agent-worktree cleanup --
 rather than deleting it.
 
 > **The reclaim no longer dirties the primary.** Its audit rows land on the board
-> (`DeskRecord`, visible on the Desks panel at `/deployments`), not in
-> `docs/agents/maintenance/delete-later.md`. That file used to take them, and because a
-> sweep runs from the primary — which sits on `main` — the rows could never be committed:
-> **166** of them were stranded across twelve "restore later" stashes and the primary's own
-> uncommitted tree, and never restored. `bin/harvest-desk-ledger` can import them and is
-> safe to re-run, but as of 2026-11-01 production holds none of them (no `import` rows):
-> they are still only in those stashes. **A
+> (`DeskRecord`, visible on the Desks panel at `/deployments`). A markdown ledger used to
+> take them, and because a sweep runs from the primary — which sits on `main` — the rows
+> could never be committed: **166** of them were stranded across twelve "restore later"
+> stashes and the primary's own uncommitted tree. They reached the board on 2026-11-01
+> (`source: import`), and the markdown ledger is retired. **A
 > teardown now REFUSES when the board is unreachable**, and it refuses *before* anything
 > is destroyed, so a failed write costs a re-run and nothing else. If you see that
 > refusal, fix the board access and re-run the same command.

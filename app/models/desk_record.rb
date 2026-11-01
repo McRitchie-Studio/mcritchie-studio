@@ -3,31 +3,23 @@
 # DeskRecord — the desk ledger, on the board.
 #
 # WHAT IT REPLACES, AND WHY THE FILE COULD NOT WORK. `bin/agent-worktree` wrote its
-# teardown row into `docs/agents/maintenance/delete-later.md`, resolved against HUB_DIR.
-# Cleanups are run from the PRIMARY checkout, and the primary sits on `main` — a branch
-# nobody may commit to. So the audit row was created in the one place it could never be
-# saved from. Twelve stashes of "restore later" ledger content piled up between 2026-06-26
-# and 2026-08-31 (166 rows, plus the primary's own uncommitted tree); not one was ever
-# restored, and a reclaim sweep stranded 25 more DURING the conversation about the defect.
-# `bin/harvest-desk-ledger` imports those 166 onto this table (`import!` below); as of
-# 2026-11-01 it has not been run against production. Every earlier fix idea relocated the
-# write and still needed a human to remember a follow-up; a row here is durable the
+# teardown row into a markdown ledger resolved against HUB_DIR. Cleanups are run from the
+# PRIMARY checkout, and the primary sits on `main` — a branch nobody may commit to. So the
+# audit row was created in the one place it could never be saved from. Twelve stashes of
+# "restore later" ledger content piled up between 2026-06-26 and 2026-08-31, and none was
+# ever restored. Those 166 rows were imported on 2026-11-01 (`source: "import"`), and the
+# markdown ledger and its tooling were then retired; the rows it held stay readable in git
+# (docs/agents/maintenance/parking-lot.md names the commit). A row here is durable the
 # moment it lands, which is the acceptance bar met outright.
 #
 # ONE ROW PER EPISODE, NOT PER PATH. Desk paths RECYCLE — `_ship` is torn down once per
 # release cycle at the same path — so identity is (worktree_path, the teardown that
 # resolved it), exactly as it was in the file. A row whose `resolved_on` carries a date
 # is HISTORY and is immutable; a row with no date is the OPEN item the next teardown
-# closes in place. That is `LedgerGuard.resolved_row?`'s rule (a dated Status cell),
-# reused rather than restated — the markdown ledger and its archive drifted apart in the
-# first place because only one of them had the definition.
+# closes in place.
 #
-# IMMUTABILITY IS ENFORCED HERE, NOT DETECTED LATER. `bin/ledger-guard` had to judge the
-# committed TREE because the offending writer was a stale COPY of the script and no rule
-# added to the writer could reach it. That problem does not exist in this medium: there
-# is one writer, this class, and it refuses a destructive write at the source. The guard
-# keeps covering the markdown rows it always covered — see bin/ledger-guard's own header
-# for the split.
+# IMMUTABILITY IS ENFORCED HERE, NOT DETECTED LATER. There is one writer, this class, and
+# it refuses a destructive write at the source.
 #
 # A TEARDOWN HAS TWO OUTCOMES, AND IT WRITES TWICE TO SAY WHICH. `bin/agent-worktree` spares
 # a process it cannot prove runs from the desk (a pid is recycled, a port is only a hint, and
@@ -48,7 +40,8 @@ class DeskRecord < ApplicationRecord
   STATUSES = %w[live candidate removing removed leaked].freeze
 
   # Where the write came from, so a row filed by a batch sweep is legible as such next
-  # to one an operator typed by hand.
+  # to one an operator typed by hand. `import` has no writer left: it marks the 166 rows
+  # recovered from the stranded ledger stashes on 2026-11-01, and it stays so they stay valid.
   SOURCES = %w[snapshot cleanup remove reclaim import].freeze
 
   RESOLVED_STATUS = "removed"
@@ -128,61 +121,6 @@ class DeskRecord < ApplicationRecord
     record.recorded_at = Time.current
     record.save!
     record
-  end
-
-  # ---- IMPORT: the stranded-row harvest ---------------------------------------------
-  #
-  # WHY THIS IS NOT `file!`. `file!` resolves an existing row through
-  # `open_for(worktree_path)`, which matches OPEN episodes only. Every stranded row is a
-  # RESOLVED `removed` episode, so `open_for` never matches one: a second harvest would
-  # file all 166 again. `import!` therefore keys on the row's OWN identity — a digest of
-  # the ledger row text (DeskLedgerImport.import_key) — and that key is unique in the
-  # schema, so a re-run cannot duplicate even if two harvests race.
-  #
-  # THE KEY IS THE ROW TEXT, NEVER THE DESK PATH, and the distinction is the whole
-  # correctness argument. `_ship` is torn down every release cycle at the same path; the
-  # harvested set holds 5 distinct `_ship` teardowns under mcritchie-studio and 3 under
-  # turf-monster. Keying on the path would collapse those 8 into 2 and silently destroy 6
-  # teardown records — the exact loss of 2026-08-21 that `bin/ledger-guard` exists to
-  # refuse.
-  #
-  # AN EXISTING ROW IS RETURNED UNTOUCHED, never updated. A resolved episode is history
-  # and `refuse_rewriting_history` would raise on the attempt; re-running the harvest must
-  # be a no-op, not a conflict. The caller distinguishes the two outcomes through
-  # `previously_new_record?` so a second run can report honestly that it wrote nothing.
-  IMPORT_SOURCE = "import"
-  IMPORT_KEY = "import_key"
-
-  scope :imported, -> { where(source: IMPORT_SOURCE) }
-
-  def self.for_import_key(key)
-    where("payload->>'import_key' = ?", key.to_s).first
-  end
-
-  def self.import!(import_key:, worktree_path:, resolved_on:, payload: {}, **attrs)
-    key = import_key.to_s
-    # An import with no key is precisely the write that duplicates on re-run. Refuse it
-    # here rather than letting it through as an ordinary create — a nil key would also
-    # slip past the partial unique index, which only constrains rows that HAVE one.
-    raise ArgumentError, "import_key is required — an unkeyed import duplicates on re-run" if key.empty?
-    raise ArgumentError, "resolved_on is required — a stranded row is a completed teardown" if resolved_on.blank?
-
-    existing = for_import_key(key)
-    return existing if existing
-
-    create!(
-      **attrs.slice(*WRITABLE).except(:payload),
-      worktree_path: worktree_path,
-      status: RESOLVED_STATUS,
-      resolved_on: resolved_on,
-      source: IMPORT_SOURCE,
-      payload: payload.merge(IMPORT_KEY => key),
-      recorded_at: Time.current
-    )
-  rescue ActiveRecord::RecordNotUnique
-    # Two harvests raced. The index settled it; re-read and hand back the winner, which
-    # is the same row this call would have written.
-    for_import_key(key) || raise
   end
 
   # Fold ONE registry snapshot into the table: every desk it lists is seen, and the
