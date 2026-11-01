@@ -353,7 +353,8 @@ H bin/rails "broadcasts:queue_status[cyvasse-four-poster]"
 ```
 
 - **Address first.** No staging until `MAILER_ADDRESS` is set, or Alex McRitchie has
-  ruled to send without it. `broadcasts:restage` reaches staged rows, never
+  ruled to send without it for this send: ask him, because the 2026-10-31 decision
+  that left it unset is not that go. `broadcasts:restage` reaches staged rows, never
   approved ones, so a late change misses them.
 - **`LIMIT` adds readers, it does not top up.** A second run holds `LIMIT` more, so
   set it to the target minus what is already held. Run one staging at a time: the
