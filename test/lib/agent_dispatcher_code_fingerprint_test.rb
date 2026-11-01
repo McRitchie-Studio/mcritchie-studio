@@ -48,7 +48,7 @@ class AgentDispatcherCodeFingerprintTest < Minitest::Test
 
   def test_it_covers_the_entry_the_repo_files_it_loaded_and_the_routes_only
     assert_equal [ "bin/dispatcher", "bin/lib/agent_dispatcher.rb", "bin/lib/agent_mailbox.rb", "config/agent_routes.yml",
-                   AgentMailbox::ContextBuilder::DOMAINS_PATH ].sort,
+                   AgentMailbox::ContextBuilder::DOMAINS_PATH, AgentMailbox::Scopes::PATH ].sort,
                  fingerprint.files.map { |f| f.delete_prefix("#{File.realpath(@root)}/").delete_prefix("#{@root}/") }.sort
   end
 

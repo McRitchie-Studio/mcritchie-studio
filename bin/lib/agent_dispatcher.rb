@@ -42,7 +42,8 @@ module AgentMailbox
   # agent_mailbox.rb, agent_api.rb, cli_arg_guard.rb and what they pull in),
   # config/agent_routes.yml, whose souls are read only at startup, and
   # config/agent_domains.yml, whose warm_session flags are too (so turning a
-  # domain warm reaches a running dispatcher). The file LIST
+  # domain warm reaches a running dispatcher), and config/agent_scopes.yml,
+  # whose scopes are read once at startup too (Scopes::Config). The file LIST
   # is fixed when the fingerprint is taken; each #call re-reads those files, so
   # an edit, a checkout or a deletion changes the digest and an unrelated
   # release (one that touches none of them) does not. A missing file digests as

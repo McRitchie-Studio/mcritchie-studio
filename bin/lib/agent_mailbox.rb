@@ -707,12 +707,21 @@ module AgentMailbox
                             [ nil, nil ]
                           end
       meta = (run.meta || {}).merge(source ? { "reasoning_source" => source } : {}).merge(media ? media.meta : {})
-      meta = meta.merge("scope" => grant ? "granted" : scope.reason) if scope
+      meta = meta.merge("scope" => scope_reason(scope, grant, warm)) if scope
       reply, notes, proposal = run.reply && !limit ? ProposalBlock.split(run.reply) : [ nil, [], nil ]
       Answer.new(reply: reply.to_s.empty? ? nil : reply, notes: notes, proposal: proposal, action: action, status: status, usage_limit: limit,
                  signed_out: limit.nil? && ClaudeAuth.signed_out?(run), session_id: run.session_id, cwd: cwd,
                  reasoning: reasoning, meta: meta.merge(warm ? { "warm" => warm.resumed? ? "resumed" : "fresh" } : {}),
                  warm: warm)
+    end
+
+    # What the run record says about the scope: granted only when this run
+    # actually had the tools.
+    def scope_reason(decision, grant, warm)
+      return "granted" if grant
+      return decision.reason unless decision.granted?
+
+      warm ? "warm" : "not_owner"
     end
 
     # Whether this responder's runner hands stdout over line by line (the real

@@ -31,7 +31,7 @@ module AgentScopes
 
     # The text for one checked lookup. `params` were checked by
     # Scopes.check_lookup (defaults filled).
-    def run(name, params, now: Time.current, fetcher: nil, env: ENV)
+    def run(name, params, now: Time.current, fetcher: nil, env: ENV, books: nil)
       text = case name
              when "error_groups" then error_groups(days: params.fetch("days"), app: params["app"], now: now,
                                                    fetcher: fetcher, env: env)
@@ -41,9 +41,10 @@ module AgentScopes
              when "board_status" then AgentProposals::Queries.board_status
              when "recently_shipped" then AgentProposals::Queries.recently_shipped(days: params.fetch("days"), now: now)
              when "release_status" then AgentProposals::Queries.release_status
-             when "books_status" then books_status(params.fetch("entity"))
-             when "books_unclassified" then books_unclassified(params.fetch("entity"), limit: params.fetch("limit"))
-             when "books_month" then books_month(params.fetch("entity"), params.fetch("month"))
+             when "books_status" then books_status(params.fetch("entity"), config: books || Books::Config.current)
+             when "books_unclassified" then books_unclassified(params.fetch("entity"), limit: params.fetch("limit"),
+                                                                                      config: books || Books::Config.current)
+             when "books_month" then books_month(params.fetch("entity"), params.fetch("month"), config: books || Books::Config.current)
              when "usage" then AgentProposals::Queries.usage(params.fetch("app"), now: now)
              else raise Scopes::Refused, "no lookup named #{name.to_s[0, 40].inspect}"
              end
@@ -200,8 +201,8 @@ module AgentScopes
 
     # Books::Export#status read from the database alone: no Drive call, so the
     # Inbox is not listed (bin/books status reads it).
-    def books_status(key)
-      entity = Books::Config.current.entity(key)
+    def books_status(key, config:)
+      entity = config.entity(key)
       statements = BookStatement.for_entity(entity.key).order(:period_start).to_a
       accounts = entity.accounts.values.map do |a|
         own = statements.select { |s| s.account_key == a.key }
@@ -220,8 +221,8 @@ module AgentScopes
         "(The Drive Inbox is not read here; bin/books status lists it.)" ].join("\n")
     end
 
-    def books_unclassified(key, limit:)
-      entity = Books::Config.current.entity(key)
+    def books_unclassified(key, limit:, config:)
+      entity = config.entity(key)
       scope = BookEntry.for_entity(entity.key).unclassified
       total = scope.count
       rows = scope.chronological.limit(limit).map do |e|
@@ -233,8 +234,7 @@ module AgentScopes
 
     # One month of an entity's ledger: totals per category and per kind, from
     # the lines themselves (a draft month reads the same way a closed one does).
-    def books_month(key, month)
-      config = Books::Config.current
+    def books_month(key, month, config:)
       entity = config.entity(key)
       start = Date.strptime("#{month}-01", "%Y-%m-%d")
       lines = BookEntry.for_entity(entity.key).where(posted_on: start..start.end_of_month)
