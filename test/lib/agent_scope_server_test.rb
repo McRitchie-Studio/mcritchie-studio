@@ -125,7 +125,7 @@ class AgentScopeServerTest < Minitest::Test
 
     { "docs/agents/.env.md" => /not in this scope/, "config/credentials.yml" => /not in this scope/,
       "docs/agents/escape.md" => /outside the checkout/, "/etc/passwd" => /relative/, "~/.ssh/id_rsa" => /relative/,
-      "docs/../config/../../x" => /climb/, "app/models/user.rb" => /does not exist|not in this scope/,
+      "docs/../config/../../x" => /climb/, "app/models/user.rb" => /not in this scope/, "config/master.key" => /not in this scope/,
       "docs/agents/nope.md" => /does not exist/ }.each do |path, why|
       result = call("read_file", { "path" => path })
       assert result["isError"], path

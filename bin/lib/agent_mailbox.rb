@@ -621,7 +621,9 @@ module AgentMailbox
     # answering it can read nothing and run nothing beyond the prompt it is given.
     # --safe-mode skips CLAUDE.md, hooks, skills and plugins for the same reason.
     # json, so the reply and any error arrive in an envelope whose status fields
-    # the model cannot write (ClaudeRun).
+    # the model cannot write (ClaudeRun). The one exception is a SCOPED run (the
+    # owner on Slack, Scopes.grant): Scopes::Grant#claude_cmd adds read-only MCP
+    # tools to this command, built-in tools still off.
     DEFAULT_CLAUDE_CMD = [ "claude", "-p", "--safe-mode", "--tools", "", "--output-format", "json" ].freeze
     CLAUDE_TIMEOUT = 300
     # reply: the text to post, or nil when the run failed. usage_limit: a

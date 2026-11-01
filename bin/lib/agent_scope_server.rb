@@ -179,6 +179,11 @@ module AgentMailbox
         raise Refused, "paths are relative to the hub checkout" if given.start_with?("/", "~")
         raise Refused, "a path may not climb out with .." if given.split("/").include?("..")
 
+        # The path as written is checked first, so a refusal never says whether
+        # a file outside the scope exists; then the real path, below.
+        lexical = given.sub(%r{\A(?:\./)+}, "").squeeze("/")
+        raise Refused, "#{lexical} is not in this scope's paths" unless allowed_path?(lexical)
+
         full = File.realpath(File.join(@repo_root, given))
         raise Refused, "#{given} is outside the checkout" unless full.start_with?(File.join(@repo_root, ""))
 
