@@ -282,17 +282,20 @@ parked here, in this section, with its condition.
   back on 2026-11-01. `GET /api/v1/desk_records` has no `source` filter, so count them by
   paging the whole list. The stashes in the hub primary were left in place.
 - 598 resolved rows committed to the two files (590 `removed <date>`, 8
-  `archive-only <date>`) stay in git at `ded736a70c06`, with the 9 open rows below as first filed:
+  `archive-only <date>`) stay in git history, with the 9 open rows below as first filed. Find
+  them by path, never by a pinned SHA: a history purge of this repo rewrites every SHA, and the
+  rows survive it. The copy they live in is the parent of the commit that deleted them:
 
 ```bash
-git show ded736a70c06:docs/agents/maintenance/delete-later.md
-git show ded736a70c06:docs/agents/archive/maintenance/delete-later-archive.md
+c=$(git log --all -1 --format=%H --diff-filter=D -- docs/agents/maintenance/delete-later.md)
+git show "$c^:docs/agents/maintenance/delete-later.md"
+git show "$c^:docs/agents/archive/maintenance/delete-later-archive.md"
 ```
 
 ### Open items carried from the ledger
 
-Measured 2026-11-01. Each row holds what you need to act on it; the original wording is at
-the commit above.
+Measured 2026-11-01. Each row holds what you need to act on it; the original wording is in
+the copy above.
 
 | Item | State | What closes it |
 |------|-------|----------------|
@@ -305,7 +308,7 @@ disk, so there is nothing left to approve: `mcritchie-studio/devops-scout-launch
 `mcritchie-studio/devops-scout-control-v1`, `mcritchie-studio/task-board-devops-contract`
 and `turf-monster/sidebar-back-qa-sync`. Each branch is still on its origin, which is
 `bin/prune-branches`' concern. The harvest took only resolved rows, so the board holds no
-record of these four; the commit above does.
+record of these four; the copy above does.
 
 Two more rows were `reference only`, with no action owed: Claude's local memory
 (`~/.claude/projects/-Users-alex-projects/memory/*`) and character files

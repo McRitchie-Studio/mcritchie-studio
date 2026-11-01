@@ -16,7 +16,7 @@ What stays in the tree:
 - [`prototypes/`](prototypes/README.md): `acquisition-studio.bundle`. The repo's
   GitHub origin is gone, so this bundle is the only copy off the laptop. Never delete it.
 
-The delete-later ledger and its archive of closed rows were retired on 2026-11-01. Read them
-at `ded736a70c06`; [`parking-lot.md`](../maintenance/parking-lot.md#retired-delete-later-ledger) has the commands.
+The delete-later ledger and its archive of closed rows were retired on 2026-11-01. They stay in
+git history; [`parking-lot.md`](../maintenance/parking-lot.md#retired-delete-later-ledger) has the commands.
 
 `bin/archive-docs` still moves dated docs here on the archive beat, so new files can appear.
