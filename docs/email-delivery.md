@@ -369,8 +369,9 @@ H bin/rails "broadcasts:queue_status[cyvasse-four-poster]"
   stop and tell Alex McRitchie; that execute queued nothing.
 - **Let one style finish before the next.** `BATCH_SPACING` paces each execute alone,
   so four at once outrun Resend. 125 takes about 75 seconds.
-- **Check after each style.** Compare queued with sent in `queue_status`. A row whose
-  retries ran out stays approved and queued; another execute does not recover it.
+- **Check after each style.** `queue_status` is done at queued 0 with every row sent
+  or skipped. A row whose retries ran out stays approved and queued, and holds cap for
+  24 hours; another execute does not recover it, so stop and report it.
 - **Leave a cancelled row cancelled.** The Restage button can revive it, past the
   one-style guard.
 - **Window and stop rules** are in
