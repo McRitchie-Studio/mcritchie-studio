@@ -398,7 +398,7 @@ apps:
       command: bin/deploy
       args: ["--yes"]
   chain-ops:
-    # Retired 2026-11-01, kept ONLY to park chain-ops-mail-from-team, a reviewed card
+    # Retired. Kept ONLY to park chain-ops-mail-from-team, a reviewed card
     # on a live desk. Without this row the repo reads as unknown, the sweep attaches
     # that card, and validate_members! rolls back every bin/release prepare. Delete
     # this row once that card is archived; retired_repo_card_hold_test.rb says when.
