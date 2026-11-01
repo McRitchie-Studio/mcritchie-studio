@@ -33,8 +33,9 @@ class SeedSnapshot
     raise ChecksumMismatch, "#{key(name)} is #{actual}, pinned #{sha256}"
   end
 
-  # Only production writes the production bucket, so this runs on a dyno:
-  # `heroku run bin/rails seed_data:publish FILE=/tmp/x.json NAME=x.json`.
+  # Only production writes the production bucket, so this runs on a dyno. Each
+  # `heroku run` gets a fresh dyno, so the step that writes the file and this one
+  # share one session; object-storage.md, Seed assets, has the command.
   def self.publish!(path, name)
     unless Studio::S3.production_environment?
       raise ProductionOnly, "#{key(name)}: only production writes the production bucket; nothing was uploaded"

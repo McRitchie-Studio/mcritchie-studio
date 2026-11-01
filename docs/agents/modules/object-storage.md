@@ -89,12 +89,19 @@ What holds it in the hub:
 `Studio::S3.production_download`, and checks it against a SHA-256 pin in the
 class, because R2 has no versioning and the object is no longer in git. It holds
 `artists_wikidata.json` (`artists:import_wikidata`, which refuses when the object
-is missing) and `spotrac_contracts_2025.json` (`db/seeds/22`, `nfl:salaries_sync`,
-which skip). No R2 connection, `SKIP_NETWORK_SEEDS=1` or no object reads as absent; an R2 error or a pin
+is missing) and `spotrac_contracts_2025.json` (`db/seeds/22` skips with a stderr warning;
+`nfl:salaries_sync` refuses). No R2 connection, `SKIP_NETWORK_SEEDS=1` or no object reads as absent; an R2 error or a pin
 mismatch raises. The production bucket is **publicly served** at
-`assets.mcritchie.studio`, so only data that may be public goes here. To refresh:
-on a dyno, `artists:fetch_wikidata SNAPSHOT=/tmp/a.json` then `seed_data:publish
-FILE=/tmp/a.json NAME=artists_wikidata.json`, and bump the pin the task prints.
+`assets.mcritchie.studio`, so only data that may be public goes here. To refresh,
+run both steps in **one** `heroku run` session, because a second `heroku run` is a
+fresh dyno without the first one's file, then bump the pin the publish prints:
+
+```bash
+heroku run --no-tty --exit-code -a mcritchie-studio -- bash -c \
+  'bin/rails artists:fetch_wikidata SNAPSHOT=/tmp/a.json && bin/rails seed_data:publish FILE=/tmp/a.json NAME=artists_wikidata.json'
+heroku run --no-tty --exit-code -a mcritchie-studio -- bash -c \
+  'bin/rails spotrac:scrape && bin/rails seed_data:publish FILE=tmp/spotrac_contracts_2025.json NAME=spotrac_contracts_2025.json'
+```
 
 **Cached headshots reference production.** The NFL headshot seeders
 (`nfl:players_seed` via `Nflverse::SeedPlayers`, `nfl:upload_headshots`,

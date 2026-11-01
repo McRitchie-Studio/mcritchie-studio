@@ -8,7 +8,8 @@
 #
 # Source:  seed-data/spotrac_contracts_2025.json in the production R2 bucket
 #          (~2,500 active NFL contracts); read through SeedSnapshot. Skips when
-#          there is nothing to read: CI and a keyless desk hold no R2 connection.
+#          there is nothing to read, warning on stderr: CI and a keyless desk hold
+#          no R2 connection.
 # Service: Spotrac::SyncContracts (matches by otc_id when present, name otherwise)
 #
 # Identity is seeded by `bin/rails nfl:players_seed` (nflverse master CSV).
@@ -18,4 +19,4 @@
 # Idempotent — re-runs are no-ops when JSON is unchanged. Run independently
 # any time via `bin/rails nfl:salaries_sync`.
 
-Spotrac::SyncContracts.new.call
+Spotrac::SyncContracts.new(skip_if_absent: true).call

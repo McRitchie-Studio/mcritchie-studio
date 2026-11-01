@@ -29,12 +29,31 @@ class Spotrac::SyncContractsTest < ActiveSupport::TestCase
     end
   end
 
-  test "skips and changes nothing when the R2 snapshot is absent" do
+  test "refuses by default when the R2 snapshot is absent, and changes nothing" do
     SeedSnapshot.stub(:read, nil) do
       assert_no_difference ["Contract.count", "Athlete.count"] do
-        assert_output(/seed-data\/spotrac_contracts_2025.json.*skipping/) do
-          assert_empty Spotrac::SyncContracts.new.call
-        end
+        error = assert_raises(Spotrac::SyncContracts::SnapshotUnavailable) { Spotrac::SyncContracts.new.call }
+        assert_includes error.message, "seed-data/spotrac_contracts_2025.json"
+      end
+    end
+  end
+
+  test "nfl:salaries_sync refuses when the snapshot is absent" do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("nfl:salaries_sync")
+    task = Rake::Task["nfl:salaries_sync"]
+    task.reenable
+    SeedSnapshot.stub(:read, nil) do
+      assert_raises(Spotrac::SyncContracts::SnapshotUnavailable) { task.invoke }
+    end
+  end
+
+  test "seed 22 skips with a stderr warning naming the consequence and the recovery" do
+    SeedSnapshot.stub(:read, nil) do
+      assert_no_difference ["Contract.count", "Athlete.count"] do
+        _out, err = capture_io { load Rails.root.join("db/seeds/22_nfl_contracts_2025.rb").to_s }
+        assert_match(/no active NFL contracts/, err)
+        assert_match(/depth charts and roster spots empty/, err)
+        assert_match(%r{bin/rails db:seed}, err)
       end
     end
   end

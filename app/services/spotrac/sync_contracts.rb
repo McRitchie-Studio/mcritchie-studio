@@ -19,15 +19,19 @@ require "json"
 #   Spotrac::SyncContracts.new.call
 #   Spotrac::SyncContracts.new(json_path: "/tmp/contracts.json", verbose: true).call
 #
-# Without a json_path it reads SNAPSHOT from R2 (SeedSnapshot) and skips when
-# there is none to read.
+# Without a json_path it reads SNAPSHOT from R2 (SeedSnapshot) and refuses when
+# there is none to read, because an operator asked for this sync. db/seeds/22
+# alone passes skip_if_absent: true, and warns on stderr.
 class Spotrac::SyncContracts
+  class SnapshotUnavailable < StandardError; end
+
   SNAPSHOT = "spotrac_contracts_2025.json".freeze
 
   attr_reader :stats
 
-  def initialize(json_path: nil, verbose: false, entries: nil)
+  def initialize(json_path: nil, verbose: false, entries: nil, skip_if_absent: false)
     @json_path = json_path
+    @skip_if_absent = skip_if_absent
     @verbose = verbose
     @entries = entries
     @stats = Hash.new(0)
@@ -79,9 +83,17 @@ class Spotrac::SyncContracts
   end
 
   def read_snapshot
-    SeedSnapshot.read(SNAPSHOT).tap do |raw|
-      puts "Spotrac: no #{SeedSnapshot.key(SNAPSHOT)} to read, skipping" unless raw
-    end
+    raw = SeedSnapshot.read(SNAPSHOT)
+    return raw if raw
+
+    missing = "#{SeedSnapshot.key(SNAPSHOT)}: no R2 connection, SKIP_NETWORK_SEEDS=1 or no object"
+    raise SnapshotUnavailable, missing unless @skip_if_absent
+
+    warn "#{missing}. Skipped the Spotrac seed: no active NFL contracts, so seeds 30 and 31 leave " \
+         "depth charts and roster spots empty. Put the R2 keys in .env.development " \
+         "(1Password r2.mcritchie-studio), then run bin/rails db:seed; nfl:salaries_sync alone " \
+         "does not rebuild those seeds."
+    nil
   end
 
   # Match by otc_id first (canonical anchor when available), fall back to smart

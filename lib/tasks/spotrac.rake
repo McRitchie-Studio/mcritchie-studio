@@ -117,7 +117,8 @@ namespace :spotrac do
     File.write(output_path, JSON.pretty_generate(contracts))
 
     puts "\nDone! #{contracts.size} contracts written to #{output_path}"
-    puts "To seed from it: bin/rails seed_data:publish FILE=#{output_path} NAME=#{Spotrac::SyncContracts::SNAPSHOT}, on a dyno, then bump its pin"
+    puts "This file does not reach any seed by itself. Refreshing means scrape and seed_data:publish in one " \
+         "heroku run session, then bumping the pin: docs/agents/modules/object-storage.md, Seed assets."
     puts "Teams with errors: #{errors.map { |e| e[:code] }.join(', ')}" if errors.any?
 
     # Show unique positions for debugging
