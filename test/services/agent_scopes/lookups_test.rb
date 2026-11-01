@@ -31,7 +31,8 @@ class AgentScopes::LookupsTest < ActiveSupport::TestCase
              FakeApp.new("cyvasse", "Cyvasse") ]
     reports = {
       "mcritchie-studio" => health("mcritchie-studio", "McRitchie Studio",
-                                   groups: [ { error_class: "Google::Apis::AuthorizationError", message: "Unauthorized", count: 2 } ]),
+                                   groups: [ { error_class: "Google::Apis::AuthorizationError",
+                                               message: "Unauthorized for alex@example.com wallet 7auwTLbSWsMnXrcuqVx3mPNHydBiAnquWXAnfprDrAFE", count: 2 } ]),
       "turf-monster" => health("turf-monster", "Turf Monster",
                                groups: [ { error_class: "NoMethodError", message: "undefined method `slug' for nil", count: 9 },
                                          { error_class: "Faraday::TimeoutError", message: "timeout token=abcdef123456", count: 1 } ]),
@@ -45,6 +46,7 @@ class AgentScopes::LookupsTest < ActiveSupport::TestCase
     assert_match(/McRitchie Studio: Google::Apis::AuthorizationError ×4/, lines.second)
     assert_match(/Not read: Cyvasse \(timeout\)\./, text)
     refute_includes text, "abcdef123456", "every answer is redacted on the way out"
+    assert_includes text, "Unauthorized for [email] wallet [address]", "emails and addresses are cut from messages"
   end
 
   test "error_groups narrows to one app, and refuses an app that has no health report" do

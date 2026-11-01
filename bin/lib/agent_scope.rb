@@ -255,7 +255,8 @@ module AgentMailbox
     #
     #   no_scope          the soul has no scope (or one with nothing in it)
     #   channel           the message is not on a scoped channel (Slack)
-    #   not_owner         the board's audience is not the owner (the board
+    #   not_owner         the board's audience may not use scoped_tools (owner
+    #                     only, Audience::CAPABILITIES; the board
     #                     resolves it from the verified sender's person; a name
     #                     in the text cannot set it)
     #   not_owner_user    the message's author_ref is not slack.owner_user_id:
@@ -274,7 +275,7 @@ module AgentMailbox
       scope = config.scope_for(soul)
       return deny("no_scope") unless scope&.tools?
       return deny("channel") unless config.channels.include?(message["channel"].to_s)
-      return deny("not_owner") unless Audience.from_context(context).owner?
+      return deny("not_owner") unless Audience.from_context(context).may?(:scoped_tools)
 
       owner = owner_user_id(routes, message["channel"])
       return deny("not_owner_user") if owner.empty? || message["author_ref"].to_s != owner
@@ -289,6 +290,14 @@ module AgentMailbox
     end
 
     def deny(reason) = Decision.new(grant: nil, reason: reason)
+
+    # The reply a scoped run posts when it used every turn before answering:
+    # code, never the model's, so it claims nothing about what was found.
+    def max_turns_reply(grant)
+      "I used all #{grant.max_turns} of my tool turns looking into this before I could finish, so I " \
+        "have no answer I can stand behind yet. Ask me something narrower (one app, one week, one " \
+        "entity) and I will look again."
+    end
 
     def load_routes(repo_root)
       path = File.join(repo_root, ROUTES_PATH)

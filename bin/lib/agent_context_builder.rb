@@ -103,7 +103,7 @@ module AgentMailbox
       @fence = fence || "untrusted-#{SecureRandom.hex(6)}"
       # Belt and braces: a grant only ever reaches here for the owner, and the
       # prompt never tells anyone else they have tools.
-      @scope = @audience.owner? ? scope : nil
+      @scope = @audience.may?(:scoped_tools) ? scope : nil
     end
 
     def prompt

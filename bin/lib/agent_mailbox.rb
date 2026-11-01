@@ -329,7 +329,10 @@ module AgentMailbox
   # stream with no result line is a FAILED run, never a reply: its stdout is
   # the CLI's own event stream, not an answer to post.
   module ClaudeRun
-    Parsed = Struct.new(:reply, :error_text, :api_status, :session_id, :meta, keyword_init: true)
+    # max_turns: the envelope's subtype is error_max_turns (CLI-authored, measured
+    # on claude 2.1.316: exit 1, is_error true, empty result): a scoped run used
+    # its --max-turns before it answered (Responder#respond posts a code reply).
+    Parsed = Struct.new(:reply, :error_text, :api_status, :session_id, :meta, :max_turns, keyword_init: true)
 
     def self.parse(stdout, status, stderr, stream: false)
       env = stream ? stream_envelope(stdout) : envelope(stdout)
@@ -342,7 +345,8 @@ module AgentMailbox
         reply = failed ? nil : env["result"].to_s.strip
         error = failed ? [ (env["result"] if env["is_error"] == true), env["error"], stderr ] : nil
         return Parsed.new(reply: reply.to_s.empty? ? nil : reply, error_text: join(error),
-                          api_status: env["api_error_status"], session_id: session_id(env), meta: meta(env))
+                          api_status: env["api_error_status"], session_id: session_id(env), meta: meta(env),
+                          max_turns: env["subtype"].to_s == "error_max_turns")
       end
 
       text = stdout.to_s.strip
@@ -675,7 +679,7 @@ module AgentMailbox
     # audience is checked again here.
     def respond(message, context: nil, warm: nil, phase: nil, scope: nil)
       audience = Audience.from_context(context)
-      grant = scope&.grant if audience.owner? && warm.nil?
+      grant = scope&.grant if audience.may?(:scoped_tools) && warm.nil?
       action = grant ? nil : run_action(audience)
       cwd = soul_folder
       stdin = if warm
@@ -711,6 +715,12 @@ module AgentMailbox
       meta = (run.meta || {}).merge(source ? { "reasoning_source" => source } : {}).merge(media ? media.meta : {})
       meta = meta.merge("scope" => scope_reason(scope, grant, warm)) if scope
       reply, notes, proposal = run.reply && !limit ? ProposalBlock.split(run.reply) : [ nil, [], nil ]
+      # A scoped run that spent its turns posts a code-written answer instead of
+      # being given back: a retry would spend the same turns again, and pause.
+      if grant && reply.nil? && limit.nil? && run.max_turns
+        reply = Scopes.max_turns_reply(grant)
+        meta = meta.merge("scope" => "max_turns")
+      end
       Answer.new(reply: reply.to_s.empty? ? nil : reply, notes: notes, proposal: proposal, action: action, status: status, usage_limit: limit,
                  signed_out: limit.nil? && ClaudeAuth.signed_out?(run), session_id: run.session_id, cwd: cwd,
                  reasoning: reasoning, meta: meta.merge(warm ? { "warm" => warm.resumed? ? "resumed" : "fresh" } : {}),

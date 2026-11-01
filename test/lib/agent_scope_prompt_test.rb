@@ -12,13 +12,20 @@ class AgentScopePromptTest < ActiveSupport::TestCase
   class Runner
     attr_reader :calls
 
-    def initialize = @calls = []
+    def initialize(envelope: { "type" => "result", "result" => "Answer." }, status: 0)
+      @calls = []
+      @envelope = envelope
+      @status = status
+    end
 
     def call(argv, stdin:, timeout:, chdir:)
       @calls << { argv: argv, stdin: stdin }
-      stdin.nil? ? [ "BOARD", 0 ] : [ JSON.generate("type" => "result", "result" => "Answer."), 0, "" ]
+      stdin.nil? ? [ "BOARD", 0 ] : [ JSON.generate(@envelope), @status, "" ]
     end
   end
+
+  # The envelope claude 2.1.316 prints when --max-turns runs out (measured).
+  MAX_TURNS = { "type" => "result", "subtype" => "error_max_turns", "is_error" => true, "num_turns" => 13, "result" => "" }.freeze
 
   setup do
     @mailbox = Dir.mktmpdir("scope-prompt")
@@ -31,8 +38,7 @@ class AgentScopePromptTest < ActiveSupport::TestCase
 
   teardown { FileUtils.rm_rf(@mailbox) }
 
-  def respond(role, decision: @decision, soul: "mason", warm: nil)
-    runner = Runner.new
+  def respond(role, decision: @decision, soul: "mason", warm: nil, runner: Runner.new)
     responder = AgentMailbox::Responder.new(soul: soul, runner: runner, repo_root: Rails.root.to_s, mailbox_home: @mailbox,
                                             claude_cmd: AgentMailbox::Responder::DEFAULT_CLAUDE_CMD, claude_home: @mailbox)
     answer = responder.respond(@message, context: { "audience" => { "role" => role } }, scope: decision, warm: warm)
@@ -46,6 +52,21 @@ class AgentScopePromptTest < ActiveSupport::TestCase
     assert_match(/READ-ONLY tools inside your scope/, call[:stdin])
     refute_match(/You may take exactly ONE action/, call[:stdin])
     assert_equal "granted", answer.meta["scope"]
+  end
+
+  test "a scoped run that spends its turns posts a code reply instead of being given back" do
+    answer, = respond("owner", runner: Runner.new(envelope: MAX_TURNS, status: 1))
+    assert_match(/I used all 12 of my tool turns/, answer.reply)
+    assert_equal "max_turns", answer.meta["scope"]
+
+    unscoped, = respond("owner", decision: nil, runner: Runner.new(envelope: MAX_TURNS, status: 1))
+    assert_nil unscoped.reply, "only a scoped run gets the code reply; anything else fails as before"
+  end
+
+  test "ClaudeRun reads max_turns only from the CLI's subtype" do
+    assert AgentMailbox::ClaudeRun.parse(JSON.generate(MAX_TURNS), 1, "").max_turns
+    refute AgentMailbox::ClaudeRun.parse(JSON.generate("type" => "result", "result" => "error_max_turns"), 0, "").max_turns,
+           "the model's words never set it"
   end
 
   test "a grant handed in for anyone but the owner changes nothing" do

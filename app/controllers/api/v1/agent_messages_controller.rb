@@ -167,9 +167,20 @@ module Api
 
         scope = scopes_config.scope_for(@message.soul_slug)
         name, checked = AgentMailbox::Scopes.check_lookup(params[:name], lookup_params, allowed: scope.lookups)
-        text = AgentScopes::Lookups.run(name, checked)
-        @message.events.create!(kind: "scoped_lookup", actor: session_actor(acting_soul),
-                                detail: { "name" => name, "params" => checked }, created_at: Time.current)
+        # A fault is an ErrorLog (rescue_and_log re-raises it); an app or entity
+        # the lookup cannot read is an answer, not a fault.
+        unavailable = nil
+        text = rescue_and_log(target: @message) do
+          AgentScopes::Lookups.run(name, checked).tap do
+            @message.events.create!(kind: "scoped_lookup", actor: session_actor(acting_soul),
+                                    detail: { "name" => name, "params" => checked }, created_at: Time.current)
+          end
+        rescue AgentScopes::Lookups::Unavailable => e
+          unavailable = e
+          nil
+        end
+        raise unavailable if unavailable
+
         render_data({ "name" => name, "params" => checked, "text" => text })
       rescue AgentMailbox::Scopes::Refused, AgentScopes::Lookups::Unavailable => e
         render_error(e.message, status: :unprocessable_entity, error_code: "LOOKUP_REFUSED")

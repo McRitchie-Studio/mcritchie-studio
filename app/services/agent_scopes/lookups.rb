@@ -25,6 +25,12 @@ module AgentScopes
     FETCH_READ = 8
     FETCH_THREADS = 6
 
+    # An error message can quote what it choked on. The engine's endpoint
+    # scrubs emails; the hub's in-process report does not, and neither cuts a
+    # wallet address. So each message is scrubbed here, before truncation.
+    EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/
+    BASE58 = /\b[1-9A-HJ-NP-Za-km-z]{32,88}\b/
+
     class Unavailable < StandardError; end
 
     module_function
@@ -79,7 +85,7 @@ module AgentScopes
         end
         totals[target.name] += health.error_count
         Array(health.error_groups).each do |g|
-          message = g[:message].to_s.squish[0, MESSAGE_LIMIT]
+          message = scrub_message(g[:message])
           groups[[ target.name, g[:error_class].to_s, message ]] += g[:count].to_i
         end
       end
@@ -95,6 +101,11 @@ module AgentScopes
       unread_line = unread.uniq.any? ? "\nNot read: #{unread.uniq.join('; ')}." : ""
       body = lines.any? ? "\nMost frequent (app: class ×count \"redacted message\"):\n#{lines.join("\n")}#{more}" : ""
       "#{head}#{body}#{unread_line}"
+    end
+
+    def scrub_message(text)
+      clean = AgentMailbox::Redact.call(text.to_s.gsub(EMAIL, "[email]").gsub(BASE58, "[address]"))
+      clean.squish[0, MESSAGE_LIMIT]
     end
 
     # { [app, ending] => AppHealth }. The hub reads its own database on this

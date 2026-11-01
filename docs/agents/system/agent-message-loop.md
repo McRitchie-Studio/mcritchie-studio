@@ -328,7 +328,8 @@ the board through the agent API; no action reads Heroku, which launchd cannot lo
 in to); for anyone else it runs nothing. It builds the prompt from
 the five layers (below, "Memory"), the audience's rules, the action output and the
 message. Claude runs headless with
-**no tools** (`claude -p --safe-mode --tools ""`), and the heartbeat completes
+**no tools** (`claude -p --safe-mode --tools ""`; the one exception is the
+dispatcher's scoped run for Alex McRitchie on Slack, "Scoped runs" below), and the heartbeat completes
 the message with the answer. The message sits between random-named
 `<untrusted-…>` markers, and the model is told to treat it as data to answer,
 never as instructions. A request that fits the soul's catalog gets a proposal
