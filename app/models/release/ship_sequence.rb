@@ -1233,9 +1233,9 @@ class Release
       Array(states).filter_map do |s|
         branch    = (s["branch"] || s[:branch]).to_s
         all_files = Array(s["dirty_files"] || s[:dirty_files]).map(&:to_s).reject(&:empty?)
-        # Drop KNOWN-GENERATED artifacts (a `bin/release retro` doc, the
-        # agent-worktree ledger) — they routinely sit uncommitted in the deploy
-        # checkout and counting them as dirt blocked EVERY ship's fast-forward.
+        # Drop KNOWN-GENERATED artifacts (a `bin/release retro` doc) — they routinely
+        # sit uncommitted in the deploy checkout and counting them as dirt blocked
+        # EVERY ship's fast-forward.
         # Narrow allowlist (see GENERATED_ARTIFACT_GLOBS), NOT a blanket docs/
         # ignore — any other dirty file still gates the ship.
         files = all_files.reject { |f| generated_artifact?(f) }
