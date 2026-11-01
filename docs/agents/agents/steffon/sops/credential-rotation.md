@@ -429,4 +429,4 @@ Update [`credential-inventory.md`](../../../modules/credential-inventory.md) onl
 
 `system/secrets-rotation.md` (recipes; this SOP wins), `modules/credentials.md`, `turf-monster/docs/SOLANA.md`.
 
-History: the long form, with rationale and measurements, is [`credential-rotation-2026-10-05.md`](../../../archive/credential-rotation-2026-10-05.md).
+History: the long form, with rationale and measurements, is [`credential-rotation-2026-10-05.md`](../../../archive/README.md).

@@ -151,7 +151,7 @@
 # trigger refusal (refuse_blind_accepted!) for that repo. Set it only after
 # reading the lint on the repo's origin/accepted; a repo without the key is still
 # refused at promote. The lint files:
-#   studio-engine, chain-ops   test/lib/ci_accepted_trigger_test.rb
+#   studio-engine              test/lib/ci_accepted_trigger_test.rb
 #   solana-studio              test/ci_accepted_trigger_test.rb
 #   mcritchie-studio, turf-monster, rolio   test/lib/ci_workflow_triggers_test.rb
 #   mcritchie-industries       test/lib/ci_workflow_test.rb
@@ -398,15 +398,11 @@ apps:
       command: bin/deploy
       args: ["--yes"]
   chain-ops:
-    # No production app, so no prod_deploy and no test_cmd. To enroll, in order:
-    # give it a real Heroku app and an adapter naming it, register a test_cmd, then
-    # flip the ladder. `blocked` only stops `bin/release init` creating rungs;
-    # membership is by task, so a chain-ops task that reaches `reviewed` still
-    # rides. Ship probes every repo_script command at the frozen SHA before pushing
-    # any ref, so a missing command aborts with nothing moved. qa_test_cmd stays
-    # unset until test/integration has tests.
+    # Retired. Kept ONLY to park chain-ops-mail-from-team, a reviewed card
+    # on a live desk. Without this row the repo reads as unknown, the sweep attaches
+    # that card, and validate_members! rolls back every bin/release prepare. Delete
+    # this row once that card is archived; retired_repo_card_hold_test.rb says when.
     ladder: blocked
-    accepted_trigger_lint: true
   moms-app:
     # Registered by bin/register-app on profile standalone-heroku. The contract, the
     # QA decision and how to leave the profile: config/app_profiles.yml and the

@@ -21,9 +21,10 @@ This ledger tracks files and directories that look removable once replacement do
 >
 > **Do not delete this file or its archive.** They hold every desk row filed before the
 > cutover, `bin/ledger-guard` still refuses a tree that lost a dated row, and they are the
-> SOURCE the harvest reads: `/tasks/harvest-stranded-ledger-stashes` recovered the 166
-> stranded rows from the stashed copies of these two files onto the board with
-> `bin/harvest-desk-ledger`. That command stays runnable and is safe to run again — it is
+> SOURCE the harvest reads: `/tasks/harvest-stranded-ledger-stashes` built
+> `bin/harvest-desk-ledger` for the 166 stranded rows in the stashed copies of these two
+> files. It has not been run against production (2026-11-01: the board holds no `import`
+> rows). That command stays runnable and is safe to run again — it is
 > keyed on the row text, so a second pass writes nothing — and it is what to reach for if
 > another stranded ledger copy ever turns up.
 

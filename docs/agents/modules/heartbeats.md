@@ -45,7 +45,7 @@ with that soul ([`Carl`](../agents/carl/HEARTBEAT.md),
 [`Mason`](../agents/mason/HEARTBEAT.md),
 [`Turf Monster`](../agents/turf_monster/HEARTBEAT.md)); this page is the
 cross-soul map. History cut from it lives in
-[`../archive/heartbeats-2026-09-25.md`](../archive/heartbeats-2026-09-25.md).
+[`heartbeats-2026-09-25.md`](../archive/README.md).
 
 | Soul (avatar → `/agents/<slug>`) | Row 1 prompt | Acts | Enters at | Exit seam |
 |---|---|---|---|---|

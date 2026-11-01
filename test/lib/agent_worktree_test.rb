@@ -1768,6 +1768,18 @@ class AgentWorktreeTest < Minitest::Test
     end
   end
 
+  def test_a_discovered_desk_keeps_its_redis_db_out_of_the_allocator
+    Dir.mktmpdir do |root|
+      desk = File.join(root, "retired-app", ".worktrees", "a-desk")
+      FileUtils.mkdir_p(desk)
+      File.write(File.join(desk, ".env.agent-stack"), "REDIS_URL=redis://localhost:6379/16\n")
+
+      out = run_in_script("print allocated_redis_dbs.include?(16)", env: { "PROJECTS_DIR" => root })
+
+      assert_equal "true", out, "teardown flushes the DB in the desk's own env, so it must stay allocated"
+    end
+  end
+
   # The skip needs BOTH halves. Discovery is per-repo but a stack is per-desk, and
   # moms-app / mcritchie-industries are discovered too — they are ordinary Rails apps
   # whose desks DO have servers to stop. Classifying the repo stackless must never

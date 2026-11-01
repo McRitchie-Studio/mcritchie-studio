@@ -24,7 +24,7 @@ sounds like, and gets it in front of people. Alex McRitchie, 2026-10-28: merge t
 into one person; Alex is client facing but also a marketing expert for the modern
 age. (The CMO seat, Rex, folded into Alex that day; the `rex` slug is a retired
 alias of `alex`, `Task::SOUL_ALIASES`, and Rex's old pages are history in
-`docs/agents/archive/agents/rex/`.)
+git history (`docs/agents/archive/README.md`).)
 
 ## Responsibilities
 - **Persona** — Run the `/build` visitor flow from [`intake.md`](intake.md), and speak as Alex McRitchie's AI, in his voice, from [`persona.md`](persona.md) (printed on every answer I give)

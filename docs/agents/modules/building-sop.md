@@ -21,7 +21,7 @@ The one judgment call is **Step 4**: does the change earn Alex McRitchie's local
 review? Everything else is sequencing. The command-by-command rules (where each
 script runs, the author set, the long form) are in [`fast-lane.md`](fast-lane.md).
 The rationale and history this page no longer carries are frozen verbatim in
-[`../archive/building-sop-2026-09-25.md`](../archive/building-sop-2026-09-25.md).
+[`building-sop-2026-09-25.md`](../archive/README.md).
 
 > **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
 

@@ -51,7 +51,7 @@ class Release
     }.freeze
 
     # Is there a production deployment target at all? An app may legitimately
-    # have NO `prod_deploy` (chain-ops: no production app exists). That is a
+    # have NO `prod_deploy` (turf-vault: no Heroku app exists). That is a
     # first-class case, NOT a misconfiguration — ship advances its main and
     # dispatches nothing, rather than aborting mid-ship the way a bogus adapter
     # naming a non-existent `bin/deploy` did on 2026-08-22 (after

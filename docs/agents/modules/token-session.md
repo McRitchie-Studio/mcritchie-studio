@@ -515,7 +515,7 @@ Why the shared cache exists: the credential helper once re-derived a session
 from the private key on every git operation, and a day of ordinary work spent the
 account's 1000-read daily quota. Reading the shared session first makes a warm git
 operation cost zero reads. The full history is in
-[`../archive/token-session-2026-09-25.md`](../archive/token-session-2026-09-25.md).
+[`token-session-2026-09-25.md`](../archive/README.md).
 
 Deeper reference: `mcritchie-studio/docs/agents/modules/source-control.md`
 (architecture, the three credential stores and how they rank) and

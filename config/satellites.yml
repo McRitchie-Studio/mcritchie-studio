@@ -79,17 +79,6 @@ satellites:
     deploy_provider: "other"
     status: "reserved"
 
-  - slug: chain-ops
-    display_name: "Chain Ops"
-    emoji: "⛓️"
-    port: 3400
-    heroku_app: null
-    production_url: null
-    role: "admin"
-    description: "Solana localnet and QA control plane; archived, port block kept"
-    deploy_provider: "heroku"
-    status: "reserved"
-
   - slug: mcritchie-industries
     display_name: "McRitchie Industries"
     emoji: "📐"
@@ -97,7 +86,7 @@ satellites:
     heroku_app: "mcritchie-industries"
     production_url: "https://mcritchie.industries"
     role: "viewer"
-    description: "Central business knowledge base — acquisitions (flagship), companies, financials, clients; version-controlled business-data/ files plus the app DB. Successor to the retired acquisition-studio prototype"
+    description: "Central business knowledge base — acquisitions (flagship), companies, financials, clients; version-controlled business-data/ files plus the app DB"
     deploy_provider: "heroku"
     status: "active"
 

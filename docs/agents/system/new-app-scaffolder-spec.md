@@ -12,8 +12,8 @@ Active rules live in:
 - `mcritchie-studio/config/satellites.yml`
 - `studio-engine/docs/NEW_APP_SETUP.md`
 
-Current decision: Tax Studio stays planned at `3200-3299`, Rolio is reserved at
-`3300-3399`, and Chain Ops is planned at `3400-3499`. A new managed app should
+Current decision: Tax Studio stays planned at `3200-3299` and Rolio is reserved at
+`3300-3399`. A new managed app should
 start at the next open block unless the registry says otherwise.
 
 ## What it does

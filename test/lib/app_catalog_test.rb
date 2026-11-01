@@ -44,7 +44,8 @@ class AppCatalogTest < Minitest::Test
     %w[dads-app rantly 10and5 portfolio prisoners-dilemma search-position weekly-lock].each do |slug|
       assert_equal ["basic", "showcase"], tiers.fetch(slug), slug
     end
-    %w[chain-ops tax-studio acquisition-studio].each { |slug| assert_equal [nil, "archived"], tiers.fetch(slug), slug }
+    assert_equal [nil, "archived"], tiers.fetch("tax-studio")
+    %w[chain-ops acquisition-studio].each { |slug| refute tiers.key?(slug), "#{slug} is retired from the registry" }
     assert_equal true, AppCatalog.app("commercial-welding").hosted
     assert_nil AppCatalog.app("tax-studio").repo
   end
@@ -131,7 +132,7 @@ class AppCatalogTest < Minitest::Test
     unshippable = ->(app) { app.archived? || app.repo.nil? || app.heroku_app.nil? }
     assert_equal AppCatalog.apps.select { |app| unshippable.(app) || AppCatalog::UNANNOUNCED.include?(app.slug) }.map(&:slug), hidden,
                  "only an archived, repo-less, undeployed or unannounced app's group hides when empty"
-    assert_includes hidden, "acquisition-studio"
+    assert_includes hidden, "tax-studio"
     cw = AppCatalog.app("commercial-welding")
     refute unshippable.(cw), "commercial-welding is deployed, so only UNANNOUNCED hides it"
     assert_includes hidden, "commercial-welding", "no public release note names Commercial Welding before the acquisition closes"

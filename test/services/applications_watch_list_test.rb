@@ -21,13 +21,13 @@ class ApplicationsWatchListTest < ActiveSupport::TestCase
   def app!(slug, **attrs) = App.find_by(slug: slug) || App.create!(slug: slug, name: slug.titleize, **attrs)
 
   test "[unit] a live catalog app with a URL is live; a client app, a URL-less app, a library and an archived app are not" do
-    apps = [ apps(:turf_monster), app!("pawsome"), app!("chain-ops"), app!("studio-engine"), app!("rolio") ]
+    apps = [ apps(:turf_monster), app!("pawsome"), app!("tax-studio"), app!("studio-engine"), app!("rolio") ]
     list = ApplicationsWatchList.build(apps, admin: true,
                                              catalog: catalog("rolio" => AppCatalog.app("rolio").with(production_url: nil)))
 
     assert_equal %w[turf-monster], list.live.map(&:slug)
     assert_equal %w[pawsome rolio], list.pending.map(&:slug).sort
-    assert_equal %w[chain-ops studio-engine], list.other.map(&:slug).sort
+    assert_equal %w[studio-engine tax-studio], list.other.map(&:slug).sort
     assert_equal "No production URL yet", list.pending.find { |r| r.slug == "rolio" }.why
     assert_equal "Not launched; no production URL on record", list.pending.find { |r| r.slug == "pawsome" }.why
   end

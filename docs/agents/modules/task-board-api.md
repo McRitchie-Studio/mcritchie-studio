@@ -414,7 +414,7 @@ gate docs live in `docs/agents/modules/gates/`). Keys and grains:
 | `g3_candidate` | G3 Candidate (pre-QA + QA deploy) | `release` |
 | `g4_ship` | G4 Ship (frozen-SHA + prod deploy) | `release` |
 
-A **retired** key (`GateRun::RETIRED_KEYS`; history in `docs/agents/archive/`) is
+A **retired** key (`GateRun::RETIRED_KEYS`; history in `docs/agents/archive/README.md`) is
 refused on every write (`open`, `sops`, `close`) with `422 RETIRED_GATE_KEY` and
 mints no row. Its old rows still validate and still list through `GET`.
 
@@ -475,7 +475,8 @@ is normally run from the **primary**, which sits on `main` — a branch nobody m
 to — so the audit row was created in the one place it could never be saved from. Twelve
 "restore later" stashes carrying 166 rows accumulated, plus the primary's own uncommitted
 tree, and none was ever restored. The records live here now and render on the **Desks
-panel at `/deployments`**; `bin/harvest-desk-ledger` recovered the stranded ones.
+panel at `/deployments`**. The board starts at 2026-09-01: `bin/harvest-desk-ledger` was never
+run against production, so the stranded rows are not on it.
 
 **Post the registry record verbatim.** The caller sends the hash
 `bin/agent-worktree snapshot` already builds; the server owns the mapping onto columns

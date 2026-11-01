@@ -1157,9 +1157,8 @@ deploy command:** each app ships by the `prod_deploy.strategy` on its
 
 All three deploying apps migrate in their Heroku release phase (`release:` in
 each Procfile). The registry parks the rest: `rolio` (`git_push_heroku`, `ladder:
-dormant`) and `tax-studio` (`repo_script`, `ladder: planned`) declare adapters, and
-`chain-ops` (`ladder: blocked`) declares none. **A parked repo never reaches
-those adapters.** `app/models/release/ladder.rb#sweepable` scopes `bin/release
+dormant`) and `tax-studio` (`repo_script`, `ladder: planned`) declare adapters.
+**A parked repo never reaches those adapters.** `app/models/release/ladder.rb#sweepable` scopes `bin/release
 init`, the ladder guards and the unwired-CI warning, and the sweep reads the
 ladder too: a task naming any parked repo is HELD
 at detection (`app/models/release/conductor.rb#sweep_candidates`) and in the
@@ -1245,7 +1244,7 @@ preserving the release history. `shipped` is therefore **no longer terminal** �
 the Deploy loop now closes at `archived`. **Desk teardown records are board rows**
 (`DeskRecord`, on the Desks panel at `/deployments`) — the reclaim no longer writes
 `delete-later.md`, because a sweep runs from the primary, the primary sits on `main`, and
-166 rows were stranded that way (recovered onto the board by `bin/harvest-desk-ledger`). The archive beat still rolls that file's historical
+166 rows were stranded that way (`bin/harvest-desk-ledger` imports them; not yet run against production). The archive beat still rolls that file's historical
 resolved rows into its archive and commits **that** update to `release` (best-effort, only
 when the ledger is the *sole* uncommitted change — pure guard `Release::ArtifactCommit`),
 so it ships next round instead of piling up as uncommitted dirt.

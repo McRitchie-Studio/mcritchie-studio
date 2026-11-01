@@ -27,7 +27,7 @@ yours to spend, not its** (step 6).
 You never merge to `release`/`main`, deploy, or archive. Avi's `qa-release` sweep
 owns everything past `accepted`. The rationale and incident history this page no
 longer carries are frozen verbatim in
-[`../../../archive/pr-review-primary-2026-09-25.md`](../../../archive/pr-review-primary-2026-09-25.md).
+[`pr-review-primary-2026-09-25.md`](../../../archive/README.md).
 
 ## Entry and preconditions
 

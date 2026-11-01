@@ -140,7 +140,7 @@ Message verifiers are deliberately **not** rotated: the old key is the leaked on
 
 **The expected prefix.** `config/secret_rotation.yml` holds `expected_old_prefix`: the first 16 hex characters of the SHA-256 of the key a swap retires, which is the live key whenever no window is open. It is a prefix, never a full digest. Two sources give it without printing a key: the `new=` line of the previous swap, and the `runtime=` field of `heroku run --app mcritchie-studio -- bin/rails secret_key_base:verify_rotation`, which the dyno computes from the key it runs on (with the window closed the task exits 1 and still prints the field). Confirm the config against the `runtime=` field before a swap.
 
-**Past rotations:** the dated record is [`../archive/secrets-rotation-2026-10-07.md`](../archive/secrets-rotation-2026-10-07.md).
+**Past rotations:** the dated record is [`secrets-rotation-2026-10-07.md`](../archive/README.md).
 
 ---
 

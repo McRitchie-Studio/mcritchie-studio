@@ -44,8 +44,7 @@ class RetiredSopNamesTest < ActiveSupport::TestCase
     assert_operator lines.size, :>=, 10_000, "the live-doc scan read too few lines to be the real docs tree"
 
     assert_empty retired_hits(lines),
-                 "a live doc names a retired gate or SOP. Name the live one, or move the history to " \
-                 "docs/agents/archive/"
+                 "a live doc names a retired gate or SOP. Name the live one, or leave the history to git"
     refute SopRegistry.entries(Rails.root.to_s).any? { |e| e.invocation.match?(Regexp.union(RETIRED_NAMES.values)) },
            "the SOP registry still carries a retired name"
   end

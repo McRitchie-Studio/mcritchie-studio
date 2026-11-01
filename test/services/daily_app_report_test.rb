@@ -59,7 +59,7 @@ class DailyAppReportTest < ActiveSupport::TestCase
     assert_includes slugs, "mcritchie-studio"
     assert_includes slugs, "turf-monster" # showcase counts as live
     refute_includes slugs, "dads-app"     # engine: false
-    refute_includes slugs, "acquisition-studio" # archived
+    refute_includes slugs, "tax-studio" # archived
     AppCatalog::UNANNOUNCED.each { |slug| refute_includes slugs, slug }
     assert_equal "HEALTH_TOKEN_TURF_MONSTER", DailyAppReport.token_env("turf-monster")
     assert_equal "HEALTH_TOKEN_10AND5", DailyAppReport.token_env("10and5")

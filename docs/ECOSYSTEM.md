@@ -27,10 +27,8 @@ app on display) and **archived** (nothing deploys it). Every app runs on Heroku.
 | [`10and5`](https://github.com/McRitchie-Studio/10and5) | showcase | Restaurant mystery-shopper platform | 4200 | https://10and5.mcritchie.studio | none |
 | [`search-position`](https://github.com/McRitchie-Studio/search-position) | showcase | Google search position checker | 4300 | https://search-position.mcritchie.studio | none |
 
-Archived: `rolio`, `chain-ops`, `tax-studio` and `acquisition-studio`. The first
-three keep their port blocks (3300, 3400, 3200) in `config/satellites.yml`, and
-the release ladder ships none of them. `mcritchie-industries` succeeds
-`acquisition-studio`.
+Archived: `rolio` and `tax-studio`. Both keep their port blocks (3300, 3200) in
+`config/satellites.yml`, and the release ladder ships neither.
 
 Local desks take ports from each app's hundred-block (the hub's is `3000-3099`):
 [`docs/agents/modules/ports-and-processes.md`](agents/modules/ports-and-processes.md).

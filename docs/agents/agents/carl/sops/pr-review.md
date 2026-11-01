@@ -22,7 +22,7 @@ seat merges docs-shape PRs only, measured by `bin/merge-permit` at the merge
 ([`pr-review-primary.md`](pr-review-primary.md)); every other PR is Carl's to
 merge. This sweep runs Carl plus a light on every PR.
 The rationale and incident history this page no longer carries are frozen
-verbatim in [`../../../archive/pr-review-2026-09-25.md`](../../../archive/pr-review-2026-09-25.md).
+verbatim in [`pr-review-2026-09-25.md`](../../../archive/README.md).
 
 ## Scope and entry
 

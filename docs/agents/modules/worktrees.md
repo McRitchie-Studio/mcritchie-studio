@@ -3,7 +3,7 @@
 Every code or active-doc edit happens in an isolated worktree (a **desk**,
 `/Users/alex/projects/<repo>/.worktrees/<task-slug>`) on an allocated port; primary
 checkouts are loading docks. History cut from this page:
-[`../archive/worktrees-2026-09-25.md`](../archive/worktrees-2026-09-25.md).
+[`worktrees-2026-09-25.md`](../archive/README.md).
 
 ## Fresh Worktree Checklist
 

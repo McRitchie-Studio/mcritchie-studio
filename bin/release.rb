@@ -495,7 +495,7 @@ end
 
 # Whether an app is registered in config/qa_environments.yml — i.e. has a QA
 # target to deploy to. A repo can be a registered app in release_repos.yml yet
-# have NO QA env (tax-studio, chain-ops); prepare warns + skips its QA deploy
+# have NO QA env (tax-studio); prepare warns + skips its QA deploy
 # rather than aborting the whole release. (validate_members! already aborts on a
 # fully-unknown repo; this is the softer "registered app, no QA env" case.)
 def qa_registered?(app)
@@ -5272,7 +5272,7 @@ def prepare
     end
 
     # Eligibility: a repo can be a registered app (passes validate_members!) yet
-    # have NO QA env (tax-studio, chain-ops). Warn + skip its QA deploy rather
+    # have NO QA env (tax-studio). Warn + skip its QA deploy rather
     # than firing a `bin/qa-server deploy` that has no target — it still ships at
     # `ship` via its prod_deploy adapter; it just can't be QA-reviewed here.
     unless qa_registered?(group["qa_app"])
@@ -7142,7 +7142,7 @@ end
 # Release::GateEnv sets RAILS_ENV=test (right for a gate, which runs nothing but
 # test commands) — and this is a PRODUCTION DEPLOY SCRIPT. Handing it RAILS_ENV
 # =test changes a contract it never agreed to: turf's bin/deploy happens to run
-# only `bin/rails test`, but the next repo_script app (tax-studio, chain-ops) could
+# only `bin/rails test`, but the next repo_script app (tax-studio) could
 # precompile assets or run a rails task in its deploy, and doing that under
 # RAILS_ENV=test would build the WRONG artifact and ship it. The ruby pin is out
 # for the same reason: the script's toolchain is the script's business. The change
@@ -10271,7 +10271,7 @@ def deploy_app(group, frozen)
   # assembled+main = prod-in-flight; an interrupted re-run reads it as "ff done").
   record_merged_main(Array(group["members"]).map { |m| m["slug"] })
 
-  # NO DEPLOY TARGET — a registered app with no `prod_deploy` (chain-ops). Its
+  # NO DEPLOY TARGET — a registered app with no `prod_deploy` (turf-vault). Its
   # main is advanced and its members stamped merged:"main" above; there is simply
   # nothing to dispatch. Ship continues to the NEXT app instead of aborting, and
   # the record says what actually happened — never "deployed to production".
@@ -12869,7 +12869,7 @@ class ReleaseCycleDeps
 
   # Prod verify's SHA leg: for each app the release DEPLOYS (a prod_deploy strategy,
   # Release::ShipSequence.deploy_target?, as the URL check and the ship read it; a
-  # turf-vault or chain-ops group has none), does production run the SHA the release
+  # turf-vault group has none), does production run the SHA the release
   # shipped? That SHA is release.metadata["shipped_shas"] (what the ship pushed: a
   # candidate-gem re-pin commit is newer than qa_shas), else qa_shas.
   # [{ "repo", "sha", "ok", "reason" }], or nil when the release cannot be read.

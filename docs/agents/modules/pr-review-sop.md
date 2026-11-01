@@ -22,7 +22,7 @@ light, drives the verdict, and merges. Each reviewer reviews **as their own
 soul**, attributed in the Agent column of `/mason/heartbeat`. Stage ownership stays
 as `devops-cycle-design.md` §1.2 defines it; this is the how-to.
 History and rationale cut from this page live in
-[`../archive/pr-review-sop-2026-09-25.md`](../archive/pr-review-sop-2026-09-25.md).
+[`pr-review-sop-2026-09-25.md`](../archive/README.md).
 
 > **Stale GitHub credential?** Run `eval "$(/Users/alex/projects/mcritchie-studio/bin/gh-auth-refresh --export)"` in the same shell command as the retry, read its stderr (eval hides the exit code), and never ask for `gh auth login` ([`token-session.md`](token-session.md)).
 

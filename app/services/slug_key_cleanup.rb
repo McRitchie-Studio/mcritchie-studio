@@ -4,7 +4,7 @@
 # AddSlugForeignKeys adds the keys NOT VALID, ValidateSlugForeignKeys validates
 # every key whose column is already clean, and this cleans and validates the rest.
 #
-# The cleanup, per the orphan census (docs/agents/archive/audits/slug-orphan-census-2026-10-06.md):
+# The cleanup, per the orphan census (audits/slug-orphan-census-2026-10-06.md, docs/agents/archive/README.md):
 #   * an agent slug that differs from a real agent only by case takes the agent's;
 #   * an activity's unknown agent or task handle moves into its metadata
 #     (agent_handle, task_handle), and a task's unknown agent handle into its

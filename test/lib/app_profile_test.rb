@@ -217,7 +217,10 @@ class AppProfileTest < Minitest::Test
     root = File.expand_path("../..", __dir__)
     registry = YAML.safe_load_file(File.join(root, "config/release_repos.yml"))
     catalog = File.read(File.join(root, "config/apps.yml"))
-    registry.fetch("apps").each_key { |slug| assert AppContract.glyph_check(catalog, slug).ok, "#{slug} has no glyph" }
+    # chain-ops is a bare parked row, out of the catalog: retired_repo_card_hold_test.rb.
+    (registry.fetch("apps").keys - %w[chain-ops]).each do |slug|
+      assert AppContract.glyph_check(catalog, slug).ok, "#{slug} has no glyph"
+    end
   end
 
   SATELLITES = <<~YAML

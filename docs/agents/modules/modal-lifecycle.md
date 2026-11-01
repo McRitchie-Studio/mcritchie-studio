@@ -23,18 +23,14 @@ card that needs it.
 
 **Among the apps that mount the engine, only turf-monster bundles
 solana-studio.** Measured from the lockfiles 2026-09-06. The engine-mounting set
-is five: mcritchie-studio, turf-monster, acquisition-studio,
-mcritchie-industries, moms-app. Of those, acquisition-studio,
+is four: mcritchie-studio, turf-monster, mcritchie-industries, moms-app. Of those,
 mcritchie-industries, moms-app and **mcritchie-studio itself** carry no
 solana-studio. So a primitive that needs the gem and lands in the engine is a
-missing-template 500 for four of the five engine-mounting apps — including the
+missing-template 500 for three of the four engine-mounting apps — including the
 hub.
 
-**Scope both halves to that set** — neither is an ecosystem-wide fact. rolio
-mounts neither gem, and **chain-ops bundles solana-studio (0.5.7) without the
-engine**, so "only turf-monster has solana-studio" is false across the ecosystem
-and true exactly where this rule applies. The conclusion is unchanged; the set it
-ranges over is what needed saying.
+**Scope both halves to that set**: neither is an ecosystem-wide fact, and rolio
+mounts neither gem.
 
 The style guide already resolves this at RUNTIME rather than build time: it
 asks `lookup_context.exists?("wallet_connect", ["solana_studio/modals"], true)`
@@ -209,8 +205,8 @@ file.
 **The precondition: your app must actually mount the shared host.** Measured
 2026-09-07 by grepping every local checkout whose Gemfile carries
 `gem "studio-engine"` for `render "studio/modals/host"` in its layouts:
-turf-monster (2) and McRitchie Studio (1) mount it; **`mcritchie-industries`,
-`moms-app` and `acquisition-studio` mount it zero times**. In those three,
+turf-monster (2) and McRitchie Studio (1) mount it; **`mcritchie-industries`
+and `moms-app` mount it zero times**. In those two,
 `$store.modals` is undefined, so a host-section trigger throws on click and the
 card never opens. (Deliberately no "N of M apps" here — this module and the
 engine's CHANGELOG disagree on the total, and the claim does not need it. Re-run

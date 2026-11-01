@@ -99,7 +99,7 @@ boundary's only allowlist entry. The console, the gem and the entry left togethe
 in [`retire-signing-console`](https://mcritchie.studio/tasks/retire-signing-console).
 The full record, with the losing argument, the console's freeze and removal, the
 signer-verification gap and the implementing tasks, is frozen verbatim in
-[`../archive/app-templates-2026-10-05.md`](../archive/app-templates-2026-10-05.md).
+[`app-templates-2026-10-05.md`](../archive/README.md).
 
 ## Related
 

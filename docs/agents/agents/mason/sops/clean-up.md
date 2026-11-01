@@ -297,4 +297,4 @@ Report to Alex McRitchie:
 The two-workflow release model is `../../../system/devops-cycle-design.md`, the gates
 (DoR, G2–G4) are `../../../modules/gates/`, and worktree mechanics are `../../../modules/worktrees.md`.
 
-History: the long form, with rationale and incident history, is [`clean-up-2026-10-05.md`](../../../archive/clean-up-2026-10-05.md).
+History: the long form, with rationale and incident history, is [`clean-up-2026-10-05.md`](../../../archive/README.md).

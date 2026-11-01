@@ -7,7 +7,7 @@ Task management and orchestration hub for the McRitchie AI agent system. McRitch
 Legacy Rails host: https://app.mcritchie.studio. Previous Squarespace site:
 https://v1.mcritchie.studio.
 
-McRitchie Studio is the **flagship app** of the McRitchie ecosystem ([turf-monster](https://github.com/McRitchie-Studio/turf-monster), [chain-ops](https://github.com/McRitchie-Studio/chain-ops), [studio-engine](https://github.com/McRitchie-Studio/studio-engine), [solana-studio](https://github.com/McRitchie-Studio/solana-studio), [turf-vault](https://github.com/McRitchie-Studio/turf-vault), and future apps). Clone this repo first; it carries the scripts and agent-neutral docs that bootstrap everything else.
+McRitchie Studio is the **flagship app** of the McRitchie ecosystem ([turf-monster](https://github.com/McRitchie-Studio/turf-monster), [studio-engine](https://github.com/McRitchie-Studio/studio-engine), [solana-studio](https://github.com/McRitchie-Studio/solana-studio), [turf-vault](https://github.com/McRitchie-Studio/turf-vault), and future apps). Clone this repo first; it carries the scripts and agent-neutral docs that bootstrap everything else.
 
 > **New here?** Read [`docs/ECOSYSTEM.md`](docs/ECOSYSTEM.md) first — it's the canonical 2-minute orientation surface for the ecosystem.
 
