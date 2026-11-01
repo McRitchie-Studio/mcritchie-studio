@@ -297,8 +297,11 @@ module ChangeBuilds
   def ops_text(task, proposal = confirmed_proposals([ task.slug ])[task.slug])
     run = run_of(task)
     from = proposal ? proposal.requested_in : "a chat"
-    "Change build started: `#{task.slug}` (#{task.devops['repositories'].first}, from #{from}) is building " \
-      "with its desk#{run['desk'] ? " at #{run['desk']}" : ''}. Start its builder: `#{run['launch_line']}`"
+    head = "Change build started: `#{task.slug}` (#{task.devops['repositories'].first}, from #{from}) is building " \
+           "with its desk#{run['desk'] ? " at #{run['desk']}" : ''}."
+    return "#{head} The launcher runs its headless builder next; do not start a second one." if builder_of(task).present?
+
+    "#{head} Start its builder: `#{run['launch_line']}`"
   end
 
   # After the commit: the thread's one message and the ops line. Neither failing
