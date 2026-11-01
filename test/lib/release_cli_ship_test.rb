@@ -294,12 +294,12 @@ class ReleaseCliShipTest < ReleaseCliHarness
     refute_includes out, "ABORTED"
   end
 
-  # [integration] A generated artifact (a retro doc / the worktree ledger) routinely
+  # [integration] A generated artifact (a retro doc) routinely
   # sits uncommitted and must not gate a gem build either — the same narrow allowlist.
   def test_ship_preflight_ignores_generated_artifacts_in_a_gem_primary
     setup = NO_WORKSPACE + <<~RUBY
       def repo_git_state(repo, _path)
-        files = ["docs/agents/maintenance/delete-later.md"]
+        files = ["docs/agents/audits/retro-rel-1.md"]
         return { "repo" => repo, "branch" => "main", "dirty" => true,
                  "dirty_files" => files, "tracked_dirty" => files } if repo == "studio-engine"
         { "repo" => repo, "branch" => "main", "dirty" => false, "dirty_files" => [], "tracked_dirty" => [] }

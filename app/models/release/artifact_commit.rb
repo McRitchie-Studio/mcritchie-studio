@@ -1,6 +1,6 @@
 class Release
   # Pure decision for committing a generated doc — a `bin/release retro` doc or the
-  # `delete-later.md` ledger that `archive` updates — onto the `accepted` branch,
+  # frozen docs that `archive` retires — onto the `accepted` branch,
   # instead of leaving it to pile up as uncommitted working-tree dirt in the primary.
   # (It no longer BLOCKS a ship — the deploy runs from its own workspace and only
   # advises on a dirty primary — but an uncommitted generated doc that never ships
@@ -27,9 +27,9 @@ class Release
     #
     # `expected` takes one path OR many. Many exists for the archive beat's docs
     # sweep, which retires a whole batch of frozen snapshots in one `git mv` pass
-    # plus rewrites the ledger — one logical change across N paths. Passing only
-    # the ledger there would read the retirements as "unrelated work", refuse the
-    # commit, and strand a dozen staged renames as dirt on the primary checkout.
+    # — one logical change across N paths. Omitting a path there would read it as
+    # "unrelated work", refuse the commit, and strand the staged renames as dirt on
+    # the primary checkout.
     def other_dirty_paths(porcelain, expected)
       allowed = Array(expected)
       dirty_paths(porcelain).reject { |path| allowed.include?(path) }

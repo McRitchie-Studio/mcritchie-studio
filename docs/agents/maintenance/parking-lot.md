@@ -266,3 +266,51 @@ small-host example with scaled knobs — so the next person sizing it down reads
 the answer instead of rediscovering it. `mcritchie-studio`'s
 `tasks/_deployments_live_fx` (its `.release-meter-glow` CSS) carries a worked small-host override
 (2px ring, 4px bloom, on a wrapper sized to the bar) to copy from.
+
+---
+
+## Retired delete-later ledger
+
+Alex McRitchie ruled on 2026-11-01 to retire `docs/agents/maintenance/delete-later.md`,
+its archive, `bin/ledger-guard` and the harvest. Desk teardown records are `DeskRecord`
+rows on the board. A file or doc that looks removable once some condition holds is
+parked here, in this section, with its condition.
+
+**Where the old rows are.**
+
+- 166 rows stranded in stashes are on the production board with `source: import`, read
+  back on 2026-11-01. `GET /api/v1/desk_records` has no `source` filter, so count them by
+  paging the whole list. The stashes in the hub primary were left in place.
+- 598 resolved rows committed to the two files (590 `removed <date>`, 8
+  `archive-only <date>`) stay in git history, with the 9 open rows below as first filed. Find
+  them by path, never by a pinned SHA: a history purge of this repo rewrites every SHA, and the
+  rows survive it. The copy they live in is the parent of the commit that deleted them:
+
+```bash
+c=$(git log --all -1 --format=%H --diff-filter=D -- docs/agents/maintenance/delete-later.md)
+git show "$c^:docs/agents/maintenance/delete-later.md"
+git show "$c^:docs/agents/archive/maintenance/delete-later-archive.md"
+```
+
+### Open items carried from the ledger
+
+Measured 2026-11-01. Each row holds what you need to act on it; the original wording is in
+the copy above.
+
+| Item | State | What closes it |
+|------|-------|----------------|
+| `SOLANA_DEVNET_RPC_URL` on Heroku `mcritchie-studio` | Still set. No hub code reads it since `retire-signing-console`, which reached `main` in `rel-20260905-d6c266`. Its value carries a Helius key **shared** with `turf-monster-mainnet`'s `SOLANA_RPC_URL`. | `heroku config:unset SOLANA_DEVNET_RPC_URL -a mcritchie-studio`. Do not route it through `post_deploy_cmd`, which also fires on the QA deploy. Unsetting is safe alone; **rotating the key is not**: rotate only alongside `turf-monster-mainnet`. |
+| Postgres per-desk databases | The 498 `*_development_*` orphans filed on 2026-08-25 are gone. 354 databases remain: 32 `*_development_*`, 277 `*_test*`. `bin/agent-worktree remove` now drops a desk's database. | Needs Alex McRitchie's go-ahead for any bulk drop, with a `pg_stat_activity` check per database, because a drop cannot be undone. |
+| `feat/ai-builder-cache-run` (was the worktree `mcritchie-studio-ai-builder-cache`) | The worktree is gone from disk. `origin/feat/ai-builder-cache-run` is still at `c7d5d3267`. Its last 5 commits carry 517 insertions across 27 files, and it shares **no history** with `accepted` (no merge base), so a plain merge refuses; port them. No board task. | Point at the code that supersedes those commits, or file a task to land them. Record the verdict here. |
+
+**Closed on measurement, 2026-11-01.** Four desks filed `pending approval` are gone from
+disk, so there is nothing left to approve: `mcritchie-studio/devops-scout-launcher-v1`,
+`mcritchie-studio/devops-scout-control-v1`, `mcritchie-studio/task-board-devops-contract`
+and `turf-monster/sidebar-back-qa-sync`. Each branch is still on its origin, which is
+`bin/prune-branches`' concern. The harvest took only resolved rows, so the board holds no
+record of these four; the copy above does.
+
+Two more rows were `reference only`, with no action owed: Claude's local memory
+(`~/.claude/projects/-Users-alex-projects/memory/*`) and character files
+(`~/.claude/agents/*.md`). Promote durable lessons into repo docs and leave those files alone
+unless Alex McRitchie asks.

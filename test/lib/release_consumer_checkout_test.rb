@@ -86,7 +86,7 @@ class ReleaseConsumerCheckoutTest < Minitest::Test
   # requires. Copied rather than stubbed because `--repo=` is the variable under test.
   #
   # THE LIST IS DERIVED, NOT WRITTEN DOWN. It used to be the literal
-  # `%w[docs_archive.rb ledger_guard.rb repo_root.rb]`, which was true only for as
+  # three-file list of bin/lib names, which was true only for as
   # long as bin/archive-docs required exactly those three. Adding a fourth
   # (lib/cli_arg_guard, the argument guard) broke both tests in this file with a
   # LoadError from inside the fixture — a failure about the FIXTURE's shape wearing
@@ -112,22 +112,9 @@ class ReleaseConsumerCheckoutTest < Minitest::Test
     FileUtils.chmod(0o755, path)
   end
 
-  # A ledger with two RESOLVED rows (the older one rolls over) and one UNDATED row
-  # (unresolved — always stays), plus one unreferenced frozen snapshot to retire. The
-  # ledger rows deliberately cite worktrees, not docs: a row naming the snapshot would
-  # PIN it as a live citation and the retirement half would never run.
+  # One unreferenced frozen snapshot to retire.
   def plant_docs(hub)
-    FileUtils.mkdir_p(File.join(hub, "docs", "agents", "maintenance"))
     FileUtils.mkdir_p(File.join(hub, "docs", "agents", "audits"))
-    File.write(File.join(hub, "docs", "agents", "maintenance", "delete-later.md"), <<~MD)
-      # Delete Later Ledger
-
-      | Path | Type | Why it is a candidate | Safe-delete condition | Status |
-      |------|------|-----------------------|-----------------------|--------|
-      | `.worktrees/old-desk-a` | worktree | teardown left it behind | after the release ships | removed 2026-01-02 |
-      | `.worktrees/old-desk-b` | worktree | teardown left it behind | after the release ships | removed 2026-02-03 |
-      | `tmp/scratch-dir` | dir | regenerable scratch | reference only | pending approval |
-    MD
     File.write(File.join(hub, RETIRED_DOC), "# Prelaunch Audit\n\nFrozen snapshot.\n")
   end
 
@@ -202,10 +189,9 @@ class ReleaseConsumerCheckoutTest < Minitest::Test
       assert_includes out, "repo: #{hub}",
                       "the sweep must be pointed at the checkout that EXISTS:\n#{out}"
 
-      # And it did real work there: the frozen snapshot moved, the older resolved
-      # ledger row rolled, and the beat reached the artifact commit.
+      # And it did real work there: the frozen snapshot moved, and the beat reached the
+      # artifact commit.
       assert_includes out, "Retired 1 frozen doc(s)", "the retirement half ran:\n#{out}"
-      assert_includes out, "rolled 1 ledger row(s)", "the ledger half ran:\n#{out}"
       assert_includes out, COMPLETED, "the beat ran THROUGH the sweep:\n#{out}"
       assert_path_exists File.join(hub, ARCHIVED_DOC),
                          "the snapshot must actually be moved on disk, not merely reported"

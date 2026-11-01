@@ -381,7 +381,6 @@ test/lib/desk_claim_test.rb: 0.28
 test/lib/desk_context_test.rb: 0.15
 test/lib/desk_database_guard_test.rb: 0.08
 test/lib/desk_guard_test.rb: 0.19
-test/lib/desk_ledger_import_test.rb: 0.08
 test/lib/desk_ledger_test.rb: 0.08
 test/lib/desk_root_test.rb: 0.02
 test/lib/devops_reconcile_cli_test.rb: 8.17
@@ -451,7 +450,6 @@ test/lib/hormozi/vtt_cleaner_test.rb: 0.05
 test/lib/importmap_audit_ci_test.rb: 3.06
 test/lib/importmap_audit_test.rb: 0.11
 test/lib/lane_runner_test.rb: 2.07
-test/lib/ledger_guard_test.rb: 4.35
 test/lib/mail_cli_test.rb: 2.79
 test/lib/marker_prune_test.rb: 0.82
 test/lib/merge_command_test.rb: 0.01

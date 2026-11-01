@@ -269,30 +269,11 @@ module FastCert
        .sort
   end
 
-  # PREFIX IS NOT PARENTHOOD. bin/lib/desk_ledger.rb's stem prefixes
-  # test/lib/desk_ledger_import_test.rb — but that file is the twin of
-  # bin/lib/desk_ledger_import.rb, a source file of its own that the diff did not
-  # touch. Claiming it would run an unrelated tool's tests on every desk_ledger
-  # edit, which is the over-widening this hop has to avoid to be worth having. A
+  # PREFIX IS NOT PARENTHOOD. A source file's stem can prefix a test that is the twin of
+  # a different source file, as test/lib/agent_worktree_cli_test.rb is the twin of
+  # bin/lib/agent_worktree_cli.rb. Claiming it would run an unrelated tool's tests on
+  # every edit, which is the over-widening this hop has to avoid to be worth having. A
   # sibling joins the family only when NO source file of its own exists.
-  #
-  # Measured over this repo 2026-09-07, sweeping EVERY source that convention-maps
-  # into test/lib/ (bin/* + bin/lib/**/*.rb + lib/**/*.rb — 95 of them have an
-  # existing twin): the glob finds 26 distinct candidate siblings, the guard rejects
-  # THREE, and 23 genuine ones are kept.
-  #
-  #   test/lib/desk_ledger_import_test.rb   ← bin/lib/desk_ledger_import.rb
-  #   test/lib/agent_worktree_cli_test.rb   ← bin/lib/agent_worktree_cli.rb
-  #   test/lib/importmap_audit_ci_test.rb   ← bin/importmap-audit-ci
-  #
-  # THE EARLIER NUMBERS HERE ("sixteen candidates / rejects exactly two / keeps
-  # fourteen") WERE WRONG ON ALL THREE, and the way they went wrong is worth keeping:
-  # they SPLICED TWO INCOMPATIBLE SWEEPS. Sixteen is the candidate count of a bin/*-ONLY
-  # sweep — which rejects exactly ONE (agent_worktree_cli_test.rb) — while
-  # desk_ledger_import_test.rb is only reachable from the bin/lib sweep, which finds 9
-  # candidates and rejects 2. No single sweep rejects two AND finds sixteen. The GUARD
-  # was always right; only the prose lied, which is the failure mode of a measured
-  # comment nobody re-derives. Re-derive before editing this paragraph, don't paste it.
   def owned_elsewhere?(root, test_path)
     source_twins(test_path).any? { |src| File.file?(File.join(root, src)) }
   end

@@ -61,7 +61,7 @@ Mode:
 ## Follow-Up Ledger
 ```
 
-If cleanup work is performed, update `docs/agents/maintenance/delete-later.md`
+If cleanup work is performed, update `docs/agents/maintenance/parking-lot.md`
 for superseded files and update `docs/agents/audits/final-closeout-*.md` when
 the closeout state changes.
 

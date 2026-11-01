@@ -20,7 +20,7 @@ same kind of fact:
 |---|---|---|
 | archived tasks, completed releases | the **production board** | shared; `--local` is never added (see Entry) |
 | reclaimed worktrees, swept bytes, rotation verdicts | **this machine only** | never board state |
-| retired docs, ledger rollover | **the repo** | staged, then committed to `accepted` |
+| retired docs | **the repo** | staged, then committed to `accepted` |
 
 So a **fresh Mac's first archive run sweeps almost nothing, and that is
 correct** — not an anomaly, and not a sign the sweep is broken. The disk numbers
@@ -28,8 +28,8 @@ describe the machine the command ran on. Never file them as pipeline state, and
 never compare them across machines.
 
 The doc retirement is the exception to "machine-local": it edits **tracked
-files**, so the run stages the moves and commits them to `accepted` with the
-ledger in one artifact commit. It therefore does the same thing on any machine.
+files**, so the run stages the moves and commits them to `accepted` in one
+artifact commit. It therefore does the same thing on any machine.
 
 ## Entry
 
@@ -117,9 +117,8 @@ cleanup guards.
    reclaim, so worktrees that just went away are not swept and counted twice.
    Then runs both pruners with `--yes` (see [the pruners](#the-pruners-step-4--step-9)).
    A pruner that refuses or fails prints a warning; the archive goes on.
-10. Retires frozen docs + rolls the ledger (`bin/archive-docs`), then commits
-    each move (the archive copy AND the live copy's removal) and the ledger to
-    `accepted` in ONE artifact commit.
+10. Retires frozen docs (`bin/archive-docs`), then commits each move (the archive
+    copy AND the live copy's removal) to `accepted` in ONE artifact commit.
 
 **`bin/release archive` ends at step 10. The ACT does not.** One step remains, and
 it is a separate command you run yourself:
@@ -239,46 +238,22 @@ stale inbound link resolvable by search instead of turning it into a dead end.
 **A still-referenced snapshot is skipped and named.** It is someone's live
 citation: fix the referrer first, deliberately, and it retires on the next run.
 
-The ledger rolls over on the same beat: rows in
-`docs/agents/maintenance/delete-later.md` whose status date is older than the
-current release cycle move to `docs/agents/archive/maintenance/`. Rows with **no
-date** — `pending approval`, `reference only` — are unresolved work and always
-stay live.
-
-**The beat refuses to sweep a ledger that has lost rows, and the refusal stops
-the beat.** A dated row is a teardown that happened, and it may only ever MOVE
-between the ledger and its archive. `bin/archive-docs` checks that against `HEAD`
-before the roll and again after it, and an apply exits non-zero naming every
-destroyed row (a `--dry-run` reports and still exits 0, so a preview never wedges
-the callers that preview before confirming). `bin/release archive` **honours that
-exit code**: it aborts before `commit_artifact_to_accepted`, so the destroyed
-ledger is never committed to `accepted`.
-
-Both halves are load-bearing, and the second one is easy to lose. When the
-refusal first shipped it was **inert** through the only caller that matters —
-`sweep_docs` returned `[out, ok]` and both call sites took `.first`, so the
-warning printed and the beat committed the loss anyway. If you change how
-`sweep_docs` is called, `test/lib/release_archive_docs_refusal_test.rb` is what
-holds the seam.
-
-The board archive, the worktree reclaim, and the artifact sweep all run **before**
-this point and are idempotent, so an abort here is safe to resume: recover the
-row, then re-run `bin/release archive`. If it fires, do not edit the guard —
-recover the row with `git show HEAD:docs/agents/maintenance/delete-later.md` and
-put it back.
+**A failed sweep stops the beat.** `bin/release archive` honours the non-zero exit:
+it aborts before `commit_artifact_to_accepted` and names the command, its exit status
+and its stderr. If you change how `sweep_docs` is called,
+`test/lib/release_archive_docs_refusal_test.rb` is what holds the seam. The board
+archive, the worktree reclaim, and the artifact sweep all run **before** this point
+and are idempotent, so fix the cause and re-run `bin/release archive`.
 
 ```bash
 bin/archive-docs --dry-run                  # report only
-bin/archive-docs --ledger-cutoff=2026-08-09 # override the derived cycle boundary
-bin/archive-docs --help                     # usage; sweeps nothing, rolls nothing
-bin/ledger-guard                            # the same invariant, on demand
+bin/archive-docs --help                     # usage; sweeps nothing
 ```
 
 **`--help` is safe to probe, and it was not always.** Until 2026-08-31
 `bin/archive-docs --help` was not a help flag at all: the script read four exact
 spellings out of `ARGV` and silently ignored everything else, so `--help` fell
-through to a REAL roll — it rewrote `delete-later.md` by −41 lines and staged a
-second file for an operator who was only asking what the command does. It now
+through to a REAL roll for an operator who was only asking what the command does. It now
 prints usage and exits without touching the working tree or the index, and an
 argument it cannot account for REFUSES rather than proceeding. The same guard
 (`bin/lib/cli_arg_guard.rb`) covers `bin/clean-artifacts`, `bin/control-check`
@@ -383,7 +358,7 @@ reclaimed, and regenerable disk is swept. Report:
   BOTH directions, so a contaminated UNKNOWN is not merely pessimistic, it is
   uninformative. That is what `bin/lib/toolchain_env.rb` exists to prevent; the
   interpreter line is how you confirm it did
-- **retired-doc count** and the ledger rows rolled over. With both at 0, a
+- **retired-doc count**. At 0, a
   `left N doc(s) uncommitted` advisory is a failed empty commit, not stranded work
 - **any doc skipped for being still referenced** — name the file AND its
   referrer, so the citation can be fixed deliberately rather than orphaned

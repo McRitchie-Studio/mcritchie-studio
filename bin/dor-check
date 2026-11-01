@@ -489,8 +489,8 @@ end
 # hole the fail-closed rule above left open, and the one that actually fired: the
 # review gate-zero runs from the hub PRIMARY by SOP (pr-review-primary.md's Entry
 # says `cd /Users/alex/projects/mcritchie-studio`), the PR file list was unreadable,
-# and the git fallback dutifully reported the primary's ONE dirty unrelated file —
-# docs/agents/maintenance/delete-later.md. Non-empty, observed, all prose: the
+# and the git fallback dutifully reported the primary's ONE dirty unrelated file, the
+# markdown desk ledger retired on 2026-11-01. Non-empty, observed, all prose: the
 # `kind: chore` exemption was EARNED by evidence, and a multi-file code PR was waved
 # through with "✓ DoR-to-Merge n/a … doc-only diff … → ready to advance". The
 # fingerprint half of this same mistake can only ever produce a false REFUSAL
@@ -1747,7 +1747,7 @@ review_role = options[:gate_role] == "review"
 # nothing pins either to the task's tree. Observed verbatim, on a multi-file code PR:
 #
 #   ✓ DoR-to-Merge n/a … doc-only diff (kind: chore): 1 file(s), none behavioral —
-#     docs/agents/maintenance/delete-later.md [source: git working tree]
+#     <that one ledger file> [source: git working tree]
 #     → ready to advance submitted → reviewed
 #
 # One unrelated dirty file on the PRIMARY's `main`, read as the PR's entire diff,

@@ -1881,7 +1881,7 @@ class AgentWorktreeTest < Minitest::Test
                  "run_reclaim. The registered cases must keep reporting, or the guard is just off."
   end
 
-  # Every remediation line the sweep prints for a discovered desk goes into the delete-later
+  # Every remediation line the sweep prints for a discovered desk goes into the desk
   # ledger as the archive record, so BOTH halves have to hold: the command must resolve, and
   # it must resolve into the tree the desk actually lives in.
   #
