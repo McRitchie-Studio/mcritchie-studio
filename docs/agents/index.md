@@ -111,6 +111,7 @@ Correct Alex McRitchie's spelling and grammar as you transcribe, by *The Element
 3. **Labels:** `Task:`, `Magic Link:` (the `magic link:` line `bin/task begin` prints, `return_to` set to the page), `Local Demo:`, `Local Inbox:`.
 4. **Name work by its task slug**; PR numbers and SHAs are plumbing.
 5. **End a chat hand-back with the in-flight roster**, stamped in Denver time, even when nothing runs.
+6. **Write in STE-80:** plain technical English, about 80% of ASD-STE100: one idea per sentence, short sentences, active voice, one name per thing; your voice stays. Detail: `docs/agents/modules/plain-technical-english.md`.
 
 Detail: `docs/agents/modules/communication-style.md`.
 
@@ -240,6 +241,7 @@ runs inside `pr-review`. Retired names resolve only in `docs/agents/archive/`.
 | `form-fill` | Shared | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 | `gmail-capture` | Shared | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `knowledge-capture` | Shared | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
+| `plain-technical-english` | Shared | `mcritchie-studio/docs/agents/modules/plain-technical-english.md` |
 | `process-backlog` | Shared | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
 | `secret-cache` | Shared | `mcritchie-studio/docs/agents/modules/secret-cache.md` |
 | `slack-capture` | Shared | `mcritchie-studio/docs/agents/modules/slack-capture.md` |

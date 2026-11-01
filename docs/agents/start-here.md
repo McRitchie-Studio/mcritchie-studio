@@ -173,6 +173,7 @@ its invocation exactly.
 | `form-fill` (complete an application from records, ask only what they cannot answer) | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 | `gmail-capture` (read-only mailbox pull into the desk queue) | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |
 | `knowledge-capture` (team@, intake protocol, sweep) | `mcritchie-studio/docs/agents/modules/knowledge-capture.md` |
+| `plain-technical-english` (STE-80: write every agent reply in plain technical English, about 80% of ASD-STE100) | `mcritchie-studio/docs/agents/modules/plain-technical-english.md` |
 | `process-backlog` (groom designed, build four wide) | `mcritchie-studio/docs/agents/modules/process-backlog.md` |
 | `secret-cache` (read, refresh, forget and recover cached expiring credentials; 1Password is the fallback) | `mcritchie-studio/docs/agents/modules/secret-cache.md` |
 | `slack-capture` (connect, read, categorize a channel) | `mcritchie-studio/docs/agents/modules/slack-capture.md` |

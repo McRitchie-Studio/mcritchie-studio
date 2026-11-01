@@ -853,6 +853,11 @@ of its answer. Two pieces build the memory:
 | THREAD | The conversation being answered | `agent_messages` by `thread_key`, this channel and guild only | 6,000 |
 | GOOGLE | Only for an owner (below, "The Google layer"): a read-only snapshot of their own Google, printed after USER | `GoogleConnect::OwnerContext` through the existing readers | 4,000 |
 
+HOW TO ANSWER, between DOMAIN and USER, is code-written rules, not a layer. Its
+second line is `ContextBuilder::STE80_RULE`: write the reply in STE-80, plain
+technical English at about 80% of ASD-STE100, for every soul and audience
+([`../modules/plain-technical-english.md`](../modules/plain-technical-english.md)).
+
 **The Google layer.** The bundle's `google_context` is a small read-only
 snapshot of the sender's own connected Google: the next 7 days of calendar
 events (title, start, end, attendee count; at most 20), the 10 newest Gmail
@@ -2265,7 +2270,7 @@ back to its previous, readable checkpoint and answers 500 (ErrorLog through
    or the first after a consolidation, runs without `--resume`.
 5. **Every turn carries the board's rules again** (`ContextBuilder#warm_prompt`).
    A resumed turn's prompt is the audience and its rules, HOW TO ANSWER (the
-   fence, the catalog, the action output), USER, THREAD and the fenced message,
+   STE-80 reply rule, the fence, the catalog, the action output), USER, THREAD and the fenced message,
    each cut byte for byte from the cold prompt. The role doc, DOMAIN and PERSON
    are left out: the session already holds them. The audience is still resolved
    on the board from the person's role, and `claimable`, the bundle's audience
