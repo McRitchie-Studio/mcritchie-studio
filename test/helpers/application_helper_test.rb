@@ -290,7 +290,6 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "💎", app_emoji("studio-engine")
     assert_equal "🏛️", app_emoji("turf-vault")
     assert_equal "🧱", app_emoji("solana-studio")
-    assert_equal "⛓️", app_emoji("chain-ops")
     assert_equal "📇", app_emoji("rolio")
     assert_equal "📐", app_emoji("mcritchie-industries")
   end

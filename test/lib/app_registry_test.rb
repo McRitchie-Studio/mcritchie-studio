@@ -220,8 +220,9 @@ class AppRegistryTest < Minitest::Test
     assert_includes satellite_disagreements(CATALOG, with_satellite("rolio", production_url: "https://rolio.mcritchie.studio")),
                     "rolio: production_url \"https://rolio.mcritchie.studio\" in satellites.yml, " \
                     "\"https://rolio-prod-82e96784b462.herokuapp.com\" in apps.yml"
-    assert_includes satellite_disagreements(CATALOG, with_satellite("chain-ops", production_url: "https://chain.mcritchie.studio")),
-                    "chain-ops: production_url \"https://chain.mcritchie.studio\" in satellites.yml, nil in apps.yml"
+    assert_includes satellite_disagreements(CATALOG, with_satellite("tax-studio", production_url: "https://taxes.mcritchie.studio")),
+                    "tax-studio: production_url \"https://taxes.mcritchie.studio\" in satellites.yml, " \
+                    "\"https://tax.mcritchie.studio\" in apps.yml"
   end
 
   def test_every_production_url_exception_is_still_needed
@@ -236,10 +237,10 @@ class AppRegistryTest < Minitest::Test
   def test_status_words_map_onto_the_catalog
     assert_includes satellite_disagreements(CATALOG, with_satellite("cyvasse", status: "planned")),
                     "cyvasse: planned in satellites.yml but showcase on Heroku cyvasse (use active or reserved)"
-    assert_includes satellite_disagreements(CATALOG, with_satellite("chain-ops", status: "planned")),
-                    "chain-ops: planned in satellites.yml but archived in apps.yml (use reserved)"
-    assert_includes satellite_disagreements(CATALOG, with_satellite("chain-ops", status: "active")),
-                    "chain-ops: active in satellites.yml but archived in apps.yml"
+    assert_includes satellite_disagreements(CATALOG, with_satellite("tax-studio", status: "planned")),
+                    "tax-studio: planned in satellites.yml but archived in apps.yml (use reserved)"
+    assert_includes satellite_disagreements(CATALOG, with_satellite("tax-studio", status: "active")),
+                    "tax-studio: active in satellites.yml but archived in apps.yml"
   end
 
   def test_a_no_engine_description_on_an_engine_app_is_named
@@ -264,9 +265,9 @@ class AppRegistryTest < Minitest::Test
     parked_live = with_release_app("cyvasse", apps.fetch("cyvasse").merge("ladder" => "dormant"))
     assert_includes release_repo_disagreements(CATALOG, parked_live),
                     "cyvasse: showcase in apps.yml but ladder dormant in release_repos.yml"
-    shipping_archived = with_release_app("chain-ops", apps.fetch("chain-ops").merge("ladder" => "three-rung"))
+    shipping_archived = with_release_app("tax-studio", apps.fetch("tax-studio").merge("ladder" => "three-rung"))
     assert_includes release_repo_disagreements(CATALOG, shipping_archived),
-                    "chain-ops: archived in apps.yml but ladder three-rung in release_repos.yml (park it: dormant, planned, blocked)"
+                    "tax-studio: archived in apps.yml but ladder three-rung in release_repos.yml (park it: dormant, planned, blocked)"
     live_blocked = with_release_app("commercial-welding",
                                     apps.fetch("commercial-welding").merge("ladder" => "blocked"))
     assert_includes release_repo_disagreements(CATALOG, live_blocked),

@@ -26,7 +26,7 @@ class ReleaseAcceptedTriggerLintFlagTest < Minitest::Test
 
   # The repos whose lint was read on their own origin/accepted. A flag added to the
   # registry without that read fails here.
-  LINTED = %w[chain-ops mcritchie-industries mcritchie-studio rolio solana-studio studio-engine turf-monster].freeze
+  LINTED = %w[mcritchie-industries mcritchie-studio rolio solana-studio studio-engine turf-monster].freeze
 
   # Promotes `sources.keys` with every repo shipping the given workflow tree. The RED
   # guard is pinned green, so a refusal here is the trigger refusal's.

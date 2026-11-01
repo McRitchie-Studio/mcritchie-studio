@@ -104,14 +104,14 @@ class AppRequestTest < ActiveSupport::TestCase
   # rolio's production_url is a herokuapp host, not a subdomain of ours, so its
   # slug is what keeps the name from being claimed.
   test "every satellite's slug is reserved, whatever its production_url" do
-    %w[rolio chain-ops turf-monster cyvasse].each do |name|
+    %w[rolio turf-monster cyvasse].each do |name|
       assert_equal "That name is reserved.", AppRequest.unavailable_reason(name), "#{name} has a satellites.yml row"
     end
   end
 
   # The app catalog (AppCatalog::PATH) names apps and libraries satellites.yml never lists: the
   # libraries (studio-engine, solana-studio, turf-vault and its alias vault) and
-  # apps with no satellite row (acquisition-studio, tax-studio's tax host). A
+  # apps with no satellite row (tax-studio's tax host). A
   # /build app must not take any of them.
   test "[unit] every app catalog app and library name is reserved, with aliases and our subdomains" do
     catalog = YAML.safe_load_file(AppCatalog::PATH)
@@ -127,12 +127,6 @@ class AppRequestTest < ActiveSupport::TestCase
       assert_equal "That name is reserved.", AppRequest.unavailable_reason(name), "#{name} is in the app catalog"
       assert_equal "That name is reserved.", AppRequest.unavailable_reasons([ name ])[name], "#{name} (batch check)"
     end
-  end
-
-  # chain-ops' production_url is null until chain.mcritchie.studio exists, so
-  # RESERVED holds "chain" by hand.
-  test "chain stays reserved for chain-ops' planned host" do
-    assert_equal "That name is reserved.", AppRequest.unavailable_reason("chain")
   end
 
   test "[unit] unavailable_reasons answers every suggestion in one pass, as unavailable_reason would (task build-flow-polish)" do

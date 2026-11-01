@@ -105,7 +105,7 @@ class Release::ReposTest < ActiveSupport::TestCase
   # needs no edit to this file (app-deploy-standard).
   test "app_repos lists the registry's app hash keys" do
     assert_equal (%w[mcritchie-studio turf-monster turf-vault mcritchie-industries rolio
-                     tax-studio chain-ops commercial-welding alex-build] + profile_repos).sort,
+                     tax-studio commercial-welding alex-build] + profile_repos).sort,
                  Release::Repos.app_repos.sort
   end
 
@@ -113,7 +113,7 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert Release::Repos.app?("mcritchie-studio")
     assert Release::Repos.app?("rolio")
     assert Release::Repos.app?("tax-studio")
-    assert Release::Repos.app?("chain-ops")
+    assert_not Release::Repos.app?("chain-ops") # retired
     assert_not Release::Repos.app?("studio-engine") # a gem
     assert_not Release::Repos.app?("not-a-real-repo")
   end
@@ -364,12 +364,12 @@ class Release::ReposTest < ActiveSupport::TestCase
     assert_operator declared, :>=, 1, "expected at least one repo_script app for the guard to check"
   end
 
-  # The fix in evidence. chain-ops has no production app, so it declares no
-  # adapter — and ship treats that as "advance main, dispatch nothing".
-  test "chain-ops declares no prod_deploy because it has no production target" do
-    assert_nil Release::Repos.prod_deploy("chain-ops"),
-               "chain-ops has no production deployment target; declaring one is what wedged G4"
-    assert Release::Repos.app?("chain-ops"), "it is still a registered app — just an undeployed one"
+  # The fix in evidence. turf-vault has no Heroku app, so it declares no adapter,
+  # and ship treats that as "advance main, dispatch nothing".
+  test "turf-vault declares no prod_deploy because it has no production target" do
+    assert_nil Release::Repos.prod_deploy("turf-vault"),
+               "turf-vault has no production deployment target; declaring a bogus one is what wedged G4"
+    assert Release::Repos.app?("turf-vault"), "it is still a registered app, just an undeployed one"
   end
 
   # --- turf-vault: a registered repo with NO production target -----------------
@@ -437,15 +437,12 @@ class Release::ReposTest < ActiveSupport::TestCase
     end
   end
 
-  test "[unit] tax-studio and chain-ops are NOT exempt though they too have no QA env" do
-    # Both are apps with no qa_test_cmd and no qa_environments entry — the exact
-    # config shape turf-vault has. They are NOT exempt, which is the proof that the
-    # exemption is read from the declaration rather than inferred from the tree.
-    # (Neither can ride a sweep today — tax-studio is `planned`, chain-ops
-    # `blocked`, and Ladder.sweepable is three-rung only — so declaring them would
-    # be an unmeasured guess. Each owes its own judgement the day it goes live.)
+  test "[unit] tax-studio is NOT exempt though it too has no QA env" do
+    # An app with no qa_test_cmd and no qa_environments entry, the exact config
+    # shape turf-vault has. It is NOT exempt, which is the proof that the exemption
+    # is read from the declaration rather than inferred from the tree. (It cannot
+    # ride a sweep today: it is `planned`, and Ladder.sweepable is three-rung only.)
     assert_not Release::Repos.qa_evidence_exempt?("tax-studio")
-    assert_not Release::Repos.qa_evidence_exempt?("chain-ops")
   end
 
   test "[unit] an unregistered repo defaults to REQUIRED, not exempt" do
@@ -861,7 +858,6 @@ class Release::ReposTest < ActiveSupport::TestCase
     "10and5" => "git_push_heroku",
     "search-position" => "git_push_heroku",
     "tax-studio" => "repo_script",
-    "chain-ops" => nil,
     "moms-app" => "git_push_heroku",
     "commercial-welding" => "git_push_heroku",
     "alex-build" => "git_push_heroku",
@@ -1105,10 +1101,9 @@ class Release::ReposTest < ActiveSupport::TestCase
   end
 
   test "qa_test_cmd is nil for planned apps without a runnable integration tier" do
-    # tax-studio has no sibling checkout yet; chain-ops' test/integration is
-    # empty — both self-gate (the prepare gate skips) until they grow the tier.
+    # tax-studio has no sibling checkout yet; it self-gates (the prepare gate
+    # skips) until it grows the tier.
     assert_nil Release::Repos.qa_test_cmd("tax-studio")
-    assert_nil Release::Repos.qa_test_cmd("chain-ops")
   end
 
   test "qa_test_cmd is nil for a gem or an unknown repo" do
