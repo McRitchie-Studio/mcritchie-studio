@@ -9,7 +9,8 @@
 # saved from. Twelve stashes of "restore later" ledger content piled up between 2026-06-26
 # and 2026-08-31 (166 rows, plus the primary's own uncommitted tree); not one was ever
 # restored, and a reclaim sweep stranded 25 more DURING the conversation about the defect.
-# `bin/harvest-desk-ledger` recovered all 166 onto this table — see `import!` below. Every earlier fix idea relocated the
+# `bin/harvest-desk-ledger` imports those 166 onto this table (`import!` below); as of
+# 2026-11-01 it has not been run against production. Every earlier fix idea relocated the
 # write and still needed a human to remember a follow-up; a row here is durable the
 # moment it lands, which is the acceptance bar met outright.
 #

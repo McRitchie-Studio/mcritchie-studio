@@ -41,8 +41,7 @@ class DevnetNightlyRetiredGuardTest < ActiveSupport::TestCase
     end
     assert_empty found,
                  "these lines name turf-monster's deleted devnet nightly workflow as if it ran. The devnet " \
-                 "signal is the per-release contest-rehearsal recorded by qa-release; move history to " \
-                 "docs/agents/archive/"
+                 "signal is the per-release contest-rehearsal recorded by qa-release; leave history to git"
   end
 
   test "[unit] the scan bites every spelling and spares the task slug" do

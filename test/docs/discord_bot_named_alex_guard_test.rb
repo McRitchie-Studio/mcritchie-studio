@@ -36,7 +36,7 @@ class DiscordBotNamedAlexGuardTest < ActiveSupport::TestCase
     end
     assert_empty found,
                  "these lines still call the shared Discord bot Ritch; it is named Alex in Discord " \
-                 "(username, guild role and application). Move history to docs/agents/archive/"
+                 "(username, guild role and application). Leave the history to git"
   end
 
   test "[unit] the scan bites every stale spelling and spares the current ones" do
