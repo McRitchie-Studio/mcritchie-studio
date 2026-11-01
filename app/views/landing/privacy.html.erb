@@ -5,7 +5,7 @@
 
 <section class="max-w-3xl mx-auto px-4 py-10 prose-custom" data-test="privacy-page">
   <h1 class="text-3xl font-bold text-heading mb-2">Privacy Policy and Messaging Terms and Conditions</h1>
-  <p class="text-muted text-sm mb-8">Last updated: October 29, 2026</p>
+  <p class="text-muted text-sm mb-8">Last updated: November 1, 2026</p>
 
   <div class="space-y-6 text-body leading-relaxed">
     <section>
@@ -20,6 +20,7 @@
       <p><strong>Text messages:</strong> If you opt in to text messages, we collect your mobile number, the messages you send us, and your opt-in and opt-out history.</p>
       <p><strong>Account information:</strong> When you sign in (by a magic link emailed to you, or Google sign-in), we store your name, email address, authentication metadata and session records needed to keep the account secure.</p>
       <p data-test="voice-profile-privacy"><strong>Voice profile:</strong> If you set up your voice on your profile page, your device listens to three short phrases you read and turns them into a voice pattern: a list of numbers that describes how you sound, so your agent can tell it is you. We store that pattern, which model made it and when, on your account. We never receive or keep the recordings: they stay on your device and are discarded. To do this your browser downloads the speech model from Hugging Face (huggingface.co) and its runtime from jsDelivr (cdn.jsdelivr.net); those hosts see your IP address when it does, and nothing you say is sent to them. You can delete your voice pattern from your profile at any time, and deleting it removes it entirely.</p>
+      <p data-test="voice-message-privacy"><strong>Spoken messages:</strong> <%= VoiceChatHelper::VOICE_PRIVACY %> The words it writes are kept as your message, like one you typed.</p>
       <p><strong>Requests and mailing list:</strong> When you ask us to build an app or join our mailing list, we store what you submit (for example your description of the app) and your email address. Our emails record whether they were opened and which links were clicked.</p>
       <p><strong>Google account data:</strong> When you connect Google Calendar, Gmail or Google Drive, we store the token Google issues and read your Google data only as described in <a href="#google-user-data" class="text-primary hover:underline">section 15, Google User Data</a>.</p>
       <p><strong>Third-party platform credentials:</strong> When an account holder authorizes the Service to post to social media accounts they control, we store the access tokens and account identifiers those platforms issue.</p>
@@ -46,7 +47,7 @@
       <p data-test="sms-no-sharing"><strong>Mobile information is not shared for marketing.</strong> We do not share your mobile opt-in information with anyone. Mobile phone numbers, text messaging opt-in data and consent are not shared with or sold to third parties or affiliates for marketing or promotional purposes.</p>
       <p>We share other information only with:</p>
       <ul class="list-disc pl-6 space-y-1">
-        <li><strong>Service providers</strong> that host the Service, store its files, deliver its email, and carry its phone calls and text messages. They process information for us, only to provide that service.</li>
+        <li><strong>Service providers</strong> that host the Service, store its files, deliver its email, and carry its phone calls and text messages, and OpenAI, which turns a message you speak to an agent into text. They process information for us, only to provide that service.</li>
         <li><strong>Sign-in providers:</strong> Google, when you choose Google sign-in or connect a Google account.</li>
         <li><strong>Platforms you direct us to:</strong> social media platforms, when an account holder instructs the Service to publish content.</li>
         <li><strong>AI providers:</strong> when an account holder uses an AI feature, the content of that request is sent to the AI provider to produce the result. That includes Google data an agent reads for you, under terms that do not allow the provider to train on it (section 15). Contact form submissions and mobile numbers are not sent to AI providers.</li>

@@ -125,6 +125,36 @@ Studio.configure do |config|
     config.voice_profile = true
     config.voice_embedder = "fake" if Rails.env.test?
   end
+  # ---- Talk to Alex by voice (epic .agents/epics/studio-voice.md, card 4) ----
+  # /chat is the hub's own page on the engine's agent chat (studio-engine
+  # docs/AGENT_CHAT.md), thread chat:alex:<user id>. The hub holds that thread,
+  # so the page's /agent_chat/* calls are answered in-process by
+  # HubAgentChatsController (drawn before Studio.routes), never proxied back to
+  # ourselves; naming the soul here is what lets the engine partial render.
+  config.agent_chat_souls = %w[alex]
+  # POST /voice/takes (studio-engine docs/VOICE_TRANSCRIPTION.md): a held take
+  # becomes {text, speaker, score}; nothing is kept. The key is voice's OWN
+  # (1Password studio-applications/openai.studio.voice, Heroku
+  # STUDIO_VOICE_OPENAI_API_KEY), never the hub's shared OPENAI_API_KEY image
+  # key. studio-engine 0.121.0 reads OPENAI_API_KEY when this is blank, so
+  # with no voice key a production boot names a transcriber that does not
+  # exist: every take answers 503 not_configured ("Voice isn't set up...")
+  # instead of spending the image key. QA (RAILS_ENV=production, QA_ENV=true)
+  # runs the mock transcriber: no vendor call, a fixed transcript. Tests and
+  # desks default to the mock already (Studio::VoiceTranscription.adapter_name).
+  if Studio.respond_to?(:voice_transcription=)
+    config.voice_transcription = true
+    voice_key = ENV["STUDIO_VOICE_OPENAI_API_KEY"].to_s.strip
+    config.voice_openai_api_key = voice_key.presence
+    if Studio.qa_environment?
+      config.voice_transcriber = "mock"
+    elsif voice_key.empty? && ENV["STUDIO_VOICE_TRANSCRIBER"].to_s.strip.empty? && Rails.env.production?
+      # Names no adapter, so Studio::VoiceTranscription raises NotConfigured
+      # (503 not_configured, an ErrorLog row naming it). Remove with the
+      # engine release that drops the OPENAI_API_KEY fallback.
+      config.voice_transcriber = "no-voice-key"
+    end
+  end
   # ---- Site footer and booking (studio-engine docs/SITE_FOOTER.md) ----
   # The engine renders the footer, the map, the booking frame and the booking
   # popup, and serves Leaflet. This block is only the facts.

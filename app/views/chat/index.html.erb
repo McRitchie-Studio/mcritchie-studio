@@ -1,16 +1,32 @@
 <% content_for(:title, "Chat with Alex — McRitchie Studio") %>
 <% content_for(:full_width, true) %>
 
-<div class="flex flex-col" style="height: calc(100vh - 80px);">
-  <!-- Header -->
-  <div class="bg-surface border-b border-subtle px-4 py-3 flex items-center gap-3">
-    <img src="/agents/alex.webp" class="w-10 h-10 rounded-full" alt="Alex">
-    <div>
-      <h1 class="text-heading font-bold text-lg leading-tight">Alex McRitchie</h1>
-      <p class="text-muted text-xs">Lead Orchestrator · McRitchie Studio</p>
-    </div>
-    <span class="w-2 h-2 rounded-full bg-success"></span>
+<% if logged_in? %>
+  <%# Signed in: the engine's agent chat (studio-engine docs/AGENT_CHAT.md) on
+      the person's own thread with Alex, chat:alex:<user id>, answered in-process
+      by HubAgentChatsController and the dispatcher; under it, hold to talk
+      (chat/_voice; epic .agents/epics/studio-voice.md, card 4). %>
+  <div class="pb-8" data-voice-chat-page data-test="alex-chat-page">
+    <%= render "studio/agent_chat/chat", soul: "alex", name: "Alex",
+               portrait: image_tag("/agents/alex.webp", alt: "", class: "w-24 h-24 rounded-full object-cover"),
+               role: "Sales and Marketing · McRitchie Studio",
+               empty: "Say hello to Alex, or hold to talk." %>
+    <% if Studio.voice_transcription %>
+      <%= render "chat/voice", soul: "alex", name: "Alex" %>
+    <% end %>
   </div>
+<% else %>
+  <div class="flex flex-col" style="height: calc(100vh - 80px);">
+    <!-- Header -->
+    <div class="bg-surface border-b border-subtle px-4 py-3 flex items-center gap-3">
+      <img src="/agents/alex.webp" class="w-10 h-10 rounded-full" alt="Alex">
+      <div>
+        <h1 class="text-heading font-bold text-lg leading-tight">Alex McRitchie</h1>
+        <p class="text-muted text-xs">Lead Orchestrator · McRitchie Studio</p>
+      </div>
+      <span class="w-2 h-2 rounded-full bg-success"></span>
+    </div>
 
-  <%= render "chat/chat_widget" %>
-</div>
+    <%= render "chat/chat_widget" %>
+  </div>
+<% end %>
