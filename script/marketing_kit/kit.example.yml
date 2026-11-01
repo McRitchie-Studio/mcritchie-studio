@@ -60,7 +60,8 @@ contact:
 logos:
   # Files by fixed name. png/: full_light, full_dark, horizontal_light, horizontal_dark, icon_light
   # are required; icon_dark and icon_512 optional. svg/: the same names, all optional.
-  # From a saved hub kit: brand-kit-rollout step 3 (export) and step 5 (rasters).
+  # From a saved hub kit: brand-kit-rollout steps 3 and 4 (export, install into svg/), then
+  # bin/marketing-kit pngs DIR draws png/ from svg/ (marketing-kit SOP step 3).
   dir: logos
 quick_grab_logos: [full_light.png, full_dark.png, horizontal_light.png, horizontal_dark.png, icon_512.png]
 
