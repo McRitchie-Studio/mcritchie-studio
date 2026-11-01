@@ -59,4 +59,34 @@ class BroadcastAnalyticsControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-unknown-filter] b", count: 0, message: "the filter value is shown as text, never as markup"
     assert_select "section[aria-label='By email']"
   end
+
+  test "the four-style test is admin only and links from the dashboard" do
+    get cyvasse_four_scoreboard_path
+    assert_response :redirect
+    log_in_as(@viewer)
+    get cyvasse_four_scoreboard_path
+    assert_redirected_to root_path
+    log_in_as(@admin)
+    get broadcast_analytics_path
+    assert_select "a[href=?]", cyvasse_four_scoreboard_path
+  end
+
+  test "the four-style test draws empty and with results" do
+    log_in_as(@admin)
+    get cyvasse_four_scoreboard_path
+    assert_response :success
+    assert_select "[data-verdict=waiting]"
+    assert_select "td", text: /not on this environment/
+
+    Broadcasts::CyvasseFour::STYLES.each do |style, (key, _)|
+      Broadcast.create!(slug: "cyvasse-four-#{style}", subject: style, template_key: key)
+    end
+    delivery = BroadcastDelivery.create!(broadcast: Broadcast.find_by!(slug: "cyvasse-four-dragon"),
+                                         contact: Contact.create!(email: "r@example.com"), sent_at: Time.current)
+    delivery.record_event!(kind: "converted", source: "beacon", data: { "goal" => "played_match" })
+    get cyvasse_four_scoreboard_path
+    assert_select "[data-verdict=early]"
+    assert_select "tr[data-style]", count: 4
+    assert_select "tr[data-style=dragon] td", text: /1 · 100\.0%/
+  end
 end

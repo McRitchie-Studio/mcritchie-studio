@@ -76,6 +76,7 @@ Rails.application.routes.draw do
   # (in the email shell) for the editor's live iframe.
   # Email analytics dashboard (before the resource, so "analytics" is not an id).
   get "broadcasts/analytics", to: "broadcast_analytics#show", as: :broadcast_analytics
+  get "broadcasts/analytics/cyvasse-four", to: "broadcast_analytics#cyvasse_four", as: :cyvasse_four_scoreboard
   resources :broadcasts, only: %i[index edit update] do
     member do
       get  :preview

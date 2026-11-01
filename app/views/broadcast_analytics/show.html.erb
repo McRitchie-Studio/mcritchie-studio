@@ -8,6 +8,7 @@
         <%= @broadcast ? "“#{@broadcast.subject}”" : "Every broadcast" %> ·
         opens and clicks count people; programs that fake a read are counted apart.
       </p>
+      <%= link_to "Cyvasse four-style test", cyvasse_four_scoreboard_path, class: "text-sm text-primary hover:underline" %>
     </div>
     <%= form_with url: broadcast_analytics_path, method: :get, class: "flex flex-wrap items-center gap-2 min-w-0 max-w-full" do %>
       <label for="broadcast" class="text-sm text-secondary">Email</label>

@@ -12,4 +12,12 @@ class BroadcastAnalyticsController < ApplicationController
     @analytics = Broadcasts::Analytics.new(broadcast: @broadcast)
     @summary = @analytics.summary
   end
+
+  # GET /broadcasts/analytics/cyvasse-four — the four-style test side by side.
+  def cyvasse_four
+    scoreboard = Broadcasts::CyvasseFourScoreboard.new
+    @rows = scoreboard.rows
+    @verdict = scoreboard.verdict
+    @pick_answers = scoreboard.pick_answers
+  end
 end

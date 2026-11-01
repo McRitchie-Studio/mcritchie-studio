@@ -1,0 +1,61 @@
+<% content_for(:title, "Cyvasse four-style test") %>
+<div class="max-w-6xl mx-auto px-4 py-8 space-y-6">
+  <div>
+    <%= link_to "Email analytics", broadcast_analytics_path, class: "text-sm text-secondary hover:text-heading" %>
+    <h1 class="text-2xl font-extrabold text-heading mt-1">Cyvasse four-style test</h1>
+    <p class="text-secondary text-sm mt-1">Which email brings players back. Ranked by people who started a game from the email.</p>
+  </div>
+
+  <section class="card p-4" aria-label="Verdict" data-verdict="<%= @verdict.state %>">
+    <p class="text-lg font-bold text-heading"><%= cyvasse_four_verdict_title(@verdict) %></p>
+    <p class="text-secondary text-sm mt-1"><%= cyvasse_four_verdict_note(@verdict) %></p>
+  </section>
+
+  <section class="card overflow-hidden" aria-label="The four styles">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm whitespace-nowrap">
+        <thead class="text-secondary border-b border-subtle">
+          <tr>
+            <th class="sticky left-0 z-10 bg-surface text-left p-3">Style</th>
+            <th class="text-right p-3">Waiting</th>
+            <th class="text-right p-3">Sent</th>
+            <th class="text-right p-3">Delivered</th>
+            <th class="text-right p-3">Clicked</th>
+            <th class="text-right p-3">Signed in</th>
+            <th class="text-right p-3">Started a game</th>
+            <th class="text-right p-3">Unsub</th>
+            <th class="text-right p-3">Spam</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% if @rows.empty? %><tr><td colspan="9" class="p-3 text-secondary">The four drafts are not on this environment.</td></tr><% end %>
+          <% @rows.each do |row| %>
+            <% s = row.summary %>
+            <tr class="border-b border-subtle/50" data-style="<%= row.style %>">
+              <td class="sticky left-0 z-10 bg-surface p-3 font-medium text-heading"><%= link_to row.name, broadcast_analytics_path(broadcast: row.broadcast.slug) %></td>
+              <td class="p-3 text-right tabular-nums"><%= number_with_delimiter(row.waiting) %></td>
+              <td class="p-3 text-right tabular-nums"><%= number_with_delimiter(s.sent) %></td>
+              <td class="p-3 text-right tabular-nums"><%= analytics_pct(s.rate(s.delivered, s.sent)) %></td>
+              <td class="p-3 text-right tabular-nums"><%= cyvasse_four_cell(row.clicked, row.click_rate) %></td>
+              <td class="p-3 text-right tabular-nums"><%= cyvasse_four_cell(row.signed_in, row.signed_in_rate) %></td>
+              <td class="p-3 text-right tabular-nums font-bold text-heading"><%= cyvasse_four_cell(row.played, row.played_rate) %></td>
+              <td class="p-3 text-right tabular-nums"><%= analytics_pct(s.unsubscribe_rate) %></td>
+              <td class="p-3 text-right tabular-nums"><%= analytics_pct(s.complaint_rate) %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card p-4" aria-labelledby="pick-heading">
+    <h2 id="pick-heading" class="text-sm font-semibold uppercase tracking-widest text-muted mb-2">The Pick: which piece they chose</h2>
+    <dl class="grid grid-cols-2 gap-y-1 text-sm max-w-sm">
+      <% @pick_answers.each do |label, people| %>
+        <dt class="text-secondary"><%= label %></dt><dd class="text-right tabular-nums text-heading"><%= number_with_delimiter(people) %></dd>
+      <% end %>
+    </dl>
+  </section>
+
+  <p class="text-secondary text-xs">Clicked counts people, not mail scanners. Delivered is a share of sent, and the other percentages are shares of delivered. Signed in and Started a game come from Cyvasse, for readers who arrived from the email, so someone who returns later on their own is not counted. Started a game fires at game setup, not at a finished game.</p>
+</div>
