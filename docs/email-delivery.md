@@ -359,6 +359,8 @@ H bin/rails "broadcasts:queue_status[cyvasse-four-poster]"
   set it to the target minus what is already held. Run one staging at a time: the
   unique index is per broadcast, so two overlapping runs can put one reader on
   two styles.
+  `heroku run` output can vanish while the command ran, so read the counts in
+  `queue_status` before you repeat a stage or an execute.
 - **Split the cap evenly.** `DAILY_CAP` (500) is a rolling 24 hours across every
   broadcast, and an execute takes what is left, so one big execute starves the
   rest. Read what the gate has left and pass the same limit per style: 125 each
