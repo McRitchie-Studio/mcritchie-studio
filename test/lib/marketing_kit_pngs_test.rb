@@ -8,7 +8,7 @@ require "tmpdir"
 # one, 2026-10-31), icons are square with the mark fitted inside, icon_light also
 # yields icon_512.png, and an SVG without a kit name is skipped, never guessed.
 # [integration] With Chrome present, a wide SVG renders to a PNG whose header
-# carries the planned size.
+# carries the planned size; without it, the draw refuses and names CHROME_BIN.
 class MarketingKitPngsTest < ActiveSupport::TestCase
   WIDE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 3000 300"><rect width="3000" height="300" fill="#C8661F"/></svg>'
   TALL_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500"><rect width="400" height="500"/></svg>'
@@ -50,10 +50,16 @@ class MarketingKitPngsTest < ActiveSupport::TestCase
     end
   end
 
-  test "Chrome renders a wide logo at its planned size" do
-    skip "Chrome not at #{MarketingKit::ChromePdf::CHROME}" unless File.executable?(MarketingKit::ChromePdf::CHROME)
-
+  # Chrome is on the Mac that builds kits and may be absent from CI: there, the
+  # draw must refuse with the path to set rather than write nothing quietly.
+  test "Chrome renders a wide logo at its planned size, or the draw names the missing Chrome" do
     with_logos("horizontal_dark" => WIDE_SVG) do |dir|
+      unless File.executable?(MarketingKit::ChromePdf::CHROME)
+        error = assert_raises(MarketingKit::Error) { MarketingKit::LogoPngs.draw(dir) }
+        assert_match "CHROME_BIN", error.message
+        next
+      end
+
       MarketingKit::LogoPngs.draw(dir)
       header = File.binread(File.join(dir, "logos", "png", "horizontal_dark.png"), 24)
       assert_equal "\x89PNG".b, header[0, 4]
