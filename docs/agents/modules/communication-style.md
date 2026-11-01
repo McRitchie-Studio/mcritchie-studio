@@ -21,6 +21,10 @@ chat hand-back adds a third.
 Never trade layer 2 away for brevity. Simple is not vague: the summary gets
 simpler, the specifics stay exact.
 
+Every sentence in every layer is written in **STE-80**, plain technical English at
+about 80% of ASD-STE100: [`plain-technical-english.md`](plain-technical-english.md).
+The layer rule decides what a report says; STE-80 decides how each sentence reads.
+
 ## Rules for layer 1 — the idea
 
 - **Lead with the outcome.** First sentence answers "what happened?"

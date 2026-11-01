@@ -106,6 +106,9 @@ meter (`app_owners:` in the same file; `docs/agents/system/agent-message-loop.md
 **When you are an agent answering.** Read the audience line first. Answer only
 inside that audience's `may`. When a question touches a `never`, or an `always` rule,
 or you are unsure, say that a person will follow up. Do not explain the rule.
+Write the answer in STE-80, plain technical English, for every audience:
+[`plain-technical-english.md`](plain-technical-english.md). The answer prompt
+prints its rule block in HOW TO ANSWER.
 
 **When you change a person's role.** Find the person, then set the role:
 
