@@ -83,6 +83,19 @@ What holds it in the hub:
   name, refuse the production bucket off production before any upload
   (`pokemon_upload_bucket!`).
 
+**Bulky seed data lives in production too.** `SeedSnapshot`
+(`app/services/seed_snapshot.rb`) reads `seed-data/<name>` from
+`mcritchie-studio-production` in every environment, through
+`Studio::S3.production_download`, and checks it against a SHA-256 pin in the
+class, because R2 has no versioning and the object is no longer in git. It holds
+`artists_wikidata.json` (`artists:import_wikidata`, which refuses when the object
+is missing) and `spotrac_contracts_2025.json` (`db/seeds/22`, `nfl:salaries_sync`,
+which skip). No R2 connection or no object reads as absent; an R2 error or a pin
+mismatch raises. The production bucket is **publicly served** at
+`assets.mcritchie.studio`, so only data that may be public goes here. To refresh:
+on a dyno, `artists:fetch_wikidata SNAPSHOT=/tmp/a.json` then `seed_data:publish
+FILE=/tmp/a.json NAME=artists_wikidata.json`, and bump the pin the task prints.
+
 **Cached headshots reference production.** The NFL headshot seeders
 (`nfl:players_seed` via `Nflverse::SeedPlayers`, `nfl:upload_headshots`,
 `nfl:upload_coach_headshots`) and the per-player `Athletes::AcquireOrValidate`

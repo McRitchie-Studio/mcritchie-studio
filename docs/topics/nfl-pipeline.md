@@ -20,7 +20,7 @@ The disambiguator suffix is the last four digits of the row's highest-priority i
 ### 2. `Spotrac::SyncContracts`
 `app/services/spotrac/sync_contracts.rb`, rake `nfl:salaries_sync` — salary overlay.
 
-Reads `db/seeds/data/spotrac_contracts_2025.json` (committed, ~2,500 entries — **season-specific snapshot, replace per season**), matches Athletes by `otc_id` then name fallback, upserts active Contracts with `annual_value_cents` and `expires_at` (end_year → March 15 of that year). Updates `Athlete.team_slug` per the contract-update rule.
+Reads `seed-data/spotrac_contracts_2025.json` from the production R2 bucket through `SeedSnapshot` (~2,500 entries — **season-specific snapshot, replace per season**; skips when no R2 connection or object), matches Athletes by `otc_id` then name fallback, upserts active Contracts with `annual_value_cents` and `expires_at` (end_year → March 15 of that year). Updates `Athlete.team_slug` per the contract-update rule.
 
 ### 3. `Espn::ScrapeDepthCharts`
 `app/services/espn/scrape_depth_charts.rb`, rake `espn:scrape_depth_charts` — current-roster + depth truth.

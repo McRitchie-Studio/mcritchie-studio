@@ -18,13 +18,16 @@ require "json"
 # Usage:
 #   Spotrac::SyncContracts.new.call
 #   Spotrac::SyncContracts.new(json_path: "/tmp/contracts.json", verbose: true).call
+#
+# Without a json_path it reads SNAPSHOT from R2 (SeedSnapshot) and skips when
+# there is none to read.
 class Spotrac::SyncContracts
-  DEFAULT_JSON_PATH = -> { Rails.root.join("db/seeds/data/spotrac_contracts_2025.json") }
+  SNAPSHOT = "spotrac_contracts_2025.json".freeze
 
   attr_reader :stats
 
   def initialize(json_path: nil, verbose: false, entries: nil)
-    @json_path = json_path || DEFAULT_JSON_PATH.call
+    @json_path = json_path
     @verbose = verbose
     @entries = entries
     @stats = Hash.new(0)
@@ -63,11 +66,22 @@ class Spotrac::SyncContracts
 
   def load_entries
     return @entries if @entries
-    unless File.exist?(@json_path)
-      puts "[!] Spotrac JSON not found at #{@json_path}"
-      return nil
+
+    raw = @json_path ? read_file : read_snapshot
+    raw && JSON.parse(raw, symbolize_names: true)
+  end
+
+  def read_file
+    return File.read(@json_path) if File.exist?(@json_path)
+
+    puts "[!] Spotrac JSON not found at #{@json_path}"
+    nil
+  end
+
+  def read_snapshot
+    SeedSnapshot.read(SNAPSHOT).tap do |raw|
+      puts "Spotrac: no #{SeedSnapshot.key(SNAPSHOT)} to read, skipping" unless raw
     end
-    JSON.parse(File.read(@json_path), symbolize_names: true)
   end
 
   # Match by otc_id first (canonical anchor when available), fall back to smart

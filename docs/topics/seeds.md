@@ -19,7 +19,7 @@ Each file only depends on files above it. Teams → Seasons → People → Grade
 | | `16_slates.rb` | 29 slates across seasons |
 | 3. People | `20_coaches_nfl.rb` | 128 NFL coaches (HC + coordinators) |
 | | `21_coaches_fifa.rb` | 48 FIFA coaches (one per team) |
-| | `22_nfl_contracts_2025.rb` | One-liner that calls `Spotrac::SyncContracts.new.call`. Layers ~2,420 active contracts (Person + Athlete + Contract w/ `annual_value_cents`) on top of nflverse identity records. **Season-specific snapshot** — replace file + JSON per season. Idempotent. Standalone task: `bin/rails nfl:salaries_sync`. |
+| | `22_nfl_contracts_2025.rb` | One-liner that calls `Spotrac::SyncContracts.new.call`. Layers ~2,420 active contracts (Person + Athlete + Contract w/ `annual_value_cents`) on top of nflverse identity records. **Season-specific snapshot** in R2 (`seed-data/`, read through `SeedSnapshot`) — replace the seed file and the published JSON per season. Skips without an R2 connection, so CI and a keyless desk seed no Spotrac contracts. Idempotent. Standalone task: `bin/rails nfl:salaries_sync`. |
 | | `23_nfl_prospects.rb` | 102 draft prospects + 1 hypothetical → Person + Athlete + college Contract + NFL draft_pick Contract |
 | | `25_fifa_players.rb` | 48 FIFA stars → Person + Athlete + Contract (`contract_type: "active"`) |
 | 4. Evaluation | `29_pff_grades.rb` | Imports `db/seeds/data/pff/*.csv` via `Pff::ImportCsv`. 11 stat types, position-filtered. ~570 graded athletes when all CSVs present. Matches by `pff_id` when nflverse has populated it; falls back to name match. |
