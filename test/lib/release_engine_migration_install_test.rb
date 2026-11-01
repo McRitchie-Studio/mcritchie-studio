@@ -6,7 +6,7 @@ require "tmpdir"
 # publish. Never read ANY non-zero exit from `bin/rails -T <task>` as "not an engine": on a
 # live sweep `bundle lock` resolves without INSTALLING, rails dies with Bundler::GemNotFound,
 # and the step skips silently while the pre-QA gate reddens after the irreversible publish. A
-# FILE OF ITS OWN: release CLI files are frozen at their size by config/test_health.yml. Flow
+# FILE OF ITS OWN: release CLI files are frozen at their size by `config/test_health.yml`. Flow
 # tests stub this function wholesale; here `sh` is stubbed, so the REAL function runs.
 # History: task install-engine-migrations-in-sweep.
 class ReleaseEngineMigrationInstallTest < Minitest::Test

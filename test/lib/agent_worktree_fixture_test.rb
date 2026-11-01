@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # THE FIXTURE'S OWN PROOF for test/support/agent_worktree_fixture.rb, lifted out of
-# test/commands/agent_worktree_test.rb under its append ceiling in config/test_health.yml. The
+# test/commands/agent_worktree_test.rb under its append ceiling in `config/test_health.yml`. The
 # claim: A SECOND FILE CAN STAGE THE DESK AND DRIVE THE REAL BINARY AGAINST IT WHILE COPYING
 # NOTHING. Its whole setup is the `include` below: delete it and every test dies on a
 # NoMethodError. NOT a second copy of the reclaim guard's coverage: checks drive the real

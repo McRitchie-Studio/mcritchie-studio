@@ -6,7 +6,7 @@ require "tmpdir"
 # step after the consumer bump. `bump_consumer_locks_for_qa` walks `app_groups`, and
 # studio-engine is registered as a `gem`, so it never enters that loop though its Gemfile
 # declares `solana-studio`, and `bin/gem-drift-check` reddens open engine PRs. A FILE OF ITS
-# OWN: release CLI files are frozen at their size by config/test_health.yml. As in
+# OWN: release CLI files are frozen at their size by `config/test_health.yml`. As in
 # test/lib/release_engine_migration_install_test.rb, the REAL function runs, with
 # `sh`/`git_capture` stubbed.
 # History: task prepare-skips-engine-own-lock.

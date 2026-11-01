@@ -5,7 +5,7 @@
 # which offers `bin/full-suite-check <task>`. GitHub's verdict for origin/release's tip IS the
 # gate, and `<task>` is unfillable: the subject is a release SHA carrying MANY tasks. A refusal
 # naming the wrong remedy is worse than none, because the reader ACTS on it. Lives in its own
-# file: the release CLI pre-QA gate tests are frozen in config/test_health.yml. `eval_helper` is
+# file: the release CLI pre-QA gate tests are frozen in `config/test_health.yml`. `eval_helper` is
 # re-implemented, not shared: see test/lib/release_auth_remedy_message_test.rb.
 # History: task release-offers-retired-cert.
 require "minitest/autorun"

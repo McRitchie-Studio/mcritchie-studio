@@ -6,7 +6,7 @@
 # reuses CodeDiff, the classifier the kind gate runs, rather than a second list that could
 # drift. NOT fixed by `full_suite_gate: true`: that makes every prose correction pay a full
 # suite and pushes people to mislabel. Gate the CLAIM, not the cost. Its own file:
-# test/lib/dor_check_test.rb is a named APPEND HOTSPOT in config/test_health.yml.
+# test/lib/dor_check_test.rb is a named APPEND HOTSPOT in `config/test_health.yml`.
 # History: task docs-shape-admits-test-code.
 require "minitest/autorun"
 require "json"

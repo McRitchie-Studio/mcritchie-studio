@@ -5,7 +5,7 @@
 # COMPACT INDEX AND NOT THE VERSIONS API: they disagree during exactly this window, and the
 # compact index is the surface BUNDLER resolves from, so waiting on the other is a gate that
 # cannot observe what it gates. A FILE OF ITS OWN: the release CLI files are frozen at their
-# size by config/test_health.yml.
+# size by `config/test_health.yml`.
 # History: task await-gem-before-lock-bump.
 require "minitest/autorun"
 require "open3"

@@ -5,7 +5,7 @@
 # commit_artifact_to_accepted pushed the refused loss. test/lib/archive_docs_cli_test.rb cannot
 # see that, so this spawns the REAL bin/release.rb across a REAL Open3 boundary; only what the
 # child DOES is faked. A file of its own: the release CLI files are frozen hotspots in
-# config/test_health.yml.
+# `config/test_health.yml`.
 # History: task honour-archive-docs-refusal.
 
 require "minitest/autorun"
