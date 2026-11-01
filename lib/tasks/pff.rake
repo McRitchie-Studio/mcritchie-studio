@@ -5,9 +5,7 @@ namespace :pff do
     season = ENV.fetch("SEASON", "2025-nfl")
 
     unless File.exist?(file)
-      puts "File not found: #{file}"
-      puts "Copy PFF CSV to lib/pff/ and retry, or pass FILE=path/to/csv"
-      exit 1
+      abort "File not found: #{file}\nCopy PFF CSV to the gitignored lib/pff/ and retry, or pass FILE=path/to/csv"
     end
 
     puts "Importing PFF starters from #{file} for season #{season}..."
@@ -21,8 +19,7 @@ namespace :pff do
     type   = ENV["TYPE"]
 
     unless File.exist?(file)
-      puts "File not found: #{file}"
-      exit 1
+      abort "File not found: #{file}"
     end
 
     puts "Importing PFF CSV: #{File.basename(file)} (season=#{season}#{type ? ", type=#{type}" : ""})..."
@@ -35,8 +32,7 @@ namespace :pff do
     season = ENV.fetch("SEASON", "2025-nfl")
 
     unless Dir.exist?(dir)
-      puts "Directory not found: #{dir}"
-      exit 1
+      abort "Directory not found: #{dir}"
     end
 
     # PFF stat file patterns (only files that match known PFF naming)
@@ -57,8 +53,7 @@ namespace :pff do
     end
 
     if csvs.empty?
-      puts "No PFF CSV files found in #{dir}"
-      exit 1
+      abort "No PFF CSV files found in #{dir}"
     end
 
     # Deduplicate: keep highest-numbered copy per stat_type
@@ -92,6 +87,10 @@ namespace :pff do
 
     offseason = season.slates.find_by(sequence: 0)
     abort "Offseason slate not found for #{season_slug}" unless offseason
+    unless PffStat.where(season_slug: season_slug).exists?
+      abort "pff:build_rosters: #{season_slug} has no imported PFF stats, so there is nothing to build from. " \
+            "The repo ships no PFF data; import a licensed export first (bin/rails pff:import_dir DIR=... SEASON=#{season_slug})."
+    end
 
     # Position priority: which stat_type is most authoritative per position group
     # For each position, pick the best summary stat_type to source from

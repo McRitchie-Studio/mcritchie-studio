@@ -112,7 +112,7 @@ bin/rails db:create db:migrate db:seed
 bin/rails server
 ```
 
-Seeds load 9 agents with avatars, 35 skills, sample tasks, plus 32 NFL + 75 NCAA + 48 FIFA teams, 38 NFL schedule arenas, active contracts, PFF-graded athletes, and news articles. Visit http://localhost:3000.
+Seeds load 9 agents with avatars, 35 skills, sample tasks, plus 32 NFL + 75 NCAA + 48 FIFA teams, 38 NFL schedule arenas, active contracts, placeholder athlete grades (the repo ships no PFF data), and news articles. Visit http://localhost:3000.
 
 ## Prerequisites (single-app path)
 

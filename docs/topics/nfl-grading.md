@@ -4,7 +4,31 @@
 
 ## PFF Grade Pipeline
 
-`db/seeds/data/pff/*.csv` (committed) → `db/seeds/29_pff_grades.rb` → `Pff::ImportCsv` (`app/services/pff/import_csv.rb`). Detects stat_type from filename. Each stat_type has a `POSITION_FILTER` whitelist so only relevant positions get grades written. PFF-sourced columns on `AthleteGrade` are suffixed `_pff` (e.g., `overall_grade_pff`, `pass_grade_pff`, `pass_block_grade_pff`, etc. — all 15 of them). For blocking CSVs without `grades_offense`, derives `overall_grade_pff` as the avg of `pass_block_grade_pff` + `run_block_grade_pff`; for defensive sub-CSVs without `grades_defense`, derives from coverage/pass_rush/rush_defense. Position normalization uses `source: :pff`. After PFF runs, `30_athlete_grades.rb` writes a flat 50.0 placeholder for non-PFF active athletes so ranking pages have something to sort against. Drop new CSVs into the dir and re-seed; idempotent via `find_or_initialize_by`. Currently imported: 11 stat types.
+**The repo ships no PFF data.** Alex McRitchie ruled on 2026-11-01 that the 11 CSVs leave the tree, because PFF's terms read as barring hosting. Do not commit them and do not host them anywhere else, R2 included. `db/seeds/data/pff/` and `lib/pff/` are gitignored. The files remain in git history until the separate purge. Removing the files changes no deployed rows, because the release phase runs `db:migrate` only. Measured 2026-11-01: `mcritchie-studio-qa` holds the imported rows (4,743 `PffStat`) and its public ranking pages serve them; `mcritchie-studio` holds none (0 `PffStat`, 0 `AthleteGrade`).
+
+An operator holding a licensed export imports it locally: `bin/rails pff:import_dir DIR=path/to/dir SEASON=2025-nfl` → `Pff::ImportCsv` (`app/services/pff/import_csv.rb`). Detects stat_type from filename. Each stat_type has a `POSITION_FILTER` whitelist so only relevant positions get grades written. PFF-sourced columns on `AthleteGrade` are suffixed `_pff` (e.g., `overall_grade_pff`, `pass_grade_pff`, `pass_block_grade_pff`, etc. — all 15 of them). For blocking CSVs without `grades_offense`, derives `overall_grade_pff` as the avg of `pass_block_grade_pff` + `run_block_grade_pff`; for defensive sub-CSVs without `grades_defense`, derives from coverage/pass_rush/rush_defense. Position normalization uses `source: :pff`. Idempotent via `find_or_initialize_by`.
+
+### What a fresh database has without it
+
+`db/seeds/29_pff_grades.rb` (`Pff::SeedGrades`) imports nothing and warns on stderr; `30_athlete_grades.rb` then writes every grade. `nfl:rankings_compute` and `nfl:assign_grades` warn on stderr too, and `bin/ecosystem-build` logs `DEGRADED` and closes `Ecosystem up, DEGRADED` (exit 0). Rows that have a value are not measurements: `_pff` columns hold a flat 50.0 or a draft-tier estimate.
+
+Measured 2026-11-01, `phase_bundles_dbs` + `phase_nfl_data` on two fresh databases, with and without the files:
+
+| | With the 11 CSVs | Without |
+|---|---|---|
+| `PffStat` rows (athletes) | 4,743 (1,996) | 0 |
+| `AthleteGrade` rows | 2,833 | 2,567 |
+| with any sub-grade | 2,049 | 85 (draft-tier prospects only) |
+| flat 50.0 placeholder, no sub-grade | 784 | 2,482 |
+| distinct `overall_grade_pff` values | 546 | 78 |
+| `pass_grade_pff` · `pass_block_grade_pff` · `coverage_grade_pff` | 80 · 468 · 964 | 3 · 16 · 47 |
+| `fg_grade_pff` · `return_grade_pff` | 42 · 236 | 0 · 0 |
+| People · Athletes (the importer creates athletes) | 3,099 · 2,882 | 2,833 · 2,616 |
+| `Athlete.pff_id` set | 1,996 | 0 (`nfl:players_seed` also sets it) |
+| `DepthChartEntry` · `RosterSpot` | 2,790 · 7,764 | 2,728 · 7,702 |
+| 2026 `TeamRanking` rows | 448, 439 distinct scores, none zero | 448, 199 distinct, 214 zero |
+
+Rankings pages, team grades, depth charts and game pages all answer 200 without the data, and each roster still fills its 12-slot lineups. The order they show is not a ranking of players: the quarterback unit has 3 distinct scores across 32 teams, for instance. The all-zero refusal in `nfl:rankings_compute` stays quiet, because prospects still score.
 
 ## Proprietary Pass/Run Grade Pipeline
 

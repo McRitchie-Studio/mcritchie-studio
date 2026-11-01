@@ -105,13 +105,69 @@ class EcosystemBuildNflDataVerdictTest < Minitest::Test
     assert_match(/AthleteGrade/, out)
   end
 
+  # --- PFF grades: the repo ships none ------------------------------------
+  #
+  # The rankings row count and its all-zero refusal both pass without PFF data,
+  # because draft-tier prospects still carry sub-grades. Every case here differs
+  # from its twin by the PffStat answer alone.
+
+  VERDICT = "render_build_verdict"
+
+  def test_no_pff_rows_degrades_the_build_and_the_closing_line_says_so
+    out = phase(pff_answer: "echo 0", after: VERDICT)
+
+    assert_match(/DEGRADED: no PFF grades/, out)
+    assert_match(/flat 50\.0 placeholder/, out)
+    assert_match(/pff:import_dir/, out, "name how an operator with a licensed export recovers")
+    assert_match(/Ecosystem up, DEGRADED/, out)
+    refute_match(/steady state/, out, "a build with no grades must not close on the healthy banner")
+  end
+
+  def test_the_rankings_line_does_not_read_populated_without_pff_rows
+    out = phase(pff_answer: "echo 0")
+
+    assert_match(/448 rank rows written from placeholder grades/, out)
+    refute_match(/rank rows populated/, out, "the same 448 rows print in a graded database")
+  end
+
+  def test_pff_rows_keep_the_healthy_banner
+    out = phase(pff_answer: "echo 4743", after: VERDICT)
+
+    assert_match(/PFF grades.*4743 stat rows imported/, out)
+    assert_match(/Ecosystem at steady state/, out)
+    refute_match(/DEGRADED/, out)
+  end
+
+  def test_an_unreadable_count_degrades_rather_than_passing
+    ["exit 1", "echo boom"].each do |answer|
+      out = phase(pff_answer: answer, after: VERDICT)
+
+      assert_match(/DEGRADED: PFF grade rows unreadable/, out, answer)
+      refute_match(/steady state/, out, answer)
+    end
+  end
+
+  # The degradation is the expected state of a clean checkout, so the build goes on
+  # past it. Asserted by running on: `after` only runs if the phase returned.
+  def test_a_degraded_build_still_runs_on
+    assert_match(/REACHED NEXT PHASE/, phase(pff_answer: "echo 0", after: 'echo "REACHED NEXT PHASE"'))
+  end
+
+  # A phase-local array would die with a subshell and the banner would read green.
+  def test_main_closes_on_the_verdict_not_a_fixed_banner
+    src = File.read(SCRIPT)
+    main = src[/^main\(\) \{.*?^\}/m]
+    assert_includes main, "render_build_verdict"
+    refute_includes main, "steady state", "the healthy line lives in render_build_verdict alone"
+  end
+
   private
 
   # Drive phase_nfl_data with a stubbed `bundle`.
   #
   # The stub answers by INSPECTING ITS ARGUMENTS, so reordering the phase cannot
   # silently change which command a case is exercising.
-  def phase(espn_exit: 0, rankings_exit: 0, espn_stderr: nil)
+  def phase(espn_exit: 0, rankings_exit: 0, espn_stderr: nil, pff_answer: "echo 4743", after: "")
     Dir.mktmpdir("ecosystem-build-6b") do |tmp|
       stub = File.join(tmp, "bin")
       FileUtils.mkdir_p(stub)
@@ -129,6 +185,7 @@ class EcosystemBuildNflDataVerdictTest < Minitest::Test
           *nfl:rankings_compute*)   exit #{rankings_exit} ;;
           *nfl:schedule_seed*)      exit 0 ;;
           *nfl:rosters_snapshot*)   exit 0 ;;
+          *PffStat*)                #{pff_answer}; exit 0 ;;
           *DepthChartEntry*)        echo 4321; exit 0 ;;
           *TeamRanking*)            echo 448;  exit 0 ;;
           *Game.where*)             echo 272;  exit 0 ;;
@@ -142,6 +199,7 @@ class EcosystemBuildNflDataVerdictTest < Minitest::Test
         source "#{SCRIPT}"
         PATH="#{stub}:/usr/bin:/bin"
         phase_nfl_data
+        #{after}
       BASH
 
       env = { "HOME" => tmp, "PROJECTS_DIR" => tmp, "NFL_YEAR" => "2026" }

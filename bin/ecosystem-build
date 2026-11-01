@@ -227,6 +227,7 @@ log_phase() { echo; echo "${BOLD}${YELLOW}═══ $1 ═══${RESET}"; }
 log_ok()    { local detail="${2:-}"; echo "  ${GREEN}✓${RESET} $1${detail:+  ${DIM}$detail${RESET}}"; }
 log_act()   { echo "  ${YELLOW}→${RESET} $1"; }
 log_fail()  { local detail="${2:-}"; echo "  ${RED}✗${RESET} $1${detail:+  ${DIM}$detail${RESET}}"; }
+log_warn()  { local detail="${2:-}"; echo "  ${YELLOW}!${RESET} $1${detail:+  ${DIM}$detail${RESET}}"; }
 
 # ─── Helpers ────────────────────────────────────────────────────────────────
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -906,8 +907,10 @@ phase_nfl_data() {
       || log_fail "nfl:rosters_snapshot failed"
 
     # GRADES_FROM defaults to last year's NFL season slug. Override via env
-    # once current-year PFF grades land (mid-season) — set GRADES_FROM=2026-nfl
-    # to score 2026 rankings against 2026 grades.
+    # once a season's grades are imported — set GRADES_FROM=2026-nfl to score
+    # 2026 rankings against 2026 grades. The repo ships no PFF data, so a clean
+    # rebuild has no imported grades in either season: report_pff_grades below
+    # gives this lane's row count its verdict.
     local grades_from="${NFL_GRADES_FROM:-$((${NFL_YEAR:-2026} - 1))-nfl}"
     log_act "nfl:rankings_compute SEASON=${NFL_YEAR:-2026}-nfl GRADES_FROM=${grades_from} (preseason snapshot)"
     # THE ROW COUNT CANNOT SEE THE FAILURE THIS LANE HAS. Measured with
@@ -915,10 +918,59 @@ phase_nfl_data() {
     # scoring every team 0.0 — so "448 rank rows populated" is what this line
     # prints whether the rankings mean anything or not. The task now refuses an
     # all-zero ranking and names the grade season that came back empty.
+    # A GREEN LINE HERE NEEDS IMPORTED GRADES. The task's exit code cannot tell: see
+    # report_pff_grades. Without them the rows exist and are not a ranking of players.
     bundle exec rails nfl:rankings_compute SEASON="${NFL_YEAR:-2026}-nfl" GRADES_FROM="${grades_from}" >/dev/null \
-      && log_ok "nfl:rankings_compute" "$(bundle exec rails runner "puts TeamRanking.where(season_slug: \"${NFL_YEAR:-2026}-nfl\").count" 2>/dev/null | tail -1) rank rows populated" \
+      && { local rank_rows log_rank=log_warn rank_note="rank rows written from placeholder grades, not a ranking of players"
+           rank_rows="$(bundle exec rails runner "puts TeamRanking.where(season_slug: \"${NFL_YEAR:-2026}-nfl\").count" 2>/dev/null | tail -1)"
+           if pff_stat_count "$mcr_path" | grep -qE '^[1-9][0-9]*$'; then log_rank=log_ok; rank_note="rank rows populated"; fi
+           "$log_rank" "nfl:rankings_compute" "$rank_rows $rank_note"; } \
       || log_fail "nfl:rankings_compute failed — either ${NFL_YEAR:-2026}-nfl/${grades_from} names a season that does not exist, or ${grades_from} has no AthleteGrade rows and every team scored 0.0. The line above says which."
   )
+  report_pff_grades "$mcr_path"
+}
+
+# THE REPO SHIPS NO PFF DATA (Alex McRitchie's ruling, 2026-11-01), SO A CLEAN REBUILD
+# HAS NO PFF GRADES, AND NOTHING ABOVE CAN SEE IT. Seed 29 warns on stderr, but Phase 6
+# discards both db:seed streams. MEASURED with the files
+# gone: db:seed exits 0, and nfl:rankings_compute writes the same 448 rows as a
+# graded database and passes its all-zero refusal, because seed 30's draft-tier
+# prospects still carry sub-grades. So this reads the rows, whichever Phase 6 branch
+# ran, and runs outside the phase's subshell so the closing verdict can hear it. It
+# degrades the build and does not fail it: no grades is the expected state of a clean
+# checkout, and an unreadable count is reported the same way rather than passing.
+BUILD_DEGRADED=()
+pff_stat_count() { (cd "$1" && bundle exec rails runner 'puts PffStat.count' 2>/dev/null | tail -1); }
+report_pff_grades() {
+  local path="$1" count why
+  count=$(pff_stat_count "$path")
+  case "$count" in
+    ''|*[!0-9]*) why="PFF grade rows unreadable (try: cd $path && bin/rails runner 'puts PffStat.count')" ;;
+    0) why="no PFF grades: active NFL athletes hold a flat 50.0 placeholder, and team rankings rest on draft-tier prospect grades only" ;;
+    *) log_ok "PFF grades" "$count stat rows imported"; return 0 ;;
+  esac
+  log_warn "DEGRADED: $why" "the repo ships no PFF data; a licensed export imports with bin/rails pff:import_dir DIR=path/to/dir SEASON=2025-nfl"
+  BUILD_DEGRADED+=("$why")
+  return 0
+}
+
+# The build's closing line. Green only when nothing above degraded it.
+render_build_verdict() {
+  local color="$GREEN" verdict="Ecosystem at steady state" item
+  if [ "${#BUILD_DEGRADED[@]}" -gt 0 ]; then
+    color="$YELLOW"
+    verdict="Ecosystem up, DEGRADED"
+  fi
+  echo
+  echo "${color}${BOLD}═══════════════════════════════════════════════${RESET}"
+  echo "${color}${BOLD}  ${verdict}${RESET}"
+  echo "${color}${BOLD}═══════════════════════════════════════════════${RESET}"
+  if [ "${#BUILD_DEGRADED[@]}" -gt 0 ]; then
+    for item in "${BUILD_DEGRADED[@]}"; do
+      echo "  ${YELLOW}!${RESET} $item"
+    done
+  fi
+  echo
 }
 
 # ─── Phase 6c: NFL headshots (opt-in: WITH_NFL_HEADSHOTS=1) ─────────────────
@@ -1284,11 +1336,7 @@ main() {
   phase_env_snapshot
   phase_services
 
-  echo
-  echo "${GREEN}${BOLD}═══════════════════════════════════════════════${RESET}"
-  echo "${GREEN}${BOLD}  Ecosystem at steady state${RESET}"
-  echo "${GREEN}${BOLD}═══════════════════════════════════════════════${RESET}"
-  echo
+  render_build_verdict
   for i in "${!RAILS_APPS[@]}"; do
     printf "  %-18s http://localhost:%s\n" "${RAILS_APPS[$i]}:" "${RAILS_PORTS[$i]}"
   done
