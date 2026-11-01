@@ -4,13 +4,14 @@
 # bin/marketing-kit — build a brand's marketing kit from its spec and put it in Drive.
 #
 #   bin/marketing-kit init DIR                       start a spec: copies the worked example to DIR/kit.yml
+#   bin/marketing-kit pngs DIR                       draw DIR/logos/png from DIR/logos/svg, each at its own shape
 #   bin/marketing-kit build SPEC --out DIR           render every file into DIR (+ DIR/manifest.json)
 #   bin/marketing-kit publish SPEC --out DIR         create or update the kit in Drive from DIR's manifest
 #       --dry-run                                    read Drive and report; write nothing
 #       --replace NAME                               overwrite this existing Doc/Sheet/Slides (repeatable)
 #       --replace-all                                overwrite every existing Doc/Sheet/Slides
 #
-# build needs Google Chrome (the guidelines PDF) and python3 (the slides and tracker; a venv is made
+# pngs and build need Google Chrome (the PNGs, the guidelines PDF) and python3 (the slides and tracker; a venv is made
 # under ~/.cache/marketing-kit on first use); --no-pdf and --no-office skip them. publish writes as the
 # spec's drive.subject. Procedure: docs/agents/agents/alex/sops/marketing-kit.md
 require "optparse"
@@ -19,7 +20,7 @@ require "fileutils"
 EXAMPLE = File.expand_path("../script/marketing_kit/kit.example.yml", __dir__)
 options = { pdf: true, office: true, replace: [] }
 parser = OptionParser.new do |opts|
-  opts.banner = "usage: bin/marketing-kit init DIR | build SPEC --out DIR [--no-pdf] [--no-office] | " \
+  opts.banner = "usage: bin/marketing-kit init DIR | pngs DIR | build SPEC --out DIR [--no-pdf] [--no-office] | " \
                 "publish SPEC --out DIR [--dry-run] [--replace NAME]... [--replace-all]"
   opts.on("--out DIR", "the local build folder") { |d| options[:out] = d }
   opts.on("--[no-]pdf", "print the guidelines PDF (needs Chrome)") { |v| options[:pdf] = v }
@@ -39,14 +40,28 @@ rescue OptionParser::ParseError => e
 end
 command, target = ARGV.shift(2)
 abort "bin/marketing-kit: unexpected argument #{ARGV.first}\n#{parser.banner}" if ARGV.any?
-abort parser.banner unless %w[init build publish].include?(command) && target
+abort parser.banner unless %w[init pngs build publish].include?(command) && target
 
 if command == "init"
   dest = File.join(File.expand_path(target), "kit.yml")
   abort "bin/marketing-kit: #{dest} exists; not overwriting" if File.exist?(dest)
   FileUtils.mkdir_p([File.dirname(dest), *%w[logos/svg logos/png photos docs].map { |d| File.join(File.dirname(dest), d) }])
   FileUtils.cp(EXAMPLE, dest)
-  puts "wrote #{dest}\nnext: put the logo files in logos/png and logos/svg, the photos in photos/, then edit kit.yml"
+  puts "wrote #{dest}\nnext: put the logo SVGs in logos/svg, run bin/marketing-kit pngs on this folder, put the photos in photos/, then edit kit.yml"
+  exit
+end
+
+if command == "pngs"
+  require_relative "../config/environment"
+  begin
+    dir = File.expand_path(target)
+    MarketingKit::LogoPngs.draw(dir).each { |_, png, w, h| puts "wrote #{png} (#{w}x#{h})" }
+    skipped = MarketingKit::LogoPngs.skipped(dir)
+    puts "skipped (not a kit name, so no PNG): #{skipped.join(', ')}" if skipped.any?
+  rescue MarketingKit::Error => e
+    abort "bin/marketing-kit: #{e.message}"
+  end
+  puts "next: look at every PNG on white and on dark"
   exit
 end
 
