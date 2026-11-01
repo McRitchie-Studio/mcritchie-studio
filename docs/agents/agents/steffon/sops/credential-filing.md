@@ -85,9 +85,10 @@ landed. Never `--dry-run` with the real secret: its preview prints the concealed
   secret, he runs section 5 in HIS terminal and the variable is `$T` — the
   agent never holds that one at all.
 - **The refusal is not ceremony.** An unset `VALUE` does not abort the
-  command — the shell hands `op` the literal `credential[concealed]=`, a
-  well-formed assignment carrying zero bytes, so nothing downstream ever sees a
-  missing argument. Whether `op` then files the empty item or rejects it has
+  command — `printf` hands ruby zero bytes and ruby prints a well-formed
+  template whose concealed `value` is `""` (measured 2026-11-01), so `op`
+  gets valid JSON, not the `invalid JSON in piped input` refusal above, and
+  nothing downstream ever sees a missing secret. Whether `op` then files the empty item or rejects it has
   NOT been measured here, because measuring it means writing a throwaway item
   into a real credential vault; the refusal removes the question rather than
   betting on the answer. Guard on the variable being non-empty — `[ -n
