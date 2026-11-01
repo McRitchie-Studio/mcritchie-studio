@@ -12,10 +12,11 @@
 # CONVENTION — tag each satisfying `checks_run` line with its tier in leading
 # square brackets so the gate can credit it deterministically:
 #   [unit] bin/rails test test/models/upload_test.rb
-#   [component] request spec + rendered _upload partial
-#   [integration] request -> S3 (FakeVault) -> record
+#   [component] test/controllers/uploads_controller_test.rb (request + rendered partial)
+#   [integration] test/integration/upload_flow_test.rb
 #   [e2e] npx playwright test e2e/upload.spec.js
-# A tier counts as satisfied when at least one checks_run line is tagged with it.
+# A tier counts as satisfied when at least one checks_run line is tagged with it. A
+# tier in a shape's `cited_tiers` also needs a line that names a test path; see below.
 #
 # Known tiers: unit, component, integration, e2e
 #
@@ -90,9 +91,10 @@
 # and NOBODY IS BUILDING IT. Treat the **IN THIS REPO** qualifier as a PERMANENT limitation,
 # not a pending one.
 #
-# ASK THE CODE, NOT THIS COMMENT. bin/dor-check credits a tier from the TAG ALONE —
-# `missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }` — and never
-# reads a repo's lanes, its own included. If you build the check, rewrite this paragraph BY
+# ASK THE CODE, NOT THIS COMMENT. bin/dor-check credits a tier from the TAG —
+# `missing_tiers = dor_tiers.reject { |tier| tier_satisfied?(checks, tier) }` — plus, for
+# `cited_tiers`, a test path of the right form (bin/lib/dor/checks/tier_citation.rb). It
+# never reads a repo's lanes, its own included. If you build the check, rewrite this paragraph BY
 # HAND; nothing will do it for you.
 #
 # What that cost, measured the day the lane was finally switched on: the studio's
@@ -133,7 +135,15 @@
 # pre-flight and records nothing.
 #
 # THE OTHER CONTRACT KEYS — `dor_tiers` is not the only thing a shape can ask
-# for, and two shapes now ask for something a tier list cannot express:
+# for, and three shapes now ask for something a tier list cannot express:
+#
+#   cited_tiers: [<tier>, ...]
+#     Each listed tier needs a checks_run line that NAMES a test: `test/…` for unit,
+#     component and integration, `e2e/….spec.js` or `test/system/….rb` for e2e. The
+#     test may be new or existing. So a change with no new logic at a tier cites the
+#     test that already covers it instead of minting one; every tier stays demanded.
+#     The bar is the same either way: the cited test exercises this change and goes
+#     red if the change is reverted, and review re-runs one.
 #
 #   claimable_when: test_only_diff | docs_with_guards_diff
 #     The shape may be claimed ONLY on a diff bin/dor-check OBSERVES to match it.
@@ -179,8 +189,12 @@ shapes:
   ui+db:
     description: UI plus persistence — a form that writes, a record-backed view, a stateful flow.
     dor_tiers: [unit, component, integration, e2e]
+    cited_tiers: [unit, component, integration, e2e]
     required_metadata: [acceptance, repositories, risk_tags, test_plan, local_url]
     notes: >-
+      Answer each tier by citing the test that covers the change there. Write a new
+      test only when none does: extend the owning test or table first.
+
       e2e here is the happy path, CHROMIUM ONLY (playwright.config.js runs one project) —
       there is no browser matrix and no nightly backstop anywhere in the ecosystem. If a flow
       needs cross-browser or deeper coverage, it needs a LANE first; do not thin an e2e spec
@@ -242,9 +256,11 @@ shapes:
       `claimable_when: docs_with_guards_diff` (widened from doc_only_diff on
       2026-09-03, /tasks/docs-shape-rejects-guard-test): the diff may ALSO carry
       documentation-subject tests — files that are BOTH under test/docs/ AND
-      tests by type (*_test.rb) — because every SOP wants the registry-guard
-      test that pins its rows, and pure doc_only_diff forced authors to delete
-      the guard or mislabel the shape. The rule is deliberately type AND
+      tests by type (*_test.rb) — because a doc can need a guard that pins it,
+      and pure doc_only_diff forced authors to delete the guard or mislabel the
+      shape. A new SOP or registry row goes in the existing table or generated
+      registry its guard already reads; a new guard test is the exception, for a
+      claim no table can carry. The rule is deliberately type AND
       location together, never a bare directory allowlist (a helper.rb under
       test/docs/ still disqualifies), and a diff of guard tests with NO prose
       still refuses — that is test-only's stricter contract (the CI gate plus a

@@ -19,6 +19,8 @@
 # state a quarantined e2e spec is in. The ratchet does NOT demand the number go down —
 # it forbids it rising above the merge base's count.
 require "open3"
+require "ripper"
+require "yaml"
 
 module TestHealth
   # A test opener in either dialect: `test "name" do` (declarative) or `def test_x`.
@@ -27,6 +29,12 @@ module TestHealth
   # raised` and `pass` count: they are deliberate statements about behaviour.
   ASSERTION = /\b(?:assert\w*|refute\w*|flunk|pass)\b|\.must_|\.wont_/
   SKIP_CALL = /^\s*skip\b/
+  # Used when a repo's config/test_health.yml carries no such key, so a sibling repo can
+  # adopt bin/test-health with no config at all. No ceiling means nothing to exceed.
+  DEFAULT_COMMENT_CAP = 8
+  DEFAULT_TEST_ROOTS = %w[test e2e].freeze
+  DEFAULT_PRODUCTION_ROOTS = %w[app lib bin].freeze
+  COMMENT_FILE = /\.(?:rb|js|mjs|ts)\z/
 
   module_function
 
@@ -154,6 +162,179 @@ module TestHealth
     bodies
   rescue SystemCallError
     Array.new(specs.size)
+  end
+
+  # ---- the comment-block cap ------------------------------------------------
+  #
+  # A block is a run of full-line comments on adjacent lines. A blank line ends it, so
+  # the cap can be dodged with blank lines, which review has to catch. The why fits in
+  # eight lines and the story belongs in the PR.
+
+  def comment_cap(config)
+    config.dig("comment_blocks", "max_lines") || DEFAULT_COMMENT_CAP
+  end
+
+  def test_roots(config)
+    config.dig("line_budget", "roots") || DEFAULT_TEST_ROOTS
+  end
+
+  # PURE. [{file:, line:, lines:, text:}, ...], one per block, for Ruby or JS `source`.
+  def comment_blocks_in(source, file)
+    clean = source.scrub
+    found = file.end_with?(".rb") ? ruby_comment_lines(clean) : js_comment_lines(clean)
+    found.slice_when { |a, b| b[0] != a[0] + 1 }.map do |run|
+      { file: file, line: run.first[0], lines: run.size, text: run.map { |_, body| body.strip }.join("\n") }
+    end
+  end
+
+  # Ripper, not a line regex: a `#` inside a heredoc is fixture text, not a comment.
+  def ruby_comment_lines(source)
+    lines = source.lines
+    Ripper.lex(source).filter_map do |(line, column), type, token, _state|
+      next [line, token] if %i[on_embdoc_beg on_embdoc on_embdoc_end].include?(type)
+      next unless type == :on_comment
+
+      [line, token] if lines[line - 1].byteslice(0, column).strip.empty?
+    end
+  end
+
+  # `//` lines only. A /* */ block is not counted; every spec here uses `//`.
+  def js_comment_lines(source)
+    source.lines.each_with_index.filter_map { |text, index| [index + 1, text] if text.match?(%r{\A\s*//}) }
+  end
+
+  # Blocks over `cap` in { path => source }. The regex is a cheap sound filter: a block
+  # over the cap needs a run this long, so most files never reach the lexer.
+  def long_blocks(sources, cap)
+    run = /(?:^[ \t]*(?:#|\/\/).*\R){#{cap + 1}}|^=begin/
+    sources.flat_map do |path, source|
+      next [] unless path.match?(COMMENT_FILE) && source.to_s.scrub.match?(run)
+
+      comment_blocks_in(source, path).select { |block| block[:lines] > cap }
+    end
+  end
+
+  # Long blocks in `now` the base cannot account for. A block the base holds verbatim is
+  # a move; one no longer than a block it replaced in the same file is an edit. Each
+  # base block answers for one block only, so the count of long blocks can only fall.
+  def new_long_blocks(now, base, cap)
+    changed = (now.keys | base.keys).reject { |path| now[path] == base[path] }
+    gone = long_blocks(base.slice(*changed), cap)
+    moved = ->(block) { claim(gone) { |old| old[:text] == block[:text] } }
+    edited = ->(block) { claim(gone) { |old| old[:file] == block[:file] && old[:lines] >= block[:lines] } }
+    long_blocks(now.slice(*changed), cap).reject(&moved).reject(&edited)
+  end
+
+  def claim(pool, &match)
+    index = pool.index(&match)
+    pool.delete_at(index) if index
+  end
+
+  # ---- the tree, as git sees it ----------------------------------------------
+
+  # Tracked and untracked-but-not-ignored paths under `roots`, or nil outside git.
+  def tree_paths(root, roots)
+    listing = git(root, "ls-files", "--cached", "--others", "--exclude-standard", "--", *roots)
+    listing&.lines&.map(&:strip)&.select { |path| File.file?(File.join(root.to_s, path)) }
+  end
+
+  def comment_sources(root, roots)
+    Array(tree_paths(root, roots)).grep(COMMENT_FILE).to_h do |path|
+      [path, File.binread(File.join(root.to_s, path)).force_encoding(Encoding::UTF_8)]
+    end
+  end
+
+  def comment_sources_at(root, ref, roots)
+    paths = git(root, "ls-tree", "-r", "--name-only", ref, "--", *roots)&.lines&.map(&:strip)&.grep(COMMENT_FILE)
+    return nil if paths.nil?
+
+    paths.zip(blobs(root, paths.map { |path| "#{ref}:#{path}" })).to_h
+  end
+
+  # Newlines in text files under `roots`. A file with a NUL byte is binary and counts 0.
+  def line_total(root, roots)
+    Array(tree_paths(root, roots)).sum do |path|
+      body = File.binread(File.join(root.to_s, path))
+      body.include?("\0") ? 0 : body.count("\n")
+    end
+  end
+
+  # Net lines against `ref` by numstat. nil when git cannot answer.
+  def net_lines(root, ref, roots)
+    stat = git(root, "diff", "--numstat", ref, "--", *roots)
+    stat&.lines&.sum do |line|
+      added, deleted, = line.split("\t")
+      added.to_i - deleted.to_i
+    end
+  end
+
+  # ---- the line budget --------------------------------------------------------
+
+  # The budget at a glance. `over` compares the tree with the ceiling; `net_*` compare it
+  # with the merge base, and are nil when there is no base to read.
+  def budget_report(root, config, ref)
+    budget = config["line_budget"] || {}
+    total = line_total(root, test_roots(config))
+    ceiling = budget["ceiling"]
+    { total: total, ceiling: ceiling, over: ceiling ? [total - ceiling, 0].max : 0,
+      enforce: budget["enforce"] == true,
+      net_test: ref && net_lines(root, ref, test_roots(config)),
+      net_production: ref && net_lines(root, ref, budget["production_roots"] || DEFAULT_PRODUCTION_ROOTS) }
+  end
+
+  def budget_summary(report)
+    cap = report[:ceiling] ? "ceiling #{report[:ceiling]}, over by #{report[:over]}" : "no ceiling set"
+    "#{report[:total]} test lines (#{cap}); this diff: test #{signed(report[:net_test])}, " \
+      "production #{signed(report[:net_production])}; " \
+      "#{report[:long_comment_blocks] || "unknown"} grandfathered long comment blocks"
+  end
+
+  def signed(number)
+    number.nil? ? "unknown" : format("%+d", number)
+  end
+
+  # A hard failure only once `enforce` is on: over the ceiling AND adding lines. A PR that
+  # cuts lines always passes, or the budget would block the cut that clears it.
+  def budget_exceeded?(report)
+    report[:enforce] && report[:over].positive? && report[:net_test].to_i.positive?
+  end
+
+  # The ceiling at `ref`, or nil when the file or key is absent there. It may only fall.
+  def ceiling_at(root, ref)
+    body = blobs(root, ["#{ref}:config/test_health.yml"]).first
+    body && YAML.safe_load(body)&.dig("line_budget", "ceiling")
+  rescue Psych::Exception
+    nil
+  end
+
+  def ceiling_raised?(root, config, ref)
+    before = ceiling_at(root, ref)
+    now = config.dig("line_budget", "ceiling")
+    !before.nil? && (now.nil? || now > before)
+  end
+
+  # Everything the shared check reports, for any repo root: a sibling needs no config.
+  def check(root, config = load_config(root))
+    ref = base_ref(root)
+    report = budget_report(root, config, ref)
+    sources = comment_sources(root, test_roots(config))
+    report[:long_comment_blocks] = long_blocks(sources, comment_cap(config)).size
+    failures = []
+    failures << "no merge base with #{BASE_BRANCH}, so the ratchets have no baseline" if ref.nil?
+    base = ref && comment_sources_at(root, ref, test_roots(config))
+    fresh = base ? new_long_blocks(sources, base, comment_cap(config)) : []
+    fresh.each do |block|
+      failures << "#{block[:file]}:#{block[:line]} is a #{block[:lines]}-line comment block, new or grown " \
+                  "since the merge base; the cap is #{comment_cap(config)}. Keep the why, move the story to the PR."
+    end
+    failures << "the test-line ceiling rose above the merge base's" if ref && ceiling_raised?(root, config, ref)
+    failures << budget_summary(report) if budget_exceeded?(report)
+    { report: report, failures: failures }
+  end
+
+  def load_config(root)
+    path = File.join(root.to_s, "config", "test_health.yml")
+    File.exist?(path) ? (YAML.safe_load_file(path) || {}) : {}
   end
 
   # PURE. Which lines of `source` are CODE — i.e. not inside a heredoc body.

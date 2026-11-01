@@ -74,6 +74,7 @@ class BinHelpFlagClassTest < Minitest::Test
   MANIFEST = {
     # --- retrofitted onto the shared guard, 2026-08-31 ------------------------
     "archive-docs"           => :cli_arg_guard,
+    "test-health"            => :cli_arg_guard,
     # --- the archive's pruners ------------------------------------------------
     "prune-branches"         => :cli_arg_guard,
     "prune-session-markers"  => :cli_arg_guard,
