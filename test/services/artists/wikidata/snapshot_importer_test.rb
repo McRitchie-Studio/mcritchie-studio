@@ -1,9 +1,26 @@
 require "test_helper"
+require "minitest/mock"
 
 class Artists::Wikidata::SnapshotImporterTest < ActiveSupport::TestCase
   SNAPSHOT = Rails.root.join("test/fixtures/files/artists_wikidata_snapshot.json")
 
   def import = Artists::Wikidata::SnapshotImporter.new(SNAPSHOT).call
+
+  test "with no source it loads the snapshot from R2" do
+    SeedSnapshot.stub(:read, ->(name) { name == "artists_wikidata.json" ? File.read(SNAPSHOT) : flunk(name) }) do
+      assert_equal 8, Artists::Wikidata::SnapshotImporter.new.call[:artists]
+    end
+  end
+
+  test "with no source and no R2 object it refuses, because the operator asked for this import" do
+    SeedSnapshot.stub(:read, nil) do
+      error = assert_raises(Artists::Wikidata::SnapshotImporter::SnapshotUnavailable) do
+        Artists::Wikidata::SnapshotImporter.new
+      end
+      assert_includes error.message, "seed-data/artists_wikidata.json"
+    end
+    assert_equal 0, Artist.count
+  end
 
   test "imports artists, aliases and memberships and links members to groups" do
     stats = import

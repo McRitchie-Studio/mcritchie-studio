@@ -1,4 +1,5 @@
 require "test_helper"
+require "minitest/mock"
 
 class Spotrac::SyncContractsTest < ActiveSupport::TestCase
   setup do
@@ -15,6 +16,43 @@ class Spotrac::SyncContractsTest < ActiveSupport::TestCase
       annual_value_cents: 5_000_000_000,
       guaranteed_cents:   8_000_000_000
     }.merge(overrides)
+  end
+
+  def snapshot_rows = [entry(first_name: "Snapshot", last_name: "Row")].to_json
+
+  test "by default it reads the snapshot from R2" do
+    read = ->(name) { name == "spotrac_contracts_2025.json" ? snapshot_rows : flunk(name) }
+    SeedSnapshot.stub(:read, read) do
+      assert_difference -> { Contract.count }, 1 do
+        assert_output(/Spotrac sync: 1 entries/) { Spotrac::SyncContracts.new.call }
+      end
+    end
+  end
+
+  test "skips and changes nothing when the R2 snapshot is absent" do
+    SeedSnapshot.stub(:read, nil) do
+      assert_no_difference -> { [Contract.count, Athlete.count] } do
+        assert_output(/seed-data\/spotrac_contracts_2025.json.*skipping/) do
+          assert_empty Spotrac::SyncContracts.new.call
+        end
+      end
+    end
+  end
+
+  test "an R2 failure stops the sync instead of reading as absent" do
+    SeedSnapshot.stub(:read, ->(_name) { raise Studio::S3::Error, "403" }) do
+      assert_raises(Studio::S3::Error) { Spotrac::SyncContracts.new.call }
+    end
+  end
+
+  test "an explicit json_path reads that file and never asks R2" do
+    Tempfile.create(["contracts", ".json"]) do |file|
+      file.write(snapshot_rows)
+      file.flush
+      SeedSnapshot.stub(:read, ->(_name) { flunk "asked R2" }) do
+        assert_output(/Spotrac sync: 1 entries/) { Spotrac::SyncContracts.new(json_path: file.path).call }
+      end
+    end
   end
 
   test "matches existing Athlete by otc_id when present" do
