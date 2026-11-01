@@ -72,7 +72,11 @@ This writes `kit.yml` (the worked example, every field explained) and empty
 
 **3. Put the logos in.** Export the saved kit and install its SVGs with
 `brand-kit-rollout` steps 3 and 4, setting `DEST=<working folder>/logos/svg`.
-Name them by type and tone:
+`logos:install` reads the local database, which must have the `brand_kits`
+table. If the development database lacks it, load the schema into a scratch
+database (`createdb <name>`, then `DATABASE_URL=postgres:///<name> bin/rails
+db:schema:load`), run the install against it, and drop it after. Name the SVGs
+by type and tone:
 
 | Hub kit file | Kit name |
 |--------------|----------|
@@ -80,11 +84,21 @@ Name them by type and tone:
 | `navbar-light.svg` / `navbar-dark.svg` | `horizontal_light.svg` / `horizontal_dark.svg` |
 | `icon-light.svg` / `icon-dark.svg` | `icon_light.svg` / `icon_dark.svg` |
 
-Draw each PNG from its SVG with `node script/brand_png.cjs <svg> <png> <width>`.
-Use 2000 px wide for full and horizontal, and 512 px for `icon_512.png`. The spec
-refuses to load until the five required PNGs are there: `full_light`,
-`full_dark`, `horizontal_light`, `horizontal_dark` and `icon_light`. Look at
-every PNG on both white and dark before going on.
+Then draw every PNG from its SVG:
+
+```bash
+bin/marketing-kit pngs <working folder>
+```
+
+It draws full and horizontal logos 2000 px wide at their own height, icons at
+512 px square, and `icon_512.png` from `icon_light.svg`. An SVG still under
+its hub name, or a watermark, gets no PNG; the command lists it as skipped, so
+rename the six logos first. Do not use
+`script/brand_png.cjs` here: it draws squares only (app favicons), so a
+horizontal logo comes out padded into a square. The spec refuses to load until
+the five required PNGs are there: `full_light`, `full_dark`,
+`horizontal_light`, `horizontal_dark` and `icon_light`. Look at every PNG on
+both white and dark before going on.
 
 **4. Put the photos in** `photos/`: web-sized (about 2000 px, JPEG). List each one
 in `photos.items` with what it shows. Pick:
