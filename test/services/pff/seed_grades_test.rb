@@ -58,12 +58,13 @@ class Pff::SeedGradesTest < ActiveSupport::TestCase
     assert_empty err
   end
 
-  # The seed file itself, against this repo's real tree: no PFF file may be present.
-  test "seed 29 on this checkout loads, imports nothing and warns" do
-    skip "an operator's licensed export is on this machine" if Dir.glob(Rails.root.join("db/seeds/data/pff/*.csv")).any?
-
+  # The seed file itself. glob is stubbed so an operator's gitignored export on this
+  # machine cannot change the answer; the tree guard is pff_data_not_in_repo_test.rb.
+  test "seed 29 with no files loads, imports nothing and warns" do
     _out, err = capture_io do
-      assert_no_difference("PffStat.count") { load SEED }
+      Dir.stub(:glob, []) do
+        assert_no_difference("PffStat.count") { load SEED }
+      end
     end
 
     assert_match(/imported nothing/, err)

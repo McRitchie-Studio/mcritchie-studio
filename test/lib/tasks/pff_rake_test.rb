@@ -39,7 +39,7 @@ class PffRakeTest < ActiveSupport::TestCase
   test "pff:build_rosters refuses a season with no imported stats" do
     PffStat.where(season_slug: "2025-nfl").delete_all
     ENV["SEASON"] = "2025-nfl"
-    skip "fixtures hold no offseason slate" unless seasons(:nfl_2025).slates.exists?(sequence: 0)
+    assert seasons(:nfl_2025).slates.exists?(sequence: 0), "the refusal under test sits behind the offseason slate check"
 
     assert_match(/no imported PFF stats/, refused("pff:build_rosters"))
   end

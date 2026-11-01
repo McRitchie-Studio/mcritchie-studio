@@ -7,8 +7,8 @@ require "open3"
 class PffDataNotInRepoTest < ActiveSupport::TestCase
   test "nothing is tracked under the PFF data paths" do
     tracked, status = Open3.capture2("git", "ls-files", "db/seeds/data/pff", "lib/pff", chdir: Rails.root.to_s)
-    skip "no git checkout" unless status.success?
 
+    assert status.success?, "git ls-files could not read the tree"
     assert_empty tracked
   end
 
