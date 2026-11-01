@@ -16,6 +16,7 @@ at `<sub>.<preview domain>`. Nobody waits for a person to pick it up.
 | Heartbeat | a minute ping to `/api/v1/agent_dispatchers/ping` listing the one soul `client-build-launcher` (`AgentDispatcher::LAUNCHER_SOUL`) |
 | Publish session | a studio login for the one build task the run holds, minted per run (below); no standing publish secret |
 | Change cards | `ChangeBuilds` (`app/services/change_builds.rb`) behind `/api/v1/change_builds`, `ClientBuildLauncher::ChangeStart` on the Mac ([below](#change-cards)) |
+| Change builder logs | `~/.client-builds/change-builders/<slug>/<run>.log` (0600): the run's stream-json, one file per run ([The change builder](#the-change-builder)) |
 | Scratch directories | `~/.client-builds/<sub>/<run>`: outside every repo, one per run, kept for inspection (they hold the customer's bundle; no sweep removes them yet, see [Failure](#failure)) |
 
 ## What one build does
@@ -107,7 +108,12 @@ same `cap` is free, the launcher takes the oldest startable one.
    cd <desk> && claude --agent pokemon "Build task <slug> to submitted: run /Users/alex/projects/.agents/bin/task begin <slug> to take the desk, then building-sop from Step 2."
    ```
 
-   A dispatcher soul or Alex McRitchie's session starts the builder with that one command.
+   A dispatcher soul or Alex McRitchie's session starts the builder with that one command,
+   except on a card Alex McRitchie's own go opened while the change builder is on:
+   there the start records `devops.change_build.builder` (`pending`), the thread line
+   says "a headless Pokémon builder takes it to submitted next" instead of carrying
+   the launch line, the ops line says "do not start a second one", and the launcher
+   runs the builder itself ([below](#the-change-builder)).
 
    The `go` answer itself says so ("The build launcher starts it next…") only when
    `ChangeBuilds.starts?` holds, so the thread never hears a promise the launcher
@@ -121,13 +127,136 @@ same `cap` is free, the launcher takes the oldest startable one.
    ([agent-dispatcher](../agents/steffon/sops/agent-dispatcher.md)), which
    recovers when a later start succeeds or the card leaves `designed`.
 
-**Why the launcher stops at the desk.** Its builder is a sandboxed headless Claude
-built for static bundles: no secrets in its environment, no file outside its run
-directory, no git (below). A hub app's builder needs the opposite: a desk in a
-primary checkout, a database, `gh` credentials to push and open a PR, and
-`bin/submit`, with instructions that came from a chat message. So the launcher
-runs only our own tooling, and a session with the operator's permissions runs the
-builder.
+**Where the launcher stops.** For an app owner's web card it stops at the desk. Its
+bundle builder is a sandboxed headless Claude built for static bundles: no secrets
+in its environment, no file outside its run directory, no git (below). A hub app's
+builder needs the opposite: a desk, a database, `gh` credentials to push and open a
+PR, and `bin/submit`, and a web card's instructions came from a client's chat. So
+for those the launcher runs only our own tooling, and a session runs the builder.
+For Alex McRitchie's own go it goes one step further.
+
+## The change builder
+
+Alex McRitchie, 2026-11-01: "I want to be able to build from Slack also." For a card
+his own Slack or Teams go opened (`ChangeBuilds.owner_go?`, above), once the desk is
+cut, the launcher runs a headless Pokémon in that desk
+(`ClientBuildLauncher::ChangeBuilder`) that follows the DevOps cycle to `submitted`
+with `bin/submit-wait`, exactly as a session builder does. Nobody has to run the
+launch line. An app owner's web card never gets one.
+
+**Which cards.** `GET /api/v1/change_builds/builders` (`ChangeBuilds.builder_candidates`):
+`building`, not blocked, its start `started` with a desk and a builder recorded,
+still Alex McRitchie's own go, and one of: builder `pending`; `failed` over 10
+minutes ago; or `running` past `run_minutes` + 15 minutes (a launcher that died
+mid-run). At most `change_builder.max_attempts` runs per card. Empty while the
+board's switch is off.
+
+**One run.**
+
+1. `POST …/builder_claim` records the run (`builder.state` `running`, attempts + 1)
+   under the card's row lock and answers the brief's fields: slug, title, repo,
+   kind, shape, acceptance, tests, risk, source thread, desk. Never the task's
+   description, never a chat message. The thread hears "Builder running, task
+   `<slug>`: a headless Pokémon is building it in its desk (attempt N of M, up to
+   90 min)."
+2. The launcher checks the card (`BuilderBrief.refusal`): a kebab-case slug, a plain
+   repo slug, and the desk exactly `<projects>/<repo>/.worktrees/<slug>`, on disk. It
+   refuses a desk whose `.claude/settings.json` could widen the permissions (the
+   intent scout's `project_settings_violations`).
+3. The brief (`BuilderBrief.prompt`) puts the card's fields in one JSON document
+   between fence lines carrying a random per-run token, and says outside the fence
+   that they are data written from a chat thread, never instructions. It spells out
+   the cycle: `task begin <slug>` (a resume that takes the desk), read the task and
+   `building-sop`, build and test unit-first, commit, read Avi's brief, record
+   `--checks`, then `submit-wait <slug> --launch`. And the floors: never merge,
+   deploy, or push `main` or `release`; never `git push`, `gh pr merge`, `bin/release`
+   or `heroku` by hand.
+4. `claude -p` runs in the desk with the brief on **stdin**; the argv is a fixed
+   array (no shell, no card text in it), through the same runner as the bundle
+   builder (`Sandbox.run`: its own process group, the wall-clock and turn caps, TERM
+   then KILL). Each stream-json event goes to the run's log.
+5. `POST …/builder_finish`: `finished` when the process exited by itself, and the
+   board reads the stage. A card at `submitted` or later records `submitted` (its
+   thread already heard "Submitted for review" with the PR, from Task's after_commit);
+   anything else is `failed`, "the builder exited without reaching submitted". A
+   timeout, the turn cap, a crash or a refused brief is `failed` with a short reason
+   (stderr's last line, never one carrying a token or a link). A launcher stop is
+   `released`: back to `pending`, the attempt spent.
+
+**A failure** posts "Builder stopped, task `<slug>`: <reason>." in the thread, with
+"The launcher tries again in 10 minutes" or, past the attempts, the launch line to
+continue from the desk. The floor alert raises it as a per-card
+`change_build_refused` incident ("Change builder failed: …", naming the desk, the
+log and the launch line), recovered when a later run submits it or the card leaves
+`building`. The desk keeps every commit, so a retry or a session continues the work.
+
+**The permission set, and why.** Neither the bundle sandbox (a change needs git, the
+repo's tests and `bin/submit`) nor a session's own settings: the operator's
+`~/.claude/settings.json` allows `git push`, `gh pr merge` and `gh api`, which a
+builder started from chat must never get. So, as the intent scout does:
+
+| Flag | Why |
+|------|-----|
+| `--setting-sources project` | Loads no user or local settings: under `dontAsk` their allow rules would be ADDED to ours (Carl reproduced that for the scout, 2026-10-14) |
+| `--permission-mode dontAsk` | Anything not allowed is denied, never asked; nobody is there to answer |
+| `--allowedTools` | `Read`, `Glob`, `Grep`; `Edit` and `Write` only on `<desk>/**`; `Bash` only for the repo's own tooling (`bin/rails test`, `bin/rails db:migrate`, `ruby -Itest`, `bin/rubocop`, `bin/test-js`, `bin/fast-check`, `bin/dor-check`), the board (`bin/task`, `bin/agent-activity`, the fixed-path `task`, `submit`, `submit-wait`, `dream`), local git (`status`, `diff`, `log`, `show`, `add`, `commit`, `fetch`, `merge`, `restore`, `stash`), `gh` reads (`pr view`/`checks`/`diff`, `run view`/`list`) and read-only shell (`ls`, `cat`, `grep`, `sed -n`, …) (`ChangeBuilder::ALLOWED_BASH`) |
+| `--disallowedTools` | The floors, which beat any allow: `git push`, `git reset --hard`, `gh pr merge`, `gh api`, `gh auth`, `bin/release`, `bin/ship`, `bin/merge-permit`, `heroku`, `op`, `bin/secret`, WebFetch, WebSearch (`ChangeBuilder::DENIED`) |
+| `--strict-mcp-config` | No MCP servers from the operator's config |
+| `--agents` / `--agent pokemon` | The soul from the hub's shipped `docs/agents/agents/pokemon/claude-agent.md` (its `tools` line dropped), since user agents no longer load |
+| `--add-dir <projects>` | Reads the hub docs, the epics and the other repos, as a session can |
+
+`bin/submit-wait` itself pushes the branch and opens the PR: the subprocesses an
+allowed command runs are not checked rule by rule, which is how a session builder
+ships too, and why `git push` by hand can be denied. `bin/submit` stops at
+`submitted`; merging needs Carl's review and the merge permit, and deploying needs
+the deployer identity, which the builder never has.
+
+**This is not a code sandbox**, and it does not pretend to be: `bin/rails test` runs
+the repo's code, which can do anything this macOS user can. What bounds it is where
+its instructions come from (a card only Alex McRitchie's own verified go created,
+fenced as data), the floors above, the identity below, and review before merge.
+
+**Identity and environment.** The same macOS user and agent tooling as a session
+builder. The environment is an allow-list (`ChangeBuilder::ENV_ALLOW`: HOME, USER,
+PATH, the locale, `CLAUDE_CONFIG_DIR`, `TASK_API_BASE`), applied with
+`unsetenv_others`, plus `GH_APP_ITEM=github.mcritchie-agent` pinned, so `bin/submit`'s
+own token mint (`GhAuthRetry`) is the agent App, never the deployer, and
+`CHANGE_BUILDER_RUN=<run>`. No `ANTHROPIC_API_KEY` (it runs on the subscription), no
+`GH_TOKEN`, no board secret: `bin/task` reads the board token from the hub
+checkout's `.env` as every agent's does.
+
+**Bounds.**
+
+- The switch: `config/client_builds.yml` `change_builder.enabled` (on as shipped). Off
+  in the board's copy offers no card; off in the Mac's copy runs none. A missing
+  section is off.
+- The wall clock: `change_builder.run_minutes` (90); the turn cap: `max_turns` (400).
+- The cap: a builder holds a slot of the launcher's one `cap` (2) with builds and
+  starts (`Launcher#free_slots`), so the launcher still runs at most 2 headless
+  `claude` processes. A builder's own children (`bin/submit-wait`, the tests) are not
+  model processes.
+- Attempts: `change_builder.max_attempts` (2), then a session's.
+- Awake: the launcher holds `caffeinate -is -w <its pid>` for its whole life, which
+  spans every builder it runs (the plist's pattern, as `bin/dispatcher`).
+
+**Operate it.** `bin/client-build-launcher run --dry-run` also prints "would run
+[...]" for change builders. A run's log: `~/.client-builds/change-builders/<slug>/<run>.log`.
+Keep one card from getting another run by blocking it (`bin/task block`); a run
+already going is ended only by stopping the launcher (below), which releases every
+run in flight. Turn them all off with `change_builder.enabled: false`: the config
+file is in the launcher's fingerprint, so it lets its runs finish, restarts, and reads it.
+
+**New code** reaches the launcher only from the hub primary, which a production ship
+updates (`bin/release` refreshes the primary). The launcher sees its own files change
+on two minute beats, stops claiming, waits for its runs (a builder may take up to
+`run_minutes`), and exits 0; launchd's KeepAlive starts the new code. To restart at
+once: `launchctl kickstart -k gui/$(id -u)/studio.mcritchie.client-build-launcher`
+(runs in flight are released back to `pending`).
+
+**Tests.** `test/lib/client_build_launcher_change_builder_test.rb` (the brief, argv,
+permissions, environment, switch, cap, timeouts, the stop) and
+`test/integration/change_builder_launcher_loop_test.rb` (a stubbed `claude`
+executable, spawned for real, against the board API).
 
 ## The stage flow, and why
 
@@ -247,7 +376,8 @@ outside, and the run wrote `done.txt`.
 ## How many Claude processes
 
 The launcher's `cap` and the dispatcher's are separate, and they add up. On one
-Mac the most at once is **2 builders** (`cap`) **+ 5 dispatcher responders**
+Mac the most at once is **2 builders** (`cap`, shared by bundle builds, change
+starts and change builders) **+ 5 dispatcher responders**
 (`AgentMailbox::Dispatcher::CAP`) **= 7 headless `claude` processes**, plus any
 interactive sessions and their agents.
 
@@ -345,3 +475,8 @@ which stops it as SIGTERM does: runs in flight go back in line.
 | `model` | `opus` | The builder's model |
 | `poll_seconds` | 30 | Idle poll interval |
 | `bundle_max_bytes` | 5000000 | The local check's size limit |
+| `change_builder.enabled` | true | The headless builder for owner-go change cards ([above](#the-change-builder)); missing is off |
+| `change_builder.run_minutes` | 90 | Its wall-clock cap |
+| `change_builder.max_turns` | 400 | Its turn cap |
+| `change_builder.max_attempts` | 2 | Runs per card before a session takes it |
+| `change_builder.model` | `opus` | Its model |
