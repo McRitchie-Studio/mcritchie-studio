@@ -14,7 +14,7 @@
   <img src="<%= @email_asset_host %>/email/cyvasse_wordmark.png" width="170" alt="Cyvasse" style="display:block;margin:0 auto;height:auto;border:0;">
   <div style="font-size:48px;line-height:1.02;font-weight:900;letter-spacing:-1.5px;color:#ffffff;padding-top:6px;">The Dragon<br>Is Awake.</div>
   <div style="font-size:18px;line-height:1.4;color:#e6e2ff;word-break:break-word;padding:14px 8px 0;">Your board is set<%= ", #{merge_field(:username)}" if named %>. 30 seconds a move.</div>
-  <div style="padding-top:18px;"><img src="<%= @email_asset_host %>/email/cyvasse_hex_dragon_vector.png" width="320" alt="A dragon" style="display:block;margin:0 auto;height:auto;border:0;max-width:100%;"></div>
+  <div style="padding-top:18px;"><img src="<%= @email_asset_host %>/email/cyvasse_hex_dragon_glass.png" width="320" alt="The Cyvasse dragon" style="display:block;margin:0 auto;height:auto;border:0;max-width:100%;"></div>
   <div style="margin-top:-14px;"><img src="<%= @email_asset_host %>/email/cyvasse_arrow_white.png" width="96" alt="" style="display:block;margin:0 auto;height:auto;border:0;"></div>
   <div style="padding:6px 0 40px;"><%= render "broadcasts/blocks/cta", url: play_url, label: "PLAY NOW", bg: "#16123c", color: "#ffffff" %></div>
 <% end %>

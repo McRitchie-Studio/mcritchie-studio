@@ -124,8 +124,16 @@ class CyvasseFourEmailsTest < ActionDispatch::IntegrationTest
     original ? ENV["MAILER_ADDRESS"] = original : ENV.delete("MAILER_ADDRESS")
   end
 
+  test "The Wrapped leads with games played and won" do
+    body = text(render("cyvasse_wrapped", @vet))
+    assert_match "VEYJIN, YOU PLAYED", body
+    assert_match "Games of Cyvasse played.", body
+    assert_operator body.index("YOU PLAYED"), :<, body.index("YOU WON")
+    assert_operator body.index("YOU WON"), :<, body.index("The year you joined.")
+  end
+
   test "the Dragon and Pick emails use the vector piece art" do
-    assert_match "cyvasse_hex_dragon_vector.png", html(render("cyvasse_dragon", @vet))
+    assert_match "cyvasse_hex_dragon_glass.png", html(render("cyvasse_dragon", @vet))
     assert_equal 4, html(render("cyvasse_pick", @vet)).scan(/cyvasse_vector_\w+\.png/).uniq.size
   end
 
