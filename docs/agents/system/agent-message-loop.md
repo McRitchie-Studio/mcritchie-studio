@@ -679,6 +679,7 @@ messages the engine already redacts.
 |------|---------|----------|-------|
 | Mason | `error_groups` (every live app's health report, grouped by app, class and redacted message, 1-3 days), `gate_failures`, `review_findings`, `grades`, `board_status`, `recently_shipped`, `release_status` | `bin/task list`, `bin/task show` | `docs/agents/**/*.md`, `config/agent_*.yml`, release, shape and chart config |
 | Mack | `books_status`, `books_unclassified`, `books_month` (totals per category and kind), `usage` | none | `config/books.yml`, the chart, his own docs, `agent-usage.md` |
+| Turf (card 3) | `turf_contests` (Turf Monster's recent contests through its operator endpoint: weeks, format, state, entries, paid entries; scope open or all, up to 25), `usage` | none | the Turf Monster domain doc and its own docs |
 
 `books_status` here reads the database only; the Drive Inbox stays
 `bin/books status`'s. **Bounds:** each tool call `tool_timeout` (45 s); the run is
@@ -1162,14 +1163,13 @@ board and the worker read one file the same way). Each domain names its `soul`
 
 | Kind | Phase 1 | What runs on `go` |
 |------|---------|-------------------|
-| `ask` | Avi: `board_status` (stage counts), `recently_shipped` (`days` 1-30), `release_status` (the active release, its stage and member count, the submitted/reviewed/assembled counts, the last ship; read in process, no Heroku). Turf: `signups_and_errors` (`days` 1-7) | A named method in `AgentProposals::Queries`: code with bounded params, never model-written SQL. Turf's reads Turf Monster's engine health endpoint once per daily window (`DailyAppReport.health_for`, the daily app report's own path), never its database |
-| `operate` | empty | Phase 2 (a confirmed SOP, headless in a desk) |
+| `ask` | Avi: `board_status` (stage counts), `recently_shipped` (`days` 1-30), `release_status` (the active release, its stage and member count, the submitted/reviewed/assembled counts, the last ship; read in process, no Heroku). Turf: `signups_and_errors` (`days` 1-7), `contests` (scope, limit; through its operator endpoint) | A named method in `AgentProposals::Queries`: code with bounded params, never model-written SQL. Turf's reads Turf Monster's engine health endpoint once per daily window (`DailyAppReport.health_for`, the daily app report's own path), never its database |
+| `operate` | Turf: `cancel_contest` (`contest`, `paid_entries` none/refund/credit), `create_contest` (`week` 1-22, `weeks` 1-3, `season`, `contest_type`); owner only | A named method in `AgentProposals::Operations` through Turf Monster's operator endpoint (below, "Operations"). Nothing signs: a cancel is queued for your cosign, a create is a pre-filled form you sign in Phantom |
 | `change` | both domains (`repo`, `default_shape`) | A `designed` board task (title, kind, shape, accept, test, risk) with the thread's link in `devops.source_thread`. A web-chat card on a studio or product app is started by the build launcher on Alex McRitchie's Mac: it runs `bin/task begin` (desk, claim, Avi's scout), posts "Building started, task `<slug>`" in the thread, and posts the builder launch line to the ops channel ([client-build-launcher.md](client-build-launcher.md#change-cards)). A Discord or email card waits for a session |
 
 Only the front door has a catalog. Alex (and every other studio soul) maps to the
 studio domain for its DOMAIN layer and proposes nothing. An `internal: true` domain (Commercial Welding) has no
-catalog and no prompt names it. Turf Monster has no aggregate entries endpoint the
-hub can read, so there is no entries-for-week ask yet.
+catalog and no prompt names it.
 
 **Who may ask, who may confirm.** Requesting needs both a row in
 `AgentMailbox::Audience::CAPABILITIES` (`propose_ask`, `propose_change`,
@@ -1222,7 +1222,9 @@ the model's summary of it.
 
 Refused, it is a `proposal_refused` event on the message and is never shown.
 
-**Confirm by reply.** In `DiscordIngest`, before routing and before any model, a
+**Confirm by reply.** In `DiscordIngest`, and in Slack and Teams through
+`ChatIngest#confirm` (card 3 of `.agents/epics/slack-terminal-scope.md`; until then
+a Slack `go` reached the soul as a plain message), before routing and before any model, a
 message whose text is exactly `go`, `no` or `change: …` (trimmed, any case,
 leading @-mentions ignored) is handled by `AgentMessages::ProposalConfirm` when
 it is about a proposal (`AgentProposal.for_word`), within its thread (same
@@ -1301,6 +1303,86 @@ message) before it raises.
 **A failed run** writes an `ErrorLog` row targeted at the go message, puts the
 proposal back to `proposed` (a later `go` retries it), and posts one line with a
 short reason (an error class, never a message that could carry a secret).
+
+**On Slack** (and Teams) a word counts only as a reply inside a thread (a
+top-level `go` is a thread of its own and finds nothing), and a leading Slack
+mention (`<@U…>`) is read past as a Discord one is. A chat medium has no reply
+reference, so the word is about the thread's newest pending proposal; with none
+pending, a thread whose newest proposal was confirmed or ran within the hour takes
+the word, so a second `go` is told "still running" or "already ran" instead of
+reaching the soul.
+
+### Operations: operate on go
+
+Epic `.agents/epics/slack-terminal-scope.md`, card 3 (Alex McRitchie, 2026-10-31: "it
+would be cool if I could request operational changes through Slack like this", on
+"Turf, Week 8-10 didn't work great can we cancel and make a week 10-12 like
+originally planned"). An `operate` capability is a named, bounded operation a front
+door PROPOSES and that runs only on the owner's `go`, then reports in the thread.
+
+```text
+Alex: "Turf, cancel weeks 8-10 and make 10-12"
+  Turf (scoped run): lookup turf_contests ─▶ "Weeks 8-10: 4 entries, 3 paid. Refund or credit?"
+Alex: "credit them"
+  Turf proposes  ===PROPOSAL=== {"kind":"operate","capability":"cancel_contest","params":{"contest":"…","paid_entries":"credit"}}
+  board: > Runs: operate `cancel_contest` · contest … · paid_entries credit   Reply go
+Alex: go ─▶ AgentProposalJob ─▶ Operations.cancel_contest ─▶ Turf POST /_operator/contests/:slug/cancel
+  thread: "Cancel of … queued for your cosign: <Treasury link>. Nothing is on chain until your wallet signs it there."
+Then "Turf, make weeks 10-12" ─▶ create_contest ─▶ go ─▶ "Ready to create …: <pre-filled /contests/new link>"
+```
+
+| Piece | Where |
+|-------|-------|
+| Catalog | `config/agent_domains.yml` `operate:` (`operation`, `min_audience: owner`, params schema), validated by `DomainRegistry#validate` and listed by `#catalog` |
+| Operations | `AgentProposals::Operations` (`app/services/agent_proposals/operations.rb`): `cancel_contest`, `create_contest`, and `contests_text` for the read |
+| Turf client | `AgentProposals::TurfOperator`: the catalog's `production_url`, bearer `OPERATOR_TOKEN_TURF_MONSTER`, timeouts 5/20s (3/8s inside a scoped lookup) |
+| Turf endpoint | turf-monster `Operator::ContestsController` + `Operator::ContestOps`, `/_operator/contests` (list, `:slug/cancel`, `prepare`), bearer `TURF_OPERATOR_TOKEN` (turf-monster `docs/OPERATOR_API.md`) |
+| The read first | the ask `contests` (query `turf_contests`) and Turf's scoped lookup of the same name (`config/agent_scopes.yml`) |
+
+**The floors.**
+
+- **Named and bounded.** An operation is a method; its params are the registry's
+  schema (unknown keys and out-of-range values refused). No model writes SQL or code.
+- **Owner only.** Requesting needs `min_audience: owner`; confirming is
+  `confirm_proposal`, from the person's role. An app owner's word never confirms an
+  operate (`OWNER_KINDS` is `change` only).
+- **Bound to the proposal.** The params are frozen in the `agent_proposals` row at
+  propose time and rendered on the `Runs:` line; the executor runs exactly those, so a
+  `go` cannot run a different operation or different params. A `change: …` rejects it
+  and the soul proposes anew.
+- **Once.** The job's claim runs a proposal once; a second `go` is told it is running
+  or ran. Turf's cancel is idempotent too: a cancel already waiting for a cosign is
+  returned (`already_queued`), never stacked (`Contest#queue_cancel_cosign!`, shared
+  with the admin button).
+- **Recorded.** The proposal's `settled_by` (`person:<id>`) and `confirm_message`, its
+  `result` (the operation's outcome plus `confirmed_by`), and a `proposal_executed`
+  event naming the operation, state and who confirmed. Turf's pending transaction
+  carries `requested_by` and `request_ref: agent_proposal:<id>`.
+- **Failures in the thread.** Turf's refusal (`422`, its operator copy) posts as "That
+  did not run: Turf refused it: …"; an unwired or unreachable endpoint posts its short
+  reason; anything else posts its error class. Each writes an `ErrorLog` row and leaves
+  the proposal open. No token, body or exception message is posted or logged.
+- **No agent signature (AGENTS.md First Rule 10).** `cancel_contest` queues a
+  `cancel_contest` PendingTransaction pre-signed in the admin (payer) slot only, the
+  admin button's own path; Alex McRitchie's wallet cosigns it in Turf's Treasury
+  (`/admin/pending_transactions`). `create_contest` writes nothing: it checks every
+  week of the span has a weekly NFL slate and returns the pre-filled `/contests/new`
+  link, where he reviews the form and signs `create_contest` in Phantom.
+- **Paid entries.** Turf refuses a cancel with paid entries until `paid_entries` is
+  `refund` or `credit`; the soul is told never to fill a choice the owner has not
+  stated, and the choice shows on the `Runs:` line he confirms. It is recorded on the
+  pending transaction; making entrants whole stays the human step in turf-monster
+  `docs/runbooks/cancelled-contest-refunds.md`.
+
+**Setup.** One random token, filed in 1Password as `turf.operator.token`, set as
+`TURF_OPERATOR_TOKEN` on the Turf Monster app and `OPERATOR_TOKEN_TURF_MONSTER` on the
+hub (Steffon, `credential-filing`). Until both are set every operation and the
+contests read answer "not wired here" and nothing is sent; the Turf endpoint itself
+answers a bare 404.
+
+**Slack replies never unfurl.** `Media::Slack#post_text` sends `unfurl_links: false`
+and `unfurl_media: false` on every answer: a reply is text a sender can steer, and
+Slack fetches every link it unfurls.
 
 **Replies come from the front door's own bot** once its token is set
 (`DISCORD_BOT_TOKEN_AVI`, `DISCORD_BOT_TOKEN_TURF_MONSTER`; above, "Which bot
