@@ -52,6 +52,9 @@ module AgentScopes
                                                                                       config: books || Books::Config.current)
              when "books_month" then books_month(params.fetch("entity"), params.fetch("month"), config: books || Books::Config.current)
              when "usage" then AgentProposals::Queries.usage(params.fetch("app"), now: now)
+             when "turf_contests"
+               operator = AgentProposals::TurfOperator.new(env: env, open_timeout: FETCH_OPEN, read_timeout: FETCH_READ)
+               AgentProposals::Queries.turf_contests(params, operator: operator)
              else raise Scopes::Refused, "no lookup named #{name.to_s[0, 40].inspect}"
              end
       AgentMailbox::Redact.call(text)

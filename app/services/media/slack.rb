@@ -153,9 +153,15 @@ module Media
 
     # ONE message, so a retry can never leave half an answer posted twice:
     # mrkdwn, clipped under Slack's 40,000-character truncation.
+    #
+    # NO LINK PREVIEWS. A reply is model-written text a sender can steer (a
+    # scoped run's tool output, a proposal's result, any answer), and Slack
+    # fetches every link it unfurls; so an answer never unfurls (Carl's
+    # follow-up on slack-owner-terminal-scope).
     def post_text(channel, text, soul:, thread_ts:)
       body = Format.clip(Format.mrkdwn(text).presence || "(no answer text)", REPLY_LIMIT)
-      client.post_message({ channel: channel, text: body, thread_ts: thread_ts }.merge(identity_for(soul)).compact)
+      client.post_message({ channel: channel, text: body, thread_ts: thread_ts, unfurl_links: false, unfurl_media: false }
+                            .merge(identity_for(soul)).compact)
     end
 
     # Media::OnceDelivery's hooks.

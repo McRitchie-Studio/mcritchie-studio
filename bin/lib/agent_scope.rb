@@ -86,6 +86,12 @@ module AgentMailbox
       "usage" => {
         "what" => "an app's agent usage this month and today against its allowance",
         "params" => { "app" => { "type" => "string", "pattern" => '\A[a-z0-9][a-z0-9_-]{0,40}\z', "required" => true } }
+      },
+      "turf_contests" => {
+        "what" => "Turf Monster's recent contests (its operator endpoint): slug, weeks, format, state, entries " \
+                  "and paid entries, newest first; read it before proposing a cancel or a create",
+        "params" => { "scope" => { "type" => "string", "pattern" => '\A(?:open|all)\z', "default" => "open" },
+                      "limit" => { "type" => "integer", "min" => 1, "max" => 25, "default" => 10 } }
       }
     }.freeze
 

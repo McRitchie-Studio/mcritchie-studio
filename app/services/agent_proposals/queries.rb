@@ -13,7 +13,7 @@ module AgentProposals
   # Counts only, as the daily app report: no names or emails, and error
   # classes without their messages.
   module Queries
-    NAMES = %w[board_status recently_shipped release_status app_health usage].freeze
+    NAMES = %w[board_status recently_shipped release_status app_health usage turf_contests].freeze
     # The accepted → release → main ladder, in order (Task::DEPLOY_STAGES before shipped).
     LADDER_STAGES = %w[submitted reviewed assembled].freeze
     SHIPPED_LISTED = 15
@@ -25,7 +25,7 @@ module AgentProposals
     module_function
 
     # The text for one confirmed ask. `app` is the domain's App slug.
-    def run(name, params, app: nil, now: Time.current, fetcher: DailyAppReport::Fetcher.new, env: ENV)
+    def run(name, params, app: nil, now: Time.current, fetcher: DailyAppReport::Fetcher.new, env: ENV, operator: nil)
       raise Unknown, "no query named #{name.inspect}" unless NAMES.include?(name.to_s)
 
       params = (params || {}).to_h.stringify_keys
@@ -35,7 +35,17 @@ module AgentProposals
       when "release_status" then release_status
       when "app_health" then app_health(app, days: params.fetch("days", 1).to_i, fetcher: fetcher, env: env, now: now)
       when "usage" then usage(app, now: now)
+      when "turf_contests" then turf_contests(params, operator: operator || TurfOperator.new(env: env))
       end
+    end
+
+    # Turf Monster's recent contests with their state, entry and paid-entry
+    # counts (Operations.contests_text), through its operator endpoint: what a
+    # cancel would touch, read before one is proposed.
+    def turf_contests(params, operator:)
+      Operations.contests_text(client: operator, scope: params.fetch("scope", "open"), limit: params.fetch("limit", 10).to_i)
+    rescue TurfOperator::Error => e
+      raise Unavailable, e.message
     end
 
     def board_status

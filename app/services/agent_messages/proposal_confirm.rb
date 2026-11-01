@@ -36,7 +36,8 @@ module AgentMessages
     GO = /\Ago\z/i
     NO = /\Ano\z/i
     CHANGE = /\Achange:\s*(?<text>\S.*)\z/im
-    LEADING_MENTIONS = /\A(?:\s*<@[!&]?\d+>)+/
+    # Discord's <@123>, <@!123>, <@&123> and Slack's <@U0ABC> or <@U0ABC|name>.
+    LEADING_MENTIONS = /\A(?:\s*<@(?:[!&]?\d+|[UW][A-Z0-9]+(?:\|[^>]*)?)>)+/
 
     EXPIRED_TEXT = "That proposal expired after 24 hours, so nothing ran. Ask again and I will offer it fresh.".freeze
     DROPPED_TEXT = "Dropped. Nothing will run.".freeze
