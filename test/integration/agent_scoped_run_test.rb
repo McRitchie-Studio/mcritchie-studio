@@ -61,7 +61,7 @@ class AgentScopedRunTest < ActionDispatch::IntegrationTest
   def dispatcher(runner, souls: %w[mason avi])
     AgentMailbox::Dispatcher.new(client: @client, souls: souls, worker: "disp-scope-1", runner: runner, channel: "slack",
                                  claude_cmd: AgentMailbox::Responder::DEFAULT_CLAUDE_CMD, out: @out,
-                                 clock: -> { Time.now }, sleeper: ->(_) {}, idle_wait: 0, busy_wait: 0,
+                                 clock: -> { Time.now }, sleeper: ->(_) { }, idle_wait: 0, busy_wait: 0,
                                  version: "test", mailbox_home: @mailbox, claude_home: @mailbox)
   end
 
