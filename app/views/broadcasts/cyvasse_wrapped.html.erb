@@ -10,25 +10,22 @@
 <% losses = merge_field(:losses, fallback: @merge_fields ? "" : nil) %>
 <% rank = merge_field(:all_time_rank, fallback: @merge_fields ? "" : nil) %>
 <% rate = @merge_fields ? Broadcasts::CyvasseFour.win_rate(@merge_fields) : "{win_rate}" %>
-<% years = history ? "YOUR CYVASSE YEARS" : "YOUR CYVASSE ACCOUNT" %>
-<% who = named ? "#{merge_field(:username).upcase}, #{years}" : years %>
+<% account = named ? "#{merge_field(:username).upcase}, YOUR CYVASSE ACCOUNT" : "YOUR CYVASSE ACCOUNT" %>
+<% played = named ? "#{merge_field(:username).upcase}, YOU PLAYED" : "YOU PLAYED" %>
+<% one_game = @merge_fields && @merge_fields["games"].to_i == 1 %>
 <% content_for :email_title, "Your Cyvasse years" %>
 <% content_for :preheader, @broadcast&.preview_text.presence || (history ? "The numbers you left on the board." : "Your account came across to the rebuilt game.") %>
 <% if history %>
-  <% label = who %>
-  <% if year.present? %>
-    <%= render "broadcasts/blocks/stat_card", bg: "#16123c", color: "#ffffff", label: label, big: year, note: "The year you joined." %>
-    <% label = "YOU PLAYED" %>
-  <% end %>
-  <%= render "broadcasts/blocks/stat_card", bg: "#8e82fe", color: "#16123c", label: label, big: merge_field(:games), note: "games on the old board." %>
-  <% if rate.present? && wins.present? && losses.present? %>
-    <%= render "broadcasts/blocks/stat_card", bg: "#ffa800", color: "#16123c", label: "YOU WON", big: @merge_fields ? "#{rate}%" : rate, note: "#{merge_count(:wins, "win")}, #{merge_count(:losses, "loss")}." %>
-  <% end %>
-  <% if rank.present? %>
-    <%= render "broadcasts/blocks/stat_card", bg: "#c8324b", color: "#ffffff", label: "ALL-TIME RANK", big: "##{rank}", note: "Still yours. For now." %>
+  <% cards = [ { label: played, big: merge_field(:games), note: one_game ? "Game of Cyvasse played." : "Games of Cyvasse played." } ] %>
+  <% cards << { label: "YOU WON", big: @merge_fields ? "#{rate}%" : rate, note: "#{merge_count(:wins, "win")}, #{merge_count(:losses, "loss")}." } if rate.present? && wins.present? && losses.present? %>
+  <% cards << { label: "ALL-TIME RANK", big: "##{rank}", note: "Still yours. For now." } if rank.present? %>
+  <% cards << { label: "YOU JOINED", big: year, note: "The year you joined." } if year.present? %>
+  <% palette = [ %w[#16123c #ffffff], %w[#8e82fe #16123c], %w[#ffa800 #16123c], %w[#c8324b #ffffff] ] %>
+  <% cards.zip(palette).each do |card, (bg, color)| %>
+    <%= render "broadcasts/blocks/stat_card", bg: bg, color: color, **card %>
   <% end %>
 <% else %>
-  <%= render "broadcasts/blocks/stat_card", bg: "#16123c", color: "#ffffff", label: who, big: "Back.", note: "Your account came across to the rebuilt game." %>
+  <%= render "broadcasts/blocks/stat_card", bg: "#16123c", color: "#ffffff", label: account, big: "Back.", note: "Your account came across to the rebuilt game." %>
 <% end %>
 <tr>
   <td style="background-color:#16123c;padding:36px 24px;text-align:center;">
