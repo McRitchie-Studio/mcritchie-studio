@@ -33,7 +33,8 @@ class ClientIpSpoofTest < ActionDispatch::IntegrationTest
     "signup/ip" => ["/signup", "POST"],
     "sso_continue/ip" => ["/sso_continue", "POST"],
     "oauth_callback/ip" => ["/auth/google_oauth2/callback", "GET"],
-    "chat/ip" => ["/chat", "POST"]
+    "chat/ip" => ["/chat", "POST"],
+    "voice_takes/ip" => ["/voice/takes", "POST"]
   }.freeze
 
   def heroku_env(path, method: "POST", **headers)

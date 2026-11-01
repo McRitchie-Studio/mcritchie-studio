@@ -1,3 +1,30 @@
+# The hub's voice settings (see "Talk to Alex by voice" below), as a plain
+# module so test/lib/hub_voice_config_test.rb can ask each case.
+module HubVoiceConfig
+  KEY_ENV = "STUDIO_VOICE_OPENAI_API_KEY".freeze
+  # A transcriber name with no adapter: Studio::VoiceTranscription raises
+  # NotConfigured, so a take answers 503 not_configured.
+  NO_KEY = "no-voice-key".freeze
+
+  module_function
+
+  def api_key(env: ENV) = env[KEY_ENV].to_s.strip.presence
+
+  # The Studio.voice_transcriber to set: "mock" on QA; NO_KEY in production
+  # with no voice key, unless STUDIO_VOICE_TRANSCRIBER asks for the mock
+  # (studio-engine 0.121.0 would fall back to the hub's shared OPENAI_API_KEY
+  # image key; remove with the engine release that drops that fallback); else
+  # nil, the engine's choice (STUDIO_VOICE_TRANSCRIBER, else openai in
+  # production and mock everywhere else).
+  def transcriber(env: ENV, production: Rails.env.production?, qa: Studio.qa_environment?)
+    return "mock" if qa
+    return nil unless production && api_key(env: env).nil?
+    return nil if env["STUDIO_VOICE_TRANSCRIBER"].to_s.strip == "mock"
+
+    NO_KEY
+  end
+end
+
 Studio.configure do |config|
   # ---- Site identity + link preview (studio-engine docs/LINK_PREVIEW.md) ----
   # The DRAFTED title and description; the operator edits them at
@@ -124,6 +151,38 @@ Studio.configure do |config|
   if Studio.respond_to?(:voice_profile=)
     config.voice_profile = true
     config.voice_embedder = "fake" if Rails.env.test?
+  end
+  # ---- Talk to Alex by voice (epic .agents/epics/studio-voice.md, card 4) ----
+  # /chat is the hub's own page on the engine's agent chat (studio-engine
+  # docs/AGENT_CHAT.md), thread chat:alex:<user id>. The hub holds that thread,
+  # so the page's /agent_chat/* calls are answered in-process by
+  # HubAgentChatsController (drawn before Studio.routes), never proxied back to
+  # ourselves; naming the soul here is what lets the engine partial render.
+  config.agent_chat_souls = %w[alex]
+  # POST /voice/takes (studio-engine docs/VOICE_TRANSCRIPTION.md): a held take
+  # becomes {text, speaker, score}; nothing is kept. The key is voice's OWN
+  # (1Password studio-applications/openai.studio.voice, Heroku
+  # STUDIO_VOICE_OPENAI_API_KEY), never the hub's shared OPENAI_API_KEY image
+  # key. studio-engine 0.121.0 reads OPENAI_API_KEY when this is blank, so
+  # with no voice key a production boot names a transcriber that does not
+  # exist: every take answers 503 not_configured ("Voice isn't set up...")
+  # instead of spending the image key. QA (RAILS_ENV=production, QA_ENV=true)
+  # runs the mock transcriber: no vendor call, a fixed transcript. Tests and
+  # desks default to the mock already (Studio::VoiceTranscription.adapter_name).
+  if Studio.respond_to?(:voice_transcription=)
+    config.voice_transcription = true
+    config.voice_openai_api_key = HubVoiceConfig.api_key
+    config.voice_transcriber = HubVoiceConfig.transcriber
+  end
+  # The engine's per-user take limit (studio-engine >= the release carrying
+  # engine-voice-takes-hardened). Its counter must be SHARED: the hub's
+  # Rails.cache is a per-dyno file store (config/environments/production.rb),
+  # which would multiply the limit by the web dyno count. Rack::Attack's store
+  # (config/initializers/rack_attack.rb, loaded first) is the shared one.
+  # Inert on 0.121.0, which has no setting; Rack::Attack's VOICE_* throttles
+  # bound takes until the relock.
+  if Studio.respond_to?(:voice_takes_rate_limit=)
+    config.voice_takes_rate_limit = { to: 20, within: 600, store: Rack::Attack.cache.store }
   end
   # ---- Site footer and booking (studio-engine docs/SITE_FOOTER.md) ----
   # The engine renders the footer, the map, the booking frame and the booking

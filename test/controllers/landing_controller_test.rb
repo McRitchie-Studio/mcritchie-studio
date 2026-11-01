@@ -140,7 +140,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     text = css_select("[data-test='voice-profile-privacy']").first&.text&.squish
     assert text, "the voice profile paragraph renders"
     [ "Hugging Face (huggingface.co)", "jsDelivr (cdn.jsdelivr.net)", "voice pattern",
-      "We never receive or keep the recordings", "delete your voice pattern from your profile" ].each { assert_includes text, _1 }
+      "We never receive or keep the recordings of those phrases", "delete your voice pattern from your profile" ].each { assert_includes text, _1 }
   end
 
   # [component] /privacy doubles as the Messaging Terms and Conditions a carrier
@@ -150,7 +150,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "h1", text: "Privacy Policy and Messaging Terms and Conditions"
-    assert_includes response.body, "Last updated: October 29, 2026"
+    assert_includes response.body, "Last updated: November 1, 2026"
     text = css_select("[data-test='privacy-page']").text.squish
     assert_includes text, "McRitchie Studio LLC (doing business as McRitchie Studio)"
     assert_includes text, "3000 Lawrence St, Denver, CO 80205"

@@ -1,0 +1,23 @@
+<%# locals: (soul:, name:) %>
+<%# Hold to talk to <name> (epic .agents/epics/studio-voice.md, card 4), under
+    the engine chat on /chat. The engine's recorder (studio/voice/_recorder,
+    hold mode) and microphone chip (studio/voice/_microphone_chip) capture the
+    take; app/javascript/voice_chat.js embeds it on this device when the person
+    has a saved voice (data-voice-chat-embedder, the /profile voice row's own
+    embedder), posts it to POST /voice/takes, and sends the words to the chat
+    with the answer as `voice`, so <name> is told who spoke. No audio is kept:
+    the privacy line below says where it goes. Status lines are set as text. %>
+<section class="w-full max-w-3xl mx-auto px-4 pt-4 flex flex-col items-center gap-2 text-center min-w-0"
+         data-voice-chat data-test="voice-chat"
+         data-voice-chat-state="idle"
+         data-voice-chat-soul="<%= soul %>" data-voice-chat-name="<%= name %>"
+         data-voice-chat-takes-url="<%= studio_voice_takes_path %>"
+         <%= tag.attributes("data-voice-chat-embedder": voice_chat_embedder(current_user)) %>
+         aria-label="Talk to <%= name %>">
+  <%= render "studio/voice/microphone_chip", copy: VoiceChatHelper::VOICE_CHIP_COPY %>
+  <%= render "studio/voice/recorder", id: "#{soul}-voice-recorder", mode: "hold",
+             copy: VoiceChatHelper::VOICE_RECORDER_COPY %>
+  <p class="text-sm text-body min-h-[1.25rem] max-w-md break-words" role="status" aria-live="polite"
+     data-voice-chat-status data-test="voice-chat-status"></p>
+  <p class="text-xs text-secondary max-w-md break-words" data-test="voice-chat-privacy"><%= VoiceChatHelper::VOICE_PRIVACY %></p>
+</section>

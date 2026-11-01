@@ -363,3 +363,6 @@ web:
   souls: [avi, turf_monster, tyrion, alex, client_cto]
   apps:
     alex-build: [alex]
+    # The hub's own /chat (HubAgentChatsController), in-process: no credential
+    # is minted for it, so no satellite can speak as the hub.
+    mcritchie-studio: [alex]

@@ -2023,7 +2023,7 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   addresses, phone numbers or personal email; family only as written (Lauren, Margot, their
   birthday months); no commitment of his time, prices or contracts beyond what is published;
   the Hormozi floor. The page is public by construction, so these threads stay answered at
-  the public audience. The hub's public `/chat` (`Chat::AlexResponder`) prints the same block.
+  the public audience. The session-only `Chat::AlexResponder` (`POST /chat`) prints the same block.
 - **Who answers.** The person's role, as everywhere, and the public on the public-intake
   soul's chat threads: `Answerers#intake?` and its SQL guard answer `chat:alex:` as they
   answer `web:build:`, a prefix built in code. Another soul's public row is `held`.
@@ -2049,6 +2049,27 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   and `person.anon_token` are filtered (`config/initializers/filter_parameter_logging.rb`).
 - **Delivery.** `WebChat.polled?` covers these threads as /build's: the answer is marked
   posted with no broadcast and the typing phase is kept on the row for the poll.
+- **The hub's own page: `/chat`** (task `talk-to-alex-by-voice`; admin wall). The engine
+  chat (`studio/agent_chat/chat`, soul `alex`; `Studio.agent_chat_souls = %w[alex]`) on the
+  admin's own `chat:alex:<user id>` thread. Its browser calls, `POST /agent_chat/messages`
+  and `GET /agent_chat/turns`, are answered IN-PROCESS by `HubAgentChatsController` (drawn
+  before `Studio.routes`, which draws the same paths to the satellite proxy), through the
+  same `AgentChat::Ingest` and `Turns`, app `mcritchie-studio` (`web: apps:`). No
+  credential exists for that slug. The audience rule above holds here too.
+- **Spoken messages** (epic `.agents/epics/studio-voice.md`, card 4). Under the chat on
+  `/chat`, the engine's hold-to-talk recorder and microphone chip
+  (`chat/_voice`, `app/javascript/voice_chat.js`). A take is embedded on the device when
+  the user has a saved voice of the app's embedder, posted to the engine's
+  `POST /voice/takes` (OpenAI under `STUDIO_VOICE_OPENAI_API_KEY`; the mock on QA, in tests
+  and on desks; nothing kept), and its text sent as the message with `voice`
+  `{speaker, score, check, duration_ms}`. `AgentChat::Voice` keeps that as
+  `envelope.voice`, accepting only the engine's checks and naming the speaker ITSELF (the
+  user's own name when `matched`, else "Someone new"), so a browser can never put a name
+  in the prompt. `ContextBuilder` adds `Spoken by: <name> (voice recognised|not
+  recognised)` inside the fence and one code-written rule outside it. Rack::Attack bounds
+  `POST /voice/takes` per address and per user (`VOICE_*` in `config/initializers/rack_attack.rb`).
+  With no voice key in production the hub names no transcriber (`HubVoiceConfig::NO_KEY`),
+  so a take answers 503 "Voice isn't set up" instead of spending the shared `OPENAI_API_KEY`.
 - **Minting without a terminal or `ps` showing the secret.** `SECRET_ONLY=1` writes the
   secret alone to stdout. Capture it in a shell variable and hand it on over stdin only,
   as the `credential-rotation` SOP does (never `op item edit field=…` or
