@@ -94,6 +94,13 @@ module AgentMailbox
     end
 
     # `run`: what the Claude run reported (Responder::Answer#run_record), optional.
+    # One bounded board read for a scoped run (AgentMailbox::Scopes, LOOKUPS),
+    # holder-only and owner-only on the board too. data.text is the answer.
+    def lookup(id, worker:, name:, params: {})
+      call(:get, path("/api/v1/agent_messages/#{Integer(id)}/lookup",
+                      worker: worker, name: name, params: JSON.generate(params || {})))
+    end
+
     def complete(id, worker:, response_text:, action_summary:, run: {})
       body = { "worker" => worker, "response_text" => response_text, "action_summary" => action_summary }
       call(:post, "/api/v1/agent_messages/#{Integer(id)}/complete", body.merge(run.compact))
