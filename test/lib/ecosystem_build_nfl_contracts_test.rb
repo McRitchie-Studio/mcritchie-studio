@@ -66,6 +66,8 @@ class EcosystemBuildNflContractsTest < Minitest::Test
       assert_equal 1, status.exitstatus, out
       assert_includes out, "Stopped at Phase 6"
       refute_includes out, "REACHED STEADY STATE"
+      assert_includes out, "Restore the hub's Spotrac contracts"
+      refute_includes out, "nothing waits on you"
     end
   end
 end

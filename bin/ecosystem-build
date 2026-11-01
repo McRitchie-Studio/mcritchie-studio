@@ -779,6 +779,7 @@ assert_nfl_contracts() {
     log_act "SKIP_NETWORK_SEEDS=1: no active NFL contracts, so depth charts and roster spots are empty. Reseed once you have network access: cd $path && bin/rails db:seed"
     return 0
   fi
+  checklist_add 1 "Restore the hub's Spotrac contracts: put the R2 keys in .env.development (1Password r2.mcritchie-studio), then reseed" "cd $path && bin/rails db:seed"
   log_fail "mcritchie-studio has no active NFL contracts" "the Spotrac seed reads R2 and skipped, so depth charts and roster spots are empty. Put the R2 keys in $path/.env.development (1Password r2.mcritchie-studio; re-running this build writes them when 1Password can), then: cd $path && bin/rails db:seed"
   return 1
 }
