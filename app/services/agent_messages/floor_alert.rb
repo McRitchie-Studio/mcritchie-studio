@@ -19,9 +19,11 @@ module AgentMessages
   #                         single-task entry); it recovers when a claim appears or
   #                         the card leaves submitted.
   #   change_build_refused  the build launcher could not start a chat-sourced
-  #                         change card (ChangeBuilds: bin/task begin refused). The
-  #                         card stays designed; it recovers when the build starts
-  #                         or the card leaves designed.
+  #                         change card (ChangeBuilds: bin/task begin refused), and
+  #                         the card stays designed; OR its headless builder (an
+  #                         owner-go card) failed and the card sits building short
+  #                         of submitted. It recovers when the build starts, a
+  #                         builder run submits it, or the card leaves that stage.
   #
   # One more floor-wide check reads the dispatcher's harness health, which
   # bin/dispatcher measures on the Mac each beat and carries on its ping:
@@ -119,16 +121,24 @@ module AgentMessages
       end
     end
 
-    # One failing Check per chat-sourced change card the launcher could not start.
+    # One failing Check per chat-sourced change card the launcher could not start,
+    # and one per owner-go card whose headless builder failed short of submitted.
     def refused_checks(now)
-      Task.where(stage: "designed")
-          .where("tasks.metadata->'devops'->'#{ChangeBuilds::KEY}'->>'refused_reason' IS NOT NULL").order(:id)
-          .map do |task|
-            run = ChangeBuilds.run_of(task)
-            Check.new(kind: "change_build_refused", failing: true, subject: task.slug,
-                      detail: { "slug" => task.slug, "reason" => run["refused_reason"].to_s[0, 300],
-                                "attempts" => run["attempts"].to_i, "max_attempts" => ChangeBuilds.max_attempts })
-          end
+      refused = Task.where(stage: "designed")
+                    .where("tasks.metadata->'devops'->'#{ChangeBuilds::KEY}'->>'refused_reason' IS NOT NULL").order(:id)
+                    .map do |task|
+                      run = ChangeBuilds.run_of(task)
+                      Check.new(kind: "change_build_refused", failing: true, subject: task.slug,
+                                detail: { "slug" => task.slug, "reason" => run["refused_reason"].to_s[0, 300],
+                                          "attempts" => run["attempts"].to_i, "max_attempts" => ChangeBuilds.max_attempts })
+                    end
+      refused + ChangeBuilds.failed_builders.map do |task|
+        builder = ChangeBuilds.builder_of(task)
+        Check.new(kind: "change_build_refused", failing: true, subject: task.slug,
+                  detail: { "slug" => task.slug, "builder" => true, "reason" => builder["reason"].to_s[0, 300],
+                            "attempts" => builder["attempts"].to_i, "max_attempts" => ChangeBuilds.builder_max_attempts,
+                            "desk" => ChangeBuilds.run_of(task)["desk"], "log" => builder["log"] }.compact)
+      end
     end
 
     def dispatcher_check(now)
@@ -198,6 +208,13 @@ module AgentMessages
           "`cd #{HUB} && bin/task review-claim acquire #{d['slug']} --agent carl`, then one Carl subagent " \
           "(SOP pr-review, single-task entry)."
       when "change_build_refused"
+        if d["builder"]
+          return "Change builder failed: the headless builder for `#{d['slug']}` stopped short of submitted " \
+                 "(#{d['reason']}); attempt #{d['attempts']} of #{d['max_attempts']}. The card stays building with its desk" \
+                 "#{d['desk'] ? " at #{d['desk']}" : ''}#{d['log'] ? "; log #{d['log']}" : ''}. Continue it by hand: " \
+                 "`#{ChangeBuilds.launch_line(d['slug'], d['desk'])}`"
+        end
+
         "Change build not started: the launcher could not run bin/task begin for `#{d['slug']}` (#{d['reason']}). " \
           "The card stays designed; attempt #{d['attempts']} of #{d['max_attempts']}. By hand: " \
           "`cd #{HUB} && /Users/alex/projects/.agents/bin/task begin #{d['slug']} --agent pokemon`."
@@ -214,7 +231,8 @@ module AgentMessages
       when "submitted_unclaimed"
         "`#{incident.subject}` no longer waits for review: a review claim appeared or it left submitted (incident lasted #{lasted} min)."
       when "change_build_refused"
-        "`#{incident.subject}` no longer waits for its build: it started or left designed (incident lasted #{lasted} min)."
+        "`#{incident.subject}` no longer waits for its build: it started, its builder submitted it, or it left " \
+          "the stage (incident lasted #{lasted} min)."
       else DbBackupSweep.recovery_text(incident, lasted)
       end
     end
