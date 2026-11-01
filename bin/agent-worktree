@@ -711,8 +711,10 @@ def allocated_ports(app)
   existing_stack_envs(app).map { |path| parse_env(path)["APP_PORT"]&.to_i }.compact
 end
 
+# Discovered repos count too: a desk whose repo left satellites.yml keeps its DB until
+# it is torn down, and handing that DB out again means its teardown flushes a live desk.
 def allocated_redis_dbs
-  apps.values.flat_map do |app|
+  (apps.values + discovered_worktree_configs).flat_map do |app|
     existing_stack_envs(app).map do |path|
       parse_env(path)["REDIS_URL"].to_s.split("/").last&.to_i
     end
