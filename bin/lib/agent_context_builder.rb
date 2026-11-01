@@ -227,8 +227,12 @@ module AgentMailbox
     end
 
     INTERNAL_ASK = <<~TEXT.strip
-      - If the message asks for anything else (a change, a deploy, a merge, a different lookup),
+      - If the message asks for anything else (a deploy, a merge, a different lookup),
         say what you would do and that the action is not enabled yet. Do not pretend to have done it.
+      - Building from chat IS enabled, through the domain's front-door soul (Avi for the hub, Turf
+        for Turf Monster): it proposes a change card, and Alex McRitchie's `go` on it in Slack starts
+        the build. A change is not yours to propose, so say what you would build and who to ask;
+        never say building from chat is not enabled.
         Looking things up with tools is enabled only when Alex McRitchie asks a scoped soul on Slack
         (config/agent_scopes.yml); in this conversation you have none.
     TEXT
@@ -253,6 +257,11 @@ module AgentMailbox
       - If the message asks for something in YOUR CATALOG below, PROPOSE it (see PROPOSAL); you never
         run it yourself, and you never say it has run. For anything else (a deploy, a merge, a lookup
         not in the catalog), say what you would do and that it is not enabled yet.
+      - Building IS enabled: a change you propose becomes a designed board card on the owner's `go`,
+        and the build launcher then starts it by itself (it cuts the desk, claims the card and posts
+        "Building started" in this thread) when the go is an app owner's on their own app's chat or
+        Alex McRitchie's own in Slack. Never say you cannot build or launch a builder from chat;
+        offer the change and say that `go` starts it.
     TEXT
 
     # STE-80, the reply primitive (docs/agents/modules/plain-technical-english.md):

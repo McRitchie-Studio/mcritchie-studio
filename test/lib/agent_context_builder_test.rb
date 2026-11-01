@@ -378,4 +378,18 @@ class AgentContextBuilderTest < ActiveSupport::TestCase
     File.write(File.join(@root, "config/souls.yml"), "souls: [unclosed")
     assert builder.prompt.start_with?("You are Alex,"), "an unreadable roster falls back to the slug's name"
   end
+
+  # Avi told Alex McRitchie "I can't build it from chat or launch a builder from
+  # here, as neither is enabled yet" after his go. Building from chat is enabled;
+  # the rules say so, and still say deploys and merges are not.
+  test "the ask rules say building from chat is enabled, and deploys and merges are not" do
+    catalog = AgentMailbox::ContextBuilder::CATALOG_ASK
+    internal = AgentMailbox::ContextBuilder::INTERNAL_ASK
+    assert_match(/Building IS enabled/, catalog)
+    assert_match(/build launcher then starts it/, catalog)
+    assert_match(/Never say you cannot build or launch a builder from chat/, catalog)
+    assert_match(/a deploy, a merge.*not enabled yet/m, catalog)
+    assert_match(/Building from chat IS enabled/, internal)
+    refute_match(/\(a change, a deploy/, internal, "a change is no longer listed among the things not enabled")
+  end
 end

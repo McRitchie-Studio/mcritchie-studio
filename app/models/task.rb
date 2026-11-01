@@ -362,6 +362,9 @@ class Task < ApplicationRecord
   # The app chat's status card (AppDevopsStages::Live) reloads when a task for
   # the app appears, leaves, changes stage, release or title.
   after_commit :broadcast_app_devops_card, on: %i[create update destroy]
+  # A change card the build launcher started tells its chat thread when it
+  # reaches `submitted` (ChangeBuilds.announce_submitted; rescued inside).
+  after_commit :announce_change_build_submitted, on: :update, if: -> { saved_change_to_stage? && stage == "submitted" }
 
   def to_param
     slug
@@ -2532,6 +2535,10 @@ class Task < ApplicationRecord
 
   def broadcast_block_change
     DeploymentsBroadcaster.block_change(self)
+  end
+
+  def announce_change_build_submitted
+    ChangeBuilds.announce_submitted(self)
   end
 
   def broadcast_app_devops_card
