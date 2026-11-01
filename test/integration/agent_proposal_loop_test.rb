@@ -196,7 +196,7 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
         text = "I can pull that.\n===PROPOSAL===\n" \
                '{"kind": "ask", "capability": "signups_and_errors", "params": {"days": 7}, "summary": "Signups and errors, 7 days"}'
         message, catalog = perform_enqueued_jobs { answer("turf_monster", text) }
-        assert_equal %w[signups_and_errors usage task], catalog
+        assert_equal %w[signups_and_errors usage contests cancel_contest create_contest task], catalog
         assert @posts.last["content"].start_with?("**Turf** · I can pull that.")
 
         # Alex McRitchie's reply pings the shared bot that posted Turf's answer; the thread keeps Turf.
