@@ -85,9 +85,10 @@ landed. Never `--dry-run` with the real secret: its preview prints the concealed
   secret, he runs section 5 in HIS terminal and the variable is `$T` — the
   agent never holds that one at all.
 - **The refusal is not ceremony.** An unset `VALUE` does not abort the
-  command — the shell hands `op` the literal `credential[concealed]=`, a
-  well-formed assignment carrying zero bytes, so nothing downstream ever sees a
-  missing argument. Whether `op` then files the empty item or rejects it has
+  command — `printf` hands ruby zero bytes and ruby prints a well-formed
+  template whose concealed `value` is `""` (measured 2026-11-01), so `op`
+  gets valid JSON, not the `invalid JSON in piped input` refusal above, and
+  nothing downstream ever sees a missing secret. Whether `op` then files the empty item or rejects it has
   NOT been measured here, because measuring it means writing a throwaway item
   into a real credential vault; the refusal removes the question rather than
   betting on the answer. Guard on the variable being non-empty — `[ -n
@@ -104,10 +105,10 @@ landed. Never `--dry-run` with the real secret: its preview prints the concealed
 - **Notes are a permission matrix, not prose.** `scope`, `CAN`, `CANNOT`,
   plus a line for any SOP-only rule (e.g. Heroku cannot separate app-delete
   from write, so "never delete" is policy — say so in the note).
-- **The value rides the command's argv** (`credential[concealed]=$VALUE`), so
-  it is readable via `ps` by same-user processes for the life of the call.
-  Acceptable on this single-operator machine; stated so the recipe is not
-  mistaken for airtight.
+- **The value never rides argv.** The recipe pipes it to `op` as a stdin
+  template (the `-`), so `ps` never shows it; only the public fields ride the
+  command line. An earlier form passed `credential[concealed]=$VALUE` as an
+  argument, which `ps` could read for the life of the call; never use it.
 - Scope claims must be **measured, not assumed**: probe with a throwaway
   token/act where the provider's docs are vague, and put what you measured
   in the note. (2026-09-02: a Heroku `write-protected` probe created AND
