@@ -125,7 +125,7 @@ PIPELINE_REPOS =
     cfg = YAML.load_file(File.expand_path("../config/release_repos.yml", SCRIPT_DIR)) || {}
     (Array(cfg["gems"]&.keys) + Array(cfg["apps"]&.keys)).map(&:to_s).reject(&:empty?)
   rescue StandardError
-    %w[mcritchie-studio turf-monster tax-studio chain-ops studio-engine solana-studio]
+    %w[mcritchie-studio turf-monster tax-studio studio-engine solana-studio]
   end
 
 # The prod URL to smoke for the brief health line. Read from the hub app's

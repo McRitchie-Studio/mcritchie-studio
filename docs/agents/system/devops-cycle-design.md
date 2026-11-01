@@ -1157,9 +1157,8 @@ deploy command:** each app ships by the `prod_deploy.strategy` on its
 
 All three deploying apps migrate in their Heroku release phase (`release:` in
 each Procfile). The registry parks the rest: `rolio` (`git_push_heroku`, `ladder:
-dormant`) and `tax-studio` (`repo_script`, `ladder: planned`) declare adapters, and
-`chain-ops` (`ladder: blocked`) declares none. **A parked repo never reaches
-those adapters.** `app/models/release/ladder.rb#sweepable` scopes `bin/release
+dormant`) and `tax-studio` (`repo_script`, `ladder: planned`) declare adapters.
+**A parked repo never reaches those adapters.** `app/models/release/ladder.rb#sweepable` scopes `bin/release
 init`, the ladder guards and the unwired-CI warning, and the sweep reads the
 ladder too: a task naming any parked repo is HELD
 at detection (`app/models/release/conductor.rb#sweep_candidates`) and in the

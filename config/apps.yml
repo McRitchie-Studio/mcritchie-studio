@@ -314,25 +314,6 @@ apps:
     restore_drilled: null
     description: Relationship operating workspace
 
-  - slug: chain-ops
-    name: Chain Ops
-    emoji: "⛓️"
-    color: "#38BDF8"
-    tier: null
-    status: archived
-    port: 3400
-    repo: McRitchie-Studio/chain-ops
-    heroku_app: null
-    production_url: null
-    qa_url: null
-    engine: false
-    hosted: false
-    workspace: null
-    database: false
-    backups: false
-    restore_drilled: null
-    description: Solana localnet and QA control plane; never reached production
-
   - slug: tax-studio
     name: Tax Studio
     emoji: "📊"
@@ -352,24 +333,6 @@ apps:
     restore_drilled: null
     description: Tax planning workspace; a Heroku app with no repo
 
-  - slug: acquisition-studio
-    name: Acquisition Studio
-    emoji: "🤝"
-    color: "#57534E"
-    tier: null
-    status: archived
-    port: null
-    repo: null
-    heroku_app: null
-    production_url: null
-    qa_url: null
-    engine: true
-    hosted: false
-    workspace: null
-    database: false
-    backups: false
-    restore_drilled: null
-    description: Retired prototype; McRitchie Industries replaced it and holds its port block
 
   - slug: alex-build
     name: alex.build

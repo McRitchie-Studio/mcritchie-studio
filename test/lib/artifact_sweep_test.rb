@@ -233,23 +233,23 @@ class ArtifactSweepTest < Minitest::Test
   end
 
   def test_an_app_that_could_not_be_booted_is_unproven_never_capped
-    summary = { audited_envs: %w[development], rotation_missing: [], rotation_unknown: %w[karen_mcritchie] }
+    summary = { audited_envs: %w[development], rotation_missing: [], rotation_unknown: %w[legacy-rails-app] }
 
     assert_equal :unproven, ArtifactSweep.rotation_coverage(summary),
                  "an empty rotation_missing with an unbootable app is NOT a clean machine"
     refute ArtifactSweep.rotation_proven?(summary)
     report = ArtifactSweep.rotation_report_lines(summary).join("\n")
-    assert_includes report, "karen_mcritchie"
+    assert_includes report, "legacy-rails-app"
     assert_includes report, "NOT PROVEN"
   end
 
   def test_a_loose_app_and_an_unprovable_one_are_both_named_in_the_same_run
-    summary = { audited_envs: %w[development], rotation_missing: %w[rolio], rotation_unknown: %w[karen_mcritchie] }
+    summary = { audited_envs: %w[development], rotation_missing: %w[rolio], rotation_unknown: %w[legacy-rails-app] }
     report = ArtifactSweep.rotation_report_lines(summary)
 
     assert_equal 2, report.size, "the worst verdict must not swallow the other category"
     assert_includes report.join("\n"), "rolio"
-    assert_includes report.join("\n"), "karen_mcritchie"
+    assert_includes report.join("\n"), "legacy-rails-app"
   end
 
   def test_a_skipped_audit_does_not_read_as_a_capped_machine
@@ -372,8 +372,8 @@ class ArtifactSweepTest < Minitest::Test
   # unclassified, which looks exactly like a machine with no data.
   def test_the_report_survives_the_summary_round_trip_the_archive_lane_uses
     summary = { audited_envs: %w[development], rotation_missing: %w[chain-ops moms-app],
-                rotation_unknown: %w[karen_mcritchie],
-                rotation_unknown_reasons: { "karen_mcritchie" => "Could not find rails-4.1.6" },
+                rotation_unknown: %w[legacy-rails-app],
+                rotation_unknown_reasons: { "legacy-rails-app" => "Could not find rails-4.1.6" },
                 engine_pins: { "chain-ops" => ArtifactSweep::ENGINE_PIN_ABSENT, "moms-app" => "0.32.1" } }
 
     round_tripped = ArtifactSweep.parse_summary(ArtifactSweep.summary_line(summary))
@@ -387,14 +387,14 @@ class ArtifactSweepTest < Minitest::Test
   # --- every unknown carries its reason --------------------------------------
 
   def test_each_unprovable_app_is_reported_with_the_reason_it_could_not_boot
-    summary = { audited_envs: %w[development], rotation_unknown: %w[karen_mcritchie mcritchie-studio],
-                rotation_unknown_reasons: { "karen_mcritchie" => "Could not find rails-4.1.6",
+    summary = { audited_envs: %w[development], rotation_unknown: %w[legacy-rails-app mcritchie-studio],
+                rotation_unknown_reasons: { "legacy-rails-app" => "Could not find rails-4.1.6",
                                             "mcritchie-studio" => "Could not find studio-engine-0.76.2" } }
 
     report = ArtifactSweep.rotation_report_lines(summary)
 
     assert_equal 2, report.size, "one line per unknown, so a long reason cannot crowd out another app"
-    assert(report.any? { |l| l.include?("karen_mcritchie") && l.include?("Could not find rails-4.1.6") })
+    assert(report.any? { |l| l.include?("legacy-rails-app") && l.include?("Could not find rails-4.1.6") })
     assert(report.any? { |l| l.include?("mcritchie-studio") && l.include?("studio-engine-0.76.2") })
     assert(report.all? { |l| l.include?("Never read UNKNOWN as a pass") })
   end

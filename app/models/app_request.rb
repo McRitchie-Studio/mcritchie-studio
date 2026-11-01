@@ -76,14 +76,11 @@ class AppRequest < ApplicationRecord
   # (rolio is a herokuapp host) still keeps its name.
   # A name stays reserved on mcritchie.app because it is ours on mcritchie.studio:
   # rantly.mcritchie.app would pass for our Rantly, and a satellite may move over.
-  # `chain` holds chain-ops' planned host, chain.mcritchie.studio, which has no
-  # DNS yet, so satellites.yml's production_url (null) cannot reserve it.
   RESERVED = %w[
     www app api admin qa staging dev test demo status docs help support blog
     mail email smtp imap pop ftp ns ns1 ns2 cdn static assets auth login signin
     signup register account billing build stack packages credentials v1
     mcritchie studio team security root
-    chain
   ].freeze
 
   # The names the name field types, one after another, as its placeholder — so

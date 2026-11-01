@@ -18,8 +18,8 @@ class Release
     # idempotent no-op.
     #
     # PARKED REPOS ARE HELD, NOT SWEPT. A task naming ANY repo the registry parks
-    # (Release::Ladder.parked: a `dormant` repo, tax-studio `planned`, chain-ops
-    # `blocked`) is withheld from both sweepable lists and reported under "parked"
+    # (Release::Ladder.parked: a `dormant` repo, tax-studio `planned`) is
+    # withheld from both sweepable lists and reported under "parked"
     # instead, so curate! — which sweeps reviewed + stragglers — cannot attach it,
     # and nothing downstream (repo_plan, the promote, the deploy) ever sees its repo.
     # A task that ALSO names a live repo is held whole: sweeping only its live half

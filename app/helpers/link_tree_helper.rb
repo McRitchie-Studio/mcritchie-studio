@@ -70,8 +70,7 @@ module LinkTreeHelper
   def satellite_hover_emoji(slug)
     {
       "turf-monster" => "👹",
-      "tax-studio" => "🧾",
-      "chain-ops" => "⚡"
+      "tax-studio" => "🧾"
     }.fetch(slug, "✨")
   end
 end

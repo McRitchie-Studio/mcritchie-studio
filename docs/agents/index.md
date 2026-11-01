@@ -121,7 +121,6 @@ Detail: `docs/agents/modules/communication-style.md`.
 | `mcritchie-studio` | Flagship hub, SSO source, recovery scripts, agent docs | 3000 |
 | `turf-monster` | Sports pick'em satellite, payments, Solana integration | 3100 |
 | `rolio` | Release-managed standalone with reserved satellite range | 3300 |
-| `chain-ops` | Planned Solana localnet/QA/node operations control plane | 3400 |
 | `studio-engine` | Shared Rails engine for auth, theme, error logs, SSO | none |
 | `solana-studio` | Ruby Solana primitives | none |
 | `turf-vault` | Anchor smart contract | none |

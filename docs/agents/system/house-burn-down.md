@@ -10,7 +10,6 @@ How to rebuild the McRitchie dev environment from a freshly-reset Mac. This is t
 |------|------|-------|------|
 | [`mcritchie-studio`](https://github.com/McRitchie-Studio/mcritchie-studio) | Flagship hub. Task/News/Content pipelines, NFL data, agent docs, recovery scripts | Rails 8.1 / Postgres | 3000 |
 | [`turf-monster`](https://github.com/McRitchie-Studio/turf-monster) | Sports pick'em (World Cup 2026). Solana onchain | Rails 8.1 / Postgres / Redis / Sidekiq | 3100 |
-| [`chain-ops`](https://github.com/McRitchie-Studio/chain-ops) | Planned Solana environment control plane | Rails 8.1 / Postgres | 3400 |
 | [`studio-engine`](https://github.com/McRitchie-Studio/studio-engine) | Shared Rails engine: passwordless auth, error logging, theme, modals, ImageCache | Ruby gem | — |
 | [`solana-studio`](https://github.com/McRitchie-Studio/solana-studio) | Ruby Solana client (RPC, ed25519, borsh, txns) | Ruby gem | — |
 | [`turf-vault`](https://github.com/McRitchie-Studio/turf-vault) | Onchain escrow vault. Five-key multisig, per-action thresholds. Consumed by Turf Monster | Anchor / Rust / Solana | — |
@@ -20,7 +19,6 @@ How to rebuild the McRitchie dev environment from a freshly-reset Mac. This is t
 ```
 studio-engine gem ──┐
                     ├──> mcritchie-studio (flagship)
-                    ├──> chain-ops ─────> solana-studio gem
                     └──> turf-monster ──> solana-studio gem
                                        ──> turf-vault (devnet + mainnet deployments)
 ```
