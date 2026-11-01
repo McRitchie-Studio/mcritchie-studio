@@ -329,7 +329,10 @@ No template requires a merge field. `bin/rails broadcasts:publish_assets
 broadcasts:draft_cyvasse_four_styles` (the post-deploy) publishes the images and
 creates the `cyvasse-four-<style>` drafts. `/broadcasts/analytics/cyvasse-four`
 compares the four, ranked by people who played a match from the email, and says
-when a lead is too early to call (`Broadcasts::CyvasseFourScoreboard`). `LIMIT=500 bin/rails
+when a lead is too early to call (`Broadcasts::CyvasseFourScoreboard`). These four
+print a postal address only when `MAILER_ADDRESS` is set; by Alex McRitchie's
+decision of 2026-10-31 it is unset. CAN-SPAM requires one on commercial mail, and
+a staged row keeps its rendered footer, so set it before staging. `LIMIT=500 bin/rails
 broadcasts:stage_cyvasse_four` then holds the top `LIMIT` never-emailed verified
 players, most games first, dealing each run of four across the styles so every
 style gets the same mix. It never approves or sends; review and approve from the
