@@ -210,7 +210,10 @@ builder started from chat must never get. So, as the intent scout does:
 allowed command runs are not checked rule by rule, which is how a session builder
 ships too, and why `git push` by hand can be denied. `bin/submit` stops at
 `submitted`; merging needs Carl's review and the merge permit, and deploying needs
-the deployer identity, which the builder never has.
+the deployer identity, which the builder is not given. It can still reach it as this
+macOS user (its `Read` and `cat` see HOME's profiles and the hub `.env`), and `main`,
+`release` and `accepted` carry no branch protection, so the floors are a speed bump
+against a confused builder, not a wall against a hostile brief.
 
 **This is not a code sandbox**, and it does not pretend to be: `bin/rails test` runs
 the repo's code, which can do anything this macOS user can. What bounds it is where
