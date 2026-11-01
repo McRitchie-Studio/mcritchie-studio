@@ -1,7 +1,7 @@
 module Artists
   module Wikidata
-    # Loads the committed Wikidata snapshot into artists, aliases and
-    # memberships. No network. Idempotent: rows are matched by wikidata_id
+    # Loads the Wikidata snapshot from R2 (SeedSnapshot), or a file or Hash the
+    # caller names, into artists, aliases and memberships. Idempotent: rows are matched by wikidata_id
     # (artists), name + locale (aliases) and member + group + start year
     # (memberships), and only new or changed rows are written, so a re-run
     # writes nothing.
@@ -9,11 +9,13 @@ module Artists
     # Additive: a row the snapshot no longer carries is left alone. Slugs are
     # never rewritten once set, because other records will point at them.
     class SnapshotImporter
-      DEFAULT_PATH = Rails.root.join("db/seeds/data/artists_wikidata.json")
+      class SnapshotUnavailable < StandardError; end
+
+      SNAPSHOT = "artists_wikidata.json".freeze
       FIELDS = %w[name kind musicbrainz_id discogs_id spotify_id].freeze
 
-      def initialize(source = DEFAULT_PATH)
-        @data = source.is_a?(Hash) ? source : JSON.parse(File.read(source))
+      def initialize(source = nil)
+        @data = source.is_a?(Hash) ? source : JSON.parse(source ? File.read(source) : read_snapshot)
       end
 
       def call
@@ -26,6 +28,10 @@ module Artists
       end
 
       private
+
+      def read_snapshot
+        SeedSnapshot.read(SNAPSHOT) || raise(SnapshotUnavailable, "#{SeedSnapshot.key(SNAPSHOT)}: no R2 connection or no object")
+      end
 
       def entries = @data.fetch("artists").sort_by { |a| Parser.qid_number(a["wikidata_id"]) }
 

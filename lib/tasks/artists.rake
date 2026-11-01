@@ -1,13 +1,14 @@
 # Music artists from Wikidata (CC0), in two steps so a deploy never calls out:
 #
-#   bin/rails artists:fetch_wikidata    → query Wikidata, rewrite the committed snapshot
-#   bin/rails artists:import_wikidata   → load the snapshot (idempotent; the post-deploy step)
+#   bin/rails artists:fetch_wikidata SNAPSHOT=path → query Wikidata, write a snapshot file
+#   bin/rails seed_data:publish FILE=path NAME=artists_wikidata.json → upload it (production only)
+#   bin/rails artists:import_wikidata              → load the R2 snapshot (idempotent; the post-deploy step)
 #
-# SNAPSHOT=path overrides db/seeds/data/artists_wikidata.json for either task.
+# A deploy calls out only to our own R2. SNAPSHOT=path makes the import read a local file instead.
 namespace :artists do
-  desc "Fetch rappers and hip-hop/R&B/pop groups from Wikidata into the committed snapshot"
+  desc "Fetch rappers and hip-hop/R&B/pop groups from Wikidata into a snapshot file. SNAPSHOT=path"
   task fetch_wikidata: :environment do
-    path = ENV.fetch("SNAPSHOT", Artists::Wikidata::SnapshotImporter::DEFAULT_PATH.to_s)
+    path = ENV.fetch("SNAPSHOT") { abort "SNAPSHOT= is required" }
     logger = ->(message) { puts message }
     fetcher = Artists::Wikidata::Fetcher.new(client: Artists::Wikidata::Client.new(logger: logger), logger: logger)
     snapshot = fetcher.call
@@ -18,8 +19,7 @@ namespace :artists do
 
   desc "Load the Wikidata artist snapshot (upsert by wikidata_id; a re-run writes nothing)"
   task import_wikidata: :environment do
-    path = ENV.fetch("SNAPSHOT", Artists::Wikidata::SnapshotImporter::DEFAULT_PATH.to_s)
-    stats = Artists::Wikidata::SnapshotImporter.new(path).call
+    stats = Artists::Wikidata::SnapshotImporter.new(ENV["SNAPSHOT"]).call
     puts "artists:import_wikidata #{stats.map { |k, v| "#{k}=#{v}" }.join(' ')}"
   end
 end
