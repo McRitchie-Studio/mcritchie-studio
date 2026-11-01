@@ -106,10 +106,27 @@ class CyvasseFourEmailsTest < ActionDispatch::IntegrationTest
     KEYS.each { |key| assert_match "word-break:break-word", html(render(key, long)), key }
   end
 
-  test "a reader without history gets natural copy and every footer has an address" do
+  test "a reader without history gets natural copy" do
     assert_no_match(/ADD TO YOUR RECORD/, text(render("cyvasse_poster", @guest)))
     assert_match "Back.", text(render("cyvasse_wrapped", @guest))
-    KEYS.each { |key| assert_match "Denver, CO", text(render(key, @vet)), key }
+  end
+
+  test "the footer prints an address only when MAILER_ADDRESS is set" do
+    original = ENV.delete("MAILER_ADDRESS")
+    KEYS.each do |key|
+      assert_no_match(/Denver, CO/, text(render(key, @vet)), key)
+      assert_no_match(/<br>\s*<br>\s*<a [^>]*>Unsubscribe/, html(render(key, @vet)), key)
+      assert_match "Unsubscribe", text(render(key, @vet)), key
+    end
+    ENV["MAILER_ADDRESS"] = "PO Box 1, Denver, CO 80205"
+    KEYS.each { |key| assert_match "PO Box 1, Denver, CO 80205", text(render(key, @vet)), key }
+  ensure
+    original ? ENV["MAILER_ADDRESS"] = original : ENV.delete("MAILER_ADDRESS")
+  end
+
+  test "the Dragon and Pick emails use the vector piece art" do
+    assert_match "cyvasse_hex_dragon_vector.png", html(render("cyvasse_dragon", @vet))
+    assert_equal 4, html(render("cyvasse_pick", @vet)).scan(/cyvasse_vector_\w+\.png/).uniq.size
   end
 
   test "every image a template names is in public/email" do

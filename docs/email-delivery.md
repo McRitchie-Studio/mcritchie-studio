@@ -327,7 +327,9 @@ use this layout. `Broadcasts::CyvasseFour` holds the styles and the split.
 
 No template requires a merge field. `bin/rails broadcasts:publish_assets
 broadcasts:draft_cyvasse_four_styles` (the post-deploy) publishes the images and
-creates the `cyvasse-four-<style>` drafts. `LIMIT=500 bin/rails
+creates the `cyvasse-four-<style>` drafts. These four print a postal address only
+when `MAILER_ADDRESS` is set; by Alex McRitchie's decision of 2026-10-31 it is unset,
+and CAN-SPAM expects one on commercial mail, so setting it is the one-step restore. `LIMIT=500 bin/rails
 broadcasts:stage_cyvasse_four` then holds the top `LIMIT` never-emailed verified
 players, most games first, dealing each run of four across the styles so every
 style gets the same mix. It never approves or sends; review and approve from the
