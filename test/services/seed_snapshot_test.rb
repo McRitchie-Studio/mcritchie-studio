@@ -33,6 +33,17 @@ class SeedSnapshotTest < ActiveSupport::TestCase
     end
   end
 
+  test "SKIP_NETWORK_SEEDS answers nil without asking the store" do
+    ENV["SKIP_NETWORK_SEEDS"] = "1"
+    StorageBackend.stub(:configured?, true) do
+      Studio::S3.stub(:production_exists?, ->(**) { flunk "asked the store" }) do
+        assert_nil SeedSnapshot.read("x.json", sha256: PIN)
+      end
+    end
+  ensure
+    ENV.delete("SKIP_NETWORK_SEEDS")
+  end
+
   test "raises on a changed object rather than seed from it" do
     with_store(body: "{}".b) do
       error = assert_raises(SeedSnapshot::ChecksumMismatch) { SeedSnapshot.read("x.json", sha256: PIN) }

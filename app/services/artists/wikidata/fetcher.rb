@@ -55,7 +55,7 @@ module Artists
         }
       end
 
-      # One artist per line so a refresh diffs cleanly.
+      # One artist per line, so two snapshot files diff cleanly.
       def self.write(snapshot, path)
         meta = snapshot.except("artists", "memberships")
         lines = meta.map { |k, v| "  #{k.to_json}: #{v.to_json}" }

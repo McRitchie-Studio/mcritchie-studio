@@ -42,7 +42,7 @@ echo "exit: $?"
 tail -40 tmp/seed.log
 ```
 
-This populates: 32 NFL teams + 71 NCAA + 48 FIFA, 128 coaches, 3 seasons, 29 slates, ~2,400 Spotrac contracts, prospects, PFF grades, synthetic grade fill, depth chart shells, sample roster spots, news/content/tasks fixtures.
+This populates: 32 NFL teams + 71 NCAA + 48 FIFA, 128 coaches, 3 seasons, 29 slates, ~2,400 Spotrac contracts (read from R2: needs the R2 keys, skips without them), prospects, PFF grades, synthetic grade fill, depth chart shells, sample roster spots, news/content/tasks fixtures.
 
 ### Step 3 — Pull nflverse master CSV (identity + cross-ref IDs + headshots)
 

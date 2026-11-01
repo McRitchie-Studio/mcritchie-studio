@@ -90,7 +90,7 @@ What holds it in the hub:
 class, because R2 has no versioning and the object is no longer in git. It holds
 `artists_wikidata.json` (`artists:import_wikidata`, which refuses when the object
 is missing) and `spotrac_contracts_2025.json` (`db/seeds/22`, `nfl:salaries_sync`,
-which skip). No R2 connection or no object reads as absent; an R2 error or a pin
+which skip). No R2 connection, `SKIP_NETWORK_SEEDS=1` or no object reads as absent; an R2 error or a pin
 mismatch raises. The production bucket is **publicly served** at
 `assets.mcritchie.studio`, so only data that may be public goes here. To refresh:
 on a dyno, `artists:fetch_wikidata SNAPSHOT=/tmp/a.json` then `seed_data:publish

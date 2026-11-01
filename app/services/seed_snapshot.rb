@@ -6,7 +6,7 @@ require "digest"
 # assets).
 #
 # read answers nil only when there is nothing to read: no R2 connection (CI, a
-# keyless desk) or no such object. The caller skips, as seeds do for optional
+# keyless desk), SKIP_NETWORK_SEEDS=1 (a firewalled rebuild) or no such object. The caller skips, as seeds do for optional
 # data. An R2 failure or a changed object raises, so an outage cannot pass for
 # an empty snapshot and R2, which has no versioning, cannot change a seed
 # unnoticed. Refreshing a snapshot means publish, then bump its pin here.
@@ -23,7 +23,7 @@ class SeedSnapshot
   def self.key(name) = "#{PREFIX}/#{name}"
 
   def self.read(name, sha256: SHA256.fetch(name))
-    return nil unless StorageBackend.configured?
+    return nil if ENV["SKIP_NETWORK_SEEDS"] == "1" || !StorageBackend.configured?
     return nil unless Studio::S3.production_exists?(key: key(name))
 
     body = Studio::S3.production_download(key: key(name))
