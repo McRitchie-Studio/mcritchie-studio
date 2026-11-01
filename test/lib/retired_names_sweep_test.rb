@@ -23,6 +23,7 @@ class RetiredNamesSweepTest < Minitest::Test
     # Deleted files.
     "bin/docker-entrypoint", "ci_test_command_test", "system_test_browser_test",
     "builder_policy_test",
+    "bin/harvest-desk-ledger", "bin/lib/ledger_guard", "ledger_guard_test", "desk_ledger_import_test",
     # Test files renamed after the routes they test.
     "atomic_actions_controller_test", "atomic_events_controller_test",
     "event_grades_controller_test", "heartbeat_all_spans_test",

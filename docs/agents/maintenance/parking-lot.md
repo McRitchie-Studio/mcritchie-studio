@@ -299,10 +299,13 @@ the commit above.
 | `SOLANA_DEVNET_RPC_URL` on Heroku `mcritchie-studio` | Still set. No hub code reads it since `retire-signing-console`, which reached `main` in `rel-20260905-d6c266`. Its value carries a Helius key **shared** with `turf-monster-mainnet`'s `SOLANA_RPC_URL`. | `heroku config:unset SOLANA_DEVNET_RPC_URL -a mcritchie-studio`. Do not route it through `post_deploy_cmd`, which also fires on the QA deploy. Unsetting is safe alone; **rotating the key is not**: rotate only alongside `turf-monster-mainnet`. |
 | Postgres per-desk databases | The 498 `*_development_*` orphans filed on 2026-08-25 are gone. 354 databases remain: 32 `*_development_*`, 277 `*_test*`. `bin/agent-worktree remove` now drops a desk's database. | Needs Alex McRitchie's go-ahead for any bulk drop, with a `pg_stat_activity` check per database, because a drop cannot be undone. |
 | `feat/ai-builder-cache-run` (was the worktree `mcritchie-studio-ai-builder-cache`) | The worktree is gone from disk. `origin/feat/ai-builder-cache-run` is still at `c7d5d3267`: 5 commits, 517 insertions across 27 files, not on `accepted`. No board task. | Point at the code that supersedes those commits, or file a task to land them. Record the verdict here. |
-| Desk `mcritchie-studio/devops-scout-launcher-v1` | Filed `pending approval`. Gone from disk; branch still on origin. No board record. | Nothing to approve. Branch cleanup belongs to `bin/prune-branches`. |
-| Desk `mcritchie-studio/devops-scout-control-v1` | Same. | Same. |
-| Desk `mcritchie-studio/task-board-devops-contract` | Same. | Same. |
-| Desk `turf-monster/sidebar-back-qa-sync` | Same, in the turf-monster repo. | Same. |
+
+**Closed on measurement, 2026-11-01.** Four desks filed `pending approval` are gone from
+disk, so there is nothing left to approve: `mcritchie-studio/devops-scout-launcher-v1`,
+`mcritchie-studio/devops-scout-control-v1`, `mcritchie-studio/task-board-devops-contract`
+and `turf-monster/sidebar-back-qa-sync`. Each branch is still on its origin, which is
+`bin/prune-branches`' concern. The harvest took only resolved rows, so the board holds no
+record of these four; the commit above does.
 
 Two more rows were `reference only`, with no action owed: Claude's local memory
 (`~/.claude/projects/-Users-alex-projects/memory/*`) and character files
