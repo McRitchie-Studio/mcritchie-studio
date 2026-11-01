@@ -54,7 +54,8 @@ at `<sub>.<preview domain>`. Nobody waits for a person to pick it up.
 ## Change cards
 
 The same service starts the builder of a change an app owner asked for in the
-app's web chat. An owner's `go` on a change proposal opens a `designed` card
+app's web chat, or that Alex McRitchie himself confirmed in Slack (or Teams, once
+its owner id is set). An owner's `go` on a change proposal opens a `designed` card
 (`AgentProposals::Executor#change`,
 [agent-message-loop.md](agent-message-loop.md)); each tick, while a slot of the
 same `cap` is free, the launcher takes the oldest startable one.
@@ -64,12 +65,23 @@ same `cap` is free, the launcher takes the oldest startable one.
 - `designed`, not blocked, no assignee, not a launch task (no `AppRequest` names it);
 - `devops.kind` is `feature`, `bug` or `chore`, and `devops.source_thread` is set;
 - exactly one repository, an app in `config/apps.yml` that is live and tier
-  `studio` or `product` (a `basic` app's card waits for a session);
-- **owner-confirmed**: an `AgentProposal` of kind `change` on the `web` channel,
-  status `executed`, settled by the person who said `go`, whose `result` names
-  this card's slug. `AgentProposalJob` writes that result only after the owner's
-  `go` ran ([app-owner-confirms-proposals](agent-message-loop.md)), so an
-  unconfirmed card has no such row and is never started;
+  `studio` or `product` (a `basic` app's card waits for a session). The rule is
+  the same on every channel: the hub (`mcritchie-studio`, tier `studio`) and Turf
+  Monster (tier `product`) are already eligible, so an owner-confirmed Slack card
+  on either internal repo starts, while a library or a basic app never does;
+- **owner-confirmed**: an `AgentProposal` of kind `change`, status `executed`,
+  settled by the person who said `go`, whose `result` names this card's slug.
+  `AgentProposalJob` writes that result only after the owner's `go` ran
+  ([app-owner-confirms-proposals](agent-message-loop.md)), so an unconfirmed card
+  has no such row and is never started. Its channel is one of:
+  - `web`: an app owner's `go` on their own app's CTO thread, as before;
+  - `slack` or `teams`: **only Alex McRitchie's own `go`** (`ChangeBuilds.owner_go?`).
+    The go message's person holds the owner role and settled the proposal, and its
+    author is the medium's configured owner user (`config/agent_routes.yml`
+    `slack.owner_user_id`, `teams.owner_aad_object_id`; blank starts nothing). A
+    team member's, a client's or a second owner-role identity's `go` in Slack may
+    open the card but never starts it. A Discord or email `go` still waits for a
+    session;
 - never started before, or its last refusal is over 10 minutes old, or its start
   was left `starting` over 30 minutes (a launcher that died mid-begin); at most
   `max_attempts` starts, the same limit launch tasks take.
@@ -84,15 +96,25 @@ same `cap` is free, the launcher takes the oldest startable one.
    (`designed → building`) and launches Avi's intent scout. The slug is the
    board's, checked against a kebab-case rule; no chat text reaches the command.
 3. `POST …/finish` with `started` and the desk path begin printed: the card stores
-   `devops.change_build.launch_line`, the card's web thread gets one code-written
+   `devops.change_build.launch_line`, the card's thread gets one code-written
    line, "Building started, task `<slug>`.", and the ops channel gets the builder
-   launch line:
+   launch line. On web the line is stored already posted; on Slack or Teams it is
+   stored with its reply queued and the one reply path (`AgentMessageReplyJob`)
+   posts it in the proposal's thread, carrying the launch line too, since there
+   it is Alex McRitchie's own thread and he is the operator who runs it:
 
    ```bash
    cd <desk> && claude --agent pokemon "Build task <slug> to submitted: run /Users/alex/projects/.agents/bin/task begin <slug> to take the desk, then building-sop from Step 2."
    ```
 
    A dispatcher soul or Alex McRitchie's session starts the builder with that one command.
+
+   The `go` answer itself says so ("The build launcher starts it next…") only when
+   `ChangeBuilds.starts?` holds, so the thread never hears a promise the launcher
+   will not keep. When the started card later reaches `submitted`, Task's
+   after_commit (`ChangeBuilds.announce_submitted`) posts one more line in the same
+   thread: "Submitted for review, task `<slug>`.", with the PR and the task link on
+   an owner's Slack or Teams thread (a web client cannot open a private PR).
 4. A begin that fails reports `refused` with its last lines (never a link or token
    line). The card stays `designed`, the thread hears nothing, and the floor alert
    opens one `change_build_refused` incident for the card
